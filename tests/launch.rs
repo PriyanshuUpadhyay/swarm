@@ -794,6 +794,7 @@ fn the_agent_listing_rings_no_agent_that_a_fresh_hook_reports_working() {
         "working",
         "hook",
         None,
+        None,
         now - 1,
     )
     .unwrap();
@@ -1111,6 +1112,7 @@ fn all_agent_listings_match_each_sessions_adapter_and_fields() {
                 "failed",
                 "hook",
                 Some("fixture failure"),
+                None,
                 now,
             )
             .unwrap();

@@ -8,6 +8,7 @@ struct PaneCell: Identifiable, Equatable {
     let role: String
     let model: String
     let status: AgentStatus
+    var stateKind: String? = nil
     var stateTooltip: String? = nil
 
     var ended: Bool { status == .ended }
@@ -316,7 +317,7 @@ private struct PaneView<Content: View>: View {
 
     private var header: some View {
         HStack(spacing: tokens.spacing.s) {
-            StatusGlyph(status: cell.status, helpText: cell.stateTooltip)
+            StatusGlyph(status: cell.status, kind: cell.stateKind, helpText: cell.stateTooltip)
             Text(cell.title).fontWeight(.semibold)
             Text("\(cell.role) · \(cell.model)").foregroundStyle(.secondary)
             Spacer(minLength: 4)

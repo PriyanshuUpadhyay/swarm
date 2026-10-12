@@ -27,12 +27,15 @@ public struct NoticeEvent: Sendable, Hashable {
     public let chat: SwarmProjectSession
     public let projectPath: String
     public let agentID: SwarmAgentID?
+    public let stateKind: String?
 
-    public init(kind: Kind, chat: SwarmProjectSession, projectPath: String, agentID: SwarmAgentID? = nil) {
+    public init(kind: Kind, chat: SwarmProjectSession, projectPath: String,
+                agentID: SwarmAgentID? = nil, stateKind: String? = nil) {
         self.kind = kind
         self.chat = chat
         self.projectPath = projectPath
         self.agentID = agentID
+        self.stateKind = stateKind
     }
 }
 
@@ -78,9 +81,13 @@ public enum NoticeRule {
     public static func shouldPost(event: NoticeEvent, prefs: NoticePrefs, project: ProjectNode, title: String) -> Notice? {
         guard prefs.post, !prefs.mutedProjects.contains(project.path),
               event.kind != .done || prefs.done else { return nil }
-        let body = event.kind == .needsInput
-            ? "\(project.name): waiting on a permission or a question"
-            : "\(project.name): chat is done"
+        let body: String
+        switch (event.kind, event.stateKind) {
+        case (.needsInput, "permission"): body = "\(project.name): waiting on a permission"
+        case (.needsInput, "question"): body = "\(project.name): asked a question"
+        case (.needsInput, _): body = "\(project.name): waiting on a permission or a question"
+        case (.done, _): body = "\(project.name): chat is done"
+        }
         return Notice(title: "Swarm — \(title)", body: body,
                       sessionID: event.chat.id, agentID: event.agentID, sound: prefs.sound)
     }
@@ -109,7 +116,8 @@ public enum NoticeRule {
                 let agent = kind == .needsInput
                     ? agents.first { $0.state == "waiting" }
                     : agents.first { SwarmPanePolicy.isChair($0, in: chat.session) }
-                events.append(NoticeEvent(kind: kind, chat: chat, projectPath: project.path, agentID: agent?.id))
+                events.append(NoticeEvent(kind: kind, chat: chat, projectPath: project.path,
+                                          agentID: agent?.id, stateKind: agent?.stateKind))
             }
         }
         return events

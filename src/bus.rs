@@ -30,6 +30,7 @@ pub struct Agent {
     /// `hook` or `screen`.
     pub state_source: Option<String>,
     pub state_detail: Option<String>,
+    pub state_kind: Option<String>,
     /// The chat log the agent's provider hooks reported; null until the first report.
     pub log: Option<String>,
     /// The question the agent's screen shows now, if any; `swarm answer` picks a choice.

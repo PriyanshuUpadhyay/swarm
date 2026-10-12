@@ -24,6 +24,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0007.sql"),
     include_str!("../migrations/0008.sql"),
     include_str!("../migrations/0009.sql"),
+    include_str!("../migrations/0010.sql"),
 ];
 
 #[derive(serde::Serialize)]
@@ -166,6 +167,11 @@ fn migrate(connection: &mut Connection) -> Result<(), Box<dyn std::error::Error>
     if version < 9 {
         tx.execute_batch(MIGRATIONS[8])?;
         tx.pragma_update(None, "user_version", 9)?;
+    }
+
+    if version < 10 {
+        tx.execute_batch(MIGRATIONS[9])?;
+        tx.pragma_update(None, "user_version", 10)?;
     }
 
     tx.commit()?;
@@ -652,6 +658,7 @@ pub struct AgentRow {
     pub state_at: Option<i64>,
     pub state_source: Option<String>,
     pub state_detail: Option<String>,
+    pub state_kind: Option<String>,
     /// The chat log its provider's hooks reported; kept after the agent ends.
     pub log: Option<String>,
     pub profile: Option<String>,
@@ -802,10 +809,12 @@ fn write_usage(
 }
 
 /// Record an agent's reported state; `now` is unix seconds. The table's CHECKs refuse unknown
-/// states and sources. Returns `Some` with the state it replaced (None when the agent had no
-/// state yet), read in the same immediate transaction, so two hooks that race cannot both see one
+/// states, sources, and invalid wait kinds. A kindless wait keeps the kind of an existing wait;
+/// every other state write replaces it. Returns `Some` with the state it replaced (None when the
+/// agent had no state yet), read in the same immediate transaction, so two hooks that race cannot both see one
 /// change (a notice is sent once per change, ADR 0044). Returns None and writes nothing when the
 /// session holds no such agent.
+#[allow(clippy::too_many_arguments)]
 pub fn set_state(
     connection: &Connection,
     session_id: &str,
@@ -813,6 +822,7 @@ pub fn set_state(
     state: &str,
     source: &str,
     detail: Option<&str>,
+    kind: Option<&str>,
     now: i64,
 ) -> Result<Option<Option<String>>, Box<dyn std::error::Error>> {
     use rusqlite::OptionalExtension;
@@ -829,9 +839,11 @@ pub fn set_state(
         return Ok(None);
     };
     transaction.execute(
-        "UPDATE agent SET state = ?3, state_source = ?4, state_detail = ?5, state_at = ?6
+        "UPDATE agent SET state = ?3, state_source = ?4, state_detail = ?5,
+            state_kind = CASE WHEN ?3 = 'waiting' AND ?6 IS NULL AND state = 'waiting'
+                              THEN state_kind ELSE ?6 END, state_at = ?7
          WHERE session_id = ?1 AND id = ?2",
-        (session_id, agent_id, state, source, detail, now),
+        (session_id, agent_id, state, source, detail, kind, now),
     )?;
     transaction.commit()?;
     Ok(Some(old))
@@ -852,12 +864,17 @@ pub fn session_cwd(
         .optional()?)
 }
 
-/// The report a listing read for one agent: (state, state_source, state_at).
-pub type ReadState<'a> = (Option<&'a str>, Option<&'a str>, Option<i64>);
+/// The report a listing read for one agent: (state, state_source, state_at, state_kind).
+pub type ReadState<'a> = (
+    Option<&'a str>,
+    Option<&'a str>,
+    Option<i64>,
+    Option<&'a str>,
+);
 
 /// A screen check's write, applied only while the row still holds the report it read: a hook
 /// that lands between the listing's read and this write keeps its newer report, also within the
-/// same second, because state and source take part in the compare. Returns whether the row
+/// same second, because state, source, and kind take part in the compare. Returns whether the row
 /// changed.
 pub fn set_screen_state(
     connection: &Connection,
@@ -868,11 +885,11 @@ pub fn set_screen_state(
     now: i64,
     read: ReadState<'_>,
 ) -> Result<bool, Box<dyn std::error::Error>> {
-    let (read_state, read_source, read_at) = read;
+    let (read_state, read_source, read_at, read_kind) = read;
     let changed = connection.execute(
-        "UPDATE agent SET state = ?3, state_source = 'screen', state_detail = ?4, state_at = ?5
+        "UPDATE agent SET state = ?3, state_source = 'screen', state_detail = ?4, state_kind = NULL, state_at = ?5
          WHERE session_id = ?1 AND id = ?2
-           AND state IS ?6 AND state_source IS ?7 AND state_at IS ?8",
+           AND state IS ?6 AND state_source IS ?7 AND state_at IS ?8 AND state_kind IS ?9",
         (
             session_id,
             agent_id,
@@ -882,6 +899,7 @@ pub fn set_screen_state(
             read_state,
             read_source,
             read_at,
+            read_kind,
         ),
     )?;
     Ok(changed == 1)
@@ -892,7 +910,7 @@ pub fn agents(
     session_id: &str,
 ) -> Result<Vec<AgentRow>, Box<dyn std::error::Error>> {
     let mut statement = connection.prepare(
-        "SELECT id, role, pane_id, provider, created_at, state, state_at, state_source, state_detail,
+        "SELECT id, role, pane_id, provider, created_at, state, state_at, state_source, state_detail, state_kind,
                 log, profile, runner, model, effort, account, cost_usd, tokens
          FROM agent WHERE session_id = ?1 ORDER BY id",
     )?;
@@ -907,14 +925,15 @@ pub fn agents(
             state_at: row.get(6)?,
             state_source: row.get(7)?,
             state_detail: row.get(8)?,
-            log: row.get(9)?,
-            profile: row.get(10)?,
-            runner: row.get(11)?,
-            model: row.get(12)?,
-            effort: row.get(13)?,
-            account: row.get(14)?,
-            cost_usd: row.get(15)?,
-            tokens: row.get(16)?,
+            state_kind: row.get(9)?,
+            log: row.get(10)?,
+            profile: row.get(11)?,
+            runner: row.get(12)?,
+            model: row.get(13)?,
+            effort: row.get(14)?,
+            account: row.get(15)?,
+            cost_usd: row.get(16)?,
+            tokens: row.get(17)?,
         })
     })?;
     Ok(rows.collect::<Result<_, _>>()?)
@@ -1284,7 +1303,7 @@ pub fn clear_pane(
     connection.execute(
         // A closed agent reports nothing, so it shows as ended rather than its last state.
         "UPDATE agent SET pane_id = NULL, state = NULL, state_at = NULL, state_source = NULL,
-         state_detail = NULL WHERE session_id = ?1 AND id = ?2",
+         state_detail = NULL, state_kind = NULL WHERE session_id = ?1 AND id = ?2",
         (session_id, agent_id),
     )?;
     Ok(())
@@ -2141,7 +2160,17 @@ mod tests {
             "UPDATE message SET rung_at = unixepoch() - 30, rings = 1, delivery = 'hook'",
         );
         // Working, or done with no read message and a reply sent: no stall.
-        set_state(&connection, SESSION, CODER, "working", "hook", None, 0).unwrap();
+        set_state(
+            &connection,
+            SESSION,
+            CODER,
+            "working",
+            "hook",
+            None,
+            None,
+            0,
+        )
+        .unwrap();
         assert!(stalls(&connection, SESSION).unwrap().is_empty());
 
         // Read, then done without an ack.
@@ -2150,7 +2179,7 @@ mod tests {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs() as i64;
-        set_state(&connection, SESSION, CODER, "done", "hook", None, now).unwrap();
+        set_state(&connection, SESSION, CODER, "done", "hook", None, None, now).unwrap();
         assert_eq!(
             stalls(&connection, SESSION).unwrap(),
             [(CODER.to_string(), StallKind::Unacked, ask)]
@@ -2190,6 +2219,7 @@ mod tests {
             ORCHESTRATOR,
             "done",
             "hook",
+            None,
             None,
             now,
         )
@@ -2318,7 +2348,7 @@ mod tests {
         let version: i64 = connection
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 9);
+        assert_eq!(version, 10);
         let old = create_session(&connection, "lane", Path::new("/work"), None, None).unwrap();
         let new = create_session(&connection, "lane", Path::new("/work"), None, None).unwrap();
         continue_session(&connection, &new, &old).unwrap();
@@ -2345,14 +2375,49 @@ mod tests {
         let version: i64 = connection
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 9);
+        assert_eq!(version, 10);
         let coder = &agents(&connection, SESSION).unwrap()[0];
         assert_eq!(coder.state, None);
-        set_state(&connection, SESSION, CODER, "waiting", "hook", None, 1_700).unwrap();
+        set_state(
+            &connection,
+            SESSION,
+            CODER,
+            "waiting",
+            "hook",
+            None,
+            None,
+            1_700,
+        )
+        .unwrap();
         let coder = &agents(&connection, SESSION).unwrap()[0];
         assert_eq!(coder.state.as_deref(), Some("waiting"));
         assert_eq!(coder.state_at, Some(1_700));
         assert_eq!(coder.state_source.as_deref(), Some("hook"));
+    }
+
+    #[test]
+    fn migration_adds_state_kind_to_a_version_nine_database() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        for migration in &MIGRATIONS[..9] {
+            connection.execute_batch(migration).unwrap();
+        }
+        connection.pragma_update(None, "user_version", 9).unwrap();
+        connection
+            .execute_batch(&format!(
+                "INSERT INTO session (id, talk_mode, cwd) VALUES ('{SESSION}', 'lane', '/test');
+                 INSERT INTO agent (id, session_id, role, state)
+                     VALUES ('{CODER}', '{SESSION}', 'coder', 'waiting');"
+            ))
+            .unwrap();
+        migrate(&mut connection).unwrap();
+        let kind: Option<String> = connection
+            .query_row("SELECT state_kind FROM agent", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(kind, None);
+        let version: i64 = connection
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, 10);
     }
 
     #[test]
@@ -2365,6 +2430,7 @@ mod tests {
             "failed",
             "hook",
             Some("rate_limit"),
+            None,
             42,
         )
         .unwrap();
@@ -2375,24 +2441,241 @@ mod tests {
         assert_eq!(coder.state_detail.as_deref(), Some("rate_limit"));
         assert_eq!(orchestrator.state, None);
         assert_eq!(
-            set_state(&connection, SESSION, ORCHESTRATOR, "done", "hook", None, 42).unwrap(),
+            set_state(
+                &connection,
+                SESSION,
+                ORCHESTRATOR,
+                "done",
+                "hook",
+                None,
+                None,
+                42
+            )
+            .unwrap(),
             Some(None)
         );
         assert_eq!(
-            set_state(&connection, SESSION, "ghost", "waiting", "hook", None, 42).unwrap(),
+            set_state(
+                &connection,
+                SESSION,
+                "ghost",
+                "waiting",
+                "hook",
+                None,
+                None,
+                42
+            )
+            .unwrap(),
             None
         );
-        assert!(set_state(&connection, SESSION, CODER, "asleep", "hook", None, 42).is_err());
-        assert!(set_state(&connection, SESSION, CODER, "done", "guess", None, 42).is_err());
+        assert!(
+            set_state(
+                &connection,
+                SESSION,
+                CODER,
+                "asleep",
+                "hook",
+                None,
+                None,
+                42
+            )
+            .is_err()
+        );
+        assert!(set_state(&connection, SESSION, CODER, "done", "guess", None, None, 42).is_err());
+    }
+
+    #[test]
+    fn a_waiting_hook_records_kind_and_a_screen_write_clears_it() {
+        let connection = seed(0);
+        for (kind, screen_state) in [("permission", "waiting"), ("question", "done")] {
+            set_state(
+                &connection,
+                SESSION,
+                CODER,
+                "waiting",
+                "hook",
+                Some("prompt"),
+                Some(kind),
+                100,
+            )
+            .unwrap();
+            let coder = &agents(&connection, SESSION).unwrap()[0];
+            assert_eq!(coder.state_kind.as_deref(), Some(kind));
+            assert_eq!(coder.state_detail.as_deref(), Some("prompt"));
+            assert!(
+                set_screen_state(
+                    &connection,
+                    SESSION,
+                    CODER,
+                    screen_state,
+                    None,
+                    110,
+                    (Some("waiting"), Some("hook"), Some(100), Some(kind)),
+                )
+                .unwrap()
+            );
+            let coder = &agents(&connection, SESSION).unwrap()[0];
+            assert_eq!(coder.state_kind, None);
+            assert_eq!(coder.state.as_deref(), Some(screen_state));
+        }
+    }
+
+    #[test]
+    fn state_kind_checks_reject_non_waiting_states_and_unknown_kinds() {
+        let connection = seed(0);
+        for (state, kind) in [("done", "permission"), ("waiting", "unknown")] {
+            let error = set_state(
+                &connection,
+                SESSION,
+                CODER,
+                state,
+                "hook",
+                None,
+                Some(kind),
+                100,
+            )
+            .unwrap_err();
+            assert!(error.to_string().contains("CHECK constraint failed"));
+            assert_eq!(agents(&connection, SESSION).unwrap()[0].state, None);
+        }
+    }
+
+    #[test]
+    fn a_kindless_wait_keeps_its_kind_until_the_state_changes() {
+        let connection = seed(0);
+        set_state(
+            &connection,
+            SESSION,
+            CODER,
+            "waiting",
+            "hook",
+            None,
+            Some("permission"),
+            100,
+        )
+        .unwrap();
+        set_state(
+            &connection,
+            SESSION,
+            CODER,
+            "waiting",
+            "hook",
+            None,
+            None,
+            101,
+        )
+        .unwrap();
+        assert_eq!(
+            agents(&connection, SESSION).unwrap()[0]
+                .state_kind
+                .as_deref(),
+            Some("permission")
+        );
+        set_state(
+            &connection,
+            SESSION,
+            CODER,
+            "working",
+            "hook",
+            None,
+            None,
+            102,
+        )
+        .unwrap();
+        assert_eq!(agents(&connection, SESSION).unwrap()[0].state_kind, None);
+        set_state(
+            &connection,
+            SESSION,
+            CODER,
+            "waiting",
+            "hook",
+            None,
+            None,
+            103,
+        )
+        .unwrap();
+        assert_eq!(agents(&connection, SESSION).unwrap()[0].state_kind, None);
+    }
+
+    #[test]
+    fn a_same_second_kind_change_stops_the_screen_write() {
+        let connection = seed(0);
+        set_state(
+            &connection,
+            SESSION,
+            CODER,
+            "waiting",
+            "hook",
+            None,
+            Some("permission"),
+            100,
+        )
+        .unwrap();
+        let read = (Some("waiting"), Some("hook"), Some(100), Some("permission"));
+        set_state(
+            &connection,
+            SESSION,
+            CODER,
+            "waiting",
+            "hook",
+            None,
+            Some("question"),
+            100,
+        )
+        .unwrap();
+        assert!(!set_screen_state(&connection, SESSION, CODER, "done", None, 100, read).unwrap());
+        let coder = &agents(&connection, SESSION).unwrap()[0];
+        assert_eq!(coder.state.as_deref(), Some("waiting"));
+        assert_eq!(coder.state_kind.as_deref(), Some("question"));
+    }
+
+    #[test]
+    fn a_hook_state_without_kind_clears_the_previous_wait_kind() {
+        let connection = seed(0);
+        set_state(
+            &connection,
+            SESSION,
+            CODER,
+            "waiting",
+            "hook",
+            None,
+            Some("permission"),
+            100,
+        )
+        .unwrap();
+        set_state(&connection, SESSION, CODER, "done", "hook", None, None, 110).unwrap();
+        let coder = &agents(&connection, SESSION).unwrap()[0];
+        assert_eq!(coder.state.as_deref(), Some("done"));
+        assert_eq!(coder.state_kind, None);
     }
 
     #[test]
     fn a_screen_write_does_not_overwrite_a_newer_hook_report() {
         let connection = seed(0);
-        set_state(&connection, SESSION, CODER, "working", "hook", None, 100).unwrap();
+        set_state(
+            &connection,
+            SESSION,
+            CODER,
+            "working",
+            "hook",
+            None,
+            None,
+            100,
+        )
+        .unwrap();
         // The listing read state_at 100; a hook reports waiting before the screen write lands.
-        set_state(&connection, SESSION, CODER, "waiting", "hook", None, 105).unwrap();
-        let read = (Some("working"), Some("hook"), Some(100));
+        set_state(
+            &connection,
+            SESSION,
+            CODER,
+            "waiting",
+            "hook",
+            None,
+            None,
+            105,
+        )
+        .unwrap();
+        let read = (Some("working"), Some("hook"), Some(100), None);
         let written =
             set_screen_state(&connection, SESSION, CODER, "done", None, 110, read).unwrap();
         assert!(!written);
@@ -2403,9 +2686,9 @@ mod tests {
             .unwrap();
         assert_eq!(coder.state.as_deref(), Some("waiting"));
         assert_eq!(coder.state_source.as_deref(), Some("hook"));
-        let latest = (Some("waiting"), Some("hook"), Some(105));
+        let latest = (Some("waiting"), Some("hook"), Some(105), None);
         assert!(set_screen_state(&connection, SESSION, CODER, "done", None, 111, latest).unwrap());
-        let unset = (None, None, None);
+        let unset = (None, None, None, None);
         assert!(
             set_screen_state(&connection, SESSION, ORCHESTRATOR, "done", None, 112, unset).unwrap()
         );
@@ -2421,12 +2704,22 @@ mod tests {
             "working",
             None,
             100,
-            (None, None, None),
+            (None, None, None, None),
         )
         .unwrap();
         // The listing read (working, screen, 100); a hook reports waiting in that same second.
-        set_state(&connection, SESSION, CODER, "waiting", "hook", None, 100).unwrap();
-        let read = (Some("working"), Some("screen"), Some(100));
+        set_state(
+            &connection,
+            SESSION,
+            CODER,
+            "waiting",
+            "hook",
+            None,
+            None,
+            100,
+        )
+        .unwrap();
+        let read = (Some("working"), Some("screen"), Some(100), None);
         assert!(!set_screen_state(&connection, SESSION, CODER, "done", None, 100, read).unwrap());
         let coder = agents(&connection, SESSION)
             .unwrap()
@@ -2444,9 +2737,10 @@ mod tests {
             &connection,
             SESSION,
             CODER,
-            "failed",
+            "waiting",
             "hook",
             Some("quota"),
+            Some("permission"),
             42,
         )
         .unwrap();
@@ -2462,9 +2756,10 @@ mod tests {
                 coder.state,
                 coder.state_at,
                 coder.state_source,
-                coder.state_detail
+                coder.state_detail,
+                coder.state_kind
             ),
-            (None, None, None, None)
+            (None, None, None, None, None)
         );
     }
 
