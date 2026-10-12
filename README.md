@@ -121,27 +121,33 @@ If **Open Anyway** does not show, run `xattr -dr com.apple.quarantine /Applicati
    **Swarm > Managed Changes…** lists each entry swarm added and removes one after you see the
    diff, as `swarm managed revert` does.
 
-### Optional: accounts with yelo
+### Accounts and usage
 
-[yelo](https://github.com/PriyanshuUpadhyay/yelo) keeps more than one Claude or Codex account
-(profiles) and reads how much usage each one has left. Swarm uses it when it is on `PATH`:
+Swarm keeps more than one Claude or Codex account and reads how much usage each one has left.
+It needs no other tool.
 
-- `swarm launch --account auto` starts the worker on the account with the most usage left, the
-  same answer as `yelo profile pick`. `--account work` takes the account named `work`. Without
-  `--account`, yelo's `claude` or `codex` command in the pane picks the account.
+- **Settings › Accounts** in the app lists the accounts of each provider with their sign-in state
+  and usage. **Add account** opens the provider's own login in a pane. `swarm accounts login` is
+  the same step for a script.
+- A Claude account is a login in the macOS Keychain. Every account uses the chats, settings and
+  memory in `~/.claude`; only the login changes (ADR 0071). The home of a new account is in
+  `~/.swarm/accounts/<provider>/<name>`. Swarm adds no account folder to your home.
+- `swarm launch` starts the worker on the account with the most usage left. `--account work`
+  takes the account named `work`. A Fable model counts the Fable weekly limit too, and its
+  automatic pick stops when every signed-in account has used that limit. A named account is
+  never refused.
+- `swarm run claude` or `swarm run codex` starts the CLI in your terminal on the account with the
+  most usage left. `swarm run claude --account work -- --resume` names the account and passes
+  `--resume` to the CLI.
 - A runner whose best account has less than `min_usage_left_pct` (default 5%) left is skipped, so
   the launch falls through to the next runner.
-- `swarm accounts --provider claude --json` and `swarm usage --json` show what yelo reports, and
-  the app shows it on the account row of Switch model.
+- Swarm reads Claude usage with the account's own Keychain token (ADR 0072). The token stays in
+  memory and is written to no file.
+- The usage HUD is a panel at the top of the screen that shows each account's limits. The app
+  asks one time, "Add the usage HUD?". **Settings › Accounts › Show usage HUD** changes the answer
+  later, and **View › Show Usage HUD** opens the panel (ADR 0073).
 
-```sh
-brew install priyanshuupadhyay/tap/yelo
-yelo setup
-yelo profile create --cli claude work
-claude --profile work auth login
-```
-
-Without yelo, each CLI uses its own login. AGY has no account source yet.
+AGY has no account source yet.
 
 ### Bundled workflow skills
 
@@ -313,12 +319,15 @@ id. A chair gets both from its pane, which `swarm session new` registers. A chil
 | `models --provider <claude\|codex\|agy> --json` | any | List models for a provider. Codex and AGY use their CLI catalogs, and a Codex model lists its efforts; Claude shows its model aliases. |
 | `accounts --provider <claude\|codex\|agy> --json` | any | List accounts for one provider as JSON. |
 | `usage --json` | any | List account use meters as JSON. |
+| `usage --refresh --provider <claude\|codex> --json` | any | Read that provider's usage again from its source, save it, and list its meters as JSON. A failed read gives a meter with state `failed` and a `reason`, never zero usage. |
+| `accounts login --provider <claude\|codex> --name <name> --revision <revision> --json [--cwd <dir>]` | any | Open the provider's own login for the account `name` in a pane. A child caller is refused. |
+| `run <claude\|codex> [--account <auto\|name>] [-- <args>...]` | any | Start the provider CLI in this terminal on the picked account, `auto` by default. It needs no session. |
 | `drain` | any | Run queued summarize jobs, print `done`, `retry`, or `parked` per job. |
 | `agent add <id> <role>` | session | Register an agent. The `orchestrator` role also records the caller pane and session adapter. |
 | `agents --json` | session | List agents, pane state, agent state, and adapter attach support as JSON. Each row includes `state_kind` (`permission`, `question`, or null) beside `state_detail`; null or an absent field means no known wait kind. Each row also includes `profile`, `runner`, `model`, `effort`, `account`, `costUsd`, and `tokens` when known. Missing values are omitted. For each live agent it reads the pane's bottom rows (the adapter's `screen` verb). A hook report stands through 45 s unless, after the first 10 s, the screen shows a state the provider's hooks cannot send (Codex failed, AGY waiting, any idle; ADR 0070). It re-rings a due message to an idle pane and, while the adapter lists the chair's pane and it reads idle with no question, sends the sweep's reports. None of its rings waits for proof: the next listing or sweep settles it from the hook state and the screen (ADR 0041). |
 | `agents --json --all` | any | Print one JSON object that maps a session id to its `agents --json` listing, read with that session's stored adapter. It has a key only for a non-archived session that has agents and a stored adapter and whose read worked; a failed read prints an error on stderr. Adapter work shares an 18 s batch budget, divided across the remaining sessions. A session that exceeds its share is omitted with an error on stderr. The app's sidebar uses it once per refresh. |
 | `messages --json [--after <seq>]` | session | List message metadata and available bodies as JSON. `delivery` is what the last ring proved: `hook`, `screen`, `seen` (the agent read its messages after the ring), `unconfirmed`, `unchecked`, or null until the ring's proof is settled; more values may come (ADR 0041). |
-| `launch <id> <role> [--provider <claude\|codex\|agy>] [--model <name> for chat] [--account <auto\|name>] [--cwd <dir>] [-- <args>...]` | session | Start the first runner of the role's profile that can run, or, with `chat --provider <provider> --model <name>`, exactly that model once with the chat profile's effort for that provider and no fallback (ADR 0033). `--account` is ignored for a provider with no accounts, and without `--model` a `--provider` the profile has no runner of is refused. Register the agent, split a pane in `--cwd`, and start its provider CLI. A child caller is refused. A Claude child runs from `<cwd>/.herdr/workers`. The pane dir is marked trusted for Claude, Codex, and AGY only with standing consent from `swarm setup`, or for a chair, whose folder the owner picked; each write is recorded and printed as a bare `trusted <provider> <dir>` line on stderr. With no consent, launch writes nothing and prints a bare `trust-pending <provider> <dir>` line, the diff, and the `swarm setup --plan --cwd` command that approves it; the pane shows its CLI's own trust question (ADR 0043). |
+| `launch <id> <role> [--provider <claude\|codex\|agy>] [--model <name> for chat] [--account <auto\|name>] [--cwd <dir>] [-- <args>...]` | session | Start the first runner of the role's profile that can run, or, with `chat --provider <provider> --model <name>`, exactly that model once with the chat profile's effort for that provider and no fallback (ADR 0033). Without `--account` the account is `auto`, the one with the most usage left. `--account` is ignored for a provider with no accounts, and without `--model` a `--provider` the profile has no runner of is refused. Register the agent, split a pane in `--cwd`, and start its provider CLI. A child caller is refused. A Claude child runs from `<cwd>/.herdr/workers`. The pane dir is marked trusted for Claude, Codex, and AGY only with standing consent from `swarm setup`, or for a chair, whose folder the owner picked; each write is recorded and printed as a bare `trusted <provider> <dir>` line on stderr. With no consent, launch writes nothing and prints a bare `trust-pending <provider> <dir>` line, the diff, and the `swarm setup --plan --cwd` command that approves it; the pane shows its CLI's own trust question (ADR 0043). |
 | `spawn <id> <role> [--provider <p>] [--account <auto\|name>] [-- <cmd>...]` | session | Register the agent, split a pane, and optionally run `<cmd>; swarm exited`. Print the pane id. |
 | `type <id>` | session | Read text from stdin and type it into a live agent pane. A closed pane causes an error before any input is sent. |
 | `interrupt <id>` | session | Send the adapter interrupt action to the agent pane. |

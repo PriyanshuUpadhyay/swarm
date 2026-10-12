@@ -1,7 +1,8 @@
 ---
-status: proposed
+status: superseded
 date: 2026-10-09
 deciders: [chair]
+superseded-by: "0072"
 related: ["0005", "0006", "0057", "0061", "0063"]
 informed-by:
   - "Owner L5 on 2026-10-06: yelo keeps its usage HUD until research shows its reads can move"

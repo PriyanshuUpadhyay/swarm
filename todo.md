@@ -48,9 +48,6 @@ pressing Enter again.
 - The profiles page rows are a LazyVStack, so they have no arrow-key selection.
 - Model ids show in full in a runner chip; they are not shortened.
 - The profiles page has no Restore defaults, because swarm has no command for it.
-- A launch with `--account` reads yelo twice (the probe and the account pick), so a stuck yelo
-  costs 4 s, not 2 s. One read could serve both.
-- A hung yelo's own child process can outlive the kill after the 2 s limit.
 - `argv` stays in `bus.rs`, dispatching on the `Provider` enum, not in `providers.rs`.
 - The profile schema lives in `src/config.rs`, not `src/profiles.rs` (ADR 0031 names it).
 - `swarm roles save` takes the profile JSON as an argument, not on stdin.
