@@ -3077,6 +3077,7 @@ fn list_agents(
             None => (None, None, None),
         };
         let (state, write) = swarm::screen::resolve(
+            row.provider.as_deref(),
             row.state.as_deref(),
             row.state_at,
             row.state_source.as_deref(),
