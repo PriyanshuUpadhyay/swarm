@@ -206,6 +206,8 @@ pub fn openusage(usage: &Usage, now: i64) -> Value {
             if let Some(reset) = meter.reset_time_seconds {
                 resource["resetsAt"] = iso_time(reset).into();
             }
+            // windowSeconds is optional, so a length that overflows seconds is left out
+            // and the export keeps the rest of the resource.
             if let Some(seconds) = meter
                 .window_minutes
                 .and_then(|minutes| minutes.checked_mul(60))

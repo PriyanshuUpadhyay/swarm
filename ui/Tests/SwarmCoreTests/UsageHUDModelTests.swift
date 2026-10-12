@@ -340,9 +340,11 @@ struct UsageHUDModelTests {
             now: UsageTestClock(now).now
         )
         let poll = Task { await model.read() }
-        // Each wait has a bound and releases the read before its check, so a failure ends the test.
+        // Each wait has a time bound and releases the read before its check, so a failure ends the test.
+        let clock = ContinuousClock()
+        var deadline = clock.now + .seconds(10)
         var holding = false
-        for _ in 0..<100_000 {
+        while clock.now < deadline {
             if await held.isHolding {
                 holding = true
                 break
@@ -356,8 +358,9 @@ struct UsageHUDModelTests {
         }
         await command.set([meter(usedPct: 50)])
         let refresh = Task { await model.refresh() }
+        deadline = clock.now + .seconds(10)
         var refreshed = false
-        for _ in 0..<100_000 {
+        while clock.now < deadline {
             if await command.refreshed.count >= 2 {
                 refreshed = true
                 break

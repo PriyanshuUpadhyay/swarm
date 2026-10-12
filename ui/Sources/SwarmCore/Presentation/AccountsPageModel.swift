@@ -65,7 +65,7 @@ public struct AccountsPageModel: Sendable, Equatable {
     private var refreshCooldownEndSeconds: Int?
     /// The running load is an explicit Refresh, which is said one time, when it ends.
     private var refreshInLoad = false
-    /// The error text VoiceOver last said, so a load that repeats it stays silent.
+    /// The error text VoiceOver last said, or kept silent at an action start, so a load that repeats it stays silent.
     private var saidError: String?
     private var actionError: String?
     public private(set) var revision: String?
@@ -257,8 +257,8 @@ public struct AccountsPageModel: Sendable, Equatable {
     }
 
     /// The banner text for a report during a load. Inside a Refresh nothing is said until
-    /// `refreshEnded`; outside one, a text is said when it is new or changed.
-    public mutating func reportsError() -> AccountsErrorReport {
+    /// `finishRefresh`; outside one, a text is said when it is new or changed.
+    public mutating func takeErrorReport() -> AccountsErrorReport {
         let message = errorMessage
         guard !refreshInLoad else { return AccountsErrorReport(message: message, announce: false) }
         defer { saidError = message }
@@ -267,9 +267,23 @@ public struct AccountsPageModel: Sendable, Equatable {
 
     /// The one announcement of an explicit Refresh: the error that stands, else the no-call note,
     /// else a short result.
-    public mutating func refreshEnded(nowSeconds: Int) -> String {
+    public mutating func finishRefresh(nowSeconds: Int) -> String {
         saidError = errorMessage
         return errorMessage ?? refreshNote(nowSeconds: nowSeconds) ?? "Usage refreshed."
+    }
+
+    /// The start of a login or reset clears its old failure from the banner and says nothing.
+    public mutating func startAction() -> AccountsErrorReport {
+        actionError = nil
+        saidError = errorMessage
+        return AccountsErrorReport(message: errorMessage, announce: false)
+    }
+
+    /// A failed login or reset is said each time, so a retry that fails again is heard.
+    public mutating func failAction(_ message: String) -> AccountsErrorReport {
+        actionError = message
+        saidError = errorMessage
+        return AccountsErrorReport(message: errorMessage, announce: true)
     }
 
     public func refreshNote(nowSeconds: Int) -> String? {

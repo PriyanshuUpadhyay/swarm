@@ -136,13 +136,13 @@ struct AccountsPageModelTests {
         model.requestLoad(refreshUsage: true)
         let generation = try start(&model)
         model.receiveUsage(SwarmUsage(meters: [meter(usedPct: 30)]), generation: generation)
-        #expect(model.reportsError() == AccountsErrorReport(message: nil, announce: false))
-        #expect(model.refreshEnded(nowSeconds: 1_000) == "Usage refreshed.")
+        #expect(model.takeErrorReport() == AccountsErrorReport(message: nil, announce: false))
+        #expect(model.finishRefresh(nowSeconds: 1_000) == "Usage refreshed.")
         model.finishLoad(generation)
         model.requestLoad(refreshUsage: true)
         let next = try start(&model)
         model.receiveRefreshCooldown(nextInSeconds: 180, nowSeconds: 1_000, generation: next)
-        #expect(model.refreshEnded(nowSeconds: 1_000) == "Updated 2m ago. Next refresh in 3m.")
+        #expect(model.finishRefresh(nowSeconds: 1_000) == "Updated 2m ago. Next refresh in 3m.")
     }
 
     @Test("a standing error is shown at each call of one Refresh and said one time, at its end")
@@ -152,27 +152,27 @@ struct AccountsPageModelTests {
         let generation = try start(&model)
         model.failUsage(provider: "codex", message: "Codex usage read failed", generation: generation)
         for _ in 0..<8 {
-            #expect(model.reportsError() == AccountsErrorReport(message: "Codex: Codex usage read failed", announce: false))
+            #expect(model.takeErrorReport() == AccountsErrorReport(message: "Codex: Codex usage read failed", announce: false))
         }
         model.receiveRefreshCooldown(nextInSeconds: 180, nowSeconds: 1_000, generation: generation)
-        #expect(model.refreshEnded(nowSeconds: 1_000) == "Codex: Codex usage read failed")
+        #expect(model.finishRefresh(nowSeconds: 1_000) == "Codex: Codex usage read failed")
         model.finishLoad(generation)
         // Outside a Refresh the same text is not said again, and a changed text is.
         model.requestLoad(refreshUsage: false)
         let later = try start(&model)
-        #expect(model.reportsError() == AccountsErrorReport(message: "Codex: Codex usage read failed", announce: false))
+        #expect(model.takeErrorReport() == AccountsErrorReport(message: "Codex: Codex usage read failed", announce: false))
         model.failAccounts(provider: "claude", error: SwarmProfileError.failed("claude failed"), generation: later)
         let changed = try #require(model.errorMessage)
-        #expect(model.reportsError() == AccountsErrorReport(message: changed, announce: true))
-        #expect(model.reportsError() == AccountsErrorReport(message: changed, announce: false))
+        #expect(model.takeErrorReport() == AccountsErrorReport(message: changed, announce: true))
+        #expect(model.takeErrorReport() == AccountsErrorReport(message: changed, announce: false))
         // Once the error is gone, the same text is new again.
         var claude = list()
         claude.provider = "claude"
         model.receiveAccounts(claude, provider: "claude", generation: later)
         model.receiveUsage(SwarmUsage(meters: [meter(usedPct: 30)]), generation: later, provider: "codex")
-        #expect(model.reportsError() == AccountsErrorReport(message: nil, announce: false))
+        #expect(model.takeErrorReport() == AccountsErrorReport(message: nil, announce: false))
         model.failUsage(provider: "codex", message: "Codex usage read failed", generation: later)
-        #expect(model.reportsError().announce)
+        #expect(model.takeErrorReport().announce)
     }
 
     @Test("an error text that changes inside one Refresh is said one time, as it stands at the end")
@@ -181,10 +181,46 @@ struct AccountsPageModelTests {
         model.requestLoad(refreshUsage: true)
         let generation = try start(&model)
         model.failUsage(provider: "codex", message: "first", generation: generation)
-        #expect(!model.reportsError().announce)
+        #expect(!model.takeErrorReport().announce)
         model.failUsage(provider: "codex", message: "second", generation: generation)
-        #expect(!model.reportsError().announce)
-        #expect(model.refreshEnded(nowSeconds: 1_000) == "Codex: second")
+        #expect(!model.takeErrorReport().announce)
+        #expect(model.finishRefresh(nowSeconds: 1_000) == "Codex: second")
+    }
+
+    @Test("the start of a login or reset updates the banner and does not say a standing error again")
+    func actionStartIsSilent() throws {
+        var model = AccountsPageModel()
+        let generation = try start(&model)
+        model.failUsage(provider: "codex", message: "Codex usage read failed", generation: generation)
+        #expect(model.takeErrorReport().announce)
+        model.finishLoad(generation)
+        #expect(model.startAction() == AccountsErrorReport(message: "Codex: Codex usage read failed", announce: false))
+        _ = model.failAction("Cannot open login pane")
+        #expect(model.startAction() == AccountsErrorReport(message: "Codex: Codex usage read failed", announce: false))
+    }
+
+    @Test("a failed login or reset says its text one time, and the reload after it says nothing")
+    func actionFailureSaidOnce() throws {
+        var model = AccountsPageModel()
+        #expect(model.startAction() == AccountsErrorReport(message: nil, announce: false))
+        #expect(model.failAction("Cannot open login pane") == AccountsErrorReport(message: "Cannot open login pane", announce: true))
+        model.requestLoad(refreshUsage: false)
+        let reload = try start(&model)
+        model.receiveAccounts(list(), provider: "codex", generation: reload)
+        #expect(model.takeErrorReport() == AccountsErrorReport(message: "Cannot open login pane", announce: false))
+    }
+
+    @Test("the same action that fails again with the same text is said again, one time")
+    func repeatedActionFailureSaidAgain() throws {
+        var model = AccountsPageModel()
+        for _ in 0..<2 {
+            #expect(!model.startAction().announce)
+            #expect(model.failAction("The accounts file changed. Reload and retry.").announce)
+            model.requestLoad(refreshUsage: false)
+            let reload = try start(&model)
+            #expect(!model.takeErrorReport().announce)
+            model.finishLoad(reload)
+        }
     }
 
     @Test("a meter decodes its reason code, and a meter with none has nil")

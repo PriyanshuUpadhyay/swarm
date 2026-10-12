@@ -255,7 +255,7 @@ struct AccountsPage: View {
         }
         // The rows change in place, so VoiceOver hears that a Refresh ended only if it is said.
         if explicitRefresh, !Task.isCancelled, generation == state.generation {
-            AccessibilityNotification.Announcement(state.refreshEnded(nowSeconds: Int(Date().timeIntervalSince1970))).post()
+            AccessibilityNotification.Announcement(state.finishRefresh(nowSeconds: Int(Date().timeIntervalSince1970))).post()
         }
     }
 
@@ -275,15 +275,15 @@ struct AccountsPage: View {
 
     private func reportError(_ generation: Int) {
         guard generation == state.generation else { return }
-        let report = state.reportsError()
+        let report = state.takeErrorReport()
         onError(report.message, report.announce)
     }
 
     private func login(_ provider: String) {
         guard !busy, let request = state.loginRequest(provider: provider, name: accountName) else { return }
         action = .login(provider)
-        state.setActionError(nil)
-        onError(state.errorMessage, true)
+        let started = state.startAction()
+        onError(started.message, started.announce)
         Task {
             defer { action = nil }
             do {
@@ -292,10 +292,10 @@ struct AccountsPage: View {
                 addingProvider = nil
                 state.requestLoad(refreshUsage: false)
             } catch {
-                state.setActionError(AccountsPageModel.message(error))
+                let failed = state.failAction(AccountsPageModel.message(error))
                 // Reload revisions after any failure; the form input stays for retry.
                 state.requestLoad(refreshUsage: false)
-                onError(state.errorMessage, true)
+                onError(failed.message, failed.announce)
             }
         }
     }
@@ -303,8 +303,8 @@ struct AccountsPage: View {
     private func reset() {
         guard !busy, let revision = state.revision else { return }
         action = .reset
-        state.setActionError(nil)
-        onError(state.errorMessage, true)
+        let started = state.startAction()
+        onError(started.message, started.announce)
         Task {
             defer { action = nil }
             do {
@@ -313,9 +313,9 @@ struct AccountsPage: View {
                 confirmReset = false
                 state.requestLoad(refreshUsage: false)
             } catch {
-                state.setActionError(AccountsPageModel.message(error))
+                let failed = state.failAction(AccountsPageModel.message(error))
                 state.requestLoad(refreshUsage: false)
-                onError(state.errorMessage, true)
+                onError(failed.message, failed.announce)
             }
         }
     }
