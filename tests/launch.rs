@@ -139,6 +139,13 @@ fn a_claude_launch_trusts_the_config_that_the_pane_reads() {
         }
         let output = swarm(&home, &env, &args);
         assert!(output.status.success(), "{seat}: {}", stderr(&output));
+        if account.is_none() {
+            assert!(
+                stderr(&output).contains("account work"),
+                "{}",
+                stderr(&output)
+            );
+        }
         home.join(repo).join(".herdr/workers")
     };
 
@@ -1015,18 +1022,15 @@ fn a_chat_launches_from_the_chat_profile_and_a_one_off_pick_keeps_its_effort() {
     let no_usage = swarm(
         &home,
         &env,
-        &[
-            "launch",
-            "chat-no-usage",
-            "chat",
-            "--account",
-            "auto",
-            "--cwd",
-            &cwd,
-        ],
+        &["launch", "chat-no-usage", "chat", "--cwd", &cwd],
     );
     assert!(no_usage.status.success(), "{}", stderr(&no_usage));
     assert!(stderr(&no_usage).contains("claude uses its own login"));
+    assert!(
+        script("chat-no-usage").contains(
+            "unset CLAUDE_CONFIG_DIR CLAUDE_SECURESTORAGE_CONFIG_DIR AGENT_PROFILE_LABEL;"
+        )
+    );
     assert!(script("chat-no-usage").contains("'--model' 'opus' '--effort' 'high'"));
 
     // An unavailable native read keeps the scheduler fail-open and Auto on the CLI login.
