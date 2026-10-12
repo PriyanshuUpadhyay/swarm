@@ -1,0 +1,190 @@
+// SwarmWeb: one window with one WKWebView on a `swarm serve` child. A pilot shell, not the app.
+// usage: SwarmWeb --swarm BIN --assets DIR [--app react|solid]
+//        SwarmWeb ... --smoke
+//        SwarmWeb ... --measure OUT.json [--live-seconds N] [--soak-minutes N] [--gen web/perf/gen.mjs]
+// It never activates itself: the window comes to the front of its level only (owner rule).
+import AppKit
+import WebKit
+
+@MainActor
+final class Shell: NSObject, NSApplicationDelegate {
+    let options: [String: String]
+    let webView = WKWebView(frame: .zero)
+    var window: NSWindow!
+    var children: [Process] = []
+    var signals: [DispatchSourceSignal] = []
+    /// `http://127.0.0.1:<port>` and `token=<hex>`, from the line that `swarm serve` prints.
+    var origin = ""
+    var token = ""
+
+    // ⌘N and ⌘T have no command in the pilot web app yet, so `swarmCommand` returns false for them.
+    static let commands: [(title: String, id: String, key: String, mods: NSEvent.ModifierFlags)] =
+        (1...9).map { (title: $0 == 9 ? "Last Chat" : "Chat \($0)", id: "chat.\($0)", key: "\($0)", mods: .command) } + [
+            ("Next Chat", "chat.next", "}", .command),
+            ("Previous Chat", "chat.prev", "{", .command),
+            ("Command Palette", "palette", "k", .command),
+            ("Focus Composer", "composer.focus", "l", .command),
+            ("New Workspace", "workspace.new", "n", .command),
+            ("New Chat", "chat.new", "t", .command),
+            ("Next Workspace", "workspace.next", String(UnicodeScalar(NSDownArrowFunctionKey)!), [.control, .command]),
+            ("Previous Workspace", "workspace.prev", String(UnicodeScalar(NSUpArrowFunctionKey)!), [.control, .command]),
+        ]
+
+    init(options: [String: String]) {
+        self.options = options
+    }
+
+    var entry: String { options["app"] == "solid" ? "/solid.html" : "/" }
+    var measuring: Bool { options["measure"] != nil || options["smoke"] != nil }
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        // SIGINT and SIGTERM quit through AppKit, so the serve child stops too.
+        for number in [SIGINT, SIGTERM] {
+            signal(number, SIG_IGN)
+            let source = DispatchSource.makeSignalSource(signal: number, queue: .main)
+            source.setEventHandler { MainActor.assumeIsolated { NSApp.terminate(nil) } }
+            source.resume()
+            signals.append(source)
+        }
+        NSApp.mainMenu = makeMenu()
+        let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+        let size = NSSize(width: 900, height: 600)
+        window = NSWindow(
+            contentRect: NSRect(origin: NSPoint(x: screen.maxX - size.width, y: screen.minY), size: size),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+        window.title = "SwarmWeb"
+        window.contentView = webView
+        window.makeFirstResponder(webView)
+        window.orderFrontRegardless()
+        do {
+            try startServe()
+            webView.load(URLRequest(url: pageURL()))
+        } catch {
+            fail("\(error)")
+            return
+        }
+        if measuring {
+            Task {
+                do {
+                    if options["smoke"] != nil { try await smoke() } else { try await measure() }
+                    quit(0)
+                } catch {
+                    FileHandle.standardError.write(Data("SwarmWeb: \(error)\n".utf8))
+                    quit(1)
+                }
+            }
+        }
+    }
+
+    func pageURL(_ query: String = "") -> URL {
+        URL(string: "\(origin)\(entry)\(query)#\(token)")!
+    }
+
+    /// Starts `swarm serve` and reads the URL from its first stdout line.
+    func startServe() throws {
+        guard let swarm = options["swarm"], let assets = options["assets"] else {
+            throw ShellError("usage: SwarmWeb --swarm BIN --assets DIR [--app react|solid] [--smoke] [--measure OUT.json]")
+        }
+        let serve = Process()
+        serve.executableURL = URL(fileURLWithPath: swarm)
+        serve.arguments = ["serve", "--port", "0", "--assets", assets]
+        // The child inherits the environment, so SWARM_HOME and SWARM_TRANSCRIPT_TOOL pass through.
+        let stdout = Pipe()
+        serve.standardOutput = stdout
+        serve.terminationHandler = { process in
+            let status = process.terminationStatus
+            Task { @MainActor in self.fail("swarm serve stopped (exit \(status)).") }
+        }
+        try serve.run()
+        children.append(serve)
+        var line = Data()
+        while !line.contains(10) {
+            let chunk = stdout.fileHandleForReading.availableData
+            if chunk.isEmpty { break }
+            line.append(chunk)
+        }
+        let parts = String(decoding: line, as: UTF8.self).split(separator: "\n").first?.split(separator: "#", maxSplits: 1) ?? []
+        guard parts.count == 2, parts[0].hasPrefix("http://127.0.0.1:") else {
+            throw ShellError("swarm serve printed no URL.")
+        }
+        origin = String(parts[0].hasSuffix("/") ? parts[0].dropLast() : parts[0])
+        token = String(parts[1])
+    }
+
+    /// Shows one line of error in the window. A measure or smoke run stops instead.
+    func fail(_ message: String) {
+        if measuring {
+            FileHandle.standardError.write(Data("SwarmWeb: \(message)\n".utf8))
+            quit(1)
+        }
+        let text = message.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;")
+        webView.loadHTMLString("<p style=\"font: 13px -apple-system; padding: 16px\">\(text)</p>", baseURL: nil)
+    }
+
+    func makeMenu() -> NSMenu {
+        let main = NSMenu()
+        let app = NSMenu()
+        app.addItem(withTitle: "Quit SwarmWeb", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        let go = NSMenu(title: "Go")
+        for command in Self.commands {
+            let item = NSMenuItem(title: command.title, action: #selector(runCommand(_:)), keyEquivalent: command.key)
+            item.keyEquivalentModifierMask = command.mods
+            item.representedObject = command.id
+            item.target = self
+            go.addItem(item)
+        }
+        for menu in [app, go] {
+            let item = NSMenuItem()
+            item.submenu = menu
+            main.addItem(item)
+        }
+        return main
+    }
+
+    /// Every menu item calls the page's one entry point. The ids are fixed strings from `commands`.
+    @objc func runCommand(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? String else { return }
+        webView.evaluateJavaScript("window.swarmCommand?.('\(id)')")
+    }
+
+    func stopChildren() {
+        for child in children where child.isRunning {
+            child.terminationHandler = nil
+            child.terminate()
+        }
+    }
+
+    func quit(_ code: Int32) -> Never {
+        stopChildren()
+        exit(code)
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        stopChildren()
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        true
+    }
+}
+
+struct ShellError: Error, CustomStringConvertible {
+    let description: String
+    init(_ description: String) { self.description = description }
+}
+
+var options: [String: String] = [:]
+var arguments = CommandLine.arguments.dropFirst()
+while let flag = arguments.popFirst() {
+    // A flag with no value after it, such as --smoke, is a switch.
+    let value = arguments.first.map { $0.hasPrefix("--") ? nil : $0 } ?? nil
+    if value != nil { arguments.removeFirst() }
+    options[String(flag.drop(while: { $0 == "-" }))] = value ?? "true"
+}
+
+let shell = Shell(options: options)
+let application = NSApplication.shared
+application.delegate = shell
+// A menu bar needs the regular policy. Launch does not activate the app; a click on the window does.
+application.setActivationPolicy(.regular)
+application.run()

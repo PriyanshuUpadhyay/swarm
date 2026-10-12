@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { takeToken, type Api, type Snapshot } from "./api";
 import { App } from "./app";
-import { eventKey, parseChord, Registry, search } from "./commands";
+import { eventKey, installKeys, parseChord, Registry, search } from "./commands";
 import { renderMarkdown } from "./markdown";
 import { MAX_RECORDS, measure } from "./perf";
 import { SseParser } from "./sse";
@@ -187,6 +187,23 @@ describe("command registry", () => {
     expect(r.match(key({ key: "}", code: "BracketRight", metaKey: true, shiftKey: true }))?.id).toBe("next");
     expect(r.match(key({ key: "ArrowDown", code: "ArrowDown", metaKey: true, ctrlKey: true }))?.id).toBe("ws");
     expect(r.match(key({ key: "j", code: "KeyJ" }))).toBeUndefined();
+  });
+
+  it("swarmCommand runs a registered command by id", () => {
+    const hits: string[] = [];
+    const r = new Registry();
+    r.add(
+      { id: "palette", title: "Palette", chord: "Meta+K", run: () => hits.push("palette") },
+      { id: "down", title: "Down", chord: "j", when: () => false, run: () => hits.push("down") },
+    );
+    const page = { addEventListener: () => {}, removeEventListener: () => {} } as unknown as Window;
+    const uninstall = installKeys(r, page);
+    expect(page.swarmCommand!("palette")).toBe(true);
+    expect(page.swarmCommand!("down")).toBe(false);
+    expect(page.swarmCommand!("workspace.new")).toBe(false);
+    expect(hits).toEqual(["palette"]);
+    uninstall();
+    expect(page.swarmCommand).toBeUndefined();
   });
 
   it("parses chords and reads keys", () => {

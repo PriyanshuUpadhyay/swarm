@@ -6,6 +6,7 @@ let package = Package(
     platforms: [.macOS(.v26)],
     products: [
         .executable(name: "Swarm", targets: ["Swarm"]),
+        .executable(name: "SwarmWeb", targets: ["SwarmWeb"]),
         .library(name: "SwarmCore", targets: ["SwarmCore"]),
         .library(name: "TranscriptTool", targets: ["TranscriptTool"]),
     ],
@@ -18,6 +19,7 @@ let package = Package(
             resources: [.copy("Resources/DiffViewer")],
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
+        .executableTarget(name: "SwarmWeb", swiftSettings: [.swiftLanguageMode(.v6)]),
         .testTarget(name: "SwarmCoreTests", dependencies: ["SwarmCore"], resources: [.copy("Fixtures")], swiftSettings: [.swiftLanguageMode(.v6)]),
         .testTarget(name: "TranscriptToolTests", dependencies: ["TranscriptTool"], swiftSettings: [.swiftLanguageMode(.v6)]),
     ]

@@ -12,6 +12,13 @@ export type Command = {
   run: (e?: KeyboardEvent) => void;
 };
 
+declare global {
+  interface Window {
+    /** The native shell's menu items call this. False when no command with that id ran. */
+    swarmCommand?: (id: string) => boolean;
+  }
+}
+
 type Chord = { ctrl: boolean; meta: boolean; shift: boolean; alt: boolean; key: string };
 
 export function parseChord(chord: string): Chord {
@@ -59,6 +66,14 @@ export class Registry {
     for (const { cmd, chord } of this.cmds) if (chord && matches(chord, e) && (!cmd.when || cmd.when())) return cmd;
     return undefined;
   }
+
+  /** Runs the command with this id, without a key event. */
+  run(id: string): boolean {
+    const cmd = this.cmds.find((c) => c.cmd.id === id)?.cmd;
+    if (!cmd || (cmd.when && !cmd.when())) return false;
+    cmd.run();
+    return true;
+  }
 }
 
 function editable(t: EventTarget | null): boolean {
@@ -66,7 +81,7 @@ function editable(t: EventTarget | null): boolean {
   return t.isContentEditable || t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT";
 }
 
-/** Installs the one global listener. Keys without ⌘ or ⌃ never fire inside a text input. */
+/** Installs the one global listener and `swarmCommand`. Keys without ⌘ or ⌃ never fire inside a text input. */
 export function installKeys(registry: Registry, target: Window = window): () => void {
   const onKey = (e: KeyboardEvent) => {
     if (e.isComposing || (!e.metaKey && !e.ctrlKey && editable(e.target))) return;
@@ -76,7 +91,11 @@ export function installKeys(registry: Registry, target: Window = window): () => 
     cmd.run(e);
   };
   target.addEventListener("keydown", onKey);
-  return () => target.removeEventListener("keydown", onKey);
+  target.swarmCommand = (id) => registry.run(id);
+  return () => {
+    target.removeEventListener("keydown", onKey);
+    delete target.swarmCommand;
+  };
 }
 
 /** Every query word must match. */
