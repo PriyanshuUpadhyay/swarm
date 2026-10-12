@@ -382,7 +382,9 @@ pub(crate) fn normalize_meter(stored: &UsageMeter, now: i64) -> UsageMeter {
         meter.as_of_seconds = None;
         // The app acts on these codes, so a cached read must keep them.
         let code = match (meter.state.as_str(), stored.reason_code) {
-            ("missing", Some(ReasonCode::NoCredentials)) => ReasonCode::NoCredentials,
+            ("missing", Some(code @ (ReasonCode::NoCredentials | ReasonCode::NoQuotaWindows))) => {
+                code
+            }
             ("missing", _) => ReasonCode::NoCachedUsage,
             ("no_source", _) => ReasonCode::NoSource,
             (_, Some(code @ (ReasonCode::ReloginRequired | ReasonCode::TokenExpired))) => code,
@@ -1109,6 +1111,7 @@ mod tests {
         );
         for (state, code) in [
             ("missing", ReasonCode::NoCredentials),
+            ("missing", ReasonCode::NoQuotaWindows),
             ("failed", ReasonCode::ReloginRequired),
             ("failed", ReasonCode::TokenExpired),
         ] {
