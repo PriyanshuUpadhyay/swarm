@@ -89,12 +89,13 @@ pub fn adapter(env: impl Fn(&str) -> Option<String>) -> String {
 
 /// The contract for this session, or None outside a visible host. `env` reads one variable.
 /// Herdr wins over Superset and the app's tmux host when they match too, because its pane is the
-/// one on screen.
+/// one on screen. An explicit `SWARM_ADAPTER` other than `superset` skips Superset, so a chair that
+/// names tmux or `tmux-solo` in a Superset terminal gets that host's contract, as `adapter()` does.
 pub fn context(provider: &str, env: impl Fn(&str) -> Option<String>) -> Option<String> {
     let set = |name: &str| env(name).is_some_and(|value| !value.is_empty());
     let (chair, worker) = if in_herdr(&env) {
         (HERDR_CONTEXT, HERDR_WORKER_CONTEXT)
-    } else if in_superset(&env) {
+    } else if in_superset(&env) && env("SWARM_ADAPTER").is_none_or(|name| name == "superset") {
         (SUPERSET_CONTEXT, SUPERSET_WORKER_CONTEXT)
     } else if env("SWARM_ADAPTER").as_deref() == Some("tmux-solo")
         && set("SWARM_SESSION_ID")
@@ -594,6 +595,19 @@ mod tests {
         let mut plain_tmux = APP_CHAIR;
         plain_tmux[0] = ("SWARM_ADAPTER", "tmux");
         assert_eq!(context("codex", env(&plain_tmux)), None);
+    }
+
+    #[test]
+    fn an_explicit_swarm_adapter_wins_over_the_superset_contract() {
+        assert_eq!(
+            context("claude", env(&[SUPERSET[0], ("SWARM_ADAPTER", "tmux")])),
+            None
+        );
+        let app: Vec<_> = APP_CHAIR.iter().chain(SUPERSET.iter()).copied().collect();
+        let body = context("claude", env(&app)).unwrap();
+        assert!(body.starts_with("[agent-host: swarm-app]\n"));
+        let named = context("claude", env(&[SUPERSET[0], ("SWARM_ADAPTER", "superset")]));
+        assert!(named.unwrap().starts_with("[agent-host: superset]\n"));
     }
 
     #[test]
