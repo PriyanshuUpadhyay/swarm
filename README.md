@@ -52,14 +52,16 @@ brew install --cask priyanshuupadhyay/tap/swarm-app
 swarm init                               # creates ~/.swarm with the db, runs/, and adapters/
 ```
 
-Update with `brew upgrade priyanshuupadhyay/tap/swarm-app`. If you had the old `swarm` formula,
-or a Swarm.app dragged from the DMG, run this once. The formula is now an empty pointer, so its
-upgrade frees the PATH link. The cask reinstall links `swarm` to the app, and `--force` lets it
-replace a dragged app:
+Update with `brew upgrade priyanshuupadhyay/tap/swarm-app`. If you had a Swarm.app dragged from the
+DMG, run this once. The cask reinstall links `swarm` to the app, and `--force` lets it replace a
+dragged app:
 
 ```sh
-brew update && brew upgrade priyanshuupadhyay/tap/swarm; brew reinstall --cask --force priyanshuupadhyay/tap/swarm-app
+brew reinstall --cask --force priyanshuupadhyay/tap/swarm-app
 ```
+
+If you still have the old `swarm` formula installed, run `brew uninstall swarm` once, because the
+formula is no longer in the tap.
 
 The app warns at launch when Terminal's `swarm` is another build than its own, and names the same
 command. A `swarm` that brew did not install, such as `~/.cargo/bin/swarm`, you remove yourself.
