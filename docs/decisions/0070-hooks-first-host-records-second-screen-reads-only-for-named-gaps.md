@@ -39,6 +39,7 @@ The gap table in `src/screen.rs` is the code owner of this rule:
 - Any provider Idle (after Esc or a denied prompt)
 
 The `agent.state_kind` column carries `permission` or `question` during a wait.
+The app's notice rule uses this kind to name the wait in the notice body.
 A program-status record from a host slots in as a host record later.
 
 ## Consequences

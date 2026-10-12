@@ -73,6 +73,29 @@ struct NoticeRuleTests {
         #expect(!completion.sound)
     }
 
+    @Test("Input notices use the waiting agent's kind and keep the fallback for missing or new kinds")
+    func waitingKind() throws {
+        let previous = tree(chats: [chat("input", status: .working)])
+        let current = tree(chats: [chat("input", status: .waiting)])
+        let cases: [(String?, String)] = [
+            ("permission", "project: waiting on a permission"),
+            ("question", "project: asked a question"),
+            (nil, "project: waiting on a permission or a question"),
+            ("future", "project: waiting on a permission or a question"),
+        ]
+        for (kind, body) in cases {
+            var waiting = SwarmAgent(id: SwarmAgentID("waiting"), role: "coder", pane: "%2", alive: true, state: "waiting")
+            waiting.stateKind = kind
+            let events = NoticeRule.transitions(previous: previous, current: current,
+                                               agentsBySession: [SwarmSessionID("input"): [waiting]])
+            let event = try #require(events.first)
+            let notice = try #require(NoticeRule.shouldPost(event: event, prefs: NoticePrefs(),
+                                                          project: current.projects[0], title: event.chat.title))
+            #expect(notice.body == body)
+            #expect(notice.agentID == waiting.id)
+        }
+    }
+
     @Test("Post and project mute suppress all notices; done off still permits needs-input")
     func suppression() {
         let waiting = chat("waiting", status: .waiting)
