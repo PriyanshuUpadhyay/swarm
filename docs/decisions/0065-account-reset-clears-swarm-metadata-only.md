@@ -2,7 +2,7 @@
 status: proposed
 date: 2026-10-09
 deciders: [chair]
-related: ["0036", "0042", "0043", "0057", "0063"]
+related: ["0036", "0042", "0043", "0057", "0063", "0071"]
 informed-by:
   - "Owner layer model on 2026-10-06: bundled default plus owner overlay, Modified and Reset to bundled"
   - "Owner L4 on 2026-10-06: login runs the provider's CLI, tokens stay in its store or keychain"

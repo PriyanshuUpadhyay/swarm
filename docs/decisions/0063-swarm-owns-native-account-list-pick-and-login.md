@@ -2,7 +2,7 @@
 status: proposed
 date: 2026-10-09
 deciders: [chair]
-related: ["0004", "0005", "0018", "0032", "0033", "0057"]
+related: ["0004", "0005", "0018", "0032", "0033", "0057", "0071"]
 informed-by:
   - "Owner L4 and L5 on 2026-10-06, unify-swarm/03-contracts.md:404-410"
   - "Chair decisions in swarm messages 1655 and 1659 on 2026-10-09; the owner can overturn this proposed record"
