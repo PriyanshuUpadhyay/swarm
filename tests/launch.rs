@@ -1827,3 +1827,13 @@ fn account_budget_starts_after_a_waiting_store_open() {
     assert!(output.status.success(), "{}", stderr(&output));
     assert!(stderr(&output).contains("account work"));
 }
+
+#[test]
+fn a_superset_chair_registers_as_orchestrator_on_session_new() {
+    let home = scratch("superset-chair");
+    let superset = [("SUPERSET_TERMINAL_ID", "t1")];
+    let session = swarm(&home, &superset, &["session", "new", "lane"]);
+    assert!(session.status.success(), "{}", stderr(&session));
+    let inbox = swarm(&home, &superset, &["inbox"]);
+    assert!(inbox.status.success(), "{}", stderr(&inbox));
+}

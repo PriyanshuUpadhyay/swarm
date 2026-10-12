@@ -3512,11 +3512,11 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 .map(|(provider, id)| (provider.as_str(), id.as_str())),
             Some(&adapter),
         )?;
-        // A chair in a Herdr or tmux pane is registered here, so it needs no ids of its own. The
-        // app's `tmux-solo` chair is launched as an agent instead. A child pane already has an
-        // agent id, and registering it would take its pane from its own session.
+        // A chair in a Herdr, Superset, or tmux pane is registered here, so it needs no ids of its
+        // own. The app's `tmux-solo` chair is launched as an agent instead. A child pane already
+        // has an agent id, and registering it would take its pane from its own session.
         if env::var_os("SWARM_AGENT_ID").is_none()
-            && matches!(adapter.as_str(), "herdr" | "tmux")
+            && matches!(adapter.as_str(), "herdr" | "superset" | "tmux")
             && own_pane().is_ok()
         {
             add_agent(
