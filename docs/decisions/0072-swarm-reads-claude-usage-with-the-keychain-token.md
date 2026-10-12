@@ -33,6 +33,10 @@ never refreshes a token. The timeout comes from the caller's deadline, and there
 cache `root_dir/claude-usage.json` is the fallback. HTTP 401 or 403 gives a meter with state
 `failed` and the reason "Sign in again". The usage source name is `claude_api`.
 
+These rules of ADR 0064 stay in force: Codex quota comes from the Codex app-server, each account
+shows its usage source and read state, AGY has no usage source in swarm, and a cached reading is
+fresh for 5 minutes.
+
 `swarm usage --refresh --provider claude --json` joins the Codex form. The app is the one
 refresher, at most once per provider per 300 seconds.
 

@@ -2,7 +2,7 @@
 status: proposed
 date: 2026-10-12
 deciders: [user]
-related: ["0006", "0057", "0069", "0072"]
+related: ["0006", "0057", "0064", "0069", "0072"]
 informed-by:
   - 'owner, 2026-10-12: "even the usage hud install prompt in the app so that it can be added"'
   - "~/dotfiles/docs/council/2026-10-12-swarm-owns-accounts-isolation.md"
@@ -13,7 +13,8 @@ informed-by:
 
 ## Context and Problem Statement
 
-Yelo ships the usage HUD as a second app in `~/Applications`, started by a LaunchAgent. The owner
+Yelo ships the usage HUD as a second app in `~/Applications`, started by a LaunchAgent, and ADR 0064
+left the HUD with yelo. The owner
 wants the HUD in swarm, added from a prompt in the app.
 
 ## Considered Options
@@ -27,7 +28,8 @@ Chosen: a panel inside Swarm.app. The app already starts at login and keeps runn
 window (ADR 0069), so the panel needs no second process. The panel is off until the owner accepts
 one prompt, "Add the usage HUD?". The answer is the `usageHUD` choice in `choices.json`, and a
 switch in Settings › Accounts changes it later. History is `root_dir/usage-history.json`. Panel
-sizes are view state in UserDefaults (ADR 0057). The panel reads `swarm usage --json` only.
+sizes are view state in UserDefaults (ADR 0057). The panel reads `swarm usage --json`, and its Refresh runs
+`swarm usage --refresh` through the one shared refresher.
 
 The HUD adds no menu-bar item, so ADR 0069 stands. A Mac with no notch gets a small pill at the
 top of the screen.

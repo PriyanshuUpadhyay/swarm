@@ -49,14 +49,17 @@ failed on its own limit. So the entry decides who pays.
   `$HOME/.claude-NAME`. Existing Codex homes and both default accounts stay by reference. A new
   Codex home is `root_dir/accounts/codex/NAME`.
 - Reset and every cleanup skip `accounts/`.
-- The run script starts the CLI with `command <cli>`, so a shell function cannot change the account.
+- The pane line starts the CLI through `env`, which finds the program on PATH, so a shell function
+  cannot change the account.
 
 Rejected: the linked folder, because it keeps a mirror to repair and writes links for no gain once
 the config folder is not needed. Rejected: the private copy, because a plain `claude` and a swarm
 chat would then hold different chats and settings.
 
-This record changes the account-home parts of ADR 0063 and the "no secret under the swarm home"
-consequence of ADR 0065. Their other rules stand.
+This record changes the account-home parts of ADR 0063. It also changes its rule for the current
+account, which is now read from `CLAUDE_SECURESTORAGE_CONFIG_DIR` first and `CLAUDE_CONFIG_DIR`
+second. It changes the consequence of ADR 0065 that swarm files can sync without a secret,
+because a new account's login state is now under the swarm home. Their other rules stand.
 
 ## Consequences
 

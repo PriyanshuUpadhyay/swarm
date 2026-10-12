@@ -129,13 +129,13 @@ It needs no other tool.
 - **Settings › Accounts** in the app lists the accounts of each provider with their sign-in state
   and usage. **Add account** opens the provider's own login in a pane. `swarm accounts login` is
   the same step for a script.
-- A Claude account is a login in the macOS Keychain. Every account uses the chats, settings and
-  memory in `~/.claude`; only the login changes (ADR 0071). The home of a new account is in
+- A Claude account is a login in the macOS Keychain. Every Claude account uses the chats, settings and
+  memory in `~/.claude`; only the login changes (ADR 0071). A Codex account keeps its own home. The home of a new account is in
   `~/.swarm/accounts/<provider>/<name>`. Swarm adds no account folder to your home.
 - `swarm launch` starts the worker on the account with the most usage left. `--account work`
   takes the account named `work`. A Fable model counts the Fable weekly limit too, and its
-  automatic pick stops when every signed-in account has used that limit. A named account is
-  never refused.
+  automatic pick stops when every signed-in account has used that limit. The Fable limit never
+  refuses a named account; an unknown or signed-out name is still refused.
 - `swarm run claude` or `swarm run codex` starts the CLI in your terminal on the account with the
   most usage left. `swarm run claude --account work -- --resume` names the account and passes
   `--resume` to the CLI.
@@ -319,7 +319,7 @@ id. A chair gets both from its pane, which `swarm session new` registers. A chil
 | `models --provider <claude\|codex\|agy> --json` | any | List models for a provider. Codex and AGY use their CLI catalogs, and a Codex model lists its efforts; Claude shows its model aliases. |
 | `accounts --provider <claude\|codex\|agy> --json` | any | List accounts for one provider as JSON. |
 | `usage --json` | any | List account use meters as JSON. |
-| `usage --refresh --provider <claude\|codex> --json` | any | Read that provider's usage again from its source, save it, and list its meters as JSON. A failed read gives a meter with state `failed` and a `reason`, never zero usage. |
+| `usage --refresh --provider <claude\|codex> --json` | any | Read that provider's usage again from its source, save it, and list its meters as JSON. A failed read keeps an older reading with state `stale` and a `reason`. With no older reading, or after HTTP 401 or 403, the meter has state `failed`. A failed read never gives zero usage. |
 | `accounts login --provider <claude\|codex> --name <name> --revision <revision> --json [--cwd <dir>]` | any | Open the provider's own login for the account `name` in a pane. A child caller is refused. |
 | `run <claude\|codex> [--account <auto\|name>] [-- <args>...]` | any | Start the provider CLI in this terminal on the picked account, `auto` by default. It needs no session. |
 | `drain` | any | Run queued summarize jobs, print `done`, `retry`, or `parked` per job. |
