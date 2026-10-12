@@ -10,6 +10,7 @@ public enum ChildProcessEnvironment {
         "SWARM_PANE",
         // `swarm answer` refuses a caller inside an agent pane; the app is never in one.
         "TMUX_PANE",
+        "SUPERSET_TERMINAL_ID",
     ]
 
     static func swarmCall(overrides: [String: String], inherited: [String: String]) -> [String: String] {

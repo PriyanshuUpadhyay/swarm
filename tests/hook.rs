@@ -1402,7 +1402,7 @@ fn each_shipped_notify_verb_passes_the_text_to_osascript_as_argv() {
     let title = "swarm: a\" & (do shell script \"touch pwned\") & \"";
     let body = "body $HOME `id`";
 
-    for adapter in ["tmux", "tmux-solo", "herdr"] {
+    for adapter in ["tmux", "tmux-solo", "herdr", "superset"] {
         let sent = swarm(
             &home,
             &[("SWARM_ADAPTER", adapter), ("PATH", &path)],
@@ -1417,7 +1417,7 @@ fn each_shipped_notify_verb_passes_the_text_to_osascript_as_argv() {
     );
     assert_eq!(
         std::fs::read_to_string(home.join("osascript")).unwrap(),
-        line.repeat(3)
+        line.repeat(4)
     );
     std::fs::remove_dir_all(&home).unwrap();
 }

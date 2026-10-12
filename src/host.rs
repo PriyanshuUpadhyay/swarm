@@ -22,6 +22,25 @@ This session is a worker pane, a child of the orchestrator session. Act only on 
 - Remain a leaf: no provider-native subagents, workflow fan-out, headless one-shots, review rounds, or multi-agent pipelines.
 - Report results to the orchestrator only; do not notify the user."#;
 
+const SUPERSET_CONTEXT: &str = r#"[agent-host: superset]
+This session is running inside a Superset terminal. The top-level session is the orchestrator.
+- A pane worker is a Superset terminal in the same workspace, created beside this one.
+- Open one session per run with `swarm session new lane`; it registers this terminal as the orchestrator.
+- Spawn with `swarm launch <unique-name> ROLE --cwd "$PWD" [-- extra agent flags]`; it resolves the provider, model and effort, prepares trust, and opens the pane.
+- Send work with `swarm send <name> ask`; a reply arrives as the prompt `swarm: new message`, then `swarm inbox`, read, `swarm ack`. Close with `swarm close <name>`.
+- `swarm answer` and `swarm interrupt` are not available on this host; answer a worker's prompt in the Superset app.
+- Native background subagents are allowed. Prefer a visible pane when the user must watch or answer the worker, when it runs on another provider, or when a skill asks for visible seats.
+- Do not use headless CLIs or detached processes.
+- For pane lifecycle detail, load `~/.claude/skills/swarm-orchestrator/SKILL.md`.
+- When the run is done, notify the owner with `swarm notify "swarm: <project> done" --body "<one line>"`; swarm itself notifies when an agent waits on a permission or a question.
+- Workers are leaves: answer only, do not orchestrate, spawn descendants, or notify the user."#;
+
+const SUPERSET_WORKER_CONTEXT: &str = r#"[agent-host: superset — worker]
+This session is a worker pane, a child of the orchestrator session. Act only on the task you were assigned.
+- Never spawn panes: `swarm launch` and `swarm spawn` are orchestrator-only and are refused for worker sessions.
+- Remain a leaf: no provider-native subagents, workflow fan-out, headless one-shots, review rounds, or multi-agent pipelines.
+- Report results to the orchestrator only; do not notify the user."#;
+
 // The app opens the session and launches the chair as `orchestrator` before the CLI starts, so
 // the chair must not open a second session that the app would not show.
 const APP_CONTEXT: &str = r#"[agent-host: swarm-app]
@@ -48,21 +67,36 @@ fn in_herdr(env: impl Fn(&str) -> Option<String>) -> bool {
         && env("HERDR_PANE_ID").is_some_and(|pane| !pane.is_empty())
 }
 
+/// Whether this process runs in a Superset terminal.
+fn in_superset(env: impl Fn(&str) -> Option<String>) -> bool {
+    env("SUPERSET_TERMINAL_ID").is_some_and(|terminal| !terminal.is_empty())
+}
+
 /// The adapter every pane verb uses: `SWARM_ADAPTER` when set, else `herdr` in a Herdr pane, else
-/// `tmux`. So a chair in Herdr reaches its panes with no variable of its own to keep set.
+/// `superset` in a Superset terminal, else `tmux`. So a chair in Herdr or Superset reaches its
+/// panes with no variable of its own to keep set.
 pub fn adapter(env: impl Fn(&str) -> Option<String>) -> String {
-    env("SWARM_ADAPTER").unwrap_or_else(|| match in_herdr(&env) {
-        true => "herdr".into(),
-        false => "tmux".into(),
+    env("SWARM_ADAPTER").unwrap_or_else(|| {
+        if in_herdr(&env) {
+            "herdr".into()
+        } else if in_superset(&env) {
+            "superset".into()
+        } else {
+            "tmux".into()
+        }
     })
 }
 
 /// The contract for this session, or None outside a visible host. `env` reads one variable.
-/// Herdr wins over the app's tmux host when both match, because its pane is the one on screen.
+/// Herdr wins over Superset and the app's tmux host when they match too, because its pane is the
+/// one on screen. An explicit `SWARM_ADAPTER` other than `superset` skips Superset, so a chair that
+/// names tmux or `tmux-solo` in a Superset terminal gets that host's contract, as `adapter()` does.
 pub fn context(provider: &str, env: impl Fn(&str) -> Option<String>) -> Option<String> {
     let set = |name: &str| env(name).is_some_and(|value| !value.is_empty());
     let (chair, worker) = if in_herdr(&env) {
         (HERDR_CONTEXT, HERDR_WORKER_CONTEXT)
+    } else if in_superset(&env) && env("SWARM_ADAPTER").is_none_or(|name| name == "superset") {
+        (SUPERSET_CONTEXT, SUPERSET_WORKER_CONTEXT)
     } else if env("SWARM_ADAPTER").as_deref() == Some("tmux-solo")
         && set("SWARM_SESSION_ID")
         && set("TMUX_PANE")
@@ -439,6 +473,37 @@ mod tests {
         );
     }
 
+    const SUPERSET: [(&str, &str); 1] = [("SUPERSET_TERMINAL_ID", "t1")];
+
+    #[test]
+    fn a_superset_terminal_picks_superset_unless_herdr_or_swarm_adapter_wins() {
+        assert_eq!(adapter(env(&SUPERSET)), "superset");
+        assert_eq!(adapter(env(&[("SUPERSET_TERMINAL_ID", "")])), "tmux");
+        assert_eq!(adapter(env(&[HERDR[0], HERDR[1], SUPERSET[0]])), "herdr");
+        assert_eq!(
+            adapter(env(&[SUPERSET[0], ("SWARM_ADAPTER", "tmux")])),
+            "tmux"
+        );
+    }
+
+    #[test]
+    fn the_superset_contract_marks_chair_and_worker() {
+        let chair = context("claude", env(&SUPERSET)).unwrap();
+        assert!(chair.starts_with("[agent-host: superset]\n"));
+        assert!(chair.contains("`swarm answer` and `swarm interrupt` are not available"));
+        let worker = context(
+            "claude",
+            env(&[SUPERSET[0], ("SWARM_AGENT_ID", "cl-seat-1")]),
+        );
+        assert!(
+            worker
+                .unwrap()
+                .starts_with("[agent-host: superset — worker]")
+        );
+        let herdr = context("claude", env(&[HERDR[0], HERDR[1], SUPERSET[0]])).unwrap();
+        assert!(herdr.starts_with("[agent-host: herdr]\n"));
+    }
+
     #[test]
     fn outside_a_host_codex_gets_an_empty_object_and_claude_nothing() {
         assert_eq!(
@@ -479,10 +544,14 @@ mod tests {
     #[test]
     fn only_the_chair_contracts_name_swarm_notify() {
         let line = "- When the run is done, notify the owner with `swarm notify";
-        for chair in [HERDR_CONTEXT, APP_CONTEXT] {
+        for chair in [HERDR_CONTEXT, SUPERSET_CONTEXT, APP_CONTEXT] {
             assert!(chair.contains(line), "{chair}");
         }
-        for worker in [HERDR_WORKER_CONTEXT, APP_WORKER_CONTEXT] {
+        for worker in [
+            HERDR_WORKER_CONTEXT,
+            SUPERSET_WORKER_CONTEXT,
+            APP_WORKER_CONTEXT,
+        ] {
             assert!(!worker.contains("swarm notify"), "{worker}");
         }
     }
@@ -530,6 +599,19 @@ mod tests {
         let mut plain_tmux = APP_CHAIR;
         plain_tmux[0] = ("SWARM_ADAPTER", "tmux");
         assert_eq!(context("codex", env(&plain_tmux)), None);
+    }
+
+    #[test]
+    fn an_explicit_swarm_adapter_wins_over_the_superset_contract() {
+        assert_eq!(
+            context("claude", env(&[SUPERSET[0], ("SWARM_ADAPTER", "tmux")])),
+            None
+        );
+        let app: Vec<_> = APP_CHAIR.iter().chain(SUPERSET.iter()).copied().collect();
+        let body = context("claude", env(&app)).unwrap();
+        assert!(body.starts_with("[agent-host: swarm-app]\n"));
+        let named = context("claude", env(&[SUPERSET[0], ("SWARM_ADAPTER", "superset")]));
+        assert!(named.unwrap().starts_with("[agent-host: superset]\n"));
     }
 
     #[test]

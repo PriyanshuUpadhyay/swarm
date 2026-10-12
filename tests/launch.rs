@@ -1827,3 +1827,29 @@ fn account_budget_starts_after_a_waiting_store_open() {
     assert!(output.status.success(), "{}", stderr(&output));
     assert!(stderr(&output).contains("account work"));
 }
+
+#[test]
+fn a_superset_chair_registers_as_orchestrator_on_session_new() {
+    let home = scratch("superset-chair");
+    let superset = [("SUPERSET_TERMINAL_ID", "t1")];
+    let session = swarm(&home, &superset, &["session", "new", "lane"]);
+    assert!(session.status.success(), "{}", stderr(&session));
+    let inbox = swarm(&home, &superset, &["inbox"]);
+    assert!(inbox.status.success(), "{}", stderr(&inbox));
+}
+
+#[test]
+fn a_superset_terminal_counts_as_an_agent_pane_for_the_owner_only_guard() {
+    let home = scratch("superset-guard");
+    let output = swarm(
+        &home,
+        &[("SUPERSET_TERMINAL_ID", "t1")],
+        &["answer", "w1", "p1", "1"],
+    );
+    assert!(!output.status.success());
+    assert!(
+        stderr(&output).contains("only the owner answers"),
+        "{}",
+        stderr(&output)
+    );
+}
