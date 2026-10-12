@@ -9,11 +9,13 @@ public struct Prefs: Codable, Sendable, Hashable {
     public var density: Density
     public var sendKey: SendKey
     public var notices: NoticePrefs
+    /// The owner's answer to "Add the usage HUD?". nil means not asked yet.
+    public var usageHUD: Bool?
 
     public init(
         settingsPage: String? = nil, skillsCheckout: String? = nil, splitDiff: Bool = false, theme: Theme = .system,
         textSize: TextSize = .default, density: Density = .comfortable, sendKey: SendKey = .return,
-        notices: NoticePrefs = NoticePrefs()
+        notices: NoticePrefs = NoticePrefs(), usageHUD: Bool? = nil
     ) {
         self.settingsPage = settingsPage
         self.skillsCheckout = skillsCheckout
@@ -23,6 +25,7 @@ public struct Prefs: Codable, Sendable, Hashable {
         self.density = density
         self.sendKey = sendKey
         self.notices = notices
+        self.usageHUD = usageHUD
     }
 
     public init(from decoder: Decoder) throws {
@@ -35,6 +38,7 @@ public struct Prefs: Codable, Sendable, Hashable {
         density = (try? container.decode(Density.self, forKey: .density)) ?? .comfortable
         sendKey = (try? container.decode(SendKey.self, forKey: .sendKey)) ?? .return
         notices = try container.decodeIfPresent(NoticePrefs.self, forKey: .notices) ?? NoticePrefs()
+        usageHUD = try? container.decode(Bool.self, forKey: .usageHUD)
     }
 }
 

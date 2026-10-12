@@ -142,6 +142,10 @@ public final class SettingsSelection {
         save { $0.sendKey = sendKey }
     }
 
+    public func setUsageHUD(_ shown: Bool) {
+        save { $0.usageHUD = shown }
+    }
+
     @discardableResult
     public func setSkillsCheckout(_ path: String?) -> Bool {
         let canonical: String?

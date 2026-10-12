@@ -89,7 +89,7 @@ public struct AccountsPageModel: Sendable, Equatable {
         return unique.isEmpty ? nil : unique.joined(separator: "\n")
     }
 
-    fileprivate static func providerTitle(_ provider: String) -> String {
+    static func providerTitle(_ provider: String) -> String {
         switch provider {
         case "claude": "Claude"
         case "codex": "Codex"
