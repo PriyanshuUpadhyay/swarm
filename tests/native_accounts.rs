@@ -169,13 +169,14 @@ fn cached_windows_choose_least_left_and_match_the_shared_account_fixture() {
         usage_source: Some("codex_app_server".into()),
         summary: None,
         invalid_home: false,
+        fable_spent: false,
     });
     let mut meters: Vec<swarm::profiles::UsageMeter> = serde_json::from_value(serde_json::json!([
         {"provider":"codex","account":"work","label":"work","used_pct":10,"state":"fresh","as_of_seconds":700},
         {"provider":"codex","account":"work","label":"work","used_pct":30,"state":"fresh","as_of_seconds":700}
     ])).unwrap();
     apply_usage(&mut list, &meters);
-    list.auto = pick_auto(&list.accounts, None);
+    list.auto = pick_auto(&list.accounts, None, None).unwrap();
     let expected: serde_json::Value =
         serde_json::from_str(include_str!("fixtures/accounts/work-list.json")).unwrap();
     assert_eq!(serde_json::to_value(&list).unwrap(), expected);
@@ -184,9 +185,11 @@ fn cached_windows_choose_least_left_and_match_the_shared_account_fixture() {
     }
     apply_usage(&mut list, &meters);
     assert_eq!(list.accounts[0].usage_state, "stale");
-    assert_eq!(pick_auto(&list.accounts, None), None);
+    assert_eq!(pick_auto(&list.accounts, None, None).unwrap(), None);
     assert_eq!(
-        pick_auto(&list.accounts, Some("/tmp/demo/.codex-work")).as_deref(),
+        pick_auto(&list.accounts, Some("/tmp/demo/.codex-work"), None)
+            .unwrap()
+            .as_deref(),
         Some("work")
     );
     meters[0].state = "failed".into();

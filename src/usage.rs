@@ -779,6 +779,7 @@ mod tests {
             usage_source: Some("codex_app_server".into()),
             summary: None,
             invalid_home: false,
+            fable_spent: false,
         }
     }
 

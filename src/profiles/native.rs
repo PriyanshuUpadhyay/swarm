@@ -209,6 +209,7 @@ fn load_inner(
             ),
             summary: None,
             invalid_home: false,
+            fable_spent: false,
         });
     }
     if include_usage {
@@ -248,11 +249,13 @@ fn load_inner(
             usage_source: None,
             summary: Some(reason),
             invalid_home: true,
+            fable_spent: false,
         });
     }
     list.accounts
         .sort_by(|left, right| left.name.cmp(&right.name));
-    list.auto = super::pick_auto(&list.accounts, discovery.current.to_str());
+    list.current_home = discovery.current.to_str().map(str::to_string);
+    list.auto = super::pick_auto(&list.accounts, list.current_home.as_deref(), None)?;
     Ok(list)
 }
 

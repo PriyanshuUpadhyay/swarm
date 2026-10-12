@@ -573,10 +573,18 @@ impl Probe {
         let accounts = cache
             .entry(provider)
             .or_insert_with(|| swarm::profiles::native::load(provider, self.deadline));
-        let accounts = accounts
+        // An explicit account bypasses the Fable guard; authentication and general limits still apply.
+        let model = self.account.is_none().then_some(runner.model.as_str());
+        let scoped = accounts.as_ref().ok().map(|list| list.for_model(model));
+        if let Some(list) = &scoped
+            && let Err(reason) =
+                swarm::profiles::pick_auto(&list.accounts, list.current_home.as_deref(), model)
+        {
+            return Some((swarm::config::SkipCode::LowUsage, reason));
+        }
+        let accounts = scoped
             .as_ref()
-            .ok()
-            .and_then(|list| account_states(list, self.account.as_deref()));
+            .and_then(|list| account_states(list, self.account.as_deref(), model));
         // A named account belongs to one provider; another provider's runner cannot use it.
         if let (Some(name), Some([])) = (&self.account, accounts.as_deref()) {
             return Some((
@@ -592,12 +600,14 @@ impl Probe {
 fn account_states(
     list: &swarm::profiles::AccountList,
     only: Option<&str>,
+    model: Option<&str>,
 ) -> Option<Vec<swarm::config::AccountState>> {
     let rows: Vec<_> = list
         .accounts
         .iter()
         .filter(|account| !account.invalid_home())
         .filter(|account| only.is_none_or(|name| account.name == name))
+        .filter(|account| !swarm::profiles::is_fable_model(model) || !account.fable_spent)
         .collect();
     if rows
         .iter()
@@ -719,10 +729,19 @@ fn load_accounts(
 fn select_account(
     provider: Provider,
     requested: &str,
+    model: Option<&str>,
     accounts: Result<&swarm::profiles::AccountList, String>,
 ) -> Result<Option<swarm::profiles::Account>, String> {
+    let mut accounts = accounts.map(|accounts| accounts.for_model(model));
+    if requested == "auto"
+        && let Ok(accounts) = &mut accounts
+    {
+        accounts.auto =
+            swarm::profiles::pick_auto(&accounts.accounts, accounts.current_home.as_deref(), model)
+                .map_err(|error| format!("swarm: {error}"))?;
+    }
     match accounts
-        .and_then(|accounts| swarm::profiles::resolve_account(accounts, requested).cloned())
+        .and_then(|accounts| swarm::profiles::resolve_account(&accounts, requested).cloned())
     {
         Ok(account) => Ok(Some(account)),
         Err(error) if requested == "auto" => {
@@ -751,7 +770,12 @@ fn run_cli(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         provider,
         swarm::profiles::native::deadline(ACCOUNT_PICK_TIMEOUT_SECONDS),
     );
-    let account = select_account(provider, requested, accounts.as_ref().map_err(Clone::clone))?;
+    let account = select_account(
+        provider,
+        requested,
+        swarm::bus::command_model(extra),
+        accounts.as_ref().map_err(Clone::clone),
+    )?;
     let mut command = std::process::Command::new(provider.id());
     command.args(extra);
     for key in provider.account_env_keys() {
@@ -3863,7 +3887,12 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 let accounts = cache
                     .entry(kind)
                     .or_insert_with(|| swarm::profiles::native::load(kind, account_deadline));
-                select_account(kind, requested, accounts.as_ref().map_err(Clone::clone))?
+                select_account(
+                    kind,
+                    requested,
+                    resolved.model.as_deref(),
+                    accounts.as_ref().map_err(Clone::clone),
+                )?
             }
             _ => None,
         };

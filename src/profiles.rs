@@ -10,6 +10,10 @@ pub struct AccountList {
     pub modified: bool,
     pub accounts: Vec<Account>,
     pub auto: Option<String>,
+    #[serde(skip)]
+    pub current_home: Option<String>,
+    #[serde(skip)]
+    pub meters: Vec<UsageMeter>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -25,6 +29,23 @@ pub struct Account {
     pub summary: Option<String>,
     #[serde(skip)]
     pub invalid_home: bool,
+    #[serde(skip)]
+    pub fable_spent: bool,
+}
+
+impl AccountList {
+    pub fn for_model(&self, model: Option<&str>) -> Self {
+        let mut list = self.clone();
+        apply_usage_for_model(&mut list, &self.meters, model);
+        list
+    }
+}
+
+pub fn is_fable_model(model: Option<&str>) -> bool {
+    model.is_some_and(|model| {
+        let model = model.to_ascii_lowercase();
+        model.contains("fable") || model == "best"
+    })
 }
 
 impl Account {
@@ -52,16 +73,31 @@ pub fn empty_accounts(provider: &str) -> AccountList {
         modified: false,
         accounts: Vec::new(),
         auto: None,
+        current_home: None,
+        meters: Vec::new(),
     }
 }
 
-pub fn pick_auto(accounts: &[Account], current_home: Option<&str>) -> Option<String> {
+pub fn pick_auto(
+    accounts: &[Account],
+    current_home: Option<&str>,
+    model: Option<&str>,
+) -> Result<Option<String>, String> {
+    let fable = is_fable_model(model);
+    let signed_in: Vec<_> = accounts
+        .iter()
+        .filter(|account| account.auth_state == AuthState::SignedIn)
+        .collect();
+    if fable && !signed_in.is_empty() && signed_in.iter().all(|account| account.fable_spent) {
+        return Err("every signed-in Claude account has used its Fable limit".into());
+    }
     let signed_in = || {
         accounts
             .iter()
             .filter(|account| account.auth_state == AuthState::SignedIn)
+            .filter(|account| !fable || !account.fable_spent)
     };
-    signed_in()
+    Ok(signed_in()
         .filter(|account| account.usage_state == "fresh" && account.remaining_pct.is_some())
         .min_by(|left, right| {
             right
@@ -70,10 +106,17 @@ pub fn pick_auto(accounts: &[Account], current_home: Option<&str>) -> Option<Str
                 .then(left.name.cmp(&right.name))
         })
         .or_else(|| signed_in().find(|account| Some(account.home.as_str()) == current_home))
-        .map(|account| account.name.clone())
+        .map(|account| account.name.clone()))
 }
 
 pub fn apply_usage(list: &mut AccountList, meters: &[UsageMeter]) {
+    list.meters = meters.to_vec();
+    apply_usage_for_model(list, meters, None);
+}
+
+fn apply_usage_for_model(list: &mut AccountList, meters: &[UsageMeter], model: Option<&str>) {
+    let fable = list.provider == "claude" && is_fable_model(model);
+    let now = crate::usage::now_seconds();
     for account in &mut list.accounts {
         if account.usage_state == "no_source" {
             continue;
@@ -82,6 +125,21 @@ pub fn apply_usage(list: &mut AccountList, meters: &[UsageMeter]) {
             .iter()
             .filter(|meter| {
                 meter.provider == list.provider && meter.account.as_deref() == Some(&account.name)
+            })
+            .collect();
+        account.fable_spent = list.provider == "claude"
+            && rows.iter().any(|meter| {
+                meter.window.as_deref() == Some("fb")
+                    && matches!(meter.state.as_str(), "fresh" | "stale")
+                    && meter.used_pct == Some(100)
+                    && meter.reset_time_seconds.is_none_or(|reset| reset > now)
+            });
+        let rows: Vec<_> = rows
+            .into_iter()
+            .filter(|meter| {
+                list.provider != "claude"
+                    || meter.window.as_deref() != Some("fb")
+                    || (fable && meter.reset_time_seconds.is_none_or(|reset| reset > now))
             })
             .collect();
         account.remaining_pct = None;
@@ -176,6 +234,7 @@ mod tests {
             remaining_pct: remaining,
             summary: None,
             invalid_home: false,
+            fable_spent: false,
         }
     }
 
@@ -187,23 +246,36 @@ mod tests {
             account("spare", AuthState::SignedOut, "fresh", Some(100)),
         ];
         assert_eq!(
-            pick_auto(&rows, Some("/profiles/personal")).as_deref(),
+            pick_auto(&rows, Some("/profiles/personal"), None)
+                .unwrap()
+                .as_deref(),
             Some("work")
         );
         rows[1].remaining_pct = Some(70);
-        assert_eq!(pick_auto(&rows, None).as_deref(), Some("personal"));
+        assert_eq!(
+            pick_auto(&rows, None, None).unwrap().as_deref(),
+            Some("personal")
+        );
         rows[0].usage_state = "stale".into();
         rows[0].remaining_pct = Some(100);
-        assert_eq!(pick_auto(&rows, None).as_deref(), Some("personal"));
+        assert_eq!(
+            pick_auto(&rows, None, None).unwrap().as_deref(),
+            Some("personal")
+        );
         rows[1].usage_state = "missing".into();
         rows[1].remaining_pct = None;
         assert_eq!(
-            pick_auto(&rows, Some("/profiles/work")).as_deref(),
+            pick_auto(&rows, Some("/profiles/work"), None)
+                .unwrap()
+                .as_deref(),
             Some("work")
         );
-        assert_eq!(pick_auto(&rows, None), None);
+        assert_eq!(pick_auto(&rows, None, None).unwrap(), None);
         rows[0].auth_state = AuthState::Unavailable;
-        assert_eq!(pick_auto(&rows, Some("/profiles/work")), None);
+        assert_eq!(
+            pick_auto(&rows, Some("/profiles/work"), None).unwrap(),
+            None
+        );
     }
 
     #[test]
@@ -222,5 +294,97 @@ mod tests {
                 .unwrap_err()
                 .contains("unavailable")
         );
+    }
+
+    fn model_list(provider: &str, fb: Option<i64>, state: &str, reset: Option<i64>) -> AccountList {
+        let mut list = empty_accounts(provider);
+        list.accounts
+            .push(account("work", AuthState::SignedIn, "missing", None));
+        list.current_home = Some("/profiles/work".into());
+        let general = UsageMeter {
+            provider: provider.into(),
+            account: Some("work".into()),
+            label: "work".into(),
+            window: Some("5h".into()),
+            window_minutes: Some(300),
+            used_pct: Some(10),
+            reset_time_seconds: None,
+            state: "fresh".into(),
+            source: None,
+            reason: None,
+            as_of_seconds: None,
+        };
+        let fable = UsageMeter {
+            window: Some("fb".into()),
+            used_pct: fb,
+            state: state.into(),
+            reset_time_seconds: reset,
+            ..general.clone()
+        };
+        apply_usage(&mut list, &[general, fable]);
+        list
+    }
+
+    #[test]
+    fn fable_auto_refuses_the_only_signed_in_account_with_a_valid_spent_sample() {
+        for state in ["fresh", "stale"] {
+            let list = model_list("claude", Some(100), state, None).for_model(Some("best"));
+            assert_eq!(
+                pick_auto(&list.accounts, list.current_home.as_deref(), Some("best")),
+                Err("every signed-in Claude account has used its Fable limit".into())
+            );
+            assert!(resolve_account(&list, "work").is_ok());
+        }
+    }
+
+    #[test]
+    fn fable_auto_keeps_unknown_and_reset_samples_usable() {
+        let now = crate::usage::now_seconds();
+        for (used, state, reset) in [
+            (None, "missing", None),
+            (None, "failed", None),
+            (Some(100), "failed", None),
+            (Some(100), "fresh", Some(now - 1)),
+            (Some(100), "fresh", Some(now)),
+        ] {
+            let list = model_list("claude", used, state, reset).for_model(Some("fable"));
+            assert!(!list.accounts[0].fable_spent);
+            assert_eq!(
+                pick_auto(&list.accounts, list.current_home.as_deref(), Some("fable")),
+                Ok(Some("work".into()))
+            );
+        }
+    }
+
+    #[test]
+    fn fable_auto_with_no_signed_in_account_has_no_pick() {
+        assert_eq!(pick_auto(&[], None, Some("fable")), Ok(None));
+        let mut list = model_list("claude", Some(100), "fresh", None).for_model(Some("fable"));
+        list.accounts[0].auth_state = AuthState::SignedOut;
+        assert_eq!(pick_auto(&list.accounts, None, Some("fable")), Ok(None));
+    }
+
+    #[test]
+    fn fable_windows_affect_only_claude_fable_models_and_stay_out_of_json() {
+        let list = model_list("claude", Some(80), "fresh", None);
+        for model in ["FABLE", "claude-fable-5-1", "best", "BEST"] {
+            let scoped = list.for_model(Some(model));
+            assert_eq!(scoped.accounts[0].remaining_pct, Some(20));
+        }
+        for model in [None, Some("sonnet"), Some("opus")] {
+            assert_eq!(list.for_model(model).accounts[0].remaining_pct, Some(90));
+        }
+        let failed = model_list("claude", None, "failed", None);
+        assert_eq!(failed.accounts[0].usage_state, "fresh");
+        let codex = model_list("codex", Some(100), "fresh", None).for_model(Some("fable"));
+        assert_eq!(codex.accounts[0].remaining_pct, Some(0));
+        assert_eq!(
+            pick_auto(&codex.accounts, None, Some("fable")),
+            Ok(Some("work".into()))
+        );
+        let json = serde_json::to_value(&list).unwrap();
+        assert!(json.get("meters").is_none());
+        assert!(json.get("current_home").is_none());
+        assert!(json["accounts"][0].get("fable_spent").is_none());
     }
 }
