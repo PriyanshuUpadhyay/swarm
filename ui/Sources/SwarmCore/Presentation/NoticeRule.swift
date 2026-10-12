@@ -24,11 +24,13 @@ public struct NoticeEvent: Sendable, Hashable {
     public let kind: Kind
     public let chat: SwarmProjectSession
     public let projectPath: String
+    public let agentID: SwarmAgentID?
 
-    public init(kind: Kind, chat: SwarmProjectSession, projectPath: String) {
+    public init(kind: Kind, chat: SwarmProjectSession, projectPath: String, agentID: SwarmAgentID? = nil) {
         self.kind = kind
         self.chat = chat
         self.projectPath = projectPath
+        self.agentID = agentID
     }
 }
 
@@ -36,6 +38,7 @@ public struct Notice: Sendable, Hashable {
     public let title: String
     public let body: String
     public let sessionID: SwarmSessionID
+    public let agentID: SwarmAgentID?
     public let sound: Bool
 }
 
@@ -47,10 +50,11 @@ public enum NoticeRule {
             ? "\(project.name): waiting on a permission or a question"
             : "\(project.name): chat is done"
         return Notice(title: "Swarm — \(title)", body: body,
-                      sessionID: event.chat.id, sound: prefs.sound)
+                      sessionID: event.chat.id, agentID: event.agentID, sound: prefs.sound)
     }
 
-    public static func transitions(previous: SessionsTree, current: SessionsTree) -> [NoticeEvent] {
+    public static func transitions(previous: SessionsTree, current: SessionsTree,
+                                   agentsBySession: [SwarmSessionID: [SwarmAgent]] = [:]) -> [NoticeEvent] {
         var previousBySession: [SwarmSessionID: SwarmProjectSession] = [:]
         for row in previous.projects.flatMap(\.chats) {
             for session in row.session.sessions { previousBySession[session.id] = row.session }
@@ -69,7 +73,11 @@ public enum NoticeRule {
                 case .done where before != nil && before?.status != .done: kind = .done
                 default: continue
                 }
-                events.append(NoticeEvent(kind: kind, chat: chat, projectPath: project.path))
+                let agents = agentsBySession[chat.id] ?? []
+                let agent = kind == .needsInput
+                    ? agents.first { $0.state == "waiting" }
+                    : agents.first { SwarmPanePolicy.isChair($0, in: chat.session) }
+                events.append(NoticeEvent(kind: kind, chat: chat, projectPath: project.path, agentID: agent?.id))
             }
         }
         return events

@@ -12,6 +12,8 @@ pub struct Adapter {
     pub close: String,
     pub capture: String,
     pub attach: Option<String>,
+    /// Brings the owner to `$SWARM_PANE` in the host (`swarm focus`).
+    pub focus: Option<String>,
     pub interrupt: Option<String>,
     /// Prints a pane's visible rows, or Herdr's JSON for the agent in it (ADR 0021).
     pub screen: Option<String>,
@@ -94,6 +96,7 @@ fn build(name: &str, mut verbs: Verbs) -> Result<Adapter, Box<dyn std::error::Er
         close: take("close")?,
         capture: take("capture")?,
         attach: verbs.remove("attach"),
+        focus: verbs.remove("focus"),
         interrupt: verbs.remove("interrupt"),
         screen: verbs.remove("screen"),
         key: verbs.remove("key"),
@@ -155,6 +158,10 @@ impl Adapter {
             "list" => &self.list,
             "close" => &self.close,
             "capture" => &self.capture,
+            "focus" => self
+                .focus
+                .as_ref()
+                .ok_or_else(|| format!("swarm: {} has no focus", self.name))?,
             "interrupt" => self
                 .interrupt
                 .as_ref()

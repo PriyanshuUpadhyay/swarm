@@ -47,7 +47,7 @@ final class SessionsTreeModel {
     private func postTransitions(previous: SessionsTree) {
         updateDockBadge()
         guard hasLoaded, let settings = noticeSettings, let noticeCenter else { return }
-        for event in NoticeRule.transitions(previous: previous, current: tree) {
+        for event in NoticeRule.transitions(previous: previous, current: tree, agentsBySession: tree.agentsBySession) {
             guard let project = tree.projects.first(where: { $0.path == event.projectPath }),
                   let notice = NoticeRule.shouldPost(event: event, prefs: settings.prefs.notices,
                                                      project: project, title: navigation.title(for: event.chat)) else { continue }

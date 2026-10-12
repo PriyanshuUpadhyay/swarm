@@ -353,6 +353,17 @@ pub fn set_adapter(
     Ok(())
 }
 
+pub fn adapter_of(
+    connection: &Connection,
+    session_id: &str,
+) -> Result<Option<String>, Box<dyn std::error::Error>> {
+    Ok(connection.query_row(
+        "SELECT adapter FROM session WHERE id = ?1",
+        [session_id],
+        |row| row.get(0),
+    )?)
+}
+
 pub fn archive_sessions(
     connection: &mut Connection,
     session_ids: &[String],

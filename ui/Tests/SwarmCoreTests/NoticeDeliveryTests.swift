@@ -131,7 +131,7 @@ struct NoticeDeliveryTests {
     }
 
     private func notice() -> Notice {
-        Notice(title: "Swarm — Chat", body: "project: chat is done", sessionID: SwarmSessionID("chat"), sound: false)
+        Notice(title: "Swarm — Chat", body: "project: chat is done", sessionID: SwarmSessionID("chat"), agentID: nil, sound: false)
     }
 
     private func session(_ role: String, time: Int) -> SwarmSession {

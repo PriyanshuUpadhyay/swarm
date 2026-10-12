@@ -224,6 +224,10 @@ public struct SwarmCLIBus: SwarmBus {
         _ = try await call(["managed", "revert"] + ids + ["--digest", digest])
     }
 
+    public func focus(_ agent: SwarmAgentID, in session: SwarmSessionID) async throws {
+        _ = try await call(["focus", session.rawValue, agent.rawValue])
+    }
+
     public func answer(
         _ prompt: SwarmPrompt, choice: Int, to agent: SwarmAgentID,
         in session: SwarmSessionID, adapter: String

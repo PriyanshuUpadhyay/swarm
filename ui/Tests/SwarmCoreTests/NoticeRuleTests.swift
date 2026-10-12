@@ -87,6 +87,26 @@ struct NoticeRuleTests {
         #expect(NoticeRule.transitions(previous: first, current: empty).isEmpty)
     }
 
+    @Test("Input notices name the waiting agent and done notices name the chair")
+    func agents() throws {
+        let previous = tree(chats: [chat("input", status: .working), chat("finished", status: .working)])
+        let current = tree(chats: [chat("input", status: .waiting), chat("finished", status: .done)])
+        let working = SwarmAgent(id: SwarmAgentID("worker"), role: "coder", pane: "%1", alive: true, state: "working")
+        let waiting = SwarmAgent(id: SwarmAgentID("waiting"), role: "coder", pane: "%2", alive: true, state: "waiting")
+        let chair = SwarmAgent(id: SwarmPanePolicy.chair, role: "orchestrator", pane: "%3", alive: true, state: "done")
+        let events = NoticeRule.transitions(previous: previous, current: current, agentsBySession: [
+            SwarmSessionID("input"): [working, waiting, chair],
+            SwarmSessionID("finished"): [working, chair],
+        ])
+        #expect(events.map(\.agentID) == [waiting.id, chair.id])
+        for event in events {
+            let notice = try #require(NoticeRule.shouldPost(event: event, prefs: NoticePrefs(),
+                                                           project: current.projects[0], title: event.chat.title))
+            #expect(notice.agentID == event.agentID)
+        }
+        #expect(NoticeRule.transitions(previous: previous, current: current).allSatisfy { $0.agentID == nil })
+    }
+
     @Test("A handoff retains the state of its chat chain and uses the new session id")
     func handoff() {
         let previous = chat("original", status: .waiting)
@@ -96,6 +116,23 @@ struct NoticeRuleTests {
         next.status = .done
         let events = NoticeRule.transitions(previous: tree(chats: [previous]), current: tree(chats: [next]))
         #expect(events.count == 1 && events.first?.chat.id == next.id && events.first?.kind == .done)
+    }
+
+    @Test("Notice focus passes explicit ids to the CLI and reports a failed host")
+    func focusCommand() async throws {
+        for status: Int32 in [0, 1] {
+            let bus = SwarmCLIBus(environment: [:], cwd: "/fixture") { _, arguments, _, _, _, _ in
+                #expect(arguments == ["focus", "session", "waiting"])
+                return ShellResult(status: status, stdout: "", stderr: "closed pane")
+            }
+            if status == 0 {
+                try await bus.focus(SwarmAgentID("waiting"), in: SwarmSessionID("session"))
+            } else {
+                await #expect(throws: SwarmProfileError.failed("closed pane")) {
+                    try await bus.focus(SwarmAgentID("waiting"), in: SwarmSessionID("session"))
+                }
+            }
+        }
     }
 
     @Test("The dock counts chats, including muted projects, and only badge off clears it")

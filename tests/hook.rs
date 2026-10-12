@@ -1422,6 +1422,96 @@ fn each_shipped_notify_verb_passes_the_text_to_osascript_as_argv() {
     std::fs::remove_dir_all(&home).unwrap();
 }
 
+#[test]
+fn focus_uses_the_stored_adapter_and_pane_outside_a_session() {
+    let home = scratch("focus-host");
+    assert!(swarm(&home, &[], &["init"], "").status.success());
+    let bin = home.join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    for host in ["herdr", "tmux"] {
+        let executable = bin.join(host);
+        std::fs::write(
+            &executable,
+            "#!/bin/sh\nfor arg; do printf '<%s>' \"$arg\"; done >> \"$HOME/focus\"\necho >> \"$HOME/focus\"\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(
+            executable,
+            std::os::unix::fs::PermissionsExt::from_mode(0o755),
+        )
+        .unwrap();
+    }
+    let path = format!("{}:/usr/bin:/bin", bin.display());
+    let connection = swarm::store::open(&home.join(".swarm/swarm.db")).unwrap();
+    for (adapter, pane, expected) in [
+        ("herdr", "wK:p2", "<agent><focus><wK:p2>\n"),
+        (
+            "tmux",
+            "%2",
+            "<select-window><-t><%2>\n<select-pane><-t><%2>\n",
+        ),
+    ] {
+        let created = swarm(&home, &[], &["session", "new", "lane"], "");
+        assert!(created.status.success(), "{created:?}");
+        let session = stdout(&created).trim().to_string();
+        let added = swarm(
+            &home,
+            &[("SWARM_SESSION_ID", &session)],
+            &["agent", "add", "coder", "coder"],
+            "",
+        );
+        assert!(added.status.success(), "{added:?}");
+        swarm::store::set_adapter(&connection, &session, adapter).unwrap();
+        swarm::store::set_pane(&connection, &session, "coder", pane).unwrap();
+        let focused = swarm(
+            &home,
+            &[("PATH", &path), ("SWARM_ADAPTER", "wrong")],
+            &["focus", &session, "coder"],
+            "",
+        );
+        assert!(focused.status.success(), "{adapter}: {focused:?}");
+        assert_eq!(
+            std::fs::read_to_string(home.join("focus")).unwrap(),
+            expected
+        );
+        std::fs::remove_file(home.join("focus")).unwrap();
+    }
+    std::fs::remove_dir_all(&home).unwrap();
+}
+
+#[test]
+fn focus_names_missing_panes_adapters_and_verbs() {
+    let home = scratch("focus-errors");
+    assert!(swarm(&home, &[], &["init"], "").status.success());
+    let connection = swarm::store::open(&home.join(".swarm/swarm.db")).unwrap();
+    let session = swarm::store::create_session(&connection, "lane", &home, None, None).unwrap();
+    swarm::store::add_agent(&connection, &session, "coder", "coder").unwrap();
+    let focused = swarm(&home, &[], &["focus", &session, "coder"], "");
+    assert!(!focused.status.success(), "{focused:?}");
+    assert_eq!(
+        String::from_utf8_lossy(&focused.stderr),
+        "swarm: session has no adapter\n"
+    );
+    for adapter in ["tmux-solo", "superset"] {
+        swarm::store::set_adapter(&connection, &session, adapter).unwrap();
+        let missing = swarm(&home, &[], &["focus", &session, "coder"], "");
+        assert!(!missing.status.success(), "{missing:?}");
+        assert_eq!(
+            String::from_utf8_lossy(&missing.stderr),
+            "swarm: no pane recorded\n"
+        );
+        swarm::store::set_pane(&connection, &session, "coder", "%2").unwrap();
+        let missing = swarm(&home, &[], &["focus", &session, "coder"], "");
+        assert!(!missing.status.success(), "{missing:?}");
+        assert_eq!(
+            String::from_utf8_lossy(&missing.stderr),
+            format!("swarm: {adapter} has no focus\n")
+        );
+        swarm::store::clear_pane(&connection, &session, "coder").unwrap();
+    }
+    std::fs::remove_dir_all(&home).unwrap();
+}
+
 /// Claude sends `PermissionRequest` and then `Notification permission_prompt` for one prompt. The
 /// owner gets one notice for the change to `waiting`, and the next change to `waiting` gets one more.
 #[test]

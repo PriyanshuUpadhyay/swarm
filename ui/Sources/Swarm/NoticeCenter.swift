@@ -28,6 +28,7 @@ final class NoticeCenter: NSObject, UNUserNotificationCenterDelegate {
             content.body = notice.body
             content.categoryIdentifier = NoticeCenter.category
             content.userInfo = ["sessionID": notice.sessionID.rawValue]
+            if let agent = notice.agentID { content.userInfo["agentID"] = agent.rawValue }
             content.sound = notice.sound ? .default : nil
             try await center.add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
         }, onDenied: { await onDenied() })
@@ -45,6 +46,8 @@ final class NoticeCenter: NSObject, UNUserNotificationCenterDelegate {
                                             didReceive response: UNNotificationResponse) async {
         guard response.actionIdentifier == UNNotificationDefaultActionIdentifier,
               let session = response.notification.request.content.userInfo["sessionID"] as? String else { return }
+        if let agent = response.notification.request.content.userInfo["agentID"] as? String,
+           (try? await SwarmCLIBus().focus(SwarmAgentID(agent), in: SwarmSessionID(session))) != nil { return }
         await MainActor.run { selectChat(SwarmSessionID(session)) }
     }
 
