@@ -206,8 +206,11 @@ pub fn openusage(usage: &Usage, now: i64) -> Value {
             if let Some(reset) = meter.reset_time_seconds {
                 resource["resetsAt"] = iso_time(reset).into();
             }
-            if let Some(minutes) = meter.window_minutes {
-                resource["windowSeconds"] = (minutes * 60).into();
+            if let Some(seconds) = meter
+                .window_minutes
+                .and_then(|minutes| minutes.checked_mul(60))
+            {
+                resource["windowSeconds"] = seconds.into();
             }
             resources.insert(name.into(), resource);
         }
@@ -1103,6 +1106,31 @@ mod tests {
             serde_json::to_string(&openusage(&usage, 1_791_000_100)).unwrap(),
             serde_json::to_string(&expected).unwrap()
         );
+    }
+
+    #[test]
+    fn openusage_leaves_out_a_window_length_that_does_not_fit_in_seconds() {
+        let mut meter = status_meter(
+            "claude",
+            Some(&work()),
+            "fresh",
+            ReasonCode::ReadFailed,
+            None,
+        );
+        meter.clear_reason();
+        meter.window = Some("5h".into());
+        meter.window_minutes = Some(i64::MAX);
+        meter.used_pct = Some(10);
+        meter.as_of_seconds = Some(1000);
+        let value = openusage(
+            &Usage {
+                meters: vec![meter],
+            },
+            1000,
+        );
+        let session = &value["providers"]["claude@work"]["resources"]["session"];
+        assert_eq!(session["used"], 10);
+        assert!(session.get("windowSeconds").is_none(), "{session}");
     }
 
     #[test]

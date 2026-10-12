@@ -63,8 +63,7 @@ the next change.
 A reader matches `reason_code` and never the `reason` text, because the text can change (RFC 9457,
 section 3.1.4). The list can grow. For a code that a reader does not know, it shows `reason` as
 plain text. `no_source` and `read_failed` have more than one text, and each text names the cause.
-That holds for refresh output only, because a cached read gives a stored meter that is not `fresh` or
-`stale` the base text of its code, such as "Usage read failed".
+A meter read back from the cache file has the base text of its code, such as "Usage read failed".
 
 | Code | Text | Meaning |
 |---|---|---|
