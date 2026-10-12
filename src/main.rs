@@ -416,6 +416,7 @@ fn hook(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         state,
         "hook",
         detail.as_deref(),
+        None,
         now,
     )?
     else {
@@ -3122,6 +3123,7 @@ fn list_agents(
                     }
                     (row.state_at, row.state_source, row.state_detail) =
                         (Some(now), Some("screen".into()), detail);
+                    row.state_kind = None;
                 }
                 // A newer hook report landed after this listing read the row; it stands,
                 // and the next listing shows it.
@@ -3140,6 +3142,7 @@ fn list_agents(
             state_at_s: row.state_at,
             state_source: row.state_source,
             state_detail: row.state_detail,
+            state_kind: row.state_kind,
             log: row.log.map(resolved_agent_log),
             prompt,
             profile: row.profile,
@@ -5867,7 +5870,17 @@ mod tests {
             .unwrap();
         swarm::store::ack(&connection, &session, ask, CODER).unwrap();
         let now = unix_now().unwrap();
-        swarm::store::set_state(&connection, &session, CODER, "done", "hook", None, now).unwrap();
+        swarm::store::set_state(
+            &connection,
+            &session,
+            CODER,
+            "done",
+            "hook",
+            None,
+            None,
+            now,
+        )
+        .unwrap();
         let adapter = swarm::adapter::load(&root, "fake").unwrap();
 
         list_agents(&mut connection, &root, &session, &adapter).unwrap();
@@ -5963,7 +5976,17 @@ mod tests {
             )
             .unwrap();
         let now = unix_now().unwrap();
-        swarm::store::set_state(&connection, &session, CODER, "done", "hook", None, now).unwrap();
+        swarm::store::set_state(
+            &connection,
+            &session,
+            CODER,
+            "done",
+            "hook",
+            None,
+            None,
+            now,
+        )
+        .unwrap();
         let adapter = swarm::adapter::load(&root, "fake").unwrap();
 
         swarm::store::set_pane(&connection, &session, ORCHESTRATOR, "%9").unwrap();
@@ -6010,7 +6033,17 @@ mod tests {
             )
             .unwrap();
         let now = unix_now().unwrap();
-        swarm::store::set_state(&connection, &session, CODER, "done", "hook", None, now).unwrap();
+        swarm::store::set_state(
+            &connection,
+            &session,
+            CODER,
+            "done",
+            "hook",
+            None,
+            None,
+            now,
+        )
+        .unwrap();
         let adapter = swarm::adapter::load(&root, "fake").unwrap();
 
         list_agents(&mut connection, &root, &session, &adapter).unwrap();
@@ -6097,7 +6130,17 @@ mod tests {
             )
             .unwrap();
         let now = unix_now().unwrap();
-        swarm::store::set_state(&connection, &session, CODER, "done", "hook", None, now).unwrap();
+        swarm::store::set_state(
+            &connection,
+            &session,
+            CODER,
+            "done",
+            "hook",
+            None,
+            None,
+            now,
+        )
+        .unwrap();
         let adapter = swarm::adapter::load(&root, "fake").unwrap();
 
         list_agents(&mut connection, &root, &session, &adapter).unwrap();
@@ -6133,7 +6176,17 @@ mod tests {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs() as i64;
-        swarm::store::set_state(&connection, &session, CODER, "done", "hook", None, now).unwrap();
+        swarm::store::set_state(
+            &connection,
+            &session,
+            CODER,
+            "done",
+            "hook",
+            None,
+            None,
+            now,
+        )
+        .unwrap();
         let adapter = swarm::adapter::load(&root, "fake").unwrap();
         let sweep =
             |connection: &mut rusqlite::Connection| swept(connection, &root, &adapter, &session);
@@ -6604,7 +6657,17 @@ mod tests {
     fn stop_hook_commits_done_state_before_usage() {
         let log = r#"{"type":"assistant","message":{"id":"m1","model":"claude","usage":{"input_tokens":1,"output_tokens":2}}}"#;
         let (home, connection, session) = stop_fixture("state-before-usage", Some(log));
-        swarm::store::set_state(&connection, &session, CODER, "working", "hook", None, 1).unwrap();
+        swarm::store::set_state(
+            &connection,
+            &session,
+            CODER,
+            "working",
+            "hook",
+            None,
+            None,
+            1,
+        )
+        .unwrap();
         // Reject a usage write unless the done state is already stored in the same row.
         connection.execute_batch("CREATE TRIGGER usage_requires_done BEFORE UPDATE OF usage_state ON agent WHEN NEW.state IS NOT 'done' BEGIN SELECT RAISE(ABORT, 'usage before done'); END;").unwrap();
         run_stop_hook(&home, &session, "claude", "Stop", "{}");
