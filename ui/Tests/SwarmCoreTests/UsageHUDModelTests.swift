@@ -342,6 +342,20 @@ struct UsageHUDModelTests {
         #expect(model.meters.count == 1)
     }
 
+    @Test("a second Refresh inside 300 seconds keeps the failure text of the first one")
+    func refreshFailureStaysInCooldown() async throws {
+        let command = UsageCommand([meter()])
+        await command.failRefresh("codex", "codex is not on PATH")
+        let clock = UsageTestClock(now)
+        let model = try makeModel(command, clock: clock)
+        await model.refresh()
+        clock.advance(by: 60)
+        await model.refresh()
+        #expect(await command.refreshed.count == 2)
+        let footer = model.footer(nowSeconds: now + 60)
+        #expect(footer.text == "Last refresh: Codex: codex is not on PATH" && footer.warning)
+    }
+
     // MARK: Panel layout
 
     @Test("the content rect is the notch when collapsed and the card under the screen top when open")
@@ -427,6 +441,25 @@ struct UsageHUDModelTests {
         model.expandedContentHeight = 700
         model.applyPanelCeiling(900)
         #expect(model.expandedContentHeight == 700)
+    }
+
+    @Test("a lower height limit from the bottom edge lowers the card height at once")
+    func heightLimitLowersTheCard() throws {
+        let model = try makeModel(UsageCommand())
+        model.applyPanelCeiling(900)
+        model.expandedContentHeight = 600
+        model.resizePanelHeight(to: 400)
+        #expect(model.expandedContentHeight == 400)
+        // A higher limit gives height back, up to what the content needs.
+        model.contentNeeds(height: 600)
+        model.resizePanelHeight(to: 500)
+        #expect(model.expandedContentHeight == 500)
+        model.resizePanelHeight(to: 700)
+        #expect(model.expandedContentHeight == 600)
+        // The screen is the ceiling: 900 less the 38 pt notch.
+        model.contentNeeds(height: 2_000)
+        model.resizePanelHeight(to: 3_000)
+        #expect(model.expandedContentHeight == 862)
     }
 
     @Test("the height limit has a floor and a new model reads the saved one")

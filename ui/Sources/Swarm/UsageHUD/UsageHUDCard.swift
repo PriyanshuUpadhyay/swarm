@@ -44,13 +44,24 @@ private struct FittedLine: View {
 
 private struct HUDButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(HUD.button)
-            .frame(width: HUD.controlSize, height: HUD.controlSize)
-            .background(configuration.isPressed ? HUD.buttonPressedFill : HUD.buttonFill, in: Circle())
-            .contentShape(Circle())
-            .scaleEffect(configuration.isPressed ? HUD.pressedScale : 1)
-            .animation(.easeOut(duration: 0.1), value: configuration.isPressed)
+        Pressed(configuration: configuration)
+    }
+
+    /// A view, because a style reads the environment only through one.
+    private struct Pressed: View {
+        let configuration: Configuration
+        @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+        var body: some View {
+            configuration.label
+                .font(HUD.button)
+                .frame(width: HUD.controlSize, height: HUD.controlSize)
+                // With Reduce Motion the fill alone shows the press.
+                .background(configuration.isPressed ? HUD.buttonPressedFill : HUD.buttonFill, in: Circle())
+                .contentShape(Circle())
+                .scaleEffect(configuration.isPressed && !reduceMotion ? HUD.pressedScale : 1)
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.1), value: configuration.isPressed)
+        }
     }
 }
 
@@ -125,6 +136,8 @@ private struct MeterCell: View {
         // An older sample shows no risk, so it keeps the provider's color.
         let severity = isFresh ? UsageSeverity(usedPct: meter?.usedPct ?? 0, level: pressure?.level) : .calm
         let tint = severity.hudColor
+        // Small text needs more contrast than a bar or a large number does.
+        let riskTint = severity == .danger ? HUD.dangerLight : tint
         // A short form can hide the gap, so the tooltip always has the full lines.
         let fullLines = detail.map(\.text)
             + [meter.flatMap { UsageHUDModel.freshnessDetail($0, nowSeconds: nowSeconds) }].compactMap { $0 }
@@ -149,7 +162,7 @@ private struct MeterCell: View {
                         Spacer(minLength: HUD.lineSpacing)
                         FittedLine(text: risk.text, short: risk.short)
                             .font(HUD.risk)
-                            .foregroundStyle(tint ?? HUD.textSecondary)
+                            .foregroundStyle(riskTint ?? HUD.textSecondary)
                     }
                 }
                 UsageBar(
@@ -159,7 +172,7 @@ private struct MeterCell: View {
                 )
                 FittedLine(text: lastLine?.text ?? "", short: lastLine?.short ?? "")
                     .font(lastLine?.risk == true ? HUD.risk : HUD.detail)
-                    .foregroundStyle(lastLine?.risk == true ? tint ?? HUD.textSecondary : HUD.textSecondary)
+                    .foregroundStyle(lastLine?.risk == true ? riskTint ?? HUD.textSecondary : HUD.textSecondary)
             } else {
                 Text(verbatim: "—").font(HUD.noValue).foregroundStyle(HUD.textSecondary)
                 Text("No sample").font(HUD.detail).foregroundStyle(HUD.textSecondary)
@@ -207,6 +220,7 @@ private struct ProviderCard: View {
                         .frame(width: HUD.providerDot, height: HUD.providerDot)
                         .accessibilityHidden(true)
                     Text(verbatim: section.title).font(HUD.provider).foregroundStyle(HUD.textPrimary)
+                        .accessibilityAddTraits(.isHeader)
                 }
                 .frame(width: accountWidth, alignment: .leading)
                 ForEach(section.windows) { window in
@@ -325,7 +339,7 @@ struct UsageHUDCard: View {
                         .frame(width: contentWidth)
                         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
                             naturalHeight = height
-                            model.expandedContentHeight = min(height + chromeHeight, availableHeight)
+                            model.contentNeeds(height: height + chromeHeight)
                         }
                 }
                 .scrollBounceBehavior(.basedOnSize)
@@ -381,6 +395,7 @@ struct UsageHUDCard: View {
         HStack(spacing: HUD.headerSpacing) {
             VStack(alignment: .leading, spacing: HUD.lineSpacing) {
                 Text("Usage").font(HUD.title).foregroundStyle(HUD.textPrimary)
+                    .accessibilityAddTraits(.isHeader)
                 HStack(spacing: HUD.valueSpacing) {
                     Circle().fill(model.mood.dotColor).frame(width: HUD.moodDot, height: HUD.moodDot)
                         .accessibilityHidden(true)
@@ -389,7 +404,7 @@ struct UsageHUDCard: View {
             }
             Spacer(minLength: HUD.lineSpacing)
             Button {
-                refreshBounce += 1
+                if !reduceMotion { refreshBounce += 1 }
                 actions.refresh()
             } label: {
                 // The glyph turns in place, so the header does not move during a refresh.
@@ -426,7 +441,8 @@ struct UsageHUDCard: View {
             } else if model.hasOlderSamples {
                 Image(systemName: "clock").font(HUD.caption)
             }
-            Text(verbatim: footer.text).font(HUD.footer).lineLimit(1)
+            // The line can be longer than the card, so the tooltip has all of it.
+            Text(verbatim: footer.text).font(HUD.footer).lineLimit(1).help(footer.text)
             Spacer(minLength: 0)
         }
         .foregroundStyle(footer.warning ? HUD.warn : HUD.textSecondary)

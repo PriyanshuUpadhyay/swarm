@@ -135,7 +135,7 @@ enum DesignTokens {
         /// The space on each side of the card content.
         static let contentInset: CGFloat = 28
         static let cardGap: CGFloat = 14
-        static let cardPaddingHorizontal: CGFloat = 12
+        static let cardPaddingHorizontal = UsageHUDLayout.cardPaddingHorizontal
         static let cardPaddingVertical: CGFloat = 10
         static let cardRadius: CGFloat = 16
         static let rowRadius: CGFloat = 10
@@ -143,7 +143,7 @@ enum DesignTokens {
         static let rowDividerInset: CGFloat = 8
         /// Every account row has this height, so rows line up across cards.
         static let rowHeight: CGFloat = 46
-        static let columnSpacing: CGFloat = 14
+        static let columnSpacing = UsageHUDLayout.columnSpacing
         static let accountWidthShare: CGFloat = 0.27
         static let accountMinWidth: CGFloat = 132
         static let accountMaxWidth: CGFloat = 220

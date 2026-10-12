@@ -17,6 +17,9 @@ public actor UsageRefresher {
     private let run: @Sendable (String) async throws -> SwarmUsage
     private var startedAtSeconds: [String: Int] = [:]
     private var running: [String: Task<SwarmUsage, any Error>] = [:]
+    /// The error of the last call, until the next call. Inside the interval it is thrown again,
+    /// so a second click does not show a failed refresh as a good one.
+    private var failures: [String: any Error] = [:]
 
     public init(
         now: @escaping @Sendable () -> Int = { Int(Date().timeIntervalSince1970) },
@@ -32,14 +35,21 @@ public actor UsageRefresher {
         if let task = running[provider] { return .refreshed(try await task.value) }
         // The check and the reservation have no suspension between them, so two callers cannot both pass.
         if let started = startedAtSeconds[provider], (0..<Self.minIntervalSeconds).contains(now - started) {
+            if let failure = failures[provider] { throw failure }
             return .cooldown(nextInSeconds: Self.minIntervalSeconds - (now - started))
         }
         startedAtSeconds[provider] = now
+        failures[provider] = nil
         let run = run
         let task = Task { try await run(provider) }
         running[provider] = task
         defer { running[provider] = nil }
-        return .refreshed(try await task.value)
+        do {
+            return .refreshed(try await task.value)
+        } catch {
+            failures[provider] = error
+            throw error
+        }
     }
 
     /// For a page that shows one provider's usage: the new reading, or the cached one when the

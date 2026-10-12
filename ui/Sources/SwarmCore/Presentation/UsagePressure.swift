@@ -42,8 +42,8 @@ public struct UsageRowPressure: Sendable, Equatable {
     }
 }
 
-/// What the one-glance tint comes from. With no trend the level is an empty `.green`, so the raw
-/// percent band decides; with a trend the level decides.
+/// What the one-glance tint comes from. With no trend, or with no reset time to project to, the
+/// level is an empty `.green`, so the raw percent band decides. Otherwise the level decides.
 public enum UsageBubbleBasis: Sendable, Equatable {
     case severity(Double)
     case pressure(UsagePressureLevel)
@@ -60,6 +60,9 @@ public enum UsageBubbleBasis: Sendable, Equatable {
 
 /// Trend math for usage meters: how fast a window fills, and whether it fills before it resets.
 public enum UsagePressure {
+    /// The two window lengths that have a trend rule and a title of their own.
+    public static let fiveHourMinutes = 300
+    public static let weekMinutes = 10_080
     /// A drop of more than this from the previous sample means the window reset.
     private static let resetDropPct = 10.0
     /// A shorter span is noise, not a trend.
@@ -124,12 +127,12 @@ public enum UsagePressure {
             let hoursToReset = meter.resetTimeSeconds.map { Double(max(0, $0 - nowSeconds)) / 3_600 }
             let burn: Double?
             switch meter.windowMinutes {
-            case 300:
+            case fiveHourMinutes:
                 let samples = history.filter {
                     $0.provider == meter.provider && $0.account == meter.account ?? "" && $0.window == window
                 }
                 burn = burnRate(currentSegment(samples), lookbackHours: 1)
-            case 10_080:
+            case weekMinutes:
                 burn = hoursToReset.flatMap { weeklyAveragePace(usedPct: usedPct, hoursToReset: $0) }
             default:
                 // A window of unknown length gets no trend, not a guess.
@@ -143,18 +146,25 @@ public enum UsagePressure {
         }
     }
 
-    /// The row that the one-glance tint follows: the worst level, then the higher projection, then
-    /// the higher percent.
+    /// The row that the one-glance tint follows: the worst tint, then the worse level, then the
+    /// higher projection, then the higher percent. The tint is that of `basis`, so a row with no
+    /// trend ranks by its percent band and 95 percent outranks an amber row.
     public static func binding(_ rows: [UsageRowPressure]) -> UsageRowPressure? {
-        func rank(_ level: UsagePressureLevel) -> Int {
-            switch level {
+        func rank(_ row: UsageRowPressure) -> (Int, Int) {
+            let tint = switch basis(row)?.severity {
+            case .danger: 0
+            case .warn: 1
+            case .calm, nil: 2
+            }
+            let level = switch row.level {
             case .red: 0
             case .amber: 1
             case .green: 2
             }
+            return (tint, level)
         }
         return rows.min { first, second in
-            if rank(first.level) != rank(second.level) { return rank(first.level) < rank(second.level) }
+            if rank(first) != rank(second) { return rank(first) < rank(second) }
             let projections = (first.projectedPct ?? 0, second.projectedPct ?? 0)
             if projections.0 != projections.1 { return projections.0 > projections.1 }
             return first.usedPct > second.usedPct
@@ -163,6 +173,7 @@ public enum UsagePressure {
 
     public static func basis(_ binding: UsageRowPressure?) -> UsageBubbleBasis? {
         guard let binding else { return nil }
-        return binding.burnPctPerHour == nil ? .severity(binding.usedPct) : .pressure(binding.level)
+        return binding.burnPctPerHour == nil || binding.hoursToReset == nil
+            ? .severity(binding.usedPct) : .pressure(binding.level)
     }
 }

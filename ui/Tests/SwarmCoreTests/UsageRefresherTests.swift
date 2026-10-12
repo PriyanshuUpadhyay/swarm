@@ -68,8 +68,17 @@ struct UsageRefresherTests {
         let refresher = UsageRefresher(now: clock.now) { try await command.run($0) }
         await #expect(throws: SwarmProfileError.failed("Sign in again")) { try await refresher.refresh(provider: "claude") }
         await command.fail(nil)
-        #expect(try await refresher.refresh(provider: "claude") == .cooldown(nextInSeconds: 300))
+        clock.advance(by: 60)
+        // No call is made, and the failure is not replaced by a result that looks good.
+        await #expect(throws: SwarmProfileError.failed("Sign in again")) { try await refresher.refresh(provider: "claude") }
+        await #expect(throws: SwarmProfileError.failed("Sign in again")) {
+            try await refresher.refreshOrCached(provider: "claude") { [] }
+        }
         #expect(await command.providers == ["claude"])
+        clock.advance(by: 240)
+        #expect(try await refresher.refresh(provider: "claude") == .refreshed(SwarmUsage(meters: [])))
+        clock.advance(by: 60)
+        #expect(try await refresher.refresh(provider: "claude") == .cooldown(nextInSeconds: 240))
     }
 
     @Test("the Accounts page gets the new reading, or the cached one inside the 300 seconds")
@@ -95,9 +104,13 @@ struct UsageRefresherTests {
         async let hud = refresher.refresh(provider: "claude")
         async let accountsPage = refresher.refresh(provider: "claude")
         // Each call reads the clock when it enters, so two reads mean both calls wait on the one run.
+        var waits = 0
         while true {
             let started = await !command.providers.isEmpty
             if clock.reads >= 2 && started { break }
+            // A refresher that never reads the clock or never starts the run must fail here, not hang.
+            waits += 1
+            try #require(waits < 100_000, "the two callers did not reach the one run")
             await Task.yield()
         }
         await command.release()

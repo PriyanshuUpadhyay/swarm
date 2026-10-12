@@ -89,6 +89,27 @@ struct UsagePressureTests {
         #expect(UsagePressure.binding([]) == nil)
     }
 
+    @Test("a row with no trend ranks by its percent band, so 95 percent outranks an amber row")
+    func bindingWithNoTrend() {
+        let full = pressure("a", usedPct: 95, burn: nil, level: .green)
+        let amber = pressure("b", usedPct: 40, burn: 20, projected: 88, level: .amber)
+        let binding = UsagePressure.binding([full, amber])
+        #expect(binding?.meterID == "a")
+        #expect(UsagePressure.basis(binding)?.severity == .danger)
+        // In one band the row with a trend still leads, as before.
+        let warm = pressure("c", usedPct: 75, burn: nil, level: .green)
+        #expect(UsagePressure.binding([warm, amber])?.meterID == "b")
+    }
+
+    @Test("a full meter with no reset time is danger, because no projection can clear it")
+    func fullWithNoReset() {
+        let result = UsagePressure.classify(usedPct: 100, burn: 10, hoursToReset: nil)
+        let row = UsageRowPressure(meterID: "a", usedPct: 100, burnPctPerHour: 10, hoursToReset: nil,
+                                   projectedPct: result.projectedPct, hoursToFull: result.hoursToFull,
+                                   level: result.level)
+        #expect(UsagePressure.basis(row)?.severity == .danger)
+    }
+
     @Test("a five-hour window takes its burn from the last hour of history")
     func shortWindow() {
         let rows = UsagePressure.rows(

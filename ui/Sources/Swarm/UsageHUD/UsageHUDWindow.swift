@@ -14,7 +14,8 @@ final class UsageHUDWindow {
     /// The Accounts page uses the same refresher, so the two share the 300-second limit.
     let refresher: UsageRefresher
     let model: UsageHUDModel
-    /// Set by a window, because only a view has the Settings action.
+    /// Set by the app's menu commands, because the Settings action comes from the environment
+    /// and the menu bar exists when no window does (ADR 0069).
     @ObservationIgnored var openAccounts: () -> Void = {}
     /// The "Add the usage HUD?" alert shows at most one time per app run.
     @ObservationIgnored var askedThisRun = false

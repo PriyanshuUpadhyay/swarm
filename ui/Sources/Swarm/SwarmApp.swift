@@ -1021,12 +1021,6 @@ private struct SessionsWindow: View {
             model.attachWindow()
         }
         .task {
-            let settings = settings
-            let showSettings: OpenSettingsAction = openSettings
-            usageHUD.openAccounts = {
-                settings.select(.accounts)
-                showSettings()
-            }
             // A Finder launch finds `swarm` only on the login shell's PATH.
             await LoginShellPath.ready()
             // Switch model and the profiles page then open on these reads instead of waiting.
@@ -2493,7 +2487,7 @@ struct SwarmApp: App {
             .environment(usageHUD)
             .environment(\.splitDiff, splitDiff)
             .commands {
-                SetupCommands(selection: settings)
+                SetupCommands(selection: settings, usageHUD: usageHUD)
                 AppKeyCommands(usageHUD: usageHUD, usageHUDEnabled: settings.prefs.usageHUD == true)
             }
         WindowGroup("Chat", id: "chat", for: SwarmSessionID.self) { $sessionID in
@@ -2529,9 +2523,16 @@ private struct UsageHUDFollowsAnswer: ViewModifier {
 
 private struct SetupCommands: Commands {
     let selection: SettingsSelection
+    let usageHUD: UsageHUDWindow
     @Environment(\.openSettings) private var openSettings
 
     var body: some Commands {
+        // The HUD shows at login with no window (ADR 0069). The menu bar is there then, so the
+        // HUD's Open Accounts button takes the Settings action from here and not from a window.
+        let _ = usageHUD.openAccounts = { [selection, openSettings] in
+            selection.select(.accounts)
+            openSettings()
+        }
         CommandGroup(after: .appSettings) {
             Button("Set Up Swarm…") {
                 selection.select(.setup)

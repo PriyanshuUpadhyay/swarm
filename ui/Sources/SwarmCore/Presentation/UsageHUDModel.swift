@@ -52,7 +52,8 @@ public struct UsageHUDAccount: Sendable, Equatable, Identifiable {
     }
 }
 
-public struct UsageHUDWindow: Sendable, Equatable, Identifiable {
+/// One meter column of a provider card: a usage window such as 5 hours.
+public struct UsageHUDColumn: Sendable, Equatable, Identifiable {
     /// The `window` value of the meters in this column.
     public let id: String
     public let title: String
@@ -62,7 +63,7 @@ public struct UsageHUDSection: Sendable, Equatable, Identifiable {
     public var id: String { provider }
     public let provider: String
     public let title: String
-    public let windows: [UsageHUDWindow]
+    public let windows: [UsageHUDColumn]
     public let accounts: [UsageHUDAccount]
 }
 
@@ -96,6 +97,14 @@ public enum UsageHUDLayout {
     /// Room around the card inside the window for its shadow.
     public static let panelWindowMargin: CGFloat = 40
     public static let minPanelHeightLimit: CGFloat = 240
+    /// The design tokens of the provider card take these two, so the drawn card and
+    /// `providerCardMinWidth` cannot disagree.
+    public static let cardPaddingHorizontal: CGFloat = 12
+    public static let columnSpacing: CGFloat = 14
+    /// The account column and one meter at the width where two cards first sit side by side. The
+    /// account column takes a share of the card, so here it is wider than its smallest drawn width.
+    private static let sideBySideAccountWidth: CGFloat = 150
+    private static let sideBySideMeterWidth: CGFloat = 112
     private static let notchHoverHorizontalInset: CGFloat = 8
     private static let notchHoverBottomInset: CGFloat = 5
     private static let notchHoverTopInset: CGFloat = 1
@@ -162,8 +171,11 @@ public enum UsageHUDLayout {
         return minWidths.map { ($0 * (total - gaps) / needed).rounded(.down) }
     }
 
-    /// Card padding, the shortest account column, and one 112 pt meter per column with its spacing.
-    public static func providerCardMinWidth(columns: Int) -> CGFloat { 24 + 150 + CGFloat(columns) * (112 + 14) }
+    /// Card padding, the account column, and one meter per column with its spacing.
+    public static func providerCardMinWidth(columns: Int) -> CGFloat {
+        2 * cardPaddingHorizontal + sideBySideAccountWidth
+            + CGFloat(columns) * (sideBySideMeterWidth + columnSpacing)
+    }
 }
 
 /// What the usage HUD shows and the state of its panel. It reads `swarm usage --json`; only
@@ -190,6 +202,8 @@ public final class UsageHUDModel {
     public private(set) var panelSize = CGSize(width: 624, height: UsageHUDLayout.panelHeight(screenHeight: 800))
     /// The measured height of the open card, at most the window height.
     public var expandedContentHeight: CGFloat
+    /// What the card needs to show every account, with its header and footer.
+    @ObservationIgnored private var neededContentHeight: CGFloat?
     public private(set) var panelWidth = UsageHUDLayout.minPanelWidth
     /// The most height the card may take, set with its bottom edge. nil fits every account.
     public private(set) var panelHeightLimit: CGFloat?
@@ -317,7 +331,7 @@ public final class UsageHUDModel {
                 minutes[window] = minutes[window] ?? meter.windowMinutes ?? .max
             }
             let windows = minutes.sorted { ($0.value, $0.key) < ($1.value, $1.key) }.map {
-                UsageHUDWindow(id: $0.key, title: Self.windowTitle(window: $0.key, minutes: $0.value))
+                UsageHUDColumn(id: $0.key, title: Self.windowTitle(window: $0.key, minutes: $0.value))
             }
             return UsageHUDSection(
                 provider: provider, title: AccountsPageModel.providerTitle(provider), windows: windows, accounts: accounts
@@ -371,8 +385,8 @@ public final class UsageHUDModel {
         let name = parts.last ?? ""
         let title: String = switch (name, minutes) {
         case ("fb", _): "Fable · week"
-        case (_, 300): "5 hours"
-        case (_, 10_080): "Weekly"
+        case (_, UsagePressure.fiveHourMinutes): "5 hours"
+        case (_, UsagePressure.weekMinutes): "Weekly"
         default: name.isEmpty ? "—" : name
         }
         let limit = parts.dropLast().joined(separator: ":")
@@ -514,8 +528,23 @@ public final class UsageHUDModel {
         defaults.set(Double(panelWidth), forKey: Self.panelWidthKey)
     }
 
+    /// The card measured its content. The open height is that, inside the limit and the screen.
+    public func contentNeeds(height: CGFloat) {
+        neededContentHeight = height
+        fitContentHeight()
+    }
+
+    /// The backdrop, the hover area and the next drag start follow the new limit at once.
     public func resizePanelHeight(to height: CGFloat) {
         panelHeightLimit = max(UsageHUDLayout.minPanelHeightLimit, height)
+        fitContentHeight()
+    }
+
+    private func fitContentHeight() {
+        expandedContentHeight = min(
+            neededContentHeight ?? expandedContentHeight,
+            panelHeightLimit ?? .infinity, max(0, panelSize.height - notchTopInset)
+        )
     }
 
     public func savePanelHeightLimit() {
