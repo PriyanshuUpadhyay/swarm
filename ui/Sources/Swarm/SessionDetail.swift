@@ -486,7 +486,7 @@ struct SessionDetailView: View {
             cells: agentCells.map { cell in
                 PaneCell(
                     id: cell.agent.id.rawValue, title: cell.agent.id.rawValue, role: cell.agent.role,
-                    model: cell.model, status: cell.agent.status,
+                    model: cell.model, status: cell.agent.status, stateKind: cell.agent.stateKind,
                     stateTooltip: AgentStateText.tooltip(agent: cell.agent, now: Int(Date().timeIntervalSince1970))
                 )
             },

@@ -25,6 +25,7 @@ public struct SwarmAgent: Sendable, Hashable, Codable, Identifiable {
     /// hook or screen.
     public var stateSource: String?
     public var stateDetail: String?
+    public var stateKind: String?
     /// The chat log the agent's provider hooks reported, or nil before the first report.
     public var log: String?
     /// The question the agent's screen shows now; `swarm answer` picks one of its choices.
