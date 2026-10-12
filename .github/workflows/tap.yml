@@ -14,15 +14,13 @@ jobs:
   tap:
     runs-on: ubuntu-latest
     steps:
-      - name: Update the swarm-app cask and the pointer swarm formula
+      - name: Update the swarm-app cask
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
           TAP_DEPLOY_KEY: ${{ secrets.TAP_DEPLOY_KEY }}
         run: |
           version="${RELEASE_TAG#v}"
-          url="https://github.com/${{ github.repository }}/archive/refs/tags/$RELEASE_TAG.tar.gz"
-          source_sha=$(curl -sSfL "$url" | sha256sum | cut -d' ' -f1)
           gh release download "$RELEASE_TAG" -R "${{ github.repository }}" -p "Swarm-$version.dmg"
           dmg_sha=$(sha256sum "Swarm-$version.dmg" | cut -d' ' -f1)
 
@@ -30,36 +28,6 @@ jobs:
           printf '%s\n' "$TAP_DEPLOY_KEY" > ~/tap_key
           export GIT_SSH_COMMAND="ssh -i ~/tap_key -o IdentitiesOnly=yes"
           git clone -q git@github.com:PriyanshuUpadhyay/homebrew-tap.git tap
-          # This release only, then removed: the formula installs no bin/swarm, so its upgrade
-          # (brew upgrades formulae before casks) frees the PATH link that the cask then takes.
-          cat > tap/Formula/swarm.rb <<FORMULA
-          class Swarm < Formula
-            desc "Moved: the swarm-app cask installs the swarm CLI"
-            homepage "https://github.com/PriyanshuUpadhyay/swarm"
-            url "$url"
-            sha256 "$source_sha"
-            license "MIT"
-
-            deprecate! date: "$(date -u +%Y-%m-%d)", because: "is installed by the swarm-app cask",
-                       replacement_cask: "priyanshuupadhyay/tap/swarm-app"
-
-            def install
-              # A keg must hold one file.
-              (pkgshare/"MOVED").write "swarm now ships inside Swarm.app; see the swarm-app cask.\n"
-            end
-
-            def caveats
-              <<~EOS
-                swarm now ships inside Swarm.app. Run this once to link it onto PATH:
-                  brew update && brew upgrade priyanshuupadhyay/tap/swarm; brew reinstall --cask --force priyanshuupadhyay/tap/swarm-app
-              EOS
-            end
-
-            test do
-              assert_path_exists pkgshare/"MOVED"
-            end
-          end
-          FORMULA
           mkdir -p tap/Casks
           cat > tap/Casks/swarm-app.rb <<CASK
           cask "swarm-app" do
@@ -88,7 +56,7 @@ jobs:
           end
           CASK
 
-          git -C tap add Formula/swarm.rb Casks/swarm-app.rb
+          git -C tap add Casks/swarm-app.rb
           git -C tap -c user.name="github-actions[bot]" \
             -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
             commit -qm "swarm $version"

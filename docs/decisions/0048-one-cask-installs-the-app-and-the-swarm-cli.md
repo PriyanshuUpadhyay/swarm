@@ -32,13 +32,13 @@ copy against the shared `~/.swarm/swarm.db`.
 Chosen: one cask with a `binary` stanza, because brew makes and removes the link itself and swarm
 makes no write outside its home. For this release the `swarm` formula is a pointer: it is
 `deprecate!`d with `replacement_cask:` and installs no `bin/swarm`, so `brew upgrade` (formulae
-first) frees the link before the cask takes it. The next release removes the formula. At launch a
-release build of the app compares the PATH `swarm --version` line with its helper's; when they
-differ it shows one alert per path-and-version pair with Copy Command and Not Now, and it shows
-nothing when a version cannot be read. The app always runs its bundled copy. `make install` puts
-no cargo build on PATH. Rejected: the app-made link, because swarm would write into the Homebrew
-prefix and a DMG-only install has no prefix to own; two pinned packages, because they still
-upgrade one at a time.
+first) frees the link before the cask takes it. The next release removes the formula. (Removed on
+2026-10-12, after 0.9.1.) At launch a release build of the app compares the PATH `swarm --version`
+line with its helper's; when they differ it shows one alert per path-and-version pair with Copy
+Command and Not Now, and it shows nothing when a version cannot be read. The app always runs its
+bundled copy. `make install` puts no cargo build on PATH. Rejected: the app-made link, because swarm
+would write into the Homebrew prefix and a DMG-only install has no prefix to own; two pinned
+packages, because they still upgrade one at a time.
 
 ### Consequences
 
