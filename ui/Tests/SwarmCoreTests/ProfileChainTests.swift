@@ -17,6 +17,8 @@ struct ProfileChainTests {
         #expect(RunnerChipState.states(runners: 2, check: SwarmProfileCheck(name: "chat", pick: nil, skipped: [lowUsage, signedOut]))
             == [.skipped(short: "usage 2% left", full: "usage 2% left (threshold 5%)"),
                 .skipped(short: "signed out", full: "no codex account is signed in")])
+        let fable = SwarmSkip(index: 0, code: "fable_spent", text: "every signed-in Claude account has used its Fable limit")
+        #expect(RunnerChipState.shortReason(fable) == "Fable limit used")
     }
 
     @Test("A cut chain drops chips from the end but keeps the one the next launch takes")

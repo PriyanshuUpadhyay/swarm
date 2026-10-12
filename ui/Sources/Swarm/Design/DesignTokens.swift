@@ -81,6 +81,99 @@ enum DesignTokens {
         static let skillText: CGFloat = 150
     }
 
+    /// The usage HUD. Its panel is always dark, so its colors are fixed values, not semantic ones.
+    enum UsageHUD {
+        static let warn = Color(red: 0xF5 / 255, green: 0x93 / 255, blue: 0x11 / 255)
+        static let danger = Color(red: 0xE5 / 255, green: 0x48 / 255, blue: 0x4D / 255)
+        static let calm = Color(red: 0x5A / 255, green: 0xD8 / 255, blue: 0xA4 / 255)
+        static let claude = Color(red: 0xD9 / 255, green: 0x77 / 255, blue: 0x57 / 255)
+        static let codex = Color(red: 0x2D / 255, green: 0x7F / 255, blue: 0xF9 / 255)
+        // A bar runs from the base color to the light one, so the fill reads as lit.
+        static let claudeLight = Color(red: 0xF2 / 255, green: 0xA2 / 255, blue: 0x7E / 255)
+        static let codexLight = Color(red: 0x6F / 255, green: 0xB2 / 255, blue: 0xFF / 255)
+        static let warnLight = Color(red: 0xFF / 255, green: 0xC1 / 255, blue: 0x5E / 255)
+        static let dangerLight = Color(red: 0xFF / 255, green: 0x7B / 255, blue: 0x7F / 255)
+        static let surfaceTop = Color(red: 0x11 / 255, green: 0x11 / 255, blue: 0x16 / 255)
+        static let surfaceBottom = Color(red: 0x09 / 255, green: 0x09 / 255, blue: 0x0B / 255)
+        static let cardInset = Color.white.opacity(0.04)
+        static let hairline = Color.white.opacity(0.07)
+        /// The row divider under Increase Contrast.
+        static let strongHairline = Color.white.opacity(0.4)
+        static let edgeStroke = Color.white.opacity(0.06)
+        static let textPrimary = Color.white.opacity(0.92)
+        /// A percent from an older sample.
+        static let textOlder = Color.white.opacity(0.74)
+        static let textSecondary = Color.white.opacity(0.55)
+        static let textTertiary = Color.white.opacity(0.35)
+        static let barTrack = Color.white.opacity(0.08)
+        static let rowHover = Color.white.opacity(0.03)
+        static let buttonFill = Color.primary.opacity(0.06)
+        static let buttonPressedFill = Color.primary.opacity(0.16)
+        static let shadow = Color.black.opacity(0.5)
+        /// An older sample stays readable but is not as loud as a current one.
+        static let olderBarOpacity = 0.45
+
+        static let title = Font.system(size: 17, weight: .semibold)
+        static let caption = Font.system(size: 11)
+        static let footer = Font.system(size: 11, weight: .medium)
+        static let body = Font.system(size: 12)
+        static let button = Font.system(size: 12, weight: .medium)
+        static let emptySymbol = Font.system(size: 26, weight: .light)
+        static let emptyTitle = Font.system(size: 14, weight: .medium)
+        static let provider = Font.system(size: 13, weight: .semibold)
+        static let account = Font.system(size: 12.5, weight: .medium)
+        static let columnTitle = Font.system(size: 10, weight: .medium)
+        static let value = Font.system(size: 17, weight: .semibold, design: .rounded)
+        static let noValue = Font.system(size: 17, design: .rounded)
+        static let detail = Font.system(size: 10)
+        static let risk = Font.system(size: 10, weight: .medium)
+        static let olderMark = Font.system(size: 8, weight: .medium)
+        static let pill = Font.system(size: 11, weight: .semibold, design: .rounded)
+
+        static let headerHeight: CGFloat = 72
+        static let footerHeight: CGFloat = 40
+        /// The space on each side of the card content.
+        static let contentInset: CGFloat = 28
+        static let cardGap: CGFloat = 14
+        static let cardPaddingHorizontal = UsageHUDLayout.cardPaddingHorizontal
+        static let cardPaddingVertical: CGFloat = 10
+        static let cardRadius: CGFloat = 16
+        static let rowRadius: CGFloat = 10
+        static let rowPadding: CGFloat = 6
+        static let rowDividerInset: CGFloat = 8
+        /// Every account row has this height, so rows line up across cards.
+        static let rowHeight: CGFloat = 46
+        static let columnSpacing = UsageHUDLayout.columnSpacing
+        static let accountWidthShare: CGFloat = 0.27
+        static let accountMinWidth: CGFloat = 132
+        static let accountMaxWidth: CGFloat = 220
+        /// "73%" with "Out Sun 10:41" beside it needs this much width.
+        static let wideCell: CGFloat = 120
+        static let barHeight: CGFloat = 6
+        static let lineSpacing: CGFloat = 4
+        static let valueSpacing: CGFloat = 5
+        static let labelSpacing: CGFloat = 7
+        static let headerSpacing: CGFloat = 10
+        static let controlSize: CGFloat = 30
+        static let moodDot: CGFloat = 6
+        static let providerDot: CGFloat = 8
+        static let columnTitleTracking: CGFloat = 0.6
+        static let hairlineWidth: CGFloat = 0.5
+        static let emptyHeight: CGFloat = 150
+        static let emptyInset: CGFloat = 42
+        static let edgeHandle: CGFloat = 14
+        static let bottomEdgeHandle: CGFloat = 10
+        static let collapsedShoulder: CGFloat = 6
+        static let openShoulder: CGFloat = 22
+        static let collapsedCorner: CGFloat = 14
+        static let openCorner: CGFloat = 28
+        static let shadowRadius: CGFloat = 22
+        static let shadowOffset: CGFloat = 10
+        static let openScale: CGFloat = 0.97
+        static let pressedScale: CGFloat = 0.94
+        static let microFade = 0.14
+    }
+
     /// Body text is 13 pt; this spacing gives it about 1.45 line height.
     static func body(textSize: TextSize) -> Font {
         Font.system(size: AppearanceScale.fonts(textSize: textSize).body)

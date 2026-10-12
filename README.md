@@ -121,27 +121,35 @@ If **Open Anyway** does not show, run `xattr -dr com.apple.quarantine /Applicati
    **Swarm > Managed Changes…** lists each entry swarm added and removes one after you see the
    diff, as `swarm managed revert` does.
 
-### Optional: accounts with yelo
+### Accounts and usage
 
-[yelo](https://github.com/PriyanshuUpadhyay/yelo) keeps more than one Claude or Codex account
-(profiles) and reads how much usage each one has left. Swarm uses it when it is on `PATH`:
+Swarm keeps more than one Claude or Codex account and reads how much usage each one has left.
+It needs no other tool.
 
-- `swarm launch --account auto` starts the worker on the account with the most usage left, the
-  same answer as `yelo profile pick`. `--account work` takes the account named `work`. Without
-  `--account`, yelo's `claude` or `codex` command in the pane picks the account.
+- **Settings › Accounts** in the app lists the accounts of each provider with their sign-in state
+  and usage. **Add account** opens the provider's own login in a pane. `swarm accounts login` is
+  the same step for a script.
+- A Claude account is a login in the macOS Keychain. Every Claude account uses the chats, settings and
+  memory in `~/.claude`; only the login changes (ADR 0071). A Codex account keeps its own home. The home of a new account is in
+  `~/.swarm/accounts/<provider>/<name>`. Swarm adds no account folder to your home.
+- `swarm launch` starts the worker on the account with the most usage left. When no account has
+  `min_usage_left_pct` left, it takes the first account whose token expired, because the CLI
+  renews that token when the chat starts. `--account work`
+  takes the account named `work`. A Fable model counts the Fable weekly limit too, and its
+  automatic pick stops when every signed-in account has used that limit. The Fable limit never
+  refuses a named account; an unknown or signed-out name is still refused.
+- `swarm run claude` or `swarm run codex` starts the CLI in your terminal on the account with the
+  most usage left. `swarm run claude --account work -- --resume` names the account and passes
+  `--resume` to the CLI.
 - A runner whose best account has less than `min_usage_left_pct` (default 5%) left is skipped, so
   the launch falls through to the next runner.
-- `swarm accounts --provider claude --json` and `swarm usage --json` show what yelo reports, and
-  the app shows it on the account row of Switch model.
+- Swarm reads Claude usage with the account's own Keychain token (ADR 0072). The token stays in
+  memory and is written to no file.
+- The usage HUD is a panel at the top of the screen that shows each account's limits. The app
+  asks one time, "Add the usage HUD?". **Settings › Accounts › Show usage HUD** changes the answer
+  later, and **View › Usage HUD** opens and closes the panel (ADR 0073).
 
-```sh
-brew install priyanshuupadhyay/tap/yelo
-yelo setup
-yelo profile create --cli claude work
-claude --profile work auth login
-```
-
-Without yelo, each CLI uses its own login. AGY has no account source yet.
+AGY has no account source yet.
 
 ### Bundled workflow skills
 
@@ -267,8 +275,9 @@ the first save. A file that is a broken symlink is an error, never a silent swit
 A save writes through a symlink, so `profiles.json` can live in a dotfiles checkout.
 
 A launch takes the first runner that can run (ADR 0032). It skips a runner whose CLI is not on
-PATH, whose accounts are all signed out, or whose best account has less usage left than
-`min_usage_left_pct` (default 5). The account read has a 2 s deadline; a read that fails, times
+PATH (code `cli_missing`), whose accounts are all signed out (`signed_out`), whose best account has
+less usage left than `min_usage_left_pct` (default 5, `low_usage`), or, for a Fable model, whose
+signed-in accounts have all used the Fable limit (`fable_spent`). The account read has a 2 s deadline; a read that fails, times
 out, or finds no accounts counts as "can run". Each skip is one stderr line, such as
 `swarm: code.complex: skipped claude/opus/high: usage 2% left (threshold 5%)`, and a launch where
 no runner can run fails with one line per runner.
@@ -288,7 +297,7 @@ id. A chair gets both from its pane, which `swarm session new` registers. A chil
 | `setup status --json` | any | Print whether each setup group has nothing pending: `hooks` (swarm's Codex and AGY state hooks), `guard` (as for `hooks status`), `trust` (the owner's answer, `standing` or `ask`, for launch folder trust in `~/.swarm/consent.json`), `herdr` (always true until a Herdr writer ships), and `skills` (all catalog links recorded and present, with a complete default copy). More groups may come (ADR 0043). |
 | `setup [--plan [--json] \| --digest <digest>] [--cwd <dir>] [--only <group>,...] [--consent <standing\|ask>] [--resume]` | any | One plan of every write swarm makes outside its home, with one digest: the `hooks` group as `hooks setup` writes it, then the `trust` group, the consent file (set to `--consent`, by default the recorded answer, else `standing`, as a managed edit whose undo means `ask`) and each trust entry a seat launched in `--cwd` (default the current folder) would need, or with `--resume` a resuming seat, whose Claude runs in that folder itself. The `skills` group follows `herdr` and plans links into the current build home. `--plan` prints a unified diff per file, each conflict, and each skipped part with its reason, and with `--json` gives each file and conflict its `group`. Apply writes each file in plan order and records each trust entry and the consent (ADR 0042); with nothing pending it prints `already set up` and exits 0 (ADR 0043). |
 | `hooks status --json` | any | Print whether swarm's own Codex and AGY state hooks are set up, and as `guard` whether the guard registrations match the rule list: all in place while `~/.swarm/guards.json` exists, none left once it is gone (ADR 0040). |
-| `hooks setup [--plan [--json] \| --digest <digest>]` | any | Trust swarm's Codex hooks in `~/.codex` and each `~/.codex-<name>`, and add the `swarm` group to AGY's `hooks.json`. With a rule list at `~/.swarm/guards.json`, also register `swarm guard` in each Claude `settings.json`, each Codex `hooks.json` with its trust, and AGY's `swarm-guard` group (ADR 0040). An entry that swarm needs where the owner already has another one, or a file that swarm cannot read or edit, is a conflict: setup names it with its fix, writes no file, and exits 1. `--plan` prints a unified diff per file and each conflict, writes nothing, and exits 0. With `--json` it also prints the `digest` that `--digest` checks, so apply refuses a file that changed after the plan (ADR 0036). Each item it adds is recorded, so `managed list` shows it and `managed revert` removes it (ADR 0042). |
+| `hooks setup [--plan [--json] \| --digest <digest>]` | any | Trust swarm's Codex hooks in `~/.codex`, each `~/.codex-<name>`, and each `~/.swarm/accounts/codex/<name>`, and add the `swarm` group to AGY's `hooks.json`. With a rule list at `~/.swarm/guards.json`, also register `swarm guard` in each Claude `settings.json`, each Codex `hooks.json` with its trust, and AGY's `swarm-guard` group (ADR 0040). An entry that swarm needs where the owner already has another one, or a file that swarm cannot read or edit, is a conflict: setup names it with its fix, writes no file, and exits 1. `--plan` prints a unified diff per file and each conflict, writes nothing, and exits 0. With `--json` it also prints the `digest` that `--digest` checks, so apply refuses a file that changed after the plan (ADR 0036). Each item it adds is recorded, so `managed list` shows it and `managed revert` removes it (ADR 0042). |
 | `managed list [--json]` | any | Print each item swarm wrote outside its home (a TOML key, a JSON key, a JSON array item, or a skill link) with its live state: `present` (equals what swarm wrote), `changed` (with the value `found` now), `unreadable` (swarm cannot read the file or the path in it, with the reason as `error`; revert refuses it), `gone`, or `off` (swarm removed it). An item with no record that equals swarm's current hook text is listed with `recorded: false` (ADR 0042). |
 | `managed revert (<id>... \| --all) [--plan [--json] \| --digest <digest>]` | any but a child | Remove each named item, or each `present` one with `--all`, and only while it equals what swarm wrote; a value swarm replaced is set back. A Codex guard trust key goes with its `hooks.json` group. An item with another value is a conflict with its fix, and no file is written. `--plan` and `--digest` work as for `hooks setup`. A child caller is refused, because a revert can remove the guard that blocks its own calls; its `--plan` still prints (ADR 0042). |
 | `guard <claude\|codex\|agy> PreToolUse` | a CLI hook | Read the CLI's hook payload on stdin, run each matching rule of `~/.swarm/guards.json` (`SWARM_GUARDS` overrides the path), and print that CLI's allow or deny. A guard rule that crashes, times out, or does not start, a bad list, or a missing list blocks the call (ADR 0040). |
@@ -312,13 +321,17 @@ id. A chair gets both from its pane, which `swarm session new` registers. A chil
 | `providers --json` | any | List each provider with its efforts, default effort, whether it has accounts, and the flags a runner of it takes. |
 | `models --provider <claude\|codex\|agy> --json` | any | List models for a provider. Codex and AGY use their CLI catalogs, and a Codex model lists its efforts; Claude shows its model aliases. |
 | `accounts --provider <claude\|codex\|agy> --json` | any | List accounts for one provider as JSON. |
-| `usage --json` | any | List account use meters as JSON. |
+| `usage --json` | any | List account use meters as JSON, in the `swarm.usage.v1` format of [docs/usage-format.md](docs/usage-format.md). |
+| `usage --format openusage` | any | Print the cached meters in the OpenUsage `openusage.limits.v1` shape, with no provider call. The rules are in [docs/usage-format.md](docs/usage-format.md). |
+| `usage --refresh --provider <claude\|codex> --json` | any | Read that provider's usage again from its source, save it, and list its meters as JSON. A failed read keeps an older reading with state `stale` and a `reason`. With no older reading, or after HTTP 401 or 403, the meter has state `failed`. A Claude token that has expired gets no request and one `failed` meter (`token_expired`) with no older reading kept. A failed read never gives zero usage. |
+| `accounts login --provider <claude\|codex> --name <name> --revision <revision> --json [--cwd <dir>]` | any | Open the provider's own login for the account `name` in a pane. A child caller is refused. |
+| `run <claude\|codex> [--account <auto\|name>] [-- <args>...]` | any | Start the provider CLI in this terminal on the picked account, `auto` by default. It needs no session. |
 | `drain` | any | Run queued summarize jobs, print `done`, `retry`, or `parked` per job. |
 | `agent add <id> <role>` | session | Register an agent. The `orchestrator` role also records the caller pane and session adapter. |
 | `agents --json` | session | List agents, pane state, agent state, and adapter attach support as JSON. Each row includes `state_kind` (`permission`, `question`, or null) beside `state_detail`; null or an absent field means no known wait kind. Each row also includes `profile`, `runner`, `model`, `effort`, `account`, `costUsd`, and `tokens` when known. Missing values are omitted. For each live agent it reads the pane's bottom rows (the adapter's `screen` verb). A hook report stands through 45 s unless, after the first 10 s, the screen shows a state the provider's hooks cannot send (Codex failed, AGY waiting, any idle; ADR 0070). It re-rings a due message to an idle pane and, while the adapter lists the chair's pane and it reads idle with no question, sends the sweep's reports. None of its rings waits for proof: the next listing or sweep settles it from the hook state and the screen (ADR 0041). |
 | `agents --json --all` | any | Print one JSON object that maps a session id to its `agents --json` listing, read with that session's stored adapter. It has a key only for a non-archived session that has agents and a stored adapter and whose read worked; a failed read prints an error on stderr. Adapter work shares an 18 s batch budget, divided across the remaining sessions. A session that exceeds its share is omitted with an error on stderr. The app's sidebar uses it once per refresh. |
 | `messages --json [--after <seq>]` | session | List message metadata and available bodies as JSON. `delivery` is what the last ring proved: `hook`, `screen`, `seen` (the agent read its messages after the ring), `unconfirmed`, `unchecked`, or null until the ring's proof is settled; more values may come (ADR 0041). |
-| `launch <id> <role> [--provider <claude\|codex\|agy>] [--model <name> for chat] [--account <auto\|name>] [--cwd <dir>] [-- <args>...]` | session | Start the first runner of the role's profile that can run, or, with `chat --provider <provider> --model <name>`, exactly that model once with the chat profile's effort for that provider and no fallback (ADR 0033). `--account` is ignored for a provider with no accounts, and without `--model` a `--provider` the profile has no runner of is refused. Register the agent, split a pane in `--cwd`, and start its provider CLI. A child caller is refused. A Claude child runs from `<cwd>/.herdr/workers`. The pane dir is marked trusted for Claude, Codex, and AGY only with standing consent from `swarm setup`, or for a chair, whose folder the owner picked; each write is recorded and printed as a bare `trusted <provider> <dir>` line on stderr. With no consent, launch writes nothing and prints a bare `trust-pending <provider> <dir>` line, the diff, and the `swarm setup --plan --cwd` command that approves it; the pane shows its CLI's own trust question (ADR 0043). |
+| `launch <id> <role> [--provider <claude\|codex\|agy>] [--model <name> for chat] [--account <auto\|name>] [--cwd <dir>] [-- <args>...]` | session | Start the first runner of the role's profile that can run, or, with `chat --provider <provider> --model <name>`, exactly that model once with the chat profile's effort for that provider and no fallback (ADR 0033). Without `--account` the account is `auto`, the one with the most usage left. `--account` is ignored for a provider with no accounts, and without `--model` a `--provider` the profile has no runner of is refused. Register the agent, split a pane in `--cwd`, and start its provider CLI. A child caller is refused. A Claude child runs from `<cwd>/.herdr/workers`. The pane dir is marked trusted for Claude, Codex, and AGY only with standing consent from `swarm setup`, or for a chair, whose folder the owner picked; each write is recorded and printed as a bare `trusted <provider> <dir>` line on stderr. With no consent, launch writes nothing and prints a bare `trust-pending <provider> <dir>` line, the diff, and the `swarm setup --plan --cwd` command that approves it; the pane shows its CLI's own trust question (ADR 0043). |
 | `spawn <id> <role> [--provider <p>] [--account <auto\|name>] [-- <cmd>...]` | session | Register the agent, split a pane, and optionally run `<cmd>; swarm exited`. Print the pane id. |
 | `type <id>` | session | Read text from stdin and type it into a live agent pane. A closed pane causes an error before any input is sent. |
 | `interrupt <id>` | session | Send the adapter interrupt action to the agent pane. |

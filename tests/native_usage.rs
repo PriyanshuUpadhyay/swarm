@@ -78,6 +78,7 @@ fn refresh_reads_native_windows_and_caches_only_nonsecret_usage() {
         .find(|row| row["account"] == "personal")
         .unwrap();
     assert_eq!(personal["state"], "no_source");
+    assert_eq!(personal["reason_code"], "no_source");
     assert!(personal["used_pct"].is_null());
     assert!(personal["source"].is_null());
     let cache = std::fs::read_to_string(home.join(".swarm/codex-usage.json")).unwrap();
@@ -140,15 +141,13 @@ fn distinct_limit_buckets_and_windows_remain_distinct() {
 }
 
 #[test]
-fn invalid_claude_home_has_no_usage_with_matching_missing_or_failed_yelo() {
+fn invalid_claude_home_has_no_usage_with_matching_missing_or_failed_cache() {
     let home = fixture("personal-invalid-usage");
     std::fs::create_dir_all(home.join(".claude/.profiles/Personal")).unwrap();
-    for snapshot in [
-        r#"echo '[{"provider":"claude","label":"cl·Personal","window":"5h","pct":30,"state":"ok"}]'"#,
-        "echo '[]'",
-        "exit 1",
-    ] {
-        tool(&home, "yelo", snapshot);
+    json(run(&home, &["accounts", "--provider", "claude", "--json"]));
+    for cache in [r#"{"accounts":[]}"#, "invalid cache"] {
+        std::fs::create_dir_all(home.join(".swarm")).unwrap();
+        std::fs::write(home.join(".swarm/claude-usage.json"), cache).unwrap();
         let list = json(run(&home, &["accounts", "--provider", "claude", "--json"]));
         let account = list["accounts"]
             .as_array()
@@ -157,31 +156,35 @@ fn invalid_claude_home_has_no_usage_with_matching_missing_or_failed_yelo() {
             .find(|row| row["name"] == "Personal")
             .unwrap();
         let usage = json(run(&home, &["usage", "--json"]));
-        let claude: Vec<_> = usage["meters"]
+        let invalid: Vec<_> = usage["meters"]
             .as_array()
             .unwrap()
             .iter()
-            .filter(|row| row["provider"] == "claude")
+            .filter(|row| row["provider"] == "claude" && row["account"] == "Personal")
             .collect();
-        let invalid: Vec<_> = claude
-            .iter()
-            .filter(|row| row["account"] == "Personal")
-            .collect();
-        assert_eq!(invalid.len(), 1, "{snapshot}");
-        assert_eq!(invalid[0]["state"], "no_source", "{snapshot}");
-        assert_eq!(invalid[0]["reason"], account["summary"], "{snapshot}");
-        assert!(
-            invalid[0]["reason"]
-                .as_str()
-                .unwrap()
-                .contains("lowercase ASCII")
-        );
+        assert_eq!(invalid.len(), 1);
+        assert_eq!(invalid[0]["state"], "no_source");
+        assert_eq!(invalid[0]["reason"], account["summary"]);
+        assert_eq!(invalid[0]["reason_code"], "no_source");
         assert!(invalid[0]["source"].is_null());
-        assert!(
-            claude.iter().all(|row| row["used_pct"].is_null()),
-            "{snapshot}"
-        );
+        assert!(invalid[0]["used_pct"].is_null());
     }
+}
+
+fn claude_cache(home: &Path, meters: serde_json::Value) {
+    json(run(home, &["accounts", "--provider", "claude", "--json"]));
+    std::fs::create_dir_all(home.join(".swarm")).unwrap();
+    let cache = serde_json::json!({"accounts":[{"home":home.join(".claude"),"meters":meters}]});
+    std::fs::write(home.join(".swarm/claude-usage.json"), cache.to_string()).unwrap();
+}
+
+fn claude_meter(
+    window: &str,
+    percent: serde_json::Value,
+    state: &str,
+    now: u64,
+) -> serde_json::Value {
+    serde_json::json!({"provider":"claude","account":"default","label":"default","window":window,"window_minutes":10080,"used_pct":percent,"reset_time_seconds":null,"state":state,"source":"claude_api","reason":null,"as_of_seconds":now})
 }
 
 fn assert_invalid_alias_keeps_work_usage(home: &Path, alias: &str) {
@@ -253,24 +256,24 @@ fn invalid_case_alias_of_registered_codex_home_keeps_work_cached_usage() {
 }
 
 #[test]
-fn cached_claude_usage_uses_yelo_and_missing_sources_never_become_zero() {
+fn cached_claude_usage_uses_native_cache_and_missing_sources_never_become_zero() {
     let home = fixture("spare");
-    tool(
+    claude_cache(
         &home,
-        "yelo",
-        r#"test "$*" = 'usage show --json' || exit 8
-echo '[{"provider":"claude","label":"cl·owner@example.test","window":"7d","pct":12,"state":"ok","asOf":1},{"provider":"codex","label":"cx","pct":100,"state":"ok","asOf":1}]'"#,
+        serde_json::json!([claude_meter("7d", 12.into(), "fresh", 1)]),
     );
     let usage = json(run(&home, &["usage", "--json"]));
     let rows = usage["meters"].as_array().unwrap();
     let claude = rows.iter().find(|row| row["provider"] == "claude").unwrap();
     assert_eq!(claude["account"], "default");
-    assert_eq!(claude["source"], "yelo");
+    assert_eq!(claude["source"], "claude_api");
     assert_eq!(claude["state"], "stale");
     assert_eq!(claude["used_pct"], 12);
     assert_eq!(claude["window_minutes"], 10080);
     let agy = rows.iter().find(|row| row["provider"] == "agy").unwrap();
     assert_eq!(agy["state"], "no_source");
+    assert_eq!(agy["reason"], "No Swarm usage source");
+    assert_eq!(agy["reason_code"], "no_source");
     assert!(agy["used_pct"].is_null());
     assert!(
         rows.iter()
@@ -397,7 +400,8 @@ exec /bin/sleep 25"#,
             .iter()
             .all(|row| row["state"] == "failed"
                 && row["used_pct"].is_null()
-                && row["reason"] == "Codex usage read failed")
+                && row["reason"] == "Codex usage read failed"
+                && row["reason_code"] == "read_failed")
     );
     assert_eq!(
         std::fs::read_to_string(home.join("processes"))
@@ -510,13 +514,12 @@ fn claude_failed_window_and_missing_source_match_account_reads() {
         .unwrap()
         .as_secs();
     for bad in [
-        serde_json::json!({"provider":"claude","label":"cl·owner@example.test","window":"7d","state":"failed"}),
-        serde_json::json!({"provider":"claude","label":"cl·owner@example.test","window":"7d","state":"unknown","pct":20}),
-        serde_json::json!({"provider":"claude","label":"cl·owner@example.test","window":"7d","state":"ok","pct":150}),
-        serde_json::json!({"provider":"claude","label":"cl·owner@example.test","window":"7d","state":"ok","pct":2.5}),
+        claude_meter("7d", serde_json::Value::Null, "failed", now),
+        claude_meter("7d", 20.into(), "unknown", now),
+        claude_meter("7d", 150.into(), "fresh", now),
     ] {
-        let input = serde_json::json!([bad, {"provider":"claude","label":"cl·owner@example.test","window":"5h","pct":20,"state":"ok","asOf":now}]);
-        tool(&home, "yelo", &format!("echo '{input}'"));
+        let input = serde_json::json!([bad, claude_meter("5h", 20.into(), "fresh", now)]);
+        claude_cache(&home, input.clone());
         let list = json(run(&home, &["accounts", "--provider", "claude", "--json"]));
         assert_eq!(list["accounts"][0]["usage_state"], "failed", "{input}");
         assert!(list["accounts"][0]["remaining_pct"].is_null());
@@ -531,7 +534,7 @@ fn claude_failed_window_and_missing_source_match_account_reads() {
         assert_eq!(windows[0]["state"], "failed");
         assert_eq!(windows[1]["state"], "fresh");
     }
-    std::fs::remove_file(home.join("bin/yelo")).unwrap();
+    std::fs::write(home.join(".swarm/claude-usage.json"), "invalid cache").unwrap();
     let list = json(run(&home, &["accounts", "--provider", "claude", "--json"]));
     assert_eq!(list["accounts"][0]["usage_state"], "failed");
 }

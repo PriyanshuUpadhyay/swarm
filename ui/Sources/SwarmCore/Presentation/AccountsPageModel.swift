@@ -24,6 +24,10 @@ public struct AccountsProviderSection: Sendable, Hashable, Identifiable {
     public var usageMessage: String? {
         provider == "agy" ? "No usage source in Swarm. View quota with /usage in the CLI." : nil
     }
+    public var loginNote: String? {
+        provider == "claude"
+            ? "The login runs in a private folder in the swarm home. Only the Keychain item changes." : nil
+    }
 }
 
 public struct AccountsUsageRow: Sendable, Hashable, Identifiable {
@@ -38,17 +42,31 @@ public struct AccountsUsageRow: Sendable, Hashable, Identifiable {
     public let resetTimeSeconds: Int?
 }
 
+/// The page's error banner text, and whether VoiceOver says it now.
+public struct AccountsErrorReport: Sendable, Equatable {
+    public let message: String?
+    public let announce: Bool
+}
+
 /// Owns page decisions without UI, provider processes, or clocks hidden inside state transitions.
 public struct AccountsPageModel: Sendable, Equatable {
     // Matches Rust usage::MAX_AGE_SECONDS for the CLI quota cache.
     private static let maxUsageAgeSeconds = 300
     private static let providers = ["claude", "codex", "agy"]
+    /// The providers that `swarm usage --refresh` can read.
+    public static let usageProviders = ["claude", "codex"]
     public static let resetConfirmation = "Reset to bundled clears Swarm account metadata. CLI accounts stay signed in."
     public private(set) var generation = 0
     public private(set) var isLoading = false
     public private(set) var loadRequest = 0
     public private(set) var shouldRefreshUsage = false
     public private(set) var hasPendingRead = false
+    /// When the last Refresh made no provider call, the time the next call may run.
+    private var refreshCooldownEndSeconds: Int?
+    /// The running load is an explicit Refresh, which is said one time, when it ends.
+    private var refreshInLoad = false
+    /// The error text VoiceOver last said, or kept silent at an action start, so a load that repeats it stays silent.
+    private var saidError: String?
     private var actionError: String?
     public private(set) var revision: String?
     public private(set) var modified = false
@@ -76,19 +94,29 @@ public struct AccountsPageModel: Sendable, Equatable {
             }
         }
         let quotaFailures = meters.filter { [.failed, .unavailable].contains($0.state) }.map {
-            "\(Self.providerTitle($0.provider)): \($0.account ?? $0.label): \($0.reason ?? "Usage status is unavailable")"
+            "\(Self.providerTitle($0.provider)): \($0.account ?? $0.label): \($0.reasonText ?? "Usage status is unavailable")"
         }
         var unique: [String] = []
         for message in messages + quotaFailures where !unique.contains(message) { unique.append(message) }
         return unique.isEmpty ? nil : unique.joined(separator: "\n")
     }
 
-    fileprivate static func providerTitle(_ provider: String) -> String {
+    static func providerTitle(_ provider: String) -> String {
         switch provider {
         case "claude": "Claude"
         case "codex": "Codex"
         case "agy": "AGY"
         default: provider
+        }
+    }
+
+    /// A source that this build does not know shows as its raw text.
+    public static func sourceLabel(_ source: String) -> String {
+        switch source {
+        case "swarm": "Swarm"
+        case "claude_api": "Claude API"
+        case "codex_app_server": "Codex app-server"
+        default: source
         }
     }
 
@@ -149,6 +177,8 @@ public struct AccountsPageModel: Sendable, Equatable {
         guard !isLoading else { return nil }
         generation += 1
         isLoading = true
+        if shouldRefreshUsage { refreshCooldownEndSeconds = nil }
+        refreshInLoad = shouldRefreshUsage
         shouldRefreshUsage = false
         hasPendingRead = false
         readingProviders = Set(Self.providers)
@@ -158,6 +188,7 @@ public struct AccountsPageModel: Sendable, Equatable {
     public mutating func invalidateReads() {
         generation += 1
         isLoading = false
+        refreshInLoad = false
         hasPendingRead = false
         readingProviders = []
     }
@@ -165,6 +196,7 @@ public struct AccountsPageModel: Sendable, Equatable {
     public mutating func finishLoad(_ generation: Int) {
         guard generation == self.generation else { return }
         isLoading = false
+        refreshInLoad = false
         hasPendingRead = false
         readingProviders = []
     }
@@ -208,6 +240,7 @@ public struct AccountsPageModel: Sendable, Equatable {
                     var kept = sample
                     kept.state = meter.state
                     kept.reason = meter.reason
+                    kept.reasonCode = meter.reasonCode
                     return kept
                 }
             }
@@ -217,9 +250,49 @@ public struct AccountsPageModel: Sendable, Equatable {
         }
     }
 
+    /// One call per provider of a Refresh; nil means that provider was called.
+    public mutating func receiveRefreshCooldown(nextInSeconds: Int?, nowSeconds: Int, generation: Int) {
+        guard generation == self.generation, let nextInSeconds else { return }
+        refreshCooldownEndSeconds = max(refreshCooldownEndSeconds ?? .min, nowSeconds + nextInSeconds)
+    }
+
+    /// The banner text for a report during a load. Inside a Refresh nothing is said until
+    /// `finishRefresh`; outside one, a text is said when it is new or changed.
+    public mutating func takeErrorReport() -> AccountsErrorReport {
+        let message = errorMessage
+        guard !refreshInLoad else { return AccountsErrorReport(message: message, announce: false) }
+        defer { saidError = message }
+        return AccountsErrorReport(message: message, announce: message != nil && message != saidError)
+    }
+
+    /// The one announcement of an explicit Refresh: the error that stands, else the no-call note,
+    /// else a short result.
+    public mutating func finishRefresh(nowSeconds: Int) -> String {
+        saidError = errorMessage
+        return errorMessage ?? refreshNote(nowSeconds: nowSeconds) ?? "Usage refreshed."
+    }
+
+    /// The start of a login or reset clears its old failure from the banner and says nothing.
+    public mutating func startAction() -> AccountsErrorReport {
+        actionError = nil
+        saidError = errorMessage
+        return AccountsErrorReport(message: errorMessage, announce: false)
+    }
+
+    /// A failed login or reset is said each time, so a retry that fails again is heard.
+    public mutating func failAction(_ message: String) -> AccountsErrorReport {
+        actionError = message
+        saidError = errorMessage
+        return AccountsErrorReport(message: errorMessage, announce: true)
+    }
+
+    public func refreshNote(nowSeconds: Int) -> String? {
+        refreshCooldownEndSeconds.flatMap { UsageHUDModel.cooldownText(endSeconds: $0, nowSeconds: nowSeconds) }
+    }
+
     public mutating func failUsage(provider: String?, message: String, generation: Int) {
         guard generation == self.generation else { return }
-        for selected in provider.map({ [$0] }) ?? ["claude", "codex"] {
+        for selected in provider.map({ [$0] }) ?? Self.usageProviders {
             usageErrors[selected] = message
         }
     }
@@ -257,7 +330,7 @@ public struct AccountsPageModel: Sendable, Equatable {
             let title = [meter.window, meter.windowMinutes.map { "\($0) min" }].compactMap { $0 }.joined(separator: " · ")
             return AccountsUsageRow(
                 id: meter.id, title: title, remainingPct: percentage,
-                status: Self.usageStatus(state, percentage: percentage), reason: usageErrors[provider] ?? meter.reason,
+                status: Self.usageStatus(state, percentage: percentage), reason: usageErrors[provider] ?? meter.reasonText,
                 isOld: isOld, source: meter.source, sampleTimeSeconds: meter.asOfSeconds,
                 resetTimeSeconds: meter.resetTimeSeconds
             )

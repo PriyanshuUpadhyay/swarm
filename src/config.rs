@@ -73,6 +73,13 @@ fn default_min_usage_left_pct() -> u8 {
     DEFAULT_MIN_USAGE_LEFT_PCT
 }
 
+/// The configured `min_usage_left_pct`, or the default when the config cannot be read.
+pub fn min_usage_left_pct() -> u8 {
+    load().map_or(DEFAULT_MIN_USAGE_LEFT_PCT, |(config, _)| {
+        config.min_usage_left_pct
+    })
+}
+
 impl Config {
     pub fn profile(&self, name: &str) -> Result<&Profile, String> {
         self.profiles
@@ -322,6 +329,7 @@ pub enum SkipCode {
     CliMissing,
     SignedOut,
     LowUsage,
+    FableSpent,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -386,7 +394,7 @@ pub struct AccountState {
 
 /// Why a provider's accounts cannot start a runner, or None. `accounts` is None when the read
 /// failed or timed out, and an empty list means no account source; both count as "can run", so a
-/// Mac without yelo still launches (ADR 0032). An account with no usage number counts as can run.
+/// missing usage source still permits launch (ADR 0032). An unknown percentage permits launch.
 pub fn account_skip(
     provider: Provider,
     accounts: Option<&[AccountState]>,

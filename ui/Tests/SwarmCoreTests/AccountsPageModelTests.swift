@@ -103,6 +103,135 @@ struct AccountsPageModelTests {
         #expect(model.usageRows(provider: "codex", account: "work", nowSeconds: 1_000)[0].status == "No usage source in Swarm")
     }
 
+    @Test("an expired token keeps the old sample and says how to renew it; other codes show their text")
+    func reasonCodeRows() throws {
+        var model = AccountsPageModel()
+        let generation = try start(&model)
+        model.receiveUsage(SwarmUsage(meters: [meter(usedPct: 30)]), generation: generation)
+        var expired = SwarmUsageMeter(provider: "codex", account: "work", label: "work", window: nil, usedPct: nil,
+                                      state: .failed, reason: "Token expired", reasonCode: "token_expired")
+        model.receiveUsage(SwarmUsage(meters: [expired]), generation: generation)
+        let row = model.usageRows(provider: "codex", account: "work", nowSeconds: 1_000)[0]
+        #expect(row.reason == "Token expired. Start a chat on this account to renew it.")
+        #expect(row.remainingPct == 70)
+        expired.reason = "Sign in again"
+        expired.reasonCode = "relogin_required"
+        model.receiveUsage(SwarmUsage(meters: [expired]), generation: generation)
+        #expect(model.usageRows(provider: "codex", account: "work", nowSeconds: 1_000)[0].reason == "Sign in again")
+    }
+
+    @Test("the error banner says how to renew an expired token")
+    func expiredTokenBanner() throws {
+        var model = AccountsPageModel()
+        let generation = try start(&model)
+        let expired = SwarmUsageMeter(provider: "codex", account: "work", label: "work", window: nil, usedPct: nil,
+                                      state: .failed, reason: "Token expired", reasonCode: "token_expired")
+        model.receiveUsage(SwarmUsage(meters: [expired]), generation: generation)
+        #expect(model.errorMessage == "Codex: work: Token expired. Start a chat on this account to renew it.")
+    }
+
+    @Test("a Refresh with no error says nothing during the load and one result at its end")
+    func refreshAnnouncement() throws {
+        var model = AccountsPageModel()
+        model.requestLoad(refreshUsage: true)
+        let generation = try start(&model)
+        model.receiveUsage(SwarmUsage(meters: [meter(usedPct: 30)]), generation: generation)
+        #expect(model.takeErrorReport() == AccountsErrorReport(message: nil, announce: false))
+        #expect(model.finishRefresh(nowSeconds: 1_000) == "Usage refreshed.")
+        model.finishLoad(generation)
+        model.requestLoad(refreshUsage: true)
+        let next = try start(&model)
+        model.receiveRefreshCooldown(nextInSeconds: 180, nowSeconds: 1_000, generation: next)
+        #expect(model.finishRefresh(nowSeconds: 1_000) == "Updated 2m ago. Next refresh in 3m.")
+    }
+
+    @Test("a standing error is shown at each call of one Refresh and said one time, at its end")
+    func refreshStandingError() throws {
+        var model = AccountsPageModel()
+        model.requestLoad(refreshUsage: true)
+        let generation = try start(&model)
+        model.failUsage(provider: "codex", message: "Codex usage read failed", generation: generation)
+        for _ in 0..<8 {
+            #expect(model.takeErrorReport() == AccountsErrorReport(message: "Codex: Codex usage read failed", announce: false))
+        }
+        model.receiveRefreshCooldown(nextInSeconds: 180, nowSeconds: 1_000, generation: generation)
+        #expect(model.finishRefresh(nowSeconds: 1_000) == "Codex: Codex usage read failed")
+        model.finishLoad(generation)
+        // Outside a Refresh the same text is not said again, and a changed text is.
+        model.requestLoad(refreshUsage: false)
+        let later = try start(&model)
+        #expect(model.takeErrorReport() == AccountsErrorReport(message: "Codex: Codex usage read failed", announce: false))
+        model.failAccounts(provider: "claude", error: SwarmProfileError.failed("claude failed"), generation: later)
+        let changed = try #require(model.errorMessage)
+        #expect(model.takeErrorReport() == AccountsErrorReport(message: changed, announce: true))
+        #expect(model.takeErrorReport() == AccountsErrorReport(message: changed, announce: false))
+        // Once the error is gone, the same text is new again.
+        var claude = list()
+        claude.provider = "claude"
+        model.receiveAccounts(claude, provider: "claude", generation: later)
+        model.receiveUsage(SwarmUsage(meters: [meter(usedPct: 30)]), generation: later, provider: "codex")
+        #expect(model.takeErrorReport() == AccountsErrorReport(message: nil, announce: false))
+        model.failUsage(provider: "codex", message: "Codex usage read failed", generation: later)
+        #expect(model.takeErrorReport().announce)
+    }
+
+    @Test("an error text that changes inside one Refresh is said one time, as it stands at the end")
+    func refreshChangingError() throws {
+        var model = AccountsPageModel()
+        model.requestLoad(refreshUsage: true)
+        let generation = try start(&model)
+        model.failUsage(provider: "codex", message: "first", generation: generation)
+        #expect(!model.takeErrorReport().announce)
+        model.failUsage(provider: "codex", message: "second", generation: generation)
+        #expect(!model.takeErrorReport().announce)
+        #expect(model.finishRefresh(nowSeconds: 1_000) == "Codex: second")
+    }
+
+    @Test("the start of a login or reset updates the banner and does not say a standing error again")
+    func actionStartIsSilent() throws {
+        var model = AccountsPageModel()
+        let generation = try start(&model)
+        model.failUsage(provider: "codex", message: "Codex usage read failed", generation: generation)
+        #expect(model.takeErrorReport().announce)
+        model.finishLoad(generation)
+        #expect(model.startAction() == AccountsErrorReport(message: "Codex: Codex usage read failed", announce: false))
+        _ = model.failAction("Cannot open login pane")
+        #expect(model.startAction() == AccountsErrorReport(message: "Codex: Codex usage read failed", announce: false))
+    }
+
+    @Test("a failed login or reset says its text one time, and the reload after it says nothing")
+    func actionFailureSaidOnce() throws {
+        var model = AccountsPageModel()
+        #expect(model.startAction() == AccountsErrorReport(message: nil, announce: false))
+        #expect(model.failAction("Cannot open login pane") == AccountsErrorReport(message: "Cannot open login pane", announce: true))
+        model.requestLoad(refreshUsage: false)
+        let reload = try start(&model)
+        model.receiveAccounts(list(), provider: "codex", generation: reload)
+        #expect(model.takeErrorReport() == AccountsErrorReport(message: "Cannot open login pane", announce: false))
+    }
+
+    @Test("the same action that fails again with the same text is said again, one time")
+    func repeatedActionFailureSaidAgain() throws {
+        var model = AccountsPageModel()
+        for _ in 0..<2 {
+            #expect(!model.startAction().announce)
+            #expect(model.failAction("The accounts file changed. Reload and retry.").announce)
+            model.requestLoad(refreshUsage: false)
+            let reload = try start(&model)
+            #expect(!model.takeErrorReport().announce)
+            model.finishLoad(reload)
+        }
+    }
+
+    @Test("a meter decodes its reason code, and a meter with none has nil")
+    func reasonCodeDecodes() throws {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let json = #"{"meters":[{"provider":"claude","account":"work","label":"work","state":"failed","reason":"Token expired","reason_code":"token_expired"},{"provider":"claude","account":"home","label":"home","state":"fresh","used_pct":10,"reason":null,"reason_code":null}]}"#
+        let usage = try decoder.decode(SwarmUsage.self, from: Data(json.utf8))
+        #expect(usage.meters.map(\.reasonCode) == ["token_expired", nil])
+    }
+
     @Test("failed quota keeps the previous sample, its source and its age")
     func failedQuota() throws {
         var model = AccountsPageModel()
@@ -127,7 +256,7 @@ struct AccountsPageModelTests {
         let generation = try start(&model)
         var claude = meter(usedPct: 40)
         claude.provider = "claude"
-        claude.source = "yelo"
+        claude.source = "claude_api"
         model.receiveUsage(SwarmUsage(meters: [meter(usedPct: 30), claude]), generation: generation)
         model.failUsage(provider: "codex", message: "Network read failed", generation: generation)
         let row = model.usageRows(provider: "codex", account: "work", nowSeconds: 1_000)[0]
@@ -218,6 +347,24 @@ struct AccountsPageModelTests {
         #expect(AccountsPageModel.authLabel(.unavailable) == "Status unavailable")
     }
 
+    @Test("usage sources have a label and an unknown source shows as its raw text")
+    func sourceLabels() {
+        #expect(AccountsPageModel.sourceLabel("swarm") == "Swarm")
+        #expect(AccountsPageModel.sourceLabel("claude_api") == "Claude API")
+        #expect(AccountsPageModel.sourceLabel("codex_app_server") == "Codex app-server")
+        #expect(AccountsPageModel.sourceLabel("next_source") == "next_source")
+    }
+
+    @Test("Refresh covers Claude and Codex, and only the Claude name form has the login note")
+    func claudeJoinsCodex() {
+        #expect(AccountsPageModel.usageProviders == ["claude", "codex"])
+        let model = AccountsPageModel()
+        #expect(model.section("claude").loginNote
+            == "The login runs in a private folder in the swarm home. Only the Keychain item changes.")
+        #expect(model.section("codex").loginNote == nil)
+        #expect(model.section("agy").loginNote == nil)
+    }
+
     @Test("queued and running refreshes coalesce and page exit invalidates both")
     func refreshRequests() throws {
         var model = AccountsPageModel()
@@ -238,6 +385,28 @@ struct AccountsPageModelTests {
         let returned = model.requestLoad(refreshUsage: false)
         #expect(returned)
         #expect(!model.shouldRefreshUsage)
+    }
+
+    @Test("a Refresh that made no provider call says so with the time to the next one, as the HUD footer")
+    func refreshCooldownNote() throws {
+        var model = AccountsPageModel()
+        model.requestLoad(refreshUsage: true)
+        let generation = try start(&model)
+        model.receiveRefreshCooldown(nextInSeconds: nil, nowSeconds: 1_000, generation: generation)
+        #expect(model.refreshNote(nowSeconds: 1_000) == nil)
+        model.receiveRefreshCooldown(nextInSeconds: 180, nowSeconds: 1_000, generation: generation)
+        model.receiveRefreshCooldown(nextInSeconds: 120, nowSeconds: 1_000, generation: generation)
+        #expect(model.refreshNote(nowSeconds: 1_000) == "Updated 2m ago. Next refresh in 3m.")
+        #expect(model.refreshNote(nowSeconds: 1_180) == nil)
+        model.finishLoad(generation)
+        // A load with no Refresh keeps the note; the next Refresh starts without it.
+        model.requestLoad(refreshUsage: false)
+        _ = try start(&model)
+        #expect(model.refreshNote(nowSeconds: 1_000) != nil)
+        model.invalidateReads()
+        model.requestLoad(refreshUsage: true)
+        _ = try start(&model)
+        #expect(model.refreshNote(nowSeconds: 1_000) == nil)
     }
 
     @Test("failed login and metadata conflict keep their message across revision reload")

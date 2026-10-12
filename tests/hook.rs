@@ -416,6 +416,24 @@ fn a_broken_codex_home_is_a_conflict_and_nothing_is_written() {
     std::fs::remove_dir_all(&home).unwrap();
 }
 
+/// A Codex home that swarm allocated under its own folder is a Codex home for setup too.
+#[test]
+fn a_codex_home_under_swarm_accounts_is_planned_like_a_home_folder_one() {
+    let home = scratch("swarm-codex-home");
+    let exe = Path::new(env!("CARGO_BIN_EXE_swarm"));
+    let broken = home.join(".swarm/accounts/codex/work/config.toml");
+    std::fs::create_dir_all(broken.parent().unwrap()).unwrap();
+    std::fs::write(&broken, "not toml = =\n").unwrap();
+
+    let plan = hooks(exe, &home, &["setup", "--plan", "--json"]);
+    assert!(plan.status.success(), "{plan:?}");
+    let plan: serde_json::Value = serde_json::from_slice(&plan.stdout).unwrap();
+    let conflicts = plan["conflicts"].as_array().unwrap();
+    assert_eq!(conflicts.len(), 1, "{plan}");
+    assert_eq!(conflicts[0]["file"], broken.display().to_string());
+    std::fs::remove_dir_all(&home).unwrap();
+}
+
 /// With a rule list, setup registers `swarm guard` for Claude, Codex, and AGY next to the owner's
 /// own hooks, trusts the Codex group where it lands, and each registered command answers its CLI
 /// (ADR 0040). Without a list, setup adds no guard.

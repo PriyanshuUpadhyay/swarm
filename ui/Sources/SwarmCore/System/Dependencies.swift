@@ -15,7 +15,6 @@ public enum Dependencies {
             ("codex", "Install Codex with Homebrew: brew install --cask codex"),
             ("agy", "Install AGY from antigravity.google"),
             ("gh", "Install GitHub CLI with Homebrew: brew install gh"),
-            ("yelo", "Install yelo and add it to PATH"),
         ]
         return dependencies.map { DependencyRow(name: $0.0, path: lookup($0.0), installHint: $0.1) }
     }

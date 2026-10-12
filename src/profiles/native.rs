@@ -2,10 +2,10 @@ use super::{Account, AccountList, AuthState};
 use crate::providers::Provider;
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
-use std::sync::mpsc::{Receiver, channel};
+use std::process::{Child, Command, ExitStatus, Stdio};
+use std::sync::mpsc::{Receiver, RecvTimeoutError, channel};
 use std::time::{Duration, Instant};
 
 #[derive(Debug)]
@@ -134,22 +134,46 @@ fn load_inner(
         return Ok(list);
     }
     let home = PathBuf::from(std::env::var_os("HOME").ok_or("HOME is not set")?);
-    let variable = match provider {
-        Provider::Codex => "CODEX_HOME",
-        _ => "CLAUDE_CONFIG_DIR",
+    let active = match provider {
+        Provider::Codex => std::env::var_os("CODEX_HOME"),
+        _ => std::env::var_os("CLAUDE_SECURESTORAGE_CONFIG_DIR")
+            .filter(|value| !value.is_empty())
+            .or_else(|| std::env::var_os("CLAUDE_CONFIG_DIR")),
+    }
+    .filter(|value| !value.is_empty())
+    .map(PathBuf::from);
+    // Secure-storage paths can differ from legacy config homes; retain the known account name.
+    let active = if provider == Provider::Claude && active.is_some() {
+        let known = crate::accounts::merge(
+            provider,
+            discover(provider, &home, None).homes,
+            &metadata.accounts,
+        );
+        active.map(|active| {
+            known
+                .into_iter()
+                .find_map(|(name, path)| {
+                    crate::providers::secure_storage_dir(&path.to_string_lossy(), &name)
+                        .filter(|storage| {
+                            resolved(PathBuf::from(storage)) == resolved(active.clone())
+                        })
+                        .map(|_| path)
+                })
+                .unwrap_or(active)
+        })
+    } else {
+        active
     };
-    let active = std::env::var_os(variable)
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from);
     let discovery = discover(provider, &home, active);
     let homes = crate::accounts::merge(provider, discovery.homes, &metadata.accounts);
     list.source = Some("swarm".into());
     list.state = "ready".into();
     for (name, path) in homes {
         let path = path.to_string_lossy().into_owned();
-        let env = provider.account_env(&name, &path, |variable| std::env::var_os(variable));
+        let env = provider.launch_env(&name, &path);
+        let identity_env = provider.identity_env(&name, &path);
         let identity = match provider {
-            Provider::Codex => AppServer::start(&env, deadline)
+            Provider::Codex => AppServer::start(&identity_env, deadline)
                 .and_then(|mut server| {
                     server.request(2, "account/read", json!({"refreshToken":false}))
                 })
@@ -159,7 +183,9 @@ fn load_inner(
                         .map(|(state, email)| (state, email, api_key))
                         .map_err(NativeReadError::from)
                 }),
-            _ => claude_identity(&env, deadline).map(|(state, email)| (state, email, false)),
+            _ => {
+                claude_identity(&identity_env, deadline).map(|(state, email)| (state, email, false))
+            }
         };
         if matches!(identity, Err(NativeReadError::CliUnavailable)) {
             list.state = "unavailable".into();
@@ -177,16 +203,18 @@ fn load_inner(
             usage_source: (!api_key).then_some(
                 match provider {
                     Provider::Codex => "codex_app_server",
-                    _ => "yelo",
+                    _ => "claude_api",
                 }
                 .into(),
             ),
             summary: None,
             invalid_home: false,
+            fable_spent: false,
+            renewable: false,
         });
     }
     if include_usage {
-        let meters = crate::usage::for_accounts(&list, deadline, crate::usage::now_seconds())?;
+        let meters = crate::usage::for_accounts(&list, crate::usage::now_seconds())?;
         super::apply_usage(&mut list, &meters);
     }
     for (name, path) in discovery.skipped {
@@ -222,11 +250,23 @@ fn load_inner(
             usage_source: None,
             summary: Some(reason),
             invalid_home: true,
+            fable_spent: false,
+            renewable: false,
         });
     }
     list.accounts
         .sort_by(|left, right| left.name.cmp(&right.name));
-    list.auto = super::pick_auto(&list.accounts, discovery.current.to_str());
+    list.current_home = discovery.current.to_str().map(str::to_string);
+    // Only a caller of `load` uses `auto`. A usage read must not read the roles config, which can
+    // write its one-time import and warn on each read.
+    if include_usage {
+        list.auto = super::pick_auto(
+            &list.accounts,
+            list.current_home.as_deref(),
+            None,
+            crate::config::min_usage_left_pct(),
+        )?;
+    }
     Ok(list)
 }
 
@@ -287,7 +327,7 @@ pub fn read_json(
             command.env_remove(key);
         }
     }
-    let mut child = command
+    let child = command
         .args(args)
         .envs(env)
         .stdin(Stdio::null())
@@ -295,25 +335,7 @@ pub fn read_json(
         .stderr(Stdio::null())
         .spawn()
         .map_err(|_| NativeReadError::CliUnavailable)?;
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or("provider stdout is unavailable")?;
-    let (sender, receiver) = channel();
-    std::thread::spawn(move || {
-        let mut bytes = Vec::new();
-        let result =
-            std::io::Read::read_to_end(&mut BufReader::new(stdout), &mut bytes).map(|_| bytes);
-        let _ = sender.send(result);
-    });
-    let response = receiver.recv_timeout(deadline.saturating_duration_since(Instant::now()));
-    let mut status = child.try_wait().ok().flatten();
-    while response.is_ok() && status.is_none() && Instant::now() < deadline {
-        std::thread::sleep(Duration::from_millis(2));
-        status = child.try_wait().ok().flatten();
-    }
-    let _ = child.kill();
-    let _ = child.wait();
+    let (response, status) = read_stdout(child, u64::MAX, deadline);
     if response.is_err() || status.is_none() {
         return Err("provider read timed out".into());
     }
@@ -324,6 +346,37 @@ pub fn read_json(
         .map_err(|_| "provider read timed out")?
         .map_err(|_| "provider read failed")?;
     serde_json::from_slice(&bytes).map_err(|_| "provider response JSON is invalid".into())
+}
+
+/// Reads up to `limit` bytes of the child's stdout and waits for its exit, both before `deadline`.
+/// The child is always killed and reaped. A status of `None` means it did not exit in time.
+pub(crate) fn read_stdout(
+    mut child: Child,
+    limit: u64,
+    deadline: Instant,
+) -> (
+    Result<std::io::Result<Vec<u8>>, RecvTimeoutError>,
+    Option<ExitStatus>,
+) {
+    let (sender, receiver) = channel();
+    if let Some(stdout) = child.stdout.take() {
+        std::thread::spawn(move || {
+            let mut bytes = Vec::new();
+            let result = stdout.take(limit).read_to_end(&mut bytes).map(|_| bytes);
+            let _ = sender.send(result);
+        });
+    } else {
+        let _ = sender.send(Err(std::io::Error::other("child has no stdout pipe")));
+    }
+    let response = receiver.recv_timeout(deadline.saturating_duration_since(Instant::now()));
+    let mut status = child.try_wait().ok().flatten();
+    while response.is_ok() && status.is_none() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(2));
+        status = child.try_wait().ok().flatten();
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+    (response, status)
 }
 
 pub struct AppServer {

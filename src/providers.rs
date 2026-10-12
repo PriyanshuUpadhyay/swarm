@@ -159,34 +159,31 @@ impl Provider {
         }
     }
 
-    /// Default Claude returns no overrides, so its native store stays under HOME.
-    ///
-    /// `CLAUDE_CONFIG_DIR` alone is not enough: Claude Code keeps the credentials in a second tree,
-    /// so a pane that gets only the config dir starts at "Not logged in · Run /login".
-    pub fn account_env(
-        self,
-        name: &str,
-        dir: &str,
-        env_var: impl FnOnce(&str) -> Option<std::ffi::OsString>,
-    ) -> BTreeMap<String, String> {
+    /// The account variables of a chat launch. It never sets `CLAUDE_CONFIG_DIR`: each Claude
+    /// account uses the owner's one config folder and differs only in its login storage.
+    pub fn launch_env(self, name: &str, dir: &str) -> BTreeMap<String, String> {
         match self {
-            Provider::Claude if name == "default" => BTreeMap::new(),
             Provider::Claude => {
-                let home = std::path::PathBuf::from(env_var("HOME").unwrap_or_default());
-                BTreeMap::from([
-                    ("AGENT_PROFILE_LABEL".to_string(), name.to_string()),
-                    ("CLAUDE_CONFIG_DIR".to_string(), dir.to_string()),
-                    (
-                        "CLAUDE_SECURESTORAGE_CONFIG_DIR".to_string(),
-                        home.join(format!(".claude-{name}"))
-                            .to_string_lossy()
-                            .into_owned(),
-                    ),
-                ])
+                secure_storage_dir(dir, name).map_or_else(BTreeMap::new, |storage| {
+                    BTreeMap::from([
+                        ("AGENT_PROFILE_LABEL".into(), name.into()),
+                        ("CLAUDE_SECURESTORAGE_CONFIG_DIR".into(), storage),
+                    ])
+                })
             }
-            Provider::Codex => BTreeMap::from([("CODEX_HOME".to_string(), dir.to_string())]),
+            Provider::Codex => BTreeMap::from([("CODEX_HOME".into(), dir.into())]),
             Provider::Agy => BTreeMap::new(),
         }
+    }
+
+    /// Only for `claude auth status` and `claude auth login`, which find a login by
+    /// `CLAUDE_CONFIG_DIR`. Never give this to a chat launch.
+    pub fn identity_env(self, name: &str, dir: &str) -> BTreeMap<String, String> {
+        let mut env = self.launch_env(name, dir);
+        if self == Provider::Claude && name != "default" {
+            env.insert("CLAUDE_CONFIG_DIR".into(), dir.into());
+        }
+        env
     }
 
     /// The models the provider's CLI lists. `run` runs a CLI and returns its stdout. Claude has no
@@ -257,6 +254,28 @@ impl Provider {
             ],
         }
     }
+}
+
+/// The default uses the native Keychain item; existing named homes keep their legacy item.
+pub fn secure_storage_dir(home: &str, name: &str) -> Option<String> {
+    if name == "default" {
+        return None;
+    }
+    if name == "current"
+        || crate::paths::root_dir().is_ok_and(|root| {
+            let root = std::fs::canonicalize(&root).unwrap_or(root);
+            std::path::Path::new(home)
+                .starts_with(crate::accounts::accounts_dir(&root, Provider::Claude))
+        })
+    {
+        return Some(home.into());
+    }
+    Some(
+        std::path::PathBuf::from(std::env::var_os("HOME").unwrap_or_default())
+            .join(format!(".claude-{name}"))
+            .to_string_lossy()
+            .into_owned(),
+    )
 }
 
 pub fn info_list() -> InfoList {
@@ -382,29 +401,28 @@ mod tests {
     }
 
     #[test]
-    fn claude_secure_storage_uses_home_and_ignores_swarm_home() {
-        let requested = std::cell::RefCell::new(Vec::new());
-        let environment = Provider::Claude.account_env("work", "/profiles/work", |name| {
-            requested.borrow_mut().push(name.to_string());
-            match name {
-                "HOME" => Some("/login-home".into()),
-                "SWARM_HOME" => Some("/swarm-home".into()),
-                _ => None,
-            }
-        });
+    fn claude_current_hashes_its_config_home_and_launch_shares_chats() {
+        let launch = Provider::Claude.launch_env("current", "/private/config");
+        assert_eq!(launch["CLAUDE_SECURESTORAGE_CONFIG_DIR"], "/private/config");
+        assert!(!launch.contains_key("CLAUDE_CONFIG_DIR"));
         assert_eq!(
-            environment["CLAUDE_SECURESTORAGE_CONFIG_DIR"],
-            "/login-home/.claude-work"
+            Provider::Claude.identity_env("current", "/private/config")["CLAUDE_CONFIG_DIR"],
+            "/private/config"
         );
-        assert_eq!(*requested.borrow(), ["HOME"]);
     }
 
     #[test]
     fn claude_default_uses_the_native_store_without_profile_overrides() {
-        let environment = Provider::Claude.account_env("default", "/native-home/.claude", |_| {
-            Some("/native-home".into())
-        });
-        assert!(environment.is_empty());
+        assert!(
+            Provider::Claude
+                .launch_env("default", "/native-home/.claude")
+                .is_empty()
+        );
+        assert!(
+            Provider::Claude
+                .identity_env("default", "/native-home/.claude")
+                .is_empty()
+        );
     }
 
     #[test]

@@ -52,7 +52,20 @@ case "$CLAUDE_CONFIG_DIR" in
   *) echo '{"loggedIn":true,"email":"owner@example.test"}' ;;
 esac"#,
     );
-    let list = accounts(&home, "claude", &[("CLAUDE_CONFIG_DIR", &work)]);
+    let list = accounts(
+        &home,
+        "claude",
+        &[
+            (
+                "CLAUDE_CONFIG_DIR",
+                &home.join(".claude/.profiles/personal"),
+            ),
+            (
+                "CLAUDE_SECURESTORAGE_CONFIG_DIR",
+                &home.join(".claude-work"),
+            ),
+        ],
+    );
     assert_eq!(list["source"], "swarm");
     assert_eq!(list["state"], "ready");
     assert_eq!(list["auto"], "work");
@@ -63,7 +76,12 @@ esac"#,
     assert_eq!(rows[1]["auth_state"], "signed_out");
     assert_eq!(rows[2]["name"], "work");
     assert_eq!(rows[2]["env"]["AGENT_PROFILE_LABEL"], "work");
-    assert_eq!(rows[2]["usage_state"], "failed");
+    assert!(rows[2]["env"].get("CLAUDE_CONFIG_DIR").is_none());
+    assert_eq!(
+        rows[2]["env"]["CLAUDE_SECURESTORAGE_CONFIG_DIR"],
+        home.join(".claude-work").to_string_lossy().as_ref()
+    );
+    assert_eq!(rows[2]["usage_state"], "missing");
     assert_eq!(rows[2]["remaining_pct"], serde_json::Value::Null);
 }
 
@@ -151,13 +169,15 @@ fn cached_windows_choose_least_left_and_match_the_shared_account_fixture() {
         usage_source: Some("codex_app_server".into()),
         summary: None,
         invalid_home: false,
+        fable_spent: false,
+        renewable: false,
     });
     let mut meters: Vec<swarm::profiles::UsageMeter> = serde_json::from_value(serde_json::json!([
         {"provider":"codex","account":"work","label":"work","used_pct":10,"state":"fresh","as_of_seconds":700},
         {"provider":"codex","account":"work","label":"work","used_pct":30,"state":"fresh","as_of_seconds":700}
     ])).unwrap();
     apply_usage(&mut list, &meters);
-    list.auto = pick_auto(&list.accounts, None);
+    list.auto = pick_auto(&list.accounts, None, None, 5).unwrap();
     let expected: serde_json::Value =
         serde_json::from_str(include_str!("fixtures/accounts/work-list.json")).unwrap();
     assert_eq!(serde_json::to_value(&list).unwrap(), expected);
@@ -166,9 +186,11 @@ fn cached_windows_choose_least_left_and_match_the_shared_account_fixture() {
     }
     apply_usage(&mut list, &meters);
     assert_eq!(list.accounts[0].usage_state, "stale");
-    assert_eq!(pick_auto(&list.accounts, None), None);
+    assert_eq!(pick_auto(&list.accounts, None, None, 5).unwrap(), None);
     assert_eq!(
-        pick_auto(&list.accounts, Some("/tmp/demo/.codex-work")).as_deref(),
+        pick_auto(&list.accounts, Some("/tmp/demo/.codex-work"), None, 5)
+            .unwrap()
+            .as_deref(),
         Some("work")
     );
     meters[0].state = "failed".into();

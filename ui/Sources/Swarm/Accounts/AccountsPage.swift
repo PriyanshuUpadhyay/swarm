@@ -6,10 +6,12 @@ struct AccountsPage: View {
     @Environment(\.scenePhase) private var scenePhase
     let loadAccounts: (String) async throws -> SwarmAccountList
     let loadUsage: () async throws -> [SwarmUsageMeter]
-    let refreshUsage: (String) async throws -> SwarmUsage
+    let refreshUsage: (String) async throws -> (usage: SwarmUsage, nextInSeconds: Int?)
+    @Binding var showsUsageHUD: Bool
     let openLogin: (SwarmAccountLoginRequest) async throws -> SwarmAccountLoginResult
     let resetAccounts: (String) async throws -> SwarmAccountMetadataAction
-    let onError: (String?) -> Void
+    /// The banner text, and whether VoiceOver says it now.
+    let onError: (String?, _ announce: Bool) -> Void
 
     @State private var state = AccountsPageModel()
     @State private var addingProvider: String?
@@ -25,9 +27,14 @@ struct AccountsPage: View {
         ScrollView {
             VStack(alignment: .leading, spacing: tokens.spacing.l) {
                 header
+                Toggle("Show usage HUD", isOn: $showsUsageHUD)
+                    .help("A panel at the top of the screen with Claude and Codex usage. Hover over the notch to open it.")
                 metadataControls
                 TimelineView(.periodic(from: .now, by: 60)) { context in
                     VStack(alignment: .leading, spacing: tokens.spacing.l) {
+                        if let note = state.refreshNote(nowSeconds: Int(context.date.timeIntervalSince1970)) {
+                            Text(verbatim: note).foregroundStyle(.secondary)
+                        }
                         ForEach(state.sections) { section in
                             providerSection(section, nowSeconds: Int(context.date.timeIntervalSince1970))
                             Divider()
@@ -58,7 +65,7 @@ struct AccountsPage: View {
                 state.requestLoad(refreshUsage: true)
             }
             .disabled(busy)
-            .help("Read account status and cached Claude usage. Refresh Codex usage.")
+            .help("Read account status, then refresh Claude and Codex usage.")
         }
     }
 
@@ -99,7 +106,7 @@ struct AccountsPage: View {
                 }
             }
             if let source = section.source {
-                Text("Account source: \(sourceLabel(source))").font(.caption).foregroundStyle(.secondary)
+                Text("Account source: \(AccountsPageModel.sourceLabel(source))").font(.caption).foregroundStyle(.secondary)
             }
             if let message = section.message {
                 Text(verbatim: message).foregroundStyle(.secondary)
@@ -138,6 +145,10 @@ struct AccountsPage: View {
             if !accountName.isEmpty && !SwarmAccountLoginRequest.validName(accountName) {
                 Text("Enter a valid account name without spaces or path parts.")
                     .font(.caption).foregroundStyle(.red)
+            }
+            if let note = section.loginNote {
+                Text(verbatim: note).font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             HStack {
                 Button("Open login") { login(section.provider) }
@@ -192,18 +203,10 @@ struct AccountsPage: View {
                     Text("Resets \(date(reset))").font(.caption).foregroundStyle(.secondary)
                 }
             }
-            Text("Usage source: \(row.source.map(sourceLabel) ?? "Unavailable")")
+            Text("Usage source: \(row.source.map(AccountsPageModel.sourceLabel) ?? "Unavailable")")
                 .font(.caption).foregroundStyle(.secondary)
             Text(row.sampleTimeSeconds.map { "Sample time: \(date($0))" } ?? "Sample time unavailable")
                 .font(.caption).foregroundStyle(.secondary)
-        }
-    }
-
-    private func sourceLabel(_ source: String) -> String {
-        switch source {
-        case "swarm": "Swarm"
-        case "codex_app_server": "Codex app-server"
-        default: source
         }
     }
 
@@ -229,22 +232,30 @@ struct AccountsPage: View {
             reportError(generation)
         }
         // A cached read completes before explicit refresh, so it cannot overwrite the new sample.
-        if explicitRefresh && !Task.isCancelled && generation == state.generation {
+        let refreshed = explicitRefresh ? AccountsPageModel.usageProviders : []
+        for provider in refreshed where !Task.isCancelled && generation == state.generation {
             do {
-                let usage = try await refreshUsage("codex")
+                let result = try await refreshUsage(provider)
                 try Task.checkCancellation()
-                state.receiveUsage(usage, generation: generation, provider: "codex")
+                state.receiveUsage(result.usage, generation: generation, provider: provider)
+                state.receiveRefreshCooldown(
+                    nextInSeconds: result.nextInSeconds, nowSeconds: Int(Date().timeIntervalSince1970), generation: generation
+                )
                 reportError(generation)
             } catch is CancellationError {
                 return
             } catch {
-                state.failUsage(provider: "codex", message: AccountsPageModel.message(error), generation: generation)
+                state.failUsage(provider: provider, message: AccountsPageModel.message(error), generation: generation)
                 reportError(generation)
             }
         }
         _ = await (claude, codex, agy)
-        if explicitRefresh && !Task.isCancelled && generation == state.generation {
-            await readAccounts("codex", generation: generation)
+        for provider in refreshed where !Task.isCancelled && generation == state.generation {
+            await readAccounts(provider, generation: generation)
+        }
+        // The rows change in place, so VoiceOver hears that a Refresh ended only if it is said.
+        if explicitRefresh, !Task.isCancelled, generation == state.generation {
+            AccessibilityNotification.Announcement(state.finishRefresh(nowSeconds: Int(Date().timeIntervalSince1970))).post()
         }
     }
 
@@ -263,14 +274,16 @@ struct AccountsPage: View {
     }
 
     private func reportError(_ generation: Int) {
-        if generation == state.generation { onError(state.errorMessage) }
+        guard generation == state.generation else { return }
+        let report = state.takeErrorReport()
+        onError(report.message, report.announce)
     }
 
     private func login(_ provider: String) {
         guard !busy, let request = state.loginRequest(provider: provider, name: accountName) else { return }
         action = .login(provider)
-        state.setActionError(nil)
-        onError(state.errorMessage)
+        let started = state.startAction()
+        onError(started.message, started.announce)
         Task {
             defer { action = nil }
             do {
@@ -279,10 +292,10 @@ struct AccountsPage: View {
                 addingProvider = nil
                 state.requestLoad(refreshUsage: false)
             } catch {
-                state.setActionError(AccountsPageModel.message(error))
+                let failed = state.failAction(AccountsPageModel.message(error))
                 // Reload revisions after any failure; the form input stays for retry.
                 state.requestLoad(refreshUsage: false)
-                onError(state.errorMessage)
+                onError(failed.message, failed.announce)
             }
         }
     }
@@ -290,8 +303,8 @@ struct AccountsPage: View {
     private func reset() {
         guard !busy, let revision = state.revision else { return }
         action = .reset
-        state.setActionError(nil)
-        onError(state.errorMessage)
+        let started = state.startAction()
+        onError(started.message, started.announce)
         Task {
             defer { action = nil }
             do {
@@ -300,9 +313,9 @@ struct AccountsPage: View {
                 confirmReset = false
                 state.requestLoad(refreshUsage: false)
             } catch {
-                state.setActionError(AccountsPageModel.message(error))
+                let failed = state.failAction(AccountsPageModel.message(error))
                 state.requestLoad(refreshUsage: false)
-                onError(state.errorMessage)
+                onError(failed.message, failed.announce)
             }
         }
     }

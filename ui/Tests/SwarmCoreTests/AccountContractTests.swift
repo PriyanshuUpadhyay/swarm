@@ -59,14 +59,18 @@ struct AccountContractTests {
     @Test("launch and picker preserve the full Claude environment")
     func launchAgreement() throws {
         let list = try decode(SwarmAccountList.self, fixture: "personal")
+        #expect(list.accounts[0].usageSource == "claude_api")
         let launch = try #require(SwarmLaunchAccount.resolve(.auto, from: list))
         let decision = SwarmAccountLoadDecision.loaded(list)
         #expect(decision.selection == .auto)
         #expect(SwarmAccountOption.account(for: decision.selection, in: decision.options) == launch)
-        #expect(launch.environment == list.accounts[0].env)
+        #expect(launch.environment == [
+            "AGENT_PROFILE_LABEL": "personal", "CLAUDE_SECURESTORAGE_CONFIG_DIR": "/tmp/demo/.claude-personal",
+        ])
         #expect(SwarmAccountOption.launchSelection(for: .auto, in: decision.options) == .named("personal"))
         #expect(list.autoEnvironment == launch.environment)
-        #expect(launch.merging(into: ["PATH": "/usr/bin", "CLAUDE_CONFIG_DIR": "/other"])["CLAUDE_CONFIG_DIR"] == list.accounts[0].home)
+        #expect(launch.merging(into: ["PATH": "/usr/bin", "CLAUDE_SECURESTORAGE_CONFIG_DIR": "/other"])
+            == ["PATH": "/usr/bin"].merging(launch.environment) { _, account in account })
         var injected = launch.environment
         injected["OWNER_WORK"] = "unsafe"
         #expect(SwarmLaunchAccount(name: "personal", provider: "claude", environment: injected) == nil)
@@ -78,6 +82,7 @@ struct AccountContractTests {
     @Test("the default-only Claude list agrees in Settings, launch and Switch Model")
     func defaultClaude() throws {
         let list = try decode(SwarmAccountList.self, fixture: "default-claude")
+        #expect(list.accounts[0].usageSource == "claude_api")
         let automatic = try #require(SwarmLaunchAccount.resolve(.auto, from: list))
         let selected = try #require(SwarmLaunchAccount.resolve(.named("default"), from: list))
         #expect(automatic == selected)
