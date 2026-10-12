@@ -7,7 +7,8 @@
     "build": "vite build",
     "typecheck": "tsc -p tsconfig.react.json && tsc -p tsconfig.solid.json && tsc -p tsconfig.node.json",
     "test": "vitest run",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "perf": "node perf/run.mjs"
   },
   "dependencies": {
     "markdown-it": "15.0.2",
