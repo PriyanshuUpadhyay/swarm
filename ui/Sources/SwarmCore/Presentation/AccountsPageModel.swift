@@ -227,6 +227,7 @@ public struct AccountsPageModel: Sendable, Equatable {
                     var kept = sample
                     kept.state = meter.state
                     kept.reason = meter.reason
+                    kept.reasonCode = meter.reasonCode
                     return kept
                 }
             }
@@ -286,7 +287,7 @@ public struct AccountsPageModel: Sendable, Equatable {
             let title = [meter.window, meter.windowMinutes.map { "\($0) min" }].compactMap { $0 }.joined(separator: " · ")
             return AccountsUsageRow(
                 id: meter.id, title: title, remainingPct: percentage,
-                status: Self.usageStatus(state, percentage: percentage), reason: usageErrors[provider] ?? meter.reason,
+                status: Self.usageStatus(state, percentage: percentage), reason: usageErrors[provider] ?? meter.reasonText,
                 isOld: isOld, source: meter.source, sampleTimeSeconds: meter.asOfSeconds,
                 resetTimeSeconds: meter.resetTimeSeconds
             )

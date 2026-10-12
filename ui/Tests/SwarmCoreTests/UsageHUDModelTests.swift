@@ -15,11 +15,11 @@ private var utc: Calendar {
 private func meter(
     provider: String = "claude", account: String = "work", window: String? = "5h", minutes: Int? = 300,
     usedPct: Double? = 60, resetInHours: Double? = 2, state: SwarmUsageState = .fresh,
-    source: String? = "claude_api", reason: String? = nil, asOfSecondsAgo: Int? = 0
+    source: String? = "claude_api", reason: String? = nil, reasonCode: String? = nil, asOfSecondsAgo: Int? = 0
 ) -> SwarmUsageMeter {
     SwarmUsageMeter(provider: provider, account: account, label: account, window: window, windowMinutes: minutes,
                     usedPct: usedPct, resetTimeSeconds: resetInHours.map { now + Int($0 * 3_600) }, state: state,
-                    source: source, reason: reason, asOfSeconds: asOfSecondsAgo.map { now - $0 })
+                    source: source, reason: reason, reasonCode: reasonCode, asOfSeconds: asOfSecondsAgo.map { now - $0 })
 }
 
 private func pressure(
@@ -251,9 +251,12 @@ struct UsageHUDModelTests {
     @Test("an account with no window shows why, and a signed-out account asks for sign-in")
     func accountNotice() async throws {
         let command = UsageCommand([
-            meter(account: "out", window: nil, usedPct: nil, state: .missing, reason: "Account is signed out", asOfSecondsAgo: nil),
-            meter(account: "expired", window: nil, usedPct: nil, state: .failed, reason: "Sign in again", asOfSecondsAgo: nil),
-            meter(account: "broken", window: nil, usedPct: nil, state: .failed, reason: "Claude usage read failed", asOfSecondsAgo: nil),
+            meter(account: "out", window: nil, usedPct: nil, state: .missing, reason: "Account is signed out",
+                  reasonCode: "no_credentials", asOfSecondsAgo: nil),
+            meter(account: "expired", window: nil, usedPct: nil, state: .failed, reason: "Sign in again",
+                  reasonCode: "relogin_required", asOfSecondsAgo: nil),
+            meter(account: "broken", window: nil, usedPct: nil, state: .failed, reason: "Claude usage read failed",
+                  reasonCode: "read_failed", asOfSecondsAgo: nil),
             meter(account: "work"),
         ])
         let model = try makeModel(command)
@@ -265,6 +268,39 @@ struct UsageHUDModelTests {
         ])
         #expect(accounts.map(\.notice?.needsSignIn) == [true, true, false, nil])
         #expect(model.sections[0].windows.map(\.id) == ["5h"])
+    }
+
+    @Test("each reason code gives its text, only relogin_required and no_credentials offer sign-in, and the text alone decides nothing",
+          arguments: [
+              ("token_expired", "Token expired", "Token expired. Start a chat on this account to renew it.", false),
+              ("relogin_required", "Sign in again", "Sign in to this account to see usage.", true),
+              ("no_credentials", "Account is signed out", "Sign in to this account to see usage.", true),
+              ("refresh_failed", "Usage refresh failed; old reading", "Usage refresh failed; old reading", false),
+              ("no_cached_usage", "No cached usage", "No cached usage", false),
+              ("no_source", "API-key mode has no plan-quota source", "API-key mode has no plan-quota source", false),
+              ("read_failed", "Claude usage read failed", "Claude usage read failed", false),
+              ("no_quota_windows", "No Codex quota windows", "No Codex quota windows", false),
+              // A code from a newer swarm, and an old meter with no code: the text shows as it is.
+              ("future_code", "Something new", "Something new", false),
+              (nil, "Sign in again", "Sign in again", false),
+          ] as [(String?, String, String, Bool)])
+    func reasonCodeNotice(code: String?, reason: String, text: String, signIn: Bool) {
+        let account = UsageHUDAccount(id: "claude:work", name: "work", meters: [
+            meter(window: nil, usedPct: nil, state: .failed, reason: reason, reasonCode: code, asOfSecondsAgo: nil),
+        ])
+        #expect(account.notice == UsageHUDNotice(text: text, needsSignIn: signIn))
+    }
+
+    @Test("the app knows each reason code of docs/usage-format.md and no other")
+    func reasonCodesMatchTheSpec() throws {
+        let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let spec = try String(contentsOf: repo.appendingPathComponent("docs/usage-format.md"), encoding: .utf8)
+        let section = try #require(spec.components(separatedBy: "## Reason codes").dropFirst().first)
+            .components(separatedBy: "\n## ")[0]
+        let codes = section.split(separator: "\n").filter { $0.hasPrefix("| `") }
+            .map { $0.dropFirst(3).prefix { $0 != "`" } }.map(String.init)
+        #expect(codes == SwarmReasonCode.allCases.map(\.rawValue))
     }
 
     // MARK: Reads

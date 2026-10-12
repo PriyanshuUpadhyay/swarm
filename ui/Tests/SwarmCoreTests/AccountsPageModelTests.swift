@@ -103,6 +103,32 @@ struct AccountsPageModelTests {
         #expect(model.usageRows(provider: "codex", account: "work", nowSeconds: 1_000)[0].status == "No usage source in Swarm")
     }
 
+    @Test("an expired token keeps the old sample and says how to renew it; other codes show their text")
+    func reasonCodeRows() throws {
+        var model = AccountsPageModel()
+        let generation = try start(&model)
+        model.receiveUsage(SwarmUsage(meters: [meter(usedPct: 30)]), generation: generation)
+        var expired = SwarmUsageMeter(provider: "codex", account: "work", label: "work", window: nil, usedPct: nil,
+                                      state: .failed, reason: "Token expired", reasonCode: "token_expired")
+        model.receiveUsage(SwarmUsage(meters: [expired]), generation: generation)
+        let row = model.usageRows(provider: "codex", account: "work", nowSeconds: 1_000)[0]
+        #expect(row.reason == "Token expired. Start a chat on this account to renew it.")
+        #expect(row.remainingPct == 70)
+        expired.reason = "Sign in again"
+        expired.reasonCode = "relogin_required"
+        model.receiveUsage(SwarmUsage(meters: [expired]), generation: generation)
+        #expect(model.usageRows(provider: "codex", account: "work", nowSeconds: 1_000)[0].reason == "Sign in again")
+    }
+
+    @Test("a meter decodes its reason code, and a meter with none has nil")
+    func reasonCodeDecodes() throws {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let json = #"{"meters":[{"provider":"claude","account":"work","label":"work","state":"failed","reason":"Token expired","reason_code":"token_expired"},{"provider":"claude","account":"home","label":"home","state":"fresh","used_pct":10,"reason":null,"reason_code":null}]}"#
+        let usage = try decoder.decode(SwarmUsage.self, from: Data(json.utf8))
+        #expect(usage.meters.map(\.reasonCode) == ["token_expired", nil])
+    }
+
     @Test("failed quota keeps the previous sample, its source and its age")
     func failedQuota() throws {
         var model = AccountsPageModel()

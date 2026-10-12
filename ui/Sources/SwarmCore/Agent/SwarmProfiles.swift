@@ -276,13 +276,24 @@ public struct SwarmUsageMeter: Sendable, Hashable, Codable, Identifiable {
     public var resetTimeSeconds: Int?
     public var state: SwarmUsageState
     public var source: String?
+    /// Text for a person; never match it. `reasonCode` is the machine value (docs/usage-format.md).
     public var reason: String?
+    /// The raw code, so a code from a newer swarm survives; `knownReasonCode` reads it.
+    public var reasonCode: String?
     public var asOfSeconds: Int?
+
+    public var knownReasonCode: SwarmReasonCode? { reasonCode.flatMap(SwarmReasonCode.init(rawValue:)) }
+
+    /// The reason as the app shows it. Only the code changes the text; with no known code it is `reason`.
+    public var reasonText: String? {
+        knownReasonCode == .tokenExpired ? "Token expired. Start a chat on this account to renew it." : reason
+    }
 
     public init(
         provider: String, account: String?, label: String, window: String?,
         windowMinutes: Int? = nil, usedPct: Double?, resetTimeSeconds: Int? = nil,
-        state: SwarmUsageState, source: String? = nil, reason: String? = nil, asOfSeconds: Int? = nil
+        state: SwarmUsageState, source: String? = nil, reason: String? = nil, reasonCode: String? = nil,
+        asOfSeconds: Int? = nil
     ) {
         self.provider = provider
         self.account = account
@@ -294,12 +305,13 @@ public struct SwarmUsageMeter: Sendable, Hashable, Codable, Identifiable {
         self.state = state
         self.source = source
         self.reason = reason
+        self.reasonCode = reasonCode
         self.asOfSeconds = asOfSeconds
     }
 
     enum CodingKeys: String, CodingKey {
         case provider, account, label, window, windowMinutes, usedPct, resetTimeSeconds
-        case state, source, reason, asOfSeconds
+        case state, source, reason, reasonCode, asOfSeconds
     }
 
     public init(from decoder: Decoder) throws {
@@ -314,8 +326,22 @@ public struct SwarmUsageMeter: Sendable, Hashable, Codable, Identifiable {
         state = try container.decodeIfPresent(SwarmUsageState.self, forKey: .state) ?? .unavailable
         source = try container.decodeIfPresent(String.self, forKey: .source)
         reason = try container.decodeIfPresent(String.self, forKey: .reason)
+        reasonCode = try container.decodeIfPresent(String.self, forKey: .reasonCode)
         asOfSeconds = try container.decodeIfPresent(Int.self, forKey: .asOfSeconds)
     }
+}
+
+/// The reason codes of `docs/usage-format.md`. The list can grow; a code with no case here shows
+/// the meter's `reason` as plain text.
+public enum SwarmReasonCode: String, Sendable, CaseIterable {
+    case tokenExpired = "token_expired"
+    case reloginRequired = "relogin_required"
+    case noCredentials = "no_credentials"
+    case refreshFailed = "refresh_failed"
+    case noCachedUsage = "no_cached_usage"
+    case noSource = "no_source"
+    case readFailed = "read_failed"
+    case noQuotaWindows = "no_quota_windows"
 }
 
 private func validPercentage(_ value: Double?) -> Double? {

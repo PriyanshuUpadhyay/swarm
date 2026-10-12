@@ -44,11 +44,13 @@ public struct UsageHUDAccount: Sendable, Equatable, Identifiable {
     /// An account with no usage window shows this text in place of its meters.
     public var notice: UsageHUDNotice? {
         guard let meter = meters.first(where: { $0.window == nil }) else { return nil }
-        // The CLI has no state for sign-in, so these are its two reason texts (`src/usage.rs`).
-        if ["Account is signed out", "Sign in again"].contains(meter.reason) {
+        // Open Accounts can fix only a missing or refused sign-in; an expired token renews in a chat.
+        switch meter.knownReasonCode {
+        case .reloginRequired, .noCredentials:
             return UsageHUDNotice(text: "Sign in to this account to see usage.", needsSignIn: true)
+        default:
+            return UsageHUDNotice(text: meter.reasonText ?? "No usage reading", needsSignIn: false)
         }
-        return UsageHUDNotice(text: meter.reason ?? "No usage reading", needsSignIn: false)
     }
 }
 
