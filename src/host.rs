@@ -544,10 +544,14 @@ mod tests {
     #[test]
     fn only_the_chair_contracts_name_swarm_notify() {
         let line = "- When the run is done, notify the owner with `swarm notify";
-        for chair in [HERDR_CONTEXT, APP_CONTEXT] {
+        for chair in [HERDR_CONTEXT, SUPERSET_CONTEXT, APP_CONTEXT] {
             assert!(chair.contains(line), "{chair}");
         }
-        for worker in [HERDR_WORKER_CONTEXT, APP_WORKER_CONTEXT] {
+        for worker in [
+            HERDR_WORKER_CONTEXT,
+            SUPERSET_WORKER_CONTEXT,
+            APP_WORKER_CONTEXT,
+        ] {
             assert!(!worker.contains("swarm notify"), "{worker}");
         }
     }
