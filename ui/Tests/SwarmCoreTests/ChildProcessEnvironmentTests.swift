@@ -8,6 +8,7 @@ struct ChildProcessEnvironmentTests {
         let orchestratorEnvironment = [
             "HERDR_PANE_ID": "pane-1",
             "HERDR_FUTURE_VALUE": "future",
+            "SUPERSET_TERMINAL_ID": "t1",
             "CLAUDECODE": "1",
             "CLAUDE_PID": "42",
             "AI_AGENT": "claude",
