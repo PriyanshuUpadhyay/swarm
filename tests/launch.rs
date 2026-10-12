@@ -1837,3 +1837,19 @@ fn a_superset_chair_registers_as_orchestrator_on_session_new() {
     let inbox = swarm(&home, &superset, &["inbox"]);
     assert!(inbox.status.success(), "{}", stderr(&inbox));
 }
+
+#[test]
+fn a_superset_terminal_counts_as_an_agent_pane_for_the_owner_only_guard() {
+    let home = scratch("superset-guard");
+    let output = swarm(
+        &home,
+        &[("SUPERSET_TERMINAL_ID", "t1")],
+        &["answer", "w1", "p1", "1"],
+    );
+    assert!(!output.status.success());
+    assert!(
+        stderr(&output).contains("only the owner answers"),
+        "{}",
+        stderr(&output)
+    );
+}

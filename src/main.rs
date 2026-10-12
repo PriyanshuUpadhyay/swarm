@@ -295,7 +295,7 @@ fn valid_session_id(id: &str) -> Result<String, String> {
 /// Every agent pane has one of these set. It is a guard against a model's mistake, not a trust
 /// boundary.
 fn in_agent_pane() -> bool {
-    ["TMUX_PANE", "HERDR_PANE_ID"]
+    ["TMUX_PANE", "HERDR_PANE_ID", "SUPERSET_TERMINAL_ID"]
         .iter()
         .any(|name| env::var_os(name).is_some())
 }
