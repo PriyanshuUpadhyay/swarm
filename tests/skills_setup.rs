@@ -293,20 +293,49 @@ fn clean_home_plans_and_records_all_69_links_in_the_selected_build_home() {
 }
 
 #[test]
-fn foreign_link_is_taken_and_no_plan_or_status_claims_it() {
+fn foreign_link_is_skipped_and_setup_leaves_it_unclaimed() {
     let f = Fixture::new("foreign-owner", true);
     fs::create_dir_all(f.destination().parent().unwrap()).unwrap();
     symlink("/foreign/flow", f.destination()).unwrap();
     let plan = f.plan();
-    assert_eq!(plan["conflicts"][0]["kind"], "taken");
-    assert_eq!(plan["conflicts"][0]["group"], "skills");
+    assert_eq!(plan["conflicts"], serde_json::json!([]));
+    assert_eq!(plan["skipped"].as_array().unwrap().len(), 1);
+    assert_eq!(plan["skipped"][0]["group"], "skills");
+    assert_eq!(
+        plan["skipped"][0]["reason"],
+        format!(
+            "{} is yours (link -> /foreign/flow); swarm leaves it",
+            f.destination().display()
+        )
+    );
+    let files = plan["files"].as_array().unwrap();
+    assert_eq!(files.len(), 68);
+    assert!(
+        files
+            .iter()
+            .all(|file| { file["path"] != f.destination().to_string_lossy().as_ref() })
+    );
+    for root in [".claude/skills", ".gemini/config/skills"] {
+        assert!(files.iter().any(|file| {
+            file["path"] == f.home.join(root).join("flow").to_string_lossy().as_ref()
+        }));
+    }
     assert_eq!(f.status()["skills"], false);
-    assert!(!f.apply(plan["digest"].as_str().unwrap()).status.success());
+    let output = f.apply(plan["digest"].as_str().unwrap());
+    assert!(output.status.success(), "{output:?}");
     assert_eq!(
         fs::read_link(f.destination()).unwrap(),
         PathBuf::from("/foreign/flow")
     );
-    assert!(!f.home.join(".claude/skills").exists());
+    let listed = f.json(&["managed", "list", "--json"]);
+    assert!(
+        listed["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|entry| { entry["file"] != f.destination().to_string_lossy().as_ref() })
+    );
+    assert_eq!(f.status()["skills"], true);
 }
 
 #[test]
@@ -497,13 +526,17 @@ fn owner_recreated_link_agrees_in_list_and_setup_and_does_not_block_undo_all() {
         .unwrap();
     assert_eq!(owner["state"], "changed");
     let plan = f.plan();
-    let conflict = plan["conflicts"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|conflict| conflict["file"] == f.destination().to_string_lossy().as_ref())
-        .unwrap();
-    assert_eq!(conflict["kind"], "taken");
+    assert_eq!(plan["conflicts"], serde_json::json!([]));
+    assert_eq!(plan["skipped"][0]["group"], "skills");
+    assert_eq!(
+        plan["skipped"][0]["reason"],
+        format!(
+            "{} is yours (link -> {}); swarm leaves it",
+            f.destination().display(),
+            target.display()
+        )
+    );
+    assert_eq!(f.status()["skills"], true);
     let undo = f.json(&["managed", "revert", "--all", "--plan", "--json"]);
     assert_eq!(undo["files"].as_array().unwrap().len(), 68);
     assert_eq!(undo["conflicts"], serde_json::json!([]));
