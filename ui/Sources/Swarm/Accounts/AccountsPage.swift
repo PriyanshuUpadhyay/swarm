@@ -10,7 +10,8 @@ struct AccountsPage: View {
     @Binding var showsUsageHUD: Bool
     let openLogin: (SwarmAccountLoginRequest) async throws -> SwarmAccountLoginResult
     let resetAccounts: (String) async throws -> SwarmAccountMetadataAction
-    let onError: (String?) -> Void
+    /// The banner text, and whether VoiceOver says it now.
+    let onError: (String?, _ announce: Bool) -> Void
 
     @State private var state = AccountsPageModel()
     @State private var addingProvider: String?
@@ -253,9 +254,8 @@ struct AccountsPage: View {
             await readAccounts(provider, generation: generation)
         }
         // The rows change in place, so VoiceOver hears that a Refresh ended only if it is said.
-        if explicitRefresh, !Task.isCancelled, generation == state.generation,
-           let text = state.refreshAnnouncement(nowSeconds: Int(Date().timeIntervalSince1970)) {
-            AccessibilityNotification.Announcement(text).post()
+        if explicitRefresh, !Task.isCancelled, generation == state.generation {
+            AccessibilityNotification.Announcement(state.refreshEnded(nowSeconds: Int(Date().timeIntervalSince1970))).post()
         }
     }
 
@@ -274,14 +274,16 @@ struct AccountsPage: View {
     }
 
     private func reportError(_ generation: Int) {
-        if generation == state.generation { onError(state.errorMessage) }
+        guard generation == state.generation else { return }
+        let report = state.reportsError()
+        onError(report.message, report.announce)
     }
 
     private func login(_ provider: String) {
         guard !busy, let request = state.loginRequest(provider: provider, name: accountName) else { return }
         action = .login(provider)
         state.setActionError(nil)
-        onError(state.errorMessage)
+        onError(state.errorMessage, true)
         Task {
             defer { action = nil }
             do {
@@ -293,7 +295,7 @@ struct AccountsPage: View {
                 state.setActionError(AccountsPageModel.message(error))
                 // Reload revisions after any failure; the form input stays for retry.
                 state.requestLoad(refreshUsage: false)
-                onError(state.errorMessage)
+                onError(state.errorMessage, true)
             }
         }
     }
@@ -302,7 +304,7 @@ struct AccountsPage: View {
         guard !busy, let revision = state.revision else { return }
         action = .reset
         state.setActionError(nil)
-        onError(state.errorMessage)
+        onError(state.errorMessage, true)
         Task {
             defer { action = nil }
             do {
@@ -313,7 +315,7 @@ struct AccountsPage: View {
             } catch {
                 state.setActionError(AccountsPageModel.message(error))
                 state.requestLoad(refreshUsage: false)
-                onError(state.errorMessage)
+                onError(state.errorMessage, true)
             }
         }
     }

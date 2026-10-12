@@ -159,9 +159,10 @@ struct SettingsWindow: View {
                 resetAccounts: { revision in
                     try await SwarmCLIProfileSource().resetAccounts(revision: revision)
                 },
-                onError: { message in
-                    if let message { selection.reportPageError(message, on: .accounts) }
-                    else { selection.setPageError(nil, on: .accounts) }
+                onError: { message, announce in
+                    // A Refresh reports its error many times; the page says when (AccountsPageModel).
+                    if let message, announce { selection.reportPageError(message, on: .accounts) }
+                    else { selection.setPageError(message, on: .accounts) }
                 }
             )
         case .managedChanges:

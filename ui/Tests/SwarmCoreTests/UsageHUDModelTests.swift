@@ -340,10 +340,35 @@ struct UsageHUDModelTests {
             now: UsageTestClock(now).now
         )
         let poll = Task { await model.read() }
-        while !(await held.isHolding) { await Task.yield() }
+        // Each wait has a bound and releases the read before its check, so a failure ends the test.
+        var holding = false
+        for _ in 0..<100_000 {
+            if await held.isHolding {
+                holding = true
+                break
+            }
+            await Task.yield()
+        }
+        guard holding else {
+            await held.release()
+            Issue.record("the poll read did not start")
+            return
+        }
         await command.set([meter(usedPct: 50)])
         let refresh = Task { await model.refresh() }
-        while await command.refreshed.count < 2 { await Task.yield() }
+        var refreshed = false
+        for _ in 0..<100_000 {
+            if await command.refreshed.count >= 2 {
+                refreshed = true
+                break
+            }
+            await Task.yield()
+        }
+        guard refreshed else {
+            await held.release()
+            Issue.record("the refresh did not call both providers")
+            return
+        }
         for _ in 0..<50 { await Task.yield() }
         // The poll read still holds the old answer, so the refresh is not over.
         #expect(model.isRefreshing)

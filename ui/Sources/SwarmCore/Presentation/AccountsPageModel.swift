@@ -42,6 +42,12 @@ public struct AccountsUsageRow: Sendable, Hashable, Identifiable {
     public let resetTimeSeconds: Int?
 }
 
+/// The page's error banner text, and whether VoiceOver says it now.
+public struct AccountsErrorReport: Sendable, Equatable {
+    public let message: String?
+    public let announce: Bool
+}
+
 /// Owns page decisions without UI, provider processes, or clocks hidden inside state transitions.
 public struct AccountsPageModel: Sendable, Equatable {
     // Matches Rust usage::MAX_AGE_SECONDS for the CLI quota cache.
@@ -57,6 +63,10 @@ public struct AccountsPageModel: Sendable, Equatable {
     public private(set) var hasPendingRead = false
     /// When the last Refresh made no provider call, the time the next call may run.
     private var refreshCooldownEndSeconds: Int?
+    /// The running load is an explicit Refresh, which is said one time, when it ends.
+    private var refreshInLoad = false
+    /// The error text VoiceOver last said, so a load that repeats it stays silent.
+    private var saidError: String?
     private var actionError: String?
     public private(set) var revision: String?
     public private(set) var modified = false
@@ -168,6 +178,7 @@ public struct AccountsPageModel: Sendable, Equatable {
         generation += 1
         isLoading = true
         if shouldRefreshUsage { refreshCooldownEndSeconds = nil }
+        refreshInLoad = shouldRefreshUsage
         shouldRefreshUsage = false
         hasPendingRead = false
         readingProviders = Set(Self.providers)
@@ -177,6 +188,7 @@ public struct AccountsPageModel: Sendable, Equatable {
     public mutating func invalidateReads() {
         generation += 1
         isLoading = false
+        refreshInLoad = false
         hasPendingRead = false
         readingProviders = []
     }
@@ -184,6 +196,7 @@ public struct AccountsPageModel: Sendable, Equatable {
     public mutating func finishLoad(_ generation: Int) {
         guard generation == self.generation else { return }
         isLoading = false
+        refreshInLoad = false
         hasPendingRead = false
         readingProviders = []
     }
@@ -243,11 +256,20 @@ public struct AccountsPageModel: Sendable, Equatable {
         refreshCooldownEndSeconds = max(refreshCooldownEndSeconds ?? .min, nowSeconds + nextInSeconds)
     }
 
-    /// What VoiceOver says when a Refresh ends. An error is left out, because the page reports it
-    /// and the Settings window says each report.
-    public func refreshAnnouncement(nowSeconds: Int) -> String? {
-        guard errorMessage == nil else { return nil }
-        return refreshNote(nowSeconds: nowSeconds) ?? "Usage refreshed."
+    /// The banner text for a report during a load. Inside a Refresh nothing is said until
+    /// `refreshEnded`; outside one, a text is said when it is new or changed.
+    public mutating func reportsError() -> AccountsErrorReport {
+        let message = errorMessage
+        guard !refreshInLoad else { return AccountsErrorReport(message: message, announce: false) }
+        defer { saidError = message }
+        return AccountsErrorReport(message: message, announce: message != nil && message != saidError)
+    }
+
+    /// The one announcement of an explicit Refresh: the error that stands, else the no-call note,
+    /// else a short result.
+    public mutating func refreshEnded(nowSeconds: Int) -> String {
+        saidError = errorMessage
+        return errorMessage ?? refreshNote(nowSeconds: nowSeconds) ?? "Usage refreshed."
     }
 
     public func refreshNote(nowSeconds: Int) -> String? {

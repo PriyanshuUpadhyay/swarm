@@ -229,6 +229,8 @@ private struct ProviderCard: View {
                         .tracking(HUD.columnTitleTracking)
                         .foregroundStyle(HUD.textSecondary)
                         .lineLimit(1)
+                        // One line can cut a long Codex limit name; hover shows it whole.
+                        .help(window.title)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 if section.windows.isEmpty { Spacer(minLength: 0) }

@@ -130,17 +130,61 @@ struct AccountsPageModelTests {
         #expect(model.errorMessage == "Codex: work: Token expired. Start a chat on this account to renew it.")
     }
 
-    @Test("a Refresh ends with one announcement: the no-call note, else a short result; an error is said by the page")
+    @Test("a Refresh with no error says nothing during the load and one result at its end")
     func refreshAnnouncement() throws {
         var model = AccountsPageModel()
         model.requestLoad(refreshUsage: true)
         let generation = try start(&model)
         model.receiveUsage(SwarmUsage(meters: [meter(usedPct: 30)]), generation: generation)
-        #expect(model.refreshAnnouncement(nowSeconds: 1_000) == "Usage refreshed.")
-        model.receiveRefreshCooldown(nextInSeconds: 180, nowSeconds: 1_000, generation: generation)
-        #expect(model.refreshAnnouncement(nowSeconds: 1_000) == "Updated 2m ago. Next refresh in 3m.")
+        #expect(model.reportsError() == AccountsErrorReport(message: nil, announce: false))
+        #expect(model.refreshEnded(nowSeconds: 1_000) == "Usage refreshed.")
+        model.finishLoad(generation)
+        model.requestLoad(refreshUsage: true)
+        let next = try start(&model)
+        model.receiveRefreshCooldown(nextInSeconds: 180, nowSeconds: 1_000, generation: next)
+        #expect(model.refreshEnded(nowSeconds: 1_000) == "Updated 2m ago. Next refresh in 3m.")
+    }
+
+    @Test("a standing error is shown at each call of one Refresh and said one time, at its end")
+    func refreshStandingError() throws {
+        var model = AccountsPageModel()
+        model.requestLoad(refreshUsage: true)
+        let generation = try start(&model)
         model.failUsage(provider: "codex", message: "Codex usage read failed", generation: generation)
-        #expect(model.refreshAnnouncement(nowSeconds: 1_000) == nil)
+        for _ in 0..<8 {
+            #expect(model.reportsError() == AccountsErrorReport(message: "Codex: Codex usage read failed", announce: false))
+        }
+        model.receiveRefreshCooldown(nextInSeconds: 180, nowSeconds: 1_000, generation: generation)
+        #expect(model.refreshEnded(nowSeconds: 1_000) == "Codex: Codex usage read failed")
+        model.finishLoad(generation)
+        // Outside a Refresh the same text is not said again, and a changed text is.
+        model.requestLoad(refreshUsage: false)
+        let later = try start(&model)
+        #expect(model.reportsError() == AccountsErrorReport(message: "Codex: Codex usage read failed", announce: false))
+        model.failAccounts(provider: "claude", error: SwarmProfileError.failed("claude failed"), generation: later)
+        let changed = try #require(model.errorMessage)
+        #expect(model.reportsError() == AccountsErrorReport(message: changed, announce: true))
+        #expect(model.reportsError() == AccountsErrorReport(message: changed, announce: false))
+        // Once the error is gone, the same text is new again.
+        var claude = list()
+        claude.provider = "claude"
+        model.receiveAccounts(claude, provider: "claude", generation: later)
+        model.receiveUsage(SwarmUsage(meters: [meter(usedPct: 30)]), generation: later, provider: "codex")
+        #expect(model.reportsError() == AccountsErrorReport(message: nil, announce: false))
+        model.failUsage(provider: "codex", message: "Codex usage read failed", generation: later)
+        #expect(model.reportsError().announce)
+    }
+
+    @Test("an error text that changes inside one Refresh is said one time, as it stands at the end")
+    func refreshChangingError() throws {
+        var model = AccountsPageModel()
+        model.requestLoad(refreshUsage: true)
+        let generation = try start(&model)
+        model.failUsage(provider: "codex", message: "first", generation: generation)
+        #expect(!model.reportsError().announce)
+        model.failUsage(provider: "codex", message: "second", generation: generation)
+        #expect(!model.reportsError().announce)
+        #expect(model.refreshEnded(nowSeconds: 1_000) == "Codex: second")
     }
 
     @Test("a meter decodes its reason code, and a meter with none has nil")
