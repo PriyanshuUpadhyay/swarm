@@ -12,13 +12,15 @@ pub struct Adapter {
     pub close: String,
     pub capture: String,
     pub attach: Option<String>,
+    /// Brings the owner to `$SWARM_PANE` in the host (`swarm focus`).
+    pub focus: Option<String>,
     pub interrupt: Option<String>,
     /// Prints a pane's visible rows, or Herdr's JSON for the agent in it (ADR 0021).
     pub screen: Option<String>,
     /// Sends one key name, such as `2`, `Down`, or `Enter`, to a pane (`swarm answer`).
     pub key: Option<String>,
-    /// Shows the owner one notice with `$SWARM_TITLE` and `$SWARM_BODY` (`swarm notify`, ADR 0045).
-    pub notify: Option<String>,
+    /// Prints the pid of the host client, for window activation after focus.
+    pub client: Option<String>,
 }
 
 /// The adapters this binary carries, which are the ones it is tested against.
@@ -94,10 +96,11 @@ fn build(name: &str, mut verbs: Verbs) -> Result<Adapter, Box<dyn std::error::Er
         close: take("close")?,
         capture: take("capture")?,
         attach: verbs.remove("attach"),
+        focus: verbs.remove("focus"),
         interrupt: verbs.remove("interrupt"),
         screen: verbs.remove("screen"),
         key: verbs.remove("key"),
-        notify: verbs.remove("notify"),
+        client: verbs.remove("client"),
     };
     if let Some(key) = verbs.keys().next() {
         return Err(format!("adapter {name}: unknown key {key}").into());
@@ -155,6 +158,10 @@ impl Adapter {
             "list" => &self.list,
             "close" => &self.close,
             "capture" => &self.capture,
+            "focus" => self
+                .focus
+                .as_ref()
+                .ok_or_else(|| format!("swarm: {} has no focus", self.name))?,
             "interrupt" => self
                 .interrupt
                 .as_ref()
@@ -165,12 +172,10 @@ impl Adapter {
                     self.name
                 )
             })?,
-            "notify" => self.notify.as_ref().ok_or_else(|| {
-                format!(
-                    "swarm: adapter {} has no notify verb, so it cannot notify the owner",
-                    self.name
-                )
-            })?,
+            "client" => self
+                .client
+                .as_ref()
+                .ok_or_else(|| format!("swarm: {} has no client", self.name))?,
             _ => return Err(format!("adapter: unknown verb {verb}").into()),
         };
         if let Some(deadline) = self.deadline {

@@ -116,28 +116,37 @@ struct NoticeDeliveryTests {
         #expect(await calls.denialCount == 0)
     }
 
-    @Test("A click selects the live chat or reopens its own window across handoffs")
-    func destinations() {
-        let original = session("original", time: 10)
-        let current = session("handoff", time: 20)
-        let chat = SwarmProjectSession(sessions: [current, original], title: "Chat", status: .waiting)
-        let project = ProjectNode(id: .folder("/project"), path: "/project", launchDirectory: "/project",
-                                  workspaces: [WorkspaceNode(path: "/project", name: "project", sessions: [chat])])
-        let tree = SessionsTree(projects: [project])
-        #expect(NoticeDestination.resolve(sessionID: original.id, tree: tree, openChats: []) == .mainChat(current.id))
-        #expect(NoticeDestination.resolve(sessionID: current.id, tree: tree, openChats: [original.id]) == .chatWindow(original.id))
-        #expect(NoticeDestination.resolve(sessionID: original.id, tree: tree, openChats: [original.id]) == .chatWindow(original.id))
-        #expect(NoticeDestination.resolve(sessionID: SwarmSessionID("missing"), tree: tree, openChats: []) == nil)
+    @Test("A failed focus posts one error notice and has no chat action")
+    func failedFocus() async {
+        let calls = DeliveryCalls()
+        let bus = SwarmCLIBus(environment: [:], cwd: "/fixture") { _, arguments, _, _, _, _ in
+            #expect(arguments == ["focus", "session", "waiting"])
+            return ShellResult(status: 1, stdout: "", stderr: "swarm: pane closed")
+        }
+        await NoticeClick.receive(session: SwarmSessionID("session"), agent: SwarmAgentID("waiting"),
+                                  focus: { try await bus.focus($0, in: $1) }, postError: { await calls.deliver($0) })
+        #expect(await calls.notices == [Notice(title: "Swarm", body: "swarm: pane closed")])
+        #expect(await calls.notices.first?.sessionID == nil)
+    }
+
+    @Test("A successful focus posts no error and a notice without a session reports a closed pane")
+    func focusResults() async {
+        let calls = DeliveryCalls()
+        await NoticeClick.receive(session: SwarmSessionID("session"), agent: nil, focus: { agent, session in
+            #expect(agent == SwarmAgentID("orchestrator"))
+            #expect(session == SwarmSessionID("session"))
+        }, postError: { await calls.deliver($0) })
+        #expect(await calls.notices.isEmpty)
+        await NoticeClick.receive(session: nil, agent: nil, focus: { _, _ in Issue.record("No session must not focus") },
+                                  postError: { await calls.deliver($0) })
+        #expect(await calls.notices == [Notice(title: "Swarm", body: "swarm: pane closed")])
     }
 
     private func notice() -> Notice {
-        Notice(title: "Swarm — Chat", body: "project: chat is done", sessionID: SwarmSessionID("chat"), sound: false)
+        Notice(title: "Swarm — Chat", body: "project: chat is done", sessionID: SwarmSessionID("chat"), agentID: nil, sound: false)
     }
 
-    private func session(_ role: String, time: Int) -> SwarmSession {
-        SwarmSession(id: SwarmSessionID(role), talkMode: "lane", adapter: "herdr", cwd: "/project",
-                     createdAt: time, chairLog: nil, agents: 1, messages: 0, lastMessageAt: nil)
-    }
+
 }
 
 private enum DeliveryFailure: Error { case failed }

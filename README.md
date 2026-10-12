@@ -302,7 +302,8 @@ id. A chair gets both from its pane, which `swarm session new` registers. A chil
 | `sessions --json --archived` | any | List all active sessions, then the newest 50 archived sessions in archive order, with `archivedAt` in Unix seconds. |
 | `host-context --provider <claude\|codex\|agy>` | any | Print the session's host contract in that provider's hook format, or nothing outside a visible host. |
 | `hook <claude\|codex\|agy> [event]` | any | Read a provider hook's JSON on stdin and record the agent's state (`working`, `waiting`, `done`, `failed`) for `SWARM_AGENT_ID`. A Claude or Codex `Stop` also stores the model and token total. Claude reads at most 8 MiB per Stop and adds new message usage; Codex copies its cumulative total. A cost is stored only from a complete provider record. Does nothing outside a swarm agent. Always prints `{}` and exits 0. AGY sends no event name, so its hook passes it, as in `swarm hook agy Stop`. |
-| `notify <title> [--body <text>]` | orchestrator or owner | Show the owner one notice through the adapter's `notify` verb (osascript on every shipped adapter, ADR 0045), within 5 s. Needs no session. Refuse a worker, and exit 1 when the adapter has no `notify` verb. `hook` and `agents --json` also send one notice when an agent's state changes to `waiting` (ADR 0044). |
+| `notify <title> [--body <text>]` | orchestrator or owner | Store one owner notice, with chair ids when known. Start Swarm in the background if needed. Needs no session and refuses a worker. The app posts it with the notice settings (ADR 0069). |
+| `notices --json` | app or owner | Read unposted owner notices and mark them posted in one store transaction. Each row carries `id`, `session_id`, `agent_id`, `title`, and `body`. |
 | `herdr-split` | any | Split a child pane right of `HERDR_PANE_ID`, stack it under earlier children at equal height, and print its id. The herdr adapter's spawn verb. |
 | `roles --json` | any | Print every profile, the file's `revision`, and `imported` when the file came from the old routing file. Reads no usage. |
 | `roles check --json` | any | Print, for each profile, the runner a launch would take now (`pick`) and each skipped runner with its `code` and `text`. |
@@ -322,6 +323,7 @@ id. A chair gets both from its pane, which `swarm session new` registers. A chil
 | `type <id>` | session | Read text from stdin and type it into a live agent pane. A closed pane causes an error before any input is sent. |
 | `interrupt <id>` | session | Send the adapter interrupt action to the agent pane. |
 | `attach <id>` | session | Attach to the agent pane when the adapter supports it. |
+| `focus <session_id> <agent_id>` | any | Focus the stored agent pane, retry the chair once if needed, and raise the host app. Exit 1 with `swarm: pane closed` if both panes fail. Herdr and tmux support focus; Superset and tmux-solo report `has no focus`. |
 | `close <id>` | session | Close the pane of `<id>` and forget it. |
 | `send <recipient> <kind>` | agent | Store stdin as a message, ring the recipient, print the seq. The ring waits, up to 30 s, for the recipient's turn-start hook or a working screen, and presses Enter again while a Claude or Codex input box still holds it. With no proof it warns on stderr and still exits 0 (ADR 0041). |
 | `finish` | agent | Send stdin as a `summary` to the orchestrator, print the seq. |

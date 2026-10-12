@@ -10,7 +10,9 @@ struct NoticeRuleTests {
         for json in ["{}", #"{"notices":null}"#, #"{"notices":{}}"#] {
             #expect(try decoder.decode(Prefs.self, from: Data(json.utf8)).notices == NoticePrefs())
         }
+        #expect(NoticePrefs().startAtLogin)
         var notices = NoticePrefs()
+        notices.startAtLogin = false
         notices.post = false
         notices.sound = false
         notices.done = false
@@ -19,7 +21,38 @@ struct NoticeRuleTests {
         let prefs = Prefs(settingsPage: "notifications", splitDiff: true, notices: notices)
         #expect(try decoder.decode(Prefs.self, from: JSONEncoder().encode(prefs)) == prefs)
         let partial = try decoder.decode(NoticePrefs.self, from: Data(#"{"sound":false,"done":null,"future":1}"#.utf8))
-        #expect(partial.post && !partial.sound && partial.done && partial.badge && partial.mutedProjects.isEmpty)
+        #expect(partial.startAtLogin && partial.post && !partial.sound && partial.done && partial.badge && partial.mutedProjects.isEmpty)
+    }
+
+    @Test("Stored notices use the same mute, sound, and done choices")
+    func storedNotices() throws {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let row = try decoder.decode(StoredNotice.self, from: Data(#"{"id":1,"session_id":"waiting","agent_id":"coder","title":"Custom","body":"Done"}"#.utf8))
+        let waiting = chat("waiting", status: .waiting)
+        let snapshot = SessionsTree(projects: tree(chats: [waiting]).projects, agentsBySession: [waiting.id: [SwarmAgent(id: SwarmAgentID("coder"), role: "coder", pane: nil, alive: nil, state: "waiting")]])
+        var prefs = NoticePrefs()
+        prefs.sound = false
+        prefs.done = false
+        #expect(NoticeRule.shouldPost(row: row, prefs: prefs, tree: snapshot) == Notice(title: "Custom", body: "Done", sessionID: waiting.id, agentID: SwarmAgentID("coder")))
+        #expect(NoticeRule.shouldPost(row: row, prefs: prefs, tree: tree(chats: [waiting])) == nil)
+        prefs.mutedProjects = ["/project"]
+        #expect(NoticeRule.shouldPost(row: row, prefs: prefs, tree: snapshot) == nil)
+        prefs.mutedProjects = []
+        prefs.post = false
+        #expect(NoticeRule.shouldPost(row: row, prefs: prefs, tree: snapshot) == nil)
+    }
+
+    @Test("The bus reads explicit notices without a session")
+    func storedNoticeCommand() async throws {
+        let bus = SwarmCLIBus(environment: [:], cwd: "/fixture") { _, arguments, _, environment, _, _ in
+            #expect(arguments == ["notices", "--json"])
+            #expect(environment["SWARM_SESSION_ID"] == nil)
+            return ShellResult(status: 0, stdout: #"[{"id":1,"session_id":null,"agent_id":null,"title":"Done","body":""}]"#, stderr: "")
+        }
+        let rows = try await bus.notices()
+        #expect(rows.count == 1 && rows[0].sessionId == nil && rows[0].agentId == nil)
+        #expect(rows[0].title == "Done")
     }
 
     @Test("Each notice carries the chat title, fixed body, session id, and sound choice")
@@ -87,6 +120,26 @@ struct NoticeRuleTests {
         #expect(NoticeRule.transitions(previous: first, current: empty).isEmpty)
     }
 
+    @Test("Input notices name the waiting agent and done notices name the chair")
+    func agents() throws {
+        let previous = tree(chats: [chat("input", status: .working), chat("finished", status: .working)])
+        let current = tree(chats: [chat("input", status: .waiting), chat("finished", status: .done)])
+        let working = SwarmAgent(id: SwarmAgentID("worker"), role: "coder", pane: "%1", alive: true, state: "working")
+        let waiting = SwarmAgent(id: SwarmAgentID("waiting"), role: "coder", pane: "%2", alive: true, state: "waiting")
+        let chair = SwarmAgent(id: SwarmPanePolicy.chair, role: "orchestrator", pane: "%3", alive: true, state: "done")
+        let events = NoticeRule.transitions(previous: previous, current: current, agentsBySession: [
+            SwarmSessionID("input"): [working, waiting, chair],
+            SwarmSessionID("finished"): [working, chair],
+        ])
+        #expect(events.map(\.agentID) == [waiting.id, chair.id])
+        for event in events {
+            let notice = try #require(NoticeRule.shouldPost(event: event, prefs: NoticePrefs(),
+                                                           project: current.projects[0], title: event.chat.title))
+            #expect(notice.agentID == event.agentID)
+        }
+        #expect(NoticeRule.transitions(previous: previous, current: current).allSatisfy { $0.agentID == nil })
+    }
+
     @Test("A handoff retains the state of its chat chain and uses the new session id")
     func handoff() {
         let previous = chat("original", status: .waiting)
@@ -96,6 +149,23 @@ struct NoticeRuleTests {
         next.status = .done
         let events = NoticeRule.transitions(previous: tree(chats: [previous]), current: tree(chats: [next]))
         #expect(events.count == 1 && events.first?.chat.id == next.id && events.first?.kind == .done)
+    }
+
+    @Test("Notice focus passes explicit ids to the CLI and reports a failed host")
+    func focusCommand() async throws {
+        for status: Int32 in [0, 1] {
+            let bus = SwarmCLIBus(environment: [:], cwd: "/fixture") { _, arguments, _, _, _, _ in
+                #expect(arguments == ["focus", "session", "waiting"])
+                return ShellResult(status: status, stdout: "", stderr: "closed pane")
+            }
+            if status == 0 {
+                try await bus.focus(SwarmAgentID("waiting"), in: SwarmSessionID("session"))
+            } else {
+                await #expect(throws: SwarmProfileError.failed("closed pane")) {
+                    try await bus.focus(SwarmAgentID("waiting"), in: SwarmSessionID("session"))
+                }
+            }
+        }
     }
 
     @Test("The dock counts chats, including muted projects, and only badge off clears it")

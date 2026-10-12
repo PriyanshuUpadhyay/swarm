@@ -47,13 +47,16 @@ public actor NoticeDelivery {
     }
 }
 
-public enum NoticeDestination: Sendable, Hashable {
-    case mainChat(SwarmSessionID), chatWindow(SwarmSessionID)
-
-    public static func resolve(sessionID: SwarmSessionID, tree: SessionsTree,
-                               openChats: Set<SwarmSessionID>) -> Self? {
-        guard let chat = tree.session(sessionID) else { return nil }
-        let windowID = ChatWindowState.id(for: chat)
-        return openChats.contains(windowID) ? .chatWindow(windowID) : .mainChat(chat.id)
+/// A notice click has only a host focus action. A failure posts one notice with no click action.
+public enum NoticeClick {
+    public static func receive(session: SwarmSessionID?, agent: SwarmAgentID?,
+                               focus: @Sendable (SwarmAgentID, SwarmSessionID) async throws -> Void,
+                               postError: @Sendable (Notice) async -> Void) async {
+        do {
+            guard let session else { throw SwarmProfileError.failed("swarm: pane closed") }
+            try await focus(agent ?? SwarmAgentID("orchestrator"), session)
+        } catch {
+            await postError(Notice(title: "Swarm", body: error.localizedDescription))
+        }
     }
 }

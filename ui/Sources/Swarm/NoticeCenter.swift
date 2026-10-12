@@ -1,18 +1,13 @@
-import AppKit
 import SwarmCore
-import SwiftUI
 import UserNotifications
 
 @MainActor
 final class NoticeCenter: NSObject, UNUserNotificationCenterDelegate {
     nonisolated private static let category = "swarm.chat"
     private let center = UNUserNotificationCenter.current()
-    private let selectChat: @MainActor (SwarmSessionID) -> Void
     private let delivery: NoticeDelivery
 
-    init(selectChat: @escaping @MainActor (SwarmSessionID) -> Void,
-         onDenied: @escaping @MainActor @Sendable () -> Void) {
-        self.selectChat = selectChat
+    init(onDenied: @escaping @MainActor @Sendable () -> Void) {
         delivery = NoticeDelivery(authorize: {
             let center = UNUserNotificationCenter.current()
             let settings = await center.notificationSettings()
@@ -26,8 +21,11 @@ final class NoticeCenter: NSObject, UNUserNotificationCenterDelegate {
             let content = UNMutableNotificationContent()
             content.title = notice.title
             content.body = notice.body
+            if let session = notice.sessionID {
+                content.userInfo["sessionID"] = session.rawValue
+            }
             content.categoryIdentifier = NoticeCenter.category
-            content.userInfo = ["sessionID": notice.sessionID.rawValue]
+            if let agent = notice.agentID { content.userInfo["agentID"] = agent.rawValue }
             content.sound = notice.sound ? .default : nil
             try await center.add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
         }, onDenied: { await onDenied() })
@@ -44,39 +42,24 @@ final class NoticeCenter: NSObject, UNUserNotificationCenterDelegate {
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
                                             didReceive response: UNNotificationResponse) async {
         guard response.actionIdentifier == UNNotificationDefaultActionIdentifier,
-              let session = response.notification.request.content.userInfo["sessionID"] as? String else { return }
-        await MainActor.run { selectChat(SwarmSessionID(session)) }
+              response.notification.request.content.categoryIdentifier == Self.category else { return }
+        let info = response.notification.request.content.userInfo
+        let session = (info["sessionID"] as? String).map(SwarmSessionID.init)
+        let agent = (info["agentID"] as? String).map(SwarmAgentID.init)
+        await NoticeClick.receive(session: session, agent: agent, focus: { agent, session in
+            try await SwarmCLIBus().focus(agent, in: session)
+        }, postError: { notice in
+            let center = UNUserNotificationCenter.current()
+            let content = UNMutableNotificationContent()
+            content.title = notice.title
+            content.body = notice.body
+            // No category or ids: clicking an error cannot start another failed focus.
+            try? await center.add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
+        })
     }
 
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
                                             willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
         [.banner, .list, .sound]
-    }
-}
-
-struct NoticeWindowRouting: ViewModifier {
-    let model: SessionsTreeModel
-    @Environment(\.openWindow) private var openWindow
-
-    func body(content: Content) -> some View {
-        content.onAppear { [model, openWindow] in
-            // Keep the scene's action while windows are closed, so a notice can reopen one.
-            model.noticeAction = { [weak model, openWindow] session in
-                guard let model else { return }
-                switch NoticeDestination.resolve(sessionID: session, tree: model.tree, openChats: Set(model.chatWindows.keys)) {
-                case .chatWindow(let id): openWindow(id: "chat", value: id)
-                case .mainChat(let id):
-                    model.select(id)
-                    if let window = NSApp.windows.first(where: { $0.frameAutosaveName == SwarmWindows.sessionsFrameName }) {
-                        window.deminiaturize(nil)
-                        window.makeKeyAndOrderFront(nil)
-                    } else {
-                        openWindow(id: "sessions")
-                    }
-                case nil: return
-                }
-                NSApp.activate()
-            }
-        }
     }
 }

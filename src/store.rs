@@ -23,7 +23,56 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0006.sql"),
     include_str!("../migrations/0007.sql"),
     include_str!("../migrations/0008.sql"),
+    include_str!("../migrations/0009.sql"),
 ];
+
+#[derive(serde::Serialize)]
+pub struct Notice {
+    pub id: i64,
+    pub session_id: Option<String>,
+    pub agent_id: Option<String>,
+    pub title: String,
+    pub body: String,
+}
+
+pub fn add_notice(
+    connection: &Connection,
+    session: Option<&str>,
+    agent: Option<&str>,
+    title: &str,
+    body: &str,
+) -> rusqlite::Result<()> {
+    connection.execute(
+        "INSERT INTO notice (session_id, agent_id, title, body) VALUES (?1, ?2, ?3, ?4)",
+        rusqlite::params![session, agent, title, body],
+    )?;
+    Ok(())
+}
+
+/// The write lock covers both the read and the mark, so concurrent app reads cannot repeat a row.
+pub fn take_notices(connection: &mut Connection) -> rusqlite::Result<Vec<Notice>> {
+    let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let notices = {
+        let mut query = tx.prepare("SELECT id, session_id, agent_id, title, body FROM notice WHERE posted_at IS NULL ORDER BY id")?;
+        query
+            .query_map([], |row| {
+                Ok(Notice {
+                    id: row.get(0)?,
+                    session_id: row.get(1)?,
+                    agent_id: row.get(2)?,
+                    title: row.get(3)?,
+                    body: row.get(4)?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?
+    };
+    tx.execute(
+        "UPDATE notice SET posted_at = unixepoch() WHERE posted_at IS NULL",
+        [],
+    )?;
+    tx.commit()?;
+    Ok(notices)
+}
 
 fn known_version(version: i64) -> bool {
     (1..=MIGRATIONS.len() as i64).contains(&version)
@@ -112,6 +161,11 @@ fn migrate(connection: &mut Connection) -> Result<(), Box<dyn std::error::Error>
     if version < 8 {
         tx.execute_batch(MIGRATIONS[7])?;
         tx.pragma_update(None, "user_version", 8)?;
+    }
+
+    if version < 9 {
+        tx.execute_batch(MIGRATIONS[8])?;
+        tx.pragma_update(None, "user_version", 9)?;
     }
 
     tx.commit()?;
@@ -351,6 +405,17 @@ pub fn set_adapter(
         return Err(format!("session {session_id} not found").into());
     }
     Ok(())
+}
+
+pub fn adapter_of(
+    connection: &Connection,
+    session_id: &str,
+) -> Result<Option<String>, Box<dyn std::error::Error>> {
+    Ok(connection.query_row(
+        "SELECT adapter FROM session WHERE id = ?1",
+        [session_id],
+        |row| row.get(0),
+    )?)
 }
 
 pub fn archive_sessions(
@@ -2228,6 +2293,23 @@ mod tests {
     }
 
     #[test]
+    fn migration_adds_notices_to_a_version_eight_database() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        for migration in &MIGRATIONS[..8] {
+            connection.execute_batch(migration).unwrap();
+        }
+        connection.pragma_update(None, "user_version", 8).unwrap();
+        migrate(&mut connection).unwrap();
+        add_notice(&connection, Some("session"), Some("chair"), "Done", "body").unwrap();
+        let notices = take_notices(&mut connection).unwrap();
+        assert_eq!(notices.len(), 1);
+        assert_eq!(notices[0].session_id.as_deref(), Some("session"));
+        assert_eq!(notices[0].agent_id.as_deref(), Some("chair"));
+        assert_eq!(notices[0].title, "Done");
+        assert!(take_notices(&mut connection).unwrap().is_empty());
+    }
+
+    #[test]
     fn migration_adds_chat_continuations_to_existing_databases() {
         let mut connection = Connection::open_in_memory().unwrap();
         connection.execute_batch(MIGRATIONS[0]).unwrap();
@@ -2236,7 +2318,7 @@ mod tests {
         let version: i64 = connection
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 8);
+        assert_eq!(version, 9);
         let old = create_session(&connection, "lane", Path::new("/work"), None, None).unwrap();
         let new = create_session(&connection, "lane", Path::new("/work"), None, None).unwrap();
         continue_session(&connection, &new, &old).unwrap();
@@ -2263,7 +2345,7 @@ mod tests {
         let version: i64 = connection
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 8);
+        assert_eq!(version, 9);
         let coder = &agents(&connection, SESSION).unwrap()[0];
         assert_eq!(coder.state, None);
         set_state(&connection, SESSION, CODER, "waiting", "hook", None, 1_700).unwrap();

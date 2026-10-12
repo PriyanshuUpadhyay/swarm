@@ -6,6 +6,13 @@ fn scratch(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("swarm-hook-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(dir.join(".swarm")).unwrap();
+    std::fs::create_dir_all(dir.join("bin")).unwrap();
+    std::fs::write(dir.join("bin/open"), "#!/bin/sh\nexit 0\n").unwrap();
+    std::fs::set_permissions(
+        dir.join("bin/open"),
+        std::os::unix::fs::PermissionsExt::from_mode(0o755),
+    )
+    .unwrap();
     std::fs::canonicalize(dir).unwrap()
 }
 
@@ -17,7 +24,10 @@ fn clean(exe: &Path, home: &Path) -> Command {
         .env_clear()
         .env("HOME", home)
         .env("SWARM_HOME", home)
-        .env("PATH", "/usr/bin:/bin");
+        .env(
+            "PATH",
+            format!("{}:/usr/bin:/bin", home.join("bin").display()),
+        );
     command
 }
 
@@ -75,7 +85,6 @@ fn a_claude_permission_request_shows_the_coder_waiting() {
     let in_session = [("SWARM_SESSION_ID", session.as_str())];
     let added = swarm(&home, &in_session, &["agent", "add", "coder", "coder"], "");
     assert!(added.status.success());
-    let sent_to = stand_in_notify(&home);
 
     let coder = coder_state(&home, &session);
     for field in ["state", "state_at_s", "state_source", "state_detail"] {
@@ -99,7 +108,13 @@ fn a_claude_permission_request_shows_the_coder_waiting() {
     assert_eq!(coder["state"], "waiting");
     assert_eq!(coder["state_source"], "hook");
     assert!(coder["state_at_s"].as_i64().unwrap() > 0);
-    assert_eq!(notices(&sent_to).lines().count(), 1);
+    let connection = swarm::store::open(&home.join(".swarm/swarm.db")).unwrap();
+    assert_eq!(
+        connection
+            .query_row("SELECT count(*) FROM notice", [], |r| r.get::<_, i64>(0))
+            .unwrap(),
+        0
+    );
 
     let broken = swarm(&home, &as_coder, &["hook", "claude"], "not json");
     assert!(broken.status.success());
@@ -1227,66 +1242,80 @@ fn a_setup_waiting_on_the_trust_lock_keeps_an_answer_recorded_meanwhile() {
     std::fs::remove_dir_all(&home).unwrap();
 }
 
-/// Lays a stand-in `notify` verb over the shipped tmux adapter. It appends one line per notice to
-/// `$HOME/notices`, so a test never shows a real notice. Call it after swarm has claimed its home.
-fn stand_in_notify(home: &Path) -> PathBuf {
-    std::fs::create_dir_all(home.join(".swarm/adapters")).unwrap();
-    std::fs::write(
-        home.join(".swarm/adapters/tmux.conf"),
-        "notify = printf '%s|%s\\n' \"$SWARM_TITLE\" \"$SWARM_BODY\" >> \"$HOME/notices\"\n",
-    )
-    .unwrap();
-    home.join("notices")
-}
-
-fn notices(file: &Path) -> String {
-    std::fs::read_to_string(file).unwrap_or_default()
-}
-
-/// A chair started by hand has no swarm env at all, and `swarm notify` still reaches the owner.
 #[test]
-fn swarm_notify_sends_one_notice_for_a_chair_started_by_hand() {
-    let home = scratch("notify-chair");
+fn notify_stores_text_and_notices_returns_it_once_without_an_adapter() {
+    let home = scratch("notice-store");
     assert!(swarm(&home, &[], &["init"], "").status.success());
-    let sent_to = stand_in_notify(&home);
-
+    let title = "swarm: a\" & (do shell script \"touch pwned\") & \"";
+    let body = "body $HOME `id`";
     let sent = swarm(
         &home,
-        &[],
-        &[
-            "notify",
-            "swarm: demo done",
-            "--body",
-            "it's \"done\" $HOME",
-        ],
+        &[("SWARM_ADAPTER", "missing")],
+        &["notify", title, "--body", body],
         "",
     );
-
     assert!(sent.status.success(), "{sent:?}");
-    assert_eq!(notices(&sent_to), "swarm: demo done|it's \"done\" $HOME\n");
-    std::fs::remove_dir_all(&home).unwrap();
+    let result = swarm(
+        &home,
+        &[("SWARM_ADAPTER", "missing")],
+        &["notices", "--json"],
+        "",
+    );
+    assert!(result.status.success(), "{result:?}");
+    let rows: serde_json::Value = serde_json::from_str(&stdout(&result)).unwrap();
+    assert_eq!(rows.as_array().unwrap().len(), 1);
+    assert_eq!(rows[0]["title"], title);
+    assert_eq!(rows[0]["body"], body);
+    assert!(rows[0]["session_id"].is_null());
+    assert!(rows[0]["agent_id"].is_null());
+    assert!(rows[0]["id"].is_i64());
+    let second = swarm(&home, &[], &["notices", "--json"], "");
+    assert_eq!(stdout(&second), "[]\n");
+    let connection = swarm::store::open(&home.join(".swarm/swarm.db")).unwrap();
+    assert!(
+        connection
+            .query_row("SELECT posted_at FROM notice", [], |r| r
+                .get::<_, Option<i64>>(0))
+            .unwrap()
+            .is_some()
+    );
+    std::fs::remove_dir_all(home).unwrap();
 }
 
 #[test]
-fn swarm_notify_refuses_a_worker() {
-    let home = scratch("notify-worker");
-    assert!(swarm(&home, &[], &["init"], "").status.success());
-    let sent_to = stand_in_notify(&home);
-
+fn notify_records_the_chair_identity_and_refuses_a_worker() {
+    let home = scratch("notice-chair");
+    let created = swarm(&home, &[], &["session", "new", "lane"], "");
+    assert!(created.status.success());
+    let session = stdout(&created).trim().to_string();
+    let connection = swarm::store::open(&home.join(".swarm/swarm.db")).unwrap();
+    swarm::store::add_agent(&connection, &session, "orchestrator", "orchestrator").unwrap();
+    let sent = swarm(
+        &home,
+        &[
+            ("SWARM_SESSION_ID", &session),
+            ("SWARM_AGENT_ID", "orchestrator"),
+        ],
+        &["notify", "Done"],
+        "",
+    );
+    assert!(sent.status.success(), "{sent:?}");
+    let rows: serde_json::Value =
+        serde_json::from_str(&stdout(&swarm(&home, &[], &["notices", "--json"], ""))).unwrap();
+    assert_eq!(rows[0]["session_id"], session);
+    assert_eq!(rows[0]["agent_id"], "orchestrator");
     let refused = swarm(
         &home,
         &[("SWARM_AGENT_ID", "coder")],
-        &["notify", "swarm: blocked"],
+        &["notify", "Blocked"],
         "",
     );
-
-    assert!(!refused.status.success(), "{refused:?}");
+    assert!(!refused.status.success());
     assert_eq!(
         String::from_utf8_lossy(&refused.stderr),
         "swarm: only the chair notifies the owner; send it to the orchestrator with swarm send\n"
     );
-    assert_eq!(notices(&sent_to), "");
-    std::fs::remove_dir_all(&home).unwrap();
+    std::fs::remove_dir_all(home).unwrap();
 }
 
 fn hold_app_lock(path: &Path) -> std::fs::File {
@@ -1301,200 +1330,242 @@ fn hold_app_lock(path: &Path) -> std::fs::File {
 }
 
 #[test]
-fn swarm_notify_skips_a_held_app_lock_and_sends_after_release() {
-    let home = scratch("notify-app-held");
-    assert!(swarm(&home, &[], &["init"], "").status.success());
-    let sent_to = stand_in_notify(&home);
-    let app_lock = home.join(".swarm/app.lock");
-    let held = hold_app_lock(&app_lock);
-    std::fs::write(&app_lock, std::process::id().to_string()).unwrap();
-    let skipped = swarm(
-        &home,
-        &[],
-        &["notify", "Swarm — chat", "--body", "done"],
-        "",
-    );
-    assert!(skipped.status.success(), "{skipped:?}");
-    assert!(skipped.stdout.is_empty() && skipped.stderr.is_empty());
-    assert_eq!(notices(&sent_to), "");
-    drop(held);
-    let sent = swarm(
-        &home,
-        &[],
-        &["notify", "Swarm — chat", "--body", "done"],
-        "",
-    );
-    assert!(sent.status.success(), "{sent:?}");
-    assert_eq!(notices(&sent_to), "Swarm — chat|done\n");
-    std::fs::remove_dir_all(&home).unwrap();
-}
-
-#[test]
-fn swarm_notify_sends_for_missing_and_unlocked_pid_files() {
-    for (role, content) in [
-        ("missing", None),
-        ("recycled-live-pid", Some(std::process::id().to_string())),
-        ("garbage", Some("not a pid".into())),
-    ] {
-        let home = scratch(&format!("notify-app-{role}"));
-        assert!(swarm(&home, &[], &["init"], "").status.success());
-        let sent_to = stand_in_notify(&home);
-        if let Some(content) = content {
-            std::fs::write(home.join(".swarm/app.lock"), content).unwrap();
-        }
-        let output = swarm(
-            &home,
-            &[],
-            &["notify", "Swarm — chat", "--body", "done"],
-            "",
-        );
-        assert!(output.status.success(), "{role}: {output:?}");
-        assert_eq!(notices(&sent_to), "Swarm — chat|done\n", "{role}");
-        std::fs::remove_dir_all(&home).unwrap();
-    }
-}
-
-#[test]
-fn swarm_notify_names_the_missing_verb() {
-    let home = scratch("notify-no-verb");
+fn notify_starts_the_app_only_without_its_lock_and_does_not_wait() {
+    let home = scratch("notice-open");
     assert!(swarm(&home, &[], &["init"], "").status.success());
     std::fs::write(
-        home.join(".swarm/adapters/bare.conf"),
-        "self = true\nspawn = true\nring = true\nlist = true\nclose = true\ncapture = true\n",
+        home.join("bin/open"),
+        "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$HOME/opened\"\nsleep 2\n",
     )
     .unwrap();
-
-    let failed = swarm(
-        &home,
-        &[("SWARM_ADAPTER", "bare")],
-        &["notify", "swarm: demo done"],
-        "",
-    );
-
-    assert!(!failed.status.success(), "{failed:?}");
+    let held = hold_app_lock(&home.join(".swarm/app.lock"));
+    assert!(swarm(&home, &[], &["notify", "Done"], "").status.success());
+    assert!(!home.join("opened").exists());
+    drop(held);
+    let started = std::time::Instant::now();
+    assert!(swarm(&home, &[], &["notify", "Done"], "").status.success());
+    assert!(started.elapsed() < std::time::Duration::from_secs(1));
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+    while !home.join("opened").exists() && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
     assert_eq!(
-        String::from_utf8_lossy(&failed.stderr),
-        "swarm: adapter bare has no notify verb, so it cannot notify the owner\n"
+        std::fs::read_to_string(home.join("opened")).unwrap(),
+        "-g -b io.github.priyanshuupadhyay.swarm\n"
     );
-    std::fs::remove_dir_all(&home).unwrap();
+    std::fs::remove_dir_all(home).unwrap();
 }
 
-/// Each shipped adapter's `notify` verb gives osascript the title and body as argv, never as
-/// AppleScript source. A stand-in `osascript` first on PATH records its args, so no notice shows.
 #[test]
-fn each_shipped_notify_verb_passes_the_text_to_osascript_as_argv() {
-    let home = scratch("notify-osascript");
+fn focus_uses_the_stored_adapter_and_pane_outside_a_session() {
+    let home = scratch("focus-host");
     assert!(swarm(&home, &[], &["init"], "").status.success());
     let bin = home.join("bin");
     std::fs::create_dir_all(&bin).unwrap();
-    let osascript = bin.join("osascript");
-    std::fs::write(
-        &osascript,
-        "#!/bin/sh\nfor arg; do printf '<%s>' \"$arg\"; done >> \"$HOME/osascript\"\necho >> \"$HOME/osascript\"\n",
-    )
-    .unwrap();
-    std::fs::set_permissions(
-        &osascript,
-        std::os::unix::fs::PermissionsExt::from_mode(0o755),
-    )
-    .unwrap();
+    for host in ["herdr", "tmux"] {
+        std::fs::write(
+            home.join(format!(".swarm/adapters/{host}.conf")),
+            "client = true\n",
+        )
+        .unwrap();
+        let executable = bin.join(host);
+        std::fs::write(
+            &executable,
+            "#!/bin/sh\nfor arg; do printf '<%s>' \"$arg\"; done >> \"$HOME/focus\"\necho >> \"$HOME/focus\"\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(
+            executable,
+            std::os::unix::fs::PermissionsExt::from_mode(0o755),
+        )
+        .unwrap();
+    }
     let path = format!("{}:/usr/bin:/bin", bin.display());
-    let title = "swarm: a\" & (do shell script \"touch pwned\") & \"";
-    let body = "body $HOME `id`";
-
-    for adapter in ["tmux", "tmux-solo", "herdr", "superset"] {
-        let sent = swarm(
+    let connection = swarm::store::open(&home.join(".swarm/swarm.db")).unwrap();
+    for (adapter, pane, expected) in [
+        ("herdr", "wK:p2", "<agent><focus><wK:p2>\n"),
+        (
+            "tmux",
+            "%2",
+            "<select-window><-t><%2>\n<select-pane><-t><%2>\n",
+        ),
+    ] {
+        let created = swarm(&home, &[], &["session", "new", "lane"], "");
+        assert!(created.status.success(), "{created:?}");
+        let session = stdout(&created).trim().to_string();
+        let added = swarm(
             &home,
-            &[("SWARM_ADAPTER", adapter), ("PATH", &path)],
-            &["notify", title, "--body", body],
+            &[("SWARM_SESSION_ID", &session)],
+            &["agent", "add", "coder", "coder"],
             "",
         );
-        assert!(sent.status.success(), "{adapter}: {sent:?}");
+        assert!(added.status.success(), "{added:?}");
+        swarm::store::set_adapter(&connection, &session, adapter).unwrap();
+        swarm::store::set_pane(&connection, &session, "coder", pane).unwrap();
+        let focused = swarm(
+            &home,
+            &[("PATH", &path), ("SWARM_ADAPTER", "wrong")],
+            &["focus", &session, "coder"],
+            "",
+        );
+        assert!(focused.status.success(), "{adapter}: {focused:?}");
+        assert_eq!(
+            std::fs::read_to_string(home.join("focus")).unwrap(),
+            expected
+        );
+        std::fs::remove_file(home.join("focus")).unwrap();
     }
-
-    let line = format!(
-        "<-e><on run argv><-e><display notification (item 2 of argv) with title (item 1 of argv) sound name \"Glass\"><-e><end run><{title}><{body}>\n"
-    );
-    assert_eq!(
-        std::fs::read_to_string(home.join("osascript")).unwrap(),
-        line.repeat(4)
-    );
     std::fs::remove_dir_all(&home).unwrap();
 }
 
-/// Claude sends `PermissionRequest` and then `Notification permission_prompt` for one prompt. The
-/// owner gets one notice for the change to `waiting`, and the next change to `waiting` gets one more.
 #[test]
-fn a_change_to_waiting_sends_one_notice_and_a_repeat_sends_none() {
-    let home = scratch("notify-waiting");
+fn focus_names_missing_panes_adapters_and_verbs() {
+    let home = scratch("focus-errors");
+    assert!(swarm(&home, &[], &["init"], "").status.success());
+    let connection = swarm::store::open(&home.join(".swarm/swarm.db")).unwrap();
+    let session = swarm::store::create_session(&connection, "lane", &home, None, None).unwrap();
+    swarm::store::add_agent(&connection, &session, "coder", "coder").unwrap();
+    let focused = swarm(&home, &[], &["focus", &session, "coder"], "");
+    assert!(!focused.status.success(), "{focused:?}");
+    assert_eq!(
+        String::from_utf8_lossy(&focused.stderr),
+        "swarm: session has no adapter\n"
+    );
+    for adapter in ["tmux-solo", "superset"] {
+        swarm::store::set_adapter(&connection, &session, adapter).unwrap();
+        let missing = swarm(&home, &[], &["focus", &session, "coder"], "");
+        assert!(!missing.status.success(), "{missing:?}");
+        assert_eq!(
+            String::from_utf8_lossy(&missing.stderr),
+            format!("swarm: {adapter} has no focus\n")
+        );
+        swarm::store::set_pane(&connection, &session, "coder", "%2").unwrap();
+        let missing = swarm(&home, &[], &["focus", &session, "coder"], "");
+        assert!(!missing.status.success(), "{missing:?}");
+        assert_eq!(
+            String::from_utf8_lossy(&missing.stderr),
+            format!("swarm: {adapter} has no focus\n")
+        );
+        swarm::store::clear_pane(&connection, &session, "coder").unwrap();
+    }
+    std::fs::remove_dir_all(&home).unwrap();
+}
+
+/// Hooks write state for the app; they do not insert an explicit notice or call an adapter.
+#[test]
+fn a_change_to_waiting_updates_state_without_posting_a_notice() {
+    let home = scratch("notice-waiting");
     let session = stdout(&swarm(&home, &[], &["session", "new", "lane"], ""))
         .trim()
         .to_string();
-    let in_session = [("SWARM_SESSION_ID", session.as_str())];
     assert!(
-        swarm(&home, &in_session, &["agent", "add", "coder", "coder"], "")
-            .status
-            .success()
+        swarm(
+            &home,
+            &[("SWARM_SESSION_ID", &session)],
+            &["agent", "add", "coder", "coder"],
+            ""
+        )
+        .status
+        .success()
     );
-    let sent_to = stand_in_notify(&home);
     let as_coder = [
         ("SWARM_SESSION_ID", session.as_str()),
         ("SWARM_AGENT_ID", "coder"),
     ];
-    let hook = |payload: &str| {
-        let reported = swarm(&home, &as_coder, &["hook", "claude"], payload);
-        assert_eq!(stdout(&reported), "{}\n", "{reported:?}");
-    };
-    let project = home.file_name().unwrap().to_string_lossy().into_owned();
-    let notice =
-        format!("swarm: coder needs you|{project}: waiting on a permission or a question\n");
-
-    hook(r#"{"hook_event_name":"PermissionRequest"}"#);
-    assert_eq!(notices(&sent_to), notice);
-
-    hook(r#"{"hook_event_name":"Notification","notification_type":"permission_prompt"}"#);
-    assert_eq!(notices(&sent_to), notice);
-
-    hook(r#"{"hook_event_name":"PreToolUse"}"#);
-    hook(r#"{"hook_event_name":"PermissionRequest"}"#);
-    assert_eq!(notices(&sent_to), notice.repeat(2));
-
-    let app_lock = home.join(".swarm/app.lock");
-    let held = hold_app_lock(&app_lock);
-    hook(r#"{"hook_event_name":"PreToolUse"}"#);
-    hook(r#"{"hook_event_name":"PermissionRequest"}"#);
-    assert_eq!(notices(&sent_to), notice.repeat(2));
-    drop(held);
-    hook(r#"{"hook_event_name":"PreToolUse"}"#);
-    hook(r#"{"hook_event_name":"PermissionRequest"}"#);
-    assert_eq!(notices(&sent_to), notice.repeat(3));
-    std::fs::remove_dir_all(&home).unwrap();
-}
-
-/// An agent that `swarm close` removed, or one the session never held, has no row to change, so
-/// its hook sends no notice however often it reports `waiting`.
-#[test]
-fn a_hook_for_an_agent_the_session_does_not_hold_sends_no_notice() {
-    let home = scratch("notify-ghost");
-    let session = stdout(&swarm(&home, &[], &["session", "new", "lane"], ""))
-        .trim()
-        .to_string();
-    let sent_to = stand_in_notify(&home);
-    let as_ghost = [
-        ("SWARM_SESSION_ID", session.as_str()),
-        ("SWARM_AGENT_ID", "ghost"),
-    ];
-
-    for _ in 0..2 {
+    for event in [
+        "PermissionRequest",
+        "PermissionRequest",
+        "PreToolUse",
+        "PermissionRequest",
+    ] {
         let reported = swarm(
             &home,
-            &as_ghost,
+            &as_coder,
             &["hook", "claude"],
-            r#"{"hook_event_name":"PermissionRequest"}"#,
+            &format!(r#"{{"hook_event_name":"{event}"}}"#),
         );
         assert_eq!(stdout(&reported), "{}\n", "{reported:?}");
     }
+    assert_eq!(coder_state(&home, &session)["state"], "waiting");
+    assert_eq!(
+        stdout(&swarm(&home, &[], &["notices", "--json"], "")),
+        "[]\n"
+    );
+    std::fs::remove_dir_all(home).unwrap();
+}
 
-    assert_eq!(notices(&sent_to), "");
-    std::fs::remove_dir_all(&home).unwrap();
+#[test]
+fn focus_retries_the_chair_and_raises_the_clients_app() {
+    let home = scratch("focus-chair");
+    assert!(swarm(&home, &[], &["init"], "").status.success());
+    let connection = swarm::store::open(&home.join(".swarm/swarm.db")).unwrap();
+    let session =
+        swarm::store::create_session(&connection, "lane", &home, None, Some("herdr")).unwrap();
+    for (agent, role, pane) in [
+        ("coder", "coder", "closed"),
+        ("chair", "orchestrator", "chair-pane"),
+    ] {
+        swarm::store::add_agent(&connection, &session, agent, role).unwrap();
+        swarm::store::set_pane(&connection, &session, agent, pane).unwrap();
+    }
+    std::fs::write(
+        home.join(".swarm/adapters/herdr.conf"),
+        "client = printf 101\n",
+    )
+    .unwrap();
+    for (name, script) in [
+        (
+            "herdr",
+            "#!/bin/sh\necho \"$3\" >> \"$HOME/focus\"\ntest \"$3\" = chair-pane\n",
+        ),
+        (
+            "ps",
+            "#!/bin/sh\ncase \"$2:$4\" in comm=:101) echo herdr;; ppid=:101) echo 102;; comm=:102) echo zsh;; ppid=:102) echo 103;; comm=:103) echo login;; ppid=:103) echo 104;; comm=:104) echo '/Applications/Terminal Host.app/Contents/MacOS/ghostty';; *) exit 1;; esac\n",
+        ),
+        (
+            "open",
+            "#!/bin/sh\nprintf '%s\\n' \"$1\" >> \"$HOME/raised\"\n",
+        ),
+    ] {
+        let path = home.join("bin").join(name);
+        std::fs::write(&path, script).unwrap();
+        std::fs::set_permissions(path, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+            .unwrap();
+    }
+    let focused = swarm(&home, &[], &["focus", &session, "coder"], "");
+    assert!(focused.status.success(), "{focused:?}");
+    assert_eq!(
+        std::fs::read_to_string(home.join("focus")).unwrap(),
+        "closed\nchair-pane\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(home.join("raised")).unwrap(),
+        "/Applications/Terminal Host.app\n"
+    );
+    swarm::store::clear_pane(&connection, &session, "coder").unwrap();
+    assert!(
+        swarm(&home, &[], &["focus", &session, "coder"], "")
+            .status
+            .success()
+    );
+    std::fs::remove_file(home.join("raised")).unwrap();
+    std::fs::write(
+        home.join("bin/ps"),
+        "#!/bin/sh\ncase \"$2\" in comm=) echo herdr;; ppid=) echo 1;; esac\n",
+    )
+    .unwrap();
+    assert!(
+        swarm(&home, &[], &["focus", &session, "coder"], "")
+            .status
+            .success()
+    );
+    assert!(!home.join("raised").exists());
+    swarm::store::clear_pane(&connection, &session, "chair").unwrap();
+    let gone = swarm(&home, &[], &["focus", &session, "coder"], "");
+    assert_eq!(gone.status.code(), Some(1));
+    assert_eq!(
+        String::from_utf8_lossy(&gone.stderr),
+        "swarm: pane closed\n"
+    );
+    std::fs::remove_dir_all(home).unwrap();
 }

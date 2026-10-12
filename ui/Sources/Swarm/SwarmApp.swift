@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import OSLog
+import ServiceManagement
 import SwiftUI
 import SwarmCore
 
@@ -15,27 +16,33 @@ final class SessionsTreeModel {
     private let navigationStore: WorkspaceNavigationStore
     private var noticeSettings: SettingsSelection?
     private var noticeCenter: NoticeCenter?
-    var noticeAction: ((SwarmSessionID) -> Void)?
-    private(set) var chatWindows: [SwarmSessionID: Int] = [:]
 
     func startNotices(settings: SettingsSelection) {
         guard noticeCenter == nil else { return }
         noticeSettings = settings
-        noticeCenter = NoticeCenter(selectChat: { [weak self] id in self?.noticeAction?(id) }, onDenied: {
+        noticeCenter = NoticeCenter(onDenied: {
             settings.setAppError("Notifications are off for Swarm in System Settings, so no notice is shown while the app runs.")
         })
+        updateLoginItem(enabled: settings.prefs.notices.startAtLogin)
         // One app-owned subscription keeps notices current when every window is closed.
         attachWindow()
         updateDockBadge()
     }
 
-    func attachChatWindow(_ id: SwarmSessionID) {
-        chatWindows[id, default: 0] += 1
-    }
-
-    func detachChatWindow(_ id: SwarmSessionID) {
-        let remaining = (chatWindows[id] ?? 1) - 1
-        chatWindows[id] = remaining > 0 ? remaining : nil
+    func updateLoginItem(enabled: Bool) {
+        let service = SMAppService.mainApp
+        do {
+            if enabled {
+                if service.status == .notRegistered || service.status == .notFound { try service.register() }
+                if service.status == .requiresApproval {
+                    noticeSettings?.setAppError("Allow Swarm to start at login in System Settings › General › Login Items.")
+                }
+            } else if service.status == .enabled || service.status == .requiresApproval {
+                try service.unregister()
+            }
+        } catch {
+            noticeSettings?.setAppError("Could not change start at login. \(error.localizedDescription)")
+        }
     }
 
     func updateDockBadge() {
@@ -46,8 +53,8 @@ final class SessionsTreeModel {
 
     private func postTransitions(previous: SessionsTree) {
         updateDockBadge()
-        guard hasLoaded, let settings = noticeSettings, let noticeCenter else { return }
-        for event in NoticeRule.transitions(previous: previous, current: tree) {
+        guard let settings = noticeSettings, let noticeCenter else { return }
+        for event in NoticeRule.transitions(previous: previous, current: tree, agentsBySession: tree.agentsBySession) {
             guard let project = tree.projects.first(where: { $0.path == event.projectPath }),
                   let notice = NoticeRule.shouldPost(event: event, prefs: settings.prefs.notices,
                                                      project: project, title: navigation.title(for: event.chat)) else { continue }
@@ -444,6 +451,13 @@ final class SessionsTreeModel {
                 }
             }
             hasLoaded = true
+            if let settings = noticeSettings, let noticeCenter {
+                for row in try await bus.notices() {
+                    guard let notice = NoticeRule.shouldPost(row: row, prefs: settings.prefs.notices, tree: tree) else { continue }
+                    do { try await noticeCenter.post(notice) }
+                    catch { settings.setAppError(error.localizedDescription) }
+                }
+            }
         }
         // A start that the owner left selected selects its chat; one they moved away from does not.
         for chat in settled where chat.id == selectedPendingID {
@@ -2439,7 +2453,7 @@ struct SwarmApp: App {
         WindowGroup(id: "sessions") {
             Group {
                 if SwarmPaneStress.count > 0 { PaneStressWindow() }
-                else { SessionsWindow(model: model).modifier(NoticeWindowRouting(model: model)) }
+                else { SessionsWindow(model: model) }
             }
             .modifier(AppearancePreferences(prefs: settings.prefs))
             // Register on the installed state before the window's setup readers start.
@@ -2454,7 +2468,6 @@ struct SwarmApp: App {
         WindowGroup("Chat", id: "chat", for: SwarmSessionID.self) { $sessionID in
             if let sessionID {
                 ChatWindow(sessionID: sessionID, model: model)
-                    .modifier(NoticeWindowRouting(model: model))
                     .modifier(AppearancePreferences(prefs: settings.prefs))
             }
         }
@@ -2463,7 +2476,6 @@ struct SwarmApp: App {
             .commandsRemoved()
         Settings {
             SettingsWindow().environment(settings).environment(model).environment(\.splitDiff, splitDiff)
-                .modifier(NoticeWindowRouting(model: model))
                 .modifier(AppearancePreferences(prefs: settings.prefs))
         }
             .defaultSize(width: DesignTokens.Size.settingsWidth, height: DesignTokens.Size.settingsHeight)

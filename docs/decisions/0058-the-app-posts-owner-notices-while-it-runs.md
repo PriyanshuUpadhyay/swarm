@@ -1,8 +1,9 @@
 ---
-status: accepted
+status: superseded
 date: 2026-10-07
 deciders: [user]
 supersedes: "0045"
+superseded-by: "0069"
 related: ["0036", "0044"]
 informed-by:
   - "Owner verdicts on 2026-10-07 in the redesign checklist (tmp/redesign/checklist.md): D-12 (b), dock badge yes, G-16, S-28, GC-27"
