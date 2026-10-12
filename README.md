@@ -147,7 +147,7 @@ It needs no other tool.
   memory and is written to no file.
 - The usage HUD is a panel at the top of the screen that shows each account's limits. The app
   asks one time, "Add the usage HUD?". **Settings › Accounts › Show usage HUD** changes the answer
-  later, and **View › Show Usage HUD** opens the panel (ADR 0073).
+  later, and **View › Usage HUD** opens and closes the panel (ADR 0073).
 
 AGY has no account source yet.
 

@@ -180,7 +180,8 @@ struct AppKeyCommands: Commands {
             Divider()
             item("Zoom Pane", .zoom)
             Divider()
-            Button(usageHUD.isOpen ? "Hide Usage HUD" : "Show Usage HUD") { usageHUD.toggleFromMenu() }
+            // One fixed title: the menu bar does not redraw a title that changes with the panel.
+            Button("Usage HUD") { usageHUD.toggleFromMenu() }
                 .disabled(!usageHUDEnabled)
             Divider()
         }

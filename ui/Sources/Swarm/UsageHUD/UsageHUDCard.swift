@@ -348,6 +348,11 @@ struct UsageHUDCard: View {
             }
         }
         .padding(.horizontal, HUD.contentInset)
+        // The footer changes in place, so VoiceOver hears the result only if it is said.
+        .onChange(of: model.isRefreshing) { wasRefreshing, isRefreshing in
+            guard wasRefreshing, !isRefreshing else { return }
+            AccessibilityNotification.Announcement(model.footer(nowSeconds: Int(Date().timeIntervalSince1970)).text).post()
+        }
         .frame(width: model.panelWidth, height: visibleHeight, alignment: .top)
     }
 

@@ -128,6 +128,8 @@ final class UsageHUDWindow {
         expand()
         // Key, so that Esc and ⌘R reach the panel.
         panel.makeKeyAndOrderFront(nil)
+        // The panel takes focus with no window change that VoiceOver says, so say that it opened.
+        AccessibilityNotification.Announcement("Usage HUD open. \(model.headerCaption)").post()
     }
 
     private func close() {

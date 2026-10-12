@@ -173,6 +173,9 @@ struct UsagePressureTests {
         #expect(UsagePressure.basis(pressure("a", usedPct: 95, burn: nil, level: .green)) == .severity(95))
         #expect(UsagePressure.basis(pressure("a", usedPct: 60, burn: 20, level: .red)) == .pressure(.red))
         #expect(UsagePressure.basis(nil) == nil)
+        // 90% or more is danger also when the trend falls.
+        #expect(UsagePressure.basis(pressure("a", usedPct: 90, burn: -5, level: .green))?.severity == .danger)
+        #expect(UsagePressure.basis(pressure("a", usedPct: 89, burn: -5, level: .green))?.severity == .calm)
         #expect(UsageBubbleBasis.severity(95).severity == .danger)
         #expect(UsageBubbleBasis.severity(75).severity == .warn)
         #expect(UsageBubbleBasis.severity(69).severity == .calm)

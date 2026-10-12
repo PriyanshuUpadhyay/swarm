@@ -72,7 +72,7 @@ public enum UsageHUDPrompt {
     public static let title = "Add the usage HUD?"
     public static let message = "Swarm can show Claude and Codex usage in a panel at the top of the screen. Hover over the notch to open it. You can turn it off in Settings › Accounts."
     public static let acceptTitle = "Add HUD"
-    public static let declineTitle = "Not Now"
+    public static let declineTitle = "No Thanks"
 
     /// The setup sheet goes first, so the two never show together.
     public static func shouldAsk(answer: Bool?, askedThisRun: Bool, setupSheetOpen: Bool) -> Bool {
@@ -358,11 +358,17 @@ public final class UsageHUDModel {
     public func footer(nowSeconds: Int) -> (text: String, warning: Bool) {
         if readFailed { return ("Swarm could not read usage. Click Refresh to try again.", true) }
         if let refreshFailure { return ("Last refresh: \(refreshFailure)", true) }
-        if let end = cooldownEndSeconds, nowSeconds < end {
-            let updated = Self.ageLabel(sinceSeconds: end - UsageRefresher.minIntervalSeconds, nowSeconds: nowSeconds)
-            return ("Updated \(updated). Next refresh in \((end - nowSeconds + 59) / 60)m.", false)
+        if let text = cooldownEndSeconds.flatMap({ Self.cooldownText(endSeconds: $0, nowSeconds: nowSeconds) }) {
+            return (text, false)
         }
         return (hasOlderSamples ? "Clock marks an older sample." : "Usage from swarm", false)
+    }
+
+    /// After a Refresh that made no provider call, until the next call may run.
+    public nonisolated static func cooldownText(endSeconds: Int, nowSeconds: Int) -> String? {
+        guard nowSeconds < endSeconds else { return nil }
+        let updated = ageLabel(sinceSeconds: endSeconds - UsageRefresher.minIntervalSeconds, nowSeconds: nowSeconds)
+        return "Updated \(updated). Next refresh in \((endSeconds - nowSeconds + 59) / 60)m."
     }
 
     /// A refresh outranks every reading, because the owner just started it. With no fresh meter
@@ -429,19 +435,16 @@ public final class UsageHUDModel {
             : (age ?? "", false)
     }
 
-    /// "14:20" today, "Sun 10:41" on another day. A time with no weekday reads as today.
+    /// "14:20" today, "Sun 10:41" on another day, or "2:20 PM" with a 12-hour region. A time with
+    /// no weekday reads as today.
     public nonisolated static func limitTimeLabel(
         _ seconds: Int, nowSeconds: Int, calendar: Calendar = .current
     ) -> String {
         let date = Date(timeIntervalSince1970: Double(seconds))
-        let time: Date.FormatString = "\(hour: .twoDigits(clock: .twentyFourHour, hourCycle: .zeroBased)):\(minute: .twoDigits)"
-        let weekdayTime: Date.FormatString =
-            "\(weekday: .abbreviated) \(hour: .twoDigits(clock: .twentyFourHour, hourCycle: .zeroBased)):\(minute: .twoDigits)"
         let sameDay = calendar.isDate(date, inSameDayAs: Date(timeIntervalSince1970: Double(nowSeconds)))
-        return date.formatted(Date.VerbatimFormatStyle(
-            format: sameDay ? time : weekdayTime,
-            locale: calendar.locale ?? .current, timeZone: calendar.timeZone, calendar: calendar
-        ))
+        let style = Date.FormatStyle(locale: calendar.locale ?? .current, calendar: calendar, timeZone: calendar.timeZone)
+            .hour().minute()
+        return date.formatted(sameDay ? style : style.weekday(.abbreviated))
     }
 
     /// "45m", "1h 10m", "2d 3h".

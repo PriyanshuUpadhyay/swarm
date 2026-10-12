@@ -52,14 +52,14 @@ public actor UsageRefresher {
         }
     }
 
-    /// For a page that shows one provider's usage: the new reading, or the cached one when the
-    /// limit allows no call.
+    /// For a page that shows one provider's usage: the new reading, or the cached one and the
+    /// seconds to the next call when the limit allows no call.
     public func refreshOrCached(
         provider: String, cached: @Sendable () async throws -> [SwarmUsageMeter]
-    ) async throws -> SwarmUsage {
+    ) async throws -> (usage: SwarmUsage, nextInSeconds: Int?) {
         switch try await refresh(provider: provider) {
-        case .refreshed(let usage): usage
-        case .cooldown: SwarmUsage(meters: try await cached().filter { $0.provider == provider })
+        case .refreshed(let usage): (usage, nil)
+        case .cooldown(let next): (SwarmUsage(meters: try await cached().filter { $0.provider == provider }), next)
         }
     }
 }

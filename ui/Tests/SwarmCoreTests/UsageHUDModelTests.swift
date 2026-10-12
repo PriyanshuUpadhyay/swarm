@@ -8,7 +8,7 @@ private let now = 1_791_799_200
 private var utc: Calendar {
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = TimeZone(identifier: "UTC")!
-    calendar.locale = Locale(identifier: "en_US")
+    calendar.locale = Locale(identifier: "en_GB")
     return calendar
 }
 
@@ -131,6 +131,17 @@ struct UsageHUDModelTests {
         ])
         #expect(UsageHUDModel.limitTimeLabel(now + 60, nowSeconds: now, calendar: utc) == "10:01")
         #expect(UsageHUDModel.limitTimeLabel(now + 48 * 3_600, nowSeconds: now, calendar: utc) == "Wed 10:00")
+    }
+
+    @Test("a limit time follows the region's 12-hour or 24-hour clock")
+    func regionClock() {
+        var twelve = utc
+        twelve.locale = Locale(identifier: "en_US")
+        #expect(UsageHUDModel.limitTimeLabel(now + 60, nowSeconds: now, calendar: twelve) == "10:01\u{202F}AM")
+        #expect(UsageHUDModel.limitTimeLabel(now + 48 * 3_600, nowSeconds: now, calendar: twelve) == "Wed 10:00\u{202F}AM")
+        // The macOS 24-hour setting comes as an `hours` key on the region.
+        twelve.locale = Locale(identifier: "en_US@hours=h23")
+        #expect(UsageHUDModel.limitTimeLabel(now + 60, nowSeconds: now, calendar: twelve) == "10:01")
     }
 
     @Test("an amber meter keeps the reset and adds the projection, at most 100%")
@@ -506,7 +517,7 @@ struct UsageHUDModelTests {
         #expect(!UsageHUDPrompt.shouldAsk(answer: false, askedThisRun: false, setupSheetOpen: false))
         #expect(UsageHUDPrompt.title == "Add the usage HUD?")
         #expect(UsageHUDPrompt.message == "Swarm can show Claude and Codex usage in a panel at the top of the screen. Hover over the notch to open it. You can turn it off in Settings › Accounts.")
-        #expect([UsageHUDPrompt.acceptTitle, UsageHUDPrompt.declineTitle] == ["Add HUD", "Not Now"])
+        #expect([UsageHUDPrompt.acceptTitle, UsageHUDPrompt.declineTitle] == ["Add HUD", "No Thanks"])
     }
 
     @Test("Add HUD saves on, Not Now saves off, and neither answer is asked again", arguments: [true, false])

@@ -258,6 +258,28 @@ struct AccountsPageModelTests {
         #expect(!model.shouldRefreshUsage)
     }
 
+    @Test("a Refresh that made no provider call says so with the time to the next one, as the HUD footer")
+    func refreshCooldownNote() throws {
+        var model = AccountsPageModel()
+        model.requestLoad(refreshUsage: true)
+        let generation = try start(&model)
+        model.receiveRefreshCooldown(nextInSeconds: nil, nowSeconds: 1_000, generation: generation)
+        #expect(model.refreshNote(nowSeconds: 1_000) == nil)
+        model.receiveRefreshCooldown(nextInSeconds: 180, nowSeconds: 1_000, generation: generation)
+        model.receiveRefreshCooldown(nextInSeconds: 120, nowSeconds: 1_000, generation: generation)
+        #expect(model.refreshNote(nowSeconds: 1_000) == "Updated 2m ago. Next refresh in 3m.")
+        #expect(model.refreshNote(nowSeconds: 1_180) == nil)
+        model.finishLoad(generation)
+        // A load with no Refresh keeps the note; the next Refresh starts without it.
+        model.requestLoad(refreshUsage: false)
+        _ = try start(&model)
+        #expect(model.refreshNote(nowSeconds: 1_000) != nil)
+        model.invalidateReads()
+        model.requestLoad(refreshUsage: true)
+        _ = try start(&model)
+        #expect(model.refreshNote(nowSeconds: 1_000) == nil)
+    }
+
     @Test("failed login and metadata conflict keep their message across revision reload")
     func actionFailures() throws {
         var model = AccountsPageModel()

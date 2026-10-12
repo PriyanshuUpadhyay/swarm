@@ -72,7 +72,7 @@ struct UsageRefresherTests {
         // No call is made, and the failure is not replaced by a result that looks good.
         await #expect(throws: SwarmProfileError.failed("Sign in again")) { try await refresher.refresh(provider: "claude") }
         await #expect(throws: SwarmProfileError.failed("Sign in again")) {
-            try await refresher.refreshOrCached(provider: "claude") { [] }
+            _ = try await refresher.refreshOrCached(provider: "claude") { [] }
         }
         #expect(await command.providers == ["claude"])
         clock.advance(by: 240)
@@ -90,8 +90,11 @@ struct UsageRefresherTests {
             SwarmUsageMeter(provider: "claude", account: "work", label: "work", window: "5h", usedPct: 30, state: .fresh),
             SwarmUsageMeter(provider: "codex", account: "main", label: "main", window: "primary", usedPct: 40, state: .fresh),
         ]
-        #expect(try await refresher.refreshOrCached(provider: "claude") { cached } == SwarmUsage(meters: []))
-        #expect(try await refresher.refreshOrCached(provider: "claude") { cached } == SwarmUsage(meters: [cached[0]]))
+        let refreshed = try await refresher.refreshOrCached(provider: "claude") { cached }
+        #expect(refreshed.usage == SwarmUsage(meters: []) && refreshed.nextInSeconds == nil)
+        clock.advance(by: 60)
+        let held = try await refresher.refreshOrCached(provider: "claude") { cached }
+        #expect(held.usage == SwarmUsage(meters: [cached[0]]) && held.nextInSeconds == 240)
         #expect(await command.providers == ["claude"])
     }
 

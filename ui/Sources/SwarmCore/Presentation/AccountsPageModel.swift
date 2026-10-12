@@ -55,6 +55,8 @@ public struct AccountsPageModel: Sendable, Equatable {
     public private(set) var loadRequest = 0
     public private(set) var shouldRefreshUsage = false
     public private(set) var hasPendingRead = false
+    /// When the last Refresh made no provider call, the time the next call may run.
+    private var refreshCooldownEndSeconds: Int?
     private var actionError: String?
     public private(set) var revision: String?
     public private(set) var modified = false
@@ -165,6 +167,7 @@ public struct AccountsPageModel: Sendable, Equatable {
         guard !isLoading else { return nil }
         generation += 1
         isLoading = true
+        if shouldRefreshUsage { refreshCooldownEndSeconds = nil }
         shouldRefreshUsage = false
         hasPendingRead = false
         readingProviders = Set(Self.providers)
@@ -231,6 +234,16 @@ public struct AccountsPageModel: Sendable, Equatable {
             meters.append(contentsOf: replacement)
             usageErrors[selected] = nil
         }
+    }
+
+    /// One call per provider of a Refresh; nil means that provider was called.
+    public mutating func receiveRefreshCooldown(nextInSeconds: Int?, nowSeconds: Int, generation: Int) {
+        guard generation == self.generation, let nextInSeconds else { return }
+        refreshCooldownEndSeconds = max(refreshCooldownEndSeconds ?? .min, nowSeconds + nextInSeconds)
+    }
+
+    public func refreshNote(nowSeconds: Int) -> String? {
+        refreshCooldownEndSeconds.flatMap { UsageHUDModel.cooldownText(endSeconds: $0, nowSeconds: nowSeconds) }
     }
 
     public mutating func failUsage(provider: String?, message: String, generation: Int) {

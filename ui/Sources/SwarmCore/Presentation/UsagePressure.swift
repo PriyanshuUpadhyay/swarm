@@ -6,8 +6,11 @@ public enum UsagePressureLevel: Sendable, Equatable { case red, amber, green }
 public enum UsageSeverity: Sendable, Equatable {
     case calm, warn, danger
 
+    /// At or above this percent a meter is danger, whatever its trend.
+    public static let dangerPct = 90.0
+
     public init(usedPct: Double, level: UsagePressureLevel?) {
-        if usedPct >= 90 || level == .red {
+        if usedPct >= Self.dangerPct || level == .red {
             self = .danger
         } else if usedPct >= 70 || level == .amber {
             self = .warn
@@ -173,7 +176,7 @@ public enum UsagePressure {
 
     public static func basis(_ binding: UsageRowPressure?) -> UsageBubbleBasis? {
         guard let binding else { return nil }
-        return binding.burnPctPerHour == nil || binding.hoursToReset == nil
+        return binding.burnPctPerHour == nil || binding.hoursToReset == nil || binding.usedPct >= UsageSeverity.dangerPct
             ? .severity(binding.usedPct) : .pressure(binding.level)
     }
 }

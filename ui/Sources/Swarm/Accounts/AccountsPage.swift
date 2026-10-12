@@ -6,7 +6,7 @@ struct AccountsPage: View {
     @Environment(\.scenePhase) private var scenePhase
     let loadAccounts: (String) async throws -> SwarmAccountList
     let loadUsage: () async throws -> [SwarmUsageMeter]
-    let refreshUsage: (String) async throws -> SwarmUsage
+    let refreshUsage: (String) async throws -> (usage: SwarmUsage, nextInSeconds: Int?)
     @Binding var showsUsageHUD: Bool
     let openLogin: (SwarmAccountLoginRequest) async throws -> SwarmAccountLoginResult
     let resetAccounts: (String) async throws -> SwarmAccountMetadataAction
@@ -31,6 +31,9 @@ struct AccountsPage: View {
                 metadataControls
                 TimelineView(.periodic(from: .now, by: 60)) { context in
                     VStack(alignment: .leading, spacing: tokens.spacing.l) {
+                        if let note = state.refreshNote(nowSeconds: Int(context.date.timeIntervalSince1970)) {
+                            Text(verbatim: note).foregroundStyle(.secondary)
+                        }
                         ForEach(state.sections) { section in
                             providerSection(section, nowSeconds: Int(context.date.timeIntervalSince1970))
                             Divider()
@@ -231,9 +234,12 @@ struct AccountsPage: View {
         let refreshed = explicitRefresh ? AccountsPageModel.usageProviders : []
         for provider in refreshed where !Task.isCancelled && generation == state.generation {
             do {
-                let usage = try await refreshUsage(provider)
+                let result = try await refreshUsage(provider)
                 try Task.checkCancellation()
-                state.receiveUsage(usage, generation: generation, provider: provider)
+                state.receiveUsage(result.usage, generation: generation, provider: provider)
+                state.receiveRefreshCooldown(
+                    nextInSeconds: result.nextInSeconds, nowSeconds: Int(Date().timeIntervalSince1970), generation: generation
+                )
                 reportError(generation)
             } catch is CancellationError {
                 return
