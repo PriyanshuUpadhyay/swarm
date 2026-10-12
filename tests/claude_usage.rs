@@ -193,6 +193,31 @@ fn auth_failure_clears_old_usage_and_keeps_sign_in_reason() {
 }
 
 #[test]
+fn a_signed_out_account_keeps_its_reason_in_a_cached_read() {
+    let home = fixture("signed-out");
+    tool(&home, "claude", "echo '{\"loggedIn\":false}'");
+    let refreshed = usage(&run(
+        &home,
+        "http://127.0.0.1:9/unused",
+        &["usage", "--refresh", "--provider", "claude", "--json"],
+    ));
+    assert_eq!(refreshed["meters"][0]["reason"], "Account is signed out");
+    let cached = usage(&run(
+        &home,
+        "http://127.0.0.1:9/unused",
+        &["usage", "--json"],
+    ));
+    let row = cached["meters"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["provider"] == "claude")
+        .unwrap();
+    assert_eq!(row["state"], "missing");
+    assert_eq!(row["reason"], "Account is signed out");
+}
+
+#[test]
 fn redirects_are_not_followed() {
     let home = fixture("redirect");
     let destination = TcpListener::bind("127.0.0.1:0").unwrap();

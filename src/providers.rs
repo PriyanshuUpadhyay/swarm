@@ -159,6 +159,8 @@ impl Provider {
         }
     }
 
+    /// The account variables of a chat launch. It never sets `CLAUDE_CONFIG_DIR`: each Claude
+    /// account uses the owner's one config folder and differs only in its login storage.
     pub fn launch_env(self, name: &str, dir: &str) -> BTreeMap<String, String> {
         match self {
             Provider::Claude => {
@@ -174,6 +176,8 @@ impl Provider {
         }
     }
 
+    /// Only for `claude auth status` and `claude auth login`, which find a login by
+    /// `CLAUDE_CONFIG_DIR`. Never give this to a chat launch.
     pub fn identity_env(self, name: &str, dir: &str) -> BTreeMap<String, String> {
         let mut env = self.launch_env(name, dir);
         if self == Provider::Claude && name != "default" {

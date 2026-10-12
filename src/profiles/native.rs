@@ -2,10 +2,10 @@ use super::{Account, AccountList, AuthState};
 use crate::providers::Provider;
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
-use std::sync::mpsc::{Receiver, channel};
+use std::process::{Child, Command, ExitStatus, Stdio};
+use std::sync::mpsc::{Receiver, RecvTimeoutError, channel};
 use std::time::{Duration, Instant};
 
 #[derive(Debug)]
@@ -316,7 +316,7 @@ pub fn read_json(
             command.env_remove(key);
         }
     }
-    let mut child = command
+    let child = command
         .args(args)
         .envs(env)
         .stdin(Stdio::null())
@@ -324,25 +324,7 @@ pub fn read_json(
         .stderr(Stdio::null())
         .spawn()
         .map_err(|_| NativeReadError::CliUnavailable)?;
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or("provider stdout is unavailable")?;
-    let (sender, receiver) = channel();
-    std::thread::spawn(move || {
-        let mut bytes = Vec::new();
-        let result =
-            std::io::Read::read_to_end(&mut BufReader::new(stdout), &mut bytes).map(|_| bytes);
-        let _ = sender.send(result);
-    });
-    let response = receiver.recv_timeout(deadline.saturating_duration_since(Instant::now()));
-    let mut status = child.try_wait().ok().flatten();
-    while response.is_ok() && status.is_none() && Instant::now() < deadline {
-        std::thread::sleep(Duration::from_millis(2));
-        status = child.try_wait().ok().flatten();
-    }
-    let _ = child.kill();
-    let _ = child.wait();
+    let (response, status) = read_stdout(child, u64::MAX, deadline);
     if response.is_err() || status.is_none() {
         return Err("provider read timed out".into());
     }
@@ -353,6 +335,37 @@ pub fn read_json(
         .map_err(|_| "provider read timed out")?
         .map_err(|_| "provider read failed")?;
     serde_json::from_slice(&bytes).map_err(|_| "provider response JSON is invalid".into())
+}
+
+/// Reads up to `limit` bytes of the child's stdout and waits for its exit, both before `deadline`.
+/// The child is always killed and reaped. A status of `None` means it did not exit in time.
+pub(crate) fn read_stdout(
+    mut child: Child,
+    limit: u64,
+    deadline: Instant,
+) -> (
+    Result<std::io::Result<Vec<u8>>, RecvTimeoutError>,
+    Option<ExitStatus>,
+) {
+    let (sender, receiver) = channel();
+    if let Some(stdout) = child.stdout.take() {
+        std::thread::spawn(move || {
+            let mut bytes = Vec::new();
+            let result = stdout.take(limit).read_to_end(&mut bytes).map(|_| bytes);
+            let _ = sender.send(result);
+        });
+    } else {
+        let _ = sender.send(Err(std::io::Error::other("child has no stdout pipe")));
+    }
+    let response = receiver.recv_timeout(deadline.saturating_duration_since(Instant::now()));
+    let mut status = child.try_wait().ok().flatten();
+    while response.is_ok() && status.is_none() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(2));
+        status = child.try_wait().ok().flatten();
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+    (response, status)
 }
 
 pub struct AppServer {

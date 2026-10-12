@@ -956,21 +956,25 @@ fn default_codex_home() -> Result<std::path::PathBuf, String> {
     default_codex_home_with_env(|variable| std::env::var_os(variable))
 }
 
-/// The native Codex home and each discovered `~/.codex-<name>` home.
+/// The native Codex home, each discovered `~/.codex-<name>` home, and each home that
+/// `swarm accounts login` made under `accounts/codex/` in swarm's folder.
 fn codex_homes(
     user_home: &std::path::Path,
 ) -> Result<Vec<std::path::PathBuf>, Box<dyn std::error::Error>> {
     let mut homes = vec![default_codex_home()?];
-    if let Ok(entries) = std::fs::read_dir(user_home) {
-        homes.extend(
-            entries
-                .filter_map(Result::ok)
-                .filter(|entry| {
-                    entry.file_name().to_string_lossy().starts_with(".codex-")
-                        && entry.path().is_dir()
-                })
-                .map(|entry| entry.path()),
-        );
+    let swarm_homes = swarm::paths::codex_accounts_dir()?;
+    for (folder, prefix) in [(user_home, ".codex-"), (swarm_homes.as_path(), "")] {
+        if let Ok(entries) = std::fs::read_dir(folder) {
+            homes.extend(
+                entries
+                    .filter_map(Result::ok)
+                    .filter(|entry| {
+                        entry.file_name().to_string_lossy().starts_with(prefix)
+                            && entry.path().is_dir()
+                    })
+                    .map(|entry| entry.path()),
+            );
+        }
     }
     homes.sort();
     homes.dedup();

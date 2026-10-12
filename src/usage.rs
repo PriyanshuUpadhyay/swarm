@@ -1,16 +1,19 @@
-use crate::profiles::native::{AppServer, read_json};
+use crate::profiles::native::{AppServer, read_json, read_stdout};
 use crate::profiles::{Account, AccountList, AuthState, Usage, UsageMeter};
 use crate::providers::Provider;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
-use std::io::{Read, Write};
+use std::io::Write;
 use std::process::{Command, Stdio};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 pub const MAX_AGE_SECONDS: i64 = 300;
 const REFRESH_FAILED_REASON: &str = "Usage refresh failed; old reading";
+// The app shows its Open Accounts button for these two texts, so a cached read must keep them.
+const SIGNED_OUT_REASON: &str = "Account is signed out";
+const SIGN_IN_AGAIN_REASON: &str = "Sign in again";
 
 #[derive(Serialize, Deserialize, Default)]
 struct Cache {
@@ -239,9 +242,12 @@ pub(crate) fn normalize_meter(stored: &UsageMeter, now: i64) -> UsageMeter {
         meter.as_of_seconds = None;
         meter.reason = Some(
             match meter.state.as_str() {
+                "missing" if stored.reason.as_deref() == Some(SIGNED_OUT_REASON) => {
+                    SIGNED_OUT_REASON
+                }
                 "missing" => "No cached usage",
                 "no_source" => "No usage source",
-                _ if stored.reason.as_deref() == Some("Sign in again") => "Sign in again",
+                _ if stored.reason.as_deref() == Some(SIGN_IN_AGAIN_REASON) => SIGN_IN_AGAIN_REASON,
                 _ => "Usage read failed",
             }
             .into(),
@@ -289,7 +295,7 @@ fn refresh(provider: Provider, deadline: Instant) -> Result<Usage, String> {
                 provider.id(),
                 Some(&account),
                 "missing",
-                "Account is signed out",
+                SIGNED_OUT_REASON,
             )],
             _ => match if provider == Provider::Codex {
                 fresh_codex(&account, deadline)
@@ -297,11 +303,11 @@ fn refresh(provider: Provider, deadline: Instant) -> Result<Usage, String> {
                 fresh_claude(&account, deadline)
             } {
                 Ok(meters) => meters,
-                Err(reason) if reason == "Sign in again" => vec![status_meter(
+                Err(reason) if reason == SIGN_IN_AGAIN_REASON => vec![status_meter(
                     provider.id(),
                     Some(&account),
                     "failed",
-                    "Sign in again",
+                    SIGN_IN_AGAIN_REASON,
                 )],
                 Err(_) => {
                     let retained: Vec<_> = previous
@@ -426,27 +432,7 @@ fn fresh_claude(account: &Account, deadline: Instant) -> Result<Vec<UsageMeter>,
         let _ = child.wait();
         return Err("Claude usage request failed".into());
     }
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or("Claude usage response is unavailable")?;
-    let (sender, receiver) = std::sync::mpsc::channel();
-    std::thread::spawn(move || {
-        let mut bytes = Vec::new();
-        let result = stdout
-            .take(1024 * 1024)
-            .read_to_end(&mut bytes)
-            .map(|_| bytes);
-        let _ = sender.send(result);
-    });
-    let response = receiver.recv_timeout(deadline.saturating_duration_since(Instant::now()));
-    let mut status = child.try_wait().ok().flatten();
-    while response.is_ok() && status.is_none() && Instant::now() < deadline {
-        std::thread::sleep(std::time::Duration::from_millis(2));
-        status = child.try_wait().ok().flatten();
-    }
-    let _ = child.kill();
-    let _ = child.wait();
+    let (response, status) = read_stdout(child, 1024 * 1024, deadline);
     if !status.is_some_and(|status| status.success()) {
         return Err("Claude usage request failed".into());
     }
@@ -458,7 +444,7 @@ fn fresh_claude(account: &Account, deadline: Instant) -> Result<Vec<UsageMeter>,
         .rposition(|byte| *byte == b'\n')
         .ok_or("Claude usage response is invalid")?;
     match &bytes[split + 1..] {
-        b"401" | b"403" => return Err("Sign in again".into()),
+        b"401" | b"403" => return Err(SIGN_IN_AGAIN_REASON.into()),
         b"200" => (),
         _ => return Err("Claude usage request failed".into()),
     }
