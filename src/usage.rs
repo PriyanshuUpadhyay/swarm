@@ -367,7 +367,9 @@ pub(crate) fn normalize_meter(stored: &UsageMeter, now: i64) -> UsageMeter {
         .used_pct
         .is_some_and(|percent| !(0..=100).contains(&percent))
         || stored.window_minutes.is_some_and(|minutes| minutes <= 0)
-        || stored.reset_time_seconds.is_some_and(|time| time < 0);
+        || stored
+            .reset_time_seconds
+            .is_some_and(|time| !(0..=MAX_RESET_SECONDS).contains(&time));
     if !matches!(stored.state.as_str(), "fresh" | "stale")
         || stored.used_pct.is_none()
         || invalid_value
@@ -393,7 +395,8 @@ pub(crate) fn normalize_meter(stored: &UsageMeter, now: i64) -> UsageMeter {
         meter.set_reason(code, None);
         return meter;
     }
-    if stored.reason.is_some() {
+    // Either half of the pair means a failed refresh kept this reading, so the pair stays whole.
+    if stored.reason.is_some() || stored.reason_code.is_some() {
         meter.set_reason(ReasonCode::RefreshFailed, None);
     }
     if meter
@@ -823,16 +826,17 @@ fn normalize_limits(
                 .as_i64()
                 .filter(|percent| (0..=100).contains(percent))
                 .ok_or("Invalid Codex usage percentage")?;
-            let optional_integer = |key: &str, minimum: i64| -> Result<Option<i64>, String> {
-                match value.get(key).filter(|value| !value.is_null()) {
-                    None => Ok(None),
-                    Some(value) => value
-                        .as_i64()
-                        .filter(|number| *number >= minimum)
-                        .map(Some)
-                        .ok_or_else(|| "Invalid Codex usage window".into()),
-                }
-            };
+            let optional_integer =
+                |key: &str, range: std::ops::RangeInclusive<i64>| -> Result<Option<i64>, String> {
+                    match value.get(key).filter(|value| !value.is_null()) {
+                        None => Ok(None),
+                        Some(value) => value
+                            .as_i64()
+                            .filter(|number| range.contains(number))
+                            .map(Some)
+                            .ok_or_else(|| "Invalid Codex usage window".into()),
+                    }
+                };
             meters.push(UsageMeter {
                 provider: "codex".into(),
                 account: Some(account.name.clone()),
@@ -843,9 +847,11 @@ fn normalize_limits(
                 } else {
                     format!("{id}:{window}")
                 }),
-                window_minutes: optional_integer("windowDurationMins", 1)?,
+                window_minutes: optional_integer("windowDurationMins", 1..=i64::MAX)?,
                 used_pct: Some(used_pct),
-                reset_time_seconds: optional_integer("resetsAt", 0)?,
+                // The Claude path has the same bound (`claude_reset_seconds`), so a time in
+                // milliseconds is not read as a far-future second.
+                reset_time_seconds: optional_integer("resetsAt", 0..=MAX_RESET_SECONDS)?,
                 state: "fresh".into(),
                 source: Some("codex_app_server".into()),
                 reason: None,
@@ -1096,6 +1102,52 @@ mod tests {
         assert_eq!(
             serde_json::to_string(&openusage(&usage, 1_791_000_100)).unwrap(),
             serde_json::to_string(&expected).unwrap()
+        );
+    }
+
+    #[test]
+    fn a_cached_reading_with_half_a_reason_reads_back_as_a_kept_reading() {
+        for (reason, code) in [
+            (json!(null), json!("relogin_required")),
+            (json!("x"), json!(null)),
+        ] {
+            let stored: UsageMeter = serde_json::from_value(json!({
+                "provider": "claude", "account": "work", "label": "work", "window": "5h",
+                "window_minutes": 300, "used_pct": 20, "reset_time_seconds": null, "state": "fresh",
+                "source": "claude_api", "reason": reason, "reason_code": code, "as_of_seconds": 1000
+            }))
+            .unwrap();
+            let cached = normalize_meter(&stored, 1000);
+            assert_eq!(cached.used_pct, Some(20));
+            assert_eq!(
+                (cached.reason_code, cached.reason.as_deref()),
+                (
+                    Some(ReasonCode::RefreshFailed),
+                    Some(ReasonCode::RefreshFailed.text())
+                ),
+                "{reason} {code}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_reset_time_past_year_9999_is_invalid_from_codex_and_from_the_cache() {
+        // The Claude path rejects the same value (see claude_reset_seconds).
+        let reply = json!({"rateLimits":{"primary":{"usedPercent":5,"windowDurationMins":300,"resetsAt":1791766923000_i64}}});
+        assert_eq!(
+            normalize_limits(&work(), &reply, 1000).unwrap_err(),
+            "Invalid Codex usage window"
+        );
+        let bound =
+            json!({"rateLimits":{"primary":{"usedPercent":5,"resetsAt":MAX_RESET_SECONDS}}});
+        let mut meter = normalize_limits(&work(), &bound, 1000).unwrap().remove(0);
+        assert_eq!(meter.reset_time_seconds, Some(MAX_RESET_SECONDS));
+        assert_eq!(normalize_meter(&meter, 1000).state, "fresh");
+        meter.reset_time_seconds = Some(MAX_RESET_SECONDS + 1);
+        let cached = normalize_meter(&meter, 1000);
+        assert_eq!(
+            (cached.state.as_str(), cached.reset_time_seconds),
+            ("failed", None)
         );
     }
 

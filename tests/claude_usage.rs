@@ -492,3 +492,47 @@ fn the_openusage_export_reads_the_cache_only_and_an_unknown_format_fails() {
         "swarm: unknown usage format csv; the one format is openusage"
     );
 }
+
+#[test]
+fn a_usage_read_does_not_read_the_roles_config() {
+    let home = fixture("no-roles-read");
+    let roles = home.join(".config/agent-routing/roles.json");
+    std::fs::create_dir_all(roles.parent().unwrap()).unwrap();
+    std::fs::write(
+        &roles,
+        r#"{"routes":{"chat":["claude-opus"]},"runners":{"claude-opus":{"provider":"claude","model":"opus","effort":"high"}}}"#,
+    )
+    .unwrap();
+    let profiles = home.join(".swarm/profiles.json");
+    let output = run(&home, "http://127.0.0.1:9/unused", &["usage", "--json"]);
+    usage(&output);
+    assert!(!profiles.exists());
+    // The listing does read it, so the fixture is a real import.
+    let listing = run(
+        &home,
+        "http://127.0.0.1:9/unused",
+        &["accounts", "--provider", "claude", "--json"],
+    );
+    assert!(listing.status.success());
+    assert!(profiles.exists());
+    // With the old file newer than the import, only a reader of the config says so.
+    std::thread::sleep(std::time::Duration::from_millis(1100));
+    std::fs::write(&roles, std::fs::read(&roles).unwrap()).unwrap();
+    for args in [
+        &["usage", "--json"][..],
+        &["usage", "--refresh", "--provider", "claude", "--json"][..],
+    ] {
+        let output = run(&home, "http://127.0.0.1:9/unused", args);
+        assert!(
+            !String::from_utf8_lossy(&output.stderr).contains("changed after import"),
+            "{args:?}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    let listing = run(
+        &home,
+        "http://127.0.0.1:9/unused",
+        &["accounts", "--provider", "claude", "--json"],
+    );
+    assert!(String::from_utf8_lossy(&listing.stderr).contains("changed after import"));
+}

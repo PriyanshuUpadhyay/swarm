@@ -257,12 +257,16 @@ fn load_inner(
     list.accounts
         .sort_by(|left, right| left.name.cmp(&right.name));
     list.current_home = discovery.current.to_str().map(str::to_string);
-    list.auto = super::pick_auto(
-        &list.accounts,
-        list.current_home.as_deref(),
-        None,
-        crate::config::min_usage_left_pct(),
-    )?;
+    // Only a caller of `load` uses `auto`. A usage read must not read the roles config, which can
+    // write its one-time import and warn on each read.
+    if include_usage {
+        list.auto = super::pick_auto(
+            &list.accounts,
+            list.current_home.as_deref(),
+            None,
+            crate::config::min_usage_left_pct(),
+        )?;
+    }
     Ok(list)
 }
 
