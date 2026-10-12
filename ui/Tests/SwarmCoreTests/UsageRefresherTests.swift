@@ -23,20 +23,20 @@ final class UsageTestClock: Sendable {
 private actor RefreshCommand {
     private(set) var providers: [String] = []
     private var failure: SwarmProfileError?
-    private var held: CheckedContinuation<Void, Never>?
+    private var held: [CheckedContinuation<Void, Never>] = []
     private var holds = false
 
     func hold() { holds = true }
     func fail(_ message: String?) { failure = message.map { .failed($0) } }
     func release() {
         holds = false
-        held?.resume()
-        held = nil
+        for run in held { run.resume() }
+        held = []
     }
 
     func run(_ provider: String) async throws -> SwarmUsage {
         providers.append(provider)
-        if holds { await withCheckedContinuation { held = $0 } }
+        if holds { await withCheckedContinuation { held.append($0) } }
         if let failure { throw failure }
         return SwarmUsage(meters: [])
     }
@@ -104,16 +104,19 @@ struct UsageRefresherTests {
         async let hud = refresher.refresh(provider: "claude")
         async let accountsPage = refresher.refresh(provider: "claude")
         // Each call reads the clock when it enters, so two reads mean both calls wait on the one run.
-        var waits = 0
-        while true {
+        var reached = false
+        for _ in 0..<100_000 {
             let started = await !command.providers.isEmpty
-            if clock.reads >= 2 && started { break }
-            // A refresher that never reads the clock or never starts the run must fail here, not hang.
-            waits += 1
-            try #require(waits < 100_000, "the two callers did not reach the one run")
+            if clock.reads >= 2 && started {
+                reached = true
+                break
+            }
             await Task.yield()
         }
+        // The release comes before the check. The scope waits for both calls when it ends, so a
+        // failure that left the run held would hang the test.
         await command.release()
+        try #require(reached, "the two callers did not reach the one run")
         #expect(try await hud == .refreshed(SwarmUsage(meters: [])))
         #expect(try await accountsPage == .refreshed(SwarmUsage(meters: [])))
         #expect(await command.providers == ["claude"])
