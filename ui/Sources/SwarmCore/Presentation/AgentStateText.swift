@@ -18,7 +18,7 @@ public enum AgentStateText {
 
     public static func tooltip(agent: SwarmAgent, now: Int) -> String {
         var text = agent.status.rawValue
-        if let kind = agent.stateKind, kind == "permission" || kind == "question" {
+        if agent.status == .waiting, let kind = agent.stateKind, kind == "permission" || kind == "question" {
             text += " · " + kind
         }
         if let timestamp = agent.stateAtS {

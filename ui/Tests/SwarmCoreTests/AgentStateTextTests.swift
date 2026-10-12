@@ -30,6 +30,16 @@ struct AgentStateTextTests {
         }
     }
 
+    @Test("A kind is omitted when the agent is not waiting")
+    func kindWithoutWait() {
+        var agent = SwarmAgent(id: .init("child"), role: "build", pane: "%1", alive: true, state: nil)
+        agent.stateKind = "permission"
+        #expect(AgentStateText.tooltip(agent: agent, now: 100) == "done")
+        agent.state = "waiting"
+        agent.alive = false
+        #expect(AgentStateText.tooltip(agent: agent, now: 100) == "ended")
+    }
+
     @Test("The tooltip shows state age, source and detail")
     func reportedState() {
         var agent = SwarmAgent(id: .init("child"), role: "build", pane: "%1", alive: true, state: "waiting")

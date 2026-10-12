@@ -501,7 +501,7 @@ pub fn resolve(
         return (state.map(str::to_string), None);
     }
     if source == Some("hook")
-        && age.is_some_and(|age| age < STALE_S)
+        && age.is_some_and(|age| age <= STALE_S)
         && screen.is_some_and(|screen| !screen_gap(provider, screen))
     {
         return (state.map(str::to_string), None);
@@ -1201,8 +1201,8 @@ mod tests {
             (Some("working".into()), None)
         );
         for state in ["waiting", "done"] {
-            // A working screen cannot replace a hook report before STALE_S.
-            for age in [11, 44] {
+            // A working screen cannot replace a hook report through STALE_S.
+            for age in [11, 44, 45] {
                 assert_eq!(
                     resolve(
                         Some("claude"),

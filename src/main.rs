@@ -3021,6 +3021,16 @@ fn list_agents(
             .ok()
             .flatten()
     });
+    let providers: Vec<_> = rows
+        .iter()
+        .map(|row| {
+            if Some(&row.id) == chair.as_ref() {
+                chair_provider.clone()
+            } else {
+                row.provider.clone()
+            }
+        })
+        .collect();
     // The screen check (ADR 0021) reads each live pane once per listing, all at the same
     // time, so six agents cost about one capture.
     type ScreenRead = (
@@ -3032,14 +3042,10 @@ fn list_agents(
         let reads: Vec<_> = rows
             .iter()
             .zip(&alive)
-            .map(|(row, alive)| {
-                let provider = if Some(&row.id) == chair.as_ref() {
-                    chair_provider.as_deref()
-                } else {
-                    row.provider.as_deref()
-                };
+            .zip(&providers)
+            .map(|((row, alive), provider)| {
                 let target = match (alive, row.pane.as_deref()) {
-                    (Some(true), Some(pane)) => Some((pane, provider)),
+                    (Some(true), Some(pane)) => Some((pane, provider.as_deref())),
                     _ => None,
                 };
                 scope.spawn(move || {
@@ -3071,13 +3077,15 @@ fn list_agents(
     adapter.check_deadline()?;
     let mut chair_row_idle = false;
     let mut agents = Vec::new();
-    for ((mut row, alive), screen) in rows.into_iter().zip(alive).zip(screens) {
+    for (((mut row, alive), screen), provider) in
+        rows.into_iter().zip(alive).zip(screens).zip(providers)
+    {
         let (screen, detail, prompt) = match screen {
             Some((screen, detail, prompt)) => (Some(screen), detail, prompt),
             None => (None, None, None),
         };
         let (state, write) = swarm::screen::resolve(
-            row.provider.as_deref(),
+            provider.as_deref(),
             row.state.as_deref(),
             row.state_at,
             row.state_source.as_deref(),
@@ -3120,6 +3128,7 @@ fn list_agents(
                     row.state.as_deref(),
                     row.state_source.as_deref(),
                     row.state_at,
+                    row.state_kind.as_deref(),
                 ),
             ) {
                 Ok(true) => {
@@ -3136,6 +3145,9 @@ fn list_agents(
                 Err(error) => eprintln!("swarm: {error}"),
             }
         }
+        let state_kind = row
+            .state_kind
+            .filter(|_| state.as_deref() == Some("waiting"));
         agents.push(swarm::bus::Agent {
             id: row.id,
             role: row.role,
@@ -3147,7 +3159,7 @@ fn list_agents(
             state_at_s: row.state_at,
             state_source: row.state_source,
             state_detail: row.state_detail,
-            state_kind: row.state_kind,
+            state_kind,
             log: row.log.map(resolved_agent_log),
             prompt,
             profile: row.profile,
@@ -5711,6 +5723,129 @@ mod tests {
             .filter(|message| message.recipient == ORCHESTRATOR)
             .map(|message| (message.sender, message.kind))
             .collect()
+    }
+
+    #[test]
+    fn the_listing_hides_the_kind_when_the_wait_is_stale() {
+        let (root, mut connection, session) = ring_session(
+            "listing-stale-kind",
+            Some("claude"),
+            "ring = true\nscreen = true",
+            "",
+        );
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        swarm::store::set_state(
+            &connection,
+            &session,
+            CODER,
+            "waiting",
+            "hook",
+            None,
+            Some("permission"),
+            now - 50,
+        )
+        .unwrap();
+        let adapter = swarm::adapter::load(&root, "fake").unwrap();
+        let output =
+            serde_json::to_value(list_agents(&mut connection, &root, &session, &adapter).unwrap())
+                .unwrap();
+        let coder = output["agents"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|agent| agent["id"] == CODER)
+            .unwrap();
+        assert!(coder["state"].is_null());
+        assert!(coder["state_kind"].is_null());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn the_listing_clears_the_kind_when_an_idle_screen_ends_the_wait() {
+        let (root, mut connection, session) = ring_session(
+            "listing-idle-kind",
+            Some("claude"),
+            "ring = true\nscreen = cat '{screen}'",
+            include_str!("../tests/fixtures/screens/claude-idle.txt"),
+        );
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        swarm::store::set_state(
+            &connection,
+            &session,
+            CODER,
+            "waiting",
+            "hook",
+            None,
+            Some("permission"),
+            now - 20,
+        )
+        .unwrap();
+        let adapter = swarm::adapter::load(&root, "fake").unwrap();
+        let output =
+            serde_json::to_value(list_agents(&mut connection, &root, &session, &adapter).unwrap())
+                .unwrap();
+        let coder = output["agents"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|agent| agent["id"] == CODER)
+            .unwrap();
+        assert_eq!(coder["state"], "done");
+        assert!(coder["state_kind"].is_null());
+        let coder = swarm::store::agents(&connection, &session)
+            .unwrap()
+            .into_iter()
+            .find(|row| row.id == CODER)
+            .unwrap();
+        assert_eq!(coder.state.as_deref(), Some("done"));
+        assert_eq!(coder.state_kind, None);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn the_listing_uses_the_session_chair_provider_for_a_screen_gap() {
+        let (root, mut connection, session) = ring_session(
+            "listing-chair-gap",
+            None,
+            "ring = true\nscreen = cat '{screen}'",
+            include_str!("../tests/fixtures/screens/codex-failed.txt"),
+        );
+        swarm::store::set_chair(&connection, &session, Some(("codex", "chair"))).unwrap();
+        swarm::store::set_pane(&connection, &session, ORCHESTRATOR, "%1").unwrap();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        swarm::store::set_state(
+            &connection,
+            &session,
+            ORCHESTRATOR,
+            "working",
+            "hook",
+            None,
+            None,
+            now - 20,
+        )
+        .unwrap();
+        let adapter = swarm::adapter::load(&root, "fake").unwrap();
+        let output =
+            serde_json::to_value(list_agents(&mut connection, &root, &session, &adapter).unwrap())
+                .unwrap();
+        let chair = output["agents"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|agent| agent["id"] == ORCHESTRATOR)
+            .unwrap();
+        assert!(chair["provider"].is_null());
+        assert_eq!(chair["state"], "failed");
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     /// The app kills `agents --json` at 20 s, so the listing types its re-ring and returns. A later
