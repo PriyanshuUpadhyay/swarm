@@ -545,6 +545,78 @@ fn login_retry_after_pane_failure_reuses_equal_registration() {
     );
 }
 
+/// An entry that an older build wrote has its home in `$HOME`. A new login for that name must
+/// open the login for that home, as the older build did.
+#[test]
+fn login_for_a_name_with_an_older_home_reuses_that_home() {
+    let home = fixture("work-older-home");
+    let older = home.join(".codex-work");
+    std::fs::create_dir(&older).unwrap();
+    let text = format!(
+        "version = 1\n[[accounts]]\nprovider = 'codex'\nname = 'work'\nhome = '{}'\n",
+        older.display()
+    );
+    std::fs::write(home.join(".swarm/accounts.toml"), &text).unwrap();
+    let before = revision(&home);
+    let opened = json(run(&home, &login("codex", "work", &before)));
+    assert_eq!(opened["revision"], before);
+    assert_eq!(
+        std::fs::read_to_string(home.join("login-exec")).unwrap(),
+        format!("login\n{}\n", older.display())
+    );
+    assert_eq!(
+        std::fs::read_to_string(home.join(".swarm/accounts.toml")).unwrap(),
+        text
+    );
+    assert!(!home.join(".swarm/accounts/codex/work").exists());
+}
+
+/// A profile that swarm finds by reference keeps its home when the owner logs in to its name.
+/// A new empty home would hide the profile that is signed in.
+#[test]
+fn login_for_a_found_profile_reuses_its_home_and_does_not_hide_it() {
+    let home = fixture("work-found-profile");
+    let found = home.join(".claude/.profiles/work");
+    std::fs::create_dir_all(&found).unwrap();
+    json(run(&home, &login("claude", "work", &revision(&home))));
+    let exec = std::fs::read_to_string(home.join("login-exec")).unwrap();
+    assert_eq!(exec.lines().nth(1), Some(found.to_str().unwrap()), "{exec}");
+    assert!(!home.join(".swarm/accounts/claude/work").exists());
+    let list = json(run(&home, &["accounts", "--provider", "claude", "--json"]));
+    let work: Vec<_> = list["accounts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|account| account["name"] == "work")
+        .collect();
+    assert_eq!(work.len(), 1, "{list}");
+    assert_eq!(work[0]["home"], found.to_str().unwrap());
+}
+
+/// A second login for a registered name makes its folder again, with the private mode.
+#[test]
+fn a_second_login_repairs_a_removed_or_open_account_home() {
+    let home = fixture("work-repair");
+    json(run(&home, &login("codex", "work", &revision(&home))));
+    let account_home = home.join(".swarm/accounts/codex/work");
+    let mode = || {
+        std::fs::metadata(&account_home)
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777
+    };
+    assert_eq!(mode(), 0o700);
+
+    std::fs::remove_dir_all(&account_home).unwrap();
+    json(run(&home, &login("codex", "work", &revision(&home))));
+    assert_eq!(mode(), 0o700, "a removed home");
+
+    std::fs::set_permissions(&account_home, std::fs::Permissions::from_mode(0o755)).unwrap();
+    json(run(&home, &login("codex", "work", &revision(&home))));
+    assert_eq!(mode(), 0o700, "a home with an open mode");
+}
+
 #[test]
 fn login_typed_line_closes_only_after_native_login_succeeds() {
     let home = fixture("personal-pane-exit");

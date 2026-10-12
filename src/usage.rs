@@ -14,6 +14,8 @@ const REFRESH_FAILED_REASON: &str = "Usage refresh failed; old reading";
 // The app shows its Open Accounts button for these two texts, so a cached read must keep them.
 const SIGNED_OUT_REASON: &str = "Account is signed out";
 const SIGN_IN_AGAIN_REASON: &str = "Sign in again";
+/// The last second of year 9999. A reset time in text has the same limit.
+const MAX_RESET_SECONDS: i64 = 253_402_300_799;
 
 #[derive(Serialize, Deserialize, Default)]
 struct Cache {
@@ -532,22 +534,23 @@ fn claude_windows(account: &Account, payload: &Value, now: i64) -> Result<Vec<Us
         }
         meters.push(meter);
     }
-    if !meters
-        .iter()
-        .any(|meter| meter.window.as_deref() == Some("5h"))
-    {
-        return Err("Claude usage response has no five-hour window".into());
+    if meters.is_empty() {
+        return Err("Claude usage response has no usage window".into());
     }
     Ok(meters)
 }
 
 fn claude_reset_seconds(value: &Value) -> Option<i64> {
     if let Some(seconds) = value.as_i64() {
-        return (seconds >= 0).then_some(seconds);
+        return (0..=MAX_RESET_SECONDS)
+            .contains(&seconds)
+            .then_some(seconds);
     }
     let text = value.as_str()?;
     if let Ok(seconds) = text.parse::<i64>() {
-        return (seconds >= 0).then_some(seconds);
+        return (0..=MAX_RESET_SECONDS)
+            .contains(&seconds)
+            .then_some(seconds);
     }
     let text = text
         .strip_suffix('Z')
@@ -735,10 +738,26 @@ mod tests {
         assert_eq!(meters[1].used_pct, None);
         assert_eq!(meters[2].window.as_deref(), Some("fb"));
         assert_eq!(meters[2].window_minutes, Some(10080));
-        for payload in [json!({}), json!({"seven_day":{"utilization":10}})] {
-            assert!(claude_windows(&account, &payload, 1000).is_err());
+        assert!(claude_windows(&account, &json!({}), 1000).is_err());
+        for payload in [
+            json!({"seven_day":{"utilization":40,"resets_at":"2026-10-12T01:02:03Z"}}),
+            json!({"five_hour":null,"seven_day":{"utilization":40,"resets_at":"2026-10-12T01:02:03Z"}}),
+        ] {
+            let meters = claude_windows(&account, &payload, 1000).unwrap();
+            assert_eq!(meters.len(), 1, "{payload}");
+            assert_eq!(meters[0].window.as_deref(), Some("7d"));
+            assert_eq!(meters[0].state, "fresh");
+            assert_eq!(meters[0].used_pct, Some(40));
         }
+        // A time in milliseconds is not a time in seconds. The limit is the end of year 9999,
+        // as for a time in text.
+        assert_eq!(
+            claude_reset_seconds(&json!(253402300799_i64)),
+            Some(253402300799)
+        );
         for value in [
+            json!(1791766923000_i64),
+            json!("1791766923000"),
             json!(-1),
             json!("2026-02-29T01:02:03Z"),
             json!("2026-10-12T24:02:03Z"),

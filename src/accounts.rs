@@ -141,6 +141,8 @@ fn update(
 
 /// Allocate a private account home only when the supplied revision still matches.
 /// Registration stays on disk if the later pane open or login fails.
+/// A name that already has a home in `$HOME` keeps it: an entry that an older build wrote, or a
+/// profile found by reference. A new home there would hide the login the owner already has.
 pub fn register(provider: Provider, name: &str, expected: &str) -> Result<(Entry, String), String> {
     if !provider.has_accounts() {
         return Err("This provider has no Swarm account source".into());
@@ -152,23 +154,46 @@ pub fn register(provider: Provider, name: &str, expected: &str) -> Result<(Entry
     let root = std::fs::canonicalize(root).map_err(|_| "Swarm home is unavailable")?;
     let home = root.join("accounts").join(provider.id()).join(name);
     home.to_str().ok_or("Account home path must be UTF-8")?;
-    let entry = Entry {
+    let older = std::env::var_os("HOME")
+        .and_then(|home| std::fs::canonicalize(home).ok())
+        .map(|home| match provider {
+            Provider::Codex => home.join(format!(".codex-{name}")),
+            _ => home.join(".claude/.profiles").join(name),
+        })
+        .filter(|older| older.to_str().is_some());
+    let mut entry = Entry {
         provider,
         name: name.into(),
         home,
     };
     let revision = update(expected, |accounts| {
-        if let Some(account) = accounts
+        let registered = accounts
             .iter()
             .find(|account| account.provider == provider && account.name == name)
-        {
-            return if account.home == entry.home {
-                Ok(false)
-            } else {
-                Err("This account name is already registered".into())
-            };
+            .map(|account| account.home.clone());
+        let add = |accounts: &mut Vec<Entry>, entry: &Entry| {
+            accounts.push(entry.clone());
+            accounts.sort_by(|left, right| {
+                (left.provider.id(), &left.name).cmp(&(right.provider.id(), &right.name))
+            });
+        };
+        match (&registered, older) {
+            (Some(found), Some(older)) if *found == older => {
+                entry.home = older;
+                return Ok(false);
+            }
+            (Some(found), _) if *found != entry.home => {
+                return Err("This account name is already registered".into());
+            }
+            (None, Some(older)) if older.is_dir() => {
+                entry.home = older;
+                add(accounts, &entry);
+                return Ok(true);
+            }
+            _ => (),
         }
-        use std::os::unix::fs::DirBuilderExt;
+        // A registered name comes here too, so a removed folder or an open mode is repaired.
+        use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
         for directory in [
             root.join("accounts"),
             root.join("accounts").join(provider.id()),
@@ -177,6 +202,13 @@ pub fn register(provider: Provider, name: &str, expected: &str) -> Result<(Entry
             match std::fs::symlink_metadata(&directory) {
                 Ok(metadata) if !metadata.is_dir() || metadata.is_symlink() => {
                     return Err("Account home must be a directory, not a symlink".into());
+                }
+                Ok(metadata)
+                    if directory == entry.home
+                        && metadata.permissions().mode() & 0o777 != 0o700 =>
+                {
+                    std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o700))
+                        .map_err(|_| "Cannot make account home private")?;
                 }
                 Ok(_) => (),
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
@@ -188,10 +220,10 @@ pub fn register(provider: Provider, name: &str, expected: &str) -> Result<(Entry
                 Err(_) => return Err("Cannot read account home".into()),
             }
         }
-        accounts.push(entry.clone());
-        accounts.sort_by(|left, right| {
-            (left.provider.id(), &left.name).cmp(&(right.provider.id(), &right.name))
-        });
+        if registered.is_some() {
+            return Ok(false);
+        }
+        add(accounts, &entry);
         Ok(true)
     })?;
     Ok((entry, revision))

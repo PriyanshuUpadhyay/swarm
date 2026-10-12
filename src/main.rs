@@ -2433,32 +2433,30 @@ fn spawn_agent(
         );
         let exe = exe.to_string_lossy().into_owned();
         let hook = swarm::adapter::shell_line(&[exe, "exited".into()]);
-        let cli = format!("command {}", swarm::adapter::shell_line(options.command));
         let child = if account.is_some()
             || (options.runner.is_some() && provider.is_some_and(Provider::has_accounts))
         {
-            let keys = provider
+            // `env` finds the CLI on PATH, so a pane function with the CLI's name never runs. It
+            // is one command with no shell syntax, so a fish pane runs it too, and the pane's own
+            // variables stay as they were.
+            let mut args = vec!["env".to_string()];
+            for key in provider
                 .map(|provider| provider.account_env_keys())
-                .unwrap_or_default();
-            let clear = if keys.is_empty() {
-                String::new()
-            } else {
-                format!("unset {}; ", keys.join(" "))
-            };
-            let assignments: Vec<_> = account
-                .iter()
-                .flat_map(|account| &account.env)
-                .map(|(key, value)| format!("{key}={value}"))
-                .collect();
-            let apply = if assignments.is_empty() {
-                String::new()
-            } else {
-                format!("export {}; ", swarm::adapter::shell_line(&assignments))
-            };
-            // A subshell leaves the pane's account variables unchanged after the CLI exits.
-            format!("({clear}{apply}{cli})")
+                .unwrap_or_default()
+            {
+                args.extend(["-u".into(), key.to_string()]);
+            }
+            args.push("--".into());
+            args.extend(
+                account
+                    .iter()
+                    .flat_map(|account| &account.env)
+                    .map(|(key, value)| format!("{key}={value}")),
+            );
+            args.extend_from_slice(options.command);
+            swarm::adapter::shell_line(&args)
         } else {
-            cli
+            swarm::adapter::shell_line(options.command)
         };
         let line = script_line(root, &session_id, agent_id, &format!("{path}{child}"))?;
         adapter.run(
@@ -2502,7 +2500,8 @@ fn swarm_bin(
 /// Save `command` as `runs/<session>/<agent>.sh` and return the short line that sources it.
 /// A ring types into a new pane before its shell is ready, and the terminal then keeps only the
 /// first 1024 bytes of the line, so a long argv never reaches the shell whole. The pane's own
-/// shell sources the file; `command` starts the selected external CLI.
+/// shell sources the file, so a `swarm spawn` command can be one of its functions; `env` starts a
+/// provider CLI.
 fn script_line(
     root: &std::path::Path,
     session_id: &str,

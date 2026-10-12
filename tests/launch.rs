@@ -168,7 +168,7 @@ fn a_claude_launch_trusts_the_config_that_the_pane_reads() {
         std::fs::read_to_string(home.join(format!(".swarm/runs/{session}/seat-default.sh")))
             .unwrap();
     assert!(
-        default_script.contains("unset CLAUDE_CONFIG_DIR "),
+        default_script.contains("'env' '-u' 'CLAUDE_CONFIG_DIR' "),
         "{default_script}"
     );
     assert!(
@@ -1028,7 +1028,7 @@ fn a_chat_launches_from_the_chat_profile_and_a_one_off_pick_keeps_its_effort() {
     assert!(stderr(&no_usage).contains("claude uses its own login"));
     assert!(
         script("chat-no-usage").contains(
-            "unset CLAUDE_CONFIG_DIR CLAUDE_SECURESTORAGE_CONFIG_DIR AGENT_PROFILE_LABEL;"
+            "'env' '-u' 'CLAUDE_CONFIG_DIR' '-u' 'CLAUDE_SECURESTORAGE_CONFIG_DIR' '-u' 'AGENT_PROFILE_LABEL' '--' 'claude'"
         )
     );
     assert!(script("chat-no-usage").contains("'--model' 'opus' '--effort' 'high'"));
@@ -2076,9 +2076,50 @@ fn claude_launch_uses_shared_chats_and_bypasses_shell_functions() {
             .any(|line| line == "AGENT_PROFILE_LABEL=work")
     );
     assert!(!home.join("function-ran").exists());
+    // One `env` command and no subshell, `unset` or `export`, so a fish pane can run the line too.
+    let script = std::fs::read_to_string(script).unwrap();
+    let cli = script.split_once("; ").unwrap().1;
     assert!(
-        std::fs::read_to_string(script)
-            .unwrap()
-            .contains("command 'claude'")
+        cli.starts_with("'env' '-u' 'CLAUDE_CONFIG_DIR' "),
+        "{script}"
+    );
+    assert!(
+        !cli.contains("unset ") && !cli.contains("export "),
+        "{script}"
+    );
+}
+
+/// `swarm spawn -- <cmd>` runs the owner's own command line, so a shell function of the pane
+/// still runs.
+#[test]
+fn a_spawned_owner_command_can_be_a_shell_function_of_the_pane() {
+    let (home, session, _cwd) = account_launch_fixture("spawn-function");
+    let output = swarm(
+        &home,
+        &[
+            ("SWARM_ADAPTER", "fake"),
+            ("SWARM_SESSION_ID", &session),
+            ("SWARM_AGENT_ID", "orchestrator"),
+        ],
+        &["spawn", "seat", "coder", "--", "wrapper", "one"],
+    );
+    assert!(output.status.success(), "{}", stderr(&output));
+    let script = home.join(format!(".swarm/runs/{session}/seat.sh"));
+    let output = Command::new("/bin/sh")
+        .env_clear()
+        .env("HOME", &home)
+        .env("PATH", "/usr/bin:/bin")
+        .args([
+            "-c",
+            "wrapper() { echo \"$1\" > \"$HOME/function-ran\"; }; . \"$1\"",
+            "test",
+            script.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert_eq!(
+        std::fs::read_to_string(home.join("function-ran")).unwrap(),
+        "one\n"
     );
 }
