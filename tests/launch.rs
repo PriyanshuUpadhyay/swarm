@@ -1795,6 +1795,127 @@ fn launch_uses_model_usage_and_refuses_spent_fable_auto_before_starting_a_pane()
     assert!(stderr(&fable).contains("account default"));
 }
 
+fn renewable_launch_cache(home: &Path, work_used: i64) {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let work = serde_json::json!({
+        "provider":"claude", "account":"work", "label":"work", "window":"5h",
+        "used_pct":work_used, "state":"fresh", "as_of_seconds":now,
+        "reset_time_seconds":now+3600
+    });
+    let default = serde_json::json!({
+        "provider":"claude", "account":"default", "label":"default",
+        "state":"failed", "reason":"Token expired"
+    });
+    std::fs::write(
+        home.join(".swarm/claude-usage.json"),
+        serde_json::json!({"accounts":[
+            {"home":home.join(".claude/.profiles/work"), "meters":[work]},
+            {"home":home.join(".claude"), "meters":[default]},
+        ]})
+        .to_string(),
+    )
+    .unwrap();
+}
+
+#[test]
+fn auto_takes_a_renewable_account_only_when_no_fresh_one_has_enough_left() {
+    let (home, session, cwd) = account_launch_fixture("renewable-pick");
+    let env = [
+        ("SWARM_ADAPTER", "fake"),
+        ("SWARM_SESSION_ID", session.as_str()),
+        ("SWARM_AGENT_ID", "orchestrator"),
+    ];
+    let launch = |seat: &str| {
+        swarm(
+            &home,
+            &env,
+            &[
+                "launch",
+                seat,
+                "chat",
+                "--provider",
+                "claude",
+                "--model",
+                "sonnet",
+                "--cwd",
+                &cwd,
+            ],
+        )
+    };
+    renewable_launch_cache(&home, 60);
+    let fresh = launch("fresh");
+    assert!(fresh.status.success(), "{}", stderr(&fresh));
+    assert!(
+        stderr(&fresh).contains("account work"),
+        "{}",
+        stderr(&fresh)
+    );
+    renewable_launch_cache(&home, 97);
+    let renewable = launch("renewable");
+    assert!(renewable.status.success(), "{}", stderr(&renewable));
+    assert!(
+        stderr(&renewable).contains("account default"),
+        "{}",
+        stderr(&renewable)
+    );
+    let role = swarm(&home, &[], &["roles", "get", "chat"]);
+    assert!(role.status.success(), "{}", stderr(&role));
+    let role: serde_json::Value = serde_json::from_slice(&role.stdout).unwrap();
+    assert_eq!(role["provider"], "claude");
+    assert_eq!(role["skipped"], serde_json::json!([]));
+}
+
+#[test]
+fn an_auto_launch_warns_when_a_trust_file_cannot_be_edited_and_a_named_one_stops() {
+    let (home, session, cwd) = account_launch_fixture("trust-file-auto");
+    std::fs::write(home.join(".claude.json"), "[]\n").unwrap();
+    let env = [
+        ("SWARM_ADAPTER", "fake"),
+        ("SWARM_SESSION_ID", session.as_str()),
+        ("SWARM_AGENT_ID", "orchestrator"),
+    ];
+    let launch = |seat: &str, account: Option<&str>| {
+        let mut args = vec![
+            "launch",
+            seat,
+            "chat",
+            "--provider",
+            "claude",
+            "--model",
+            "sonnet",
+            "--cwd",
+            &cwd,
+        ];
+        if let Some(account) = account {
+            args.extend(["--account", account]);
+        }
+        swarm(&home, &env, &args)
+    };
+    for (seat, account) in [("plain", None), ("auto", Some("auto"))] {
+        let output = launch(seat, account);
+        assert!(output.status.success(), "{}", stderr(&output));
+        assert!(
+            stderr(&output).contains("swarm: skipped"),
+            "{}",
+            stderr(&output)
+        );
+    }
+    let named = launch("named", Some("work"));
+    assert!(!named.status.success());
+    assert!(
+        stderr(&named).contains("not a JSON object"),
+        "{}",
+        stderr(&named)
+    );
+    assert_eq!(
+        std::fs::read_to_string(home.join(".claude.json")).unwrap(),
+        "[]\n"
+    );
+}
+
 #[test]
 fn roles_check_uses_fable_models_and_reads_native_accounts_once_per_provider() {
     let (home, session, cwd) = account_launch_fixture("fable-role-fallback");
@@ -1817,7 +1938,7 @@ fn roles_check_uses_fable_models_and_reads_native_accounts_once_per_provider() {
         .find(|profile| profile["name"] == "review.scope")
         .unwrap();
     assert_eq!(scope["pick"], 1);
-    assert_eq!(scope["skipped"][0]["code"], "low_usage");
+    assert_eq!(scope["skipped"][0]["code"], "fable_spent");
     assert_eq!(
         scope["skipped"][0]["text"],
         "every signed-in Claude account has used its Fable limit"

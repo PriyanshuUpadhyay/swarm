@@ -320,3 +320,62 @@ fn current_config_home_uses_its_own_keychain_service() {
         "{args}"
     );
 }
+
+fn security_with_expiry(home: &Path, expires_at_millis: i64) {
+    tool(
+        home,
+        "security",
+        &format!(
+            "echo '{{\"claudeAiOauth\":{{\"accessToken\":\"{TOKEN}\",\"expiresAt\":{expires_at_millis}}}}}'"
+        ),
+    );
+}
+
+#[test]
+fn an_expired_token_makes_no_request_and_keeps_its_reason_in_a_cached_read() {
+    let home = fixture("expired");
+    let now_millis = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as i64;
+    security_with_expiry(&home, now_millis - 60_000);
+    let value = usage(&run(
+        &home,
+        "http://127.0.0.1:9/unused",
+        &["usage", "--refresh", "--provider", "claude", "--json"],
+    ));
+    assert_eq!(value["meters"].as_array().unwrap().len(), 1);
+    assert_eq!(value["meters"][0]["state"], "failed");
+    assert_eq!(value["meters"][0]["reason"], "Token expired");
+    assert!(!home.join("curl-args").exists());
+    let cached = usage(&run(
+        &home,
+        "http://127.0.0.1:9/unused",
+        &["usage", "--json"],
+    ));
+    assert!(
+        cached["meters"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|row| row["provider"] == "claude" && row["reason"] == "Token expired")
+    );
+}
+
+#[test]
+fn a_rejected_live_token_still_asks_to_sign_in_again() {
+    let home = fixture("live-401");
+    let now_millis = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as i64;
+    security_with_expiry(&home, now_millis + 3_600_000);
+    let (url, request) = server("401 Unauthorized", "", "");
+    let value = usage(&run(
+        &home,
+        &url,
+        &["usage", "--refresh", "--provider", "claude", "--json"],
+    ));
+    request.join().unwrap();
+    assert_eq!(value["meters"][0]["reason"], "Sign in again");
+}

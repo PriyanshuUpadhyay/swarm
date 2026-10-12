@@ -264,7 +264,8 @@ pub fn secure_storage_dir(home: &str, name: &str) -> Option<String> {
     if name == "current"
         || crate::paths::root_dir().is_ok_and(|root| {
             let root = std::fs::canonicalize(&root).unwrap_or(root);
-            std::path::Path::new(home).starts_with(root.join("accounts/claude"))
+            std::path::Path::new(home)
+                .starts_with(crate::accounts::accounts_dir(&root, Provider::Claude))
         })
     {
         return Some(home.into());

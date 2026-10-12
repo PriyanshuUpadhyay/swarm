@@ -30,8 +30,11 @@ Chosen: swarm reads the OAuth access token of each account from the Keychain wit
 calls `GET https://api.anthropic.com/api/oauth/usage` with `curl`. The headers go to `curl` on
 stdin. The token stays in memory; it is in no argument list, log, error text or cache file. Swarm
 never refreshes a token. The timeout comes from the caller's deadline, and there is no retry; the
-cache `root_dir/claude-usage.json` is the fallback. HTTP 401 or 403 gives a meter with state
-`failed` and the reason "Sign in again". The usage source name is `claude_api`.
+cache `root_dir/claude-usage.json` is the fallback. When the Keychain entry's
+`claudeAiOauth.expiresAt` (milliseconds) is in the past, swarm makes no call and gives one meter
+with state `failed` and the reason "Token expired"; a missing or unreadable `expiresAt` counts as
+live. HTTP 401 or 403 with a live token gives a meter with state `failed` and the reason "Sign in
+again". The usage source name is `claude_api`.
 
 These rules of ADR 0064 stay in force: Codex quota comes from the Codex app-server, each account
 shows its usage source and read state, AGY has no usage source in swarm, and a cached reading is

@@ -210,6 +210,7 @@ fn load_inner(
             summary: None,
             invalid_home: false,
             fable_spent: false,
+            renewable: false,
         });
     }
     if include_usage {
@@ -250,12 +251,18 @@ fn load_inner(
             summary: Some(reason),
             invalid_home: true,
             fable_spent: false,
+            renewable: false,
         });
     }
     list.accounts
         .sort_by(|left, right| left.name.cmp(&right.name));
     list.current_home = discovery.current.to_str().map(str::to_string);
-    list.auto = super::pick_auto(&list.accounts, list.current_home.as_deref(), None)?;
+    list.auto = super::pick_auto(
+        &list.accounts,
+        list.current_home.as_deref(),
+        None,
+        crate::config::min_usage_left_pct(),
+    )?;
     Ok(list)
 }
 

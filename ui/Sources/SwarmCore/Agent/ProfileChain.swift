@@ -23,6 +23,7 @@ public enum RunnerChipState: Sendable, Equatable {
         switch skip.code {
         case "cli_missing": "CLI missing"
         case "signed_out": "signed out"
+        case "fable_spent": "Fable limit used"
         default: skip.text.components(separatedBy: " (").first ?? skip.text
         }
     }

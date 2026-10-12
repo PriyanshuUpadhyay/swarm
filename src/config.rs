@@ -73,6 +73,13 @@ fn default_min_usage_left_pct() -> u8 {
     DEFAULT_MIN_USAGE_LEFT_PCT
 }
 
+/// The configured `min_usage_left_pct`, or the default when the config cannot be read.
+pub fn min_usage_left_pct() -> u8 {
+    load().map_or(DEFAULT_MIN_USAGE_LEFT_PCT, |(config, _)| {
+        config.min_usage_left_pct
+    })
+}
+
 impl Config {
     pub fn profile(&self, name: &str) -> Result<&Profile, String> {
         self.profiles
@@ -322,6 +329,7 @@ pub enum SkipCode {
     CliMissing,
     SignedOut,
     LowUsage,
+    FableSpent,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]

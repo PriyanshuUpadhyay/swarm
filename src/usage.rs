@@ -14,6 +14,8 @@ const REFRESH_FAILED_REASON: &str = "Usage refresh failed; old reading";
 // The app shows its Open Accounts button for these two texts, so a cached read must keep them.
 const SIGNED_OUT_REASON: &str = "Account is signed out";
 const SIGN_IN_AGAIN_REASON: &str = "Sign in again";
+// The CLI renews an expired token when a chat starts, so Auto may still pick the account.
+pub(crate) const TOKEN_EXPIRED_REASON: &str = "Token expired";
 /// The last second of year 9999. A reset time in text has the same limit.
 const MAX_RESET_SECONDS: i64 = 253_402_300_799;
 
@@ -250,6 +252,7 @@ pub(crate) fn normalize_meter(stored: &UsageMeter, now: i64) -> UsageMeter {
                 "missing" => "No cached usage",
                 "no_source" => "No usage source",
                 _ if stored.reason.as_deref() == Some(SIGN_IN_AGAIN_REASON) => SIGN_IN_AGAIN_REASON,
+                _ if stored.reason.as_deref() == Some(TOKEN_EXPIRED_REASON) => TOKEN_EXPIRED_REASON,
                 _ => "Usage read failed",
             }
             .into(),
@@ -305,12 +308,14 @@ fn refresh(provider: Provider, deadline: Instant) -> Result<Usage, String> {
                 fresh_claude(&account, deadline)
             } {
                 Ok(meters) => meters,
-                Err(reason) if reason == SIGN_IN_AGAIN_REASON => vec![status_meter(
-                    provider.id(),
-                    Some(&account),
-                    "failed",
-                    SIGN_IN_AGAIN_REASON,
-                )],
+                Err(reason) if reason == SIGN_IN_AGAIN_REASON || reason == TOKEN_EXPIRED_REASON => {
+                    vec![status_meter(
+                        provider.id(),
+                        Some(&account),
+                        "failed",
+                        &reason,
+                    )]
+                }
                 Err(_) => {
                     let retained: Vec<_> = previous
                         .iter()
@@ -397,6 +402,14 @@ fn fresh_claude(account: &Account, deadline: Instant) -> Result<Vec<UsageMeter>,
                 && token.bytes().all(|byte| byte.is_ascii_graphic())
         })
         .ok_or("Claude credentials are unavailable")?;
+    // A missing or unreadable expiry counts as live, so the API answers for it.
+    if credentials
+        .pointer("/claudeAiOauth/expiresAt")
+        .and_then(Value::as_i64)
+        .is_some_and(|millis| millis < now_seconds().saturating_mul(1000))
+    {
+        return Err(TOKEN_EXPIRED_REASON.into());
+    }
     let remaining = deadline
         .checked_duration_since(Instant::now())
         .ok_or("Claude usage read timed out")?;
@@ -785,6 +798,7 @@ mod tests {
             summary: None,
             invalid_home: false,
             fable_spent: false,
+            renewable: false,
         }
     }
 

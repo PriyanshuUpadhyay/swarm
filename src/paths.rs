@@ -84,9 +84,10 @@ pub fn root_dir() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
 /// The folder of the Codex homes that `swarm accounts login` makes. It is only read through this
 /// path, so it does not claim the swarm folder.
 pub fn codex_accounts_dir() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
-    Ok(std::path::PathBuf::from(home()?)
-        .join(SWARM_DIR)
-        .join("accounts/codex"))
+    Ok(crate::accounts::accounts_dir(
+        &std::path::PathBuf::from(home()?).join(SWARM_DIR),
+        crate::providers::Provider::Codex,
+    ))
 }
 
 pub fn skills_dir() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {

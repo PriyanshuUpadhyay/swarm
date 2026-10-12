@@ -132,7 +132,9 @@ It needs no other tool.
 - A Claude account is a login in the macOS Keychain. Every Claude account uses the chats, settings and
   memory in `~/.claude`; only the login changes (ADR 0071). A Codex account keeps its own home. The home of a new account is in
   `~/.swarm/accounts/<provider>/<name>`. Swarm adds no account folder to your home.
-- `swarm launch` starts the worker on the account with the most usage left. `--account work`
+- `swarm launch` starts the worker on the account with the most usage left. When no account has
+  `min_usage_left_pct` left, it takes the first account whose token expired, because the CLI
+  renews that token when the chat starts. `--account work`
   takes the account named `work`. A Fable model counts the Fable weekly limit too, and its
   automatic pick stops when every signed-in account has used that limit. The Fable limit never
   refuses a named account; an unknown or signed-out name is still refused.
@@ -273,8 +275,9 @@ the first save. A file that is a broken symlink is an error, never a silent swit
 A save writes through a symlink, so `profiles.json` can live in a dotfiles checkout.
 
 A launch takes the first runner that can run (ADR 0032). It skips a runner whose CLI is not on
-PATH, whose accounts are all signed out, or whose best account has less usage left than
-`min_usage_left_pct` (default 5). The account read has a 2 s deadline; a read that fails, times
+PATH (code `cli_missing`), whose accounts are all signed out (`signed_out`), whose best account has
+less usage left than `min_usage_left_pct` (default 5, `low_usage`), or, for a Fable model, whose
+signed-in accounts have all used the Fable limit (`fable_spent`). The account read has a 2 s deadline; a read that fails, times
 out, or finds no accounts counts as "can run". Each skip is one stderr line, such as
 `swarm: code.complex: skipped claude/opus/high: usage 2% left (threshold 5%)`, and a launch where
 no runner can run fails with one line per runner.

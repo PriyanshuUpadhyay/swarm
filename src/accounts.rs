@@ -139,6 +139,11 @@ fn update(
     })
 }
 
+/// `<root>/accounts/<provider>`, the folder of the account homes that `register` makes.
+pub fn accounts_dir(root: &Path, provider: Provider) -> PathBuf {
+    root.join("accounts").join(provider.id())
+}
+
 /// Allocate a private account home only when the supplied revision still matches.
 /// Registration stays on disk if the later pane open or login fails.
 /// A name that already has a home in `$HOME` keeps it: an entry that an older build wrote, or a
@@ -152,7 +157,7 @@ pub fn register(provider: Provider, name: &str, expected: &str) -> Result<(Entry
     }
     let root = crate::paths::root_dir().map_err(|error| error.to_string())?;
     let root = std::fs::canonicalize(root).map_err(|_| "Swarm home is unavailable")?;
-    let home = root.join("accounts").join(provider.id()).join(name);
+    let home = accounts_dir(&root, provider).join(name);
     home.to_str().ok_or("Account home path must be UTF-8")?;
     let older = std::env::var_os("HOME")
         .and_then(|home| std::fs::canonicalize(home).ok())
@@ -196,7 +201,7 @@ pub fn register(provider: Provider, name: &str, expected: &str) -> Result<(Entry
         use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
         for directory in [
             root.join("accounts"),
-            root.join("accounts").join(provider.id()),
+            accounts_dir(&root, provider),
             entry.home.clone(),
         ] {
             match std::fs::symlink_metadata(&directory) {

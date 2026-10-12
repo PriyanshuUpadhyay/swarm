@@ -31,6 +31,9 @@ pub struct Account {
     pub invalid_home: bool,
     #[serde(skip)]
     pub fable_spent: bool,
+    /// Signed in with an expired token, which the CLI renews when a chat starts.
+    #[serde(skip)]
+    pub renewable: bool,
 }
 
 impl AccountList {
@@ -41,6 +44,8 @@ impl AccountList {
     }
 }
 
+/// `best` is the Claude CLI alias for its most capable model, which is Fable, so a chat on `best`
+/// spends the Fable limit and the pick must count it.
 pub fn is_fable_model(model: Option<&str>) -> bool {
     model.is_some_and(|model| {
         let model = model.to_ascii_lowercase();
@@ -78,10 +83,14 @@ pub fn empty_accounts(provider: &str) -> AccountList {
     }
 }
 
+/// The fresh account with the most left when it has at least `min_usage_left_pct`, else the
+/// first renewable account by name, else the fresh account with the most left, else the current
+/// home. A signed-out account is never picked.
 pub fn pick_auto(
     accounts: &[Account],
     current_home: Option<&str>,
     model: Option<&str>,
+    min_usage_left_pct: u8,
 ) -> Result<Option<String>, String> {
     let fable = is_fable_model(model);
     let signed_in: Vec<_> = accounts
@@ -97,14 +106,22 @@ pub fn pick_auto(
             .filter(|account| account.auth_state == AuthState::SignedIn)
             .filter(|account| !fable || !account.fable_spent)
     };
-    Ok(signed_in()
+    let fresh = signed_in()
         .filter(|account| account.usage_state == "fresh" && account.remaining_pct.is_some())
         .min_by(|left, right| {
             right
                 .remaining_pct
                 .cmp(&left.remaining_pct)
                 .then(left.name.cmp(&right.name))
+        });
+    Ok(fresh
+        .filter(|account| account.remaining_pct >= Some(i64::from(min_usage_left_pct)))
+        .or_else(|| {
+            signed_in()
+                .filter(|account| account.renewable)
+                .min_by(|left, right| left.name.cmp(&right.name))
         })
+        .or(fresh)
         .or_else(|| signed_in().find(|account| Some(account.home.as_str()) == current_home))
         .map(|account| account.name.clone()))
 }
@@ -133,6 +150,12 @@ fn apply_usage_for_model(list: &mut AccountList, meters: &[UsageMeter], model: O
                     && matches!(meter.state.as_str(), "fresh" | "stale")
                     && meter.used_pct == Some(100)
                     && meter.reset_time_seconds.is_none_or(|reset| reset > now)
+            });
+        account.renewable = list.provider == "claude"
+            && account.auth_state == AuthState::SignedIn
+            && rows.iter().any(|meter| {
+                meter.state == "failed"
+                    && meter.reason.as_deref() == Some(crate::usage::TOKEN_EXPIRED_REASON)
             });
         let rows: Vec<_> = rows
             .into_iter()
@@ -235,6 +258,7 @@ mod tests {
             summary: None,
             invalid_home: false,
             fable_spent: false,
+            renewable: false,
         }
     }
 
@@ -246,35 +270,88 @@ mod tests {
             account("spare", AuthState::SignedOut, "fresh", Some(100)),
         ];
         assert_eq!(
-            pick_auto(&rows, Some("/profiles/personal"), None)
+            pick_auto(&rows, Some("/profiles/personal"), None, 5)
                 .unwrap()
                 .as_deref(),
             Some("work")
         );
         rows[1].remaining_pct = Some(70);
         assert_eq!(
-            pick_auto(&rows, None, None).unwrap().as_deref(),
+            pick_auto(&rows, None, None, 5).unwrap().as_deref(),
             Some("personal")
         );
         rows[0].usage_state = "stale".into();
         rows[0].remaining_pct = Some(100);
         assert_eq!(
-            pick_auto(&rows, None, None).unwrap().as_deref(),
+            pick_auto(&rows, None, None, 5).unwrap().as_deref(),
             Some("personal")
         );
         rows[1].usage_state = "missing".into();
         rows[1].remaining_pct = None;
         assert_eq!(
-            pick_auto(&rows, Some("/profiles/work"), None)
+            pick_auto(&rows, Some("/profiles/work"), None, 5)
                 .unwrap()
                 .as_deref(),
             Some("work")
         );
-        assert_eq!(pick_auto(&rows, None, None).unwrap(), None);
+        assert_eq!(pick_auto(&rows, None, None, 5).unwrap(), None);
         rows[0].auth_state = AuthState::Unavailable;
         assert_eq!(
-            pick_auto(&rows, Some("/profiles/work"), None).unwrap(),
+            pick_auto(&rows, Some("/profiles/work"), None, 5).unwrap(),
             None
+        );
+    }
+
+    fn meter(name: &str, state: &str, used: Option<i64>, reason: Option<&str>) -> UsageMeter {
+        UsageMeter {
+            provider: "claude".into(),
+            account: Some(name.into()),
+            label: name.into(),
+            window: used.map(|_| "5h".into()),
+            window_minutes: None,
+            used_pct: used,
+            reset_time_seconds: None,
+            state: state.into(),
+            source: None,
+            reason: reason.map(str::to_string),
+            as_of_seconds: None,
+        }
+    }
+
+    fn claude_list(meters: &[UsageMeter]) -> AccountList {
+        let mut list = empty_accounts("claude");
+        for name in ["alpha", "bravo", "charlie"] {
+            list.accounts
+                .push(account(name, AuthState::SignedIn, "missing", None));
+        }
+        apply_usage(&mut list, meters);
+        list
+    }
+
+    #[test]
+    fn auto_takes_a_renewable_account_only_below_the_threshold_and_never_a_signed_out_one() {
+        let expired = |name| meter(name, "failed", None, Some("Token expired"));
+        let pick = |list: &AccountList| pick_auto(&list.accounts, None, None, 5).unwrap();
+        let list = claude_list(&[meter("alpha", "fresh", Some(60), None), expired("bravo")]);
+        assert!(list.accounts[1].renewable);
+        assert_eq!(pick(&list).as_deref(), Some("alpha"));
+        let list = claude_list(&[meter("alpha", "fresh", Some(97), None), expired("bravo")]);
+        assert_eq!(pick(&list).as_deref(), Some("bravo"));
+        let list = claude_list(&[expired("charlie"), expired("bravo")]);
+        assert_eq!(pick(&list).as_deref(), Some("bravo"));
+        let mut list = claude_list(&[expired("bravo")]);
+        list.accounts[1].auth_state = AuthState::SignedOut;
+        assert_eq!(pick(&list), None);
+        apply_usage(&mut list, &[expired("bravo")]);
+        assert!(!list.accounts[1].renewable);
+        let list = claude_list(&[meter("bravo", "failed", None, Some("Sign in again"))]);
+        assert!(!list.accounts[1].renewable);
+        assert_eq!(pick(&list), None);
+        let fable = claude_list(&[expired("bravo")]).for_model(Some("fable"));
+        assert!(!fable.accounts[1].fable_spent);
+        assert_eq!(
+            pick_auto(&fable.accounts, None, Some("fable"), 5),
+            Ok(Some("bravo".into()))
         );
     }
 
@@ -330,7 +407,12 @@ mod tests {
         for state in ["fresh", "stale"] {
             let list = model_list("claude", Some(100), state, None).for_model(Some("best"));
             assert_eq!(
-                pick_auto(&list.accounts, list.current_home.as_deref(), Some("best")),
+                pick_auto(
+                    &list.accounts,
+                    list.current_home.as_deref(),
+                    Some("best"),
+                    5
+                ),
                 Err("every signed-in Claude account has used its Fable limit".into())
             );
             assert!(resolve_account(&list, "work").is_ok());
@@ -350,7 +432,12 @@ mod tests {
             let list = model_list("claude", used, state, reset).for_model(Some("fable"));
             assert!(!list.accounts[0].fable_spent);
             assert_eq!(
-                pick_auto(&list.accounts, list.current_home.as_deref(), Some("fable")),
+                pick_auto(
+                    &list.accounts,
+                    list.current_home.as_deref(),
+                    Some("fable"),
+                    5
+                ),
                 Ok(Some("work".into()))
             );
         }
@@ -358,10 +445,10 @@ mod tests {
 
     #[test]
     fn fable_auto_with_no_signed_in_account_has_no_pick() {
-        assert_eq!(pick_auto(&[], None, Some("fable")), Ok(None));
+        assert_eq!(pick_auto(&[], None, Some("fable"), 5), Ok(None));
         let mut list = model_list("claude", Some(100), "fresh", None).for_model(Some("fable"));
         list.accounts[0].auth_state = AuthState::SignedOut;
-        assert_eq!(pick_auto(&list.accounts, None, Some("fable")), Ok(None));
+        assert_eq!(pick_auto(&list.accounts, None, Some("fable"), 5), Ok(None));
     }
 
     #[test]
@@ -379,7 +466,7 @@ mod tests {
         let codex = model_list("codex", Some(100), "fresh", None).for_model(Some("fable"));
         assert_eq!(codex.accounts[0].remaining_pct, Some(0));
         assert_eq!(
-            pick_auto(&codex.accounts, None, Some("fable")),
+            pick_auto(&codex.accounts, None, Some("fable"), 5),
             Ok(Some("work".into()))
         );
         let json = serde_json::to_value(&list).unwrap();

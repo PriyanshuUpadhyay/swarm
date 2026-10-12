@@ -577,10 +577,14 @@ impl Probe {
         let model = self.account.is_none().then_some(runner.model.as_str());
         let scoped = accounts.as_ref().ok().map(|list| list.for_model(model));
         if let Some(list) = &scoped
-            && let Err(reason) =
-                swarm::profiles::pick_auto(&list.accounts, list.current_home.as_deref(), model)
+            && let Err(reason) = swarm::profiles::pick_auto(
+                &list.accounts,
+                list.current_home.as_deref(),
+                model,
+                self.min_usage_left_pct,
+            )
         {
-            return Some((swarm::config::SkipCode::LowUsage, reason));
+            return Some((swarm::config::SkipCode::FableSpent, reason));
         }
         let accounts = scoped
             .as_ref()
@@ -730,15 +734,20 @@ fn select_account(
     provider: Provider,
     requested: &str,
     model: Option<&str>,
+    min_usage_left_pct: u8,
     accounts: Result<&swarm::profiles::AccountList, String>,
 ) -> Result<Option<swarm::profiles::Account>, String> {
     let mut accounts = accounts.map(|accounts| accounts.for_model(model));
     if requested == "auto"
         && let Ok(accounts) = &mut accounts
     {
-        accounts.auto =
-            swarm::profiles::pick_auto(&accounts.accounts, accounts.current_home.as_deref(), model)
-                .map_err(|error| format!("swarm: {error}"))?;
+        accounts.auto = swarm::profiles::pick_auto(
+            &accounts.accounts,
+            accounts.current_home.as_deref(),
+            model,
+            min_usage_left_pct,
+        )
+        .map_err(|error| format!("swarm: {error}"))?;
     }
     match accounts
         .and_then(|accounts| swarm::profiles::resolve_account(&accounts, requested).cloned())
@@ -774,6 +783,7 @@ fn run_cli(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         provider,
         requested,
         swarm::bus::command_model(extra),
+        swarm::config::min_usage_left_pct(),
         accounts.as_ref().map_err(Clone::clone),
     )?;
     let mut command = std::process::Command::new(provider.id());
@@ -3894,6 +3904,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                     kind,
                     requested,
                     resolved.model.as_deref(),
+                    probe.min_usage_left_pct,
                     accounts.as_ref().map_err(Clone::clone),
                 )?
             }
@@ -3913,7 +3924,9 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         let launch_trust = LaunchTrust {
             store: &connection,
             consent,
-            required: picked.is_some(),
+            // Auto keeps the base rule for a launch with no account: a file that cannot take the
+            // entry is a warning. Only a named account must get it.
+            required: picked.is_some() && account.is_some_and(|name| name != "auto"),
             cwd: &cwd,
         };
         match kind {
