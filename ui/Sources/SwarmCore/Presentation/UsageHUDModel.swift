@@ -77,6 +77,13 @@ public enum UsageHUDPrompt {
     public static func shouldAsk(answer: Bool?, askedThisRun: Bool, setupSheetOpen: Bool) -> Bool {
         answer == nil && !askedThisRun && !setupSheetOpen
     }
+
+    /// Read from the choices file, because Swarm starts at login with no window (ADR 0069) and
+    /// the HUD cannot wait for one. A file that cannot be read shows no HUD.
+    @MainActor
+    public static func showsAtLaunch(choices: OwnerChoicesStore) -> Bool {
+        (try? choices.load(waitForLock: true).prefs.usageHUD) == true
+    }
 }
 
 /// Sizes and rects of the HUD panel. A rect has its origin at the bottom left, as AppKit has.
@@ -186,7 +193,7 @@ public final class UsageHUDModel {
     public private(set) var panelWidth = UsageHUDLayout.minPanelWidth
     /// The most height the card may take, set with its bottom edge. nil fits every account.
     public private(set) var panelHeightLimit: CGFloat?
-    /// False on a screen with no notch. The collapsed panel is then a pill under the menu bar.
+    /// False on a screen with no notch. The collapsed panel is then a pill on the menu bar.
     public var hasNotch = true
     public var notchTopInset = UsageHUDLayout.fallbackNotchSize.height
     public var notchTriggerWidth = UsageHUDLayout.fallbackNotchSize.width

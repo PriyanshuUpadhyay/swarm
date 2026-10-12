@@ -2450,12 +2450,14 @@ private struct SwitchTarget: Identifiable {
 struct SwarmApp: App {
     @State private var model = SessionsTreeModel()
     @State private var settings = SettingsSelection()
-    @State private var usageHUD = UsageHUDWindow()
+    private let usageHUD = UsageHUDWindow.shared
     private var splitDiff: Binding<Bool> {
         Binding(get: { settings.prefs.splitDiff }, set: { settings.setSplitDiff($0) })
     }
     init() {
         SwarmPerformance.event("AppStarted")
+        // Swarm starts at login with no window (ADR 0069), so the HUD does not wait for one.
+        if SwarmPaneStress.count == 0 { UsageHUDWindow.shared.showAtLaunch() }
     }
 
     private func beginStartup() {
@@ -2485,9 +2487,7 @@ struct SwarmApp: App {
             .modifier(AppearancePreferences(prefs: settings.prefs))
             // Register on the installed state before the window's setup readers start.
             .onAppear { beginStartup() }
-            .onChange(of: settings.prefs.usageHUD, initial: true) { _, shown in
-                usageHUD.setShown(shown == true && SwarmPaneStress.count == 0)
-            }
+            .modifier(UsageHUDFollowsAnswer(shown: settings.prefs.usageHUD == true))
         }
             .environment(settings)
             .environment(usageHUD)
@@ -2508,9 +2508,22 @@ struct SwarmApp: App {
         Settings {
             SettingsWindow().environment(settings).environment(model).environment(usageHUD)
                 .environment(\.splitDiff, splitDiff)
+                .modifier(UsageHUDFollowsAnswer(shown: settings.prefs.usageHUD == true))
                 .modifier(AppearancePreferences(prefs: settings.prefs))
         }
             .defaultSize(width: DesignTokens.Size.settingsWidth, height: DesignTokens.Size.settingsHeight)
+    }
+}
+
+/// The answer changes only in the "Add the usage HUD?" alert of a sessions window and in the
+/// Settings switch, so those two windows carry this. App start is `UsageHUDWindow.showAtLaunch`.
+private struct UsageHUDFollowsAnswer: ViewModifier {
+    let shown: Bool
+
+    func body(content: Content) -> some View {
+        content.onChange(of: shown) { _, shown in
+            UsageHUDWindow.shared.setShown(shown && SwarmPaneStress.count == 0)
+        }
     }
 }
 

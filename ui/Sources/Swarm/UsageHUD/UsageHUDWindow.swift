@@ -8,6 +8,9 @@ import SwarmCore
 /// has the HUD on, and only while the app runs.
 @MainActor @Observable
 final class UsageHUDWindow {
+    /// One per process: the launch hook and every window must reach the same panel.
+    static let shared = UsageHUDWindow()
+
     /// The Accounts page uses the same refresher, so the two share the 300-second limit.
     let refresher: UsageRefresher
     let model: UsageHUDModel
@@ -39,7 +42,7 @@ final class UsageHUDWindow {
         .canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle,
     ]
 
-    init() {
+    private init() {
         let refresher = UsageRefresher { provider in
             await LoginShellPath.ready()
             return try await SwarmCLIProfileSource().refreshUsage(provider: provider)
@@ -55,6 +58,20 @@ final class UsageHUDWindow {
     }
 
     // MARK: On and off
+
+    /// Shows the HUD when the app has started, with or without a window. Call it before the app
+    /// runs; a panel cannot be made earlier than that.
+    func showAtLaunch() {
+        // Registered now and not in a Task, because a Task can start after the notification.
+        // The notification comes one time per process, so the observer stays.
+        _ = NotificationCenter.default.addObserver(
+            forName: NSApplication.didFinishLaunchingNotification, object: nil, queue: .main
+        ) { _ in
+            MainActor.assumeIsolated {
+                Self.shared.setShown(UsageHUDPrompt.showsAtLaunch(choices: OwnerChoicesStore()))
+            }
+        }
+    }
 
     func setShown(_ shown: Bool) {
         guard shown != (panel != nil) else { return }
@@ -202,20 +219,19 @@ final class UsageHUDWindow {
         guard let panel else { return }
         model.applyPanelCeiling(UsageHUDLayout.panelHeight(screenHeight: screen.visibleFrame.height))
         model.applyScreenWidth(screen.frame.width)
-        var top = screen.frame
+        let menuBarHeight = screen.frame.maxY - screen.visibleFrame.maxY
         model.hasNotch = screen.safeAreaInsets.top > 0
         if model.hasNotch {
-            let menuBarHeight = screen.frame.maxY - screen.visibleFrame.maxY
             model.notchTopInset = max(screen.safeAreaInsets.top, menuBarHeight)
             model.notchTriggerWidth = screen.frame.width
                 - (screen.auxiliaryTopLeftArea?.width ?? 0) - (screen.auxiliaryTopRightArea?.width ?? 0)
         } else {
-            // No notch: a pill as high as the menu bar, directly under it.
-            model.notchTopInset = NSStatusBar.system.thickness
+            // No notch: a pill on the menu bar at the top center. A hidden menu bar has no height,
+            // so the pill then takes the height of a status item.
+            model.notchTopInset = max(menuBarHeight, NSStatusBar.system.thickness)
             model.notchTriggerWidth = UsageHUDLayout.fallbackNotchSize.width
-            top.size.height = screen.visibleFrame.maxY - screen.frame.minY
         }
-        let origin = UsageHUDLayout.notchAnchoredOrigin(size: model.panelSize, screenFrame: top)
+        let origin = UsageHUDLayout.notchAnchoredOrigin(size: model.panelSize, screenFrame: screen.frame)
         panel.setFrame(CGRect(origin: origin, size: model.panelSize), display: false)
         placedScreenFrame = screen.frame
     }

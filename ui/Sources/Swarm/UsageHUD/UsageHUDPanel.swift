@@ -99,7 +99,7 @@ struct UsageHUDPanel: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // A notch covers this area. With no notch it is the pill under the menu bar.
+            // A notch covers this area. With no notch it is the pill on the menu bar.
             Group {
                 if model.hasNotch { Color.clear } else { pill }
             }

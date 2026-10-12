@@ -491,6 +491,26 @@ struct UsageHUDModelTests {
         #expect(!UsageHUDPrompt.shouldAsk(answer: nextRun.prefs.usageHUD, askedThisRun: false, setupSheetOpen: false))
     }
 
+    @Test("at app start the saved answer alone decides, so the HUD needs no window")
+    func shownAtLaunch() throws {
+        let folder = try claimedChoicesFolder(
+            FileManager.default.temporaryDirectory.appendingPathComponent("usage-hud-launch-\(UUID().uuidString)")
+        )
+        defer { try? FileManager.default.removeItem(at: folder) }
+        #expect(!UsageHUDPrompt.showsAtLaunch(choices: OwnerChoicesStore(folder: folder)))
+        let selection = SettingsSelection(choices: OwnerChoicesStore(folder: folder))
+        selection.setUsageHUD(true)
+        #expect(UsageHUDPrompt.showsAtLaunch(choices: OwnerChoicesStore(folder: folder)))
+        selection.setUsageHUD(false)
+        #expect(!UsageHUDPrompt.showsAtLaunch(choices: OwnerChoicesStore(folder: folder)))
+        // No swarm home, or a choices file that cannot be read, shows no HUD.
+        #expect(!UsageHUDPrompt.showsAtLaunch(choices: OwnerChoicesStore(folder: nil)))
+        selection.setUsageHUD(true)
+        try FileManager.default.removeItem(at: folder.appendingPathComponent("choices.lock"))
+        try FileManager.default.createDirectory(at: folder.appendingPathComponent("choices.lock"), withIntermediateDirectories: false)
+        #expect(!UsageHUDPrompt.showsAtLaunch(choices: OwnerChoicesStore(folder: folder)))
+    }
+
     // MARK: The owner's answer
 
     @Test("the HUD answer is on, off or absent in choices.json")
