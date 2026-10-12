@@ -792,9 +792,7 @@ fn account_login(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     if pane.is_empty() || pane.chars().any(|ch| ch.is_whitespace() || ch.is_control()) {
         return Err("swarm: account registered; login pane has no valid ID".into());
     }
-    let native_env = provider.account_env(name, &entry.home.to_string_lossy(), |variable| {
-        env::var_os(variable)
-    });
+    let native_env = provider.identity_env(name, &entry.home.to_string_lossy());
     let mut command = vec!["env".to_string()];
     for key in provider.account_env_keys() {
         command.extend(["-u".into(), key.to_string()]);
@@ -886,8 +884,7 @@ fn default_codex_home() -> Result<std::path::PathBuf, String> {
     default_codex_home_with_env(|variable| std::env::var_os(variable))
 }
 
-/// Every Codex home a pane's `codex` may read: the default one and each yelo profile
-/// (`~/.codex-<name>`).
+/// The native Codex home and each discovered `~/.codex-<name>` home.
 fn codex_homes(
     user_home: &std::path::Path,
 ) -> Result<Vec<std::path::PathBuf>, Box<dyn std::error::Error>> {
@@ -1895,15 +1892,14 @@ fn agy_settings(user_home: &std::path::Path) -> std::path::PathBuf {
     user_home.join(".gemini/antigravity-cli/settings.json")
 }
 
-/// Every Claude config a pane with no picked account may read: `~/.claude.json` and each yelo
-/// profile's.
+/// Native and legacy Claude config files for the setup trust plan.
 fn claude_configs(user_home: &std::path::Path) -> Vec<std::path::PathBuf> {
     let mut configs = vec![user_home.join(".claude.json")];
     if let Ok(profiles) = std::fs::read_dir(user_home.join(".claude/.profiles")) {
         configs.extend(
             profiles
                 .filter_map(Result::ok)
-                // yelo keeps its own data in hidden dirs here; a profile is not hidden.
+                // Hidden dirs hold helper data, not account config files.
                 .filter(|entry| {
                     !entry.file_name().to_string_lossy().starts_with('.') && entry.path().is_dir()
                 })
@@ -2361,24 +2357,30 @@ fn spawn_agent(
         );
         let exe = exe.to_string_lossy().into_owned();
         let hook = swarm::adapter::shell_line(&[exe, "exited".into()]);
+        let cli = format!("command {}", swarm::adapter::shell_line(options.command));
         let child = if let Some(account) = &account {
-            let mut args = vec!["env".to_string()];
-            if let Some(provider) = provider {
-                for key in provider.account_env_keys() {
-                    args.extend(["-u".into(), key.to_string()]);
-                }
-            }
-            args.push("--".into());
-            args.extend(
-                account
-                    .env
-                    .iter()
-                    .map(|(key, value)| format!("{key}={value}")),
-            );
-            args.extend_from_slice(options.command);
-            swarm::adapter::shell_line(&args)
+            let keys = provider
+                .map(|provider| provider.account_env_keys())
+                .unwrap_or_default();
+            let clear = if keys.is_empty() {
+                String::new()
+            } else {
+                format!("unset {}; ", keys.join(" "))
+            };
+            let assignments: Vec<_> = account
+                .env
+                .iter()
+                .map(|(key, value)| format!("{key}={value}"))
+                .collect();
+            let apply = if assignments.is_empty() {
+                String::new()
+            } else {
+                format!("export {}; ", swarm::adapter::shell_line(&assignments))
+            };
+            // A subshell leaves the pane's account variables unchanged after the CLI exits.
+            format!("({clear}{apply}{cli})")
         } else {
-            swarm::adapter::shell_line(options.command)
+            cli
         };
         let line = script_line(root, &session_id, agent_id, &format!("{path}{child}"))?;
         adapter.run(
@@ -2422,7 +2424,7 @@ fn swarm_bin(
 /// Save `command` as `runs/<session>/<agent>.sh` and return the short line that sources it.
 /// A ring types into a new pane before its shell is ready, and the terminal then keeps only the
 /// first 1024 bytes of the line, so a long argv never reaches the shell whole. The pane's own
-/// shell sources the file, so its functions (such as yelo's `codex`) still pick the account.
+/// shell sources the file; `command` starts the selected external CLI.
 fn script_line(
     root: &std::path::Path,
     session_id: &str,
@@ -3842,8 +3844,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         match kind {
             Provider::Codex | Provider::Agy => match trust_target(&cwd, &user_home) {
                 Ok(target) if kind == Provider::Codex => {
-                    // Without --account, yelo's `codex` in the pane picks the profile, so every
-                    // profile it might pick needs the entry.
+                    // A selected account needs trust in its own Codex home.
                     let homes = if let Some(account) = &picked {
                         vec![std::path::PathBuf::from(&account.home)]
                     } else {
@@ -3905,18 +3906,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                         "swarm: not pre-trusting for claude: {reason}; answer the prompt in the pane"
                     );
                 } else {
-                    // Claude reads `.claude.json` from its CLAUDE_CONFIG_DIR. Without --account,
-                    // yelo's `claude` in the pane points that at the profile it picks, and a pane
-                    // with no yelo reads ~/.claude.json, so each of them needs the entry.
-                    let configs = if let Some(account) = &picked {
-                        if account.env.is_empty() {
-                            vec![user_home.join(".claude.json")]
-                        } else {
-                            vec![std::path::PathBuf::from(&account.home).join(".claude.json")]
-                        }
-                    } else {
-                        claude_configs(&user_home)
-                    };
+                    let configs = vec![user_home.join(".claude.json")];
                     launch_trust.run(
                         "claude",
                         &pane_dir,

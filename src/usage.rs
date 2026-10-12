@@ -369,12 +369,8 @@ fn fresh_claude(account: &Account, deadline: Instant) -> Result<Vec<UsageMeter>,
             account.summary.as_deref().unwrap_or("No usage source"),
         )]);
     }
-    let service = claude_keychain_service(
-        account
-            .env
-            .get("CLAUDE_SECURESTORAGE_CONFIG_DIR")
-            .map(String::as_str),
-    );
+    let storage = crate::providers::secure_storage_dir(&account.home, &account.name);
+    let service = claude_keychain_service(storage.as_deref());
     let security = std::env::var("SWARM_SECURITY_CMD").unwrap_or_else(|_| "security".into());
     let user = std::env::var("USER").unwrap_or_default();
     let credentials = read_json(

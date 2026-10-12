@@ -139,8 +139,7 @@ fn update(
     })
 }
 
-/// Register a native home reference only when the supplied revision still matches.
-/// The provider CLI creates its home and credentials.
+/// Allocate a private account home only when the supplied revision still matches.
 /// Registration stays on disk if the later pane open or login fails.
 pub fn register(provider: Provider, name: &str, expected: &str) -> Result<(Entry, String), String> {
     if !provider.has_accounts() {
@@ -149,16 +148,10 @@ pub fn register(provider: Provider, name: &str, expected: &str) -> Result<(Entry
     if !crate::config::valid_account_name(name) {
         return Err("Invalid account name".into());
     }
-    let home = PathBuf::from(std::env::var_os("HOME").ok_or("HOME is not set")?);
-    if !home.is_absolute() {
-        return Err("HOME must be an absolute path".into());
-    }
-    let home = std::fs::canonicalize(home).map_err(|_| "HOME is unavailable")?;
-    let home = match provider {
-        Provider::Codex => home.join(format!(".codex-{name}")),
-        _ => home.join(".claude/.profiles").join(name),
-    };
-    home.to_str().ok_or("Native home path must be UTF-8")?;
+    let root = crate::paths::root_dir().map_err(|error| error.to_string())?;
+    let root = std::fs::canonicalize(root).map_err(|_| "Swarm home is unavailable")?;
+    let home = root.join("accounts").join(provider.id()).join(name);
+    home.to_str().ok_or("Account home path must be UTF-8")?;
     let entry = Entry {
         provider,
         name: name.into(),
@@ -174,6 +167,26 @@ pub fn register(provider: Provider, name: &str, expected: &str) -> Result<(Entry
             } else {
                 Err("This account name is already registered".into())
             };
+        }
+        use std::os::unix::fs::DirBuilderExt;
+        for directory in [
+            root.join("accounts"),
+            root.join("accounts").join(provider.id()),
+            entry.home.clone(),
+        ] {
+            match std::fs::symlink_metadata(&directory) {
+                Ok(metadata) if !metadata.is_dir() || metadata.is_symlink() => {
+                    return Err("Account home must be a directory, not a symlink".into());
+                }
+                Ok(_) => (),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    std::fs::DirBuilder::new()
+                        .mode(0o700)
+                        .create(&directory)
+                        .map_err(|_| "Cannot create account home")?;
+                }
+                Err(_) => return Err("Cannot read account home".into()),
+            }
         }
         accounts.push(entry.clone());
         accounts.sort_by(|left, right| {

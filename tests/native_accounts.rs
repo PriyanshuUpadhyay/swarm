@@ -52,7 +52,20 @@ case "$CLAUDE_CONFIG_DIR" in
   *) echo '{"loggedIn":true,"email":"owner@example.test"}' ;;
 esac"#,
     );
-    let list = accounts(&home, "claude", &[("CLAUDE_CONFIG_DIR", &work)]);
+    let list = accounts(
+        &home,
+        "claude",
+        &[
+            (
+                "CLAUDE_CONFIG_DIR",
+                &home.join(".claude/.profiles/personal"),
+            ),
+            (
+                "CLAUDE_SECURESTORAGE_CONFIG_DIR",
+                &home.join(".claude-work"),
+            ),
+        ],
+    );
     assert_eq!(list["source"], "swarm");
     assert_eq!(list["state"], "ready");
     assert_eq!(list["auto"], "work");
@@ -63,6 +76,11 @@ esac"#,
     assert_eq!(rows[1]["auth_state"], "signed_out");
     assert_eq!(rows[2]["name"], "work");
     assert_eq!(rows[2]["env"]["AGENT_PROFILE_LABEL"], "work");
+    assert!(rows[2]["env"].get("CLAUDE_CONFIG_DIR").is_none());
+    assert_eq!(
+        rows[2]["env"]["CLAUDE_SECURESTORAGE_CONFIG_DIR"],
+        home.join(".claude-work").to_string_lossy().as_ref()
+    );
     assert_eq!(rows[2]["usage_state"], "missing");
     assert_eq!(rows[2]["remaining_pct"], serde_json::Value::Null);
 }

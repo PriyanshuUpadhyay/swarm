@@ -115,7 +115,10 @@ fn login_registers_before_open_and_uses_fixed_native_argv_and_home() {
     assert!(!metadata.contains("owner@example.test"));
     assert_eq!(
         std::fs::read_to_string(home.join("login-exec")).unwrap(),
-        format!("login\n{}\n", home.join(".codex-work").display())
+        format!(
+            "login\n{}\n",
+            home.join(".swarm/accounts/codex/work").display()
+        )
     );
     assert_eq!(
         std::fs::read_to_string(home.join("pane-cwd")).unwrap(),
@@ -153,15 +156,21 @@ fn claude_login_clears_inherited_keys_and_uses_the_requested_directory() {
         std::fs::read_to_string(home.join("pane-cwd")).unwrap(),
         cwd_string
     );
-    let native = home.join(".claude/.profiles/personal");
+    let native = home.join(".swarm/accounts/claude/personal");
     assert_eq!(
         std::fs::read_to_string(home.join("login-exec")).unwrap(),
         format!(
             "auth login\n{}\n{}\npersonal\n",
             native.display(),
-            home.join(".claude-personal").display()
+            native.display()
         )
     );
+    assert_eq!(
+        std::fs::metadata(&native).unwrap().permissions().mode() & 0o777,
+        0o700
+    );
+    assert!(!home.join(".claude").exists());
+    assert!(!home.join(".claude-personal").exists());
 }
 
 #[test]
@@ -234,8 +243,8 @@ fn reset_changes_only_metadata_and_keeps_native_and_token_sentinels() {
     json(run(&home, &login("codex", "work", &revision(&home))));
     json(run(&home, &login("claude", "personal", &revision(&home))));
     let paths = [
-        home.join(".codex-work/auth.json"),
-        home.join(".claude/.profiles/personal/token-store"),
+        home.join(".swarm/accounts/codex/work/auth.json"),
+        home.join(".swarm/accounts/claude/personal/token-store"),
         home.join(".swarm/codex-usage.json"),
         home.join("keychain-sentinel"),
         home.join(".claude-personal/token-store"),
@@ -262,8 +271,8 @@ fn reset_changes_only_metadata_and_keeps_native_and_token_sentinels() {
             b"credential-and-cache-sentinel"
         );
     }
-    assert!(home.join(".codex-work").is_dir());
-    assert!(home.join(".claude/.profiles/personal").is_dir());
+    assert!(home.join(".swarm/accounts/codex/work").is_dir());
+    assert!(home.join(".swarm/accounts/claude/personal").is_dir());
     assert!(
         !run(
             &home,
@@ -663,4 +672,91 @@ fn a_failed_ring_and_close_names_the_pane_that_stayed_open() {
     assert!(error.contains("stayed open"), "{error}");
     assert!(!error.contains("private-ring-error"), "{error}");
     assert!(!error.contains("private-close-error"), "{error}");
+}
+
+#[test]
+fn allocation_changes_only_swarm_home_and_refuses_linked_account_dirs() {
+    let home = fixture("private-allocation");
+    std::fs::write(
+        home.join(".swarm/adapters/fake.conf"),
+        "self = printf chair\nspawn = printf pane\nring = true\nclose = true\nlist = true\ncapture = true\n",
+    )
+    .unwrap();
+    std::fs::write(home.join("sentinel"), "keep").unwrap();
+    let outside_before: std::collections::BTreeMap<_, _> = std::fs::read_dir(&home)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .filter(|name| name != ".swarm")
+        .map(|name| {
+            (
+                name.clone(),
+                if name == "bin" {
+                    Vec::new()
+                } else {
+                    std::fs::read(home.join(&name)).unwrap()
+                },
+            )
+        })
+        .collect();
+    let tools_before =
+        ["claude", "codex"].map(|name| std::fs::read(home.join("bin").join(name)).unwrap());
+    for provider in ["claude", "codex"] {
+        json(run(&home, &login(provider, "work", &revision(&home))));
+        let path = home.join(".swarm/accounts").join(provider).join("work");
+        assert!(path.is_dir());
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+        if provider == "claude" {
+            let listed = json(
+                command(&home, &["accounts", "--provider", "claude", "--json"])
+                    .env("CLAUDE_SECURESTORAGE_CONFIG_DIR", &path)
+                    .env("CLAUDE_CONFIG_DIR", "/wrong")
+                    .output()
+                    .unwrap(),
+            );
+            assert_eq!(listed["auto"], "work");
+            assert_eq!(listed["accounts"].as_array().unwrap().len(), 2);
+            let account = &listed["accounts"][1];
+            assert_eq!(
+                account["env"]["CLAUDE_SECURESTORAGE_CONFIG_DIR"],
+                path.to_string_lossy().as_ref()
+            );
+            assert!(account["env"].get("CLAUDE_CONFIG_DIR").is_none());
+        }
+    }
+    let outside_after: std::collections::BTreeMap<_, _> = std::fs::read_dir(&home)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .filter(|name| name != ".swarm")
+        .map(|name| {
+            (
+                name.clone(),
+                if name == "bin" {
+                    Vec::new()
+                } else {
+                    std::fs::read(home.join(&name)).unwrap()
+                },
+            )
+        })
+        .collect();
+    assert_eq!(outside_before, outside_after);
+    assert_eq!(
+        tools_before,
+        ["claude", "codex"].map(|name| std::fs::read(home.join("bin").join(name)).unwrap())
+    );
+    symlink(
+        home.join("bin"),
+        home.join(".swarm/accounts/claude/personal"),
+    )
+    .unwrap();
+    let before = std::fs::read(home.join(".swarm/accounts.toml")).unwrap();
+    let refused = run(&home, &login("claude", "personal", &revision(&home)));
+    assert!(!refused.status.success());
+    assert!(String::from_utf8_lossy(&refused.stderr).contains("not a symlink"));
+    assert_eq!(
+        std::fs::read(home.join(".swarm/accounts.toml")).unwrap(),
+        before
+    );
 }

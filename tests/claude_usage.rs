@@ -258,3 +258,40 @@ fn curl_timeout_uses_the_remaining_deadline() {
             .success()
     );
 }
+
+#[test]
+fn current_config_home_uses_its_own_keychain_service() {
+    let home = fixture("current-keychain");
+    tool(
+        &home,
+        "curl",
+        "echo '{\"five_hour\":{\"utilization\":10}}'; printf '\\n200'",
+    );
+    let output = Command::new(env!("CARGO_BIN_EXE_swarm"))
+        .env_clear()
+        .env("HOME", &home)
+        .env("SWARM_HOME", &home)
+        .env("USER", "test-owner")
+        .env("CLAUDE_CONFIG_DIR", "/Users/example/.claude-work")
+        .env("SWARM_CLAUDE_CMD", home.join("claude"))
+        .env("SWARM_SECURITY_CMD", home.join("security"))
+        .env("SWARM_CURL_CMD", home.join("curl"))
+        .env("SWARM_CLAUDE_USAGE_URL", "http://unused.invalid")
+        .env("PATH", "/usr/bin:/bin")
+        .args(["usage", "--refresh", "--provider", "claude", "--json"])
+        .output()
+        .unwrap();
+    let value = usage(&output);
+    assert!(
+        value["meters"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|meter| meter["account"] == "current" && meter["state"] == "fresh")
+    );
+    let args = std::fs::read_to_string(home.join("security-args")).unwrap();
+    assert!(
+        args.contains("-s Claude Code-credentials-dd1118a7 -a test-owner -w"),
+        "{args}"
+    );
+}

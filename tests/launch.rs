@@ -142,23 +142,14 @@ fn a_claude_launch_trusts_the_config_that_the_pane_reads() {
         home.join(repo).join(".herdr/workers")
     };
 
-    // No --account: yelo's `claude` in the pane picks any profile, or ~/.claude.json without yelo.
     let any = launch("seat-any", "any", None);
     assert!(trusted(&home.join(".claude.json"), &any));
     assert!(!hidden.join(".claude.json").exists());
-    for dir in &profiles {
-        assert!(
-            trusted(&dir.join(".claude.json"), &any),
-            "{}",
-            dir.display()
-        );
-    }
-
-    // A named account trusts only the config that its pane reads.
     let only_b = launch("seat-personal", "only-personal", Some("personal"));
-    assert!(trusted(&profiles[1].join(".claude.json"), &only_b));
-    assert!(!trusted(&profiles[0].join(".claude.json"), &only_b));
-    assert!(!trusted(&home.join(".claude.json"), &only_b));
+    assert!(trusted(&home.join(".claude.json"), &only_b));
+    for dir in &profiles {
+        assert!(!dir.join(".claude.json").exists());
+    }
 
     let native_default = launch("seat-default", "only-default", Some("default"));
     assert!(trusted(&home.join(".claude.json"), &native_default));
@@ -170,7 +161,7 @@ fn a_claude_launch_trusts_the_config_that_the_pane_reads() {
         std::fs::read_to_string(home.join(format!(".swarm/runs/{session}/seat-default.sh")))
             .unwrap();
     assert!(
-        default_script.contains("'-u' 'CLAUDE_CONFIG_DIR'"),
+        default_script.contains("unset CLAUDE_CONFIG_DIR "),
         "{default_script}"
     );
     assert!(
@@ -213,7 +204,7 @@ fn a_claude_launch_trusts_the_config_that_the_pane_reads() {
         stderr(&output)
     );
     assert!(trusted(
-        &profiles[0].join(".claude.json"),
+        &home.join(".claude.json"),
         &cwd.join(".herdr/workers")
     ));
 
@@ -285,7 +276,7 @@ fn a_claude_launch_trusts_the_config_that_the_pane_reads() {
     let chair = git_repo(&home, "chair");
     chair_in(&chair);
     assert!(trusted(&home.join(".claude.json"), &chair));
-    assert!(trusted(&profiles[0].join(".claude.json"), &chair));
+    assert!(!profiles[0].join(".claude.json").exists());
     assert!(!chair.join(".herdr/workers").exists());
 
     // A chair in $HOME, or in a folder another account can write, gets no entry and shows
@@ -1852,5 +1843,79 @@ fn a_superset_terminal_counts_as_an_agent_pane_for_the_owner_only_guard() {
         stderr(&output).contains("only the owner answers"),
         "{}",
         stderr(&output)
+    );
+}
+
+#[test]
+fn claude_launch_uses_shared_chats_and_bypasses_shell_functions() {
+    let (home, session, cwd) = account_launch_fixture("launch-env");
+    tool(
+        &home,
+        "claude",
+        r#"if [ "$*" = 'auth status' ]; then echo '{"loggedIn":true}'; else /usr/bin/env > "$HOME/launch-env"; fi"#,
+    );
+    let output = swarm(
+        &home,
+        &[
+            ("SWARM_ADAPTER", "fake"),
+            ("SWARM_SESSION_ID", &session),
+            ("SWARM_AGENT_ID", "orchestrator"),
+        ],
+        &[
+            "launch",
+            "seat",
+            "review.deep",
+            "--provider",
+            "claude",
+            "--account",
+            "work",
+            "--cwd",
+            &cwd,
+        ],
+    );
+    assert!(output.status.success(), "{}", stderr(&output));
+    let script = home.join(format!(".swarm/runs/{session}/seat.sh"));
+    let output = Command::new("/bin/sh")
+        .env_clear()
+        .env("HOME", &home)
+        .env(
+            "PATH",
+            format!("{}:/usr/bin:/bin", home.join("bin").display()),
+        )
+        .env("CLAUDE_CONFIG_DIR", "/wrong")
+        .args([
+            "-c",
+            "claude() { echo wrong > \"$HOME/function-ran\"; }; . \"$1\"",
+            "test",
+            script.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{}", stderr(&output));
+    let environment = std::fs::read_to_string(home.join("launch-env")).unwrap();
+    assert!(
+        !environment
+            .lines()
+            .any(|line| line.starts_with("CLAUDE_CONFIG_DIR=")),
+        "{environment}"
+    );
+    assert!(
+        environment.lines().any(|line| line
+            == format!(
+                "CLAUDE_SECURESTORAGE_CONFIG_DIR={}/.claude-work",
+                home.display()
+            )),
+        "{environment}"
+    );
+    assert!(
+        environment
+            .lines()
+            .any(|line| line == "AGENT_PROFILE_LABEL=work")
+    );
+    assert!(!home.join("function-ran").exists());
+    assert!(
+        std::fs::read_to_string(script)
+            .unwrap()
+            .contains("command 'claude'")
     );
 }

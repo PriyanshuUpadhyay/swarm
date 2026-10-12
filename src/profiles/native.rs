@@ -134,22 +134,46 @@ fn load_inner(
         return Ok(list);
     }
     let home = PathBuf::from(std::env::var_os("HOME").ok_or("HOME is not set")?);
-    let variable = match provider {
-        Provider::Codex => "CODEX_HOME",
-        _ => "CLAUDE_CONFIG_DIR",
+    let active = match provider {
+        Provider::Codex => std::env::var_os("CODEX_HOME"),
+        _ => std::env::var_os("CLAUDE_SECURESTORAGE_CONFIG_DIR")
+            .filter(|value| !value.is_empty())
+            .or_else(|| std::env::var_os("CLAUDE_CONFIG_DIR")),
+    }
+    .filter(|value| !value.is_empty())
+    .map(PathBuf::from);
+    // Secure-storage paths can differ from legacy config homes; retain the known account name.
+    let active = if provider == Provider::Claude && active.is_some() {
+        let known = crate::accounts::merge(
+            provider,
+            discover(provider, &home, None).homes,
+            &metadata.accounts,
+        );
+        active.map(|active| {
+            known
+                .into_iter()
+                .find_map(|(name, path)| {
+                    crate::providers::secure_storage_dir(&path.to_string_lossy(), &name)
+                        .filter(|storage| {
+                            resolved(PathBuf::from(storage)) == resolved(active.clone())
+                        })
+                        .map(|_| path)
+                })
+                .unwrap_or(active)
+        })
+    } else {
+        active
     };
-    let active = std::env::var_os(variable)
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from);
     let discovery = discover(provider, &home, active);
     let homes = crate::accounts::merge(provider, discovery.homes, &metadata.accounts);
     list.source = Some("swarm".into());
     list.state = "ready".into();
     for (name, path) in homes {
         let path = path.to_string_lossy().into_owned();
-        let env = provider.account_env(&name, &path, |variable| std::env::var_os(variable));
+        let env = provider.launch_env(&name, &path);
+        let identity_env = provider.identity_env(&name, &path);
         let identity = match provider {
-            Provider::Codex => AppServer::start(&env, deadline)
+            Provider::Codex => AppServer::start(&identity_env, deadline)
                 .and_then(|mut server| {
                     server.request(2, "account/read", json!({"refreshToken":false}))
                 })
@@ -159,7 +183,9 @@ fn load_inner(
                         .map(|(state, email)| (state, email, api_key))
                         .map_err(NativeReadError::from)
                 }),
-            _ => claude_identity(&env, deadline).map(|(state, email)| (state, email, false)),
+            _ => {
+                claude_identity(&identity_env, deadline).map(|(state, email)| (state, email, false))
+            }
         };
         if matches!(identity, Err(NativeReadError::CliUnavailable)) {
             list.state = "unavailable".into();
