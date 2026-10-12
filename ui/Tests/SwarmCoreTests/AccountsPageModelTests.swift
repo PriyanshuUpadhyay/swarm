@@ -120,6 +120,29 @@ struct AccountsPageModelTests {
         #expect(model.usageRows(provider: "codex", account: "work", nowSeconds: 1_000)[0].reason == "Sign in again")
     }
 
+    @Test("the error banner says how to renew an expired token")
+    func expiredTokenBanner() throws {
+        var model = AccountsPageModel()
+        let generation = try start(&model)
+        let expired = SwarmUsageMeter(provider: "codex", account: "work", label: "work", window: nil, usedPct: nil,
+                                      state: .failed, reason: "Token expired", reasonCode: "token_expired")
+        model.receiveUsage(SwarmUsage(meters: [expired]), generation: generation)
+        #expect(model.errorMessage == "Codex: work: Token expired. Start a chat on this account to renew it.")
+    }
+
+    @Test("a Refresh ends with one announcement: the no-call note, else a short result; an error is said by the page")
+    func refreshAnnouncement() throws {
+        var model = AccountsPageModel()
+        model.requestLoad(refreshUsage: true)
+        let generation = try start(&model)
+        model.receiveUsage(SwarmUsage(meters: [meter(usedPct: 30)]), generation: generation)
+        #expect(model.refreshAnnouncement(nowSeconds: 1_000) == "Usage refreshed.")
+        model.receiveRefreshCooldown(nextInSeconds: 180, nowSeconds: 1_000, generation: generation)
+        #expect(model.refreshAnnouncement(nowSeconds: 1_000) == "Updated 2m ago. Next refresh in 3m.")
+        model.failUsage(provider: "codex", message: "Codex usage read failed", generation: generation)
+        #expect(model.refreshAnnouncement(nowSeconds: 1_000) == nil)
+    }
+
     @Test("a meter decodes its reason code, and a meter with none has nil")
     func reasonCodeDecodes() throws {
         let decoder = JSONDecoder()

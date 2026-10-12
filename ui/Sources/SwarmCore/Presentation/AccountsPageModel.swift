@@ -84,7 +84,7 @@ public struct AccountsPageModel: Sendable, Equatable {
             }
         }
         let quotaFailures = meters.filter { [.failed, .unavailable].contains($0.state) }.map {
-            "\(Self.providerTitle($0.provider)): \($0.account ?? $0.label): \($0.reason ?? "Usage status is unavailable")"
+            "\(Self.providerTitle($0.provider)): \($0.account ?? $0.label): \($0.reasonText ?? "Usage status is unavailable")"
         }
         var unique: [String] = []
         for message in messages + quotaFailures where !unique.contains(message) { unique.append(message) }
@@ -241,6 +241,13 @@ public struct AccountsPageModel: Sendable, Equatable {
     public mutating func receiveRefreshCooldown(nextInSeconds: Int?, nowSeconds: Int, generation: Int) {
         guard generation == self.generation, let nextInSeconds else { return }
         refreshCooldownEndSeconds = max(refreshCooldownEndSeconds ?? .min, nowSeconds + nextInSeconds)
+    }
+
+    /// What VoiceOver says when a Refresh ends. An error is left out, because the page reports it
+    /// and the Settings window says each report.
+    public func refreshAnnouncement(nowSeconds: Int) -> String? {
+        guard errorMessage == nil else { return nil }
+        return refreshNote(nowSeconds: nowSeconds) ?? "Usage refreshed."
     }
 
     public func refreshNote(nowSeconds: Int) -> String? {

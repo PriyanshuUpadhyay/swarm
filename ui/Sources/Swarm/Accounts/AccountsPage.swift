@@ -252,6 +252,11 @@ struct AccountsPage: View {
         for provider in refreshed where !Task.isCancelled && generation == state.generation {
             await readAccounts(provider, generation: generation)
         }
+        // The rows change in place, so VoiceOver hears that a Refresh ended only if it is said.
+        if explicitRefresh, !Task.isCancelled, generation == state.generation,
+           let text = state.refreshAnnouncement(nowSeconds: Int(Date().timeIntervalSince1970)) {
+            AccessibilityNotification.Announcement(text).post()
+        }
     }
 
     private func readAccounts(_ provider: String, generation: Int) async {

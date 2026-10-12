@@ -20,8 +20,6 @@ final class UsageHUDWindow {
     /// The "Add the usage HUD?" alert shows at most one time per app run.
     @ObservationIgnored var askedThisRun = false
 
-    var isOpen: Bool { panel != nil && !model.isCollapsed }
-
     private var panel: NSPanel?
     @ObservationIgnored private var hostingView: UsageHUDHostingView<UsageHUDPanel>?
     @ObservationIgnored private var placedScreenFrame: CGRect?

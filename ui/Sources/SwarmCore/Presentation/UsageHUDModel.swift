@@ -221,7 +221,7 @@ public final class UsageHUDModel {
     private let history: UsageHistoryStore
     private let defaults: UserDefaults
     private let now: @Sendable () -> Int
-    @ObservationIgnored private var isReading = false
+    @ObservationIgnored private var reading: Task<Void, Never>?
     @ObservationIgnored private var readQueued = false
     @ObservationIgnored private var pendingCeilingReset = false
     @ObservationIgnored private var screenWidth: CGFloat = 0
@@ -245,14 +245,20 @@ public final class UsageHUDModel {
 
     // MARK: Reads
 
-    /// Reads the cached usage. A read that arrives during another read runs once after it.
+    /// Reads the cached usage. A read that arrives during another read runs once after it, and its
+    /// caller waits for that pass, so a Refresh ends with the new meters in the model.
     public func read() async {
-        if isReading {
+        if let reading {
             readQueued = true
+            await reading.value
             return
         }
-        isReading = true
-        defer { isReading = false }
+        let task = Task { await readPasses() }
+        reading = task
+        await task.value
+    }
+
+    private func readPasses() async {
         repeat {
             readQueued = false
             do {
@@ -271,6 +277,8 @@ public final class UsageHUDModel {
                 readFailed = true
             }
         } while readQueued
+        // The same turn as the last check, so a read that comes later starts a new pass.
+        reading = nil
     }
 
     /// The owner's Refresh. Inside the 300-second limit it makes no provider call and reads the cache.

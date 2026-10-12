@@ -55,6 +55,30 @@ private actor UsageCommand {
     }
 }
 
+/// Holds the first read until `release`, as a poll read still in flight.
+private actor HeldRead {
+    private var first = true
+    private var released = false
+    private var waiter: CheckedContinuation<Void, Never>?
+    private(set) var isHolding = false
+
+    /// True for the first call only, after the hold ends.
+    func holdFirst() async -> Bool {
+        guard first else { return false }
+        first = false
+        guard !released else { return true }
+        isHolding = true
+        await withCheckedContinuation { waiter = $0 }
+        return true
+    }
+
+    func release() {
+        released = true
+        waiter?.resume()
+        waiter = nil
+    }
+}
+
 @Suite("Usage HUD model")
 @MainActor
 struct UsageHUDModelTests {
@@ -301,6 +325,33 @@ struct UsageHUDModelTests {
         let codes = section.split(separator: "\n").filter { $0.hasPrefix("| `") }
             .map { $0.dropFirst(3).prefix { $0 != "`" } }.map(String.init)
         #expect(codes == SwarmReasonCode.allCases.map(\.rawValue))
+    }
+
+    @Test("a Refresh during a poll read ends only after the refreshed meters are in the model")
+    func refreshWaitsForTheQueuedRead() async throws {
+        let command = UsageCommand([meter(usedPct: 10)])
+        let held = HeldRead()
+        let old = [meter(usedPct: 10)]
+        let model = UsageHUDModel(
+            loadUsage: { await held.holdFirst() ? old : try await command.read() },
+            refresher: UsageRefresher(now: UsageTestClock(now).now) { try await command.refresh($0) },
+            history: UsageHistoryStore(folder: nil),
+            defaults: try #require(UserDefaults(suiteName: "UsageHUDModelTests.\(UUID().uuidString)")),
+            now: UsageTestClock(now).now
+        )
+        let poll = Task { await model.read() }
+        while !(await held.isHolding) { await Task.yield() }
+        await command.set([meter(usedPct: 50)])
+        let refresh = Task { await model.refresh() }
+        while await command.refreshed.count < 2 { await Task.yield() }
+        for _ in 0..<50 { await Task.yield() }
+        // The poll read still holds the old answer, so the refresh is not over.
+        #expect(model.isRefreshing)
+        await held.release()
+        await refresh.value
+        #expect(!model.isRefreshing)
+        #expect(model.meters.map(\.usedPct) == [50])
+        await poll.value
     }
 
     // MARK: Reads
@@ -556,7 +607,7 @@ struct UsageHUDModelTests {
         #expect([UsageHUDPrompt.acceptTitle, UsageHUDPrompt.declineTitle] == ["Add HUD", "No Thanks"])
     }
 
-    @Test("Add HUD saves on, Not Now saves off, and neither answer is asked again", arguments: [true, false])
+    @Test("Add HUD saves on, No Thanks saves off, and neither answer is asked again", arguments: [true, false])
     func promptAnswer(accepted: Bool) throws {
         let folder = try claimedChoicesFolder(
             FileManager.default.temporaryDirectory.appendingPathComponent("usage-hud-prompt-\(UUID().uuidString)")
