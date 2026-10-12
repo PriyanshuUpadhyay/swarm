@@ -3,8 +3,10 @@ use crate::profiles::{Account, AccountList, AuthState, Usage, UsageMeter};
 use crate::providers::Provider;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
-use std::io::Write;
+use std::io::{Read, Write};
+use std::process::{Command, Stdio};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 pub const MAX_AGE_SECONDS: i64 = 300;
@@ -38,7 +40,7 @@ fn resolved_parent(path: &std::path::Path) -> std::path::PathBuf {
     }
 }
 
-fn cache_path() -> Result<std::path::PathBuf, String> {
+fn cache_path(provider: &str) -> Result<std::path::PathBuf, String> {
     let root = std::path::PathBuf::from(crate::paths::home().map_err(|error| error.to_string())?)
         .join(".swarm");
     let resolved_root = resolved_parent(&root);
@@ -71,41 +73,28 @@ fn cache_path() -> Result<std::path::PathBuf, String> {
         return Err("Swarm usage cache must be outside provider homes".into());
     }
     crate::paths::root_dir()
-        .map(|root| root.join("codex-usage.json"))
+        .map(|root| root.join(format!("{provider}-usage.json")))
         .map_err(|error| error.to_string())
 }
 
-fn yelo_command() -> String {
-    std::env::var("SWARM_YELO_CMD").unwrap_or_else(|_| "yelo".into())
-}
-
-pub(crate) fn claude_snapshot(deadline: Instant) -> Result<Value, String> {
-    let executable = yelo_command();
-    read_json(
-        &executable,
-        &["usage", "show", "--json"],
-        &BTreeMap::new(),
-        deadline,
-    )
-    .map_err(String::from)
-}
-
-pub(crate) fn window_minutes(window: &str) -> Option<i64> {
-    let (number, multiplier) =
-        [("m", 1), ("h", 60), ("d", 1440)]
-            .into_iter()
-            .find_map(|(unit, multiplier)| {
-                window.strip_suffix(unit).map(|number| (number, multiplier))
-            })?;
-    let number = number.parse::<i64>().ok().filter(|number| *number > 0)?;
-    number.checked_mul(multiplier)
+fn claude_keychain_service(secure_storage: Option<&str>) -> String {
+    match secure_storage {
+        None => "Claude Code-credentials".into(),
+        Some(path) => {
+            let hash = Sha256::digest(path.as_bytes());
+            format!(
+                "Claude Code-credentials-{:02x}{:02x}{:02x}{:02x}",
+                hash[0], hash[1], hash[2], hash[3]
+            )
+        }
+    }
 }
 
 fn source_for(provider: &str, state: &str) -> Option<String> {
     match (provider, state) {
         (_, "no_source") => None,
         ("codex", _) => Some("codex_app_server".into()),
-        ("claude", _) => Some("yelo".into()),
+        ("claude", _) => Some("claude_api".into()),
         _ => None,
     }
 }
@@ -133,13 +122,13 @@ fn status_meter(
     }
 }
 
-/// Read cached quota values; native identity and Claude snapshot calls share this deadline.
+/// Read cached quota values; native identity calls share this deadline.
 pub fn read(deadline: Instant) -> Result<Usage, String> {
     let now = now_seconds();
     let codex = crate::profiles::native::identities(Provider::Codex, deadline)?;
     let claude = crate::profiles::native::identities(Provider::Claude, deadline)?;
-    let mut meters = for_accounts(&codex, deadline, now)?;
-    meters.extend(for_accounts(&claude, deadline, now)?);
+    let mut meters = for_accounts(&codex, now)?;
+    meters.extend(for_accounts(&claude, now)?);
     meters.push(status_meter(
         "agy",
         None,
@@ -149,80 +138,16 @@ pub fn read(deadline: Instant) -> Result<Usage, String> {
     Ok(Usage { meters })
 }
 
-pub(crate) fn for_accounts(
-    list: &AccountList,
-    deadline: Instant,
-    now: i64,
-) -> Result<Vec<UsageMeter>, String> {
-    if list.provider == "codex" {
-        return cached_codex(&list.accounts, now);
-    }
-    let claude = list;
-    let mut meters: Vec<_> = claude
-        .accounts
-        .iter()
-        .filter(|account| account.invalid_home())
-        .map(|account| {
-            status_meter(
-                "claude",
-                Some(account),
-                "no_source",
-                account.summary.as_deref().unwrap_or("No usage source"),
-            )
-        })
-        .collect();
-    match claude_snapshot(deadline).and_then(|value| {
-        crate::profiles::translate_usage(&value.to_string(), std::slice::from_ref(claude), now)
-    }) {
-        Ok((usage, skipped)) => {
-            for account in claude
-                .accounts
-                .iter()
-                .filter(|account| !account.invalid_home())
-            {
-                if !usage
-                    .meters
-                    .iter()
-                    .any(|meter| meter.account.as_deref() == Some(account.name.as_str()))
-                {
-                    meters.push(status_meter(
-                        "claude",
-                        Some(account),
-                        if skipped.is_empty() {
-                            "missing"
-                        } else {
-                            "failed"
-                        },
-                        if skipped.is_empty() {
-                            "No cached Claude usage"
-                        } else {
-                            "Claude usage row is invalid"
-                        },
-                    ));
-                }
-            }
-            meters.extend(usage.meters);
-        }
-        Err(_) => meters.extend(
-            claude
-                .accounts
-                .iter()
-                .filter(|account| !account.invalid_home())
-                .map(|account| {
-                    status_meter(
-                        "claude",
-                        Some(account),
-                        "failed",
-                        "Claude usage source is unavailable",
-                    )
-                }),
-        ),
-    }
-    Ok(meters)
+pub(crate) fn for_accounts(list: &AccountList, now: i64) -> Result<Vec<UsageMeter>, String> {
+    cached_accounts(&list.provider, &list.accounts, now)
 }
 
-fn cached_codex(accounts: &[Account], now: i64) -> Result<Vec<UsageMeter>, String> {
-    let stored = match cache_path() {
+fn cached_accounts(
+    provider: &str,
+    accounts: &[Account],
+    now: i64,
+) -> Result<Vec<UsageMeter>, String> {
+    let stored = match cache_path(provider) {
         Err(_) => Err("refused cache"),
         Ok(path) => match std::fs::read(path) {
             Ok(bytes) => serde_json::from_slice::<Cache>(&bytes)
@@ -236,7 +161,7 @@ fn cached_codex(accounts: &[Account], now: i64) -> Result<Vec<UsageMeter>, Strin
     for account in accounts {
         if account.usage_state == "no_source" {
             meters.push(status_meter(
-                "codex",
+                provider,
                 Some(account),
                 "no_source",
                 if account.invalid_home() {
@@ -256,36 +181,36 @@ fn cached_codex(accounts: &[Account], now: i64) -> Result<Vec<UsageMeter>, Strin
                 Some(entry) if !entry.meters.is_empty() => {
                     meters.extend(entry.meters.iter().map(|meter| {
                         let mut meter = meter.clone();
-                        meter.provider = "codex".into();
+                        meter.provider = provider.into();
                         meter.account = Some(account.name.clone());
                         meter.label = account.name.clone();
                         normalize_meter(&meter, now)
                     }));
                 }
                 Some(_) => meters.push(status_meter(
-                    "codex",
+                    provider,
                     Some(account),
                     "missing",
-                    "No cached Codex usage",
+                    "No cached usage",
                 )),
                 None => meters.push(status_meter(
-                    "codex",
+                    provider,
                     Some(account),
                     "missing",
-                    "No cached Codex usage",
+                    "No cached usage",
                 )),
             },
             Ok(None) => meters.push(status_meter(
-                "codex",
+                provider,
                 Some(account),
                 "missing",
-                "No cached Codex usage",
+                "No cached usage",
             )),
             Err(_) => meters.push(status_meter(
-                "codex",
+                provider,
                 Some(account),
                 "failed",
-                "Codex cache is unavailable",
+                "Usage cache is unavailable",
             )),
         }
     }
@@ -316,6 +241,7 @@ pub(crate) fn normalize_meter(stored: &UsageMeter, now: i64) -> UsageMeter {
             match meter.state.as_str() {
                 "missing" => "No cached usage",
                 "no_source" => "No usage source",
+                _ if stored.reason.as_deref() == Some("Sign in again") => "Sign in again",
                 _ => "Usage read failed",
             }
             .into(),
@@ -338,9 +264,17 @@ pub(crate) fn normalize_meter(stored: &UsageMeter, now: i64) -> UsageMeter {
 /// Refresh Codex only and atomically replace its nonsecret cache outside provider homes.
 /// Every identity and quota request uses the supplied total deadline.
 pub fn refresh_codex(deadline: Instant) -> Result<Usage, String> {
-    let path = cache_path()?;
-    let accounts = crate::profiles::native::identities(Provider::Codex, deadline)?.accounts;
-    let previous = cached_codex(&accounts, now_seconds())?;
+    refresh(Provider::Codex, deadline)
+}
+
+pub fn refresh_claude(deadline: Instant) -> Result<Usage, String> {
+    refresh(Provider::Claude, deadline)
+}
+
+fn refresh(provider: Provider, deadline: Instant) -> Result<Usage, String> {
+    let path = cache_path(provider.id())?;
+    let accounts = crate::profiles::native::identities(provider, deadline)?.accounts;
+    let previous = cached_accounts(provider.id(), &accounts, now_seconds())?;
     let resolved_cache = resolved_parent(&path);
     if accounts.iter().any(|account| {
         resolved_cache.starts_with(resolved_parent(std::path::Path::new(&account.home)))
@@ -352,13 +286,23 @@ pub fn refresh_codex(deadline: Instant) -> Result<Usage, String> {
     for account in accounts {
         let account_meters = match account.auth_state {
             AuthState::SignedOut => vec![status_meter(
-                "codex",
+                provider.id(),
                 Some(&account),
                 "missing",
                 "Account is signed out",
             )],
-            _ => match fresh_codex(&account, deadline) {
+            _ => match if provider == Provider::Codex {
+                fresh_codex(&account, deadline)
+            } else {
+                fresh_claude(&account, deadline)
+            } {
                 Ok(meters) => meters,
+                Err(reason) if reason == "Sign in again" => vec![status_meter(
+                    provider.id(),
+                    Some(&account),
+                    "failed",
+                    "Sign in again",
+                )],
                 Err(_) => {
                     let retained: Vec<_> = previous
                         .iter()
@@ -377,10 +321,14 @@ pub fn refresh_codex(deadline: Instant) -> Result<Usage, String> {
                         .collect();
                     if retained.is_empty() {
                         vec![status_meter(
-                            "codex",
+                            provider.id(),
                             Some(&account),
                             "failed",
-                            "Codex usage read failed",
+                            if provider == Provider::Codex {
+                                "Codex usage read failed"
+                            } else {
+                                "Claude usage read failed"
+                            },
                         )]
                     } else {
                         retained
@@ -399,19 +347,279 @@ pub fn refresh_codex(deadline: Instant) -> Result<Usage, String> {
         .write(true)
         .create_new(true)
         .open(&temporary)
-        .map_err(|_| "Cannot write Codex usage cache")?;
+        .map_err(|_| "Cannot write usage cache")?;
     let written = serde_json::to_writer(&mut file, &cache)
-        .map_err(|_| "Cannot encode Codex usage cache")
-        .and_then(|_| file.flush().map_err(|_| "Cannot flush Codex usage cache"))
-        .and_then(|_| file.sync_all().map_err(|_| "Cannot sync Codex usage cache"))
-        .and_then(|_| {
-            std::fs::rename(&temporary, &path).map_err(|_| "Cannot replace Codex usage cache")
-        });
+        .map_err(|_| "Cannot encode usage cache")
+        .and_then(|_| file.flush().map_err(|_| "Cannot flush usage cache"))
+        .and_then(|_| file.sync_all().map_err(|_| "Cannot sync usage cache"))
+        .and_then(|_| std::fs::rename(&temporary, &path).map_err(|_| "Cannot replace usage cache"));
     if written.is_err() {
         let _ = std::fs::remove_file(temporary);
     }
     written?;
     Ok(Usage { meters })
+}
+
+fn fresh_claude(account: &Account, deadline: Instant) -> Result<Vec<UsageMeter>, String> {
+    if account.invalid_home() {
+        return Ok(vec![status_meter(
+            "claude",
+            Some(account),
+            "no_source",
+            account.summary.as_deref().unwrap_or("No usage source"),
+        )]);
+    }
+    let service = claude_keychain_service(
+        account
+            .env
+            .get("CLAUDE_SECURESTORAGE_CONFIG_DIR")
+            .map(String::as_str),
+    );
+    let security = std::env::var("SWARM_SECURITY_CMD").unwrap_or_else(|_| "security".into());
+    let user = std::env::var("USER").unwrap_or_default();
+    let credentials = read_json(
+        &security,
+        &["find-generic-password", "-s", &service, "-a", &user, "-w"],
+        &BTreeMap::new(),
+        deadline,
+    )
+    .map_err(|_| "Claude credentials are unavailable")?;
+    let token = credentials
+        .pointer("/claudeAiOauth/accessToken")
+        .and_then(Value::as_str)
+        .filter(|token| {
+            !token.is_empty()
+                && token.len() <= 8192
+                && token.bytes().all(|byte| byte.is_ascii_graphic())
+        })
+        .ok_or("Claude credentials are unavailable")?;
+    let remaining = deadline
+        .checked_duration_since(Instant::now())
+        .ok_or("Claude usage read timed out")?;
+    let curl = std::env::var("SWARM_CURL_CMD").unwrap_or_else(|_| "curl".into());
+    let url = std::env::var("SWARM_CLAUDE_USAGE_URL")
+        .unwrap_or_else(|_| "https://api.anthropic.com/api/oauth/usage".into());
+    let mut child = Command::new(curl)
+        // Disable curlrc so it cannot enable redirects, tracing, or a different destination.
+        .args([
+            "-q",
+            "--silent",
+            "--max-time",
+            &remaining.as_secs_f64().to_string(),
+            "--write-out",
+            "\n%{http_code}",
+            "-H",
+            "@-",
+            "--url",
+            &url,
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|_| "Claude usage request is unavailable")?;
+    let sent = child.stdin.take().is_some_and(|mut stdin| {
+        writeln!(
+            stdin,
+            "Authorization: Bearer {token}\nanthropic-beta: oauth-2025-04-20"
+        )
+        .is_ok()
+    });
+    if !sent {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err("Claude usage request failed".into());
+    }
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or("Claude usage response is unavailable")?;
+    let (sender, receiver) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut bytes = Vec::new();
+        let result = stdout
+            .take(1024 * 1024)
+            .read_to_end(&mut bytes)
+            .map(|_| bytes);
+        let _ = sender.send(result);
+    });
+    let response = receiver.recv_timeout(deadline.saturating_duration_since(Instant::now()));
+    let mut status = child.try_wait().ok().flatten();
+    while response.is_ok() && status.is_none() && Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        status = child.try_wait().ok().flatten();
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+    if !status.is_some_and(|status| status.success()) {
+        return Err("Claude usage request failed".into());
+    }
+    let bytes = response
+        .map_err(|_| "Claude usage read timed out")?
+        .map_err(|_| "Claude usage read failed")?;
+    let split = bytes
+        .iter()
+        .rposition(|byte| *byte == b'\n')
+        .ok_or("Claude usage response is invalid")?;
+    match &bytes[split + 1..] {
+        b"401" | b"403" => return Err("Sign in again".into()),
+        b"200" => (),
+        _ => return Err("Claude usage request failed".into()),
+    }
+    let payload =
+        serde_json::from_slice(&bytes[..split]).map_err(|_| "Claude usage response is invalid")?;
+    claude_windows(account, &payload, now_seconds())
+}
+
+fn claude_windows(account: &Account, payload: &Value, now: i64) -> Result<Vec<UsageMeter>, String> {
+    let probe = |value: &Value, names: &[&str]| {
+        names
+            .iter()
+            .find_map(|name| {
+                value
+                    .get(*name)
+                    .filter(|value| !value.is_null() && **value != false)
+            })
+            .cloned()
+            .unwrap_or(Value::Null)
+    };
+    let mut fable = probe(
+        payload,
+        &["fable", "seven_day_fable", "fable_seven_day", "fable_week"],
+    );
+    if fable.is_null()
+        && let Some(limits) = payload["limits"].as_array()
+    {
+        fable = limits
+            .iter()
+            .find(|entry| {
+                entry["kind"] == "weekly_scoped"
+                    && entry
+                        .pointer("/scope/model/display_name")
+                        .and_then(Value::as_str)
+                        == Some("Fable")
+            })
+            .cloned()
+            .unwrap_or(Value::Null);
+    }
+    let mut meters = Vec::new();
+    for (window, minutes, value) in [
+        (
+            "5h",
+            300,
+            probe(payload, &["five_hour", "fiveHour", "five_hour_window"]),
+        ),
+        (
+            "7d",
+            10080,
+            probe(payload, &["seven_day", "sevenDay", "seven_day_window"]),
+        ),
+        ("fb", 10080, fable),
+    ] {
+        if value.is_null() {
+            continue;
+        }
+        let percent = probe(
+            &value,
+            &["used_percentage", "utilization", "used_percent", "percent"],
+        );
+        let percent = percent
+            .as_f64()
+            .or_else(|| percent.as_str()?.parse().ok())
+            .filter(|percent| percent.is_finite() && (0.0..=100.0).contains(percent));
+        let reset = probe(&value, &["resets_at", "reset_at", "resets"]);
+        let reset_time = if reset.is_null() {
+            Some(None)
+        } else {
+            claude_reset_seconds(&reset).map(Some)
+        };
+        let mut meter = status_meter(
+            "claude",
+            Some(account),
+            "failed",
+            "Claude usage window is invalid",
+        );
+        meter.window = Some(window.into());
+        meter.window_minutes = Some(minutes);
+        if let (Some(percent), Some(reset_time)) = (percent, reset_time) {
+            meter.used_pct = Some(percent.round() as i64);
+            meter.reset_time_seconds = reset_time;
+            meter.as_of_seconds = Some(now);
+            meter.state = "fresh".into();
+            meter.reason = None;
+        }
+        meters.push(meter);
+    }
+    if !meters
+        .iter()
+        .any(|meter| meter.window.as_deref() == Some("5h"))
+    {
+        return Err("Claude usage response has no five-hour window".into());
+    }
+    Ok(meters)
+}
+
+fn claude_reset_seconds(value: &Value) -> Option<i64> {
+    if let Some(seconds) = value.as_i64() {
+        return (seconds >= 0).then_some(seconds);
+    }
+    let text = value.as_str()?;
+    if let Ok(seconds) = text.parse::<i64>() {
+        return (seconds >= 0).then_some(seconds);
+    }
+    let text = text
+        .strip_suffix('Z')
+        .or_else(|| text.strip_suffix("+00:00"))?;
+    let (text, fraction) = text
+        .split_once('.')
+        .map_or((text, None), |(text, fraction)| (text, Some(fraction)));
+    if !text.is_ascii()
+        || text.len() != 19
+        || fraction.is_some_and(|value| {
+            value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_digit())
+        })
+    {
+        return None;
+    }
+    if [4, 7, 10, 13, 16].map(|index| text.as_bytes()[index]) != *b"--T::" {
+        return None;
+    }
+    let number = |start, end| text[start..end].parse::<i64>().ok();
+    let (year, month, day, hour, minute, second) = (
+        number(0, 4)?,
+        number(5, 7)?,
+        number(8, 10)?,
+        number(11, 13)?,
+        number(14, 16)?,
+        number(17, 19)?,
+    );
+    let leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+    let days = match month {
+        2 => {
+            if leap {
+                29
+            } else {
+                28
+            }
+        }
+        4 | 6 | 9 | 11 => 30,
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        _ => return None,
+    };
+    if !(1970..=9999).contains(&year)
+        || !(1..=days).contains(&day)
+        || !(0..24).contains(&hour)
+        || !(0..60).contains(&minute)
+        || !(0..60).contains(&second)
+    {
+        return None;
+    }
+    let year = year - i64::from(month <= 2);
+    let era = year.div_euclid(400);
+    let year_of_era = year - era * 400;
+    let day_of_year = (153 * (month + if month > 2 { -3 } else { 9 }) + 2) / 5 + day - 1;
+    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    Some((era * 146097 + day_of_era - 719468) * 86400 + hour * 3600 + minute * 60 + second)
 }
 
 fn fresh_codex(account: &Account, deadline: Instant) -> Result<Vec<UsageMeter>, String> {
@@ -514,6 +722,55 @@ fn normalize_limits(
 mod tests {
     use super::*;
 
+    #[test]
+    fn keychain_service_matches_the_adopted_profile_vector() {
+        assert_eq!(claude_keychain_service(None), "Claude Code-credentials");
+        assert_eq!(
+            claude_keychain_service(Some("/Users/example/.claude-work")),
+            "Claude Code-credentials-dd1118a7"
+        );
+    }
+
+    #[test]
+    fn claude_windows_keep_failed_values_and_accept_the_api_aliases() {
+        let mut account = work();
+        account.name = "personal".into();
+        let meters = claude_windows(
+            &account,
+            &json!({
+                "fiveHour":{"used_percent":"12.6","reset_at":"2026-10-12T01:02:03.123Z"},
+                "sevenDay":{"percent":101},
+                "seven_day_fable":{"utilization":90}
+            }),
+            1000,
+        )
+        .unwrap();
+        assert_eq!(meters[0].window.as_deref(), Some("5h"));
+        assert_eq!(meters[0].used_pct, Some(13));
+        assert_eq!(meters[0].reset_time_seconds, Some(1791766923));
+        assert_eq!(meters[0].as_of_seconds, Some(1000));
+        assert_eq!(meters[1].state, "failed");
+        assert_eq!(meters[1].used_pct, None);
+        assert_eq!(meters[2].window.as_deref(), Some("fb"));
+        assert_eq!(meters[2].window_minutes, Some(10080));
+        for payload in [json!({}), json!({"seven_day":{"utilization":10}})] {
+            assert!(claude_windows(&account, &payload, 1000).is_err());
+        }
+        for value in [
+            json!(-1),
+            json!("2026-02-29T01:02:03Z"),
+            json!("2026-10-12T24:02:03Z"),
+            json!("2026-10-12T01:02:03.éZ"),
+            json!("２０２６-10-12T01:02:03Z"),
+        ] {
+            assert_eq!(claude_reset_seconds(&value), None);
+        }
+        assert_eq!(
+            claude_reset_seconds(&json!("2024-02-29T00:00:00Z")),
+            Some(1709164800)
+        );
+    }
+
     fn work() -> Account {
         Account {
             name: "work".into(),
@@ -550,14 +807,5 @@ mod tests {
         assert_eq!(unknown.state, "failed");
         assert_eq!(unknown.used_pct, None);
         assert!(!unknown.reason.unwrap().contains("private"));
-    }
-
-    #[test]
-    fn quota_duration_rejects_bad_units_unicode_and_overflow() {
-        assert_eq!(window_minutes("5h"), Some(300));
-        assert_eq!(window_minutes("7d"), Some(10080));
-        for window in ["", "é", "1é", "0h", "-1h", "1w", "9223372036854775807d"] {
-            assert_eq!(window_minutes(window), None);
-        }
     }
 }

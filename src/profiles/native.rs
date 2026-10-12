@@ -177,7 +177,7 @@ fn load_inner(
             usage_source: (!api_key).then_some(
                 match provider {
                     Provider::Codex => "codex_app_server",
-                    _ => "yelo",
+                    _ => "claude_api",
                 }
                 .into(),
             ),
@@ -186,7 +186,7 @@ fn load_inner(
         });
     }
     if include_usage {
-        let meters = crate::usage::for_accounts(&list, deadline, crate::usage::now_seconds())?;
+        let meters = crate::usage::for_accounts(&list, crate::usage::now_seconds())?;
         super::apply_usage(&mut list, &meters);
     }
     for (name, path) in discovery.skipped {

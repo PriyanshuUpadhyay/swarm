@@ -63,7 +63,7 @@ esac"#,
     assert_eq!(rows[1]["auth_state"], "signed_out");
     assert_eq!(rows[2]["name"], "work");
     assert_eq!(rows[2]["env"]["AGENT_PROFILE_LABEL"], "work");
-    assert_eq!(rows[2]["usage_state"], "failed");
+    assert_eq!(rows[2]["usage_state"], "missing");
     assert_eq!(rows[2]["remaining_pct"], serde_json::Value::Null);
 }
 

@@ -95,11 +95,16 @@ fn a_claude_launch_trusts_the_config_that_the_pane_reads() {
         "claude",
         r#"if [ "$*" = 'auth status' ]; then /bin/echo "$CLAUDE_CONFIG_DIR" >> "$HOME/native-reads"; echo '{"loggedIn":true}'; fi"#,
     );
-    tool(
-        &home,
-        "yelo",
-        r#"echo '[{"provider":"claude","label":"cl·work","pct":30,"state":"ok","asOf":'"$(/bin/date +%s)"'},{"provider":"claude","label":"cl·personal","pct":75,"state":"ok","asOf":'"$(/bin/date +%s)"'}]'"#,
-    );
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let accounts: Vec<_> = profiles.iter().zip([30,75]).map(|(path,used)| serde_json::json!({"home":path,"meters":[{"provider":"claude","account":path.file_name().unwrap().to_str().unwrap(),"label":"account","window":"5h","window_minutes":300,"used_pct":used,"reset_time_seconds":null,"state":"fresh","source":"claude_api","reason":null,"as_of_seconds":now}]})).collect();
+    std::fs::write(
+        home.join(".swarm/claude-usage.json"),
+        serde_json::json!({"accounts":accounts}).to_string(),
+    )
+    .unwrap();
     std::fs::create_dir_all(home.join(".config/agent-routing")).unwrap();
     std::fs::write(
         home.join(".config/agent-routing/roles.json"),
@@ -904,11 +909,6 @@ fn a_chat_launches_from_the_chat_profile_and_a_one_off_pick_keeps_its_effort() {
     let home = scratch("chat");
     tool(&home, "claude", "true");
     tool(&home, "codex", "true");
-    tool(
-        &home,
-        "yelo",
-        r#"echo '[{"name":"personal","dir":"/p/personal","signed_in":true,"remaining":50}]'"#,
-    );
     std::fs::create_dir_all(home.join(".swarm/adapters")).unwrap();
     std::fs::write(
         home.join(".swarm/adapters/fake.conf"),
@@ -1020,14 +1020,13 @@ fn a_chat_launches_from_the_chat_profile_and_a_one_off_pick_keeps_its_effort() {
     assert!(text.contains("no runner can run"), "{text}");
     assert!(!text.contains("running"), "{text}");
 
-    // On a Mac without yelo, `auto` falls back to the CLI's own login.
-    std::fs::remove_file(home.join("bin/yelo")).unwrap();
-    let no_yelo = swarm(
+    // With unavailable native auth, `auto` falls back to the CLI's own login.
+    let no_usage = swarm(
         &home,
         &env,
         &[
             "launch",
-            "chat-no-yelo",
+            "chat-no-usage",
             "chat",
             "--account",
             "auto",
@@ -1035,9 +1034,9 @@ fn a_chat_launches_from_the_chat_profile_and_a_one_off_pick_keeps_its_effort() {
             &cwd,
         ],
     );
-    assert!(no_yelo.status.success(), "{}", stderr(&no_yelo));
-    assert!(stderr(&no_yelo).contains("claude uses its own login"));
-    assert!(script("chat-no-yelo").contains("'--model' 'opus' '--effort' 'high'"));
+    assert!(no_usage.status.success(), "{}", stderr(&no_usage));
+    assert!(stderr(&no_usage).contains("claude uses its own login"));
+    assert!(script("chat-no-usage").contains("'--model' 'opus' '--effort' 'high'"));
 
     // An unavailable native read keeps the scheduler fail-open and Auto on the CLI login.
     tool(
@@ -1051,7 +1050,7 @@ fn a_chat_launches_from_the_chat_profile_and_a_one_off_pick_keeps_its_effort() {
         &env,
         &[
             "launch",
-            "chat-stuck-yelo",
+            "chat-stuck-auth",
             "chat",
             "--account",
             "auto",

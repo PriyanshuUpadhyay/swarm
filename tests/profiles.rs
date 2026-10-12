@@ -442,8 +442,8 @@ fn the_owners_config_imports_with_no_route_lost() {
     );
 }
 
-/// Native auth fixtures and the retained Claude cached-usage source.
-fn yelo(bin: &Path, claude_rows: &str) {
+/// Native auth fixtures and the Claude usage cache.
+fn claude_accounts(bin: &Path, claude_rows: &str) {
     use std::os::unix::fs::PermissionsExt;
     let home = bin.parent().unwrap();
     let profiles = home.join(".claude/.profiles");
@@ -465,21 +465,21 @@ fn yelo(bin: &Path, claude_rows: &str) {
             "  */{name}) echo '{{\"loggedIn\":{}}}' ;;\n",
             row["signed_in"]
         ));
-        meters.push(serde_json::json!({"provider":"claude","label":format!("cl·{name}"),"pct":100-row["remaining"].as_i64().unwrap(),"state":"ok","asOf":now}));
+        meters.push(serde_json::json!({"home":std::fs::canonicalize(profiles.join(name)).unwrap(),"meters":[{"provider":"claude","account":name,"label":name,"window":"5h","window_minutes":300,"used_pct":100-row["remaining"].as_i64().unwrap(),"reset_time_seconds":null,"state":"fresh","source":"claude_api","reason":null,"as_of_seconds":now}]}));
     }
     auth.push_str("  *) echo '{\"loggedIn\":false}' ;;\nesac\n");
     std::fs::write(bin.join("claude"), auth).unwrap();
+    json(&swarm(
+        home,
+        &[],
+        &["accounts", "--provider", "agy", "--json"],
+    ));
     std::fs::write(
-        bin.join("yelo"),
-        format!(
-            "#!/bin/sh\necho '{}'\n",
-            serde_json::to_string(&meters).unwrap()
-        ),
+        home.join(".swarm/claude-usage.json"),
+        serde_json::json!({"accounts":meters}).to_string(),
     )
     .unwrap();
-    for name in ["claude", "yelo"] {
-        std::fs::set_permissions(bin.join(name), std::fs::Permissions::from_mode(0o755)).unwrap();
-    }
+    std::fs::set_permissions(bin.join("claude"), std::fs::Permissions::from_mode(0o755)).unwrap();
 }
 
 const CLAUDE_FIRST: &str = r#"{
@@ -497,7 +497,7 @@ fn a_provider_with_every_account_low_or_signed_out_is_skipped() {
     let bin = clis(&home, &["claude", "codex"]);
     let path = [("PATH", bin.as_path())];
 
-    yelo(
+    claude_accounts(
         &bin,
         r#"[{"name":"nearly-spent","dir":"/p/nearly-spent","signed_in":true,"remaining":2},{"name":"signed-out","dir":"/p/signed-out","signed_in":false,"remaining":90}]"#,
     );
@@ -510,7 +510,7 @@ fn a_provider_with_every_account_low_or_signed_out_is_skipped() {
             .contains("swarm: code: skipped claude/opus/high: usage 2% left (threshold 5%)")
     );
 
-    yelo(
+    claude_accounts(
         &bin,
         r#"[{"name":"signed-out","dir":"/p/signed-out","signed_in":false,"remaining":80}]"#,
     );
@@ -522,7 +522,7 @@ fn a_provider_with_every_account_low_or_signed_out_is_skipped() {
         "no claude account is signed in"
     );
 
-    yelo(
+    claude_accounts(
         &bin,
         r#"[{"name":"personal","dir":"/p/personal","signed_in":true,"remaining":40}]"#,
     );
