@@ -15,7 +15,6 @@ struct SkillsWindowCloseGuard: NSViewRepresentable {
     func updateNSView(_ view: GuardView, context: Context) {
         context.coordinator.dirty = dirty
         context.coordinator.attempt = attempt
-        if let window = view.window { context.coordinator.attach(window) }
     }
     static func dismantleNSView(_ view: GuardView, coordinator: Coordinator) { coordinator.restore() }
 
@@ -44,6 +43,12 @@ struct SkillsWindowCloseGuard: NSViewRepresentable {
         func restore() {
             if let window, window.delegate === self { window.delegate = original }
             window = nil
+            original = nil
+        }
+        func windowWillClose(_ notification: Notification) {
+            let delegate = original
+            restore()
+            delegate?.windowWillClose?(notification)
         }
         func windowShouldClose(_ sender: NSWindow) -> Bool {
             guard dirty && !allowClose else { return original?.windowShouldClose?(sender) ?? true }
