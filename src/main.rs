@@ -431,14 +431,26 @@ fn hook(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+const APP_PATH: &str = "/Applications/Swarm.app";
+
 /// The app owns every notice. Start it without waiting or using the hook's remaining budget.
 fn start_app_if_needed(root: &std::path::Path) {
     use std::os::unix::process::CommandExt;
     if app_holds_lock(root) {
         return;
     }
-    let _ = std::process::Command::new("open")
-        .args(["-g", "-b", "io.github.priyanshuupadhyay.swarm"])
+    // LaunchServices can register many dev builds under the bundle id; prefer the installed app.
+    let path = std::env::var_os("SWARM_APP_PATH")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from(APP_PATH));
+    let mut command = std::process::Command::new("open");
+    command.arg("-g");
+    if path.exists() {
+        command.arg(path);
+    } else {
+        command.args(["-b", "io.github.priyanshuupadhyay.swarm"]);
+    }
+    let _ = command
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())

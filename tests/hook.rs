@@ -1333,18 +1333,72 @@ fn hold_app_lock(path: &Path) -> std::fs::File {
 fn notify_starts_the_app_only_without_its_lock_and_does_not_wait() {
     let home = scratch("notice-open");
     assert!(swarm(&home, &[], &["init"], "").status.success());
+    let missing = home.join("missing.app");
+    let env = [("SWARM_APP_PATH", missing.to_str().unwrap())];
     std::fs::write(
         home.join("bin/open"),
         "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$HOME/opened\"\nsleep 2\n",
     )
     .unwrap();
     let held = hold_app_lock(&home.join(".swarm/app.lock"));
-    assert!(swarm(&home, &[], &["notify", "Done"], "").status.success());
+    assert!(swarm(&home, &env, &["notify", "Done"], "").status.success());
     assert!(!home.join("opened").exists());
     drop(held);
     let started = std::time::Instant::now();
-    assert!(swarm(&home, &[], &["notify", "Done"], "").status.success());
+    assert!(swarm(&home, &env, &["notify", "Done"], "").status.success());
     assert!(started.elapsed() < std::time::Duration::from_secs(1));
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+    while !home.join("opened").exists() && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert_eq!(
+        std::fs::read_to_string(home.join("opened")).unwrap(),
+        "-g -b io.github.priyanshuupadhyay.swarm\n"
+    );
+    std::fs::remove_dir_all(home).unwrap();
+}
+
+#[test]
+fn notify_starts_the_app_by_path_when_installed_and_by_bundle_otherwise() {
+    let home = scratch("notice-open-target");
+    let app = home.join("Swarm.app");
+    let missing = home.join("missing.app");
+    std::fs::create_dir_all(&app).unwrap();
+    std::fs::write(
+        home.join("bin/open"),
+        "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$HOME/opened\"\n",
+    )
+    .unwrap();
+    assert!(
+        swarm(
+            &home,
+            &[("SWARM_APP_PATH", app.to_str().unwrap())],
+            &["notify", "Done"],
+            ""
+        )
+        .status
+        .success()
+    );
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+    while !home.join("opened").exists() && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert_eq!(
+        std::fs::read_to_string(home.join("opened")).unwrap(),
+        format!("-g {}\n", app.display())
+    );
+
+    let _ = std::fs::remove_file(home.join("opened"));
+    assert!(
+        swarm(
+            &home,
+            &[("SWARM_APP_PATH", missing.to_str().unwrap())],
+            &["notify", "Done"],
+            ""
+        )
+        .status
+        .success()
+    );
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
     while !home.join("opened").exists() && std::time::Instant::now() < deadline {
         std::thread::sleep(std::time::Duration::from_millis(10));
