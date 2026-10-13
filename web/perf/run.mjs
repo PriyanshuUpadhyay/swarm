@@ -1,7 +1,8 @@
 // Web pilot budget suite. Builds nothing; run `pnpm -C web perf` after the release builds.
 // usage: node web/perf/run.mjs [--browsers chromium,webkit] [--apps react] [--live-seconds 60] [--soak-minutes 10]
+//        [--only cold,warm,key,scroll,giant,live,pane,soak]
 // Needs: target/release/swarm built with --features serve, the ReleaseSafe transcript tool, web/dist.
-// PERF_SWARM and PERF_TOOL point at other builds of the two binaries.
+// PERF_SWARM and PERF_TOOL point at other builds of the two binaries; PERF_DIST at another web build.
 import { spawn, execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -16,6 +17,8 @@ const browsers = (args.browsers ?? "chromium,webkit").split(",");
 const apps = (args.apps ?? "react").split(",");
 const liveSeconds = Number(args["live-seconds"] ?? 60);
 const soakMinutes = Number(args["soak-minutes"] ?? 10);
+const only = new Set((args.only ?? "cold,warm,key,scroll,giant,live,pane,soak").split(","));
+const dist = path.resolve(repo, process.env.PERF_DIST ?? "web/dist");
 const swarm = path.resolve(repo, process.env.PERF_SWARM ?? "target/release/swarm");
 const tool = path.resolve(repo, process.env.PERF_TOOL ?? "packages/transcript/zig-out/bin/transcript");
 const home = path.join(repo, "tmp/web-pilot/perf-home");
@@ -40,7 +43,7 @@ const p = (xs, q) => {
 };
 
 function startServer() {
-  const child = spawn(swarm, ["serve", "--port", "0", "--assets", path.join(repo, "web/dist")], {
+  const child = spawn(swarm, ["serve", "--port", "0", "--assets", dist], {
     env: { ...process.env, SWARM_HOME: home, SWARM_TRANSCRIPT_TOOL: tool },
     stdio: ["ignore", "pipe", "inherit"],
   });
@@ -57,7 +60,7 @@ async function frames(page, action) {
     window.__frames = [];
     let last = performance.now();
     const tick = (t) => {
-      window.__frames.push(t - last);
+      window.__frames.push([t, t - last]);
       last = t;
       if (window.__frameRun) requestAnimationFrame(tick);
     };
@@ -65,12 +68,22 @@ async function frames(page, action) {
     requestAnimationFrame(tick);
   });
   await action();
-  const gaps = await page.evaluate(() => {
+  const timed = await page.evaluate(() => {
     window.__frameRun = false;
     return window.__frames.slice(1);
   });
+  const gaps = timed.map(([, g]) => g);
   const dropped = gaps.filter((g) => g > 25).length;
-  return { frames: gaps.length, dropped, rate: gaps.length ? dropped / gaps.length : NaN, worst: Math.max(...gaps) };
+  // Dropped frames per minute of the run, to see when drops start.
+  const start = timed[0]?.[0] ?? 0;
+  const minutes = [];
+  for (const [t, g] of timed) {
+    const m = Math.floor((t - start) / 60000);
+    minutes[m] ??= { frames: 0, dropped: 0 };
+    minutes[m].frames++;
+    if (g > 25) minutes[m].dropped++;
+  }
+  return { frames: gaps.length, dropped, rate: gaps.length ? dropped / gaps.length : NaN, worst: Math.max(...gaps), minutes };
 }
 
 const perfOf = (page, kind) => page.evaluate((k) => (window.__swarmPerf ?? []).filter((r) => r.kind === k).map((r) => r.painted - r.start), kind);
@@ -128,15 +141,20 @@ async function suite(browserName, app, url) {
 
   await open();
   // The pane chat has its own scenario; the other scenarios keep the chats they had before it.
-  const paneChat = `c:${JSON.parse(fs.readFileSync(path.join(home, "manifest.json"), "utf8")).panes.id}`;
-  const chatRows = await page.getByTestId("tree-row").evaluateAll((rows, skip) => rows.map((r, i) => ({ i, chat: r.getAttribute("data-kind") === "chat" && r.getAttribute("data-id") !== skip })).filter((r) => r.chat).map((r) => r.i), paneChat);
+  const paneChat = JSON.parse(fs.readFileSync(path.join(home, "manifest.json"), "utf8")).panes.id;
+  // Sidebar positions of the chat rows; headers and workspace rows sit between them. A build
+  // before P2b names a chat row "c:<session>" and has no data-session.
+  const chatRows = await page.getByTestId("tree-row").evaluateAll((rows, skip) => rows.map((r, i) => ({ i, chat: r.getAttribute("data-kind") === "chat" && (r.getAttribute("data-session") ?? r.getAttribute("data-id")?.slice(2)) !== skip })).filter((r) => r.chat).map((r) => r.i), paneChat);
 
+  if (only.has("cold")) {
   log(browserName, app, "cold opens");
   // Cold opens: cycle through every chat, so the 4-chat LRU always misses.
   await clearPerf(page);
   for (let round = 0; round < 3; round++) for (const i of chatRows.slice(2)) await openChat(page, i);
   result.open_p95 = p(await perfOf(page, "open"), 0.95);
+  }
 
+  if (only.has("warm")) {
   log(browserName, app, "warm switches");
   // Warm switches between two cached chats.
   await openChat(page, chatRows[2]);
@@ -144,7 +162,9 @@ async function suite(browserName, app, url) {
   await clearPerf(page);
   for (let k = 0; k < 30; k++) await openChat(page, chatRows[2 + (k % 2)]);
   result.switch_p95 = p(await perfOf(page, "switch"), 0.95);
+  }
 
+  if (only.has("key")) {
   log(browserName, app, "key-to-paint");
   // Key-to-paint: j/k selection moves in the sidebar.
   await page.getByTestId("sidebar").focus();
@@ -155,7 +175,9 @@ async function suite(browserName, app, url) {
   }
   result.key_p95 = p(await perfOf(page, "key"), 0.95);
   result.key_p50 = p(await perfOf(page, "key"), 0.5);
+  }
 
+  if (only.has("scroll")) {
   log(browserName, app, "scroll");
   // Scroll the 100k-event chat upward, paging older rows in as it goes.
   await openChat(page, chatRows[0]);
@@ -176,7 +198,9 @@ async function suite(browserName, app, url) {
   page.off("request", countOlder);
   result.scroll_rows = await page.locator('[data-testid="transcript"] [data-testid="row"]').count();
   result.scroll_older_pages = olderPages;
+  }
 
+  if (only.has("giant")) {
   log(browserName, app, "giant");
   // Giant tool output chat.
   await clearPerf(page);
@@ -186,7 +210,9 @@ async function suite(browserName, app, url) {
   }
   const giant = await perfOf(page, "open").then(async (opens) => opens.concat(await perfOf(page, "switch")));
   result.giant_open_p95 = p(giant, 0.95);
+  }
 
+  if (only.has("live")) {
   log(browserName, app, "live");
   // Live load: every chair log grows at 50 lines/s while the page follows all 12 chats.
   await open("?live=all");
@@ -207,12 +233,14 @@ async function suite(browserName, app, url) {
   result.live_rows_added = (await maxIndex(page)) - liveStart;
   result.live_drop = live.rate;
   result.live_worst_ms = live.worst;
+  }
 
+  if (only.has("pane")) {
   log(browserName, app, "pane live");
   // Pane live load: the chat's chair and four child logs grow at 50 lines/s while all four panes
   // are on screen (two columns of two) and follow their logs.
   await open();
-  await page.locator(`[data-testid="tree-row"][data-id="${paneChat}"]`).click();
+  await page.locator(`[data-testid="tree-row"]:is([data-session="${paneChat}"], [data-id="c:${paneChat}"])`).click();
   await page.waitForFunction(() => document.querySelectorAll('[data-testid="pane"]').length === 4);
   await page.getByTestId("strip").evaluate((el) => (el.scrollLeft = el.scrollWidth));
   await page.waitForFunction(() => {
@@ -224,24 +252,46 @@ async function suite(browserName, app, url) {
   const paneStart = await paneRows(page);
   const paneGen = spawn("node", [path.join(here, "gen.mjs"), "live", "--home", home, "--rate", "50", "--seconds", String(liveSeconds), "--target", "panes"], { stdio: "inherit" });
   const paneGenExit = new Promise((r) => paneGen.once("exit", r));
+  // Per minute: API requests by route, DOM size, and (Chromium) heap, to see what grows.
+  const started = Date.now();
+  const samples = [];
+  const minuteOf = () => Math.floor((Date.now() - started) / 60000);
+  const countRequest = (r) => {
+    const route = new URL(r.url()).pathname;
+    if (!route.startsWith("/api/") || route === "/api/stream") return;
+    const s = (samples[minuteOf()] ??= { requests: {} });
+    s.requests[route] = (s.requests[route] ?? 0) + 1;
+  };
+  page.on("request", countRequest);
   const paneLive = await frames(page, async () => {
     const end = Date.now() + liveSeconds * 1000;
+    let next = 0;
     while (Date.now() < end) {
+      if (Date.now() - started >= next * 60000) {
+        const s = (samples[minuteOf()] ??= { requests: {} });
+        s.dom = await page.evaluate(() => document.getElementsByTagName("*").length);
+        // No forced GC here: it would drop frames in the window it measures.
+        if (cdp) s.heap_mb = (await cdp.send("Performance.getMetrics")).metrics.find((m) => m.name === "JSHeapUsedSize").value / 1e6;
+        next++;
+      }
       await page.keyboard.press("j");
       await page.waitForTimeout(250);
     }
   });
+  page.off("request", countRequest);
+  result.pane_live_minutes = paneLive.minutes.map((m, i) => ({ minute: i, drop: m ? m.dropped / m.frames : NaN, ...samples[i] }));
   await paneGenExit;
   await page.waitForTimeout(500);
   result.pane_live_rows_added = (await paneRows(page)) - paneStart;
   result.pane_live_drop = paneLive.rate;
   result.pane_live_worst_ms = paneLive.worst;
+  }
 
   log(browserName, app, "soak");
   // Memory soak: switch chats for `soakMinutes`; compare the heap at 20% of the run with the end.
   // Samples are taken only after a full cycle of chats, so the 4-chat LRU holds the same chats each
   // time; the ~9 MB giant output is in the LRU for 4 of 12 positions and would swing the heap.
-  if (cdp && soakMinutes > 0) {
+  if (cdp && soakMinutes > 0 && only.has("soak")) {
     await open();
     const start = Date.now();
     const end = start + soakMinutes * 60000;
@@ -304,6 +354,11 @@ out += `rows appended to the open chat during live load: ${results.map((r) => `$
 out += `live worst frame: ${results.map((r) => `${r.app} ${r.browser} ${fmt(r.live_worst_ms, "ms")}`).join(", ")}\n`;
 out += `rows appended to the four panes during pane live load: ${results.map((r) => `${r.app} ${r.browser} ${r.pane_live_rows_added}`).join(", ")}\n`;
 out += `pane live worst frame: ${results.map((r) => `${r.app} ${r.browser} ${fmt(r.pane_live_worst_ms, "ms")}`).join(", ")}\n`;
+for (const r of results.filter((r) => r.pane_live_minutes)) {
+  out += `pane live per minute, ${r.app} ${r.browser}:\n`;
+  for (const m of r.pane_live_minutes)
+    out += `  ${m.minute}m drop ${(m.drop * 100).toFixed(2)}% dom ${m.dom ?? "-"}${m.heap_mb ? ` heap ${m.heap_mb.toFixed(1)} MB` : ""} requests ${JSON.stringify(m.requests ?? {})}\n`;
+}
 for (const r of results.filter((r) => r.heap_samples))
   out += `heap MB per minute, ${r.app} ${r.browser}: ${r.heap_samples.map((s) => `${s.min.toFixed(1)}m ${s.mb.toFixed(2)}`).join(", ")}\n`;
 console.log(out);

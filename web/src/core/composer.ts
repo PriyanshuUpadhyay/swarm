@@ -34,38 +34,6 @@ export function submission(text: string): string {
   return word.endsWith("\\") || word.endsWith(":") || "@$/".includes(word[0]) ? cleaned + " " : cleaned;
 }
 
-/** `C-u` presses that empty a CLI box holding `texts`, one per line (QueuePullBack.clearPresses). */
-export function clearPresses(texts: string[]): number {
-  return 2 * texts.join("\n").split("\n").length + 1;
-}
-
-/** What Up found once the queued rows left: texts back in the CLI box, or texts the CLI took. */
-export type PullBack = { state: "pulled"; texts: string[]; presses: number } | { state: "alreadySent"; presses: number } | { state: "waiting" };
-
-/** Decides a pull-back from rows. `queued` are the owner's queued rows when Up was pressed, and
- *  `before` the row ids then. A queued row that left with a new user row of the same text was taken
- *  by the CLI; one that left without one was popped into the CLI box. */
-export function decidePullBack(queued: Row[], before: ReadonlySet<string>, rows: readonly Row[]): PullBack {
-  const ids = new Set(rows.map((r) => r.id));
-  if (queued.some((q) => ids.has(q.id))) return { state: "waiting" };
-  const taken = new Map<string, number>();
-  for (const r of rows)
-    if (r.kind === "user" && !before.has(r.id)) {
-      const t = r.text.trim();
-      taken.set(t, (taken.get(t) ?? 0) + 1);
-    }
-  const pulled: string[] = [];
-  for (const q of queued) {
-    const t = q.text.trim();
-    const n = taken.get(t) ?? 0;
-    if (n) taken.set(t, n - 1);
-    else pulled.push(q.text);
-  }
-  if (pulled.length) return { state: "pulled", texts: pulled, presses: clearPresses(pulled) };
-  // Up recalled the last sent prompt into the box; clear that.
-  return { state: "alreadySent", presses: clearPresses([queued[queued.length - 1].text]) };
-}
-
 /** A text typed into a running Codex or AGY chat. Their logs say nothing until the agent takes it. */
 export type Sent = { row: Row; before: ReadonlySet<string> };
 

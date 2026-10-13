@@ -1,12 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { takeToken, type Api, type Row, type RowPage, type Snapshot } from "./api";
+import { takeToken, type Api, type Row, type RowPage } from "./api";
 import { App } from "./app";
-import { eventKey, installKeys, parseChord, Registry, search } from "./commands";
+import { eventKey, installKeys, parseChord, Registry } from "./commands";
 import { renderMarkdown } from "./markdown";
 import { MAX_RECORDS, measure } from "./perf";
 import { SseParser } from "./sse";
 import { FoldChoices, findMatches, lines, mergeRows, parsePatch, splitPatch } from "./transcript";
-import { buildTree, flatten, rollUp } from "./tree";
 
 // A row as the server sends it; `order` is [source offset, event ordinal].
 const row = (id: string, offset: number, extra: Partial<Row> = {}): Row => ({ id, kind: "assistant", text: id, order: [offset, 0], ...extra });
@@ -129,66 +128,6 @@ describe("patch", () => {
   });
 });
 
-describe("sidebar tree", () => {
-  const session = (id: string, workspace: string, project: string | null, created: number) => ({
-    id,
-    cwd: workspace,
-    workspace,
-    project,
-    created_at: created,
-    chair_provider: "claude",
-    adapter: null,
-  });
-  const snap: Snapshot = {
-    version: 1,
-    sessions: [
-      session("chat-old", "/r/app", "/r/app", 1),
-      session("chat-new", "/r/app", "/r/app", 2),
-      session("chat-wt", "/r/wt/feature", "/r/app", 3),
-      session("chat-lone", "/tmp/x", null, 4),
-    ],
-    agents: {
-      "chat-old": [{ id: "w1", role: "worker", state: "working", alive: true }],
-      "chat-wt": [
-        { id: "w2", role: "worker", state: "waiting", alive: true },
-        { id: "w3", role: "worker", state: "done", alive: false },
-      ],
-    },
-  };
-
-  it("groups chats under workspace under project in a stable order", () => {
-    const rows = flatten(buildTree(snap), new Set());
-    expect(rows.map((r) => `${r.depth}:${r.id}`)).toEqual([
-      "1:p:/r/app",
-      "2:w:/r/app",
-      "3:c:chat-new",
-      "3:c:chat-old",
-      "2:w:/r/wt/feature",
-      "3:c:chat-wt",
-      "1:p:/tmp/x",
-      "2:w:/tmp/x",
-      "3:c:chat-lone",
-    ]);
-  });
-
-  it("rolls agent state up: waiting beats working beats idle", () => {
-    const rows = flatten(buildTree(snap), new Set());
-    const state = (id: string) => rows.find((r) => r.id === id)!.state;
-    expect(state("c:chat-old")).toBe("working");
-    expect(state("c:chat-wt")).toBe("waiting");
-    expect(state("w:/r/app")).toBe("working");
-    expect(state("p:/r/app")).toBe("waiting");
-    expect(state("p:/tmp/x")).toBe("idle");
-    expect(rollUp([])).toBe("idle");
-  });
-
-  it("hides the children of a collapsed row", () => {
-    const rows = flatten(buildTree(snap), new Set(["p:/r/app"]));
-    expect(rows.map((r) => r.id)).toEqual(["p:/r/app", "p:/tmp/x", "w:/tmp/x", "c:chat-lone"]);
-    expect(rows[0].expanded).toBe(false);
-  });
-});
-
 describe("command registry", () => {
   const key = (k: Partial<KeyboardEvent>) => ({ key: "", code: "", ctrlKey: false, metaKey: false, shiftKey: false, altKey: false, ...k });
 
@@ -228,12 +167,6 @@ describe("command registry", () => {
   it("parses chords and reads keys", () => {
     expect(parseChord("Ctrl+Meta+ArrowUp")).toEqual({ ctrl: true, meta: true, shift: false, alt: false, key: "arrowup" });
     expect(eventKey(key({ key: "¡", code: "Digit1" }))).toBe("1");
-  });
-
-  it("palette search needs every word to match", () => {
-    const all = [{ title: "app / feature / claude 1" }, { title: "app / main / codex 2" }];
-    expect(search(all, "app claude")).toEqual([all[0]]);
-    expect(search(all, "")).toEqual(all);
   });
 });
 

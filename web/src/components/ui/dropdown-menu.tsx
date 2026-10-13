@@ -20,6 +20,10 @@ function DropdownMenuContent({ className, sideOffset = 4, ...props }: React.Comp
   );
 }
 
+function DropdownMenuItem({ className, ...props }: React.ComponentProps<typeof DropdownMenuPrimitive.Item>) {
+  return <DropdownMenuPrimitive.Item data-slot="dropdown-menu-item" className={cn(menuItem, className)} {...props} />;
+}
+
 function DropdownMenuLabel({ className, ...props }: React.ComponentProps<typeof DropdownMenuPrimitive.Label>) {
   return <DropdownMenuPrimitive.Label data-slot="dropdown-menu-label" className={cn(menuLabel, className)} {...props} />;
 }
@@ -43,4 +47,4 @@ function DropdownMenuRadioItem({ className, children, ...props }: React.Componen
   );
 }
 
-export { DropdownMenu, DropdownMenuContent, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuTrigger };
+export { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuTrigger };

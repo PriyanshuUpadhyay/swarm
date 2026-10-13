@@ -1,11 +1,13 @@
-import { CommandIcon, MessageSquareIcon } from "lucide-react";
-import { useState, useSyncExternalStore } from "react";
-import type { App, PaletteEntry } from "../core/app";
+import { useMemo, useState, useSyncExternalStore } from "react";
+import type { App } from "../core/app";
+import { paletteSections, type PaletteItem } from "../core/nav";
 import { Command, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandShortcut } from "../components/ui/command";
 import { Kbd } from "../components/ui/kbd";
 import { chordLabel } from "./chord";
+import { StatusGlyph } from "./status";
 
-/** ⌘K. The app owns open state and search; cmdk only draws the list and moves the selection. */
+/** ⌘K. The app owns open state and the items; jean's fuzzy search ranks them (`rankPalette`);
+ *  cmdk only draws the list and moves the selection. */
 export function Palette({ app }: { app: App }) {
   const open = useSyncExternalStore(app.subscribe, () => app.view.paletteOpen);
   return (
@@ -16,46 +18,37 @@ export function Palette({ app }: { app: App }) {
 }
 
 function PaletteBody({ app }: { app: App }) {
-  const roots = useSyncExternalStore(app.subscribe, () => app.view.roots);
+  // The items change with the tree, the snapshot (through Recent) and the open chat, not with rows.
+  const tree = useSyncExternalStore(app.subscribe, () => app.view.tree);
+  const recent = useSyncExternalStore(app.subscribe, () => app.view.recent);
+  const openId = useSyncExternalStore(app.subscribe, () => app.view.openId);
   const [query, setQuery] = useState("");
-  const entries = app.paletteEntries(roots, query);
-  // Chat entries carry tree ids ("c:<session>"); everything else is a registered command.
-  const commands = entries.filter((e) => !e.id.startsWith("c:"));
-  const chats = entries.filter((e) => e.id.startsWith("c:"));
-  const run = (entry: PaletteEntry) => {
+  const items = useMemo(() => app.paletteItems(), [app, tree, recent, openId]);
+  const sections = paletteSections(items, query);
+  const run = (item: PaletteItem) => {
+    if (item.disabledReason) return;
     app.setPalette(false);
-    entry.run();
+    item.run();
   };
   return (
     <Command shouldFilter={false} loop label="Command palette" data-testid="palette">
-      <CommandInput autoFocus value={query} onValueChange={setQuery} placeholder="Search commands and chats" />
+      <CommandInput autoFocus value={query} onValueChange={setQuery} placeholder="Search actions, workspaces, chats, and agents" />
       <CommandList>
-        <CommandEmpty>Nothing matches “{query}”.</CommandEmpty>
-        {commands.length > 0 && (
-          <CommandGroup heading="Commands">
-            {commands.map((e) => (
-              <CommandItem key={e.id} value={e.id} onSelect={() => run(e)}>
-                <CommandIcon />
-                {e.title}
-                {e.hint && (
-                  <CommandShortcut>
-                    <Kbd>{chordLabel(e.hint)}</Kbd>
-                  </CommandShortcut>
+        <CommandEmpty>No matches</CommandEmpty>
+        {sections.map((s) => (
+          <CommandGroup key={s.title} heading={s.title}>
+            {s.items.map((item) => (
+              <CommandItem key={item.id} value={item.id} disabled={!!item.disabledReason} onSelect={() => run(item)} title={item.disabledReason ?? item.title}>
+                <span className="grid w-4 shrink-0 place-items-center">{item.status && <StatusGlyph status={item.status} />}</span>
+                <span className="truncate">{item.title}</span>
+                {item.subtitle && <span className="min-w-0 truncate text-muted-foreground">{item.subtitle}</span>}
+                {(item.shortcut || item.disabledReason) && (
+                  <CommandShortcut>{item.disabledReason ? item.disabledReason : <Kbd>{chordLabel(item.shortcut!)}</Kbd>}</CommandShortcut>
                 )}
               </CommandItem>
             ))}
           </CommandGroup>
-        )}
-        {chats.length > 0 && (
-          <CommandGroup heading="Chats">
-            {chats.map((e) => (
-              <CommandItem key={e.id} value={e.id} onSelect={() => run(e)}>
-                <MessageSquareIcon />
-                <span className="truncate">{e.title}</span>
-              </CommandItem>
-            ))}
-          </CommandGroup>
-        )}
+        ))}
       </CommandList>
     </Command>
   );

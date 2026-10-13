@@ -31,7 +31,9 @@ export const GIANT_LINES = 20_000;
 /** The browsers that run the pane case. Each gets its own chat, because the case closes an agent. */
 export const PANE_PROJECTS = ["chromium", "webkit"];
 const paneOf = (project: string, agent: string) => `fixture-${project}-${agent}`;
-const PANES = ["fixture-chair", ...PANE_PROJECTS.flatMap((p) => ["chair", "reviewer", "tester"].map((a) => paneOf(p, a)))];
+/** Two live chats in one workspace, for the tab strip cases. */
+const TAB_PANES = ["fixture-tabs-1", "fixture-tabs-2"];
+const PANES = ["fixture-chair", ...TAB_PANES, ...PANE_PROJECTS.flatMap((p) => ["chair", "reviewer", "tester"].map((a) => paneOf(p, a)))];
 
 /** A pane adapter that is only shell lines: it logs each verb under $HOME and reads a pane's screen
  *  from $HOME/screen-<pane>, else from $HOME/screen. While $HOME/fail exists, typing fails with its
@@ -63,6 +65,12 @@ export default async function setup() {
   };
   const logs = join(home, ".claude/projects/e2e");
   mkdirSync(logs, { recursive: true });
+  // Chats with no adapter. The tree lists only chats with agents, so each gets an ended chair below.
+  const plain: { session: string; log: string }[] = [];
+  const lane = (cwd: string, chair: string) => {
+    const session = execFileSync(swarm, ["session", "new", "lane", "--chair", `claude:${chair}`], { cwd, env, stdio: "pipe" }).toString().trim().split("\n").pop()!;
+    plain.push({ session, log: join(logs, `${chair}.jsonl`) });
+  };
   for (const [ws, fixture] of [
     ["ws-build", "claude-chair-run.jsonl"],
     ["ws-edit", "claude-edit.jsonl"],
@@ -73,7 +81,7 @@ export default async function setup() {
     const chair = randomUUID();
     if (fixture) copyFileSync(join(fixtures, fixture), join(logs, `${chair}.jsonl`));
     else writeFileSync(join(logs, `${chair}.jsonl`), giantLog(chair, GIANT_LINES));
-    execFileSync(swarm, ["session", "new", "lane", "--chair", `claude:${chair}`], { cwd, env, stdio: "pipe" });
+    lane(cwd, chair);
   }
   // The live chat: its chair registers from the stand-in pane, as a chair CLI does at start.
   mkdirSync(join(home, ".swarm/adapters"), { recursive: true });
@@ -90,12 +98,24 @@ export default async function setup() {
     .split("\n")
     .pop()!;
   execFileSync(swarm, ["agent", "add", "orchestrator", "orchestrator"], { env: { ...liveEnv, SWARM_SESSION_ID: liveSession }, stdio: "pipe" });
+  // Two live chats in ws-tabs. A tab of an ended chat closes when the owner leaves it (TabStrip),
+  // so the tab cases need chats whose chairs are alive.
+  const tabsDir = join(dir, "ws-tabs");
+  mkdirSync(tabsDir);
+  for (const [i, pane] of TAB_PANES.entries()) {
+    const chairLog = randomUUID();
+    copyFileSync(join(fixtures, i ? "claude-chair-run.jsonl" : "claude-edit.jsonl"), join(logs, `${chairLog}.jsonl`));
+    const session = execFileSync(swarm, ["session", "new", "lane", "--chair", `claude:${chairLog}`], { cwd: tabsDir, env: liveEnv, stdio: "pipe" }).toString().trim().split("\n").pop()!;
+    execFileSync(swarm, ["agent", "add", "orchestrator", "orchestrator"], { env: { ...liveEnv, SWARM_SESSION_ID: session, FIXTURE_PANE: pane }, stdio: "pipe" });
+  }
   // Each pane of the pane chats has its own screen, so the chair case's question does not reach them.
   for (const pane of PANES.slice(1)) copyFileSync(join(repo, "tests/fixtures/screens/claude-idle.txt"), join(home, `screen-${pane}`));
   // One chat per browser with a chair and two children, each on its own stand-in pane. `swarm
   // spawn` gives a child its pane and its hooks report its log; here the store gets both directly.
   const db = execFileSync("fd", ["-HI", "-t", "f", "^swarm.db$", home], { encoding: "utf8" }).trim().split("\n")[0];
   const sql = (text: string) => `'${text.replaceAll("'", "''")}'`;
+  for (const { session, log } of plain)
+    execFileSync("sqlite3", [db, `INSERT INTO agent (id, session_id, role, provider, created_at, log) VALUES ('orchestrator', ${sql(session)}, 'orchestrator', 'claude', ${Math.floor(Date.now() / 1000)}, ${sql(log)});`]);
   for (const project of PANE_PROJECTS) {
     const cwd = join(dir, `ws-panes-${project}`);
     mkdirSync(cwd);
@@ -134,6 +154,7 @@ export default async function setup() {
   process.env.SWARM_SERVE_URL = first.trim();
   process.env.SWARM_E2E_HOME = home;
   process.env.SWARM_E2E_LIVE = liveSession;
+  process.env.SWARM_E2E_DIR = dir;
   return async () => {
     server?.kill();
     rmSync(dir, { recursive: true, force: true });

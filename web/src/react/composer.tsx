@@ -182,7 +182,7 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
     <div>
       <div
         data-testid="composer-box"
-        className="rounded-xl border border-border-strong bg-surface focus-within:border-ring has-[textarea:disabled]:opacity-70"
+        className="rounded-lg border border-border-strong bg-surface shadow-sm focus-within:border-ring has-[textarea:disabled]:opacity-70"
       >
         <textarea
           ref={box}
@@ -197,8 +197,8 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
           onKeyDown={onKeyDown}
         />
         <div className="flex items-center gap-2 px-2 pb-2 text-xs text-muted-foreground">
-          {/* P3 opens Switch model here, and P4 the Usage view. */}
-          <button type="button" data-testid="model-chip" className="flex min-w-0 items-center gap-1 rounded-md px-1.5 py-1 hover:bg-hover" title="Switch model comes in P3">
+          {/* S3 opens Switch model here, and S5 the Usage view. */}
+          <button type="button" data-testid="model-chip" className="flex min-w-0 items-center gap-1 rounded-md px-1.5 py-1 hover:bg-hover" title="Switch model comes in S3">
             <span className="truncate">{modelLabel(chair)}</span>
             <ChevronDownIcon className="size-3 shrink-0" />
           </button>

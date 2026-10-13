@@ -1,5 +1,7 @@
 // HTTP client for `swarm serve`. The token lives only in memory.
 
+import type { ChoiceOp, TreeName, TreeView, TabsView } from "./nav";
+
 export type Session = {
   id: string;
   cwd: string;
@@ -110,8 +112,8 @@ export type Row = {
 
 export type RowPage = { page: Page; rows: Row[]; usage: unknown; remove?: string[] };
 
-/** One `rows` stream frame. */
-export type RowFrame = { key: string; upsert?: Row[]; remove?: string[]; end_offset: number };
+/** One `rows` stream frame. `usage` is there only when it changed; null clears it. */
+export type RowFrame = { key: string; upsert?: Row[]; remove?: string[]; end_offset: number; usage?: unknown };
 
 export type SubscribeKey = { key: string; from: number; view: "rows" };
 
@@ -164,15 +166,33 @@ export class Api {
     return (await this.json<{ text: string }>(`/api/tool-output?${q}`)).text;
   }
 
+  tree(view: TreeName): Promise<TreeView> {
+    return this.json(`/api/tree?view=${view}`);
+  }
+
+  tabs(workspace: string): Promise<TabsView> {
+    return this.json(`/api/tabs?${new URLSearchParams({ workspace })}`);
+  }
+
+  /** One owner choice. A stale revision is a 409 `ApiError`. */
+  choice(revision: string, op: ChoiceOp): Promise<{ revision: string; version: number }> {
+    return this.post("/api/choices", { revision, ...op });
+  }
+
   /** A chat action (P0-U3). A failure throws the server's `error` text as the message. */
   async action(path: string, body: Record<string, unknown>): Promise<void> {
+    await this.post(path, body);
+  }
+
+  /** A POST with a JSON body and reply. A failure throws the server's `error` text as the message. */
+  async post<T>(path: string, body: Record<string, unknown>): Promise<T> {
     const res = await this.fetch(path, {
       method: "POST",
       headers: this.headers({ "Content-Type": "application/json" }),
       body: JSON.stringify(body),
     });
-    if (res.ok) return;
     const text = await res.text();
+    if (res.ok) return (text ? JSON.parse(text) : null) as T;
     let message = text || `${res.status} ${res.statusText}`;
     try {
       message = String(JSON.parse(text).error ?? message);

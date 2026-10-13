@@ -3,9 +3,13 @@ import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { GIANT_LINES } from "./serve";
 
+// WebKit reports a ResizeObserver loop when a short row list opens (p1d-result.md). A reload restores
+// the owner's last chat, which can be a chat with child columns, so any case can see it at load.
+// It changes nothing on screen, so no case counts it as an error.
+
 test("select a chat by keyboard and see its rows", async ({ page: tab }) => {
   const errors: string[] = [];
-  tab.on("pageerror", (e) => errors.push(e.message));
+  tab.on("pageerror", (e) => !e.message.startsWith("ResizeObserver loop") && errors.push(e.message));
   tab.on("console", (m) => m.type() === "error" && errors.push(m.text()));
 
   const url = new URL(process.env.SWARM_SERVE_URL!);
@@ -14,14 +18,15 @@ test("select a chat by keyboard and see its rows", async ({ page: tab }) => {
   expect(new URL(tab.url()).hash).toBe("");
 
   const sidebar = tab.getByTestId("sidebar");
-  await expect(sidebar.locator('[data-testid="tree-row"][data-kind="chat"]')).toHaveCount(6);
+  await expect(sidebar.locator('[data-testid="tree-row"][data-kind="chat"]')).toHaveCount(8);
 
-  // The first row is selected; move down to the first chat row, then open it.
+  // The first row (a project header) is selected; move down past its workspace to its first chat, then open it.
   await tab.keyboard.press("j");
   await tab.keyboard.press("j");
   const selected = sidebar.locator('[aria-selected="true"]');
   await expect(selected).toHaveAttribute("data-kind", "chat");
-  const chatId = (await selected.getAttribute("data-id"))!.slice(2);
+  const rowId = (await selected.getAttribute("data-id"))!;
+  const chatId = (await selected.getAttribute("data-session"))!;
   await tab.keyboard.press("Enter");
 
   const transcript = tab.locator(`[data-testid="transcript"][data-chat="${chatId}"][data-state="ready"]`);
@@ -30,7 +35,7 @@ test("select a chat by keyboard and see its rows", async ({ page: tab }) => {
   // Records land in the frame after the paint, so poll.
   await expect.poll(() => tab.evaluate(() => window.__swarmPerf.map((p) => `${p.kind}:${p.target}`))).toEqual([
     "key:" + (await sidebar.locator('[data-testid="tree-row"]').nth(1).getAttribute("data-id")),
-    `key:c:${chatId}`,
+    `key:${rowId}`,
     `open:${chatId}`,
   ]);
   expect(errors).toEqual([]);
@@ -38,7 +43,7 @@ test("select a chat by keyboard and see its rows", async ({ page: tab }) => {
 
 test("⌘K opens the palette with the registered commands and runs one", async ({ page: tab }) => {
   const errors: string[] = [];
-  tab.on("pageerror", (e) => errors.push(e.message));
+  tab.on("pageerror", (e) => !e.message.startsWith("ResizeObserver loop") && errors.push(e.message));
   tab.on("console", (m) => m.type() === "error" && errors.push(m.text()));
 
   const url = new URL(process.env.SWARM_SERVE_URL!);
@@ -47,7 +52,7 @@ test("⌘K opens the palette with the registered commands and runs one", async (
 
   await tab.keyboard.press("Meta+k");
   const palette = tab.getByTestId("palette");
-  await expect(palette.getByRole("option", { name: /Next workspace/ })).toContainText("⌃⌘↓");
+  await expect(palette.getByRole("option", { name: /Next Workspace/ })).toContainText("⌃⌘↓");
   await tab.keyboard.type("light");
   await expect(palette.getByRole("option")).toHaveText(["Theme: Light"]);
   await tab.keyboard.press("Enter");
@@ -61,7 +66,7 @@ async function openChatWithCard(tab: Page, title: string) {
   const chats = tab.getByTestId("sidebar").locator('[data-testid="tree-row"][data-kind="chat"]');
   for (let i = 0; i < (await chats.count()); i++) {
     await chats.nth(i).click();
-    const chatId = (await chats.nth(i).getAttribute("data-id"))!.slice(2);
+    const chatId = (await chats.nth(i).getAttribute("data-session"))!;
     await expect(tab.locator(`[data-testid="transcript"][data-chat="${chatId}"][data-state="ready"]`).getByTestId("row").first()).toBeVisible();
     const card = tab.getByTestId("tool-card").filter({ hasText: title });
     if (await card.count()) return card.first();
@@ -71,7 +76,7 @@ async function openChatWithCard(tab: Page, title: string) {
 
 test("a giant output shows a capped card, and Show full output fetches every line", async ({ page: tab }) => {
   const errors: string[] = [];
-  tab.on("pageerror", (e) => errors.push(e.message));
+  tab.on("pageerror", (e) => !e.message.startsWith("ResizeObserver loop") && errors.push(e.message));
   tab.on("console", (m) => m.type() === "error" && errors.push(m.text()));
 
   const url = new URL(process.env.SWARM_SERVE_URL!);
@@ -99,7 +104,7 @@ test("a giant output shows a capped card, and Show full output fetches every lin
 
 test("the composer types into the chair, ⌘. interrupts, errors show in a banner, and the prompt card answers", async ({ page: tab }, info) => {
   const errors: string[] = [];
-  tab.on("pageerror", (e) => errors.push(e.message));
+  tab.on("pageerror", (e) => !e.message.startsWith("ResizeObserver loop") && errors.push(e.message));
   // The refused send logs its 409 response as a console error; that one is expected.
   tab.on("console", (m) => m.type() === "error" && !m.text().includes("409") && errors.push(m.text()));
   const home = process.env.SWARM_E2E_HOME!;
@@ -112,7 +117,7 @@ test("the composer types into the chair, ⌘. interrupts, errors show in a banne
   const url = new URL(process.env.SWARM_SERVE_URL!);
   await tab.goto(`${url.origin}/${url.hash}`);
   await tab.waitForFunction(() => window.__swarmReady === true);
-  await tab.locator(`[data-testid="tree-row"][data-id="c:${process.env.SWARM_E2E_LIVE}"]`).click();
+  await tab.locator(`[data-testid="tree-row"][data-session="${process.env.SWARM_E2E_LIVE}"]`).click();
   const composer = tab.getByTestId("composer");
   await expect(composer).toBeEnabled();
   try {
@@ -199,7 +204,7 @@ test("a chat with two children shows their panes; keys move focus and zoom; a pa
   await tab.waitForFunction(() => window.__swarmReady === true);
   // Wide enough to drag a column's edge to the right.
   await tab.setViewportSize({ width: 1600, height: 900 });
-  await tab.locator(`[data-testid="tree-row"][data-id="c:${process.env[`SWARM_E2E_PANES_${project}`]}"]`).click();
+  await tab.locator(`[data-testid="tree-row"][data-session="${process.env[`SWARM_E2E_PANES_${project}`]}"]`).click();
   try {
     // Two children are one column of two panes (ADR 0030), oldest first, each with its own chat.
     const panes = tab.getByTestId("pane");

@@ -1,11 +1,10 @@
 // Framework-free app state. Each view layer reads `view`, which is a new object after every change.
 
-import { Api, type Row, type RowFrame, type Snapshot, type SubscribeKey } from "./api";
-import { installKeys, Registry, search, type Command } from "./commands";
+import { Api, ApiError, type Row, type RowFrame, type Snapshot, type SubscribeKey } from "./api";
+import { installKeys, Registry, type Command } from "./commands";
 import {
   agentInput,
   confirmSent,
-  decidePullBack,
   outgoing,
   SEND_KEY_STORAGE,
   sentRow,
@@ -19,9 +18,28 @@ import {
 import { MarkdownCache } from "./markdown";
 import { measure, whenPainted, type PerfKind } from "./perf";
 import { readSse, type SseEvent } from "./sse";
-import { movePane, paneCells, type Direction, type PaneCell } from "./panes";
+import { isChair, movePane, paneCells, paneStatus, type Direction, type PaneCell } from "./panes";
 import { FoldChoices, findMatches, lines, mergeRows, type Line, type Match } from "./transcript";
-import { buildTree, flatten, workspaces, type TreeNode, type TreeRow } from "./tree";
+import {
+  chatRows,
+  foldId,
+  moveTarget,
+  navRows,
+  paletteSources,
+  recency,
+  recentWork,
+  shareTree,
+  workspaceOf,
+  workspaceRow,
+  type ChoiceOp,
+  type NavRow,
+  type PaletteItem,
+  type RecentChat,
+  type Tab,
+  type Tabs,
+  type TreeName,
+  type TreeView,
+} from "./nav";
 
 export const TAIL = 200;
 export const LRU_SIZE = 4;
@@ -122,12 +140,24 @@ export type Strip = {
 /** The chair's chat as `Pane` fields, and the rest of the window. */
 export type View = Pane & {
   loaded: boolean;
-  roots: TreeNode[];
+  tree: TreeView | null;
+  treeName: TreeName;
   error: string | null;
-  rows: TreeRow[];
+  /** The sidebar's lines; `selected` is the keyboard row among them. */
+  rows: NavRow[];
   selected: string | null;
   openId: string | null;
+  /** The workspace whose tabs show; with no chat open, its landing shows. Null is Home. */
+  workspace: string | null;
+  /** The tab strip of `workspace`, once loaded. */
+  tabs: Tabs | null;
+  /** 1 Workspaces, 2 Recent (⌥⌘1-2). */
+  sidebarView: number;
+  /** Every listed chat across projects, newest activity first; `recentSelected` is its keyboard row. */
+  recent: RecentChat[];
+  recentSelected: string | null;
   paletteOpen: boolean;
+  asking: Ask | null;
   strip: Strip;
 };
 
@@ -143,7 +173,11 @@ export type Reader = {
   closeFind(): void;
 };
 
-export type PaletteEntry = { id: string; title: string; hint?: string; run: () => void };
+/** A name the owner types: a rename. */
+export type Ask = { title: string; value: string; save: (name: string) => void };
+
+/** The sidebar views in ⌥⌘ order. */
+export const SIDEBAR_VIEWS = ["Workspaces", "Recent"];
 
 const EMPTY: Line[] = [];
 const NO_FULL: ReadonlyMap<string, FullText> = new Map();
@@ -190,16 +224,33 @@ export class App {
   readonly registry = new Registry();
   view: View;
   private snapshot: Snapshot | null = null;
-  private roots: TreeNode[] = [];
-  private rows: TreeRow[] = [];
-  private collapsed = new Set<string>();
+  private tree: TreeView | null = null;
+  private treeName: TreeName = "workspaces";
+  private rows: NavRow[] = [];
+  /** Fold presses the server has not confirmed yet, by fold id. */
+  private folds = new Map<string, boolean>();
   private selected: string | null = null;
   private openId: string | null = null;
+  private workspace: string | null = null;
+  private tabs: Tabs | null = null;
+  private sidebarView = 1;
+  private recentMemo: { tree: TreeView | null; snapshot: Snapshot | null; list: RecentChat[] } | null = null;
+  private recentSelected: string | null = null;
+  /** The choices revision of the last read or write. Writes go one at a time, each on the last. */
+  private revision: string | null = null;
+  private writes: Promise<unknown> = Promise.resolve();
+  private writing = 0;
+  /** Bumped by each write, so a read that started before it does not take back its revision. */
+  private writeSeq = 0;
+  private restored = false;
+  /** Bumped by each move between chats, so a slow workspace step does not undo a newer one. */
+  private navSeq = 0;
+  private starting = false;
   private paletteOpen = false;
+  private asking: Ask | null = null;
   private error: string | null = null;
   private chats = new Map<string, Chat>();
   private lru: string[] = [];
-  private remembered = new Map<string, string>();
   private listeners = new Set<() => void>();
   private streamId: string | null = null;
   private sentKeys = "";
@@ -223,6 +274,8 @@ export class App {
   private cellsMemo: { snapshot: Snapshot | null; openId: string | null; dismissed: string[] | undefined; cells: PaneCell[] } | null = null;
   private strip: Strip = { cells: NO_CELLS, panes: new Map(), focused: null, zoomed: null, reveal: null, revealSeq: 0 };
   private readers = new Map<string, Reader>();
+  /** Shows a short message to the owner; the view layer sets it (a toast). */
+  notice: (text: string, error?: boolean) => void = () => {};
 
   constructor(
     readonly api: Api,
@@ -260,13 +313,20 @@ export class App {
     if (this.findId && !cells.some((c) => paneId(this.openId!, c.id) === this.findId)) this.findId = null;
     return {
       ...(chat ? this.paneView(chat, sendKey) : NO_PANE),
-      loaded: this.snapshot !== null,
-      roots: this.roots,
+      loaded: this.tree !== null,
+      tree: this.tree,
+      treeName: this.treeName,
       error: this.error,
       rows: this.rows,
       selected: this.selected,
       openId: this.openId,
+      workspace: this.workspace,
+      tabs: this.tabs?.workspace === this.workspace ? this.tabs : null,
+      sidebarView: this.sidebarView,
+      recent: this.recentList(),
+      recentSelected: this.recentSelected,
       paletteOpen: this.paletteOpen,
+      asking: this.asking,
       strip: this.stripView(cells, sendKey),
     };
   }
@@ -363,7 +423,7 @@ export class App {
     };
   }
 
-  // ---- snapshot and tree ----
+  // ---- snapshot, tree and tabs ----
 
   private refreshSnapshot(): Promise<void> {
     if (this.snapshotBusy) {
@@ -374,7 +434,9 @@ export class App {
       do {
         this.snapshotAgain = false;
         try {
-          this.applySnapshot(await this.api.snapshot());
+          const [snap] = await Promise.all([this.api.snapshot(), this.loadNav()]);
+          this.applySnapshot(snap);
+          this.afterNav();
           this.error = null;
         } catch (err) {
           this.error = String(err);
@@ -386,10 +448,46 @@ export class App {
     return this.snapshotBusy;
   }
 
+  /** Reads the tree and the current workspace's tab strip. */
+  private async loadNav() {
+    const seq = this.writeSeq;
+    const name = this.treeName;
+    const workspace = this.workspace;
+    const [tree, tabs] = await Promise.all([
+      this.api.tree(name),
+      // An unknown workspace is a 404; the strip stays empty.
+      workspace ? this.api.tabs(workspace).catch(() => null) : null,
+    ]);
+    if (name !== this.treeName) return;
+    // A write that landed while these were in flight holds the newer revision and folds.
+    if (this.writing === 0 && seq === this.writeSeq) {
+      this.revision = tree.revision;
+      this.folds.clear();
+    }
+    this.tree = shareTree(this.tree?.view === name ? this.tree : null, tree);
+    if (tabs && workspace === this.workspace) this.tabs = tabs.view;
+    this.rows = navRows(this.tree, this.folds);
+  }
+
+  /** After each tree: the first one restores the owner's last chat. A chat is marked seen only when
+   *  it is selected (`selected_chat`), as in Swift's WorkspaceNavigation.select. */
+  private afterNav() {
+    const tree = this.tree;
+    if (!tree) return;
+    if (!this.selected || !this.rows.some((r) => r.id === this.selected)) this.selected = this.rows[0]?.id ?? null;
+    if (!this.restored) {
+      this.restored = true;
+      const row = tree.sections.flatMap((s) => s.rows).find((r) => r.id === tree.selectedRow);
+      if (row && !this.openId && !this.workspace) {
+        if (row.selection.chat) this.openChat(row.selection.chat, undefined, { write: false });
+        else if (row.kind === "workspace") this.workspace = row.id;
+        void this.refreshSnapshot();
+      }
+    }
+  }
+
   private applySnapshot(snap: Snapshot) {
     this.snapshot = snap;
-    this.roots = buildTree(snap);
-    this.rows = flatten(this.roots, this.collapsed);
     // A card stays busy until its question goes; the same question shown again is a new ask.
     for (const [id, input] of this.inputs)
       if (input.answering && this.chair(id).prompt?.id !== input.answering.prompt) input.answering = null;
@@ -401,13 +499,39 @@ export class App {
       }
     // A child's hooks report its log after its column shows.
     for (const id of this.visible) this.loadPane(id);
-    if (!this.selected || !this.rows.some((r) => r.id === this.selected)) this.selected = this.rows[0]?.id ?? null;
     if (this.liveAll) void this.loadAllForLive();
   }
 
-  private reflatten() {
-    this.rows = flatten(this.roots, this.collapsed);
+  /** Writes one owner choice after the writes before it, on the newest revision. A refused write
+   *  (a stale revision from another writer, or a bad target) shows its error and reloads the tree;
+   *  nothing retries, so a choice never lands on a state the owner did not see. */
+  choose(op: ChoiceOp): Promise<boolean> {
+    this.writing++;
+    const run = this.writes.then(async () => {
+      try {
+        if (this.revision === null) throw new Error("The sidebar has not loaded yet.");
+        const done = await this.api.choice(this.revision, op);
+        this.revision = done.revision;
+        this.writeSeq++;
+        return true;
+      } catch (err) {
+        this.folds.clear();
+        this.rows = navRows(this.tree, this.folds);
+        this.notice(
+          err instanceof ApiError && err.status === 409 ? "Your choices changed elsewhere. The list was reloaded; try again." : message(err),
+          true,
+        );
+        void this.refreshSnapshot();
+        return false;
+      } finally {
+        this.writing--;
+      }
+    });
+    this.writes = run;
+    return run;
   }
+
+  // ---- sidebar ----
 
   private select(id: string, e?: KeyboardEvent) {
     this.selected = id;
@@ -420,6 +544,7 @@ export class App {
   }
 
   moveSelection(to: number | "home" | "end", e?: KeyboardEvent) {
+    if (this.sidebarView === 2) return this.moveRecent(to, e);
     if (!this.rows.length) return;
     const i = this.rows.findIndex((r) => r.id === this.selected);
     const next = to === "home" ? 0 : to === "end" ? this.rows.length - 1 : Math.max(0, Math.min(this.rows.length - 1, i + to));
@@ -443,33 +568,219 @@ export class App {
     else if (this.rows[i + 1]?.parentId === row.id) this.select(this.rows[i + 1].id, e);
   }
 
+  /** Folds or opens a header, workspace or chat. It shows at once; the server confirms it. */
   toggle(id: string) {
-    if (!this.collapsed.delete(id)) this.collapsed.add(id);
-    this.reflatten();
+    const row = this.rows.find((r) => r.id === id);
+    if (!row || row.expanded === null) return;
+    const open = !row.expanded;
+    this.folds.set(foldId(row), open);
+    this.rows = navRows(this.tree, this.folds);
     this.notify();
+    void this.choose({ op: open ? "expand" : "collapse", id: foldId(row) });
   }
 
-  /** Enter: open a chat, or fold a group. */
+  /** Enter: open a chat or a workspace, fold a header, or list a workspace's other chats. */
   activate(e?: KeyboardEvent) {
+    if (this.sidebarView === 2) {
+      if (this.recentSelected) this.openChat(this.recentSelected, e);
+      return;
+    }
     const row = this.rows.find((r) => r.id === this.selected);
-    if (!row) return;
-    if (row.sessionId) this.openChat(row.sessionId, e);
-    else this.toggle(row.id);
+    if (row) this.runRow(row, e);
   }
 
   clickRow(id: string) {
     const row = this.rows.find((r) => r.id === id);
     if (!row) return;
     this.selected = id;
-    if (row.sessionId) this.openChat(row.sessionId);
-    else this.toggle(id);
+    this.runRow(row);
+  }
+
+  private runRow(nav: NavRow, e?: KeyboardEvent) {
+    const row = nav.row;
+    if (!row) return this.toggle(nav.id);
+    const sel = row.selection;
+    // The archive view only shows; Restore comes in S3, and an archived workspace takes no selection.
+    if (this.treeName === "archived") {
+      if (row.kind === "chat" && sel.chat) this.openChat(sel.chat, e, { write: false });
+      return;
+    }
+    if (row.kind === "more") {
+      const workspace = sel.workspace ?? row.parentId;
+      if (workspace) void this.choose({ op: "expand_list", workspace });
+    } else if (row.kind === "workspace") void this.selectWorkspace(row.id, e);
+    else if (row.kind === "child") {
+      const session = sel.agentSession ?? sel.chat;
+      if (session) this.openChat(session, e);
+      if (sel.agent) this.focusPane(sel.agent);
+    } else if (sel.chat) this.openChat(sel.chat, e);
+  }
+
+  /** Every chat the tree lists, across projects, newest activity first. Home shows the first ones. */
+  private recentList(): RecentChat[] {
+    const m = this.recentMemo;
+    if (m && m.tree === this.tree && m.snapshot === this.snapshot) return m.list;
+    const list = recentWork(this.tree, this.snapshot, Infinity);
+    this.recentMemo = { tree: this.tree, snapshot: this.snapshot, list };
+    return list;
+  }
+
+  private moveRecent(to: number | "home" | "end", e?: KeyboardEvent) {
+    const list = this.recentList();
+    if (!list.length) return;
+    const i = list.findIndex((r) => r.session === this.recentSelected);
+    const next = to === "home" ? 0 : to === "end" ? list.length - 1 : Math.max(0, Math.min(list.length - 1, i + to));
+    const id = list[next].session;
+    if (id === this.recentSelected) return;
+    this.recentSelected = id;
+    this.notify();
+    const row = () => document.querySelector<HTMLElement>(`[data-testid="recent-row"][data-session="${CSS.escape(id)}"]`);
+    whenPainted(() => row() !== null, () => row()?.focus());
+    if (e) measure("key", id, e.timeStamp, () => this.recentSelected !== id || row()?.getAttribute("aria-selected") === "true");
+  }
+
+  /** A click on a Recent row: it becomes the keyboard row, and its chat opens. */
+  clickRecent(session: string) {
+    this.recentSelected = session;
+    this.openChat(session);
+  }
+
+  /** Pin from the menu or a drop on Pinned; a folded Pinned header opens to show it. */
+  async pin(workspace: string) {
+    if (!(await this.choose({ op: "pin", workspace }))) return;
+    const pinned = this.tree?.sections.find((s) => s.kind === "pinned");
+    if (pinned && !pinned.expanded) void this.choose({ op: "expand", id: pinned.collapseId });
+  }
+
+  /** Move Up / Move Down's target, or null when the row cannot move that way. */
+  workspaceMoveTarget(path: string, offset: -1 | 1): string | null {
+    return moveTarget(this.tree, this.snapshot, path, offset);
+  }
+
+  /** The Workspaces / Archived switch at the foot of the sidebar. */
+  setTreeName(name: TreeName) {
+    if (name === this.treeName) return;
+    this.treeName = name;
+    this.tree = null;
+    this.rows = [];
+    this.notify();
+    void this.refreshSnapshot();
+  }
+
+  /** ⌥⌘1 Workspaces, ⌥⌘2 Recent. The list takes the keyboard, on the open chat's row. */
+  setSidebarView(n: number) {
+    if (n < 1 || n > SIDEBAR_VIEWS.length) return;
+    if (n !== this.sidebarView) {
+      this.sidebarView = n;
+      if (n === 2) this.recentSelected = this.openId ?? this.recentList()[0]?.session ?? null;
+      this.notify();
+    }
+    const list = n === 2 ? '[data-testid="recent"]' : '[data-testid="sidebar"]';
+    whenPainted(() => document.querySelector(list) !== null, () => document.querySelector<HTMLElement>(`${list} [tabindex="0"]`)?.focus() ?? document.querySelector<HTMLElement>(list)?.focus());
+  }
+
+  /** Home: no workspace and no chat. It is not saved; a reload opens the last chat. */
+  showHome() {
+    this.navSeq++;
+    this.leavePanes("");
+    this.openId = null;
+    this.workspace = null;
+    this.notify();
+  }
+
+  /** A workspace row, ⌃⌘↓ or ⌃⌘↑: the workspace's remembered chat, else its landing
+   *  (SessionsWindowModel.selectWorkspace). */
+  async selectWorkspace(path: string, e?: KeyboardEvent) {
+    const seq = ++this.navSeq;
+    if (this.tree && !(await this.choose({ op: "selected_chat", workspace: path, chat: null }))) return;
+    let tabs: Tabs | null = null;
+    try {
+      tabs = (await this.api.tabs(path)).view;
+    } catch {
+      // No strip: the landing shows.
+    }
+    if (seq !== this.navSeq) return;
+    if (tabs) this.tabs = tabs;
+    if (tabs?.selectedChat) return this.openChat(tabs.selectedChat, e);
+    this.leavePanes("");
+    this.openId = null;
+    this.workspace = path;
+    if (this.rows.some((r) => r.id === path)) this.selected = path;
+    this.notify();
+  }
+
+  /** ⌘T, a "+" and New chat: starts the default profile in the workspace. The pending tab and the
+   *  profile menu come in P3c; until then a notice shows while `swarm launch` runs. */
+  async startChat(workspace = this.workspace) {
+    const row = workspaceRow(this.tree, workspace);
+    if (!workspace || this.starting || (row && !row.newChatEnabled)) return;
+    this.starting = true;
+    this.notice("Starting a chat…");
+    try {
+      const started = await this.api.post<{ session: string }>("/api/chat/new", { cwd: workspace });
+      await this.refreshSnapshot();
+      this.openChat(started.session);
+    } catch (err) {
+      this.notice(message(err), true);
+    } finally {
+      this.starting = false;
+    }
+  }
+
+  // ---- tabs ----
+
+  private stripTabs(): Tab[] {
+    return (this.tabs?.workspace === this.workspace ? this.tabs?.tabs : null)?.filter((t) => t.pending === null) ?? [];
+  }
+
+  /** ⌘1-8 pick a tab by strip order; ⌘9 picks the last. */
+  pickChat(n: number, e?: KeyboardEvent) {
+    const tabs = this.stripTabs();
+    const tab = n === 9 ? tabs[tabs.length - 1] : tabs[n - 1];
+    if (tab && tab.session !== this.openId) this.openChat(tab.session, e);
+  }
+
+  /** ⇧⌘] / ⇧⌘[ step through the tabs, wrapping (PaneSearch.step). */
+  stepChat(delta: number, e?: KeyboardEvent) {
+    const tabs = this.stripTabs();
+    if (!tabs.length) return;
+    const i = tabs.findIndex((t) => t.session === this.openId);
+    const next = i < 0 ? (delta < 0 ? tabs.length - 1 : 0) : (i + (delta % tabs.length) + tabs.length) % tabs.length;
+    if (tabs[next].session !== this.openId) this.openChat(tabs[next].session, e);
+  }
+
+  /** ⌃Tab / ⌃⇧Tab go back and forth in the workspace's tab history. Cycling keeps the history
+   *  order, or repeated presses would only toggle two chats. */
+  stepRecent(delta: number, e?: KeyboardEvent) {
+    const strip = this.tabs?.workspace === this.workspace ? this.tabs : null;
+    const key = delta < 0 ? strip?.previousRecent : strip?.nextRecent;
+    const tab = strip?.tabs.find((t) => t.id === key && t.pending === null);
+    if (tab && tab.session !== this.openId) this.openChat(tab.session, e, { history: false });
+  }
+
+  /** ⌘W and a tab's ×. Closing the open tab shows the chat the server picks, else the landing. */
+  async closeTab(key?: string) {
+    const workspace = this.workspace;
+    const tab = this.stripTabs().find((t) => (key ? t.id === key : t.session === this.openId));
+    if (!workspace || !tab?.canHide) return;
+    const wasOpen = tab.session === this.openId;
+    const seq = ++this.navSeq;
+    if (!(await this.choose({ op: "close_tab", workspace, chat: tab.id })) || !wasOpen) return;
+    let next: Tabs | null = null;
+    try {
+      next = (await this.api.tabs(workspace)).view;
+    } catch {
+      // The landing shows.
+    }
+    if (seq !== this.navSeq) return;
+    if (next) this.tabs = next;
+    if (next?.selectedChat) return this.openChat(next.selectedChat);
+    this.leavePanes("");
+    this.openId = null;
+    this.notify();
   }
 
   // ---- chats ----
-
-  private workspaceOf(sessionId: string): TreeNode | undefined {
-    return workspaces(this.roots).find((w) => w.children.some((c) => c.sessionId === sessionId));
-  }
 
   private newChat(sessionId: string, agent = "chair"): Chat {
     const chat: Chat = {
@@ -542,21 +853,26 @@ export class App {
     this.lru = this.lru.slice(0, LRU_SIZE);
   }
 
-  openChat(sessionId: string, e?: KeyboardEvent) {
+  /** Opens a chat: its tab, the owner's selected chat, and its transcript. `write: false` only
+   *  shows it (a restore at start); `history: false` keeps the tab history order (⌃Tab). */
+  openChat(sessionId: string, e?: KeyboardEvent, opts: { write?: boolean; history?: boolean } = {}) {
+    this.navSeq++;
     const kind: PerfKind = this.lru.includes(sessionId) ? "switch" : "open";
     if (this.openId !== sessionId) this.leavePanes(sessionId);
     this.openId = sessionId;
-    const ws = this.workspaceOf(sessionId);
-    if (ws) {
-      this.remembered.set(ws.id, sessionId);
-      const project = this.roots.find((p) => p.children.includes(ws));
-      if (this.collapsed.has(ws.id) || (project && this.collapsed.has(project.id))) {
-        this.collapsed.delete(ws.id);
-        if (project) this.collapsed.delete(project.id);
-        this.reflatten();
-      }
-    }
-    this.selected = `c:${sessionId}`;
+    const workspace = workspaceOf(this.tree, this.snapshot, sessionId);
+    const moved = workspace !== null && workspace !== this.workspace;
+    if (workspace) this.workspace = workspace;
+    const row = chatRows(this.tree).find((r) => r.selection.chat === sessionId);
+    // A restore leaves the keyboard row where it was.
+    if (row && opts.write !== false) this.selected = row.id;
+    if (workspace && this.revision !== null && opts.write !== false) {
+      // Swift's select: open the tab, then select; only a move to another workspace opens its project.
+      const section = this.tree?.sections.find((s) => s.rows.some((r) => r.selection.chat === sessionId));
+      if (moved && section && !section.expanded) void this.choose({ op: "expand", id: section.collapseId });
+      void this.choose({ op: "open_tab", workspace, chat: sessionId });
+      void this.choose({ op: "selected_chat", workspace, chat: sessionId, recording_history: opts.history !== false });
+    } else if (moved) void this.refreshSnapshot();
     this.touch(sessionId);
     let chat = this.chats.get(sessionId);
     if (!chat) {
@@ -579,38 +895,13 @@ export class App {
     return last < 0 || el.querySelector(`[data-testid="row"][data-index="${last}"]`) !== null;
   }
 
-  private currentWorkspace(): TreeNode | undefined {
-    if (this.openId) return this.workspaceOf(this.openId);
-    const id = this.selected;
-    return workspaces(this.roots).find((w) => w.id === id || w.children.some((c) => c.id === id));
-  }
-
-  /** ⌃⌘↓ / ⌃⌘↑ open the next or previous workspace at its remembered chat. */
+  /** ⌃⌘↓ / ⌃⌘↑ go to the next or previous workspace row in the sidebar, wrapping. */
   stepWorkspace(delta: number, e?: KeyboardEvent) {
-    const all = workspaces(this.roots);
-    if (!all.length) return;
-    const cur = this.currentWorkspace();
-    const i = cur ? all.indexOf(cur) : -1;
-    const next = all[Math.max(0, Math.min(all.length - 1, i + delta))];
-    if (next === cur) return;
-    const sessionId = this.remembered.get(next.id) ?? next.children[0]?.sessionId;
-    if (sessionId) this.openChat(sessionId, e);
-  }
-
-  /** ⌘1..⌘8 pick a chat in the workspace; ⌘9 picks the last. */
-  pickChat(n: number, e?: KeyboardEvent) {
-    const chats = this.currentWorkspace()?.children ?? [];
-    const target = n === 9 ? chats[chats.length - 1] : chats[n - 1];
-    if (target?.sessionId) this.openChat(target.sessionId, e);
-  }
-
-  /** ⇧⌘] / ⇧⌘[ step through the workspace's chats, wrapping. */
-  stepChat(delta: number, e?: KeyboardEvent) {
-    const chats = this.currentWorkspace()?.children ?? [];
-    if (!chats.length) return;
-    const i = chats.findIndex((c) => c.sessionId === this.openId);
-    const target = chats[(i + delta + chats.length) % chats.length];
-    if (target.sessionId && target.sessionId !== this.openId) this.openChat(target.sessionId, e);
+    const list = this.rows.filter((r) => r.kind === "workspace").map((r) => r.id);
+    if (!list.length) return;
+    const i = this.workspace ? list.indexOf(this.workspace) : -1;
+    const next = i < 0 ? (delta < 0 ? list.length - 1 : 0) : (i + delta + list.length) % list.length;
+    if (list[next] !== this.workspace) void this.selectWorkspace(list[next], e);
   }
 
   private get open(): Chat | undefined {
@@ -892,41 +1183,27 @@ export class App {
     this.update(sessionId, { banner: null });
   }
 
-  /** ↑ on an empty draft: Claude's queued messages back into the draft, with the CLI's own keys
-   *  (ADR 0038). Up pops the queue into the CLI box, and C-u presses empty that box again. */
+  /** ↑ on an empty draft: Claude's queued messages back into the draft. The server presses the
+   *  CLI's own keys and confirms them from the log (ADR 0038, `/api/chat/pull-back`). */
   async pullBack(sessionId: string) {
     const chat = this.chats.get(sessionId);
     const st = this.input(sessionId);
     const chair = this.chair(sessionId);
     if (!chat || !chair.pullBack || chair.disabled || st.pulling || st.sending) return;
-    const queued = chat.rows.filter((r) => r.kind === "queued");
-    if (!queued.length) return;
-    const before = new Set(chat.rows.map((r) => r.id));
-    const key = (k: string) => this.api.action("/api/chat/key", { ...this.target(sessionId), key: k });
-    const result: { pulled: string[] | null } = { pulled: null };
+    if (!chat.rows.some((r) => r.kind === "queued")) return;
+    const result: { pulled: string | null } = { pulled: null };
     await this.act(
       sessionId,
       { pulling: true, alreadySent: false },
       { pulling: false },
       async () => {
-        await key("Up");
-        const deadline = performance.now() + 1500;
-        let decision = decidePullBack(queued, before, chat.rows);
-        while (decision.state === "waiting" && performance.now() < deadline) {
-          await sleep(50);
-          decision = decidePullBack(queued, before, chat.rows);
-        }
-        // C-u could wipe text Up pulled, so an unconfirmed box gets none.
-        if (decision.state === "waiting") throw new Error("Could not confirm the pull-back. Check the agent's input box.");
-        for (let i = 0; i < decision.presses; i++) {
-          if (i) await sleep(50);
-          await key("C-u");
-        }
-        if (decision.state === "pulled") result.pulled = decision.texts;
+        const done = await this.api.post<{ outcome: "pulled" | "alreadySent" | "unconfirmed"; text: string | null }>("/api/chat/pull-back", this.target(sessionId));
+        if (done.outcome === "unconfirmed") throw new Error("Could not confirm the pull-back. Check the agent's input box.");
+        if (done.outcome === "pulled") result.pulled = done.text ?? "";
       },
       () => void this.pullBack(sessionId),
     );
-    if (!result.pulled) {
+    if (result.pulled === null) {
       if (this.input(sessionId).banner) return;
       // Only the caption waits, so Send works again at once. A newer caption keeps its own timer.
       const seq = ++this.alreadySentSeq;
@@ -936,7 +1213,7 @@ export class App {
     }
     // Keep anything typed while the CLI let go of the text.
     const typed = this.draft(sessionId);
-    const text = result.pulled.join("\n");
+    const text = result.pulled;
     this.replaceDraft(sessionId, typed ? `${text}\n${typed}` : text);
   }
 
@@ -1047,7 +1324,7 @@ export class App {
     return this.api.action("/api/agent/close", { session: this.openId, agent });
   }
 
-  // ---- palette ----
+  // ---- palette and names ----
 
   setPalette(open: boolean) {
     if (this.paletteOpen === open) return;
@@ -1055,16 +1332,78 @@ export class App {
     this.notify();
   }
 
-  /** Pure in (roots, query), so a memoizing view can cache it on those two. */
-  paletteEntries(roots: TreeNode[], query: string): PaletteEntry[] {
-    const cmds: PaletteEntry[] = this.registry
+  /** Asks the owner for a name; the view shows one dialog. */
+  ask(ask: Ask | null) {
+    this.asking = ask;
+    this.notify();
+  }
+
+  renameChat(session: string) {
+    const workspace = workspaceOf(this.tree, this.snapshot, session);
+    const row = chatRows(this.tree).find((r) => r.selection.chat === session);
+    if (!workspace) return;
+    this.ask({ title: "Rename chat", value: row?.title ?? "", save: (name) => void this.choose({ op: "rename_chat", workspace, chat: session, name }) });
+  }
+
+  renameWorkspace(path: string) {
+    const row = workspaceRow(this.tree, path);
+    this.ask({ title: "Rename workspace", value: row?.title ?? "", save: (name) => void this.choose({ op: "rename_workspace", workspace: path, name }) });
+  }
+
+  renameProject(path: string, title: string) {
+    this.ask({ title: "Rename project", value: title, save: (name) => void this.choose({ op: "rename_project", project: path, name }) });
+  }
+
+  /** The palette's items in Swift order: actions, chat actions, workspaces, chats, agents
+   *  (PaletteItems.build). Pure in the view, so the palette can memoize it on the view. */
+  paletteItems(): PaletteItem[] {
+    const items: PaletteItem[] = this.registry
       .list()
       .filter((c) => c.palette !== false)
-      .map((c) => ({ id: c.id, title: c.title, hint: c.chord, run: () => c.run() }));
-    const chats: PaletteEntry[] = workspaces(roots).flatMap((w) =>
-      w.children.map((c) => ({ id: c.id, title: c.title, run: () => this.openChat(c.sessionId!) })),
-    );
-    return search([...cmds, ...chats], query);
+      .map((c) => ({ id: `action:${c.id}`, title: c.title, group: "action", shortcut: c.chord, disabledReason: c.phase ? `Comes in ${c.phase}` : null, run: () => c.run() }));
+    const open = this.openId;
+    const chatAction = (id: string, title: string, run: (() => void) | string): PaletteItem => ({
+      id: `chatAction:${id}`,
+      title,
+      group: "action",
+      disabledReason: typeof run === "string" ? `Comes in ${run}` : null,
+      run: typeof run === "string" ? () => {} : run,
+    });
+    if (open)
+      items.push(
+        chatAction("closeTab", "Close Tab", () => void this.closeTab()),
+        chatAction("endChat", "End chat", "S3"),
+        chatAction("archiveChat", "Archive chat", "S3"),
+        chatAction("renameChat", "Rename chat", () => this.renameChat(open)),
+      );
+    items.push(chatAction("reopenChat", "Reopen closed chat", "S3"));
+    if (open) items.push(chatAction("switchModel", "Switch model", "S3"));
+    const sources = paletteSources(this.tree, this.snapshot);
+    const chats: PaletteItem[] = [];
+    const agents: PaletteItem[] = [];
+    for (const w of sources) {
+      const title = w.project && !w.row.pinned ? `${w.project} / ${w.row.title}` : w.row.title;
+      items.push({ id: `workspace:${w.row.id}`, title, subtitle: w.row.detail || undefined, group: "workspace", status: w.row.status, recency: w.at, run: () => void this.selectWorkspace(w.row.id) });
+      for (const c of w.chats) {
+        const session = c.selection.chat!;
+        chats.push({ id: `chat:${session}`, title: c.title, subtitle: title, group: "chat", status: c.status, recency: recency(this.snapshot, session), run: () => this.openChat(session) });
+        const info = this.snapshot?.sessions.find((s) => s.id === session);
+        for (const a of this.snapshot?.agents[session] ?? [])
+          if (info && a.alive && !isChair(a, info))
+            agents.push({
+              id: `agent:${session}:${a.id}`,
+              title: a.id,
+              subtitle: `${a.role} · ${c.title}`,
+              group: "agent",
+              status: paneStatus(a),
+              run: () => {
+                this.openChat(session);
+                this.focusPane(a.id);
+              },
+            });
+      }
+    }
+    return [...items, ...chats, ...agents];
   }
 
   // ---- stream ----
@@ -1123,6 +1462,12 @@ export class App {
       for (const f of frames) {
         chat.rows = mergeRows(chat.rows, f.upsert, f.remove);
         chat.end = Math.max(chat.end, Number(f.end_offset));
+        // Absent usage leaves the shown value; null clears it.
+        if (f.usage !== undefined) {
+          chat.usage = f.usage as Usage;
+          this.inputRev++;
+          if (chat.sessionId === this.openId) render = true;
+        }
       }
       if (chat.rows !== before) {
         chat.sent = confirmSent(chat.sent, chat.rows);
@@ -1179,10 +1524,12 @@ export class App {
 
   // ---- commands ----
 
+  /** The SwiftUI key map (AppKey.table), in the palette's action order (PaletteItems.actions).
+   *  A key whose target comes later is registered and says which phase brings it. */
   private commands(): Command[] {
     const inTree = () => {
       const a = document.activeElement;
-      return !a || a === document.body || a.closest('[data-testid="sidebar"]') !== null;
+      return !a || a === document.body || a.closest('[data-testid="sidebar"], [data-testid="recent"]') !== null;
     };
     const tree = (id: string, title: string, chord: string, run: (e?: KeyboardEvent) => void): Command => ({
       id,
@@ -1192,32 +1539,63 @@ export class App {
       when: () => !this.paletteOpen && inTree(),
       run,
     });
+    const later = (id: string, title: string, chord: string, phase: string, palette = true): Command => ({
+      id,
+      title,
+      chord,
+      phase,
+      palette,
+      run: () => this.notice(`${title} comes in ${phase}.`),
+    });
+    const chat = () => this.openId !== null;
     const cmds: Command[] = [
-      { id: "palette", title: "Command palette", chord: "Meta+K", palette: false, run: () => this.setPalette(!this.paletteOpen) },
-      { id: "workspace.next", title: "Next workspace", chord: "Ctrl+Meta+ArrowDown", run: (e) => this.stepWorkspace(1, e) },
-      { id: "workspace.prev", title: "Previous workspace", chord: "Ctrl+Meta+ArrowUp", run: (e) => this.stepWorkspace(-1, e) },
-      { id: "chat.next", title: "Next chat", chord: "Shift+Meta+]", run: (e) => this.stepChat(1, e) },
-      { id: "chat.prev", title: "Previous chat", chord: "Shift+Meta+[", run: (e) => this.stepChat(-1, e) },
-      { id: "find.open", title: "Find in chat", chord: "Meta+F", when: () => this.openId !== null, run: () => this.openFind() },
-      { id: "find.next", title: "Find next", chord: "Meta+G", when: () => this.openId !== null, run: () => this.stepFind(1) },
-      { id: "find.prev", title: "Find previous", chord: "Shift+Meta+G", when: () => this.openId !== null, run: () => this.stepFind(-1) },
+      later("workspace.new", "New Workspace", "Meta+N", "S3"),
+      {
+        id: "chat.new",
+        title: "New Chat",
+        chord: "Meta+T",
+        when: () => this.workspace !== null,
+        // A held key must not start one chat per repeat.
+        run: (e) => void (e?.repeat || this.startChat()),
+      },
+      later("project.new", "New Project…", "Shift+Meta+N", "S3"),
+      { id: "workspace.next", title: "Next Workspace", chord: "Ctrl+Meta+ArrowDown", run: (e) => this.stepWorkspace(1, e) },
+      { id: "workspace.prev", title: "Previous Workspace", chord: "Ctrl+Meta+ArrowUp", run: (e) => this.stepWorkspace(-1, e) },
+      { id: "chat.next", title: "Next Chat", chord: "Shift+Meta+]", run: (e) => this.stepChat(1, e) },
+      { id: "chat.prev", title: "Previous Chat", chord: "Shift+Meta+[", run: (e) => this.stepChat(-1, e) },
+      { id: "pane.zoom", title: "Zoom Pane", chord: "Shift+Meta+Enter", when: chat, run: () => this.toggleZoom() },
       {
         id: "composer.focus",
-        title: "Focus composer",
+        title: "Focus Composer",
         chord: "Meta+L",
         run: () => {
           this.revealChat();
           document.querySelector<HTMLElement>('[data-testid="composer"]')?.focus();
         },
       },
-      { id: "pane.zoom", title: "Zoom Pane", chord: "Shift+Meta+Enter", when: () => this.openId !== null, run: () => this.toggleZoom() },
+    ];
+    // ⌘B and ⇧⌘B belong to the window frame, which registers them; they sit here in palette order.
+    for (let n = 1; n <= SIDEBAR_VIEWS.length; n++)
+      cmds.push({ id: `sidebar.view.${n}`, title: `Show ${SIDEBAR_VIEWS[n - 1]}`, chord: `Alt+Meta+${n}`, run: () => this.setSidebarView(n) });
+    cmds.push(
+      later("changes.show", "Show Changes", "Alt+Meta+I", "S4"),
+      { id: "find.open", title: "Find", chord: "Meta+F", when: chat, run: () => this.openFind() },
       {
         id: "chat.stop",
-        title: "Stop the chair",
+        title: "Stop the Chair",
         chord: "Meta+.",
         when: () => this.openId !== null && !this.chair(this.openId).unreachable,
         run: () => void this.interrupt(this.openId!),
       },
+      { id: "palette", title: "Search", chord: "Meta+K", palette: false, run: () => this.setPalette(!this.paletteOpen) },
+      { id: "find.next", title: "Find Next", chord: "Meta+G", palette: false, when: chat, run: () => this.stepFind(1) },
+      { id: "find.prev", title: "Find Previous", chord: "Shift+Meta+G", palette: false, when: chat, run: () => this.stepFind(-1) },
+      { id: "tab.close", title: "Close Tab", chord: "Meta+W", palette: false, run: () => void this.closeTab() },
+      later("window.close", "Close Window", "Shift+Meta+W", "S6", false),
+      later("recent.closed", "Recently closed…", "Shift+Meta+T", "S3", false),
+      { id: "recent.prev", title: "Previous Recent Chat", chord: "Ctrl+Tab", palette: false, run: (e) => this.stepRecent(-1, e) },
+      { id: "recent.next", title: "Next Recent Chat", chord: "Ctrl+Shift+Tab", palette: false, run: (e) => this.stepRecent(1, e) },
+      later("settings", "Settings…", "Meta+,", "S5", false),
       tree("tree.down", "Select next row", "j", (e) => this.moveSelection(1, e)),
       tree("tree.down2", "Select next row", "ArrowDown", (e) => this.moveSelection(1, e)),
       tree("tree.up", "Select previous row", "k", (e) => this.moveSelection(-1, e)),
@@ -1227,17 +1605,18 @@ export class App {
       tree("tree.collapse", "Collapse", "ArrowLeft", (e) => this.collapse(e)),
       tree("tree.expand", "Expand", "ArrowRight", (e) => this.expand(e)),
       tree("tree.open", "Open", "Enter", (e) => this.activate(e)),
-    ];
+    );
     for (const d of ["left", "right", "up", "down"] as const)
       cmds.push({
         id: `pane.focus.${d}`,
         title: `Focus ${d[0].toUpperCase()}${d.slice(1)}`,
         chord: `Alt+Meta+Arrow${d[0].toUpperCase()}${d.slice(1)}`,
-        when: () => this.openId !== null,
+        palette: false,
+        when: chat,
         run: () => this.movePaneFocus(d),
       });
     for (let n = 1; n <= 9; n++)
-      cmds.push({ id: `chat.${n}`, title: n === 9 ? "Last chat" : `Chat ${n}`, chord: `Meta+${n}`, palette: false, run: (e) => this.pickChat(n, e) });
+      cmds.push({ id: `chat.${n}`, title: n === 9 ? "Last Chat" : `Chat ${n}`, chord: `Meta+${n}`, palette: false, run: (e) => this.pickChat(n, e) });
     return cmds;
   }
 }

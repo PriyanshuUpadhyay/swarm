@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { ApiError, type Agent, type Api, type Row, type RowPage, type Session, type Snapshot } from "./api";
+import { ApiError, type Agent, type Api, type Row, type RowFrame, type RowPage, type Session, type Snapshot } from "./api";
 import { App } from "./app";
-import { agentInput, clearPresses, confirmSent, decidePullBack, MISSING_ADAPTER, sends, sentRow, submission, usageLabel } from "./composer";
+import { agentInput, confirmSent, MISSING_ADAPTER, sends, sentRow, submission, usageLabel } from "./composer";
 
 const user = (id: string, text: string, offset = 10): Row => ({ id, kind: "user", text, order: [offset, 0] });
 const queued = (id: string, text: string): Row => ({ id, kind: "queued", text, order: [5, 0] });
@@ -43,36 +43,6 @@ describe("submission", () => {
     expect(submission("note:")).toBe("note: ");
     expect(submission("a path\\")).toBe("a path\\ ");
     expect(submission("plain words")).toBe("plain words");
-  });
-});
-
-describe("pull-back", () => {
-  it("counts two C-u presses per line and one more", () => {
-    expect(clearPresses(["one"])).toBe(3);
-    expect(clearPresses(["first", "second\nthird"])).toBe(7);
-  });
-
-  it("waits while a queued row is still in the rows", () => {
-    const fixTypo = queued("q-1", "fix the typo");
-    expect(decidePullBack([fixTypo], new Set(["q-1"]), [fixTypo])).toEqual({ state: "waiting" });
-  });
-
-  it("pulls a queued text that left without a new user row", () => {
-    const fixTypo = queued("q-1", "fix the typo");
-    expect(decidePullBack([fixTypo], new Set(["q-1"]), [])).toEqual({ state: "pulled", texts: ["fix the typo"], presses: 3 });
-  });
-
-  it("reports already sent when the CLI took the text first, and clears the recalled prompt", () => {
-    const fixTypo = queued("q-1", "fix the typo");
-    const rows = [user("old-prompt", "fix the typo", 1), user("taken", "fix the typo", 20)];
-    expect(decidePullBack([fixTypo], new Set(["q-1", "old-prompt"]), rows)).toEqual({ state: "alreadySent", presses: 3 });
-  });
-
-  it("keeps only the texts the CLI did not take", () => {
-    const taken = queued("q-1", "run the tests");
-    const left = queued("q-2", "then the linter");
-    const rows = [user("taken", "run the tests", 20)];
-    expect(decidePullBack([taken, left], new Set(["q-1", "q-2"]), rows)).toEqual({ state: "pulled", texts: ["then the linter"], presses: 3 });
   });
 });
 
@@ -224,36 +194,52 @@ describe("chat actions", () => {
 });
 
 describe("pull-back through the app", () => {
-  it("presses Up, waits for the queued row to leave, clears the CLI box, and puts the text in the draft", async () => {
-    const g = globalThis as unknown as { requestAnimationFrame?: unknown };
-    g.requestAnimationFrame = (fn: () => void) => setTimeout(fn, 0);
-    try {
-      const keys: string[] = [];
-      let app!: App;
-      const api = {
-        rows: async (): Promise<RowPage> => ({ page: { start_offset: 0, end_offset: 10 }, rows: [user("hello", "hello", 1), queued("q-1", "fix the typo")], usage: null }),
-        action: async (_path: string, body: Record<string, unknown>) => {
-          keys.push(String(body.key));
-          // Claude logs a popAll; the server's next rows frame drops the queued row.
-          if (body.key === "Up")
-            (app as unknown as { onSse(e: { event: string; data: string }): void }).onSse({
-              event: "rows",
-              data: JSON.stringify({ key: "chat:chair", remove: ["q-1"], end_offset: 20 }),
-            });
-        },
-      } as unknown as Api;
-      app = new App(api);
-      (app as unknown as { applySnapshot(s: Snapshot): void }).applySnapshot({ version: 1, sessions: [session()], agents: { chat: [chair({ state: "working" })] } });
-      app.openChat("chat");
-      await settle();
-      expect(app.view.composer!.queued).toBe(1);
-      app.setDraft("chat", "");
-      await app.pullBack("chat");
-      expect(keys).toEqual(["Up", "C-u", "C-u", "C-u"]);
-      expect(app.draft("chat")).toBe("fix the typo");
-      expect(app.view.composer!.state.banner).toBeNull();
-    } finally {
-      delete g.requestAnimationFrame;
-    }
+  it("asks the server to pull back and puts the returned text before what was typed", async () => {
+    const posts: { path: string; body: Record<string, unknown> }[] = [];
+    let outcome: { outcome: string; text: string | null } = { outcome: "pulled", text: "fix the typo" };
+    const api = {
+      rows: async (): Promise<RowPage> => ({ page: { start_offset: 0, end_offset: 10 }, rows: [user("hello", "hello", 1), queued("q-1", "fix the typo")], usage: null }),
+      post: async (path: string, body: Record<string, unknown>) => {
+        posts.push({ path, body });
+        return outcome;
+      },
+    } as unknown as Api;
+    const app = new App(api);
+    (app as unknown as { applySnapshot(s: Snapshot): void }).applySnapshot({ version: 1, sessions: [session()], agents: { chat: [chair({ state: "working" })] } });
+    app.openChat("chat");
+    await settle();
+    expect(app.view.composer!.queued).toBe(1);
+    app.setDraft("chat", "and the docs");
+    await app.pullBack("chat");
+    expect(posts).toEqual([{ path: "/api/chat/pull-back", body: { session: "chat", agent: "chair" } }]);
+    expect(app.draft("chat")).toBe("fix the typo\nand the docs");
+    expect(app.view.composer!.state.banner).toBeNull();
+
+    // A box the server could not confirm keeps the draft and shows why.
+    outcome = { outcome: "unconfirmed", text: null };
+    await app.pullBack("chat");
+    expect(app.draft("chat")).toBe("fix the typo\nand the docs");
+    expect(app.view.composer!.state.banner?.text).toMatch(/Could not confirm/);
+  });
+});
+
+describe("usage from the rows stream", () => {
+  it("takes a frame's usage, keeps it when a frame has none, and clears it on null", async () => {
+    const api = { rows: async (): Promise<RowPage> => ({ page: { start_offset: 0, end_offset: 10 }, rows: [user("hello", "hello", 1)], usage: null }) } as unknown as Api;
+    const app = new App(api);
+    const inner = app as unknown as { applySnapshot(s: Snapshot): void; pending: Map<string, RowFrame[]>; flush(): void };
+    inner.applySnapshot({ version: 1, sessions: [session()], agents: { chat: [chair()] } });
+    app.openChat("chat");
+    await settle();
+    const frame = (extra: Partial<RowFrame>) => {
+      inner.pending.set("chat:chair", [{ key: "chat:chair", end_offset: 20, ...extra }]);
+      inner.flush();
+    };
+    frame({ usage: { context: { context_tokens: 41_200 }, remaining_percent: 20 } });
+    expect(usageLabel(app.view.composer!.usage)).toBe("20% left");
+    frame({ upsert: [user("more", "more", 15)] });
+    expect(usageLabel(app.view.composer!.usage)).toBe("20% left");
+    frame({ usage: null });
+    expect(usageLabel(app.view.composer!.usage)).toBe("Usage");
   });
 });

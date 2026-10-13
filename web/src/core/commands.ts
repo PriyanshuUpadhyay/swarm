@@ -7,6 +7,8 @@ export type Command = {
   chord?: string;
   /** Hidden from the palette when false. */
   palette?: boolean;
+  /** The phase that brings the command's target; until then it only says so. */
+  phase?: string;
   /** Extra gate for keys without ⌘ or ⌃, such as the tree keys. */
   when?: () => boolean;
   run: (e?: KeyboardEvent) => void;
@@ -96,16 +98,4 @@ export function installKeys(registry: Registry, target: Window = window): () => 
     target.removeEventListener("keydown", onKey);
     delete target.swarmCommand;
   };
-}
-
-/** Every query word must match. */
-export function search<T extends { title: string }>(all: T[], query: string, limit = 50): T[] {
-  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
-  const out: T[] = [];
-  for (const item of all) {
-    const t = item.title.toLowerCase();
-    if (words.every((w) => t.includes(w))) out.push(item);
-    if (out.length >= limit) break;
-  }
-  return out;
 }
