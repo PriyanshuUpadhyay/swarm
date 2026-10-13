@@ -86,37 +86,18 @@ coverage table and use the fallback ladder in the method only.
 ## Depth, a hard rule
 
 Search engines and answer engines rank the same famous names first, and the user already knows
-those. The value of a seat is what sits below that surface. Every brief carries this section, and
-the chair enforces it when each report arrives.
+those. The value of a seat is what sits below that surface. Every brief quotes the kit block
+`blocks/deep-search/SKILL.md` in full, with the known list and the seeds filled in, and adds the two
+seat rules below. The chair enforces all of them when each report arrives. The chair takes the seeds
+from prior reports and its own knowledge at brief time. For later seeds from local sources, follow
+the `03-web` section of `research`.
 
-Example. The question is "which small model cleans up dictation text". A surface pass returns
-Whisper and Qwen. The depth pass lists those two as "known, baseline only", seeds Moonshine,
-SenseVoice, and Granite, and asks for people who replaced a general model with a small purpose-built
-one. It returns fifteen candidates the surface pass missed.
-
-The brief gives each seat:
-
-1. **Sub-questions** — The chair splits the question into three to six sub-questions before any
-   seat starts, because the first sources found are the most findable, not the most
-   representative. Each seat reports per sub-question. A sub-question with fewer than two
-   independent sources gets a written gap note, never a stretched finding.
-2. **Known, baseline only** — the famous answers, by name. A seat reports each in one line as a
-   comparison and never counts it as a finding.
-3. **Seeds** — candidates the chair already suspects are under-discussed, so the seat starts below
-   the surface. The chair takes them from prior reports and its own knowledge at brief time.
-   For later seeds from local sources, follow the `03-web` section of `research`.
-   An empty seed list is allowed only when the chair says why.
-4. **How to dig** — sort by new, not top; read the comments, not only the post; follow a thread to
-   the author's repo, model card, or paper; search the technique, format, and runtime names, not
-   only the product name; on GitHub and Hugging Face sort by recently updated and read repos with
-   few stars; search non-English communities when the topic has them.
-5. **Yield** — at least five findings that are not on the known list, each with evidence, one
+1. **Yield** — at least five findings that are not on the known list, each with evidence, one
    honest weakness, a confidence tag (high: two independent primary sources agree; medium: mixed
    or secondary; low: one source or inference), and one line on why it is under-discussed (new,
-   niche, no marketing, non-English community). Two sources that cite the same origin count as one
-   source. A homepage or a product page is not evidence for a specific claim. Fewer is a Coverage
-   note that names the searches tried, never "nothing found".
-6. **Floor** — read at least ten threads or pages from the seat's own site set before the seat may
+   niche, no marketing, non-English community). Sources count as `blocks/cite-sources/SKILL.md`
+   says. Fewer is a Coverage note that names the searches tried, never "nothing found".
+2. **Floor** — read at least ten threads or pages from the seat's own site set before the seat may
    stop, and say the count in Coverage. A seat that finishes in five minutes has not searched.
 
 ## The shared brief
@@ -126,13 +107,13 @@ One brief, one section per seat. It holds:
 1. the question, verbatim;
 2. the site set for that seat;
 3. an "already cited, do not re-cite" list;
-4. **depth** — the Depth section above, quoted in full, with the known list and the seeds filled
-   in;
+4. **depth** — the deep-search block and the Yield and Floor rules above, quoted in full, with the
+   known list and the seeds filled in;
 5. **method** — use your own native search and fetch tools and the Reach tools block; prefer
    2025-2026 material; when a site blocks you, try in order the Reach tool for that site, the
    browser row, the Jina reader, the search snippet, `old.reddit.com`, `<url>.json`, a public mirror,
-   `web.archive.org`, and `archive.ph`; mark anything you could not open "(snippet only)"; never
-   invent a quote; stop after about 20 minutes;
+   `web.archive.org`, and `archive.ph`; cite as `blocks/cite-sources/SKILL.md` says, with that
+   block's Rules quoted; stop after about 20 minutes;
 6. **blocked log** — a seat may call a site blocked only when its Coverage lists, for that site,
    each step it tried and the error each step gave, for example
    `reddit: browser_read → no extension; r.jina.ai → 403; old.reddit.com → 403; archive.ph → no copy`;
@@ -152,14 +133,13 @@ has handled all three reports.
 1. Apply the depth gate. Reject a report whose findings are all on the known list, that stops at
    "nothing found" without the searches tried, that is under the floor, that calls a site blocked
    without a blocked log, or whose matrix leaves a sub-question with no sources and no gap note.
-   Send that seat back at once, once only, with the Depth section quoted. Accept what it returns,
+   Send that seat back at once, once only, with the depth rules quoted. Accept what it returns,
    and say so in the coverage table. Record `sent back: <seat> 1`
    in `03-gate.md` and read that line before any resend, so a seat is never sent back twice.
    Mark "(unverified)" and drop
    from the answer any finding whose only evidence is a homepage or that repeats the brief's seed
    words without a page that says them.
-2. Check every link as the link check in `research` says. Mark a link only a seat could open as
-   "(seat-read only)".
+2. Check every link as `blocks/link-check/SKILL.md` says.
 3. Merge the three reports into `~/.claude/reports/<YYYY-MM-DD>-<slug>-web.md`, in the same output
    shape, plus a coverage table with one row per seat: seat, model, sites, threads read, blocked,
    and a matrix with one row per sub-question: independent sources per seat, gap or covered.
@@ -182,4 +162,4 @@ words.
 
 - Seats are report-only. They write their own report file and nothing else. Briefs and seats
   follow the kit block `blocks/worker-brief/SKILL.md`.
-- Never invent a quote, and never present a search snippet as a read page.
+- Every claim follows `blocks/cite-sources/SKILL.md`.

@@ -6,7 +6,7 @@ description: Research one question and write a short evidence-backed report, sho
 # Research
 
 Answer one question from evidence. Keep the report as a file, and put the whole report in the
-reply.
+reply. The kit's blocks are in `../../blocks/` from this skill's folder.
 
 ## Start or continue
 
@@ -31,19 +31,8 @@ readings of the question lead to different work, set the step to `waiting` with 
 
 ## 02-local
 
-Read these sources as the kit's `references/fan-out.md` says. When they disagree, trust them in
-the following order.
-
-1. the repository at hand;
-2. its docs;
-3. prior reports under `~/.claude/reports/`;
-4. council logs under `~/dotfiles/docs/council/`.
-
-For each decision, track the open question, primary evidence, contrary evidence, and remaining
-gap in the report. Inspect the source's actual method or code before accepting its headline.
-Separate independent origins from pages that repeat one origin. Page counts and agreeing agents
-do not establish correctness. If evidence is thin, name the gap instead of making the claim
-stronger; the user does not need to ask for a second, deeper pass.
+Do this step as the kit block `blocks/local-research/SKILL.md` says, and carry each decision's open
+question, evidence, contrary evidence, and gap into the report.
 
 ## 03-web
 
@@ -56,9 +45,8 @@ question or final link check needs current content.
 
 Under a Fable chair, one `search.web` seat does the web part and writes its notes to
 a file; any other session uses its own search and fetch tools. Either way the web part follows the
-Depth rule and the blocked-site ladder (the brief's **method** item) in `web-search`: name the
-known answers as baseline only, seed the under-discussed candidates, and dig below the first page
-of results.
+kit block `blocks/deep-search/SKILL.md` and the blocked-site ladder (the brief's **method** item)
+in `web-search`.
 
 Invoke the `web-search` skill when any of these is true:
 
@@ -73,74 +61,30 @@ merged report is written. Its report is one source among the others, not the ans
 holds but this session cannot open visible seats, do the web part yourself and write in the gaps
 that `web-search` did not run and why.
 
-### Off the usual path
-
-Every run also looks for ideas that the common advice misses or rejects. You do not know in advance
-what you will find, so search on purpose:
-
-- the opposite of the usual answer, such as "we removed X" or "X considered harmful";
-- the same problem in another field or another community, which often solved it first;
-- a way to drop the problem instead of solving it;
-- old or abandoned tools whose idea is still good, and small projects with few stars;
-- people who tried the popular answer and moved away, with their reason.
-
-Example. The question is "which state library should this React app use". The usual answers are
-libraries. An off-path search also finds a team that removed its state library and kept the state
-in the URL, so every view can be shared and reloaded.
-
-Keep each off-path idea that has a real source, even when it looks wrong at first. Write why it
-might work and why it might fail. Do not let it replace the main answer without evidence.
+Every run also searches off the usual path, as `blocks/deep-search/SKILL.md` says. Example. The
+question is "which state library should this React app use". The usual answers are libraries. An
+off-path search also finds a team that removed its state library and kept the state in the URL, so
+every view can be shared and reloaded.
 
 For X, Reddit, and other pages that a plain fetch cannot open, use the browser rows of the Reach
-tools in `web-search`. They read the page in the user's own signed-in browser.
-
-Follow each claim back to the source that owns it, such as the official docs, the source code, the
-spec, or the first-party API. A blog post, a forum answer, or a summary that reports the claim
-points you to that source. It is not the evidence. When you cannot reach the owner, cite the
-secondary page and mark the claim "(secondary)".
+tools in `web-search`. They read the page in the user's own signed-in browser. Each claim cites its
+source as `blocks/cite-sources/SKILL.md` says.
 
 ## 04-test
 
-When the question picks a tool, library, or service for later use, test the candidates on this
-machine. Make a shortlist of at least three. Install each one in a scratch place, run the same real
-task on each, record time and success, and remove the ones you do not pick. A candidate that is not
-installed stays on the list, because install time is not a reason to drop it. A slower, tested
-answer is preferred over a fast pick from reading alone. Ask before an install that changes state
-outside a scratch place, such as a GUI permission or a system service.
+When the question picks a tool, library, or service for later use, test the candidates as the kit
+block `blocks/tool-trial/SKILL.md` says.
 
 ## 05-report
 
-Write `~/.claude/reports/<YYYY-MM-DD>-<slug>.md` in plain words. Aim for about 800 words, and go
-longer when the evidence needs it. Never cut a claim, a caveat, or a source only to meet the number.
-Use this order:
-
-1. **Answer** — the answer first, in two or three sentences.
-2. **Evidence** — each claim with its link to the source that owns it.
-3. **What is contested** — where the sources disagree.
-4. **Off the usual path** — each off-path idea with its source, why it might work, and why it
-   might fail. If none held up, name the searches you tried.
-5. **Sources** — newest first, with dates.
-
-Add a diagram or a local HTML page only as `~/.claude/references/explain-formats.md` says.
-
-Check that every link resolves before you finish. An HTTP status shows only that the page opens,
-so also find the claim's number or wording on the page you cite. Mark a link that does not resolve
-or does not support its claim, and drop the claim that rests on it alone. When you convert a page,
-PDF, or table to text, compare its headers, units, and values with the source and keep the page or
-cell location in the citation. If the conversion lost structure, cite the original.
-
-Example. The question is "does anyone run two coding agents on one repository". You read two prior
-reports, then fetch six pages. One returns 404. The report keeps five links, marks the sixth
-"(link dead)", and the reply shows the whole report.
+Write `~/.claude/reports/<YYYY-MM-DD>-<slug>.md` as the kit block `blocks/report/SKILL.md` says, and
+check every link as `blocks/link-check/SKILL.md` says before you finish.
 
 ## 06-close
 
-Open the reply with the first screen in `~/.claude/references/plan-layout.md`. Then put the whole
-report below it, from its `#` title down, and give the file path in one line.
+Send the reply as `blocks/report/SKILL.md` says: the first screen, the whole report, and its path.
 
 ## Guards
 
-- Never invent a quote. Quote only text you read.
-- Mark "(snippet only)" when a page could not be opened and only its search snippet was available.
-- Prefer 2025-2026 sources. Say so when the best source is older.
+- Every claim follows `blocks/cite-sources/SKILL.md`.
 - Do not edit any repository. This skill writes only its own report and its run folder.
