@@ -7,6 +7,7 @@ pub mod discovery;
 pub mod fields;
 mod fold;
 pub mod github;
+pub mod handoff;
 pub mod lifecycle;
 pub mod navigation;
 mod preview;
