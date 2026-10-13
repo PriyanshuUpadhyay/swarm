@@ -1,184 +1,80 @@
-import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect } from "react";
 import { createRoot } from "react-dom/client";
-import { Virtualizer, type VirtualizerHandle } from "virtua";
-import type { App, View } from "../core/app";
+import { usePanelRef, useDefaultLayout } from "react-resizable-panels";
+import type { App } from "../core/app";
 import { boot } from "../core/boot";
-import type { MarkdownCache } from "../core/markdown";
-import { inputSummary, previewOf, statusLabel, type Item, type ToolRow } from "../core/transcript";
-import type { TreeRow } from "../core/tree";
-import "../core/style.css";
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "../components/ui/resizable";
+import { Toaster } from "../components/ui/sonner";
+import { TooltipProvider } from "../components/ui/tooltip";
+import "../styles.css";
+import { Palette } from "./palette";
+import { Sidebar } from "./sidebar";
+import { store } from "./store";
+import { TabStrip } from "./tabs";
+import { applyTheme, setTheme, useTheme } from "./theme";
+import { ChatView } from "./transcript";
+
+// Only the left side for now; P2 adds the command that moves it.
+const side = store.getItem("swarm.sidebar.side") === "right" ? "right" : "left";
+// The ⌘B command is registered before the panel exists; Root points it at the panel.
+const sidebarToggle = { run: () => {} };
 
 function Root({ app }: { app: App }) {
-  const view = useSyncExternalStore(app.subscribe, () => app.view);
   useEffect(() => app.start(), [app]);
-  return (
-    <div className="app">
-      <Sidebar app={app} rows={view.rows} selected={view.selected} loaded={view.loaded} />
-      <div className="main">
-        {view.error ? <p className="message">{view.error}</p> : <Transcript app={app} view={view} />}
-        <textarea className="composer" data-testid="composer" placeholder="Composer (not part of this pilot)" readOnly />
-      </div>
-      {view.paletteOpen && <Palette app={app} view={view} />}
-    </div>
-  );
-}
+  const theme = useTheme();
+  const sidebar = usePanelRef();
+  useEffect(() => {
+    sidebarToggle.run = () => {
+      const panel = sidebar.current;
+      if (panel?.isCollapsed()) panel.expand();
+      else panel?.collapse();
+    };
+  }, [sidebar]);
+  const layout = useDefaultLayout({ id: "swarm.layout", storage: store, panelIds: ["side-panel", "main-panel"] });
 
-function Sidebar({ app, rows, selected, loaded }: { app: App; rows: TreeRow[]; selected: string | null; loaded: boolean }) {
-  return (
-    <div className="sidebar" role="tree" aria-label="Chats" data-testid="sidebar" data-loaded={String(loaded)}>
-      {rows.map((row) => (
-        <TreeRowView key={row.id} app={app} row={row} selected={row.id === selected} />
-      ))}
-    </div>
-  );
-}
-
-function TreeRowView({ app, row, selected }: { app: App; row: TreeRow; selected: boolean }) {
-  return (
-    <div
-      className={`trow d${row.depth}`}
-      role="treeitem"
-      data-testid="tree-row"
-      data-kind={row.kind}
-      data-id={row.id}
-      aria-level={row.depth}
-      aria-expanded={row.expanded ?? undefined}
-      aria-selected={selected}
-      tabIndex={selected ? 0 : -1}
-      title={row.title}
-      onClick={() => app.clickRow(row.id)}
+  const side_ = (
+    <ResizablePanel
+      key="side"
+      id="side-panel"
+      panelRef={sidebar}
+      defaultSize="260px"
+      minSize="180px"
+      maxSize="560px"
+      collapsible
+      groupResizeBehavior="preserve-pixel-size"
     >
-      <span className="chev">{row.expanded === null ? "" : row.expanded ? "▾" : "▸"}</span>
-      <span className="label">{row.label}</span>
-      {row.state !== "idle" && <span className={`dot ${row.state}`} aria-label={row.state} />}
-    </div>
+      <Sidebar app={app} />
+    </ResizablePanel>
   );
-}
-
-function Transcript({ app, view }: { app: App; view: View }) {
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const handle = useRef<VirtualizerHandle>(null);
-  const atBottom = useRef(true);
-  const { items, openId, chatState } = view;
-
-  // A new chat, or its first page: start at the newest row.
-  useLayoutEffect(() => {
-    atBottom.current = true;
-    if (items.length) handle.current?.scrollToIndex(items.length - 1, { align: "end" });
-  }, [openId, chatState]);
-
-  // Appended rows: follow only when the reader is at the bottom.
-  useLayoutEffect(() => {
-    if (!view.shift && atBottom.current && items.length) handle.current?.scrollToIndex(items.length - 1, { align: "end" });
-  }, [items, view.shift]);
-
-  const onScroll = (offset: number) => {
-    const h = handle.current;
-    if (!h) return;
-    atBottom.current = offset + h.viewportSize >= h.scrollSize - 8;
-    if (offset < 400) void app.loadOlder();
-  };
-
-  return (
-    <div className="transcript" ref={scrollRef} data-testid="transcript" data-chat={openId ?? ""} data-state={chatState}>
-      {chatState === "none" && <p className="empty">Select a chat.</p>}
-      {chatState === "loading" && <p className="empty">Loading…</p>}
-      {chatState === "error" && <p className="empty">{view.chatError}</p>}
-      {chatState === "ready" && view.md && (
-        <Virtualizer key={openId} ref={handle} scrollRef={scrollRef} data={items} shift={view.shift} onScroll={onScroll}>
-          {(item: Item, index: number) => (
-            <ItemView key={item.id} app={app} item={item} index={index} md={view.md!} expanded={view.expanded.has(item.id)} />
-          )}
-        </Virtualizer>
-      )}
-    </div>
-  );
-}
-
-function ItemView({ app, item, index, md, expanded }: { app: App; item: Item; index: number; md: MarkdownCache; expanded: boolean }) {
-  const common = { "data-testid": "row", "data-index": index, "data-id": item.id };
-  switch (item.kind) {
-    case "agent":
-      return <div {...common} className="msg agent" dangerouslySetInnerHTML={{ __html: md.html(item.id, item.text) }} />;
-    case "block":
-      return <pre {...common} className="block">{item.text}</pre>;
-    case "tool":
-      return <ToolCard common={common} app={app} row={item} expanded={expanded} />;
-    default:
-      return <div {...common} className={`msg ${item.kind}`}>{item.text}</div>;
-  }
-}
-
-function ToolCard({ common, app, row, expanded }: { common: object; app: App; row: ToolRow; expanded: boolean }) {
-  const p = row.output === null ? null : previewOf(row);
-  const summary = inputSummary(row.input);
-  return (
-    <div {...common} className={`tool ${row.status}`}>
-      <div className="tool-head">
-        <b>{row.name || "tool"}</b>
-        <span className="status">{statusLabel(row)}</span>
+  const main = (
+    <ResizablePanel key="main" id="main-panel" minSize="360px">
+      <div className="flex h-full min-w-0">
+        <div className="flex min-w-0 flex-1 flex-col">
+          <TabStrip app={app} />
+          <ChatView app={app} />
+        </div>
+        {/* Agent panes (ADR 0030) land here in P1; an empty strip takes no width. */}
+        <aside data-testid="pane-strip" aria-label="Agent panes" className="flex border-l border-border empty:hidden" />
       </div>
-      {summary && <pre className="tool-input">{summary}</pre>}
-      {p && !expanded && <pre className="tool-out">{p.text}</pre>}
-      {p?.truncated && !expanded && <div className="notice">Showing the first 120 lines and 12,000 characters.</div>}
-      {p?.truncated && <button onClick={() => app.toggleOutput(row.id)}>{expanded ? "Show less" : "Show full output"}</button>}
-      {row.diffs.map((d, i) => (
-        <pre key={i} className="diff">
-          {[d.path, ...d.hunks.flatMap((h) => h.lines)].slice(0, 201).join("\n")}
-        </pre>
-      ))}
-    </div>
+    </ResizablePanel>
   );
-}
-
-function Palette({ app, view }: { app: App; view: View }) {
-  const [query, setQuery] = useState("");
-  const [index, setIndex] = useState(0);
-  const entries = app.paletteEntries(view.roots, query);
-  const close = () => app.setPalette(false);
-  const run = (i: number) => {
-    const entry = entries[i];
-    close();
-    entry?.run();
-  };
-  const onKey = (e: React.KeyboardEvent) => {
-    if (e.key === "ArrowDown") setIndex(Math.min(index + 1, entries.length - 1));
-    else if (e.key === "ArrowUp") setIndex(Math.max(index - 1, 0));
-    else if (e.key === "Enter") run(index);
-    else if (e.key === "Escape") close();
-    else return;
-    e.preventDefault();
-  };
   return (
-    <div className="palette-backdrop" onClick={close}>
-      <div className="palette" data-testid="palette" role="dialog" aria-label="Command palette" onClick={(e) => e.stopPropagation()}>
-        <input
-          autoFocus
-          value={query}
-          placeholder="Search commands and chats"
-          role="combobox"
-          aria-expanded="true"
-          aria-controls="palette-list"
-          aria-activedescendant={entries[index] ? `pal-${index}` : undefined}
-          onChange={(e) => {
-            setQuery(e.target.value);
-            setIndex(0);
-          }}
-          onKeyDown={onKey}
-        />
-        <ul id="palette-list" role="listbox">
-          {entries.map((entry, i) => (
-            <li key={entry.id} id={`pal-${i}`} role="option" aria-selected={i === index} onClick={() => run(i)}>
-              <span>{entry.title}</span>
-              {entry.hint && <kbd>{entry.hint}</kbd>}
-            </li>
-          ))}
-        </ul>
-      </div>
-    </div>
+    <TooltipProvider>
+      <ResizablePanelGroup orientation="horizontal" defaultLayout={layout.defaultLayout} onLayoutChanged={layout.onLayoutChanged}>
+        {side === "left" ? [side_, <ResizableHandle key="h" />, main] : [main, <ResizableHandle key="h" />, side_]}
+      </ResizablePanelGroup>
+      <Palette app={app} />
+      <Toaster theme={theme} position="bottom-right" />
+    </TooltipProvider>
   );
 }
 
+applyTheme();
 const app = boot();
+if (typeof app !== "string") {
+  app.registry.add({ id: "sidebar.toggle", title: "Toggle sidebar", chord: "Meta+B", run: () => sidebarToggle.run() });
+  for (const t of ["system", "light", "dark"] as const)
+    app.registry.add({ id: `theme.${t}`, title: `Theme: ${t[0].toUpperCase()}${t.slice(1)}`, run: () => setTheme(t) });
+}
 const root = createRoot(document.getElementById("root")!);
-root.render(typeof app === "string" ? <p className="message">{app}</p> : <Root app={app} />);
+root.render(typeof app === "string" ? <p className="p-6 text-muted-foreground">{app}</p> : <Root app={app} />);

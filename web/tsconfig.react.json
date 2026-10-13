@@ -1,1 +1,1 @@
-{ "extends": "./tsconfig.base.json", "compilerOptions": { "jsx": "react-jsx" }, "include": ["src/core", "src/react"] }
+{ "extends": "./tsconfig.base.json", "compilerOptions": { "jsx": "react-jsx" }, "include": ["src"] }

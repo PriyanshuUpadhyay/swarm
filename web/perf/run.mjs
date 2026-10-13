@@ -1,6 +1,7 @@
 // Web pilot budget suite. Builds nothing; run `pnpm -C web perf` after the release builds.
-// usage: node web/perf/run.mjs [--browsers chromium,webkit] [--apps react,solid] [--live-seconds 60] [--soak-minutes 10]
+// usage: node web/perf/run.mjs [--browsers chromium,webkit] [--apps react] [--live-seconds 60] [--soak-minutes 10]
 // Needs: target/release/swarm built with --features serve, the ReleaseSafe transcript tool, web/dist.
+// PERF_SWARM and PERF_TOOL point at other builds of the two binaries.
 import { spawn, execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -12,11 +13,11 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(here, "../..");
 const args = Object.fromEntries(process.argv.slice(2).reduce((acc, v, i, a) => (i % 2 ? acc : [...acc, [v.replace(/^--/, ""), a[i + 1]]]), []));
 const browsers = (args.browsers ?? "chromium,webkit").split(",");
-const apps = (args.apps ?? "react,solid").split(",");
+const apps = (args.apps ?? "react").split(",");
 const liveSeconds = Number(args["live-seconds"] ?? 60);
 const soakMinutes = Number(args["soak-minutes"] ?? 10);
-const swarm = path.join(repo, "target/release/swarm");
-const tool = path.join(repo, "packages/transcript/zig-out/bin/transcript");
+const swarm = path.resolve(repo, process.env.PERF_SWARM ?? "target/release/swarm");
+const tool = path.resolve(repo, process.env.PERF_TOOL ?? "packages/transcript/zig-out/bin/transcript");
 const home = path.join(repo, "tmp/web-pilot/perf-home");
 
 const log = (...m) => console.error(new Date().toISOString().slice(11, 19), ...m);
@@ -113,7 +114,7 @@ async function suite(browserName, app, url) {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   const cdp = browserName === "chromium" ? await page.context().newCDPSession(page) : null;
   if (cdp) await cdp.send("Performance.enable");
-  const entry = app === "react" ? "/" : "/solid.html";
+  const entry = "/";
   const [origin, hash] = url.split("#");
   const open = async (query = "") => {
     await page.goto(`${origin.replace(/\/$/, "")}${entry}${query}#${hash}`);
