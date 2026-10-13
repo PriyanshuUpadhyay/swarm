@@ -85,8 +85,7 @@ coverage table and use the fallback ladder in the method only.
 
 ## Depth, a hard rule
 
-Search engines and answer engines rank the same famous names first, and the user already knows
-those. The value of a seat is what sits below that surface. Every brief quotes the kit block
+The value of a seat is what sits below the famous answers. Every brief quotes the kit block
 `blocks/deep-search/SKILL.md` in full, with the known list and the seeds filled in, and adds the two
 seat rules below. The chair enforces all of them when each report arrives. The chair takes the seeds
 from prior reports and its own knowledge at brief time. For later seeds from local sources, follow
