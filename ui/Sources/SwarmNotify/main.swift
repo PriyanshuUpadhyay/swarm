@@ -144,14 +144,15 @@ final class Helper: NSObject, NSApplicationDelegate, UNUserNotificationCenterDel
         let session = info["sessionID"] as? String
         let agent = info["agentID"] as? String ?? "orchestrator"
         await MainActor.run { begin() }
-        let fallback = await MainActor.run { target }
-        let target = Target(swarm: info["swarm"] as? String ?? fallback.swarm, home: info["home"] as? String)
+        // A distinct name: older Swift reads `target` in the closure as the local declared below.
+        let fallback = await MainActor.run { self.target }
+        let clickTarget = Target(swarm: info["swarm"] as? String ?? fallback.swarm, home: info["home"] as? String)
         // The same rule as the app's NoticeClick (ADR 0069): a failure posts one error notice
         // with no click action, so it cannot repeat the failed focus.
         var failure: String?
         if let session {
-            let (status, _, error) = await runSwarm(target, ["focus", session, agent])
-            if status != 0 { failure = error.trimmingCharacters(in: .whitespacesAndNewlines) }
+            let (status, _, error) = await runSwarm(clickTarget, ["focus", session, agent])
+            if status != 0 { failure = error.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines) }
             await MainActor.run { log("focus \(session) \(agent) exit \(status)") }
         } else {
             failure = "swarm: pane closed"
