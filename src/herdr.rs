@@ -78,11 +78,10 @@ pub fn equalise_steps(heights: &[f64]) -> Vec<(usize, f64)> {
         .collect()
 }
 
-/// `--token` options for the child pane. Herdr cuts a value at 80 characters and clears a key
-/// whose value is empty, so an empty value is left out instead of published blank.
-pub fn tag_options(tree: &str, seat: &str) -> Vec<String> {
-    [("tree", tree), ("seat", seat)]
-        .into_iter()
+/// `--token` options for one pane. Herdr cuts a value at 80 characters and clears a key whose
+/// value is empty, so an empty value is left out instead of published blank.
+pub fn tag_options(tags: &[(&str, &str)]) -> Vec<String> {
+    tags.iter()
         .filter(|(_, value)| !value.is_empty())
         .flat_map(|(name, value)| {
             [
@@ -91,6 +90,19 @@ pub fn tag_options(tree: &str, seat: &str) -> Vec<String> {
             ]
         })
         .collect()
+}
+
+/// Best effort: a missing tag only costs the sidebar its label. The pane id goes first.
+fn report_tags(pane: &str, tags: &[(&str, &str)]) {
+    let options = tag_options(tags);
+    if options.is_empty() {
+        return;
+    }
+    let mut args = vec!["pane", "report-metadata", pane, "--source", "swarm-split"];
+    args.extend(options.iter().map(String::as_str));
+    if let Err(error) = herdr(&args) {
+        eprintln!("swarm herdr-split: pane tags skipped: {error}");
+    }
 }
 
 /// Splits the child pane, tags it for the sidebar, evens the column, and returns the pane id.
@@ -129,26 +141,20 @@ pub fn split(
         .as_str()
         .ok_or("herdr pane split: no pane id")?
         .to_string();
-    // The sidebar rows render `$tree` and `$seat`; only the spawner knows which panes are children
-    // and which seat each holds. `SWARM_PANE_TREE` picks another marker, and empty turns it off.
-    let options = tag_options(
-        &env("SWARM_PANE_TREE").unwrap_or("↳".into()),
-        &env("SWARM_AGENT_ID").unwrap_or_default(),
+    // The sidebar rows render `$tree` and `$seat`; only the spawner knows which pane is the
+    // orchestrator, which are its children, and which seat each holds. `SWARM_PANE_TREE` picks
+    // another child marker, and empty turns it off. Tagging the orchestrator on every split
+    // keeps this inside the Herdr adapter. Herdr trims whitespace from a value, so the child
+    // indent is two U+2800 braille blanks, which it keeps.
+    let child_tree = env("SWARM_PANE_TREE").unwrap_or("\u{2800}\u{2800}↳".into());
+    report_tags(orchestrator, &[("tree", "◆")]);
+    report_tags(
+        &pane,
+        &[
+            ("tree", &child_tree),
+            ("seat", &env("SWARM_AGENT_ID").unwrap_or_default()),
+        ],
     );
-    if !options.is_empty() {
-        // Best effort: a missing token only costs the sidebar its label. The pane id goes first.
-        let mut args = vec![
-            "pane",
-            "report-metadata",
-            pane.as_str(),
-            "--source",
-            "swarm-split",
-        ];
-        args.extend(options.iter().map(String::as_str));
-        if let Err(error) = herdr(&args) {
-            eprintln!("swarm herdr-split: pane tags skipped: {error}");
-        }
-    }
     let after = children(orchestrator)?;
     let heights: Vec<f64> = after.iter().map(|(_, height)| *height).collect();
     for (index, delta) in equalise_steps(&heights) {
@@ -200,13 +206,16 @@ mod tests {
     #[test]
     fn tag_options_cut_at_80_characters_and_drop_empty_values() {
         assert_eq!(
-            tag_options("↳", "ws-claude-run1"),
+            tag_options(&[("tree", "↳"), ("seat", "ws-claude-run1")]),
             ["--token", "tree=↳", "--token", "seat=ws-claude-run1"]
         );
         assert_eq!(
-            tag_options("↳", &"s".repeat(100)).last().unwrap(),
+            tag_options(&[("seat", &"s".repeat(100))]).last().unwrap(),
             &format!("seat={}", "s".repeat(80))
         );
-        assert_eq!(tag_options("", ""), Vec::<String>::new());
+        assert_eq!(
+            tag_options(&[("tree", ""), ("seat", "")]),
+            Vec::<String>::new()
+        );
     }
 }
