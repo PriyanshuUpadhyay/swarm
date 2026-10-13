@@ -83,7 +83,9 @@ metadata:
   install. `kind: step` does work and writes its `gives` artifact.
 - Blocks live under `blocks/`, not `skills/`. The Agent Skills spec loads the name and description
   of every discovered skill at startup, so 40 blocks there would crowd the skill list, and selection
-  falls as the list grows. Only the plan block and the loader read `blocks/`.
+  falls as the list grows. A skill points to the blocks it uses by path (`../../blocks/<id>/SKILL.md`
+  from the skill's folder), and the flow loader copies the blocks that a catalog line names into the
+  step files. No CLI lists a block as a skill.
 - The kit can become one Agent Plugins 1.0 package: a `plugin.json` at `skills/kit/`, skills under
   `skills/`, and `blocks/` beside them. Clients discover only `skills/` and `mcp.json`. A package path
   must resolve inside the package root, so no block may link outside the kit. See Packaging below
@@ -97,7 +99,8 @@ metadata:
 1. A block owns one concern. Its `owns` line names that concern, and no other block's `owns` line
    names it.
 2. When two files state the same rule, that is a defect. The fix is one owner and a pointer, never a
-   `conflicts` line. Example: `red-first-check` repeats `prove-it-works`.
+   `conflicts` line. Example: `red-first-check` repeated `prove-it-works`, so on 2026-10-13 both
+   texts became the one block `prove-it-works`, and the skill points to it.
 3. When two blocks are real alternatives, each names the other in `conflicts`. Code refuses a
    ledger that holds both, and the plan block picks one with a reason line. Examples:
    `html-diagram` and an SVG diagram block; the 300 ms rule in `web-ui-basics` and the 400-500 ms
@@ -115,8 +118,10 @@ Status: ✅ exists, ✂️ cut from a skill next, ⬜ later, 🆕 new, 🔒 stay
 |---|---|---|---|---|---|---|
 | plan | step | which blocks run, in which stage | task, template, catalog → ledger | none | every template | 🆕 B9 |
 | frame | step | goal, done-when claims, out of scope | request → frame | flow 01-frame, research 01-question, ink intake | flow, research, ink | ⬜ |
-| local-research | step | what local sources say | question → findings with paths | research 02-local, `references/fan-out.md` | research, glitch-walk, flow contracts | ⬜ |
-| web-research | step | web evidence | query brief → findings with links | `skills/web-search` (stays whole; the block calls it) | research, reference-analysis, motion | ⬜ |
+| local-research | step | what local sources say | question → findings with paths | `blocks/local-research` | research, glitch-walk, flow contracts | ✅ |
+| web-research | step | web evidence | query brief → findings with links | `skills/web-search` (stays whole) with `blocks/deep-search` and `blocks/cite-sources` | research, reference-analysis, motion | ✅ by the skill |
+| deep-search | rule | how a search goes past the known answers | question, known answers → sub-questions, seeds, off-path ideas | `blocks/deep-search` | research, web-search | ✅ |
+| tool-trial | step | the hands-on test of tool candidates | tool question → candidate table | `blocks/tool-trial` | research, flow contracts | ✅ |
 | reference-analysis | step | measured facts of a reference | references → measured notes with evidence levels | `blocks/reference-analysis` | ink, design-tokens | ✅ |
 | design-tokens | step | the look as tokens | measured notes → `DESIGN.md` tokens | `blocks/design-tokens` (owner of the token rules) | ink, glitch-walk, any page | ✅ owner fix |
 | story | step | order, beats, key frames, pacing | brief, facts → story sheet, shot list | `blocks/story` | ink | ✅ |
@@ -132,7 +137,7 @@ Status: ✅ exists, ✂️ cut from a skill next, ⬜ later, 🆕 new, 🔒 stay
 | serve-local | step | a local view of the output | built folder → URL, stop command | none | glitch-walk, ink sites, any page | 🆕 |
 | annotate-loop | step | comments from the owner to the agent | URL → comment file per round | Plannotator (`plannotator annotate <page> --json`); trial of 2026-10-12 | glitch-walk, any page | 🆕 strict |
 | review | step | the review verdict | range → verdict | `skills/review-check` (stays whole; the block calls it) | flow, deliver | 🔒 |
-| report | step | the written answer | findings → report with checked links | research 05-report, `references/plan-layout.md` first screen | research, council, reviews | ⬜ |
+| report | step | the written answer | findings → report with checked links | `blocks/report`, with `references/plan-layout.md` for the first screen | research | ✅ |
 | done-when-evidence | rule | close maps claims to evidence | frame, results → evidence rows | `blocks/done-when-evidence` | every template | ✅ |
 
 ### Rule cards
@@ -141,11 +146,16 @@ Status: ✅ exists, ✂️ cut from a skill next, ⬜ later, 🆕 new, 🔒 stay
 |---|---|---|---|
 | base-rules | the rules every step keeps | `blocks/base-rules` | ✅ |
 | behavior-claims | a frame as true-or-false claims | `blocks/behavior-claims` | ✅ |
-| decision-with-default | a real fork with a marked default | `blocks/decision-with-default` | ✅ defect at `:8` vs `:27` |
-| red-first-check | a check fails before the change | `blocks/red-first-check`, repeats `prove-it-works` | ✅ owner fix |
+| decision-with-default | a real fork with a marked default, and the trade-off form | `blocks/decision-with-default` (engineering-standards section 5 points here) | ✅ defect fixed |
+| prove-it-works | what proves a change works | `blocks/prove-it-works` (red-first-check merged in; the skill points here) | ✅ |
+| checked-units | small units that each end in a check | `blocks/checked-units` (the skill sequence-verifiable-units points here) | ✅ |
+| when-to-extract | code stays inline without a reason | `blocks/when-to-extract` (the skill minimize-reader-load points here) | ✅ |
+| worker-brief | what a worker brief holds and how a worker acts | `blocks/worker-brief` | ✅ |
+| run-workers | how a root session runs seats on its host | `blocks/run-workers` (the three adapters point here) | ✅ |
+| task-file | the task file and the resume | `blocks/task-file` | ✅ |
 | evidence-label | one vocabulary for how sure a claim is | six vocabularies today: ink, web-search, research, prove-it-works, engineering-standards | 🆕 after one owner is picked |
-| no-invented-quote | quote only text read, mark snippets | research, web-search, glitch-walk, decisions | ⬜ |
-| link-check | a cited page says the claim | research 05-report | ⬜ |
+| cite-sources | each claim cites its owning source; quote only text read; mark snippets | `blocks/cite-sources` | ✅ |
+| link-check | a cited page says the claim | `blocks/link-check` | ✅ |
 
 ### Stays whole
 
@@ -164,6 +174,38 @@ workflow calls them as one unit.
 | glitch-walk start | its script refuses, stops and gives exact words; it runs as one step |
 | engineering-standards tables | each row already has an ID |
 | ink seam law | one idea across three ink files; it moves with `story` |
+| cleanup-gate pass | the six emissions in order are one gate; a step that emitted nothing did not run |
+| review-walk steps | each step needs the reviewer, and the map, comments and walk share one run |
+| flow step graph | the step list, status and catalog are one machine that `flow_run.py` runs |
+
+## Every skill, split (2026-10-13)
+
+Each skill keeps its contract, its step table and its stays-whole part, and points to the blocks
+below. A skill that was one rule is now a block, and its skill folder holds one pointer, so every
+path that names the skill still works.
+
+| Skill | Blocks it points to | Stays in the skill |
+|---|---|---|
+| prove-it-works | prove-it-works | the pointer only |
+| sequence-verifiable-units | checked-units | the pointer only |
+| minimize-reader-load | when-to-extract | the pointer only |
+| engineering-standards | decision-with-default (trade-off form) | the rule tables and the procedure |
+| pair | task-file, checked-units, when-to-extract | the chunk loop, its guards, commit per behavior |
+| deliver | task-file, checked-units, prove-it-works | the predicate loop, the commit gate, the review stop |
+| research | local-research, deep-search, cite-sources, tool-trial, report, link-check | the step table, the web seat triggers and timing |
+| web-search | deep-search, cite-sources, link-check, worker-brief, run-workers | seats, site sets, reach tools, Yield and Floor, the depth gate, the merge |
+| council | worker-brief, run-workers | the protocol, the convergence check, the output, the decision log |
+| orchestrate-claude, -codex, -agy | run-workers, worker-brief | the lines that differ by runtime |
+| review-check | when-to-extract | the whole review gate |
+| review-walk | none | the five steps (stays whole) |
+| cleanup-gate | when-to-extract (by its rules file) | the six-step pass (stays whole) |
+| decisions | none | the whole capture contract (stays whole) |
+| flow | prove-it-works, checked-units, and every block its catalog lines name | the step graph and the loader |
+| ink | reference-analysis, design-tokens, story, look-check, headless-shot, visual-qa, build-site, build-canvas, web-ui-basics | the contract, the routes, the seam law, the reel rules |
+
+Plans that stay open: research writes the ledger for questions, with `web needs local` only when
+local findings set the query (the owner's local-then-web example); the emil pack owns UI motion and
+ink owns story motion (B8).
 
 ## ink, split
 
@@ -223,7 +265,8 @@ The review stops and the ledger checks come first (progress.md B1-B3). Then:
 3. Add serve-local and annotate-loop for the glitch-walk view-and-talk stage.
 4. Write the plan block and the template format, then run one task with a template and one without
    by hand.
-5. Cut the next skill, in the order of most blocks shared with what exists.
+5. Cut the next skill, in the order of most blocks shared with what exists. Done for every skill on
+   2026-10-13 (see "Every skill, split"), at the owner's word, before steps 2-4.
 
 ## annotate-loop is strict
 

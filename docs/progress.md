@@ -43,7 +43,9 @@ run beside A and B, because they touch other files.
    parent-loop key that fixes and re-plans inherit (K1). The no-progress stop compares open issues,
    not the fix count (P2). Both are owner choices of 2026-10-13.
 9. Skills are cut into blocks now, one skill at a time, starting with ink; each cut block gets a
-   second user in one live run (owner choice of 2026-10-13). `docs/blocks.md` holds the split map,
+   second user in one live run (owner choice of 2026-10-13). Later the same day the owner asked to
+   split every other skill too, with names and descriptions a small model can use, before the merge
+   and one trial run. `docs/blocks.md` holds the split map,
    the model (template, plan block, ledger, end condition) and the block format.
 
 ## A. Skills setup (one kit source)
@@ -62,11 +64,12 @@ Setup reports Skills ready, because it skips owner entries (ADR 0062 amendment,
 | A5 | Amend ADR 0066: the owner's Mac reads the checkout, other Macs read the Setup copy | ⬜ | ADR text |
 | A6 | Make Setup show skipped skill links as not ready, or say where each one points | ❓ | owner decides if Setup should change |
 
-Note. On 2026-10-13 the creative-coding lines of `~/.flow/domains.md` gained `block:` items
-(reference-analysis, design-tokens, story, build-canvas, style-frames, visual-qa). Only the flow of
-branch `skill-blocks` knows these blocks, so a creative-coding run on the live agent-kit flow stops
-with "unknown block id" until A4. Such a repo also needs a `.blocks.toml` with `source_of_truth`,
-`site` and `shots`.
+Note. On 2026-10-13 `~/.flow/domains.md` gained `block:` items: the `any` build and close lines
+name `block:prove-it-works`, and the creative-coding lines name reference-analysis, design-tokens,
+story, build-canvas, style-frames and visual-qa. Only the flow of branch `skill-blocks` knows these
+blocks, so every flow run on the live agent-kit flow stops with "unknown block id" until
+`skill-blocks` is merged to main and A4 repoints the links. A repo with no `.blocks.toml` runs the
+blocks without the base block; the creative-coding blocks also need `site` and `shots` there.
 
 Note. `~/.claude/skills/deliver` differs from agent-kit only by `scripts/__pycache__`, so no local
 skill edit is at risk in A4.
@@ -76,39 +79,48 @@ skill edit is at risk in A4.
 A block is a folder `skills/kit/blocks/<id>/` whose `SKILL.md` has Agent Skills frontmatter, then
 `Rules`, `Example`, `Check (script)` and `Check (judge)`. `skills/kit/blocks/blocks.toml` owns the format. `flow_run.py start` copies the
 blocks a step names into its step file, adds the script checks as todos, and records each block's
-hash. The loader is complete and tested. No real run has used a block yet, because
-`~/.flow/domains.md` names no `block:` line and no repo has a `.blocks.toml`.
+hash. The loader is complete and tested. `~/.flow/domains.md` names blocks since 2026-10-13 (see
+the note in track A). No real run has used a block yet. `docs/blocks.md` maps every kit skill to its
+blocks.
 
-### Blocks that exist (18)
+### Blocks that exist (29)
 
-| Block | Concept | Serves | Rule owner today |
-|---|---|---|---|
-| base-rules | the rules every step keeps (base) | every step | prove-it-works, review-check lens |
-| behavior-claims | frame as true-or-false claims with done-when | frame | html-plan pack, pre-mortem |
-| decision-with-default | a real fork asked on its claim, with a default | contracts, design | html-plan pack, plan-layout |
-| call-tree | impact as a marked call tree with real paths | impact | html-plan pack |
-| red-first-check | each behavior's check fails before the change | build | prove-it-works (copy) |
-| done-when-evidence | close maps each done-when to evidence | close | flow, prove-it-works |
-| when-to-diagram | draw only when text cannot hold the shape | design, build | explain-formats |
-| html-diagram | diagrams as HTML boxes that reflow | design, build | this block (explain-formats points here) |
-| diagram-check | each diagram tells the truth and reads on a phone | review | explain-formats, ink qa |
-| design-tokens | the look as tokens in `DESIGN.md` | design | this block |
-| look-check | frames from real code, scored beside the reference | design | this block |
-| headless-shot | screenshots with chrome-headless-shell | design, build, review | this block |
-| story | story sheet, structures, shot list, pacing | design, story | this block (cut from ink) |
-| reference-analysis | find, inspect, measure and label references | design | this block (cut from ink) |
-| visual-qa | frame and motion checks, the QA log | review | this block (cut from ink) |
-| build-site | what changes when the piece is a website | design, build | this block (cut from ink's site.md) |
-| build-canvas | the story engine, rendered from time and one seed (pack) | build | this block (cut from ink) |
-| web-ui-basics | the floor for a one-page site | build | this block (from the web guidelines pack) |
+Each block owns its rule text; the skill that held it points to the block.
 
-"(copy)" means the block repeats rules that still live in the named skill. That gives one rule two
-texts. B1 fixes this for each block that a run loads.
+| Block | Concept | Serves |
+|---|---|---|
+| base-rules | the rules every step keeps (base) | every step |
+| behavior-claims | frame as true-or-false claims with done-when | frame |
+| decision-with-default | a real fork asked with a default, and the trade-off form | contracts, design |
+| call-tree | impact as a marked call tree with real paths | impact |
+| prove-it-works | what proves a change works (was the skill's text and red-first-check) | build, review, close |
+| checked-units | small units that each end in a check (was sequence-verifiable-units) | build |
+| when-to-extract | code stays inline without a reason (was minimize-reader-load) | build, review |
+| done-when-evidence | close maps each done-when to evidence | close |
+| when-to-diagram | draw only when text cannot hold the shape | design, build |
+| html-diagram | diagrams as HTML boxes that reflow | design, build |
+| diagram-check | each diagram tells the truth and reads on a phone | review |
+| design-tokens | the look as tokens in `DESIGN.md` | design |
+| look-check | frames from real code, scored beside the reference | design |
+| headless-shot | screenshots with chrome-headless-shell | design, build, review |
+| story | story sheet, structures, shot list, pacing (cut from ink) | design, story |
+| reference-analysis | find, inspect, measure and label references (cut from ink) | design |
+| visual-qa | frame and motion checks, the QA log (cut from ink) | review |
+| build-site | what changes when the piece is a website (cut from ink) | design, build |
+| build-canvas | the story engine, rendered from time and one seed (pack, cut from ink) | build |
+| web-ui-basics | the floor for a one-page site | build |
+| worker-brief | what a worker brief holds and how a worker acts (B12) | every step that sends work |
+| run-workers | how a root session runs seats on its host (was the adapters' shared text) | every step that uses seats |
+| task-file | the task file and the resume (was in pair and deliver) | build |
+| local-research | what local sources say (was research 02-local) | research, contracts |
+| deep-search | search past the known answers (was research and web-search depth text) | research, web search |
+| cite-sources | each claim cites its owning source | research, web search |
+| link-check | every cited link opens and says the claim | report, merge |
+| report | the shape of a research report and its reply | report, close |
+| tool-trial | try three candidates on the same task (was research 04-test) | research, contracts |
 
 ### Known defects
 
-- `blocks/decision-with-default/SKILL.md:18` says to ask only about real forks, but its judge
-  check at `:37` fails a plan with fewer than 2 questions.
 - `behavior-claims`, `call-tree`, `done-when-evidence`, `when-to-diagram` and
   `diagram-check` name flow step files (`01-frame.md`, `04-impact.md`, `07-close.md`,
   `02-design.md`, `06-review.md`), so a second workflow cannot use them. `look-check`
@@ -118,18 +130,13 @@ texts. B1 fixes this for each block that a run loads.
   slice gets no script check.
 - `blocks/web-ui-basics/SKILL.md:32` says UI motion stays under 300 ms, and transitions.dev tokens use
   400-500 ms. Each motion task names one timing owner.
+- A repo with no `.blocks.toml` gets the base `Off:` line in all seven step files, also in steps
+  that name no block.
 
 ### Skills: compose or keep whole
 
-| Skill | Plan | Why |
-|---|---|---|
-| flow | compose (first); writes the ledger for code tasks | the loader is already in `flow_run.py` |
-| research | writes the ledger for questions; `web needs local` only when local findings set the query | the owner's local-then-web example |
-| motion (pack) | emil pack owns UI motion, ink owns story motion; transitions.dev is link or install only | license forbids copying its library |
-| ink | compose (second) by pointer lines to design-tokens, look-check, headless-shot; delete its copies | the blocks were cut from ink |
-| explain-formats (reference) | point to when-to-diagram, html-diagram, diagram-check | already points to html-diagram |
-| pair, deliver, review-check core, decisions, council protocol, step-run, web-search depth gate | keep whole | each is one control loop or gate; a split breaks it |
-| orchestrate-claude, -codex, -agy, council, web-search | point to one worker-brief owner section (B12) | the report-only rule has six texts that disagree |
+`docs/blocks.md` ("Every skill, split") maps each skill to the blocks it points to and the part
+that stays whole. Each stays-whole part is one control loop or gate, and a split would break it.
 
 ### Steps
 
@@ -141,7 +148,7 @@ the pilot, then packs.
 | B1 | Add the 3-round cap to `review_check.py start`, keyed by a parent-loop key in run metadata (K1); fixes and re-plans inherit it; one user `continue:` line allows one more round, once; a refusal keeps the verdict; flow and deliver pass the key and point to the guard | ⬜ | tests: round 4 refused through flow and standalone deliver, also after a fix or re-plan with a new base; two tasks on one base have separate budgets; `continue:` works once; answer-only `verdict` costs no round; APPROVE on the last allowed run closes |
 | B2 | Add the no-progress stop by issue identity (P2): `verdict` writes a snapshot of open findings and check results, `start` compares them by file, symbol, rule and source evidence; an uncertain match falls back to the cap | ⬜ | fix A then new B does not stop; the same open issues and results stop; moved lines still match |
 | B3 | Make `step_run.py` refuse an unknown or ambiguous `Needs` word, a cycle, or a missing required gate | ⬜ | tests for each refusal |
-| B4 | Fix the owner of each block the pilot loads, and the defects above | ⬜ | `rg` finds one text per rule; the flow tests pass |
+| B4 | Fix the owner of each block the pilot loads, and the defects above | 🔄 red-first-check merged into prove-it-works, the decision-with-default defect fixed (branch `skill-blocks`) | `rg` finds one text per rule; the flow tests pass |
 | B5 | Pilot `web-ui-basics` and `headless-shot` on a static HTML slice (not `web-port`): one `block:` line in the `web-ui` build step of `~/.flow/domains.md` and a `.blocks.toml` | ⬜ | block text in the step file, each block todo closed with evidence, a fresh agent resumes from the files, pair still waits for approval |
 | B6 | Judge the pilot against the same slice without blocks; keep or drop | ⬜ | written result with both runs: defects, review rounds, time, loaded text |
 | B7 | Add `Keywords:` beside `Signals:` in `domains.md`, matched against the filled frame at `take`; the model confirms, drops or adds a match once, with a reason line | ⬜ | a "transition" task in a non-web-ui repo gets the motion pack; a non-motion task gets none |
@@ -149,10 +156,10 @@ the pilot, then packs.
 | B9 | Plan block and template format: predefined templates fix required stages and the end; the plan block may add any block, and may build a ledger with no template when none fits (frame, end condition and close still required); one reason line per block | ⬜ | two tasks run by hand, one with a template and one without |
 | B10 | Merged into B17 | — | — |
 | B11 | Small judge (Jev or Laya) for pack choice: 2+ missed or wrong packs in 10 trial lines starts a benchmark; adopt only on a held-out win with no missed gate | ⬜ | benchmark result |
-| B12 | One provider-neutral worker-brief section; the five other texts point to it | ⬜ | `rg` for the report-only rule finds one owner |
+| B12 | One provider-neutral worker-brief section; the five other texts point to it | ✅ `blocks/worker-brief`, branch `skill-blocks` | `rg` for the report-only rule finds one owner |
 | B13 | List block candidates by reuse count; extract only rules with two or more real users | ⬜ | each new block names its two users |
 | B14 | Move `resolve_blocks` from `flow_run.py` into one shared kit script when a second skill has a run script that needs it | ⬜ | two run scripts import one resolver |
-| B15 | Write the split map: every skill's parts as blocks, rule cards, or units that stay whole | 🔄 draft; ink done, the other skills open | `docs/blocks.md` |
+| B15 | Write the split map: every skill's parts as blocks, rule cards, or units that stay whole | ✅ every skill split, branch `skill-blocks` | `docs/blocks.md` |
 | B16 | Block format v2: one folder per block with Agent Skills frontmatter (`name`, `description`, `license`, `metadata` with kind, owns, serves, needs, gives, conflicts, users); move the 13 blocks; update `blocks.toml` and the `flow_run.py` resolver in the same step | ✅ branch `skill-blocks`, eb7f603f..3553867d | the flow tests pass; each block validates as an Agent Skills `SKILL.md` |
 | B17 | Cut ink: reference-analysis, story, visual-qa, build-site, build-canvas; one owner for design-tokens, style-frames, headless-shot; ink keeps its contract and its routes as templates | ✅ cut done, branch `skill-blocks`, da3b8566..5213c714; the live run is B18 | ink's references hold no rule that a block holds; an ink `prototype` run still passes |
 | B18 | Second user: a glitch-walk page uses story, design-tokens, headless-shot and visual-qa | ⬜ | one live run, each block todo closed with evidence |
@@ -161,7 +168,7 @@ the pilot, then packs.
 | B21 | Install `plannotator` on the PATH on the owner's Mac from a checked release | ❓ | owner approves the install; `command -v plannotator` |
 
 Rejected for now: `minimal-diff`, `verification-evidence`, `trust-boundary`, `reversibility`. Each
-repeats a rule in `base-rules.md`, `done-when-evidence.md`, `red-first-check.md` or the global
+repeats a rule in the `base-rules`, `done-when-evidence` or `prove-it-works` block, or the global
 `AGENTS.md`.
 
 Trial evidence (2026-10-09, two rounds, small samples): Sonnet gained from blocks, Codex gained only
