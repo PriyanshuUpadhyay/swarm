@@ -14,3 +14,4 @@ pub mod screen;
 pub mod skills;
 pub mod store;
 pub mod usage;
+pub mod view;

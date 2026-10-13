@@ -23,6 +23,7 @@ use std::{
     task::{Context, Poll, Waker},
     time::Duration,
 };
+use swarm::view::transcript::{self as view, Record, Row};
 use tokio::{
     io::{AsyncBufReadExt, BufReader},
     sync::watch,
@@ -55,12 +56,14 @@ struct Hub {
     streams: HashMap<String, Client>,
     followers: HashMap<String, Follower>,
     retiring: HashMap<String, watch::Receiver<bool>>,
+    row_cache: VecDeque<(String, LiveRows)>,
 }
 
 struct Client {
     queue: VecDeque<Frame>,
     waker: Option<Waker>,
     keys: HashMap<String, u64>,
+    row_keys: HashSet<String>,
 }
 
 #[derive(Clone)]
@@ -115,9 +118,17 @@ struct Follower {
     from: u64,
     stop: watch::Sender<bool>,
     done: watch::Receiver<bool>,
+    rows: Option<LiveRows>,
 }
 
 impl Hub {
+    fn cache_rows(&mut self, key: String, rows: LiveRows) {
+        self.row_cache.retain(|(cached, _)| cached != &key);
+        self.row_cache.push_back((key, rows));
+        while self.row_cache.len() > 4 {
+            self.row_cache.pop_front();
+        }
+    }
     fn bump(&mut self) {
         self.version += 1;
         let frame = Frame::new("snapshot", json!({"version": self.version}), None);
@@ -127,6 +138,26 @@ impl Hub {
     }
 
     fn prune(&mut self) {
+        let rowless: Vec<_> = self
+            .followers
+            .keys()
+            .filter(|key| {
+                !self
+                    .streams
+                    .values()
+                    .any(|stream| stream.row_keys.contains(*key))
+            })
+            .cloned()
+            .collect();
+        for key in rowless {
+            if let Some(rows) = self
+                .followers
+                .get_mut(&key)
+                .and_then(|follower| follower.rows.take())
+            {
+                self.cache_rows(key, rows);
+            }
+        }
         self.retiring
             .retain(|_, done| !*done.borrow() && done.has_changed().is_ok());
         let unused: Vec<_> = self
@@ -143,6 +174,9 @@ impl Hub {
         for key in unused {
             let follower = self.followers.remove(&key).unwrap();
             let _ = follower.stop.send(true);
+            if let Some(rows) = follower.rows {
+                self.cache_rows(key.clone(), rows);
+            }
             self.retiring.insert(key, follower.done);
         }
     }
@@ -198,6 +232,7 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             streams: HashMap::new(),
             followers: HashMap::new(),
             retiring: HashMap::new(),
+            row_cache: VecDeque::new(),
         }),
         directories: Mutex::new(HashMap::new()),
         stopped: AtomicBool::new(false),
@@ -232,6 +267,8 @@ fn router(app: App) -> Router {
     Router::new()
         .route("/api/snapshot", get(snapshot))
         .route("/api/transcript", get(transcript))
+        .route("/api/rows", get(transcript_rows))
+        .route("/api/tool-output", get(tool_output))
         .route("/api/stream", get(stream))
         .route("/api/subscribe", post(subscribe))
         .fallback(static_file)
@@ -601,6 +638,438 @@ async fn transcript(
     .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "transcript task failed"))?
 }
 
+#[derive(Clone)]
+struct LiveRows {
+    records: BTreeMap<(u64, usize), Record>,
+    start: u64,
+    end: u64,
+    is_codex: bool,
+    shown: HashSet<String>,
+    last_rows: Vec<Row>,
+}
+impl LiveRows {
+    fn empty(from: u64, is_codex: bool) -> Self {
+        Self {
+            records: BTreeMap::new(),
+            start: from,
+            end: from,
+            is_codex,
+            shown: HashSet::new(),
+            last_rows: Vec::new(),
+        }
+    }
+    fn ingest(&mut self, start: u64, end: u64, events: &[Value]) {
+        self.start = self.start.min(start);
+        self.end = self.end.max(end);
+        for (index, event) in events.iter().enumerate() {
+            self.records.insert(
+                (start, index),
+                Record::new(event.clone(), format!("raw-{start}-{index}"), self.is_codex),
+            );
+        }
+    }
+    fn rows(&self) -> Vec<Row> {
+        view::view_rows(
+            &self.records.values().cloned().collect::<Vec<_>>(),
+            self.start > 0,
+            self.is_codex,
+            &self.shown,
+        )
+    }
+    fn remember_shown(&mut self, rows: &[Row]) {
+        for row in rows {
+            if row.kind != view::RowKind::Fold {
+                self.shown.insert(row.id.clone());
+            } else if row.default_open {
+                self.shown
+                    .extend(row.steps.iter().map(|row| row.id.clone()));
+            }
+        }
+    }
+    fn delta(&mut self, key: &str) -> Frame {
+        let rows = self.rows();
+        let previous: HashMap<_, _> = self.last_rows.iter().map(|row| (&row.id, row)).collect();
+        let upsert: Vec<_> = rows
+            .iter()
+            .filter(|row| previous.get(&row.id).is_none_or(|old| *old != *row))
+            .collect();
+        let current: HashSet<_> = rows.iter().map(|row| &row.id).collect();
+        let remove: Vec<_> = self
+            .last_rows
+            .iter()
+            .filter(|row| !current.contains(&row.id))
+            .map(|row| &row.id)
+            .collect();
+        let frame = Frame::new(
+            "rows",
+            json!({"key": key, "upsert": upsert, "remove": remove, "end_offset": self.end}),
+            Some(key),
+        );
+        self.remember_shown(&rows);
+        self.last_rows = rows;
+        frame
+    }
+}
+
+// Source positions come from the existing follower's per-line page markers, not provider JSON.
+async fn read_row_window(
+    tool: &Path,
+    log: &Log,
+    start: u64,
+    end: u64,
+) -> Result<LiveRows, ApiError> {
+    let mut state = LiveRows::empty(start, log.format == "codex");
+    if start == end {
+        return Ok(state);
+    }
+    let mut child = tokio::process::Command::new(tool)
+        .args([
+            "--follow",
+            "--from",
+            &start.to_string(),
+            "--format",
+            &log.format,
+        ])
+        .arg(&log.path)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .kill_on_drop(true)
+        .spawn()
+        .map_err(|_| {
+            error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "transcript tool unavailable",
+            )
+        })?;
+    let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
+    let read = tokio::time::timeout(Duration::from_secs(10), async {
+        let mut first = true;
+        let mut cursor = start;
+        let mut events = Vec::new();
+        loop {
+            let line = lines
+                .next_line()
+                .await
+                .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "transcript read failed"))?
+                .ok_or_else(|| error(StatusCode::INTERNAL_SERVER_ERROR, "transcript tool ended"))?;
+            let value: Value = serde_json::from_str(&line).map_err(|_| {
+                error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "invalid transcript output",
+                )
+            })?;
+            if value["type"] == "page" {
+                if first {
+                    first = false;
+                    continue;
+                }
+                let next = value["end_offset"].as_u64().ok_or_else(|| {
+                    error(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "transcript offset missing",
+                    )
+                })?;
+                if next > end {
+                    return Err(error(
+                        StatusCode::CONFLICT,
+                        "history file changed; reopen this chat",
+                    ));
+                }
+                state.ingest(cursor, next, &events);
+                events.clear();
+                cursor = next;
+                if next == end {
+                    return Ok(state);
+                }
+            } else {
+                events.push(value);
+            }
+        }
+    })
+    .await
+    .map_err(|_| error(StatusCode::GATEWAY_TIMEOUT, "transcript read timed out"));
+    let _ = child.kill().await;
+    let _ = child.wait().await;
+    read?
+}
+
+fn row_offsets(path: &Path, tail: u16, before: Option<u64>) -> std::io::Result<(u64, u64)> {
+    use std::io::{Seek, SeekFrom};
+    let mut file = std::fs::File::open(path)?;
+    let mut end = file.metadata()?.len().min(before.unwrap_or(u64::MAX));
+    let mut buffer = [0u8; 64 * 1024];
+    // A partial line stays with the live follower until its terminating newline arrives.
+    let mut cursor = end;
+    while cursor > 0 {
+        let count = (cursor as usize).min(buffer.len());
+        let start = cursor - count as u64;
+        file.seek(SeekFrom::Start(start))?;
+        file.read_exact(&mut buffer[..count])?;
+        if let Some(index) = buffer[..count].iter().rposition(|byte| *byte == b'\n') {
+            end = start + index as u64 + 1;
+            break;
+        }
+        cursor = start;
+    }
+    if cursor == 0 {
+        end = 0;
+    }
+    let mut cursor = end;
+    let mut lines = 0;
+    while cursor > 0 {
+        let count = (cursor as usize).min(buffer.len());
+        let start = cursor - count as u64;
+        file.seek(SeekFrom::Start(start))?;
+        file.read_exact(&mut buffer[..count])?;
+        for index in (0..count).rev() {
+            let offset = start + index as u64;
+            if buffer[index] == b'\n' && offset + 1 != end {
+                lines += 1;
+                if lines == tail {
+                    return Ok((offset + 1, end));
+                }
+            }
+        }
+        cursor = start;
+    }
+    Ok((0, end))
+}
+
+async fn transcript_rows(
+    State(app): State<App>,
+    Query(query): Query<TranscriptQuery>,
+) -> Result<Json<Value>, ApiError> {
+    if !(1..=2000).contains(&query.tail) {
+        return Err(error(StatusCode::BAD_REQUEST, "tail must be 1..2000"));
+    }
+    let root = app.root.clone();
+    let session = query.session.clone();
+    let agent = query.agent.clone();
+    let (log, start, end) = tokio::task::spawn_blocking(move || {
+        let log = resolve_log(&root, &session, &agent)?;
+        let (start, end) = row_offsets(&log.path, query.tail, query.before)
+            .map_err(|_| error(StatusCode::NOT_FOUND, "transcript log unavailable"))?;
+        Ok::<_, ApiError>((log, start, end))
+    })
+    .await
+    .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "rows task failed"))??;
+    let page = read_row_window(&app.tool, &log, start, end).await?;
+    let key = format!("{}:{}", query.session, query.agent);
+    let mut hub = app.hub.lock().unwrap();
+    let active = hub
+        .followers
+        .get(&key)
+        .and_then(|follower| follower.rows.clone());
+    let history = query.before.and_then(|_| {
+        hub.row_cache
+            .iter()
+            .find(|(cached, _)| cached == &key)
+            .map(|(_, state)| state.clone())
+    });
+    let mut state = active.or(history).unwrap_or_else(|| page.clone());
+    let previous = state.last_rows.clone();
+    state.records.extend(page.records);
+    state.start = state.start.min(start);
+    state.end = state.end.max(end);
+    let rows = state.rows();
+    let ids: HashSet<_> = rows.iter().map(|row| &row.id).collect();
+    let remove: Vec<_> = previous
+        .iter()
+        .filter(|row| !ids.contains(&row.id))
+        .map(|row| &row.id)
+        .collect();
+    let usage = view::usage(&state.records.values().cloned().collect::<Vec<_>>());
+    let response = json!({"page": {"start_offset": start, "end_offset": end}, "rows": rows, "usage": usage, "remove": remove});
+    state.remember_shown(&rows);
+    state.last_rows = rows;
+    let subscribed = hub
+        .streams
+        .values()
+        .any(|client| client.row_keys.contains(&key));
+    if subscribed && let Some(follower) = hub.followers.get_mut(&key) {
+        follower.rows = Some(state);
+    } else {
+        hub.cache_rows(key, state);
+    }
+    Ok(Json(response))
+}
+
+#[derive(Deserialize)]
+struct ToolOutputQuery {
+    session: String,
+    agent: String,
+    row: String,
+}
+async fn tool_output(
+    State(app): State<App>,
+    Query(mut query): Query<ToolOutputQuery>,
+) -> Result<Json<Value>, ApiError> {
+    {
+        let key = format!("{}:{}", query.session, query.agent);
+        let hub = app.hub.lock().unwrap();
+        let state = hub
+            .followers
+            .get(&key)
+            .and_then(|follower| follower.rows.as_ref())
+            .or_else(|| {
+                hub.row_cache
+                    .iter()
+                    .find(|(cached, _)| cached == &key)
+                    .map(|(_, state)| state)
+            });
+        if let Some(state) = state {
+            fn locator(rows: &[Row], id: &str) -> Option<String> {
+                for row in rows {
+                    if row.id == id {
+                        return row
+                            .tool
+                            .as_ref()
+                            .and_then(|tool| tool.output.as_ref())
+                            .map(|output| output.id.clone())
+                            .or_else(|| row.diff.as_ref().map(|diff| diff.id.clone()))
+                            .or_else(|| {
+                                row.tool
+                                    .as_ref()
+                                    .and_then(|tool| tool.diffs.first())
+                                    .map(|diff| diff.id.clone())
+                            })
+                            .or_else(|| row.shell.as_ref().map(|shell| shell.output.id.clone()))
+                            .or_else(|| {
+                                row.command
+                                    .as_ref()
+                                    .and_then(|command| command.output.as_ref())
+                                    .map(|output| output.id.clone())
+                            })
+                            .or_else(|| row.output.as_ref().map(|output| output.id.clone()));
+                    }
+                    if let Some(id) = locator(&row.steps, id) {
+                        return Some(id);
+                    }
+                }
+                None
+            }
+            if let Some(locator) = locator(&state.last_rows, &query.row) {
+                query.row = locator;
+            }
+        }
+    }
+    let (source, component) = query
+        .row
+        .rsplit_once(':')
+        .filter(|(_, component)| matches!(*component, "output" | "diff"))
+        .ok_or_else(|| error(StatusCode::NOT_FOUND, "unknown tool output"))?;
+    let mut pieces = source
+        .strip_prefix("raw-")
+        .ok_or_else(|| error(StatusCode::NOT_FOUND, "unknown tool output"))?
+        .split('-');
+    let offset: u64 = pieces
+        .next()
+        .and_then(|value| value.parse().ok())
+        .ok_or_else(|| error(StatusCode::NOT_FOUND, "unknown tool output"))?;
+    let index: usize = pieces
+        .next()
+        .and_then(|value| value.parse().ok())
+        .ok_or_else(|| error(StatusCode::NOT_FOUND, "unknown tool output"))?;
+    if pieces.next().is_some() {
+        return Err(error(StatusCode::NOT_FOUND, "unknown tool output"));
+    }
+    let component = component.to_owned();
+    let text = tokio::task::spawn_blocking(move || {
+        use std::io::{BufRead, Seek, SeekFrom};
+        use std::os::unix::fs::OpenOptionsExt;
+        let log = resolve_log(&app.root, &query.session, &query.agent)?;
+        let mut file = std::fs::File::open(&log.path)
+            .map_err(|_| error(StatusCode::NOT_FOUND, "transcript log unavailable"))?;
+        if offset > 0 {
+            file.seek(SeekFrom::Start(offset - 1))
+                .map_err(|_| error(StatusCode::NOT_FOUND, "unknown tool output"))?;
+            let mut newline = [0];
+            file.read_exact(&mut newline)
+                .map_err(|_| error(StatusCode::NOT_FOUND, "unknown tool output"))?;
+            if newline != *b"\n" {
+                return Err(error(StatusCode::NOT_FOUND, "unknown tool output"));
+            }
+        }
+        let mut reader = std::io::BufReader::new(file);
+        let mut line = String::new();
+        reader
+            .read_line(&mut line)
+            .map_err(|_| error(StatusCode::NOT_FOUND, "unknown tool output"))?;
+        if line.is_empty() {
+            return Err(error(StatusCode::NOT_FOUND, "unknown tool output"));
+        }
+        // The translator still owns parsing. A private one-line copy keeps on-demand work bounded.
+        let temporary =
+            std::env::temp_dir().join(format!("swarm-output-{}.jsonl", uuid::Uuid::now_v7()));
+        let scratch = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&temporary)
+            .and_then(|mut file| file.write_all(line.as_bytes()));
+        if scratch.is_err() {
+            let _ = std::fs::remove_file(&temporary);
+            return Err(error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "output scratch write failed",
+            ));
+        }
+        let output = std::process::Command::new(&app.tool)
+            .args(["--format", &log.format])
+            .arg(&temporary)
+            .output();
+        let _ = std::fs::remove_file(temporary);
+        let output = output.map_err(|_| {
+            error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "transcript tool unavailable",
+            )
+        })?;
+        if !output.status.success() {
+            return Err(error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "transcript tool failed",
+            ));
+        }
+        let events: Vec<Value> = output
+            .stdout
+            .split(|byte| *byte == b'\n')
+            .filter(|line| !line.is_empty())
+            .map(serde_json::from_slice)
+            .collect::<Result<_, _>>()
+            .map_err(|_| {
+                error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "invalid transcript output",
+                )
+            })?;
+        let event = events
+            .get(index)
+            .ok_or_else(|| error(StatusCode::NOT_FOUND, "unknown tool output"))?;
+        let text = match (view::string(event, "type"), component.as_str()) {
+            ("tool_call_update", "output") => view::string(event, "content").to_owned(),
+            ("tool_diff", "diff") => {
+                swarm::view::diff_patch(
+                    &serde_json::from_value::<swarm::view::Diff>(event.clone())
+                        .map_err(|_| error(StatusCode::NOT_FOUND, "unknown tool output"))?,
+                    true,
+                )
+                .0
+            }
+            ("system_message", "output") => match view::string(event, "kind") {
+                "shell_output" => view::shell_output_text(view::string(event, "text")),
+                "command_output" => view::command_output_text(view::string(event, "text")),
+                _ => view::string(event, "text").to_owned(),
+            },
+            _ => return Err(error(StatusCode::NOT_FOUND, "unknown tool output")),
+        };
+        Ok(Json(json!({"text": text})))
+    })
+    .await
+    .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "tool output task failed"))??;
+    Ok(text)
+}
+
 struct Events {
     app: App,
     id: String,
@@ -638,6 +1107,7 @@ async fn stream(State(app): State<App>) -> Sse<Events> {
         queue: VecDeque::new(),
         waker: None,
         keys: HashMap::new(),
+        row_keys: HashSet::new(),
     };
     client.push(Frame::new("hello", json!({"stream": id}), None));
     app.hub.lock().unwrap().streams.insert(id.clone(), client);
@@ -653,6 +1123,8 @@ struct Subscription {
 struct SubscriptionKey {
     key: String,
     from: u64,
+    #[serde(default)]
+    view: Option<String>,
 }
 
 async fn subscribe(
@@ -667,6 +1139,9 @@ async fn subscribe(
         let mut unique = HashSet::new();
         let mut keys = Vec::new();
         for mut entry in body.keys {
+            if entry.view.as_deref().is_some_and(|view| view != "rows") {
+                return Err(error(StatusCode::BAD_REQUEST, "unknown transcript view"));
+            }
             let (session, agent) = entry
                 .key
                 .split_once(':')
@@ -692,6 +1167,31 @@ async fn subscribe(
         )
     })??;
     let (id, keys) = keys;
+    let mut seeds = HashMap::new();
+    for (entry, log) in &keys {
+        if entry.view.as_deref() != Some("rows") {
+            continue;
+        }
+        let known = {
+            let hub = app.hub.lock().unwrap();
+            hub.followers
+                .get(&entry.key)
+                .is_some_and(|follower| follower.rows.is_some())
+                || hub.row_cache.iter().any(|(key, _)| key == &entry.key)
+        };
+        if !known {
+            let path = log.path.clone();
+            let from = entry.from;
+            let (start, end) =
+                tokio::task::spawn_blocking(move || row_offsets(&path, 200, Some(from)))
+                    .await
+                    .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "rows seed task failed"))?
+                    .map_err(|_| error(StatusCode::NOT_FOUND, "transcript log unavailable"))?;
+            let mut seed = read_row_window(&app.tool, log, start, end).await?;
+            seed.last_rows = seed.rows();
+            seeds.insert(entry.key.clone(), seed);
+        }
+    }
     let mut launch = Vec::new();
     let mut wait = Vec::new();
     {
@@ -704,9 +1204,36 @@ async fn subscribe(
             .iter()
             .map(|(entry, _)| (entry.key.clone(), entry.from))
             .collect();
+        client.row_keys = keys
+            .iter()
+            .filter(|(entry, _)| entry.view.as_deref() == Some("rows"))
+            .map(|(entry, _)| entry.key.clone())
+            .collect();
         client.queue.retain(|frame| frame.key.is_none());
         hub.prune();
         for (entry, log) in keys {
+            let needs_rows = hub
+                .streams
+                .values()
+                .any(|client| client.row_keys.contains(&entry.key));
+            let active_seed = hub
+                .followers
+                .get(&entry.key)
+                .and_then(|follower| follower.rows.clone());
+            let seed = active_seed
+                .or_else(|| {
+                    hub.row_cache
+                        .iter()
+                        .position(|(key, _)| key == &entry.key)
+                        .map(|index| hub.row_cache.remove(index).unwrap().1)
+                })
+                .or_else(|| seeds.remove(&entry.key));
+            if let Some(follower) = hub.followers.get_mut(&entry.key)
+                && needs_rows
+                && follower.rows.is_none()
+            {
+                follower.rows = seed.clone();
+            }
             if let Some(done) = hub.retiring.remove(&entry.key) {
                 wait.push(done);
             }
@@ -731,6 +1258,11 @@ async fn subscribe(
                     from: entry.from,
                     stop,
                     done,
+                    rows: if needs_rows {
+                        seed.or_else(|| Some(LiveRows::empty(entry.from, log.format == "codex")))
+                    } else {
+                        None
+                    },
                 },
             );
             launch.push((entry, log, generation, receiver, done_sender));
@@ -772,7 +1304,22 @@ fn flush_transcript(
             batches.clear();
             return;
         }
+        let row_frame = if let Some(follower) = hub.followers.get_mut(key) {
+            if let Some(state) = &mut follower.rows {
+                let mut start = follower.from;
+                for (end, events) in batches.iter() {
+                    state.ingest(start, *end, events);
+                    start = *end;
+                }
+                Some(state.delta(key))
+            } else {
+                None
+            }
+        } else {
+            None
+        };
         for client in hub.streams.values_mut() {
+            let row_view = client.row_keys.contains(key);
             let Some(cursor) = client.keys.get_mut(key) else {
                 continue;
             };
@@ -786,6 +1333,14 @@ fn flush_transcript(
             }
             if end_offset != *cursor {
                 *cursor = end_offset;
+                if row_view {
+                    if let Some(frame) = &row_frame {
+                        client.push(frame.clone());
+                    } else {
+                        client.push(Frame::new("reset", json!({"key": key}), Some(key)));
+                    }
+                    continue;
+                }
                 client.push(Frame::new(
                     "transcript",
                     json!({"key": key, "events": events, "end_offset": end_offset}),
@@ -840,6 +1395,7 @@ async fn follow(
             }
         } }.await;
         let killed = child.kill().await;
+        let _ = child.wait().await;
         result.and(killed)
     }.await;
     if let Err(err) = result {
@@ -944,6 +1500,7 @@ mod tests {
         Client {
             queue: VecDeque::new(),
             waker: None,
+            row_keys: HashSet::new(),
             keys: keys
                 .iter()
                 .map(|(key, from)| (key.to_string(), *from))
@@ -997,6 +1554,7 @@ mod tests {
                     streams: HashMap::new(),
                     followers: HashMap::new(),
                     retiring: HashMap::new(),
+                    row_cache: VecDeque::new(),
                 }),
                 directories: Mutex::new(HashMap::new()),
                 stopped: AtomicBool::new(false),
@@ -1143,6 +1701,7 @@ mod tests {
                 keys: vec![SubscriptionKey {
                     key: key.clone(),
                     from: 0,
+                    view: None,
                 }],
             }),
         )
@@ -1163,6 +1722,7 @@ mod tests {
                 keys: vec![SubscriptionKey {
                     key: key.clone(),
                     from: 0,
+                    view: None,
                 }],
             }),
         )
@@ -1226,5 +1786,449 @@ mod tests {
             .unwrap()
             .unwrap();
         assert!(fixture.app.hub.lock().unwrap().followers.is_empty());
+    }
+    async fn row_page(
+        fixture: &Fixture,
+        tail: u16,
+        before: Option<u64>,
+    ) -> Result<Value, ApiError> {
+        transcript_rows(
+            State(fixture.app.clone()),
+            Query(TranscriptQuery {
+                session: fixture.session.clone(),
+                agent: "chair".into(),
+                tail,
+                before,
+            }),
+        )
+        .await
+        .map(|Json(value)| value)
+    }
+    fn codex_line(number: usize) -> String {
+        json!({"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":format!("message-{number}")}]}}).to_string() + "\n"
+    }
+    fn codex_log(fixture: &Fixture, count: usize) {
+        std::fs::write(&fixture.log, (0..count).map(codex_line).collect::<String>()).unwrap();
+        let connection = swarm::store::open(&fixture.app.root.join("swarm.db")).unwrap();
+        connection
+            .execute(
+                "UPDATE session SET chair_provider = 'codex' WHERE id = ?1",
+                [&fixture.session],
+            )
+            .unwrap();
+    }
+    fn row_texts(page: &Value) -> Vec<String> {
+        page["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|row| row["kind"] == "user")
+            .map(|row| row["text"].as_str().unwrap().into())
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn pages() {
+        let fixture = Fixture::new();
+        codex_log(&fixture, 245);
+        let first = row_page(&fixture, 100, None).await.unwrap();
+        assert_eq!(
+            row_texts(&first),
+            (145..245)
+                .map(|number| format!("message-{number}"))
+                .collect::<Vec<_>>()
+        );
+        let second = row_page(&fixture, 100, first["page"]["start_offset"].as_u64())
+            .await
+            .unwrap();
+        assert_eq!(
+            row_texts(&second),
+            (45..245)
+                .map(|number| format!("message-{number}"))
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            &second["rows"].as_array().unwrap()[100..],
+            first["rows"].as_array().unwrap()
+        );
+        let all = row_page(&fixture, 100, second["page"]["start_offset"].as_u64())
+            .await
+            .unwrap();
+        assert_eq!(
+            row_texts(&all),
+            (0..245)
+                .map(|number| format!("message-{number}"))
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(all["page"]["start_offset"], 0);
+        let again = row_page(&fixture, 100, Some(0)).await.unwrap();
+        assert_eq!(again["rows"], all["rows"]);
+    }
+    #[tokio::test]
+    async fn append_while_paging() {
+        let fixture = Fixture::new();
+        codex_log(&fixture, 200);
+        let first = row_page(&fixture, 100, None).await.unwrap();
+        fixture
+            .app
+            .hub
+            .lock()
+            .unwrap()
+            .streams
+            .insert("live".into(), client(&[]));
+        let key = format!("{}:chair", fixture.session);
+        let _ = subscribe(
+            State(fixture.app.clone()),
+            Json(Subscription {
+                stream: "live".into(),
+                keys: vec![SubscriptionKey {
+                    key: key.clone(),
+                    from: first["page"]["end_offset"].as_u64().unwrap(),
+                    view: Some("rows".into()),
+                }],
+            }),
+        )
+        .await
+        .unwrap();
+        let older = row_page(&fixture, 100, first["page"]["start_offset"].as_u64());
+        let append = async {
+            std::fs::OpenOptions::new()
+                .append(true)
+                .open(&fixture.log)
+                .unwrap()
+                .write_all(codex_line(200).as_bytes())
+                .unwrap();
+        };
+        let (page, ()) = tokio::join!(older, append);
+        page.unwrap();
+        let size = std::fs::metadata(&fixture.log).unwrap().len();
+        until_cursor(&fixture.app, "live", &key, size).await;
+        {
+            let hub = fixture.app.hub.lock().unwrap();
+            let state = hub.followers[&key].rows.as_ref().unwrap();
+            let texts: Vec<_> = state
+                .rows()
+                .iter()
+                .filter(|row| row.kind == view::RowKind::User)
+                .map(|row| row.text.clone())
+                .collect();
+            assert_eq!(
+                texts,
+                (0..=200)
+                    .map(|number| format!("message-{number}"))
+                    .collect::<Vec<_>>()
+            );
+        }
+        // A fresh tail request must preserve history already held by a live row key.
+        assert_eq!(
+            row_texts(&row_page(&fixture, 1, None).await.unwrap()).len(),
+            201
+        );
+        let mut done = fixture.app.hub.lock().unwrap().followers[&key].done.clone();
+        drop(Events {
+            app: fixture.app.clone(),
+            id: "live".into(),
+        });
+        done.wait_for(|finished| *finished).await.unwrap();
+    }
+    #[tokio::test]
+    async fn retry_history() {
+        let fixture = Fixture::new();
+        codex_log(&fixture, 150);
+        let data = std::fs::read(&fixture.log).unwrap();
+        let first = row_page(&fixture, 100, None).await.unwrap();
+        let cursor = first["page"]["start_offset"].as_u64().unwrap();
+        std::fs::remove_file(&fixture.log).unwrap();
+        assert!(row_page(&fixture, 100, Some(cursor)).await.is_err());
+        assert_eq!(fixture.app.hub.lock().unwrap().row_cache[0].1.start, cursor);
+        std::fs::write(&fixture.log, data).unwrap();
+        let all = row_page(&fixture, 100, Some(cursor)).await.unwrap();
+        assert_eq!(
+            row_texts(&all),
+            (0..150)
+                .map(|number| format!("message-{number}"))
+                .collect::<Vec<_>>()
+        );
+    }
+    #[tokio::test]
+    async fn empty() {
+        let fixture = Fixture::new();
+        std::fs::write(&fixture.log, "").unwrap();
+        let started = std::time::Instant::now();
+        let page = row_page(&fixture, 100, None).await.unwrap();
+        assert_eq!(page["rows"], json!([]));
+        assert_eq!(page["page"]["start_offset"], 0);
+        assert_eq!(page["page"]["end_offset"], 0);
+        assert!(started.elapsed() < Duration::from_secs(2));
+    }
+    #[tokio::test]
+    async fn multiple_events() {
+        let fixture = Fixture::new();
+        let content: Vec<_> = (0..120).map(|index| json!({"type":"tool_use","id":format!("call-{index}"),"name":"Read","input":{}})).collect();
+        std::fs::write(&fixture.log, json!({"type":"assistant","sessionId":"test","uuid":"many","message":{"content":content}}).to_string()+"\n").unwrap();
+        let page = row_page(&fixture, 1, None).await.unwrap();
+        assert_eq!(page["page"]["start_offset"], 0);
+        assert_eq!(page["rows"].as_array().unwrap().len(), 1);
+        assert_eq!(page["rows"][0]["steps"].as_array().unwrap().len(), 120);
+    }
+    #[tokio::test]
+    async fn boundary_tool() {
+        let fixture = Fixture::new();
+        codex_log(&fixture, 0);
+        let old = "{\"type\":\"response_item\",\"payload\":{\"type\":\"function_call\",\"call_id\":\"boundary\",\"name\":\"shell\",\"arguments\":\"{\\\"command\\\":\\\"true\\\"}\"}}\n";
+        let result = "{\"type\":\"response_item\",\"payload\":{\"type\":\"function_call_output\",\"call_id\":\"boundary\",\"output\":\"done\"}}\n";
+        std::fs::write(&fixture.log, old.to_owned() + result).unwrap();
+        let first = row_page(&fixture, 1, None).await.unwrap();
+        assert_eq!(first["rows"][0]["kind"], "toolResult");
+        let orphan_id = first["rows"][0]["id"].clone();
+        let all = row_page(&fixture, 1, first["page"]["start_offset"].as_u64())
+            .await
+            .unwrap();
+        assert_eq!(all["rows"].as_array().unwrap().len(), 1);
+        assert_eq!(all["rows"][0]["tool"]["output"]["text"], "done");
+        assert_eq!(all["rows"][0]["tool"]["state"], "finished");
+        assert_eq!(all["remove"], json!([orphan_id]));
+        let Json(output) = tool_output(
+            State(fixture.app.clone()),
+            Query(ToolOutputQuery {
+                session: fixture.session.clone(),
+                agent: "chair".into(),
+                row: all["rows"][0]["id"].as_str().unwrap().into(),
+            }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(output["text"], "done");
+    }
+    #[tokio::test]
+    async fn giant_output_stays_small_and_full_output_is_exact() {
+        let fixture = Fixture::new();
+        let full = (0..100000)
+            .map(|index| format!("line {index}\n"))
+            .collect::<String>();
+        let call = json!({"type":"assistant","uuid":"call","message":{"content":[{"type":"tool_use","id":"giant","name":"Bash","input":{"command":"print"}}]}});
+        let result = json!({"type":"user","uuid":"result","message":{"content":[{"type":"tool_result","tool_use_id":"giant","content":full}]}});
+        std::fs::write(&fixture.log, format!("{call}\n{result}\n")).unwrap();
+        let page = row_page(&fixture, 200, None).await.unwrap();
+        assert!(page.to_string().len() < 20000);
+        assert_eq!(page["rows"][0]["tool"]["output"]["full_lines"], 100000);
+        assert_eq!(page["rows"][0]["tool"]["output"]["full_bytes"], full.len());
+        let Json(output) = tool_output(
+            State(fixture.app.clone()),
+            Query(ToolOutputQuery {
+                session: fixture.session.clone(),
+                agent: "chair".into(),
+                row: page["rows"][0]["tool"]["output"]["id"]
+                    .as_str()
+                    .unwrap()
+                    .into(),
+            }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(output["text"], full);
+        assert_eq!(
+            tool_output(
+                State(fixture.app.clone()),
+                Query(ToolOutputQuery {
+                    session: fixture.session.clone(),
+                    agent: "chair".into(),
+                    row: "raw-1-0:output".into()
+                })
+            )
+            .await
+            .unwrap_err()
+            .0,
+            StatusCode::NOT_FOUND
+        );
+    }
+    #[tokio::test]
+    async fn rows_and_raw_clients_share_one_follower_and_stable_tool_id() {
+        let fixture = Fixture::new();
+        let call = json!({"type":"assistant","uuid":"call","message":{"content":[{"type":"tool_use","id":"live-tool","name":"Bash","input":{"command":"print"}}]}}).to_string()+"\n";
+        std::fs::write(&fixture.log, call).unwrap();
+        let page = row_page(&fixture, 200, None).await.unwrap();
+        let call_id = page["rows"][0]["id"].clone();
+        let key = format!("{}:chair", fixture.session);
+        let from = page["page"]["end_offset"].as_u64().unwrap();
+        {
+            let mut hub = fixture.app.hub.lock().unwrap();
+            hub.streams.insert("rows".into(), client(&[]));
+            hub.streams.insert("raw".into(), client(&[]));
+        }
+        for (stream, view) in [("rows", Some("rows")), ("raw", None)] {
+            let _ = subscribe(
+                State(fixture.app.clone()),
+                Json(Subscription {
+                    stream: stream.into(),
+                    keys: vec![SubscriptionKey {
+                        key: key.clone(),
+                        from,
+                        view: view.map(str::to_owned),
+                    }],
+                }),
+            )
+            .await
+            .unwrap();
+        }
+        assert_eq!(fixture.app.hub.lock().unwrap().followers.len(), 1);
+        let result = json!({"type":"user","uuid":"result","message":{"content":[{"type":"tool_result","tool_use_id":"live-tool","content":"finished output"}]}}).to_string()+"\n";
+        std::fs::OpenOptions::new()
+            .append(true)
+            .open(&fixture.log)
+            .unwrap()
+            .write_all(result.as_bytes())
+            .unwrap();
+        until_cursor(&fixture.app, "rows", &key, from + result.len() as u64).await;
+        until_cursor(&fixture.app, "raw", &key, from + result.len() as u64).await;
+        {
+            let hub = fixture.app.hub.lock().unwrap();
+            let frame = hub.streams["rows"].queue.back().unwrap();
+            assert_eq!(frame.name, "rows");
+            let rows: Value = serde_json::from_str(&frame.data).unwrap();
+            assert_eq!(rows["upsert"][0]["id"], call_id);
+            assert_eq!(rows["upsert"][0]["tool"]["state"], "finished");
+            assert_eq!(hub.streams["raw"].queue.back().unwrap().name, "transcript");
+        }
+        let mut done = fixture.app.hub.lock().unwrap().followers[&key].done.clone();
+        drop(Events {
+            app: fixture.app.clone(),
+            id: "rows".into(),
+        });
+        {
+            let hub = fixture.app.hub.lock().unwrap();
+            assert!(hub.followers[&key].rows.is_none());
+            assert_eq!(hub.row_cache.len(), 1);
+        }
+        // A page read while only raw listeners remain belongs to the bounded inactive cache.
+        row_page(&fixture, 200, None).await.unwrap();
+        assert!(
+            fixture.app.hub.lock().unwrap().followers[&key]
+                .rows
+                .is_none()
+        );
+        drop(Events {
+            app: fixture.app.clone(),
+            id: "raw".into(),
+        });
+        done.wait_for(|finished| *finished).await.unwrap();
+        let hub = fixture.app.hub.lock().unwrap();
+        assert!(hub.followers.is_empty());
+        assert_eq!(hub.row_cache.len(), 1);
+    }
+    #[test]
+    fn cold_row_cache_keeps_only_four_keys() {
+        let fixture = Fixture::new();
+        let mut hub = fixture.app.hub.lock().unwrap();
+        for number in 0..12 {
+            hub.cache_rows(format!("chat-{number}"), LiveRows::empty(0, false));
+        }
+        assert_eq!(hub.row_cache.len(), 4);
+        assert_eq!(hub.row_cache[0].0, "chat-8");
+    }
+    #[tokio::test]
+    async fn twelve_row_keys_keep_live_state_and_drop_all_children() {
+        let fixture = Fixture::new();
+        codex_log(&fixture, 2);
+        let connection = swarm::store::open(&fixture.app.root.join("swarm.db")).unwrap();
+        for number in 0..12 {
+            let agent = format!("worker-{number}");
+            swarm::store::add_agent(&connection, &fixture.session, &agent, "chat").unwrap();
+            swarm::store::set_provider(&connection, &fixture.session, &agent, "codex").unwrap();
+            swarm::store::set_log(&connection, &fixture.session, &agent, &fixture.log).unwrap();
+        }
+        drop(connection);
+        fixture
+            .app
+            .hub
+            .lock()
+            .unwrap()
+            .streams
+            .insert("all".into(), client(&[]));
+        let from = std::fs::metadata(&fixture.log).unwrap().len();
+        let keys = (0..12)
+            .map(|number| SubscriptionKey {
+                key: format!("{}:worker-{number}", fixture.session),
+                from,
+                view: Some("rows".into()),
+            })
+            .collect();
+        let _ = subscribe(
+            State(fixture.app.clone()),
+            Json(Subscription {
+                stream: "all".into(),
+                keys,
+            }),
+        )
+        .await
+        .unwrap();
+        let mut receivers = {
+            let hub = fixture.app.hub.lock().unwrap();
+            assert_eq!(hub.followers.len(), 12);
+            assert!(hub.followers.values().all(|follower| {
+                follower
+                    .rows
+                    .as_ref()
+                    .is_some_and(|rows| rows.records.len() == 2)
+            }));
+            hub.followers
+                .values()
+                .map(|follower| follower.done.clone())
+                .collect::<Vec<_>>()
+        };
+        drop(Events {
+            app: fixture.app.clone(),
+            id: "all".into(),
+        });
+        for done in &mut receivers {
+            tokio::time::timeout(Duration::from_secs(2), done.wait_for(|finished| *finished))
+                .await
+                .unwrap()
+                .unwrap();
+        }
+        let hub = fixture.app.hub.lock().unwrap();
+        assert!(hub.followers.is_empty());
+        assert_eq!(hub.row_cache.len(), 4);
+    }
+    #[tokio::test]
+    async fn full_diff_uses_source_ordinal_and_retains_all_lines() {
+        let fixture = Fixture::new();
+        std::fs::copy(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("packages/transcript/src/fixtures/claude-edit.jsonl"),
+            &fixture.log,
+        )
+        .unwrap();
+        let page = row_page(&fixture, 200, None).await.unwrap();
+        let locator = page["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find_map(|row| row["diff"]["id"].as_str())
+            .unwrap();
+        let Json(output) = tool_output(
+            State(fixture.app.clone()),
+            Query(ToolOutputQuery {
+                session: fixture.session.clone(),
+                agent: "chair".into(),
+                row: locator.into(),
+            }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(locator, "raw-0-1:diff");
+        let diff = page["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["diff"]["id"] == locator)
+            .unwrap();
+        assert_eq!(output["text"], diff["diff"]["patch"]);
+        assert!(
+            output["text"]
+                .as_str()
+                .unwrap()
+                .contains("@@ -445,6 +445,7 @@")
+        );
     }
 }

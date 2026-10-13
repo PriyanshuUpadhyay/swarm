@@ -453,3 +453,92 @@ fn shared_live_followers_send_complete_line_offsets_within_one_second() {
         404
     );
 }
+
+#[test]
+fn row_routes_guard_input_cap_output_and_stream_stable_ids() {
+    let server = Server::new();
+    let call = json!({"type":"assistant","uuid":"row-call","message":{"content":[{"type":"tool_use","id":"output-call","name":"Bash","input":{"command":"print"}}]}}).to_string()+"\n";
+    fs::write(&server.log, &call).unwrap();
+    let page_path = format!("/api/rows?session={}&agent=chair&tail=200", server.session);
+    for path in [
+        &page_path,
+        "/api/tool-output?session=unknown&agent=chair&row=raw-0-0:output",
+    ] {
+        assert_eq!(server.request("GET", path, "", "", false).0, 401);
+        assert_eq!(
+            server
+                .request("GET", path, "Origin: https://evil.test\r\n", "", true)
+                .0,
+            403
+        );
+        let mut stream = server.connection();
+        write!(stream, "GET {path} HTTP/1.1\r\nHost: evil.test\r\nAuthorization: Bearer {}\r\nConnection: close\r\n\r\n", server.token).unwrap();
+        let mut response = String::new();
+        stream.read_to_string(&mut response).unwrap();
+        assert!(response.starts_with("HTTP/1.1 403"));
+    }
+    assert_eq!(
+        server
+            .request(
+                "GET",
+                &page_path.replace("tail=200", "tail=0"),
+                "",
+                "",
+                true
+            )
+            .0,
+        400
+    );
+    let (status, _, body) = server.request("GET", &page_path, "", "", true);
+    assert_eq!(status, 200, "{body}");
+    let page: Value = serde_json::from_str(&body).unwrap();
+    let id = page["rows"][0]["id"].clone();
+    let mut live = server.sse();
+    let stream_id = named_event(&mut live, "hello")["stream"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let subscription = json!({"stream":stream_id,"keys":[{"key":format!("{}:chair",server.session),"from":call.len(),"view":"rows"}]}).to_string();
+    assert_eq!(
+        server
+            .request(
+                "POST",
+                "/api/subscribe",
+                "Content-Type: application/json\r\n",
+                &subscription,
+                true
+            )
+            .0,
+        200
+    );
+    let full = (0..10000)
+        .map(|index| format!("output line {index}\n"))
+        .collect::<String>();
+    let result = json!({"type":"user","uuid":"row-output","message":{"content":[{"type":"tool_result","tool_use_id":"output-call","content":full}]}}).to_string()+"\n";
+    server.append(&result);
+    let frame = named_event(&mut live, "rows");
+    assert_eq!(frame["upsert"][0]["id"], id);
+    assert_eq!(frame["upsert"][0]["tool"]["state"], "finished");
+    assert_eq!(frame["upsert"][0]["tool"]["output"]["full_lines"], 10000);
+    assert!(frame.to_string().len() < 20000);
+    let locator = frame["upsert"][0]["tool"]["output"]["id"].as_str().unwrap();
+    let output_path = format!(
+        "/api/tool-output?session={}&agent=chair&row={locator}",
+        server.session
+    );
+    let (status, _, body) = server.request("GET", &output_path, "", "", true);
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(serde_json::from_str::<Value>(&body).unwrap()["text"], full);
+    assert_eq!(
+        server
+            .request(
+                "GET",
+                &output_path.replace(locator, "raw-1-0:output"),
+                "",
+                "",
+                true
+            )
+            .0,
+        404
+    );
+}
