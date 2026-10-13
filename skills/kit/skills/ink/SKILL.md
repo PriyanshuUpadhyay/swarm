@@ -20,12 +20,8 @@ sunrise. A neon restyle changes only the look tokens.
 
 ## Contract
 
-- Match a look only from pixels you inspected yourself. When the brief has no references,
-  research them from the brief. Keep evidence levels apart: `visible`, `stated`, `inferred`,
-  `unknown`.
-- Borrow techniques and high-level traits. Never copy characters, logos, signatures, exact
-  compositions, or a living artist's exact personal style.
-- Match density, not only palette. Measure the reference, write the numbers down, and meet them.
+- Find, inspect, measure, and label every reference, and take only what may be taken, as the kit's
+  `blocks/reference-analysis/SKILL.md` says.
 - Prove the look with style frames and the story with an animatic, both before production.
 - Keep the layers apart. Scene code has no colour literals and no story timing.
 - Render every frame from time and one seed (`?t=`). A stateful simulation steps at a fixed rate
@@ -48,8 +44,8 @@ one-prompt task, so do not suggest it is.
 1. **Intake.** Story, references (researched from the brief when none are given) with a
    benchmark, a start, middle, and end frame per shot, form, size, fps, limits, and delivery. See
    [references.md](references/references.md).
-2. **Analyse the references** and write `ink/02-look.md` with measured numbers. See
-   [references.md](references/references.md).
+2. **Analyse the references** with the kit's `blocks/reference-analysis/SKILL.md`, and write
+   `ink/02-look.md` with the style grammar in [references.md](references/references.md).
 3. **Story sheet, shot list, transitions, scene graph.** See the kit's `blocks/story/SKILL.md`
    and [story-and-motion.md](references/story-and-motion.md).
 4. **Style frames** with the real drawing code, one of them the signature shot, scored beside the
