@@ -1,6 +1,6 @@
 ---
 name: story
-description: "A brief and its facts become a story sheet, a structure, a shot list with key frames, and pacing that gives each beat time to read."
+description: "Turn a brief and its facts into a story sheet, a structure, a shot list with key frames, and pacing. Use when a reel, film, or scroll page must tell a story."
 license: MIT
 metadata:
   kind: step

@@ -1,6 +1,6 @@
 ---
 name: done-when-evidence
-description: "Close maps each done-when of the frame to its evidence, or marks it unverified."
+description: "Map each done-when of the frame to its evidence, or mark it unverified. Use when you close a change."
 license: MIT
 metadata:
   kind: rule

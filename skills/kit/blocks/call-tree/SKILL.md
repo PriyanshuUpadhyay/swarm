@@ -1,6 +1,6 @@
 ---
 name: call-tree
-description: "The impact step shows what changes as a short marked call tree with real paths."
+description: "Show what a change touches as a short marked call tree with real paths. Use when you judge the impact of a change on existing features."
 license: MIT
 metadata:
   kind: rule

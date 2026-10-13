@@ -1,6 +1,6 @@
 ---
 name: web-ui-basics
-description: "The floor every static one-page site must meet: structure, focus, contrast, layout at each width, and motion."
+description: "Check the floor every static one-page site must meet: structure, focus, contrast, layout at each width, and motion. Use when you build or review a static web page."
 license: MIT
 metadata:
   kind: rule

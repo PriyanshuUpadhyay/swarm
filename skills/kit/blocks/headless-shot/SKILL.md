@@ -1,6 +1,6 @@
 ---
 name: headless-shot
-description: "Take page screenshots with Playwright's chrome-headless-shell, and know its limits."
+description: "Take page screenshots and compare images with chrome-headless-shell, and know what it cannot render. Use when a step needs screenshots of a page."
 license: MIT
 metadata:
   kind: step

@@ -1,6 +1,6 @@
 ---
 name: html-diagram
-description: "Draw a tech diagram with HTML and CSS boxes that reflow, so labels never clip or cross at any width."
+description: "Draw a tech diagram with HTML and CSS boxes that reflow, so labels never clip or cross at any width. Use when a page or plan needs a diagram."
 license: MIT
 metadata:
   kind: rule

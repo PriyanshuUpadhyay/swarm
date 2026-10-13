@@ -1,6 +1,6 @@
 ---
 name: design-tokens
-description: "The look is measured from references, written once as tokens in `DESIGN.md`, and the page code reads only those tokens."
+description: "Measure the look from references, write it once as tokens in DESIGN.md, and make the page code read only those tokens. Use when a page or piece must match a look."
 license: MIT
 metadata:
   kind: step

@@ -1,6 +1,6 @@
 ---
 name: when-to-diagram
-description: "A diagram is drawn only when the subject has a shape text cannot hold, and its type and size follow that shape."
+description: "Draw a diagram only when the subject has a shape text cannot hold, and pick its type and size from that shape. Use when you decide whether a doc, plan, or page needs a diagram."
 license: MIT
 metadata:
   kind: rule

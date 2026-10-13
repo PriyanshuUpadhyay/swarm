@@ -1,6 +1,6 @@
 ---
 name: when-to-extract
-description: "Keep code inline unless a split has one of five reasons, so a reader holds fewer names, jumps, and state. Use before you add, split out, or keep a helper, wrapper, layer, file, or module, and when code is hard to trace."
+description: "Keep code inline unless a split has one of five reasons, so a reader holds fewer names and jumps. Use when you add, split, or keep a helper, layer, file, or module."
 license: MIT
 metadata:
   kind: rule

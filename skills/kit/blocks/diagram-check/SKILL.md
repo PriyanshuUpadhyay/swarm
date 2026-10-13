@@ -1,6 +1,6 @@
 ---
 name: diagram-check
-description: "A reviewer proves each diagram tells the truth about its source, invents nothing, and reads on a phone."
+description: "Check that each diagram tells the truth about its source, invents nothing, and reads on a phone. Use when you review a page or plan that has a diagram."
 license: MIT
 metadata:
   kind: rule

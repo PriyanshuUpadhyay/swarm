@@ -1,6 +1,6 @@
 ---
 name: base-rules
-description: "The few rules every step of every workflow keeps."
+description: "Keep the few rules every step keeps: facts only from the source of truth, real over drawn, no extra scope, evidence for done, example first. Use when any workflow step runs."
 license: MIT
 metadata:
   kind: rule

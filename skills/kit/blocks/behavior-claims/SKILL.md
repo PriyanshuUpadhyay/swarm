@@ -1,6 +1,6 @@
 ---
 name: behavior-claims
-description: "The frame states what a reader can now do or see, as true-or-false claims, with done-when and the main risks."
+description: "Write the frame as short true-or-false claims about what someone can now do or see, with done-when evidence and the main risks. Use when you frame a change before design or build."
 license: MIT
 metadata:
   kind: rule

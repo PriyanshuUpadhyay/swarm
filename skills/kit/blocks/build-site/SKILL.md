@@ -1,6 +1,6 @@
 ---
 name: build-site
-description: "A website is built as one more form of a piece: sections replace shots, screen widths replace fps, and the loader, the scroll, and the page transitions carry the story."
+description: "Build a website as one form of a story piece, where sections replace shots and the loader, scroll, and page transitions carry the story. Use when the piece is a landing page, portfolio, or product site."
 license: MIT
 metadata:
   kind: step

@@ -1,6 +1,6 @@
 ---
 name: visual-qa
-description: "Rendered frames and playback are inspected at full size against a list of frame and motion faults, and each finding goes in a QA log with its pixel evidence."
+description: "Inspect rendered frames and playback at full size against a list of frame and motion faults, and log each finding with pixel evidence. Use when a visual piece is checked before handoff."
 license: MIT
 metadata:
   kind: step

@@ -1,6 +1,6 @@
 ---
 name: build-canvas
-description: "A drawn piece is built as a small story engine: look tokens, entity functions, scene modules, a shot list, and transitions, rendered from time and one seed so any frame renders alone."
+description: "Build a drawn piece as a small story engine of tokens, entities, scenes, a shot list, and transitions, rendered from time and one seed. Use when the piece is a canvas, p5, or three.js reel or plate."
 license: MIT
 metadata:
   kind: pack

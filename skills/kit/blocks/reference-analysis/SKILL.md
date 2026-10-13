@@ -1,6 +1,6 @@
 ---
 name: reference-analysis
-description: "Every reference is found, inspected, and measured in five passes, and each fact carries an evidence label, so the look and the story rest on pixels, not on words."
+description: "Find, inspect, and measure every reference in five passes, with an evidence label on each fact, so the look and story rest on pixels. Use when work starts from visual references."
 license: MIT
 metadata:
   kind: step

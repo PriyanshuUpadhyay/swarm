@@ -1,6 +1,6 @@
 ---
 name: look-check
-description: "Prove the look before the full build with frames rendered from the real page code, scored beside the reference; a miss blocks."
+description: "Check the look before the full build: render a few frames from the real code and score them beside the reference; a miss blocks the build. Use when a page or piece must match a reference look."
 license: MIT
 metadata:
   kind: step
