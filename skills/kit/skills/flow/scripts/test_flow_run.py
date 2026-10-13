@@ -994,7 +994,7 @@ def test_kit_blocks_load(tmp):
     (root / ".blocks.toml").write_text(PARAMS, encoding="utf-8")
     ids = [path.parent.name for path in sorted(flow_run.BLOCKS.glob("*/SKILL.md"))]
     out, _ = flow_run.resolve_blocks(root, {"build": ids}, "default")
-    assert len(ids) == 15 and all(f"===== block:{b} =====" in out["build"][1] for b in ids), (ids, out["build"][0])
+    assert len(ids) == 16 and all(f"===== block:{b} =====" in out["build"][1] for b in ids), (ids, out["build"][0])
 
 
 def test_block_repo_file(tmp):

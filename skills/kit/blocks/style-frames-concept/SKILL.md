@@ -19,7 +19,6 @@ metadata:
 - A `miss` on any trait blocks the build step.
 - Do at least two rounds of fix and re-render. Record the scores of each round in the step's own file.
 - After round 3 with the same `miss`, stop and show the user the frame and the miss. Write `accepted miss: <trait>, user: <their words>` only after the user has seen the frame. Later rounds still score every trait and exempt only that accepted miss from the gate. A miss that changes asks again.
-- Never write "visually verified" unless you inspected pixels of the final page after the last fix.
 
 ## Example
 Initial state: the site's `index.html` has the hero in real HTML and CSS, and `DESIGN.md` exists.

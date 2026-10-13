@@ -1,5 +1,8 @@
 # Visual QA
 
+The frame checks, the motion checks, the QA log, and the "visually verified" rule are in the kit's
+`blocks/visual-qa/SKILL.md`. This file holds ink's own evidence and checks.
+
 ## Contents
 
 - Required evidence
@@ -23,7 +26,6 @@ seam-after.png
 contact-sheet.png
 ```
 
-A contact sheet helps compare rhythm but does not replace inspection of full-size frames.
 
 ## Reference match
 
@@ -48,37 +50,20 @@ The key frame and pacing checks are in the kit's `blocks/story/SKILL.md`.
 
 ## Frame checks
 
-For each decisive frame inspect:
+In addition to the frame checks of the visual-qa block, inspect each decisive frame for:
 
-- focal point and eye path;
-- crop, safe area, and accidental edge tangencies;
-- contour consistency and shape readability;
-- palette roles, contrast, and muddy overlaps;
-- mask edges, transform discontinuities, and layer order;
-- texture scale, density, flicker, and whether texture hides form;
 - no flat mass near the camera, no contour of one even width, and no pure black unless the
   reference has it;
-- paper and grain visible at 100 % zoom;
-- lettering legibility, including what moving elements cover at different times. A moving shape
-  that hides one letter can make a different word (a glint over the "C" turned "LOOK CLOSER" into
-  "LOOK LOSER");
-- originality changes relative to the references.
+- paper and grain visible at 100 % zoom.
 
 ## Motion checks
 
-Inspect playback at intended speed and at reduced speed:
+In addition to the motion checks of the visual-qa block, inspect playback for:
 
-- camera easing and speed spikes;
-- parallax and nested-transform continuity;
-- local motion phase relationships, and motion that restarts at a cut when it should continue;
 - each continuity cut against the seam law: same axis, same direction, similar speed, cut
   mid-motion;
-- a white flash or a see-through frame in the middle of a blend;
-- unintended jitter caused by frame-rate dependence;
-- texture crawling or random reseeding;
 - boil at 6-12 changes per second, and no boil on text, halftone, or interface layers;
-- visible loop seam;
-- repeated motion that feels mechanically synchronized.
+- a visible loop seam.
 
 ## Automated checks
 
@@ -103,16 +88,4 @@ Run these when frames can be rendered by `?t=`; they catch what a few stills mis
 
 ## QA log
 
-Keep the QA log as a table in the step file that it checks (`04-style-frames`, `06-detail`, or
-`07-export`).
-
-```text
-Artifact/version:
-Reference set:
-Render settings:
-
-Frame or interval | Observed pixel/playback evidence | Severity | Fix | Rechecked
-```
-
-Do not say "visually verified" unless pixels or playback from the final delivered artifact were
-inspected after the last fix.
+The QA log goes in the step file that it checks: `04-style-frames`, `06-detail`, or `07-export`.

@@ -49,12 +49,13 @@ one-prompt task, so do not suggest it is.
 3. **Story sheet, shot list, transitions, scene graph.** See the kit's `blocks/story/SKILL.md`
    and [story-and-motion.md](references/story-and-motion.md).
 4. **Style frames** with the real drawing code, one of them the signature shot, scored beside the
-   reference for at least two rounds. See [mark-making.md](references/mark-making.md) and
-   [qa.md](references/qa.md).
+   reference for at least two rounds, as the kit's `blocks/style-frames-concept/SKILL.md` says. See
+   [mark-making.md](references/mark-making.md) and [qa.md](references/qa.md).
 5. **Animatic.** Flat shapes, final timing, real transitions. See [build.md](references/build.md).
 6. **Detail passes** up to the style frames, with scenes in batches of about eight. See
    [mark-making.md](references/mark-making.md).
-7. **QA, export, and handoff.** See [qa.md](references/qa.md) and [build.md](references/build.md).
+7. **QA, export, and handoff.** See the kit's `blocks/visual-qa/SKILL.md`, [qa.md](references/qa.md),
+   and [build.md](references/build.md).
 
 A website changes most steps: sections replace shots, screen widths replace fps, and a `DESIGN.md`
 joins the look. Read [site.md](references/site.md) at intake when the form is a website.
