@@ -9,7 +9,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     io::Read,
     path::Path,
-    process::{Command, Stdio},
+    process::{Command, Output, Stdio},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
@@ -23,43 +23,76 @@ pub fn now() -> i64 {
 /// Drain stdout while waiting, and reap the child on timeout.
 pub fn run(program: &str, args: &[&str], seconds: u64) -> Option<Vec<u8>> {
     let mut command = Command::new(program);
+    command.args(args);
+    run_command(&mut command, seconds)
+        .ok()
+        .filter(|output| output.status.success())
+        .map(|output| output.stdout)
+}
+
+pub fn run_command(command: &mut Command, seconds: u64) -> Result<Output, String> {
     command
-        .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null());
+        .stderr(Stdio::piped());
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
         command.process_group(0);
     }
-    let mut child = command.spawn().ok()?;
-    let mut stdout = child.stdout.take()?;
+    let mut child = command.spawn().map_err(|e| e.to_string())?;
+    let mut stdout = child.stdout.take().expect("piped stdout");
+    let mut stderr = child.stderr.take().expect("piped stderr");
     let (output, receive) = std::sync::mpsc::channel();
-    let read = std::thread::spawn(move || {
+    let out_sender = output.clone();
+    let out_read = std::thread::spawn(move || {
         let mut bytes = Vec::new();
-        let _ = output.send(stdout.read_to_end(&mut bytes).map(|_| bytes));
+        let _ = out_sender.send((true, stdout.read_to_end(&mut bytes).map(|_| bytes)));
+    });
+    let err_read = std::thread::spawn(move || {
+        let mut bytes = Vec::new();
+        let _ = output.send((false, stderr.read_to_end(&mut bytes).map(|_| bytes)));
     });
     let deadline = Instant::now() + Duration::from_secs(seconds);
-    let success = loop {
+    let status = loop {
         match child.try_wait() {
-            Ok(Some(status)) => break status.success(),
+            Ok(Some(status)) => break Ok(status),
             Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(10)),
             _ => {
                 stop(&mut child);
-                break false;
+                break Err("command timed out or could not be read".to_owned());
             }
         }
     };
-    let bytes = match receive.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
-        Ok(bytes) => bytes.ok(),
-        Err(_) => {
-            stop(&mut child);
-            None
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let mut failure = None;
+    for _ in 0..2 {
+        match receive.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+            Ok((out, Ok(bytes))) => {
+                if out {
+                    stdout = bytes;
+                } else {
+                    stderr = bytes;
+                }
+            }
+            other => {
+                stop(&mut child);
+                failure = Some(format!("command output failed: {other:?}"));
+                break;
+            }
         }
-    };
-    let _ = read.join();
-    if success { bytes } else { None }
+    }
+    let _ = out_read.join();
+    let _ = err_read.join();
+    if let Some(error) = failure {
+        return Err(error);
+    }
+    Ok(Output {
+        status: status?,
+        stdout,
+        stderr,
+    })
 }
 fn stop(child: &mut std::process::Child) {
     #[cfg(unix)]
@@ -82,14 +115,8 @@ fn git(path: &str, args: &[&str]) -> Option<String> {
         .ok()
         .map(|s| s.trim().into())
 }
-fn resolve(path: &str) -> Option<String> {
-    if let Some(common) = git(
-        path,
-        &["rev-parse", "--path-format=absolute", "--git-common-dir"],
-    ) {
-        return Some(common);
-    }
-    // Offline/removed worktrees still belong to their hub. This also recognises a bare hub root.
+pub fn resolve(path: &str) -> Option<String> {
+    // A nested bare hub takes precedence over Git's surrounding checkout discovery.
     for ancestor in Path::new(path).ancestors() {
         let bare = ancestor.join(".bare");
         if bare.is_dir() {
@@ -110,7 +137,10 @@ fn resolve(path: &str) -> Option<String> {
             }
         }
     }
-    None
+    git(
+        path,
+        &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+    )
 }
 
 pub fn parse_worktrees(bytes: &[u8]) -> Vec<WorkspaceFact> {
@@ -156,6 +186,9 @@ pub struct Discovery {
     github_at: BTreeMap<String, i64>,
 }
 impl Discovery {
+    pub fn forget_catalog(&mut self) {
+        self.catalog_at = None;
+    }
     pub fn augment(&mut self, snapshot: &mut Value, owner: &OwnerChoices, at: i64) {
         let paths: BTreeSet<String> = snapshot["sessions"]
             .as_array()

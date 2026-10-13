@@ -25,13 +25,37 @@ impl Server {
     }
 
     fn with_actions(actions: bool) -> Self {
+        Self::configured(actions, false)
+    }
+
+    fn configured(actions: bool, lifecycle: bool) -> Self {
         let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let dir = repo
-            .join("tmp/web-pilot")
-            .join(format!("serve-test-{}", uuid::Uuid::now_v7()));
+        let dir = if lifecycle {
+            std::env::temp_dir()
+        } else {
+            repo.join("tmp/web-pilot")
+        }
+        .join(format!("serve-test-{}", uuid::Uuid::now_v7()));
         let home = dir.join("home");
         let root = home.join(".swarm");
         fs::create_dir_all(&root).unwrap();
+        let dir = fs::canonicalize(&dir).unwrap();
+        let home = dir.join("home");
+        let root = home.join(".swarm");
+        let source = if lifecycle {
+            let source = dir.join("project");
+            fs::create_dir(&source).unwrap();
+            let output = Command::new("git")
+                .args(["init", "-q", "-b", "main"])
+                .current_dir(&source)
+                .env("GIT_CEILING_DIRECTORIES", &dir)
+                .output()
+                .unwrap();
+            assert!(output.status.success());
+            source
+        } else {
+            repo.clone()
+        };
         let log = dir.join("chair.jsonl");
         fs::copy(
             repo.join("packages/transcript/src/fixtures/claude-chair-run.jsonl"),
@@ -42,7 +66,7 @@ impl Server {
         let session = swarm::store::create_session(
             &connection,
             "lane",
-            &repo,
+            &source,
             Some(("claude", "synthetic")),
             actions.then_some("fixture"),
         )
@@ -84,6 +108,15 @@ key = printf 'key %s %s\n' "$SWARM_PANE" "$SWARM_KEY" >> "$HOME/actions"
             fs::set_permissions(bin.join("agy"), fs::Permissions::from_mode(0o755)).unwrap();
         }
         drop(connection);
+        if lifecycle {
+            // Seed the same choices as the background coordinator before checking refused requests.
+            let source = source.to_string_lossy();
+            fs::write(
+                root.join("choices.json"),
+                json!({"projectPaths":[source],"tabs":{source:{"open":[session]}}}).to_string(),
+            )
+            .unwrap();
+        }
         let assets = dir.join("assets");
         fs::create_dir(&assets).unwrap();
         fs::write(assets.join("index.html"), "<h1>pilot</h1>").unwrap();
@@ -93,6 +126,14 @@ key = printf 'key %s %s\n' "$SWARM_PANE" "$SWARM_KEY" >> "$HOME/actions"
             .env_clear()
             .env("HOME", &home)
             .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
+            .env(
+                "GIT_CEILING_DIRECTORIES",
+                if lifecycle {
+                    dir.clone()
+                } else {
+                    PathBuf::from("/")
+                },
+            )
             // Serve must remove inherited host identity before an owner key/answer call.
             .env("TMUX_PANE", "inherited-pane")
             .env("HERDR_PANE_ID", "inherited-pane")
@@ -723,6 +764,131 @@ fn tree_choices(server: &Server) -> Value {
     let (status, _, body) = server.request("GET", "/api/tree?view=workspaces", "", "", true);
     assert_eq!(status, 200, "{body}");
     serde_json::from_str(&body).unwrap()
+}
+
+#[test]
+fn workspace_lifecycle_http_refuses_unlisted_paths_before_any_change() {
+    let server = Server::configured(true, true);
+    let outside = server.dir.join("outside");
+    fs::create_dir(&outside).unwrap();
+    fs::write(outside.join("keep.txt"), "keep").unwrap();
+    let root = server.dir.join("home/.swarm");
+    let before = fs::read(root.join("choices.json")).ok();
+    for (route, key) in [("new-options", "project"), ("impact", "workspace")] {
+        assert_eq!(
+            server
+                .request(
+                    "GET",
+                    &format!("/api/workspace/{route}?{key}={}", outside.display()),
+                    "",
+                    "",
+                    true
+                )
+                .0,
+            403
+        );
+    }
+    for route in ["new", "archive", "restore", "delete", "prune"] {
+        let body = if route == "new" {
+            json!({"project":outside,"name":"Escape","mode":"new-branch"})
+        } else {
+            json!({"workspace":outside})
+        };
+        let (status, _, body) = server.request(
+            "POST",
+            &format!("/api/workspace/{route}"),
+            "Content-Type: application/json\r\n",
+            &body.to_string(),
+            true,
+        );
+        assert_eq!(status, 403, "{route}: {body}");
+    }
+    assert_eq!(fs::read(root.join("choices.json")).ok(), before);
+    assert_eq!(
+        fs::read_to_string(outside.join("keep.txt")).unwrap(),
+        "keep"
+    );
+    assert!(!server.dir.join("home/actions").exists());
+}
+
+#[test]
+fn project_remove_http_refuses_unlisted_path_and_keeps_folder() {
+    let server = Server::configured(true, true);
+    let outside = server.dir.join("outside");
+    fs::create_dir(&outside).unwrap();
+    fs::write(outside.join("keep.txt"), "keep").unwrap();
+    let root = server.dir.join("home/.swarm");
+    let before = fs::read(root.join("choices.json")).ok();
+    let (status, _, body) = server.request(
+        "POST",
+        "/api/project/remove",
+        "Content-Type: application/json\r\n",
+        &json!({"project":outside}).to_string(),
+        true,
+    );
+    assert_eq!(status, 403, "{body}");
+    assert_eq!(fs::read(root.join("choices.json")).ok(), before);
+    assert_eq!(
+        fs::read_to_string(outside.join("keep.txt")).unwrap(),
+        "keep"
+    );
+    assert!(!server.dir.join("home/actions").exists());
+}
+
+#[test]
+fn project_create_import_http_refuse_swarm_home_symlink_and_keep_data() {
+    let server = Server::configured(true, true);
+    let root = server.dir.join("home/.swarm");
+    let link = server.dir.join("home-link");
+    std::os::unix::fs::symlink(&root, &link).unwrap();
+    fs::write(root.join("keep.txt"), "keep").unwrap();
+    let before = fs::read(root.join("choices.json")).ok();
+    for (route, value) in [
+        (
+            "create",
+            json!({"path":link.join("escape"),"name":"Escape"}),
+        ),
+        ("import", json!({"path":link,"as":"git"})),
+    ] {
+        let path = format!("/api/project/{route}");
+        assert_eq!(
+            server
+                .request(
+                    "POST",
+                    &path,
+                    "Content-Type: application/json\r\n",
+                    &value.to_string(),
+                    false
+                )
+                .0,
+            401
+        );
+        assert_eq!(
+            server
+                .request(
+                    "POST",
+                    &path,
+                    "Content-Type: application/json\r\nOrigin: https://evil.test\r\n",
+                    &value.to_string(),
+                    true
+                )
+                .0,
+            403
+        );
+        let (status, _, body) = server.request(
+            "POST",
+            &path,
+            "Content-Type: application/json\r\n",
+            &value.to_string(),
+            true,
+        );
+        assert_eq!(status, 403, "{body}");
+    }
+    assert_eq!(fs::read(root.join("choices.json")).ok(), before);
+    assert_eq!(fs::read_to_string(root.join("keep.txt")).unwrap(), "keep");
+    assert!(!root.join("escape").exists());
+    assert!(!root.join(".git").exists());
+    assert!(!server.dir.join("home/actions").exists());
 }
 fn write_choices(server: &Server, mut operation: Value) -> Value {
     for _ in 0..5 {

@@ -25,7 +25,8 @@ use std::{
 };
 use swarm::view::transcript::{self as view, Record, Row};
 use swarm::view::{
-    choices, choices_store, claude_text, discovery, fields, navigation, queue, tabs, tree,
+    choices, choices_store, claude_text, discovery, fields, lifecycle, navigation, queue, tabs,
+    tree,
 };
 use tokio::{
     io::{AsyncBufReadExt, BufReader},
@@ -288,6 +289,16 @@ fn router(app: App) -> Router {
         .route("/api/tree", get(tree_view))
         .route("/api/tabs", get(tabs_view))
         .route("/api/choices", post(choice_write))
+        .route("/api/workspace/new-options", get(lifecycle_read))
+        .route("/api/workspace/impact", get(lifecycle_read))
+        .route("/api/workspace/new", post(lifecycle_write))
+        .route("/api/workspace/archive", post(lifecycle_write))
+        .route("/api/workspace/restore", post(lifecycle_write))
+        .route("/api/workspace/delete", post(lifecycle_write))
+        .route("/api/workspace/prune", post(lifecycle_write))
+        .route("/api/project/create", post(lifecycle_write))
+        .route("/api/project/import", post(lifecycle_write))
+        .route("/api/project/remove", post(lifecycle_write))
         .route("/api/transcript", get(transcript))
         .route("/api/rows", get(transcript_rows))
         .route("/api/tool-output", get(tool_output))
@@ -713,6 +724,458 @@ fn refresh_tree(app: &App) -> Result<Value, ApiError> {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+struct ProjectPath {
+    project: String,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct WorkspacePath {
+    workspace: String,
+}
+#[derive(Deserialize)]
+enum LifecycleAction {
+    Options(ProjectPath),
+    Impact(WorkspacePath),
+    New(lifecycle::NewWorkspace),
+    Archive(WorkspacePath),
+    Restore(WorkspacePath),
+    Delete(WorkspacePath),
+    Prune(WorkspacePath),
+    Create(lifecycle::CreateProject),
+    Import(lifecycle::ImportProject),
+    Remove(ProjectPath),
+}
+fn lifecycle_error(err: lifecycle::Error) -> ApiError {
+    let status = match err {
+        lifecycle::Error::Forbidden => StatusCode::FORBIDDEN,
+        lifecycle::Error::Invalid(_) => StatusCode::BAD_REQUEST,
+        lifecycle::Error::Failed(_) => StatusCode::CONFLICT,
+    };
+    error(status, &err.to_string())
+}
+async fn lifecycle_read(
+    State(app): State<App>,
+    uri: Uri,
+    Query(query): Query<HashMap<String, String>>,
+) -> Result<Json<Value>, ApiError> {
+    let value = serde_json::to_value(query).unwrap();
+    let action = match uri.path() {
+        "/api/workspace/new-options" => LifecycleAction::Options(
+            serde_json::from_value(value)
+                .map_err(|e| error(StatusCode::BAD_REQUEST, &e.to_string()))?,
+        ),
+        _ => LifecycleAction::Impact(
+            serde_json::from_value(value)
+                .map_err(|e| error(StatusCode::BAD_REQUEST, &e.to_string()))?,
+        ),
+    };
+    enqueue_action(&app, Action::Lifecycle(action))
+        .await
+        .map(Json)
+}
+async fn lifecycle_write(
+    State(app): State<App>,
+    uri: Uri,
+    body: Result<Json<Value>, JsonRejection>,
+) -> Result<Json<Value>, ApiError> {
+    let Json(body) = body.map_err(|e| error(e.status(), &e.body_text()))?;
+    let kind = match uri.path() {
+        "/api/workspace/new" => "New",
+        "/api/workspace/archive" => "Archive",
+        "/api/workspace/restore" => "Restore",
+        "/api/workspace/delete" => "Delete",
+        "/api/workspace/prune" => "Prune",
+        "/api/project/create" => "Create",
+        "/api/project/import" => "Import",
+        _ => "Remove",
+    };
+    let action = serde_json::from_value(json!({kind:body}))
+        .map_err(|e| error(StatusCode::BAD_REQUEST, &e.to_string()))?;
+    enqueue_action(&app, Action::Lifecycle(action))
+        .await
+        .map(Json)
+}
+fn fresh_lifecycle_tree(app: &App) -> Result<(tree::Tree, choices_store::Saved), ApiError> {
+    let saved = choices_store::load(&app.root, true).map_err(choice_error)?;
+    let mut snapshot = snapshot_value(app)
+        .map_err(|e| error(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()))?;
+    let mut discovery = app.tree_cache.lock().unwrap().discovery.clone();
+    discovery.forget_catalog();
+    discovery.augment(&mut snapshot, &saved.owner, discovery::now());
+    let tree = tree::build(&snapshot, &saved.owner);
+    let mut cache = app.tree_cache.lock().unwrap();
+    cache.discovery = discovery;
+    cache.snapshot = snapshot;
+    cache.saved = Some(saved.clone());
+    Ok((tree, saved))
+}
+async fn workspace_live_targets(
+    app: &App,
+    workspace: &tree::Workspace,
+) -> Result<Vec<(String, String)>, ApiError> {
+    let sessions: Vec<_> = workspace
+        .chats
+        .iter()
+        .flat_map(|c| c.sessions.iter().cloned())
+        .collect();
+    if sessions.is_empty() {
+        return Ok(Vec::new());
+    }
+    let call = CliCall {
+        args: vec!["agents".into(), "--json".into(), "--all".into()],
+        cwd: app.root.clone(),
+        session: None,
+        adapter: "tmux-solo".into(),
+    };
+    let batch = run_cli(app, call, None)
+        .await
+        .ok()
+        .and_then(|s| serde_json::from_str::<Value>(&s).ok());
+    let mut listing = batch.as_ref().and_then(Value::as_object).map(|entries| {
+        entries
+            .iter()
+            .filter_map(|(id, v)| v["agents"].as_array().map(|a| (id.clone(), json!(a))))
+            .collect::<serde_json::Map<_, _>>()
+    });
+    let mut singles = HashMap::new();
+    for session in &sessions {
+        let id = session["id"].as_str().unwrap_or_default();
+        if listing.as_ref().is_some_and(|l| l.contains_key(id))
+            || session["adapter"]
+                .as_str()
+                .is_none_or(|a| a.trim().is_empty())
+            || (listing.is_some() && session["agents"].as_u64() == Some(0))
+        {
+            continue;
+        }
+        let call = action_session(app, id)?.args(&["agents", "--json"]);
+        let result = run_cli(app, call, None)
+            .await
+            .map_err(|e| e.1.0.to_string())
+            .and_then(|s| {
+                serde_json::from_str::<Value>(&s)
+                    .map_err(|e| e.to_string())
+                    .and_then(|v| {
+                        v["agents"]
+                            .as_array()
+                            .cloned()
+                            .ok_or_else(|| "invalid agents".into())
+                    })
+            });
+        singles.insert(id.to_owned(), result);
+    }
+    let listing = listing.take().map(Value::Object);
+    lifecycle::live_targets(&sessions, listing.as_ref(), |session| {
+        singles
+            .remove(session["id"].as_str().unwrap_or_default())
+            .unwrap_or_else(|| Err("missing listing".into()))
+    })
+    .map_err(lifecycle_error)
+}
+async fn execute_lifecycle(app: &App, action: LifecycleAction) -> Result<Value, ApiError> {
+    let cloned = app.clone();
+    let (tree, saved) = tokio::task::spawn_blocking(move || fresh_lifecycle_tree(&cloned))
+        .await
+        .map_err(|_| {
+            error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "lifecycle tree task failed",
+            )
+        })??;
+    let target = match &action {
+        LifecycleAction::Impact(p) | LifecycleAction::Archive(p) | LifecycleAction::Delete(p) => {
+            let (project, workspace) =
+                lifecycle::workspace(&tree, &p.workspace).map_err(lifecycle_error)?;
+            lifecycle::checked_path(
+                &app.root,
+                &p.workspace,
+                !workspace.missing && !workspace.removed,
+            )
+            .map_err(lifecycle_error)?;
+            if let Some(common) = lifecycle::common(project) {
+                lifecycle::checked_path(&app.root, common, true).map_err(lifecycle_error)?;
+            }
+            if matches!(action, LifecycleAction::Delete(_)) {
+                if !lifecycle::can_delete(project, workspace) {
+                    return Err(error(
+                        StatusCode::BAD_REQUEST,
+                        "This workspace cannot be deleted",
+                    ));
+                }
+                let path = p.workspace.clone();
+                let blocker =
+                    tokio::task::spawn_blocking(move || lifecycle::removal_blocker(&path))
+                        .await
+                        .map_err(|_| {
+                            error(
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                "delete inspection failed",
+                            )
+                        })?
+                        .map_err(lifecycle_error)?;
+                if let Some(blocker) = blocker {
+                    return Err(error(StatusCode::CONFLICT, &blocker));
+                }
+            }
+            Some(workspace.clone())
+        }
+        _ => None,
+    };
+    let targets = if let Some(workspace) = &target {
+        workspace_live_targets(app, workspace).await?
+    } else {
+        Vec::new()
+    };
+    if matches!(
+        action,
+        LifecycleAction::Archive(_) | LifecycleAction::Delete(_)
+    ) {
+        for (session, agent) in &targets {
+            let (call, agent) = action_target(app, session, agent)?;
+            run_cli(app, call.args(&["close", &agent]), None).await?;
+        }
+    }
+    let app = app.clone();
+    tokio::task::spawn_blocking(move || apply_lifecycle(&app, action, &tree, &saved, targets.len()))
+        .await
+        .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "lifecycle task failed"))?
+}
+fn apply_lifecycle(
+    app: &App,
+    action: LifecycleAction,
+    tree: &tree::Tree,
+    saved: &choices_store::Saved,
+    live: usize,
+) -> Result<Value, ApiError> {
+    let archive = matches!(action, LifecycleAction::Archive(_));
+    let mut result = json!({"ok":true});
+    match action {
+        LifecycleAction::Options(p) => {
+            let project = lifecycle::project(tree, &p.project).map_err(lifecycle_error)?;
+            lifecycle::checked_path(&app.root, &p.project, true).map_err(lifecycle_error)?;
+            if let Some(common) = lifecycle::common(project) {
+                lifecycle::checked_path(&app.root, common, true).map_err(lifecycle_error)?;
+            }
+            return lifecycle::options(project, &saved.owner).map_err(lifecycle_error);
+        }
+        LifecycleAction::Impact(p) => {
+            let (project, workspace) =
+                lifecycle::workspace(tree, &p.workspace).map_err(lifecycle_error)?;
+            return lifecycle::impact(project, workspace, live).map_err(lifecycle_error);
+        }
+        LifecycleAction::New(request) => {
+            let project = lifecycle::project(tree, &request.project).map_err(lifecycle_error)?;
+            let (path, settings) =
+                lifecycle::create_workspace(&app.root, project, &saved.owner, &request)
+                    .map_err(lifecycle_error)?;
+            result["workspace"] = path.clone().into();
+            let recorded = choices_store::update(
+                &app.root,
+                None,
+                |owner: &mut choices::OwnerChoices, state: &mut choices::ViewState| {
+                    lifecycle::remember(owner, &path, &project.path);
+                    owner
+                        .project_defaults
+                        .insert(project.path.clone(), settings);
+                    owner.names.insert(path.clone(), request.name.trim().into());
+                    state.selected_workspace = Some(path.clone());
+                    state.selected_child = None;
+                    Ok(())
+                },
+            )
+            .map_err(choice_error);
+            if let Err(err) = recorded {
+                result["notice"] = format!("The workspace at {path} exists, so do not create it again. Swarm could not record it. {}",err.1.0).into();
+            }
+        }
+        LifecycleAction::Archive(p) | LifecycleAction::Restore(p) => {
+            lifecycle::workspace(tree, &p.workspace).map_err(lifecycle_error)?;
+            lifecycle::checked_path(&app.root, &p.workspace, false).map_err(lifecycle_error)?;
+            choices_store::update(&app.root, None, |owner, state| {
+                if archive {
+                    owner.archived.insert(p.workspace.clone());
+                    lifecycle::clear_selection(state, &p.workspace);
+                } else {
+                    owner.archived.remove(&p.workspace);
+                }
+                Ok(())
+            })
+            .map_err(choice_error)?;
+        }
+        LifecycleAction::Delete(p) => {
+            let (project, workspace) =
+                lifecycle::workspace(tree, &p.workspace).map_err(lifecycle_error)?;
+            lifecycle::checked_path(&app.root, &p.workspace, true).map_err(lifecycle_error)?;
+            if !lifecycle::can_delete(project, workspace) {
+                return Err(error(
+                    StatusCode::BAD_REQUEST,
+                    "This workspace cannot be deleted",
+                ));
+            }
+            if let Some(blocker) =
+                lifecycle::removal_blocker(&p.workspace).map_err(lifecycle_error)?
+            {
+                return Err(error(StatusCode::CONFLICT, &blocker));
+            }
+            let common = lifecycle::common(project)
+                .ok_or_else(|| error(StatusCode::BAD_REQUEST, "not a Git project"))?;
+            lifecycle::checked_path(&app.root, common, true).map_err(lifecycle_error)?;
+            lifecycle::check_git(common, &["worktree", "remove", "--", &p.workspace])
+                .map_err(lifecycle_error)?;
+            choices_store::update(&app.root, None, |owner, state| {
+                owner.pinned.remove(&p.workspace);
+                owner.archived.remove(&p.workspace);
+                owner.names.remove(&p.workspace);
+                owner.tabs.remove(&p.workspace);
+                owner.project_paths.retain(|path| path != &p.workspace);
+                if !owner.project_paths.contains(&project.path) {
+                    owner.project_paths.push(project.path.clone());
+                }
+                if let Some(order) = owner.workspace_order.get_mut(&project.path) {
+                    order.retain(|path| path != &p.workspace);
+                }
+                lifecycle::clear_selection(state, &p.workspace);
+                Ok(())
+            })
+            .map_err(choice_error)?;
+        }
+        LifecycleAction::Prune(p) => {
+            let (project, workspace) =
+                lifecycle::workspace(tree, &p.workspace).map_err(lifecycle_error)?;
+            if !workspace.missing || workspace.removed {
+                return Err(error(
+                    StatusCode::BAD_REQUEST,
+                    "Only a missing worktree can be pruned",
+                ));
+            }
+            lifecycle::checked_path(&app.root, &p.workspace, false).map_err(lifecycle_error)?;
+            let common = lifecycle::common(project)
+                .ok_or_else(|| error(StatusCode::BAD_REQUEST, "not a Git project"))?;
+            lifecycle::checked_path(&app.root, common, true).map_err(lifecycle_error)?;
+            lifecycle::check_git(common, &["worktree", "prune"]).map_err(lifecycle_error)?;
+        }
+        LifecycleAction::Create(request) => {
+            if request.name.trim().is_empty() {
+                return Err(error(StatusCode::BAD_REQUEST, "Enter a project name"));
+            }
+            let path = lifecycle::checked_path(&app.root, &request.path, false)
+                .map_err(lifecycle_error)?;
+            if std::fs::symlink_metadata(&path).is_ok() {
+                return Err(error(
+                    StatusCode::BAD_REQUEST,
+                    "A file or folder already exists at this path",
+                ));
+            }
+            std::fs::create_dir(&path).map_err(|e| error(StatusCode::CONFLICT, &e.to_string()))?;
+            let path = path.to_string_lossy().into_owned();
+            let existed = saved.owner.project_paths.contains(&path);
+            let created = (|| {
+                choices_store::update(&app.root, None, |owner, _| {
+                    lifecycle::remember(owner, &path, &path);
+                    if request.name.trim() != tree::basename(&path) {
+                        owner
+                            .project_names
+                            .insert(path.clone(), request.name.trim().into());
+                    }
+                    Ok(())
+                })
+                .map_err(choice_error)?;
+                lifecycle::initialize_project(&path).map_err(lifecycle_error)
+            })();
+            let first_commit = match created {
+                Ok(commit) => commit,
+                Err(err) => {
+                    if std::fs::read_dir(&path)
+                        .ok()
+                        .is_some_and(|mut entries| entries.next().is_none())
+                        && std::fs::remove_dir(&path).is_ok()
+                    {
+                        let _ = choices_store::update(&app.root, None, |owner, _| {
+                            if !existed {
+                                owner.project_paths.retain(|p| p != &path);
+                            }
+                            if let Some(name) = saved.owner.project_names.get(&path) {
+                                owner.project_names.insert(path.clone(), name.clone());
+                            } else {
+                                owner.project_names.remove(&path);
+                            }
+                            Ok(())
+                        })
+                        .map_err(choice_error);
+                    }
+                    return Err(err);
+                }
+            };
+            result["path"] = path.into();
+            if let Some(notice) = first_commit.notice() {
+                result["notice"] = notice.into();
+            }
+            result["firstCommit"] = serde_json::to_value(first_commit).unwrap();
+        }
+        LifecycleAction::Import(request) => {
+            let path = lifecycle::checked_path(&app.root, &request.path, true)
+                .map_err(lifecycle_error)?
+                .to_string_lossy()
+                .into_owned();
+            let repository = lifecycle::is_repository(&path).map_err(lifecycle_error)?;
+            if !repository && request.kind.is_none() && !saved.owner.plain_folders.contains(&path) {
+                return Ok(
+                    json!({"ok":true,"needsChoice":true,"path":path,"choices":["git","folder"]}),
+                );
+            }
+            if !repository && matches!(request.kind, Some(lifecycle::ImportAs::Git)) {
+                lifecycle::check_git(&path, &["init", "-q"]).map_err(lifecycle_error)?;
+            }
+            let project = lifecycle::project_path(&path);
+            choices_store::update(&app.root, None, |owner, _| {
+                lifecycle::remember(owner, &path, &project);
+                if !repository && !matches!(request.kind, Some(lifecycle::ImportAs::Git)) {
+                    owner.plain_folders.insert(path.clone());
+                } else {
+                    owner.plain_folders.remove(&path);
+                }
+                Ok(())
+            })
+            .map_err(choice_error)?;
+            result["path"] = path.into();
+            result["needsChoice"] = false.into();
+        }
+        LifecycleAction::Remove(p) => {
+            let project = lifecycle::project(tree, &p.project).map_err(lifecycle_error)?;
+            lifecycle::checked_path(&app.root, &p.project, false).map_err(lifecycle_error)?;
+            let paths: Vec<_> = saved
+                .owner
+                .project_paths
+                .iter()
+                .filter(|p| *p == &project.path || lifecycle::project_path(p) == project.path)
+                .cloned()
+                .collect();
+            choices_store::update(&app.root, None, |owner, state| {
+                lifecycle::remove_project(owner, state, project, &paths);
+                Ok(())
+            })
+            .map_err(choice_error)?;
+        }
+    }
+    app.directories.lock().unwrap().clear();
+    app.tree_cache.lock().unwrap().discovery.forget_catalog();
+    app.hub.lock().unwrap().bump();
+    if let Err(err) = refresh_tree(app) {
+        result["notice"] = format!(
+            "Saved, but the workspace list could not refresh. {}",
+            err.1.0
+        )
+        .into();
+    }
+    if let Ok(saved) = choices_store::load(&app.root, false) {
+        result["revision"] = saved.revision.into();
+    }
+    result["version"] = app.hub.lock().unwrap().version.into();
+    Ok(result)
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct ActionTarget {
     session: String,
     agent: String,
@@ -773,6 +1236,7 @@ enum Action {
     Archived,
     Choices(choices::ChoiceWrite),
     RefreshView,
+    Lifecycle(LifecycleAction),
 }
 
 struct ActionJob {
@@ -866,6 +1330,7 @@ impl Action {
             | Self::Unarchive(_)
             | Self::Archived
             | Self::Choices(_)
+            | Self::Lifecycle(_)
             | Self::RefreshView => None,
         }
     }
@@ -892,7 +1357,10 @@ fn start_action_queue(app: &App, mut queue: mpsc::Receiver<ActionJob>) {
                     // An accepted action continues if its HTTP connection closes.
                     let changed = !matches!(
                         job.action,
-                        Action::Archived | Action::RefreshView | Action::Choices(_)
+                        Action::Archived
+                            | Action::RefreshView
+                            | Action::Choices(_)
+                            | Action::Lifecycle(_)
                     );
                     let result = execute_action(&app, job.action).await;
                     if changed {
@@ -1044,6 +1512,7 @@ async fn execute_action(app: &App, action: Action) -> Result<Value, ApiError> {
                 .await
                 .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "choice task failed"))?;
         }
+        Action::Lifecycle(action) => return execute_lifecycle(app, action).await,
         Action::RefreshView => {
             let app = app.clone();
             return tokio::task::spawn_blocking(move || refresh_tree(&app))
@@ -1198,25 +1667,28 @@ async fn new_chat(app: &App, body: NewChat) -> Result<Value, ApiError> {
     }
     let snapshot_app = app.clone();
     let allowed_cwd = body.cwd.clone();
-    let allowed = tokio::task::spawn_blocking(move || {
-        snapshot_value(&snapshot_app)
-            .map(|snapshot| {
-                snapshot["sessions"].as_array().is_some_and(|rows| {
-                    rows.iter().any(|row| {
-                        ["cwd", "project", "workspace"]
-                            .iter()
-                            .any(|key| row[*key].as_str() == Some(allowed_cwd.as_str()))
-                    })
-                })
-            })
-            .map_err(|err| err.to_string())
+    tokio::task::spawn_blocking(move || {
+        let (tree, saved) = fresh_lifecycle_tree(&snapshot_app)?;
+        let workspace = tree.workspace(&allowed_cwd).map(|(_, w)| w);
+        if workspace.is_none() && !tree.projects.iter().any(|p| p.path == allowed_cwd) {
+            return Err(error(
+                StatusCode::FORBIDDEN,
+                "cwd is outside the workspace tree",
+            ));
+        }
+        lifecycle::checked_path(&snapshot_app.root, &allowed_cwd, true).map_err(lifecycle_error)?;
+        if workspace.is_some_and(|w| w.missing || w.removed)
+            || saved.owner.archived.contains(&allowed_cwd)
+        {
+            return Err(error(
+                StatusCode::CONFLICT,
+                "This workspace is read-only. Restore it to start a chat.",
+            ));
+        }
+        Ok(())
     })
     .await
-    .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "cwd check failed"))?
-    .map_err(|err| error(StatusCode::INTERNAL_SERVER_ERROR, &err))?;
-    if !allowed {
-        return Err(error(StatusCode::FORBIDDEN, "cwd is outside the snapshot"));
-    }
+    .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "cwd check failed"))??;
     let mut call = CliCall {
         args: Vec::new(),
         cwd: body.cwd.into(),
@@ -2507,6 +2979,9 @@ mod tests {
             let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
                 .join("tmp/web-pilot")
                 .join(format!("serve-unit-{}", uuid::Uuid::now_v7()));
+            Self::at(dir)
+        }
+        fn at(dir: PathBuf) -> Self {
             let root = dir.join("home/.swarm");
             std::fs::create_dir_all(&root).unwrap();
             let log = dir.join("chair.jsonl");
@@ -2570,8 +3045,11 @@ mod tests {
     }
 
     fn action_fixture() -> Fixture {
+        action_fixture_at(Fixture::new())
+    }
+
+    fn action_fixture_at(mut fixture: Fixture) -> Fixture {
         use std::os::unix::fs::PermissionsExt;
-        let mut fixture = Fixture::new();
         let connection = swarm::store::open(&fixture.app.root.join("swarm.db")).unwrap();
         connection
             .execute(
@@ -4094,5 +4572,511 @@ if [ "$3" = Up ]; then cat "$SWARM_HOME/after" >> '{}'; fi
                 .is_empty()
         );
         assert!(!fixture.app.root.join("choices.json").exists());
+    }
+
+    #[test]
+    fn lifecycle_routes_are_exercised_without_sockets() {
+        let root = std::env::temp_dir().join(format!("swarm-life-routes-{}", uuid::Uuid::now_v7()));
+        std::fs::create_dir(&root).unwrap();
+        let root = std::fs::canonicalize(root).unwrap();
+        std::fs::write(
+            root.join(".gitconfig"),
+            "[user]\nname = Fixture\nemail = fixture@example.com\n[commit]\ngpgsign = false\n",
+        )
+        .unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::create_dir(root.join("bin")).unwrap();
+        let git = root.join("bin/git");
+        std::fs::write(
+            &git,
+            r#"#!/bin/sh
+if [ "$3" = init ] && [ -f "$HOME/fail-init" ]; then
+    if [ -f "$HOME/fail-rollback" ]; then
+        store=$(/bin/cat "$HOME/fail-rollback")
+        /bin/mv "$store/choices.json" "$store/choices.saved"
+        /bin/mkdir "$store/choices.json"
+    fi
+    printf 'Fixture git init refused\n' >&2
+    exit 1
+fi
+exec /usr/bin/git "$@"
+"#,
+        )
+        .unwrap();
+        std::fs::set_permissions(&git, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "serve::tests::lifecycle_routes_child",
+                "--nocapture",
+            ])
+            .env_clear()
+            .env("HOME", &root)
+            .env(
+                "PATH",
+                format!("{}:/usr/bin:/bin", root.join("bin").display()),
+            )
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("GIT_CONFIG_GLOBAL", root.join(".gitconfig"))
+            .env("GIT_CEILING_DIRECTORIES", &root)
+            .env("SWARM_LIFECYCLE_ROUTES", "1")
+            .output()
+            .unwrap();
+        std::fs::remove_dir_all(root).unwrap();
+        assert!(
+            output.status.success(),
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    async fn life_post(fixture: &Fixture, route: &str, body: Value) -> Result<Value, ApiError> {
+        lifecycle_write(
+            State(fixture.app.clone()),
+            route.parse().unwrap(),
+            Ok(Json(body)),
+        )
+        .await
+        .map(|v| v.0)
+    }
+    #[tokio::test]
+    async fn lifecycle_routes_child() {
+        if std::env::var("SWARM_LIFECYCLE_ROUTES").is_err() {
+            return;
+        }
+        use std::os::unix::fs::PermissionsExt;
+        let root = PathBuf::from(std::env::var("HOME").unwrap());
+        let fixture = action_fixture_at(Fixture::at(root.join("surface")));
+        let source = root.join("project").to_string_lossy().into_owned();
+        let plain = root.join("plain").to_string_lossy().into_owned();
+        std::fs::create_dir(&plain).unwrap();
+        // Remove the inherited source session so this surface contains only fixture projects.
+        let connection = swarm::store::open(&fixture.app.root.join("swarm.db")).unwrap();
+        connection
+            .execute(
+                "UPDATE session SET cwd = ?1, chair_log = NULL WHERE id = ?2",
+                (&plain, &fixture.session),
+            )
+            .unwrap();
+        fixture.app.directories.lock().unwrap().clear();
+        let create = life_post(
+            &fixture,
+            "/api/project/create",
+            json!({"path":source,"name":"Project title"}),
+        )
+        .await
+        .unwrap();
+        assert_eq!(create["firstCommit"]["state"], "made");
+        assert_eq!(
+            lifecycle::check_git(&source, &["log", "--format=%s"]).unwrap(),
+            "Create project"
+        );
+        assert_eq!(
+            choices_store::load(&fixture.app.root, true)
+                .unwrap()
+                .owner
+                .project_names[&source],
+            "Project title"
+        );
+        assert!(
+            life_post(
+                &fixture,
+                "/api/project/create",
+                json!({"path":source,"name":"Exists"})
+            )
+            .await
+            .is_err()
+        );
+        let options = lifecycle_read(
+            State(fixture.app.clone()),
+            "/api/workspace/new-options".parse().unwrap(),
+            Query(HashMap::from([("project".into(), source.clone())])),
+        )
+        .await
+        .unwrap()
+        .0;
+        assert_eq!(options["defaultBranch"], "master"); // The isolated Git has no init.defaultBranch override.
+        let base = options["defaultBranch"].as_str().unwrap();
+        let made=life_post(&fixture,"/api/workspace/new",json!({"project":source,"name":"Feature","mode":"new-branch","base":base,"prefix":"","folder":"../tasks"})).await.unwrap();
+        let path = made["workspace"].as_str().unwrap().to_owned();
+        assert_eq!(
+            lifecycle::check_git(&path, &["branch", "--show-current"]).unwrap(),
+            "feature"
+        );
+        let initial_version = made["version"].as_u64().unwrap();
+        let launch = call_action(&fixture, "/api/chat/new", json!({"cwd":path}))
+            .await
+            .unwrap()
+            .0;
+        assert_eq!(launch["ok"], true); // No session existed in the new workspace before this call.
+        let impact = lifecycle_read(
+            State(fixture.app.clone()),
+            "/api/workspace/impact".parse().unwrap(),
+            Query(HashMap::from([("workspace".into(), path.clone())])),
+        )
+        .await
+        .unwrap()
+        .0;
+        assert_eq!(impact["canDelete"], true);
+        assert_eq!(impact["liveAgents"], 0);
+        assert!(
+            impact["deleteBlocker"]
+                .as_str()
+                .unwrap()
+                .contains("unpushed")
+        );
+        life_post(
+            &fixture,
+            "/api/workspace/archive",
+            json!({"workspace":path}),
+        )
+        .await
+        .unwrap();
+        assert!(
+            choices_store::load(&fixture.app.root, true)
+                .unwrap()
+                .owner
+                .archived
+                .contains(&path)
+        );
+        assert!(Path::new(&path).is_dir());
+        assert_eq!(
+            call_action(&fixture, "/api/chat/new", json!({"cwd":path}))
+                .await
+                .unwrap_err()
+                .0,
+            StatusCode::CONFLICT
+        );
+        life_post(
+            &fixture,
+            "/api/workspace/restore",
+            json!({"workspace":path}),
+        )
+        .await
+        .unwrap();
+        assert!(
+            !choices_store::load(&fixture.app.root, true)
+                .unwrap()
+                .owner
+                .archived
+                .contains(&path)
+        );
+        assert!(fixture.app.hub.lock().unwrap().version > initial_version);
+        // An unanswered import returns the choice without saving its answer.
+        let ask = life_post(&fixture, "/api/project/import", json!({"path":plain}))
+            .await
+            .unwrap();
+        assert_eq!(ask["needsChoice"], true);
+        assert!(
+            !choices_store::load(&fixture.app.root, true)
+                .unwrap()
+                .owner
+                .plain_folders
+                .contains(&plain)
+        );
+        life_post(
+            &fixture,
+            "/api/project/import",
+            json!({"path":plain,"as":"folder"}),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            life_post(&fixture, "/api/project/import", json!({"path":plain}))
+                .await
+                .unwrap()["needsChoice"],
+            false
+        );
+        assert!(!Path::new(&plain).join(".git").exists());
+        life_post(
+            &fixture,
+            "/api/project/import",
+            json!({"path":plain,"as":"git"}),
+        )
+        .await
+        .unwrap();
+        assert!(Path::new(&plain).join(".git").exists());
+        assert!(
+            !choices_store::load(&fixture.app.root, true)
+                .unwrap()
+                .owner
+                .plain_folders
+                .contains(&plain)
+        );
+        // Dirty and unpushed work must remain before any agent close.
+        let marker = Path::new(&path).join("keep.txt");
+        std::fs::write(&marker, "keep").unwrap();
+        let calls = action_calls(&fixture);
+        assert_eq!(
+            life_post(&fixture, "/api/workspace/delete", json!({"workspace":path}))
+                .await
+                .unwrap_err()
+                .0,
+            StatusCode::CONFLICT
+        );
+        assert_eq!(action_calls(&fixture), calls);
+        assert!(marker.exists());
+        std::fs::remove_file(marker).unwrap();
+        assert!(
+            life_post(&fixture, "/api/workspace/delete", json!({"workspace":path}))
+                .await
+                .is_err()
+        );
+        lifecycle::check_git(&source, &["update-ref", "refs/remotes/origin/main", "HEAD"]).unwrap();
+        let deleted = life_post(&fixture, "/api/workspace/delete", json!({"workspace":path}))
+            .await
+            .unwrap();
+        assert_eq!(deleted["ok"], true);
+        assert!(!Path::new(&path).exists());
+        let missing = life_post(
+            &fixture,
+            "/api/workspace/new",
+            json!({"project":source,"name":"Missing","mode":"new-branch","base":base}),
+        )
+        .await
+        .unwrap()["workspace"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        std::fs::remove_dir_all(&missing).unwrap();
+        life_post(
+            &fixture,
+            "/api/workspace/prune",
+            json!({"workspace":missing}),
+        )
+        .await
+        .unwrap();
+        assert!(
+            !lifecycle::check_git(&source, &["worktree", "list", "--porcelain"])
+                .unwrap()
+                .contains(&missing)
+        );
+        // A full fresh listing supplies both child and chair live counts before closing.
+        connection
+            .execute(
+                "UPDATE session SET cwd = ?1 WHERE id = ?2",
+                (&source, &fixture.session),
+            )
+            .unwrap();
+        let cli = format!(
+            r#"#!/bin/sh
+printf '%s\n' "$*" >> "$SWARM_HOME/actions"
+case "$1 $2" in
+'agents --json') printf '%s\n' '{{"{id}":{{"agents":[{{"id":"orchestrator","alive":true}},{{"id":"worker","alive":true}}]}}}}' ;;
+'close worker') if [ -f "$HOME/change-during-close" ]; then printf keep > "$PWD/new-work.txt"; fi ;;
+esac
+"#,
+            id = fixture.session
+        );
+        std::fs::write(&fixture.app.cli, cli).unwrap();
+        std::fs::set_permissions(&fixture.app.cli, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let impact = lifecycle_read(
+            State(fixture.app.clone()),
+            "/api/workspace/impact".parse().unwrap(),
+            Query(HashMap::from([("workspace".into(), source.clone())])),
+        )
+        .await
+        .unwrap()
+        .0;
+        assert_eq!(impact["liveAgents"], 2);
+        assert_eq!(impact["confirmationRequired"], true);
+        life_post(
+            &fixture,
+            "/api/workspace/archive",
+            json!({"workspace":source}),
+        )
+        .await
+        .unwrap();
+        let calls = action_calls(&fixture);
+        assert!(calls.rfind("close worker").unwrap() < calls.rfind("close orchestrator").unwrap());
+        life_post(
+            &fixture,
+            "/api/workspace/restore",
+            json!({"workspace":source}),
+        )
+        .await
+        .unwrap();
+        let clean = life_post(
+            &fixture,
+            "/api/workspace/new",
+            json!({"project":source,"name":"Clean","mode":"new-branch","base":base}),
+        )
+        .await
+        .unwrap()["workspace"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        connection
+            .execute(
+                "UPDATE session SET cwd = ?1 WHERE id = ?2",
+                (&clean, &fixture.session),
+            )
+            .unwrap();
+        std::fs::write(root.join("change-during-close"), "").unwrap();
+        assert_eq!(
+            life_post(
+                &fixture,
+                "/api/workspace/delete",
+                json!({"workspace":clean})
+            )
+            .await
+            .unwrap_err()
+            .0,
+            StatusCode::CONFLICT
+        );
+        assert_eq!(
+            std::fs::read_to_string(Path::new(&clean).join("new-work.txt")).unwrap(),
+            "keep"
+        );
+        std::fs::remove_file(root.join("change-during-close")).unwrap();
+        let before = choices_store::load(&fixture.app.root, true).unwrap();
+        for route in ["new", "archive", "restore", "delete", "prune"] {
+            let value = if route == "new" {
+                json!({"project":root.to_string_lossy(),"name":"Outside","mode":"new-branch"})
+            } else {
+                json!({"workspace":root.to_string_lossy()})
+            };
+            assert_eq!(
+                life_post(&fixture, &format!("/api/workspace/{route}"), value)
+                    .await
+                    .unwrap_err()
+                    .0,
+                StatusCode::FORBIDDEN
+            );
+        }
+        assert_eq!(
+            life_post(
+                &fixture,
+                "/api/project/remove",
+                json!({"project":root.to_string_lossy()})
+            )
+            .await
+            .unwrap_err()
+            .0,
+            StatusCode::FORBIDDEN
+        );
+        std::os::unix::fs::symlink(&fixture.app.root, root.join("home-link")).unwrap();
+        for (route, value) in [
+            (
+                "create",
+                json!({"path":root.join("home-link/escape").to_string_lossy(),"name":"Escape"}),
+            ),
+            (
+                "import",
+                json!({"path":root.join("home-link").to_string_lossy(),"as":"git"}),
+            ),
+        ] {
+            assert_eq!(
+                life_post(&fixture, &format!("/api/project/{route}"), value)
+                    .await
+                    .unwrap_err()
+                    .0,
+                StatusCode::FORBIDDEN
+            );
+        }
+        let after = choices_store::load(&fixture.app.root, true).unwrap();
+        assert_eq!(after.revision, before.revision);
+        assert!(!fixture.app.root.join("escape").exists());
+        life_post(&fixture, "/api/project/remove", json!({"project":source}))
+            .await
+            .unwrap();
+        assert!(Path::new(&source).is_dir());
+        assert!(
+            choices_store::load(&fixture.app.root, true)
+                .unwrap()
+                .owner
+                .removed_projects
+                .contains(&source)
+        );
+        life_post(&fixture, "/api/project/import", json!({"path":clean}))
+            .await
+            .unwrap();
+        assert!(
+            !choices_store::load(&fixture.app.root, true)
+                .unwrap()
+                .owner
+                .removed_projects
+                .contains(&source)
+        );
+        // A choices failure removes the empty new folder before any Git init.
+        let (tree, saved) = fresh_lifecycle_tree(&fixture.app).unwrap();
+        let target = root.join("choices-failed").to_string_lossy().into_owned();
+        let marker = fixture.app.root.join("swarm-home");
+        std::fs::rename(&marker, fixture.app.root.join("marker.saved")).unwrap();
+        assert!(
+            apply_lifecycle(
+                &fixture.app,
+                LifecycleAction::Create(lifecycle::CreateProject {
+                    path: target.clone(),
+                    name: "Failed title".into()
+                }),
+                &tree,
+                &saved,
+                0
+            )
+            .is_err()
+        );
+        assert!(!Path::new(&target).exists());
+        std::fs::rename(fixture.app.root.join("marker.saved"), marker).unwrap();
+        // Git init failures remove only newly remembered paths and retain the first error.
+        std::fs::write(root.join("fail-init"), "").unwrap();
+        let remembered = root.join("remembered").to_string_lossy().into_owned();
+        choices_store::update(&fixture.app.root, None, |owner, _| {
+            owner.project_paths.push(remembered.clone());
+            Ok(())
+        })
+        .unwrap();
+        for path in [target.clone(), remembered.clone()] {
+            let failure = life_post(
+                &fixture,
+                "/api/project/create",
+                json!({"path":path,"name":"Failed title"}),
+            )
+            .await
+            .unwrap_err();
+            assert!(
+                failure.1.0["error"]
+                    .as_str()
+                    .unwrap()
+                    .contains("Fixture git init refused")
+            );
+            assert!(!Path::new(&path).exists());
+        }
+        let owner = choices_store::load(&fixture.app.root, true).unwrap().owner;
+        assert!(!owner.project_paths.contains(&target));
+        assert!(!owner.project_names.contains_key(&target));
+        assert!(owner.project_paths.contains(&remembered));
+        std::fs::write(
+            root.join("fail-rollback"),
+            fixture.app.root.to_string_lossy().as_bytes(),
+        )
+        .unwrap();
+        let failure = life_post(
+            &fixture,
+            "/api/project/create",
+            json!({"path":target,"name":"Failed title"}),
+        )
+        .await
+        .unwrap_err();
+        assert!(
+            failure.1.0["error"]
+                .as_str()
+                .unwrap()
+                .contains("Fixture git init refused")
+        );
+        assert!(!Path::new(&target).exists());
+        std::fs::remove_dir(fixture.app.root.join("choices.json")).unwrap();
+        std::fs::rename(
+            fixture.app.root.join("choices.saved"),
+            fixture.app.root.join("choices.json"),
+        )
+        .unwrap();
+        assert!(
+            choices_store::load(&fixture.app.root, true)
+                .unwrap()
+                .owner
+                .project_paths
+                .contains(&target)
+        );
     }
 }
