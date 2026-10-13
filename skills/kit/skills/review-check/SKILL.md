@@ -161,7 +161,7 @@ Use every seat in `checklist.json` on its listed route, as
 whose `owners` entry names it, never an ID under `tool`. A `pass` or `n/a` row may list many IDs
 with one quote and one proof, so write one row for each group of IDs.
 
-Dispatch and gap follow-ups follow [references/fan-out.md](../../references/fan-out.md).
+Dispatch and gap follow-ups follow [the kit's fan-out.md](../../references/fan-out.md).
 
 `start` splits each `review.check` aspect by assigned unit-rule pairs, with one shard per
 150 checks rounded up, at most three. Units stay whole and in order. The split balances check

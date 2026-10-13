@@ -42,7 +42,8 @@ agy plugin install <repo>/skills/kit
 
 Claude Code shows each skill with the plugin name in front, for example `/swarm:flow`. Claude Code
 reads a marketplace on a local folder in place, so an edit in the clone reaches its next session.
-Codex and Antigravity read an installed copy, so run their install again after an edit.
+Codex and Antigravity read an installed copy, so run their install again after an edit; the same
+version is copied again.
 
 Do not link a kit skill folder into an agent's skills folder. A tool reads `../../blocks/` from the
 link's own path, not from the kit, so the blocks are not found. The three vendor skills that

@@ -133,8 +133,9 @@ def start(profile="default"):
             paths = catalog[step][0]
             read, text, todos = blocks[step.split("-", 1)[1]]
             rules = "\n".join(part for part in (skills[step], text) if part)
-            if "`blocks/" in rules or "the kit's `references/" in rules:  # the copied text names kit paths
-                rules = f"Kit paths such as `blocks/` start at {BLOCKS.parent}.\n{rules}"
+            # The step file lives in the repo, so a kit-root path in the copied text needs the kit's place.
+            if any(token in rules for token in ("`blocks/", "the kit's `references/", "<kit root>")):
+                rules = f"Kit blocks (`blocks/<id>/`) and the kit's `references/` are under {BLOCKS.parent} (the kit root).\n{rules}"
             judged = f"{JUDGE_HEAD}\n{judge}\n\n" if step == "06-review" and judge else ""
             (folder / f"{step}.md").write_text(
                 f"Status: open\n{uses}\n{extra}Take with: python3 {Path(__file__).resolve()} take {folder} {step} <agent>\n"

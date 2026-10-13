@@ -555,11 +555,11 @@ def test_block_in_step(tmp):
     digest = hashlib.sha256((flow_run.BLOCKS / "prove-it-works" / "SKILL.md").read_bytes()).hexdigest()[:8]
     assert f"block:prove-it-works@{digest}" in [item.strip() for item in skills.removeprefix("Skills read:").split(",")], skills
     assert "Rank each claim on the ladder" not in step_text(folder, "02-design")
-    assert "Kit paths such as" not in build, "a block that names no kit path gets no kit-root line"
+    assert "(the kit root)" not in build, "a block that names no kit path gets no kit-root line"
     # A block that names a kit path gets the kit root, because the step file is read outside the kit.
     kit_out, kit_folder, _, _ = blocks_start(tmp, "kit-root", "- build: block:task-file\n")
     assert kit_out.returncode == 0, kit_out.stderr
-    assert f"Kit paths such as `blocks/` start at {flow_run.BLOCKS.parent}." in step_text(kit_folder, "05-build")
+    assert f"are under {flow_run.BLOCKS.parent} (the kit root)." in step_text(kit_folder, "05-build")
     # A second start on the folder writes nothing, even when the catalog now fails.
     (repo.parent / "home" / ".flow" / "domains.md").write_text("## any\n- build: block:nope\n", encoding="utf-8")
     again = run("start")
@@ -1027,7 +1027,8 @@ def test_add_folder_block(tmp):
 def test_kit_pointers():
     """The kit installs as one plugin copy, so a skill reaches a block by a path from the kit root. Every
     `blocks/<id>/...` path in the kit's Markdown names a real file, and each skill that uses a kit path says
-    where the kit root is."""
+    where the kit root is. The kit ships two equal manifests, the Agent Plugins root `plugin.json` and
+    Claude Code's `.claude-plugin/plugin.json`, so a version bump must change both."""
     kit = flow_run.BLOCKS.parent
     assert (kit / "plugin.json").read_bytes() == (kit / ".claude-plugin" / "plugin.json").read_bytes(), "the two manifests differ"
     for path in sorted(kit.glob("**/*.md")):
