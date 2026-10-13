@@ -24,12 +24,6 @@ public actor SwarmProfileCatalog {
         loadProviders = providers
     }
 
-    /// Starts both reads without waiting for them.
-    public func prefetch() {
-        Task { _ = try? await self.profiles() }
-        Task { _ = try? await self.providers() }
-    }
-
     /// Reads the profile file again on every call, never joining a read in flight, because a save
     /// can change the file after that read began.
     public func profiles() async throws -> SwarmProfileList {

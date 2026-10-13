@@ -14,6 +14,7 @@ extension EnvironmentValues {
 
 /// The large text path prepares pieces away from the main actor and creates views as they appear.
 struct TranscriptBoundedTextView: View {
+    @Environment(\.designTokens) private var tokens
     let text: String
     var emptyText = ""
     @Environment(\.transcriptSearchQuery) private var searchQuery
@@ -25,7 +26,7 @@ struct TranscriptBoundedTextView: View {
                 ScrollView(.horizontal, showsIndicators: true) {
                     Text(verbatim: text.isEmpty ? emptyText : text)
                         .fixedSize(horizontal: true, vertical: true)
-                        .padding(DesignTokens.Spacing.s)
+                        .padding(tokens.spacing.s)
                 }
             } else if let chunks {
                 ScrollViewReader { proxy in
@@ -37,7 +38,7 @@ struct TranscriptBoundedTextView: View {
                                     .id(index)
                             }
                         }
-                        .padding(DesignTokens.Spacing.s)
+                        .padding(tokens.spacing.s)
                     }
                     .frame(height: DesignTokens.Size.outputPreview)
                     .task(id: searchQuery) {
@@ -58,7 +59,7 @@ struct TranscriptBoundedTextView: View {
                            maxHeight: DesignTokens.Size.collapsedOutput, alignment: .topLeading)
             }
         }
-        .font(DesignTokens.mono)
+        .font(tokens.mono)
         .textSelection(.enabled)
         .task(id: text) {
             chunks = nil

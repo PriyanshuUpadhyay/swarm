@@ -46,6 +46,11 @@ public enum LoginShellPath {
     /// The one probe, whoever asks for it first.
     private static let probe = Mutex<Task<Void, Never>?>(nil)
 
+    /// The login shell's own PATH entries, without the inherited and guessed ones that `Shell`
+    /// adds. Empty until `ready()` returns, and empty when the probe failed.
+    public static var discovered: [String] { learned.withLock { $0 } }
+    private static let learned = Mutex<[String]>([])
+
     /// Start the probe without waiting for it. Called at launch; calling it twice does nothing.
     public static func begin() {
         _ = task()
@@ -62,7 +67,9 @@ public enum LoginShellPath {
         probe.withLock { existing in
             if let existing { return existing }
             let started = Task<Void, Never> {
-                Shell.adoptLoginShellPath(await discover())
+                let directories = await discover()
+                learned.withLock { $0 = directories }
+                Shell.adoptLoginShellPath(directories)
             }
             existing = started
             return started

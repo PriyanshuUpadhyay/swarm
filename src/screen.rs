@@ -1,5 +1,5 @@
-//! The screen check of ADR 0021: read an agent pane's bottom rows where a provider sends no hook,
-//! such as an AGY approval prompt or the idle prompt after Esc, and decide which report to show.
+//! Read an agent pane's bottom rows last, for states its provider's hooks cannot send or when
+//! a hook report is stale or absent, and decide which report to show.
 
 /// How long a hook report is the authority over the screen, in seconds.
 pub const HOOK_AUTHORITY_S: i64 = 10;
@@ -470,13 +470,26 @@ pub fn herdr_state(output: &str) -> Option<ScreenState> {
     }
 }
 
+/// The states a provider's hooks cannot send. Only these may let a screen read overturn a hook
+/// report younger than `STALE_S`, after the `HOOK_AUTHORITY_S` window.
+pub fn screen_gap(provider: Option<&str>, screen: ScreenState) -> bool {
+    matches!(
+        (provider, screen),
+        (Some("codex"), ScreenState::Failed)
+            | (Some("agy"), ScreenState::Waiting)
+            | (_, ScreenState::Idle)
+    )
+}
+
 /// What the listing shows for one agent, and the state to write, if any.
 ///
-/// A hook report younger than `HOOK_AUTHORITY_S` wins. After that, a screen result that differs
-/// is written with source `screen`. An idle screen agrees with a hook's `failed`, because a failed
+/// A hook report younger than `HOOK_AUTHORITY_S` wins. Until `STALE_S`, only a state in
+/// `screen_gap` may replace it. Then a differing screen result is written with source `screen`.
+/// An idle screen agrees with a hook's `failed`, because a failed
 /// turn also ends at the idle prompt, but not with a `failed` the screen wrote. A `working` or `waiting` report older than `STALE_S` that the
 /// screen does not confirm is shown as no report, and nothing is written for it.
 pub fn resolve(
+    provider: Option<&str>,
     state: Option<&str>,
     state_at: Option<i64>,
     source: Option<&str>,
@@ -485,6 +498,12 @@ pub fn resolve(
 ) -> (Option<String>, Option<&'static str>) {
     let age = state_at.map(|at| now - at);
     if source == Some("hook") && age.is_some_and(|age| age < HOOK_AUTHORITY_S) {
+        return (state.map(str::to_string), None);
+    }
+    if source == Some("hook")
+        && age.is_some_and(|age| age <= STALE_S)
+        && screen.is_some_and(|screen| !screen_gap(provider, screen))
+    {
         return (state.map(str::to_string), None);
     }
     if let Some(screen) = screen {
@@ -502,6 +521,61 @@ pub fn resolve(
     (state.filter(|_| !stale).map(str::to_string), None)
 }
 
+/// The text in Claude's input box, the `❯` rows right under the box's top rule, joined; an empty box
+/// shows only Claude's hint text. None until the box is drawn, as while the CLI starts. Claude draws the box
+/// while a turn runs too, so a drawn box is not an idle pane.
+pub fn claude_composer(rows: &str) -> Option<String> {
+    let lines: Vec<&str> = rows.trim_end().lines().collect();
+    let rule = |line: &str| line.trim_start().starts_with('─');
+    let top = (1..lines.len())
+        .rev()
+        .find(|&index| rule(lines[index - 1]) && lines[index].trim_start().starts_with('❯'))?;
+    let text: Vec<&str> = lines[top..]
+        .iter()
+        .take_while(|line| !rule(line))
+        .map(|line| line.trim())
+        .collect();
+    Some(text.join(" ").trim_start_matches('❯').trim().to_string())
+}
+
+/// The text in Codex's composer: the last `›` row and the rows under it, joined. Codex draws the
+/// composer under every turn, so the last `›` row is the composer, not a sent message. None until
+/// it is drawn. The pattern comes from Codex's source, not a real capture (todo.md).
+pub fn codex_composer(rows: &str) -> Option<String> {
+    let lines: Vec<&str> = rows.trim_end().lines().collect();
+    let top = lines
+        .iter()
+        .rposition(|line| line.trim_start().starts_with('›'))?;
+    let text: Vec<&str> = lines[top..].iter().map(|line| line.trim()).collect();
+    Some(text.join(" ").trim_start_matches('›').trim().to_string())
+}
+
+/// Whether swarm can read the input box of `provider`'s CLI. AGY's idle prompt was never
+/// captured, so its box is never read.
+pub fn reads_composer(provider: &str) -> bool {
+    matches!(provider, "claude" | "codex")
+}
+
+/// The text in the input box of `provider`'s CLI, or None while it is not drawn or swarm cannot
+/// read that CLI's box.
+pub fn composer(provider: &str, rows: &str) -> Option<String> {
+    match provider {
+        "claude" => claude_composer(rows),
+        "codex" => codex_composer(rows),
+        _ => None,
+    }
+}
+
+/// True when the input box of `provider`'s CLI still holds `text` unsent. The box wraps a long
+/// line, so the check ignores whitespace. A question on screen is never a held ring, so an Enter
+/// sent for it would answer the question.
+pub fn holds(provider: &str, rows: &str, text: &str) -> bool {
+    let squash = |text: &str| text.split_whitespace().collect::<String>();
+    prompt(rows).is_none()
+        && composer(provider, rows)
+            .is_some_and(|composer| squash(&composer).contains(&squash(text)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -510,6 +584,30 @@ mod tests {
         ($name:literal) => {
             include_str!(concat!("../tests/fixtures/screens/", $name, ".txt"))
         };
+    }
+
+    #[test]
+    fn claude_input_box_holds_only_an_unsent_ring() {
+        let ring = "swarm: new message. Run swarm inbox and read each body at \
+                    /Users/x/.swarm/<body_path>. Run swarm ack <seq> only after you finish that message.";
+        let unsent = fixture!("claude-ring-unsent");
+        assert!(holds("claude", unsent, ring));
+        // The box wraps a long ring onto a second row.
+        let wrapped = unsent.replace(" Run swarm ack <seq>", " Run swarm ack\n  <seq>");
+        assert!(holds("claude", &wrapped, ring));
+        // A sent ring stays in the history above an empty box, which shows only its hint.
+        assert_eq!(
+            claude_composer(fixture!("claude-idle")).as_deref(),
+            Some("Try \"fix typecheck errors\"")
+        );
+        assert!(!holds(
+            "claude",
+            &format!("❯ {ring}\n{}", fixture!("claude-idle")),
+            ring
+        ));
+        // A starting CLI has no box yet, and a question is never a held ring.
+        assert_eq!(claude_composer("$ claude --model haiku\n"), None);
+        assert!(!holds("claude", fixture!("claude-waiting"), ring));
     }
 
     #[test]
@@ -798,6 +896,7 @@ mod tests {
         );
         assert_eq!(
             resolve(
+                Some("codex"),
                 Some("done"),
                 Some(970),
                 Some("hook"),
@@ -835,7 +934,14 @@ mod tests {
         assert_eq!(read_pane(Some("codex"), idle, || None), None);
         let unknown = read_pane(Some("codex"), idle, || None).map(|(state, _)| state);
         assert_eq!(
-            resolve(Some("failed"), Some(900), Some("screen"), unknown, 1_000),
+            resolve(
+                Some("codex"),
+                Some("failed"),
+                Some(900),
+                Some("screen"),
+                unknown,
+                1_000
+            ),
             (Some("failed".into()), None)
         );
         // Only Codex has an error row to look for; other providers keep Herdr's idle.
@@ -931,33 +1037,110 @@ mod tests {
         let idle = Some(ScreenState::Idle);
         // A hook report 9 s old is the authority, whatever the screen shows.
         assert_eq!(
-            resolve(Some("working"), Some(now - 9), Some("hook"), waiting, now),
+            resolve(
+                Some("claude"),
+                Some("working"),
+                Some(now - 9),
+                Some("hook"),
+                waiting,
+                now
+            ),
             (Some("working".into()), None)
         );
         // At 10 s the screen wins: Esc after a permission prompt sends no hook.
         assert_eq!(
-            resolve(Some("waiting"), Some(now - 10), Some("hook"), idle, now),
+            resolve(
+                Some("claude"),
+                Some("waiting"),
+                Some(now - 10),
+                Some("hook"),
+                idle,
+                now
+            ),
             (Some("done".into()), Some("done"))
         );
         // A screen that agrees writes nothing.
         assert_eq!(
-            resolve(Some("waiting"), Some(now - 30), Some("hook"), waiting, now),
+            resolve(
+                Some("claude"),
+                Some("waiting"),
+                Some(now - 30),
+                Some("hook"),
+                waiting,
+                now
+            ),
             (Some("waiting".into()), None)
         );
         assert_eq!(
-            resolve(Some("failed"), Some(now - 30), Some("hook"), idle, now),
+            resolve(
+                Some("claude"),
+                Some("failed"),
+                Some(now - 30),
+                Some("hook"),
+                idle,
+                now
+            ),
             (Some("failed".into()), None)
         );
         // An agent with no report yet that sits at its prompt is done.
         assert_eq!(
-            resolve(None, None, None, idle, now),
+            resolve(None, None, None, None, idle, now),
             (Some("done".into()), Some("done"))
         );
         // A screen source has no authority window.
         assert_eq!(
-            resolve(Some("waiting"), Some(now - 1), Some("screen"), idle, now),
+            resolve(
+                Some("claude"),
+                Some("waiting"),
+                Some(now - 1),
+                Some("screen"),
+                idle,
+                now
+            ),
             (Some("done".into()), Some("done"))
         );
+    }
+
+    #[test]
+    fn only_provider_hook_gaps_overturn_a_recent_report() {
+        let now = 1_000;
+        for provider in [None, Some("claude"), Some("codex"), Some("agy")] {
+            for screen in [ScreenState::Idle, ScreenState::Failed, ScreenState::Waiting] {
+                let gap = screen == ScreenState::Idle
+                    || (provider == Some("codex") && screen == ScreenState::Failed)
+                    || (provider == Some("agy") && screen == ScreenState::Waiting);
+                assert_eq!(screen_gap(provider, screen), gap);
+                assert_eq!(
+                    resolve(
+                        provider,
+                        Some("working"),
+                        Some(now - 11),
+                        Some("hook"),
+                        Some(screen),
+                        now
+                    ),
+                    if gap {
+                        (Some(screen.as_state().into()), Some(screen.as_state()))
+                    } else {
+                        (Some("working".into()), None)
+                    },
+                    "{provider:?} {screen:?}"
+                );
+                // Even a gap cannot replace a hook inside its initial authority window.
+                assert_eq!(
+                    resolve(
+                        provider,
+                        Some("working"),
+                        Some(now - 9),
+                        Some("hook"),
+                        Some(screen),
+                        now
+                    ),
+                    (Some("working".into()), None)
+                );
+            }
+            assert!(!screen_gap(provider, ScreenState::Working));
+        }
     }
 
     #[test]
@@ -966,17 +1149,32 @@ mod tests {
         let idle = Some(ScreenState::Idle);
         // The screen saw the error row; the retry finished with no hook, the row scrolled away.
         assert_eq!(
-            resolve(Some("failed"), Some(now - 30), Some("screen"), idle, now),
+            resolve(
+                Some("claude"),
+                Some("failed"),
+                Some(now - 30),
+                Some("screen"),
+                idle,
+                now
+            ),
             (Some("done".into()), Some("done"))
         );
         // A failure the provider reported by hook ends at the same idle prompt; it stays.
         assert_eq!(
-            resolve(Some("failed"), Some(now - 30), Some("hook"), idle, now),
+            resolve(
+                Some("claude"),
+                Some("failed"),
+                Some(now - 30),
+                Some("hook"),
+                idle,
+                now
+            ),
             (Some("failed".into()), None)
         );
         // The error row still showing keeps the screen's failure.
         assert_eq!(
             resolve(
+                Some("claude"),
                 Some("failed"),
                 Some(now - 30),
                 Some("screen"),
@@ -992,18 +1190,54 @@ mod tests {
         let now = 1_000;
         let working = Some(ScreenState::Working);
         assert_eq!(
-            resolve(Some("working"), Some(now - 60), Some("hook"), working, now),
+            resolve(
+                Some("claude"),
+                Some("working"),
+                Some(now - 60),
+                Some("hook"),
+                working,
+                now
+            ),
             (Some("working".into()), None)
         );
-        for stale in ["waiting", "done"] {
+        for state in ["waiting", "done"] {
+            // A working screen cannot replace a hook report through STALE_S.
+            for age in [11, 44, 45] {
+                assert_eq!(
+                    resolve(
+                        Some("claude"),
+                        Some(state),
+                        Some(now - age),
+                        Some("hook"),
+                        working,
+                        now
+                    ),
+                    (Some(state.into()), None),
+                    "{state} at {age} s"
+                );
+            }
             assert_eq!(
-                resolve(Some(stale), Some(now - 11), Some("hook"), working, now),
+                resolve(
+                    Some("claude"),
+                    Some(state),
+                    Some(now - 46),
+                    Some("hook"),
+                    working,
+                    now
+                ),
                 (Some("working".into()), Some("working")),
-                "{stale}"
+                "{state}"
             );
         }
         assert_eq!(
-            resolve(Some("done"), Some(now - 5), Some("hook"), working, now),
+            resolve(
+                Some("claude"),
+                Some("done"),
+                Some(now - 5),
+                Some("hook"),
+                working,
+                now
+            ),
             (Some("done".into()), None)
         );
     }
@@ -1012,19 +1246,41 @@ mod tests {
     fn an_old_unconfirmed_turn_is_shown_as_no_report() {
         let now = 1_000;
         assert_eq!(
-            resolve(Some("working"), Some(now - 45), Some("hook"), None, now),
+            resolve(
+                Some("claude"),
+                Some("working"),
+                Some(now - 45),
+                Some("hook"),
+                None,
+                now
+            ),
             (Some("working".into()), None)
         );
         assert_eq!(
-            resolve(Some("working"), Some(now - 46), Some("hook"), None, now),
-            (None, None)
-        );
-        assert_eq!(
-            resolve(Some("waiting"), Some(now - 46), Some("screen"), None, now),
+            resolve(
+                Some("claude"),
+                Some("working"),
+                Some(now - 46),
+                Some("hook"),
+                None,
+                now
+            ),
             (None, None)
         );
         assert_eq!(
             resolve(
+                Some("claude"),
+                Some("waiting"),
+                Some(now - 46),
+                Some("screen"),
+                None,
+                now
+            ),
+            (None, None)
+        );
+        assert_eq!(
+            resolve(
+                Some("claude"),
                 Some("waiting"),
                 Some(now - 300),
                 Some("hook"),
@@ -1034,11 +1290,19 @@ mod tests {
             (Some("waiting".into()), None)
         );
         assert_eq!(
-            resolve(Some("done"), Some(now - 300), Some("hook"), None, now),
+            resolve(
+                Some("claude"),
+                Some("done"),
+                Some(now - 300),
+                Some("hook"),
+                None,
+                now
+            ),
             (Some("done".into()), None)
         );
         assert_eq!(
             resolve(
+                Some("claude"),
                 Some("working"),
                 Some(now - 300),
                 Some("hook"),

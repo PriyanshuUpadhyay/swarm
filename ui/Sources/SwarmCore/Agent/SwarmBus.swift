@@ -25,10 +25,18 @@ public struct SwarmAgent: Sendable, Hashable, Codable, Identifiable {
     /// hook or screen.
     public var stateSource: String?
     public var stateDetail: String?
+    public var stateKind: String?
     /// The chat log the agent's provider hooks reported, or nil before the first report.
     public var log: String?
     /// The question the agent's screen shows now; `swarm answer` picks one of its choices.
     public var prompt: SwarmPrompt?
+    public var profile: String?
+    public var runner: String?
+    public var model: String?
+    public var effort: String?
+    public var account: String?
+    public var costUsd: Double?
+    public var tokens: Int64?
 
     public init(
         id: SwarmAgentID, role: String, pane: String?, alive: Bool?,
@@ -59,17 +67,94 @@ public struct SwarmPrompt: Sendable, Hashable, Codable, Identifiable {
     }
 }
 
-/// Whether swarm's own hooks are set up for the providers that need a step (ADR 0029).
-public struct SwarmHooksStatus: Sendable, Hashable, Codable {
-    public var codex: Bool
-    public var agy: Bool
+/// `swarm setup status --json`: which setup groups have nothing pending (ADR 0043).
+public struct SwarmSetupStatus: Sendable, Hashable, Codable {
+    public var hooks: Bool
+    public var trust: Bool
+    public var herdr: Bool
+    public var skills: Bool
 
-    public init(codex: Bool, agy: Bool) {
-        self.codex = codex
-        self.agy = agy
+    public init(hooks: Bool, trust: Bool, herdr: Bool, skills: Bool) {
+        self.hooks = hooks
+        self.trust = trust
+        self.herdr = herdr
+        self.skills = skills
     }
 
-    public var isSetUp: Bool { codex && agy }
+    /// A declined or unchecked group affects only that group. Other pending groups can still
+    /// open the first-run sheet.
+    public func needsSheet(declined: Set<SetupGroup>) -> Bool {
+        SetupGroup.allCases.contains { group in
+            let ready = switch group {
+            case .hooks: hooks
+            case .trust: trust
+            case .herdr: herdr
+            case .skills: skills
+            }
+            return !ready && (group.declineFlagKey == nil || !declined.contains(group))
+        }
+    }
+}
+
+/// What the owner picked in the setup sheet: the groups to apply and the launch consent
+/// (02-design screen 1). A group left out is not planned, so the digest covers what the sheet
+/// shows.
+public struct SwarmSetupChoice: Sendable, Hashable {
+    /// Each group the full plan showed, in its order.
+    public var groups: [String]
+    /// The groups whose checkbox the owner cleared.
+    public var unchecked: Set<String>
+    /// The launch consent the trust group writes: standing, or ask in the agent's column; nil
+    /// until the first plan reports the owner's recorded answer.
+    public var standing: Bool?
+
+    public init(groups: [String] = [], unchecked: Set<String> = [], standing: Bool? = nil) {
+        self.groups = groups
+        self.unchecked = unchecked
+        self.standing = standing
+    }
+
+    /// The groups to apply.
+    public var checked: [String] { groups.filter { !unchecked.contains($0) } }
+
+    public static func trustOnly(standing: Bool) -> Self {
+        Self(
+            groups: SetupGroup.allCases.map(\.rawValue),
+            unchecked: Set(SetupGroup.allCases.filter { $0 != .trust }.map(\.rawValue)),
+            standing: standing
+        )
+    }
+
+    public static func skillsOnly() -> Self {
+        Self(
+            groups: SetupGroup.allCases.map(\.rawValue),
+            unchecked: Set(SetupGroup.allCases.filter { $0 != .skills }.map(\.rawValue))
+        )
+    }
+
+    /// The groups "Not now" declines, each by its own flag: only the cleared ones, so a checked
+    /// group is asked again at the next start. Nil when no box is cleared, which declines the
+    /// whole sheet (02-design screen 1).
+    public var notNowDeclines: Set<String>? { unchecked.isEmpty ? nil : unchecked }
+
+    /// The `swarm setup` flags of this choice; none for every group with the recorded consent.
+    public var arguments: [String] {
+        var arguments: [String] = []
+        if !unchecked.isEmpty { arguments += ["--only", checked.joined(separator: ",")] }
+        if let standing { arguments += ["--consent", standing ? "standing" : "ask"] }
+        return arguments
+    }
+
+    /// Takes what a plan shows: each new group gets a checkbox, so no planned file goes unseen,
+    /// and the radio starts at the answer the first plan sets, the owner's recorded one.
+    public mutating func take(_ plan: SwarmHooksPlan) {
+        for group in plan.groupIDs where !groups.contains(group) {
+            groups.append(group)
+        }
+        if standing == nil, let consent = plan.consent {
+            standing = consent == "standing"
+        }
+    }
 }
 
 /// `swarm hooks setup --plan --json`: each file that setup would change, with its unified diff,
@@ -79,13 +164,18 @@ public struct SwarmHooksPlan: Sendable, Hashable, Codable {
     public struct File: Sendable, Hashable, Codable, Identifiable {
         public var path: String
         public var diff: String
+        /// The `swarm setup` group, such as `hooks` or `trust`; nil from `hooks setup`. The list
+        /// may grow, so the sheet shows a group it does not know by its name.
+        public var group: String?
 
-        public init(path: String, diff: String) {
+        public init(path: String, diff: String, group: String? = nil) {
             self.path = path
             self.diff = diff
+            self.group = group
         }
 
-        public var id: String { path }
+        /// Group and path, because hooks and trust can both change one file in one plan.
+        public var id: String { (group ?? "") + "\u{0}" + path }
         public var added: Int { count("+") }
 
         /// The diff with the `diff --git` line that the app's diff viewer needs to draw it as a
@@ -113,30 +203,88 @@ public struct SwarmHooksPlan: Sendable, Hashable, Codable {
         public var found: String
         public var wanted: String
         public var fix: String
+        /// Open set: `taken`, `changed`, `order`, `unreadable`, and later ones; nil from an older
+        /// CLI.
+        public var kind: String?
+        /// The `swarm setup` group; nil from `hooks setup` and an undo.
+        public var group: String?
 
-        public init(file: String, entry: String, found: String, wanted: String, fix: String) {
+        public init(
+            file: String, entry: String, found: String, wanted: String, fix: String,
+            kind: String? = nil, group: String? = nil
+        ) {
+            self.kind = kind
             self.file = file
             self.entry = entry
             self.found = found
             self.wanted = wanted
             self.fix = fix
+            self.group = group
         }
 
         public var id: String { file + "\u{0}" + entry }
+        /// The label of `wanted`: swarm's own value only for an item that changed after swarm
+        /// wrote it; for any other cause, `wanted` is what swarm needs.
+        public var wantedLabel: String { kind == "changed" ? "Swarm wrote" : "Swarm needs" }
+    }
+
+    /// An item `swarm setup` leaves as it is, such as a folder too broad to trust, with its reason.
+    public struct Skipped: Sendable, Hashable, Codable {
+        public var group: String
+        public var reason: String
+
+        public init(group: String, reason: String) {
+            self.group = group
+            self.reason = reason
+        }
     }
 
     public var digest: String
     public var files: [File]
     public var conflicts: [Conflict]
+    /// The launch consent a `swarm setup` plan sets; nil from `hooks setup` and an undo.
+    public var consent: String?
+    /// Nil from `hooks setup` and an undo.
+    public var skipped: [Skipped]?
 
-    public init(digest: String, files: [File], conflicts: [Conflict]) {
+    public init(
+        digest: String, files: [File], conflicts: [Conflict], consent: String? = nil,
+        skipped: [Skipped]? = nil
+    ) {
         self.digest = digest
         self.files = files
         self.conflicts = conflicts
+        self.consent = consent
+        self.skipped = skipped
     }
 
     /// Nothing to change and nothing in the way.
     public var isSetUp: Bool { files.isEmpty && conflicts.isEmpty }
+    /// Each skipped item as the sheet shows it, its group's name and its reason, so the owner
+    /// learns why a folder is not trusted (02-design).
+    public var skippedLines: [String] {
+        (skipped ?? []).map { "\(Self.groupTitle($0.group)): \($0.reason)" }
+    }
+    /// What the sheet says, and VoiceOver hears, for a plan with nothing to change. A skipped item
+    /// is not set up, so the text names each one instead of `unchanged`.
+    public func unchangedText(_ unchanged: String) -> String {
+        let lines = skippedLines
+        if lines.isEmpty { return "\(unchanged) No file changes." }
+        return (["No file changes. Swarm left these as they are:"] + lines).joined(separator: "\n")
+    }
+    /// A `swarm setup` group's name; a group this build does not know shows by its id (ADR 0043).
+    public static func groupTitle(_ id: String) -> String {
+        SetupGroup(rawValue: id)?.title ?? id
+    }
+    /// Each `swarm setup` group with a file or a conflict, in plan order.
+    public var groupIDs: [String] {
+        var seen: [String] = []
+        for group in files.compactMap(\.group) + conflicts.compactMap(\.group)
+        where !seen.contains(group) {
+            seen.append(group)
+        }
+        return seen
+    }
     /// Setup writes no file while any conflict stands.
     public var canApply: Bool { conflicts.isEmpty && !files.isEmpty }
     /// What VoiceOver hears when the plan loads.
@@ -304,11 +452,52 @@ public struct SwarmLaunch: Sendable, Hashable {
     public var pane: String
     public var account: String?
     public var model: String?
+    /// Each folder trust entry the launch wrote, so the app shows it (ADR 0043, owner answer I1).
+    public var trustWrites: [SwarmTrustWrite]
 
-    public init(pane: String, account: String?, model: String? = nil) {
+    public init(pane: String, account: String?, model: String? = nil, trustWrites: [SwarmTrustWrite] = []) {
         self.pane = pane
         self.account = account
         self.model = model
+        self.trustWrites = trustWrites
+    }
+
+    /// What VoiceOver hears about the trust writes, in one announcement so none cuts off another;
+    /// nil when the launch wrote none.
+    public var trustAnnouncement: String? {
+        guard !trustWrites.isEmpty else { return nil }
+        return (trustWrites.map(\.sentence) + [SwarmTrustWrite.undo]).joined(separator: " ")
+    }
+}
+
+/// A folder that `swarm launch` marked trusted for one provider, from its
+/// `trusted <provider> <dir>` line.
+public struct SwarmTrustWrite: Sendable, Hashable {
+    public var provider: String
+    public var directory: String
+
+    public init(provider: String, directory: String) {
+        self.provider = provider
+        self.directory = directory
+    }
+
+    /// `<provider> <dir>`; the dir may hold spaces.
+    init?(line: String) {
+        let parts = line.split(separator: " ", maxSplits: 1)
+        guard parts.count == 2 else { return nil }
+        self.init(provider: String(parts[0]), directory: String(parts[1]))
+    }
+
+    static let undo = "Undo it in Swarm › Managed Changes."
+
+    /// What the chat says about the write. The line is the same for standing consent and a
+    /// chair's folder pick, so it names no reason.
+    public var notice: String { sentence + " " + Self.undo }
+
+    var sentence: String {
+        let folder = (directory as NSString).abbreviatingWithTildeInPath
+        let name = provider == "agy" ? "AGY" : provider.capitalized
+        return "Swarm marked \(folder) as trusted for \(name)."
     }
 }
 
@@ -318,6 +507,8 @@ public struct SwarmLaunch: Sendable, Hashable {
 /// and previews hand in their own. Failures are `SwarmProfileError`, the same two kinds the
 /// profile source throws.
 public protocol SwarmBus: Sendable {
+    /// Changes the profiles only when their saved revision still matches.
+    func profileAction(_ action: ProfileAction, revision: String) async throws -> String
     /// Creates the session whose chair is the app's interactive CLI. The chair registers from its
     /// tmux pane immediately before that CLI starts.
     func startChairSession(
@@ -331,6 +522,7 @@ public protocol SwarmBus: Sendable {
         in session: SwarmSessionID, directory: String
     ) async throws -> SwarmLaunch
     func agents(in session: SwarmSessionID, adapter: String) async throws -> [SwarmAgent]
+    func agentsBySession() async throws -> [SwarmSessionID: [SwarmAgent]]
     func agentListing(
         in session: SwarmSessionID, adapter: String
     ) async throws -> SwarmAgentList
@@ -341,6 +533,8 @@ public protocol SwarmBus: Sendable {
     func sessions() async throws -> [SwarmSession]
     /// `swarm session archive <id>...`, with no session selected in the environment.
     func archive(_ sessions: [SwarmSessionID]) async throws
+    func archivedSessions() async throws -> [SwarmSession]
+    func unarchive(_ sessions: [SwarmSessionID]) async throws
     /// Save a continuation after the new chair has received its handoff message.
     func linkChat(_ newSession: SwarmSessionID, after oldSession: SwarmSessionID) async throws
     /// `swarm type <agent>` with `text` on stdin.
@@ -366,6 +560,10 @@ public protocol SwarmBus: Sendable {
 }
 
 public extension SwarmBus {
+    func agentsBySession() async throws -> [SwarmSessionID: [SwarmAgent]] {
+        throw SwarmProfileError.unavailable("swarm agent batches are not available")
+    }
+
     func agentListing(
         in session: SwarmSessionID, adapter: String
     ) async throws -> SwarmAgentList {
@@ -384,6 +582,14 @@ public extension SwarmBus {
 
     func archive(_ sessions: [SwarmSessionID]) async throws {
         throw SwarmProfileError.unavailable("swarm session archives are not available")
+    }
+
+    func archivedSessions() async throws -> [SwarmSession] {
+        throw SwarmProfileError.unavailable("swarm archived sessions are not available")
+    }
+
+    func unarchive(_ sessions: [SwarmSessionID]) async throws {
+        throw SwarmProfileError.unavailable("swarm session restore is not available")
     }
 
     func answer(
@@ -469,6 +675,10 @@ public struct UnavailableSwarmBus: SwarmBus {
     public init() {}
 
     private var notConnected: SwarmProfileError { .unavailable("swarm is not connected") }
+
+    public func profileAction(_ action: ProfileAction, revision: String) async throws -> String {
+        throw notConnected
+    }
 
     public func launch(
         _ agent: SwarmAgentID, role: String, provider: String?, model: String?, account: String?,

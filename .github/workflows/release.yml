@@ -51,7 +51,10 @@ jobs:
         with:
           version: 0.16.0
       - run: brew install uv
+      # Only this build uses ~/.swarm; any other build keeps a branch home (ADR 0027).
       - run: make -C ui dmg
+        env:
+          SWARM_RELEASE_BUILD: '1'
       - name: Attach the DMG to the draft release
         env:
           GH_TOKEN: ${{ github.token }}

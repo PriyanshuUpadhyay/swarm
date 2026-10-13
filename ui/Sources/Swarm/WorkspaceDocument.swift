@@ -10,8 +10,9 @@ struct WorkspaceDocument: Identifiable {
 }
 
 struct WorkspaceDocumentView: View {
+    @Environment(\.designTokens) private var tokens
     let document: WorkspaceDocument
-    @AppStorage("splitDiff") private var split = false
+    @Environment(\.splitDiff) private var split
     @State private var text: String?
     @State private var error: String?
     @State private var rendered = false
@@ -20,26 +21,26 @@ struct WorkspaceDocumentView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
+                VStack(alignment: .leading, spacing: tokens.spacing.xs) {
                     Text(verbatim: document.title).font(.headline).lineLimit(1).truncationMode(.middle)
                     Text(verbatim: document.detail).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
                 }
                 Spacer()
                 if document.isDiff {
-                    Picker("Diff layout", selection: $split) {
+                    Picker("Diff layout", selection: split) {
                         Text("Unified").tag(false)
                         Text("Split").tag(true)
                     }.pickerStyle(.segmented).labelsHidden().frame(width: DesignTokens.Size.segmentedPicker)
-                        .onChange(of: split) { _, _ in rendered = false; renderError = nil }
+                        .onChange(of: split.wrappedValue) { _, _ in rendered = false; renderError = nil }
                 }
-            }.padding(DesignTokens.Spacing.m)
+            }.padding(tokens.spacing.m)
             Divider()
             if let error {
                 Text(verbatim: error).foregroundStyle(.red).textSelection(.enabled).padding()
                 Spacer()
             } else if let text {
                 ZStack {
-                    DiffWebView(text: text, isDiff: document.isDiff, split: split) { success in
+                    DiffWebView(text: text, isDiff: document.isDiff, split: split.wrappedValue) { success in
                         rendered = true
                         renderError = success ? nil : "The file view could not load. Close this preview and try again."
                     }

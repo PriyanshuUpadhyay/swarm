@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use rusqlite::{Connection, TransactionBehavior};
+use rusqlite::{Connection, OptionalExtension, TransactionBehavior};
 
 pub fn open(path: &Path) -> Result<rusqlite::Connection, Box<dyn std::error::Error>> {
     let mut connection = rusqlite::Connection::open(path)?;
@@ -19,7 +19,61 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0002.sql"),
     include_str!("../migrations/0003.sql"),
     include_str!("../migrations/0004.sql"),
+    include_str!("../migrations/0005.sql"),
+    include_str!("../migrations/0006.sql"),
+    include_str!("../migrations/0007.sql"),
+    include_str!("../migrations/0008.sql"),
+    include_str!("../migrations/0009.sql"),
+    include_str!("../migrations/0010.sql"),
 ];
+
+#[derive(serde::Serialize)]
+pub struct Notice {
+    pub id: i64,
+    pub session_id: Option<String>,
+    pub agent_id: Option<String>,
+    pub title: String,
+    pub body: String,
+}
+
+pub fn add_notice(
+    connection: &Connection,
+    session: Option<&str>,
+    agent: Option<&str>,
+    title: &str,
+    body: &str,
+) -> rusqlite::Result<()> {
+    connection.execute(
+        "INSERT INTO notice (session_id, agent_id, title, body) VALUES (?1, ?2, ?3, ?4)",
+        rusqlite::params![session, agent, title, body],
+    )?;
+    Ok(())
+}
+
+/// The write lock covers both the read and the mark, so concurrent app reads cannot repeat a row.
+pub fn take_notices(connection: &mut Connection) -> rusqlite::Result<Vec<Notice>> {
+    let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let notices = {
+        let mut query = tx.prepare("SELECT id, session_id, agent_id, title, body FROM notice WHERE posted_at IS NULL ORDER BY id")?;
+        query
+            .query_map([], |row| {
+                Ok(Notice {
+                    id: row.get(0)?,
+                    session_id: row.get(1)?,
+                    agent_id: row.get(2)?,
+                    title: row.get(3)?,
+                    body: row.get(4)?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?
+    };
+    tx.execute(
+        "UPDATE notice SET posted_at = unixepoch() WHERE posted_at IS NULL",
+        [],
+    )?;
+    tx.commit()?;
+    Ok(notices)
+}
 
 fn known_version(version: i64) -> bool {
     (1..=MIGRATIONS.len() as i64).contains(&version)
@@ -57,7 +111,15 @@ pub fn made_by_swarm(path: &Path) -> bool {
 }
 
 fn migrate(connection: &mut Connection) -> Result<(), Box<dyn std::error::Error>> {
-    let tx = connection.transaction()?;
+    // A db at the newest version needs no write, so its open waits behind no writer.
+    let version: i64 = connection.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    if version == MIGRATIONS.len() as i64 {
+        return Ok(());
+    }
+    // Immediate: a read that later upgrades to a write fails at once when another swarm migrated
+    // first; taking the write lock before the read waits on busy_timeout instead. The version is
+    // read again under the lock, because another swarm may have migrated since.
+    let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
 
     let version: i64 = tx.query_row("PRAGMA user_version", [], |row| row.get(0))?;
     if version == 0 {
@@ -82,6 +144,34 @@ fn migrate(connection: &mut Connection) -> Result<(), Box<dyn std::error::Error>
     if version < 4 {
         tx.execute_batch(MIGRATIONS[3])?;
         tx.pragma_update(None, "user_version", 4)?;
+    }
+    if version < 5 {
+        tx.execute_batch(MIGRATIONS[4])?;
+        tx.pragma_update(None, "user_version", 5)?;
+    }
+    if version < 6 {
+        tx.execute_batch(MIGRATIONS[5])?;
+        tx.pragma_update(None, "user_version", 6)?;
+    }
+
+    if version < 7 {
+        tx.execute_batch(MIGRATIONS[6])?;
+        tx.pragma_update(None, "user_version", 7)?;
+    }
+
+    if version < 8 {
+        tx.execute_batch(MIGRATIONS[7])?;
+        tx.pragma_update(None, "user_version", 8)?;
+    }
+
+    if version < 9 {
+        tx.execute_batch(MIGRATIONS[8])?;
+        tx.pragma_update(None, "user_version", 9)?;
+    }
+
+    if version < 10 {
+        tx.execute_batch(MIGRATIONS[9])?;
+        tx.pragma_update(None, "user_version", 10)?;
     }
 
     tx.commit()?;
@@ -323,15 +413,42 @@ pub fn set_adapter(
     Ok(())
 }
 
+pub fn adapter_of(
+    connection: &Connection,
+    session_id: &str,
+) -> Result<Option<String>, Box<dyn std::error::Error>> {
+    Ok(connection.query_row(
+        "SELECT adapter FROM session WHERE id = ?1",
+        [session_id],
+        |row| row.get(0),
+    )?)
+}
+
 pub fn archive_sessions(
     connection: &mut Connection,
     session_ids: &[String],
 ) -> Result<(), Box<dyn std::error::Error>> {
+    set_sessions_archived(connection, session_ids, true)
+}
+
+pub fn unarchive_sessions(
+    connection: &mut Connection,
+    session_ids: &[String],
+) -> Result<(), Box<dyn std::error::Error>> {
+    set_sessions_archived(connection, session_ids, false)
+}
+
+fn set_sessions_archived(
+    connection: &mut Connection,
+    session_ids: &[String],
+    archived: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let tx = connection.transaction()?;
     for session_id in session_ids {
         let changed = tx.execute(
-            "UPDATE session SET archived_at = unixepoch() WHERE id = ?1",
-            [session_id],
+            "UPDATE session SET archived_at = CASE WHEN ?2 THEN unixepoch() ELSE NULL END
+             WHERE id = ?1",
+            (session_id, archived),
         )?;
         if changed != 1 {
             return Err(format!("swarm: no session {session_id}").into());
@@ -356,9 +473,20 @@ pub struct SessionRow {
     pub agents: i64,
     pub messages: i64,
     pub last_message_at: Option<i64>,
+    /// `archived_at` in storage and `archivedAt` on the wire both use Unix seconds.
+    pub archived_at: Option<i64>,
 }
 
 pub fn sessions(connection: &Connection) -> Result<Vec<SessionRow>, Box<dyn std::error::Error>> {
+    sessions_with_archived(connection, false)
+}
+
+const ARCHIVED_SESSIONS_LIMIT: i64 = 50;
+
+pub fn sessions_with_archived(
+    connection: &Connection,
+    include_archived: bool,
+) -> Result<Vec<SessionRow>, Box<dyn std::error::Error>> {
     let mut statement = connection.prepare(
         "SELECT session.id, talk_mode, adapter, cwd, session.created_at,
                 chair_provider, chair_id, chair_log, continuation_of,
@@ -367,12 +495,17 @@ pub fn sessions(connection: &Connection) -> Result<Vec<SessionRow>, Box<dyn std:
                 strftime('%Y/%m/%d', session.created_at + 86400, 'unixepoch'),
                 (SELECT count(*) FROM agent WHERE session_id = session.id),
                 (SELECT count(*) FROM message WHERE session_id = session.id),
-                (SELECT max(created_at) FROM message WHERE session_id = session.id)
+                (SELECT max(created_at) FROM message WHERE session_id = session.id),
+                archived_at
          FROM session
-         WHERE archived_at IS NULL
-         ORDER BY session.created_at DESC, session.id DESC",
+         WHERE archived_at IS NULL OR (?1 AND session.id IN (
+             SELECT id FROM session WHERE archived_at IS NOT NULL
+             ORDER BY archived_at DESC, id DESC LIMIT ?2
+         ))
+         ORDER BY archived_at IS NOT NULL, coalesce(archived_at, session.created_at) DESC,
+                  session.id DESC",
     )?;
-    let rows = statement.query_map([], |row| {
+    let rows = statement.query_map((include_archived, ARCHIVED_SESSIONS_LIMIT), |row| {
         Ok(SessionRow {
             id: row.get(0)?,
             talk_mode: row.get(1)?,
@@ -387,6 +520,7 @@ pub fn sessions(connection: &Connection) -> Result<Vec<SessionRow>, Box<dyn std:
             agents: row.get(12)?,
             messages: row.get(13)?,
             last_message_at: row.get(14)?,
+            archived_at: row.get(15)?,
         })
     })?;
     Ok(rows.collect::<Result<_, _>>()?)
@@ -494,6 +628,25 @@ pub fn pane_of(
     Ok(pane)
 }
 
+/// The CLI that runs in an agent's pane. A chair's row names none, so it is the session's
+/// `chair_provider`.
+pub fn provider_of(
+    connection: &Connection,
+    session_id: &str,
+    agent_id: &str,
+) -> Result<Option<String>, Box<dyn std::error::Error>> {
+    let provider: Option<String> = connection.query_row(
+        "SELECT COALESCE(agent.provider,
+                         CASE WHEN agent.role = 'orchestrator' OR agent.id = 'orchestrator'
+                              THEN session.chair_provider END)
+         FROM agent JOIN session ON session.id = agent.session_id
+         WHERE agent.session_id = ?1 AND agent.id = ?2",
+        (session_id, agent_id),
+        |r| r.get(0),
+    )?;
+    Ok(provider)
+}
+
 #[derive(Debug)]
 pub struct AgentRow {
     pub id: String,
@@ -505,8 +658,41 @@ pub struct AgentRow {
     pub state_at: Option<i64>,
     pub state_source: Option<String>,
     pub state_detail: Option<String>,
+    pub state_kind: Option<String>,
     /// The chat log its provider's hooks reported; kept after the agent ends.
     pub log: Option<String>,
+    pub profile: Option<String>,
+    pub runner: Option<String>,
+    pub model: Option<String>,
+    pub effort: Option<String>,
+    pub account: Option<String>,
+    pub cost_usd: Option<f64>,
+    pub tokens: Option<i64>,
+}
+
+/// Store the runner selected by launch; absent account means the provider's own login.
+pub fn set_launch(
+    connection: &Connection,
+    session_id: &str,
+    agent_id: &str,
+    profile: &str,
+    runner: &crate::config::Runner,
+    account: Option<&str>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    connection.execute(
+        "UPDATE agent SET profile = ?3, runner = ?4, model = ?5, effort = ?6, account = ?7
+         WHERE session_id = ?1 AND id = ?2",
+        (
+            session_id,
+            agent_id,
+            profile,
+            runner.label(),
+            &runner.model,
+            &runner.effort,
+            account,
+        ),
+    )?;
+    Ok(())
 }
 
 /// Record the chat log a provider hook reported for an agent.
@@ -516,6 +702,7 @@ pub fn set_log(
     agent_id: &str,
     log: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    // Keep each log's cursor across path changes; claude_usage resets only a log that shrinks.
     connection.execute(
         "UPDATE agent SET log = ?3 WHERE session_id = ?1 AND id = ?2",
         (session_id, agent_id, log.to_string_lossy()),
@@ -523,8 +710,111 @@ pub fn set_log(
     Ok(())
 }
 
+/// Add Claude message usage or copy Codex cumulative usage. NULL fields keep prior values.
+pub fn update_usage(
+    connection: &Connection,
+    session_id: &str,
+    agent_id: &str,
+    provider: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let stored = connection
+        .query_row(
+            "SELECT log, usage_state FROM agent WHERE session_id = ?1 AND id = ?2",
+            (session_id, agent_id),
+            |row| {
+                Ok((
+                    row.get::<_, Option<String>>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                ))
+            },
+        )
+        .optional()?;
+    let Some((Some(log), old_state)) = stored else {
+        return Ok(());
+    };
+    let (snapshot, state) = if provider == "claude" {
+        let mut state: crate::host::UsageState = old_state
+            .as_deref()
+            .map(serde_json::from_str)
+            .transpose()?
+            .unwrap_or_default();
+        // Message ids count once within each log; a repeat across logs counts again.
+        let saved = state.logs.get(&log).cloned().unwrap_or_default();
+        let Some(read) = crate::host::claude_usage(Path::new(&log), &saved) else {
+            return Ok(());
+        };
+        let mut snapshot = read.snapshot;
+        state.logs.insert(log.clone(), read.log);
+        if snapshot.tokens.is_some()
+            || saved.tokens > 0
+            || !saved.ids.is_empty()
+            || state
+                .logs
+                .values()
+                .any(|log| log.tokens > 0 || !log.ids.is_empty())
+        {
+            let Some(total) = state
+                .logs
+                .values()
+                .try_fold(0_i64, |total, log| total.checked_add(log.tokens))
+            else {
+                return Ok(());
+            };
+            snapshot.tokens = Some(total);
+        }
+        (snapshot, Some(serde_json::to_string(&state)?))
+    } else {
+        (
+            crate::host::codex_usage_snapshot(Path::new(&log)),
+            old_state.clone(),
+        )
+    };
+    write_usage(
+        connection,
+        session_id,
+        agent_id,
+        &log,
+        &snapshot,
+        state.as_deref(),
+        old_state.as_deref(),
+    )
+}
+
+fn write_usage(
+    connection: &Connection,
+    session_id: &str,
+    agent_id: &str,
+    log: &str,
+    snapshot: &crate::host::UsageSnapshot,
+    state: Option<&str>,
+    old_state: Option<&str>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // If another Stop changed the state, its write wins; the next Stop reads from that state.
+    connection.execute(
+        "UPDATE agent SET model = coalesce(?3, model), cost_usd = coalesce(?4, cost_usd),
+                          tokens = coalesce(?5, tokens), usage_state = ?6
+         WHERE session_id = ?1 AND id = ?2 AND usage_state IS ?7 AND log IS ?8",
+        (
+            session_id,
+            agent_id,
+            &snapshot.model,
+            snapshot.cost_usd,
+            snapshot.tokens,
+            state,
+            old_state,
+            log,
+        ),
+    )?;
+    Ok(())
+}
+
 /// Record an agent's reported state; `now` is unix seconds. The table's CHECKs refuse unknown
-/// states and sources.
+/// states, sources, and invalid wait kinds. A kindless wait keeps the kind of an existing wait;
+/// every other state write replaces it. Returns `Some` with the state it replaced (None when the
+/// agent had no state yet), read in the same immediate transaction, so two hooks that race cannot both see one
+/// change (a notice is sent once per change, ADR 0044). Returns None and writes nothing when the
+/// session holds no such agent.
+#[allow(clippy::too_many_arguments)]
 pub fn set_state(
     connection: &Connection,
     session_id: &str,
@@ -532,22 +822,59 @@ pub fn set_state(
     state: &str,
     source: &str,
     detail: Option<&str>,
+    kind: Option<&str>,
     now: i64,
-) -> Result<(), Box<dyn std::error::Error>> {
-    connection.execute(
-        "UPDATE agent SET state = ?3, state_source = ?4, state_detail = ?5, state_at = ?6
+) -> Result<Option<Option<String>>, Box<dyn std::error::Error>> {
+    use rusqlite::OptionalExtension;
+    let transaction =
+        rusqlite::Transaction::new_unchecked(connection, TransactionBehavior::Immediate)?;
+    let Some(old) = transaction
+        .query_row(
+            "SELECT state FROM agent WHERE session_id = ?1 AND id = ?2",
+            (session_id, agent_id),
+            |row| row.get(0),
+        )
+        .optional()?
+    else {
+        return Ok(None);
+    };
+    transaction.execute(
+        "UPDATE agent SET state = ?3, state_source = ?4, state_detail = ?5,
+            state_kind = CASE WHEN ?3 = 'waiting' AND ?6 IS NULL AND state = 'waiting'
+                              THEN state_kind ELSE ?6 END, state_at = ?7
          WHERE session_id = ?1 AND id = ?2",
-        (session_id, agent_id, state, source, detail, now),
+        (session_id, agent_id, state, source, detail, kind, now),
     )?;
-    Ok(())
+    transaction.commit()?;
+    Ok(Some(old))
 }
 
-/// The report a listing read for one agent: (state, state_source, state_at).
-pub type ReadState<'a> = (Option<&'a str>, Option<&'a str>, Option<i64>);
+/// The folder a session was opened in, or None for an unknown session.
+pub fn session_cwd(
+    connection: &Connection,
+    session_id: &str,
+) -> Result<Option<String>, Box<dyn std::error::Error>> {
+    use rusqlite::OptionalExtension;
+    Ok(connection
+        .query_row(
+            "SELECT cwd FROM session WHERE id = ?1",
+            [session_id],
+            |row| row.get(0),
+        )
+        .optional()?)
+}
+
+/// The report a listing read for one agent: (state, state_source, state_at, state_kind).
+pub type ReadState<'a> = (
+    Option<&'a str>,
+    Option<&'a str>,
+    Option<i64>,
+    Option<&'a str>,
+);
 
 /// A screen check's write, applied only while the row still holds the report it read: a hook
 /// that lands between the listing's read and this write keeps its newer report, also within the
-/// same second, because state and source take part in the compare. Returns whether the row
+/// same second, because state, source, and kind take part in the compare. Returns whether the row
 /// changed.
 pub fn set_screen_state(
     connection: &Connection,
@@ -558,11 +885,11 @@ pub fn set_screen_state(
     now: i64,
     read: ReadState<'_>,
 ) -> Result<bool, Box<dyn std::error::Error>> {
-    let (read_state, read_source, read_at) = read;
+    let (read_state, read_source, read_at, read_kind) = read;
     let changed = connection.execute(
-        "UPDATE agent SET state = ?3, state_source = 'screen', state_detail = ?4, state_at = ?5
+        "UPDATE agent SET state = ?3, state_source = 'screen', state_detail = ?4, state_kind = NULL, state_at = ?5
          WHERE session_id = ?1 AND id = ?2
-           AND state IS ?6 AND state_source IS ?7 AND state_at IS ?8",
+           AND state IS ?6 AND state_source IS ?7 AND state_at IS ?8 AND state_kind IS ?9",
         (
             session_id,
             agent_id,
@@ -572,6 +899,7 @@ pub fn set_screen_state(
             read_state,
             read_source,
             read_at,
+            read_kind,
         ),
     )?;
     Ok(changed == 1)
@@ -582,8 +910,8 @@ pub fn agents(
     session_id: &str,
 ) -> Result<Vec<AgentRow>, Box<dyn std::error::Error>> {
     let mut statement = connection.prepare(
-        "SELECT id, role, pane_id, provider, created_at, state, state_at, state_source, state_detail,
-                log
+        "SELECT id, role, pane_id, provider, created_at, state, state_at, state_source, state_detail, state_kind,
+                log, profile, runner, model, effort, account, cost_usd, tokens
          FROM agent WHERE session_id = ?1 ORDER BY id",
     )?;
     let rows = statement.query_map([session_id], |row| {
@@ -597,7 +925,15 @@ pub fn agents(
             state_at: row.get(6)?,
             state_source: row.get(7)?,
             state_detail: row.get(8)?,
-            log: row.get(9)?,
+            state_kind: row.get(9)?,
+            log: row.get(10)?,
+            profile: row.get(11)?,
+            runner: row.get(12)?,
+            model: row.get(13)?,
+            effort: row.get(14)?,
+            account: row.get(15)?,
+            cost_usd: row.get(16)?,
+            tokens: row.get(17)?,
         })
     })?;
     Ok(rows.collect::<Result<_, _>>()?)
@@ -612,6 +948,7 @@ pub struct MessageRow {
     pub body_path: String,
     pub created_at: i64,
     pub read: bool,
+    pub delivery: Option<String>,
 }
 
 pub fn messages(
@@ -623,7 +960,8 @@ pub fn messages(
         "SELECT message.seq, sender_id, recipient_id, kind, body_path, created_at,
                 EXISTS (SELECT 1 FROM read_mark
                         WHERE read_mark.session_id = message.session_id
-                          AND message_seq = message.seq AND agent_id = message.recipient_id)
+                          AND message_seq = message.seq AND agent_id = message.recipient_id),
+                delivery
          FROM message
          WHERE session_id = ?1 AND seq > ?2
          ORDER BY seq
@@ -638,9 +976,222 @@ pub fn messages(
             body_path: row.get(4)?,
             created_at: row.get(5)?,
             read: row.get(6)?,
+            delivery: row.get(7)?,
         })
     })?;
     Ok(rows.collect::<Result<_, _>>()?)
+}
+
+/// What stalled a child (ADR 0041).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StallKind {
+    Unacked,
+    Silent,
+}
+
+impl StallKind {
+    /// The name in the report kind `stall:<name>:<seq>` and in the sweep line.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            StallKind::Unacked => "unacked",
+            StallKind::Silent => "silent",
+        }
+    }
+}
+
+/// A stalled child, what stalled it, and the message it is about.
+pub type Stall = (String, StallKind, i64);
+
+/// The stalls of a session's children that no report names yet, as (agent, what, seq) (ADR
+/// 0041). `unacked`: the child is done, and the oldest message it read but did not ack was read
+/// before it got done. `silent`: no such message, and the child got done after the last ring that
+/// proved a turn, and sent nothing since that ring but its own reports. The chair is never the
+/// subject: a message about the chair would go to the chair.
+pub fn stalls(
+    connection: &Connection,
+    session_id: &str,
+) -> Result<Vec<Stall>, Box<dyn std::error::Error>> {
+    let children: Vec<(String, i64)> = connection
+        .prepare(
+            "SELECT id, state_at FROM agent
+             WHERE session_id = ?1 AND pane_id IS NOT NULL AND state = 'done'
+               AND state_at IS NOT NULL AND role != 'orchestrator' AND id != 'orchestrator'
+             ORDER BY id",
+        )?
+        .query_map([session_id], |row| Ok((row.get(0)?, row.get(1)?)))?
+        .collect::<Result<_, _>>()?;
+    let mut found = Vec::new();
+    for (agent, done_at) in children {
+        let unacked: Option<(i64, i64)> = connection
+            .query_row(
+                "SELECT seq, seen_at FROM message
+                 WHERE session_id = ?1 AND recipient_id = ?2 AND seen_at IS NOT NULL
+                   AND NOT EXISTS (SELECT 1 FROM read_mark
+                                   WHERE read_mark.session_id = message.session_id
+                                     AND message_seq = message.seq AND agent_id = ?2)
+                 ORDER BY seq LIMIT 1",
+                (session_id, &agent),
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()?;
+        let stall = match unacked {
+            Some((seq, seen_at)) if seen_at < done_at => Some((StallKind::Unacked, seq)),
+            _ => connection
+                .query_row(
+                    "SELECT seq FROM message AS inbound
+                     WHERE session_id = ?1 AND recipient_id = ?2
+                       AND delivery IN ('hook', 'screen', 'seen') AND rung_at < ?3
+                       AND NOT EXISTS (SELECT 1 FROM message
+                                       WHERE session_id = ?1 AND sender_id = ?2
+                                         AND created_at >= inbound.rung_at
+                                         AND kind NOT GLOB 'stall:*'
+                                         AND kind NOT GLOB 'unconfirmed:*')
+                       AND seq = (SELECT MAX(seq) FROM message
+                                  WHERE session_id = ?1 AND recipient_id = ?2
+                                    AND delivery IN ('hook', 'screen', 'seen'))",
+                    (session_id, &agent, done_at),
+                    |row| row.get(0),
+                )
+                .optional()?
+                .map(|seq| (StallKind::Silent, seq)),
+        };
+        let Some((what, seq)) = stall else {
+            continue;
+        };
+        let reported: bool = connection.query_row(
+            "SELECT EXISTS (SELECT 1 FROM message
+                            WHERE session_id = ?1 AND sender_id = ?2 AND kind = ?3)",
+            (session_id, &agent, format!("stall:{}:{seq}", what.as_str())),
+            |row| row.get(0),
+        )?;
+        if !reported {
+            found.push((agent, what, seq));
+        }
+    }
+    Ok(found)
+}
+
+/// A ring that no caller settled: (recipient, rung_at, the messages it rang, the lowest of them
+/// that is unseen after `MAX_RINGS` rings).
+pub type Ring = (String, i64, Vec<i64>, Option<i64>);
+
+/// The rings with no result yet (ADR 0041): the listing's, which it types and leaves, and one whose
+/// caller ended in its wait. One ring rings all its messages in the same second.
+pub fn unsettled_rings(
+    connection: &Connection,
+    session_id: &str,
+) -> Result<Vec<Ring>, Box<dyn std::error::Error>> {
+    let mut statement = connection.prepare(
+        "SELECT recipient_id, rung_at, seq, rings >= ?2 AND seen_at IS NULL FROM message
+         WHERE session_id = ?1 AND rings > 0 AND rung_at IS NOT NULL AND delivery IS NULL
+         ORDER BY recipient_id, rung_at, seq",
+    )?;
+    let rows = statement.query_map((session_id, MAX_RINGS), |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, i64>(1)?,
+            row.get::<_, i64>(2)?,
+            row.get::<_, bool>(3)?,
+        ))
+    })?;
+    let mut rings: Vec<Ring> = Vec::new();
+    for row in rows {
+        let (recipient, rung_at, seq, lost) = row?;
+        match rings.last_mut() {
+            Some(ring) if ring.0 == recipient && ring.1 == rung_at => {
+                ring.2.push(seq);
+                ring.3 = ring.3.or(lost.then_some(seq));
+            }
+            _ => rings.push((recipient, rung_at, vec![seq], lost.then_some(seq))),
+        }
+    }
+    Ok(rings)
+}
+
+/// Messages whose last ring, after `MAX_RINGS` rings, proved nothing and that no
+/// `unconfirmed:<seq>` report names yet, as (recipient, seq), the lowest seq of each ring. A
+/// report that failed to send is found again. The chair is never the subject: a report about it
+/// would go to it.
+pub fn unreported_lost(
+    connection: &Connection,
+    session_id: &str,
+    chair: &str,
+) -> Result<Vec<(String, i64)>, Box<dyn std::error::Error>> {
+    let mut statement = connection.prepare(
+        "SELECT recipient_id, seq FROM (
+             SELECT recipient_id, MIN(seq) AS seq FROM message
+             WHERE session_id = ?1 AND recipient_id != ?2 AND rings >= ?3
+               AND delivery = 'unconfirmed' AND seen_at IS NULL
+               AND NOT EXISTS (SELECT 1 FROM read_mark
+                               WHERE read_mark.session_id = message.session_id
+                                 AND message_seq = message.seq AND agent_id = recipient_id)
+             GROUP BY recipient_id, rung_at
+         ) AS lost
+         WHERE NOT EXISTS (SELECT 1 FROM message
+                           WHERE session_id = ?1 AND sender_id = lost.recipient_id
+                             AND kind = 'unconfirmed:' || lost.seq)
+         ORDER BY recipient_id, seq",
+    )?;
+    let rows = statement.query_map((session_id, chair, MAX_RINGS), |row| {
+        Ok((row.get(0)?, row.get(1)?))
+    })?;
+    Ok(rows.collect::<Result<_, _>>()?)
+}
+
+/// Whether a hook of `agent_id` reported a turn at or after `since` (unix seconds). `done` is no
+/// turn start, because Claude's idle notice writes it on an idle pane.
+pub fn turn_started(
+    connection: &Connection,
+    session_id: &str,
+    agent_id: &str,
+    since: i64,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    let started: bool = connection.query_row(
+        "SELECT EXISTS (SELECT 1 FROM agent
+                        WHERE session_id = ?1 AND id = ?2 AND state_source = 'hook'
+                          AND state IN ('working', 'waiting') AND state_at >= ?3)",
+        (session_id, agent_id, since),
+        |row| row.get(0),
+    )?;
+    Ok(started)
+}
+
+/// Whether `agent_id` read its messages at or after `since` (unix seconds). `inbox` marks every
+/// unseen message of the agent at once, so a read after a ring also read the messages it rang.
+pub fn seen_since(
+    connection: &Connection,
+    session_id: &str,
+    agent_id: &str,
+    since: i64,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    let seen: bool = connection.query_row(
+        "SELECT EXISTS (SELECT 1 FROM message
+                        WHERE session_id = ?1 AND recipient_id = ?2 AND seen_at >= ?3)",
+        (session_id, agent_id, since),
+        |row| row.get(0),
+    )?;
+    Ok(seen)
+}
+
+/// Store what a ring proved on the messages it rang at `rung_at`. The column's CHECK refuses an
+/// unknown value. A message rung again since, or with a result already, keeps what it has, so a
+/// pass that read an older ring cannot settle a newer one. One statement writes all the messages,
+/// so of two passes that settle one ring, one stores the result on all of them and the other on
+/// none. Returns whether this call stored it, so the pass that lost the race reports nothing.
+pub fn set_delivery(
+    connection: &Connection,
+    session_id: &str,
+    seqs: &[i64],
+    rung_at: i64,
+    delivery: &str,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    let stored = connection.execute(
+        "UPDATE message SET delivery = ?3
+         WHERE session_id = ?1 AND seq IN (SELECT value FROM json_each(?2)) AND rung_at = ?4
+           AND delivery IS NULL",
+        (session_id, serde_json::to_string(seqs)?, delivery, rung_at),
+    )?;
+    Ok(stored > 0)
 }
 
 pub fn has_rung_unread(
@@ -686,6 +1237,10 @@ pub fn has_unrung_unread(
     Ok(found)
 }
 
+/// How many rings a message gets in all. After the last one proves nothing, the chair is told
+/// (ADR 0041).
+pub const MAX_RINGS: i64 = 2;
+
 pub fn rering_due(
     connection: &Connection,
     session_id: &str,
@@ -696,7 +1251,7 @@ pub fn rering_due(
         "SELECT COUNT(*) > 0
              AND MIN(created_at) <= unixepoch() - ?3
              AND (MAX(rung_at) IS NULL OR MAX(rung_at) <= unixepoch() - ?3)
-             AND MAX(rings) < 2
+             AND MAX(rings) < ?4
          FROM message
          WHERE session_id = ?1 AND recipient_id = ?2
            AND seen_at IS NULL
@@ -705,10 +1260,39 @@ pub fn rering_due(
                WHERE read_mark.session_id = message.session_id
                  AND message_seq = message.seq AND agent_id = ?2
            )",
-        (session_id, agent_id, age_secs),
+        (session_id, agent_id, age_secs, MAX_RINGS),
         |row| row.get(0),
     )?;
     Ok(due)
+}
+
+/// Mark `agent_id`'s unseen messages as rung once more, and return each one's seq and ring
+/// count. The result goes back to NULL, because this ring has none yet. A message rung within
+/// `age_secs` of `rung_at`, or at its last ring, is left out, so a second pass that found the same
+/// re-ring due rings nothing.
+pub fn rering(
+    connection: &Connection,
+    session_id: &str,
+    agent_id: &str,
+    age_secs: i64,
+    rung_at: i64,
+) -> Result<Vec<(i64, i64)>, Box<dyn std::error::Error>> {
+    let rung = connection
+        .prepare(
+            "UPDATE message SET rung_at = ?5, rings = rings + 1, delivery = NULL
+             WHERE session_id = ?1 AND recipient_id = ?2 AND seen_at IS NULL
+               AND (rung_at IS NULL OR rung_at <= ?5 - ?3) AND rings < ?4
+               AND NOT EXISTS (SELECT 1 FROM read_mark
+                               WHERE read_mark.session_id = message.session_id
+                                 AND message_seq = message.seq AND agent_id = ?2)
+             RETURNING seq, rings",
+        )?
+        .query_map(
+            (session_id, agent_id, age_secs, MAX_RINGS, rung_at),
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?
+        .collect::<Result<_, _>>()?;
+    Ok(rung)
 }
 
 pub fn clear_pane(
@@ -719,7 +1303,7 @@ pub fn clear_pane(
     connection.execute(
         // A closed agent reports nothing, so it shows as ended rather than its last state.
         "UPDATE agent SET pane_id = NULL, state = NULL, state_at = NULL, state_source = NULL,
-         state_detail = NULL WHERE session_id = ?1 AND id = ?2",
+         state_detail = NULL, state_kind = NULL WHERE session_id = ?1 AND id = ?2",
         (session_id, agent_id),
     )?;
     Ok(())
@@ -845,6 +1429,13 @@ mod tests {
             ))
             .unwrap();
         connection
+    }
+
+    fn unix_now() -> i64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64
     }
 
     fn temp_root(name: &str) -> std::path::PathBuf {
@@ -1380,6 +1971,262 @@ mod tests {
         assert!(!rering_due(&connection, SESSION, CODER, 60).unwrap());
     }
 
+    /// A sweep and a listing can both find a re-ring due before either one rings. The second
+    /// update finds the messages rung a moment ago, so it rings nothing and the cap holds.
+    #[test]
+    fn two_passes_that_find_a_rering_due_ring_it_once() {
+        let mut connection = seed(0);
+        let root = temp_root("rering-race");
+        let ask = send_message(
+            &mut connection,
+            &root,
+            SESSION,
+            ORCHESTRATOR,
+            CODER,
+            "ask",
+            "task",
+        )
+        .unwrap();
+        connection
+            .execute(
+                "UPDATE message SET created_at = unixepoch() - 61, rung_at = unixepoch() - 61,
+                                    rings = 1, delivery = 'unconfirmed'",
+                [],
+            )
+            .unwrap();
+        assert!(rering_due(&connection, SESSION, CODER, 60).unwrap());
+        assert!(rering_due(&connection, SESSION, CODER, 60).unwrap());
+
+        let now = unix_now();
+        assert_eq!(
+            rering(&connection, SESSION, CODER, 60, now).unwrap(),
+            [(ask, 2)]
+        );
+        assert_eq!(rering(&connection, SESSION, CODER, 60, now).unwrap(), []);
+        assert_eq!(
+            messages(&connection, SESSION, -1).unwrap()[0].delivery,
+            None
+        );
+    }
+
+    /// A pass that settles a ring stores its result only on that ring, once. A ring that another
+    /// pass rang again since, or that has a result already, keeps what it has.
+    #[test]
+    fn a_ring_result_is_stored_only_on_the_ring_it_settles() {
+        let mut connection = seed(0);
+        let root = temp_root("delivery-race");
+        let ask = send_message(
+            &mut connection,
+            &root,
+            SESSION,
+            ORCHESTRATOR,
+            CODER,
+            "ask",
+            "task",
+        )
+        .unwrap();
+        let first_ring = unix_now() - 61;
+        connection
+            .execute(
+                "UPDATE message SET created_at = ?1, rung_at = ?1, rings = 1",
+                [first_ring],
+            )
+            .unwrap();
+        let delivery = |connection: &Connection| {
+            messages(connection, SESSION, -1).unwrap()[0]
+                .delivery
+                .clone()
+        };
+
+        let second_ring = unix_now();
+        rering(&connection, SESSION, CODER, 60, second_ring).unwrap();
+        assert!(!set_delivery(&connection, SESSION, &[ask], first_ring, "unconfirmed").unwrap());
+        assert_eq!(delivery(&connection), None);
+        assert!(set_delivery(&connection, SESSION, &[ask], second_ring, "screen").unwrap());
+        assert!(!set_delivery(&connection, SESSION, &[ask], second_ring, "unconfirmed").unwrap());
+        assert_eq!(delivery(&connection).as_deref(), Some("screen"));
+    }
+
+    /// One ring's result is one write over every message it rang. Of two passes that settle a
+    /// ring at the same time, exactly one stores the result and reports it, and the ring keeps
+    /// one result.
+    #[test]
+    fn two_passes_settle_a_ring_of_many_messages_once() {
+        let db = temp_root("settle-ring").join("swarm.db");
+        std::fs::create_dir_all(db.parent().unwrap()).unwrap();
+        let connection = open(&db).unwrap();
+        connection
+            .execute_batch(&format!(
+                "INSERT INTO session (id, talk_mode, cwd) VALUES ('{SESSION}', 'lane', '/test');
+                 INSERT INTO agent (id, session_id, role)
+                     VALUES ('{ORCHESTRATOR}', '{SESSION}', 'orchestrator'),
+                            ('{CODER}', '{SESSION}', 'coder');
+                 WITH RECURSIVE ring(seq) AS (SELECT 0 UNION ALL SELECT seq + 1 FROM ring
+                                              WHERE seq < 499)
+                 INSERT INTO message (session_id, seq, sender_id, recipient_id, kind, body_path,
+                                      rung_at, rings)
+                     SELECT '{SESSION}', seq, '{ORCHESTRATOR}', '{CODER}', 'ask',
+                            'runs/' || seq || '.txt', 1700, 1
+                     FROM ring;"
+            ))
+            .unwrap();
+        // The race is timing, so it runs several times.
+        for _ in 0..10 {
+            connection
+                .execute("UPDATE message SET delivery = NULL", [])
+                .unwrap();
+            let start = std::sync::Arc::new(std::sync::Barrier::new(2));
+            let passes = ["hook", "unconfirmed"].map(|delivery| {
+                let (db, start) = (db.clone(), start.clone());
+                std::thread::spawn(move || {
+                    let connection = open(&db).unwrap();
+                    let seqs: Vec<i64> = (0..500).collect();
+                    start.wait();
+                    set_delivery(&connection, SESSION, &seqs, 1700, delivery).unwrap()
+                })
+            });
+            let stored = passes.map(|pass| pass.join().unwrap());
+            assert_eq!(stored.iter().filter(|stored| **stored).count(), 1);
+            let results: Vec<Option<String>> = connection
+                .prepare("SELECT DISTINCT delivery FROM message")
+                .unwrap()
+                .query_map([], |row| row.get(0))
+                .unwrap()
+                .collect::<Result<_, _>>()
+                .unwrap();
+            assert_eq!(results.len(), 1, "{results:?}");
+            assert!(results[0].is_some());
+        }
+    }
+
+    /// A ring's result is stored on the messages it rang, and a stall or lost-ring report is
+    /// stored once per sender and kind (ADR 0041).
+    #[test]
+    fn stores_a_ring_result_and_each_report_once() {
+        let mut connection = seed(0);
+        let root = temp_root("delivery");
+        let send = |connection: &mut Connection, kind: &str| {
+            send_message(
+                connection,
+                &root,
+                SESSION,
+                CODER,
+                ORCHESTRATOR,
+                kind,
+                "body",
+            )
+        };
+        let ask = send(&mut connection, "ask").unwrap();
+        let rung_at = unix_now();
+        connection
+            .execute("UPDATE message SET rung_at = ?1, rings = 1", [rung_at])
+            .unwrap();
+        assert_eq!(
+            messages(&connection, SESSION, -1).unwrap()[0].delivery,
+            None
+        );
+        assert!(set_delivery(&connection, SESSION, &[ask], rung_at, "maybe").is_err());
+        set_delivery(&connection, SESSION, &[ask], rung_at, "hook").unwrap();
+        assert_eq!(
+            messages(&connection, SESSION, -1).unwrap()[0]
+                .delivery
+                .as_deref(),
+            Some("hook")
+        );
+        send(&mut connection, "stall:unacked:0").unwrap();
+        assert!(send(&mut connection, "stall:unacked:0").is_err());
+        send(&mut connection, "unconfirmed:0").unwrap();
+        assert!(send(&mut connection, "unconfirmed:0").is_err());
+        send(&mut connection, "note").unwrap();
+        send(&mut connection, "note").unwrap();
+    }
+
+    /// A child at done with a message it read and did not ack is stalled; so is a child at done
+    /// that sent nothing after a ring that started its turn. A reported stall is not found again,
+    /// and the chair is never the subject (ADR 0041).
+    #[test]
+    fn finds_each_stall_once() {
+        let mut connection = seed(0);
+        let root = temp_root("stalls");
+        let run = |connection: &Connection, sql: &str| connection.execute_batch(sql).unwrap();
+        let send = |connection: &mut Connection, from: &str, to: &str, kind: &str| {
+            send_message(connection, &root, SESSION, from, to, kind, "body").unwrap()
+        };
+        set_pane(&connection, SESSION, CODER, "%2").unwrap();
+        set_pane(&connection, SESSION, ORCHESTRATOR, "%1").unwrap();
+        let ask = send(&mut connection, ORCHESTRATOR, CODER, "ask");
+        run(
+            &connection,
+            "UPDATE message SET rung_at = unixepoch() - 30, rings = 1, delivery = 'hook'",
+        );
+        // Working, or done with no read message and a reply sent: no stall.
+        set_state(
+            &connection,
+            SESSION,
+            CODER,
+            "working",
+            "hook",
+            None,
+            None,
+            0,
+        )
+        .unwrap();
+        assert!(stalls(&connection, SESSION).unwrap().is_empty());
+
+        // Read, then done without an ack.
+        run(&connection, "UPDATE message SET seen_at = unixepoch() - 20");
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        set_state(&connection, SESSION, CODER, "done", "hook", None, None, now).unwrap();
+        assert_eq!(
+            stalls(&connection, SESSION).unwrap(),
+            [(CODER.to_string(), StallKind::Unacked, ask)]
+        );
+        send(
+            &mut connection,
+            CODER,
+            ORCHESTRATOR,
+            &format!("stall:unacked:{ask}"),
+        );
+        assert!(stalls(&connection, SESSION).unwrap().is_empty());
+
+        // Acked, and its own report is no reply: it finished silent.
+        ack(&connection, SESSION, ask, CODER).unwrap();
+        assert_eq!(
+            stalls(&connection, SESSION).unwrap(),
+            [(CODER.to_string(), StallKind::Silent, ask)]
+        );
+        send(
+            &mut connection,
+            CODER,
+            ORCHESTRATOR,
+            &format!("stall:silent:{ask}"),
+        );
+        assert!(stalls(&connection, SESSION).unwrap().is_empty());
+
+        // A reply after the ring is no stall; nor is the chair at done with unacked work.
+        run(&connection, "DELETE FROM message WHERE kind GLOB 'stall:*'");
+        send(&mut connection, CODER, ORCHESTRATOR, "summary");
+        run(
+            &connection,
+            "UPDATE message SET seen_at = unixepoch() - 20 WHERE sender_id = 'coder'",
+        );
+        set_state(
+            &connection,
+            SESSION,
+            ORCHESTRATOR,
+            "done",
+            "hook",
+            None,
+            None,
+            now,
+        )
+        .unwrap();
+        assert!(stalls(&connection, SESSION).unwrap().is_empty());
+    }
+
     #[test]
     fn finds_the_session_orchestrator() {
         let connection = seed(0);
@@ -1476,6 +2323,23 @@ mod tests {
     }
 
     #[test]
+    fn migration_adds_notices_to_a_version_eight_database() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        for migration in &MIGRATIONS[..8] {
+            connection.execute_batch(migration).unwrap();
+        }
+        connection.pragma_update(None, "user_version", 8).unwrap();
+        migrate(&mut connection).unwrap();
+        add_notice(&connection, Some("session"), Some("chair"), "Done", "body").unwrap();
+        let notices = take_notices(&mut connection).unwrap();
+        assert_eq!(notices.len(), 1);
+        assert_eq!(notices[0].session_id.as_deref(), Some("session"));
+        assert_eq!(notices[0].agent_id.as_deref(), Some("chair"));
+        assert_eq!(notices[0].title, "Done");
+        assert!(take_notices(&mut connection).unwrap().is_empty());
+    }
+
+    #[test]
     fn migration_adds_chat_continuations_to_existing_databases() {
         let mut connection = Connection::open_in_memory().unwrap();
         connection.execute_batch(MIGRATIONS[0]).unwrap();
@@ -1484,7 +2348,7 @@ mod tests {
         let version: i64 = connection
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 4);
+        assert_eq!(version, 10);
         let old = create_session(&connection, "lane", Path::new("/work"), None, None).unwrap();
         let new = create_session(&connection, "lane", Path::new("/work"), None, None).unwrap();
         continue_session(&connection, &new, &old).unwrap();
@@ -1511,14 +2375,49 @@ mod tests {
         let version: i64 = connection
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 4);
+        assert_eq!(version, 10);
         let coder = &agents(&connection, SESSION).unwrap()[0];
         assert_eq!(coder.state, None);
-        set_state(&connection, SESSION, CODER, "waiting", "hook", None, 1_700).unwrap();
+        set_state(
+            &connection,
+            SESSION,
+            CODER,
+            "waiting",
+            "hook",
+            None,
+            None,
+            1_700,
+        )
+        .unwrap();
         let coder = &agents(&connection, SESSION).unwrap()[0];
         assert_eq!(coder.state.as_deref(), Some("waiting"));
         assert_eq!(coder.state_at, Some(1_700));
         assert_eq!(coder.state_source.as_deref(), Some("hook"));
+    }
+
+    #[test]
+    fn migration_adds_state_kind_to_a_version_nine_database() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        for migration in &MIGRATIONS[..9] {
+            connection.execute_batch(migration).unwrap();
+        }
+        connection.pragma_update(None, "user_version", 9).unwrap();
+        connection
+            .execute_batch(&format!(
+                "INSERT INTO session (id, talk_mode, cwd) VALUES ('{SESSION}', 'lane', '/test');
+                 INSERT INTO agent (id, session_id, role, state)
+                     VALUES ('{CODER}', '{SESSION}', 'coder', 'waiting');"
+            ))
+            .unwrap();
+        migrate(&mut connection).unwrap();
+        let kind: Option<String> = connection
+            .query_row("SELECT state_kind FROM agent", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(kind, None);
+        let version: i64 = connection
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, 10);
     }
 
     #[test]
@@ -1531,6 +2430,7 @@ mod tests {
             "failed",
             "hook",
             Some("rate_limit"),
+            None,
             42,
         )
         .unwrap();
@@ -1540,17 +2440,242 @@ mod tests {
         assert_eq!(coder.state.as_deref(), Some("failed"));
         assert_eq!(coder.state_detail.as_deref(), Some("rate_limit"));
         assert_eq!(orchestrator.state, None);
-        assert!(set_state(&connection, SESSION, CODER, "asleep", "hook", None, 42).is_err());
-        assert!(set_state(&connection, SESSION, CODER, "done", "guess", None, 42).is_err());
+        assert_eq!(
+            set_state(
+                &connection,
+                SESSION,
+                ORCHESTRATOR,
+                "done",
+                "hook",
+                None,
+                None,
+                42
+            )
+            .unwrap(),
+            Some(None)
+        );
+        assert_eq!(
+            set_state(
+                &connection,
+                SESSION,
+                "ghost",
+                "waiting",
+                "hook",
+                None,
+                None,
+                42
+            )
+            .unwrap(),
+            None
+        );
+        assert!(
+            set_state(
+                &connection,
+                SESSION,
+                CODER,
+                "asleep",
+                "hook",
+                None,
+                None,
+                42
+            )
+            .is_err()
+        );
+        assert!(set_state(&connection, SESSION, CODER, "done", "guess", None, None, 42).is_err());
+    }
+
+    #[test]
+    fn a_waiting_hook_records_kind_and_a_screen_write_clears_it() {
+        let connection = seed(0);
+        for (kind, screen_state) in [("permission", "waiting"), ("question", "done")] {
+            set_state(
+                &connection,
+                SESSION,
+                CODER,
+                "waiting",
+                "hook",
+                Some("prompt"),
+                Some(kind),
+                100,
+            )
+            .unwrap();
+            let coder = &agents(&connection, SESSION).unwrap()[0];
+            assert_eq!(coder.state_kind.as_deref(), Some(kind));
+            assert_eq!(coder.state_detail.as_deref(), Some("prompt"));
+            assert!(
+                set_screen_state(
+                    &connection,
+                    SESSION,
+                    CODER,
+                    screen_state,
+                    None,
+                    110,
+                    (Some("waiting"), Some("hook"), Some(100), Some(kind)),
+                )
+                .unwrap()
+            );
+            let coder = &agents(&connection, SESSION).unwrap()[0];
+            assert_eq!(coder.state_kind, None);
+            assert_eq!(coder.state.as_deref(), Some(screen_state));
+        }
+    }
+
+    #[test]
+    fn state_kind_checks_reject_non_waiting_states_and_unknown_kinds() {
+        let connection = seed(0);
+        for (state, kind) in [("done", "permission"), ("waiting", "unknown")] {
+            let error = set_state(
+                &connection,
+                SESSION,
+                CODER,
+                state,
+                "hook",
+                None,
+                Some(kind),
+                100,
+            )
+            .unwrap_err();
+            assert!(error.to_string().contains("CHECK constraint failed"));
+            assert_eq!(agents(&connection, SESSION).unwrap()[0].state, None);
+        }
+    }
+
+    #[test]
+    fn a_kindless_wait_keeps_its_kind_until_the_state_changes() {
+        let connection = seed(0);
+        set_state(
+            &connection,
+            SESSION,
+            CODER,
+            "waiting",
+            "hook",
+            None,
+            Some("permission"),
+            100,
+        )
+        .unwrap();
+        set_state(
+            &connection,
+            SESSION,
+            CODER,
+            "waiting",
+            "hook",
+            None,
+            None,
+            101,
+        )
+        .unwrap();
+        assert_eq!(
+            agents(&connection, SESSION).unwrap()[0]
+                .state_kind
+                .as_deref(),
+            Some("permission")
+        );
+        set_state(
+            &connection,
+            SESSION,
+            CODER,
+            "working",
+            "hook",
+            None,
+            None,
+            102,
+        )
+        .unwrap();
+        assert_eq!(agents(&connection, SESSION).unwrap()[0].state_kind, None);
+        set_state(
+            &connection,
+            SESSION,
+            CODER,
+            "waiting",
+            "hook",
+            None,
+            None,
+            103,
+        )
+        .unwrap();
+        assert_eq!(agents(&connection, SESSION).unwrap()[0].state_kind, None);
+    }
+
+    #[test]
+    fn a_same_second_kind_change_stops_the_screen_write() {
+        let connection = seed(0);
+        set_state(
+            &connection,
+            SESSION,
+            CODER,
+            "waiting",
+            "hook",
+            None,
+            Some("permission"),
+            100,
+        )
+        .unwrap();
+        let read = (Some("waiting"), Some("hook"), Some(100), Some("permission"));
+        set_state(
+            &connection,
+            SESSION,
+            CODER,
+            "waiting",
+            "hook",
+            None,
+            Some("question"),
+            100,
+        )
+        .unwrap();
+        assert!(!set_screen_state(&connection, SESSION, CODER, "done", None, 100, read).unwrap());
+        let coder = &agents(&connection, SESSION).unwrap()[0];
+        assert_eq!(coder.state.as_deref(), Some("waiting"));
+        assert_eq!(coder.state_kind.as_deref(), Some("question"));
+    }
+
+    #[test]
+    fn a_hook_state_without_kind_clears_the_previous_wait_kind() {
+        let connection = seed(0);
+        set_state(
+            &connection,
+            SESSION,
+            CODER,
+            "waiting",
+            "hook",
+            None,
+            Some("permission"),
+            100,
+        )
+        .unwrap();
+        set_state(&connection, SESSION, CODER, "done", "hook", None, None, 110).unwrap();
+        let coder = &agents(&connection, SESSION).unwrap()[0];
+        assert_eq!(coder.state.as_deref(), Some("done"));
+        assert_eq!(coder.state_kind, None);
     }
 
     #[test]
     fn a_screen_write_does_not_overwrite_a_newer_hook_report() {
         let connection = seed(0);
-        set_state(&connection, SESSION, CODER, "working", "hook", None, 100).unwrap();
+        set_state(
+            &connection,
+            SESSION,
+            CODER,
+            "working",
+            "hook",
+            None,
+            None,
+            100,
+        )
+        .unwrap();
         // The listing read state_at 100; a hook reports waiting before the screen write lands.
-        set_state(&connection, SESSION, CODER, "waiting", "hook", None, 105).unwrap();
-        let read = (Some("working"), Some("hook"), Some(100));
+        set_state(
+            &connection,
+            SESSION,
+            CODER,
+            "waiting",
+            "hook",
+            None,
+            None,
+            105,
+        )
+        .unwrap();
+        let read = (Some("working"), Some("hook"), Some(100), None);
         let written =
             set_screen_state(&connection, SESSION, CODER, "done", None, 110, read).unwrap();
         assert!(!written);
@@ -1561,9 +2686,9 @@ mod tests {
             .unwrap();
         assert_eq!(coder.state.as_deref(), Some("waiting"));
         assert_eq!(coder.state_source.as_deref(), Some("hook"));
-        let latest = (Some("waiting"), Some("hook"), Some(105));
+        let latest = (Some("waiting"), Some("hook"), Some(105), None);
         assert!(set_screen_state(&connection, SESSION, CODER, "done", None, 111, latest).unwrap());
-        let unset = (None, None, None);
+        let unset = (None, None, None, None);
         assert!(
             set_screen_state(&connection, SESSION, ORCHESTRATOR, "done", None, 112, unset).unwrap()
         );
@@ -1579,12 +2704,22 @@ mod tests {
             "working",
             None,
             100,
-            (None, None, None),
+            (None, None, None, None),
         )
         .unwrap();
         // The listing read (working, screen, 100); a hook reports waiting in that same second.
-        set_state(&connection, SESSION, CODER, "waiting", "hook", None, 100).unwrap();
-        let read = (Some("working"), Some("screen"), Some(100));
+        set_state(
+            &connection,
+            SESSION,
+            CODER,
+            "waiting",
+            "hook",
+            None,
+            None,
+            100,
+        )
+        .unwrap();
+        let read = (Some("working"), Some("screen"), Some(100), None);
         assert!(!set_screen_state(&connection, SESSION, CODER, "done", None, 100, read).unwrap());
         let coder = agents(&connection, SESSION)
             .unwrap()
@@ -1602,9 +2737,10 @@ mod tests {
             &connection,
             SESSION,
             CODER,
-            "failed",
+            "waiting",
             "hook",
             Some("quota"),
+            Some("permission"),
             42,
         )
         .unwrap();
@@ -1620,10 +2756,99 @@ mod tests {
                 coder.state,
                 coder.state_at,
                 coder.state_source,
-                coder.state_detail
+                coder.state_detail,
+                coder.state_kind
             ),
-            (None, None, None, None)
+            (None, None, None, None, None)
         );
+    }
+
+    /// A ring from an older build was never checked, and its pane has moved on since, so the
+    /// migration stores it as unchecked. A later pass neither settles it nor reports it lost to
+    /// the chair (ADR 0041).
+    #[test]
+    fn a_version_four_ring_is_unchecked_and_never_reported_lost() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        for migration in &MIGRATIONS[..4] {
+            connection.execute_batch(migration).unwrap();
+        }
+        connection.pragma_update(None, "user_version", 4).unwrap();
+        connection
+            .execute_batch(&format!(
+                "INSERT INTO session (id, talk_mode, cwd) VALUES ('{SESSION}', 'lane', '/test');
+                 INSERT INTO agent (id, session_id, role)
+                     VALUES ('{ORCHESTRATOR}', '{SESSION}', 'orchestrator'),
+                            ('{CODER}', '{SESSION}', 'coder');
+                 INSERT INTO message (session_id, seq, sender_id, recipient_id, kind, body_path,
+                                      rung_at, rings)
+                     VALUES ('{SESSION}', 0, '{ORCHESTRATOR}', '{CODER}', 'ask', 'runs/0.txt',
+                             1700, 2),
+                            ('{SESSION}', 1, '{ORCHESTRATOR}', '{CODER}', 'ask', 'runs/1.txt',
+                             NULL, 0);"
+            ))
+            .unwrap();
+        migrate(&mut connection).unwrap();
+        assert!(unsettled_rings(&connection, SESSION).unwrap().is_empty());
+        assert!(
+            unreported_lost(&connection, SESSION, ORCHESTRATOR)
+                .unwrap()
+                .is_empty()
+        );
+        let delivery: Vec<Option<String>> = messages(&connection, SESSION, -1)
+            .unwrap()
+            .into_iter()
+            .map(|message| message.delivery)
+            .collect();
+        assert_eq!(delivery, [Some("unchecked".to_string()), None]);
+    }
+
+    /// `swarm send` takes any kind, so an older database can hold two hand-sent messages of one
+    /// report kind. The migration keeps both, and only a new report of that kind is refused.
+    #[test]
+    fn a_version_four_database_with_two_hand_sent_report_kinds_migrates_and_keeps_both() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        for migration in &MIGRATIONS[..4] {
+            connection.execute_batch(migration).unwrap();
+        }
+        connection.pragma_update(None, "user_version", 4).unwrap();
+        connection
+            .execute_batch(&format!(
+                "INSERT INTO session (id, talk_mode, cwd) VALUES ('{SESSION}', 'lane', '/test');
+                 INSERT INTO agent (id, session_id, role)
+                     VALUES ('{ORCHESTRATOR}', '{SESSION}', 'orchestrator'),
+                            ('{CODER}', '{SESSION}', 'coder');
+                 INSERT INTO message (session_id, seq, sender_id, recipient_id, kind, body_path)
+                     VALUES ('{SESSION}', 0, '{CODER}', '{ORCHESTRATOR}', 'stall:x', 'runs/0.txt'),
+                            ('{SESSION}', 1, '{CODER}', '{ORCHESTRATOR}', 'stall:x', 'runs/1.txt');"
+            ))
+            .unwrap();
+        migrate(&mut connection).unwrap();
+        let kept: Vec<(i64, String)> = messages(&connection, SESSION, -1)
+            .unwrap()
+            .into_iter()
+            .map(|message| (message.seq, message.kind))
+            .collect();
+        assert_eq!(
+            kept,
+            [(0, "stall:x".to_string()), (1, "stall:x".to_string())]
+        );
+        let root = std::env::temp_dir().join(format!("swarm-store-{}", uuid::Uuid::now_v7()));
+        let resend = send_message(
+            &mut connection,
+            &root,
+            SESSION,
+            CODER,
+            ORCHESTRATOR,
+            "stall:x",
+            "again",
+        );
+        let _ = std::fs::remove_dir_all(&root);
+        // `report` in main.rs reads this code as a report already sent.
+        assert!(matches!(
+            resend.unwrap_err().downcast_ref::<rusqlite::Error>(),
+            Some(rusqlite::Error::SqliteFailure(failure, _))
+                if failure.extended_code == rusqlite::ffi::SQLITE_CONSTRAINT_TRIGGER
+        ));
     }
 
     #[test]
@@ -1667,7 +2892,7 @@ mod tests {
         );
         Connection::open(&db)
             .unwrap()
-            .execute_batch("PRAGMA user_version = 5")
+            .pragma_update(None, "user_version", MIGRATIONS.len() + 1)
             .unwrap();
         assert!(open(&db).is_err());
     }
@@ -1742,5 +2967,443 @@ mod tests {
         assert_eq!(tables, ["bookmark"]);
         open(&root.join("new.db")).unwrap();
         assert!(made_by_swarm(&root.join("new.db")));
+    }
+
+    /// A second swarm that opens the db while the first migrates it waits and then finds it
+    /// migrated, not "database is locked", because migrate takes the write lock before it reads
+    /// the version.
+    #[test]
+    fn a_second_open_waits_for_a_migration_in_progress() {
+        let root = temp_root("migrate-race");
+        std::fs::create_dir_all(&root).unwrap();
+        let db = root.join("swarm.db");
+        let first = Connection::open(&db).unwrap();
+        for migration in &MIGRATIONS[..5] {
+            first.execute_batch(migration).unwrap();
+        }
+        first.pragma_update(None, "user_version", 5).unwrap();
+        first.execute_batch("BEGIN IMMEDIATE;").unwrap();
+        for migration in &MIGRATIONS[5..] {
+            first.execute_batch(migration).unwrap();
+        }
+        first
+            .pragma_update(None, "user_version", MIGRATIONS.len())
+            .unwrap();
+        let committer = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(500));
+            first.execute_batch("COMMIT;").unwrap();
+        });
+        let second = open(&db);
+        committer.join().unwrap();
+        assert!(second.is_ok(), "{:?}", second.err());
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// An open of a db at the newest version takes no write lock, so a polled read does not wait
+    /// behind a writer.
+    #[test]
+    fn an_open_of_a_current_db_does_not_wait_for_a_writer() {
+        let root = temp_root("migrate-current");
+        std::fs::create_dir_all(&root).unwrap();
+        let db = root.join("swarm.db");
+        drop(open(&db).unwrap());
+        let writer = Connection::open(&db).unwrap();
+        writer.execute_batch("BEGIN IMMEDIATE;").unwrap();
+        let reader = open(&db);
+        assert!(reader.is_ok(), "{:?}", reader.err());
+        writer.execute_batch("ROLLBACK;").unwrap();
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+    fn usage_fixture(tag: &str) -> (std::path::PathBuf, Connection) {
+        let root = temp_root(tag);
+        std::fs::create_dir_all(&root).unwrap();
+        let connection = open(&root.join("swarm.db")).unwrap();
+        connection
+            .execute(
+                "INSERT INTO session (id, talk_mode, cwd) VALUES (?1, 'lane', ?2)",
+                (SESSION, root.to_string_lossy()),
+            )
+            .unwrap();
+        add_agent(&connection, SESSION, CODER, "coder").unwrap();
+        set_log(&connection, SESSION, CODER, &root.join("chat.jsonl")).unwrap();
+        (root, connection)
+    }
+
+    fn assistant_usage(id: &str, model: &str) -> String {
+        format!(
+            r#"{{"type":"assistant","message":{{"id":"{id}","model":"{model}","usage":{{"input_tokens":10,"cache_creation_input_tokens":20,"cache_read_input_tokens":30,"output_tokens":4}}}}}}"#
+        )
+    }
+
+    #[test]
+    fn claude_usage_grows_once_per_message_across_reads() {
+        use std::io::Write;
+        let (root, connection) = usage_fixture("usage-growing");
+        let path = root.join("chat.jsonl");
+        let first = assistant_usage("m1", "claude-first");
+        std::fs::write(
+            &path,
+            format!(
+                "{}\n{first}\n{first}\n",
+                include_str!("../packages/transcript/src/fixtures/claude-chair-run.jsonl")
+            ),
+        )
+        .unwrap();
+        update_usage(&connection, SESSION, CODER, "claude").unwrap();
+        assert_eq!(agents(&connection, SESSION).unwrap()[0].tokens, Some(64));
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap();
+        writeln!(
+            file,
+            "{}\n{first}\n{}",
+            assistant_usage("m2", "claude-new"),
+            assistant_usage("stub", "<synthetic>")
+        )
+        .unwrap();
+        update_usage(&connection, SESSION, CODER, "claude").unwrap();
+        update_usage(&connection, SESSION, CODER, "claude").unwrap();
+        let agent = &agents(&connection, SESSION).unwrap()[0];
+        assert_eq!(agent.tokens, Some(128));
+        assert_eq!(agent.model.as_deref(), Some("claude-first"));
+        assert_eq!(agent.cost_usd, None);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn claude_usage_keeps_each_log_cursor_and_resets_only_a_shorter_log() {
+        let (root, connection) = usage_fixture("usage-reset");
+        let path = root.join("chat.jsonl");
+        let first = assistant_usage("m1", "claude");
+        let second = assistant_usage("m2", "claude");
+        std::fs::write(&path, format!("{first}\n{second}\n")).unwrap();
+        update_usage(&connection, SESSION, CODER, "claude").unwrap();
+        let next = root.join("next.jsonl");
+        std::fs::write(&next, format!("{first}\n")).unwrap();
+        set_log(&connection, SESSION, CODER, &next).unwrap();
+        update_usage(&connection, SESSION, CODER, "claude").unwrap();
+        assert_eq!(agents(&connection, SESSION).unwrap()[0].tokens, Some(192));
+        set_log(&connection, SESSION, CODER, &path).unwrap();
+        update_usage(&connection, SESSION, CODER, "claude").unwrap();
+        assert_eq!(agents(&connection, SESSION).unwrap()[0].tokens, Some(192));
+        std::fs::write(&path, format!("{first}\n")).unwrap();
+        update_usage(&connection, SESSION, CODER, "claude").unwrap();
+        assert_eq!(agents(&connection, SESSION).unwrap()[0].tokens, Some(128));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn claude_usage_adds_only_the_increase_in_a_later_message_record() {
+        use std::io::Write;
+        let (root, connection) = usage_fixture("usage-increase");
+        let path = root.join("chat.jsonl");
+        let first = assistant_usage("m1", "claude");
+        std::fs::write(&path, format!("{first}\n")).unwrap();
+        update_usage(&connection, SESSION, CODER, "claude").unwrap();
+        let higher = first.replace("\"output_tokens\":4", "\"output_tokens\":300");
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap();
+        writeln!(file, "{higher}\n{higher}\n{first}").unwrap();
+        update_usage(&connection, SESSION, CODER, "claude").unwrap();
+        assert_eq!(agents(&connection, SESSION).unwrap()[0].tokens, Some(360));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn claude_usage_defers_model_and_cost_until_a_stop_reaches_the_log_end() {
+        let (root, connection) = usage_fixture("usage-budget");
+        let runner = crate::config::Runner {
+            provider: crate::providers::Provider::Claude,
+            model: "claude-launch".into(),
+            effort: "high".into(),
+            sandbox: None,
+            approval: None,
+            permission: None,
+        };
+        set_launch(&connection, SESSION, CODER, "coder", &runner, None).unwrap();
+        let path = root.join("chat.jsonl");
+        let first = assistant_usage("m1", "claude-old");
+        let second = assistant_usage("m2", "claude-new");
+        let old_cost = r#"{"type":"cost-state","totalCostUSD":1,"hasUnknownModelCost":false}"#;
+        let new_cost = r#"{"type":"cost-state","totalCostUSD":2,"hasUnknownModelCost":false}"#;
+        let filler = format!("{}\n", "x".repeat(1023));
+        let log = format!(
+            "{first}\n{old_cost}\n{}{second}\n{new_cost}\n",
+            filler.repeat(8192)
+        );
+        std::fs::write(&path, &log).unwrap();
+        update_usage(&connection, SESSION, CODER, "claude").unwrap();
+        let agent = &agents(&connection, SESSION).unwrap()[0];
+        assert_eq!(agent.tokens, Some(64));
+        assert_eq!(agent.model.as_deref(), Some("claude-launch"));
+        assert_eq!(agent.cost_usd, None);
+        let stored: String = connection
+            .query_row(
+                "SELECT usage_state FROM agent WHERE session_id = ?1 AND id = ?2",
+                (SESSION, CODER),
+                |row| row.get(0),
+            )
+            .unwrap();
+        let state: crate::host::UsageState = serde_json::from_str(&stored).unwrap();
+        let saved = &state.logs[&path.to_string_lossy().into_owned()];
+        assert!(saved.offset > 0 && saved.offset <= 8 * 1024 * 1024);
+        assert!(saved.offset < log.len() as i64);
+        assert_eq!(saved.tokens, 64);
+        update_usage(&connection, SESSION, CODER, "claude").unwrap();
+        let agent = &agents(&connection, SESSION).unwrap()[0];
+        assert_eq!(agent.tokens, Some(128));
+        assert_eq!(agent.model.as_deref(), Some("claude-new"));
+        assert_eq!(agent.cost_usd, Some(2.0));
+        update_usage(&connection, SESSION, CODER, "claude").unwrap();
+        assert_eq!(agents(&connection, SESSION).unwrap()[0].tokens, Some(128));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn claude_usage_defers_an_ordinary_record_cut_by_the_budget() {
+        let (root, connection) = usage_fixture("usage-cut-record");
+        let path = root.join("chat.jsonl");
+        let first = assistant_usage("m1", "claude");
+        let second = assistant_usage("m2", "claude");
+        let limit = 8 * 1024 * 1024;
+        let mut prefix = format!(
+            "{first}\n{}",
+            format!("{}\n", "x".repeat(1023)).repeat(8191)
+        );
+        prefix.push_str(&format!("{}\n", "x".repeat(limit - prefix.len() - 81)));
+        std::fs::write(&path, format!("{prefix}{second}\n")).unwrap();
+        update_usage(&connection, SESSION, CODER, "claude").unwrap();
+        assert_eq!(agents(&connection, SESSION).unwrap()[0].tokens, Some(64));
+        let stored: String = connection
+            .query_row(
+                "SELECT usage_state FROM agent WHERE session_id = ?1 AND id = ?2",
+                (SESSION, CODER),
+                |row| row.get(0),
+            )
+            .unwrap();
+        let state: crate::host::UsageState = serde_json::from_str(&stored).unwrap();
+        assert_eq!(
+            state.logs[&path.to_string_lossy().into_owned()].offset,
+            prefix.len() as i64
+        );
+        update_usage(&connection, SESSION, CODER, "claude").unwrap();
+        assert_eq!(agents(&connection, SESSION).unwrap()[0].tokens, Some(128));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn claude_usage_skips_an_oversized_record_in_bounded_chunks() {
+        let (root, connection) = usage_fixture("usage-oversized");
+        let path = root.join("chat.jsonl");
+        let huge = assistant_usage("huge", "claude").replace(
+            "\"usage\"",
+            &format!("\"content\":\"{}\",\"usage\"", "x".repeat(9 * 1024 * 1024)),
+        );
+        std::fs::write(
+            &path,
+            format!("{huge}\n{}\n", assistant_usage("m1", "claude")),
+        )
+        .unwrap();
+        update_usage(&connection, SESSION, CODER, "claude").unwrap();
+        let stored: String = connection
+            .query_row(
+                "SELECT usage_state FROM agent WHERE session_id = ?1 AND id = ?2",
+                (SESSION, CODER),
+                |row| row.get(0),
+            )
+            .unwrap();
+        let state: crate::host::UsageState = serde_json::from_str(&stored).unwrap();
+        let offset = state.logs[&path.to_string_lossy().into_owned()].offset;
+        assert!(offset > 0 && offset <= 8 * 1024 * 1024);
+        update_usage(&connection, SESSION, CODER, "claude").unwrap();
+        assert_eq!(agents(&connection, SESSION).unwrap()[0].tokens, Some(64));
+        update_usage(&connection, SESSION, CODER, "claude").unwrap();
+        assert_eq!(agents(&connection, SESSION).unwrap()[0].tokens, Some(64));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_concurrent_usage_state_change_wins_over_a_stale_stop_write() {
+        let (root, connection) = usage_fixture("usage-write-race");
+        let path = root.join("chat.jsonl");
+        std::fs::write(&path, format!("{}\n", assistant_usage("m1", "claude"))).unwrap();
+        let other = open(&root.join("swarm.db")).unwrap();
+        for seed in [None, Some(r#"{"logs":{}}"#)] {
+            connection
+                .execute("UPDATE agent SET usage_state = ?1", [seed])
+                .unwrap();
+            let old_state: Option<String> = connection
+                .query_row(
+                    "SELECT usage_state FROM agent WHERE session_id = ?1 AND id = ?2",
+                    (SESSION, CODER),
+                    |row| row.get(0),
+                )
+                .unwrap();
+            let read =
+                crate::host::claude_usage(&path, &crate::host::ClaudeLogUsage::default()).unwrap();
+            let winning_state = r#"{"logs":{"other":{"offset":100,"tokens":123,"ids":[]}}}"#;
+            other.execute("UPDATE agent SET usage_state = ?1, tokens = 123, model = 'winner', cost_usd = 9", [winning_state]).unwrap();
+            write_usage(
+                &connection,
+                SESSION,
+                CODER,
+                &path.to_string_lossy(),
+                &read.snapshot,
+                Some(r#"{"logs":{}}"#),
+                old_state.as_deref(),
+            )
+            .unwrap();
+            let agent = &agents(&connection, SESSION).unwrap()[0];
+            assert_eq!(agent.tokens, Some(123));
+            assert_eq!(agent.model.as_deref(), Some("winner"));
+            assert_eq!(agent.cost_usd, Some(9.0));
+            let actual: String = connection
+                .query_row(
+                    "SELECT usage_state FROM agent WHERE session_id = ?1 AND id = ?2",
+                    (SESSION, CODER),
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(actual, winning_state);
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn claude_usage_ignores_partial_cost_and_synthetic_models() {
+        let (root, connection) = usage_fixture("usage-partial");
+        let path = root.join("chat.jsonl");
+        std::fs::write(
+            &path,
+            format!(
+                "{}\n{}\n{}\n",
+                assistant_usage("m1", "claude"),
+                r#"{"type":"cost-state","totalCostUSD":3,"hasUnknownModelCost":true}"#,
+                assistant_usage("stub", "<synthetic>")
+            ),
+        )
+        .unwrap();
+        update_usage(&connection, SESSION, CODER, "claude").unwrap();
+        let agent = &agents(&connection, SESSION).unwrap()[0];
+        assert_eq!(agent.cost_usd, None);
+        assert_eq!(agent.tokens, Some(64));
+        assert_eq!(agent.model.as_deref(), Some("claude"));
+        std::fs::write(
+            &path,
+            r#"{"type":"cost-state","totalCostUSD":0,"hasUnknownModelCost":false}"#,
+        )
+        .unwrap();
+        update_usage(&connection, SESSION, CODER, "claude").unwrap();
+        assert_eq!(agents(&connection, SESSION).unwrap()[0].cost_usd, Some(0.0));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn claude_usage_keeps_an_unfinished_record_for_the_next_read() {
+        use std::io::Write;
+        let (root, connection) = usage_fixture("usage-unfinished");
+        let path = root.join("chat.jsonl");
+        let first = assistant_usage("m1", "claude");
+        let second = assistant_usage("m2", "claude");
+        let split = second.len() / 2;
+        std::fs::write(
+            &path,
+            format!(
+                "{first}\n{}\n{}",
+                "x".repeat(1024 * 1024 + 100),
+                &second[..split]
+            ),
+        )
+        .unwrap();
+        update_usage(&connection, SESSION, CODER, "claude").unwrap();
+        assert_eq!(agents(&connection, SESSION).unwrap()[0].tokens, Some(64));
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap();
+        writeln!(file, "{}", &second[split..]).unwrap();
+        update_usage(&connection, SESSION, CODER, "claude").unwrap();
+        assert_eq!(agents(&connection, SESSION).unwrap()[0].tokens, Some(128));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn usage_migration_keeps_existing_values_and_starts_without_a_cursor() {
+        let root = temp_root("usage-migration");
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("swarm.db");
+        let connection = Connection::open(&path).unwrap();
+        for migration in &MIGRATIONS[..7] {
+            connection.execute_batch(migration).unwrap();
+        }
+        connection.pragma_update(None, "user_version", 7).unwrap();
+        connection
+            .execute(
+                "INSERT INTO session (id, talk_mode, cwd) VALUES (?1, 'lane', '/test')",
+                [SESSION],
+            )
+            .unwrap();
+        connection.execute("INSERT INTO agent (id, session_id, role, tokens, cost_usd) VALUES (?1, ?2, 'coder', 42, 3)", (CODER, SESSION)).unwrap();
+        drop(connection);
+        let connection = open(&path).unwrap();
+        let values = connection
+            .query_row(
+                "SELECT tokens, cost_usd, usage_state FROM agent WHERE session_id = ?1 AND id = ?2",
+                (SESSION, CODER),
+                |row| {
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        row.get::<_, f64>(1)?,
+                        row.get::<_, Option<String>>(2)?,
+                    ))
+                },
+            )
+            .unwrap();
+        assert_eq!(values, (42, 3.0, None));
+        assert_eq!(
+            connection
+                .query_row("PRAGMA foreign_key_check", [], |_| Ok(()))
+                .optional()
+                .unwrap(),
+            None
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn claude_usage_retains_only_the_latest_message_ids() {
+        use std::io::Write;
+        let (root, connection) = usage_fixture("usage-id-limit");
+        let path = root.join("chat.jsonl");
+        let log = (0..66)
+            .map(|id| assistant_usage(&format!("m{id}"), "claude"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        std::fs::write(&path, format!("{log}\n")).unwrap();
+        update_usage(&connection, SESSION, CODER, "claude").unwrap();
+        let stored: String = connection
+            .query_row(
+                "SELECT usage_state FROM agent WHERE session_id = ?1 AND id = ?2",
+                (SESSION, CODER),
+                |row| row.get(0),
+            )
+            .unwrap();
+        let state: crate::host::UsageState = serde_json::from_str(&stored).unwrap();
+        let ids = &state.logs[&path.to_string_lossy().into_owned()].ids;
+        assert_eq!(ids.len(), crate::host::COUNTED_MESSAGES);
+        assert_eq!(ids.front().map(|(id, _)| id.as_str()), Some("m2"));
+        assert_eq!(ids.back().map(|(id, _)| id.as_str()), Some("m65"));
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap();
+        writeln!(file, "{}", assistant_usage("m65", "claude")).unwrap();
+        update_usage(&connection, SESSION, CODER, "claude").unwrap();
+        assert_eq!(
+            agents(&connection, SESSION).unwrap()[0].tokens,
+            Some(66 * 64)
+        );
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

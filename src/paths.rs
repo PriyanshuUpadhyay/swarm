@@ -2,21 +2,32 @@ const SWARM_DIR: &str = ".swarm";
 const SWARM_DB: &str = "swarm.db";
 /// The file that proves a `.swarm` folder is swarm's own (ADR 0036).
 const MARKER: &str = "swarm-home";
+/// The owner's guard rule list, which `swarm guard` reads (ADR 0040).
+pub const GUARDS: &str = "guards.json";
+/// The app's held file lock, which makes the CLI leave owner notices to the app (ADR 0058).
+pub const APP_LOCK: &str = "app.lock";
+/// The owner's consent for launch folder trust (ADR 0043).
+const CONSENT: &str = "consent.json";
+/// The lock every build takes before it edits a file outside its home (ADR 0043, C6).
+const TRUST_LOCK: &str = "trust.lock";
 
 /// The parent of the `.swarm` data directory for this build. See ADR 0027.
 ///
-/// SWARM_HOME is read first, so an explicit one works when HOME is unset or not UTF-8.
+/// SWARM_HOME is read first, so an explicit one works when HOME is unset or not UTF-8. An empty
+/// one is an error, because as a relative path it would put `.swarm` in the current folder.
 pub fn home() -> Result<String, Box<dyn std::error::Error>> {
     match std::env::var("SWARM_HOME") {
         Err(std::env::VarError::NotPresent) => Ok(branch_home(
             &std::env::var("HOME")?,
             env!("SWARM_BUILD_BRANCH"),
         )),
+        Ok(explicit) if explicit.is_empty() => Err("SWARM_HOME is set but empty".into()),
         explicit => Ok(explicit?),
     }
 }
 
-/// HOME for a `main` build or a build with no branch (`""`), else `HOME/<branch_folder>`.
+/// HOME for a release build (`""`, see `build.rs`), else `HOME/<branch_folder>`. A dev build from
+/// `main` is `HOME/.swarm-main` and one from a detached HEAD (`HEAD`) is `HOME/.swarm-head+<hash>`.
 pub fn branch_home(home: &str, branch: &str) -> String {
     match branch_folder(branch) {
         None => home.to_string(),
@@ -39,7 +50,7 @@ pub fn branch_home(home: &str, branch: &str) -> String {
 /// uppercase, or very long name relies on the hash, which keeps `feat/login` apart from
 /// `feat-login`. A folder name is at most 7 + 200 + 17 = 224 bytes, under NAME_MAX 255.
 pub fn branch_folder(branch: &str) -> Option<String> {
-    if matches!(branch, "" | "main") {
+    if branch.is_empty() {
         return None;
     }
     let safe = |byte: u8| {
@@ -70,6 +81,19 @@ pub fn root_dir() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
     Ok(root)
 }
 
+/// The folder of the Codex homes that `swarm accounts login` makes. It is only read through this
+/// path, so it does not claim the swarm folder.
+pub fn codex_accounts_dir() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
+    Ok(crate::accounts::accounts_dir(
+        &std::path::PathBuf::from(home()?).join(SWARM_DIR),
+        crate::providers::Provider::Codex,
+    ))
+}
+
+pub fn skills_dir() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
+    Ok(root_dir()?.join("skills"))
+}
+
 /// Prove that swarm owns `root` before anything writes there (ADR 0036). A missing or empty
 /// folder is claimed with the marker before any other write. A folder with no marker is adopted
 /// only when it holds a db that an older swarm made. Any other folder is refused with no write.
@@ -79,8 +103,14 @@ fn claim(root: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
     if marker.is_file() {
         return Ok(());
     }
+    // The Mac-wide files (ADR 0040, 0043) can arrive before this build first runs: the owner's
+    // rule list, or a branch build's lock and consent. They do not count.
     let empty = match std::fs::read_dir(root) {
-        Ok(mut entries) => entries.next().is_none(),
+        Ok(mut entries) => entries.all(|entry| {
+            entry.is_ok_and(|entry| {
+                [GUARDS, CONSENT, TRUST_LOCK].contains(&&*entry.file_name().to_string_lossy())
+            })
+        }),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => true,
         Err(error) => return Err(format!("swarm: cannot read {}: {error}", root.display()).into()),
     };
@@ -107,6 +137,33 @@ fn claim(root: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// The owner's guard rule list (ADR 0040): `SWARM_GUARDS` when set, else `~/.swarm/guards.json`
+/// for every build and every SWARM_HOME, because the hooks that read it are global to each CLI.
+pub fn guards_file() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
+    match std::env::var_os("SWARM_GUARDS") {
+        Some(path) => Ok(path.into()),
+        None => Ok(mac_dir()?.join(GUARDS)),
+    }
+}
+
+/// `~/.swarm` for every build and every SWARM_HOME, for what is global to the Mac.
+fn mac_dir() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
+    Ok(std::path::PathBuf::from(std::env::var("HOME")?).join(SWARM_DIR))
+}
+
+/// The owner's launch trust consent, `~/.swarm/consent.json`, global like the trust files.
+pub fn consent_file() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
+    Ok(mac_dir()?.join(CONSENT))
+}
+
+/// `~/.swarm/trust.lock`, made with its folder, so two builds with two homes take one lock on the
+/// files they share (C6).
+pub fn trust_lock() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
+    let dir = mac_dir()?;
+    std::fs::create_dir_all(&dir)?;
+    Ok(dir.join(TRUST_LOCK))
+}
+
 pub fn runs_dir() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
     Ok(root_dir()?.join("runs"))
 }
@@ -119,10 +176,65 @@ pub fn sqlite_db() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
 mod tests {
     use super::{branch_folder, branch_home};
 
+    #[test]
+    fn settings_paths_match_the_shared_swift_vectors() {
+        let vectors: serde_json::Value =
+            serde_json::from_str(include_str!("../tests/fixtures/settings-paths.json")).unwrap();
+        for vector in vectors.as_array().unwrap() {
+            let home = vector["explicit"]
+                .as_str()
+                .map(String::from)
+                .unwrap_or_else(|| {
+                    branch_home(
+                        vector["home"].as_str().unwrap(),
+                        vector["branch"].as_str().unwrap(),
+                    )
+                });
+            let lock = std::path::Path::new(&home)
+                .join(super::SWARM_DIR)
+                .join(super::APP_LOCK);
+            assert_eq!(lock.to_str().unwrap(), vector["lock"].as_str().unwrap());
+            let mut probe = std::process::Command::new(std::env::current_exe().unwrap());
+            probe
+                .env_clear()
+                .env("HOME", vector["home"].as_str().unwrap())
+                .env(
+                    "SWARM_TEST_GUARDS_EXPECTED",
+                    vector["guards"].as_str().unwrap(),
+                )
+                .args(["--exact", "paths::tests::guards_path_probe"]);
+            if let Some(explicit) = vector["explicit"].as_str() {
+                probe.env("SWARM_HOME", explicit);
+            }
+            if let Some(guards) = vector["guardsOverride"].as_str() {
+                probe.env("SWARM_GUARDS", guards);
+            }
+            let output = probe.output().unwrap();
+            assert!(output.status.success(), "{vector}: {output:?}");
+            assert!(
+                String::from_utf8_lossy(&output.stdout).contains("1 passed"),
+                "guard path probe did not run: {vector}: {output:?}"
+            );
+        }
+    }
+
+    // A subprocess keeps each vector's environment separate from concurrent tests.
+    #[test]
+    fn guards_path_probe() {
+        let Ok(expected) = std::env::var("SWARM_TEST_GUARDS_EXPECTED") else {
+            return;
+        };
+        assert_eq!(
+            super::guards_file().unwrap(),
+            std::path::PathBuf::from(expected)
+        );
+    }
+
     /// Shared with `ui/Tests/SwarmCoreTests/SwarmHomeTests.swift`; keep both lists the same.
-    const VECTORS: [(&str, Option<&str>); 14] = [
-        ("main", None),
+    const VECTORS: [(&str, Option<&str>); 15] = [
+        ("main", Some(".swarm-main")),
         ("", None),
+        ("HEAD", Some(".swarm-head+4b9253d8ff1ee183")),
         ("unknown", Some(".swarm-unknown")),
         ("ui-polish", Some(".swarm-ui-polish")),
         ("feat/login", Some(".swarm-feat-login+407712bf7898fb7f")),
@@ -179,9 +291,13 @@ mod tests {
     }
 
     #[test]
-    fn main_and_no_branch_use_home_and_others_a_folder_in_it() {
-        assert_eq!(branch_home("/home-dir", "main"), "/home-dir");
+    fn a_release_build_uses_home_and_a_dev_build_a_folder_in_it() {
         assert_eq!(branch_home("/home-dir", ""), "/home-dir");
+        assert_eq!(branch_home("/home-dir", "main"), "/home-dir/.swarm-main");
+        assert_eq!(
+            branch_home("/home-dir", "HEAD"),
+            "/home-dir/.swarm-head+4b9253d8ff1ee183"
+        );
         assert_eq!(
             branch_home("/home-dir", "ui-polish"),
             "/home-dir/.swarm-ui-polish"

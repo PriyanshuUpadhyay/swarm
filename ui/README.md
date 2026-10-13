@@ -58,19 +58,22 @@ The picker reports each step. Cancel stops the switch before the new agent start
 agent may still finish its summary. After launch, cancellation is disabled until the operation
 finishes. The chats are linked only after the new agent receives the context.
 
-One sidebar switches between Workspaces, Files, Changes, PR, and Usage. ⇧⌘B or the toolbar menu
-moves it left or right; ⌘B hides or shows it, ⌥⌘1 to ⌥⌘5 pick a view, and ⌥⌘I opens Changes.
+One sidebar switches between Workspaces, Files, Changes, PR, Usage, and Runs. ⇧⌘B or the toolbar menu
+moves it left or right; ⌘B hides or shows it, ⌥⌘1 to ⌥⌘6 pick a view, and ⌥⌘I opens Changes.
 Drag its inner edge to resize it. Its side, width, and selected view survive restarts. The composer usage line selects Usage.
 Reads run when a view opens or Refresh is pressed; they do not fetch or change Git.
+Runs lists the step runs that skills such as flow write under the workspace's `tmp/<skill>/`, and
+draws one run as a graph of its steps; it re-reads them every second while it shows.
 
 Agent panes sit in columns to the right of the chat. Drag a column's right edge to set the width
 of every column, or the line inside a two-pane column to split it; a double-click resets either.
 The width and splits survive restarts.
 
 Every app key is a menu command, so it works while an agent pane has focus. ⌘N makes a workspace
-in the current project, ⌘T starts a chat in the workspace, and ⇧⌘N makes or imports a project. ⌃⌘↓ and ⌃⌘↑ move between workspaces. ⌘1 to ⌘9 pick
-a chat tab, and ⇧⌘] and ⇧⌘[ step through them. ⌥⌘ with an arrow moves focus between the chat
-and the panes, and the strip scrolls to the focused pane. ⌘↩ zooms the focused pane and returns
+in the current project, ⌘T starts a chat in the workspace, and ⇧⌘N makes or imports a project.
+⌃⌘↓ and ⌃⌘↑ move between workspaces. ⌘1 to ⌘8 pick a chat tab, ⌘9 picks the last chat tab,
+and ⇧⌘] and ⇧⌘[ step through them. ⌥⌘ with an arrow moves focus between the chat and the panes,
+and the strip scrolls to the focused pane. ⇧⌘↩ zooms the focused pane and returns
 it. ⌘L focuses the composer. ⌘K opens the command palette, which finds actions, workspaces,
 chats, and agents; every query word must match. ⌘F, ⌘G, and ⇧⌘G find in the chat or in the
 focused pane. A pane gets every key without ⌘, including all ⌃ and ⌥ keys and Esc. In a pane,
@@ -109,10 +112,12 @@ Run `make build` to compile the Swift targets.
 Run `make test` to build the transcript tool and run tests.
 Run `make lint` to check the source boundaries.
 Run `make app` to build `.build/release/Swarm.app`.
-Run `make install` to put it in `~/Applications`, keep the old app, and install the `swarm` CLI
-from this checkout. `make app` never changes the installed CLI or `~/.swarm`.
+Run `make install` to put it in `~/Applications`, keep the old app, and run `swarm init` with this
+build. It puts no `swarm` on PATH, because the cask's link is the PATH `swarm` (ADR 0048).
+`make app` never changes `~/.swarm`.
 Run `make run` to build and launch the app.
 Run `make dmg` to package the app as `.build/release/Swarm-<version>.dmg`. The app carries its own
-`swarm` CLI in `Contents/Helpers` and uses it only when `SWARM_BIN` and the login PATH name none.
-A build from a branch other than `main` keeps its data in `~/.swarm-<branch>` and passes that
-`SWARM_HOME` to every `swarm` it starts. An explicit `SWARM_HOME` in the app's environment wins.
+`swarm` CLI in `Contents/Helpers` and uses it before the login PATH's `swarm`; `SWARM_BIN` wins.
+A release build (`SWARM_RELEASE_BUILD=1`, as release.yml builds it) shows one alert at launch when the login PATH's `swarm` is another build.
+Every other build, `main` too, keeps its data in `~/.swarm-<branch>` and passes that `SWARM_HOME`
+to every `swarm` it starts, so `make install` never migrates `~/.swarm` (ADR 0027, ADR 0048). An explicit `SWARM_HOME` in the app's environment wins.

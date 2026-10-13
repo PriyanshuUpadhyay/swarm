@@ -6,6 +6,7 @@ public struct WorkspaceFileEntry: Identifiable, Sendable {
     public let path: String
     public let name: String
     public let kind: Kind
+    public let modified: Date
     public var id: String { path }
 }
 
@@ -64,7 +65,8 @@ public enum WorkspaceFiles {
                 case S_IFLNK: kind = .symbolicLink
                 default: kind = .other
                 }
-                entries.append(WorkspaceFileEntry(path: path.isEmpty ? name : path + "/" + name, name: name, kind: kind))
+                let modified = Date(timeIntervalSince1970: TimeInterval(info.st_mtimespec.tv_sec) + TimeInterval(info.st_mtimespec.tv_nsec) / 1e9)
+                entries.append(WorkspaceFileEntry(path: path.isEmpty ? name : path + "/" + name, name: name, kind: kind, modified: modified))
             }
             return listing(entries, truncated: false)
         }

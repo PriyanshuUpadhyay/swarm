@@ -354,7 +354,7 @@ struct ComposerTests {
         let account = SwarmAccount(
             name: "a", email: nil, home: "/users/a",
             env: ["CLAUDE_CONFIG_DIR": "/profiles/a/claude"],
-            signedIn: true, remainingPct: nil, summary: nil
+            authState: .signedIn, remainingPct: nil, summary: nil
         )
         let source = ComposerCommandSource.resolve(
             provider: "claude", session: session, accounts: [account], homeDirectory: "/users/default"
@@ -369,7 +369,7 @@ struct ComposerTests {
         let codex = SwarmAccount(
             name: "codex", email: nil, home: "/users/a",
             env: ["CODEX_HOME": "/profiles/a/codex"],
-            signedIn: true, remainingPct: nil, summary: nil
+            authState: .signedIn, remainingPct: nil, summary: nil
         )
         #expect(ComposerCommandSource.resolve(
             provider: "codex", session: session, accounts: [codex],

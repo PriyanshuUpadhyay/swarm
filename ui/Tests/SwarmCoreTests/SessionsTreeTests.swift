@@ -10,6 +10,95 @@ struct SessionsTreeTests {
         WorktreeEntry(path: "/repo/wt/feature", branch: "feature"),
     ]
 
+    @Test("Worktree listings stay cached for ten seconds and refresh additions and removals")
+    func worktreeListingsExpire() async throws {
+        let calls = WorktreeListingCalls()
+        let discovery = SwarmSessionDiscovery(worktreeLister: { await calls.list($0) })
+        let start = Date.now
+        let first = try await discovery.worktrees(for: "/repo-one", now: start)
+        #expect(first.map(\.path) == ["/repo-one/main"])
+        await calls.set([WorktreeEntry(path: "/repo-one/new", branch: "new")])
+        #expect(try await discovery.worktrees(for: "/repo-one", now: start.addingTimeInterval(9.999)) == first)
+        #expect(await calls.paths == ["/repo-one"])
+        #expect(try await discovery.worktrees(for: "/repo-one", now: start.addingTimeInterval(10)).map(\.path) == ["/repo-one/new"])
+        _ = try await discovery.worktrees(for: "/repo-two", now: start.addingTimeInterval(10))
+        #expect(await calls.paths == ["/repo-one", "/repo-one", "/repo-two"])
+        await calls.set([])
+        #expect(try await discovery.worktrees(for: "/repo-one", now: start.addingTimeInterval(20)).isEmpty)
+    }
+
+    @Test("Forgetting worktrees prevents an older in-flight listing from filling the cache")
+    func forgetWorktreesDuringListing() async throws {
+        let calls = SuspendedWorktreeListing()
+        let discovery = SwarmSessionDiscovery(worktreeLister: { await calls.list($0) })
+        let start = Date.now
+        let oldListing = Task { try await discovery.worktrees(for: "/repo-one", now: start) }
+        await calls.waitUntilStarted()
+        await discovery.forgetWorktrees(for: "/repo-one")
+        let fresh = try await discovery.worktrees(for: "/repo-one", now: start)
+        #expect(fresh.map(\.path) == ["/repo-one/new"])
+        await calls.resume()
+        #expect(try await oldListing.value.map(\.path) == ["/repo-one/old"])
+        #expect(try await discovery.worktrees(for: "/repo-one", now: start) == fresh)
+        #expect(await calls.count == 2)
+    }
+
+    @Test("The tree reads many sessions with one agents call and keeps unknown sessions unknown")
+    func treeReadsAgentsOnce() async throws {
+        let agent = SwarmAgent(id: .init("orchestrator"), role: "chair", pane: "%1", alive: true, state: "working")
+        var sessions = (0..<50).map { session("batch-\($0)", cwd: "/outside") }
+        sessions[0].adapter = "herdr"
+        var unknown = session("no-adapter", cwd: "/outside")
+        unknown.adapter = nil
+        var empty = session("empty", cwd: "/outside")
+        empty.agents = 0
+        let archived = session("archived", cwd: "/outside", archivedAt: 50)
+        sessions += [unknown, empty, archived]
+        let listings = Dictionary(uniqueKeysWithValues: sessions.map {
+            ($0.id.rawValue, SwarmAgentList(agents: [agent]))
+        })
+        let encoder = JSONEncoder()
+        encoder.keyEncodingStrategy = .convertToSnakeCase
+        let batch = String(decoding: try encoder.encode(listings), as: UTF8.self)
+        let single = String(decoding: try encoder.encode(SwarmAgentList(agents: [agent])), as: UTF8.self)
+        let calls = TreeAgentCalls()
+        let bus = SwarmCLIBus(environment: [:], cwd: "/tmp") { _, arguments, _, environment, _, _ in
+            await calls.record(arguments, environment: environment)
+            return ShellResult(status: 0, stdout: arguments.contains("--all") ? batch : single, stderr: "")
+        }
+        let tree = try await SwarmSessionDiscovery().tree(sessions: sessions, bus: bus)
+        #expect(await calls.arguments == [["agents", "--json", "--all"]])
+        #expect(await calls.sessionIDs == [nil])
+        for item in sessions.prefix(50) {
+            #expect(tree.session(item.id)?.status == .working)
+            #expect(tree.session(item.id)?.isRunning == true)
+            #expect(tree.session(item.id)?.liveAgents == 1)
+        }
+        #expect(tree.session(unknown.id)?.status == nil)
+        #expect(tree.session(unknown.id)?.isRunning == nil)
+        #expect(tree.session(empty.id) == nil)
+        #expect(tree.session(archived.id) == nil)
+    }
+
+    @Test("An older swarm with no --all still lists each session's agents")
+    func treeFallsBackWithoutBatch() async throws {
+        let agent = SwarmAgent(id: .init("orchestrator"), role: "chair", pane: "%1", alive: true, state: "working")
+        let sessions = (0..<3).map { session("old-\($0)", cwd: "/outside") }
+        let encoder = JSONEncoder()
+        encoder.keyEncodingStrategy = .convertToSnakeCase
+        let single = String(decoding: try encoder.encode(SwarmAgentList(agents: [agent])), as: UTF8.self)
+        let calls = TreeAgentCalls()
+        let bus = SwarmCLIBus(environment: [:], cwd: "/tmp") { _, arguments, _, environment, _, _ in
+            await calls.record(arguments, environment: environment)
+            return arguments.contains("--all")
+                ? ShellResult(status: 2, stdout: "", stderr: "unknown flag --all")
+                : ShellResult(status: 0, stdout: single, stderr: "")
+        }
+        let tree = try await SwarmSessionDiscovery().tree(sessions: sessions, bus: bus)
+        #expect(await calls.arguments.count == 4)
+        for item in sessions { #expect(tree.session(item.id)?.status == .working) }
+    }
+
     @Test("One repository keeps workspaces and exposes their chats")
     func repositoryAndWorktrees() {
         var older = session("11111111-a", cwd: "/repo/wt/main/src")
@@ -19,7 +108,7 @@ struct SessionsTreeTests {
         let tree = build([older, newer, session("33333333-c", cwd: "/repo/.bare")])
         #expect(tree.projects.count == 1)
         #expect(tree.projects[0].name == "repo")
-        #expect(tree.projects[0].workspaces.map(\.name) == ["feature", "main", ".bare"])
+        #expect(tree.projects[0].workspaces.map(\.name) == ["main", "feature", "repo"])
         #expect(tree.projects[0].workspaces.map(\.sessions.count) == [1, 1, 1])
         #expect(tree.projects[0].chats.map(\.id) == [newer.id, older.id, SwarmSessionID("33333333-c")])
         #expect(tree.launchDirectory(for: newer.id) == "/repo/wt/feature")
@@ -55,7 +144,7 @@ struct SessionsTreeTests {
         #expect(repository.projects.map(\.path) == ["/repo"])
         #expect(repository.projects[0].launchDirectory == "/repo/wt/feature")
         #expect(repository.projects[0].chats.isEmpty)
-        #expect(repository.projects[0].workspaces.map(\.name) == ["feature", "main"])
+        #expect(repository.projects[0].workspaces.map(\.name) == ["main", "feature"])
 
         let reopened = build([], projectPaths: ["/repo/wt/feature", "/repo/wt/main"])
         #expect(reopened.projects.count == 1)
@@ -70,8 +159,8 @@ struct SessionsTreeTests {
         let titles = Dictionary(uniqueKeysWithValues: tree.projects[0].workspaces[0].sessions.map {
             ($0.id, $0.title)
         })
-        #expect(titles == [named.id: "Repair the sidebar", fallback.id: "Chat"])
-        #expect(tree.windowTitle(for: named.id) == "outside · Repair the sidebar")
+        #expect(titles == [named.id: "Repair the sidebar", fallback.id: "Chat fallback"])
+        #expect(tree.windowTitle(for: named.id, navigation: WorkspaceNavigation()) == "outside · Repair the sidebar")
     }
 
     @Test("Session rows have clear titles, captions, and states")
@@ -111,7 +200,7 @@ struct SessionsTreeTests {
         #expect(SessionRowPresentation.make(
             tree.projects[0].chats[0], now: 61
         ).caption == "outside · ended")
-        #expect(tree.text(now: 61).contains("Chat · outside · ended · 1m"))
+        #expect(tree.text(now: 61).contains("Chat dead-ses · outside · ended · 1m"))
 
         let empty = build([dead], agentsBySession: [dead.id: []])
         #expect(empty.projects.isEmpty)
@@ -159,7 +248,7 @@ struct SessionsTreeTests {
         )
         #expect(sections.map(\.title) == ["Pinned", "api", "docs"])
         #expect(sections.map(\.kind) == [.pinned, .project(path: "/api"), .project(path: "/docs")])
-        #expect(sections[0].rows.map(\.id) == ["/docs"])
+        #expect(sections[0].rows.filter { $0.kind == .workspace }.map(\.id) == ["/docs"])
         // A project whose only workspace is pinned keeps its header for its "+".
         #expect(sections[2].rows.isEmpty)
         let apiRow = sections[1].rows[0]
@@ -174,14 +263,14 @@ struct SessionsTreeTests {
             showingArchive: true, now: 61
         )
         #expect(archived.map(\.kind) == [.project(path: "/api")])
-        #expect(archived[0].rows.map(\.id) == ["/api"])
+        #expect(archived[0].rows.filter { $0.kind == .workspace }.map(\.id) == ["/api"])
         #expect(SidebarRows.sections(
             projects: tree.projects, workspaces: workspaces, navigation: navigation, search: "docs",
             showingArchive: false, now: 61
-        ).flatMap(\.rows).map(\.id) == ["/docs"])
+        ).flatMap(\.rows).filter { $0.kind == .workspace }.map(\.id) == ["/docs"])
     }
 
-    @Test("Workspaces sit under their project in activity order, titled without the project name")
+    @Test("Workspaces keep main first under their project, titled without the project name")
     func projectSections() {
         var feature = session("feature-session", cwd: "/repo/wt/feature")
         feature.lastMessageAt = 20
@@ -199,9 +288,9 @@ struct SessionsTreeTests {
         ])
         // A plain folder is its own one workspace.
         #expect(sections[0].rows.map(\.title) == ["empty"])
-        #expect(sections[2].rows.map(\.id) == ["/repo/wt/feature", "/repo/wt/main"])
-        #expect(sections[2].rows.map(\.title) == ["feature", "main"])
-        #expect(sections[1].rows.map(\.title) == ["notes"])
+        #expect(sections[2].rows.filter { $0.kind == .workspace }.map(\.id) == ["/repo/wt/main", "/repo/wt/feature"])
+        #expect(sections[2].rows.filter { $0.kind == .workspace }.map(\.title) == ["main", "feature"])
+        #expect(sections[1].rows.filter { $0.kind == .workspace }.map(\.title) == ["notes"])
 
         // The palette has no headers, so it keeps "project / folder".
         let listed = PaletteSource.workspaces(WorkspaceEntry.list(in: tree), navigation: navigation, now: 61)
@@ -212,7 +301,7 @@ struct SessionsTreeTests {
             projects: tree.projects, workspaces: WorkspaceEntry.list(in: tree), navigation: navigation,
             search: "", showingArchive: false, now: 61
         )
-        let row = renamed[2].rows[1]
+        let row = renamed[2].rows.filter { $0.kind == .workspace }[0]
         #expect(row.title == "Fix login")
         #expect(row.detail == "main · 1 chat")
 
@@ -289,12 +378,12 @@ struct SessionsTreeTests {
             id: .init("orchestrator"), role: "chair", pane: "%1", alive: true, state: "working"
         )]])
         let chats = tree.workspaceChats(for: live.id)
-        let tab = ChatTab.tabs(chats, closing: [], now: 61)[0]
+        let tab = ChatTab.tabs(chats, strip: .init(open: chats.map { ChatTitle.key($0.session) }), closing: [], now: 61)[0]
         #expect(tab.id == "live-session")
         #expect(tab.status == .working)
         #expect(tab.badge == "X")
         #expect(tab.canClose)
-        #expect(!ChatTab.tabs(chats, closing: [live.id], now: 61)[0].canClose)
+        #expect(!ChatTab.tabs(chats, strip: .init(open: chats.map { ChatTitle.key($0.session) }), closing: [live.id], now: 61)[0].canClose)
         #expect(ChatTab.badge("claude") == "C")
         #expect(ChatTab.badge("agy") == "A")
     }
@@ -312,7 +401,7 @@ struct SessionsTreeTests {
         #expect(SessionRowPresentation.make(
             withChair.projects[0].chats[0], now: 61
         ).caption == "outside · codex")
-        #expect(withChair.windowTitle(for: item.id) == "outside · Chat")
+        #expect(withChair.windowTitle(for: item.id, navigation: WorkspaceNavigation()) == "outside · codex provider")
 
         let withoutChair = build([item], agentsBySession: [item.id: [worker]])
         #expect(SessionRowPresentation.make(
@@ -333,7 +422,7 @@ struct SessionsTreeTests {
             == ["live-new", "live-old", "no-chair", "ended-new", "ended-old"])
     }
 
-    @Test("Workspaces sort by state and then recent activity")
+    @Test("Workspace names keep their order across status and activity changes")
     func workspaceOrdering() {
         let workspaces = [
             WorkspaceNode(path: "/ended", name: "ended", sessions: [
@@ -350,7 +439,7 @@ struct SessionsTreeTests {
             ]),
         ]
         #expect(SessionsTree.ordered(workspaces).map(\.name)
-            == ["live-new", "live-old", "no-chair", "ended"])
+            == ["ended", "live-new", "live-old", "no-chair"])
     }
 
     @Test("Archived sessions and empty worktrees are hidden")
@@ -380,7 +469,7 @@ struct SessionsTreeTests {
         #expect(tree.session(rows[0].id)?.id == rows[0].id)
         #expect(tree.retainedSelection(SwarmSessionID("newer")) == rows[0].id)
         #expect(tree.retainedSelection(SwarmSessionID("gone")) == nil)
-        #expect(tree.windowTitle(for: rows[0].id) == "repo · Chat")
+        #expect(tree.windowTitle(for: rows[0].id, navigation: WorkspaceNavigation()) == "repo · codex \(rows[0].id.rawValue.prefix(8))")
     }
 
     @Test("A provider switch keeps both sessions in one chat")
@@ -425,9 +514,9 @@ struct SessionsTreeTests {
             session("main", cwd: "/repo/wt/main"),
         ])
         #expect(tree.projects.count == 1)
-        #expect(tree.projects[0].workspaces.map(\.name) == [".bare", "main"])
+        #expect(tree.projects[0].workspaces.map(\.name) == ["main", "repo"])
         #expect(tree.projects[0].launchDirectory == "/repo/wt/main")
-        #expect(tree.launchDirectory(for: SwarmSessionID("hub")) == "/repo/.bare")
+        #expect(tree.launchDirectory(for: SwarmSessionID("hub")) == "/repo")
     }
 
     @Test("Tree text prints project and chat presentation")
@@ -438,8 +527,8 @@ struct SessionsTreeTests {
         ])
         #expect(tree.text(now: 61) == """
             repo
-              Chat · .bare · no chair · 1m
-              Chat · main · no chair · 1m
+              Chat main · main · no chair · 1m
+              Chat hub · repo · no chair · 1m
             """)
     }
 
@@ -518,5 +607,47 @@ struct SessionsTreeTests {
 
     private func chat(_ session: SwarmProjectSession) -> ChatRow {
         ChatRow(session: session, workspace: "outside", workspacePath: "/outside")
+    }
+}
+
+private actor TreeAgentCalls {
+    var arguments: [[String]] = []
+    var sessionIDs: [String?] = []
+
+    func record(_ arguments: [String], environment: [String: String]) {
+        self.arguments.append(arguments)
+        sessionIDs.append(environment["SWARM_SESSION_ID"])
+    }
+}
+
+private actor WorktreeListingCalls {
+    var paths: [String] = []
+    var entries: [WorktreeEntry]?
+    func set(_ entries: [WorktreeEntry]) { self.entries = entries }
+    func list(_ path: String) -> [WorktreeEntry] {
+        paths.append(path)
+        return entries ?? [WorktreeEntry(path: path + "/main", branch: "main")]
+    }
+}
+
+private actor SuspendedWorktreeListing {
+    var count = 0
+    private var pending: CheckedContinuation<[WorktreeEntry], Never>?
+
+    func list(_ path: String) async -> [WorktreeEntry] {
+        count += 1
+        if count == 1 {
+            return await withCheckedContinuation { pending = $0 }
+        }
+        return [WorktreeEntry(path: path + "/new", branch: "new")]
+    }
+
+    func waitUntilStarted() async {
+        while pending == nil { await Task.yield() }
+    }
+
+    func resume() {
+        pending?.resume(returning: [WorktreeEntry(path: "/repo-one/old", branch: "old")])
+        pending = nil
     }
 }

@@ -4,6 +4,7 @@ import SwarmCore
 /// A question an agent's screen shows, with one button per choice in the CLI's own words
 /// (ADR 0029). A child column and the chair page both show it. Nothing is picked for the owner.
 struct PromptCard: View {
+    @Environment(\.designTokens) private var tokens
     let agent: String
     let prompt: SwarmPrompt
     /// Sends choice `index`; throws with swarm's reason, such as a question that changed.
@@ -17,7 +18,7 @@ struct PromptCard: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.s) {
+        VStack(alignment: .leading, spacing: tokens.spacing.s) {
             HStack {
                 Label("\(agent) is waiting for you", systemImage: "questionmark.bubble")
                     .font(.caption.weight(.semibold))
@@ -33,12 +34,12 @@ struct PromptCard: View {
                 .font(.callout)
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
-            VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
+            VStack(alignment: .leading, spacing: tokens.spacing.xs) {
                 ForEach(Array(prompt.choices.enumerated()), id: \.offset) { index, label in
                     Button {
                         pick(index)
                     } label: {
-                        HStack(spacing: DesignTokens.Spacing.s) {
+                        HStack(spacing: tokens.spacing.s) {
                             Text("\(index + 1)").monospacedDigit().foregroundStyle(.secondary)
                             Text(label).multilineTextAlignment(.leading)
                             Spacer(minLength: 0)
@@ -55,7 +56,7 @@ struct PromptCard: View {
                 Text(failure).font(.caption).foregroundStyle(.red)
             }
         }
-        .padding(DesignTokens.Spacing.m)
+        .padding(tokens.spacing.m)
         .background(DesignTokens.promptFill, in: RoundedRectangle(cornerRadius: DesignTokens.Radius.card))
         .overlay(RoundedRectangle(cornerRadius: DesignTokens.Radius.card).strokeBorder(DesignTokens.promptBorder))
         .focusable()

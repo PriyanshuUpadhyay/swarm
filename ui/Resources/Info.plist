@@ -20,5 +20,18 @@
     <string>Swarm UI. Includes code by Spatie, MIT licence.</string>
     <key>NSSupportsSuddenTermination</key>
     <false/>
+    <key>UTExportedTypeDeclarations</key>
+    <array>
+        <dict>
+            <key>UTTypeIdentifier</key>
+            <string>io.github.priyanshuupadhyay.swarm.workspace</string>
+            <key>UTTypeDescription</key>
+            <string>Swarm workspace</string>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.data</string>
+            </array>
+        </dict>
+    </array>
 </dict>
 </plist>

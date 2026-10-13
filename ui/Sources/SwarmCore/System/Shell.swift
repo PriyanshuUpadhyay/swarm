@@ -180,7 +180,6 @@ public enum Shell {
         switch URL(fileURLWithPath: executable).lastPathComponent {
         case "git": name = "GitProcess"
         case "swarm": name = "SwarmProcess"
-        case "yelo": name = "YeloProcess"
         default: name = "OtherProcess"
         }
         let timing = SwarmPerformance.begin(name)

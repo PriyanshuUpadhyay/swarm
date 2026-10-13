@@ -166,7 +166,8 @@ final class SwitchModelModel {
         launch: (SwarmChatLaunchPlan, @escaping @Sendable (ChatSwitchPhase) async -> Void) async throws -> SwarmSessionID
     ) async -> SwarmSessionID? {
         guard canSwitch, let plan = SwarmChatLaunchPlan(
-            directory: directory, provider: provider, model: selectedModel, account: accountSelection
+            directory: directory, provider: provider, model: selectedModel,
+            account: SwarmAccountOption.launchSelection(for: accountSelection, in: accountOptions)
         ) else { return nil }
         isStarting = true
         phase = .preparing
@@ -200,6 +201,7 @@ final class SwitchModelModel {
 }
 
 struct SwitchModelSheet: View {
+    @Environment(\.designTokens) private var tokens
     let directory: String
     let currentProvider: String?
     let currentModel: String?
@@ -211,9 +213,9 @@ struct SwitchModelSheet: View {
     @State private var showAccount = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.m) {
+        VStack(alignment: .leading, spacing: tokens.spacing.m) {
             Text("Switch model").font(.title2.bold())
-            HStack(spacing: DesignTokens.Spacing.s) {
+            HStack(spacing: tokens.spacing.s) {
                 Text("Now").foregroundStyle(.secondary)
                 Text(verbatim: "\(currentProvider.map(model.label) ?? "Provider not reported") · "
                     + (currentModel ?? "Model not reported"))
@@ -256,7 +258,7 @@ struct SwitchModelSheet: View {
                 .disabled(!model.canSwitch)
             }
         }
-        .padding(DesignTokens.Spacing.xl)
+        .padding(tokens.spacing.xl)
         .frame(width: DesignTokens.Size.sheet)
         .interactiveDismissDisabled(model.isStarting)
         .task { await model.load(currentProvider: currentProvider, currentModel: currentModel) }
@@ -271,7 +273,7 @@ struct SwitchModelSheet: View {
     }
 
     private var selection: some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.m) {
+        VStack(alignment: .leading, spacing: tokens.spacing.m) {
             Picker("Provider", selection: Binding(
                 get: { model.provider }, set: { model.selectProvider($0) }
             )) {
@@ -302,7 +304,7 @@ struct SwitchModelSheet: View {
                         .disabled(!SwarmChatLaunchPlan.validModel(customModelName))
                 }
             }
-            HStack(alignment: .firstTextBaseline, spacing: DesignTokens.Spacing.s) {
+            HStack(alignment: .firstTextBaseline, spacing: tokens.spacing.s) {
                 DisclosureGroup(accountLabel, isExpanded: $showAccount) {
                     if !model.accountOptions.isEmpty {
                         Picker("Account", selection: $model.accountSelection) {
@@ -342,9 +344,9 @@ struct SwitchModelSheet: View {
 
     private var modelList: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: DesignTokens.Spacing.xxs) {
+            VStack(alignment: .leading, spacing: tokens.spacing.xxs) {
                 if model.visibleModels.isEmpty {
-                    Text("No matching models").foregroundStyle(.secondary).padding(DesignTokens.Spacing.s)
+                    Text("No matching models").foregroundStyle(.secondary).padding(tokens.spacing.s)
                 }
                 ForEach(model.visibleModels) { choice in
                     Button {
@@ -355,7 +357,7 @@ struct SwitchModelSheet: View {
                             Spacer()
                             if choice.id == model.selectedModel { Image(systemName: "checkmark") }
                         }
-                        .padding(DesignTokens.Spacing.s)
+                        .padding(tokens.spacing.s)
                         .contentShape(Rectangle())
                         .background(choice.id == model.selectedModel ? DesignTokens.selectionAccentFill : .clear,
                                     in: RoundedRectangle(cornerRadius: DesignTokens.Radius.control))

@@ -22,7 +22,9 @@ struct TranscriptRowBuilderTests {
             text: "world!", meta: Meta(agentSessionID: "s1", uuid: "turn-1", timestamp: "t2")
         )
         let rows = TranscriptRowBuilder.rows(from: [first, second])
-        #expect(rows == [TranscriptRow(kind: .assistant, text: "Hello world!", eventID: "turn-1")])
+        var merged = TranscriptRow(kind: .assistant, text: "Hello world!", eventID: "turn-1")
+        merged.sourceIDs = ["raw-0", "raw-1"]
+        #expect(rows == [merged])
     }
 
     @Test("A different UUID starts a new row")
@@ -607,5 +609,184 @@ struct TranscriptDebugDataTests {
         #expect(ChairTurn.isActive([question, decision]))
         #expect(!ChairTurn.isActive([question, answer, ended]))
         #expect(ChairTurn.isActive([question, answer, ended, question]))
+    }
+
+    private static let ring = "swarm: new message. Run swarm inbox and read each body at /home/owner/.swarm/<body_path>."
+
+    @Test("A ring to an idle agent is a ring row that starts a turn; a ring mid-turn starts none")
+    func ringRows() {
+        let idle = TranscriptRowBuilder.rows(from: [
+            .systemMessage(kind: TranscriptSystemKind.swarmRing, text: Self.ring, meta: Meta(uuid: "ring-1")),
+        ])
+        #expect(idle.map(\.kind) == [.system])
+        #expect(idle[0].systemKind == TranscriptSystemKind.swarmRing)
+        #expect(idle[0].eventID == "ring-1:ring")
+        #expect(idle[0].startsTurn)
+        #expect(!idle[0].isHiddenByDefault)
+        #expect(ChairTurn.isActive(idle))
+        // Find matches what the row draws, so "inbox" has no hit on a ring line.
+        #expect(idle[0].searchText == TranscriptRow.swarmRingLine)
+
+        let rows = TranscriptRowBuilder.rows(from: [
+            .userMessageChunk(text: "Run the council", meta: Meta(uuid: "prompt")),
+            .systemMessage(kind: TranscriptSystemKind.swarmRing, text: Self.ring, meta: Meta(uuid: "ring-2")),
+            .turnEnded(durationMs: 1000, reason: .completed, meta: Meta(uuid: "end")),
+            .systemMessage(kind: TranscriptSystemKind.swarmRing, text: Self.ring, meta: Meta(uuid: "ring-3")),
+        ])
+        #expect(rows.map(\.eventID) == ["prompt", "ring-2:ring", "end:result", "ring-3:ring"])
+        #expect(rows.map(\.startsTurn) == [false, false, false, true])
+        #expect(ChairTurn.isActive(rows))
+        #expect(!ChairTurn.isActive(Array(rows.prefix(3))))
+    }
+
+    @Test("A window that starts mid-turn keeps its first ring mid-turn, so the run around it folds as one")
+    func windowStartsMidTurn() {
+        let tail: [TranscriptEvent] = [
+            .toolCall(toolCallID: "c1", name: "exec", input: .string("ls"), status: .pending, meta: Meta()),
+            .toolCallUpdate(toolCallID: "c1", status: .completed, content: "ok", meta: Meta()),
+            .systemMessage(kind: TranscriptSystemKind.swarmRing, text: Self.ring, meta: Meta(uuid: "ring-1")),
+            .toolCall(toolCallID: "c2", name: "exec", input: .string("swarm inbox"), status: .pending, meta: Meta()),
+            .toolCallUpdate(toolCallID: "c2", status: .completed, content: "ok", meta: Meta()),
+            .agentMessageChunk(text: "Done.", meta: Meta(uuid: "answer")),
+            .turnEnded(durationMs: 1000, reason: .completed, meta: Meta(uuid: "end")),
+            .systemMessage(kind: TranscriptSystemKind.swarmRing, text: Self.ring, meta: Meta(uuid: "ring-2")),
+        ]
+        // The app's tail window starts at index 0 and only goes below 0 on Load earlier, so the
+        // window's older-entries flag, not the offset, says it starts mid-log.
+        let rows = TranscriptRowBuilder.rows(from: tail, indexOffset: 0, hasOlder: true)
+        #expect(rows.filter { $0.systemKind == TranscriptSystemKind.swarmRing }.map(\.startsTurn) == [false, true])
+        let folds = ToolRunFold.items(in: rows).compactMap { if case .fold(let group) = $0 { group.map(\.eventID) } else { nil } }
+        #expect(folds == [["c1:call", "ring-1:ring", "c2:call"]])
+        // The owner's prompt is above the window, so the mid-turn ring is what shows the turn runs.
+        let running = TranscriptRowBuilder.rows(from: Array(tail.prefix(5)), indexOffset: 0, hasOlder: true)
+        #expect(ChairTurn.isActive(running))
+
+        // A prompt the owner queued mid-turn starts no turn, so the ring before it stays mid-turn.
+        let queued = TranscriptRowBuilder.rows(from: Array(tail.prefix(4)) + [
+            .systemMessage(kind: TranscriptSystemKind.queuedPrompt, text: "also check the docs", meta: Meta(uuid: "queued")),
+            .toolCallUpdate(toolCallID: "c2", status: .completed, content: "ok", meta: Meta()),
+            .turnEnded(durationMs: 1000, reason: .completed, meta: Meta(uuid: "end")),
+        ], indexOffset: 0, hasOlder: true)
+        #expect(queued.filter { $0.systemKind == TranscriptSystemKind.swarmRing }.map(\.startsTurn) == [false])
+        let queuedFolds = ToolRunFold.items(in: queued).compactMap { if case .fold(let group) = $0 { group.map(\.eventID) } else { nil } }
+        #expect(queuedFolds == [["c1:call", "ring-1:ring", "c2:call"]])
+
+        // A Codex steer (Enter mid-turn) and a task notice Claude queued mid-turn start no turn either.
+        let midTurnInputs: [(TranscriptEvent, Bool)] = [
+            (.userMessageChunk(text: "also check docs", meta: Meta(uuid: "steer")), true),
+            (.systemMessage(kind: "queued_command", text: "<task-notification><summary>done</summary></task-notification>", meta: Meta(uuid: "task")), false),
+        ]
+        for (input, isCodex) in midTurnInputs {
+            let events: [TranscriptEvent] = Array(tail.prefix(5)) + [
+                input, .turnEnded(durationMs: 1000, reason: .completed, meta: Meta(uuid: "end")),
+            ]
+            let window = TranscriptRowBuilder.rows(from: events, indexOffset: 0, hasOlder: true, isCodex: isCodex)
+            #expect(window.filter { $0.systemKind == TranscriptSystemKind.swarmRing }.map(\.startsTurn) == [false])
+            let inputFolds = ToolRunFold.items(in: window).compactMap { if case .fold(let group) = $0 { group.map(\.eventID) } else { nil } }
+            #expect(inputFolds == [["c1:call", "ring-1:ring", "c2:call"]])
+            #expect(ChairTurn.isActive(Array(window.dropLast())))
+        }
+        // In a Codex log the prompt follows its turn-started record, so it still starts a turn.
+        let codexPrompt = TranscriptRowBuilder.rows(from: [
+            .turnEnded(durationMs: 1000, reason: .completed, meta: Meta(uuid: "end")),
+            .turnStarted(meta: Meta(uuid: "start")),
+            .userMessageChunk(text: "Run the council", meta: Meta(uuid: "prompt")),
+            .systemMessage(kind: TranscriptSystemKind.swarmRing, text: Self.ring, meta: Meta(uuid: "ring-4")),
+        ], indexOffset: 0, hasOlder: true, isCodex: true)
+        #expect(codexPrompt.filter { $0.systemKind == TranscriptSystemKind.swarmRing }.map(\.startsTurn) == [false])
+
+        let idleWindow = TranscriptRowBuilder.rows(from: [
+            .systemMessage(kind: TranscriptSystemKind.swarmRing, text: Self.ring, meta: Meta(uuid: "ring-3")),
+            .userMessageChunk(text: "Run the council", meta: Meta(uuid: "prompt")),
+        ], indexOffset: 0, hasOlder: true)
+        #expect(idleWindow[0].startsTurn)
+    }
+
+    @Test("A Codex log with no turn-started records still starts a turn with a prompt at the log's start or after a turn ends")
+    func codexLogWithoutTurnStarts() {
+        let rows = TranscriptRowBuilder.rows(from: [
+            .userMessageChunk(text: "Fix the build", meta: Meta(uuid: "prompt")),
+            .toolCall(toolCallID: "c1", name: "exec", input: .string("make"), status: .pending, meta: Meta()),
+            .toolCallUpdate(toolCallID: "c1", status: .completed, content: "ok", meta: Meta()),
+            .agentMessageChunk(text: "Done.", meta: Meta(uuid: "answer")),
+            .turnEnded(durationMs: 1000, reason: .aborted, meta: Meta(uuid: "end")),
+            .userMessageChunk(text: "Try again", meta: Meta(uuid: "retry")),
+            .systemMessage(kind: TranscriptSystemKind.swarmRing, text: Self.ring, meta: Meta(uuid: "ring")),
+        ], isCodex: true)
+        #expect(rows.filter { $0.kind == .user }.map(\.arrivesMidTurn) == [false, false])
+        #expect(rows.filter { $0.systemKind == TranscriptSystemKind.swarmRing }.map(\.startsTurn) == [false])
+    }
+
+    /// Claude Code and AGY mark a failed result failed, so a completed result stays finished there
+    /// even when the command printed text in Codex code-mode shape.
+    @Test("Only a Codex log reads a completed tool's result text as a failure")
+    func failureFromOutputOnlyInCodex() {
+        let events: [TranscriptEvent] = [
+            .toolCall(toolCallID: "c1", name: "Bash", input: .object(["command": .string("cat run.log")]), status: .pending, meta: Meta()),
+            .toolCallUpdate(toolCallID: "c1", status: .completed, content: "Script failed\nWall time 1 seconds\nOutput:\nboom", meta: Meta()),
+        ]
+        #expect(TranscriptRowBuilder.rows(from: events).map(\.tool?.state) == [.finished])
+        #expect(TranscriptRowBuilder.rows(from: events, isCodex: true).map(\.tool?.state) == [.failed])
+    }
+
+    /// A Claude Bash that prints a Codex log keeps a finished card with no "exit 1".
+    @Test("Only a Codex log reads an exit code from a Codex result header")
+    func codexExitCodeOnlyInCodex() {
+        for output in [
+            "Script completed\nWall time 1 seconds\nOutput:\n{\"exit_code\":1}",
+            "Chunk ID: b2\nWall time: 0.0 seconds\nProcess exited with code 1\nOutput:\nboom",
+        ] {
+            let events: [TranscriptEvent] = [
+                .toolCall(toolCallID: "c1", name: "Bash", input: .object(["command": .string("cat run.log")]), status: .pending, meta: Meta()),
+                .toolCallUpdate(toolCallID: "c1", status: .completed, content: output, meta: Meta()),
+            ]
+            #expect(TranscriptRowBuilder.rows(from: events).map(\.tool?.exitCode) == [nil])
+            #expect(TranscriptRowBuilder.rows(from: events, isCodex: true).map(\.tool?.exitCode) == [1])
+        }
+        let claude = TranscriptRowBuilder.rows(from: [
+            .toolCall(toolCallID: "c1", name: "Bash", input: .object(["command": .string("false")]), status: .pending, meta: Meta()),
+            .toolCallUpdate(toolCallID: "c1", status: .failed, content: "Exit code 1", meta: Meta()),
+        ])
+        #expect(claude.map(\.tool?.exitCode) == [1])
+    }
+
+    @Test("A ring between a tool call and its result does not split them")
+    func ringKeepsToolScope() {
+        let rows = TranscriptRowBuilder.rows(from: [
+            .userMessageChunk(text: "Run the council", meta: Meta(uuid: "prompt")),
+            .toolCall(toolCallID: "c1", name: "exec", input: .string("ls"), status: .pending, meta: Meta()),
+            .systemMessage(kind: TranscriptSystemKind.swarmRing, text: Self.ring, meta: Meta(uuid: "ring")),
+            .toolCallUpdate(toolCallID: "c1", status: .completed, content: "ok", meta: Meta()),
+        ])
+        #expect(rows.map(\.eventID) == ["prompt", "c1:call", "ring:ring"])
+        #expect(rows[1].tool?.output == "ok")
+    }
+
+    @Test("Each row names its own event and every joined or merged event as its sources, and Show Source finds them")
+    func rowSources() {
+        let records: [TranscriptRecord] = [
+            .init(event: .agentMessageChunk(text: "Hel", meta: Meta(uuid: "a1")), rawLine: "{}"),
+            .init(event: .agentMessageChunk(text: "lo", meta: Meta(uuid: "a1")), rawLine: "{}"),
+            .init(event: .toolCall(toolCallID: "c1", name: "Bash", input: .object(["command": .string("ls")]), status: .pending, meta: Meta()), rawLine: "{}"),
+            .init(event: .ignored(kind: "usage", meta: Meta()), rawLine: "{}"),
+            .init(event: .toolCallUpdate(toolCallID: "c1", status: .completed, content: "ok", meta: Meta()), rawLine: "{}"),
+            .init(event: .systemMessage(kind: TranscriptSystemKind.shellInput, text: "<bash-input>pwd</bash-input>", meta: Meta(uuid: "in")), rawLine: "{}"),
+            .init(event: .systemMessage(kind: TranscriptSystemKind.shellOutput, text: "<bash-stdout>/w</bash-stdout>", meta: Meta(uuid: "out", parentUUID: "in")), rawLine: "{}"),
+        ]
+        let rows = TranscriptRowBuilder.rows(from: records, indexOffset: 10)
+        #expect(rows.map(\.sourceIDs) == [["raw-10", "raw-11"], ["raw-12", "raw-14"], ["raw-15", "raw-16"]])
+        let raw = TranscriptDebugData.entries(from: records, indexOffset: 10)
+        #expect(TranscriptSource.entries(for: rows[1], in: raw).map(\.index) == [12, 14])
+        #expect(TranscriptSource.entries(for: TranscriptRow(kind: .notice, text: "", eventID: "x"), in: raw).isEmpty)
+    }
+
+    @Test("Show Source's lookup is equal by source ids, so SwiftUI can skip a row a parent update did not change")
+    func sourceLookupEquality() {
+        let shown = TranscriptSource.Lookup(ids: ["raw-1"]) { [] }
+        let rebuilt = TranscriptSource.Lookup(ids: ["raw-1"]) { [RawTranscriptEntry(index: 1, rawLine: "{}", rowKind: "user")] }
+        let merged = TranscriptSource.Lookup(ids: ["raw-1", "raw-2"]) { [] }
+        #expect(shown == rebuilt)
+        #expect(shown != merged)
+        #expect(rebuilt.entries().map(\.index) == [1])
     }
 }

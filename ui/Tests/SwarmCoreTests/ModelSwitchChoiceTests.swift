@@ -5,6 +5,60 @@ import Testing
 struct ModelSwitchChoiceTests {
     let codexChat = ModelSwitchChoice(currentProvider: "codex", currentModel: "gpt-5.5")
 
+    @Test("An unselected live chat stays enabled until its detail can decide")
+    func unselectedChat() {
+        #expect(tabReason(agents: []) == nil)
+        #expect(tabReason(agents: [agent("orchestrator", state: "done")]) == nil)
+        #expect(tabReason(agents: [agent("worker", state: "working")]) == nil)
+    }
+
+    @Test("A known working or waiting chair disables its tab, but an ended chair does not")
+    func chairState() {
+        let busy = ModelSwitchChoice.disabledReason(readOnlyReason: nil, waitingForModel: false,
+                                                    isSending: false, isRunning: true)
+        #expect(tabReason(agents: [agent("orchestrator", state: "working")]) == busy)
+        #expect(tabReason(agents: [agent("orchestrator", state: "waiting")]) == busy)
+        #expect(tabReason(agents: [agent("orchestrator", state: "working", alive: false)]) == nil)
+    }
+
+    @Test("The session's custom chair decides readiness, and a read-only reason wins")
+    func customChair() {
+        #expect(tabReason(agents: [agent("custom-chair", state: "working")], chairID: "custom-chair") != nil)
+        #expect(tabReason(agents: [agent("custom-chair", state: "done"), agent("worker", state: "working")],
+                         chairID: "custom-chair") == nil)
+        #expect(tabReason(agents: [agent("custom-chair", state: "working")], chairID: "custom-chair",
+                         readOnly: "Archived") == "Archived")
+    }
+
+    private func tabReason(agents: [SwarmAgent], chairID: String? = nil, readOnly: String? = nil) -> String? {
+        let session = SwarmSession(id: .init("chat"), talkMode: "lane", adapter: "herdr",
+                                   cwd: "/fixture/workspace", createdAt: 1,
+                                   chairID: chairID.map(SwarmChairID.init), chairLog: nil,
+                                   agents: agents.count, messages: 0, lastMessageAt: nil)
+        return ModelSwitchChoice.tabDisabledReason(readOnlyReason: readOnly,
+            chat: SwarmProjectSession(sessions: [session], title: "Work", isRunning: true), agents: agents)
+    }
+
+    private func agent(_ id: String, state: String, alive: Bool = true) -> SwarmAgent {
+        SwarmAgent(id: .init(id), role: "work", pane: "pane", alive: alive, state: state)
+    }
+
+    @Test("Composer and tab menu share the model switch reason")
+    func disabledReason() {
+        func reason(readOnly: String? = nil, waiting: Bool = false, sending: Bool = false,
+                    running: Bool = false) -> String? {
+            ModelSwitchChoice.disabledReason(readOnlyReason: readOnly, waitingForModel: waiting,
+                                             isSending: sending, isRunning: running)
+        }
+        #expect(reason() == nil)
+        #expect(reason(readOnly: "Archived", waiting: true, sending: true, running: true) == "Archived")
+        #expect(reason(waiting: true, sending: true, running: true)
+            == "Waiting for this chat's model information.")
+        let busy = "Wait for the reply to finish, or stop it before switching model."
+        #expect(reason(sending: true) == busy)
+        #expect(reason(running: true) == busy)
+    }
+
     @Test("The chat's own provider and model leave Switch disabled")
     func samePick() {
         #expect(!codexChat.canSwitch(provider: "codex", model: "gpt-5.5", isSwitching: false))

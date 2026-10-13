@@ -17,12 +17,12 @@ public struct SwarmCLIBus: SwarmBus {
             environment: Self.appEnvironment(),
             resolveExecutable: { Shell.which($0) },
             run: { executable, arguments, cwd, environment, stdin, timeout in
-                let inherited = ChildProcessEnvironment.removingInheritedAgentIdentity(
-                    from: Shell.environment()
+                let childEnvironment = ChildProcessEnvironment.swarmCall(
+                    overrides: environment, inherited: Shell.environment()
                 )
                 return try await Shell.run(
                     executable, arguments, cwd: cwd,
-                    replacingEnvironment: inherited.merging(environment) { _, requested in requested },
+                    replacingEnvironment: childEnvironment,
                     stdin: stdin, timeout: timeout
                 )
             }
@@ -39,6 +39,20 @@ public struct SwarmCLIBus: SwarmBus {
         self.cwd = cwd
         self.resolveExecutable = resolveExecutable
         self.run = run
+    }
+
+    public func profileAction(_ action: ProfileAction, revision: String) async throws -> String {
+        try await read(
+            ["roles"] + action.arguments + ["--revision", revision], as: ProfileActionRevision.self
+        ).revision
+    }
+
+    public func initializeHome() async throws {
+        _ = try await call(["init"])
+    }
+
+    public func refreshSkills() async throws {
+        _ = try await call(["skills", "refresh"], timeout: .seconds(120))
     }
 
     public func startChairSession(
@@ -75,12 +89,19 @@ public struct SwarmCLIBus: SwarmBus {
         guard let pane = firstLine(in: result.stdout) else {
             throw SwarmProfileError.failed("swarm returned no pane")
         }
+        // A key line starts at its first column. A trust diff prints in the same stream, and each
+        // of its lines starts with a diff mark (` `, `+`, `-`, `@`), so a context line such as
+        // ` model = "gpt-5.5"` is never read as a key (L-12).
         let lines = result.stderr.components(separatedBy: .newlines)
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
         func reported(_ key: String) -> String? {
             lines.first { $0.hasPrefix(key + " ") }.map { String($0.dropFirst(key.count + 1)) }
         }
-        return SwarmLaunch(pane: pane, account: reported("account"), model: reported("model"))
+        let trustWrites = lines.filter { $0.hasPrefix("trusted ") }
+            .compactMap { SwarmTrustWrite(line: String($0.dropFirst("trusted ".count))) }
+        return SwarmLaunch(
+            pane: pane, account: reported("account"), model: reported("model"),
+            trustWrites: trustWrites
+        )
     }
 
     public func agents(
@@ -93,6 +114,11 @@ public struct SwarmCLIBus: SwarmBus {
         in session: SwarmSessionID, adapter: String
     ) async throws -> SwarmAgentList {
         try await listAgents(in: session, adapter: adapter)
+    }
+
+    public func agentsBySession() async throws -> [SwarmSessionID: [SwarmAgent]] {
+        let listings = try await read(["agents", "--json", "--all"], as: [String: SwarmAgentList].self)
+        return Dictionary(uniqueKeysWithValues: listings.map { (SwarmSessionID($0.key), $0.value.agents) })
     }
 
     public func messages(
@@ -122,6 +148,16 @@ public struct SwarmCLIBus: SwarmBus {
         _ = try await call(["session", "archive"] + sessions.map(\.rawValue))
     }
 
+    public func archivedSessions() async throws -> [SwarmSession] {
+        try await read(["sessions", "--json", "--archived"], as: SwarmSessionList.self)
+            .sessions.filter { $0.archivedAt != nil }
+    }
+
+    public func unarchive(_ sessions: [SwarmSessionID]) async throws {
+        guard !sessions.isEmpty else { return }
+        _ = try await call(["session", "unarchive"] + sessions.map(\.rawValue))
+    }
+
     public func linkChat(_ newSession: SwarmSessionID, after oldSession: SwarmSessionID) async throws {
         _ = try await call(["session", "continue", newSession.rawValue, oldSession.rawValue])
     }
@@ -140,11 +176,6 @@ public struct SwarmCLIBus: SwarmBus {
         _ = try await call(["interrupt", agent.rawValue], in: session, adapter: adapter)
     }
 
-    /// `swarm hooks status --json`: whether swarm's own Codex and AGY hooks are set up (ADR 0029).
-    public func hooksStatus() async throws -> SwarmHooksStatus {
-        try await read(["hooks", "status", "--json"], as: SwarmHooksStatus.self)
-    }
-
     /// `swarm hooks setup --plan --json`: what setup would change and what is in its way. It
     /// writes nothing (ADR 0036).
     public func hooksPlan() async throws -> SwarmHooksPlan {
@@ -156,6 +187,49 @@ public struct SwarmCLIBus: SwarmBus {
     /// that changed after that plan.
     public func setUpHooks(digest: String) async throws {
         _ = try await call(["hooks", "setup", "--digest", digest])
+    }
+
+    /// `swarm setup status --json`: which setup groups have nothing pending (ADR 0043).
+    public func setupStatus() async throws -> SwarmSetupStatus {
+        try await read(["setup", "status", "--json"], as: SwarmSetupStatus.self)
+    }
+
+    /// `swarm setup --plan --json`: every write swarm would make outside its home in the groups
+    /// of `choice`, each file with its group. It writes nothing (ADR 0043).
+    public func setupPlan(_ choice: SwarmSetupChoice = .init()) async throws -> SwarmHooksPlan {
+        try await read(["setup", "--plan", "--json"] + choice.arguments, as: SwarmHooksPlan.self)
+    }
+
+    /// `swarm setup --digest`, which writes the owner's config and the launch consent; call it
+    /// only on the owner's consent to the plan of `choice` with this digest.
+    public func setUp(digest: String, choice: SwarmSetupChoice = .init()) async throws {
+        _ = try await call(["setup", "--digest", digest] + choice.arguments)
+    }
+
+    /// `swarm managed list --json`: each item swarm wrote outside its home and its live state
+    /// (ADR 0042).
+    public func managedList() async throws -> SwarmManagedList {
+        try await read(["managed", "list", "--json"], as: SwarmManagedList.self)
+    }
+
+    /// `swarm managed revert <ids> --plan --json`: what removing these items would change and
+    /// what is in the way, in the shape of the hooks setup plan. It writes nothing.
+    public func managedRevertPlan(ids: [String]) async throws -> SwarmHooksPlan {
+        try await read(["managed", "revert"] + ids + ["--plan", "--json"], as: SwarmHooksPlan.self)
+    }
+
+    /// `swarm managed revert <ids> --digest`, which changes the owner's config; call it only on
+    /// the owner's consent to the plan with this digest.
+    public func revertManaged(ids: [String], digest: String) async throws {
+        _ = try await call(["managed", "revert"] + ids + ["--digest", digest])
+    }
+
+    public func notices() async throws -> [StoredNotice] {
+        try await read(["notices", "--json"], as: [StoredNotice].self)
+    }
+
+    public func focus(_ agent: SwarmAgentID, in session: SwarmSessionID) async throws {
+        _ = try await call(["focus", session.rawValue, agent.rawValue])
     }
 
     public func answer(
@@ -245,16 +319,21 @@ public struct SwarmCLIBus: SwarmBus {
     }
 }
 
+private struct ProfileActionRevision: Decodable {
+    var revision: String
+}
+
 extension SwarmCLIBus {
-    /// The app's environment, with `SWARM_BIN` naming the `swarm` inside the app bundle when neither
-    /// `SWARM_BIN` nor the login PATH names one. A DMG install has only that bundled copy.
+    /// The app's environment, with `SWARM_BIN` naming the `swarm` inside the app bundle unless
+    /// `SWARM_BIN` names one. The bundled copy wins over the login PATH, because it is the CLI this
+    /// app was built with: an older PATH swarm lacks newer routes, and a branch build's home can
+    /// hold a schema it refuses. With no bundle, as in `swift test`, the login PATH's swarm runs.
     static func appEnvironment(
         _ environment: [String: String] = ProcessInfo.processInfo.environment,
-        bundled: URL = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/swarm"),
-        which: (String) -> String? = { Shell.which($0) }
+        bundled: URL = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/swarm")
     ) -> [String: String] {
         let configured = environment["SWARM_BIN"]?.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard configured?.isEmpty ?? true, which("swarm") == nil,
+        guard configured?.isEmpty ?? true,
               FileManager.default.isExecutableFile(atPath: bundled.path)
         else { return environment }
         return environment.merging(["SWARM_BIN": bundled.path]) { _, bundled in bundled }

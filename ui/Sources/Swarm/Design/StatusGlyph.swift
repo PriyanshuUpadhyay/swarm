@@ -1,20 +1,31 @@
 import SwiftUI
 import SwarmCore
 
-/// One agent status as a symbol and a color, so color is never the only signal.
+/// One agent status as a symbol (a spinner while working) and a color, so color is never the only
+/// signal.
 struct StatusGlyph: View {
     let status: AgentStatus
+    var kind: String? = nil
+    /// The word for the tooltip and VoiceOver when the caller's state is not an agent status, such as
+    /// "Open" for a step drawn with the `.ended` ring.
+    var title: String?
+    var helpText: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var spins: Bool { status == .working && !reduceMotion }
 
     var body: some View {
         Image(systemName: Self.symbol(status))
             .foregroundStyle(DesignTokens.color(status))
-            .symbolEffect(
-                .rotate, options: .repeat(.continuous).speed(0.3),
-                isActive: status == .working && !reduceMotion
-            )
-            .accessibilityLabel(Self.title(status))
-            .help(Self.title(status))
+            // An AppKit spinner, because a repeating symbol effect re-renders the whole window on
+            // every frame. The hidden symbol keeps the size the caller's font gives.
+            .opacity(spins ? 0 : 1)
+            .overlay {
+                if spins { ProgressView().controlSize(.mini) }
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(title ?? AgentStateText.title(status: status, kind: kind))
+            .help(helpText ?? title ?? AgentStateText.title(status: status, kind: kind))
     }
 
     static func symbol(_ status: AgentStatus) -> String {
@@ -29,12 +40,6 @@ struct StatusGlyph: View {
     }
 
     static func title(_ status: AgentStatus) -> String {
-        switch status {
-        case .working: "Working"
-        case .waiting: "Waiting for you"
-        case .done: "Done"
-        case .failed: "Failed"
-        case .ended: "Ended"
-        }
+        AgentStateText.title(status: status, kind: nil)
     }
 }

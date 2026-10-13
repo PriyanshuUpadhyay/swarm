@@ -20,12 +20,18 @@ swarm session new lane   # lane | relay | open; registers this pane as the orche
 swarm launch <id> <role> --cwd "$PWD" [-- <extra agent flags>]   # prints the pane id
 ```
 
-`launch` resolves the role to a provider, model and effort, pre-trusts the directory, and starts
-the agent CLI. Use `swarm spawn <id> <role> -- <agent cli and its flags>` only for a command no
+`launch` resolves the role to a provider, model and effort, marks the directory trusted when the
+owner gave consent, and starts the agent CLI. When it prints `trust-pending <provider> <dir>`, the
+owner has not approved folder trust: the seat waits at its CLI's trust question. Tell the owner,
+with the diff it printed and the `swarm setup --plan …` command it names; do not answer
+the trust question yourself. Use `swarm spawn <id> <role> -- <agent cli and its flags>` only for a command no
 role covers. The child must know the voice protocol in
 `skills/swarm-voice/SKILL.md`. Claude Code loads it when the pane's cwd is this repo, and
 Codex and AGY find it through `AGENTS.md`; otherwise give it as the child's first prompt, for
 example "Read <repo>/skills/swarm-voice/SKILL.md and follow it".
+
+Launch every seat of a stage in one turn and send their asks in one turn, as the agent kit's
+`references/fan-out.md` says.
 
 ## Work
 
@@ -41,6 +47,13 @@ When running rounds, put `round: N` on the first line of every ask and discard a
 In lane mode children cannot message each other. In relay mode you receive their child-to-child
 messages as kind `relay:<recipient>` and forward them yourself.
 
+## Owner
+
+Swarm notifies the owner when any agent waits on a permission or a question. When the run's work
+is done, or you need the owner for something else, run
+`swarm notify "swarm: <project> done" --body "<one line>"`. This is the only way to notify the
+owner, and only the orchestrator may run it.
+
 ## Health and cleanup
 
 ```sh
@@ -51,3 +64,8 @@ swarm close <id>
 
 Run the sweep as a background task of your agent harness, never with `&` in a detached shell, so it
 stops with the session.
+
+The sweep also sends you a message in a child's name when its work is stuck. `unconfirmed:<seq>`:
+two rings of message `<seq>` started no turn; check the pane and send again. `stall:unacked:<seq>`:
+the child is done but did not ack `<seq>`. `stall:silent:<seq>`: the child finished after `<seq>`
+and sent nothing back. Ack each one like any other message.

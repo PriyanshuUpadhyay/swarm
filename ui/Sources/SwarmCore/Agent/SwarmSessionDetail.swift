@@ -51,6 +51,8 @@ public actor SwarmChairTranscript {
     private var discoveredProvider: String?
     private var discoveredChairID: SwarmChairID?
     private var discoveredLog: URL?
+    /// When the last search ran. A miss, or a log found with no chair id, waits 10 s for the next one.
+    private var discoveredAt: Date?
     /// Account homes per provider with the time they were read. They expire after
     /// `accountHomesTTL`, so the same reader finds a log in an account added later.
     private var homesByProvider: [String: (homes: [URL], at: Date)] = [:]
@@ -241,7 +243,10 @@ public actor SwarmChairTranscript {
         let window = await reader.window()
         let timing = SwarmPerformance.begin("TranscriptRows")
         defer { timing.end(count: rows.count) }
-        let built = TranscriptRowBuilder.rows(from: window.records, indexOffset: window.indexOffset)
+        let built = TranscriptRowBuilder.rows(
+            from: window.records, indexOffset: window.indexOffset, hasOlder: window.hasOlder,
+            isCodex: reader.format == "codex"
+        )
         if let path = log, path != lastLogPath {
             // Claude writes bookkeeping lines first, so until a real record lands the new log
             // cannot say whether it is a clear. Keep the old rows and decide on a later read.
@@ -250,7 +255,10 @@ public actor SwarmChairTranscript {
             }
             if lastLogPath != nil, undecided { return }
             if lastLogPath != nil, ConversationBoundary.isClear(window.records), !rows.isEmpty {
-                frozenRows = rows + [Self.clearDivider(logName: path.lastPathComponent)]
+                // The new log numbers its raw entries from 0 again, so an old row's sources would
+                // point at new events.
+                frozenRows = rows.map { var row = $0; row.sourceIDs = []; return row }
+                    + [Self.clearDivider(logName: path.lastPathComponent)]
             } else {
                 frozenRows = []
                 // `/clear` keeps the model, but another log may come from another agent.
@@ -276,12 +284,18 @@ public actor SwarmChairTranscript {
     }
 
     func discoveredLog(
-        for session: SwarmSession, chairProvider: String? = nil
+        for session: SwarmSession, chairProvider: String? = nil, now: Date = .now
     ) async -> URL? {
         let provider = session.chairProvider ?? chairProvider
         guard session.chairLog.map({ !FileManager.default.fileExists(atPath: $0) }) ?? true,
               let provider,
               provider == "claude" || provider == "codex" else { return nil }
+        if discoveredSession == session.id, discoveredProvider == provider,
+           discoveredChairID == session.chairID,
+           discoveredLog.map({ FileManager.default.fileExists(atPath: $0.path) }) ?? true,
+           let discoveredAt, now.timeIntervalSince(discoveredAt) < 10 {
+            return discoveredLog
+        }
         let homes = await homes(provider: provider)
         if session.chairID == nil || discoveredSession != session.id
             || discoveredProvider != provider || discoveredChairID != session.chairID
@@ -294,6 +308,7 @@ public actor SwarmChairTranscript {
             discoveredSession = session.id
             discoveredProvider = provider
             discoveredChairID = session.chairID
+            discoveredAt = now
         }
         return discoveredLog
     }
@@ -301,20 +316,33 @@ public actor SwarmChairTranscript {
 
 public struct SwarmAgentCell: Sendable, Equatable, Identifiable {
     public let agent: SwarmAgent
+    public init(agent: SwarmAgent) { self.agent = agent }
     public var id: SwarmAgentID { agent.id }
+    public var model: String { agent.model ?? agent.provider ?? "unknown" }
+    public var requiresCloseConfirmation: Bool { agent.status.isMidTurn }
 }
 
 public enum SwarmPanePolicy {
     public static let chair = SwarmAgentID("orchestrator")
 
-    public static func hasLiveChildAgents(session: SwarmSession, agents: [SwarmAgent]) -> Bool {
-        !cells(session: session, agents: agents).isEmpty
+    public static func isChair(_ agent: SwarmAgent, in session: SwarmSession) -> Bool {
+        agent.id == chair || agent.id.rawValue == session.chairID?.rawValue
     }
 
-    public static func cells(session: SwarmSession, agents: [SwarmAgent]) -> [SwarmAgentCell] {
+    public static func hasLiveChildAgents(session: SwarmSession, agents: [SwarmAgent]) -> Bool {
+        !liveCells(session: session, agents: agents).isEmpty
+    }
+
+    public static func liveCells(session: SwarmSession, agents: [SwarmAgent]) -> [SwarmAgentCell] {
+        cells(session: session, agents: agents).filter { $0.agent.alive == true && $0.agent.status != .ended }
+    }
+
+    public static func cells(
+        session: SwarmSession, agents: [SwarmAgent], dismissed: [String] = []
+    ) -> [SwarmAgentCell] {
         agents
             .filter {
-                $0.alive == true && $0.id != chair && $0.id.rawValue != session.chairID?.rawValue
+                !isChair($0, in: session) && ($0.status != .ended || !dismissed.contains($0.id.rawValue))
             }
             .sorted {
                 if $0.createdAt != $1.createdAt { return ($0.createdAt ?? .max) < ($1.createdAt ?? .max) }
@@ -325,14 +353,77 @@ public enum SwarmPanePolicy {
 }
 
 public enum SwarmSessionCloser {
-    public static func close(_ session: SwarmSession, bus: any SwarmBus) async throws {
-        let agents = try await bus.agents(in: session)
-        let live = agents.filter { $0.alive == true }
-        let children = live.filter { $0.id != SwarmPanePolicy.chair }
-        let chairs = live.filter { $0.id == SwarmPanePolicy.chair }
-        for agent in children + chairs {
-            try await bus.close(agent.id, in: session)
+    public struct Confirmation: Sendable, Hashable {
+        public let liveChildren: Int
+        public let midTurnChildren: Int
+        public var required: Bool { liveChildren > 0 || midTurnChildren > 0 }
+
+        public init(session: SwarmSession, agents: [SwarmAgent]) {
+            self.init(children: agents.filter { !SwarmPanePolicy.isChair($0, in: session) })
         }
-        try await bus.archive([session.id])
+
+        fileprivate init(children: [SwarmAgent]) {
+            liveChildren = children.filter { $0.alive == true }.count
+            midTurnChildren = children.filter { $0.status.isMidTurn }.count
+        }
+
+        public var message: String {
+            "\(CountText.agentsStillRunning(liveChildren)), and \(midTurnChildren) \(midTurnChildren == 1 ? "is" : "are") mid-turn. Ending stops them."
+        }
+    }
+
+    public static func confirmation(
+        session: SwarmProjectSession, bus: any SwarmBus
+    ) async throws -> Confirmation {
+        let listing = try await agents(in: [session], listing: try? await bus.agentsBySession(), bus: bus)
+        let children = session.sessions.flatMap { value in
+            (listing[value.id] ?? []).filter { !SwarmPanePolicy.isChair($0, in: value) }
+        }
+        return Confirmation(children: children)
+    }
+
+    public static func end(session: SwarmProjectSession, bus: any SwarmBus) async throws {
+        try await end(chats: [session], agentsBySession: try? await bus.agentsBySession(), bus: bus)
+    }
+
+    public static func end(
+        chats: [SwarmProjectSession], agentsBySession: [SwarmSessionID: [SwarmAgent]]?, bus: any SwarmBus
+    ) async throws {
+        let listing = try await agents(in: chats, listing: agentsBySession, bus: bus)
+        let live = chats.flatMap(\.sessions).flatMap { value in
+            (listing[value.id] ?? []).filter { $0.alive == true }.map { (value, $0) }
+        }
+        let children = live.filter { !SwarmPanePolicy.isChair($0.1, in: $0.0) }
+        let chairs = live.filter { SwarmPanePolicy.isChair($0.1, in: $0.0) }
+        for (value, agent) in children + chairs {
+            try await bus.close(agent.id, in: value)
+        }
+    }
+
+    /// Finish every read before stopping any agent; a partial batch is not an empty session.
+    /// A nil listing means the batch read failed, so a cached zero count is not trusted.
+    static func agents(
+        in chats: [SwarmProjectSession], listing: [SwarmSessionID: [SwarmAgent]]?, bus: any SwarmBus
+    ) async throws -> [SwarmSessionID: [SwarmAgent]] {
+        var agents = listing ?? [:]
+        for chat in chats {
+            for session in chat.sessions where agents[session.id] == nil {
+                guard listing == nil || session.agents != 0,
+                      (try? SwarmSessionInteraction.adapter(for: session)) != nil else {
+                    agents[session.id] = []
+                    continue
+                }
+                do { agents[session.id] = try await bus.agents(in: session) }
+                catch {
+                    throw SwarmProfileError.failed("Swarm could not read the agents of “\(ChatTitle.title(chat))”. Try again.")
+                }
+            }
+        }
+        return agents
+    }
+
+    public static func archive(session: SwarmProjectSession, bus: any SwarmBus) async throws {
+        try await end(session: session, bus: bus)
+        try await bus.archive(session.sessions.map(\.id))
     }
 }

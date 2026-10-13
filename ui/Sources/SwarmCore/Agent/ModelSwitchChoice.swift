@@ -15,6 +15,27 @@ public struct ModelSwitchChoice: Sendable, Equatable {
         self.currentModel = currentModel
     }
 
+    public static func disabledReason(
+        readOnlyReason: String?, waitingForModel: Bool, isSending: Bool, isRunning: Bool
+    ) -> String? {
+        if let readOnlyReason { return readOnlyReason }
+        if waitingForModel { return "Waiting for this chat's model information." }
+        if isSending || isRunning {
+            return "Wait for the reply to finish, or stop it before switching model."
+        }
+        return nil
+    }
+
+    /// Background tabs have no transcript reader. Unknown state stays enabled so selecting the
+    /// action can load the chat and check the composer's reason.
+    public static func tabDisabledReason(
+        readOnlyReason: String?, chat: SwarmProjectSession, agents: [SwarmAgent]
+    ) -> String? {
+        let chair = agents.first { SwarmPanePolicy.isChair($0, in: chat.session) }
+        return disabledReason(readOnlyReason: readOnlyReason, waitingForModel: false,
+                              isSending: false, isRunning: chair?.status.isMidTurn == true)
+    }
+
     /// The providers the picker offers. Before the provider list is read, both switchable ones.
     public static func offered(_ providers: [SwarmProvider]?) -> [String] {
         guard let providers else { return switchable }

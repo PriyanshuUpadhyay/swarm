@@ -31,12 +31,14 @@ struct AgentStatusTests {
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         let reviewer = try decoder.decode(SwarmAgent.self, from: Data(#"""
             {"id":"reviewer","role":"review","pane":"%3","alive":true,"state":"waiting",
-             "state_at_s":1790000000,"state_source":"hook","state_detail":"permission prompt"}
+             "state_at_s":1790000000,"state_source":"hook","state_detail":"permission prompt",
+             "state_kind":"permission"}
             """#.utf8))
         #expect(reviewer.status == .waiting)
         #expect(reviewer.stateAtS == 1_790_000_000)
         #expect(reviewer.stateSource == "hook")
         #expect(reviewer.stateDetail == "permission prompt")
+        #expect(reviewer.stateKind == "permission")
         let future = try decoder.decode(SwarmAgent.self, from: Data(
             #"{"id":"coder","role":"code","pane":"%2","alive":true,"state":"thinking-hard"}"#.utf8
         ))
@@ -45,7 +47,17 @@ struct AgentStatusTests {
             #"{"id":"coder","role":"code","pane":null,"alive":false}"#.utf8
         ))
         #expect(older.state == nil)
+        #expect(older.stateKind == nil)
         #expect(older.status == .ended)
+        let nullKind = try decoder.decode(SwarmAgent.self, from: Data(
+            #"{"id":"coder","role":"code","pane":"%2","alive":true,"state":"waiting","state_kind":null}"#.utf8
+        ))
+        #expect(nullKind.stateKind == nil)
+        let futureKind = try decoder.decode(SwarmAgent.self, from: Data(
+            #"{"id":"coder","role":"code","pane":"%2","alive":true,"state":"waiting","state_kind":"future-kind"}"#.utf8
+        ))
+        #expect(futureKind.stateKind == "future-kind")
+        #expect(futureKind.status == .waiting)
         // swarm close clears the pane and the state; the agent shows as ended, not done.
         let closed = SwarmAgent(id: .init("coder"), role: "code", pane: nil, alive: nil)
         #expect(closed.status == .ended)

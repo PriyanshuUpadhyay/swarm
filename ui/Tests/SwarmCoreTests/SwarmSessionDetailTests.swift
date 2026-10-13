@@ -6,7 +6,38 @@ import TranscriptTool
 
 @Suite("Session detail")
 struct SwarmSessionDetailTests {
-    @Test("The grid includes only live agents and sorts by creation time")
+    @Test("Child headers use the model before the provider and copy a safe attach command")
+    func childHeaderValues() {
+        var child = SwarmAgent(id: .init("reviewer"), role: "review", pane: "pane", alive: true,
+                               provider: "codex", state: "done")
+        child.model = "gpt-6"
+        #expect(SwarmAgentCell(agent: child).model == "gpt-6")
+        #expect(SwarmAgentCell(agent: child).id.rawValue == "reviewer")
+        #expect(child.id.attachCommand == "swarm attach reviewer")
+        child.model = nil
+        #expect(SwarmAgentCell(agent: child).model == "codex")
+        child.provider = nil
+        #expect(SwarmAgentCell(agent: child).model == "unknown")
+        #expect(SwarmAgentID("reviewer's $(touch file)").attachCommand
+            == "swarm attach 'reviewer'\"'\"'s $(touch file)'")
+    }
+
+    @Test("Closing a working or waiting child asks first, but an idle or ended child does not")
+    func childCloseConfirmation() {
+        for state in ["working", "waiting", "done", "failed"] {
+            var child = SwarmAgent(id: .init("reviewer"), role: "review", pane: "pane", alive: true,
+                                   state: state)
+            #expect(SwarmAgentCell(agent: child).requiresCloseConfirmation
+                == ["working", "waiting"].contains(state))
+            child.alive = false
+            #expect(!SwarmAgentCell(agent: child).requiresCloseConfirmation)
+            child.alive = true
+            child.pane = nil
+            #expect(!SwarmAgentCell(agent: child).requiresCloseConfirmation)
+        }
+    }
+
+    @Test("The grid keeps finished agents and sorts by creation time")
     func agentCells() {
         var value = session(adapter: "tmux-solo")
         value.chairID = .init("other-chair")
@@ -19,16 +50,63 @@ struct SwarmSessionDetailTests {
             SwarmAgent(id: .init("no-pane"), role: "code", pane: nil, alive: nil, createdAt: 4),
         ]
         let cells = SwarmPanePolicy.cells(session: value, agents: agents)
-        #expect(cells.map(\.id.rawValue) == ["early", "later"])
+        #expect(cells.map(\.id.rawValue) == ["dead", "early", "later", "no-pane"])
+        #expect(SwarmPanePolicy.cells(session: value, agents: agents, dismissed: ["dead", "no-pane"])
+            .map(\.id.rawValue) == ["early", "later"])
+        #expect(SwarmPanePolicy.liveCells(session: value, agents: agents).map(\.id.rawValue) == ["early", "later"])
     }
 
-    @Test("The pane column exists only while a child agent is live")
+    @Test("A live child reusing a dismissed id returns after a model switch")
+    func reusedDismissedID() {
+        let value = session(adapter: "herdr")
+        let live = SwarmAgent(id: .init("child"), role: "code", pane: "new-pane", alive: true)
+        let ended = SwarmAgent(id: live.id, role: "code", pane: "old-pane", alive: false)
+        #expect(SwarmPanePolicy.cells(session: value, agents: [ended], dismissed: ["child"]).isEmpty)
+        #expect(SwarmPanePolicy.cells(session: value, agents: [live], dismissed: ["child"]).map(\.id) == [live.id])
+    }
+
+    @Test("The live child view excludes dead agents and agents without panes")
     func liveChildAgents() {
         let value = session(adapter: "tmux-solo")
         let ended = [SwarmAgent(id: .init("coder"), role: "code", pane: "%1", alive: false)]
         let live = [SwarmAgent(id: .init("coder"), role: "code", pane: "%1", alive: true)]
+        let closed = [SwarmAgent(id: .init("coder"), role: "code", pane: nil, alive: true)]
         #expect(!SwarmPanePolicy.hasLiveChildAgents(session: value, agents: ended))
+        #expect(!SwarmPanePolicy.hasLiveChildAgents(session: value, agents: closed))
         #expect(SwarmPanePolicy.hasLiveChildAgents(session: value, agents: live))
+        let unknown = [SwarmAgent(id: .init("coder"), role: "code", pane: "%1", alive: nil)]
+        #expect(SwarmPanePolicy.liveCells(session: value, agents: unknown).isEmpty)
+        #expect(SwarmPanePolicy.cells(session: value, agents: unknown).count == 1)
+    }
+
+    @Test("Dismiss one or clear finished keeps live children, chairs, and other chats unchanged")
+    func dismissFinishedChildren() {
+        let value = session(adapter: "herdr")
+        let chat = SwarmProjectSession(sessions: [value], title: "Work")
+        var finished = SwarmAgent(id: .init("finished"), role: "code", pane: "old-pane", alive: false)
+        finished.log = "/tmp/finished.jsonl"
+        let closed = SwarmAgent(id: .init("closed"), role: "review", pane: nil, alive: true)
+        let live = SwarmAgent(id: .init("live"), role: "code", pane: "live-pane", alive: true, state: "done")
+        let chair = SwarmAgent(id: SwarmPanePolicy.chair, role: "chair", pane: nil, alive: false)
+        let agents = [finished, closed, live, chair]
+        let key = ChatTitle.key(chat)
+        var navigation = WorkspaceNavigation()
+        navigation.dismissedChildren = ["other-chat": ["other-child"]]
+        navigation.dismissFinishedChildren([live.id.rawValue, chair.id.rawValue, "missing"], in: chat, agents: agents)
+        #expect(navigation.dismissedChildren[key] == nil)
+        navigation.dismissFinishedChildren([finished.id.rawValue], in: chat, agents: agents)
+        #expect(navigation.dismissedChildren[key] == ["finished"])
+        let kept = SwarmPanePolicy.cells(session: value, agents: agents,
+                                         dismissed: navigation.dismissedChildren[key] ?? [])
+        #expect(kept.map(\.id.rawValue) == ["closed", "live"])
+        #expect(SwarmPanePolicy.cells(session: value, agents: agents).first { $0.id == finished.id }?.agent.log
+            == finished.log)
+        navigation.dismissFinishedChildren(agents.map(\.id.rawValue), in: chat, agents: agents)
+        navigation.dismissFinishedChildren(agents.map(\.id.rawValue), in: chat, agents: agents)
+        #expect(navigation.dismissedChildren[key] == ["finished", "closed"])
+        #expect(navigation.dismissedChildren["other-chat"] == ["other-child"])
+        #expect(SwarmPanePolicy.cells(session: value, agents: agents,
+                                      dismissed: navigation.dismissedChildren[key] ?? []).map(\.id) == [live.id])
     }
 
     @Test("Agent creation time decodes from the CLI")
@@ -189,7 +267,7 @@ struct SwarmSessionDetailTests {
         #expect(await calls.adapters == ["tmux-solo"])
     }
 
-    @Test("Hook status and plan decode the CLI's answers, and setup sends the plan's digest")
+    @Test("The hooks plan decodes the CLI's answer, and setup sends the plan's digest")
     func hooksStatusPlanAndSetup() async throws {
         let calls = CloseCalls()
         let plan = #"""
@@ -199,13 +277,8 @@ struct SwarmSessionDetailTests {
         let bus = SwarmCLIBus(environment: [:], cwd: "/tmp", resolveExecutable: { $0 }) {
             _, arguments, _, environment, _, _ in
             _ = await calls.reply(arguments: arguments, environment: environment)
-            let stdout = arguments.contains("--plan") ? plan : #"{"codex":true,"agy":false}"#
-            return ShellResult(status: 0, stdout: stdout, stderr: "")
+            return ShellResult(status: 0, stdout: arguments.contains("--plan") ? plan : "", stderr: "")
         }
-        let status = try await bus.hooksStatus()
-        #expect(status == SwarmHooksStatus(codex: true, agy: false))
-        #expect(!status.isSetUp)
-
         let decoded = try await bus.hooksPlan()
         #expect(decoded.digest == "d1")
         #expect(decoded.files.map { [$0.added, $0.removed] } == [[2, 0]])
@@ -225,10 +298,142 @@ struct SwarmSessionDetailTests {
 
         try await bus.setUpHooks(digest: decoded.digest)
         #expect(await calls.arguments == [
-            ["hooks", "status", "--json"],
             ["hooks", "setup", "--plan", "--json"],
             ["hooks", "setup", "--digest", "d1"],
         ])
+    }
+
+    @Test("Setup status and plan come from swarm setup, and setup sends the plan's digest (ADR 0043)")
+    func setupStatusPlanAndApply() async throws {
+        let calls = CloseCalls()
+        let plan = #"""
+            {"digest":"d2","consent":"ask","files":[
+              {"group":"trust","path":"/h/.swarm/consent.json","diff":"--- /h/.swarm/consent.json\n+++ /h/.swarm/consent.json\n@@ -0,0 +1,3 @@\n+{\n+  \"trust\": \"standing\"\n+}\n"},
+              {"path":"/h/old.json","diff":""}],
+             "conflicts":[],"skipped":[]}
+            """#
+        let bus = SwarmCLIBus(environment: [:], cwd: "/tmp", resolveExecutable: { $0 }) {
+            _, arguments, _, environment, _, _ in
+            _ = await calls.reply(arguments: arguments, environment: environment)
+            let stdout = arguments.contains("--plan")
+                ? plan : #"{"hooks":true,"guard":false,"trust":false,"herdr":true,"skills":true}"#
+            return ShellResult(status: 0, stdout: stdout, stderr: "")
+        }
+        let status = try await bus.setupStatus()
+        #expect(status == SwarmSetupStatus(hooks: true, trust: false, herdr: true, skills: true))
+        // A Mac that updates has no consent yet, so the sheet opens once even after a hooks
+        // "Not now" (Q3).
+        #expect(status.needsSheet(declined: [.hooks]))
+        #expect(!SwarmSetupStatus(hooks: false, trust: true, herdr: true, skills: true).needsSheet(declined: [.hooks]))
+        #expect(SwarmSetupStatus(hooks: false, trust: true, herdr: true, skills: true).needsSheet(declined: []))
+        // A group the owner left unchecked when they applied the rest is not asked again.
+        #expect(!status.needsSheet(declined: [.trust]))
+
+        let decoded = try await bus.setupPlan()
+        #expect(decoded.files.map(\.group) == ["trust", nil])
+        #expect(decoded.files.first?.added == 3)
+        #expect(decoded.groupIDs == ["trust"])
+        // Hooks and trust can both change one file; each row keeps its own id (AP-6).
+        let hooksRow = SwarmHooksPlan.File(path: "/h/.codex/config.toml", diff: "", group: "hooks")
+        let trustRow = SwarmHooksPlan.File(path: "/h/.codex/config.toml", diff: "", group: "trust")
+        #expect(hooksRow.id != trustRow.id)
+        try await bus.setUp(digest: decoded.digest)
+
+        // The first plan, with no --consent, sets the owner's recorded answer, so the radio
+        // starts there; from then on the radio's answer is sent each time.
+        #expect(decoded.consent == "ask")
+        var first = SwarmSetupChoice()
+        first.take(decoded)
+        #expect(first.standing == false)
+        #expect(first.groups == ["trust"])
+        #expect(first.arguments == ["--consent", "ask"])
+        first.standing = true
+        #expect(first.arguments == ["--consent", "standing"])
+
+        // Each checkbox the owner clears leaves its group out, and the radio sets the consent,
+        // so the plan and its digest cover what the sheet shows (02-design screen 1).
+        var choice = SwarmSetupChoice(groups: ["hooks", "trust", "herdr"])
+        #expect(choice.arguments.isEmpty)
+        choice.unchecked = ["trust"]
+        choice.standing = false
+        #expect(choice.checked == ["hooks", "herdr"])
+        _ = try await bus.setupPlan(choice)
+        try await bus.setUp(digest: "d3", choice: choice)
+        #expect(await calls.arguments == [
+            ["setup", "status", "--json"],
+            ["setup", "--plan", "--json"],
+            ["setup", "--digest", "d2"],
+            ["setup", "--plan", "--json", "--only", "hooks,herdr", "--consent", "ask"],
+            ["setup", "--digest", "d3", "--only", "hooks,herdr", "--consent", "ask"],
+        ])
+    }
+
+    @Test("Not now with a group unchecked declines only that group, so the rest are asked again (02-design screen 1)")
+    func notNowDeclinesOnlyTheClearedGroups() {
+        var choice = SwarmSetupChoice(groups: ["hooks", "trust"])
+        // Every box checked: Not now declines the whole sheet.
+        #expect(choice.notNowDeclines == nil)
+        choice.unchecked = ["trust"]
+        #expect(choice.notNowDeclines == ["trust"])
+        // Hooks stay undeclined, so the next start asks for them again.
+        let pending = SwarmSetupStatus(hooks: false, trust: false, herdr: true, skills: true)
+        #expect(pending.needsSheet(declined: [.trust]))
+    }
+
+    @Test("A plan with only skipped items names each with its reason, not 'already set up' (02-design)")
+    func skippedItemsShowTheirReasons() throws {
+        let json = #"""
+            {"digest":"d4","consent":"standing","files":[],"conflicts":[],
+             "skipped":[{"group":"trust","reason":"/tmp is too broad to trust"}]}
+            """#
+        let plan = try JSONDecoder().decode(SwarmHooksPlan.self, from: Data(json.utf8))
+        #expect(plan.skipped == [.init(group: "trust", reason: "/tmp is too broad to trust")])
+        #expect(plan.isSetUp)
+        #expect(plan.skippedLines == ["Folder trust: /tmp is too broad to trust"])
+        #expect(plan.unchangedText("Swarm is already set up.")
+            == "No file changes. Swarm left these as they are:\nFolder trust: /tmp is too broad to trust")
+        // A `hooks setup` plan or an undo has no skipped list.
+        let none = SwarmHooksPlan(digest: "d", files: [], conflicts: [])
+        #expect(none.skippedLines.isEmpty)
+        #expect(none.unchangedText("Swarm is already set up.") == "Swarm is already set up. No file changes.")
+    }
+
+    @Test("A launch reports each trust write it made, so the app shows it (owner answer I1)")
+    func launchReportsTrustWrites() async throws {
+        // A diff line keeps its mark, so its context line ` model = …` is not the model (L-12).
+        let stderr = """
+            --- /h/.codex/config.toml
+            +++ /h/.codex/config.toml
+            @@ -1 +1,3 @@
+             model = "gpt-5.5"
+             trusted x y
+            +[projects."/r one"]
+            swarm: trusted /r one for claude in /h/.claude.json
+            trusted claude /r one
+            trusted codex /r one
+            model opus
+            """
+        let bus = SwarmCLIBus(environment: [:], cwd: "/tmp", resolveExecutable: { $0 }) {
+            _, _, _, _, _, _ in ShellResult(status: 0, stdout: "w1:p1\n", stderr: stderr)
+        }
+        let launch = try await bus.launch(
+            .init("orchestrator"), role: "chair", provider: nil, model: nil, account: nil,
+            in: SwarmSessionID("s"), directory: "/r one"
+        )
+        #expect(launch.model == "opus")
+        #expect(launch.trustWrites == [
+            SwarmTrustWrite(provider: "claude", directory: "/r one"),
+            SwarmTrustWrite(provider: "codex", directory: "/r one"),
+        ])
+        // Standing consent prints the same line as a chair's folder pick, so the notice names
+        // no reason it cannot know.
+        #expect(launch.trustWrites.first?.notice
+            == "Swarm marked /r one as trusted for Claude. Undo it in Swarm › Managed Changes.")
+        #expect(SwarmTrustWrite(provider: "agy", directory: "/r").notice.contains("for AGY."))
+        // VoiceOver hears every write in one announcement (UA-11).
+        #expect(launch.trustAnnouncement
+            == "Swarm marked /r one as trusted for Claude. Swarm marked /r one as trusted for Codex. Undo it in Swarm › Managed Changes.")
+        #expect(SwarmLaunch(pane: "p", account: nil).trustAnnouncement == nil)
     }
 
     @Test("A child's chat reads the log its hooks reported and waits before one exists")
@@ -240,6 +445,27 @@ struct SwarmSessionDetailTests {
             == .notice("No transcript reader for this provider yet"))
     }
 
+    @Test("A finished child cell keeps its final answer readable from its log")
+    func finishedChildTranscript() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let log = try chat([
+            Self.USER_ASKS,
+            #"{"type":"assistant","uuid":"reply","message":{"role":"assistant","content":[{"type":"text","text":"The fix is complete."}]}}"#,
+        ], in: directory, named: "finished-child.jsonl")
+        var finished = SwarmAgent(id: .init("finished"), role: "code", pane: nil, alive: false, provider: "claude")
+        finished.log = log.path
+        let cell = try #require(SwarmPanePolicy.cells(session: session(adapter: "herdr"), agents: [finished]).first)
+        #expect(cell.agent.status == .ended)
+        let transcript = SwarmChairTranscript()
+        guard case .rows(let rows, _) = await transcript.poll(childLog: cell.agent.log, provider: cell.agent.provider) else {
+            Issue.record("No transcript for the finished child")
+            return
+        }
+        #expect(rows.contains { $0.kind == .assistant && $0.text == "The fix is complete." })
+    }
+
     @Test("Close uses the session adapter and closes live children before the chair")
     func closeOrderAndAdapter() async throws {
         let calls = CloseCalls()
@@ -249,16 +475,16 @@ struct SwarmSessionDetailTests {
         }
         let value = session(adapter: "herdr")
 
-        try await SwarmSessionCloser.close(value, bus: bus)
+        try await SwarmSessionCloser.end(session: SwarmProjectSession(sessions: [value], title: "Chat"), bus: bus)
 
         #expect(await calls.arguments == [
+            ["agents", "--json", "--all"],
             ["agents", "--json"],
             ["close", "child-b"],
             ["close", "child-a"],
             ["close", "orchestrator"],
-            ["session", "archive", value.id.rawValue],
         ])
-        #expect(await calls.adapters == ["herdr", "herdr", "herdr", "herdr", "tmux-solo"])
+        #expect(await calls.adapters == ["tmux-solo", "herdr", "herdr", "herdr", "herdr"])
     }
 
     private func chat(_ lines: [String], in directory: URL, named name: String) throws -> URL {
@@ -299,6 +525,9 @@ struct SwarmSessionDetailTests {
         #expect(visible[1].text.hasPrefix("Context cleared · "))
         #expect(visible[1].eventID == "clear-second.jsonl")
         #expect(visible[2].text == "Start fresh")
+        // The new log numbers raw entries from 0 again, so a frozen row has no sources to show.
+        #expect(visible[0].sourceIDs.isEmpty)
+        #expect(visible[2].sourceIDs == ["raw-4"])
         #expect(!rows.contains { $0.text.contains("<command-name>/clear") })
         #expect(!rows.contains { $0.text.contains("<local-command-") })
     }

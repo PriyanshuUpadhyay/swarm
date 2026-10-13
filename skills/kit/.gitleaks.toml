@@ -1,0 +1,34 @@
+# Public-safety gate: gitleaks' default secret rules plus personal data.
+# scripts/public-safety.sh adds the owner's private words at run time; they are not in this repo.
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "home-path"
+description = "A real user's home directory"
+regex = '''/(?:Users|home)/([A-Za-z0-9._-]+)'''
+secretGroup = 1
+keywords = ["/users/", "/home/"]
+[[rules.allowlists]]
+description = "Placeholder users and dot-folders"
+regexes = ['''^(?:me|you|x|user|someone|tester\d*|other|owner|person|runner|example|\..*)$''']
+
+[[rules]]
+id = "personal-email"
+description = "An email address outside the reserved example domains"
+regex = '''[A-Za-z0-9._%+-]+@([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,})'''
+secretGroup = 1
+keywords = ["@"]
+[[rules.allowlists]]
+description = "Reserved and example domains, SSH remotes, and image scale suffixes"
+regexes = ['''(?i)^(?:(?:[a-z0-9-]+\.)*(?:example\.(?:com|org|net)|test|local|example|invalid|localhost)|(?:users\.)?noreply\.github\.com|github\.com|\d+x\.(?:png|jpe?g))$''']
+[[rules.allowlists]]
+description = "Third-party license notices keep their authors' addresses"
+paths = ['''(?:^|/)LICENSE[^/]*$''']
+
+[[rules]]
+id = "session-id"
+description = "A UUID in prose, which is usually a real session id"
+regex = '''(?i)\b[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b'''
+path = '''(?i)(?:^|/)docs/|\.md$'''

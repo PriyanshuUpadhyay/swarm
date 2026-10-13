@@ -20,6 +20,15 @@ public struct SwarmAgentID: Identifier {
     public init(_ rawValue: String) { self.rawValue = rawValue }
 }
 
+extension SwarmAgentID {
+    public var attachCommand: String {
+        let safe = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-.")
+        let argument = !rawValue.isEmpty && rawValue.unicodeScalars.allSatisfy(safe.contains)
+            ? rawValue : "'" + rawValue.replacingOccurrences(of: "'", with: "'\"'\"'") + "'"
+        return "swarm attach " + argument
+    }
+}
+
 public struct SwarmChairID: Identifier {
     public let rawValue: String
     public init(_ rawValue: String) { self.rawValue = rawValue }

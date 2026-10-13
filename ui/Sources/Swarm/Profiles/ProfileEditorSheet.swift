@@ -5,6 +5,7 @@ import SwarmCore
 /// provider, model, effort, and the flags its provider takes. Save writes the whole profile in
 /// one call; Cancel drops every edit.
 struct ProfileEditorSheet: View {
+    @Environment(\.designTokens) private var tokens
     let providers: [SwarmProvider]
     /// Why the provider list is empty, when its read failed.
     let providersError: String?
@@ -12,6 +13,8 @@ struct ProfileEditorSheet: View {
     let check: SwarmProfileCheck?
     let save: (SwarmProfile) async throws -> Void
     let onSaved: () -> Void
+    let onError: (String?) -> Void
+    let fetchModels: (String) async throws -> [SwarmModel]
 
     @Environment(\.dismiss) private var dismiss
     @State private var draft: ProfileDraft
@@ -28,21 +31,25 @@ struct ProfileEditorSheet: View {
 
     init(
         profile: SwarmProfile, providers: [SwarmProvider], providersError: String?,
-        check: SwarmProfileCheck?, focus: Int?, save: @escaping (SwarmProfile) async throws -> Void, onSaved: @escaping () -> Void
+        check: SwarmProfileCheck?, focus: Int?, models: @escaping (String) async throws -> [SwarmModel],
+        save: @escaping (SwarmProfile) async throws -> Void,
+        onSaved: @escaping () -> Void, onError: @escaping (String?) -> Void
     ) {
         self.providers = providers
         self.providersError = providersError
         self.check = check
         self.save = save
         self.onSaved = onSaved
+        self.onError = onError
+        self.fetchModels = models
         _pendingFocus = State(initialValue: focus)
         // A one-time seed: the sheet owns the edits from here until Save or Cancel.
         _draft = State(initialValue: ProfileDraft(profile))
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.m) {
-            VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
+        VStack(alignment: .leading, spacing: tokens.spacing.m) {
+            VStack(alignment: .leading, spacing: tokens.spacing.xs) {
                 Text("Edit profile · \(draft.original.name)").font(.title2)
                 Text("The first runner that can run starts. A runner is skipped when its CLI is missing, no account is signed in, or usage is low. Drag a card to change the order.")
                     .font(.callout).foregroundStyle(.secondary)
@@ -130,7 +137,7 @@ struct ProfileEditorSheet: View {
                     .disabled(isSaving || !draft.canSave)
             }
         }
-        .padding(DesignTokens.Spacing.xl)
+        .padding(tokens.spacing.xl)
         .frame(width: DesignTokens.Size.profileSheet)
         // A sheet window keeps the size it opened at, so it is set to the content's height each
         // time the cards lay out, are added, or are removed.
@@ -189,10 +196,11 @@ struct ProfileEditorSheet: View {
     private func loadModels(_ provider: String, retry: Bool = false) async {
         if !retry, models[provider] != nil { return }
         do {
-            models[provider] = try await SwarmModelCatalog.shared.models(for: provider)
+            models[provider] = try await fetchModels(provider)
             catalogErrors[provider] = nil
         } catch {
             catalogErrors[provider] = (error as? SwarmProfileError)?.message ?? String(describing: error)
+            onError(catalogErrors[provider])
         }
     }
 
@@ -200,6 +208,7 @@ struct ProfileEditorSheet: View {
         guard !isSaving else { return }
         isSaving = true
         error = nil
+        onError(nil)
         let profile = draft.profile
         Task {
             defer { isSaving = false }
@@ -209,12 +218,14 @@ struct ProfileEditorSheet: View {
                 dismiss()
             } catch {
                 self.error = (error as? SwarmProfileError)?.message ?? String(describing: error)
+                onError(self.error)
             }
         }
     }
 }
 
 private struct RunnerCard: View {
+    @Environment(\.designTokens) private var tokens
     let index: Int
     @Binding var runner: SwarmRunner
     let provider: SwarmProvider?
@@ -233,8 +244,8 @@ private struct RunnerCard: View {
     @State private var showsFlags = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.s) {
-            HStack(spacing: DesignTokens.Spacing.s) {
+        VStack(alignment: .leading, spacing: tokens.spacing.s) {
+            HStack(spacing: tokens.spacing.s) {
                 Image(systemName: "line.3.horizontal").foregroundStyle(.tertiary)
                     .accessibilityHidden(true)
                 Text(index == 0 ? "\(index + 1)  PRIMARY" : "\(index + 1)  FALLBACK")
@@ -254,7 +265,7 @@ private struct RunnerCard: View {
                 .fixedSize()
                 .accessibilityLabel("Runner \(index + 1) actions")
             }
-            HStack(spacing: DesignTokens.Spacing.s) {
+            HStack(spacing: tokens.spacing.s) {
                 Picker("Provider", selection: Binding(
                     get: { runner.provider },
                     set: { id in if let choice = providers.first(where: { $0.id == id }) { onProvider(choice) } }
@@ -277,7 +288,7 @@ private struct RunnerCard: View {
             }
             if let fields = provider?.fields, !fields.isEmpty {
                 Button { showsFlags.toggle() } label: {
-                    HStack(spacing: DesignTokens.Spacing.xs) {
+                    HStack(spacing: tokens.spacing.xs) {
                         Text(fields.map { "\($0.label): \(runner[field: $0.name] ?? "CLI default")" }
                             .joined(separator: " · "))
                         Image(systemName: "chevron.right").font(.caption2)
@@ -302,7 +313,7 @@ private struct RunnerCard: View {
                 }
             }
         }
-        .padding(DesignTokens.Spacing.m)
+        .padding(tokens.spacing.m)
         .background(fill, in: RoundedRectangle(cornerRadius: DesignTokens.Radius.card))
         .overlay {
             RoundedRectangle(cornerRadius: DesignTokens.Radius.card)
@@ -348,16 +359,17 @@ private struct RunnerCard: View {
 /// One model control: a menu of the CLI's models with "Other model…", or a text field when the
 /// list did not load or the model is not in it.
 private struct ModelField: View {
+    @Environment(\.designTokens) private var tokens
     @Binding var model: String
     let models: [SwarmModel]
     @State private var typesOther = false
 
     var body: some View {
         if models.isEmpty || typesOther || !models.contains(where: { $0.id == model }) {
-            HStack(spacing: DesignTokens.Spacing.xs) {
+            HStack(spacing: tokens.spacing.xs) {
                 TextField("Model", text: $model)
                     .textFieldStyle(.roundedBorder)
-                    .font(DesignTokens.mono)
+                    .font(tokens.mono)
                 if !models.isEmpty {
                     Menu {
                         list
@@ -398,6 +410,7 @@ private struct ModelField: View {
 
 /// The flags a provider takes. "" is no flag at all, so the CLI uses its own default.
 private struct FlagPickers: View {
+    @Environment(\.designTokens) private var tokens
     @Binding var runner: SwarmRunner
     let fields: [SwarmProviderField]
 
@@ -413,7 +426,7 @@ private struct FlagPickers: View {
                 }
             }
         }
-        .padding(DesignTokens.Spacing.m)
+        .padding(tokens.spacing.m)
         .fixedSize()
     }
 

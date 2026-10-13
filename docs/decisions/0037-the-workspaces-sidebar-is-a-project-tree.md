@@ -1,5 +1,6 @@
 ---
-status: accepted
+status: superseded
+superseded-by: "0049"
 date: 2026-10-01
 deciders: [user]
 related: ["0019", "0020", "0023", "0035"]
