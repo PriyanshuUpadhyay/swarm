@@ -1,0 +1,190 @@
+[
+  [
+    "Add a test for the empty case, then mail me@host.",
+    "Add a test for the empty case, then mail me@host."
+  ],
+  [
+    "café naïve résumé 中文",
+    "café naïve résumé 中文"
+  ],
+  [
+    "soft­hyphen",
+    "softhyphen"
+  ],
+  [
+    "word⁠joiner",
+    "wordjoiner"
+  ],
+  [
+    "h⁡i⁢j⁣k⁤l",
+    "hijkl"
+  ],
+  [
+    "abcd",
+    "abcd"
+  ],
+  [
+    "ab",
+    "a\nb"
+  ],
+  [
+    "a b c",
+    "a\nb\nc"
+  ],
+  [
+    "one\r\ntwo\rthree\nfour",
+    "one\ntwo\nthree\nfour"
+  ],
+  [
+    "a\u000bb\fc",
+    "a\nb\nc"
+  ],
+  [
+    "red\u001b[31m text",
+    "red[31m text"
+  ],
+  [
+    "a\u0000b\bc\u001fde",
+    "abcde"
+  ],
+  [
+    "tab\there",
+    "tab\there"
+  ],
+  [
+    "a͏b",
+    "ab"
+  ],
+  [
+    "é͏̂x",
+    "é͏̂x"
+  ],
+  [
+    "ᅟᅠxㅤyﾠz",
+    "xyz"
+  ],
+  [
+    "a឴b ក឴",
+    "ab ក឴"
+  ],
+  [
+    "a⁪b⁯c",
+    "abc"
+  ],
+  [
+    "a￰b￻c",
+    "abc"
+  ],
+  [
+    "a󠂀b󠿿c",
+    "abc"
+  ],
+  [
+    "a󠁁b󠁿c",
+    "abc"
+  ],
+  [
+    "flag 🏴󠁧󠁢󠁥󠁮󠁧󠁿 ok",
+    "flag 🏴󠁧󠁢󠁥󠁮󠁧󠁿 ok"
+  ],
+  [
+    "🏴󠁧󠁢󠁳󠁣󠁴󠁿 and 🏴󠁧󠁢󠁷󠁬󠁳󠁿",
+    "🏴󠁧󠁢󠁳󠁣󠁴󠁿 and 🏴󠁧󠁢󠁷󠁬󠁳󠁿"
+  ],
+  [
+    "🏴󠁵󠁳󠁴󠁸󠁿 texas",
+    "🏴 texas"
+  ],
+  [
+    "a؜b",
+    "ab"
+  ],
+  [
+    "م؜١",
+    "م؜١"
+  ],
+  [
+    "abc‎def",
+    "abcdef"
+  ],
+  [
+    "שלום‎ abc",
+    "שלום‎ abc"
+  ],
+  [
+    "a᠋b ᠠ᠋",
+    "ab ᠠ᠋"
+  ],
+  [
+    "a️b ❤️ ok",
+    "ab ❤️ ok"
+  ],
+  [
+    "1️⃣ x︎",
+    "1️⃣ x"
+  ],
+  [
+    "∀︀ a︀",
+    "∀︀ a"
+  ],
+  [
+    "a‌b",
+    "ab"
+  ],
+  [
+    "Auf‌lage",
+    "Auflage"
+  ],
+  [
+    "می‌خواهم",
+    "می‌خواهم"
+  ],
+  [
+    "क्‍ष क्‌ष",
+    "क्‍ष क्‌ष"
+  ],
+  [
+    "hi 👨‍👩‍👧 there",
+    "hi 👨‍👩‍👧 there"
+  ],
+  [
+    "👩🏽‍💻 dev",
+    "👩🏽‍💻 dev"
+  ],
+  [
+    "a‍b 😀‍",
+    "ab 😀"
+  ],
+  [
+    "ก​ข a​b",
+    "ก​ข ab"
+  ],
+  [
+    "a‪b‮c⁦d⁩e",
+    "abcde"
+  ],
+  [
+    "﻿hello",
+    "hello"
+  ],
+  [
+    "𑀓𑁿𑀓 a𑁿b",
+    "𑀓𑁿𑀓 ab"
+  ],
+  [
+    "𓀀𓐰𓀁 a𓐰b",
+    "𓀀𓐰𓀁 ab"
+  ],
+  [
+    "a𖿤b𝅳c",
+    "abc"
+  ],
+  [
+    "ل‍ا",
+    "ل‍ا"
+  ],
+  [
+    "Fix­ the​ bug 😀‍🔥 in  file क्‍ष done",
+    "Fix the bug 😀‍🔥 in\n file क्‍ष done"
+  ]
+]

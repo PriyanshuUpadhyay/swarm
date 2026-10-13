@@ -1,12 +1,15 @@
 mod builder;
 pub mod choices;
 pub mod choices_store;
+mod claude_properties;
+pub mod claude_text;
 pub mod discovery;
 pub mod fields;
 mod fold;
 pub mod github;
 pub mod navigation;
 mod preview;
+pub mod queue;
 mod sidebar;
 pub mod tabs;
 mod tool;

@@ -725,9 +725,7 @@ pub fn queued(records: &[Record]) -> Vec<Row> {
     }
     queue
         .into_iter()
-        .filter(|(_, text)| {
-            !text.starts_with("<task-notification") && !text.starts_with("<agent-message")
-        })
+        .filter(|(_, text)| super::queue::is_owner(text))
         .map(|(record, text)| {
             let mut row = Row::new(RowKind::Queued, text.into(), key(record, "queued"));
             row.source_ids.push(record.source_id.clone());

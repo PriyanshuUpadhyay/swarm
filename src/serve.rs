@@ -24,7 +24,9 @@ use std::{
     time::Duration,
 };
 use swarm::view::transcript::{self as view, Record, Row};
-use swarm::view::{choices, choices_store, discovery, fields, navigation, tabs, tree};
+use swarm::view::{
+    choices, choices_store, claude_text, discovery, fields, navigation, queue, tabs, tree,
+};
 use tokio::{
     io::{AsyncBufReadExt, BufReader},
     sync::{mpsc, oneshot, watch},
@@ -292,6 +294,7 @@ fn router(app: App) -> Router {
         .route("/api/stream", get(stream))
         .route("/api/subscribe", post(subscribe))
         .route("/api/chat/send", post(chat_action))
+        .route("/api/chat/pull-back", post(chat_action))
         .route("/api/chat/interrupt", post(chat_action))
         .route("/api/chat/key", post(chat_action))
         .route("/api/chat/answer", post(chat_action))
@@ -759,6 +762,7 @@ struct NewChat {
 #[derive(Deserialize)]
 enum Action {
     Send(SendAction),
+    PullBack(ActionTarget),
     Interrupt(ActionTarget),
     Key(KeyAction),
     Answer(AnswerAction),
@@ -812,6 +816,7 @@ async fn chat_action(
     }
     let kind = match uri.path() {
         "/api/chat/send" => "Send",
+        "/api/chat/pull-back" => "PullBack",
         "/api/chat/interrupt" => "Interrupt",
         "/api/chat/key" => "Key",
         "/api/chat/answer" => "Answer",
@@ -853,7 +858,7 @@ impl Action {
     fn lane(&self) -> Option<&str> {
         match self {
             Self::Send(body) => Some(&body.session),
-            Self::Interrupt(body) | Self::Close(body) => Some(&body.session),
+            Self::Interrupt(body) | Self::Close(body) | Self::PullBack(body) => Some(&body.session),
             Self::Key(body) => Some(&body.session),
             Self::Answer(body) => Some(&body.session),
             Self::New(_)
@@ -985,7 +990,16 @@ async fn execute_action(app: &App, action: Action) -> Result<Value, ApiError> {
                 return Err(error(StatusCode::BAD_REQUEST, "swarm: empty text"));
             }
             let (call, agent) = action_target(app, &body.session, &body.agent)?;
-            (call.args(&["type", &agent]), Some(body.text))
+            let text = if action_provider(app, &body.session, &agent)?.as_deref() == Some("claude")
+            {
+                claude_text::cleaned(&body.text)
+            } else {
+                body.text
+            };
+            if text.trim().is_empty() {
+                return Err(error(StatusCode::BAD_REQUEST, "swarm: empty text"));
+            }
+            (call.args(&["type", &agent]), Some(text))
         }
         Action::Interrupt(body) | Action::Close(body) => {
             let verb = if interrupt { "interrupt" } else { "close" };
@@ -1041,6 +1055,7 @@ async fn execute_action(app: &App, action: Action) -> Result<Value, ApiError> {
                     )
                 })?;
         }
+        Action::PullBack(body) => return pull_back(app, body).await,
         Action::New(body) => return new_chat(app, body).await,
         Action::Archived => {
             let output = run_cli(
@@ -1068,6 +1083,94 @@ async fn execute_action(app: &App, action: Action) -> Result<Value, ApiError> {
     };
     run_cli(app, call, text).await?;
     Ok(json!({"ok": true}))
+}
+
+fn action_provider(app: &Server, session: &str, agent: &str) -> Result<Option<String>, ApiError> {
+    let connection = read_connection(&app.root)
+        .map_err(|err| error(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()))?;
+    let result = if agent == "orchestrator" || agent == "chair" {
+        connection.query_row(
+            "SELECT chair_provider FROM session WHERE id = ?1",
+            [session],
+            |row| row.get(0),
+        )
+    } else {
+        connection.query_row(
+            "SELECT provider FROM agent WHERE session_id = ?1 AND id = ?2",
+            (session, agent),
+            |row| row.get(0),
+        )
+    };
+    result.map_err(|err| error(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()))
+}
+
+async fn pull_back(app: &App, body: ActionTarget) -> Result<Value, ApiError> {
+    let (call, agent) = action_target(app, &body.session, &body.agent)?;
+    let provider = action_provider(app, &body.session, &agent)?;
+    if !queue::can_pull_back(provider.as_deref(), &call.adapter) {
+        return Err(error(
+            StatusCode::CONFLICT,
+            "Pull-back needs Claude and a tmux adapter.",
+        ));
+    }
+    let log_agent = if agent == "orchestrator" {
+        "chair"
+    } else {
+        &agent
+    };
+    let log = resolve_log(&app.root, &body.session, log_agent)?;
+    let (_, mut end) = row_offsets(&log.path, 1, None)
+        .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "transcript read failed"))?;
+    let state = read_row_window(&app.tool, &log, 0, end).await?;
+    let pending = queue::replay(state.records.values().map(|record| &record.event));
+    let Some(last) = pending.iter().rfind(|text| queue::is_owner(text)) else {
+        return Ok(json!({"ok":true,"outcome":"alreadySent","text":null}));
+    };
+    if !pending.iter().all(|text| queue::is_owner(text)) {
+        return Err(error(
+            StatusCode::CONFLICT,
+            "The agent has its own message in the queue. Edit after it is delivered.",
+        ));
+    }
+    let deadline = tokio::time::Instant::now() + Duration::from_millis(1500);
+    run_cli(app, call.args(&["key", &agent, "Up"]), None).await?;
+    let mut after = Vec::new();
+    let decision = loop {
+        let (_, next) = row_offsets(&log.path, 1, None)
+            .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "transcript read failed"))?;
+        if next < end {
+            break queue::PullBack::Unconfirmed;
+        }
+        if next > end {
+            match tokio::time::timeout_at(deadline, read_row_window(&app.tool, &log, end, next))
+                .await
+            {
+                Ok(Ok(state)) => {
+                    after.extend(state.records.into_values().map(|record| record.event));
+                    end = next;
+                }
+                _ => break queue::PullBack::Unconfirmed,
+            }
+        }
+        let decision =
+            queue::PullBack::decide(&pending, &after, tokio::time::Instant::now() >= deadline);
+        if decision != queue::PullBack::Waiting {
+            break decision;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    };
+    for index in 0..decision.clear_presses(last) {
+        if index > 0 {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        run_cli(app, call.args(&["key", &agent, "C-u"]), None).await?;
+    }
+    let (outcome, text) = match decision {
+        queue::PullBack::Pulled { owner, .. } => ("pulled", Some(owner.join("\n"))),
+        queue::PullBack::AlreadySent { .. } => ("alreadySent", None),
+        queue::PullBack::Unconfirmed | queue::PullBack::Waiting => ("unconfirmed", None),
+    };
+    Ok(json!({"ok":true,"outcome":outcome,"text":text}))
 }
 
 async fn new_chat(app: &App, body: NewChat) -> Result<Value, ApiError> {
@@ -1517,6 +1620,7 @@ struct LiveRows {
     is_codex: bool,
     shown: HashSet<String>,
     last_rows: Vec<Row>,
+    last_usage: Option<view::ChatUsage>,
 }
 impl LiveRows {
     fn empty(from: u64, is_codex: bool) -> Self {
@@ -1527,6 +1631,7 @@ impl LiveRows {
             is_codex,
             shown: HashSet::new(),
             last_rows: Vec::new(),
+            last_usage: None,
         }
     }
     fn ingest(&mut self, start: u64, end: u64, events: &[Value]) {
@@ -1571,11 +1676,14 @@ impl LiveRows {
             .filter(|row| !current.contains(&row.id))
             .map(|row| &row.id)
             .collect();
-        let frame = Frame::new(
-            "rows",
-            json!({"key": key, "upsert": upsert, "remove": remove, "end_offset": self.end}),
-            Some(key),
-        );
+        let usage = view::usage(&self.records.values().cloned().collect::<Vec<_>>());
+        let mut payload =
+            json!({"key": key, "upsert": upsert, "remove": remove, "end_offset": self.end});
+        if usage != self.last_usage {
+            payload["usage"] = json!(usage);
+        }
+        self.last_usage = usage;
+        let frame = Frame::new("rows", payload, Some(key));
         self.remember_shown(&rows);
         self.last_rows = rows;
         frame
@@ -1750,7 +1858,15 @@ async fn transcript_rows(
         .map(|row| &row.id)
         .collect();
     let usage = view::usage(&state.records.values().cloned().collect::<Vec<_>>());
-    let response = json!({"page": {"start_offset": start, "end_offset": end}, "rows": rows, "usage": usage, "remove": remove});
+    let previous: HashMap<_, _> = previous.iter().map(|row| (&row.id, row)).collect();
+    let upsert: Vec<_> = rows
+        .iter()
+        .filter(|row| {
+            query.before.is_none() || previous.get(&row.id).is_none_or(|old| *old != *row)
+        })
+        .collect();
+    let response = json!({"page": {"start_offset": start, "end_offset": end}, "rows": upsert, "usage": usage, "remove": remove});
+    state.last_usage = usage;
     state.remember_shown(&rows);
     state.last_rows = rows;
     let subscribed = hub
@@ -3177,6 +3293,305 @@ wait
     }
 
     #[tokio::test]
+    async fn older_page_sends_only_new_and_changed_rows_in_thousand_row_history() {
+        let fixture = Fixture::new();
+        codex_log(&fixture, 0);
+        let call = json!({"type":"response_item","payload":{"type":"function_call","call_id":"boundary","name":"shell","arguments":"{\"command\":\"true\"}"}});
+        let result = json!({"type":"response_item","payload":{"type":"function_call_output","call_id":"boundary","output":"done"}});
+        let history = (0..99).map(codex_line).collect::<String>()
+            + &format!("{call}\n{result}\n")
+            + &(100..999).map(codex_line).collect::<String>();
+        assert_eq!(history.lines().count(), 1000);
+        std::fs::write(&fixture.log, history).unwrap();
+        let first = row_page(&fixture, 900, None).await.unwrap();
+        let orphan = first["rows"][0]["id"].clone();
+        let older = row_page(&fixture, 100, first["page"]["start_offset"].as_u64())
+            .await
+            .unwrap();
+        assert_eq!(older["rows"].as_array().unwrap().len(), 100);
+        assert_eq!(row_texts(&older).len(), 99);
+        assert_eq!(older["rows"][99]["tool"]["state"], "finished");
+        assert_eq!(older["remove"], json!([orphan]));
+        assert!(
+            older["rows"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|row| !first["rows"].as_array().unwrap().contains(row))
+        );
+        let mut old_response = older.clone();
+        old_response["rows"] = json!(fixture.app.hub.lock().unwrap().row_cache[0].1.last_rows);
+        let new_bytes = older.to_string().len();
+        let old_bytes = old_response.to_string().len();
+        println!("older-page bytes {new_bytes}; old full-page bytes {old_bytes}");
+        assert!(new_bytes * 5 < old_bytes);
+    }
+    #[tokio::test]
+    async fn older_page_replaces_changed_fold_and_omits_unchanged_prose() {
+        let fixture = Fixture::new();
+        let calls = (0..4).map(|index| json!({"type":"assistant","uuid":format!("call-{index}"),"message":{"content":[{"type":"tool_use","id":format!("tool-{index}"),"name":"Read","input":{"file_path":"readme"}}]}}).to_string()+"\n").collect::<String>();
+        let prose = json!({"type":"assistant","uuid":"prose","message":{"content":[{"type":"text","text":"done"}]}});
+        std::fs::write(&fixture.log, calls + &format!("{prose}\n")).unwrap();
+        let first = row_page(&fixture, 3, None).await.unwrap();
+        let older = row_page(&fixture, 2, first["page"]["start_offset"].as_u64())
+            .await
+            .unwrap();
+        assert_eq!(older["rows"].as_array().unwrap().len(), 1);
+        assert_eq!(older["rows"][0]["steps"].as_array().unwrap().len(), 4);
+        assert!(
+            older["remove"]
+                .as_array()
+                .unwrap()
+                .contains(&first["rows"][0]["id"])
+        );
+    }
+    #[test]
+    fn row_frames_report_changed_usage_and_clear_it() {
+        let mut state = LiveRows::empty(0, false);
+        let usage = json!({"type":"usage","kind":"context","context_tokens":80,"context_capacity_tokens":100});
+        state.ingest(0, 1, &[usage]);
+        let payload: Value = serde_json::from_str(&state.delta("chat").data).unwrap();
+        assert_eq!(payload["usage"]["remaining_percent"], 20);
+        let payload: Value = serde_json::from_str(&state.delta("chat").data).unwrap();
+        assert!(payload.get("usage").is_none());
+        state.ingest(1, 2, &[json!({"type":"usage","kind":"context","context_tokens":90,"context_capacity_tokens":100})]);
+        let payload: Value = serde_json::from_str(&state.delta("chat").data).unwrap();
+        assert_eq!(payload["usage"]["remaining_percent"], 10);
+        state.ingest(
+            2,
+            3,
+            &[json!({"type":"system_message","kind":"compaction"})],
+        );
+        let payload: Value = serde_json::from_str(&state.delta("chat").data).unwrap();
+        assert!(payload.get("usage").unwrap().is_null());
+    }
+    #[tokio::test]
+    async fn send_cleans_claude_only_and_refuses_empty_cleaned_text() {
+        let fixture = action_fixture();
+        let text = "soft\u{ad}hyphen a\u{200c}b c\u{200b}d e\u{85}f 🏴\u{e0067}\u{e007f}";
+        for provider in ["claude", "codex", "agy"] {
+            let connection = swarm::store::open(&fixture.app.root.join("swarm.db")).unwrap();
+            connection
+                .execute(
+                    "UPDATE session SET chair_provider = ?1 WHERE id = ?2",
+                    (provider, &fixture.session),
+                )
+                .unwrap();
+            let _ = call_action(
+                &fixture,
+                "/api/chat/send",
+                json!({"session":fixture.session,"agent":"chair","text":text}),
+            )
+            .await
+            .unwrap();
+            let actual =
+                std::fs::read_to_string(fixture.app.root.parent().unwrap().join("text")).unwrap();
+            assert_eq!(
+                actual,
+                if provider == "claude" {
+                    claude_text::cleaned(text)
+                } else {
+                    text.into()
+                }
+            );
+        }
+        let connection = swarm::store::open(&fixture.app.root.join("swarm.db")).unwrap();
+        connection
+            .execute(
+                "UPDATE session SET chair_provider = 'claude' WHERE id = ?1",
+                [&fixture.session],
+            )
+            .unwrap();
+        let before = action_calls(&fixture);
+        assert_eq!(
+            call_action(
+                &fixture,
+                "/api/chat/send",
+                json!({"session":fixture.session,"agent":"chair","text":"\u{200b}"})
+            )
+            .await
+            .unwrap_err()
+            .0,
+            StatusCode::BAD_REQUEST
+        );
+        assert_eq!(action_calls(&fixture), before);
+        // A child provider has its own rule, independent of the chair.
+        connection
+            .execute(
+                "UPDATE agent SET provider = 'codex' WHERE session_id = ?1 AND id = 'worker'",
+                [&fixture.session],
+            )
+            .unwrap();
+        let _ = call_action(
+            &fixture,
+            "/api/chat/send",
+            json!({"session":fixture.session,"agent":"worker","text":text}),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            std::fs::read_to_string(fixture.app.root.parent().unwrap().join("text")).unwrap(),
+            text
+        );
+    }
+    #[tokio::test]
+    async fn send_with_unknown_provider_preserves_text() {
+        let fixture = action_fixture();
+        let connection = swarm::store::open(&fixture.app.root.join("swarm.db")).unwrap();
+        connection
+            .execute(
+                "UPDATE session SET chair_provider = NULL WHERE id = ?1",
+                [&fixture.session],
+            )
+            .unwrap();
+        let text = "a\u{200b}b";
+        let _ = call_action(
+            &fixture,
+            "/api/chat/send",
+            json!({"session":fixture.session,"agent":"chair","text":text}),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            std::fs::read_to_string(fixture.app.root.parent().unwrap().join("text")).unwrap(),
+            text
+        );
+    }
+    fn queue_log(operation: &str, text: &str) -> String {
+        json!({"type":"queue-operation","operation":operation,"content":text}).to_string() + "\n"
+    }
+    fn pull_back_fixture(records: &str, after: &str) -> Fixture {
+        let fixture = action_fixture();
+        let connection = swarm::store::open(&fixture.app.root.join("swarm.db")).unwrap();
+        connection
+            .execute(
+                "UPDATE session SET adapter = 'tmux-solo' WHERE id = ?1",
+                [&fixture.session],
+            )
+            .unwrap();
+        std::fs::write(&fixture.log, records).unwrap();
+        std::fs::write(fixture.app.root.parent().unwrap().join("after"), after).unwrap();
+        std::fs::write(
+            &fixture.app.cli,
+            format!(
+                r#"#!/bin/sh
+printf '%s\n' "$*" >> "$SWARM_HOME/actions"
+if [ "$3" = Up ]; then cat "$SWARM_HOME/after" >> '{}'; fi
+"#,
+                fixture.log.display()
+            ),
+        )
+        .unwrap();
+        fixture
+    }
+    #[tokio::test]
+    async fn pull_back_route_decides_records_then_clears_only_confirmed_boxes() {
+        for (after, outcome, text, clears) in [
+            (
+                queue_log("popAll", "first") + &queue_log("popAll", "second"),
+                "pulled",
+                Some("first\nsecond"),
+                5,
+            ),
+            (
+                queue_log("popAll", "first") + &queue_log("remove", "second"),
+                "pulled",
+                Some("first"),
+                3,
+            ),
+            (
+                queue_log("dequeue", "") + &queue_log("dequeue", ""),
+                "alreadySent",
+                None,
+                3,
+            ),
+            (String::new(), "unconfirmed", None, 0),
+        ] {
+            let fixture = pull_back_fixture(
+                &(queue_log("enqueue", "first") + &queue_log("enqueue", "second")),
+                &after,
+            );
+            let Json(result) = call_action(
+                &fixture,
+                "/api/chat/pull-back",
+                json!({"session":fixture.session,"agent":"chair"}),
+            )
+            .await
+            .unwrap();
+            assert_eq!(result, json!({"ok":true,"outcome":outcome,"text":text}));
+            let calls = action_calls(&fixture);
+            assert_eq!(
+                calls.lines().filter(|line| line.ends_with(" Up")).count(),
+                1
+            );
+            assert_eq!(
+                calls.lines().filter(|line| line.ends_with(" C-u")).count(),
+                clears
+            );
+        }
+    }
+    #[tokio::test]
+    async fn pull_back_route_refuses_agent_queue_and_unsupported_targets_without_up() {
+        for notification in ["<task-notification>needed", "<agent-message>needed"] {
+            let fixture = pull_back_fixture(
+                &(queue_log("enqueue", notification) + &queue_log("enqueue", "owner")),
+                "",
+            );
+            assert_eq!(
+                call_action(
+                    &fixture,
+                    "/api/chat/pull-back",
+                    json!({"session":fixture.session,"agent":"chair"})
+                )
+                .await
+                .unwrap_err()
+                .0,
+                StatusCode::CONFLICT
+            );
+            assert!(action_calls(&fixture).is_empty());
+        }
+        for (provider, adapter) in [
+            ("claude", "herdr"),
+            ("codex", "tmux"),
+            ("claude", "fixture"),
+        ] {
+            let fixture = pull_back_fixture(&queue_log("enqueue", "owner"), "");
+            let connection = swarm::store::open(&fixture.app.root.join("swarm.db")).unwrap();
+            connection
+                .execute(
+                    "UPDATE session SET chair_provider=?1,adapter=?2 WHERE id=?3",
+                    (provider, adapter, &fixture.session),
+                )
+                .unwrap();
+            assert_eq!(
+                call_action(
+                    &fixture,
+                    "/api/chat/pull-back",
+                    json!({"session":fixture.session,"agent":"chair"})
+                )
+                .await
+                .unwrap_err()
+                .0,
+                StatusCode::CONFLICT
+            );
+            assert!(action_calls(&fixture).is_empty());
+        }
+        let fixture = pull_back_fixture(&queue_log("enqueue", "<agent-message>needed"), "");
+        let Json(result) = call_action(
+            &fixture,
+            "/api/chat/pull-back",
+            json!({"session":fixture.session,"agent":"chair"}),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            result,
+            json!({"ok":true,"outcome":"alreadySent","text":null})
+        );
+        assert!(action_calls(&fixture).is_empty());
+    }
+
+    #[tokio::test]
     async fn pages() {
         let fixture = Fixture::new();
         codex_log(&fixture, 245);
@@ -3192,26 +3607,23 @@ wait
             .unwrap();
         assert_eq!(
             row_texts(&second),
-            (45..245)
+            (45..145)
                 .map(|number| format!("message-{number}"))
                 .collect::<Vec<_>>()
         );
-        assert_eq!(
-            &second["rows"].as_array().unwrap()[100..],
-            first["rows"].as_array().unwrap()
-        );
+        assert_eq!(second["rows"].as_array().unwrap().len(), 100);
         let all = row_page(&fixture, 100, second["page"]["start_offset"].as_u64())
             .await
             .unwrap();
         assert_eq!(
             row_texts(&all),
-            (0..245)
+            (0..45)
                 .map(|number| format!("message-{number}"))
                 .collect::<Vec<_>>()
         );
         assert_eq!(all["page"]["start_offset"], 0);
         let again = row_page(&fixture, 100, Some(0)).await.unwrap();
-        assert_eq!(again["rows"], all["rows"]);
+        assert_eq!(again["rows"], json!([]));
     }
     #[tokio::test]
     async fn append_while_paging() {
@@ -3294,7 +3706,7 @@ wait
         let all = row_page(&fixture, 100, Some(cursor)).await.unwrap();
         assert_eq!(
             row_texts(&all),
-            (0..150)
+            (0..50)
                 .map(|number| format!("message-{number}"))
                 .collect::<Vec<_>>()
         );
