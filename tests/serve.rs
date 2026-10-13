@@ -196,7 +196,9 @@ key = printf 'key %s %s\n' "$SWARM_PANE" "$SWARM_KEY" >> "$HOME/actions"
     ) -> (u16, String, String) {
         let mut stream = self.connection();
         if path == "/api/chat/continue" {
-            stream.set_read_timeout(Some(Duration::from_secs(20))).unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(20)))
+                .unwrap();
         }
         let token = if auth {
             format!("Authorization: Bearer {}\r\n", self.token)
@@ -328,7 +330,10 @@ fi
             fs::write(home.join("no-summary"), "").unwrap();
         }
         let mut stream = server.sse();
-        stream.get_ref().set_read_timeout(Some(Duration::from_secs(20))).unwrap();
+        stream
+            .get_ref()
+            .set_read_timeout(Some(Duration::from_secs(20)))
+            .unwrap();
         assert_eq!(event(&mut stream).0, "hello");
         std::thread::scope(|scope| {
             let server_ref = &server;
@@ -1018,6 +1023,118 @@ fn workspace_lifecycle_http_refuses_unlisted_paths_before_any_change() {
         "keep"
     );
     assert!(!server.dir.join("home/actions").exists());
+}
+
+#[test]
+fn workspace_panels_http_refuse_unlisted_paths_and_keep_existing_guards() {
+    let server = Server::configured(false, true);
+    let outside = server.dir.join("outside");
+    fs::create_dir(&outside).unwrap();
+    for route in [
+        "/api/changes",
+        "/api/changes/diff",
+        "/api/changes/file",
+        "/api/pr",
+        "/api/issues",
+    ] {
+        let key = if route == "/api/issues" {
+            "project"
+        } else {
+            "workspace"
+        };
+        let path = format!("{route}?{key}={}&path=keep.txt", outside.display());
+        // Issues accept only their project field.
+        let path = if route == "/api/issues" {
+            format!("{route}?{key}={}", outside.display())
+        } else {
+            path
+        };
+        assert_eq!(server.request("GET", &path, "", "", true).0, 403, "{route}");
+        assert_eq!(
+            server.request("GET", &path, "", "", false).0,
+            401,
+            "{route}"
+        );
+        assert_eq!(
+            server
+                .request("GET", &path, "Origin: https://evil.test\r\n", "", true)
+                .0,
+            403,
+            "{route}"
+        );
+    }
+    for route in ["/api/usage", "/api/usage/refresh"] {
+        let method = if route.ends_with("refresh") {
+            "POST"
+        } else {
+            "GET"
+        };
+        assert_eq!(
+            server
+                .request(
+                    method,
+                    route,
+                    "Content-Type: application/json\r\n",
+                    r#"{"provider":"claude"}"#,
+                    false
+                )
+                .0,
+            401
+        );
+    }
+    assert_eq!(
+        server
+            .request(
+                "POST",
+                "/api/workspace/new",
+                "Content-Type: application/json\r\n",
+                &json!({"project":outside,"mode":"issue","issue":7}).to_string(),
+                true
+            )
+            .0,
+        403
+    );
+    assert!(!server.dir.join("home/gh-calls").exists());
+}
+
+#[test]
+#[ignore = "runs the production 600-second setup deadline; requires loopback access"]
+fn setup_timeout_http_keeps_workspace_and_kills_process_group() {
+    let server = Server::configured(false, true);
+    let source = server.dir.join("project");
+    swarm::view::choices_store::update(&server.dir.join("home/.swarm"), None, |owner, _| {
+        owner.project_defaults.insert(
+            source.to_string_lossy().into_owned(),
+            json!({
+                "setup_script":"sleep 900 & printf '%s' \"$!\" > sleeper; wait"
+            }),
+        );
+        Ok(())
+    })
+    .unwrap();
+    let body = json!({"project":source,"name":"Timeout","mode":"new-branch","prefix":"","folder":"../workspaces"}).to_string();
+    let mut stream = server.connection();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(630)))
+        .unwrap();
+    write!(stream, "POST /api/workspace/new HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nAuthorization: Bearer {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", server.port, server.token, body.len()).unwrap();
+    let mut response = String::new();
+    stream.read_to_string(&mut response).unwrap();
+    let (headers, body) = response.split_once("\r\n\r\n").unwrap();
+    assert_eq!(headers.split_whitespace().nth(1), Some("200"));
+    let result: Value = serde_json::from_str(body).unwrap();
+    assert_eq!(result["setup"]["state"], "timeout");
+    let workspace = PathBuf::from(result["workspace"].as_str().unwrap());
+    assert!(workspace.is_dir());
+    let pid = fs::read_to_string(workspace.join("sleeper")).unwrap();
+    assert!(
+        !Command::new("/bin/kill")
+            .args(["-0", pid.trim()])
+            .stderr(Stdio::null())
+            .status()
+            .unwrap()
+            .success()
+    );
 }
 
 #[test]

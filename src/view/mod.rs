@@ -1,4 +1,5 @@
 mod builder;
+pub mod changes;
 pub mod choices;
 pub mod choices_store;
 mod claude_properties;
@@ -17,6 +18,7 @@ pub mod tabs;
 mod tool;
 pub mod transcript;
 pub mod tree;
+pub mod workspace_panel;
 
 pub use fold::{FoldSummary, fold_expanded, fold_rows, summary as fold_summary};
 pub use preview::{Diff, DiffHunk, DiffPreview, TextPreview, diff_patch, text_chunks};

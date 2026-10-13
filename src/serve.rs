@@ -25,8 +25,8 @@ use std::{
 };
 use swarm::view::transcript::{self as view, Record, Row};
 use swarm::view::{
-    choices, choices_store, claude_text, discovery, fields, handoff, lifecycle, navigation, queue,
-    tabs, tree,
+    changes, choices, choices_store, claude_text, discovery, fields, handoff, lifecycle,
+    navigation, queue, tabs, tree, workspace_panel,
 };
 use tokio::{
     io::{AsyncBufReadExt, BufReader},
@@ -57,6 +57,8 @@ struct Server {
     tree_cache: Mutex<TreeCache>,
     handoffs: Mutex<HashMap<String, HandoffRun>>,
     chat_create: tokio::sync::Mutex<()>,
+    // shortcut: the cooldown resets on server restart; seed from cache if restart bursts matter.
+    usage_refresh: Mutex<HashMap<String, (tokio::time::Instant, Option<ApiError>)>>,
 }
 
 #[derive(Default)]
@@ -263,6 +265,7 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         tree_cache: Mutex::new(TreeCache::default()),
         handoffs: Mutex::new(HashMap::new()),
         chat_create: tokio::sync::Mutex::new(()),
+        usage_refresh: Mutex::new(HashMap::new()),
     });
     println!("http://127.0.0.1:{port}/#token={}", app.token);
     std::io::stdout().flush()?;
@@ -296,6 +299,13 @@ fn router(app: App) -> Router {
         .route("/api/tree", get(tree_view))
         .route("/api/tabs", get(tabs_view))
         .route("/api/choices", post(choice_write))
+        .route("/api/changes", get(panel_read))
+        .route("/api/changes/diff", get(panel_read))
+        .route("/api/changes/file", get(panel_read))
+        .route("/api/pr", get(panel_read))
+        .route("/api/issues", get(panel_read))
+        .route("/api/usage", get(usage_read))
+        .route("/api/usage/refresh", post(usage_refresh))
         .route("/api/roles", get(menu_read))
         .route("/api/providers", get(menu_read))
         .route("/api/models", get(menu_read))
@@ -787,6 +797,154 @@ struct WorkspacePath {
     workspace: String,
 }
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PanelQuery {
+    workspace: String,
+    #[serde(default)]
+    mode: changes::Mode,
+    base: Option<String>,
+    path: Option<String>,
+    layer: Option<String>,
+}
+async fn panel_read(
+    State(app): State<App>,
+    uri: Uri,
+    Query(query): Query<HashMap<String, String>>,
+) -> Result<Json<Value>, ApiError> {
+    tokio::task::spawn_blocking(move || {
+        let (tree, _) = fresh_lifecycle_tree(&app)?;
+        let value = serde_json::to_value(query).unwrap();
+        if uri.path() == "/api/issues" {
+            let query: ProjectPath = serde_json::from_value(value)
+                .map_err(|e| error(StatusCode::BAD_REQUEST, &e.to_string()))?;
+            let project = lifecycle::project(&tree, &query.project).map_err(lifecycle_error)?;
+            lifecycle::checked_path(&app.root, &query.project, true).map_err(lifecycle_error)?;
+            let common = lifecycle::common(project)
+                .ok_or_else(|| error(StatusCode::BAD_REQUEST, "Issues need a Git project"))?;
+            lifecycle::checked_path(&app.root, common, true).map_err(lifecycle_error)?;
+            return workspace_panel::issues(common)
+                .map(Json)
+                .map_err(lifecycle_error);
+        }
+        let query: PanelQuery = serde_json::from_value(value)
+            .map_err(|e| error(StatusCode::BAD_REQUEST, &e.to_string()))?;
+        lifecycle::workspace(&tree, &query.workspace).map_err(lifecycle_error)?;
+        lifecycle::checked_path(&app.root, &query.workspace, true).map_err(lifecycle_error)?;
+        let path = || {
+            query
+                .path
+                .as_deref()
+                .ok_or_else(|| error(StatusCode::BAD_REQUEST, "Select a file path"))
+        };
+        let result = match uri.path() {
+            "/api/changes" => changes::list(&query.workspace, &query.mode, query.base.as_deref()),
+            "/api/changes/diff" => changes::patch(
+                &query.workspace,
+                path()?,
+                &query.mode,
+                query.base.as_deref(),
+                query.layer.as_deref(),
+            ),
+            "/api/changes/file" => changes::file(&query.workspace, path()?),
+            _ => workspace_panel::pr(&query.workspace),
+        };
+        result.map(Json).map_err(lifecycle_error)
+    })
+    .await
+    .map_err(|_| {
+        error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "workspace read task failed",
+        )
+    })?
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct UsageRefresh {
+    provider: String,
+}
+async fn usage_read(State(app): State<App>) -> Result<Json<Value>, ApiError> {
+    read_usage(&app, None).await.map(Json)
+}
+async fn usage_refresh(
+    State(app): State<App>,
+    body: Result<Json<UsageRefresh>, JsonRejection>,
+) -> Result<Json<Value>, ApiError> {
+    let Json(body) = body.map_err(|e| error(e.status(), &e.body_text()))?;
+    if !["claude", "codex"].contains(&body.provider.as_str()) {
+        return Err(error(
+            StatusCode::BAD_REQUEST,
+            "Usage refresh supports claude or codex",
+        ));
+    }
+    enqueue_action(&app, Action::UsageRefresh(body))
+        .await
+        .map(Json)
+}
+async fn read_usage(app: &App, refresh: Option<&str>) -> Result<Value, ApiError> {
+    let mut args = vec!["usage", "--json"];
+    if let Some(provider) = refresh {
+        args = vec!["usage", "--refresh", "--provider", provider, "--json"];
+    }
+    let output = run_cli(
+        app,
+        CliCall {
+            args: args.into_iter().map(String::from).collect(),
+            cwd: app.root.clone(),
+            session: None,
+            adapter: String::new(),
+        },
+        None,
+    )
+    .await?;
+    let value: Value = serde_json::from_str(&output)
+        .map_err(|_| error(StatusCode::BAD_GATEWAY, "swarm returned invalid usage JSON"))?;
+    if !value.is_object() {
+        return Err(error(
+            StatusCode::BAD_GATEWAY,
+            "swarm returned invalid usage data",
+        ));
+    }
+    Ok(value)
+}
+async fn refresh_usage(app: &App, provider: &str) -> Result<Value, ApiError> {
+    let (remaining, failure) = {
+        let mut refresh = app.usage_refresh.lock().unwrap();
+        let now = tokio::time::Instant::now();
+        let remaining = refresh
+            .get(provider)
+            .map(|(last, _)| Duration::from_secs(300).saturating_sub(now.duration_since(*last)))
+            .unwrap_or_default();
+        if remaining.is_zero() {
+            refresh.insert(provider.into(), (now, None));
+        }
+        (
+            remaining,
+            refresh
+                .get(provider)
+                .and_then(|(_, failure)| failure.clone()),
+        )
+    };
+    if let Some(failure) = failure {
+        return Err(failure);
+    }
+    let reading = read_usage(app, remaining.is_zero().then_some(provider)).await;
+    if remaining.is_zero()
+        && let Err(err) = &reading
+    {
+        app.usage_refresh
+            .lock()
+            .unwrap()
+            .get_mut(provider)
+            .unwrap()
+            .1 = Some(err.clone());
+    }
+    let mut value = reading?;
+    value["refresh"] = json!({"provider":provider,"state":if remaining.is_zero() {"refreshed"} else {"cooldown"},
+        "next_in_seconds":if remaining.is_zero() {300} else {remaining.as_secs() + u64::from(remaining.subsec_nanos() > 0)}});
+    Ok(value)
+}
+#[derive(Deserialize)]
 enum LifecycleAction {
     Options(ProjectPath),
     Impact(WorkspacePath),
@@ -998,10 +1156,142 @@ async fn execute_lifecycle(app: &App, action: LifecycleAction) -> Result<Value, 
             run_cli(app, call.args(&["close", &agent]), None).await?;
         }
     }
-    let app = app.clone();
-    tokio::task::spawn_blocking(move || apply_lifecycle(&app, action, &tree, &saved, targets.len()))
-        .await
-        .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "lifecycle task failed"))?
+    let setup = if let LifecycleAction::New(request) = &action {
+        saved
+            .owner
+            .project_defaults
+            .get(&request.project)
+            .and_then(|s| s["setup_script"].as_str())
+            .filter(|s| !s.trim().is_empty())
+            .map(String::from)
+    } else {
+        None
+    };
+    let cloned = app.clone();
+    let mut result = tokio::task::spawn_blocking(move || {
+        apply_lifecycle(&cloned, action, &tree, &saved, targets.len())
+    })
+    .await
+    .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "lifecycle task failed"))??;
+    if let Some(script) = setup {
+        let path = result["workspace"]
+            .as_str()
+            .expect("created workspace")
+            .to_owned();
+        result["setup"] = run_setup(app, &path, &script, Duration::from_secs(600)).await;
+    }
+    Ok(result)
+}
+
+fn setup_frame(app: &App, workspace: &str, payload: Value) {
+    let mut payload = payload;
+    payload["workspace"] = workspace.into();
+    app.hub.lock().unwrap().publish(Frame::new(
+        "setup",
+        payload,
+        Some(&format!("setup:{workspace}")),
+    ));
+}
+fn setup_text(pending: &mut Vec<u8>, bytes: &[u8], eof: bool) -> String {
+    pending.extend_from_slice(bytes);
+    let mut text = String::new();
+    let mut consumed = 0;
+    while consumed < pending.len() {
+        match std::str::from_utf8(&pending[consumed..]) {
+            Ok(rest) => {
+                text.push_str(rest);
+                consumed = pending.len();
+            }
+            Err(err) => {
+                let valid = consumed + err.valid_up_to();
+                text.push_str(std::str::from_utf8(&pending[consumed..valid]).unwrap());
+                consumed = valid;
+                if let Some(size) = err.error_len() {
+                    text.push('\u{fffd}');
+                    consumed += size;
+                } else if eof {
+                    text.push('\u{fffd}');
+                    consumed = pending.len();
+                } else {
+                    break;
+                }
+            }
+        }
+    }
+    pending.drain(..consumed);
+    text
+}
+async fn run_setup(app: &App, workspace: &str, script: &str, timeout: Duration) -> Value {
+    use tokio::io::AsyncReadExt;
+    setup_frame(app, workspace, json!({"state":"running"}));
+    let mut command = tokio::process::Command::new("/bin/sh");
+    command
+        .args(["-c", script])
+        .current_dir(workspace)
+        .env("PWD", workspace)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .process_group(0)
+        .kill_on_drop(true);
+    let result = match command.spawn() {
+        Err(err) => json!({"state":"failed","exit_code":null,"error":err.to_string()}),
+        Ok(mut child) => {
+            let mut group = ActionProcessGroup(Some(child.id().expect("running setup") as i32));
+            let mut stdout = child.stdout.take().expect("piped setup stdout");
+            let mut stderr = child.stderr.take().expect("piped setup stderr");
+            let finished = tokio::time::timeout(timeout, async {
+                let mut out_buffer = [0; 4096];
+                let mut err_buffer = [0; 4096];
+                let (mut out_pending, mut err_pending) = (Vec::new(), Vec::new());
+                let (mut out_open, mut err_open) = (true, true);
+                let mut status = None;
+                while out_open || err_open || status.is_none() {
+                    tokio::select! {
+                        waited = child.wait(), if status.is_none() => {
+                            status = Some(waited?);
+                            // Close inherited pipes before draining the last output.
+                            drop(ActionProcessGroup(group.0.take()));
+                        }
+                        read = stdout.read(&mut out_buffer), if out_open => {
+                            let size = read?;
+                            out_open = size > 0;
+                            let text = setup_text(&mut out_pending, &out_buffer[..size], !out_open);
+                            if !text.is_empty() { setup_frame(app, workspace, json!({"state":"output","channel":"stdout","text":text})); }
+                        }
+                        read = stderr.read(&mut err_buffer), if err_open => {
+                            let size = read?;
+                            err_open = size > 0;
+                            let text = setup_text(&mut err_pending, &err_buffer[..size], !err_open);
+                            if !text.is_empty() { setup_frame(app, workspace, json!({"state":"output","channel":"stderr","text":text})); }
+                        }
+                    }
+                }
+                Ok::<_, std::io::Error>(status.expect("setup was reaped"))
+            }).await;
+            drop(ActionProcessGroup(group.0.take()));
+            match finished {
+                Ok(Ok(status)) => {
+                    json!({"state":if status.success() {"completed"} else {"failed"},"exit_code":status.code()})
+                }
+                other => {
+                    let _ = child.kill().await;
+                    let _ = child.wait().await;
+                    match other {
+                        Err(_) => {
+                            json!({"state":"timeout","exit_code":null,"error":"Setup exceeded its time limit"})
+                        }
+                        Ok(Err(err)) => {
+                            json!({"state":"failed","exit_code":null,"error":err.to_string()})
+                        }
+                        _ => unreachable!(),
+                    }
+                }
+            }
+        }
+    };
+    setup_frame(app, workspace, result.clone());
+    result
 }
 fn apply_lifecycle(
     app: &App,
@@ -1026,8 +1316,21 @@ fn apply_lifecycle(
                 lifecycle::workspace(tree, &p.workspace).map_err(lifecycle_error)?;
             return lifecycle::impact(project, workspace, live).map_err(lifecycle_error);
         }
-        LifecycleAction::New(request) => {
+        LifecycleAction::New(mut request) => {
             let project = lifecycle::project(tree, &request.project).map_err(lifecycle_error)?;
+            if matches!(request.mode, lifecycle::Mode::Issue) {
+                lifecycle::checked_path(&app.root, &request.project, true)
+                    .map_err(lifecycle_error)?;
+                let common = lifecycle::common(project)
+                    .ok_or_else(|| error(StatusCode::BAD_REQUEST, "Issues need a Git project"))?;
+                lifecycle::checked_path(&app.root, common, true).map_err(lifecycle_error)?;
+                let number = request
+                    .issue
+                    .ok_or_else(|| error(StatusCode::BAD_REQUEST, "Select an issue"))?;
+                let issue = workspace_panel::issue(common, number).map_err(lifecycle_error)?;
+                request.name = format!("{number}-{}", issue["title"].as_str().unwrap());
+                result["issue"] = issue;
+            }
             let (path, settings) =
                 lifecycle::create_workspace(&app.root, project, &saved.owner, &request)
                     .map_err(lifecycle_error)?;
@@ -1301,6 +1604,7 @@ enum Action {
     Choices(choices::ChoiceWrite),
     RefreshView,
     Lifecycle(LifecycleAction),
+    UsageRefresh(UsageRefresh),
 }
 
 struct ActionJob {
@@ -1396,6 +1700,7 @@ impl Action {
             | Self::Archived
             | Self::Choices(_)
             | Self::Lifecycle(_)
+            | Self::UsageRefresh(_)
             | Self::RefreshView => None,
         }
     }
@@ -1426,6 +1731,7 @@ fn start_action_queue(app: &App, mut queue: mpsc::Receiver<ActionJob>) {
                             | Action::RefreshView
                             | Action::Choices(_)
                             | Action::Lifecycle(_)
+                            | Action::UsageRefresh(_)
                     );
                     let result = execute_action(&app, job.action).await;
                     if changed {
@@ -1578,6 +1884,7 @@ async fn execute_action(app: &App, action: Action) -> Result<Value, ApiError> {
                 .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "choice task failed"))?;
         }
         Action::Lifecycle(action) => return execute_lifecycle(app, action).await,
+        Action::UsageRefresh(body) => return refresh_usage(app, &body.provider).await,
         Action::RefreshView => {
             let app = app.clone();
             return tokio::task::spawn_blocking(move || refresh_tree(&app))
@@ -3273,6 +3580,162 @@ mod tests {
         }
     }
 
+    #[test]
+    fn setup_chunks_keep_utf8_boundaries_and_replace_invalid_bytes() {
+        let mut pending = Vec::new();
+        assert_eq!(setup_text(&mut pending, &[b'a', 0xf0, 0x9f], false), "a");
+        assert_eq!(
+            setup_text(&mut pending, &[0x98, 0x80, 0xff, 0xe2], false),
+            "😀�"
+        );
+        assert_eq!(setup_text(&mut pending, &[], true), "�");
+        assert!(pending.is_empty());
+    }
+
+    #[tokio::test]
+    async fn usage_reads_cache_and_reserves_provider_refresh_even_on_failure() {
+        let fixture = action_fixture();
+        std::fs::write(
+            &fixture.app.cli,
+            r#"#!/bin/sh
+printf '%s\n' "$*" >> "$SWARM_HOME/actions"
+if [ -f "$SWARM_HOME/fail" ] && [ "$2" = --refresh ]; then printf 'refresh refused' >&2; exit 2; fi
+printf '{"schema":"swarm.usage.v1","meters":[]}\n'
+"#,
+        )
+        .unwrap();
+        assert_eq!(
+            usage_read(State(fixture.app.clone())).await.unwrap().0["schema"],
+            "swarm.usage.v1"
+        );
+        let request = |provider: &str| {
+            usage_refresh(
+                State(fixture.app.clone()),
+                Ok(Json(UsageRefresh {
+                    provider: provider.into(),
+                })),
+            )
+        };
+        let (one, two) = tokio::join!(request("claude"), request("claude"));
+        assert_eq!(one.unwrap().0["refresh"]["state"], "refreshed");
+        assert_eq!(two.unwrap().0["refresh"]["state"], "cooldown");
+        assert_eq!(
+            action_calls(&fixture)
+                .matches("usage --refresh --provider claude --json")
+                .count(),
+            1
+        );
+        std::fs::write(fixture.app.root.parent().unwrap().join("fail"), "fail").unwrap();
+        let first = request("codex").await.unwrap_err();
+        let second = request("codex").await.unwrap_err();
+        assert_eq!(first.1.0, second.1.0);
+        assert_eq!(
+            action_calls(&fixture)
+                .matches("usage --refresh --provider codex --json")
+                .count(),
+            1
+        );
+        std::fs::remove_file(fixture.app.root.parent().unwrap().join("fail")).unwrap();
+        fixture
+            .app
+            .usage_refresh
+            .lock()
+            .unwrap()
+            .get_mut("codex")
+            .unwrap()
+            .0 = tokio::time::Instant::now() - Duration::from_secs(300);
+        assert_eq!(
+            request("codex").await.unwrap().0["refresh"]["state"],
+            "refreshed"
+        );
+        assert_eq!(request("agy").await.unwrap_err().0, StatusCode::BAD_REQUEST);
+        assert!(
+            Action::UsageRefresh(UsageRefresh {
+                provider: "claude".into()
+            })
+            .lane()
+            .is_none()
+        );
+    }
+
+    #[tokio::test]
+    async fn setup_streams_both_channels_reports_failure_and_kills_timeout_group() {
+        let fixture =
+            Fixture::at(std::env::temp_dir().join(format!("swarm-setup-{}", uuid::Uuid::now_v7())));
+        let workspace = fixture.dir.to_str().unwrap();
+        fixture
+            .app
+            .hub
+            .lock()
+            .unwrap()
+            .streams
+            .insert("setup-test".into(), client(&[]));
+        let result = run_setup(
+            &fixture.app,
+            workspace,
+            "printf 'ready'; printf 'problem' >&2; exit 7",
+            Duration::from_secs(2),
+        )
+        .await;
+        assert_eq!(result["state"], "failed");
+        assert_eq!(result["exit_code"], 7);
+        {
+            let hub = fixture.app.hub.lock().unwrap();
+            let frames: Vec<Value> = hub.streams["setup-test"]
+                .queue
+                .iter()
+                .map(|f| serde_json::from_str(&f.data).unwrap())
+                .collect();
+            assert_eq!(frames.first().unwrap()["state"], "running");
+            assert_eq!(frames.last().unwrap()["exit_code"], 7);
+            assert!(
+                frames
+                    .iter()
+                    .any(|f| f["channel"] == "stdout" && f["text"] == "ready")
+            );
+            assert!(
+                frames
+                    .iter()
+                    .any(|f| f["channel"] == "stderr" && f["text"] == "problem")
+            );
+        }
+        let result = run_setup(
+            &fixture.app,
+            workspace,
+            "sleep 30 & printf '%s' \"$!\" > sleeper; wait",
+            Duration::from_millis(150),
+        )
+        .await;
+        assert_eq!(result["state"], "timeout");
+        assert!(fixture.dir.is_dir());
+        let pid = std::fs::read_to_string(fixture.dir.join("sleeper")).unwrap();
+        assert!(
+            !std::process::Command::new("/bin/kill")
+                .args(["-0", pid.trim()])
+                .stderr(std::process::Stdio::null())
+                .status()
+                .unwrap()
+                .success()
+        );
+        let result = run_setup(
+            &fixture.app,
+            workspace,
+            "sleep 30 & printf '%s' \"$!\" > detached; exit 0",
+            Duration::from_secs(1),
+        )
+        .await;
+        assert_eq!(result["state"], "completed");
+        let pid = std::fs::read_to_string(fixture.dir.join("detached")).unwrap();
+        assert!(
+            !std::process::Command::new("/bin/kill")
+                .args(["-0", pid.trim()])
+                .stderr(std::process::Stdio::null())
+                .status()
+                .unwrap()
+                .success()
+        );
+    }
+
     struct Fixture {
         app: App,
         dir: PathBuf,
@@ -3333,6 +3796,7 @@ mod tests {
                 tree_cache: Mutex::new(TreeCache::default()),
                 handoffs: Mutex::new(HashMap::new()),
                 chat_create: tokio::sync::Mutex::new(()),
+                usage_refresh: Mutex::new(HashMap::new()),
             });
             // Most row tests need no action worker and may not run inside a Tokio runtime.
             drop(action_queue);
@@ -4946,6 +5410,182 @@ exec /usr/bin/git "$@"
         )
         .await
         .map(|v| v.0)
+    }
+    #[test]
+    fn workspace_panels_and_issue_setup_are_exercised_without_sockets() {
+        use std::os::unix::fs::PermissionsExt;
+        let root =
+            std::env::temp_dir().join(format!("swarm-panel-routes-{}", uuid::Uuid::now_v7()));
+        std::fs::create_dir_all(root.join("bin")).unwrap();
+        let root = std::fs::canonicalize(root).unwrap();
+        std::fs::write(
+            root.join("bin/gh"),
+            r#"#!/bin/sh
+printf '%s\n' "$*" >> "$HOME/gh-calls"
+case "$1 $2" in
+ 'issue list') printf '[{"number":7,"title":"Fix Sidebar","body":"Use less space"}]\n' ;;
+ 'issue view') printf '{"number":7,"title":"Fix Sidebar","body":"Use less space"}\n' ;;
+ *) exit 1 ;;
+esac
+"#,
+        )
+        .unwrap();
+        std::fs::set_permissions(root.join("bin/gh"), std::fs::Permissions::from_mode(0o755))
+            .unwrap();
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "serve::tests::workspace_panel_routes_child",
+                "--nocapture",
+            ])
+            .env_clear()
+            .env("HOME", &root)
+            .env(
+                "PATH",
+                format!("{}:/usr/bin:/bin", root.join("bin").display()),
+            )
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("GIT_CONFIG_GLOBAL", root.join(".gitconfig"))
+            .env("GIT_CEILING_DIRECTORIES", &root)
+            .env("SWARM_PANEL_ROUTES", "1")
+            .output()
+            .unwrap();
+        std::fs::remove_dir_all(root).unwrap();
+        assert!(
+            output.status.success(),
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    #[tokio::test]
+    async fn workspace_panel_routes_child() {
+        if std::env::var("SWARM_PANEL_ROUTES").is_err() {
+            return;
+        }
+        let root = PathBuf::from(std::env::var("HOME").unwrap());
+        let fixture = action_fixture_at(Fixture::at(root.join("surface")));
+        let source = root.join("project").to_string_lossy().into_owned();
+        std::fs::create_dir(&source).unwrap();
+        lifecycle::check_git(&source, &["init", "-q", "-b", "main"]).unwrap();
+        lifecycle::check_git(
+            &source,
+            &[
+                "-c",
+                "user.name=Fixture",
+                "-c",
+                "user.email=fixture@example.com",
+                "-c",
+                "commit.gpgsign=false",
+                "commit",
+                "--allow-empty",
+                "-qm",
+                "base",
+            ],
+        )
+        .unwrap();
+        lifecycle::check_git(
+            &source,
+            &[
+                "remote",
+                "add",
+                "origin",
+                "https://github.com/example/project.git",
+            ],
+        )
+        .unwrap();
+        let connection = swarm::store::open(&fixture.app.root.join("swarm.db")).unwrap();
+        connection
+            .execute(
+                "UPDATE session SET cwd = ?1, chair_log = NULL WHERE id = ?2",
+                (&source, &fixture.session),
+            )
+            .unwrap();
+        fixture.app.directories.lock().unwrap().clear();
+        choices_store::update(&fixture.app.root, None, |owner, _| {
+            owner.project_paths.push(source.clone());
+            owner.project_defaults.insert(
+                source.clone(),
+                json!({"setup_script":"printf 'setting up'; printf failure >&2; exit 9"}),
+            );
+            Ok(())
+        })
+        .unwrap();
+        let issues = panel_read(
+            State(fixture.app.clone()),
+            "/api/issues".parse().unwrap(),
+            Query(HashMap::from([("project".into(), source.clone())])),
+        )
+        .await
+        .unwrap()
+        .0;
+        assert_eq!(issues["issues"][0]["number"], 7);
+        let made = life_post(&fixture, "/api/workspace/new", json!({"project":source,"mode":"issue","issue":7,"prefix":"swarm/","folder":"../tasks"})).await.unwrap();
+        let path = made["workspace"].as_str().unwrap();
+        assert_eq!(made["issue"]["title"], "Fix Sidebar");
+        assert_eq!(made["issue"]["body"], "Use less space");
+        assert_eq!(made["setup"]["state"], "failed");
+        assert_eq!(made["setup"]["exit_code"], 9);
+        assert!(Path::new(path).is_dir());
+        assert_eq!(
+            lifecycle::check_git(path, &["symbolic-ref", "--short", "HEAD"]).unwrap(),
+            "swarm/7-fix-sidebar"
+        );
+        let saved = choices_store::load(&fixture.app.root, true).unwrap();
+        assert_eq!(saved.state.selected_workspace.as_deref(), Some(path));
+        assert!(saved.owner.project_defaults[&source]["setup_script"].is_string());
+        std::fs::write(Path::new(path).join("hello.txt"), "hello\n").unwrap();
+        let params = HashMap::from([
+            ("workspace".into(), path.into()),
+            ("path".into(), "hello.txt".into()),
+        ]);
+        assert_eq!(
+            panel_read(
+                State(fixture.app.clone()),
+                "/api/changes/file".parse().unwrap(),
+                Query(params.clone())
+            )
+            .await
+            .unwrap()
+            .0["preview"]["text"],
+            "hello\n"
+        );
+        assert_eq!(
+            panel_read(
+                State(fixture.app.clone()),
+                "/api/changes/diff".parse().unwrap(),
+                Query(params)
+            )
+            .await
+            .unwrap()
+            .0["added"],
+            1
+        );
+        for route in [
+            "/api/changes",
+            "/api/changes/file",
+            "/api/changes/diff",
+            "/api/pr",
+            "/api/issues",
+        ] {
+            let key = if route == "/api/issues" {
+                "project"
+            } else {
+                "workspace"
+            };
+            let params = HashMap::from([(key.into(), root.to_string_lossy().into_owned())]);
+            assert_eq!(
+                panel_read(
+                    State(fixture.app.clone()),
+                    route.parse().unwrap(),
+                    Query(params)
+                )
+                .await
+                .unwrap_err()
+                .0,
+                StatusCode::FORBIDDEN
+            );
+        }
     }
     #[tokio::test]
     async fn lifecycle_routes_child() {

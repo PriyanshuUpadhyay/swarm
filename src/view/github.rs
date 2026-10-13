@@ -27,6 +27,9 @@ fn name(path: &str) -> Option<String> {
 }
 pub fn lookup(path: &str) -> Option<Value> {
     let deadline = Instant::now() + std::time::Duration::from_secs(30);
+    lookup_until(path, deadline)
+}
+pub fn lookup_until(path: &str, deadline: Instant) -> Option<Value> {
     let command = |program, args: &[&str]| {
         let remaining = deadline.saturating_duration_since(Instant::now()).as_secs();
         if remaining == 0 {

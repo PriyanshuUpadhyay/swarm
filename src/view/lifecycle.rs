@@ -38,6 +38,7 @@ type Result<T> = std::result::Result<T, Error>;
 #[serde(deny_unknown_fields)]
 pub struct NewWorkspace {
     pub project: String,
+    #[serde(default)]
     pub name: String,
     pub folder: Option<String>,
     pub prefix: Option<String>,
@@ -45,6 +46,7 @@ pub struct NewWorkspace {
     pub base: Option<String>,
     pub branch: Option<String>,
     pub pr: Option<u64>,
+    pub issue: Option<u64>,
 }
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -52,6 +54,7 @@ pub enum Mode {
     NewBranch,
     ExistingBranch,
     Pr,
+    Issue,
 }
 #[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -362,6 +365,12 @@ pub fn options(project: &Project, owner: &OwnerChoices) -> Result<Value> {
     value["prefix"] = prefix.into();
     value["seedFolder"] = seed.into();
     value["seedPrefix"] = "swarm/".into();
+    value["setup_script"] = owner
+        .project_defaults
+        .get(&project.path)
+        .and_then(|s| s.get("setup_script"))
+        .cloned()
+        .unwrap_or(Value::Null);
     Ok(value)
 }
 pub fn create_workspace(
@@ -401,7 +410,7 @@ pub fn create_workspace(
     let mut args = vec!["worktree", "add"];
     let expected;
     match request.mode {
-        Mode::NewBranch => {
+        Mode::NewBranch | Mode::Issue => {
             let base = request
                 .base
                 .as_deref()
@@ -481,8 +490,22 @@ pub fn create_workspace(
                 "Git created {expected}, but did not list its worktree"
             ))
         })?;
-    let settings = json!({"worktreeFolder": if folder_setting == seed {None} else {Some(folder_setting)},
-        "branchPrefix": if prefix == "swarm/" {None} else {Some(prefix)}});
+    let mut settings = owner
+        .project_defaults
+        .get(&project.path)
+        .filter(|s| s.is_object())
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    settings["worktreeFolder"] = json!(if folder_setting == seed {
+        None
+    } else {
+        Some(folder_setting)
+    });
+    settings["branchPrefix"] = json!(if prefix == "swarm/" {
+        None
+    } else {
+        Some(prefix)
+    });
     Ok((created.path, settings))
 }
 

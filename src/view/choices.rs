@@ -210,6 +210,10 @@ pub enum ChoiceOp {
         project: String,
         name: String,
     },
+    SetupScript {
+        project: String,
+        setup_script: String,
+    },
     OpenTab {
         workspace: String,
         chat: String,
@@ -351,6 +355,26 @@ pub fn apply(
                 return Err("unknown project".into());
             }
             rename(&mut owner.project_names, project, name);
+        }
+        ChoiceOp::SetupScript {
+            project,
+            setup_script,
+        } => {
+            if !tree.projects.iter().any(|p| p.path == project) {
+                return Err("unknown project".into());
+            }
+            if setup_script.contains('\0') || setup_script.len() > 16_384 {
+                return Err("setup script is invalid or exceeds 16 KiB".into());
+            }
+            let defaults = owner.project_defaults.entry(project).or_insert_with(object);
+            if !defaults.is_object() {
+                return Err("project defaults must be an object".into());
+            }
+            if setup_script.trim().is_empty() {
+                defaults.as_object_mut().unwrap().remove("setup_script");
+            } else {
+                defaults["setup_script"] = setup_script.into();
+            }
         }
         ChoiceOp::RenameChat {
             workspace,
