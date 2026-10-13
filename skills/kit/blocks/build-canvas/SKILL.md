@@ -16,7 +16,7 @@ metadata:
 ## Rules
 The item file `references/mark-making.md` in this block's folder holds the mark-making recipes: density, tone, texture, the mass stack, line, surface, depth, generative plates, and libraries. Read it before a detail pass.
 
-### Architecture
+Architecture
 Build a small story engine, so the story, the look, and the motion change in one place each:
 
 ```text
@@ -65,7 +65,7 @@ Use `push()` / `pop()` in p5.js or `save()` / `restore()` in Canvas around every
 clip, so no transform leaks. Use offscreen buffers or cached `Path2D` objects for masks, grain,
 costly textures, and reused nested scenes.
 
-### Determinism
+Determinism
 - Store one seed with the output.
 - Reset p5 `randomSeed()` and `noiseSeed()` predictably. Seed decor per entity or scene type, not per
   frame.
@@ -82,7 +82,7 @@ costly textures, and reused nested scenes.
   animation frames. Do not await `renderer.renderAsync()`, because three.js deprecated it in r181.
   A 2026-09-30 three.js WebGPU trial captured full frames this way.
 
-### Debug modes
+Debug modes
 Give toggles for:
 
 - shot id, beat, shot-local `u`, and a timeline scrub;
@@ -93,12 +93,12 @@ Give toggles for:
 - boil on and off (`?boil=0`);
 - a reference overlay when rights and source allow it.
 
-### Performance
+Performance
 Prototype at reduced resolution. Cache static textures. Do not redraw costly grain or thousands of
 hatch marks every frame unless they move. Profile before cutting visual detail. Export from a fixed
 timestep so slow rendering does not change the motion.
 
-### Toolbox
+Toolbox
 Choose tools for the look and the story, not for a small build. Dependencies, a loading screen, 3D
 models, shaders, and WebGPU are all acceptable when they make the piece better. Every tool still
 renders from `seek(t)` and the seed.
@@ -129,13 +129,13 @@ that fill the scene). Use full 3D when the camera move is the story.
 Measure first-frame load time and show a loading state that fits the look. Load time is a trade-off,
 not a limit.
 
-### Delivery
+Delivery
 - Style frame or small piece: one HTML file, with libraries from a CDN through an import map.
 - Larger story: a folder with `look.js`, `scenes/`, `story.js` (the shot list), `main.js`, and a
   README, or a Vite project. Browsers block ES modules over `file://`, so give a local server command.
 - Offline delivery: vendor dependencies explicitly.
 
-### Technical references
+Technical references
 - p5.js reference: https://p5js.org/reference/
 - p5.js `createGraphics`: https://p5js.org/reference/p5/createGraphics/
 - p5.js `noise`: https://p5js.org/reference/p5/noise/

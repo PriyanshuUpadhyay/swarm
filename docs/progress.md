@@ -98,7 +98,7 @@ hash. The loader is complete and tested. No real run has used a block yet, becau
 | visual-qa | frame and motion checks, the QA log | review | this block (cut from ink) |
 | build-site | what changes when the piece is a website | design, build | this block (cut from ink's site.md) |
 | build-canvas | the story engine, rendered from time and one seed (pack) | build | this block (cut from ink) |
-| web-ui-basics | the floor for a one-page site | build | web guidelines pack, ink |
+| web-ui-basics | the floor for a one-page site | build | this block (from the web guidelines pack) |
 
 "(copy)" means the block repeats rules that still live in the named skill. That gives one rule two
 texts. B1 fixes this for each block that a run loads.

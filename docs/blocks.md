@@ -103,7 +103,7 @@ metadata:
    `html-diagram` and an SVG diagram block; the 300 ms rule in `web-ui-basics` and the 400-500 ms
    transitions.dev timings.
 4. A block that names a step file is a defect, because a second workflow cannot use it. Example:
-   `style-frames-concept.md:10` names flow's `02-design.md`.
+   `call-tree/SKILL.md` names flow's `04-impact.md`.
 
 ## Catalog
 

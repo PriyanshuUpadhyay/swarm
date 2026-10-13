@@ -9,8 +9,8 @@ metadata:
   needs: "a page"
   gives: "pass or fail per check"
   conflicts: ""
-  users: "flow"
-  source: "web-interface-guidelines pack: command.md:16-26, :31-35, :53-60, :64, :80, :119-120, :143-146, :153; skills/ink/references/site.md (moved to blocks/build-site 2026-10-13); skills/ink/references/qa.md:57-58, :110-111; skills/ink/references/story-and-motion.md:59-60; taste-skill pack: skills/taste-skill/SKILL.md:153-154, :225, :260, :522, :529; emilkowalski pack: skills/emil-design-eng/SKILL.md:95-135, :527-531; blocks/headless-shot/SKILL.md:17 (375 px), :18 (reduced-motion shot)"
+  users: "flow, ink, build-site"
+  source: "web-interface-guidelines pack: command.md:16-26, :31-35, :53-60, :64, :80, :119-120, :143-146, :153; skills/ink/references/site.md (moved to blocks/build-site 2026-10-13); skills/ink/references/qa.md (scroll story check, hidden content); skills/ink/references/story-and-motion.md (Scroll driver); taste-skill pack: skills/taste-skill/SKILL.md:153-154, :225, :260, :522, :529; emilkowalski pack: skills/emil-design-eng/SKILL.md:95-135, :527-531; blocks/headless-shot/SKILL.md:17 (375 px), :18 (reduced-motion shot)"
 ---
 
 ## Rules
@@ -21,7 +21,7 @@ Structure
 Focus
 - Every link and control takes focus with Tab and shows a ring. Use `:focus-visible`. Never `outline: none` without a replacement. A sticky header must not cover the focused element.
 Contrast
-- Text meets WCAG AA: 4.5:1 for body, 3:1 for large text (24 px and up, or 18.7 px and up when bold). Text over an image passes in the screenshot, not only in `DESIGN.md`.
+- Text meets WCAG AA: 4.5:1 for body, 3:1 for large text (24 px and up, or 18.7 px and up when bold). Text over an image, a video, or a 3D scene passes in the screenshot, not only in `DESIGN.md`.
 Layout
 - Check widths are 1440 px, 390 px, and 375 px.
 - No sideways scroll at any check width: `document.documentElement.scrollWidth <= innerWidth`.

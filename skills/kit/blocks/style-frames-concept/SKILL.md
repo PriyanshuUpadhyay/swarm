@@ -9,7 +9,7 @@ metadata:
   needs: "tokens and page code"
   gives: "frames scored beside the reference"
   conflicts: ""
-  users: "flow, ink"
+  users: "flow, ink, build-site"
   source: "skills/ink/SKILL.md (step 4); skills/ink/references/site.md (site frames, moved to blocks/build-site 2026-10-13); skills/ink/references/qa.md (reference match and rounds, moved 2026-10-13)"
 ---
 
@@ -26,8 +26,9 @@ Action: render `{{shots}}/home-1440.png`, `home-390.png`, and `flow-1440.png`, a
 Result: the step file holds both score tables and the compare image paths. The build may start.
 
 ## Check (script)
-- `ls {{shots}}/*-1440.png | wc -l` prints 2 or more, `ls {{shots}}/*-390.png` exits 0, and `ls {{shots}}/compare-*.png | wc -l` prints 3 or more: the frames and one compare image per frame exist.
+- `ls {{shots}}/compare-*.png | wc -l` prints 3 or more: one compare image per frame exists, for a page or a reel.
 
 ## Check (judge)
+- For a page, do `<page>-1440.png`, `<page>-390.png`, and one `<section>-1440.png` exist in {{shots}}; for a reel, is one frame the signature shot? Quote the paths.
 - Does the step file record two or more rounds, each with a score table, one row per grammar line, each with pixel evidence? Quote each round's table.
 - Does the last round have no `miss`, or does each remaining one have an `accepted miss:` line with the user's words? Quote them.

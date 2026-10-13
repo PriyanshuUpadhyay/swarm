@@ -23,7 +23,7 @@ Intake
 - Record the page's drivers. Load and scroll follow the Drivers section of ink's `skills/ink/references/story-and-motion.md`, and a click that starts a page transition is a gate there. Hover, cursor, and any other click change a state, not a time, so list each state with the element it changes.
 - A screen recording is the best site reference. Record one full scroll at each width. Extract frames at each section's settled state, at each transition midpoint, and across the loader.
 - Research sources for sites: threeui.com (three.js site templates, some with their prompt), 21st.dev (components and page templates), and the GSAP showcase. A template's prompt is a `stated` source. Its rendered page is the `visible` one.
-- When the page borrows a component or effect from a repo, record its licence and its last release date in the look file.
+- The look file is the step file that holds the look, such as ink's `02-look.md`. When the page borrows a component or effect from a repo, record its licence and its last release date there.
 Look
 - Write `DESIGN.md` beside the page code as the `look-grammar` block says, never under a run folder, because the code and other design tools read it there.
 - For a page with 3D or texture, the look file also keeps light, 3D, texture, and the mark budget.

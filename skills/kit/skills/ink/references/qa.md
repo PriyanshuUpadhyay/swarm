@@ -45,8 +45,8 @@ The key frame and pacing checks are in the kit's `blocks/story/SKILL.md`.
 - Entities stay consistent across shots: same proportions, colours from the same tokens.
 - Each gate shows a hint for its action, answers a failed try, and has an escape. Play it once as a
   reader who fails.
-- For a scroll story, every key fact is visible in a settled state and with
-  `prefers-reduced-motion: reduce`. Test step scrolling with the keyboard.
+- For a scroll story, check the settled-state rule of the kit's `blocks/web-ui-basics/SKILL.md`, and
+  test step scrolling with the keyboard.
 
 ## Frame checks
 
