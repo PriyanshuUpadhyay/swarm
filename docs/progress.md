@@ -36,6 +36,12 @@ run beside A and B, because they touch other files.
    is live at once. Other Macs use Setup links to `~/.swarm/skills`.
 6. No new block until one block has passed a real run. Each rule has one owner text, and other
    files point to it.
+7. A task's workflow is a ledger written once at the start from a menu of blocks, and code runs it
+   on the step-run files. A change is a visible re-plan folder that names its parent (council
+   2026-10-13 composable-blocks).
+8. Review loops stop in code. `review_check.py start` owns a 3-round cap keyed by an explicit
+   parent-loop key that fixes and re-plans inherit (K1). The no-progress stop compares open issues,
+   not the fix count (P2). Both are owner choices of 2026-10-13.
 
 ## A. Skills setup (one kit source)
 
@@ -91,29 +97,45 @@ texts. B1 fixes this for each block that a run loads.
   `:27` fails a plan with fewer than 2 questions.
 - `blocks/style-frames-concept.md:10` names flow's `02-design.md`. ink's step is
   `04-style-frames.md`. A shared block must say "the step's own file".
+- `references/step_run.py:67-70` drops a `Needs` word that matches no step, with no error.
+- `blocks/web-ui-basics.md:30-35` checks only `*.html`, `*.css`, `*.js` and `index.html`, so a TSX
+  slice gets no script check.
+- `blocks/web-ui-basics.md:22` says UI motion stays under 300 ms, and transitions.dev tokens use
+  400-500 ms. Each motion task names one timing owner.
 
 ### Skills: compose or keep whole
 
 | Skill | Plan | Why |
 |---|---|---|
-| flow | compose (first) | the loader is already in `flow_run.py` |
+| flow | compose (first); writes the ledger for code tasks | the loader is already in `flow_run.py` |
+| research | writes the ledger for questions; `web needs local` only when local findings set the query | the owner's local-then-web example |
+| motion (pack) | emil pack owns UI motion, ink owns story motion; transitions.dev is link or install only | license forbids copying its library |
 | ink | compose (second) by pointer lines to look-grammar, style-frames-concept, headless-shot; delete its copies | the blocks were cut from ink |
 | explain-formats (reference) | point to tech-diagram-concept, html-diagram, diagram-correctness | already points to html-diagram |
-| pair, deliver, review-check core, research, decisions, council protocol, step-run, web-search depth gate | keep whole | each is one control loop or gate; a split breaks it |
-| orchestrate-claude, -codex, -agy, council, web-search | point to one worker-brief owner section (B5) | the report-only rule has six texts that disagree |
+| pair, deliver, review-check core, decisions, council protocol, step-run, web-search depth gate | keep whole | each is one control loop or gate; a split breaks it |
+| orchestrate-claude, -codex, -agy, council, web-search | point to one worker-brief owner section (B12) | the report-only rule has six texts that disagree |
 
 ### Steps
 
+Order from the 2026-10-13 composable-blocks council: the review stops, then the ledger checks, then
+the pilot, then packs.
+
 | # | Step | State | Check |
 |---|---|---|---|
-| B1 | Fix the owner of each block the pilot loads: the block becomes the owner and the skill gets a one-line pointer, or the reverse. Fix the two defects above | ⬜ | `rg` finds one text per rule; the flow tests pass |
-| B2 | Pilot: add one `block:` line to the `web-ui` build step in `~/.flow/domains.md` (web-ui-basics, headless-shot), and a `.blocks.toml` with `source_of_truth`, `site`, `shots` in the `web-port` worktree | ⬜ | a flow run on one web-port slice shows the block text in its step file, each block todo closed with evidence, a fresh agent resumes from the files, and pair still waits for approval |
-| B3 | Judge the pilot against the same slice without blocks; keep or drop | ⬜ | written result with both runs |
-| B4 | ink points to its three blocks and deletes its copies | ⬜ | ink's references hold no rule that a block holds |
-| B5 | One provider-neutral worker-brief section (what a seat may change, verify, read, write, and when it stops); the five other texts point to it | ⬜ | `rg` for the report-only rule finds one owner |
-| B6 | List block candidates by reuse count across skills; extract only rules with two or more real users | ⬜ | each new block names its two users |
-| B7 | Build new skills from blocks: each skill keeps its own trigger, inputs, step table and failure policy, and names blocks for its rules | ❓ | owner names the first new skill after B3 |
-| B8 | Move `resolve_blocks` from `flow_run.py` into one shared kit script when a second skill has a run script that needs it | ⬜ | two run scripts import one resolver |
+| B1 | Add the 3-round cap to `review_check.py start`, keyed by a parent-loop key in run metadata (K1); fixes and re-plans inherit it; one user `continue:` line allows one more round, once; a refusal keeps the verdict; flow and deliver pass the key and point to the guard | ⬜ | tests: round 4 refused through flow and standalone deliver, also after a fix or re-plan with a new base; two tasks on one base have separate budgets; `continue:` works once; answer-only `verdict` costs no round; APPROVE on the last allowed run closes |
+| B2 | Add the no-progress stop by issue identity (P2): `verdict` writes a snapshot of open findings and check results, `start` compares them by file, symbol, rule and source evidence; an uncertain match falls back to the cap | ⬜ | fix A then new B does not stop; the same open issues and results stop; moved lines still match |
+| B3 | Make `step_run.py` refuse an unknown or ambiguous `Needs` word, a cycle, or a missing required gate | ⬜ | tests for each refusal |
+| B4 | Fix the owner of each block the pilot loads, and the defects above | ⬜ | `rg` finds one text per rule; the flow tests pass |
+| B5 | Pilot `web-ui-basics` and `headless-shot` on a static HTML slice (not `web-port`): one `block:` line in the `web-ui` build step of `~/.flow/domains.md` and a `.blocks.toml` | ⬜ | block text in the step file, each block todo closed with evidence, a fresh agent resumes from the files, pair still waits for approval |
+| B6 | Judge the pilot against the same slice without blocks; keep or drop | ⬜ | written result with both runs: defects, review rounds, time, loaded text |
+| B7 | Add `Keywords:` beside `Signals:` in `domains.md`, matched against the filled frame at `take`; the model confirms, drops or adds a match once, with a reason line | ⬜ | a "transition" task in a non-web-ui repo gets the motion pack; a non-motion task gets none |
+| B8 | Motion pack: an index in the emil pack owner, item files, a check, `Keywords:`; ink keeps story motion; web-ui-basics points to it | ⬜ | the step file names one timing owner and an "item files used" todo |
+| B9 | Plan block: the step that picks blocks for a task and writes the ledger; blocks declare `conflicts:` | ❓ | owner discussion, 2026-10-13 |
+| B10 | ink points to its three blocks and deletes its copies | ⬜ | ink's references hold no rule that a block holds |
+| B11 | Small judge (Jev or Laya) for pack choice: 2+ missed or wrong packs in 10 trial lines starts a benchmark; adopt only on a held-out win with no missed gate | ⬜ | benchmark result |
+| B12 | One provider-neutral worker-brief section; the five other texts point to it | ⬜ | `rg` for the report-only rule finds one owner |
+| B13 | List block candidates by reuse count; extract only rules with two or more real users | ⬜ | each new block names its two users |
+| B14 | Move `resolve_blocks` from `flow_run.py` into one shared kit script when a second skill has a run script that needs it | ⬜ | two run scripts import one resolver |
 
 Rejected for now: `minimal-diff`, `verification-evidence`, `trust-boundary`, `reversibility`. Each
 repeats a rule in `first-principles.md`, `done-when-evidence.md`, `red-first-check.md` or the global
@@ -121,7 +143,7 @@ repeats a rule in `first-principles.md`, `done-when-evidence.md`, `red-first-che
 
 Trial evidence (2026-10-09, two rounds, small samples): Sonnet gained from blocks, Codex gained only
 with the merged profile, and blocks cut rule text by 50-60 %. Copied-in rules beat pointer lines in
-an earlier test, so B4 and B5 must show the agent read the pointed file.
+an earlier test, so B10 and B12 must show the agent read the pointed file.
 
 ## C. yelo retirement
 
@@ -165,4 +187,5 @@ is deleted.
 - Earlier councils: `2026-09-27-public-repo-split`, `2026-10-09-skill-building-blocks`,
   `2026-10-12-swarm-web-ui`, `2026-10-12-swarm-owns-accounts-isolation` (same folder)
 - Blocks trial: `~/.claude/reports/2026-10-09-blocks-trial.md`
+- Council log `2026-10-13-composable-blocks` and report `~/.claude/reports/2026-10-13-composable-skill-blocks.md`
 - ADRs 0031, 0062, 0063, 0066, 0071, 0073, 0075 in `docs/decisions/`
