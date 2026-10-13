@@ -243,6 +243,8 @@ def resolve_blocks(root, wanted, profile_name):
                 raise SystemExit(f"[add] {path} leaves the repo; {repo_file} takes repo-relative paths")
             # A repo block in the kit's layout, <folder>/SKILL.md, takes the folder name as its id.
             block = Path(path).parent.name if Path(path).name == "SKILL.md" else Path(path).stem
+            if block in ("", ".", ".."):
+                raise SystemExit(f"[add] {path} in {repo_file} has no id; a SKILL.md block sits in a folder named for its id")
             # The id goes into the step file and take's output, so it is one plain word.
             if not re.fullmatch(r"[A-Za-z0-9._-]+", block):
                 raise SystemExit(f"[add] {path} in {repo_file} has id {block}, which is not only letters, digits, "
@@ -285,8 +287,10 @@ def resolve_blocks(root, wanted, profile_name):
             # double quotes; YAML escapes are not decoded. The name is the block id, and the description goes
             # to the step as the Concept line, in place of the frontmatter.
             if text.startswith("---\n"):
-                head, close, rest = text[4:].partition("\n---\n")
-                if not close:
+                # Keep the opening newline, so an empty frontmatter finds its close. A `## ` line before the
+                # close means the frontmatter never closed and a later `---` rule in the body was taken for it.
+                head, close, rest = text[3:].partition("\n---\n")
+                if not close or "\n## " in head:
                     raise SystemExit(f"block {block} frontmatter has no closing --- line")
                 fields = dict(l.split(": ", 1) for l in head.splitlines() if ": " in l and l[:1] != " ")
                 fields = {key: value.strip().strip('"') for key, value in fields.items()}

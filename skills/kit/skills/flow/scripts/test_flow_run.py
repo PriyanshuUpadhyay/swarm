@@ -976,7 +976,9 @@ def test_block_frontmatter(tmp):
         for broken, reason in (("---\nname: a\ndescription: \"D.\"\n\n## Rules\n", "no closing --- line"),
                                ("---\nname: a\ndescription: \"D.\"\n--- \n\n## Rules\n", "no closing --- line"),
                                ("---\ndescription: \"D.\"\n---\n\n## Rules\n", "no name"),
-                               ("---\nname: a\n---\n\n## Rules\n", "no description")):
+                               ("---\nname: a\n---\n\n## Rules\n", "no description"),
+                               ("---\n---\n\n## Rules\n", "no name"),
+                               ("---\nname: a\ndescription: \"D.\"\n\n## Rules\n- x\n\n---\n\n", "no closing --- line")):
             (kit / "a" / "SKILL.md").write_text(broken + "- x\n\n## Check (script)\n- none: x\n\n## Check (judge)\n- none: x\n",
                                                  encoding="utf-8")
             try:
@@ -996,6 +998,10 @@ def test_add_folder_block(tmp):
     assert out.returncode == 0, out.stderr
     build = step_text(folder, "05-build")
     assert "===== block:foo =====" in build and "Concept: Foo rule." in build, build
+    # A SKILL.md with no plain folder name above it has no id.
+    for path in ("SKILL.md", "docs/blocks/foo/../SKILL.md"):
+        out, _, _, _ = blocks_start(tmp, f"add-folder-{len(path)}", RED_BUILD, PARAMS + f'[add]\nbuild = ["{path}"]\n')
+        assert out.returncode == 1 and "a SKILL.md block sits in a folder named for its id" in out.stderr, out.stderr
 
 
 def test_kit_block_frontmatter():
@@ -1010,7 +1016,7 @@ def test_kit_block_frontmatter():
         meta = [line.strip().split(":", 1)[0] for line in lines if line[:1] == " "]
         assert top == ["name", "description", "license", "metadata"] and meta == keys, (path, top, meta)
         assert lines[0] == f"name: {path.parent.name}" and all(": " in line for line in lines if line != "metadata:"), path
-        assert all(line.split(": ", 1)[1] not in ("", '""') for line in lines
+        assert all(line.split(": ", 1)[1].strip() not in ("", '""', "''") for line in lines
                    if ": " in line and line.strip().split(":")[0] != "conflicts"), path
 
 
