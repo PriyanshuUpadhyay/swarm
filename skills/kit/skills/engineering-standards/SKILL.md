@@ -34,7 +34,7 @@ known-bad case before trusting it; a green tool result does not prove a `judgmen
 2. Read the sections that contain those rows and check their scope.
 3. Run each `Check` that fits the actual engine. Report what you could not run.
 4. When a `Scope` forks, two rows conflict, or the question is contested, stop and emit the
-   section 5 block. Do not rule.
+   trade-off form of section 5. Do not rule.
 5. End with `pass N / fail N / judgment M / not checked K`. A fail quotes the row
    and the output that failed it.
 
@@ -92,24 +92,9 @@ Whether retry-with-backoff or backpressure and load-shedding should be the defau
 
 ## 5. Framing a trade-off
 
-This section has no table, because no rule and no checker decides a trade-off. Use it when a `Scope`
-forks, two rows conflict, or an item is contested. Emit this block and stop.
-
-```text
-Fork:            <the choice, in one line>
-Options:         <two or three, named>
-Cost of each:    <what each one buys and what it spends>
-Who is hurt:     <which caller, user, or operator feels it>
-Reversibility:   <cheap to undo, or one-way>
-What would settle it: <the measurement or fact that decides it>
-Recommendation:  <one option, with the reason>
-Owner:           human
-```
-
-It recommends and never rules. Emit it only for a trade-off that is genuinely open, not for a branch
-that a known fact already settles.
-
-To record the decision once made, use `decisions`. This skill does not write an ADR.
+This section has no table, because no rule and no checker decides a trade-off. When a `Scope`
+forks, two rows conflict, or an item is contested, emit the trade-off form of the kit block
+`blocks/decision-with-default/SKILL.md` and stop. The kit root, with its `blocks/` and `references/` folders, is two folders up from this skill's folder. This skill does not write an ADR.
 
 ## Refusals
 

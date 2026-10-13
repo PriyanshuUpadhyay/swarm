@@ -1,18 +1,24 @@
-# look-grammar
-Concept: The look is measured from references, written once as tokens in `DESIGN.md`, and the page code reads only those tokens.
-Serves: design
-Source: skills/ink/SKILL.md:23-27, :30; skills/ink/references/references.md:79, :89, :94-95, :113-143 (grammar template), :147-155 (evidence); skills/ink/references/site.md:42-53, :58-59; impeccable pack: plugin/skills/impeccable/SKILL.md:35-40 (modes); taste-skill pack: skills/taste-skill/SKILL.md:25-26, :38-39, :186, :217, :236, :531-535, :601, :687
+---
+name: design-tokens
+description: "Write the measured look once as tokens in DESIGN.md, and make the page code read only those tokens. Use when a page or piece must match a look."
+license: MIT
+metadata:
+  kind: step
+  owns: "the look as measured tokens in DESIGN.md"
+  serves: "design"
+  needs: "measured notes from reference-analysis"
+  gives: "DESIGN.md tokens"
+  conflicts: ""
+  users: "flow, ink, build-site"
+  source: "skills/ink/references/references.md (style grammar template); skills/ink/references/site.md (DESIGN.md; the file moved to blocks/build-site 2026-10-13); impeccable pack: plugin/skills/impeccable/SKILL.md:35-40 (modes); taste-skill pack: skills/taste-skill/SKILL.md:25-26, :38-39, :186, :217, :236, :531-535, :601, :687"
+---
 
 ## Rules
 - Before code, write one line: "Reading this as: <page kind> for <audience>, with a <vibe> language, leaning toward <aesthetic family>."
 - A tool's landing page is Persuade mode: the visitor decides and acts. Choose the mode from the surface, not the product.
-- Match a look only from pixels you inspected. If the brief has no references, find them from the brief first.
-- Mark each fact `visible`, `stated`, `inferred`, or `unknown`. Never upgrade `stated` or `inferred` to `visible`.
-- Measure, do not only describe. A number measured from a reference becomes a rule in the grammar.
-- Give colors roles, not samples: background, dominant fill, secondary fill, highlight, shadow, contour, accent.
-- Borrow techniques and high-level traits. Never copy logos, exact compositions, or a living artist's exact style.
+- Start from the measured notes of the `reference-analysis` block. This block turns them into tokens.
 - Write `DESIGN.md` beside the page code: colors, typography, spacing, rounded, and components as YAML tokens, then prose. Lint it with `npx @google/design.md lint DESIGN.md`. It exits 0 and gives low contrast only as a warning, so read the findings. Any error or `contrast-ratio` finding is a `miss`.
-- `DESIGN.md` owns color, type, and spacing. `02-design.md` keeps only what `DESIGN.md` cannot hold, such as the motion grammar, and names `DESIGN.md` for the rest. Each value has one home.
+- `DESIGN.md` owns color, type, and spacing. The step's own file keeps only what `DESIGN.md` cannot hold, such as the motion grammar, and names `DESIGN.md` for the rest. Each value has one home.
 - Color literals live only in the `:root` token block, which starts a line, and in one dark-mode `:root` that is all of `@media (prefers-color-scheme: dark)`. All other CSS and page code read the tokens as custom properties.
 - One accent color, saturation below 80%, used the same on the whole page. One corner-radius scale for the page. No pure black `#000000`.
 - Do not default to AI-purple gradients, a centered hero over a dark mesh, three equal feature cards, or Inter + slate-900.
@@ -32,6 +38,6 @@ Result: lint shows one `contrast-ratio` warning on the muted text, so the gramma
 - `rg -n -g '*.js' -g '*.mjs' -g '*.ts' -g '*.jsx' -g '*.tsx' '\b(rgba?|hsla?|hwb|lab|lch|oklab|oklch)\(' {{site}}` prints nothing: page code calls no color function. A quoted hex can be an id selector such as `"#feed"`, so the judge line asks about it.
 
 ## Check (judge)
-- Does `02-design.md` have the design-read line and a reference list with an evidence label on each fact? Quote the line and the labels.
+- Does the step file have the design-read line? Quote it.
 - Do the HTML's `<style>` blocks and `style=` attributes, the CSS outside the two `:root` token blocks, and the page code (JS and TS) use no named color (`black`, `white`, `red`), quoted hex color in page code (`"#ff0000"`, not an id selector such as `"#feed"`), or other color literal? Quote each color value found.
 - Does the hero screenshot at 1440 px show the call to action with no scroll? Quote the screenshot path.

@@ -24,7 +24,8 @@ after the user asks.
 ## 2 — No unnecessary boilerplate and no unused types
 
 An entry point, wrapper, interface, or type that exists without a consumer is removed, not kept for
-a future that has not been requested. The `minimize-reader-load` skill decides when a layer stays
+a future that has not been requested. The kit block `blocks/when-to-extract/SKILL.md` (in the kit root, two folders up from the
+cleanup-gate folder) decides when a layer stays
 and when it is inlined.
 
 ## 3 — Constants local to their consumer

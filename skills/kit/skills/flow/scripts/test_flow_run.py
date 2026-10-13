@@ -500,7 +500,7 @@ def git_env():
     return {**{k: v for k, v in os.environ.items() if not k.startswith("GIT_")}, **GIT_ENV}
 
 PARAMS = '[params]\nsource_of_truth = "docs/spec.md"\nsite = "site"\nshots = "tmp/shots"\n'
-RED_BUILD = "- build: block:red-first-check\n"  # the catalog line most block tests start from
+PROVE_BUILD = "- build: block:prove-it-works\n"  # the catalog line most block tests start from
 
 
 def blocks_start(tmp, name, catalog, repo_toml=PARAMS, *args, env=None, python=sys.executable):
@@ -536,7 +536,7 @@ def test_git_env_ignores_caller_git_dir(tmp):
     subprocess.run(["git", "init", "-q", "-b", "main", str(decoy)], env=git_env(), check=True)
     hook = {"GIT_DIR": str(decoy / ".git"), "GIT_WORK_TREE": str(decoy), "GIT_INDEX_FILE": str(decoy / ".git" / "index")}
     with patch.dict(os.environ, hook):
-        out, folder, repo, _ = blocks_start(tmp, "hooked", RED_BUILD)
+        out, folder, repo, _ = blocks_start(tmp, "hooked", PROVE_BUILD)
         subprocess.run(["git", "commit", "-q", "--allow-empty", "-m", "one"], cwd=repo, env=git_env(), check=True)
     assert out.returncode == 0 and folder.resolve().is_relative_to(repo.resolve()), out
     log = subprocess.run(["git", "log", "--oneline"], cwd=decoy, env=git_env(), capture_output=True, text=True)
@@ -546,15 +546,20 @@ def test_git_env_ignores_caller_git_dir(tmp):
 def test_block_in_step(tmp):
     """A catalog step line naming block:<id> writes that block into the step file, and the
     Skills read line names the profile and the block with its content hash."""
-    out, folder, repo, run = blocks_start(tmp, "d1", RED_BUILD)
+    out, folder, repo, run = blocks_start(tmp, "d1", PROVE_BUILD)
     assert out.returncode == 0, out.stderr
     build = step_text(folder, "05-build")
-    assert "===== block:red-first-check =====" in build and "Rank each claim on the ladder" in build, build
+    assert "===== block:prove-it-works =====" in build and "Rank each claim on the ladder" in build, build
     skills = next(line for line in build.splitlines() if line.startswith("Skills read:"))
     assert "profile default" in skills, skills
-    digest = hashlib.sha256((flow_run.BLOCKS / "red-first-check.md").read_bytes()).hexdigest()[:8]
-    assert f"block:red-first-check@{digest}" in [item.strip() for item in skills.removeprefix("Skills read:").split(",")], skills
+    digest = hashlib.sha256((flow_run.BLOCKS / "prove-it-works" / "SKILL.md").read_bytes()).hexdigest()[:8]
+    assert f"block:prove-it-works@{digest}" in [item.strip() for item in skills.removeprefix("Skills read:").split(",")], skills
     assert "Rank each claim on the ladder" not in step_text(folder, "02-design")
+    assert "(the kit root)" not in build, "a block that names no kit path gets no kit-root line"
+    # A block that names a kit path gets the kit root, because the step file is read outside the kit.
+    kit_out, kit_folder, _, _ = blocks_start(tmp, "kit-root", "- build: block:task-file\n")
+    assert kit_out.returncode == 0, kit_out.stderr
+    assert f"are under {flow_run.BLOCKS.parent} (the kit root)." in step_text(kit_folder, "05-build")
     # A second start on the folder writes nothing, even when the catalog now fails.
     (repo.parent / "home" / ".flow" / "domains.md").write_text("## any\n- build: block:nope\n", encoding="utf-8")
     again = run("start")
@@ -563,17 +568,17 @@ def test_block_in_step(tmp):
 
 def test_block_alias_and_base(tmp):
     """An alias expands to its members, duplicates drop, and base joins every step once."""
-    out, folder, _, _ = blocks_start(tmp, "d2", "- design: block:tech-diagram, block:html-diagram\n" + RED_BUILD)
+    out, folder, _, _ = blocks_start(tmp, "d2", "- design: block:tech-diagram, block:html-diagram\n" + PROVE_BUILD)
     assert out.returncode == 0, out.stderr
     design = step_text(folder, "02-design")
-    for block in ("first-principles", "tech-diagram-concept", "html-diagram"):
+    for block in ("base-rules", "when-to-diagram", "html-diagram"):
         assert design.count(f"===== block:{block} =====") == 1, (block, design)
     # html-diagram comes twice, through the alias and alone; a merged group prints one header either way.
     skills = next(line for line in design.splitlines() if line.startswith("Skills read: "))
     assert skills.count("block:html-diagram@") == 1, skills
     assert len(set(rule_lines(design))) == len(rule_lines(design)), rule_lines(design)
     for step in ("01-frame", "02-design", "03-contracts", "04-impact", "05-build", "06-review", "07-close"):
-        assert step_text(folder, step).count("===== block:first-principles =====") == 1, step
+        assert step_text(folder, step).count("===== block:base-rules =====") == 1, step
 
 
 def test_block_hash_bytes(tmp):
@@ -581,7 +586,7 @@ def test_block_hash_bytes(tmp):
     Path(tmp, "crlf", "app", "docs").mkdir(parents=True)
     data = b"# crlf\r\n\r\n## Rules\r\n- CRLF RULE 3\r\n## Check (script)\r\n- none: x\r\n## Check (judge)\r\n- Is it CRLF?\r\n"
     Path(tmp, "crlf", "app", "docs", "crlf.md").write_bytes(data)
-    out, folder, _, _ = blocks_start(tmp, "crlf", RED_BUILD, PARAMS + '[add]\nbuild = ["docs/crlf.md"]\n')
+    out, folder, _, _ = blocks_start(tmp, "crlf", PROVE_BUILD, PARAMS + '[add]\nbuild = ["docs/crlf.md"]\n')
     assert out.returncode == 0, out.stderr
     build = step_text(folder, "05-build")
     skills = next(line for line in build.splitlines() if line.startswith("Skills read:"))
@@ -603,7 +608,7 @@ def rule_lines(text):
 def test_block_profile(tmp):
     """The merged profile writes each alias as one block and folds base in, with the same rule and
     check lines as the split form, and drops the Example sections."""
-    catalog = "- design: block:tech-diagram, block:style-frames, block:look-grammar\n"
+    catalog = "- design: block:tech-diagram, block:style-frames, block:design-tokens\n"
     split, split_folder, _, _ = blocks_start(tmp, "d3-split", catalog)
     merged, merged_folder, _, _ = blocks_start(tmp, "d3-merged", catalog, PARAMS, "--profile", "merged")
     assert split.returncode == 0 and merged.returncode == 0, (split.stderr, merged.stderr)
@@ -618,7 +623,7 @@ def test_block_profile(tmp):
 
 def test_profile_on_second_start(tmp):
     """A second start checks the profile name too, and says a known non-default profile was not applied."""
-    out, folder, _, run = blocks_start(tmp, "d3-again", RED_BUILD)
+    out, folder, _, run = blocks_start(tmp, "d3-again", PROVE_BUILD)
     assert out.returncode == 0, out.stderr
     before = {p.name: p.read_bytes() for p in folder.iterdir()}
     again = run("start", "--profile", "nosuch")
@@ -635,11 +640,12 @@ def test_profile_on_second_start(tmp):
 def test_block_example_params(tmp):
     """A {{param}} only in a block's Example would make every run set it for nothing, so no kit block has
     one; a repo with only source_of_truth starts a close step that names done-when-evidence."""
-    for path in sorted(flow_run.BLOCKS.glob("*.md")):
-        parts = flow_run.sections(path.read_text(encoding="utf-8"))
+    for path in sorted(flow_run.BLOCKS.glob("*/SKILL.md")):
+        # The loader drops the frontmatter, so a {{param}} there is never filled and must not count.
+        parts = flow_run.sections(path.read_text(encoding="utf-8").partition("\n---\n")[2])
         rest = {p for head, lines in parts if head != "Example" for p in flow_run.PARAM.findall("\n".join(lines))}
         example = {p for head, lines in parts if head == "Example" for p in flow_run.PARAM.findall("\n".join(lines))}
-        assert example <= rest, (path.name, example - rest)
+        assert example <= rest, (path.parent.name, example - rest)
     root = Path(tmp, "example-params")
     root.mkdir()
     (root / ".blocks.toml").write_text('[params]\nsource_of_truth = "README.md"\n', encoding="utf-8")
@@ -649,11 +655,11 @@ def test_block_example_params(tmp):
 
 def test_block_params(tmp):
     """A {{name}} takes its value from the repo's .blocks.toml; a missing one stops start and names it."""
-    out, folder, _, _ = blocks_start(tmp, "d4", "- review: block:diagram-correctness\n")
+    out, folder, _, _ = blocks_start(tmp, "d4", "- review: block:diagram-check\n")
     assert out.returncode == 0, out.stderr
     review = step_text(folder, "06-review")
     assert "The source of truth is docs/spec.md." in review and "{{" not in review, review
-    out, folder, repo, _ = blocks_start(tmp, "d4-missing", "- review: block:diagram-correctness\n", "")
+    out, folder, repo, _ = blocks_start(tmp, "d4-missing", "- review: block:diagram-check\n", "")
     assert out.returncode == 1 and "{{source_of_truth}}" in out.stderr and "Traceback" not in out.stderr, out.stderr
     assert not (repo / "tmp" / "flow").exists(), "a failed start must not leave a folder"
 
@@ -673,11 +679,11 @@ def test_block_controls(tmp):
     # A control byte inside a placeholder is dropped before the param check, so a missing name gets one line.
     Path(tmp, "controls-param", "app", "docs").mkdir(parents=True)
     Path(tmp, "controls-param", "app", "docs", "y.md").write_text("# y\n\n## Rules\n- see {{no\x1bpe}}\n", encoding="utf-8")
-    out, _, repo, _ = blocks_start(tmp, "controls-param", RED_BUILD, PARAMS + '[add]\nbuild = ["docs/y.md"]\n')
+    out, _, repo, _ = blocks_start(tmp, "controls-param", PROVE_BUILD, PARAMS + '[add]\nbuild = ["docs/y.md"]\n')
     assert out.returncode == 1 and "block y needs {{nope}}" in out.stderr and "Traceback" not in out.stderr, out.stderr
     assert not (repo / "tmp" / "flow").exists()
     # Count the block's script checks with a plain read, not with the code that writes the todos.
-    section = (flow_run.BLOCKS / "web-ui-basics.md").read_text(encoding="utf-8").split("\n## Check (script)\n", 1)[1].split("\n## ", 1)[0]
+    section = (flow_run.BLOCKS / "web-ui-basics" / "SKILL.md").read_text(encoding="utf-8").split("\n## Check (script)\n", 1)[1].split("\n## ", 1)[0]
     expected = [line for line in section.splitlines() if line.startswith("- ") and not line.startswith("- none:")]
     assert len(expected) >= 2 and build.count("block web-ui-basics script:") == len(expected), build
 
@@ -693,7 +699,7 @@ def test_block_headings(tmp):
     skill = Path(tmp, "fake-skill.md")
     skill.write_text("# skill\n\n## Todo (x)\n- [x] a: ok\n\n## Result\nfine \x1b[2J\n", encoding="utf-8")
     for name, catalog, repo_toml, kept in (
-            ("fake-todo", RED_BUILD, PARAMS + '[add]\ndesign = ["docs/fake.md"]\n', ["### Todo (fake)"]),
+            ("fake-todo", PROVE_BUILD, PARAMS + '[add]\ndesign = ["docs/fake.md"]\n', ["### Todo (fake)"]),
             ("fake-skill", f"- design: {skill}\n", PARAMS, ["# skill\n", "### Todo (x)"])):
         out, folder, _, run = blocks_start(tmp, name, catalog, repo_toml)
         assert out.returncode == 0, out.stderr
@@ -721,7 +727,7 @@ def test_skill_fenced_headings(tmp):
 def test_start_without_tomllib(tmp):
     """On a Python before 3.11, which has no tomllib, status still runs, and start of a run that names a block
     stops with one line."""
-    out, folder, repo, _ = blocks_start(tmp, "no-tomllib", RED_BUILD)
+    out, folder, repo, _ = blocks_start(tmp, "no-tomllib", PROVE_BUILD)
     assert out.returncode == 0, out.stderr
     code = "import runpy, sys; sys.modules['tomllib'] = None; sys.argv = sys.argv[1:]; runpy.run_path(sys.argv[0], run_name='__main__')"
     env = {**git_env(), "HOME": str(Path(tmp, "no-tomllib", "home"))}
@@ -763,14 +769,28 @@ def test_toml_no_block_adds_no_base(tmp):
     assert out.returncode == 0, out.stderr
     for file in sorted(folder.glob("0*.md")):
         text = file.read_text(encoding="utf-8")
-        assert "Skills read: none" in text.splitlines() and "first-principles" not in text, (file.name, text)
+        assert "Skills read: none" in text.splitlines() and "base-rules" not in text, (file.name, text)
+
+
+def test_no_toml_runs_blocks_without_base(tmp):
+    """A repo with no .blocks.toml still runs a block that needs no param, such as one an `any` catalog line
+    names; the base block, which needs source_of_truth, is off with its reason."""
+    out, folder, _, _ = blocks_start(tmp, "no-toml", "- close: block:done-when-evidence\n", None)
+    assert out.returncode == 0, out.stderr
+    close = step_text(folder, "07-close")
+    assert "===== block:done-when-evidence =====" in close and "===== block:base-rules" not in close, close
+    assert "Off: base-rules: the repo has no .blocks.toml, which sets source_of_truth" in close, close
+    # A named block that needs a param still stops start, and the message names the file to make.
+    out, _, repo, _ = blocks_start(tmp, "no-toml-param", "- build: block:web-ui-basics\n", None)
+    assert out.returncode == 1 and "set it under [params] in" in out.stderr and ".blocks.toml" in out.stderr, out.stderr
+    assert not (repo / "tmp" / "flow").exists(), "a failed start must not leave a folder"
 
 
 def test_param_quoted_in_script_checks(tmp):
     """A [params] value fills a Check (script) command as one shell word, so a space or an option inside it
     stays one path; rules text gets the value as written."""
     toml = PARAMS.replace('site = "site"', 'site = "my site --files"')
-    out, folder, repo, _ = blocks_start(tmp, "param-quote", "- build: block:web-ui-basics\n- design: block:look-grammar\n", toml)
+    out, folder, repo, _ = blocks_start(tmp, "param-quote", "- build: block:web-ui-basics\n- design: block:design-tokens\n", toml)
     assert out.returncode == 0, out.stderr
     build = step_text(folder, "05-build")
     todo = next(l for l in build.splitlines() if "'prefers-reduced-motion'" in l)
@@ -791,7 +811,7 @@ def test_param_outside_span_in_script_check(tmp):
         "# x\n\n## Rules\n- r\n\n## Check (script)\n- Look at {{site}} outside backticks and run `ls {{site}}`: prose.\n\n## Check (judge)\n",
         encoding="utf-8")
     toml = PARAMS.replace('site = "site"', 'site = "my site"') + '[add]\nbuild = ["docs/x.md"]\n'
-    out, folder, _, _ = blocks_start(tmp, "param-prose", RED_BUILD, toml)
+    out, folder, _, _ = blocks_start(tmp, "param-prose", PROVE_BUILD, toml)
     assert out.returncode == 0, out.stderr
     todo = next(l for l in step_text(folder, "05-build").splitlines() if l.startswith("- [ ] block x script:"))
     assert todo == "- [ ] block x script: Look at my site outside backticks and run `ls 'my site'`: prose.: ", todo
@@ -809,7 +829,7 @@ def test_add_path_errors(tmp):
             Path(tmp, name, "app").mkdir(parents=True)
             if case == "loop":
                 Path(tmp, name, "app", path).symlink_to(path)
-            out, _, _, _ = blocks_start(tmp, name, RED_BUILD, PARAMS + f'[add]\nbuild = ["{path}"]\n', python=python)
+            out, _, _, _ = blocks_start(tmp, name, PROVE_BUILD, PARAMS + f'[add]\nbuild = ["{path}"]\n', python=python)
             assert out.returncode == 1 and out.stderr.startswith(f"[add] {path} in ") and out.stderr.endswith(
                 " is not a file\n") and len(out.stderr.splitlines()) == 1, (python, case, out.stderr[-300:])
 
@@ -826,27 +846,27 @@ def test_block_fail_closed(tmp):
         # The Off line prints the reason through one_line, so control characters alone are an empty reason.
         ("off-controls", "- design: block:tech-diagram\n", PARAMS + '[off]\nhtml-diagram = "\\u001b\\u0007"\n', (), "[off] html-diagram needs a reason"),
         ("off-unknown", "- design: block:tech-diagram\n", PARAMS + '[off]\nnope = "x"\n', (), "unknown block id nope"),
-        ("duplicate", RED_BUILD, PARAMS + '[add]\nbuild = ["red-first-check.md"]\n', (), "duplicate block id red-first-check"),
-        ("profile", RED_BUILD, PARAMS, ("--profile", "nope"), "unknown profile nope"),
+        ("duplicate", PROVE_BUILD, PARAMS + '[add]\nbuild = ["prove-it-works.md"]\n', (), "duplicate block id prove-it-works"),
+        ("profile", PROVE_BUILD, PARAMS, ("--profile", "nope"), "unknown profile nope"),
     ]
     Path(tmp, "duplicate", "app").mkdir(parents=True)
-    Path(tmp, "duplicate", "app", "red-first-check.md").write_text("# red-first-check\n", encoding="utf-8")
+    Path(tmp, "duplicate", "app", "prove-it-works.md").write_text("# prove-it-works\n", encoding="utf-8")
     # An [add] path must stay inside the repo: absolute, `..`, and a symlink out are refused.
     for name, path in (("add-absolute", str(Path(tmp, "add-absolute", "outside.md"))),
                        ("add-parent", "../outside.md"), ("add-symlink", "link.md")):
         Path(tmp, name, "app").mkdir(parents=True)
         Path(tmp, name, "outside.md").write_text("# outside\nSECRET\n", encoding="utf-8")
-        cases.append((name, RED_BUILD, PARAMS + f'[add]\nbuild = ["{path}"]\n', (),
+        cases.append((name, PROVE_BUILD, PARAMS + f'[add]\nbuild = ["{path}"]\n', (),
                       f"[add] {path} leaves the repo"))
     Path(tmp, "add-symlink", "app", "link.md").symlink_to(Path(tmp, "add-symlink", "outside.md"))
     # A repo block whose id equals a kit alias name would mix with the alias.
     Path(tmp, "add-alias", "app", "docs").mkdir(parents=True)
     Path(tmp, "add-alias", "app", "docs", "tech-diagram.md").write_text("# tech-diagram\n", encoding="utf-8")
-    cases.append(("add-alias", RED_BUILD, PARAMS + '[add]\nbuild = ["docs/tech-diagram.md"]\n', (),
+    cases.append(("add-alias", PROVE_BUILD, PARAMS + '[add]\nbuild = ["docs/tech-diagram.md"]\n', (),
                   "has id tech-diagram, which is an alias"))
     # A TOML syntax error or a wrong value type in the repo file names the file, with no traceback.
     # A top-level key goes before [params], or TOML puts it in that table.
-    cases += [(f"type-{name}", RED_BUILD, toml, (), reason) for name, toml, reason in (
+    cases += [(f"type-{name}", PROVE_BUILD, toml, (), reason) for name, toml, reason in (
         ("syntax", "[params\nx = 1\n", ".blocks.toml is not valid TOML"),
         ("deep", "x = " + "[" * 500 + "]" * 500 + "\n" + PARAMS, ".blocks.toml is not valid TOML"),  # RecursionError
         ("bigint", PARAMS + "big = " + "9" * 5000 + "\n", ".blocks.toml is not valid TOML"),  # ValueError, int digit limit
@@ -855,35 +875,35 @@ def test_block_fail_closed(tmp):
         ("add", "add = 3\n" + PARAMS, ".blocks.toml: add must be a table"),
         ("add-string", PARAMS + '[add]\nbuild = "docs/x.md"\n', "must be a list of paths"))]
     cases += [
-        ("add-missing", RED_BUILD, PARAMS + '[add]\nbuild = ["docs/none.md"]\n', (), "[add] docs/none.md in"),
-        ("add-step", RED_BUILD, PARAMS + '[add]\nship = ["docs/x.md"]\n', (), "[add] ship in"),
-        ("table", RED_BUILD, PARAMS + "[extra]\nx = 1\n", (), "unknown table [extra]"),
-        ("param-dash", RED_BUILD, PARAMS.replace('site = "site"', 'site = "--version"'), (), "[params] site starts with '-'"),
-        ("param-dash-space", RED_BUILD, PARAMS.replace('site = "site"', 'site = "\\n -x"'), (), "[params] site starts with '-'"),
-        ("param-backtick", RED_BUILD, PARAMS.replace('site = "site"', 'site = "x`; echo PWNED; `y"'), (), "[params] site holds a backtick"),
+        ("add-missing", PROVE_BUILD, PARAMS + '[add]\nbuild = ["docs/none.md"]\n', (), "[add] docs/none.md in"),
+        ("add-step", PROVE_BUILD, PARAMS + '[add]\nship = ["docs/x.md"]\n', (), "[add] ship in"),
+        ("table", PROVE_BUILD, PARAMS + "[extra]\nx = 1\n", (), "unknown table [extra]"),
+        ("param-dash", PROVE_BUILD, PARAMS.replace('site = "site"', 'site = "--version"'), (), "[params] site starts with '-'"),
+        ("param-dash-space", PROVE_BUILD, PARAMS.replace('site = "site"', 'site = "\\n -x"'), (), "[params] site starts with '-'"),
+        ("param-backtick", PROVE_BUILD, PARAMS.replace('site = "site"', 'site = "x`; echo PWNED; `y"'), (), "[params] site holds a backtick"),
         # An empty value would reach a script check as '', which rg reads as a missing path.
-        ("param-empty", RED_BUILD, PARAMS.replace('site = "site"', 'site = ""'), (), "[params] site is empty"),
-        ("param-blank", RED_BUILD, PARAMS.replace('site = "site"', 'site = " \\u001b "'), (), "[params] site is empty"),
+        ("param-empty", PROVE_BUILD, PARAMS.replace('site = "site"', 'site = ""'), (), "[params] site is empty"),
+        ("param-blank", PROVE_BUILD, PARAMS.replace('site = "site"', 'site = " \\u001b "'), (), "[params] site is empty"),
         # A value that is not a string would reach a block sentence as a Python repr, such as ['a', 'b'] or True.
-        *[(f"param-{kind}", RED_BUILD, PARAMS.replace('site = "site"', f"site = {value}"), (), "[params] site must be a string")
+        *[(f"param-{kind}", PROVE_BUILD, PARAMS.replace('site = "site"', f"site = {value}"), (), "[params] site must be a string")
           for kind, value in (("list", '["a", "b"]'), ("bool", "true"), ("number", "3"), ("table", "{ a = 1 }"))],
     ]
     # Bytes that are not UTF-8 in the repo file or in an [add] block name the file, with no traceback.
     Path(tmp, "utf8-toml", "app").mkdir(parents=True)
     Path(tmp, "utf8-toml", "app", ".blocks.toml").write_bytes(PARAMS.encode() + b'x = "\xff"\n')
-    cases.append(("utf8-toml", RED_BUILD, None, (), ".blocks.toml is not UTF-8"))
+    cases.append(("utf8-toml", PROVE_BUILD, None, (), ".blocks.toml is not UTF-8"))
     Path(tmp, "utf8-add", "app", "docs").mkdir(parents=True)
     Path(tmp, "utf8-add", "app", "docs", "x.md").write_bytes(b"# x\n\xff\n")
-    cases.append(("utf8-add", RED_BUILD, PARAMS + '[add]\nbuild = ["docs/x.md"]\n', (), "x.md is not UTF-8"))
+    cases.append(("utf8-add", PROVE_BUILD, PARAMS + '[add]\nbuild = ["docs/x.md"]\n', (), "x.md is not UTF-8"))
     # A repo file that cannot be read, an [add] path with a NUL byte, and control characters in repo
     # text each give one clean line.
     Path(tmp, "toml-dir", "app", ".blocks.toml").mkdir(parents=True)
     cases += [
-        ("toml-dir", RED_BUILD, None, (), ".blocks.toml cannot be read"),
-        ("add-nul", RED_BUILD, PARAMS + '[add]\nbuild = ["a\\u0000b.md"]\n', (), "holds a NUL byte"),
-        ("add-id-controls", RED_BUILD, PARAMS + '[add]\nbuild = ["docs/x\\u001b[2Jy\\n- [ ] injected.md"]\n', (), "rename the file"),
-        ("add-id-space", RED_BUILD, PARAMS + '[add]\nbuild = ["docs/my block.md"]\n', (), "has id my block, which is not only"),
-        ("controls", RED_BUILD, PARAMS + '["\\u001b[2Jx\\ny"]\n', (), "unknown table [[2Jx y]"),
+        ("toml-dir", PROVE_BUILD, None, (), ".blocks.toml cannot be read"),
+        ("add-nul", PROVE_BUILD, PARAMS + '[add]\nbuild = ["a\\u0000b.md"]\n', (), "holds a NUL byte"),
+        ("add-id-controls", PROVE_BUILD, PARAMS + '[add]\nbuild = ["docs/x\\u001b[2Jy\\n- [ ] injected.md"]\n', (), "rename the file"),
+        ("add-id-space", PROVE_BUILD, PARAMS + '[add]\nbuild = ["docs/my block.md"]\n', (), "has id my block, which is not only"),
+        ("controls", PROVE_BUILD, PARAMS + '["\\u001b[2Jx\\ny"]\n', (), "unknown table [[2Jx y]"),
     ]
     # A catalog skill path that cannot be read, or is not UTF-8, stops start before any step file exists.
     Path(tmp, "skill-dir", "skill").mkdir(parents=True)
@@ -901,18 +921,18 @@ def test_block_fail_closed(tmp):
     for name, head in (("check-case", "Check (Script)"), ("check-space", "Check(script)")):
         Path(tmp, name, "app", "docs").mkdir(parents=True)
         Path(tmp, name, "app", "docs", "c.md").write_text(f"# c\n\n## Rules\n- r\n\n## {head}\n- `true` runs: ok\n", encoding="utf-8")
-        cases.append((name, RED_BUILD, PARAMS + '[add]\nbuild = ["docs/c.md"]\n', (), f"block c has the section heading ## {head}"))
+        cases.append((name, PROVE_BUILD, PARAMS + '[add]\nbuild = ["docs/c.md"]\n', (), f"block c has the section heading ## {head}"))
     # A param value that starts with `#` would put a step heading, such as `## Todo (` or `## Result`, into rules text.
     Path(tmp, "param-heading", "app", "docs").mkdir(parents=True)
     Path(tmp, "param-heading", "app", "docs", "fake.md").write_text("# fake\n\n## Rules\n{{a}}\n- [x] nothing: ok\n{{b}}\n",
                                                                    encoding="utf-8")
-    cases.append(("param-heading", RED_BUILD, PARAMS + 'a = "## Todo (x)"\nb = "## Result"\n[add]\ndesign = ["docs/fake.md"]\n', (),
+    cases.append(("param-heading", PROVE_BUILD, PARAMS + 'a = "## Todo (x)"\nb = "## Result"\n[add]\ndesign = ["docs/fake.md"]\n', (),
                   "[params] a starts with '#'"))
     # A block line that a param fills into a `## ` line would also be a step heading in the rules text.
     Path(tmp, "param-filled-heading", "app", "docs").mkdir(parents=True)
     Path(tmp, "param-filled-heading", "app", "docs", "fake.md").write_text(
         "# fake\n\n## Rules\n##{{a}}\n- [x] nothing: ok\n##{{b}}\n", encoding="utf-8")
-    cases.append(("param-filled-heading", RED_BUILD,
+    cases.append(("param-filled-heading", PROVE_BUILD,
                   PARAMS + 'a = " Todo (x)"\nb = " Result"\n[add]\ndesign = ["docs/fake.md"]\n', (),
                   "block fake has the line '## Todo (x)' once its params are filled"))
     # A check line that is not a `- ` item would be dropped without a word too.
@@ -920,14 +940,14 @@ def test_block_fail_closed(tmp):
         Path(tmp, name, "app", "docs").mkdir(parents=True)
         Path(tmp, name, "app", "docs", "c.md").write_text(f"# c\n\n## Rules\n- r\n\n## Check (script)\n- `true` runs: ok\n{line}\n",
                                                           encoding="utf-8")
-        cases.append((name, RED_BUILD, PARAMS + '[add]\nbuild = ["docs/c.md"]\n', (),
+        cases.append((name, PROVE_BUILD, PARAMS + '[add]\nbuild = ["docs/c.md"]\n', (),
                       f"block c has the line {line!r} under ## Check (script)"))
     # Every block has both check sections; `- none: <why>` is the way to have no check, so a missing one stops start.
     for name, text, head in (("no-checks", "# c\n\n## Rules\n- r\n", "Check (script)"),
                              ("no-judge", "# c\n\n## Rules\n- r\n\n## Check (script)\n- none: no command\n", "Check (judge)")):
         Path(tmp, name, "app", "docs").mkdir(parents=True)
         Path(tmp, name, "app", "docs", "c.md").write_text(text, encoding="utf-8")
-        cases.append((name, RED_BUILD, PARAMS + '[add]\nbuild = ["docs/c.md"]\n', (), f"block c has no ## {head} section"))
+        cases.append((name, PROVE_BUILD, PARAMS + '[add]\nbuild = ["docs/c.md"]\n', (), f"block c has no ## {head} section"))
     for name, catalog, repo_toml, args, reason in cases:
         out, _, repo, _ = blocks_start(tmp, name, catalog, repo_toml, *args)
         assert out.returncode == 1 and reason in out.stderr and "Traceback" not in out.stderr, (name, out.stderr)
@@ -937,12 +957,13 @@ def test_block_fail_closed(tmp):
     # A bad block catalog stops the load with a reason that names it.
     kit = Path(tmp, "kit")
     kit.mkdir()
-    (kit / "a.md").write_text("# a\n", encoding="utf-8")
-    for toml, reason in (('base = []\n[blocks]\na = "a.md"\n[aliases]\na = ["a"]\n[profiles.default]\n', "alias a is also a block id"),
-                         ("[blocks\n", "blocks.toml is not valid TOML"),
-                         ('[blocks]\na = "a.md"\n[aliases]\nb = ["nope"]\n[profiles.default]\n', "unknown block id nope in alias b"),
-                         ('base = ["nope"]\n[blocks]\na = "a.md"\n[profiles.default]\n', "unknown block id nope in base of"),
-                         ('[blocks]\na = "a.md"\n[profiles.default]\nmerge = ["a"]\n', "merges a, which is not an alias")):
+    (kit / "a").mkdir()
+    (kit / "a" / "SKILL.md").write_text("# a\n", encoding="utf-8")
+    for toml, reason in (('base = []\n[aliases]\na = ["a"]\n[profiles.default]\n', "alias a is also a block id"),
+                         ("[aliases\n", "blocks.toml is not valid TOML"),
+                         ('[aliases]\nb = ["nope"]\n[profiles.default]\n', "unknown block id nope in alias b"),
+                         ('base = ["nope"]\n[profiles.default]\n', "unknown block id nope in base of"),
+                         ('[profiles.default]\nmerge = ["a"]\n', "merges a, which is not an alias")):
         (kit / "blocks.toml").write_text(toml, encoding="utf-8")
         with patch.object(flow_run, "BLOCKS", kit):
             try:
@@ -952,14 +973,106 @@ def test_block_fail_closed(tmp):
                 assert reason in str(error) and "\n" not in str(error), error
 
 
+def test_block_frontmatter(tmp):
+    """A block's frontmatter description is the step's Concept line, no frontmatter line reaches the step,
+    and a name that is not the block id stops start."""
+    kit = Path(tmp, "front")
+    (kit / "a").mkdir(parents=True)
+    (kit / "blocks.toml").write_text("[profiles.default]\n", encoding="utf-8")
+    block = ('---\nname: %s\ndescription: "Says hello."\nmetadata:\n  kind: rule\n---\n\n## Rules\n- Say hello.\n\n'
+             "## Check (script)\n- none: no output\n\n## Check (judge)\n- none: no output\n")
+    with patch.object(flow_run, "BLOCKS", kit):
+        (kit / "a" / "SKILL.md").write_text(block % "a", encoding="utf-8")
+        text = flow_run.resolve_blocks(Path(tmp), {"build": ["a"]}, "default")[0]["build"][1]
+        assert "Concept: Says hello." in text and "---" not in text and "kind: rule" not in text, text
+        (kit / "a" / "SKILL.md").write_text(block % "b", encoding="utf-8")
+        try:
+            flow_run.resolve_blocks(Path(tmp), {"build": ["a"]}, "default")
+            raise AssertionError("a name that is not the id must stop start")
+        except SystemExit as error:
+            assert str(error) == "block a has the name b; a block's name is its id", error
+        # A frontmatter that opens and does not close, or that has no name or no description, stops start,
+        # so its lines never reach the step as header text.
+        for broken, reason in (("---\nname: a\ndescription: \"D.\"\n\n## Rules\n", "no closing --- line"),
+                               ("---\nname: a\ndescription: \"D.\"\n--- \n\n## Rules\n", "no closing --- line"),
+                               ("---\ndescription: \"D.\"\n---\n\n## Rules\n", "no name"),
+                               ("---\nname: a\n---\n\n## Rules\n", "no description"),
+                               ("---\n---\n\n## Rules\n", "no name"),
+                               ("---\nname: a\ndescription: \"D.\"\n\n## Rules\n- x\n\n---\n\n", "no closing --- line")):
+            (kit / "a" / "SKILL.md").write_text(broken + "- x\n\n## Check (script)\n- none: x\n\n## Check (judge)\n- none: x\n",
+                                                 encoding="utf-8")
+            try:
+                flow_run.resolve_blocks(Path(tmp), {"build": ["a"]}, "default")
+                raise AssertionError(f"start must stop: {reason}")
+            except SystemExit as error:
+                assert f"block a frontmatter has {reason}" in str(error), error
+
+
+def test_add_folder_block(tmp):
+    """A repo block added as `<folder>/SKILL.md` takes the folder name as its id, as a kit block does."""
+    Path(tmp, "add-folder", "app", "docs", "blocks", "foo").mkdir(parents=True)
+    Path(tmp, "add-folder", "app", "docs", "blocks", "foo", "SKILL.md").write_text(
+        '---\nname: foo\ndescription: "Foo rule."\n---\n\n## Rules\n- FOO RULE\n\n## Check (script)\n- none: x\n\n'
+        "## Check (judge)\n- none: x\n", encoding="utf-8")
+    out, folder, _, _ = blocks_start(tmp, "add-folder", PROVE_BUILD, PARAMS + '[add]\nbuild = ["docs/blocks/foo/SKILL.md"]\n')
+    assert out.returncode == 0, out.stderr
+    build = step_text(folder, "05-build")
+    assert "===== block:foo =====" in build and "Concept: Foo rule." in build, build
+    # A SKILL.md with no plain folder name above it has no id.
+    for path in ("SKILL.md", "docs/blocks/foo/../SKILL.md"):
+        out, _, _, _ = blocks_start(tmp, f"add-folder-{len(path)}", PROVE_BUILD, PARAMS + f'[add]\nbuild = ["{path}"]\n')
+        assert out.returncode == 1 and "a SKILL.md block sits in a folder named for its id" in out.stderr, out.stderr
+
+
+def test_kit_pointers():
+    """The kit installs as one plugin copy, so a skill reaches a block by a path from the kit root. Every
+    `blocks/<id>/...` path in the kit's Markdown names a real file, and each skill that uses a kit path says
+    where the kit root is. The kit ships two equal manifests, the Agent Plugins root `plugin.json` and
+    Claude Code's `.claude-plugin/plugin.json`, so a version bump must change both."""
+    kit = flow_run.BLOCKS.parent
+    assert (kit / "plugin.json").read_bytes() == (kit / ".claude-plugin" / "plugin.json").read_bytes(), "the two manifests differ"
+    for path in sorted(kit.glob("**/*.md")):
+        if "vendor" in path.parts:
+            continue
+        text = path.read_text(encoding="utf-8")
+        for target in re.findall(r"`(blocks/[a-z0-9-]+/[^`\s]+)`", text):
+            assert (kit / target).is_file(), f"{path.relative_to(kit)} names {target}, which does not exist"
+    for path in sorted(kit.glob("skills/*/SKILL.md")):
+        text = path.read_text(encoding="utf-8")
+        if "`blocks/" in text or "the kit's `references/" in text or "<kit root>" in text:
+            assert "two folders up from this" in text, f"{path.relative_to(kit)} uses kit paths but does not say where the kit root is"
+
+
+def test_kit_block_frontmatter():
+    """Every kit block opens with Agent Skills frontmatter: name (its folder), description, license, and the
+    metadata keys that blocks/blocks.toml names, each as `key: value`; only conflicts may be empty. The
+    description says what the block does and when to use it ("Use when"), in 40 words or fewer, so a small
+    model can pick it."""
+    keys = ["kind", "owns", "serves", "needs", "gives", "conflicts", "users", "source"]
+    for path in sorted(flow_run.BLOCKS.glob("*/SKILL.md")):
+        text = path.read_text(encoding="utf-8")
+        assert text.startswith("---\n"), f"{path} has no frontmatter"
+        lines = text.split("---\n")[1].splitlines()
+        top = [line.split(":", 1)[0] for line in lines if line[:1] != " "]
+        meta = [line.strip().split(":", 1)[0] for line in lines if line[:1] == " "]
+        assert top == ["name", "description", "license", "metadata"] and meta == keys, (path, top, meta)
+        assert lines[0] == f"name: {path.parent.name}" and all(": " in line for line in lines if line != "metadata:"), path
+        assert all(line.split(": ", 1)[1].strip() not in ("", '""', "''") for line in lines
+                   if ": " in line and line.strip().split(":")[0] != "conflicts"), path
+        description = lines[1].split(": ", 1)[1].strip('"')
+        assert "Use when" in description and len(description.split()) <= 40, (path.parent.name, description)
+
+
 def test_kit_blocks_load(tmp):
     """Every kit block loads, so each has both check sections and its params are the documented ones."""
     root = Path(tmp, "kit-blocks")
     root.mkdir()
     (root / ".blocks.toml").write_text(PARAMS, encoding="utf-8")
-    ids = list(flow_run.read_toml(flow_run.BLOCKS / "blocks.toml")["blocks"])
+    ids = [path.parent.name for path in sorted(flow_run.BLOCKS.glob("*/SKILL.md"))]
     out, _ = flow_run.resolve_blocks(root, {"build": ids}, "default")
-    assert len(ids) == 13 and all(f"===== block:{b} =====" in out["build"][1] for b in ids), (ids, out["build"][0])
+    # A block folder that lost its SKILL.md would be skipped by the glob in silence, so every folder counts.
+    folders = [path.name for path in flow_run.BLOCKS.iterdir() if path.is_dir() and path.name != "__pycache__"]
+    assert len(ids) == len(folders) and all(f"===== block:{b} =====" in out["build"][1] for b in ids), (ids, out["build"][0])
 
 
 def test_block_repo_file(tmp):
@@ -986,7 +1099,7 @@ def test_block_cap(tmp):
         Path(tmp, name, "app", "docs").mkdir(parents=True)
         pad = "- " + "x" * (size - len(head) - len(tail) - 3) + "\n"
         Path(tmp, name, "app", "docs", "big.md").write_text(head + pad + tail, encoding="utf-8")
-        out, folder, repo, _ = blocks_start(tmp, name, RED_BUILD, PARAMS + '[add]\nbuild = ["docs/big.md"]\n')
+        out, folder, repo, _ = blocks_start(tmp, name, PROVE_BUILD, PARAMS + '[add]\nbuild = ["docs/big.md"]\n')
         if name == "big-ok":
             assert out.returncode == 0 and "BIG CHECK" in step_text(folder, "05-build"), out.stderr
         else:
@@ -1095,8 +1208,8 @@ def test_block_checks(tmp):
     rules_at, judge_at, todo_at = (review.index(h) for h in (flow_run.RULES_HEAD, flow_run.JUDGE_HEAD, flow_run.TODO_HEAD))
     assert rules_at < judge_at < todo_at and judge in review[judge_at:todo_at], review
     assert flow_run.step_run.todo_scan(review)[0] == todo_at, review
-    assert "block first-principles judge: Does every fact in the result trace to a line in docs/spec.md?" in review, review
-    assert review.count("block first-principles judge:") == 2, "base judge lines appear once per run"
+    assert "block base-rules judge: Does every fact in the result trace to a line in docs/spec.md?" in review, review
+    assert review.count("block base-rules judge:") == 2, "base judge lines appear once per run"
     f = folder / "05-build.md"
     fill(f)
     text = f.read_text(encoding="utf-8")
@@ -1132,7 +1245,7 @@ def test_html_diagram_check(tmp):
 def block_rg(name, site):
     """Run each `rg` command of a block's Check (script) section on `site`, as written. An rg error (exit 2)
     fails the test, so a row that must stay clean cannot pass on an error."""
-    text = (flow_run.BLOCKS / f"{name}.md").read_text(encoding="utf-8").split("## Check (script)\n", 1)[1].split("\n## ")[0]
+    text = (flow_run.BLOCKS / name / "SKILL.md").read_text(encoding="utf-8").split("## Check (script)\n", 1)[1].split("\n## ")[0]
     runs = [subprocess.run(c.replace("{{site}}", shlex.quote(str(site))), shell=True, capture_output=True, text=True)
             for c in re.findall(r"`([^`]+)`", text) if c.startswith("rg ")]
     for out in runs:
@@ -1140,8 +1253,8 @@ def block_rg(name, site):
     return runs
 
 
-def test_look_grammar_colors(tmp):
-    """The look-grammar color check finds each color literal in a declaration (also before a comma or on a
+def test_design_tokens_colors(tmp):
+    """The design-tokens color check finds each color literal in a declaration (also before a comma or on a
     later line of a value), and not a selector that looks like a hex color. A literal in the :root token block,
     or in a :root that is all of @media (prefers-color-scheme: dark), is no hit; a :root anywhere else is."""
     site = Path(tmp, "colors-site")
@@ -1173,17 +1286,17 @@ def test_look_grammar_colors(tmp):
         ":root{--bg:#fff}@media (prefers-color-scheme: dark){:root{--bg:#111}}",  # 23 both blocks, minified
         "@media (prefers-color-scheme: dark) { :root { --bg: #111; } h { color: #333; } }",  # 24 more than :root
     ]) + "\n", encoding="utf-8")
-    colors = block_rg("look-grammar", site)[0]
+    colors = block_rg("design-tokens", site)[0]
     assert colors.returncode == 0, colors.stderr
     lines = sorted(int(line.split(":")[1]) for line in colors.stdout.splitlines())
     assert lines == [5, 6, 9, 12, 13, 14, 16, 21, 22, 24], (lines, colors.stdout)
 
 
 def test_diagram_shot_check(tmp):
-    """The diagram-correctness script check prints a 375 px PNG line for each diagram shot, and another line
+    """The diagram-check script check prints a 375 px PNG line for each diagram shot, and another line
     for a missing, empty, or wrong-width shot; it reads no page markup, which another block may own."""
     root = Path(tmp, "shot-check")
-    text = (flow_run.BLOCKS / "diagram-correctness.md").read_text(encoding="utf-8")
+    text = (flow_run.BLOCKS / "diagram-check" / "SKILL.md").read_text(encoding="utf-8")
     command = re.search(r"`([^`]+)`", text.split("## Check (script)\n", 1)[1])[1].replace("{{shots}}", "shots")
     png = lambda width: (b"\x89PNG\r\n\x1a\n" + (13).to_bytes(4, "big") + b"IHDR" + width.to_bytes(4, "big")
                          + (812).to_bytes(4, "big") + bytes([8, 6, 0, 0, 0]) + bytes(4))
@@ -1200,8 +1313,8 @@ def test_diagram_shot_check(tmp):
         assert not ok(), bad
 
 
-def test_look_grammar_page_code_colors(tmp):
-    """The look-grammar page-code check finds a color function in JS and TS files, and not a quoted hex, which
+def test_design_tokens_page_code_colors(tmp):
+    """The design-tokens page-code check finds a color function in JS and TS files, and not a quoted hex, which
     could be an id selector such as "#feed" (the judge line asks about quoted hex colors), nor a private field;
     a page whose code reads only tokens prints nothing."""
     site = Path(tmp, "code-colors-site")
@@ -1216,17 +1329,17 @@ def test_look_grammar_page_code_colors(tmp):
         'document.querySelector("#feed");',  # 6 an id selector made of hex letters
     ]) + "\n", encoding="utf-8")
     (site / "view.tsx").write_text("const c = `#abc`;\nconst d = hsl(1, 2, 3);\n", encoding="utf-8")
-    code = block_rg("look-grammar", site)[2]
+    code = block_rg("design-tokens", site)[2]
     hits = sorted(line.split(":", 2)[0].rsplit("/", 1)[1] + ":" + line.split(":", 2)[1] for line in code.stdout.splitlines())
     assert hits == ["main.js:2", "view.tsx:2"], (hits, code.stdout)
     (site / "main.js").write_text("el.style.color = 'var(--fg)';\nclass A { #abc = 1; }\n", encoding="utf-8")
     (site / "view.tsx").unlink()
-    code = block_rg("look-grammar", site)[2]
+    code = block_rg("design-tokens", site)[2]
     assert code.returncode == 1 and not code.stdout, code
 
 
-def test_look_grammar_dashes(tmp):
-    """The look-grammar dash check finds an em or en dash as a character, a named entity, or a numeric
+def test_design_tokens_dashes(tmp):
+    """The design-tokens dash check finds an em or en dash as a character, a named entity, or a numeric
     entity, and passes a page with only hyphens and other entities."""
     site = Path(tmp, "dash-site")
     site.mkdir()
@@ -1234,7 +1347,7 @@ def test_look_grammar_dashes(tmp):
               "&#08212;", "&#x002014;", "&#0008211;", "&#X02013;")
     for text, found in [(d, True) for d in dashes] + [("a - b &amp; &#8210; &#821; &#08210; &#x02012;", False), ("", False)]:
         (site / "index.html").write_text(f"<p>tool {text} text</p>\n", encoding="utf-8")
-        out = block_rg("look-grammar", site)[1]
+        out = block_rg("design-tokens", site)[1]
         assert (out.stdout.strip() != "") == found, (text, out)
 
 
@@ -1304,6 +1417,8 @@ with tempfile.TemporaryDirectory() as tmp:
                for text in (p.read_text(encoding="utf-8") for p in folder.glob("0*.md")))
 
     test_skip_text_encoding()
+    test_kit_pointers()
+    test_kit_block_frontmatter()
     test_command_wrong_count(run, folder)
     test_done_wrong_count(run, folder)
     test_take_force(run, folder)
@@ -1431,19 +1546,22 @@ with tempfile.TemporaryDirectory() as tmp:
     test_start_without_tomllib(tmp)
     test_start_no_block_reads_no_toml(tmp)
     test_toml_no_block_adds_no_base(tmp)
+    test_no_toml_runs_blocks_without_base(tmp)
     test_param_quoted_in_script_checks(tmp)
     test_param_outside_span_in_script_check(tmp)
     test_add_path_errors(tmp)
     test_block_fail_closed(tmp)
+    test_block_frontmatter(tmp)
     test_kit_blocks_load(tmp)
     test_block_repo_file(tmp)
+    test_add_folder_block(tmp)
     test_block_cap(tmp)
     test_block_checks(tmp)
     test_html_diagram_check(tmp)
-    test_look_grammar_colors(tmp)
-    test_look_grammar_page_code_colors(tmp)
+    test_design_tokens_colors(tmp)
+    test_design_tokens_page_code_colors(tmp)
     test_diagram_shot_check(tmp)
-    test_look_grammar_dashes(tmp)
+    test_design_tokens_dashes(tmp)
     test_web_ui_basics_checks(tmp)
     test_block_ascii_locale(tmp)
     test_review_read_encoding(tmp)

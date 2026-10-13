@@ -21,14 +21,14 @@ only the user can give.
 2. Each iteration makes the smallest change the evidence justifies, verifies it against the
    predicate, commits when it advanced, and discards a change that did not help. A change that
    "might help" is reverted, not left to ride. Order the work per the
-   `sequence-verifiable-units` skill, and judge each check per the `prove-it-works` skill.
+   kit block `blocks/checked-units/SKILL.md`, and judge each check per the kit block
+   `blocks/prove-it-works/SKILL.md`. The kit root, with its `blocks/` and `references/` folders, is two folders up from this skill's folder.
 3. A mid-run discovery is yours when it blocks the predicate. Fix it, such as a broken helper or a
    flaky check, in its own commit, then return to the predicate. Do not park reversible work for
    the user. Report any other defect in the final result and leave it unfixed.
-4. Keep one task file `<YYYY-MM-DD>-<slug>.md` in the task-file folder that the active runtime
-   adapter names, with the predicate, the iterations run, one evidence line per iteration, and the
-   next step. Read it first after a `/clear`, a `/compact`, or a resume, and make the first reply a
-   status block.
+4. Keep the task file as the kit block `blocks/task-file/SKILL.md` says, at
+   `<repo-root>/tmp/deliver/<YYYY-MM-DD>-<slug>.md`, with the predicate as its goal and one
+   evidence line per iteration.
 5. When the predicate holds, run `review-check` on `<base>..HEAD`, where `<base>` is the commit
    before this run's first commit. A fix seat may start on one review seat's validated `fix` rows
    after a partial verdict finds no problem in those rows, in its own worktree from the reviewed head.

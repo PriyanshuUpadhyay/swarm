@@ -20,12 +20,12 @@ task and the `walk` template, then writes this ledger:
 | start | glitch-walk start (its script) | one by one | the script prints `READY` |
 | research | local-research ×2 | in parallel | each seat's notes file is done |
 | plan the page | story, diagram | in parallel, then one merge | each section names its block |
-| build | build-site, look-grammar, web-ui-basics | one by one | the page checks pass |
+| build | build-site, design-tokens, web-ui-basics | one by one | the page checks pass |
 | view and talk | serve-local, annotate-loop | a loop with a cap | the owner writes `done`, or the loop stop fires |
 | close | done-when-evidence | one by one | each done-when claim has evidence |
 
 A different task uses the same blocks in a different ledger. "Make a site like this reference" uses
-reference-analysis, look-grammar, story, motion, style-frames and build-site, and it skips the walk
+reference-analysis, design-tokens, story, motion, style-frames and build-site, and it skips the walk
 start.
 
 The parts and their owners:
@@ -83,27 +83,32 @@ metadata:
   install. `kind: step` does work and writes its `gives` artifact.
 - Blocks live under `blocks/`, not `skills/`. The Agent Skills spec loads the name and description
   of every discovered skill at startup, so 40 blocks there would crowd the skill list, and selection
-  falls as the list grows. Only the plan block and the loader read `blocks/`.
-- The kit can become one Agent Plugins 1.0 package: a `plugin.json` at `skills/kit/`, skills under
+  falls as the list grows. A skill points to the blocks it uses by a path from the kit root (`blocks/<id>/SKILL.md`), and
+  says once that the kit root is two folders up from the skill's folder. This holds in the plugin copy
+  that each CLI installs, but not through a link to one skill folder, because a Read tool resolves
+  `..` on the link path (see Packaging). The flow loader copies the blocks that a catalog line names into the
+  step files. No CLI lists a block as a skill.
+- The kit is one Agent Plugins 1.0 package: a `plugin.json` at `skills/kit/`, skills under
   `skills/`, and `blocks/` beside them. Clients discover only `skills/` and `mcp.json`. A package path
   must resolve inside the package root, so no block may link outside the kit. See Packaging below
   for what each CLI loads.
-- The 13 blocks today are flat files `blocks/<id>.md` with `Concept:`, `Serves:` and `Source:` lines.
-  Moving them to folders with frontmatter is progress.md B16, and it changes the `flow_run.py`
-  resolver and `blocks.toml` in the same step.
+- Every kit block is a folder with this frontmatter (progress.md B16, done 2026-10-13). The flow
+  loader finds blocks by folder, writes `description` to the step as `Concept:`, and refuses a
+  `name` that is not the folder. A test checks every block's frontmatter.
 
 ## Ownership and conflicts
 
 1. A block owns one concern. Its `owns` line names that concern, and no other block's `owns` line
    names it.
 2. When two files state the same rule, that is a defect. The fix is one owner and a pointer, never a
-   `conflicts` line. Example: `red-first-check` repeats `prove-it-works`.
+   `conflicts` line. Example: `red-first-check` repeated `prove-it-works`, so on 2026-10-13 both
+   texts became the one block `prove-it-works`, and the skill points to it.
 3. When two blocks are real alternatives, each names the other in `conflicts`. Code refuses a
    ledger that holds both, and the plan block picks one with a reason line. Examples:
    `html-diagram` and an SVG diagram block; the 300 ms rule in `web-ui-basics` and the 400-500 ms
    transitions.dev timings.
 4. A block that names a step file is a defect, because a second workflow cannot use it. Example:
-   `style-frames-concept.md:10` names flow's `02-design.md`.
+   `call-tree/SKILL.md` names flow's `04-impact.md`.
 
 ## Catalog
 
@@ -115,37 +120,44 @@ Status: ✅ exists, ✂️ cut from a skill next, ⬜ later, 🆕 new, 🔒 stay
 |---|---|---|---|---|---|---|
 | plan | step | which blocks run, in which stage | task, template, catalog → ledger | none | every template | 🆕 B9 |
 | frame | step | goal, done-when claims, out of scope | request → frame | flow 01-frame, research 01-question, ink intake | flow, research, ink | ⬜ |
-| local-research | step | what local sources say | question → findings with paths | research 02-local, `references/fan-out.md` | research, glitch-walk, flow contracts | ⬜ |
-| web-research | step | web evidence | query brief → findings with links | `skills/web-search` (stays whole; the block calls it) | research, reference-analysis, motion | ⬜ |
-| reference-analysis | step | measured facts of a reference | references → measured notes with evidence levels | ink `references/references.md` passes 1-5 | ink, site builds, glitch-walk look | ✂️ ink |
-| look-grammar | step | the look as tokens | measured notes → `DESIGN.md` tokens | `blocks/look-grammar.md` (ink copy) | ink, glitch-walk, any page | ✅ owner fix |
-| story | step | order, beats, timing | brief, facts → story sheet | ink `story-and-motion.md` story sheet, structures, shot list, pacing | ink, glitch-walk, explainer pages | ✂️ ink |
+| local-research | step | what local sources say | question → findings with paths | `blocks/local-research` | research (planned: glitch-walk, flow contracts) | ✅ |
+| web-research | step | web evidence | query brief → findings with links | `skills/web-search` (stays whole) with `blocks/deep-search` and `blocks/cite-sources` | research, reference-analysis, motion | ✅ by the skill |
+| deep-search | rule | how a search goes past the known answers | question, known answers → sub-questions, seeds, off-path ideas | `blocks/deep-search` | research, web-search | ✅ |
+| tool-trial | step | the hands-on test of tool candidates | tool question → candidate table | `blocks/tool-trial` | research (planned: flow contracts) | ✅ |
+| reference-analysis | step | measured facts of a reference | references → measured notes with evidence levels | `blocks/reference-analysis` | ink, design-tokens | ✅ |
+| design-tokens | step | the look as tokens | measured notes → `DESIGN.md` tokens | `blocks/design-tokens` (owner of the token rules) | ink, glitch-walk, any page | ✅ owner fix |
+| story | step | order, beats, key frames, pacing | brief, facts → story sheet, shot list | `blocks/story` | ink | ✅ |
 | motion | pack | how things move | story sheet or UI states → timings, eases, one timing owner | emil pack (UI), ink `story-and-motion.md` transition catalogue and motion feel (story) | ink, any UI, sites | ✂️ B8 |
-| diagram | rule set | when and how to draw | subject → diagram | `blocks/tech-diagram-concept`, `html-diagram`, `diagram-correctness`, `call-tree` | flow, research, glitch-walk, plans | ✅ |
-| style-frames | step | "does it match the look" before the full build | tokens, page code → scored frames | `blocks/style-frames-concept.md` (ink copy) | ink, any visual build | ✅ owner fix |
-| build-site | step | a page from tokens, story and motion | tokens, story, motion → page | ink `site.md`, `build.md` architecture | ink sites, glitch-walk, diagram pages | ✂️ ink |
-| build-canvas | pack | drawn frames from time and one seed | tokens, story → scenes | ink `build.md`, `mark-making.md` | ink reels and plates | ✂️ ink |
+| diagram | rule set | when and how to draw | subject → diagram | `blocks/when-to-diagram`, `html-diagram`, `diagram-check`, `call-tree` | flow, research, glitch-walk, plans | ✅ |
+| style-frames | step | "does it match the look" before the full build | tokens, page code → scored frames | `blocks/look-check` (owner of reference scoring) | flow, ink | ✅ |
+| build-site | step | what changes when the piece is a website | look, story → page | `blocks/build-site` | ink | ✅ |
+| build-canvas | pack | a drawn piece rendered from time and one seed | look, story, shot list → piece | `blocks/build-canvas` with `references/mark-making.md` | ink | ✅ |
 | build-3d | pack | a 3D scene or hero | tokens, story → scene | ink `build.md` toolbox | ink, 3D sites | ⬜ after a second 3D task |
-| headless-shot | step | how shots are taken | URL or file → shots | `blocks/headless-shot.md` (ink copy) | every visual check | ✅ owner fix |
-| visual-qa | step | the visual verdict | shots, reference → pass or miss per check | ink `qa.md` reference match, frame and motion checks | ink, glitch-walk, any page | ✂️ ink |
-| web-ui-basics | rule | the floor for one static page | page → pass or fail | `blocks/web-ui-basics.md` | any static page | ✅ HTML only |
+| headless-shot | step | how shots are taken | URL or file → shots | `blocks/headless-shot` (owner of the shot and compare commands) | flow, ink | ✅ |
+| visual-qa | step | the visual verdict and the QA log | frames, playback → QA log | `blocks/visual-qa` | ink | ✅ |
+| web-ui-basics | rule | the floor for one static page | page → pass or fail | `blocks/web-ui-basics` | any static page | ✅ HTML only |
 | serve-local | step | a local view of the output | built folder → URL, stop command | none | glitch-walk, ink sites, any page | 🆕 |
 | annotate-loop | step | comments from the owner to the agent | URL → comment file per round | Plannotator (`plannotator annotate <page> --json`); trial of 2026-10-12 | glitch-walk, any page | 🆕 strict |
 | review | step | the review verdict | range → verdict | `skills/review-check` (stays whole; the block calls it) | flow, deliver | 🔒 |
-| report | step | the written answer | findings → report with checked links | research 05-report, `references/plan-layout.md` first screen | research, council, reviews | ⬜ |
-| done-when-evidence | rule | close maps claims to evidence | frame, results → evidence rows | `blocks/done-when-evidence.md` | every template | ✅ |
+| report | step | the written answer | findings → report with checked links | `blocks/report`, with `references/plan-layout.md` for the first screen | research | ✅ |
+| done-when-evidence | rule | close maps claims to evidence | frame, results → evidence rows | `blocks/done-when-evidence` | every template | ✅ |
 
 ### Rule cards
 
 | Block | Owns | Today's text | Status |
 |---|---|---|---|
-| first-principles | the rules every step keeps | `blocks/first-principles.md` | ✅ |
-| behavior-claims | a frame as true-or-false claims | `blocks/behavior-claims.md` | ✅ |
-| decision-with-default | a real fork with a marked default | `blocks/decision-with-default.md` | ✅ defect at `:8` vs `:27` |
-| red-first-check | a check fails before the change | `blocks/red-first-check.md`, repeats `prove-it-works` | ✅ owner fix |
+| base-rules | the rules every step keeps | `blocks/base-rules` | ✅ |
+| behavior-claims | a frame as true-or-false claims | `blocks/behavior-claims` | ✅ |
+| decision-with-default | a real fork with a marked default, and the trade-off form | `blocks/decision-with-default` (engineering-standards section 5 points here) | ✅ defect fixed |
+| prove-it-works | what proves a change works | `blocks/prove-it-works` (red-first-check merged in; the skill points here) | ✅ |
+| checked-units | small units that each end in a check | `blocks/checked-units` (the skill sequence-verifiable-units points here) | ✅ |
+| when-to-extract | code stays inline without a reason | `blocks/when-to-extract` (the skill minimize-reader-load points here) | ✅ |
+| worker-brief | what a worker brief holds and how a worker acts | `blocks/worker-brief` | ✅ |
+| run-workers | how a root session runs seats on its host | `blocks/run-workers` (the three adapters point here) | ✅ |
+| task-file | the task file and the resume | `blocks/task-file` | ✅ |
 | evidence-label | one vocabulary for how sure a claim is | six vocabularies today: ink, web-search, research, prove-it-works, engineering-standards | 🆕 after one owner is picked |
-| no-invented-quote | quote only text read, mark snippets | research, web-search, glitch-walk, decisions | ⬜ |
-| link-check | a cited page says the claim | research 05-report | ⬜ |
+| cite-sources | each claim cites its owning source; quote only text read; mark snippets | `blocks/cite-sources` | ✅ |
+| link-check | a cited page says the claim | `blocks/link-check` | ✅ |
 
 ### Stays whole
 
@@ -164,6 +176,38 @@ workflow calls them as one unit.
 | glitch-walk start | its script refuses, stops and gives exact words; it runs as one step |
 | engineering-standards tables | each row already has an ID |
 | ink seam law | one idea across three ink files; it moves with `story` |
+| cleanup-gate pass | the six emissions in order are one gate; a step that emitted nothing did not run |
+| review-walk steps | each step needs the reviewer, and the map, comments and walk share one run |
+| flow step graph | the step list, status and catalog are one machine that `flow_run.py` runs |
+
+## Every skill, split (2026-10-13)
+
+Each skill keeps its contract, its step table and its stays-whole part, and points to the blocks
+below. A skill that was one rule is now a block, and its skill folder holds one pointer, so every
+path that names the skill still works.
+
+| Skill | Blocks it points to | Stays in the skill |
+|---|---|---|
+| prove-it-works | prove-it-works | the pointer only |
+| sequence-verifiable-units | checked-units | the pointer only |
+| minimize-reader-load | when-to-extract | the pointer only |
+| engineering-standards | decision-with-default (trade-off form) | the rule tables and the procedure |
+| pair | task-file, checked-units, when-to-extract | the chunk loop, its guards, commit per behavior |
+| deliver | task-file, checked-units, prove-it-works | the predicate loop, the commit gate, the review stop |
+| research | local-research, deep-search, cite-sources, tool-trial, report, link-check | the step table, the web seat triggers and timing |
+| web-search | deep-search, cite-sources, link-check, worker-brief, run-workers | seats, site sets, reach tools, Yield and Floor, the depth gate, the merge |
+| council | worker-brief, run-workers | the protocol, the convergence check, the output, the decision log |
+| orchestrate-claude, -codex, -agy | run-workers, worker-brief | the lines that differ by runtime |
+| review-check | when-to-extract | the whole review gate |
+| review-walk | none | the five steps (stays whole) |
+| cleanup-gate | when-to-extract (by its rules file) | the six-step pass (stays whole) |
+| decisions | none | the whole capture contract (stays whole) |
+| flow | prove-it-works, checked-units, and every block its catalog lines name | the step graph and the loader |
+| ink | reference-analysis, story, look-check, headless-shot, visual-qa, build-site (which points to design-tokens), build-canvas, web-ui-basics | the contract, the routes, the seam law, the reel rules |
+
+Plans that stay open: research writes the ledger for questions, with `web needs local` only when
+local findings set the query (the owner's local-then-web example); the emil pack owns UI motion and
+ink owns story motion (B8).
 
 ## ink, split
 
@@ -172,7 +216,7 @@ ink becomes templates plus its contract. Its routes become the templates.
 | ink step today | Blocks |
 |---|---|
 | 1 Intake | frame, web-research (when no references are given) |
-| 2 Analyse the references | reference-analysis, look-grammar |
+| 2 Analyse the references | reference-analysis, design-tokens |
 | 3 Story sheet, shots, transitions | story, motion (story route) |
 | 4 Style frames | style-frames, headless-shot, visual-qa |
 | 5 Animatic | build-site or build-canvas, flat pass |
@@ -187,21 +231,44 @@ ink becomes templates plus its contract. Its routes become the templates.
 | `analysis-only` | intake, analyse |
 | `site` | as `prototype`, with build-site and web-ui-basics |
 
-ink's contract stays in its `SKILL.md`: match only inspected pixels, never copy a living artist's
-exact style, keep story, look and motion apart, render from time and one seed.
+ink's contract stays in its `SKILL.md`: keep story, look and motion apart, prove the look and the
+story before production, and render from time and one seed. Reference rules point to
+`reference-analysis`.
+
+### Where each old ink section went (2026-10-13)
+
+| Old section | Now |
+|---|---|
+| `SKILL.md` contract: inspected pixels, evidence labels, borrow not copy, match density | `blocks/reference-analysis` |
+| `references.md` Intake | stays; the benchmark line and the inspection rules moved to `blocks/reference-analysis` |
+| `references.md` Research references, Pass 1-5, Evidence language | `blocks/reference-analysis` |
+| `references.md` Style grammar template | stays |
+| `story-and-motion.md` Story sheet, Structures, Shot list, Pacing | `blocks/story` |
+| `story-and-motion.md` Drivers (its settled-state line points to `blocks/web-ui-basics`), Transition catalogue, Seam law, Scene graph, Timeline, Motion feel, Web-native media ideas, Seam design | stay |
+| `qa.md` Required evidence | stays; the contact-sheet rule moved to `blocks/visual-qa` |
+| `qa.md` Reference match | scoring to `blocks/look-check`, compare command to `blocks/headless-shot`; ink's example stays |
+| `qa.md` Story checks | stay; key frame and pacing checks moved to `blocks/story`; the scroll-story check points to the settled-state rule of `blocks/web-ui-basics` |
+| `qa.md` Frame checks, Motion checks | `blocks/visual-qa`; mass, paper, seam law, boil and loop seam checks stay |
+| `qa.md` Automated checks | stay; hidden content points to `blocks/web-ui-basics` |
+| `qa.md` QA log | `blocks/visual-qa`; ink's step names stay |
+| `site.md` (whole file, removed) | `blocks/build-site`; DESIGN.md rules to `blocks/design-tokens`, page frames to `blocks/look-check`, page floor to `blocks/web-ui-basics` |
+| `build.md` Architecture, Determinism, Debug modes, Performance, Toolbox, Delivery, Technical references | `blocks/build-canvas` |
+| `build.md` Style frames, Animatic, Frame export, Handoff | stay; the shot command points to `blocks/headless-shot` |
+| `mark-making.md` (whole file) | `blocks/build-canvas/references/mark-making.md` |
 
 ## Order
 
 The review stops and the ledger checks come first (progress.md B1-B3). Then:
 
 1. Cut ink: reference-analysis, story, visual-qa, build-site and build-canvas get folders, and ink
-   points to them. The three ink copies (look-grammar, style-frames, headless-shot) get one owner.
-2. Give each cut block a second user in one live run: a glitch-walk page uses story, look-grammar,
+   points to them. The three ink copies (design-tokens, style-frames, headless-shot) get one owner.
+2. Give each cut block a second user in one live run: a glitch-walk page uses story, design-tokens,
    headless-shot and visual-qa. This is the live run that the earlier councils asked for.
 3. Add serve-local and annotate-loop for the glitch-walk view-and-talk stage.
 4. Write the plan block and the template format, then run one task with a template and one without
    by hand.
-5. Cut the next skill, in the order of most blocks shared with what exists.
+5. Cut the next skill, in the order of most blocks shared with what exists. Done for every skill on
+   2026-10-13 (see "Every skill, split"), at the owner's word, before steps 2-4.
 
 ## annotate-loop is strict
 
@@ -228,7 +295,23 @@ On 2026-10-13 a probe package (root `plugin.json`, `skills/`, `mcp.json`) was te
 | AGY 1.3.4 | required | found | `mcp_config.json` |
 
 So the kit can ship as a skills-only package that all three load. An MCP server would need one
-file per CLI, made by one script. The research report is in the owner's private reports folder.
+file per CLI, made by one script.
+
+A second probe on the same day put a `blocks/probe/SKILL.md` with a random code word beside a skill
+that says to read `../../blocks/probe/SKILL.md`. Each CLI installed a copy of the whole package
+(Claude Code and Codex under `plugins/cache/<marketplace>/<plugin>/<version>/`, AGY under
+`~/.gemini/config/plugins/<plugin>/`), and a headless model run in each read the block from that copy
+and gave the code word. Headless AGY needed a `read_file(<folder>)` allow rule, and it was told to
+use only its file-read tool. So the kit ships as the plugin `swarm` (`skills/kit/plugin.json`,
+`skills/kit/.claude-plugin/plugin.json`, and the marketplace `.claude-plugin/marketplace.json` at the
+repo root).
+
+A pane trial on the same day installed the real kit from this repo in each CLI and opened one
+interactive pane per CLI. Each model loaded a kit skill from the plugin, followed its pointer, and
+quoted the block's first rule. Claude Code loaded the plugin from the marketplace folder itself (the
+checkout), not from its cache copy, so a kit edit reaches it at once; Codex and AGY read their copies.
+Claude Code refused `prove-it-works`, which has `disable-model-invocation: true`; Codex and AGY
+loaded it. The research report is in the owner's private reports folder.
 
 ## Open questions
 

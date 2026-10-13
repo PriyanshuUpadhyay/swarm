@@ -1,7 +1,17 @@
-# tech-diagram-concept
-Concept: A diagram is drawn only when the subject has a shape text cannot hold, and its type and size follow that shape.
-Serves: design, build
-Source: references/explain-formats.md:7-8, :16-27, :36-37; html-plan pack: skills/html-plan/references/blocks.md:79-83 (doc-machine), :188, :192-193 (doc-flow), skills/html-plan/SKILL.md:119 (caption)
+---
+name: when-to-diagram
+description: "Draw a diagram only when the subject has a shape text cannot hold, and pick its type and size from that shape. Use when you decide whether a doc, plan, or page needs a diagram."
+license: MIT
+metadata:
+  kind: rule
+  owns: "when to draw a diagram and which kind"
+  serves: "design, build"
+  needs: "a subject"
+  gives: "a diagram choice, or no diagram"
+  conflicts: ""
+  users: "flow"
+  source: "references/explain-formats.md:7-8, :16-27, :36-37; html-plan pack: skills/html-plan/references/blocks.md:79-83 (doc-machine), :188, :192-193 (doc-flow), skills/html-plan/SKILL.md:119 (caption)"
+---
 
 ## Rules
 - Draw a diagram when the subject calls across three or more parts in an order that matters; adds, removes, or reorders a branch, a guard, or an async step; moves through a lifecycle, a status, or a retry flow; or changes a schema or a data model.

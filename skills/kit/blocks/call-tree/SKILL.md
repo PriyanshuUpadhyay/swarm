@@ -1,7 +1,17 @@
-# call-tree
-Concept: The impact step shows what changes as a short marked call tree with real paths.
-Serves: impact
-Source: html-plan pack: skills/html-plan/references/blocks.md:101-106 (doc-calls), :5 (+ - ~ convention); skills/flow/SKILL.md (step table, 04-impact row)
+---
+name: call-tree
+description: "Show what a change touches as a short marked call tree with real paths. Use when you judge the impact of a change on existing features."
+license: MIT
+metadata:
+  kind: rule
+  owns: "the impact as a marked call tree with real paths"
+  serves: "impact"
+  needs: "the contracts and the callers"
+  gives: "a call tree"
+  conflicts: ""
+  users: "flow"
+  source: "html-plan pack: skills/html-plan/references/blocks.md:101-106 (doc-calls), :5 (+ - ~ convention); skills/flow/SKILL.md (step table, 04-impact row)"
+---
 
 ## Rules
 - Write the tree as plain text in a fenced block in `04-impact.md`.

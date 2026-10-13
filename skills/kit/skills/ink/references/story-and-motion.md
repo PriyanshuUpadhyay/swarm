@@ -1,43 +1,17 @@
 # Story, storyboard, and motion
 
+The story sheet, the structures, the shot list with its key frames, and pacing are in `blocks/story/SKILL.md`. This file holds how the story moves.
+
 ## Contents
 
-- Story sheet
-- Structures
 - Drivers
-- Shot list
 - Transition catalogue
 - Seam law (continuity cuts)
 - Scene graph
 - Timeline
-- Pacing
 - Motion feel
 - Web-native media ideas
 - Seam design (loops only)
-
-## Story sheet
-
-Put this at the top of `ink/03-story.md`:
-
-```text
-Logline:    one sentence: who or what, what changes, how it ends
-Structure:  linear | loop | journey | vignette | branching
-Entities:   characters, props, places, each with the states it passes through
-Beats:      3-8 rows: beat, intent (what the viewer should notice or feel), change of state, words on screen
-```
-
-Make each entity a draw function with parameters (pose, expression, state, seed), not a one-off
-drawing. The same character then appears in many shots and states without new code.
-
-## Structures
-
-| Structure | Shape | Typical transitions | Fits |
-|---|---|---|---|
-| Linear | beats in order, then an end | cut, match cut, push-in | explainer, short, title sequence |
-| Loop | last frame returns to the first | state return, self-similarity | reel background, ambient loop |
-| Journey | one continuous camera travels through places | camera move, zoom-through, parallax | "a day in", maps, infinite zoom |
-| Vignette | separate scenes share a motif | cut on the motif, crossfade | montage, anthology |
-| Branching | viewer input picks the next beat | any, driven by a state machine | scroll-driven or click-driven story |
 
 ## Drivers
 
@@ -54,8 +28,9 @@ What moves the story forward decides how time works in the build.
 - Map each section's scroll progress to that section's shot-local `u`. For DOM layers, CSS
   scroll-driven animations (`animation-timeline: view()` or `scroll()`) run off the main thread;
   NRK measured 1 ms against 0.16 ms per task. For a canvas, read the progress and render that `u`.
-- Put every key fact in a settled state that the scroll can rest on, not only mid-motion. Wheel
-  notches and the keyboard scroll in steps and jump over frames.
+- Give every key fact a settled state as `blocks/web-ui-basics/SKILL.md` says. For a
+  scroll story this matters more, because wheel notches and the keyboard scroll in steps and jump over
+  frames.
 - Treat motion as a progressive enhancement. Under `prefers-reduced-motion: reduce`, show each
   beat's key frame as a still.
 
@@ -74,18 +49,6 @@ gates, such as drawing a zero or holding to shatter glass
 - Keep gates few. Interactive-fiction players report that hard gates kill momentum.
 - In the shot list, a gate is an entry with `type: 'gate'`. Time stops at the gate, and each segment
   between gates has its own `u`.
-
-## Shot list
-
-A shot is one continuous camera view of one scene. A beat can span several shots.
-
-| Shot | Beat | Time / t | Scene | Focal subject | Camera | Transition in (story reason) | Exit → entry vector | Local motion | Verification frame |
-|---|---|---|---|---|---|---|---|---|---|
-
-The vector column records axis, direction, and speed on both sides of a continuity cut (see the
-seam law below). Write "jump" for a cut that breaks continuity on purpose.
-
-Mark a beat's key frame: the frame that must read on its own if the viewer sees nothing else.
 
 ## Transition catalogue
 
@@ -169,20 +132,6 @@ procedural motion for secondary elements.
 
 When one entity appears in consecutive shots, key its secondary motion (blink, sway, flicker) to the
 master time, not to shot-local time, so it does not restart at every cut.
-
-## Pacing
-
-Give each beat time to read. As starting values to tune by eye: a new subject holds about 1-2 s
-before it changes, and on-screen text holds about 1 s plus 0.3 s per word. A key frame that reads
-only when paused is too fast.
-
-- Hold still for 0.3-0.75 s between a major action and its result. A cut straight from action to
-  result loses the dramatic pause.
-- Do not fill spare shot time with idle loops (float, breathe, pulse) as the main motion. Add story
-  or shorten the shot. Small living motion on a character, such as a blink, is fine. HyperFrames
-  bans idle loops outright, but its rule targets explainer videos.
-- Fast action, held meaning. Show the cause, then the reaction, and give the last shot time to land.
-  The most common viewer complaint about code-drawn reels is that they move too fast.
 
 ## Motion feel
 

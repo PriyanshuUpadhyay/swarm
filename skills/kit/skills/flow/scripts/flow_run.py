@@ -134,6 +134,9 @@ def start(profile="default"):
             read, text, todos = blocks[step.split("-", 1)[1]]
             rules = "\n".join(part for part in (skills[step], text) if part)
             judged = f"{JUDGE_HEAD}\n{judge}\n\n" if step == "06-review" and judge else ""
+            # The step file lives in the repo, so a kit-root path in the copied text needs the kit's place.
+            if any(token in rules + judged for token in ("blocks/", "the kit's `references/", "<kit root>")):
+                rules = f"Kit blocks (`blocks/<id>/`) and the kit's `references/` are under {BLOCKS.parent} (the kit root).\n{rules}"
             (folder / f"{step}.md").write_text(
                 f"Status: open\n{uses}\n{extra}Take with: python3 {Path(__file__).resolve()} take {folder} {step} <agent>\n"
                 f"Skills read: {', '.join(paths + read) or 'none'}\n\n{RULES_HEAD}\n{rules}\n{judged}"
@@ -192,7 +195,7 @@ def resolve_blocks(root, wanted, profile_name):
     if profile_name == "default" and not repo_file.exists() and not any(wanted.values()):
         return {key: ([], "", []) for key in wanted}, ""
     kit = read_toml(kit_file)
-    files = {block: BLOCKS / name for block, name in kit.get("blocks", {}).items()}
+    files = {path.parent.name: path for path in sorted(BLOCKS.glob("*/SKILL.md"))}
     aliases = kit.get("aliases", {})
     for alias, members in aliases.items():
         if alias in files:
@@ -241,7 +244,10 @@ def resolve_blocks(root, wanted, profile_name):
             # The repo file is repo-owned input, and the step text goes to agents, so no file outside the repo.
             if outside:
                 raise SystemExit(f"[add] {path} leaves the repo; {repo_file} takes repo-relative paths")
-            block = Path(path).stem
+            # A repo block in the kit's layout, <folder>/SKILL.md, takes the folder name as its id.
+            block = Path(path).parent.name if Path(path).name == "SKILL.md" else Path(path).stem
+            if block in ("", ".", ".."):
+                raise SystemExit(f"[add] {path} in {repo_file} has no id; a SKILL.md block sits in a folder named for its id")
             # The id goes into the step file and take's output, so it is one plain word.
             if not re.fullmatch(r"[A-Za-z0-9._-]+", block):
                 raise SystemExit(f"[add] {path} in {repo_file} has id {block}, which is not only letters, digits, "
@@ -267,6 +273,10 @@ def resolve_blocks(root, wanted, profile_name):
             raise SystemExit(f"unknown block id {unknown[0]} in the {key} line of ~/.flow/domains.md")
         named[key] = [m for i in ids for m in aliases.get(i, [i])] + added.get(key, [])
     base = kit.get("base", []) if any(named.values()) else []  # a run that names no block stays as before
+    # The base block needs source_of_truth, which only the repo's .blocks.toml sets. A repo with no such file
+    # still runs the blocks that its catalog lines name, such as an `any` line, and the step says the base is off.
+    if base and not repo_file.exists():
+        off = {b: "the repo has no .blocks.toml, which sets source_of_truth" for b in base}  # no file, no [off]
 
     loaded = {}
 
@@ -280,6 +290,23 @@ def resolve_blocks(root, wanted, profile_name):
             # A large repo file would fill every step file, and a cut could end inside a check, so it stops start.
             if len(text) > CAP:
                 raise SystemExit(f"block {block} is {len(text)} characters; a block holds at most {CAP}")
+            # Agent Skills frontmatter: only name and description are read, as one-line values in plain or
+            # double quotes; YAML escapes are not decoded. The name is the block id, and the description goes
+            # to the step as the Concept line, in place of the frontmatter.
+            if text.startswith("---\n"):
+                # Keep the opening newline, so an empty frontmatter finds its close. A `## ` line before the
+                # close means the frontmatter never closed and a later `---` rule in the body was taken for it.
+                head, close, rest = text[3:].partition("\n---\n")
+                if not close or "\n## " in head:
+                    raise SystemExit(f"block {block} frontmatter has no closing --- line")
+                fields = dict(l.split(": ", 1) for l in head.splitlines() if ": " in l and l[:1] != " ")
+                fields = {key: value.strip().strip('"') for key, value in fields.items()}
+                for key in ("name", "description"):
+                    if not fields.get(key):
+                        raise SystemExit(f"block {block} frontmatter has no {key}")
+                if fields["name"] != block:
+                    raise SystemExit(f"block {block} has the name {fields['name']}; a block's name is its id")
+                text = f"Concept: {fields['description']}\n" + rest
             if missing := [p for p in PARAM.findall(text) if p not in params]:
                 raise SystemExit(f"block {block} needs {{{{{missing[0]}}}}}; set it under [params] in {repo_file}")
             def fill(part, quote=False):

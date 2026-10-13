@@ -18,9 +18,9 @@ Workflow skills for coding agents (Claude Code, Codex, Antigravity). Each skill 
 | `decisions` | Record consequential choices as in-repo ADRs |
 | `cleanup-gate` | A full cleanup pass, only on request |
 | `engineering-standards` | Scoped engineering rules for design, code and review |
-| `prove-it-works` | What counts as proof that a change works |
-| `sequence-verifiable-units` | Order multi-step work so each step can be checked |
-| `minimize-reader-load` | When code gets its own function, file or module |
+| `prove-it-works` | What counts as proof that a change works (points to `blocks/prove-it-works`) |
+| `sequence-verifiable-units` | Order multi-step work so each step can be checked (points to `blocks/checked-units`) |
+| `minimize-reader-load` | When code gets its own function, file or module (points to `blocks/when-to-extract`) |
 | `ink` | Pictures, generative plates, films, and websites drawn by code, from a story or a visual reference |
 | `orchestrate-claude`, `orchestrate-codex`, `orchestrate-agy` | Runtime adapters that bind the skills' worker needs to each agent CLI |
 
@@ -30,16 +30,31 @@ skills point to.
 
 ## Install
 
-Link the skills you want into your agent's skills folder, and the references next to them:
+The kit is one plugin, `swarm`, for Claude Code, Codex and Antigravity. Each CLI installs a copy of
+the whole kit, so a skill reaches the kit's `blocks/` and `references/` two folders up from its own
+folder. Install it from a clone of this repo:
 
 ```sh
-git clone --recurse-submodules https://github.com/PriyanshuUpadhyay/agent-kit ~/agent-kit
-mkdir -p ~/.claude/skills ~/.claude/references
-for s in ~/agent-kit/skills/*/ ~/agent-kit/vendor/taste-skill/skills/taste-skill/ \
-  ~/agent-kit/vendor/emil-skills/skills/animate/ ~/agent-kit/vendor/emil-skills/skills/break-ui/; do
+claude plugin marketplace add <repo> && claude plugin install swarm@swarm
+codex plugin marketplace add <repo> && codex plugin add swarm@swarm
+agy plugin install <repo>/skills/kit
+```
+
+Claude Code shows each skill with the plugin name in front, for example `/swarm:flow`. Claude Code
+reads a marketplace on a local folder in place, so an edit in the clone reaches its next session.
+Codex and Antigravity read an installed copy, so run their install again after an edit; the same
+version is copied again.
+
+Do not link a kit skill folder into an agent's skills folder. A tool reads `../../blocks/` from the
+link's own path, not from the kit, so the blocks are not found. The three vendor skills
+(`taste-skill`, `animate`, `break-ui`) use no blocks, so link them:
+
+```sh
+mkdir -p ~/.claude/skills
+for s in <repo>/skills/kit/vendor/taste-skill/skills/taste-skill/ \
+  <repo>/skills/kit/vendor/emil-skills/skills/animate/ <repo>/skills/kit/vendor/emil-skills/skills/break-ui/; do
   ln -sfn "$s" ~/.claude/skills/"$(basename "$s")"
 done
-ln -sfn ~/agent-kit/references/plan-layout.md ~/.claude/references/plan-layout.md
 ```
 
 Codex reads `~/.agents/skills` and Antigravity reads `~/.gemini/config/skills`.

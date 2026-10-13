@@ -1,7 +1,17 @@
-# diagram-correctness
-Concept: A reviewer proves each diagram tells the truth about its source, invents nothing, and reads on a phone.
-Serves: review
-Source: references/explain-formats.md:25-27, :36-37; html-plan pack: skills/html-plan/SKILL.md:82 (rule 8, real over drawn), :130 (no clipping, arrows do not cross labels); skills/ink/references/qa.md:73-75 (lettering), :49-51 (each key frame reads on its own); web-interface-guidelines pack: command.md:168-170 (finding format)
+---
+name: diagram-check
+description: "Check that each diagram tells the truth about its source, invents nothing, and reads on a phone. Use when you review a page or plan that has a diagram."
+license: MIT
+metadata:
+  kind: rule
+  owns: "the review of a diagram against its source and at phone width"
+  serves: "review"
+  needs: "a diagram and its source"
+  gives: "pass or miss per diagram"
+  conflicts: ""
+  users: "flow"
+  source: "references/explain-formats.md:25-27, :36-37; html-plan pack: skills/html-plan/SKILL.md:82 (rule 8, real over drawn), :130 (no clipping, arrows do not cross labels); blocks/visual-qa/SKILL.md (lettering, from ink's qa.md); blocks/story/SKILL.md (each key frame reads on its own, from ink's qa.md); web-interface-guidelines pack: command.md:168-170 (finding format)"
+---
 
 ## Rules
 - The source of truth is {{source_of_truth}}. First name the part of it that each diagram draws, with its path.
