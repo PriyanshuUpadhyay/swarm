@@ -1162,13 +1162,13 @@ export class App {
     }
   }
 
-  /** Types `text` into the chair. The draft clears only if it still holds the sent text. */
-  async send(sessionId: string, text: string) {
+  /** Types `text` into the chair. The draft clears only if it still holds the sent text. True when it went. */
+  async send(sessionId: string, text: string): Promise<boolean> {
     const chair = this.chair(sessionId);
     const st = this.input(sessionId);
     const out = outgoing(text);
     // A send typed while Up and C-u presses run would be cut or garbled.
-    if (!out || st.sending || st.pulling || chair.disabled) return;
+    if (!out || st.sending || st.pulling || chair.disabled) return false;
     const typed = submission(out);
     const ok = await this.act(
       sessionId,
@@ -1177,13 +1177,14 @@ export class App {
       () => this.api.action("/api/chat/send", { ...this.target(sessionId), text: typed }),
       () => void this.send(sessionId, text),
     );
-    if (!ok) return;
+    if (!ok) return false;
     const chat = this.chats.get(sessionId);
     if (chat && chair.running && (chair.provider === "codex" || chair.provider === "agy")) {
       chat.sent = [...chat.sent, sentRow(typed, chair.provider, chat.rows)];
       this.changed(chat);
     }
     if (this.draft(sessionId) === text) this.replaceDraft(sessionId, "");
+    return true;
   }
 
   /** ⌘. and Stop: interrupt the chair's turn. */
@@ -1615,7 +1616,6 @@ export class App {
     for (let n = 1; n <= SIDEBAR_VIEWS.length; n++)
       cmds.push({ id: `sidebar.view.${n}`, title: `Show ${SIDEBAR_VIEWS[n - 1]}`, chord: `Alt+Meta+${n}`, run: () => this.setSidebarView(n) });
     cmds.push(
-      later("changes.show", "Show Changes", "Alt+Meta+I", "S4"),
       { id: "find.open", title: "Find", chord: "Meta+F", when: chat, run: () => this.openFind() },
       {
         id: "chat.stop",

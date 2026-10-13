@@ -4,7 +4,7 @@
 
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createInterface } from "node:readline";
@@ -33,7 +33,9 @@ export const PANE_PROJECTS = ["chromium", "webkit"];
 const paneOf = (project: string, agent: string) => `fixture-${project}-${agent}`;
 /** Two live chats in one workspace, for the tab strip cases. */
 const TAB_PANES = ["fixture-tabs-1", "fixture-tabs-2"];
-const PANES = ["fixture-chair", ...TAB_PANES, ...PANE_PROJECTS.flatMap((p) => ["chair", "reviewer", "tester"].map((a) => paneOf(p, a)))];
+/** The live chat in the git workspace that the Changes cases send diff comments to. */
+const GIT_PANE = "fixture-git";
+const PANES = ["fixture-chair", ...TAB_PANES, GIT_PANE, ...PANE_PROJECTS.flatMap((p) => ["chair", "reviewer", "tester"].map((a) => paneOf(p, a)))];
 
 /** A pane adapter that is only shell lines: it logs each verb under $HOME and reads a pane's screen
  *  from $HOME/screen-<pane>, else from $HOME/screen. While $HOME/fail exists, typing fails with its
@@ -55,17 +57,49 @@ export const ISSUES = [
   { number: 8, title: "Tidy Tabs", body: "Close a tab when its chat is archived." },
 ];
 
-/** A stand-in `gh` for the lifecycle cases: a pull request view, the issue list and each issue.
- *  The JSON has no single quote, so it sits in shell single quotes. */
 const issueJson = (i: (typeof ISSUES)[number]) => ({ ...i, url: `https://github.com/acme/demo/issues/${i.number}`, state: "OPEN" });
+/** A stand-in `gh`. The PR panel cases write $HOME/pr-list and $HOME/pr-view; the lifecycle cases
+ *  read a pull request by number, the issue list and each issue. The JSON has no single quote, so
+ *  it sits in shell single quotes. */
 const GH = [
   "#!/bin/sh",
-  `if [ "$1 $2" = "pr view" ]; then printf '{"number":%s}\\n' "$3"; exit 0; fi`,
+  `if [ "$1 $2" = "repo view" ]; then printf '{"nameWithOwner":"example/project","parent":null}\\n'; exit 0; fi`,
+  `if [ "$1 $2" = "pr list" ]; then cat "$HOME/pr-list" 2>/dev/null || printf '[]\\n'; exit 0; fi`,
+  `if [ "$1 $2" = "pr view" ] && [ -e "$HOME/pr-view" ]; then cat "$HOME/pr-view"; exit 0; fi`,
+  `if [ "$1 $2" = "pr view" ] && [ -n "$3" ]; then printf '{"number":%s}\\n' "$3"; exit 0; fi`,
   `if [ "$1 $2" = "issue list" ]; then printf '%s\\n' '${JSON.stringify(ISSUES.map((i) => ({ ...issueJson(i), labels: [] })))}'; exit 0; fi`,
   ...ISSUES.map((i) => `if [ "$1 $2 $3" = "issue view ${i.number}" ]; then printf '%s\\n' '${JSON.stringify(issueJson(i))}'; exit 0; fi`),
   'echo "unexpected gh $*" >&2; exit 1',
   "",
 ].join("\n");
+export const GIANT_DIFF_LINES = 20_000;
+
+/** A git workspace on branch `feature`, one commit ahead of origin/main, with a staged, an
+ *  unstaged and a 20,000-line untracked file. Its origin is GitHub, for the PR lookup. */
+function gitWorkspace(cwd: string, env: NodeJS.ProcessEnv) {
+  const gitEnv = { ...env, GIT_AUTHOR_NAME: "E2E", GIT_AUTHOR_EMAIL: "e2e@example.com", GIT_COMMITTER_NAME: "E2E", GIT_COMMITTER_EMAIL: "e2e@example.com" };
+  const git = (...args: string[]) => execFileSync("git", ["-C", cwd, ...args], { env: gitEnv, stdio: "pipe" });
+  const write = (path: string, text: string) => {
+    mkdirSync(join(cwd, path, ".."), { recursive: true });
+    writeFileSync(join(cwd, path), text);
+  };
+  const app = Array.from({ length: 30 }, (_, i) => `export const value${i + 1} = ${i + 1};`);
+  git("init", "-q", "-b", "main");
+  write("src/app.ts", app.join("\n") + "\n");
+  write("README.md", "# Project\n\nA test repository.\n");
+  git("add", ".");
+  git("commit", "-q", "-m", "base");
+  git("remote", "add", "origin", "https://github.com/example/project.git");
+  git("update-ref", "refs/remotes/origin/main", "HEAD");
+  git("switch", "-q", "-c", "feature");
+  app.splice(9, 2, "export const value10 = 100;", "export const value11 = 110;", "export const added = true;");
+  write("src/app.ts", app.join("\n") + "\n");
+  git("commit", "-q", "-am", "feature");
+  write("README.md", "# Project\n\nA test repository, changed.\n");
+  write("notes.md", "staged notes\n");
+  git("add", "notes.md");
+  write("big.txt", Array.from({ length: GIANT_DIFF_LINES }, (_, i) => `generated line ${i + 1}`).join("\n") + "\n");
+}
 
 let server: ChildProcess | undefined;
 
@@ -73,8 +107,11 @@ export default async function setup() {
   const dir = mkdtempSync(join(tmpdir(), "swarm-web-e2e-"));
   const home = join(dir, "home");
   // Only what the server needs: no host adapter variables, no owner config, no real logs.
+  // The stand-in gh comes first on PATH, so no case reaches GitHub.
+  mkdirSync(join(dir, "bin"));
+  writeFileSync(join(dir, "bin/gh"), GH, { mode: 0o755 });
   const env: NodeJS.ProcessEnv = {
-    PATH: process.env.PATH,
+    PATH: `${join(dir, "bin")}:${process.env.PATH}`,
     HOME: home,
     SWARM_HOME: home,
     CLAUDE_CONFIG_DIR: join(home, ".claude"),
@@ -126,6 +163,15 @@ export default async function setup() {
     const session = execFileSync(swarm, ["session", "new", "lane", "--chair", `claude:${chairLog}`], { cwd: tabsDir, env: liveEnv, stdio: "pipe" }).toString().trim().split("\n").pop()!;
     execFileSync(swarm, ["agent", "add", "orchestrator", "orchestrator"], { env: { ...liveEnv, SWARM_SESSION_ID: session, FIXTURE_PANE: pane }, stdio: "pipe" });
   }
+  const gitDir = join(dir, "ws-git");
+  mkdirSync(gitDir);
+  gitWorkspace(gitDir, env);
+  const gitLog = randomUUID();
+  copyFileSync(join(fixtures, "claude-edit.jsonl"), join(logs, `${gitLog}.jsonl`));
+  const gitSession = execFileSync(swarm, ["session", "new", "lane", "--chair", `claude:${gitLog}`], { cwd: gitDir, env: liveEnv, stdio: "pipe" }).toString().trim().split("\n").pop()!;
+  execFileSync(swarm, ["agent", "add", "orchestrator", "orchestrator"], { env: { ...liveEnv, SWARM_SESSION_ID: gitSession, FIXTURE_PANE: GIT_PANE }, stdio: "pipe" });
+  process.env.SWARM_E2E_GIT = gitSession;
+  process.env.SWARM_E2E_GIT_DIR = gitDir;
   // Each pane of the pane chats has its own screen, so the chair case's question does not reach them.
   for (const pane of PANES.slice(1)) copyFileSync(join(repo, "tests/fixtures/screens/claude-idle.txt"), join(home, `screen-${pane}`));
   // One chat per browser with a chair and two children, each on its own stand-in pane. `swarm
@@ -185,11 +231,6 @@ export default async function setup() {
   git(ghProject, "branch", "-q", "-D", "pr-7");
   git(ghProject, "remote", "add", "origin", "https://github.com/acme/demo.git");
   git(dir, "clone", "-q", origin, prProject);
-  const bin = join(dir, "bin");
-  mkdirSync(bin);
-  writeFileSync(join(bin, "gh"), GH);
-  chmodSync(join(bin, "gh"), 0o755);
-  env.PATH = `${bin}:${process.env.PATH}`;
 
   server = spawn(swarm, ["serve", "--port", "0", "--assets", resolve(import.meta.dirname, "../dist")], {
     env,

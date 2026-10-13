@@ -2,7 +2,7 @@
 // and one Recent list across projects. Rows are plain elements; one context menu, tooltip, hover card
 // and new-chat menu serve the tree (decision 3). Drags use the browser's own drag and drop.
 
-import { ArchiveRestoreIcon, ChevronRightIcon, GripVerticalIcon, HouseIcon, MonitorIcon, MoonIcon, PinIcon, PlusIcon, SearchIcon, SunIcon, TriangleAlertIcon } from "lucide-react";
+import { ArchiveRestoreIcon, ChevronRightIcon, GitPullRequestIcon, GripVerticalIcon, HouseIcon, MonitorIcon, MoonIcon, PinIcon, PlusIcon, SearchIcon, SunIcon, TriangleAlertIcon } from "lucide-react";
 import { memo, useRef, useState, useSyncExternalStore, type DragEvent, type MouseEvent } from "react";
 import { SIDEBAR_VIEWS, type App } from "../core/app";
 import type { Field, NavRow, RecentChat, SidebarRow } from "../core/nav";
@@ -304,10 +304,29 @@ function FieldView({ f, row }: { f: Field; row: SidebarRow | null }) {
       ) : (
         <span className="fld">{f.text}</span>
       );
+    case "pr":
+      return (
+        <span className="fld pr">
+          <GitPullRequestIcon className="size-3" aria-hidden />
+          {f.text}
+        </span>
+      );
+    case "ci":
+      return CI_STATUS[f.text] ? (
+        <span className="fld ci">
+          <StatusGlyph status={CI_STATUS[f.text]} />
+          {f.text}
+        </span>
+      ) : (
+        <span className="fld ci">{f.text}</span>
+      );
     default:
       return <span className={`fld ${f.field}`}>{f.text}</span>;
   }
 }
+
+/** The row's CI text from Rust (`github_fields`) as a status glyph. */
+const CI_STATUS: Record<string, "failed" | "working" | "done"> = { "CI failed": "failed", "CI pending": "working", "CI passed": "done" };
 
 /** Every listed chat across projects, newest activity first (jean's Recent list). j/k, arrows and
  *  Enter work here as in the tree. */
