@@ -1,6 +1,6 @@
 # Block catalog for the flow skill. This file owns the format; skills/flow/SKILL.md points here.
 #
-# A block is one file in this folder: `# <id>`, `Concept:`, `Serves:`, `Source:`, then `## Rules`,
+# A block is a folder here holding one `SKILL.md`, and the folder name is its id: `# <id>`, `Concept:`, `Serves:`, `Source:`, then `## Rules`,
 # `## Example`, `## Check (script)`, and `## Check (judge)`; every block has all four. `Source:` cites
 # kit-relative paths with lines or a pack name, never a machine path.
 # A script check is a command that runs as written, then what it proves. It reads only the work's own
@@ -26,21 +26,6 @@
 #   [off]     block-id = "reason"           drops a block and prints `Off: <id>: <reason>` where it would join
 
 base = ["first-principles"]
-
-[blocks]  # id = file in this folder
-behavior-claims = "behavior-claims.md"
-call-tree = "call-tree.md"
-decision-with-default = "decision-with-default.md"
-diagram-correctness = "diagram-correctness.md"
-done-when-evidence = "done-when-evidence.md"
-first-principles = "first-principles.md"
-headless-shot = "headless-shot.md"
-html-diagram = "html-diagram.md"
-look-grammar = "look-grammar.md"
-red-first-check = "red-first-check.md"
-style-frames-concept = "style-frames-concept.md"
-tech-diagram-concept = "tech-diagram-concept.md"
-web-ui-basics = "web-ui-basics.md"
 
 [aliases]  # name = [block ids]; split or rename a block here, and no catalog line changes
 tech-diagram = ["tech-diagram-concept", "html-diagram"]

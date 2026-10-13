@@ -192,7 +192,7 @@ def resolve_blocks(root, wanted, profile_name):
     if profile_name == "default" and not repo_file.exists() and not any(wanted.values()):
         return {key: ([], "", []) for key in wanted}, ""
     kit = read_toml(kit_file)
-    files = {block: BLOCKS / name for block, name in kit.get("blocks", {}).items()}
+    files = {path.parent.name: path for path in sorted(BLOCKS.glob("*/SKILL.md"))}
     aliases = kit.get("aliases", {})
     for alias, members in aliases.items():
         if alias in files:

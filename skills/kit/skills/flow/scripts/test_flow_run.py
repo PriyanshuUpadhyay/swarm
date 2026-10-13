@@ -552,7 +552,7 @@ def test_block_in_step(tmp):
     assert "===== block:red-first-check =====" in build and "Rank each claim on the ladder" in build, build
     skills = next(line for line in build.splitlines() if line.startswith("Skills read:"))
     assert "profile default" in skills, skills
-    digest = hashlib.sha256((flow_run.BLOCKS / "red-first-check.md").read_bytes()).hexdigest()[:8]
+    digest = hashlib.sha256((flow_run.BLOCKS / "red-first-check" / "SKILL.md").read_bytes()).hexdigest()[:8]
     assert f"block:red-first-check@{digest}" in [item.strip() for item in skills.removeprefix("Skills read:").split(",")], skills
     assert "Rank each claim on the ladder" not in step_text(folder, "02-design")
     # A second start on the folder writes nothing, even when the catalog now fails.
@@ -635,7 +635,7 @@ def test_profile_on_second_start(tmp):
 def test_block_example_params(tmp):
     """A {{param}} only in a block's Example would make every run set it for nothing, so no kit block has
     one; a repo with only source_of_truth starts a close step that names done-when-evidence."""
-    for path in sorted(flow_run.BLOCKS.glob("*.md")):
+    for path in sorted(flow_run.BLOCKS.glob("*/SKILL.md")):
         parts = flow_run.sections(path.read_text(encoding="utf-8"))
         rest = {p for head, lines in parts if head != "Example" for p in flow_run.PARAM.findall("\n".join(lines))}
         example = {p for head, lines in parts if head == "Example" for p in flow_run.PARAM.findall("\n".join(lines))}
@@ -677,7 +677,7 @@ def test_block_controls(tmp):
     assert out.returncode == 1 and "block y needs {{nope}}" in out.stderr and "Traceback" not in out.stderr, out.stderr
     assert not (repo / "tmp" / "flow").exists()
     # Count the block's script checks with a plain read, not with the code that writes the todos.
-    section = (flow_run.BLOCKS / "web-ui-basics.md").read_text(encoding="utf-8").split("\n## Check (script)\n", 1)[1].split("\n## ", 1)[0]
+    section = (flow_run.BLOCKS / "web-ui-basics" / "SKILL.md").read_text(encoding="utf-8").split("\n## Check (script)\n", 1)[1].split("\n## ", 1)[0]
     expected = [line for line in section.splitlines() if line.startswith("- ") and not line.startswith("- none:")]
     assert len(expected) >= 2 and build.count("block web-ui-basics script:") == len(expected), build
 
@@ -937,12 +937,13 @@ def test_block_fail_closed(tmp):
     # A bad block catalog stops the load with a reason that names it.
     kit = Path(tmp, "kit")
     kit.mkdir()
-    (kit / "a.md").write_text("# a\n", encoding="utf-8")
-    for toml, reason in (('base = []\n[blocks]\na = "a.md"\n[aliases]\na = ["a"]\n[profiles.default]\n', "alias a is also a block id"),
-                         ("[blocks\n", "blocks.toml is not valid TOML"),
-                         ('[blocks]\na = "a.md"\n[aliases]\nb = ["nope"]\n[profiles.default]\n', "unknown block id nope in alias b"),
-                         ('base = ["nope"]\n[blocks]\na = "a.md"\n[profiles.default]\n', "unknown block id nope in base of"),
-                         ('[blocks]\na = "a.md"\n[profiles.default]\nmerge = ["a"]\n', "merges a, which is not an alias")):
+    (kit / "a").mkdir()
+    (kit / "a" / "SKILL.md").write_text("# a\n", encoding="utf-8")
+    for toml, reason in (('base = []\n[aliases]\na = ["a"]\n[profiles.default]\n', "alias a is also a block id"),
+                         ("[aliases\n", "blocks.toml is not valid TOML"),
+                         ('[aliases]\nb = ["nope"]\n[profiles.default]\n', "unknown block id nope in alias b"),
+                         ('base = ["nope"]\n[profiles.default]\n', "unknown block id nope in base of"),
+                         ('[profiles.default]\nmerge = ["a"]\n', "merges a, which is not an alias")):
         (kit / "blocks.toml").write_text(toml, encoding="utf-8")
         with patch.object(flow_run, "BLOCKS", kit):
             try:
@@ -957,7 +958,7 @@ def test_kit_blocks_load(tmp):
     root = Path(tmp, "kit-blocks")
     root.mkdir()
     (root / ".blocks.toml").write_text(PARAMS, encoding="utf-8")
-    ids = list(flow_run.read_toml(flow_run.BLOCKS / "blocks.toml")["blocks"])
+    ids = [path.parent.name for path in sorted(flow_run.BLOCKS.glob("*/SKILL.md"))]
     out, _ = flow_run.resolve_blocks(root, {"build": ids}, "default")
     assert len(ids) == 13 and all(f"===== block:{b} =====" in out["build"][1] for b in ids), (ids, out["build"][0])
 
@@ -1132,7 +1133,7 @@ def test_html_diagram_check(tmp):
 def block_rg(name, site):
     """Run each `rg` command of a block's Check (script) section on `site`, as written. An rg error (exit 2)
     fails the test, so a row that must stay clean cannot pass on an error."""
-    text = (flow_run.BLOCKS / f"{name}.md").read_text(encoding="utf-8").split("## Check (script)\n", 1)[1].split("\n## ")[0]
+    text = (flow_run.BLOCKS / name / "SKILL.md").read_text(encoding="utf-8").split("## Check (script)\n", 1)[1].split("\n## ")[0]
     runs = [subprocess.run(c.replace("{{site}}", shlex.quote(str(site))), shell=True, capture_output=True, text=True)
             for c in re.findall(r"`([^`]+)`", text) if c.startswith("rg ")]
     for out in runs:
@@ -1183,7 +1184,7 @@ def test_diagram_shot_check(tmp):
     """The diagram-correctness script check prints a 375 px PNG line for each diagram shot, and another line
     for a missing, empty, or wrong-width shot; it reads no page markup, which another block may own."""
     root = Path(tmp, "shot-check")
-    text = (flow_run.BLOCKS / "diagram-correctness.md").read_text(encoding="utf-8")
+    text = (flow_run.BLOCKS / "diagram-correctness" / "SKILL.md").read_text(encoding="utf-8")
     command = re.search(r"`([^`]+)`", text.split("## Check (script)\n", 1)[1])[1].replace("{{shots}}", "shots")
     png = lambda width: (b"\x89PNG\r\n\x1a\n" + (13).to_bytes(4, "big") + b"IHDR" + width.to_bytes(4, "big")
                          + (812).to_bytes(4, "big") + bytes([8, 6, 0, 0, 0]) + bytes(4))
