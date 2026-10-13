@@ -24,6 +24,7 @@ use std::{
     time::Duration,
 };
 use swarm::view::transcript::{self as view, Record, Row};
+use swarm::view::{choices, choices_store, discovery, fields, navigation, tabs, tree};
 use tokio::{
     io::{AsyncBufReadExt, BufReader},
     sync::{mpsc, oneshot, watch},
@@ -50,6 +51,16 @@ struct Server {
     stopped: AtomicBool,
     cli: PathBuf,
     actions: mpsc::Sender<ActionJob>,
+    tree_cache: Mutex<TreeCache>,
+}
+
+#[derive(Default)]
+struct TreeCache {
+    discovery: discovery::Discovery,
+    snapshot: Value,
+    revision: String,
+    saved: Option<choices_store::Saved>,
+    choices_error: Option<String>,
 }
 
 struct Hub {
@@ -241,6 +252,7 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         stopped: AtomicBool::new(false),
         cli: std::env::current_exe()?,
         actions,
+        tree_cache: Mutex::new(TreeCache::default()),
     });
     println!("http://127.0.0.1:{port}/#token={}", app.token);
     std::io::stdout().flush()?;
@@ -271,6 +283,9 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
 fn router(app: App) -> Router {
     Router::new()
         .route("/api/snapshot", get(snapshot))
+        .route("/api/tree", get(tree_view))
+        .route("/api/tabs", get(tabs_view))
+        .route("/api/choices", post(choice_write))
         .route("/api/transcript", get(transcript))
         .route("/api/rows", get(transcript_rows))
         .route("/api/tool-output", get(tool_output))
@@ -425,6 +440,276 @@ fn snapshot_value(app: &Server) -> Result<Value, Box<dyn std::error::Error>> {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+struct TreeQuery {
+    view: Option<String>,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TabsQuery {
+    workspace: String,
+}
+
+fn choice_error(err: choices_store::StoreError) -> ApiError {
+    let status = match err {
+        choices_store::StoreError::Stale => StatusCode::CONFLICT,
+        choices_store::StoreError::Busy => StatusCode::SERVICE_UNAVAILABLE,
+        choices_store::StoreError::Failed(_) => StatusCode::INTERNAL_SERVER_ERROR,
+    };
+    error(status, &err.to_string())
+}
+
+fn loaded_tree(
+    app: &Server,
+) -> Result<
+    (
+        tree::Tree,
+        choices_store::Saved,
+        BTreeMap<String, fields::WorkspaceFields>,
+    ),
+    ApiError,
+> {
+    let loaded = choices_store::load(&app.root, false);
+    let mut cache = app.tree_cache.lock().unwrap();
+    let mut saved = match loaded {
+        Ok(saved) => {
+            cache.choices_error = None;
+            cache.saved = Some(saved.clone());
+            saved
+        }
+        Err(err) => {
+            cache.choices_error = Some(err.to_string());
+            cache.saved.clone().unwrap_or_else(|| choices_store::Saved {
+                owner: choices::OwnerChoices::default(),
+                state: choices::ViewState::default(),
+                revision: String::new(),
+            })
+        }
+    };
+    let snapshot = if cache.snapshot.is_object() {
+        cache.snapshot.clone()
+    } else {
+        snapshot_value(app).map_err(|e| error(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()))?
+    };
+    let tree = tree::build(&snapshot, &saved.owner);
+    saved.state.record_first_sight(&tree);
+    Ok((tree, saved, cache.discovery.fields.clone()))
+}
+
+async fn tree_view(
+    State(app): State<App>,
+    Query(query): Query<TreeQuery>,
+) -> Result<Json<Value>, ApiError> {
+    let archive = match query.view.as_deref().unwrap_or("workspaces") {
+        "workspaces" => false,
+        "archived" => true,
+        _ => return Err(error(StatusCode::BAD_REQUEST, "unknown tree view")),
+    };
+    tokio::task::spawn_blocking(move || {
+        let (tree, saved, cache) = loaded_tree(&app)?;
+        let sections = tree::sections(
+            &tree,
+            &saved.owner,
+            &saved.state,
+            archive,
+            discovery::now(),
+            &cache,
+        );
+        let rows: Vec<_> = sections
+            .iter()
+            .filter(|s| s.expanded)
+            .flat_map(|s| s.rows.clone())
+            .collect();
+        let selected = saved
+            .state
+            .selected_workspace
+            .as_deref()
+            .and_then(|w| navigation::selected_chat(&tree, &saved.owner, &saved.state, w));
+        let selected_row = navigation::selected_row(
+            &rows,
+            saved.state.selected_workspace.as_deref(),
+            selected,
+            saved.state.selected_child.as_deref(),
+        );
+        let (version, agents) = {
+            let hub = app.hub.lock().unwrap();
+            (hub.version, hub.agents.clone())
+        };
+        let archived_status = tree::AgentStatus::aggregate(
+            tree.projects
+                .iter()
+                .flat_map(|p| &p.workspaces)
+                .filter(|w| saved.owner.archived.contains(&w.path))
+                .flat_map(|w| w.chats.iter().flat_map(|c| &c.sessions))
+                .flat_map(|s| {
+                    agents[s["id"].as_str().unwrap_or_default()]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                })
+                .map(tree::AgentStatus::agent)
+                .filter(|s| *s == tree::AgentStatus::Waiting),
+        );
+        let choices_error = app.tree_cache.lock().unwrap().choices_error.clone();
+        Ok(Json(json!({
+            "version": version,
+            "revision": saved.revision,
+            "view": if archive { "archived" } else { "workspaces" },
+            "sections": sections,
+            "selectedRow": selected_row,
+            "archivedStatus": archived_status,
+            "choicesError": choices_error,
+        })))
+    })
+    .await
+    .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "tree task failed"))?
+}
+
+async fn tabs_view(
+    State(app): State<App>,
+    Query(query): Query<TabsQuery>,
+) -> Result<Json<Value>, ApiError> {
+    tokio::task::spawn_blocking(move || {
+        let (tree, saved, cache) = loaded_tree(&app)?;
+        let view = tabs::view(
+            &tree,
+            &saved.owner,
+            &saved.state,
+            &query.workspace,
+            discovery::now(),
+            &cache,
+        )
+        .ok_or_else(|| error(StatusCode::NOT_FOUND, "unknown workspace"))?;
+        Ok(Json(json!({
+            "version": app.hub.lock().unwrap().version,
+            "revision": saved.revision,
+            "view": view,
+        })))
+    })
+    .await
+    .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "tabs task failed"))?
+}
+
+async fn choice_write(
+    State(app): State<App>,
+    body: Result<Json<choices::ChoiceWrite>, JsonRejection>,
+) -> Result<Json<Value>, ApiError> {
+    let Json(body) = body.map_err(|e| {
+        error(
+            if e.status() == StatusCode::PAYLOAD_TOO_LARGE {
+                StatusCode::PAYLOAD_TOO_LARGE
+            } else {
+                StatusCode::BAD_REQUEST
+            },
+            &e.body_text(),
+        )
+    })?;
+    enqueue_action(&app, Action::Choices(body)).await.map(Json)
+}
+fn apply_choice(app: &App, body: choices::ChoiceWrite) -> Result<Value, ApiError> {
+    let snapshot = {
+        let cache = app.tree_cache.lock().unwrap();
+        if cache.snapshot.is_object() {
+            cache.snapshot.clone()
+        } else {
+            snapshot_value(app)
+                .map_err(|e| error(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()))?
+        }
+    };
+    let mut invalid = None;
+    let saved = choices_store::update(&app.root, Some(&body.revision), |owner, state| {
+        let tree = tree::build(&snapshot, owner);
+        match choices::apply(owner, state, &tree, body.operation, discovery::now()) {
+            Ok(()) => Ok(()),
+            Err(e) => {
+                invalid = Some(e.clone());
+                Err(e)
+            }
+        }
+    })
+    .map_err(|e| {
+        if let Some(message) = invalid {
+            error(StatusCode::BAD_REQUEST, &message)
+        } else {
+            choice_error(e)
+        }
+    })?;
+    if saved.revision != body.revision {
+        app.hub.lock().unwrap().bump();
+    }
+    {
+        let mut cache = app.tree_cache.lock().unwrap();
+        cache.revision = saved.revision.clone();
+        cache.saved = Some(saved.clone());
+        cache.choices_error = None;
+    }
+    Ok(json!({"revision":saved.revision,"version":app.hub.lock().unwrap().version}))
+}
+fn refresh_tree(app: &App) -> Result<Value, ApiError> {
+    let saved = choices_store::load(&app.root, false).map_err(choice_error)?;
+    let mut snapshot = snapshot_value(app)
+        .map_err(|e| error(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()))?;
+    snapshot.as_object_mut().unwrap().remove("version");
+    let mut discovery = app.tree_cache.lock().unwrap().discovery.clone();
+    discovery.augment(&mut snapshot, &saved.owner, discovery::now());
+    let first_tree = tree::build(&snapshot, &saved.owner);
+    let mut discovered_owner = saved.owner.clone();
+    for project in &first_tree.projects {
+        if !discovered_owner.project_paths.contains(&project.path)
+            && !discovered_owner
+                .project_paths
+                .contains(&project.launch_directory)
+        {
+            discovered_owner
+                .project_paths
+                .push(project.launch_directory.clone());
+        }
+    }
+    let needs_projects = discovered_owner.project_paths != saved.owner.project_paths;
+    let tree = tree::build(&snapshot, &discovered_owner);
+    let mut normalized_state = saved.state.clone();
+    normalized_state.record_first_sight(&tree);
+    let needs_tabs = tree.projects.iter().flat_map(|p| &p.workspaces).any(|w| {
+        saved.owner.tabs.get(&w.path).is_none_or(|strip| {
+            strip.pruned(&w.chats.iter().map(|c| c.key.clone()).collect()) != *strip
+        })
+    });
+    let saved = if normalized_state != saved.state || needs_tabs || needs_projects {
+        choices_store::update(&app.root, Some(&saved.revision), |owner, state| {
+            state.record_first_sight(&tree);
+            for p in &tree.projects {
+                if !owner.project_paths.contains(&p.path)
+                    && !owner.project_paths.contains(&p.launch_directory)
+                {
+                    owner.project_paths.push(p.launch_directory.clone());
+                }
+                for w in &p.workspaces {
+                    let strip = owner
+                        .tabs
+                        .entry(w.path.clone())
+                        .or_insert_with(|| w.seed_tabs());
+                    *strip = strip.pruned(&w.chats.iter().map(|c| c.key.clone()).collect());
+                }
+            }
+            Ok(())
+        })
+        .map_err(choice_error)?
+    } else {
+        saved
+    };
+    let fields_changed = discovery.refresh_fields(&tree, &saved.owner, discovery::now());
+    let mut cache = app.tree_cache.lock().unwrap();
+    cache.discovery = discovery;
+    if cache.snapshot != snapshot || cache.revision != saved.revision || fields_changed {
+        app.hub.lock().unwrap().bump();
+    }
+    cache.snapshot = snapshot;
+    cache.revision = saved.revision.clone();
+    cache.saved = Some(saved);
+    Ok(json!({"ok":true}))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct ActionTarget {
     session: String,
     agent: String,
@@ -482,6 +767,8 @@ enum Action {
     Unarchive(SessionAction),
     New(NewChat),
     Archived,
+    Choices(choices::ChoiceWrite),
+    RefreshView,
 }
 
 struct ActionJob {
@@ -569,7 +856,12 @@ impl Action {
             Self::Interrupt(body) | Self::Close(body) => Some(&body.session),
             Self::Key(body) => Some(&body.session),
             Self::Answer(body) => Some(&body.session),
-            Self::New(_) | Self::Archive(_) | Self::Unarchive(_) | Self::Archived => None,
+            Self::New(_)
+            | Self::Archive(_)
+            | Self::Unarchive(_)
+            | Self::Archived
+            | Self::Choices(_)
+            | Self::RefreshView => None,
         }
     }
 }
@@ -593,7 +885,10 @@ fn start_action_queue(app: &App, mut queue: mpsc::Receiver<ActionJob>) {
                 active.insert(lane.clone());
                 workers.spawn(async move {
                     // An accepted action continues if its HTTP connection closes.
-                    let changed = !matches!(job.action, Action::Archived);
+                    let changed = !matches!(
+                        job.action,
+                        Action::Archived | Action::RefreshView | Action::Choices(_)
+                    );
                     let result = execute_action(&app, job.action).await;
                     if changed {
                         app.hub.lock().unwrap().bump();
@@ -728,6 +1023,23 @@ async fn execute_action(app: &App, action: Action) -> Result<Value, ApiError> {
             let mut call = default_call().args(&["session", verb]);
             call.args.extend(body.ids);
             (call, None)
+        }
+        Action::Choices(body) => {
+            let app = app.clone();
+            return tokio::task::spawn_blocking(move || apply_choice(&app, body))
+                .await
+                .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "choice task failed"))?;
+        }
+        Action::RefreshView => {
+            let app = app.clone();
+            return tokio::task::spawn_blocking(move || refresh_tree(&app))
+                .await
+                .map_err(|_| {
+                    error(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "tree refresh task failed",
+                    )
+                })?;
         }
         Action::New(body) => return new_chat(app, body).await,
         Action::Archived => {
@@ -965,12 +1277,27 @@ fn start_coordinator(app: &App, action_queue: mpsc::Receiver<ActionJob>) {
             return;
         };
         drop(app);
+        let mut last_tree = None;
         loop {
             let Some(app) = weak.upgrade() else {
                 break;
             };
             if app.stopped.load(Ordering::Relaxed) {
                 break;
+            }
+            let at = discovery::now();
+            if last_tree.is_none_or(|last| at - last >= 2) {
+                let (reply, _) = oneshot::channel();
+                if app
+                    .actions
+                    .try_send(ActionJob {
+                        action: Action::RefreshView,
+                        reply,
+                    })
+                    .is_ok()
+                {
+                    last_tree = Some(at);
+                }
             }
             let started = std::time::Instant::now();
             match super::all_agent_listings(&mut connection, &app.root, Duration::from_millis(900))
@@ -2073,6 +2400,7 @@ mod tests {
                 &log,
             )
             .unwrap();
+            std::fs::write(root.join("swarm-home"), "swarm\n").unwrap();
             let connection = swarm::store::open(&root.join("swarm.db")).unwrap();
             let session = swarm::store::create_session(
                 &connection,
@@ -2105,6 +2433,7 @@ mod tests {
                 stopped: AtomicBool::new(false),
                 cli: dir.join("action-cli"),
                 actions,
+                tree_cache: Mutex::new(TreeCache::default()),
             });
             // Most row tests need no action worker and may not run inside a Tokio runtime.
             drop(action_queue);
@@ -3250,5 +3579,108 @@ wait
                 .unwrap()
                 .contains("@@ -445,6 +445,7 @@")
         );
+    }
+    #[tokio::test]
+    async fn choices_handler_uses_shared_lane_rejects_stale_and_bumps_version() {
+        let fixture = action_fixture();
+        let workspace = env!("CARGO_MANIFEST_DIR");
+        refresh_tree(&fixture.app).unwrap();
+        let first = choices_store::load(&fixture.app.root, true).unwrap();
+        let version = fixture.app.hub.lock().unwrap().version;
+        let body: choices::ChoiceWrite = serde_json::from_value(json!({"revision": first.revision, "op":"rename_workspace", "workspace":workspace, "name":"New title"})).unwrap();
+        assert!(Action::Choices(body.clone()).lane().is_none());
+        let reply = choice_write(State(fixture.app.clone()), Ok(Json(body.clone())))
+            .await
+            .unwrap()
+            .0;
+        assert!(reply["version"].as_u64().unwrap() > version);
+        let bytes = std::fs::read(fixture.app.root.join("choices.json")).unwrap();
+        let stale = choice_write(State(fixture.app.clone()), Ok(Json(body)))
+            .await
+            .unwrap_err();
+        assert_eq!(stale.0, StatusCode::CONFLICT);
+        assert_eq!(
+            std::fs::read(fixture.app.root.join("choices.json")).unwrap(),
+            bytes
+        );
+        let Json(tree) = tree_view(State(fixture.app.clone()), Query(TreeQuery { view: None }))
+            .await
+            .unwrap();
+        assert!(tree.to_string().contains("New title"));
+        let Json(tabs) = tabs_view(
+            State(fixture.app.clone()),
+            Query(TabsQuery {
+                workspace: workspace.into(),
+            }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(tabs["revision"], reply["revision"]);
+        let version = fixture.app.hub.lock().unwrap().version;
+        let modified = std::fs::metadata(fixture.app.root.join("choices.json"))
+            .unwrap()
+            .modified()
+            .unwrap();
+        let before_choices = choices_store::load(&fixture.app.root, true).unwrap().owner;
+        refresh_tree(&fixture.app).unwrap();
+        assert_eq!(
+            choices_store::load(&fixture.app.root, true).unwrap().owner,
+            before_choices
+        );
+        assert_eq!(
+            std::fs::metadata(fixture.app.root.join("choices.json"))
+                .unwrap()
+                .modified()
+                .unwrap(),
+            modified
+        );
+        assert_eq!(fixture.app.hub.lock().unwrap().version, version);
+    }
+    #[tokio::test]
+    async fn tree_handler_keeps_last_good_choices_on_busy_or_invalid_state() {
+        let fixture = Fixture::new();
+        refresh_tree(&fixture.app).unwrap();
+        choices_store::update(&fixture.app.root, None, |owner, _| {
+            owner
+                .names
+                .insert(env!("CARGO_MANIFEST_DIR").into(), "External name".into());
+            Ok(())
+        })
+        .unwrap();
+        let request = || tree_view(State(fixture.app.clone()), Query(TreeQuery { view: None }));
+        assert!(
+            request()
+                .await
+                .unwrap()
+                .0
+                .to_string()
+                .contains("External name")
+        );
+        let held = std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(fixture.app.root.join("choices.lock"))
+            .unwrap();
+        held.lock().unwrap();
+        let busy = request().await.unwrap().0;
+        assert!(busy["choicesError"].is_string());
+        assert!(busy.to_string().contains("External name"));
+        drop(held);
+        std::fs::write(fixture.app.root.join("view-state.json"), "{broken").unwrap();
+        let broken = request().await.unwrap().0;
+        assert!(broken["choicesError"].is_string());
+        assert!(broken.to_string().contains("External name"));
+        std::fs::remove_file(fixture.app.root.join("view-state.json")).unwrap();
+        assert!(request().await.unwrap().0["choicesError"].is_null());
+        std::fs::write(fixture.app.root.join("choices.json"), "{broken").unwrap();
+        assert!(
+            !request().await.unwrap().0["sections"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+        assert!(!fixture.app.root.join("choices.json").exists());
     }
 }

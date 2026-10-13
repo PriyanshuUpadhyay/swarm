@@ -718,3 +718,180 @@ fn chat_routes_run_the_real_cli_against_a_fake_provider_and_adapter() {
     assert!(actions().contains(&format!("spawn {session} orchestrator tmux-solo\n")));
     post("/api/chat/new", json!({"cwd": env!("CARGO_MANIFEST_DIR")}));
 }
+
+fn tree_choices(server: &Server) -> Value {
+    let (status, _, body) = server.request("GET", "/api/tree?view=workspaces", "", "", true);
+    assert_eq!(status, 200, "{body}");
+    serde_json::from_str(&body).unwrap()
+}
+fn write_choices(server: &Server, mut operation: Value) -> Value {
+    for _ in 0..5 {
+        operation["revision"] = tree_choices(server)["revision"].clone();
+        let (status, _, body) = server.request(
+            "POST",
+            "/api/choices",
+            "Content-Type: application/json\r\n",
+            &operation.to_string(),
+            true,
+        );
+        if status == 409 {
+            continue;
+        }
+        assert_eq!(status, 200, "{body}");
+        return serde_json::from_str(&body).unwrap();
+    }
+    panic!("choices did not settle after discovery");
+}
+#[test]
+fn stale_choices_http_changes_nothing_and_routes_are_guarded() {
+    let server = Server::new();
+    let workspace = env!("CARGO_MANIFEST_DIR");
+    assert_eq!(server.request("GET", "/api/tree", "", "", false).0, 401);
+    assert_eq!(
+        server
+            .request("GET", "/api/tabs?workspace=x", "", "", false)
+            .0,
+        401
+    );
+    assert_eq!(
+        server
+            .request(
+                "POST",
+                "/api/choices",
+                "Content-Type: application/json\r\n",
+                "{}",
+                false
+            )
+            .0,
+        401
+    );
+    assert_eq!(
+        server
+            .request("GET", "/api/tree?view=other", "", "", true)
+            .0,
+        400
+    );
+    let old = tree_choices(&server)["revision"].clone();
+    write_choices(
+        &server,
+        json!({"op":"rename_workspace","workspace":workspace,"name":"Saved"}),
+    );
+    let root = server.dir.join("home/.swarm");
+    let choices = fs::read(root.join("choices.json")).unwrap();
+    let state = fs::read(root.join("view-state.json")).ok();
+    let (status, _, body) = server.request(
+        "POST",
+        "/api/choices",
+        "Content-Type: application/json\r\n",
+        &json!({"revision":old,"op":"rename_workspace","workspace":workspace,"name":"Stale"})
+            .to_string(),
+        true,
+    );
+    assert_eq!(status, 409, "{body}");
+    assert_eq!(fs::read(root.join("choices.json")).unwrap(), choices);
+    assert_eq!(fs::read(root.join("view-state.json")).ok(), state);
+    assert_eq!(
+        server
+            .request("GET", "/api/tabs?workspace=%2Fmissing", "", "", true)
+            .0,
+        404
+    );
+    assert_eq!(
+        server
+            .request("GET", "/api/tree?view=archived", "", "", true)
+            .0,
+        200
+    );
+}
+#[cfg(target_os = "macos")]
+#[test]
+fn web_choices_are_read_by_production_swift_decoder_fixture() {
+    let server = Server::new();
+    let workspace = env!("CARGO_MANIFEST_DIR");
+    write_choices(&server, json!({"op":"pin","workspace":workspace}));
+    write_choices(
+        &server,
+        json!({"op":"rename_workspace","workspace":workspace,"name":"From web"}),
+    );
+    let source = include_str!("../ui/Sources/SwarmCore/Agent/OwnerChoices.swift")
+        .split("public struct OwnerChoicesFailure")
+        .next()
+        .unwrap();
+    fs::write(server.dir.join("OwnerChoices.swift"), source).unwrap();
+    let fields = include_str!("../ui/Sources/SwarmCore/Presentation/RowFields.swift")
+        .split("public struct RowFieldValue")
+        .next()
+        .unwrap();
+    fs::write(server.dir.join("RowFields.swift"), fields).unwrap();
+    fs::write(
+        server.dir.join("TabStrip.swift"),
+        include_str!("../ui/Sources/SwarmCore/Presentation/TabStrip.swift"),
+    )
+    .unwrap();
+    fs::write(
+        server.dir.join("main.swift"),
+        include_str!("fixtures/choices-parser/main.swift"),
+    )
+    .unwrap();
+    let output = Command::new("/usr/bin/swiftc")
+        .arg("-module-cache-path")
+        .arg(server.dir.join("swift-cache"))
+        .args([
+            server.dir.join("OwnerChoices.swift"),
+            server.dir.join("RowFields.swift"),
+            server.dir.join("TabStrip.swift"),
+            server.dir.join("main.swift"),
+        ])
+        .arg("-o")
+        .arg(server.dir.join("choices-parser"))
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let output = Command::new(server.dir.join("choices-parser"))
+        .arg(server.dir.join("home/.swarm/choices.json"))
+        .arg(workspace)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(String::from_utf8_lossy(&output.stdout).contains("PASS"));
+}
+#[test]
+fn choices_external_refresh_busy_and_corrupt_state_keep_tree_visible() {
+    let server = Server::new();
+    let workspace = env!("CARGO_MANIFEST_DIR");
+    let first = tree_choices(&server);
+    let root = server.dir.join("home/.swarm");
+    let mut owner: Value = fs::read(root.join("choices.json"))
+        .ok()
+        .map(|b| serde_json::from_slice(&b).unwrap())
+        .unwrap_or(json!({}));
+    owner["names"] = json!({workspace:"External name"});
+    fs::write(root.join("choices.json"), owner.to_string()).unwrap();
+    let second = tree_choices(&server);
+    assert_ne!(first["revision"], second["revision"]);
+    assert!(second.to_string().contains("External name"));
+    let held = OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(root.join("choices.lock"))
+        .unwrap();
+    held.lock().unwrap();
+    let busy = tree_choices(&server);
+    assert!(busy["choicesError"].as_str().is_some());
+    assert!(busy.to_string().contains("External name"));
+    drop(held);
+    fs::write(root.join("view-state.json"), "{broken").unwrap();
+    let failed = tree_choices(&server);
+    assert!(failed["choicesError"].as_str().is_some());
+    assert!(failed.to_string().contains("External name"));
+}

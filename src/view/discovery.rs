@@ -1,0 +1,404 @@
+//! Slow filesystem and subprocess reads, kept outside the pure view models.
+use super::{
+    choices::OwnerChoices,
+    fields::{self, WorkspaceFields},
+    tree::{self, ProjectFact, WorkspaceFact},
+};
+use serde_json::Value;
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    io::Read,
+    path::Path,
+    process::{Command, Stdio},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+};
+
+pub fn now() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64
+}
+
+/// Drain stdout while waiting, and reap the child on timeout.
+pub fn run(program: &str, args: &[&str], seconds: u64) -> Option<Vec<u8>> {
+    let mut command = Command::new(program);
+    command
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        command.process_group(0);
+    }
+    let mut child = command.spawn().ok()?;
+    let mut stdout = child.stdout.take()?;
+    let (output, receive) = std::sync::mpsc::channel();
+    let read = std::thread::spawn(move || {
+        let mut bytes = Vec::new();
+        let _ = output.send(stdout.read_to_end(&mut bytes).map(|_| bytes));
+    });
+    let deadline = Instant::now() + Duration::from_secs(seconds);
+    let success = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status.success(),
+            Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(10)),
+            _ => {
+                stop(&mut child);
+                break false;
+            }
+        }
+    };
+    let bytes = match receive.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+        Ok(bytes) => bytes.ok(),
+        Err(_) => {
+            stop(&mut child);
+            None
+        }
+    };
+    let _ = read.join();
+    if success { bytes } else { None }
+}
+fn stop(child: &mut std::process::Child) {
+    #[cfg(unix)]
+    {
+        unsafe extern "C" {
+            fn kill(pid: i32, signal: i32) -> i32;
+        }
+        // SAFETY: this child owns its process group; kill accepts plain integers.
+        unsafe {
+            kill(-(child.id() as i32), 9);
+        }
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+}
+fn git(path: &str, args: &[&str]) -> Option<String> {
+    let mut flags = vec!["-C", path];
+    flags.extend(args);
+    String::from_utf8(run("git", &flags, 5)?)
+        .ok()
+        .map(|s| s.trim().into())
+}
+fn resolve(path: &str) -> Option<String> {
+    if let Some(common) = git(
+        path,
+        &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+    ) {
+        return Some(common);
+    }
+    // Offline/removed worktrees still belong to their hub. This also recognises a bare hub root.
+    for ancestor in Path::new(path).ancestors() {
+        let bare = ancestor.join(".bare");
+        if bare.is_dir() {
+            return Some(bare.to_string_lossy().into_owned());
+        }
+        let git = ancestor.join(".git");
+        if git.is_dir() {
+            return Some(git.to_string_lossy().into_owned());
+        }
+        if let Ok(pointer) = std::fs::read_to_string(&git)
+            && let Some(directory) = pointer.trim().strip_prefix("gitdir: ")
+        {
+            let directory = ancestor.join(directory);
+            if let Ok(common) = std::fs::read_to_string(directory.join("commondir")) {
+                return std::fs::canonicalize(directory.join(common.trim()))
+                    .ok()
+                    .map(|p| p.to_string_lossy().into_owned());
+            }
+        }
+    }
+    None
+}
+
+pub fn parse_worktrees(bytes: &[u8]) -> Vec<WorkspaceFact> {
+    let mut result = Vec::new();
+    let mut current: Option<WorkspaceFact> = None;
+    for token in bytes.split(|b| *b == 0) {
+        let line = String::from_utf8_lossy(token);
+        if let Some(path) = line.strip_prefix("worktree ") {
+            if let Some(value) = current.take() {
+                result.push(value);
+            }
+            current = Some(WorkspaceFact {
+                path: path.into(),
+                ..Default::default()
+            });
+        } else if let Some(value) = &mut current {
+            if let Some(branch) = line.strip_prefix("branch refs/heads/") {
+                value.branch = Some(branch.into());
+            } else if line == "bare" {
+                value.bare = true;
+            } else if line == "detached" {
+                value.detached = true;
+            } else if line == "locked" || line.starts_with("locked ") {
+                value.locked = true;
+            } else if line == "prunable" || line.starts_with("prunable ") {
+                value.missing = true;
+            }
+        }
+    }
+    if let Some(value) = current {
+        result.push(value);
+    }
+    result
+}
+#[derive(Clone, Default)]
+pub struct Discovery {
+    catalog_at: Option<i64>,
+    catalog_paths: BTreeSet<String>,
+    catalog: Vec<ProjectFact>,
+    titles: BTreeMap<String, (String, Option<String>, i64)>,
+    pub fields: BTreeMap<String, WorkspaceFields>,
+    dirty_at: BTreeMap<String, i64>,
+    github_at: BTreeMap<String, i64>,
+}
+impl Discovery {
+    pub fn augment(&mut self, snapshot: &mut Value, owner: &OwnerChoices, at: i64) {
+        let paths: BTreeSet<String> = snapshot["sessions"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|s| s["cwd"].as_str().map(str::to_owned))
+            .chain(owner.project_paths.iter().cloned())
+            .collect();
+        if self.catalog_paths != paths || self.catalog_at.is_none_or(|last| at - last >= 10) {
+            self.catalog_at = Some(at);
+            self.catalog_paths = paths.clone();
+            let mut projects: BTreeMap<String, ProjectFact> = BTreeMap::new();
+            for path in paths {
+                let common = resolve(&path);
+                let project_path = common
+                    .as_ref()
+                    .map(|c| {
+                        if [".git", ".bare"].contains(&tree::basename(c).as_str()) {
+                            Path::new(c)
+                                .parent()
+                                .unwrap()
+                                .to_string_lossy()
+                                .into_owned()
+                        } else {
+                            c.clone()
+                        }
+                    })
+                    .unwrap_or_else(|| path.clone());
+                let id = common
+                    .as_ref()
+                    .map_or_else(|| format!("folder:{path}"), |c| format!("repository:{c}"));
+                let project = projects.entry(id.clone()).or_insert_with(|| {
+                    let workspaces = if let Some(common) = &common {
+                        run(
+                            "git",
+                            &["-C", common, "worktree", "list", "--porcelain", "-z"],
+                            5,
+                        )
+                        .map(|b| parse_worktrees(&b))
+                        .unwrap_or_default()
+                    } else {
+                        vec![WorkspaceFact {
+                            path: path.clone(),
+                            ..Default::default()
+                        }]
+                    };
+                    let launch_directory = workspaces
+                        .iter()
+                        .find(|w| w.branch.as_deref() == Some("main") && !w.bare)
+                        .or_else(|| workspaces.iter().find(|w| !w.bare))
+                        .map(|w| w.path.clone())
+                        .unwrap_or_else(|| project_path.clone());
+                    ProjectFact {
+                        id,
+                        path: project_path,
+                        common,
+                        launch_directory,
+                        workspaces,
+                    }
+                });
+                if owner.project_paths.contains(&path) {
+                    project.launch_directory = path;
+                }
+            }
+            self.catalog = projects.into_values().collect();
+        }
+        snapshot["projects"] = serde_json::to_value(&self.catalog).unwrap();
+        if let Some(sessions) = snapshot["sessions"].as_array_mut() {
+            for session in sessions {
+                let cwd = session["cwd"].as_str().unwrap_or_default().to_owned();
+                // A catalog workspace at the deepest path wins over a surrounding plain folder.
+                let project = self
+                    .catalog
+                    .iter()
+                    .filter(|p| {
+                        p.path == cwd
+                            || p.common.as_deref() == Some(&cwd)
+                            || p.workspaces.iter().any(|w| tree::contains(&cwd, &w.path))
+                            || (p.common.is_some() && tree::contains(&cwd, &p.path))
+                    })
+                    .max_by_key(|p| {
+                        p.workspaces
+                            .iter()
+                            .filter(|w| tree::contains(&cwd, &w.path))
+                            .map(|w| w.path.len())
+                            .max()
+                            .unwrap_or(p.path.len())
+                    });
+                if let Some(project) = project {
+                    session["project_id"] = Value::String(project.id.clone());
+                    session["project"] = Value::String(project.path.clone());
+                    session["workspace"] = Value::String(
+                        project
+                            .workspaces
+                            .iter()
+                            .filter(|w| !w.bare && tree::contains(&cwd, &w.path))
+                            .max_by_key(|w| w.path.len())
+                            .map(|w| w.path.clone())
+                            .unwrap_or(cwd.clone()),
+                    );
+                    session["folder_missing"] = Value::Bool(!Path::new(&cwd).exists());
+                }
+                if let Some(log) = session["chair_log"].as_str().map(str::to_owned) {
+                    if let Ok(at) = std::fs::metadata(&log)
+                        .and_then(|m| m.modified())
+                        .and_then(|t| t.duration_since(UNIX_EPOCH).map_err(std::io::Error::other))
+                    {
+                        session["chair_log_activity"] = Value::from(at.as_secs());
+                    }
+                    let id = session["id"].as_str().unwrap_or_default().to_owned();
+                    if !self.titles.get(&id).is_some_and(|(path, title, last)| {
+                        *path == log && (title.is_some() || at - last < 30)
+                    }) {
+                        self.titles
+                            .insert(id.clone(), (log.clone(), read_title(&log), at));
+                    }
+                    if let Some((_, Some(title), _)) = self.titles.get(&id) {
+                        session["title"] = Value::String(title.clone());
+                    }
+                }
+            }
+        }
+    }
+
+    /// Reserve before a read, including failures. The coordinator owns the cache.
+    pub fn refresh_fields(&mut self, tree: &tree::Tree, owner: &OwnerChoices, at: i64) -> bool {
+        self.refresh_fields_with(
+            tree,
+            owner,
+            at,
+            |path| {
+                run("git", &["-C", path, "status", "--porcelain=v1", "-z"], 5)
+                    .map(|b| dirty_count(&b))
+            },
+            super::github::lookup,
+        )
+    }
+
+    pub fn refresh_fields_with(
+        &mut self,
+        tree: &tree::Tree,
+        owner: &OwnerChoices,
+        at: i64,
+        mut inspect: impl FnMut(&str) -> Option<usize>,
+        mut lookup: impl FnMut(&str) -> Option<Value>,
+    ) -> bool {
+        let dirty: BTreeSet<_> = fields::requested_paths("dirty", tree, &owner.fields)
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        let github: BTreeSet<_> = fields::requested_paths("pr", tree, &owner.fields)
+            .into_iter()
+            .chain(fields::requested_paths("ci", tree, &owner.fields))
+            .map(str::to_owned)
+            .collect();
+        let previous = self.fields.clone();
+        for path in dirty.union(&github) {
+            let read_dirty =
+                dirty.contains(path) && self.dirty_at.get(path).is_none_or(|last| at - last >= 10);
+            let read_github = github.contains(path)
+                && self.github_at.get(path).is_none_or(|last| at - last >= 120);
+            if read_dirty {
+                self.dirty_at.insert(path.clone(), at);
+            }
+            if read_github {
+                self.github_at.insert(path.clone(), at);
+            }
+            if read_dirty {
+                self.fields.entry(path.clone()).or_default().dirty_count = inspect(path);
+            }
+            if read_github {
+                let request = lookup(path);
+                let fields = request
+                    .as_ref()
+                    .map(fields::github_fields)
+                    .unwrap_or_default();
+                let current = self.fields.entry(path.clone()).or_default();
+                current.pr = fields.pr;
+                current.ci = fields.ci;
+            }
+        }
+        previous != self.fields
+    }
+}
+pub fn dirty_count(bytes: &[u8]) -> usize {
+    let mut paths = BTreeSet::new();
+    let mut chunks = bytes.split(|b| *b == 0);
+    while let Some(line) = chunks.next() {
+        if line.len() < 4 {
+            continue;
+        }
+        paths.insert(line[3..].to_vec());
+        if line[0] == b'R' || line[1] == b'R' || line[0] == b'C' || line[1] == b'C' {
+            chunks.next();
+        }
+    }
+    paths.len()
+}
+fn read_title(path: &str) -> Option<String> {
+    let file = std::fs::File::open(path).ok()?;
+    let mut bytes = Vec::new();
+    file.take(256 * 1024).read_to_end(&mut bytes).ok()?;
+    for line in bytes.split(|b| *b == b'\n') {
+        let Ok(value) = serde_json::from_slice::<Value>(line) else {
+            continue;
+        };
+        let text = if value["type"] == "user" {
+            content_text(&value["message"]["content"])
+        } else if value["type"] == "response_item" && value["payload"]["role"] == "user" {
+            content_text(&value["payload"]["content"])
+        } else if value["type"] == "event_msg" && value["payload"]["type"] == "user_message" {
+            value["payload"]["message"].as_str().map(str::to_owned)
+        } else {
+            None
+        };
+        if let Some(text) = text.and_then(|s| tree::nonblank(Some(&s))) {
+            let title = text.lines().next().unwrap_or_default();
+            if title.starts_with('<') || title.starts_with("# AGENTS.md") {
+                continue;
+            }
+            return Some(if title.chars().count() > 80 {
+                title
+                    .chars()
+                    .take(79)
+                    .collect::<String>()
+                    .trim_end()
+                    .to_owned()
+                    + "…"
+            } else {
+                title.into()
+            });
+        }
+    }
+    None
+}
+fn content_text(content: &Value) -> Option<String> {
+    content.as_str().map(str::to_owned).or_else(|| {
+        content.as_array().map(|a| {
+            a.iter()
+                .filter(|b| b["type"] == "text" || b["type"] == "input_text")
+                .filter_map(|b| b["text"].as_str())
+                .collect::<Vec<_>>()
+                .join("\n")
+        })
+    })
+}
