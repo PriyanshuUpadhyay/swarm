@@ -15,8 +15,11 @@ for flag in "$@"; do
 done
 
 zig build --build-file "$repo/packages/transcript/build.zig" -Doptimize=ReleaseSafe
-# The app runs this swarm from Contents/Helpers; the cask links it onto PATH (ADR 0048).
-cargo build --manifest-path "$repo/Cargo.toml" --release --locked
+# The app runs this swarm from Contents/Helpers; the cask links it onto PATH (ADR 0048). The shell
+# starts `swarm serve`, which needs the serve feature (ADR 0075).
+cargo build --manifest-path "$repo/Cargo.toml" --release --locked --features serve
+pnpm --dir "$repo/web" install --frozen-lockfile
+pnpm --dir "$repo/web" build
 # The home changes only on --install: building the app must not migrate the real database. Even then
 # no swarm goes on PATH, because a cargo build there would shadow the cask's link (ADR 0048).
 if (( install )); then
@@ -25,30 +28,39 @@ if (( install )); then
     "$repo/target/release/swarm" adapter check "$adapter"
   done
 fi
-swift build --package-path "$root" --disable-sandbox -c release --product Swarm
+swift build --package-path "$root" --disable-sandbox -c release --product SwarmWeb
+swift build --package-path "$root" --disable-sandbox -c release --product SwarmNotify
 bin_dir="$(swift build --package-path "$root" --disable-sandbox -c release --show-bin-path)"
 app="$root/.build/release/Swarm.app"
 
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Helpers" "$app/Contents/Resources"
-cp -R "$root/Sources/Swarm/Resources/DiffViewer" "$app/Contents/Resources/DiffViewer"
+cp -R "$repo/web/dist" "$app/Contents/Resources/web"
+cp "$repo/web/NOTICE" "$app/Contents/Resources/NOTICE"
 skills="$app/Contents/Resources/Skills"
 mkdir -p "$skills"
 tar -c -C "$repo/skills" --exclude='.git*' \
   swarm-orchestrator swarm-voice kit/skills kit/references kit/scripts kit/contracts \
   kit/vendor kit/LICENSE kit/README.md | tar -xp -C "$skills"
 "$repo/target/release/swarm" skills manifest "$skills" "$skills/manifest.json"
-cp "$bin_dir/Swarm" "$app/Contents/MacOS/Swarm"
+# The SwarmWeb shell is the app (ADR 0078). It finds swarm, web and transcript in this bundle.
+cp "$bin_dir/SwarmWeb" "$app/Contents/MacOS/Swarm"
 cp "$repo/packages/transcript/zig-out/bin/transcript" "$app/Contents/MacOS/transcript"
 # Helpers, not MacOS: on a case-insensitive disk MacOS/swarm would overwrite MacOS/Swarm.
 cp "$repo/target/release/swarm" "$app/Contents/Helpers/swarm"
-cp "$root/Resources/Info.plist" "$app/Contents/Info.plist"
 version="$(cargo metadata --manifest-path "$repo/Cargo.toml" --no-deps --format-version 1 | jq -r '.packages[0].version')"
+# The notice helper (ADR 0077): swarm starts it beside itself, so a notice never starts the app.
+notify="$app/Contents/Helpers/SwarmNotify.app"
+mkdir -p "$notify/Contents/MacOS"
+cp "$bin_dir/SwarmNotify" "$notify/Contents/MacOS/SwarmNotify"
+cp "$root/Resources/SwarmNotify-Info.plist" "$notify/Contents/Info.plist"
+plutil -insert CFBundleShortVersionString -string "$version" "$notify/Contents/Info.plist"
+cp "$root/Resources/Info.plist" "$app/Contents/Info.plist"
 plutil -insert CFBundleShortVersionString -string "$version" "$app/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Add :SwarmBuildDate string $(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   "$app/Contents/Info.plist"
-# The app picks its swarm home from this branch; see SwarmHome and ADR 0027. It is the branch that
-# build.rs stamped into the helper, the last word of `swarm --version`: "" only for a release build
+# The shell's PATH swarm check runs only when this branch is "" (ADR 0048); the helper picks its own
+# home from the same stamp (ADR 0027). It is the branch that build.rs stamped into the helper, the last word of `swarm --version`: "" only for a release build
 # (SWARM_RELEASE_BUILD=1, set by release.yml), "HEAD" for a dev build on a detached HEAD. A branch
 # name holds no space. plutil takes the value as one argv string, so no quote in a branch name is
 # parsed; the read-back refuses a build whose plist says another branch.
@@ -75,7 +87,7 @@ if (( install )); then
   if [[ -n "$branch" ]]; then
     print "==> This dev build of '$branch' keeps its data in ${SWARM_HOME:-its .swarm-* folder in $HOME}, never ~/.swarm (ADR 0027)."
   fi
-  # The same text as PathSwarmDrift.brewFix; a SwarmCore test keeps the two equal.
+  # The same text as PathDrift.brewFix; a SwarmWebTests test keeps the two equal.
   print "==> swarm is no longer put on PATH. The cask links it (ADR 0048):"
-  print "    brew update && brew upgrade priyanshuupadhyay/tap/swarm; brew reinstall --cask --force priyanshuupadhyay/tap/swarm-app"
+  print "    brew uninstall swarm; brew reinstall --cask --force priyanshuupadhyay/tap/swarm-app"
 fi

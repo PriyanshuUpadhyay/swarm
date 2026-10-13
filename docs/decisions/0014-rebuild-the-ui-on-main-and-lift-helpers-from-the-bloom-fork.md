@@ -1,9 +1,9 @@
 ---
-status: accepted
+status: superseded
 date: 2026-09-22
 deciders: [user]
 supersedes: 0001
-superseded-by:
+superseded-by: "0078"
 related: [0002, 0003, 0013]
 informed-by:
   - docs/council/2026-09-22-rebuild-on-main.md

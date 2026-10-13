@@ -5,7 +5,6 @@ const MARKER: &str = "swarm-home";
 /// The owner's guard rule list, which `swarm guard` reads (ADR 0040).
 pub const GUARDS: &str = "guards.json";
 /// The app's held file lock, which makes the CLI leave owner notices to the app (ADR 0058).
-pub const APP_LOCK: &str = "app.lock";
 /// The owner's consent for launch folder trust (ADR 0043).
 const CONSENT: &str = "consent.json";
 /// The lock every build takes before it edits a file outside its home (ADR 0043, C6).
@@ -38,8 +37,7 @@ pub fn branch_home(home: &str, branch: &str) -> String {
     }
 }
 
-/// The folder a branch build keeps its data in; `ui/Sources/SwarmCore/System/SwarmHome.swift`
-/// must give the same bytes. A branch of at most 200 bytes made only of `[a-z0-9._-]` that does
+/// The folder a branch build keeps its data in. A branch of at most 200 bytes made only of `[a-z0-9._-]` that does
 /// not start with `.` or `-` is `.swarm-<branch>`, whole. Any other branch is
 /// `.swarm-<slug>+<hash>`: the slug lowercases ASCII `A-Z`, maps each other UTF-8 byte outside that
 /// set to `-`, and keeps at most 200 bytes, and the hash is the 64-bit FNV-1a of the whole branch's
@@ -190,10 +188,8 @@ mod tests {
                         vector["branch"].as_str().unwrap(),
                     )
                 });
-            let lock = std::path::Path::new(&home)
-                .join(super::SWARM_DIR)
-                .join(super::APP_LOCK);
-            assert_eq!(lock.to_str().unwrap(), vector["lock"].as_str().unwrap());
+            let root = std::path::Path::new(&home).join(super::SWARM_DIR);
+            assert_eq!(root.to_str().unwrap(), vector["root"].as_str().unwrap());
             let mut probe = std::process::Command::new(std::env::current_exe().unwrap());
             probe
                 .env_clear()
@@ -230,7 +226,6 @@ mod tests {
         );
     }
 
-    /// Shared with `ui/Tests/SwarmCoreTests/SwarmHomeTests.swift`; keep both lists the same.
     const VECTORS: [(&str, Option<&str>); 15] = [
         ("main", Some(".swarm-main")),
         ("", None),
@@ -249,7 +244,6 @@ mod tests {
         ("UI-Polish", Some(".swarm-ui-polish+39b24d57f056cb17")),
     ];
 
-    /// Long names, shared with `ui/Tests/SwarmCoreTests/SwarmHomeTests.swift` like `VECTORS`.
     fn long_vectors() -> Vec<(String, Option<String>)> {
         let a = |count: usize| "a".repeat(count);
         vec![

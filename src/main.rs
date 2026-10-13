@@ -2,6 +2,9 @@ use std::env;
 use std::os::unix::process::ExitStatusExt;
 use swarm::providers::Provider;
 
+#[cfg(feature = "serve")]
+mod serve;
+
 const RERING_UNSEEN_AFTER_SECS: i64 = 60;
 
 /// The ring is typed into the recipient's prompt, so it names the next step. An agent that did
@@ -269,7 +272,7 @@ fn init() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-const USAGE: &str = "usage: swarm --version | init | skills refresh | skills manifest <source> <out> | setup status --json | setup [--plan [--json] | --digest <digest>] [--cwd <dir>] [--only <hooks|trust|herdr|skills>,...] [--consent <standing|ask>] [--resume] | hooks status --json | hooks setup [--plan [--json] | --digest <digest>] | managed list [--json] | managed revert (<id>... | --all) [--plan [--json] | --digest <digest>] | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session continue <new_id> <old_id> | session archive <id>... | session unarchive <id>... | sessions --json [--archived] | agent add <agent_id> <role> | herdr-split | notify <title> [--body <text>] | notices --json | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | guard <claude|codex|agy> PreToolUse | roles --json | roles get <role> [--provider <claude|codex|agy>] | roles check --json | roles save --revision <revision> <profile-json> | roles new <name> --revision <revision> | roles rename <old> <new> --revision <revision> | roles copy <from> <to> --revision <revision> | roles delete <name> --revision <revision> | roles reset --revision <revision> | roles set-min-usage <pct> --revision <revision> | providers --json | models --provider <claude|codex|agy> --json | accounts --provider <claude|codex|agy> --json | accounts login --provider <claude|codex> --name <name> --revision <revision> --json [--cwd <dir>] | accounts reset --revision <revision> --json | usage --json | usage --format openusage | usage --refresh --provider <claude|codex> --json | agents --json [--all] | messages --json [--after <seq>] | run <claude|codex> [--account <auto|NAME>] [-- <args>...] | launch <agent_id> <role> [--provider <claude|codex|agy>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | answer <agent_id> <prompt_id> <choice> | interrupt <agent_id> | key <agent_id> <Up|C-u> | attach <agent_id> | focus <session_id> <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
+const USAGE: &str = "usage: swarm --version | init | skills refresh | skills manifest <source> <out> | setup status --json | setup [--plan [--json] | --digest <digest>] [--cwd <dir>] [--only <hooks|trust|herdr|skills>,...] [--consent <standing|ask>] [--resume] | hooks status --json | hooks setup [--plan [--json] | --digest <digest>] | managed list [--json] | managed revert (<id>... | --all) [--plan [--json] | --digest <digest>] | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session continue <new_id> <old_id> | session archive <id>... | session unarchive <id>... | sessions --json [--archived] | agent add <agent_id> <role> | herdr-split | notify <title> [--body <text>] | notices --json | notices --due | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | guard <claude|codex|agy> PreToolUse | roles --json | roles get <role> [--provider <claude|codex|agy>] | roles check --json | roles save --revision <revision> <profile-json> | roles new <name> --revision <revision> | roles rename <old> <new> --revision <revision> | roles copy <from> <to> --revision <revision> | roles delete <name> --revision <revision> | roles reset --revision <revision> | roles set-min-usage <pct> --revision <revision> | providers --json | models --provider <claude|codex|agy> --json | accounts --provider <claude|codex|agy> --json | accounts login --provider <claude|codex> --name <name> --revision <revision> --json [--cwd <dir>] | accounts reset --revision <revision> --json | usage --json | usage --format openusage | usage --refresh --provider <claude|codex> --json | agents --json [--all] | messages --json [--after <seq>] | run <claude|codex> [--account <auto|NAME>] [-- <args>...] | launch <agent_id> <role> [--provider <claude|codex|agy>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | answer <agent_id> <prompt_id> <choice> | interrupt <agent_id> | key <agent_id> <Up|C-u> | attach <agent_id> | focus <session_id> <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
 
 fn env_var(name: &str) -> Result<String, String> {
     env::var(name).map_err(|_| format!("swarm: {name} not set"))
@@ -431,29 +434,54 @@ fn hook(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         let _ = swarm::store::update_usage(&connection, &report.session, &report.agent, provider);
     }
     if state == "waiting" && old.as_deref() != Some("waiting") {
-        start_app_if_needed(&swarm::paths::root_dir()?);
+        notice_waiting(&connection, &report.session, &report.agent, kind)?;
     }
     Ok(())
 }
 
-const APP_PATH: &str = "/Applications/Swarm.app";
+/// ADR 0077: a change to waiting is a notice row, which the notice helper posts.
+fn notice_waiting(
+    connection: &rusqlite::Connection,
+    session: &str,
+    agent: &str,
+    kind: Option<&str>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let folder = swarm::store::session_cwd(connection, session)?
+        .map(|cwd| swarm::view::tree::basename(&cwd))
+        .unwrap_or_default();
+    let what = match kind {
+        Some("permission") => "waiting on a permission",
+        Some("question") => "asked a question",
+        _ => "waiting on a permission or a question",
+    };
+    swarm::store::add_notice(
+        connection,
+        Some(session),
+        Some(agent),
+        "Swarm",
+        &format!("{folder}: {what}"),
+    )?;
+    start_notify_helper();
+    Ok(())
+}
 
-/// The app owns every notice. Start it without waiting or using the hook's remaining budget.
-fn start_app_if_needed(root: &std::path::Path) {
+/// ADR 0077: a notice starts the small helper, never the full app. Never waits, so the hook keeps
+/// its remaining budget.
+fn start_notify_helper() {
     use std::os::unix::process::CommandExt;
-    if app_holds_lock(root) {
+    let Some(helper) = notify_helper() else {
         return;
-    }
-    // LaunchServices can register many dev builds under the bundle id; prefer the installed app.
-    let path = std::env::var_os("SWARM_APP_PATH")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|| std::path::PathBuf::from(APP_PATH));
+    };
     let mut command = std::process::Command::new("open");
-    command.arg("-g");
-    if path.exists() {
-        command.arg(path);
-    } else {
-        command.args(["-b", "io.github.priyanshuupadhyay.swarm"]);
+    command.arg("-g").arg(helper);
+    // The helper drains with this swarm and this home, whichever build LaunchServices starts.
+    if let Ok(home) = swarm::paths::home() {
+        command.arg("--env").arg(format!("SWARM_HOME={home}"));
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        command
+            .arg("--env")
+            .arg(format!("SWARM_BIN={}", exe.display()));
     }
     let _ = command
         .stdin(std::process::Stdio::null())
@@ -463,18 +491,71 @@ fn start_app_if_needed(root: &std::path::Path) {
         .spawn();
 }
 
-/// Only a held kernel lock means the app is running. The pid is informational.
-fn app_holds_lock(root: &std::path::Path) -> bool {
-    use std::os::fd::AsRawFd;
-    let Ok(file) = std::fs::File::open(root.join(swarm::paths::APP_LOCK)) else {
-        return false;
-    };
-    unsafe extern "C" {
-        fn flock(fd: i32, operation: i32) -> i32;
+/// `SWARM_NOTIFY_APP` alone when set, else the helper beside this swarm (the app bundle's
+/// `Contents/Helpers`), else the installed app's. Never a bundle id: LaunchServices can pick a
+/// dev build.
+fn notify_helper() -> Option<std::path::PathBuf> {
+    if let Some(path) = env::var_os("SWARM_NOTIFY_APP") {
+        return Some(std::path::PathBuf::from(path)).filter(|path| path.exists());
     }
-    // SAFETY: file owns this open descriptor; 1 | 4 is LOCK_SH | LOCK_NB on supported Unix hosts.
-    let result = unsafe { flock(file.as_raw_fd(), 1 | 4) };
-    result != 0 && std::io::Error::last_os_error().kind() == std::io::ErrorKind::WouldBlock
+    let beside = std::env::current_exe()
+        .and_then(std::fs::canonicalize)
+        .ok()
+        .and_then(|exe| Some(exe.parent()?.join("SwarmNotify.app")));
+    [
+        beside,
+        Some("/Applications/Swarm.app/Contents/Helpers/SwarmNotify.app".into()),
+    ]
+    .into_iter()
+    .flatten()
+    .find(|path| path.exists())
+}
+
+/// ADR 0077: take every unposted notice and print the ones the owner's notice preferences post,
+/// each with its sound choice. A row whose agent is not waiting is a done notice.
+fn notices_due() -> Result<(), Box<dyn std::error::Error>> {
+    let root = swarm::paths::root_dir()?;
+    let mut connection = swarm::store::open(&swarm::paths::sqlite_db()?)?;
+    let rows = swarm::store::take_notices(&mut connection)?;
+    // A bad choices file must not lose notices, so it reads as the defaults.
+    let prefs = swarm::view::choices_store::load(&root, true)
+        .map(|saved| saved.owner.prefs["notices"].clone())
+        .unwrap_or_default();
+    let on = |key: &str| prefs[key].as_bool().unwrap_or(true);
+    let muted: Vec<&str> = prefs["mutedProjects"]
+        .as_array()
+        .map(|paths| paths.iter().filter_map(|path| path.as_str()).collect())
+        .unwrap_or_default();
+    let mut due = Vec::new();
+    for row in rows.iter().filter(|_| on("post")) {
+        let session = row.session_id.as_deref();
+        // ponytail: a muted project matches a session folder inside it; a worktree kept outside
+        // its project folder is not muted until this reads the tree.
+        let cwd = session.map(|id| swarm::store::session_cwd(&connection, id));
+        if let Some(cwd) = cwd.transpose()?.flatten()
+            && muted
+                .iter()
+                .any(|project| swarm::view::tree::contains(&cwd, project))
+        {
+            continue;
+        }
+        let waiting = match (session, row.agent_id.as_deref()) {
+            (Some(session), Some(agent)) => swarm::store::agents(&connection, session)?
+                .iter()
+                .any(|found| found.id == agent && found.state.as_deref() == Some("waiting")),
+            _ => false,
+        };
+        if waiting || on("done") {
+            due.push(serde_json::json!({
+                "session_id": row.session_id,
+                "agent_id": row.agent_id,
+                "title": row.title,
+                "body": row.body,
+                "sound": on("sound"),
+            }));
+        }
+    }
+    print_json(&due)
 }
 
 fn adapter_name() -> String {
@@ -3241,8 +3322,11 @@ fn list_agents(
                 ),
             ) {
                 Ok(true) => {
-                    if seen == "waiting" && row.state.as_deref() != Some("waiting") {
-                        start_app_if_needed(root);
+                    if seen == "waiting"
+                        && row.state.as_deref() != Some("waiting")
+                        && let Err(error) = notice_waiting(connection, session_id, &row.id, None)
+                    {
+                        eprintln!("swarm: {error}");
                     }
                     (row.state_at, row.state_source, row.state_detail) =
                         (Some(now), Some("screen".into()), detail);
@@ -3367,6 +3451,10 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         return run_cli(rest);
     }
 
+    #[cfg(feature = "serve")]
+    if args.first().map(String::as_str) == Some("serve") {
+        return serve::run(&args[1..]);
+    }
     if let [cmd, session_id, agent_id] = args
         && cmd == "focus"
     {
@@ -3432,7 +3520,6 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                     .into(),
             );
         }
-        let root = swarm::paths::root_dir()?;
         let connection = swarm::store::open(&swarm::paths::sqlite_db()?)?;
         let caller = identity().ok().filter(|(session, agent)| {
             swarm::store::orchestrator_of(&connection, session).is_ok_and(|chair| chair == *agent)
@@ -3444,7 +3531,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             title,
             body,
         )?;
-        start_app_if_needed(&root);
+        start_notify_helper();
         return Ok(());
     }
     if let [cmd, json] = args
@@ -3453,6 +3540,12 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     {
         let mut connection = swarm::store::open(&swarm::paths::sqlite_db()?)?;
         return print_json(&swarm::store::take_notices(&mut connection)?);
+    }
+    if let [cmd, due] = args
+        && cmd == "notices"
+        && due == "--due"
+    {
+        return notices_due();
     }
     if let [cmd] = args
         && cmd == "herdr-split"

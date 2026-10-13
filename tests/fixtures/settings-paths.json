@@ -3,7 +3,7 @@
     "home": "/owner",
     "branch": "",
     "explicit": null,
-    "lock": "/owner/.swarm/app.lock",
+    "root": "/owner/.swarm",
     "guardsOverride": null,
     "guards": "/owner/.swarm/guards.json"
   },
@@ -11,7 +11,7 @@
     "home": "/owner",
     "branch": "main",
     "explicit": null,
-    "lock": "/owner/.swarm-main/.swarm/app.lock",
+    "root": "/owner/.swarm-main/.swarm",
     "guardsOverride": null,
     "guards": "/owner/.swarm/guards.json"
   },
@@ -19,7 +19,7 @@
     "home": "/owner",
     "branch": "feat/login",
     "explicit": null,
-    "lock": "/owner/.swarm-feat-login+407712bf7898fb7f/.swarm/app.lock",
+    "root": "/owner/.swarm-feat-login+407712bf7898fb7f/.swarm",
     "guardsOverride": null,
     "guards": "/owner/.swarm/guards.json"
   },
@@ -27,7 +27,7 @@
     "home": "/owner",
     "branch": "main",
     "explicit": "/scratch/home",
-    "lock": "/scratch/home/.swarm/app.lock",
+    "root": "/scratch/home/.swarm",
     "guardsOverride": null,
     "guards": "/owner/.swarm/guards.json"
   },
@@ -35,7 +35,7 @@
     "home": "/owner",
     "branch": "feat/login",
     "explicit": "/scratch/home",
-    "lock": "/scratch/home/.swarm/app.lock",
+    "root": "/scratch/home/.swarm",
     "guardsOverride": "/dotfiles/guards.json",
     "guards": "/dotfiles/guards.json"
   }

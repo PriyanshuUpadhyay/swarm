@@ -41,7 +41,7 @@ jobs:
 
   app:
     needs: source
-    # The app targets macOS 26, so it needs that SDK and Swift 6.2.
+    # The shell and the notice helper target macOS 26, so they need that SDK and Swift 6.2.
     runs-on: macos-26
     permissions:
       contents: write
@@ -50,6 +50,11 @@ jobs:
       - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
         with:
           version: 0.16.0
+      # The app is the web UI in the SwarmWeb shell (ADR 0078); build.sh builds web/dist with pnpm.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install -g pnpm@11.15.1
       - run: brew install uv
       # Only this build uses ~/.swarm; any other build keeps a branch home (ADR 0027).
       - run: make -C ui dmg
