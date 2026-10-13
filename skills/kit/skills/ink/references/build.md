@@ -1,7 +1,6 @@
 # Build
 
-The story engine, determinism, debug modes, performance, the toolbox, and delivery are in the kit's
-`blocks/build-canvas/SKILL.md`. This file holds ink's own build steps.
+The story engine, determinism, debug modes, performance, the toolbox, and delivery are in `~/.claude/blocks/build-canvas/SKILL.md`. This file holds ink's own build steps.
 
 ## Contents
 
@@ -26,7 +25,7 @@ pacing, crop, and continuity before you add any detail.
 
 Render each frame at the delivery size, such as 1080,1920 for a vertical reel:
 `<chrome-headless-shell> --headless --window-size=W,H --screenshot=f.png "file://.../index.html?t=0.25"`
-(or `?shot=<id>&u=`). Find `<chrome-headless-shell>` as the kit's `blocks/headless-shot/SKILL.md`
+(or `?shot=<id>&u=`). Find `<chrome-headless-shell>` as `~/.claude/blocks/headless-shot/SKILL.md`
 says; its page widths and shot names are for page shots, not reel frames. Run several at
 once, then encode with ffmpeg
 (`-c:v libx264 -pix_fmt yuv420p`). Lightpanda has no paint engine, and Obscura 0.2.2 drew canvas

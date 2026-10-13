@@ -119,10 +119,10 @@ Status: ✅ exists, ✂️ cut from a skill next, ⬜ later, 🆕 new, 🔒 stay
 |---|---|---|---|---|---|---|
 | plan | step | which blocks run, in which stage | task, template, catalog → ledger | none | every template | 🆕 B9 |
 | frame | step | goal, done-when claims, out of scope | request → frame | flow 01-frame, research 01-question, ink intake | flow, research, ink | ⬜ |
-| local-research | step | what local sources say | question → findings with paths | `blocks/local-research` | research, glitch-walk, flow contracts | ✅ |
+| local-research | step | what local sources say | question → findings with paths | `blocks/local-research` | research (planned: glitch-walk, flow contracts) | ✅ |
 | web-research | step | web evidence | query brief → findings with links | `skills/web-search` (stays whole) with `blocks/deep-search` and `blocks/cite-sources` | research, reference-analysis, motion | ✅ by the skill |
 | deep-search | rule | how a search goes past the known answers | question, known answers → sub-questions, seeds, off-path ideas | `blocks/deep-search` | research, web-search | ✅ |
-| tool-trial | step | the hands-on test of tool candidates | tool question → candidate table | `blocks/tool-trial` | research, flow contracts | ✅ |
+| tool-trial | step | the hands-on test of tool candidates | tool question → candidate table | `blocks/tool-trial` | research (planned: flow contracts) | ✅ |
 | reference-analysis | step | measured facts of a reference | references → measured notes with evidence levels | `blocks/reference-analysis` | ink, design-tokens | ✅ |
 | design-tokens | step | the look as tokens | measured notes → `DESIGN.md` tokens | `blocks/design-tokens` (owner of the token rules) | ink, glitch-walk, any page | ✅ owner fix |
 | story | step | order, beats, key frames, pacing | brief, facts → story sheet, shot list | `blocks/story` | ink | ✅ |

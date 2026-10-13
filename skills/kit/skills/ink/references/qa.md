@@ -1,7 +1,6 @@
 # Visual QA
 
-The frame checks, the motion checks, the QA log, and the "visually verified" rule are in the kit's
-`blocks/visual-qa/SKILL.md`. This file holds ink's own evidence and checks.
+The frame checks, the motion checks, the QA log, and the "visually verified" rule are in `~/.claude/blocks/visual-qa/SKILL.md`. This file holds ink's own evidence and checks.
 
 ## Contents
 
@@ -29,9 +28,8 @@ contact-sheet.png
 
 ## Reference match
 
-Score each style frame or key frame against its reference crop as the kit's
-`blocks/look-check/SKILL.md` says, with the compare image that
-`blocks/headless-shot/SKILL.md` makes. In ink, a `miss` blocks production scenes.
+Score each style frame or key frame against its reference crop as `~/.claude/blocks/look-check/SKILL.md` says, with the compare image that
+`~/.claude/blocks/headless-shot/SKILL.md` makes. In ink, a `miss` blocks production scenes.
 
 Example. Round 1 of a cloud frame scores the palette `match`, the tone `miss` (flat fills, no dots),
 and the contour `partial` (right colour, even width). Round 2 adds the mass stack and line swell, and
@@ -39,13 +37,13 @@ both become `match`.
 
 ## Story checks
 
-The key frame and pacing checks are in the kit's `blocks/story/SKILL.md`.
+The key frame and pacing checks are in `~/.claude/blocks/story/SKILL.md`.
 
 - Each transition has a story reason and the reason shows (a match cut really matches).
 - Entities stay consistent across shots: same proportions, colours from the same tokens.
 - Each gate shows a hint for its action, answers a failed try, and has an escape. Play it once as a
   reader who fails.
-- For a scroll story, check the settled-state rule of the kit's `blocks/web-ui-basics/SKILL.md`, and
+- For a scroll story, check the settled-state rule of `~/.claude/blocks/web-ui-basics/SKILL.md`, and
   test step scrolling with the keyboard.
 
 ## Frame checks
@@ -81,7 +79,7 @@ Run these when frames can be rendered by `?t=`; they catch what a few stills mis
 - **Seam vectors:** for each continuity cut, read the carrier's screen velocity from `stateAt` on
   the last frame of shot A and the first frame of shot B. Flag a flipped sign on any axis, or a
   speed ratio outside about 0.5-2 (a starting threshold to tune). Skip cuts marked "jump".
-- **Hidden content:** check it as the kit's `blocks/web-ui-basics/SKILL.md` says, with reduced motion on.
+- **Hidden content:** check it as `~/.claude/blocks/web-ui-basics/SKILL.md` says, with reduced motion on.
 - **Read-back:** `ffprobe` the exported file for size, fps, frame count, and duration, and extract a
   few frames from it to inspect.
 

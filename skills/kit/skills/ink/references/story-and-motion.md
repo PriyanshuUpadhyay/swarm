@@ -1,7 +1,6 @@
 # Story, storyboard, and motion
 
-The story sheet, the structures, the shot list with its key frames, and pacing are in the kit's
-`blocks/story/SKILL.md`. This file holds how the story moves.
+The story sheet, the structures, the shot list with its key frames, and pacing are in `~/.claude/blocks/story/SKILL.md`. This file holds how the story moves.
 
 ## Contents
 
@@ -29,7 +28,7 @@ What moves the story forward decides how time works in the build.
 - Map each section's scroll progress to that section's shot-local `u`. For DOM layers, CSS
   scroll-driven animations (`animation-timeline: view()` or `scroll()`) run off the main thread;
   NRK measured 1 ms against 0.16 ms per task. For a canvas, read the progress and render that `u`.
-- Give every key fact a settled state as the kit's `blocks/web-ui-basics/SKILL.md` says. For a
+- Give every key fact a settled state as `~/.claude/blocks/web-ui-basics/SKILL.md` says. For a
   scroll story this matters more, because wheel notches and the keyboard scroll in steps and jump over
   frames.
 - Treat motion as a progressive enhancement. Under `prefers-reduced-motion: reduce`, show each

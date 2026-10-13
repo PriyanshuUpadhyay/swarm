@@ -34,7 +34,7 @@ The chair runs the seats as the kit block `blocks/run-workers/SKILL.md` says, on
 `search.web` route, and every seat is a visible pane. Share one brief. Completion on swarm is the
 seat's ring and its report file.
 
-These three details differ from a council run.
+These four details differ from a council run.
 
 - Agent names are `ws-<voice>-<run>`, so a search and a council can run at the same time.
 - The run directory is `~/.swarm/ws/<run>`, and every seat gets it as `--cwd`. The launcher
@@ -82,7 +82,7 @@ GitHub:    gh search issues "<query>" --sort updated --limit 30
 
 Write `<skill-dir>` as this skill's real folder in the brief. The browser rows need `playwriter` on
 the PATH, its extension on in the user's browser, and a seat that may reach local addresses. The
-runtime adapter names the launch flag for a seat whose sandbox blocks them. They only read, so a seat never signs in, posts,
+Seat mechanics section names the launch flag for a Codex seat, whose sandbox blocks them. They only read, so a seat never signs in, posts,
 likes, follows, or types into a page there. If `agent-reach` is not installed, say so in the
 coverage table and use the fallback ladder in the method only.
 
@@ -106,8 +106,8 @@ the `03-web` section of `research`.
 
 One brief, one section per seat. It holds:
 
-1. the question, verbatim, and the three to six sub-questions, which the chair splits once before
-   any seat starts, so every seat reports against the same ones;
+1. the question, verbatim, and its sub-questions, split by the chair as `blocks/deep-search/SKILL.md`
+   says;
 2. the site set for that seat;
 3. an "already cited, do not re-cite" list;
 4. **depth** — the deep-search block and the Yield and Floor rules above, quoted in full, with the
