@@ -1,10 +1,10 @@
 ---
 name: report
-description: "Write a research answer as a short plain report: the answer first, then evidence with links, what is contested, off-path ideas, and dated sources, and show it all in the reply. Use when a question ends in a written report."
+description: "Write a research answer as a short plain report: the answer first, then evidence with links, what is contested, off-path ideas, and dated sources. Use when a question ends in a written report."
 license: MIT
 metadata:
   kind: step
-  owns: "the shape of a written research answer and its reply"
+  owns: "the shape of a saved research report, and that its reply holds all of it"
   serves: "report, close"
   needs: "findings with sources"
   gives: "a report file and a reply that holds it"
@@ -21,13 +21,12 @@ metadata:
   3. **What is contested**: where the sources disagree.
   4. **Off the usual path**: each off-path idea with its source, why it might work, and why it might fail. If none held up, name the searches you tried.
   5. **Sources**: newest first, with dates.
-- Add a diagram or a local HTML page only as the kit's `references/explain-formats.md` says.
-- The reply opens with the first screen of the kit's `references/plan-layout.md`. Then it holds the whole report, from its `#` title down, and gives the file path in one line.
+- The reply holds the whole report, from its `#` title down, and gives the file path in one line. The session's agent instructions own the rest of the reply's shape, so this block does not restate it.
 
 ## Example
 Initial state: a question has five checked sources and one off-path idea.
 Action: write the answer in three sentences, then five evidence lines with links, one contested point, the off-path idea with why it might work and fail, and the sources newest first.
-Result: a 700-word report. The reply shows the first screen, then the whole report, then its path.
+Result: a 700-word report. The reply shows the whole report, then its path.
 
 ## Check (script)
 - none: the report lives outside the commit range.

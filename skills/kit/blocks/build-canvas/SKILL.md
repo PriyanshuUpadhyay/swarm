@@ -17,7 +17,7 @@ metadata:
 The item file `blocks/build-canvas/references/mark-making.md` in the kit holds the mark-making recipes: density, tone, texture, the mass stack, line, surface, depth, generative plates, and libraries. Read it before a detail pass.
 
 Architecture
-Build a small story engine, so the story, the look, and the motion change in one place each:
+Build a small story engine, so the story, the look, and the motion change in one place each. Each entity of the story sheet becomes a draw function with parameters (pose, expression, state, seed), not a one-off drawing, so it appears in many shots and states without new code:
 
 ```text
 config / seed

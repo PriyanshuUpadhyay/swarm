@@ -20,7 +20,6 @@ Story sheet
   `Structure:` linear, loop, journey, vignette, or branching.
   `Entities:` characters, props, places, each with the states it passes through.
   `Beats:` 3-8 rows: beat, intent (what the viewer should notice or feel), change of state, words on screen.
-- Make each entity a function or component with parameters (pose, expression, state, seed), not a one-off drawing. The same character then appears in many shots and states without new code.
 Structures
 - Linear: beats in order, then an end. Typical transitions: cut, match cut, push-in. Fits an explainer, a short, a title sequence.
 - Loop: the last frame returns to the first. Typical transitions: state return, self-similarity. Fits a reel background or an ambient loop.

@@ -1,6 +1,6 @@
 ---
 name: base-rules
-description: "Keep the few rules every step keeps: facts only from the source of truth, real over drawn, no extra scope, evidence for done, example first. Use when any workflow step runs."
+description: "Keep the rules every step keeps that no instruction file owns: facts only from the source of truth, and real over drawn. Use when any workflow step runs."
 license: MIT
 metadata:
   kind: rule
@@ -10,15 +10,13 @@ metadata:
   gives: "steps that keep the base rules"
   conflicts: ""
   users: "flow"
-  source: "blocks/prove-it-works/SKILL.md (rule 1, a proxy does not prove; last rule, a rerunnable check); html-plan pack: skills/html-plan/SKILL.md:82 (real over drawn); skills/review-check/references/lens.md:28 (no speculative generality)"
+  source: "html-plan pack: skills/html-plan/SKILL.md:82 (real over drawn); docs/council 2026-10-13 block rules (N4: no copy of the rules that agent instructions own)"
 ---
 
 ## Rules
 - Facts come only from {{source_of_truth}}. If it does not say it, do not write it.
 - Real over drawn. Cite the file and line for a fact or a code claim.
-- Do the requested outcome at the intended scope. Add no speculative feature, layer, or option.
-- Every claim of done has evidence: a command and its result, a screenshot path, or a file:line.
-- Explain with one concrete example first, then the rule. Use plain words.
+- The session's agent instructions (`AGENTS.md`, `CLAUDE.md`) own scope, evidence for done, and how to explain. This block does not restate them.
 - If two rules disagree, say which two and which one you followed.
 
 ## Example
