@@ -27,20 +27,9 @@ A contact sheet helps compare rhythm but does not replace inspection of full-siz
 
 ## Reference match
 
-Put each style frame or key frame beside the matching reference crop, at the same scale:
-
-```sh
-magick ref-crop.png frame-crop.png -resize x900 +append compare-01.png
-```
-
-Score every line of the style grammar as `match`, `partial`, or `miss`, each with the pixel
-evidence. Compare one crop of the whole frame and one crop at 100 % zoom, because texture and line
-swell show only at full size. A `miss` on any trait blocks production scenes. Do at least two
-rounds of fix and re-render. Record the scores in the step file. After round 3 with the same
-`miss`, stop the step and show the user the frame and the miss. Keep
-`accepted miss: <trait>, user: <their words>` in the step file, written only after the user has seen
-the frame. Later rounds keep scoring every trait and exempt only that accepted miss from the
-gate. A miss that changes asks again.
+Score each style frame or key frame against its reference crop as the kit's
+`blocks/style-frames-concept/SKILL.md` says, with the compare image that
+`blocks/headless-shot/SKILL.md` makes. In ink, a `miss` blocks production scenes.
 
 Example. Round 1 of a cloud frame scores the palette `match`, the tone `miss` (flat fills, no dots),
 and the contour `partial` (right colour, even width). Round 2 adds the mass stack and line swell, and

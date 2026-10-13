@@ -153,9 +153,8 @@ pacing, crop, and continuity before you add any detail.
 
 ## Frame export
 
-Render frames with a headless Chromium: `chrome-headless-shell --headless --window-size=W,H
---screenshot=f.png "file://.../index.html?t=0.25"`. Playwright caches one under
-`~/Library/Caches/ms-playwright/`. Run several at once, then encode with ffmpeg
+Render each frame with the shot command in the kit's `blocks/headless-shot/SKILL.md`, adding
+`?t=0.25` (or `?shot=<id>&u=`) to the URL. Run several at once, then encode with ffmpeg
 (`-c:v libx264 -pix_fmt yuv420p`). Lightpanda has no paint engine, and Obscura 0.2.2 drew canvas
 transforms, arcs, clips, and text wrong in a 2026-09 test, so neither can render canvas frames.
 

@@ -9,8 +9,8 @@ metadata:
   needs: "a URL or a file"
   gives: "screenshots at set widths"
   conflicts: ""
-  users: "flow"
-  source: "skills/ink/references/build.md:156-158 (chrome-headless-shell, Playwright cache); skills/ink/references/qa.md:30-38 (compare image at the same scale, 100 % crop)"
+  users: "flow, ink"
+  source: "skills/ink/references/build.md (frame export with chrome-headless-shell); skills/ink/references/qa.md (compare image at the same scale, 100 % crop; moved 2026-10-13)"
 ---
 
 ## Rules
