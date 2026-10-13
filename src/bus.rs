@@ -114,6 +114,7 @@ pub fn argv(
     role: &str,
     resolved: &ResolvedRole,
     swarm_home: &str,
+    cwd: &std::path::Path,
 ) -> Result<Vec<String>, String> {
     let provider = required(role, "provider", resolved.provider.as_deref())?;
     let effort = || required(role, "effort", resolved.effort.as_deref());
@@ -166,21 +167,52 @@ pub fn argv(
                 "-c".into(),
                 "check_for_update_on_startup=false".into(),
             ];
-            if let Some(sandbox) = &resolved.sandbox {
-                args.extend(["--sandbox".into(), sandbox.clone()]);
-                if sandbox == "workspace-write" {
+            match resolved.sandbox.as_deref() {
+                // `--sandbox workspace-write` keeps `.git` read-only, so a seat cannot commit. A
+                // permissions profile opens `.git` and keeps its hooks and config, `.codex` and
+                // `.agents` read-only. Submodule git dirs under `modules` stay read-only too, because
+                // their hooks and config run code when the owner next uses git there. The profile
+                // replaces `--sandbox`, which forces the legacy sandbox.
+                Some("workspace-write") => {
+                    let quote = |path: &str| {
+                        serde_json::to_string(path).expect("string serialization cannot fail")
+                    };
                     // Codex refuses every command when a writable root has a symlink in its path.
                     let root = format!("{swarm_home}/.swarm");
                     let root = std::fs::canonicalize(&root)
                         .map_or(root, |path| path.to_string_lossy().into_owned());
+                    let mut filesystem = format!(
+                        r#"":workspace_roots"={{".git"="write",".git/hooks"="read",".git/config"="read",".git/modules"="read",".codex"="read",".agents"="read"}},{}="write""#,
+                        quote(&root)
+                    );
+                    // A linked worktree keeps its git dir in the common dir, outside the workspace.
+                    if let Some((git_dir, common)) = outside_git_dirs(cwd) {
+                        filesystem += &format!(
+                            r#",{}="write",{}="read",{}="read",{}="read""#,
+                            quote(&common),
+                            quote(&format!("{common}/hooks")),
+                            quote(&format!("{common}/config")),
+                            quote(&format!("{common}/modules"))
+                        );
+                        if git_dir != common {
+                            filesystem += &format!(
+                                r#",{}="write",{}="read""#,
+                                quote(&git_dir),
+                                quote(&format!("{git_dir}/config.worktree"))
+                            );
+                        }
+                    }
                     args.extend([
                         "-c".into(),
+                        r#"default_permissions="swarm-code""#.into(),
+                        "-c".into(),
                         format!(
-                            "sandbox_workspace_write.writable_roots=[{}]",
-                            serde_json::to_string(&root).expect("string serialization cannot fail")
+                            r#"permissions.swarm-code={{extends=":workspace",filesystem={{{filesystem}}},network={{enabled=true}}}}"#
                         ),
                     ]);
                 }
+                Some(sandbox) => args.extend(["--sandbox".into(), sandbox.into()]),
+                None => {}
             }
             if let Some(approval) = &resolved.approval {
                 args.extend(["--ask-for-approval".into(), approval.clone()]);
@@ -1124,6 +1156,29 @@ fn agy_group() -> serde_json::Value {
     })
 }
 
+/// The git dir and common dir of the repo at canonical `cwd`, when its git dir is outside `cwd`.
+fn outside_git_dirs(cwd: &std::path::Path) -> Option<(String, String)> {
+    let output = std::process::Command::new("git")
+        .arg("-C")
+        .arg(cwd)
+        .args(["rev-parse", "--absolute-git-dir", "--git-common-dir"])
+        .output()
+        .ok()
+        .filter(|output| output.status.success())?;
+    let text = String::from_utf8_lossy(&output.stdout);
+    // The common dir can print relative to cwd.
+    let mut dirs = text
+        .lines()
+        .map(|line| std::fs::canonicalize(cwd.join(line)).ok());
+    let (git_dir, common) = (dirs.next()??, dirs.next()??);
+    (!git_dir.starts_with(cwd)).then(|| {
+        (
+            git_dir.to_string_lossy().into_owned(),
+            common.to_string_lossy().into_owned(),
+        )
+    })
+}
+
 fn required<'a>(role: &str, field: &str, value: Option<&'a str>) -> Result<&'a str, String> {
     value
         .filter(|value| !value.is_empty())
@@ -1150,7 +1205,14 @@ mod tests {
     fn builds_each_provider_and_optional_flags() {
         let mut claude = role("claude");
         claude.permission = Some("acceptEdits".into());
-        let claude_args = argv("orchestrator", "code.complex", &claude, "/home").unwrap();
+        let claude_args = argv(
+            "orchestrator",
+            "code.complex",
+            &claude,
+            "/home",
+            std::path::Path::new("/"),
+        )
+        .unwrap();
         assert_eq!(
             claude_args[..7],
             [
@@ -1175,7 +1237,14 @@ mod tests {
         let mut codex = role("codex");
         codex.sandbox = Some("workspace-write".into());
         codex.approval = Some("never".into());
-        let codex_args = argv("coder", "coder", &codex, "/home x").unwrap();
+        let codex_args = argv(
+            "coder",
+            "coder",
+            &codex,
+            "/home x",
+            std::path::Path::new("/"),
+        )
+        .unwrap();
         assert_eq!(
             codex_args[..13],
             [
@@ -1186,10 +1255,10 @@ mod tests {
                 "model_reasoning_effort=\"high\"",
                 "-c",
                 "check_for_update_on_startup=false",
-                "--sandbox",
-                "workspace-write",
                 "-c",
-                "sandbox_workspace_write.writable_roots=[\"/home x/.swarm\"]",
+                "default_permissions=\"swarm-code\"",
+                "-c",
+                r#"permissions.swarm-code={extends=":workspace",filesystem={":workspace_roots"={".git"="write",".git/hooks"="read",".git/config"="read",".git/modules"="read",".codex"="read",".agents"="read"},"/home x/.swarm"="write"},network={enabled=true}}"#,
                 "--ask-for-approval",
                 "never"
             ]
@@ -1199,7 +1268,7 @@ mod tests {
         let mut agy = role("agy");
         agy.permission = Some("skip".into());
         assert_eq!(
-            argv("coder", "coder", &agy, "/home"),
+            argv("coder", "coder", &agy, "/home", std::path::Path::new("/")),
             Ok(vec![
                 "agy",
                 "--model",
@@ -1215,7 +1284,7 @@ mod tests {
         agy.model = Some("default".into());
         agy.permission = Some("plan".into());
         assert_eq!(
-            argv("coder", "coder", &agy, "/home"),
+            argv("coder", "coder", &agy, "/home", std::path::Path::new("/")),
             Ok(vec!["agy", "--effort", "high", "--mode", "plan"]
                 .into_iter()
                 .map(String::from)
@@ -1223,7 +1292,7 @@ mod tests {
         );
         agy.model = None;
         agy.permission = None;
-        let agy_args = argv("coder", "coder", &agy, "/home").unwrap();
+        let agy_args = argv("coder", "coder", &agy, "/home", std::path::Path::new("/")).unwrap();
         assert_eq!(
             agy_args,
             vec!["agy", "--effort", "high"]
@@ -1234,7 +1303,7 @@ mod tests {
         assert!(!agy_args.iter().any(|arg| arg.contains("SessionStart")));
         agy.model = Some("gemini-3.8-flash-high".into());
         assert_eq!(
-            argv("coder", "coder", &agy, "/home"),
+            argv("coder", "coder", &agy, "/home", std::path::Path::new("/")),
             Ok(vec!["agy", "--model", "gemini-3.8-flash-high"]
                 .into_iter()
                 .map(String::from)
@@ -1255,16 +1324,53 @@ mod tests {
             "coder",
             &codex,
             &dir.join("link").to_string_lossy(),
+            std::path::Path::new("/"),
         )
         .unwrap();
         let real = std::fs::canonicalize(dir.join("real/.swarm")).unwrap();
-        assert!(
-            args.contains(&format!(
-                "sandbox_workspace_write.writable_roots=[{}]",
-                serde_json::to_string(&real.to_string_lossy()).unwrap()
-            )),
-            "{args:?}"
+        let root = format!(
+            "{}=\"write\"",
+            serde_json::to_string(&real.to_string_lossy()).unwrap()
         );
+        assert!(args.iter().any(|arg| arg.contains(&root)), "{args:?}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_codex_seat_in_a_linked_worktree_can_write_its_git_dir() {
+        let dir = std::env::temp_dir().join(format!("swarm-worktree-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let dir = std::fs::canonicalize(&dir).unwrap();
+        let git = |args: &[&str]| {
+            let status = std::process::Command::new("git")
+                .args(args)
+                .status()
+                .unwrap();
+            assert!(status.success(), "git {args:?}");
+        };
+        let repo = dir.join("repo");
+        let tree = dir.join("tree");
+        git(&["init", "-q", &repo.to_string_lossy()]);
+        // An orphan worktree needs no commit.
+        let (repo_arg, tree_arg) = (repo.to_string_lossy(), tree.to_string_lossy());
+        git(&[
+            "-C", &repo_arg, "worktree", "add", "-q", "--orphan", &tree_arg,
+        ]);
+        let mut codex = role("codex");
+        codex.sandbox = Some("workspace-write".into());
+        let profile = |cwd: &std::path::Path| {
+            let args = argv("coder", "coder", &codex, "/home", cwd).unwrap();
+            args.into_iter()
+                .find(|arg| arg.starts_with("permissions.swarm-code="))
+                .unwrap()
+        };
+        let common = repo.join(".git").to_string_lossy().into_owned();
+        assert!(profile(&tree).contains(&format!(
+            r#","{common}"="write","{common}/hooks"="read","{common}/config"="read","{common}/modules"="read","{common}/worktrees/tree"="write","{common}/worktrees/tree/config.worktree"="read"}}"#
+        )));
+        // The main checkout's git dir is inside the workspace, which `.git` already covers.
+        assert!(!profile(&repo).contains(&common));
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -1273,7 +1379,14 @@ mod tests {
         let claude_command = state_hook_command("claude").unwrap();
         assert!(claude_command.starts_with('\'') && claude_command.ends_with("' hook claude"));
         for agent in ["orchestrator", "coder"] {
-            let args = argv(agent, "coder", &role("claude"), "/home").unwrap();
+            let args = argv(
+                agent,
+                "coder",
+                &role("claude"),
+                "/home",
+                std::path::Path::new("/"),
+            )
+            .unwrap();
             assert_eq!(args.iter().filter(|arg| *arg == "--settings").count(), 1);
             let at = args.iter().position(|arg| arg == "--settings").unwrap();
             let settings: serde_json::Value = serde_json::from_str(&args[at + 1]).unwrap();
@@ -1300,7 +1413,14 @@ mod tests {
         }
 
         let hook_args = |agent: &str| {
-            let args = argv(agent, "coder", &role("codex"), "/home").unwrap();
+            let args = argv(
+                agent,
+                "coder",
+                &role("codex"),
+                "/home",
+                std::path::Path::new("/"),
+            )
+            .unwrap();
             args.windows(2)
                 .filter(|pair| pair[0] == "-c" && pair[1].starts_with("hooks."))
                 .map(|pair| pair[1].clone())
@@ -2142,24 +2262,52 @@ mod tests {
         let mut missing = role("claude");
         missing.provider = None;
         assert_eq!(
-            argv("reviewer", "reviewer", &missing, "/home").unwrap_err(),
+            argv(
+                "reviewer",
+                "reviewer",
+                &missing,
+                "/home",
+                std::path::Path::new("/")
+            )
+            .unwrap_err(),
             "swarm: role reviewer has no provider"
         );
         missing.provider = Some("claude".into());
         missing.model = None;
         assert_eq!(
-            argv("reviewer", "reviewer", &missing, "/home").unwrap_err(),
+            argv(
+                "reviewer",
+                "reviewer",
+                &missing,
+                "/home",
+                std::path::Path::new("/")
+            )
+            .unwrap_err(),
             "swarm: role reviewer has no model"
         );
         missing.model = Some("model".into());
         missing.effort = None;
         assert_eq!(
-            argv("reviewer", "reviewer", &missing, "/home").unwrap_err(),
+            argv(
+                "reviewer",
+                "reviewer",
+                &missing,
+                "/home",
+                std::path::Path::new("/")
+            )
+            .unwrap_err(),
             "swarm: role reviewer has no effort"
         );
         let unsupported = role("other");
         assert_eq!(
-            argv("reviewer", "reviewer", &unsupported, "/home").unwrap_err(),
+            argv(
+                "reviewer",
+                "reviewer",
+                &unsupported,
+                "/home",
+                std::path::Path::new("/")
+            )
+            .unwrap_err(),
             "swarm: role reviewer uses unsupported provider other"
         );
     }

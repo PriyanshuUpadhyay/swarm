@@ -3911,7 +3911,8 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             return Err(reason.into());
         }
         let provider = resolved.provider.clone();
-        let mut command = swarm::bus::argv(agent_id, role, &resolved, &swarm::paths::home()?)?;
+        let mut command =
+            swarm::bus::argv(agent_id, role, &resolved, &swarm::paths::home()?, &cwd)?;
         let kind = Provider::parse(provider.as_deref().unwrap_or_default())
             .ok_or("swarm: launch has no known provider")?;
         let runner = swarm::config::Runner {
