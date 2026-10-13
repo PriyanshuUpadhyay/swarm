@@ -28,6 +28,14 @@ fn anchor_match(
     matches.next().is_none().then_some(first.index)
 }
 pub fn rows(records: &[Record], has_older: bool, is_codex: bool) -> Vec<Row> {
+    rows_with_context(records, has_older, is_codex, None)
+}
+pub(super) fn rows_with_context(
+    records: &[Record],
+    has_older: bool,
+    is_codex: bool,
+    context: Option<(bool, bool)>,
+) -> Vec<Row> {
     let mut scope = 0;
     let mut saw_tool = false;
     let mut scopes = Vec::new();
@@ -149,7 +157,7 @@ pub fn rows(records: &[Record], has_older: bool, is_codex: bool) -> Vec<Row> {
     let mut rows: Vec<Row> = Vec::new();
     let mut used = HashSet::new();
     let mut last_source_id = None;
-    let mut prompt_expected = !has_older;
+    let mut prompt_expected = context.map_or(!has_older, |value| value.0);
     for (index, record) in records.iter().enumerate() {
         if joined.contains(&index) {
             last_source_id = None;
@@ -311,7 +319,10 @@ pub fn rows(records: &[Record], has_older: bool, is_codex: bool) -> Vec<Row> {
         rows.push(row);
     }
     let first_boundary = rows.iter().find(|row| row.opens_turn() || row.ends_turn);
-    let mut turn_open = has_older && first_boundary.is_none_or(|row| row.ends_turn);
+    let mut turn_open = context.map_or(
+        has_older && first_boundary.is_none_or(|row| row.ends_turn),
+        |value| value.1,
+    );
     for row in &mut rows {
         if row.system_kind.as_deref() == Some("swarm_ring") && !turn_open {
             row.starts_turn = true;
@@ -322,13 +333,17 @@ pub fn rows(records: &[Record], has_older: bool, is_codex: bool) -> Vec<Row> {
         if row.ends_turn {
             turn_open = false;
         }
-        row.hidden = (row.kind == RowKind::Notice
-            && !row.starts_turn
-            && ["hook_success", "title:", "model:"]
-                .iter()
-                .any(|prefix| row.text.starts_with(prefix)))
-            || (row.kind == RowKind::System
-                && (row.text.trim().is_empty() || row.system_kind.as_deref() == Some("injected")));
+        row.hidden = is_hidden(row);
     }
     rows
+}
+
+pub fn is_hidden(row: &Row) -> bool {
+    (row.kind == RowKind::Notice
+        && !row.starts_turn
+        && ["hook_success", "title:", "model:"]
+            .iter()
+            .any(|prefix| row.text.starts_with(prefix)))
+        || (row.kind == RowKind::System
+            && (row.text.trim().is_empty() || row.system_kind.as_deref() == Some("injected")))
 }

@@ -139,6 +139,7 @@ struct Follower {
     stop: watch::Sender<bool>,
     done: watch::Receiver<bool>,
     rows: Option<LiveRows>,
+    rendering_rows: bool,
 }
 
 impl Hub {
@@ -2697,15 +2698,45 @@ async fn transcript(
     .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "transcript task failed"))?
 }
 
+type Position = (u64, usize);
+const ROW_RECORD_LIMIT: usize = 2000;
+
+#[derive(Clone)]
+struct LiveChunk {
+    records: Vec<Position>,
+    rows: Vec<Row>,
+    context: (bool, bool),
+}
 #[derive(Clone)]
 struct LiveRows {
-    records: BTreeMap<(u64, usize), Record>,
+    records: BTreeMap<Position, Record>,
     start: u64,
     end: u64,
     is_codex: bool,
     shown: HashSet<String>,
     last_rows: Vec<Row>,
     last_usage: Option<view::ChatUsage>,
+    usage: view::UsageState,
+    chunks: BTreeMap<usize, LiveChunk>,
+    record_chunks: HashMap<Position, usize>,
+    dirty: HashSet<usize>,
+    rebuild: bool,
+    initialized: bool,
+    context: (bool, bool),
+    contexts: HashMap<Position, (bool, bool)>,
+    scope_start: Position,
+    saw_tool: bool,
+    anchors: HashMap<String, Vec<Position>>,
+    unmatched: HashSet<String>,
+    shell_outputs: HashSet<Position>,
+    next_chunk: usize,
+    tail_steps: usize,
+    last_prose: Option<(view::RowKind, String)>,
+    clear_row: Option<Row>,
+    pending_queue: Vec<Record>,
+    queue_cursor: Option<Position>,
+    last_queued: Vec<Row>,
+    queue_dirty: bool,
 }
 impl LiveRows {
     fn empty(from: u64, is_codex: bool) -> Self {
@@ -2717,25 +2748,297 @@ impl LiveRows {
             shown: HashSet::new(),
             last_rows: Vec::new(),
             last_usage: None,
+            usage: view::UsageState::default(),
+            chunks: BTreeMap::new(),
+            record_chunks: HashMap::new(),
+            dirty: HashSet::new(),
+            rebuild: false,
+            initialized: false,
+            context: (from == 0, from > 0),
+            contexts: HashMap::new(),
+            scope_start: (from, 0),
+            saw_tool: false,
+            anchors: HashMap::new(),
+            unmatched: HashSet::new(),
+            shell_outputs: HashSet::new(),
+            next_chunk: 0,
+            tail_steps: 0,
+            last_prose: None,
+            clear_row: None,
+            pending_queue: Vec::new(),
+            queue_cursor: None,
+            last_queued: Vec::new(),
+            queue_dirty: false,
         }
     }
     fn ingest(&mut self, start: u64, end: u64, events: &[Value]) {
         self.start = self.start.min(start);
         self.end = self.end.max(end);
         for (index, event) in events.iter().enumerate() {
-            self.records.insert(
-                (start, index),
-                Record::new(event.clone(), format!("raw-{start}-{index}"), self.is_codex),
-            );
+            let position = (start, index);
+            if self.records.contains_key(&position) {
+                continue;
+            }
+            let record = Record::new(event.clone(), format!("raw-{start}-{index}"), self.is_codex);
+            self.usage.ingest(event);
+            self.contexts.insert(position, self.context);
+            self.records.insert(position, record);
+            self.update_queue(position);
+            self.append(position);
         }
     }
-    fn rows(&self) -> Vec<Row> {
-        view::view_rows(
-            &self.records.values().cloned().collect::<Vec<_>>(),
-            self.start > 0,
-            self.is_codex,
-            &self.shown,
+    fn update_queue(&mut self, key: Position) {
+        let record = &self.records[&key];
+        let event = &record.event;
+        if event["type"] != "queue_operation"
+            || self.queue_cursor.is_some_and(|cursor| key <= cursor)
+        {
+            return;
+        }
+        self.queue_cursor = Some(key);
+        self.queue_dirty = true;
+        match view::string(event, "operation") {
+            "enqueue" if event["content"].is_string() => self.pending_queue.push(record.clone()),
+            "dequeue" if !self.pending_queue.is_empty() => {
+                self.pending_queue.remove(0);
+            }
+            "remove" | "popAll" => {
+                if let Some(index) = self
+                    .pending_queue
+                    .iter()
+                    .position(|record| record.event["content"] == event["content"])
+                {
+                    self.pending_queue.remove(index);
+                }
+            }
+            _ => (),
+        }
+    }
+    fn append(&mut self, position: Position) {
+        let event = &self.records[&position].event;
+        let event_type = view::string(event, "type");
+        if matches!(event_type, "page" | "turn_started")
+            || (event_type == "user_message_chunk" && self.saw_tool)
+        {
+            self.scope_start = position;
+            self.saw_tool = false;
+            self.anchors.clear();
+            self.unmatched.clear();
+            self.shell_outputs.clear();
+        }
+        if matches!(event_type, "turn_started" | "turn_ended") {
+            self.context.0 = true;
+        }
+        let mut row = view::row(&self.records[&position]);
+        if let Some(row) = &mut row {
+            if self.is_codex
+                && (row.kind == view::RowKind::User
+                    || row.system_kind.as_deref() == Some("swarm_ring"))
+            {
+                if row.kind == view::RowKind::User && !self.context.0 {
+                    row.arrives_mid_turn = true;
+                }
+                self.context.0 = false;
+            }
+            if row.system_kind.as_deref() == Some("swarm_ring") && !self.context.1 {
+                row.starts_turn = true;
+            }
+            if row.opens_turn() {
+                self.context.1 = true;
+            }
+            if row.ends_turn {
+                self.context.1 = false;
+            }
+            row.hidden = view::is_hidden(row);
+        }
+        let reference = match event_type {
+            "tool_call_update" | "tool_diff" => {
+                Some(format!("tool:{}", view::string(event, "tool_call_id")))
+            }
+            "system_message" => match view::string(event, "kind") {
+                "shell_output" => Some(format!(
+                    "shell:{}",
+                    event["meta"]["parent_uuid"].as_str().unwrap_or("")
+                )),
+                "command_output" | "skill_body" | "injected" => {
+                    let kind = view::string(event, "kind");
+                    let text = view::string(event, "text").trim_start();
+                    if kind == "injected"
+                        && ["<system-reminder>", "<local-command-caveat>"]
+                            .iter()
+                            .any(|prefix| text.starts_with(prefix))
+                    {
+                        None
+                    } else {
+                        let command = format!(
+                            "command:{}",
+                            event["meta"]["parent_uuid"].as_str().unwrap_or("")
+                        );
+                        if self.anchors.contains_key(&command) {
+                            Some(command)
+                        } else if kind != "command_output" {
+                            let tool = format!(
+                                "tool:{}",
+                                event["meta"]["source_tool_use_id"].as_str().unwrap_or("")
+                            );
+                            if kind != "injected"
+                                || self.anchors.get(&tool).is_some_and(|anchors| {
+                                    anchors.iter().any(|key| {
+                                        view::string(&self.records[key].event, "name") == "Skill"
+                                    })
+                                })
+                            {
+                                Some(tool)
+                            } else {
+                                None
+                            }
+                        } else {
+                            Some(command)
+                        }
+                    }
+                }
+                _ => None,
+            },
+            _ => None,
+        };
+        let reference =
+            reference.filter(|id| id.split_once(':').is_some_and(|(_, id)| !id.is_empty()));
+        let target = reference
+            .as_ref()
+            .and_then(|id| self.anchors.get(id))
+            .and_then(|anchors| {
+                let session = event["meta"]["session_id"].as_str().unwrap_or("");
+                let mut matches = anchors.iter().filter(|key| {
+                    let anchor = self.records[key].event["meta"]["session_id"]
+                        .as_str()
+                        .unwrap_or("");
+                    (session.is_empty() || anchor.is_empty() || session == anchor)
+                        && (view::string(event, "kind") != "injected"
+                            || !reference.as_ref().is_some_and(|id| id.starts_with("tool:"))
+                            || view::string(&self.records[key].event, "name") == "Skill")
+                });
+                let first = matches.next()?;
+                matches.next().is_none().then_some(*first)
+            });
+        let target = target.filter(|key| {
+            view::string(event, "kind") != "shell_output" || !self.shell_outputs.contains(key)
+        });
+        if view::string(event, "kind") == "shell_output"
+            && let Some(key) = target
+        {
+            self.shell_outputs.insert(key);
+        }
+        if target.is_none()
+            && let Some(reference) = &reference
+        {
+            self.unmatched.insert(reference.clone());
+        }
+        let anchor = match event_type {
+            "tool_call" => Some(format!("tool:{}", view::string(event, "tool_call_id"))),
+            "system_message" if view::string(event, "kind") == "shell_input" => Some(format!(
+                "shell:{}",
+                event["meta"]["uuid"].as_str().unwrap_or("")
+            )),
+            "system_message" if row.as_ref().is_some_and(|row| row.command.is_some()) => Some(
+                format!("command:{}", event["meta"]["uuid"].as_str().unwrap_or("")),
+            ),
+            _ => None,
+        };
+        if let Some(anchor) = anchor {
+            if self.unmatched.contains(&anchor) {
+                self.rebuild = true;
+            }
+            let anchors = self.anchors.entry(anchor).or_default();
+            if !anchors.is_empty() {
+                self.rebuild = true;
+            }
+            anchors.push(position);
+        }
+        if matches!(event_type, "tool_call" | "tool_call_update" | "tool_diff") {
+            self.saw_tool = true;
+        }
+        if event_type == "turn_ended" {
+            self.rebuild = true;
+            self.scope_start = position;
+            self.saw_tool = false;
+            self.anchors.clear();
+            self.unmatched.clear();
+            self.shell_outputs.clear();
+        }
+        if matches!(view::string(event, "kind"), "skill_body" | "injected")
+            && target.is_some_and(|key| {
+                view::string(&self.records[&key].event, "type") == "system_message"
+            })
+        {
+            self.context.1 = true;
+        }
+        if !self.initialized {
+            return;
+        }
+        if let Some(target) = target.and_then(|key| self.record_chunks.get(&key).copied()) {
+            self.chunks.get_mut(&target).unwrap().records.push(position);
+            self.record_chunks.insert(position, target);
+            self.dirty.insert(target);
+            self.last_prose = None;
+            return;
+        }
+        let Some(row) = row else {
+            if matches!(event_type, "turn_started" | "page")
+                && let Some((&id, _)) = self.chunks.last_key_value()
+            {
+                self.chunks.get_mut(&id).unwrap().records.push(position);
+                self.record_chunks.insert(position, id);
+                self.dirty.insert(id);
+            }
+            return;
+        };
+        let step = swarm::view::is_step(&row) || event_type == "tool_call";
+        let prose = matches!(
+            row.kind,
+            view::RowKind::User | view::RowKind::Assistant | view::RowKind::Thought
         )
+        .then(|| (row.kind, row.id.clone()));
+        let merges = prose.is_some() && self.last_prose == prose;
+        let new_chunk = self.chunks.is_empty()
+            || (!merges
+                && (!step
+                    || self.tail_steps == 0
+                    || self.tail_steps == swarm::view::FOLD_STEP_LIMIT));
+        if new_chunk {
+            let id = self.next_chunk;
+            self.next_chunk += 1;
+            self.chunks.insert(
+                id,
+                LiveChunk {
+                    records: Vec::new(),
+                    rows: Vec::new(),
+                    context: self.contexts[&position],
+                },
+            );
+            self.tail_steps = 0;
+        }
+        let id = *self.chunks.last_key_value().unwrap().0;
+        self.chunks.get_mut(&id).unwrap().records.push(position);
+        self.record_chunks.insert(position, id);
+        self.dirty.insert(id);
+        if step {
+            if !merges {
+                self.tail_steps += 1;
+            }
+        } else {
+            self.tail_steps = 0;
+        }
+        self.last_prose = prose;
+    }
+    fn rows(&self) -> Vec<Row> {
+        if !self.initialized || self.rebuild {
+            return self.rows_full();
+        }
+        self.chunks
+            .values()
+            .flat_map(|chunk| chunk.rows.clone())
+            .chain(self.last_queued.clone())
+            .collect()
     }
     fn remember_shown(&mut self, rows: &[Row]) {
         for row in rows {
@@ -2747,31 +3050,322 @@ impl LiveRows {
             }
         }
     }
+    fn prepare(&mut self, rows: Vec<Row>) {
+        self.clear_row = rows
+            .iter()
+            .find(|row| row.kind == view::RowKind::Divider)
+            .cloned();
+        self.chunks.clear();
+        self.record_chunks.clear();
+        self.dirty.clear();
+        self.next_chunk = 0;
+        for queued in &self.last_queued {
+            if !rows.iter().any(|row| row.id == queued.id) {
+                self.shown.remove(&queued.id);
+            }
+        }
+        self.last_queued = rows
+            .iter()
+            .filter(|row| row.kind == view::RowKind::Queued)
+            .cloned()
+            .collect();
+        for row in rows
+            .into_iter()
+            .filter(|row| row.kind != view::RowKind::Queued)
+        {
+            let step = swarm::view::is_step(&row);
+            let can_append = step
+                && row.kind != view::RowKind::Fold
+                && self.chunks.last_key_value().is_some_and(|(_, chunk)| {
+                    chunk.rows.iter().all(swarm::view::is_step)
+                        && chunk
+                            .rows
+                            .iter()
+                            .map(|row| {
+                                if row.kind == view::RowKind::Fold {
+                                    row.steps.len()
+                                } else {
+                                    1
+                                }
+                            })
+                            .sum::<usize>()
+                            < swarm::view::FOLD_STEP_LIMIT
+                });
+            let id = if can_append {
+                *self.chunks.last_key_value().unwrap().0
+            } else {
+                let id = self.next_chunk;
+                self.next_chunk += 1;
+                self.chunks.insert(
+                    id,
+                    LiveChunk {
+                        records: Vec::new(),
+                        rows: Vec::new(),
+                        context: (self.start == 0, self.start > 0),
+                    },
+                );
+                id
+            };
+            let mut records: Vec<_> = row
+                .source_ids
+                .iter()
+                .filter_map(|source| {
+                    let mut pieces = source.strip_prefix("raw-")?.split('-');
+                    Some((pieces.next()?.parse().ok()?, pieces.next()?.parse().ok()?))
+                })
+                .collect();
+            if let (Some(&first), Some(&last)) = (records.iter().min(), records.iter().max()) {
+                records.extend(
+                    self.records
+                        .range(first..=last)
+                        .filter(|(_, record)| {
+                            matches!(
+                                view::string(&record.event, "type"),
+                                "page" | "turn_started" | "turn_ended"
+                            )
+                        })
+                        .map(|(key, _)| *key),
+                );
+                records.sort_unstable();
+                records.dedup();
+            }
+            for key in &records {
+                self.record_chunks.insert(*key, id);
+            }
+            let chunk = self.chunks.get_mut(&id).unwrap();
+            if chunk.records.is_empty() {
+                chunk.context = records
+                    .first()
+                    .and_then(|key| self.contexts.get(key))
+                    .copied()
+                    .unwrap_or((self.start == 0, self.start > 0));
+            }
+            chunk.records.extend(records);
+            chunk.rows.push(row);
+        }
+        self.tail_steps = self.chunks.last_key_value().map_or(0, |(_, chunk)| {
+            if chunk
+                .rows
+                .iter()
+                .all(|row| row.kind == view::RowKind::Fold || swarm::view::is_step(row))
+            {
+                chunk
+                    .rows
+                    .iter()
+                    .map(|row| {
+                        if row.kind == view::RowKind::Fold {
+                            row.steps.len()
+                        } else {
+                            1
+                        }
+                    })
+                    .sum()
+            } else {
+                0
+            }
+        });
+        self.last_prose = self
+            .records
+            .values()
+            .rev()
+            .find_map(view::row)
+            .and_then(|row| {
+                matches!(
+                    row.kind,
+                    view::RowKind::User | view::RowKind::Assistant | view::RowKind::Thought
+                )
+                .then_some((row.kind, row.id))
+            });
+        self.initialized = true;
+        self.rebuild = false;
+        self.queue_dirty = false;
+    }
+    fn compact(&mut self) {
+        // shortcut: one open turn can exceed 2000 records; spill it only if its memory becomes a problem.
+        while self.records.len() > ROW_RECORD_LIMIT {
+            let Some((&key, _)) = self.records.first_key_value() else {
+                break;
+            };
+            if key >= self.scope_start {
+                break;
+            }
+            if let Some(id) = self.record_chunks.get(&key).copied() {
+                let chunk = &self.chunks[&id];
+                if chunk.records.iter().any(|key| *key >= self.scope_start) {
+                    break;
+                }
+                let chunk = self.chunks.remove(&id).unwrap();
+                for row in &chunk.rows {
+                    self.shown.remove(&row.id);
+                    for step in &row.steps {
+                        self.shown.remove(&step.id);
+                    }
+                }
+                for key in chunk.records {
+                    self.records.remove(&key);
+                    self.contexts.remove(&key);
+                    self.record_chunks.remove(&key);
+                }
+            } else {
+                self.records.remove(&key);
+                self.contexts.remove(&key);
+            }
+        }
+    }
     fn delta(&mut self, key: &str) -> Frame {
-        let rows = self.rows();
-        let previous: HashMap<_, _> = self.last_rows.iter().map(|row| (&row.id, row)).collect();
-        let upsert: Vec<_> = rows
-            .iter()
-            .filter(|row| previous.get(&row.id).is_none_or(|old| *old != *row))
-            .collect();
-        let current: HashSet<_> = rows.iter().map(|row| &row.id).collect();
-        let remove: Vec<_> = self
-            .last_rows
-            .iter()
-            .filter(|row| !current.contains(&row.id))
-            .map(|row| &row.id)
-            .collect();
-        let usage = view::usage(&self.records.values().cloned().collect::<Vec<_>>());
+        let mut upsert = Vec::new();
+        let mut remove = Vec::new();
+        if !self.initialized
+            || self.rebuild
+            || (self.start == 0 && self.records.len() < 30 && !self.dirty.is_empty())
+        {
+            let rows = self.rows_full();
+            let old: Vec<_> = if self.initialized {
+                self.chunks
+                    .values()
+                    .flat_map(|chunk| chunk.rows.iter())
+                    .chain(self.last_queued.iter())
+                    .collect()
+            } else {
+                self.last_rows.iter().collect()
+            };
+            let previous: HashMap<_, _> = old.iter().map(|row| (&row.id, *row)).collect();
+            upsert.extend(
+                rows.iter()
+                    .filter(|row| previous.get(&row.id).is_none_or(|old| *old != *row))
+                    .cloned(),
+            );
+            let ids: HashSet<_> = rows.iter().map(|row| &row.id).collect();
+            remove.extend(
+                old.iter()
+                    .filter(|row| !ids.contains(&row.id))
+                    .map(|row| row.id.clone()),
+            );
+            self.remember_shown(&rows);
+            self.prepare(rows);
+            self.last_rows.clear();
+        } else {
+            let mut dirty: Vec<_> = self.dirty.drain().collect();
+            dirty.sort_unstable();
+            for id in dirty {
+                let chunk = &self.chunks[&id];
+                let mut positions = chunk.records.clone();
+                positions.sort_unstable();
+                let records: Vec<_> = positions
+                    .iter()
+                    .filter_map(|key| self.records.get(key).cloned())
+                    .collect();
+                let rows = view::view_rows_with_context(
+                    &records,
+                    true,
+                    self.is_codex,
+                    &self.shown,
+                    Some(chunk.context),
+                );
+                upsert.extend(rows.iter().filter(|row| !chunk.rows.contains(row)).cloned());
+                remove.extend(
+                    chunk
+                        .rows
+                        .iter()
+                        .filter(|row| !rows.iter().any(|new| new.id == row.id))
+                        .map(|row| row.id.clone()),
+                );
+                self.remember_shown(&rows);
+                self.chunks.get_mut(&id).unwrap().rows = rows;
+            }
+            if self.queue_dirty {
+                let rows = view::view_rows(&self.pending_queue, true, self.is_codex, &self.shown);
+                upsert.extend(
+                    rows.iter()
+                        .filter(|row| !self.last_queued.contains(row))
+                        .cloned(),
+                );
+                remove.extend(
+                    self.last_queued
+                        .iter()
+                        .filter(|row| !rows.iter().any(|new| new.id == row.id))
+                        .map(|row| row.id.clone()),
+                );
+                self.remember_shown(&rows);
+                self.last_queued = rows;
+                self.queue_dirty = false;
+            }
+        }
+        let usage = self.usage.value();
         let mut payload =
             json!({"key": key, "upsert": upsert, "remove": remove, "end_offset": self.end});
         if usage != self.last_usage {
             payload["usage"] = json!(usage);
         }
         self.last_usage = usage;
-        let frame = Frame::new("rows", payload, Some(key));
-        self.remember_shown(&rows);
-        self.last_rows = rows;
-        frame
+        self.compact();
+        Frame::new("rows", payload, Some(key))
+    }
+    fn reindex(&mut self) {
+        let initial = self
+            .records
+            .first_key_value()
+            .and_then(|(key, _)| self.contexts.get(key))
+            .copied();
+        let usage = self.usage.clone();
+        let queue_lost = self.pending_queue.iter().any(|record| {
+            !self
+                .records
+                .values()
+                .any(|cached| cached.source_id == record.source_id)
+        });
+        let pending_queue = std::mem::take(&mut self.pending_queue);
+        let queue_cursor = self.queue_cursor;
+        let records = std::mem::take(&mut self.records);
+        let mut fresh = Self::empty(self.start, self.is_codex);
+        if let Some(context) = initial {
+            fresh.context = context;
+        }
+        fresh.end = self.end;
+        fresh.shown = std::mem::take(&mut self.shown);
+        fresh.last_usage = self.last_usage.take();
+        fresh.clear_row = self.clear_row.take();
+        if queue_lost {
+            fresh.pending_queue = pending_queue;
+            fresh.queue_cursor = queue_cursor;
+        }
+        for (key, record) in records {
+            fresh.usage.ingest(&record.event);
+            fresh.contexts.insert(key, fresh.context);
+            fresh.records.insert(key, record);
+            fresh.update_queue(key);
+            fresh.append(key);
+        }
+        if usage.has_report() {
+            fresh.usage = usage;
+        }
+        *self = fresh;
+    }
+    fn rows_full(&self) -> Vec<Row> {
+        let records = self.records.values().cloned().collect::<Vec<_>>();
+        let compacted = self
+            .records
+            .first_key_value()
+            .is_some_and(|(key, _)| key.0 > self.start);
+        let context = compacted.then(|| self.contexts[self.records.first_key_value().unwrap().0]);
+        let mut rows = view::view_rows_with_context(
+            &records,
+            self.start > 0 || compacted,
+            self.is_codex,
+            &self.shown,
+            context,
+        );
+        rows.retain(|row| row.kind != view::RowKind::Queued);
+        rows.extend(view::view_rows(
+            &self.pending_queue,
+            true,
+            self.is_codex,
+            &self.shown,
+        ));
+        if compacted && let Some(divider) = &self.clear_row {
+            rows.insert(0, divider.clone());
+        }
+        rows
     }
 }
 
@@ -2917,6 +3511,60 @@ async fn transcript_rows(
     })
     .await
     .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "rows task failed"))??;
+    let key = format!("{}:{}", query.session, query.agent);
+    if query.before.is_none() {
+        let hub = app.hub.lock().unwrap();
+        let cached = hub
+            .followers
+            .get(&key)
+            .and_then(|follower| follower.rows.as_ref())
+            .or_else(|| {
+                hub.row_cache
+                    .iter()
+                    .find(|(cached, _)| cached == &key)
+                    .map(|(_, state)| state)
+            });
+        if let Some(state) = cached
+            && state.initialized
+            && !state.rebuild
+            && state.dirty.is_empty()
+            && state
+                .records
+                .first_key_value()
+                .is_some_and(|(key, _)| key.0 <= start)
+            && state.end == end
+        {
+            return Ok(Json(
+                json!({"page":{"start_offset":start,"end_offset":end},"rows":state.chunks.values().filter(|chunk|state.records.len()<=ROW_RECORD_LIMIT || chunk.records.iter().any(|key|key.0>=start)).flat_map(|chunk|chunk.rows.iter()).chain(state.last_queued.iter()).collect::<Vec<_>>(),"usage":state.usage.value(),"remove":[]}),
+            ));
+        }
+    }
+    let recovery = if query.before.is_some() {
+        let hub = app.hub.lock().unwrap();
+        hub.followers
+            .get(&key)
+            .and_then(|follower| follower.rows.as_ref())
+            .or_else(|| {
+                hub.row_cache
+                    .iter()
+                    .find(|(cached, _)| cached == &key)
+                    .map(|(_, state)| state)
+            })
+            .filter(|state| {
+                state
+                    .records
+                    .first_key_value()
+                    .is_some_and(|(key, _)| key.0 > state.start)
+            })
+            .map(|state| (state.start, state.end))
+    } else {
+        None
+    };
+    let recovery = if let Some((start, end)) = recovery {
+        Some(read_row_window(&app.tool, &log, start, end).await?)
+    } else {
+        None
+    };
     let page = read_row_window(&app.tool, &log, start, end).await?;
     let key = format!("{}:{}", query.session, query.agent);
     let mut hub = app.hub.lock().unwrap();
@@ -2931,10 +3579,15 @@ async fn transcript_rows(
             .map(|(_, state)| state.clone())
     });
     let mut state = active.or(history).unwrap_or_else(|| page.clone());
-    let previous = state.last_rows.clone();
+    if let Some(recovery) = recovery {
+        state.records.extend(recovery.records);
+        state.reindex();
+    }
+    let previous = state.rows();
     state.records.extend(page.records);
     state.start = state.start.min(start);
     state.end = state.end.max(end);
+    state.reindex();
     let rows = state.rows();
     let ids: HashSet<_> = rows.iter().map(|row| &row.id).collect();
     let remove: Vec<_> = previous
@@ -2942,7 +3595,7 @@ async fn transcript_rows(
         .filter(|row| !ids.contains(&row.id))
         .map(|row| &row.id)
         .collect();
-    let usage = view::usage(&state.records.values().cloned().collect::<Vec<_>>());
+    let usage = state.usage.value();
     let previous: HashMap<_, _> = previous.iter().map(|row| (&row.id, row)).collect();
     let upsert: Vec<_> = rows
         .iter()
@@ -2953,7 +3606,10 @@ async fn transcript_rows(
     let response = json!({"page": {"start_offset": start, "end_offset": end}, "rows": upsert, "usage": usage, "remove": remove});
     state.last_usage = usage;
     state.remember_shown(&rows);
+    state.prepare(rows.clone());
     state.last_rows = rows;
+    state.compact();
+    state.last_rows = state.rows();
     let subscribed = hub
         .streams
         .values()
@@ -2972,6 +3628,37 @@ struct ToolOutputQuery {
     agent: String,
     row: String,
 }
+fn output_locator(rows: &[Row], id: &str) -> Option<String> {
+    for row in rows {
+        if row.id == id {
+            return row
+                .tool
+                .as_ref()
+                .and_then(|tool| tool.output.as_ref())
+                .map(|output| output.id.clone())
+                .or_else(|| row.diff.as_ref().map(|diff| diff.id.clone()))
+                .or_else(|| {
+                    row.tool
+                        .as_ref()
+                        .and_then(|tool| tool.diffs.first())
+                        .map(|diff| diff.id.clone())
+                })
+                .or_else(|| row.shell.as_ref().map(|shell| shell.output.id.clone()))
+                .or_else(|| {
+                    row.command
+                        .as_ref()
+                        .and_then(|command| command.output.as_ref())
+                        .map(|output| output.id.clone())
+                })
+                .or_else(|| row.output.as_ref().map(|output| output.id.clone()));
+        }
+        if let Some(id) = output_locator(&row.steps, id) {
+            return Some(id);
+        }
+    }
+    None
+}
+
 async fn tool_output(
     State(app): State<App>,
     Query(mut query): Query<ToolOutputQuery>,
@@ -2989,41 +3676,60 @@ async fn tool_output(
                     .find(|(cached, _)| cached == &key)
                     .map(|(_, state)| state)
             });
-        if let Some(state) = state {
-            fn locator(rows: &[Row], id: &str) -> Option<String> {
-                for row in rows {
-                    if row.id == id {
-                        return row
-                            .tool
-                            .as_ref()
-                            .and_then(|tool| tool.output.as_ref())
-                            .map(|output| output.id.clone())
-                            .or_else(|| row.diff.as_ref().map(|diff| diff.id.clone()))
-                            .or_else(|| {
-                                row.tool
-                                    .as_ref()
-                                    .and_then(|tool| tool.diffs.first())
-                                    .map(|diff| diff.id.clone())
-                            })
-                            .or_else(|| row.shell.as_ref().map(|shell| shell.output.id.clone()))
-                            .or_else(|| {
-                                row.command
-                                    .as_ref()
-                                    .and_then(|command| command.output.as_ref())
-                                    .map(|output| output.id.clone())
-                            })
-                            .or_else(|| row.output.as_ref().map(|output| output.id.clone()));
-                    }
-                    if let Some(id) = locator(&row.steps, id) {
-                        return Some(id);
-                    }
+        if let Some(state) = state
+            && let Some(locator) = state
+                .chunks
+                .values()
+                .find_map(|chunk| output_locator(&chunk.rows, &query.row))
+                .or_else(|| output_locator(&state.last_rows, &query.row))
+        {
+            query.row = locator;
+        }
+    }
+    if let Some((_, source)) = query.row.rsplit_once('@') {
+        let offset = source
+            .strip_prefix("raw-")
+            .and_then(|source| source.split('-').next())
+            .and_then(|offset| offset.parse::<u64>().ok())
+            .ok_or_else(|| error(StatusCode::NOT_FOUND, "unknown tool output"))?;
+        let log = resolve_log(&app.root, &query.session, &query.agent)?;
+        let path = log.path.clone();
+        let end = tokio::task::spawn_blocking(move || {
+            use std::io::{BufRead, Seek, SeekFrom};
+            let mut file = std::fs::File::open(path)?;
+            file.seek(SeekFrom::Start(offset))?;
+            let mut reader = std::io::BufReader::new(file);
+            let mut line = String::new();
+            let mut end = offset;
+            for _ in 0..ROW_RECORD_LIMIT {
+                line.clear();
+                let bytes = reader.read_line(&mut line)?;
+                if bytes == 0 {
+                    break;
                 }
-                None
+                end += bytes as u64;
             }
-            if let Some(locator) = locator(&state.last_rows, &query.row) {
-                query.row = locator;
+            Ok::<_, std::io::Error>(end)
+        })
+        .await
+        .map_err(|_| {
+            error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "tool locator task failed",
+            )
+        })?
+        .map_err(|_| error(StatusCode::NOT_FOUND, "unknown tool output"))?;
+        let mut window = read_row_window(&app.tool, &log, offset, end).await?;
+        if output_locator(&window.rows(), &query.row).is_none() {
+            let full_end = std::fs::metadata(&log.path)
+                .map_err(|_| error(StatusCode::NOT_FOUND, "unknown tool output"))?
+                .len();
+            if end < full_end {
+                window = read_row_window(&app.tool, &log, offset, full_end).await?;
             }
         }
+        query.row = output_locator(&window.rows(), &query.row)
+            .ok_or_else(|| error(StatusCode::NOT_FOUND, "unknown tool output"))?;
     }
     let (source, component) = query
         .row
@@ -3248,7 +3954,7 @@ async fn subscribe(
             let hub = app.hub.lock().unwrap();
             hub.followers
                 .get(&entry.key)
-                .is_some_and(|follower| follower.rows.is_some())
+                .is_some_and(|follower| follower.rows.is_some() || follower.rendering_rows)
                 || hub.row_cache.iter().any(|(key, _)| key == &entry.key)
         };
         if !known {
@@ -3261,6 +3967,7 @@ async fn subscribe(
                     .map_err(|_| error(StatusCode::NOT_FOUND, "transcript log unavailable"))?;
             let mut seed = read_row_window(&app.tool, log, start, end).await?;
             seed.last_rows = seed.rows();
+            seed.prepare(seed.last_rows.clone());
             seeds.insert(entry.key.clone(), seed);
         }
     }
@@ -3330,6 +4037,7 @@ async fn subscribe(
                     from: entry.from,
                     stop,
                     done,
+                    rendering_rows: false,
                     rows: if needs_rows {
                         seed.or_else(|| Some(LiveRows::empty(entry.from, log.format == "codex")))
                     } else {
@@ -3357,16 +4065,101 @@ async fn subscribe(
     Ok(Json(json!({})))
 }
 
-fn flush_transcript(
+async fn flush_transcript(
     app: &Weak<Server>,
     key: &str,
     generation: &str,
     batches: &mut Vec<(u64, Vec<Value>)>,
-) {
+) -> std::io::Result<()> {
     if batches.is_empty() {
-        return;
+        return Ok(());
     }
     if let Some(app) = app.upgrade() {
+        let pending = {
+            let mut hub = app.hub.lock().unwrap();
+            let Some(follower) = hub
+                .followers
+                .get_mut(key)
+                .filter(|follower| follower.generation == generation)
+            else {
+                batches.clear();
+                return Ok(());
+            };
+            if let Some(state) = &mut follower.rows {
+                let mut start = follower.from;
+                for (end, events) in batches.iter() {
+                    state.ingest(start, *end, events);
+                    start = *end;
+                }
+            }
+            if follower
+                .rows
+                .as_ref()
+                .is_some_and(|state| state.rebuild && state.records.len() > ROW_RECORD_LIMIT)
+            {
+                follower.rendering_rows = true;
+                follower.rows.take().map(Err)
+            } else {
+                let frame = follower.rows.as_mut().map(|state| state.delta(key));
+                frame.map(Ok)
+            }
+        };
+        let row_frame = if let Some(pending) = pending {
+            if let Ok(frame) = pending {
+                Some(frame)
+            } else {
+                let state = pending.err().unwrap();
+                let render_key = key.to_owned();
+                let (mut state, frame) = tokio::task::spawn_blocking(move || {
+                    let mut state = state;
+                    let frame = state.delta(&render_key);
+                    (state, frame)
+                })
+                .await
+                .map_err(std::io::Error::other)?;
+                loop {
+                    let incoming = {
+                        let mut hub = app.hub.lock().unwrap();
+                        let Some(follower) = hub
+                            .followers
+                            .get_mut(key)
+                            .filter(|follower| follower.generation == generation)
+                        else {
+                            batches.clear();
+                            return Ok(());
+                        };
+                        if let Some(incoming) = follower.rows.take() {
+                            Some(incoming)
+                        } else {
+                            follower.rows = Some(state);
+                            follower.rendering_rows = false;
+                            break;
+                        }
+                    };
+                    if let Some(incoming) = incoming {
+                        let merged = tokio::task::spawn_blocking(move || {
+                            let usage = state.usage.clone();
+                            state.records.extend(incoming.records);
+                            state.shown.extend(incoming.shown);
+                            state.start = state.start.min(incoming.start);
+                            state.end = state.end.max(incoming.end);
+                            state.reindex();
+                            state.usage = usage;
+                            let rows = state.rows_full();
+                            state.prepare(rows);
+                            state.compact();
+                            state
+                        })
+                        .await
+                        .map_err(std::io::Error::other)?;
+                        state = merged;
+                    }
+                }
+                Some(frame)
+            }
+        } else {
+            None
+        };
         let mut hub = app.hub.lock().unwrap();
         if hub
             .followers
@@ -3374,22 +4167,8 @@ fn flush_transcript(
             .is_none_or(|follower| follower.generation != generation)
         {
             batches.clear();
-            return;
+            return Ok(());
         }
-        let row_frame = if let Some(follower) = hub.followers.get_mut(key) {
-            if let Some(state) = &mut follower.rows {
-                let mut start = follower.from;
-                for (end, events) in batches.iter() {
-                    state.ingest(start, *end, events);
-                    start = *end;
-                }
-                Some(state.delta(key))
-            } else {
-                None
-            }
-        } else {
-            None
-        };
         for client in hub.streams.values_mut() {
             let row_view = client.row_keys.contains(key);
             let Some(cursor) = client.keys.get_mut(key) else {
@@ -3399,7 +4178,9 @@ fn flush_transcript(
             let mut end_offset = *cursor;
             for (end, batch) in batches.iter() {
                 if *end > end_offset {
-                    events.extend(batch.iter().cloned());
+                    if !row_view {
+                        events.extend(batch.iter().cloned());
+                    }
                     end_offset = *end;
                 }
             }
@@ -3425,6 +4206,7 @@ fn flush_transcript(
         }
     }
     batches.clear();
+    Ok(())
 }
 
 async fn follow(
@@ -3452,7 +4234,7 @@ async fn follow(
                 biased;
                 _ = stop.changed() => break Ok::<_, std::io::Error>(()),
                 _ = timer.tick() => {
-                    flush_transcript(&app, &entry.key, &generation, &mut batches);
+                    flush_transcript(&app, &entry.key, &generation, &mut batches).await?;
                     timer.reset();
                 }
                 line = lines.next_line() => {
@@ -4595,6 +5377,493 @@ wait
                 .contains(&first["rows"][0]["id"])
         );
     }
+    fn synthetic_event(number: usize, tools_only: bool) -> Value {
+        if tools_only || number % 4 == 2 {
+            json!({"type":"tool_call","tool_call_id":format!("tool-{number}"),"name":"Bash","input":{"command":"cargo test"},"status":"in_progress","meta":{"uuid":format!("call-{number}"),"timestamp":"2026-10-13T00:00:00Z"}})
+        } else if number % 4 == 3 {
+            json!({"type":"tool_call_update","tool_call_id":format!("tool-{}",number-1),"status":"completed","content":"test passed","meta":{"timestamp":"2026-10-13T00:00:01Z"}})
+        } else {
+            json!({"type":if number.is_multiple_of(4) {"user_message_chunk"} else {"agent_message_chunk"},"text":format!("message-{number}"),"meta":{"uuid":format!("message-{number}")}})
+        }
+    }
+    fn reference_delta(state: &mut LiveRows, key: &str) -> Value {
+        let rows = state.rows_full();
+        let previous: HashMap<_, _> = state.last_rows.iter().map(|row| (&row.id, row)).collect();
+        let upsert: Vec<_> = rows
+            .iter()
+            .filter(|row| previous.get(&row.id).is_none_or(|old| *old != *row))
+            .collect();
+        let current: HashSet<_> = rows.iter().map(|row| &row.id).collect();
+        let remove: Vec<_> = state
+            .last_rows
+            .iter()
+            .filter(|row| !current.contains(&row.id))
+            .map(|row| &row.id)
+            .collect();
+        let usage = view::usage(&state.records.values().cloned().collect::<Vec<_>>());
+        let mut payload = json!({"key":key,"upsert":upsert,"remove":remove,"end_offset":state.end});
+        if usage != state.last_usage {
+            payload["usage"] = json!(usage);
+        }
+        state.last_usage = usage;
+        state.remember_shown(&rows);
+        state.last_rows = rows;
+        payload
+    }
+    #[test]
+    fn live_chunks_match_full_frames_for_claude_and_codex() {
+        for codex in [false, true] {
+            let mut incremental = LiveRows::empty(0, codex);
+            let mut reference = LiveRows::empty(0, codex);
+            let mut events = (0..320)
+                .map(|number| synthetic_event(number, true))
+                .collect::<Vec<_>>();
+            events.extend([
+                json!({"type":"tool_call_update","tool_call_id":"tool-5","status":"completed","content":"late result"}),
+                json!({"type":"usage","kind":"context","context_tokens":80,"context_capacity_tokens":100}),
+                json!({"type":"turn_ended","reason":"completed"}),
+                json!({"type":"turn_started"}),
+                json!({"type":"user_message_chunk","text":"next","meta":{"uuid":"next"}}),
+                json!({"type":"agent_message_chunk","text":"answer","meta":{"uuid":"answer"}}),
+                json!({"type":"agent_message_chunk","text":" more","meta":{"uuid":"answer"}}),
+                json!({"type":"agent_thought_chunk","text":"thinking","meta":{"uuid":"thinking"}}),
+                json!({"type":"system_message","kind":"swarm_ring","text":"ring"}),
+                json!({"type":"tool_call","tool_call_id":"joined","name":"Bash","input":{"command":"true"}}),
+                json!({"type":"tool_call_update","tool_call_id":"joined","status":"completed","content":"done"}),
+                json!({"type":"tool_call","tool_call_id":"joined","name":"Bash","input":{"command":"false"}}),
+                json!({"type":"system_message","kind":"compaction"}),
+                json!({"type":"queue_operation","operation":"enqueue","content":"queued"}),
+                json!({"type":"queue_operation","operation":"dequeue"}),
+                json!({"type":"tool_call_update","tool_call_id":"retro","status":"completed","content":"before call"}),
+                json!({"type":"tool_call","tool_call_id":"retro","name":"Read","input":{}}),
+                json!({"type":"system_message","kind":"command","text":"<command-name>/example</command-name>","meta":{"uuid":"command"}}),
+                json!({"type":"system_message","kind":"skill_body","text":"body","meta":{"parent_uuid":"command"}}),
+                json!({"type":"system_message","kind":"command_output","text":"output","meta":{"parent_uuid":"command"}}),
+                json!({"type":"system_message","kind":"shell_input","text":"<bash-input>true</bash-input>","meta":{"uuid":"shell"}}),
+                json!({"type":"system_message","kind":"shell_output","text":"<bash-stdout>done</bash-stdout>","meta":{"parent_uuid":"shell"}}),
+                json!({"type":"system_message","kind":"shell_output","text":"<bash-stdout>second</bash-stdout>","meta":{"parent_uuid":"shell"}}),
+
+            ]);
+            events.extend((0..99).map(|number|json!({"type":"session_info","kind":"title","value":"hidden","meta":{"uuid":format!("hidden-{number}")}})));
+            events.extend([
+                json!({"type":"tool_call","tool_call_id":"hidden-100","name":"Read","input":{}}),
+                json!({"type":"turn_ended","reason":"completed"}),
+                json!({"type":"tool_call","tool_call_id":"hidden-101","name":"Read","input":{}}),
+            ]);
+            for (index, event) in events.into_iter().enumerate() {
+                incremental.ingest(index as u64, index as u64 + 1, std::slice::from_ref(&event));
+                if event["type"] == "queue_operation" {
+                    assert!(!incremental.rebuild, "a queue edit rebuilt the open turn");
+                }
+                reference.ingest(index as u64, index as u64 + 1, &[event]);
+                let expected = reference_delta(&mut reference, "chat");
+                let actual = incremental.delta("chat").data;
+                assert_eq!(actual, expected.to_string(), "event {index}, codex={codex}");
+            }
+            assert_eq!(incremental.rows(), reference.last_rows);
+            assert_eq!(
+                incremental.usage.value(),
+                view::usage(&reference.records.values().cloned().collect::<Vec<_>>())
+            );
+        }
+    }
+    #[test]
+    fn trimmed_history_has_the_same_live_frames() {
+        let mut live = LiveRows::empty(0, false);
+        let mut reference = LiveRows::empty(0, false);
+        let first = [
+            json!({"type":"queue_operation","operation":"enqueue","content":"pending"}),
+            json!({"type":"usage","kind":"context","context_tokens":80,"context_capacity_tokens":100}),
+        ];
+        live.ingest(0, 1, &first);
+        reference.ingest(0, 1, &first);
+        live.delta("chat");
+        reference_delta(&mut reference, "chat");
+        for index in 0..2400 {
+            let event = synthetic_event(index, false);
+            live.ingest(
+                index as u64 + 1,
+                index as u64 + 2,
+                std::slice::from_ref(&event),
+            );
+            reference.ingest(index as u64 + 1, index as u64 + 2, &[event]);
+            if index % 8 == 7 {
+                assert_eq!(
+                    serde_json::from_str::<Value>(&live.delta("chat").data).unwrap(),
+                    reference_delta(&mut reference, "chat"),
+                    "event {index}"
+                );
+            }
+        }
+        assert!(live.records.len() <= ROW_RECORD_LIMIT);
+    }
+    #[tokio::test]
+    async fn synthetic_provider_logs_match_full_rebuild() {
+        for codex in [false, true] {
+            let fixture = Fixture::new();
+            let lines=(0..12).flat_map(|turn| {
+                let id=format!("tool-{turn}");
+                if codex { vec![codex_line(turn).trim_end().to_owned(),
+                    json!({"type":"response_item","payload":{"type":"function_call","call_id":id,"name":"shell","arguments":"{\"command\":\"true\"}"}}).to_string(),
+                    json!({"type":"response_item","payload":{"type":"function_call_output","call_id":id,"output":"done"}}).to_string()]
+                } else { vec![
+                    json!({"type":"user","uuid":format!("user-{turn}"),"message":{"content":"prompt"}}).to_string(),
+                    json!({"type":"assistant","uuid":format!("thought-{turn}"),"message":{"content":[{"type":"thinking","thinking":"think"}]}}).to_string(),
+                    json!({"type":"assistant","uuid":format!("call-{turn}"),"message":{"content":[{"type":"tool_use","id":id,"name":"Bash","input":{"command":"true"}}]}}).to_string(),
+                    json!({"type":"user","uuid":format!("result-{turn}"),"message":{"content":[{"type":"tool_result","tool_use_id":id,"content":"done"}]}}).to_string()]
+                }
+            }).collect::<Vec<_>>();
+            std::fs::write(&fixture.log, lines.join("\n") + "\n").unwrap();
+            let log = Log {
+                path: fixture.log.clone(),
+                format: if codex { "codex" } else { "claude" }.into(),
+            };
+            let mut state = LiveRows::empty(0, codex);
+            let mut start = 0;
+            for line in &lines {
+                let end = start + line.len() as u64 + 1;
+                let page = read_row_window(&fixture.app.tool, &log, start, end)
+                    .await
+                    .unwrap();
+                state.ingest(
+                    start,
+                    end,
+                    &page
+                        .records
+                        .values()
+                        .map(|record| record.event.clone())
+                        .collect::<Vec<_>>(),
+                );
+                state.delta("chat");
+                start = end;
+            }
+            let mut full = read_row_window(&fixture.app.tool, &log, 0, start)
+                .await
+                .unwrap();
+            full.shown = state.shown.clone();
+            assert_eq!(state.rows(), full.rows_full());
+            assert_eq!(
+                state.usage.value(),
+                view::usage(&full.records.values().cloned().collect::<Vec<_>>())
+            );
+        }
+    }
+    #[cfg(target_os = "macos")]
+    fn allocated_bytes() -> usize {
+        #[repr(C)]
+        #[derive(Default)]
+        struct Statistics {
+            blocks_in_use: u32,
+            size_in_use: usize,
+            max_size_in_use: usize,
+            size_allocated: usize,
+        }
+        unsafe extern "C" {
+            fn malloc_zone_statistics(zone: *mut std::ffi::c_void, statistics: *mut Statistics);
+        }
+        let mut statistics = Statistics::default();
+        // Apple's malloc.h specifies that a null zone sums all allocation zones.
+        unsafe {
+            malloc_zone_statistics(std::ptr::null_mut(), &mut statistics);
+        }
+        statistics.size_in_use
+    }
+    fn percentile(values: &mut [u128]) -> u128 {
+        values.sort_unstable();
+        values[values.len() * 95 / 100]
+    }
+    #[cfg(target_os = "macos")]
+    fn live_soak(keys: usize, tools_only: bool) {
+        let mut start_times = Vec::with_capacity(1000 * keys);
+        let mut end_times = Vec::with_capacity(1000 * keys);
+        let mut start_bytes = Vec::with_capacity(1000 * keys);
+        let mut end_bytes = Vec::with_capacity(1000 * keys);
+        let baseline = allocated_bytes();
+        let mut states = (0..keys)
+            .map(|_| LiveRows::empty(0, false))
+            .collect::<Vec<_>>();
+        let mut peak = 0;
+        let mut warmed = 0;
+        for index in 0..30_000 {
+            for state in &mut states {
+                let event = synthetic_event(index, tools_only);
+                let timer = std::time::Instant::now();
+                state.ingest(index as u64, index as u64 + 1, &[event]);
+                let frame = state.delta("chat");
+                let elapsed = timer.elapsed().as_nanos();
+                if (1000..2000).contains(&index) {
+                    start_times.push(elapsed);
+                    start_bytes.push(frame.data.len() as u128);
+                }
+                if index >= 29_000 {
+                    end_times.push(elapsed);
+                    end_bytes.push(frame.data.len() as u128);
+                }
+                if index % 4 == 3 {
+                    let idle = state.delta("chat");
+                    let payload: Value = serde_json::from_str(&idle.data).unwrap();
+                    assert_eq!(payload["upsert"], json!([]));
+                }
+            }
+            if index % 50 == 49 {
+                peak = peak.max(allocated_bytes().saturating_sub(baseline));
+            }
+            if index == 9999 {
+                warmed = allocated_bytes().saturating_sub(baseline);
+            }
+        }
+        let retained = allocated_bytes().saturating_sub(baseline);
+        println!(
+            "soak keys={keys} tools_only={tools_only} simulated_seconds=600 lines_per_second=50 start_p95_ns={} end_p95_ns={} start_frame_p95_bytes={} end_frame_p95_bytes={} peak_retained_heap_bytes={peak} warmed_retained_heap_bytes={warmed} final_retained_heap_bytes={retained} records={:?}",
+            percentile(&mut start_times),
+            percentile(&mut end_times),
+            percentile(&mut start_bytes),
+            percentile(&mut end_bytes),
+            states
+                .iter()
+                .map(|state| state.records.len())
+                .collect::<Vec<_>>()
+        );
+        if tools_only {
+            let state = &mut states[0];
+            let timer = std::time::Instant::now();
+            state.ingest(
+                30_000,
+                30_001,
+                &[json!({"type":"turn_ended","reason":"completed"})],
+            );
+            let frame = state.delta("chat");
+            println!(
+                "turn_ended_ms={} frame_bytes={} retained_heap_bytes={} records={}",
+                timer.elapsed().as_secs_f64() * 1000.,
+                frame.data.len(),
+                allocated_bytes().saturating_sub(baseline),
+                state.records.len()
+            );
+        } else {
+            assert!(
+                states
+                    .iter()
+                    .all(|state| state.records.len() <= ROW_RECORD_LIMIT)
+            );
+            assert!(
+                retained < warmed * 5 / 4,
+                "closed-turn heap grew after the cache filled"
+            );
+        }
+        assert!(
+            percentile(&mut end_times) < percentile(&mut start_times) * 3 + 100_000,
+            "live flush cost grew with history"
+        );
+        assert!(
+            percentile(&mut end_bytes) < percentile(&mut start_bytes) * 2,
+            "live frame bytes grew with history"
+        );
+    }
+    #[cfg(target_os = "macos")]
+    #[test]
+    #[ignore = "release performance check, 5 keys x 50 records/s x 600 simulated seconds"]
+    fn live_rows_closed_turn_soak() {
+        live_soak(5, false);
+    }
+    #[cfg(target_os = "macos")]
+    #[test]
+    #[ignore = "release performance check, 1 open turn x 50 tools/s x 600 simulated seconds"]
+    fn live_rows_open_turn_soak() {
+        live_soak(1, true);
+    }
+    #[test]
+    #[ignore = "release baseline for the previous full-history rebuild"]
+    fn live_rows_full_rebuild_baseline() {
+        for count in [1000, 30000] {
+            let mut state = LiveRows::empty(0, false);
+            for index in 0..count {
+                state.ingest(
+                    index as u64,
+                    index as u64 + 1,
+                    &[synthetic_event(index, false)],
+                );
+            }
+            let mut samples = Vec::new();
+            for _ in 0..20 {
+                let timer = std::time::Instant::now();
+                let frame = reference_delta(&mut state, "chat");
+                std::hint::black_box(frame.to_string());
+                samples.push(timer.elapsed().as_nanos());
+            }
+            println!(
+                "full_rebuild records={count} p95_ns={}",
+                percentile(&mut samples)
+            );
+        }
+    }
+    #[tokio::test(flavor = "current_thread")]
+    #[ignore = "release cadence check during a 30000-tool turn-end rebuild"]
+    async fn large_turn_end_keeps_other_keys_running() {
+        let fixture = Fixture::new();
+        let mut state = LiveRows::empty(0, false);
+        state.ingest(
+            0,
+            30_000,
+            &(0..30_000)
+                .map(|number| synthetic_event(number, true))
+                .collect::<Vec<_>>(),
+        );
+        state.delta("large");
+        {
+            let mut hub = fixture.app.hub.lock().unwrap();
+            let mut stream = client(&[("large", 30_000), ("small", 0)]);
+            stream.row_keys = HashSet::from(["large".into(), "small".into()]);
+            hub.streams.insert("cadence".into(), stream);
+            for (key, rows, from) in [
+                ("large", state, 30_000),
+                ("small", LiveRows::empty(0, false), 0),
+            ] {
+                let (stop, _) = watch::channel(false);
+                let (_, done) = watch::channel(false);
+                hub.followers.insert(
+                    key.into(),
+                    Follower {
+                        generation: "cadence".into(),
+                        from,
+                        stop,
+                        done,
+                        rows: Some(rows),
+                        rendering_rows: false,
+                    },
+                );
+            }
+        }
+        let weak = Arc::downgrade(&fixture.app);
+        let heavy = tokio::spawn(async move {
+            let mut batches = vec![(
+                30_001,
+                vec![json!({"type":"turn_ended","reason":"completed"})],
+            )];
+            flush_transcript(&weak, "large", "cadence", &mut batches)
+                .await
+                .unwrap();
+        });
+        let mut ticks = Vec::new();
+        let mut previous = std::time::Instant::now();
+        for index in 0..15 {
+            tokio::time::sleep(Duration::from_millis(16)).await;
+            ticks.push(previous.elapsed().as_nanos());
+            previous = std::time::Instant::now();
+            let mut batches = vec![(index + 1, vec![synthetic_event(index as usize, false)])];
+            flush_transcript(
+                &Arc::downgrade(&fixture.app),
+                "small",
+                "cadence",
+                &mut batches,
+            )
+            .await
+            .unwrap();
+        }
+        heavy.await.unwrap();
+        println!(
+            "other_key_cadence_p95_ms={} worst_ms={}",
+            percentile(&mut ticks) as f64 / 1_000_000.,
+            *ticks.iter().max().unwrap() as f64 / 1_000_000.
+        );
+        assert!(
+            percentile(&mut ticks) < 40_000_000,
+            "another key stalled during turn end"
+        );
+        assert_eq!(
+            fixture.app.hub.lock().unwrap().streams["cadence"].keys["small"],
+            15
+        );
+    }
+    #[tokio::test]
+    #[ignore = "release HTTP-path costs on a 100000-line synthetic chat"]
+    async fn row_http_paths_on_large_synthetic_chat() {
+        let fixture = Fixture::new();
+        let full = (0..100_000)
+            .map(|index| format!("line {index}\n"))
+            .collect::<String>();
+        let call = json!({"type":"assistant","uuid":"giant","message":{"content":[{"type":"tool_use","id":"giant","name":"Bash","input":{"command":"print"}}]}});
+        let result = json!({"type":"user","uuid":"giant-result","message":{"content":[{"type":"tool_result","tool_use_id":"giant","content":full}]}});
+        let beginning = format!("{call}\n{result}\n");
+        let tail=(0..100_000).map(|index|json!({"type":"user","uuid":format!("u-{index}"),"message":{"content":format!("message-{index}")}}).to_string()+"\n").collect::<String>();
+        std::fs::write(&fixture.log, &beginning).unwrap();
+        let giant = row_page(&fixture, 2, None).await.unwrap();
+        std::fs::write(&fixture.log, beginning + &tail).unwrap();
+        let direct = giant["rows"][0]["tool"]["output"]["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let legacy = giant["rows"][0]["id"].as_str().unwrap().to_owned();
+        let mut cold = Vec::new();
+        for _ in 0..20 {
+            fixture.app.hub.lock().unwrap().row_cache.clear();
+            let timer = std::time::Instant::now();
+            row_page(&fixture, 200, None).await.unwrap();
+            cold.push(timer.elapsed().as_nanos());
+        }
+        let mut warm = Vec::new();
+        let mut older = Vec::new();
+        for _ in 0..20 {
+            let timer = std::time::Instant::now();
+            let page = row_page(&fixture, 200, None).await.unwrap();
+            warm.push(timer.elapsed().as_nanos());
+            let timer = std::time::Instant::now();
+            row_page(&fixture, 200, page["page"]["start_offset"].as_u64())
+                .await
+                .unwrap();
+            older.push(timer.elapsed().as_nanos());
+        }
+        let mut output = Vec::new();
+        let mut legacy_output = Vec::new();
+        for (id, times) in [(&direct, &mut output), (&legacy, &mut legacy_output)] {
+            for _ in 0..20 {
+                let timer = std::time::Instant::now();
+                let Json(value) = tool_output(
+                    State(fixture.app.clone()),
+                    Query(ToolOutputQuery {
+                        session: fixture.session.clone(),
+                        agent: "chair".into(),
+                        row: id.clone(),
+                    }),
+                )
+                .await
+                .unwrap();
+                assert_eq!(value["text"], full);
+                times.push(timer.elapsed().as_nanos());
+            }
+        }
+        println!(
+            "http_100k cold_p95_ms={} warm_p95_ms={} older_p95_ms={} giant_direct_p95_ms={} giant_row_id_p95_ms={}",
+            percentile(&mut cold) as f64 / 1_000_000.,
+            percentile(&mut warm) as f64 / 1_000_000.,
+            percentile(&mut older) as f64 / 1_000_000.,
+            percentile(&mut output) as f64 / 1_000_000.,
+            percentile(&mut legacy_output) as f64 / 1_000_000.
+        );
+        assert!(percentile(&mut cold) < 150_000_000);
+        assert!(percentile(&mut warm) <= 100_000_000);
+        assert!(percentile(&mut output) <= 150_000_000);
+        assert!(percentile(&mut legacy_output) <= 150_000_000);
+    }
+    #[test]
+    fn two_hundred_fifty_tools_make_three_stable_folds() {
+        let records = (0..250)
+            .map(|number| {
+                Record::new(
+                    synthetic_event(number, true),
+                    format!("raw-{number}-0"),
+                    false,
+                )
+            })
+            .collect::<Vec<_>>();
+        let rows = view::view_rows(&records, false, false, &HashSet::new());
+        assert_eq!(
+            rows.iter().map(|row| row.steps.len()).collect::<Vec<_>>(),
+            [100, 100, 50]
+        );
+        let first = view::view_rows(&records[..100], false, false, &HashSet::new());
+        assert_eq!(rows[0].id, first[0].id);
+    }
     #[test]
     fn row_frames_report_changed_usage_and_clear_it() {
         let mut state = LiveRows::empty(0, false);
@@ -4979,8 +6248,9 @@ if [ "$3" = Up ]; then cat "$SWARM_HOME/after" >> '{}'; fi
         std::fs::write(&fixture.log, json!({"type":"assistant","sessionId":"test","uuid":"many","message":{"content":content}}).to_string()+"\n").unwrap();
         let page = row_page(&fixture, 1, None).await.unwrap();
         assert_eq!(page["page"]["start_offset"], 0);
-        assert_eq!(page["rows"].as_array().unwrap().len(), 1);
-        assert_eq!(page["rows"][0]["steps"].as_array().unwrap().len(), 120);
+        assert_eq!(page["rows"].as_array().unwrap().len(), 2);
+        assert_eq!(page["rows"][0]["steps"].as_array().unwrap().len(), 100);
+        assert_eq!(page["rows"][1]["steps"].as_array().unwrap().len(), 20);
     }
     #[tokio::test]
     async fn boundary_tool() {

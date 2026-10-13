@@ -636,7 +636,7 @@ pub fn row(record: &Record) -> Option<Row> {
     Some(row)
 }
 
-pub use super::builder::rows;
+pub use super::builder::{is_hidden, rows};
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct ChatUsage {
@@ -645,54 +645,62 @@ pub struct ChatUsage {
     pub context_notice: String,
     pub remaining_percent: Option<i64>,
 }
-pub fn usage(records: &[Record]) -> Option<ChatUsage> {
-    let mut context = None;
-    let mut timestamp = String::new();
-    let mut notice = "No usage report in the loaded transcript.".to_owned();
-    let mut model = None;
-    for record in records {
-        let event = &record.event;
+#[derive(Clone, Default)]
+pub struct UsageState {
+    context: Option<Value>,
+    model: Option<String>,
+    reported: bool,
+}
+impl UsageState {
+    pub fn ingest(&mut self, event: &Value) {
         match (string(event, "type"), string(event, "kind")) {
             ("usage", "context") => {
-                context = Some(event.clone());
-                timestamp = meta(event, "timestamp").into();
-                notice = if event["context_tokens"].is_null() {
-                    "Context tokens were not reported.".into()
-                } else {
-                    String::new()
-                };
+                self.context = Some(event.clone());
+                self.reported = true;
             }
-            ("system_message", "compaction") => {
-                context = None;
-                timestamp.clear();
-                notice = "Waiting for a usage report after compaction.".into();
-            }
+            ("system_message", "compaction") => self.context = None,
             ("session_info", "model") => {
-                let value = string(event, "value");
-                if model.is_some_and(|model| model != value) {
-                    context = None;
-                    timestamp.clear();
-                    notice = "Waiting for a usage report from this model.".into();
+                let model = string(event, "value");
+                if self.model.as_ref().is_some_and(|old| old != model) {
+                    self.context = None;
                 }
-                model = Some(value);
+                self.model = Some(model.into());
             }
             _ => (),
         }
     }
-    let remaining_percent = context.as_ref().and_then(|context| {
-        let used = context["context_tokens"].as_i64()?;
-        let capacity = context["context_capacity_tokens"].as_i64()?;
-        (capacity > 0).then(|| {
-            ((capacity.saturating_sub(used).max(0) as f64 / capacity as f64) * 100.0).round() as i64
+    pub fn has_report(&self) -> bool {
+        self.reported
+    }
+    pub fn value(&self) -> Option<ChatUsage> {
+        let context = self.context.as_ref()?;
+        let remaining_percent = context["context_tokens"]
+            .as_i64()
+            .zip(context["context_capacity_tokens"].as_i64())
+            .and_then(|(used, capacity)| {
+                (capacity > 0).then(|| {
+                    ((capacity.saturating_sub(used).max(0) as f64 / capacity as f64) * 100.0)
+                        .round() as i64
+                })
+            });
+        Some(ChatUsage {
+            context: Some(context.clone()),
+            context_timestamp: meta(context, "timestamp").into(),
+            context_notice: if context["context_tokens"].is_null() {
+                "Context tokens were not reported.".into()
+            } else {
+                String::new()
+            },
+            remaining_percent,
         })
-    });
-    context.as_ref()?;
-    Some(ChatUsage {
-        context,
-        context_timestamp: timestamp,
-        context_notice: notice,
-        remaining_percent,
-    })
+    }
+}
+pub fn usage(records: &[Record]) -> Option<ChatUsage> {
+    let mut state = UsageState::default();
+    for record in records {
+        state.ingest(&record.event);
+    }
+    state.value()
 }
 pub fn queued(records: &[Record]) -> Vec<Row> {
     let mut queue: Vec<(&Record, &str)> = Vec::new();
@@ -776,8 +784,18 @@ pub fn view_rows(
     is_codex: bool,
     shown: &HashSet<String>,
 ) -> Vec<Row> {
-    let mut result = rows(records, has_older, is_codex);
-    clear_boundary(records, &mut result, !has_older);
+    view_rows_with_context(records, has_older, is_codex, shown, None)
+}
+/// Context is (prompt_expected, turn_open) immediately before this record slice.
+pub fn view_rows_with_context(
+    records: &[Record],
+    has_older: bool,
+    is_codex: bool,
+    shown: &HashSet<String>,
+    context: Option<(bool, bool)>,
+) -> Vec<Row> {
+    let mut result = super::builder::rows_with_context(records, has_older, is_codex, context);
+    clear_boundary(records, &mut result, !has_older && context.is_none());
     result.extend(queued(records));
     for row in &mut result {
         let source = if row.anchor_source_id.is_empty() {

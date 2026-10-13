@@ -20,7 +20,9 @@ pub mod transcript;
 pub mod tree;
 pub mod workspace_panel;
 
-pub use fold::{FoldSummary, fold_expanded, fold_rows, summary as fold_summary};
+pub use fold::{
+    FOLD_STEP_LIMIT, FoldSummary, fold_expanded, fold_rows, is_step, summary as fold_summary,
+};
 pub use preview::{Diff, DiffHunk, DiffPreview, TextPreview, diff_patch, text_chunks};
 pub use tool::{
     ToolActivity, ToolState, command, duration, duration_label, exec_commands, exit_code, path,

@@ -51,6 +51,9 @@ pub fn fold_expanded(
                 >= 2
         })
 }
+// shortcut: folds hold at most 100 steps; raise this only after checking live frame cost.
+pub const FOLD_STEP_LIMIT: usize = 100;
+
 pub fn fold_rows(rows: Vec<Row>, shown: &HashSet<String>) -> Vec<Row> {
     fn flush(run: &mut Vec<Row>, items: &mut Vec<Row>, shown: &HashSet<String>) {
         if run.iter().filter(|row| !row.hidden).count() >= 2
@@ -73,6 +76,9 @@ pub fn fold_rows(rows: Vec<Row>, shown: &HashSet<String>) -> Vec<Row> {
     let mut run = Vec::new();
     for row in rows {
         if is_step(&row) {
+            if run.len() == FOLD_STEP_LIMIT {
+                flush(&mut run, &mut items, shown);
+            }
             run.push(row);
         } else {
             flush(&mut run, &mut items, shown);
