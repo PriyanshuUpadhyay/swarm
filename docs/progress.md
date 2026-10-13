@@ -62,9 +62,11 @@ Setup reports Skills ready, because it skips owner entries (ADR 0062 amendment,
 | A5 | Amend ADR 0066: the owner's Mac reads the checkout, other Macs read the Setup copy | ⬜ | ADR text |
 | A6 | Make Setup show skipped skill links as not ready, or say where each one points | ❓ | owner decides if Setup should change |
 
-Note. `~/.flow/domains.md` names `ink/references/story-and-motion.md`, `build.md` and `qa.md` for
-the creative-coding domain. On branch `skill-blocks` those files keep only ink's own rules and point
-to blocks, so A4 also replaces those lines with `block:` lines.
+Note. On 2026-10-13 the creative-coding lines of `~/.flow/domains.md` gained `block:` items
+(reference-analysis, look-grammar, story, build-canvas, style-frames, visual-qa). Only the flow of
+branch `skill-blocks` knows these blocks, so a creative-coding run on the live agent-kit flow stops
+with "unknown block id" until A4. Such a repo also needs a `.blocks.toml` with `source_of_truth`,
+`site` and `shots`.
 
 Note. `~/.claude/skills/deliver` differs from agent-kit only by `scripts/__pycache__`, so no local
 skill edit is at risk in A4.
