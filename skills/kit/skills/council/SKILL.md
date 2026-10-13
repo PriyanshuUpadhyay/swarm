@@ -10,8 +10,9 @@ top-level session is the chair: relay messages, correct grounding, judge converg
 synthesize. Do not vote as a fourth voice.
 
 The council never makes the user's final design decision and never starts implementation. Seats
-inspect evidence and write only council scratch artifacts. Workers follow the active runtime
-adapter's `Worker contract` section. End with the options, evidence, disagreement, and the decision
+inspect evidence and write only council scratch artifacts. Briefs and seats follow the kit block
+`blocks/worker-brief/SKILL.md`, and the chair runs seats as the kit block `blocks/run-workers/SKILL.md`
+says. The kit's blocks are in `../../blocks/` from this skill's folder. End with the options, evidence, disagreement, and the decision
 that remains with the user.
 
 ## Start or continue
@@ -34,23 +35,14 @@ Round-0 questions that survive the filter, and a split after Round 3, set the st
 ## Execution backend
 
 The runtime adapter (`orchestrate-claude`) selects the host and its reference; the council names no host.
-The kit's `references/fan-out.md` owns fan-out policy.
+`blocks/run-workers/SKILL.md` owns launch, retry, degraded runs, and close. The council adds:
 
-These rules hold on every backend, and the selected reference only says how to satisfy them:
-
-- Every voice is a persistent, visible, interactive leaf seat rooted at the invoking surface. Never
-  replace a seat with a headless or hidden process.
-- Resolve `council.claude`, `council.gpt`, and `council.gemini` through the router before launch.
-  Never hardcode a model, effort, sandbox, or approval value.
-- Every seat brief is report-only: it forbids orchestration, spawning, repository edits, applied
-  recommendations, commits, and user-facing notification, and permits only the assigned council
-  scratch result.
+- Every voice is a persistent, visible, interactive pane rooted at the invoking surface. A native
+  subagent does not replace a voice.
+- The roles are `council.claude`, `council.gpt`, and `council.gemini`.
+- Every seat is report-only and writes only its council scratch result.
 - Reuse the same three seats for every round, and never start the next round while a seat is
   working.
-- If a seat cannot launch or stay interactive, retry once, then replace it with another visible
-  provider pane and tell the user the council is degraded. Never silently substitute a headless
-  process.
-- At completion, close only the identifiers this run captured, and verify their removal.
 
 ## Run state
 
@@ -71,15 +63,9 @@ streams into the chair context.
 
 ## Pinned brief
 
-Every voice receives the same:
-
-1. Verbatim artifact/question.
-2. Human-resolved constraints.
-3. Exact file paths, URLs, commits, or other coordinates it may inspect.
-4. A strict “do not wander outside these coordinates” guardrail.
-5. Required output shape.
-
-Voices are leaf reasoners. They may inspect the pinned material but may not spawn their own agents.
+Every voice receives the same brief, pinned as `blocks/worker-brief/SKILL.md` says for a judgment:
+the artifact or question word for word, the constraints the user settled, the exact coordinates it
+may read, the "do not look outside these" line, and the output shape.
 
 ## Protocol
 

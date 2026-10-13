@@ -10,6 +10,7 @@ tools, and each writes its findings to a file. The chair merges them into one re
 blocked fetch is another seat's open page, so the coverage is wider than any single session.
 
 The runtime adapter (`orchestrate-claude`) selects the host and its reference; web search names no host. Without a visible host, stop and say so; a hidden or headless seat is not a substitute.
+The kit's blocks are in `../../blocks/` from this skill's folder.
 
 ## Start or continue
 
@@ -29,10 +30,9 @@ close, and when a step waits for the user. The run folder is
 
 ## Seat mechanics
 
-The seats follow the council's mechanics but ride the cheap `search.web` route. Share one brief.
-The host reference selected by the runtime adapter owns launch, completion, retry, and close-out
-mechanics. Read and follow it; completion on swarm is the seat's ring and its report file.
-The kit's `references/fan-out.md` owns fan-out policy.
+The chair runs the seats as the kit block `blocks/run-workers/SKILL.md` says, on the cheap
+`search.web` route, and every seat is a visible pane. Share one brief. Completion on swarm is the
+seat's ring and its report file.
 
 These three details differ from a council run.
 
@@ -180,8 +180,6 @@ words.
 
 ## Guards
 
-- Seats are report-only. They write their own report file and nothing else.
-- Workers follow the active runtime adapter's `Worker contract` section.
-- Seats never read `~/.claude/history.jsonl`, `~/.claude/sessions/`, `~/.claude/projects/`,
-  `~/.claude-*`, `~/.codex-*`, or `~/.gemini`.
+- Seats are report-only. They write their own report file and nothing else. Briefs and seats
+  follow the kit block `blocks/worker-brief/SKILL.md`.
 - Never invent a quote, and never present a search snippet as a read page.
