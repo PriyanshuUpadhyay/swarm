@@ -1,7 +1,17 @@
-# html-diagram
-Concept: Draw a tech diagram with HTML and CSS boxes that reflow, so labels never clip or cross at any width.
-Serves: design, build
-Source: impeccable pack: plugin/skills/impeccable/reference/adapt.md:140 (grid and flexbox reflow), reference/layout.md:52 (structural reflow); blocks/web-ui-basics.md:10 (a diagram needs a text description)
+---
+name: html-diagram
+description: "Draw a tech diagram with HTML and CSS boxes that reflow, so labels never clip or cross at any width."
+license: MIT
+metadata:
+  kind: rule
+  owns: "how a tech diagram is drawn as HTML boxes that reflow"
+  serves: "design, build"
+  needs: "a diagram choice"
+  gives: "an HTML diagram"
+  conflicts: ""
+  users: "flow"
+  source: "impeccable pack: plugin/skills/impeccable/reference/adapt.md:140 (grid and flexbox reflow), reference/layout.md:52 (structural reflow); blocks/web-ui-basics/SKILL.md, Rules (a diagram needs a text description)"
+---
 
 ## Rules
 - Build each node as an HTML element with real text, laid out with CSS grid or flexbox. Draw arrows with CSS borders, pseudo-elements, or text arrows (→ ↓), never with absolute pixel positions.
