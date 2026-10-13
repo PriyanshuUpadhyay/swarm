@@ -10,7 +10,7 @@ tools, and each writes its findings to a file. The chair merges them into one re
 blocked fetch is another seat's open page, so the coverage is wider than any single session.
 
 The runtime adapter (`orchestrate-claude`) selects the host and its reference; web search names no host. Without a visible host, stop and say so; a hidden or headless seat is not a substitute.
-The kit's blocks are in `~/.claude/blocks/`, a link to the kit's `blocks/` folder.
+The kit root, with its `blocks/` and `references/` folders, is two folders up from this skill's folder.
 
 ## Start or continue
 
@@ -18,7 +18,7 @@ A web search is a step run, so the kit's `references/step-run.md` owns the statu
 close, and when a step waits for the user. The run folder is
 `~/.claude/reports/<YYYY-MM-DD>-<slug>-seats/`, which also keeps the seat reports at the end.
 "web-search continue <folder>" picks it up. Make the folder with
-`python3 ~/.claude/references/step_run.py start <folder> <this SKILL.md>`, and close each step with `done`.
+`python3 <kit root>/references/step_run.py start <folder> <this SKILL.md>`, and close each step with `done`.
 
 | File | Needs | Holds |
 |---|---|---|
@@ -124,7 +124,7 @@ One brief, one section per seat. It holds:
    `Findings` with a quote or paraphrase plus its link and confidence tag, `What is contested`,
    `Sources` newest first, under 800 words, and a final `RESEARCH_DONE` line;
 8. **layout** — the seat's report follows the section order in
-   `~/.claude/references/plan-layout.md` where that file applies; quote the rule lines the seat
+   the kit's `references/plan-layout.md` where that file applies; quote the rule lines the seat
    needs, because Codex and AGY seats do not load it;
 9. the literal response path for that seat under the run directory, never a `$VAR`.
 

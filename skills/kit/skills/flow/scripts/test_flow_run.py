@@ -1019,6 +1019,23 @@ def test_add_folder_block(tmp):
         assert out.returncode == 1 and "a SKILL.md block sits in a folder named for its id" in out.stderr, out.stderr
 
 
+def test_kit_pointers():
+    """The kit installs as one plugin copy, so a skill reaches a block by a path from the kit root. Every
+    `blocks/<id>/...` path in the kit's Markdown names a real file, and each skill that uses a kit path says
+    where the kit root is."""
+    kit = flow_run.BLOCKS.parent
+    for path in sorted(kit.glob("**/*.md")):
+        if "vendor" in path.parts:
+            continue
+        text = path.read_text(encoding="utf-8")
+        for target in re.findall(r"`(blocks/[a-z0-9-]+/[^`\s]+)`", text):
+            assert (kit / target).is_file(), f"{path.relative_to(kit)} names {target}, which does not exist"
+    for path in sorted(kit.glob("skills/*/SKILL.md")):
+        text = path.read_text(encoding="utf-8")
+        if "`blocks/" in text or "the kit's `references/" in text or "<kit root>" in text:
+            assert "two folders up from this" in text, f"{path.relative_to(kit)} uses kit paths but does not say where the kit root is"
+
+
 def test_kit_block_frontmatter():
     """Every kit block opens with Agent Skills frontmatter: name (its folder), description, license, and the
     metadata keys that blocks/blocks.toml names, each as `key: value`; only conflicts may be empty. The
@@ -1393,6 +1410,7 @@ with tempfile.TemporaryDirectory() as tmp:
                for text in (p.read_text(encoding="utf-8") for p in folder.glob("0*.md")))
 
     test_skip_text_encoding()
+    test_kit_pointers()
     test_kit_block_frontmatter()
     test_command_wrong_count(run, folder)
     test_done_wrong_count(run, folder)

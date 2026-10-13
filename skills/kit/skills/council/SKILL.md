@@ -12,7 +12,7 @@ synthesize. Do not vote as a fourth voice.
 The council never makes the user's final design decision and never starts implementation. Seats
 inspect evidence and write only council scratch artifacts. Briefs and seats follow the kit block
 `blocks/worker-brief/SKILL.md`, and the chair runs seats as the kit block `blocks/run-workers/SKILL.md`
-says. The kit's blocks are in `~/.claude/blocks/`, a link to the kit's `blocks/` folder. End with the options, evidence, disagreement, and the decision
+says. The kit root, with its `blocks/` and `references/` folders, is two folders up from this skill's folder. End with the options, evidence, disagreement, and the decision
 that remains with the user.
 
 ## Start or continue
@@ -20,7 +20,7 @@ that remains with the user.
 A council is a step run, so the kit's `references/step-run.md` owns the status line, pick-up,
 close, and when a step waits for the user. The run folder is the decision-log folder below,
 `<log>/<YYYY-MM-DD>-<slug>/`, next to the log file. "council continue <folder>" picks it up. Make the folder with
-`python3 ~/.claude/references/step_run.py start <folder> <this SKILL.md>`, and close each step with `done`.
+`python3 <kit root>/references/step_run.py start <folder> <this SKILL.md>`, and close each step with `done`.
 
 | File | Needs | Holds |
 |---|---|---|
@@ -130,7 +130,7 @@ Dissent / residual risk: anything still contested.
 Per-model trail: one line each for GEMINI, GPT, and CLAUDE.
 ```
 
-The reply opens with the first screen in `~/.claude/references/plan-layout.md`. The verdict heading
+The reply opens with the first screen in the kit's `references/plan-layout.md`. The verdict heading
 is its verdict line. Its table holds the required changes and the open dissent, grouped, and Read
 first names the top ones. The consensus reasoning, the full required changes and dissent, and
 the per-model trail go below `Reference below`.

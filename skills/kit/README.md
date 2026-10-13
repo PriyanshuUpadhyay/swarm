@@ -30,19 +30,22 @@ skills point to.
 
 ## Install
 
-Link the skills you want into your agent's skills folder, and the references next to them:
+The kit is one plugin, `swarm`, for Claude Code, Codex and Antigravity. Each CLI installs a copy of
+the whole kit, so a skill reaches the kit's `blocks/` and `references/` two folders up from its own
+folder. Install it from a clone of this repo:
 
 ```sh
-git clone --recurse-submodules https://github.com/PriyanshuUpadhyay/agent-kit ~/agent-kit
-mkdir -p ~/.claude/skills ~/.claude/references
-for s in ~/agent-kit/skills/*/ ~/agent-kit/vendor/taste-skill/skills/taste-skill/ \
-  ~/agent-kit/vendor/emil-skills/skills/animate/ ~/agent-kit/vendor/emil-skills/skills/break-ui/; do
-  ln -sfn "$s" ~/.claude/skills/"$(basename "$s")"
-done
-ln -sfn ~/agent-kit/references/plan-layout.md ~/.claude/references/plan-layout.md
+claude plugin marketplace add <repo> && claude plugin install swarm@swarm
+codex plugin marketplace add <repo> && codex plugin add swarm@swarm
+agy plugin install <repo>/skills/kit
 ```
 
-Codex reads `~/.agents/skills` and Antigravity reads `~/.gemini/config/skills`.
+Claude Code shows each skill with the plugin name in front, for example `/swarm:flow`. An installed
+copy does not follow later edits in the clone; `claude --plugin-dir <repo>/skills/kit` loads the
+clone itself for one session.
+
+Do not link single skill folders into an agent's skills folder. A tool reads `../../blocks/` from
+the link's own path, not from the kit, so the blocks are not found.
 
 ## What the skills expect
 

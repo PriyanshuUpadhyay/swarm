@@ -83,11 +83,12 @@ metadata:
   install. `kind: step` does work and writes its `gives` artifact.
 - Blocks live under `blocks/`, not `skills/`. The Agent Skills spec loads the name and description
   of every discovered skill at startup, so 40 blocks there would crowd the skill list, and selection
-  falls as the list grows. A skill points to the blocks it uses by path (`~/.claude/blocks/<id>/SKILL.md`,
-  a link to the kit's `blocks/` folder; a relative `../../blocks/` fails through an installed skill
-  link, because a Read tool resolves `..` on the link path), and the flow loader copies the blocks that a catalog line names into the
+  falls as the list grows. A skill points to the blocks it uses by a path from the kit root (`blocks/<id>/SKILL.md`), and
+  says once that the kit root is two folders up from the skill's folder. This holds in the plugin copy
+  that each CLI installs, but not through a link to one skill folder, because a Read tool resolves
+  `..` on the link path (see Packaging). The flow loader copies the blocks that a catalog line names into the
   step files. No CLI lists a block as a skill.
-- The kit can become one Agent Plugins 1.0 package: a `plugin.json` at `skills/kit/`, skills under
+- The kit is one Agent Plugins 1.0 package: a `plugin.json` at `skills/kit/`, skills under
   `skills/`, and `blocks/` beside them. Clients discover only `skills/` and `mcp.json`. A package path
   must resolve inside the package root, so no block may link outside the kit. See Packaging below
   for what each CLI loads.
@@ -294,7 +295,16 @@ On 2026-10-13 a probe package (root `plugin.json`, `skills/`, `mcp.json`) was te
 | AGY 1.3.4 | required | found | `mcp_config.json` |
 
 So the kit can ship as a skills-only package that all three load. An MCP server would need one
-file per CLI, made by one script. The research report is in the owner's private reports folder.
+file per CLI, made by one script.
+
+A second probe on the same day put a `blocks/probe/SKILL.md` with a random code word beside a skill
+that says to read `../../blocks/probe/SKILL.md`. Each CLI installed a copy of the whole package
+(Claude Code and Codex under `plugins/cache/<marketplace>/<plugin>/<version>/`, AGY under
+`~/.gemini/config/plugins/<plugin>/`), and a headless model run in each read the block from that copy
+and gave the code word. Headless AGY needed a `read_file(<folder>)` allow rule, and it was told to
+use only its file-read tool. So the kit ships as the plugin `swarm` (`skills/kit/plugin.json`,
+`skills/kit/.claude-plugin/plugin.json`, and the marketplace `.claude-plugin/marketplace.json` at the
+repo root). The research report is in the owner's private reports folder.
 
 ## Open questions
 

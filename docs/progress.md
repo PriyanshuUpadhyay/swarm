@@ -32,8 +32,10 @@ run beside A and B, because they touch other files.
    with no Rust dependency. `accounts`, `profiles` and `usage` own identity and quota. `serve` is
    behind a cargo feature and owns no domain rule. Managed edits own every write outside the swarm
    home. A crate split waits until a second user needs one part alone.
-5. On the owner's Mac, the CLI skill roots link to this checkout's `skills/kit/skills/*`, so an edit
-   is live at once. Other Macs use Setup links to `~/.swarm/skills`.
+5. Each CLI installs the kit as the plugin `swarm`, because a skill reaches its blocks two folders
+   up from its own folder, and only a copy of the whole kit keeps that path (`docs/blocks.md`,
+   Packaging). An installed copy does not follow edits; the owner updates the plugin after a kit
+   change, or starts Claude Code with `--plugin-dir` on the checkout.
 6. No new block until one block has passed a real run. Each rule has one owner text, and other
    files point to it.
 7. A task's workflow is a ledger written once at the start from a menu of blocks, and code runs it
@@ -60,15 +62,15 @@ Setup reports Skills ready, because it skips owner entries (ADR 0062 amendment,
 | A1 | Make a read-only matrix of every bundled skill × `.claude/skills`, `.agents/skills`, `.gemini/config/skills`: real target, revision, local differences, proposed link | ⬜ | each name has one future source, and each difference has a preserve-or-merge row |
 | A2 | Pull agent-kit `3b57571` into `skills/kit/` on a branch | ⬜ | `diff -r` of agent-kit `skills/` and `skills/kit/skills/` is empty |
 | A3 | Stop edits in agent-kit; add its README pointer and archive it | ⬜ | no agent-kit commit after the pull |
-| A4 | Repoint the owner's links to `~/work/swarm/wt/main/skills/kit/skills/*` in one dotfiles commit; replace the real folders in `~/.claude/skills` with links; link `~/.claude/blocks` to `skills/kit/blocks`, and point each kit file in `~/.claude/references/` (step_run.py, step-run.md, run-folder.md, plan-layout.md, explain-formats.md, fan-out.md) at `skills/kit/references/`, because those links go to dotfiles copies and agent-kit, which A3 archives; switch the `any` build and close lines of `~/.flow/domains.md` to `block:prove-it-works` | ⬜ | `realpath` of each kit name resolves under `skills/kit/`; new Claude, Codex and AGY sessions list the same skills as before |
-| A5 | Amend ADR 0066: the owner's Mac reads the checkout, other Macs read the Setup copy | ⬜ | ADR text |
+| A4 | On the owner's Mac, install the plugin `swarm` from this checkout in Claude Code, Codex and AGY; remove the `~/.claude/skills`, `~/.agents/skills` and `~/.gemini/config/skills` links of kit skills to agent-kit in one dotfiles commit; switch the `any` build and close lines of `~/.flow/domains.md` to `block:prove-it-works` | ⬜ | `claude plugin details swarm`, `codex plugin list`, `agy plugin list` list the kit skills; no skills folder holds a kit name; a new session in each CLI reads a block |
+| A5 | Amend ADR 0066: each Mac reads an installed plugin copy, and the owner updates it after a kit change | ⬜ | ADR text |
 | A6 | Make Setup show skipped skill links as not ready, or say where each one points | ❓ | owner decides if Setup should change |
-| A7 | Make Setup link `~/.claude/blocks` and the kit files of `~/.claude/references/` to the bundled kit on other Macs, because skills point to them by those paths | ⬜ | `realpath ~/.claude/blocks ~/.claude/references/step_run.py` on a Setup-only Mac |
+| A7 | Make Setup install the plugin `swarm` from the bundled kit in each CLI, in place of skill links, because a link to one skill folder cannot reach `blocks/` | ⬜ | on a Setup-only Mac, each CLI lists the plugin and a session reads a block |
 
 Note. On 2026-10-13 the creative-coding lines of `~/.flow/domains.md` gained `block:` items
 (reference-analysis, design-tokens, story, build-canvas, style-frames, visual-qa). Only the flow of
 branch `skill-blocks` knows these blocks, so a creative-coding run on the live agent-kit flow stops
-with "unknown block id" until `skill-blocks` is merged to main and A4 repoints the links. The `any`
+with "unknown block id" until `skill-blocks` is merged to main and A4 installs the plugin. The `any`
 lines keep the `prove-it-works` skill path until A4, because a `block:` item there would stop every
 live flow run. A repo with no `.blocks.toml` runs the blocks without the base block; the
 creative-coding blocks also need `site` and `shots` there. Once a catalog line in every repo names a
@@ -167,7 +169,7 @@ the pilot, then packs.
 | B17 | Cut ink: reference-analysis, story, visual-qa, build-site, build-canvas; one owner for design-tokens, style-frames, headless-shot; ink keeps its contract and its routes as templates | ✅ cut done, branch `skill-blocks`, da3b8566..5213c714; the live run is B18 | ink's references hold no rule that a block holds; an ink `prototype` run still passes |
 | B18 | Second user: a glitch-walk page uses story, design-tokens, headless-shot and visual-qa | ⬜ | one live run, each block todo closed with evidence |
 | B19 | serve-local and annotate-loop (Plannotator, strict): view-and-talk is required in the `walk` template; a missing `plannotator` sets `unavailable plannotator` and stops; each round writes `annotate/<round>.json`; the loop uses the B1 and B2 stop | ⬜ | one glitch-walk run where an owner comment reaches the agent and the page is rebuilt; a run without the binary stops with the status |
-| B20 | Package the kit as a skills-only Agent Plugins 1.0 package (`plugin.json` at `skills/kit/`); Codex reads it as specified, Claude Code and AGY load its skills (`docs/blocks.md`, Packaging) | ⬜ | `codex plugin add`, `claude plugin details`, `agy plugin validate` each list the kit's skills |
+| B20 | Package the kit as a skills-only Agent Plugins 1.0 package (`plugin.json` at `skills/kit/`); Codex reads it as specified, Claude Code and AGY load its skills (`docs/blocks.md`, Packaging) | ✅ manifests and marketplace on branch `skill-blocks`; install is A4 and A7 | a probe package installed in each CLI, and a model in each read a block by `../../blocks/` |
 | B21 | Install `plannotator` on the PATH on the owner's Mac from a checked release | ❓ | owner approves the install; `command -v plannotator` |
 
 Rejected for now: `minimal-diff`, `verification-evidence`, `trust-boundary`, `reversibility`. Each

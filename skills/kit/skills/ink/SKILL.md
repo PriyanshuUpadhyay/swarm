@@ -20,7 +20,7 @@ sunrise. A neon restyle changes only the look tokens.
 
 ## Contract
 
-- Find, inspect, measure, and label every reference, and take only what may be taken, as `~/.claude/blocks/reference-analysis/SKILL.md` says.
+- Find, inspect, measure, and label every reference, and take only what may be taken, as `blocks/reference-analysis/SKILL.md` says. The kit root, with its `blocks/` and `references/` folders, is two folders up from this skill's folder.
 - Prove the look with style frames and the story with an animatic, both before production.
 - Keep the layers apart. Scene code has no colour literals and no story timing.
 - Render every frame from time and one seed (`?t=`). A stateful simulation steps at a fixed rate
@@ -43,20 +43,20 @@ one-prompt task, so do not suggest it is.
 1. **Intake.** Story, references (researched from the brief when none are given) with a
    benchmark, a start, middle, and end frame per shot, form, size, fps, limits, and delivery. See
    [references.md](references/references.md).
-2. **Analyse the references** with `~/.claude/blocks/reference-analysis/SKILL.md`, and write
+2. **Analyse the references** with `blocks/reference-analysis/SKILL.md`, and write
    `ink/02-look.md` with the style grammar in [references.md](references/references.md).
-3. **Story sheet, shot list, transitions, scene graph.** See `~/.claude/blocks/story/SKILL.md`
+3. **Story sheet, shot list, transitions, scene graph.** See `blocks/story/SKILL.md`
    and [story-and-motion.md](references/story-and-motion.md).
 4. **Style frames** with the real drawing code, one of them the signature shot, scored beside the
-   reference for at least two rounds, as `~/.claude/blocks/look-check/SKILL.md` says. See
-   `~/.claude/blocks/build-canvas/references/mark-making.md` and [qa.md](references/qa.md).
+   reference for at least two rounds, as `blocks/look-check/SKILL.md` says. See
+   `blocks/build-canvas/references/mark-making.md` and [qa.md](references/qa.md).
 5. **Animatic.** Flat shapes, final timing, real transitions. See [build.md](references/build.md).
-6. **Detail passes** up to the style frames, with scenes in batches of about eight. Build with `~/.claude/blocks/build-canvas/SKILL.md` and its `references/mark-making.md`.
-7. **QA, export, and handoff.** See `~/.claude/blocks/visual-qa/SKILL.md`, [qa.md](references/qa.md),
+6. **Detail passes** up to the style frames, with scenes in batches of about eight. Build with `blocks/build-canvas/SKILL.md` and its `references/mark-making.md`.
+7. **QA, export, and handoff.** See `blocks/visual-qa/SKILL.md`, [qa.md](references/qa.md),
    and [build.md](references/build.md).
 
 A website changes most steps: sections replace shots, screen widths replace fps, and a `DESIGN.md`
-joins the look. Use `~/.claude/blocks/build-site/SKILL.md` from intake on when the form is a website.
+joins the look. Use `blocks/build-site/SKILL.md` from intake on when the form is a website.
 
 A pattern file holds the mechanics of one reusable structure:
 [recursive-zoom.md](references/patterns/recursive-zoom.md) covers worlds inside worlds. Add a

@@ -6,14 +6,14 @@ description: Research one question and write a short evidence-backed report, sho
 # Research
 
 Answer one question from evidence. Keep the report as a file, and put the whole report in the
-reply. The kit's blocks are in `~/.claude/blocks/`, a link to the kit's `blocks/` folder.
+reply. The kit root, with its `blocks/` and `references/` folders, is two folders up from this skill's folder.
 
 ## Start or continue
 
 Research is a step run, so the kit's `references/step-run.md` owns the status line, pick-up,
 close, and when a step waits for the user. "research <question>" starts a run in
 `~/.claude/reports/<YYYY-MM-DD>-<slug>/`. "research continue <folder>" picks it up. Make the folder with
-`python3 ~/.claude/references/step_run.py start <folder> <this SKILL.md>`, and close each step with `done`.
+`python3 <kit root>/references/step_run.py start <folder> <this SKILL.md>`, and close each step with `done`.
 
 | File | Needs | Holds |
 |---|---|---|

@@ -51,7 +51,7 @@ A walk is the one exception. A walk from the borrowed `glitch-walk` skill
 real code lines behind it, and text cannot hold that. So its page is the main result. The reply gives
 the page's path and two or three lines on what it covers and what was not checked. The agent still
 never publishes or opens the page. Its diagram is the step map that the skill draws from the walk in
-HTML and CSS, not Mermaid, so the page needs no library; `~/.claude/blocks/html-diagram/SKILL.md` owns how that map
+HTML and CSS, not Mermaid, so the page needs no library; `blocks/html-diagram/SKILL.md` owns how that map
 is drawn.
 
 ## Not yet

@@ -21,8 +21,8 @@ metadata:
   3. **What is contested**: where the sources disagree.
   4. **Off the usual path**: each off-path idea with its source, why it might work, and why it might fail. If none held up, name the searches you tried.
   5. **Sources**: newest first, with dates.
-- Add a diagram or a local HTML page only as `~/.claude/references/explain-formats.md` says.
-- The reply opens with the first screen of `~/.claude/references/plan-layout.md`. Then it holds the whole report, from its `#` title down, and gives the file path in one line.
+- Add a diagram or a local HTML page only as the kit's `references/explain-formats.md` says.
+- The reply opens with the first screen of the kit's `references/plan-layout.md`. Then it holds the whole report, from its `#` title down, and gives the file path in one line.
 
 ## Example
 Initial state: a question has five checked sources and one off-path idea.

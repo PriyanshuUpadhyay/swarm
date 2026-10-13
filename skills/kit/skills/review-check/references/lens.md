@@ -15,7 +15,7 @@ and the comment asks if the helper is needed, because our own code sets the valu
 
 The goal is a change that the next reader can follow without holding extra state in their head.
 
-- `C-1` A helper, wrapper, or file with one caller and no domain name → inline it. The kit block `~/.claude/blocks/when-to-extract/SKILL.md` owns the conditions.
+- `C-1` A helper, wrapper, or file with one caller and no domain name → inline it. The kit block `blocks/when-to-extract/SKILL.md` owns the conditions.
 - `C-2` A shallow module whose interface is as big as its body → merge it into the caller (Ousterhout, deep modules).
 - `C-3` Validation, `unknown`, or a zod schema on data that our own code produced → type it and drop the check. Keep checks only at a trust boundary: user input, LLM output, a third-party API.
 - `C-4` A second type for a shape that already has one (a hand-written RPC interface next to the real class, a type that repeats a schema) → derive it from the owner.

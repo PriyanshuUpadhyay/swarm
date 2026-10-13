@@ -7,7 +7,7 @@ description: Coding partner that writes the code with the user. Use when the use
 
 Write the code together, one small chunk at a time. The user approves every chunk before it touches
 a file, and every finished behavior is committed at once. The user keeps the mental model; the agent
-does the typing. The kit's blocks are in `~/.claude/blocks/`, a link to the kit's `blocks/` folder.
+does the typing. The kit root, with its `blocks/` and `references/` folders, is two folders up from this skill's folder.
 
 ## One task file per task
 
