@@ -46,3 +46,14 @@ copy.
 
 - Good: less UI to build, and each feature is chosen for use, not for parity.
 - Bad: SwiftUI features outside Scope v1 and "Later" disappear when `ui/` is deleted.
+
+## Amendment 2026-10-13: the Skills editor leaves the web UI
+
+Deciders: [user]. Informed by the owner answer "drop the skills eidtor right now... we can pick it up
+later", after the kit started to ship as the plugin `swarm` (`docs/blocks.md`, Packaging).
+
+The kit's skills and blocks are plain files in `skills/kit/`, and each CLI loads them from the
+plugin. So the web UI has no Skills view, editor or skills-folder setting, `swarm serve` has no
+skill routes, and the web app does not run `swarm skills refresh` at start. The Swift Skills code
+goes with `ui/` at cutover. A later editor, if any, edits the kit in `skills/kit/`. Guards, the
+Setup sheet and Managed Changes stay "Later".
