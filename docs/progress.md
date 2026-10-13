@@ -34,8 +34,8 @@ run beside A and B, because they touch other files.
    home. A crate split waits until a second user needs one part alone.
 5. Each CLI installs the kit as the plugin `swarm`, because a skill reaches its blocks two folders
    up from its own folder, and only a copy of the whole kit keeps that path (`docs/blocks.md`,
-   Packaging). An installed copy does not follow edits; the owner updates the plugin after a kit
-   change, or starts Claude Code with `--plugin-dir` on the checkout.
+   Packaging). On the owner's Mac, Claude Code reads the checkout, because its marketplace is this
+   folder; Codex and AGY read an installed copy, so the owner updates the plugin after a kit change.
 6. No new block until one block has passed a real run. Each rule has one owner text, and other
    files point to it.
 7. A task's workflow is a ledger written once at the start from a menu of blocks, and code runs it

@@ -304,7 +304,14 @@ that says to read `../../blocks/probe/SKILL.md`. Each CLI installed a copy of th
 and gave the code word. Headless AGY needed a `read_file(<folder>)` allow rule, and it was told to
 use only its file-read tool. So the kit ships as the plugin `swarm` (`skills/kit/plugin.json`,
 `skills/kit/.claude-plugin/plugin.json`, and the marketplace `.claude-plugin/marketplace.json` at the
-repo root). The research report is in the owner's private reports folder.
+repo root).
+
+A pane trial on the same day installed the real kit from this repo in each CLI and opened one
+interactive pane per CLI. Each model loaded a kit skill from the plugin, followed its pointer, and
+quoted the block's first rule. Claude Code loaded the plugin from the marketplace folder itself (the
+checkout), not from its cache copy, so a kit edit reaches it at once; Codex and AGY read their copies.
+Claude Code refused `prove-it-works`, which has `disable-model-invocation: true`; Codex and AGY
+loaded it. The research report is in the owner's private reports folder.
 
 ## Open questions
 
