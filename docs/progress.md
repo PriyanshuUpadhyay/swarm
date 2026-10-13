@@ -62,18 +62,22 @@ Setup reports Skills ready, because it skips owner entries (ADR 0062 amendment,
 | A5 | Amend ADR 0066: the owner's Mac reads the checkout, other Macs read the Setup copy | ⬜ | ADR text |
 | A6 | Make Setup show skipped skill links as not ready, or say where each one points | ❓ | owner decides if Setup should change |
 
+Note. `~/.flow/domains.md` names `ink/references/story-and-motion.md`, `build.md` and `qa.md` for
+the creative-coding domain. On branch `skill-blocks` those files keep only ink's own rules and point
+to blocks, so A4 also replaces those lines with `block:` lines.
+
 Note. `~/.claude/skills/deliver` differs from agent-kit only by `scripts/__pycache__`, so no local
 skill edit is at risk in A4.
 
 ## B. Skills from blocks
 
-A block is one file in `skills/kit/blocks/` with `Rules`, `Example`, `Check (script)` and
-`Check (judge)`. `skills/kit/blocks/blocks.toml` owns the format. `flow_run.py start` copies the
+A block is a folder `skills/kit/blocks/<id>/` whose `SKILL.md` has Agent Skills frontmatter, then
+`Rules`, `Example`, `Check (script)` and `Check (judge)`. `skills/kit/blocks/blocks.toml` owns the format. `flow_run.py start` copies the
 blocks a step names into its step file, adds the script checks as todos, and records each block's
 hash. The loader is complete and tested. No real run has used a block yet, because
 `~/.flow/domains.md` names no `block:` line and no repo has a `.blocks.toml`.
 
-### Blocks that exist (13)
+### Blocks that exist (18)
 
 | Block | Concept | Serves | Rule owner today |
 |---|---|---|---|
@@ -86,9 +90,14 @@ hash. The loader is complete and tested. No real run has used a block yet, becau
 | tech-diagram-concept | draw only when text cannot hold the shape | design, build | explain-formats |
 | html-diagram | diagrams as HTML boxes that reflow | design, build | this block (explain-formats points here) |
 | diagram-correctness | each diagram tells the truth and reads on a phone | review | explain-formats, ink qa |
-| look-grammar | the look as tokens in `DESIGN.md` | design | ink (copy) |
-| style-frames-concept | frames from real code, scored beside the reference | design | ink (copy) |
-| headless-shot | screenshots with chrome-headless-shell | design, build, review | ink (copy) |
+| look-grammar | the look as tokens in `DESIGN.md` | design | this block |
+| style-frames-concept | frames from real code, scored beside the reference | design | this block |
+| headless-shot | screenshots with chrome-headless-shell | design, build, review | this block |
+| story | story sheet, structures, shot list, pacing | design, story | this block (cut from ink) |
+| reference-analysis | find, inspect, measure and label references | design | this block (cut from ink) |
+| visual-qa | frame and motion checks, the QA log | review | this block (cut from ink) |
+| build-site | what changes when the piece is a website | design, build | this block (cut from ink's site.md) |
+| build-canvas | the story engine, rendered from time and one seed (pack) | build | this block (cut from ink) |
 | web-ui-basics | the floor for a one-page site | build | web guidelines pack, ink |
 
 "(copy)" means the block repeats rules that still live in the named skill. That gives one rule two
@@ -96,14 +105,16 @@ texts. B1 fixes this for each block that a run loads.
 
 ### Known defects
 
-- `blocks/decision-with-default.md:8` says to ask only about real forks, but its judge check at
-  `:27` fails a plan with fewer than 2 questions.
-- `blocks/style-frames-concept.md:10` names flow's `02-design.md`. ink's step is
-  `04-style-frames.md`. A shared block must say "the step's own file".
+- `blocks/decision-with-default/SKILL.md:18` says to ask only about real forks, but its judge
+  check at `:37` fails a plan with fewer than 2 questions.
+- `behavior-claims`, `call-tree`, `done-when-evidence`, `tech-diagram-concept` and
+  `diagram-correctness` name flow step files (`01-frame.md`, `04-impact.md`, `07-close.md`,
+  `02-design.md`, `06-review.md`), so a second workflow cannot use them. `style-frames-concept`
+  and `look-grammar` were fixed on 2026-10-13.
 - `references/step_run.py:67-70` drops a `Needs` word that matches no step, with no error.
-- `blocks/web-ui-basics.md:30-35` checks only `*.html`, `*.css`, `*.js` and `index.html`, so a TSX
+- `blocks/web-ui-basics/SKILL.md:44-47` checks only `*.html`, `*.css`, `*.js` and `index.html`, so a TSX
   slice gets no script check.
-- `blocks/web-ui-basics.md:22` says UI motion stays under 300 ms, and transitions.dev tokens use
+- `blocks/web-ui-basics/SKILL.md:32` says UI motion stays under 300 ms, and transitions.dev tokens use
   400-500 ms. Each motion task names one timing owner.
 
 ### Skills: compose or keep whole
@@ -139,9 +150,9 @@ the pilot, then packs.
 | B12 | One provider-neutral worker-brief section; the five other texts point to it | ⬜ | `rg` for the report-only rule finds one owner |
 | B13 | List block candidates by reuse count; extract only rules with two or more real users | ⬜ | each new block names its two users |
 | B14 | Move `resolve_blocks` from `flow_run.py` into one shared kit script when a second skill has a run script that needs it | ⬜ | two run scripts import one resolver |
-| B15 | Write the split map: every skill's parts as blocks, rule cards, or units that stay whole | 🔄 draft | `docs/blocks.md` |
-| B16 | Block format v2: one folder per block with Agent Skills frontmatter (`name`, `description`, `license`, `metadata` with kind, owns, serves, needs, gives, conflicts, users); move the 13 blocks; update `blocks.toml` and the `flow_run.py` resolver in the same step | ⬜ | the flow tests pass; each block validates as an Agent Skills `SKILL.md` |
-| B17 | Cut ink: reference-analysis, story, visual-qa, build-site, build-canvas; one owner for look-grammar, style-frames, headless-shot; ink keeps its contract and its routes as templates | ⬜ | ink's references hold no rule that a block holds; an ink `prototype` run still passes |
+| B15 | Write the split map: every skill's parts as blocks, rule cards, or units that stay whole | 🔄 draft; ink done, the other skills open | `docs/blocks.md` |
+| B16 | Block format v2: one folder per block with Agent Skills frontmatter (`name`, `description`, `license`, `metadata` with kind, owns, serves, needs, gives, conflicts, users); move the 13 blocks; update `blocks.toml` and the `flow_run.py` resolver in the same step | ✅ branch `skill-blocks`, eb7f603f..3553867d | the flow tests pass; each block validates as an Agent Skills `SKILL.md` |
+| B17 | Cut ink: reference-analysis, story, visual-qa, build-site, build-canvas; one owner for look-grammar, style-frames, headless-shot; ink keeps its contract and its routes as templates | ✅ branch `skill-blocks`, da3b8566..5213c714 | ink's references hold no rule that a block holds; an ink `prototype` run still passes |
 | B18 | Second user: a glitch-walk page uses story, look-grammar, headless-shot and visual-qa | ⬜ | one live run, each block todo closed with evidence |
 | B19 | serve-local and annotate-loop (Plannotator, strict): view-and-talk is required in the `walk` template; a missing `plannotator` sets `unavailable plannotator` and stops; each round writes `annotate/<round>.json`; the loop uses the B1 and B2 stop | ⬜ | one glitch-walk run where an owner comment reaches the agent and the page is rebuilt; a run without the binary stops with the status |
 | B20 | Package the kit as a skills-only Agent Plugins 1.0 package (`plugin.json` at `skills/kit/`); Codex reads it as specified, Claude Code and AGY load its skills (`docs/blocks.md`, Packaging) | ⬜ | `codex plugin add`, `claude plugin details`, `agy plugin validate` each list the kit's skills |
