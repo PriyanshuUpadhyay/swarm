@@ -1,7 +1,17 @@
-# headless-shot
-Concept: Take page screenshots with Playwright's chrome-headless-shell, and know its limits.
-Serves: design, build, review
-Source: skills/ink/references/build.md:156-158 (chrome-headless-shell, Playwright cache); skills/ink/references/qa.md:30-38 (compare image at the same scale, 100 % crop)
+---
+name: headless-shot
+description: "Take page screenshots with Playwright's chrome-headless-shell, and know its limits."
+license: MIT
+metadata:
+  kind: step
+  owns: "how page screenshots are taken"
+  serves: "design, build, review"
+  needs: "a URL or a file"
+  gives: "screenshots at set widths"
+  conflicts: ""
+  users: "flow"
+  source: "skills/ink/references/build.md:156-158 (chrome-headless-shell, Playwright cache); skills/ink/references/qa.md:30-38 (compare image at the same scale, 100 % crop)"
+---
 
 ## Rules
 - Command: `mkdir -p {{shots}} && <chrome-headless-shell> --headless --screenshot="$PWD/{{shots}}/<name>-<W>.png" --window-size=W,H "file://$PWD/{{site}}/index.html"`, run from the repo root; the shell does not make the folder. Widths are 1440,900 and 390,844 and 375,812. `<name>` is the page, such as `home`, or `diagram-<diagram>` for a shot of one diagram.

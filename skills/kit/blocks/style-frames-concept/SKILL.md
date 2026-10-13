@@ -1,7 +1,17 @@
-# style-frames-concept
-Concept: Prove the look before the full build with frames rendered from the real page code, scored beside the reference; a miss blocks.
-Serves: design
-Source: skills/ink/SKILL.md:55-57 (step 4); skills/ink/references/site.md:69-73 (site frames); skills/ink/references/qa.md:28-47 (reference match, rounds), :128-129 (visually verified)
+---
+name: style-frames-concept
+description: "Prove the look before the full build with frames rendered from the real page code, scored beside the reference; a miss blocks."
+license: MIT
+metadata:
+  kind: step
+  owns: "the proof of the look before the full build"
+  serves: "design"
+  needs: "tokens and page code"
+  gives: "frames scored beside the reference"
+  conflicts: ""
+  users: "flow"
+  source: "skills/ink/SKILL.md:55-57 (step 4); skills/ink/references/site.md:69-73 (site frames); skills/ink/references/qa.md:28-47 (reference match, rounds), :128-129 (visually verified)"
+---
 
 ## Rules
 - Render three frames from the real page code with the screenshot tool the workflow names: the hero at 1440 px and at 390 px as `<page>-1440.png` and `<page>-390.png`, and one middle section at 1440 px as `<section>-1440.png`. Save them in `{{shots}}`, with one `compare-NN.png` per frame beside the reference.
