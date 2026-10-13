@@ -500,7 +500,7 @@ def git_env():
     return {**{k: v for k, v in os.environ.items() if not k.startswith("GIT_")}, **GIT_ENV}
 
 PARAMS = '[params]\nsource_of_truth = "docs/spec.md"\nsite = "site"\nshots = "tmp/shots"\n'
-RED_BUILD = "- build: block:red-first-check\n"  # the catalog line most block tests start from
+RED_BUILD = "- build: block:prove-it-works\n"  # the catalog line most block tests start from
 
 
 def blocks_start(tmp, name, catalog, repo_toml=PARAMS, *args, env=None, python=sys.executable):
@@ -549,11 +549,11 @@ def test_block_in_step(tmp):
     out, folder, repo, run = blocks_start(tmp, "d1", RED_BUILD)
     assert out.returncode == 0, out.stderr
     build = step_text(folder, "05-build")
-    assert "===== block:red-first-check =====" in build and "Rank each claim on the ladder" in build, build
+    assert "===== block:prove-it-works =====" in build and "Rank each claim on the ladder" in build, build
     skills = next(line for line in build.splitlines() if line.startswith("Skills read:"))
     assert "profile default" in skills, skills
-    digest = hashlib.sha256((flow_run.BLOCKS / "red-first-check" / "SKILL.md").read_bytes()).hexdigest()[:8]
-    assert f"block:red-first-check@{digest}" in [item.strip() for item in skills.removeprefix("Skills read:").split(",")], skills
+    digest = hashlib.sha256((flow_run.BLOCKS / "prove-it-works" / "SKILL.md").read_bytes()).hexdigest()[:8]
+    assert f"block:prove-it-works@{digest}" in [item.strip() for item in skills.removeprefix("Skills read:").split(",")], skills
     assert "Rank each claim on the ladder" not in step_text(folder, "02-design")
     # A second start on the folder writes nothing, even when the catalog now fails.
     (repo.parent / "home" / ".flow" / "domains.md").write_text("## any\n- build: block:nope\n", encoding="utf-8")
@@ -837,11 +837,11 @@ def test_block_fail_closed(tmp):
         # The Off line prints the reason through one_line, so control characters alone are an empty reason.
         ("off-controls", "- design: block:tech-diagram\n", PARAMS + '[off]\nhtml-diagram = "\\u001b\\u0007"\n', (), "[off] html-diagram needs a reason"),
         ("off-unknown", "- design: block:tech-diagram\n", PARAMS + '[off]\nnope = "x"\n', (), "unknown block id nope"),
-        ("duplicate", RED_BUILD, PARAMS + '[add]\nbuild = ["red-first-check.md"]\n', (), "duplicate block id red-first-check"),
+        ("duplicate", RED_BUILD, PARAMS + '[add]\nbuild = ["prove-it-works.md"]\n', (), "duplicate block id prove-it-works"),
         ("profile", RED_BUILD, PARAMS, ("--profile", "nope"), "unknown profile nope"),
     ]
     Path(tmp, "duplicate", "app").mkdir(parents=True)
-    Path(tmp, "duplicate", "app", "red-first-check.md").write_text("# red-first-check\n", encoding="utf-8")
+    Path(tmp, "duplicate", "app", "prove-it-works.md").write_text("# prove-it-works\n", encoding="utf-8")
     # An [add] path must stay inside the repo: absolute, `..`, and a symlink out are refused.
     for name, path in (("add-absolute", str(Path(tmp, "add-absolute", "outside.md"))),
                        ("add-parent", "../outside.md"), ("add-symlink", "link.md")):
