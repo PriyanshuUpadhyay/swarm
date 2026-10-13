@@ -49,7 +49,8 @@ Build may run while seats work, because seats never judge build-gate IDs.
 A CI descendant that starts its own session escapes the group kill and must be stopped by hand.
 
 Run it from the repo root. The run folder is `<repo-root>/tmp/review-check/<run>/`, where `<run>`
-is `range-<base7>-<head7>-NN` or `local-NN`, as `references/run-folder.md` describes.
+is `range-<base7>-<head7>-NN` or `local-NN`, as the kit's `references/run-folder.md` describes. The kit
+root is two folders up from this skill's folder; a bare `references/` path below is this skill's own.
 
 | File | Who | Holds |
 |---|---|---|
@@ -70,8 +71,7 @@ that can move.
 For each unit, read its full range in `head/`, the diff hunks, and every place that
 `checklist.json` lists under `refs`. Then check the unit against each rule ID in its checklist.
 The rules live in `references/lens.md`, `references/lens-<name>.md`, and the repo's rules file that
-`01-units.md` names. Also read the kit block `blocks/when-to-extract/SKILL.md` (the kit root is two folders up from this
-skill's folder), the `engineering-standards` skill, the
+`01-units.md` names. Also read the kit block `blocks/when-to-extract/SKILL.md`, the `engineering-standards` skill, the
 repo's own convention docs, and the `review` paths of each domain in `~/.flow/domains.md` whose `Signals:`
 line matches the file. A defect that no rule names is still a finding, with rule `-`.
 

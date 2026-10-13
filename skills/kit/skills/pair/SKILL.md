@@ -41,7 +41,7 @@ the rules and the todo list in its `05-build.md`. The flow's review step follows
 last behavior, so pair itself still has no closing pass.
 
 Every behavior ends with `Standards: <row ids>` or `Standards: none`. Select them using
-`~/.claude/skills/engineering-standards/SKILL.md`. The agent checks this selection against the
+the kit's `skills/engineering-standards/SKILL.md`. The agent checks this selection against the
 behavior and repository; the user does not have to catch a wrong `none` or write the standards.
 
 ## Chunk loop

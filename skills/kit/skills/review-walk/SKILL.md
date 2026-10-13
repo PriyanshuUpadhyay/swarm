@@ -44,7 +44,8 @@ ready step.
 
 ## Status line
 
-A review walk is a step run. The kit root, with its `blocks/` and `references/` folders, is two folders up from this skill's folder. So the kit's `references/step-run.md` owns the status line, ready
+A review walk is a step run, so the kit's `references/step-run.md` (the kit root is
+two folders up from this skill's folder) owns the status line, ready
 and stale steps, pick-up, close, and when a step waits for the user. The script reads the same
 status line.
 

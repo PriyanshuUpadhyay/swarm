@@ -27,7 +27,7 @@ run beside A and B, because they touch other files.
    usage, agent profiles, and the kit source in `skills/kit/`.
 2. yelo and agent-kit stop getting edits. Each gets a README pointer to swarm and is archived.
 3. dotfiles stays private. It keeps `~/.flow/domains.md`, `~/.claude/references`,
-   `~/.claude/scripts`, the global `AGENTS.md`, and the owner's skill links.
+   `~/.claude/scripts`, the global `AGENTS.md`, and the owner's links to skills outside the kit plugin.
 4. Parts stay separable by modules, not by crates (separate Rust packages). The kit is plain data
    with no Rust dependency. `accounts`, `profiles` and `usage` own identity and quota. `serve` is
    behind a cargo feature and owns no domain rule. Managed edits own every write outside the swarm
@@ -62,10 +62,10 @@ Setup reports Skills ready, because it skips owner entries (ADR 0062 amendment,
 | A1 | Make a read-only matrix of every bundled skill × `.claude/skills`, `.agents/skills`, `.gemini/config/skills`: real target, revision, local differences, proposed link | ⬜ | each name has one future source, and each difference has a preserve-or-merge row |
 | A2 | Pull agent-kit `3b57571` into `skills/kit/` on a branch | ⬜ | `diff -r` of agent-kit `skills/` and `skills/kit/skills/` is empty |
 | A3 | Stop edits in agent-kit; add its README pointer and archive it | ⬜ | no agent-kit commit after the pull |
-| A4 | On the owner's Mac, install the plugin `swarm` from this checkout in Claude Code, Codex and AGY; remove the `~/.claude/skills`, `~/.agents/skills` and `~/.gemini/config/skills` links of kit skills to agent-kit in one dotfiles commit; switch the `any` build and close lines of `~/.flow/domains.md` to `block:prove-it-works` | ⬜ | `claude plugin details swarm`, `codex plugin list`, `agy plugin list` list the kit skills; no skills folder holds a kit name; a new session in each CLI reads a block |
+| A4 | On the owner's Mac, install the plugin `swarm` from this checkout in Claude Code, Codex and AGY. Remove every kit skill name from `~/.claude/skills`, `~/.agents/skills` and `~/.gemini/config/skills`, links and real folders alike, in one dotfiles commit; keep swarm-orchestrator, swarm-voice and the three vendor skills linked. Repoint each absolute kit path to the checkout's `skills/kit/`: the `~/.claude/skills/...` and `~/.claude/references/...` paths in `~/.flow/domains.md`, the global `AGENTS.md` and `fable-orchestrator-mode.md`; remove the kit copies in `~/.claude/references`. Make `src/host.rs` name the runtime adapter as a skill (`orchestrate-claude`) in place of a skills-folder path. Switch the `any` build and close lines of `~/.flow/domains.md` to `block:prove-it-works` | ⬜ | `claude plugin details swarm`, `codex plugin list`, `agy plugin list` list the kit skills; no skills folder holds a kit name; `rg '~/.claude/(skills|references)/'` finds no kit name in dotfiles; a new session in each CLI reads a block; after a kit edit, the update step for Codex and AGY (install again, or a version bump) puts the edit in a new session |
 | A5 | Amend ADR 0066: each Mac reads an installed plugin copy, and the owner updates it after a kit change | ⬜ | ADR text |
 | A6 | Make Setup show skipped skill links as not ready, or say where each one points | ❓ | owner decides if Setup should change |
-| A7 | Make Setup install the plugin `swarm` from the bundled kit in each CLI, in place of skill links, because a link to one skill folder cannot reach `blocks/` | ⬜ | on a Setup-only Mac, each CLI lists the plugin and a session reads a block |
+| A7 | Make Setup install the plugin `swarm` from the bundled kit in each CLI, in place of kit skill links, because a link to one kit skill folder cannot reach `blocks/`; Setup keeps the links for swarm-orchestrator, swarm-voice and the three vendor skills, and the root README's Setup step says so | ⬜ | on a Setup-only Mac, each CLI lists the plugin and a session reads a block |
 
 Note. On 2026-10-13 the creative-coding lines of `~/.flow/domains.md` gained `block:` items
 (reference-analysis, design-tokens, story, build-canvas, style-frames, visual-qa). Only the flow of

@@ -90,7 +90,7 @@ Example. `~/work/seed-city/ink/` holds one file per step. Steps 1-4 are done, so
   [orchestration.json](orchestration.json) declares both roles, and the runtime adapter resolves
   each one with its fallbacks.
 - Before two builder seats run at once, each owns its files in a named subfolder; `05-animatic`
-  may run beside `04-style-frames` by the pick-up rule in `references/step-run.md`.
+  may run beside `04-style-frames` by the pick-up rule in the kit's `references/step-run.md`.
 - A builder writes only the piece folder and its own step file, and it ends by setting line 1. The
   main session inspects the frames itself before it accepts the step.
 - A new skill-specific role is one route in the roles registry and one line in

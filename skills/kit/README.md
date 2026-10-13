@@ -40,12 +40,22 @@ codex plugin marketplace add <repo> && codex plugin add swarm@swarm
 agy plugin install <repo>/skills/kit
 ```
 
-Claude Code shows each skill with the plugin name in front, for example `/swarm:flow`. An installed
-copy does not follow later edits in the clone; `claude --plugin-dir <repo>/skills/kit` loads the
-clone itself for one session.
+Claude Code shows each skill with the plugin name in front, for example `/swarm:flow`. Claude Code
+reads a marketplace on a local folder in place, so an edit in the clone reaches its next session.
+Codex and Antigravity read an installed copy, so run their install again after an edit.
 
-Do not link single skill folders into an agent's skills folder. A tool reads `../../blocks/` from
-the link's own path, not from the kit, so the blocks are not found.
+Do not link a kit skill folder into an agent's skills folder. A tool reads `../../blocks/` from the
+link's own path, not from the kit, so the blocks are not found. The three vendor skills that
+`build-site` and ink read use no blocks, so link them:
+
+```sh
+for s in <repo>/skills/kit/vendor/taste-skill/skills/taste-skill/ \
+  <repo>/skills/kit/vendor/emil-skills/skills/animate/ <repo>/skills/kit/vendor/emil-skills/skills/break-ui/; do
+  ln -sfn "$s" ~/.claude/skills/"$(basename "$s")"
+done
+```
+
+Codex reads `~/.agents/skills` and Antigravity reads `~/.gemini/config/skills`.
 
 ## What the skills expect
 
