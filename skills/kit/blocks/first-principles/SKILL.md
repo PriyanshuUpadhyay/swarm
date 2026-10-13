@@ -1,7 +1,17 @@
-# first-principles
-Concept: The few rules every step of every workflow keeps.
-Serves: every step
-Source: skills/prove-it-works/SKILL.md:9-10, :55-56 (evidence, not a proxy); html-plan pack: skills/html-plan/SKILL.md:82 (real over drawn); skills/review-check/references/lens.md:28 (no speculative generality)
+---
+name: first-principles
+description: "The few rules every step of every workflow keeps."
+license: MIT
+metadata:
+  kind: rule
+  owns: "the rules every step of every workflow keeps"
+  serves: "every step"
+  needs: "source_of_truth"
+  gives: "steps that keep the base rules"
+  conflicts: ""
+  users: "flow"
+  source: "skills/prove-it-works/SKILL.md:9-10, :55-56 (evidence, not a proxy); html-plan pack: skills/html-plan/SKILL.md:82 (real over drawn); skills/review-check/references/lens.md:28 (no speculative generality)"
+---
 
 ## Rules
 - Facts come only from {{source_of_truth}}. If it does not say it, do not write it.
