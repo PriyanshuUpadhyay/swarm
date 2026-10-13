@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ApiError, type Agent, type Api, type Row, type RowPage, type Session, type Snapshot } from "./api";
 import { App } from "./app";
-import { chairInput, clearPresses, confirmSent, decidePullBack, MISSING_ADAPTER, sends, sentRow, submission, usageLabel } from "./composer";
+import { agentInput, clearPresses, confirmSent, decidePullBack, MISSING_ADAPTER, sends, sentRow, submission, usageLabel } from "./composer";
 
 const user = (id: string, text: string, offset = 10): Row => ({ id, kind: "user", text, order: [offset, 0] });
 const queued = (id: string, text: string): Row => ({ id, kind: "queued", text, order: [5, 0] });
@@ -92,22 +92,22 @@ describe("sent rows", () => {
 
 describe("chair input", () => {
   it("names why the composer cannot send", () => {
-    expect(chairInput(session({ adapter: null }), [chair()]).disabled).toBe(MISSING_ADAPTER);
-    expect(chairInput(session(), []).disabled).toBe("The chair has no pane to receive input.");
-    const closed = chairInput(session(), [chair({ alive: false })]);
+    expect(agentInput(session({ adapter: null }), [chair()]).disabled).toBe(MISSING_ADAPTER);
+    expect(agentInput(session(), []).disabled).toBe("The chair has no pane to receive input.");
+    const closed = agentInput(session(), [chair({ alive: false })]);
     expect(closed.disabled).toBe("This chat's pane has closed. Start a new chat or switch model.");
     expect(closed.unreachable).toBe(true);
-    const asking = chairInput(session(), [chair({ state: "waiting", prompt: waitingPrompt })]);
+    const asking = agentInput(session(), [chair({ state: "waiting", prompt: waitingPrompt })]);
     expect(asking.disabled).toBe("The agent is asking a question. Answer it first.");
     expect(asking.unreachable).toBe(false);
     expect(asking.prompt).toEqual(waitingPrompt);
-    expect(chairInput(session(), [chair({ state: "waiting" })]).disabled).toBe("The agent is asking a question. Answer it first in its pane.");
+    expect(agentInput(session(), [chair({ state: "waiting" })]).disabled).toBe("The agent is asking a question. Answer it first in its pane.");
   });
 
   it("pulls back only Claude in tmux, and reads running from the chair state", () => {
-    expect(chairInput(session(), [chair({ state: "working" })])).toMatchObject({ disabled: null, running: true, pullBack: true });
-    expect(chairInput(session({ adapter: "herdr" }), [chair()]).pullBack).toBe(false);
-    expect(chairInput(session({ chair_provider: "codex" }), [chair()]).pullBack).toBe(false);
+    expect(agentInput(session(), [chair({ state: "working" })])).toMatchObject({ disabled: null, running: true, pullBack: true });
+    expect(agentInput(session({ adapter: "herdr" }), [chair()]).pullBack).toBe(false);
+    expect(agentInput(session({ chair_provider: "codex" }), [chair()]).pullBack).toBe(false);
   });
 
   it("shows the context left, else the token count", () => {

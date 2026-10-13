@@ -8,11 +8,11 @@ import { Toaster } from "../components/ui/sonner";
 import { TooltipProvider } from "../components/ui/tooltip";
 import "../styles.css";
 import { Palette } from "./palette";
+import { PaneStrip } from "./panes";
 import { Sidebar } from "./sidebar";
 import { store } from "./store";
 import { TabStrip } from "./tabs";
 import { applyTheme, setTheme, useTheme } from "./theme";
-import { ChatView } from "./transcript";
 
 // Only the left side for now; P2 adds the command that moves it.
 const side = store.getItem("swarm.sidebar.side") === "right" ? "right" : "left";
@@ -48,13 +48,9 @@ function Root({ app }: { app: App }) {
   );
   const main = (
     <ResizablePanel key="main" id="main-panel" minSize="360px">
-      <div className="flex h-full min-w-0">
-        <div className="flex min-w-0 flex-1 flex-col">
-          <TabStrip app={app} />
-          <ChatView app={app} />
-        </div>
-        {/* Agent panes (ADR 0030) land here in P1; an empty strip takes no width. */}
-        <aside data-testid="pane-strip" aria-label="Agent panes" className="flex border-l border-border empty:hidden" />
+      <div className="flex h-full min-w-0 flex-col">
+        <TabStrip app={app} />
+        <PaneStrip app={app} />
       </div>
     </ResizablePanel>
   );

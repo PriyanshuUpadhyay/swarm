@@ -28,6 +28,7 @@ const BUDGET = {
   open_p95: 150,
   scroll_drop: 0.01,
   live_drop: 0.01,
+  pane_live_drop: 0.01,
   giant_open_p95: 150,
   heap_growth: 0.10,
 };
@@ -75,7 +76,10 @@ async function frames(page, action) {
 const perfOf = (page, kind) => page.evaluate((k) => (window.__swarmPerf ?? []).filter((r) => r.kind === k).map((r) => r.painted - r.start), kind);
 const clearPerf = (page) => page.evaluate(() => { window.__swarmPerf = []; });
 
-const maxIndex = (page) => page.evaluate(() => Math.max(-1, ...[...document.querySelectorAll('[data-testid="row"]')].map((r) => Number(r.getAttribute("data-index")))));
+// The newest row of the chat, not of a child's pane.
+const maxIndex = (page) => page.evaluate(() => Math.max(-1, ...[...document.querySelectorAll('[data-testid="transcript"] [data-testid="row"]')].map((r) => Number(r.getAttribute("data-index")))));
+// The newest row index of each pane on screen, added up.
+const paneRows = (page) => page.evaluate(() => [...document.querySelectorAll('[data-testid="pane-transcript"]')].reduce((sum, pane) => sum + Math.max(-1, ...[...pane.querySelectorAll('[data-testid="row"]')].map((r) => Number(r.getAttribute("data-index")))), 0));
 
 async function heap(page, cdp) {
   if (!cdp) return NaN;
@@ -123,7 +127,9 @@ async function suite(browserName, app, url) {
   const result = { browser: browserName, app };
 
   await open();
-  const chatRows = await page.getByTestId("tree-row").evaluateAll((rows) => rows.map((r, i) => ({ i, chat: r.getAttribute("data-kind") === "chat" })).filter((r) => r.chat).map((r) => r.i));
+  // The pane chat has its own scenario; the other scenarios keep the chats they had before it.
+  const paneChat = `c:${JSON.parse(fs.readFileSync(path.join(home, "manifest.json"), "utf8")).panes.id}`;
+  const chatRows = await page.getByTestId("tree-row").evaluateAll((rows, skip) => rows.map((r, i) => ({ i, chat: r.getAttribute("data-kind") === "chat" && r.getAttribute("data-id") !== skip })).filter((r) => r.chat).map((r) => r.i), paneChat);
 
   log(browserName, app, "cold opens");
   // Cold opens: cycle through every chat, so the 4-chat LRU always misses.
@@ -168,7 +174,7 @@ async function suite(browserName, app, url) {
   });
   result.scroll_drop = scroll.rate;
   page.off("request", countOlder);
-  result.scroll_rows = await page.locator('[data-testid="row"]').count();
+  result.scroll_rows = await page.locator('[data-testid="transcript"] [data-testid="row"]').count();
   result.scroll_older_pages = olderPages;
 
   log(browserName, app, "giant");
@@ -201,6 +207,35 @@ async function suite(browserName, app, url) {
   result.live_rows_added = (await maxIndex(page)) - liveStart;
   result.live_drop = live.rate;
   result.live_worst_ms = live.worst;
+
+  log(browserName, app, "pane live");
+  // Pane live load: the chat's chair and four child logs grow at 50 lines/s while all four panes
+  // are on screen (two columns of two) and follow their logs.
+  await open();
+  await page.locator(`[data-testid="tree-row"][data-id="${paneChat}"]`).click();
+  await page.waitForFunction(() => document.querySelectorAll('[data-testid="pane"]').length === 4);
+  await page.getByTestId("strip").evaluate((el) => (el.scrollLeft = el.scrollWidth));
+  await page.waitForFunction(() => {
+    const panes = [...document.querySelectorAll('[data-testid="pane"]')];
+    const shown = (el) => el.getBoundingClientRect().left >= 0 && el.getBoundingClientRect().right <= innerWidth;
+    return panes.length === 4 && panes.every((p) => shown(p) && p.querySelector('[data-testid="pane-transcript"][data-state="ready"] [data-testid="row"]'));
+  });
+  await page.waitForTimeout(500);
+  const paneStart = await paneRows(page);
+  const paneGen = spawn("node", [path.join(here, "gen.mjs"), "live", "--home", home, "--rate", "50", "--seconds", String(liveSeconds), "--target", "panes"], { stdio: "inherit" });
+  const paneGenExit = new Promise((r) => paneGen.once("exit", r));
+  const paneLive = await frames(page, async () => {
+    const end = Date.now() + liveSeconds * 1000;
+    while (Date.now() < end) {
+      await page.keyboard.press("j");
+      await page.waitForTimeout(250);
+    }
+  });
+  await paneGenExit;
+  await page.waitForTimeout(500);
+  result.pane_live_rows_added = (await paneRows(page)) - paneStart;
+  result.pane_live_drop = paneLive.rate;
+  result.pane_live_worst_ms = paneLive.worst;
 
   log(browserName, app, "soak");
   // Memory soak: switch chats for `soakMinutes`; compare the heap at 20% of the run with the end.
@@ -255,6 +290,7 @@ const rows = [
   ["scroll dropped frames", "scroll_drop", "%"],
   ["giant output open p95", "giant_open_p95", "ms"],
   ["live 12x50/s dropped frames", "live_drop", "%"],
+  ["live 4 panes x50/s dropped frames", "pane_live_drop", "%"],
   ["heap growth over soak", "heap_growth", "%"],
 ];
 let out = `| Metric | Budget | ${results.map((r) => `${r.app} ${r.browser}`).join(" | ")} |\n|---|---|${results.map(() => "---|").join("")}\n`;
@@ -266,6 +302,8 @@ out += `rows in DOM after scroll: ${results.map((r) => `${r.app} ${r.browser} ${
 out += `older 200-line pages fetched while scrolling (50 = 10k lines): ${results.map((r) => `${r.app} ${r.browser} ${r.scroll_older_pages}`).join(", ")}\n`;
 out += `rows appended to the open chat during live load: ${results.map((r) => `${r.app} ${r.browser} ${r.live_rows_added}`).join(", ")}\n`;
 out += `live worst frame: ${results.map((r) => `${r.app} ${r.browser} ${fmt(r.live_worst_ms, "ms")}`).join(", ")}\n`;
+out += `rows appended to the four panes during pane live load: ${results.map((r) => `${r.app} ${r.browser} ${r.pane_live_rows_added}`).join(", ")}\n`;
+out += `pane live worst frame: ${results.map((r) => `${r.app} ${r.browser} ${fmt(r.pane_live_worst_ms, "ms")}`).join(", ")}\n`;
 for (const r of results.filter((r) => r.heap_samples))
   out += `heap MB per minute, ${r.app} ${r.browser}: ${r.heap_samples.map((s) => `${s.min.toFixed(1)}m ${s.mb.toFixed(2)}`).join(", ")}\n`;
 console.log(out);

@@ -3,14 +3,14 @@
 import { Api, type Row, type RowFrame, type Snapshot, type SubscribeKey } from "./api";
 import { installKeys, Registry, search, type Command } from "./commands";
 import {
-  chairInput,
+  agentInput,
   confirmSent,
   decidePullBack,
   outgoing,
   SEND_KEY_STORAGE,
   sentRow,
   submission,
-  type ChairInput,
+  type AgentInput,
   type Prompt,
   type Sent,
   type SendKey,
@@ -19,6 +19,7 @@ import {
 import { MarkdownCache } from "./markdown";
 import { measure, whenPainted, type PerfKind } from "./perf";
 import { readSse, type SseEvent } from "./sse";
+import { movePane, paneCells, type Direction, type PaneCell } from "./panes";
 import { FoldChoices, findMatches, lines, mergeRows, type Line, type Match } from "./transcript";
 import { buildTree, flatten, workspaces, type TreeNode, type TreeRow } from "./tree";
 
@@ -30,8 +31,14 @@ const MAX_KEYS = 32;
 export type FullText = { state: "loading" } | { state: "ready"; text: string; lines: string[] } | { state: "error"; error: string };
 
 type Chat = {
+  /** The session id for the chair's chat, and `paneId` for a child agent's. */
+  id: string;
   sessionId: string;
+  /** "chair", or the child agent's id. */
+  agent: string;
   key: string;
+  /** False for a child's chat until its column first shows. */
+  loaded: boolean;
   rows: Row[];
   /** The next older page ends here; 0 means no older rows. */
   older: number;
@@ -51,6 +58,7 @@ type Chat = {
   usage: Usage;
   /** Texts typed into a running Codex or AGY chair, shown as queued rows until the log has them. */
   sent: Sent[];
+  memo: { sig: unknown[]; pane: Pane } | null;
 };
 
 /** A failed chat action: the server's error text, and the same action again. */
@@ -69,8 +77,9 @@ export type Input = {
 };
 
 export type Composer = {
-  sessionId: string;
-  chair: ChairInput;
+  /** The chat id that every composer action takes. */
+  id: string;
+  agent: AgentInput;
   state: Input;
   /** The owner's queued rows at the end of the transcript. */
   queued: number;
@@ -80,13 +89,10 @@ export type Composer = {
 
 export type Find = { open: boolean; query: string; matches: Match[]; index: number; seq: number };
 
-export type View = {
-  loaded: boolean;
-  roots: TreeNode[];
-  error: string | null;
-  rows: TreeRow[];
-  selected: string | null;
-  openId: string | null;
+/** One transcript with its composer: the chair's chat, or a child agent's column. */
+export type Pane = {
+  /** The chat id; "" when no chat is open. */
+  id: string;
   chatState: "none" | "loading" | "ready" | "error";
   chatError: string | null;
   lines: Line[];
@@ -98,8 +104,43 @@ export type View = {
   md: MarkdownCache | null;
   full: ReadonlyMap<string, FullText>;
   find: Find;
-  paletteOpen: boolean;
   composer: Composer | null;
+};
+
+/** The open chat's child agents beside it (ADR 0030). `focused`, `zoomed` and `reveal` are agent ids. */
+export type Strip = {
+  cells: PaneCell[];
+  panes: ReadonlyMap<string, Pane>;
+  focused: string | null;
+  zoomed: string | null;
+  /** The pane a key moved focus to; null shows the chat page. The strip scrolls to it. */
+  reveal: string | null;
+  /** Changes on every reveal, so a repeated reveal still scrolls. */
+  revealSeq: number;
+};
+
+/** The chair's chat as `Pane` fields, and the rest of the window. */
+export type View = Pane & {
+  loaded: boolean;
+  roots: TreeNode[];
+  error: string | null;
+  rows: TreeRow[];
+  selected: string | null;
+  openId: string | null;
+  paletteOpen: boolean;
+  strip: Strip;
+};
+
+/** What a transcript's rows call. `App` is the reader of the chair's chat; `App.reader` gives a child's. */
+export type Reader = {
+  toggleLine(line: Line): void;
+  toggleHidden(): void;
+  loadFull(previewId: string): Promise<void>;
+  fullText(previewId: string): Promise<string>;
+  loadOlder(): Promise<void>;
+  setFindQuery(query: string): void;
+  stepFind(dir: number): void;
+  closeFind(): void;
 };
 
 export type PaletteEntry = { id: string; title: string; hint?: string; run: () => void };
@@ -107,8 +148,27 @@ export type PaletteEntry = { id: string; title: string; hint?: string; run: () =
 const EMPTY: Line[] = [];
 const NO_FULL: ReadonlyMap<string, FullText> = new Map();
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-const chatKey = (sessionId: string) => `${sessionId}:chair`;
+/** The chat id of a child agent's column. It is also the agent's stream key. */
+export const paneId = (sessionId: string, agent: string) => `${sessionId}:${agent}`;
 const DRAFT_PREFIX = "composer.draft.";
+const DISMISSED_STORAGE = "swarm.panes.dismissed";
+const NO_FIND: Find = { open: false, query: "", matches: [], index: -1, seq: 0 };
+const NO_PANE: Pane = {
+  id: "",
+  chatState: "none",
+  chatError: null,
+  lines: EMPTY,
+  hidden: 0,
+  showHidden: false,
+  hasOlder: false,
+  loadingOlder: false,
+  shift: false,
+  md: null,
+  full: NO_FULL,
+  find: NO_FIND,
+  composer: null,
+};
+const NO_CELLS: PaneCell[] = [];
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
 const readStore = (key: string): string | null => {
   try {
@@ -144,7 +204,9 @@ export class App {
   private streamId: string | null = null;
   private sentKeys = "";
   private pending = new Map<string, RowFrame[]>();
-  private find: Find = { open: false, query: "", matches: [], index: -1, seq: 0 };
+  private find: Find = NO_FIND;
+  /** The chat that Find searches: the focused pane's when Find opened, else the chair's. */
+  private findId: string | null = null;
   private findVersion = "";
   private frame = 0;
   private snapshotBusy: Promise<void> | null = null;
@@ -152,11 +214,25 @@ export class App {
   private inputs = new Map<string, Input>();
   private drafts = new Map<string, string>();
   private alreadySentSeq = 0;
+  private inputRev = 0;
+  private pane = { focused: null as string | null, zoomed: null as string | null, reveal: null as string | null, revealSeq: 0 };
+  /** Chat ids of the child columns on screen. Only these follow their logs. */
+  private visible = new Set<string>();
+  /** Finished children the owner dismissed, per session (ADR 0056). P2 moves this to view state. */
+  private dismissed: Record<string, string[]>;
+  private cellsMemo: { snapshot: Snapshot | null; openId: string | null; dismissed: string[] | undefined; cells: PaneCell[] } | null = null;
+  private strip: Strip = { cells: NO_CELLS, panes: new Map(), focused: null, zoomed: null, reveal: null, revealSeq: 0 };
+  private readers = new Map<string, Reader>();
 
   constructor(
     readonly api: Api,
     readonly liveAll = false,
   ) {
+    try {
+      this.dismissed = JSON.parse(readStore(DISMISSED_STORAGE) ?? "{}");
+    } catch {
+      this.dismissed = {};
+    }
     this.view = this.makeView();
     this.registry.add(...this.commands());
   }
@@ -172,30 +248,84 @@ export class App {
   }
 
   private makeView(): View {
-    const chat = this.openId ? this.chats.get(this.openId) : undefined;
-    if (chat && chat.built?.version !== chat.version) chat.built = { version: chat.version, ...this.build(chat) };
-    this.refind(chat);
+    const sendKey: SendKey = readStore(SEND_KEY_STORAGE) === "commandReturn" ? "commandReturn" : "return";
+    const chat = this.open;
+    const cells = this.cells();
+    // A pane that left the strip takes its focus, its zoom and its Find with it.
+    const has = (id: string | null) => (id !== null && cells.some((c) => c.id === id) ? id : null);
+    const p = this.pane;
+    p.focused = has(p.focused);
+    p.zoomed = has(p.zoomed);
+    p.reveal = has(p.reveal);
+    if (this.findId && !cells.some((c) => paneId(this.openId!, c.id) === this.findId)) this.findId = null;
     return {
+      ...(chat ? this.paneView(chat, sendKey) : NO_PANE),
       loaded: this.snapshot !== null,
       roots: this.roots,
       error: this.error,
       rows: this.rows,
       selected: this.selected,
       openId: this.openId,
-      chatState: chat ? chat.state : "none",
-      chatError: chat?.error ?? null,
-      lines: chat?.built?.lines ?? EMPTY,
-      hidden: chat?.built?.hidden ?? 0,
-      showHidden: chat?.showHidden ?? false,
-      hasOlder: (chat?.older ?? 0) > 0,
-      loadingOlder: chat?.loadingOlder ?? false,
-      shift: chat?.shift ?? false,
-      md: chat?.md ?? null,
-      full: chat?.full ?? NO_FULL,
-      find: this.find,
       paletteOpen: this.paletteOpen,
-      composer: chat ? this.composerView(chat) : null,
+      strip: this.stripView(cells, sendKey),
     };
+  }
+
+  /** One chat as its transcript and composer see it. The same object comes back while nothing it
+   *  shows has changed, so a sidebar key press does not render every column again. */
+  private paneView(chat: Chat, sendKey: SendKey, hasLog = true): Pane {
+    const finds = chat.id === (this.findId ?? this.openId);
+    if (finds) this.refind(chat);
+    const find = finds ? this.find : NO_FIND;
+    const sig = [chat.version, chat.state, chat.loaded, chat.loadingOlder, find, this.snapshot, this.inputRev, sendKey, hasLog];
+    if (chat.memo && sig.every((v, i) => v === chat.memo!.sig[i])) return chat.memo.pane;
+    if (chat.built?.version !== chat.version) chat.built = { version: chat.version, ...this.build(chat) };
+    const pane: Pane = {
+      id: chat.id,
+      // A child's column loads when it first shows; with no log yet it has nothing to load.
+      chatState: chat.loaded ? chat.state : hasLog ? "loading" : "none",
+      chatError: chat.error,
+      lines: chat.built.lines,
+      hidden: chat.built.hidden,
+      showHidden: chat.showHidden,
+      hasOlder: chat.older > 0,
+      loadingOlder: chat.loadingOlder,
+      shift: chat.shift,
+      md: chat.md,
+      full: chat.full,
+      find,
+      composer: this.composerView(chat, sendKey),
+    };
+    chat.memo = { sig, pane };
+    return pane;
+  }
+
+  /** The open chat's child agents, in strip order. */
+  private cells(): PaneCell[] {
+    const id = this.openId;
+    if (!id) return NO_CELLS;
+    const dismissed = this.dismissed[id];
+    const m = this.cellsMemo;
+    if (m && m.snapshot === this.snapshot && m.openId === id && m.dismissed === dismissed) return m.cells;
+    const cells = paneCells(this.snapshot?.sessions.find((s) => s.id === id), this.snapshot?.agents[id], dismissed);
+    this.cellsMemo = { snapshot: this.snapshot, openId: id, dismissed, cells };
+    return cells;
+  }
+
+  private stripView(cells: PaneCell[], sendKey: SendKey): Strip {
+    const p = this.pane;
+    const panes = new Map<string, Pane>();
+    for (const c of cells) panes.set(c.id, this.paneView(this.childChat(this.openId!, c.id), sendKey, c.hasLog));
+    const old = this.strip;
+    const same =
+      old.cells === cells &&
+      old.focused === p.focused &&
+      old.zoomed === p.zoomed &&
+      old.reveal === p.reveal &&
+      old.revealSeq === p.revealSeq &&
+      cells.every((c) => old.panes.get(c.id) === panes.get(c.id));
+    if (!same) this.strip = { cells, panes, ...p };
+    return this.strip;
   }
 
   private build(chat: Chat) {
@@ -203,16 +333,16 @@ export class App {
     return lines(rows, { showHidden: chat.showHidden, folds: chat.folds, opened: chat.opened });
   }
 
-  private composerView(chat: Chat): Composer {
+  private composerView(chat: Chat, sendKey: SendKey): Composer {
     let queued = 0;
     for (let i = chat.rows.length - 1; i >= 0 && chat.rows[i].kind === "queued"; i--) queued++;
     return {
-      sessionId: chat.sessionId,
-      chair: this.chair(chat.sessionId),
-      state: { ...this.input(chat.sessionId) },
+      id: chat.id,
+      agent: this.chair(chat.id),
+      state: { ...this.input(chat.id) },
       queued,
       usage: chat.usage,
-      sendKey: readStore(SEND_KEY_STORAGE) === "commandReturn" ? "commandReturn" : "return",
+      sendKey,
     };
   }
 
@@ -265,10 +395,12 @@ export class App {
       if (input.answering && this.chair(id).prompt?.id !== input.answering.prompt) input.answering = null;
     // A turn that ended took or dropped every typed text (ComposerSentMessages.update).
     for (const chat of this.chats.values())
-      if (chat.sent.length && !this.chair(chat.sessionId).running) {
+      if (chat.sent.length && !this.chair(chat.id).running) {
         chat.sent = [];
         chat.version++;
       }
+    // A child's hooks report its log after its column shows.
+    for (const id of this.visible) this.loadPane(id);
     if (!this.selected || !this.rows.some((r) => r.id === this.selected)) this.selected = this.rows[0]?.id ?? null;
     if (this.liveAll) void this.loadAllForLive();
   }
@@ -339,10 +471,13 @@ export class App {
     return workspaces(this.roots).find((w) => w.children.some((c) => c.sessionId === sessionId));
   }
 
-  private newChat(sessionId: string): Chat {
+  private newChat(sessionId: string, agent = "chair"): Chat {
     const chat: Chat = {
+      id: agent === "chair" ? sessionId : paneId(sessionId, agent),
       sessionId,
-      key: chatKey(sessionId),
+      agent,
+      key: `${sessionId}:${agent}`,
+      loaded: agent === "chair",
       rows: [],
       older: 0,
       end: 0,
@@ -355,8 +490,13 @@ export class App {
       sent: [],
       ...this.freshReaderState(),
     };
-    this.chats.set(sessionId, chat);
+    this.chats.set(chat.id, chat);
     return chat;
+  }
+
+  /** A child agent's chat. It holds no rows until its column shows. */
+  private childChat(sessionId: string, agent: string): Chat {
+    return this.chats.get(paneId(sessionId, agent)) ?? this.newChat(sessionId, agent);
   }
 
   private freshReaderState() {
@@ -367,12 +507,13 @@ export class App {
       full: new Map<string, FullText>(),
       md: new MarkdownCache(),
       built: null,
+      memo: null,
     };
   }
 
   private async loadTail(chat: Chat) {
     try {
-      const page = await this.api.rows(chat.sessionId, "chair", TAIL);
+      const page = await this.api.rows(chat.sessionId, chat.agent, TAIL);
       chat.rows = mergeRows([], page.rows);
       chat.older = page.page.start_offset;
       chat.end = page.page.end_offset;
@@ -403,6 +544,7 @@ export class App {
 
   openChat(sessionId: string, e?: KeyboardEvent) {
     const kind: PerfKind = this.lru.includes(sessionId) ? "switch" : "open";
+    if (this.openId !== sessionId) this.leavePanes(sessionId);
     this.openId = sessionId;
     const ws = this.workspaceOf(sessionId);
     if (ws) {
@@ -475,6 +617,30 @@ export class App {
     return this.openId ? this.chats.get(this.openId) : undefined;
   }
 
+  /** The chat a reader call is for: `id`, else the open chair's. */
+  private chat(id?: string): Chat | undefined {
+    return id === undefined ? this.open : this.chats.get(id);
+  }
+
+  /** The transcript calls of one child's chat. */
+  reader(id: string): Reader {
+    let r = this.readers.get(id);
+    if (!r) {
+      r = {
+        toggleLine: (line) => this.toggleLine(line, id),
+        toggleHidden: () => this.toggleHidden(id),
+        loadFull: (previewId) => this.loadFull(previewId, id),
+        fullText: (previewId) => this.fullText(previewId, id),
+        loadOlder: () => this.loadOlder(id),
+        setFindQuery: (query) => this.setFindQuery(query),
+        stepFind: (dir) => this.stepFind(dir),
+        closeFind: () => this.closeFind(),
+      };
+      this.readers.set(id, r);
+    }
+    return r;
+  }
+
   /** A reader change: lines rebuild, and the list does not treat it as a prepend. */
   private changed(chat: Chat) {
     chat.version++;
@@ -483,30 +649,30 @@ export class App {
   }
 
   /** Opens or closes a fold, a tool card, a thought, or a long system row. */
-  toggleLine(line: Line) {
-    const chat = this.open;
+  toggleLine(line: Line, id?: string) {
+    const chat = this.chat(id);
     if (!chat) return;
     if (line.row.kind === "fold") chat.folds.set(line.row, !line.open);
     else chat.opened.set(line.id, !line.open);
     this.changed(chat);
   }
 
-  toggleHidden() {
-    const chat = this.open;
+  toggleHidden(id?: string) {
+    const chat = this.chat(id);
     if (!chat) return;
     chat.showHidden = !chat.showHidden;
     this.changed(chat);
   }
 
   /** Fetches the full text behind a capped preview once and shows it; the LRU drops it. */
-  async loadFull(previewId: string) {
-    const chat = this.open;
+  async loadFull(previewId: string, id?: string) {
+    const chat = this.chat(id);
     if (!chat || (chat.full.has(previewId) && chat.full.get(previewId)!.state !== "error")) return;
     chat.full = new Map(chat.full).set(previewId, { state: "loading" });
     this.changed(chat);
     let next: FullText;
     try {
-      const text = await this.api.toolOutput(chat.sessionId, "chair", previewId);
+      const text = await this.api.toolOutput(chat.sessionId, chat.agent, previewId);
       next = { state: "ready", text, lines: text.split("\n") };
     } catch (err) {
       next = { state: "error", error: String(err) };
@@ -516,21 +682,21 @@ export class App {
   }
 
   /** The full text for Copy, without showing it. */
-  async fullText(previewId: string): Promise<string> {
-    const chat = this.open;
+  async fullText(previewId: string, id?: string): Promise<string> {
+    const chat = this.chat(id);
     const have = chat?.full.get(previewId);
     if (have?.state === "ready") return have.text;
     if (!chat) throw new Error("no chat open");
-    return this.api.toolOutput(chat.sessionId, "chair", previewId);
+    return this.api.toolOutput(chat.sessionId, chat.agent, previewId);
   }
 
   /** Pages older rows in above the current ones. */
-  async loadOlder() {
-    const chat = this.open;
+  async loadOlder(id?: string) {
+    const chat = this.chat(id);
     if (!chat || chat.state !== "ready" || chat.loadingOlder || chat.older <= 0) return;
     chat.loadingOlder = true;
     try {
-      const page = await this.api.rows(chat.sessionId, "chair", TAIL, chat.older);
+      const page = await this.api.rows(chat.sessionId, chat.agent, TAIL, chat.older);
       chat.rows = mergeRows(chat.rows, page.rows, page.remove);
       chat.older = page.page.start_offset;
       chat.version++;
@@ -548,7 +714,7 @@ export class App {
   /** Matches follow the rows; the current match stays on its row when rows change. */
   private refind(chat: Chat | undefined) {
     const f = this.find;
-    const sig = `${chat?.sessionId}:${chat?.version}:${chat?.showHidden}:${f.open}:${f.query}`;
+    const sig = `${chat?.id}:${chat?.version}:${chat?.showHidden}:${f.open}:${f.query}`;
     if (sig === this.findVersion) return;
     this.findVersion = sig;
     if (!f.open || !chat) {
@@ -572,12 +738,14 @@ export class App {
     chat.version++;
     chat.shift = false;
     chat.built = { version: chat.version, ...this.build(chat) };
-    this.findVersion = `${chat.sessionId}:${chat.version}:${chat.showHidden}:${f.open}:${f.query}`;
+    this.findVersion = `${chat.id}:${chat.version}:${chat.showHidden}:${f.open}:${f.query}`;
     this.find = { ...f, seq: f.seq + 1 };
   }
 
+  /** ⌘F finds in the focused pane, else in the chat. */
   openFind() {
     if (!this.open) return;
+    this.findId = this.pane.focused ? paneId(this.openId!, this.pane.focused) : null;
     this.find = { ...this.find, open: true, seq: this.find.seq + 1 };
     this.notify();
     requestAnimationFrame(() => document.querySelector<HTMLInputElement>('[data-testid="find-input"]')?.select());
@@ -596,7 +764,7 @@ export class App {
 
   /** Find starts at the newest match. Next (+1) goes to the older one, as up the chat; it wraps. */
   stepFind(dir: number) {
-    const chat = this.open;
+    const chat = this.chats.get(this.findId ?? this.openId ?? "");
     const f = this.find;
     if (!chat) return;
     if (!f.open) return this.openFind();
@@ -608,26 +776,35 @@ export class App {
 
   // ---- composer ----
 
-  /** The chat's chair as the composer sees it, from the last snapshot. */
-  chair(sessionId: string): ChairInput {
-    return chairInput(
-      this.snapshot?.sessions.find((s) => s.id === sessionId),
-      this.snapshot?.agents[sessionId],
+  /** The session and agent behind a chat id. An id with no chat is a chair's session id. */
+  private target(id: string): { session: string; agent: string } {
+    const chat = this.chats.get(id);
+    return chat ? { session: chat.sessionId, agent: chat.agent } : { session: id, agent: "chair" };
+  }
+
+  /** The chat's agent as the composer sees it, from the last snapshot: the chair, or a child. */
+  chair(id: string): AgentInput {
+    const { session, agent } = this.target(id);
+    return agentInput(
+      this.snapshot?.sessions.find((s) => s.id === session),
+      this.snapshot?.agents[session],
+      agent === "chair" ? null : agent,
     );
   }
 
-  private input(sessionId: string): Input {
-    let input = this.inputs.get(sessionId);
+  private input(id: string): Input {
+    let input = this.inputs.get(id);
     if (!input) {
       input = { sending: false, stopping: false, pulling: false, answering: null, alreadySent: false, banner: null, draftRev: 0 };
-      this.inputs.set(sessionId, input);
+      this.inputs.set(id, input);
     }
     return input;
   }
 
-  private update(sessionId: string, change: Partial<Input>) {
-    Object.assign(this.input(sessionId), change);
-    if (sessionId === this.openId) this.notify();
+  private update(id: string, change: Partial<Input>) {
+    Object.assign(this.input(id), change);
+    this.inputRev++;
+    if (this.target(id).session === this.openId) this.notify();
   }
 
   /** Each chat keeps its draft, also across a reload (ComposerDraftStore). */
@@ -673,7 +850,7 @@ export class App {
       sessionId,
       { sending: true },
       { sending: false },
-      () => this.api.action("/api/chat/send", { session: sessionId, agent: "chair", text: typed }),
+      () => this.api.action("/api/chat/send", { ...this.target(sessionId), text: typed }),
       () => void this.send(sessionId, text),
     );
     if (!ok) return;
@@ -692,7 +869,7 @@ export class App {
       sessionId,
       { stopping: true },
       { stopping: false },
-      () => this.api.action("/api/chat/interrupt", { session: sessionId, agent: "chair" }),
+      () => this.api.action("/api/chat/interrupt", this.target(sessionId)),
       () => void this.interrupt(sessionId),
     );
   }
@@ -704,7 +881,7 @@ export class App {
       sessionId,
       { answering: { prompt: prompt.id, choice } },
       {},
-      () => this.api.action("/api/chat/answer", { session: sessionId, agent: "chair", prompt_id: prompt.id, choice }),
+      () => this.api.action("/api/chat/answer", { ...this.target(sessionId), prompt_id: prompt.id, choice }),
       () => void this.answer(sessionId, prompt, choice),
     );
     // The card stays busy until the next snapshot drops this prompt.
@@ -725,7 +902,7 @@ export class App {
     const queued = chat.rows.filter((r) => r.kind === "queued");
     if (!queued.length) return;
     const before = new Set(chat.rows.map((r) => r.id));
-    const key = (k: string) => this.api.action("/api/chat/key", { session: sessionId, agent: "chair", key: k });
+    const key = (k: string) => this.api.action("/api/chat/key", { ...this.target(sessionId), key: k });
     const result: { pulled: string[] | null } = { pulled: null };
     await this.act(
       sessionId,
@@ -761,6 +938,113 @@ export class App {
     const typed = this.draft(sessionId);
     const text = result.pulled.join("\n");
     this.replaceDraft(sessionId, typed ? `${text}\n${typed}` : text);
+  }
+
+  // ---- agent panes ----
+
+  /** Leaving a chat frees its child columns, so they stop reading (AgentPaneStore.stop). */
+  private leavePanes(next: string) {
+    for (const chat of [...this.chats.values()])
+      if (chat.agent !== "chair" && chat.sessionId !== next) {
+        this.chats.delete(chat.id);
+        this.inputs.delete(chat.id);
+        this.readers.delete(chat.id);
+        this.pending.delete(chat.key);
+      }
+    this.visible.clear();
+    this.findId = null;
+    this.pane = { focused: null, zoomed: null, reveal: null, revealSeq: this.pane.revealSeq };
+  }
+
+  /** Loads a child's chat once its hooks have reported a log. */
+  private loadPane(id: string) {
+    const chat = this.chats.get(id);
+    if (!chat || chat.loaded || !this.cells().find((c) => c.id === chat.agent)?.hasLog) return;
+    chat.loaded = true;
+    void this.loadTail(chat).then(() => {
+      this.syncSubscriptions();
+      if (this.openId === chat.sessionId) this.notify();
+    });
+  }
+
+  /** A column scrolled into or out of view. Only a column on screen follows its log. */
+  setPaneVisible(agent: string, visible: boolean) {
+    if (!this.openId) return;
+    const id = paneId(this.openId, agent);
+    if (visible === this.visible.has(id)) return;
+    if (visible) {
+      this.visible.add(id);
+      this.loadPane(id);
+    } else this.visible.delete(id);
+    this.syncSubscriptions();
+  }
+
+  /** A key or "Show column" moved focus to this pane: the strip scrolls to it and its composer takes the keyboard. */
+  focusPane(agent: string) {
+    this.pane = { ...this.pane, focused: agent, reveal: agent, revealSeq: this.pane.revealSeq + 1 };
+    this.notify();
+  }
+
+  /** A click or a focus inside a pane, or on the chat page (null). The strip does not scroll. */
+  paneFocused(agent: string | null) {
+    if (this.pane.focused === agent) return;
+    this.pane = { ...this.pane, focused: agent };
+    this.notify();
+  }
+
+  /** The strip shows the chat page again, unzoomed, as when focus moves to it. */
+  revealChat() {
+    const zoomed = this.pane.zoomed !== null;
+    this.pane = { focused: null, zoomed: null, reveal: null, revealSeq: this.pane.revealSeq + 1 };
+    if (zoomed) this.syncSubscriptions();
+    this.notify();
+  }
+
+  /** ⌥⌘ arrows. Returns false when focus lands on the chat page. */
+  movePaneFocus(direction: Direction): boolean {
+    const cells = this.cells();
+    const from = cells.findIndex((c) => c.id === this.pane.focused);
+    const to = movePane(from < 0 ? null : from, cells.length, direction);
+    if (to === null) {
+      this.revealChat();
+      return false;
+    }
+    this.focusPane(cells[to].id);
+    return true;
+  }
+
+  /** ⇧⌘↩ and the header button: zooms `agent` (by default the focused pane), or returns the zoomed pane to the strip. */
+  toggleZoom(agent?: string) {
+    const id = agent ?? this.pane.zoomed ?? this.pane.focused;
+    if (!id || !this.openId) return;
+    this.pane = { ...this.pane, zoomed: this.pane.zoomed === id ? null : id, focused: id };
+    this.loadPane(paneId(this.openId, id));
+    this.syncSubscriptions();
+    this.notify();
+  }
+
+  /** Removes finished children from the strip: one pane's ×, or "Clear finished" (ADR 0056). */
+  dismissPanes(agents: string[]) {
+    const id = this.openId;
+    if (!id) return;
+    const finished = this.cells().filter((c) => c.status === "ended" && agents.includes(c.id)).map((c) => c.id);
+    if (!finished.length) return;
+    this.dismissed = { ...this.dismissed, [id]: [...(this.dismissed[id] ?? []), ...finished] };
+    writeStore(DISMISSED_STORAGE, JSON.stringify(this.dismissed));
+    for (const agent of finished) this.visible.delete(paneId(id, agent));
+    if (finished.includes(this.pane.focused!) || finished.includes(this.pane.zoomed!)) this.revealChat();
+    else this.notify();
+    this.syncSubscriptions();
+  }
+
+  /** The header's Stop: interrupts a child's turn. A failure throws the server's text. */
+  stopPane(agent: string): Promise<void> {
+    return this.api.action("/api/chat/interrupt", { session: this.openId, agent });
+  }
+
+  /** The header's Close agent: ends the child's pane. A failure throws the server's text. */
+  closePane(agent: string): Promise<void> {
+    return this.api.action("/api/agent/close", { session: this.openId, agent });
   }
 
   // ---- palette ----
@@ -833,7 +1117,7 @@ export class App {
     this.frame = 0;
     let render = false;
     for (const [key, frames] of this.pending) {
-      const chat = this.chats.get(key.slice(0, key.lastIndexOf(":")));
+      const chat = this.byKey(key);
       if (!chat || chat.state !== "ready") continue;
       const before = chat.rows;
       for (const f of frames) {
@@ -851,9 +1135,14 @@ export class App {
     if (render) this.notify();
   }
 
+  /** The chat of a stream key. A child's key is its chat id; the chair's ends in `:chair`. */
+  private byKey(key: string): Chat | undefined {
+    return this.chats.get(key) ?? (key.endsWith(":chair") ? this.chats.get(key.slice(0, -6)) : undefined);
+  }
+
   private async reset(key: string) {
     this.pending.delete(key);
-    const chat = this.chats.get(key.slice(0, key.lastIndexOf(":")));
+    const chat = this.byKey(key);
     if (!chat) return;
     Object.assign(chat, this.freshReaderState());
     await this.loadTail(chat);
@@ -873,9 +1162,11 @@ export class App {
   /** Sends the full key set when it changes. Live mode holds every session; otherwise the LRU. */
   private syncSubscriptions() {
     if (!this.streamId) return;
-    const ids = this.liveAll ? [...this.chats.keys()] : this.lru;
+    const chairs = this.liveAll ? [...this.chats.values()].filter((c) => c.agent === "chair").map((c) => c.id) : this.lru;
+    // A zoomed pane covers the strip, so only it follows its log.
+    const panes = this.pane.zoomed && this.openId ? [paneId(this.openId, this.pane.zoomed)] : this.visible;
     const keys: SubscribeKey[] = [];
-    for (const id of ids) {
+    for (const id of [...chairs, ...panes]) {
       const chat = this.chats.get(id);
       if (chat?.state === "ready") keys.push({ key: chat.key, from: chat.end, view: "rows" });
       if (keys.length === MAX_KEYS) break;
@@ -914,8 +1205,12 @@ export class App {
         id: "composer.focus",
         title: "Focus composer",
         chord: "Meta+L",
-        run: () => document.querySelector<HTMLElement>('[data-testid="composer"]')?.focus(),
+        run: () => {
+          this.revealChat();
+          document.querySelector<HTMLElement>('[data-testid="composer"]')?.focus();
+        },
       },
+      { id: "pane.zoom", title: "Zoom Pane", chord: "Shift+Meta+Enter", when: () => this.openId !== null, run: () => this.toggleZoom() },
       {
         id: "chat.stop",
         title: "Stop the chair",
@@ -933,6 +1228,14 @@ export class App {
       tree("tree.expand", "Expand", "ArrowRight", (e) => this.expand(e)),
       tree("tree.open", "Open", "Enter", (e) => this.activate(e)),
     ];
+    for (const d of ["left", "right", "up", "down"] as const)
+      cmds.push({
+        id: `pane.focus.${d}`,
+        title: `Focus ${d[0].toUpperCase()}${d.slice(1)}`,
+        chord: `Alt+Meta+Arrow${d[0].toUpperCase()}${d.slice(1)}`,
+        when: () => this.openId !== null,
+        run: () => this.movePaneFocus(d),
+      });
     for (let n = 1; n <= 9; n++)
       cmds.push({ id: `chat.${n}`, title: n === 9 ? "Last chat" : `Chat ${n}`, chord: `Meta+${n}`, palette: false, run: (e) => this.pickChat(n, e) });
     return cmds;

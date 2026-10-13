@@ -706,6 +706,114 @@ pre.plain {
   background: color-mix(in srgb, var(--foreground) 3%, transparent);
 }
 
+/* Agent pane strip (ADR 0030): the chat page, then columns that scroll in from the right, with no
+   snap. The widths come from panes.tsx as --chat-w and --col-w, and a column's split as --split. */
+.strip {
+  display: flex;
+  height: 100%;
+  overflow: hidden;
+}
+.strip[data-panes="true"] {
+  overflow-x: auto;
+}
+.strip-chat {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  min-width: 0;
+  width: var(--chat-w, 100%);
+}
+.strip-col {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  min-width: 0;
+  width: var(--col-w);
+}
+.pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  background: var(--background);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+.strip-col > .pane:first-child:not(:last-child) {
+  flex-grow: var(--split);
+}
+.strip-col > .pane:last-child:not(:first-child) {
+  flex-grow: calc(1 - var(--split));
+}
+.pane[data-focused="true"] {
+  box-shadow: inset 0 0 0 2px var(--ring);
+}
+/* The strip's box is the containing block, so a zoomed pane covers it and does not scroll. */
+.pane[data-zoomed="true"] {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+}
+.pane-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  height: 28px;
+  padding: 0 6px 0 8px;
+  font-size: 12px;
+  white-space: nowrap;
+  color: var(--muted-foreground);
+  border-bottom: 1px solid var(--border);
+}
+.pane[data-focused="true"] .pane-head {
+  color: var(--foreground);
+}
+.pane-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.pane[data-status="ended"] .pane-body {
+  opacity: 0.6;
+}
+.pane .transcript {
+  padding-inline: 12px;
+}
+/* A long question must not push the child's chat out of a half-height pane. */
+.pane .chat-input {
+  max-height: 70%;
+  overflow-y: auto;
+  padding: 4px 12px 10px;
+}
+.grip {
+  position: relative;
+  flex: none;
+  touch-action: none;
+  user-select: none;
+}
+.grip.x {
+  width: 7px;
+  cursor: col-resize;
+}
+.grip.y {
+  height: 7px;
+  cursor: row-resize;
+}
+.grip::after {
+  content: "";
+  position: absolute;
+  inset: 0 3px;
+  background: var(--border);
+}
+.grip.y::after {
+  inset: 3px 0;
+}
+.grip:hover::after {
+  background: var(--border-strong);
+}
+
 /* Find bar, Jump to latest, and the source popover. */
 .find {
   display: flex;

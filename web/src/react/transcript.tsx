@@ -17,7 +17,7 @@ import {
 import { useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { VList, Virtualizer, type VirtualizerHandle } from "virtua";
 import type { DiffPreview, Row, TextPreview, ToolState } from "../core/api";
-import type { App, FullText, View } from "../core/app";
+import type { App, FullText, Pane, Reader } from "../core/app";
 import type { MarkdownCache } from "../core/markdown";
 import { duration, parsePatch, splitPatch, type Line, type PatchLine, type SplitRow } from "../core/transcript";
 import { ContextMenu, ContextMenuTrigger } from "../components/ui/context-menu";
@@ -38,16 +38,26 @@ export function ChatView({ app }: { app: App }) {
   );
 }
 
+/** A child agent's column body: the same transcript and composer on the child's chat (ADR 0029). */
+export function PaneBody({ app, pane, empty }: { app: App; pane: Pane; empty: string }) {
+  return (
+    <>
+      <Transcript app={app.reader(pane.id)} view={pane} testid="pane-transcript" empty={empty} />
+      {pane.composer && <ChatInput app={app} composer={pane.composer} />}
+    </>
+  );
+}
+
 /** The fixed-height line above the rows; the Virtualizer starts below it. */
 const HEAD_HEIGHT = 36;
 
-function Transcript({ app, view }: { app: App; view: View }) {
+function Transcript({ app, view, testid = "transcript", empty }: { app: Reader; view: Pane; testid?: string; empty?: string }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const handle = useRef<VirtualizerHandle>(null);
   const atBottom = useRef(true);
   const [away, setAway] = useState(false);
   const [source, setSource] = useState<Source | null>(null);
-  const { lines, openId, chatState, find } = view;
+  const { lines, id: openId, chatState, find } = view;
   const current = find.open ? find.matches[find.index]?.id : undefined;
 
   // A new chat, or its first page: start at the newest row.
@@ -93,22 +103,28 @@ function Transcript({ app, view }: { app: App; view: View }) {
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
-      {find.open && <FindBar app={app} view={view} />}
+      {find.open && <FindBar app={app} view={view} listRef={scrollRef} />}
       <ContextMenu>
         <ContextMenuTrigger asChild>
           <div
             className="transcript flex-1"
             ref={scrollRef}
-            data-testid="transcript"
-            data-chat={openId ?? ""}
+            tabIndex={-1}
+            data-testid={testid}
+            data-chat={openId}
             data-state={chatState}
             onClick={onClick}
           >
-            {chatState === "none" && (
-              <ChatState icon={<MessageSquareDashedIcon className="size-5" />} title="No chat open">
-                Pick a chat in the sidebar, or press <Kbd>⌘K</Kbd> to search.
-              </ChatState>
-            )}
+            {chatState === "none" &&
+              (empty ? (
+                <ChatState icon={<MessageSquareDashedIcon className="size-5" />} title="No chat yet">
+                  {empty}
+                </ChatState>
+              ) : (
+                <ChatState icon={<MessageSquareDashedIcon className="size-5" />} title="No chat open">
+                  Pick a chat in the sidebar, or press <Kbd>⌘K</Kbd> to search.
+                </ChatState>
+              ))}
             {chatState === "loading" && <ChatSkeleton />}
             {chatState === "error" && (
               <ChatState icon={<TriangleAlertIcon className="size-5 text-failed" />} title="Could not load this chat">
@@ -143,9 +159,9 @@ function Transcript({ app, view }: { app: App; view: View }) {
             )}
           </div>
         </ContextMenuTrigger>
-        <TranscriptMenu app={app} listRef={scrollRef} onSource={setSource} />
+        <TranscriptMenu lines={lines} listRef={scrollRef} onSource={setSource} />
       </ContextMenu>
-      {source && <SourcePopover source={source} onClose={() => setSource(null)} />}
+      {source && <SourcePopover source={source} listRef={scrollRef} onClose={() => setSource(null)} />}
       {away && chatState === "ready" && (
         <button type="button" className="jump" data-testid="jump-latest" onClick={jump}>
           <ArrowDownIcon className="size-3.5" /> Jump to latest
@@ -156,7 +172,7 @@ function Transcript({ app, view }: { app: App; view: View }) {
 }
 
 /** Top of the loaded history: Load earlier messages, and Show N hidden rows. */
-function Head({ app, view }: { app: App; view: View }) {
+function Head({ app, view }: { app: Reader; view: Pane }) {
   return (
     <div className="t-head" style={{ height: HEAD_HEIGHT }}>
       {view.hasOlder ? (
@@ -176,7 +192,7 @@ function Head({ app, view }: { app: App; view: View }) {
   );
 }
 
-function FindBar({ app, view }: { app: App; view: View }) {
+function FindBar({ app, view, listRef }: { app: Reader; view: Pane; listRef: React.RefObject<HTMLDivElement | null> }) {
   const { find } = view;
   const count = find.query.trim() ? (find.matches.length ? `${find.matches.length - find.index} of ${find.matches.length}` : "No matches") : "";
   const onKeyDown = (e: React.KeyboardEvent) => {
@@ -186,7 +202,7 @@ function FindBar({ app, view }: { app: App; view: View }) {
     } else if (e.key === "Escape") {
       e.preventDefault();
       app.closeFind();
-      document.querySelector<HTMLElement>('[data-testid="transcript"]')?.focus();
+      listRef.current?.focus();
     }
   };
   return (
@@ -239,7 +255,7 @@ function ChatSkeleton() {
   );
 }
 
-type Ctx = { app: App; line: Line; md: MarkdownCache; full: ReadonlyMap<string, FullText> };
+type Ctx = { app: Reader; line: Line; md: MarkdownCache; full: ReadonlyMap<string, FullText> };
 
 function LineView({ app, line, index, md, full, match }: Ctx & { index: number; match?: string }) {
   const { row } = line;
@@ -408,7 +424,7 @@ function CommandChip({ row }: { row: Row }) {
   );
 }
 
-function Disclosure({ app, line, title, mono, children }: { app: App; line: Line; title: string; mono?: boolean; children: React.ReactNode }) {
+function Disclosure({ app, line, title, mono, children }: { app: Reader; line: Line; title: string; mono?: boolean; children: React.ReactNode }) {
   return (
     <div className="grid gap-1">
       <button type="button" className="disclosure" aria-expanded={line.open} onClick={() => app.toggleLine(line)}>
@@ -446,7 +462,7 @@ const STATE_LABEL: Record<ToolState, string> = {
 };
 
 /** One line per fold (ADR 0047): its text changes as steps land, its height does not. */
-function FoldLine({ app, line }: { app: App; line: Line }) {
+function FoldLine({ app, line }: { app: Reader; line: Line }) {
   const f = line.row.fold;
   return (
     <button type="button" className="fold" data-testid="fold" aria-expanded={line.open} onClick={() => app.toggleLine(line)}>
@@ -524,7 +540,7 @@ function ShellRow({ app, line, full }: Ctx) {
 const plural = (n: number, word: string) => `${n.toLocaleString("en-US")} ${word}${n === 1 ? "" : "s"}`;
 
 /** The capped preview; Show full output fetches the whole text and shows it in a windowed box. */
-function OutputBox({ app, preview, full, title }: { app: App; preview: TextPreview; full: ReadonlyMap<string, FullText>; title: string }) {
+function OutputBox({ app, preview, full, title }: { app: Reader; preview: TextPreview; full: ReadonlyMap<string, FullText>; title: string }) {
   const f = preview.id ? full.get(preview.id) : undefined;
   const copy = () => copyText(preview.is_truncated ? app.fullText(preview.id) : preview.text, title.toLowerCase());
   return (
@@ -573,7 +589,7 @@ function TextLines({ lines, testid }: { lines: string[]; testid?: string }) {
 const SPLIT_KEY = "swarm.diff.split";
 
 /** A patch: Unified or Split, the capped preview, Show full patch, Copy patch, and its counts. */
-function DiffView({ app, diff, full }: { app: App; diff: DiffPreview; full: ReadonlyMap<string, FullText> }) {
+function DiffView({ app, diff, full }: { app: Reader; diff: DiffPreview; full: ReadonlyMap<string, FullText> }) {
   const [split, setSplitState] = useState(() => store.getItem(SPLIT_KEY) === "1");
   const setSplit = (v: boolean) => {
     setSplitState(v);

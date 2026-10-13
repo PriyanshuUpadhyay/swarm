@@ -28,17 +28,23 @@ function giantLog(session: string, lines: number): string {
 }
 export const GIANT_LINES = 20_000;
 
-/** A pane adapter that is only shell lines: it logs each verb under $HOME and reads the chair's
- *  screen from $HOME/screen. While $HOME/fail exists, typing fails with its text. */
-const FIXTURE_ADAPTER = `self = printf fixture-chair
+/** The browsers that run the pane case. Each gets its own chat, because the case closes an agent. */
+export const PANE_PROJECTS = ["chromium", "webkit"];
+const paneOf = (project: string, agent: string) => `fixture-${project}-${agent}`;
+const PANES = ["fixture-chair", ...PANE_PROJECTS.flatMap((p) => ["chair", "reviewer", "tester"].map((a) => paneOf(p, a)))];
+
+/** A pane adapter that is only shell lines: it logs each verb under $HOME and reads a pane's screen
+ *  from $HOME/screen-<pane>, else from $HOME/screen. While $HOME/fail exists, typing fails with its
+ *  text. An agent registers on the pane that FIXTURE_PANE names, and a closed pane leaves the list. */
+const FIXTURE_ADAPTER = `self = printf '%s' "\${FIXTURE_PANE:-fixture-chair}"
 spawn = printf fixture-new
-list = printf 'fixture-chair sh\\n'
+list = for p in ${PANES.join(" ")}; do [ -e "$HOME/closed-$p" ] || printf '%s sh\\n' "$p"; done
 ring = if [ -e "$HOME/fail" ]; then cat "$HOME/fail" >&2; exit 1; fi; printf '%s\\n' "$SWARM_TEXT" >> "$HOME/typed"
 interrupt = printf 'interrupt %s\\n' "$SWARM_PANE" >> "$HOME/actions"
 key = printf 'key %s %s\\n' "$SWARM_PANE" "$SWARM_KEY" >> "$HOME/actions"
-close = printf 'close %s\\n' "$SWARM_PANE" >> "$HOME/actions"
-capture = cat "$HOME/screen"
-screen = cat "$HOME/screen"
+close = printf 'close %s\\n' "$SWARM_PANE" >> "$HOME/actions"; touch "$HOME/closed-$SWARM_PANE"
+capture = cat "$HOME/screen-$SWARM_PANE" 2>/dev/null || cat "$HOME/screen"
+screen = cat "$HOME/screen-$SWARM_PANE" 2>/dev/null || cat "$HOME/screen"
 `;
 
 let server: ChildProcess | undefined;
@@ -84,6 +90,36 @@ export default async function setup() {
     .split("\n")
     .pop()!;
   execFileSync(swarm, ["agent", "add", "orchestrator", "orchestrator"], { env: { ...liveEnv, SWARM_SESSION_ID: liveSession }, stdio: "pipe" });
+  // Each pane of the pane chats has its own screen, so the chair case's question does not reach them.
+  for (const pane of PANES.slice(1)) copyFileSync(join(repo, "tests/fixtures/screens/claude-idle.txt"), join(home, `screen-${pane}`));
+  // One chat per browser with a chair and two children, each on its own stand-in pane. `swarm
+  // spawn` gives a child its pane and its hooks report its log; here the store gets both directly.
+  const db = execFileSync("fd", ["-HI", "-t", "f", "^swarm.db$", home], { encoding: "utf8" }).trim().split("\n")[0];
+  const sql = (text: string) => `'${text.replaceAll("'", "''")}'`;
+  for (const project of PANE_PROJECTS) {
+    const cwd = join(dir, `ws-panes-${project}`);
+    mkdirSync(cwd);
+    const chairLog = randomUUID();
+    copyFileSync(join(fixtures, "claude-edit.jsonl"), join(logs, `${chairLog}.jsonl`));
+    const session = execFileSync(swarm, ["session", "new", "lane", "--chair", `claude:${chairLog}`], { cwd, env: liveEnv, stdio: "pipe" })
+      .toString()
+      .trim()
+      .split("\n")
+      .pop()!;
+    const add = (agent: string, role: string) =>
+      execFileSync(swarm, ["agent", "add", agent, role], { env: { ...liveEnv, SWARM_SESSION_ID: session, FIXTURE_PANE: paneOf(project, "chair") }, stdio: "pipe" });
+    add("orchestrator", "orchestrator");
+    for (const [agent, fixture] of [
+      ["reviewer", "claude-chair-run.jsonl"],
+      ["tester", "claude-edit.jsonl"],
+    ]) {
+      add(agent, "code.small");
+      const log = join(logs, `${randomUUID()}.jsonl`);
+      copyFileSync(join(fixtures, fixture), log);
+      execFileSync("sqlite3", [db, `UPDATE agent SET log = ${sql(log)}, provider = 'claude', pane_id = ${sql(paneOf(project, agent))} WHERE session_id = ${sql(session)} AND id = ${sql(agent)};`]);
+    }
+    process.env[`SWARM_E2E_PANES_${project}`] = session;
+  }
   // `sessions --json` resolves each chair log and stores its path, which serve reads.
   execFileSync(swarm, ["sessions", "--json"], { env, stdio: "pipe" });
 

@@ -14,7 +14,7 @@ test("select a chat by keyboard and see its rows", async ({ page: tab }) => {
   expect(new URL(tab.url()).hash).toBe("");
 
   const sidebar = tab.getByTestId("sidebar");
-  await expect(sidebar.locator('[data-testid="tree-row"][data-kind="chat"]')).toHaveCount(4);
+  await expect(sidebar.locator('[data-testid="tree-row"][data-kind="chat"]')).toHaveCount(6);
 
   // The first row is selected; move down to the first chat row, then open it.
   await tab.keyboard.press("j");
@@ -177,6 +177,140 @@ test("the composer types into the chair, ⌘. interrupts, errors show in a banne
   } finally {
     writeFileSync(screen, idle);
     rmSync(join(home, "fail"), { force: true });
+  }
+  expect(errors).toEqual([]);
+});
+
+test("a chat with two children shows their panes; keys move focus and zoom; a pane types, asks and closes", async ({ page: tab }, info) => {
+  const errors: string[] = [];
+  // WebKit reports a ResizeObserver loop when a short row list opens, also in a chat with no panes
+  // and a short window (p1d-result.md). It changes nothing on screen, so it is not an error here.
+  tab.on("pageerror", (e) => !e.message.startsWith("ResizeObserver loop") && errors.push(e.message));
+  tab.on("console", (m) => m.type() === "error" && errors.push(m.text()));
+  const home = process.env.SWARM_E2E_HOME!;
+  const project = info.project.name;
+  const read = (name: string) => (existsSync(join(home, name)) ? readFileSync(join(home, name), "utf8") : "");
+  const testerScreen = join(home, `screen-fixture-${project}-tester`);
+  const screens = resolve(import.meta.dirname, "../../tests/fixtures/screens");
+  const waiting = readFileSync(join(screens, "claude-waiting.txt"), "utf8");
+
+  const url = new URL(process.env.SWARM_SERVE_URL!);
+  await tab.goto(`${url.origin}/${url.hash}`);
+  await tab.waitForFunction(() => window.__swarmReady === true);
+  // Wide enough to drag a column's edge to the right.
+  await tab.setViewportSize({ width: 1600, height: 900 });
+  await tab.locator(`[data-testid="tree-row"][data-id="c:${process.env[`SWARM_E2E_PANES_${project}`]}"]`).click();
+  try {
+    // Two children are one column of two panes (ADR 0030), oldest first, each with its own chat.
+    const panes = tab.getByTestId("pane");
+    await expect(panes).toHaveCount(2);
+    await expect(tab.locator(".strip-col")).toHaveCount(1);
+    const reviewer = tab.locator('[data-testid="pane"][data-pane="reviewer"]');
+    const tester = tab.locator('[data-testid="pane"][data-pane="tester"]');
+    await expect(reviewer.locator('[data-testid="pane-transcript"][data-state="ready"]').getByTestId("row").first()).toBeVisible();
+    await expect(tester.locator('[data-testid="pane-transcript"][data-state="ready"]').getByTestId("row").first()).toBeVisible();
+    await expect(tab.locator('[data-testid="transcript"][data-state="ready"]').getByTestId("row").first()).toBeVisible();
+
+    // ⌥⌘→ focuses the first pane, scrolls the strip to it, and puts the keyboard in its composer.
+    await expect(reviewer).not.toBeInViewport({ ratio: 0.9 });
+    await tab.keyboard.press("Alt+Meta+ArrowRight");
+    await expect(reviewer).toHaveAttribute("data-focused", "true");
+    await expect(reviewer).toBeInViewport({ ratio: 0.99 });
+    await expect(reviewer.getByTestId("composer")).toBeFocused();
+    await tab.keyboard.press("Alt+Meta+ArrowDown");
+    await expect(tester).toHaveAttribute("data-focused", "true");
+    await expect(tester.getByTestId("composer")).toBeFocused();
+
+    // The pane's composer types into that child.
+    const hello = `hello tester from ${project}`;
+    await tab.keyboard.type(hello);
+    await tab.keyboard.press("Enter");
+    await expect.poll(() => read("typed")).toContain(hello);
+    await expect(tester.getByTestId("composer")).toHaveValue("");
+
+    // ⇧⌘↩ zooms the focused pane over the strip, and the same key returns it.
+    const strip = (await tab.getByTestId("strip").boundingBox())!;
+    await tab.keyboard.press("Shift+Meta+Enter");
+    await expect(tester).toHaveAttribute("data-zoomed", "true");
+    expect((await tester.boundingBox())!.width).toBeCloseTo(strip.width, 0);
+    await expect(tester.getByTestId("composer")).toHaveValue("");
+    await tab.keyboard.press("Shift+Meta+Enter");
+    await expect(tester).toHaveAttribute("data-zoomed", "false");
+
+    // ⌘F finds in the focused pane.
+    await tab.keyboard.press("Meta+f");
+    await expect(tester.getByTestId("find-input")).toBeFocused();
+    await tab.keyboard.press("Escape");
+
+    // ⌥⌘← goes back to the chat page.
+    await tab.keyboard.press("Alt+Meta+ArrowUp");
+    await tab.keyboard.press("Alt+Meta+ArrowLeft");
+    await expect(reviewer).toHaveAttribute("data-focused", "false");
+    await expect(tab.getByTestId("strip")).toHaveJSProperty("scrollLeft", 0);
+
+    // Drag resize (ADR 0026): the chat page's edge, a column's edge, and the line between two panes.
+    // The widths are kept, and a double-click resets each.
+    const width = async (selector: string) => (await tab.locator(selector).boundingBox())!.width;
+    const grip = (name: string) => tab.getByRole("separator", { name });
+    const drag = async (name: string, dx: number, dy: number) => {
+      const box = (await grip(name).boundingBox())!;
+      const [x, y] = [box.x + box.width / 2, box.y + box.height / 2];
+      await tab.mouse.move(x, y);
+      await tab.mouse.down();
+      await tab.mouse.move(x + dx / 2, y + dy / 2);
+      await tab.mouse.move(x + dx, y + dy);
+      await tab.mouse.up();
+    };
+    const chatWidth = await width(".strip-chat");
+    await drag("Chat page width", -500, 0);
+    expect(await width(".strip-chat")).toBeCloseTo(chatWidth - 500, 0);
+    const columnWidth = await width(".strip-col");
+    await drag("Agent column width", 100, 0);
+    expect(await width(".strip-col")).toBeCloseTo(columnWidth + 100, 0);
+    const topHeight = (await reviewer.boundingBox())!.height;
+    await drag("Split of reviewer", 0, 80);
+    expect((await reviewer.boundingBox())!.height).toBeGreaterThan(topHeight + 70);
+    const saved = await tab.evaluate(() => JSON.parse(localStorage.getItem("swarm.panes.widths")!));
+    expect(saved.chat).toBeCloseTo(chatWidth + 7 - 500, 0);
+    expect(saved.column).toBeCloseTo(columnWidth + 7 + 100, 0);
+    expect(saved.splits[process.env[`SWARM_E2E_PANES_${project}`]!].reviewer).toBeGreaterThan(0.55);
+    await grip("Split of reviewer").dblclick();
+    await grip("Agent column width").dblclick();
+    await grip("Chat page width").dblclick();
+    expect(await width(".strip-chat")).toBeCloseTo(chatWidth, 0);
+    expect(await width(".strip-col")).toBeCloseTo(columnWidth, 0);
+    expect((await reviewer.boundingBox())!.height).toBeCloseTo(topHeight, 0);
+
+    // The child's question shows on the chat page too; "Show column" focuses its pane.
+    writeFileSync(testerScreen, waiting);
+    const asking = tab.getByTestId("asking").getByTestId("prompt-card");
+    await expect(asking).toContainText("tester is waiting for you");
+    await expect(tester.getByTestId("prompt-card")).toContainText("Do you want to proceed?");
+    await asking.getByRole("button", { name: "Show column" }).click();
+    await expect(tester).toHaveAttribute("data-focused", "true");
+    await expect(tester).toBeInViewport({ ratio: 0.99 });
+
+    // One menu serves the headers: the same actions as the header buttons.
+    await reviewer.locator(".pane-head").click({ button: "right" });
+    await expect(tab.getByRole("menuitem")).toHaveText(["Stop", "Close agent…", "Copy id", "Copy attach command", "Zoom pane (⇧⌘↩)"]);
+    await tab.keyboard.press("Escape");
+
+    // Close agent… asks first for a child in a turn, then reaches /api/agent/close.
+    await tester.getByRole("button", { name: "Close agent tester" }).click();
+    const dialog = tab.getByTestId("close-agent");
+    await expect(dialog).toContainText("“tester” is in a turn. Closing the agent stops it.");
+    const closed = tab.waitForRequest((r) => r.url().endsWith("/api/agent/close") && r.method() === "POST");
+    await dialog.getByRole("button", { name: "Close Agent" }).click();
+    expect((await closed).postDataJSON()).toMatchObject({ agent: "tester" });
+    await expect.poll(() => read("actions")).toContain(`close fixture-${project}-tester`);
+
+    // The finished child stays, dimmed, until it is dismissed (ADR 0056).
+    await expect(tester).toHaveAttribute("data-status", "ended");
+    await expect(tester).toContainText("This agent has ended.");
+    await tab.getByTestId("clear-finished").click();
+    await expect(panes).toHaveCount(1);
+  } finally {
+    writeFileSync(testerScreen, readFileSync(join(screens, "claude-idle.txt"), "utf8"));
   }
   expect(errors).toEqual([]);
 });

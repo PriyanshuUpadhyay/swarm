@@ -5,15 +5,22 @@ import { modelLabel, outgoing, sends, usageLabel, type Prompt } from "../core/co
 import { Button } from "../components/ui/button";
 import { Kbd } from "../components/ui/kbd";
 
-/** Below the transcript: the error banner, the chair's question, and the composer. */
+/** Below the transcript: the error banner, the agent's question, and the composer. */
 export function ChatInput({ app, composer }: { app: App; composer: Composer }) {
-  const { sessionId, chair, state } = composer;
+  const { id, agent, state } = composer;
   return (
-    <div className="shrink-0 px-6 pt-1 pb-4">
+    <div className="chat-input shrink-0 px-6 pt-1 pb-4">
       <div className="mx-auto grid max-w-[820px] gap-2">
-        {state.banner && <ChatBanner app={app} sessionId={sessionId} banner={state.banner} />}
-        {chair.prompt && <PromptCard app={app} sessionId={sessionId} prompt={chair.prompt} state={state} />}
-        <ComposerBox key={sessionId} app={app} composer={composer} />
+        {state.banner && <ChatBanner app={app} sessionId={id} banner={state.banner} />}
+        {agent.prompt && <PromptCard app={app} sessionId={id} who={agent.who} prompt={agent.prompt} state={state} />}
+        {/* A child with no pane shows only the reason (ChildColumnView). */}
+        {agent.who && agent.unreachable ? (
+          <p className="text-xs text-muted-foreground" data-testid="composer-status">
+            {agent.disabled}
+          </p>
+        ) : (
+          <ComposerBox key={id} app={app} composer={composer} />
+        )}
       </div>
     </div>
   );
@@ -34,15 +41,33 @@ function ChatBanner({ app, sessionId, banner }: { app: App; sessionId: string; b
   );
 }
 
-/** The chair's question, one button per choice in the CLI's words (ADR 0029). Nothing is picked
- *  for the owner. While the card has focus, 1 to 9 pick a choice, as in the CLI. */
-function PromptCard({ app, sessionId, prompt, state, showColumn }: { app: App; sessionId: string; prompt: Prompt; state: Input; showColumn?: () => void }) {
+/** An agent's question, one button per choice in the CLI's words (ADR 0029). Nothing is picked
+ *  for the owner. While the card has focus, 1 to 9 pick a choice, as in the CLI. `sessionId` is the
+ *  chat id, and `who` the child agent's id (null for the chair). */
+export function PromptCard({
+  app,
+  sessionId,
+  who,
+  prompt,
+  state,
+  showColumn,
+}: {
+  app: App;
+  sessionId: string;
+  who: string | null;
+  prompt: Prompt;
+  state: Input;
+  showColumn?: () => void;
+}) {
   const ref = useRef<HTMLDivElement>(null);
   const busy = state.answering?.prompt === prompt.id ? state.answering.choice : null;
-  // The composer cannot send while the question is open, so the card takes its focus.
+  // The composer cannot send while the question is open, so the card takes its focus. The chair's
+  // card also takes the keyboard when nothing has it. A child's question takes it from nothing
+  // else, so it never moves the owner out of the chat or out of another pane.
   useEffect(() => {
     const a = document.activeElement;
-    if (!a || a === document.body || a.matches('[data-testid="composer"]')) ref.current?.focus();
+    const own = a?.matches('[data-testid="composer"]') && ref.current?.closest(".chat-input")?.contains(a);
+    if (own || (!who && (!a || a === document.body))) ref.current?.focus();
   }, [prompt.id]);
   const pick = (i: number) => void app.answer(sessionId, prompt, i);
   const onKeyDown = (e: React.KeyboardEvent) => {
@@ -57,14 +82,13 @@ function PromptCard({ app, sessionId, prompt, state, showColumn }: { app: App; s
       ref={ref}
       tabIndex={0}
       data-testid="prompt-card"
-      aria-label={`The chair is waiting: ${prompt.question}`}
+      aria-label={`${who ?? "The chair"} is waiting: ${prompt.question}`}
       className="grid gap-2 rounded-lg border border-waiting/40 bg-waiting/10 p-3 outline-none focus-visible:ring-1 focus-visible:ring-ring"
       onKeyDown={onKeyDown}
     >
       <div className="flex items-center gap-1.5 text-xs font-semibold text-waiting">
         <CircleHelpIcon className="size-3.5" />
-        <span className="flex-1">The chair is waiting for you</span>
-        {/* P1d: the pane strip passes this for a child's question. */}
+        <span className="flex-1">{who ?? "The chair"} is waiting for you</span>
         {showColumn && (
           <button type="button" className="t-link font-normal" onClick={showColumn}>
             Show column
@@ -93,7 +117,8 @@ function PromptCard({ app, sessionId, prompt, state, showColumn }: { app: App; s
 }
 
 function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
-  const { sessionId, chair, state, sendKey } = composer;
+  const { id: sessionId, agent: chair, state, sendKey } = composer;
+  const target = chair.who ?? "the chair";
   const [text, setText] = useState(() => app.draft(sessionId));
   const box = useRef<HTMLTextAreaElement>(null);
 
@@ -118,6 +143,8 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.nativeEvent.isComposing) return;
+    // ⇧⌘↩ zooms the pane.
+    if (e.key === "Enter" && e.shiftKey && e.metaKey) return;
     if (e.key === "Enter") {
       if (sends(e, sendKey)) {
         e.preventDefault();
@@ -162,8 +189,8 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
           rows={2}
           className="block max-h-[200px] w-full resize-none bg-transparent px-3 pt-2.5 text-base outline-none placeholder:text-faint-foreground"
           data-testid="composer"
-          aria-label="Message the chair"
-          placeholder={chair.unreachable ? "This chat cannot take input" : "Message the chair"}
+          aria-label={`Message ${target}`}
+          placeholder={chair.unreachable ? "This chat cannot take input" : `Message ${target}`}
           disabled={chair.unreachable}
           value={text}
           onChange={(e) => change(e.target.value)}
@@ -178,15 +205,15 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
           <button type="button" data-testid="usage" className="rounded-md px-1.5 py-1 tabular-nums hover:bg-hover" title="Context, cache, and estimated cost for this agent session">
             {usageLabel(composer.usage)}
           </button>
-          {showStop && <span className="text-faint-foreground">⌘. stops</span>}
+          {showStop && !chair.who && <span className="text-faint-foreground">⌘. stops</span>}
           <span className="flex-1" />
           {showStop && (
             <Button
               variant="outline"
               size="icon"
               data-testid="stop"
-              aria-label="Stop the chair"
-              title="Stop the chair (⌘.)"
+              aria-label={`Stop ${target}`}
+              title={chair.who ? `Stop ${target}` : "Stop the chair (⌘.)"}
               className="rounded-full text-failed"
               disabled={state.stopping}
               onClick={() => void app.interrupt(sessionId)}
@@ -203,7 +230,7 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
       </div>
       <div className="flex min-h-5 items-center gap-2 px-1 pt-1 text-xs text-muted-foreground" data-testid="composer-status">
         <span className="flex-1">{chair.disabled ?? caption}</span>
-        {!chair.unreachable && <Kbd>⌘L</Kbd>}
+        {!chair.unreachable && !chair.who && <Kbd>⌘L</Kbd>}
       </div>
     </div>
   );

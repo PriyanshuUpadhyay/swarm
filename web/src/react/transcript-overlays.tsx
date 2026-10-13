@@ -4,7 +4,7 @@
 import { BracesIcon, CopyIcon, XIcon } from "lucide-react";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import type { Row } from "../core/api";
-import type { App } from "../core/app";
+import type { Line } from "../core/transcript";
 import { ContextMenuContent, ContextMenuItem, ContextMenuLabel, ContextMenuSeparator } from "../components/ui/context-menu";
 import { copyText } from "./copy";
 
@@ -12,13 +12,9 @@ const ROW = '[data-testid="row"]';
 
 export type Source = { row: Row; rect: DOMRect };
 
-const lineOf = (app: App, el: Element | null) => {
-  const id = el?.closest<HTMLElement>(ROW)?.dataset.id;
-  return id ? app.view.lines.find((l) => l.id === id) : undefined;
-};
 
 /** Content for the list's one ContextMenu: Copy and Show source for the row under the click. */
-export function TranscriptMenu({ app, listRef, onSource }: { app: App; listRef: RefObject<HTMLDivElement | null>; onSource: (s: Source) => void }) {
+export function TranscriptMenu({ lines, listRef, onSource }: { lines: Line[]; listRef: RefObject<HTMLDivElement | null>; onSource: (s: Source) => void }) {
   const [target, setTarget] = useState<{ row: Row; el: HTMLElement; selection: string } | null>(null);
 
   useEffect(() => {
@@ -27,7 +23,7 @@ export function TranscriptMenu({ app, listRef, onSource }: { app: App; listRef: 
     // A native listener runs before React's root listener, so Radix opens with the row already set.
     const onContextMenu = (e: MouseEvent) => {
       const el = (e.target as Element).closest<HTMLElement>(ROW);
-      const line = lineOf(app, el);
+      const line = el && lines.find((l) => l.id === el.dataset.id);
       if (!el || !line) {
         e.preventDefault();
         e.stopPropagation();
@@ -40,7 +36,7 @@ export function TranscriptMenu({ app, listRef, onSource }: { app: App; listRef: 
     };
     list.addEventListener("contextmenu", onContextMenu);
     return () => list.removeEventListener("contextmenu", onContextMenu);
-  }, [app, listRef]);
+  }, [lines, listRef]);
 
   const onClose = () => listRef.current?.querySelector('[data-menu="true"]')?.removeAttribute("data-menu");
 
@@ -61,13 +57,13 @@ export function TranscriptMenu({ app, listRef, onSource }: { app: App; listRef: 
 }
 
 /** The row's JSON next to the row. Esc, a click outside, or a scroll of the list closes it. */
-export function SourcePopover({ source, onClose }: { source: Source; onClose: () => void }) {
+export function SourcePopover({ source, listRef, onClose }: { source: Source; listRef: RefObject<HTMLDivElement | null>; onClose: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
   const json = JSON.stringify(source.row, null, 2);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     const onDown = (e: PointerEvent) => !ref.current?.contains(e.target as Node) && onClose();
-    const list = document.querySelector('[data-testid="transcript"]');
+    const list = listRef.current;
     window.addEventListener("keydown", onKey);
     window.addEventListener("pointerdown", onDown);
     list?.addEventListener("scroll", onClose, { passive: true });
@@ -77,7 +73,7 @@ export function SourcePopover({ source, onClose }: { source: Source; onClose: ()
       window.removeEventListener("pointerdown", onDown);
       list?.removeEventListener("scroll", onClose);
     };
-  }, [onClose]);
+  }, [listRef, onClose]);
   const width = Math.min(560, window.innerWidth - 32);
   const left = Math.max(16, Math.min(source.rect.left + 24, window.innerWidth - width - 16));
   const top = Math.max(16, Math.min(source.rect.top, window.innerHeight * 0.4));

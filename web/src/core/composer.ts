@@ -98,8 +98,10 @@ export function confirmSent(sent: Sent[], rows: readonly Row[]): Sent[] {
   return left.length === sent.length ? sent : left;
 }
 
-/** What the composer can do for the chat's chair, from the snapshot. */
-export type ChairInput = {
+/** What the composer can do for one agent of a chat, from the snapshot. */
+export type AgentInput = {
+  /** The child agent's id; null for the chair. */
+  who: string | null;
   provider: string | null;
   model: string | null;
   /** Why the composer cannot send now, or null. */
@@ -114,25 +116,33 @@ export type ChairInput = {
 
 export const MISSING_ADAPTER = "This session does not record an adapter, so Swarm cannot reach its panes.";
 
-export function chairInput(session: Session | undefined, agents: readonly Agent[] | undefined): ChairInput {
-  const chair = agents?.find((a) => a.id === "orchestrator");
-  const provider = (chair?.provider as string | null | undefined) ?? session?.chair_provider ?? null;
-  const prompt = (chair?.prompt as Prompt | null | undefined) ?? null;
+/** The chair's input, or the input of the child agent `child` (ChildColumnView). */
+export function agentInput(session: Session | undefined, agents: readonly Agent[] | undefined, child: string | null = null): AgentInput {
+  const agent = agents?.find((a) => a.id === (child ?? "orchestrator"));
+  const provider = (agent?.provider as string | null | undefined) ?? (child ? null : session?.chair_provider) ?? null;
+  const prompt = (agent?.prompt as Prompt | null | undefined) ?? null;
   const adapter = session?.adapter?.trim() || null;
   let disabled: string | null = null;
   if (!adapter) disabled = MISSING_ADAPTER;
-  else if (!chair?.pane) disabled = "The chair has no pane to receive input.";
-  else if (chair.alive === false) disabled = "This chat's pane has closed. Start a new chat or switch model.";
+  else if (child) {
+    if (!agent?.pane || agent.alive === false) disabled = "This agent has ended.";
+  } else if (!agent?.pane) disabled = "The chair has no pane to receive input.";
+  else if (agent.alive === false) disabled = "This chat's pane has closed. Start a new chat or switch model.";
   const unreachable = disabled !== null;
   // A waiting agent has a dialog open, where Enter means yes, so typed text could approve a tool.
-  if (!disabled && chair?.state === "waiting")
-    disabled = prompt ? "The agent is asking a question. Answer it first." : "The agent is asking a question. Answer it first in its pane.";
+  if (!disabled && agent?.state === "waiting")
+    disabled = prompt
+      ? "The agent is asking a question. Answer it first."
+      : child
+        ? `${child} waits on a question the app cannot read. Run \`swarm attach ${child}\` in a terminal to answer it.`
+        : "The agent is asking a question. Answer it first in its pane.";
   return {
+    who: child,
     provider,
-    model: (chair?.model as string | undefined) ?? null,
+    model: (agent?.model as string | undefined) ?? null,
     disabled,
     unreachable,
-    running: chair?.state === "working",
+    running: agent?.state === "working",
     prompt: unreachable ? null : prompt,
     pullBack: provider === "claude" && (adapter === "tmux" || adapter === "tmux-solo"),
   };
@@ -149,7 +159,7 @@ export function usageLabel(usage: Usage): string {
   return new Intl.NumberFormat("en-US", { notation: "compact" }).format(tokens);
 }
 
-export function modelLabel(input: ChairInput): string {
+export function modelLabel(input: AgentInput): string {
   if (input.model) return input.model;
   const p = input.provider;
   return `${p ? p[0].toUpperCase() + p.slice(1) : "Agent"} · Model not reported`;
