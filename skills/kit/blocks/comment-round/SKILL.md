@@ -10,7 +10,7 @@ metadata:
   gives: "<dir>/<N>.json and <dir>/<N>-answers.md per round"
   conflicts: ""
   users: "plan-review, page-comments"
-  source: "plannotator 0.28.17 `annotate --help` (several files open as one review; --result-file needs --gate --json; a URL goes through Jina Reader unless --no-jina) and its JSON {v, surface, decision, message, noop, annotationCount}; docs/blocks.md (annotate-loop is strict; loop stop)"
+  source: "plannotator 0.28.17 `annotate --help` (several files open as one review; --result-file needs --gate --json; a URL goes through Jina Reader unless --no-jina) and its --gate result {decision, feedback}, live round 2026-10-13; docs/blocks.md (annotate-loop is strict; loop stop)"
 ---
 
 ## Rules
@@ -25,7 +25,7 @@ metadata:
 
 ## Example
 Initial state: `plan.md` and `plan.html` are ready.
-Action: `comment_round.py run plan-review plan.html plan.md` prints `round 1: annotated, 1 notes`. The note says "skip 03-tokens". Write `1-answers.md` with the quote and "removed 03-tokens". Change the plan and run round 2, which prints `round 2: approved, 0 notes`.
+Action: `comment_round.py run plan-review plan.html plan.md` prints `round 1: annotated, with notes`. The note says "skip 03-tokens". Write `1-answers.md` with the quote and "removed 03-tokens". Change the plan and run round 2, which prints `round 2: approved, no notes`.
 Result: `comment_round.py check plan-review plan.html plan.md` prints `round 2 approved these files`.
 
 ## Check (script)

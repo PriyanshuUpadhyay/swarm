@@ -50,7 +50,8 @@ def rounds(folder):
 
 
 def has_notes(result):
-    return bool(result.get("annotationCount")) or bool((result.get("message") or "").strip())
+    # With --gate, plannotator 0.28.17 puts the notes in `feedback`; other modes use message and annotationCount.
+    return bool(result.get("annotationCount")) or any((result.get(k) or "").strip() for k in ("message", "feedback"))
 
 
 def unanswered(folder, found):
@@ -85,7 +86,7 @@ def run(folder, files):
     except (ValueError, KeyError, TypeError, AssertionError):
         raise SystemExit(f"plannotator exit {out.returncode} gave no decision JSON: {text[:200]!r}")
     (Path(folder) / f"{n}.json").write_text(json.dumps({"files": seen, "result": result}, indent=2) + "\n", encoding="utf-8")
-    print(f"round {n}: {result['decision']}, {result.get('annotationCount', 0)} notes")
+    print(f"round {n}: {result['decision']}, {'with notes' if has_notes(result) else 'no notes'}")
 
 
 def check(folder, files):

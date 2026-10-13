@@ -35,7 +35,7 @@ def test_rounds_bind_approval_to_the_reviewed_bytes():
     root = setup()
     assert "no round in" in cr(root, "check").stderr
     out = cr(root, "run", note("annotated", 1, "drop step 3"))
-    assert out.returncode == 0 and out.stdout == "round 1: annotated, 1 notes\n", out
+    assert out.returncode == 0 and out.stdout == "round 1: annotated, with notes\n", out
     saved = json.loads((root / "review" / "1.json").read_text())
     assert saved["files"] == {"../plan.md": __import__("hashlib").sha256(b"# Plan: x\n").hexdigest()}, saved
     assert "round 1 has notes but no answers" in cr(root, "run", note("approved")).stderr
@@ -66,6 +66,14 @@ def test_stops():
     assert out.returncode == 1 and "loop stop: 3 rounds ran" in out.stderr and not (root / "review" / "4.json").exists(), out
     (root / "review" / "2.json").write_text("{}")
     assert "2.json is not a round file" in cr(root, "check").stderr
+
+
+def test_feedback_is_a_note():
+    """plannotator 0.28.17 with --gate gives {decision, feedback} and no message or annotationCount."""
+    root = setup()
+    out = cr(root, "run", {"decision": "annotated", "feedback": "# File Feedback\n### 1. Feedback on: x\n> sweet\n"})
+    assert out.returncode == 0 and out.stdout == "round 1: annotated, with notes\n", out
+    assert "round 1 has notes but no answers" in cr(root, "run", note("approved")).stderr
 
 
 if __name__ == "__main__":
