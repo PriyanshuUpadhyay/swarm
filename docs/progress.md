@@ -15,7 +15,7 @@ Last checked: 2026-10-13, on main at `dabc9ef8`. Installed swarm is 0.12.0.
 | A. Skills setup (one kit source) | ⬜ next | main, dotfiles |
 | B. Skills from blocks | ⬜ after A1-A4 | main `skills/kit/` |
 | C. yelo retirement | 🔄 code done, Mac not done | main, the owner's Mac |
-| D. Web UI port | 🔄 | branches `web-pilot`, `web-port` |
+| D. Web UI port | 🔄 merged, one budget miss | main |
 | E. Records and branches | ⬜ | `docs/decisions/`, `wt/` |
 
 Order: A comes first, because a block edit must land in the one kit source. B follows A. C and D
@@ -212,10 +212,10 @@ is deleted.
 
 | # | Step | State | Where |
 |---|---|---|---|
-| D1 | `swarm serve`, web pilot, budget suite, SwarmWeb shell, ADR 0075 | ✅ on branch, not merged | `web-pilot` (7 commits ahead of main) |
-| D2 | shadcn/ui frame, Rust transcript rows, chat action routes, composer | 🔄 active worker, uncommitted files | `web-port` (12 commits ahead, on `web-pilot`) |
-| D3 | Account and skill routes in `serve` through the Rust owners | ⬜ | `serve.rs` has no such routes yet |
-| D4 | Parity, then delete `ui/` except the shell | ⬜ | speed budgets in ADR 0075 still pass |
+| D1 | `swarm serve`, web pilot, budget suite, SwarmWeb shell, ADR 0075 | ✅ | merged in 759e3bb5 through `web-port` |
+| D2 | shadcn/ui frame, Rust transcript rows, chat action routes, composer | ✅ | merged in 759e3bb5 (S1-S7) |
+| D3 | Account and skill routes in `serve` through the Rust owners | ✅ accounts; skills dropped | `/api/accounts*` in `serve.rs`; ADR 0076 amendment takes the Skills editor out of the web UI |
+| D4 | Parity, then delete `ui/` except the shell | 🔄 | `ui/Sources` holds only SwarmWeb and SwarmNotify (58beca2a). `e2e/changes.spec.ts:80` misses its 150 ms budget by about 1 ms in chromium and webkit (debug `swarm`, 2026-10-14) |
 
 ## E. Records and branches
 
