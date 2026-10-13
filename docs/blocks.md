@@ -120,8 +120,13 @@ Status: ✅ exists, ✂️ cut from a skill next, ⬜ later, 🆕 new, 🔒 stay
 |---|---|---|---|---|---|---|
 | planner | step | which blocks a task uses, in which order, with which inputs | task → `plan.md`, a step table with a Block and a Why column | `blocks/planner` | the `plan` skill | ✅ basic, B9 |
 | plan-chart | step | the check and the drawing of a plan's step graph | `plan.md` → `plan.html` or the first defect | `blocks/plan-chart` with `scripts/plan_chart.py` | the `plan` skill | ✅ basic |
-| plan-review | step | the owner's approval of a plan before work starts | `plan.html`, `plan.md` → approved plan, one Plannotator result per round | `blocks/plan-review` | the `plan` skill | ✅ basic |
-| voice-reply | rule | how the final reply to the owner sounds | step results → reply | `blocks/voice-reply` | the last step of a plan | ✅ basic |
+| plan-review | step | the owner's approval of a plan before work starts | `plan.html`, `plan.md` → approved plan, started step run | `blocks/plan-review` with `scripts/start_plan.py`, which refuses a plan that changed after approval | the `plan` skill | ✅ basic |
+| comment-round | rule | one Plannotator round: command, saved result with file hashes, answers, loop stop | files → `<N>.json`, `<N>-answers.md` | `blocks/comment-round` with `scripts/comment_round.py` | plan-review, page-comments | ✅ basic |
+| page-comments | step | the comment, fix and check loop for a built page | page, its checks, its build block → approved page | `blocks/page-comments` | glitch-walk, any page | ✅ basic |
+| change-review | step | that a plan's commits get the full review-check verdict | range → verdict | `blocks/change-review`, which runs `skills/review-check` whole | plans that make commits | ✅ basic |
+| voice-reply | rule | the final reply to the owner, by the session's reply rules | step results → reply | `blocks/voice-reply` (points to the agent instructions) | the last step of a plan | ✅ basic |
+| voice-teach | rule | the order of ideas in an explanation to learn from | subject, known terms → explanation | `blocks/voice-teach` | the last step of an explain plan | ✅ basic |
+| voice-pr | rule | how PR titles and bodies read | change, tests → PR draft | `blocks/voice-pr` | the last step of a PR plan | ✅ basic |
 | voice-review | rule | how review comments sound | findings → comments in the reviewer's voice | `blocks/voice-review`, which reads `~/.review-walk/voice.md` | the last step of a review plan | ✅ basic |
 | frame | step | goal, done-when claims, out of scope | request → frame | flow 01-frame, research 01-question, ink intake | flow, research, ink | ⬜ |
 | local-research | step | what local sources say | question → findings with paths | `blocks/local-research` | research (planned: glitch-walk, flow contracts) | ✅ |
@@ -131,7 +136,7 @@ Status: ✅ exists, ✂️ cut from a skill next, ⬜ later, 🆕 new, 🔒 stay
 | reference-analysis | step | measured facts of a reference | references → measured notes with evidence levels | `blocks/reference-analysis` | ink, design-tokens | ✅ |
 | design-tokens | step | the look as tokens | measured notes → `DESIGN.md` tokens | `blocks/design-tokens` (owner of the token rules) | ink, glitch-walk, any page | ✅ owner fix |
 | story | step | order, beats, key frames, pacing | brief, facts → story sheet, shot list | `blocks/story` | ink | ✅ |
-| motion | pack | how things move | story sheet or UI states → timings, eases, one timing owner | emil pack (UI), ink `story-and-motion.md` transition catalogue and motion feel (story) | ink, any UI, sites | ✂️ B8 |
+| motion | pack | how things move | story sheet or UI states → timings, eases, one timing owner | `blocks/ui-motion` (UI, one timing owner, emil pack tables); ink `story-and-motion.md` transition catalogue and motion feel (story) | ink, any UI, sites | ✅ basic UI, B8 |
 | diagram | rule set | when and how to draw | subject → diagram | `blocks/when-to-diagram`, `html-diagram`, `diagram-check`, `call-tree` | flow, research, glitch-walk, plans | ✅ |
 | style-frames | step | "does it match the look" before the full build | tokens, page code → scored frames | `blocks/look-check` (owner of reference scoring) | flow, ink | ✅ |
 | build-site | step | what changes when the piece is a website | look, story → page | `blocks/build-site` | ink | ✅ |
@@ -140,10 +145,9 @@ Status: ✅ exists, ✂️ cut from a skill next, ⬜ later, 🆕 new, 🔒 stay
 | headless-shot | step | how shots are taken | URL or file → shots | `blocks/headless-shot` (owner of the shot and compare commands) | flow, ink | ✅ |
 | visual-qa | step | the visual verdict and the QA log | frames, playback → QA log | `blocks/visual-qa` | ink | ✅ |
 | web-ui-basics | rule | the floor for one static page | page → pass or fail | `blocks/web-ui-basics` | any static page | ✅ HTML only |
-| serve-local | step | a local view of the output | built folder → URL, stop command | none | glitch-walk, ink sites, any page | 🆕 |
-| annotate-loop | step | comments from the owner to the agent | URL → comment file per round | Plannotator (`plannotator annotate <page> --json`); trial of 2026-10-12 | glitch-walk, any page | 🆕 strict |
-| review | step | the review verdict | range → verdict | `skills/review-check` (stays whole; the block calls it) | flow, deliver | 🔒 |
-| report | step | the written answer | findings → report with checked links | `blocks/report`, with `references/plan-layout.md` for the first screen | research | ✅ |
+| serve-local | step | a local view of the checked build | built folder → URL, commit, stop command | `blocks/serve-local` | page-comments, ink sites, any page | ✅ basic |
+| review | step | the review verdict | range → verdict | `skills/review-check` (stays whole; `blocks/change-review` calls it) | flow, deliver, plans | 🔒 |
+| report | step | the written answer | findings → report with checked links | `blocks/report` (the reply holds the whole report; the agent instructions own the rest) | research | ✅ |
 | done-when-evidence | rule | close maps claims to evidence | frame, results → evidence rows | `blocks/done-when-evidence` | every template | ✅ |
 
 ### Rule cards
@@ -151,7 +155,8 @@ Status: ✅ exists, ✂️ cut from a skill next, ⬜ later, 🆕 new, 🔒 stay
 | Block | Owns | Today's text | Status |
 |---|---|---|---|
 | base-rules | the rules every step keeps | `blocks/base-rules` | ✅ |
-| behavior-claims | a frame as true-or-false claims | `blocks/behavior-claims` | ✅ |
+| requirements | a frame as true-or-false claims (was behavior-claims) | `blocks/requirements` | ✅ |
+| scratch-home | trial and test state in a temporary home, apart from live settings | `blocks/scratch-home` | ✅ basic |
 | decision-with-default | a real fork with a marked default, and the trade-off form | `blocks/decision-with-default` (engineering-standards section 5 points here) | ✅ defect fixed |
 | prove-it-works | what proves a change works | `blocks/prove-it-works` (red-first-check merged in; the skill points here) | ✅ |
 | checked-units | small units that each end in a check | `blocks/checked-units` (the skill sequence-verifiable-units points here) | ✅ |
