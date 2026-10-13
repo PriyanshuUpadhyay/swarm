@@ -118,7 +118,11 @@ Status: ✅ exists, ✂️ cut from a skill next, ⬜ later, 🆕 new, 🔒 stay
 
 | Block | Kind | Owns | Needs → gives | Today's text | Users | Status |
 |---|---|---|---|---|---|---|
-| plan | step | which blocks run, in which stage | task, template, catalog → ledger | none | every template | 🆕 B9 |
+| planner | step | which blocks a task uses, in which order, with which inputs | task → `plan.md`, a step table with a Block and a Why column | `blocks/planner` | the `plan` skill | ✅ basic, B9 |
+| plan-chart | step | the check and the drawing of a plan's step graph | `plan.md` → `plan.html` or the first defect | `blocks/plan-chart` with `scripts/plan_chart.py` | the `plan` skill | ✅ basic |
+| plan-review | step | the owner's approval of a plan before work starts | `plan.html`, `plan.md` → approved plan, one Plannotator result per round | `blocks/plan-review` | the `plan` skill | ✅ basic |
+| voice-reply | rule | how the final reply to the owner sounds | step results → reply | `blocks/voice-reply` | the last step of a plan | ✅ basic |
+| voice-review | rule | how review comments sound | findings → comments in the reviewer's voice | `blocks/voice-review`, which reads `~/.review-walk/voice.md` | the last step of a review plan | ✅ basic |
 | frame | step | goal, done-when claims, out of scope | request → frame | flow 01-frame, research 01-question, ink intake | flow, research, ink | ⬜ |
 | local-research | step | what local sources say | question → findings with paths | `blocks/local-research` | research (planned: glitch-walk, flow contracts) | ✅ |
 | web-research | step | web evidence | query brief → findings with links | `skills/web-search` (stays whole) with `blocks/deep-search` and `blocks/cite-sources` | research, reference-analysis, motion | ✅ by the skill |

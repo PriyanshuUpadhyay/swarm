@@ -158,7 +158,7 @@ the pilot, then packs.
 | B6 | Judge the pilot against the same slice without blocks; keep or drop | ⬜ | written result with both runs: defects, review rounds, time, loaded text |
 | B7 | Add `Keywords:` beside `Signals:` in `domains.md`, matched against the filled frame at `take`; the model confirms, drops or adds a match once, with a reason line | ⬜ | a "transition" task in a non-web-ui repo gets the motion pack; a non-motion task gets none |
 | B8 | Motion pack: an index in the emil pack owner, item files, a check, `Keywords:`; ink keeps story motion; web-ui-basics points to it | ⬜ | the step file names one timing owner and an "item files used" todo |
-| B9 | Plan block and template format: predefined templates fix required stages and the end; the plan block may add any block, and may build a ledger with no template when none fits (frame, end condition and close still required); one reason line per block | ⬜ | two tasks run by hand, one with a template and one without |
+| B9 | Plan block and template format: predefined templates fix required stages and the end; the plan block may add any block, and may build a ledger with no template when none fits (frame, end condition and close still required); one reason line per block | 🔄 basic blocks `planner`, `plan-chart`, `plan-review`, `voice-reply`, `voice-review` and the skill `plan`, branch `plan-blocks` (2026-10-13); no templates yet, because the owner wants blocks picked per task | two tasks run by hand, one with a template and one without |
 | B10 | Merged into B17 | — | — |
 | B11 | Small judge (Jev or Laya) for pack choice: 2+ missed or wrong packs in 10 trial lines starts a benchmark; adopt only on a held-out win with no missed gate | ⬜ | benchmark result |
 | B12 | One provider-neutral worker-brief section; the five other texts point to it | ✅ `blocks/worker-brief`, branch `skill-blocks` | `rg` for the report-only rule finds one owner |
@@ -170,7 +170,7 @@ the pilot, then packs.
 | B18 | Second user: a glitch-walk page uses story, design-tokens, headless-shot and visual-qa | ⬜ | one live run, each block todo closed with evidence |
 | B19 | serve-local and annotate-loop (Plannotator, strict): view-and-talk is required in the `walk` template; a missing `plannotator` sets `unavailable plannotator` and stops; each round writes `annotate/<round>.json`; the loop uses the B1 and B2 stop | ⬜ | one glitch-walk run where an owner comment reaches the agent and the page is rebuilt; a run without the binary stops with the status |
 | B20 | Package the kit as a skills-only Agent Plugins 1.0 package (`plugin.json` at `skills/kit/`); Codex reads it as specified, Claude Code and AGY load its skills (`docs/blocks.md`, Packaging) | ✅ manifests and marketplace on branch `skill-blocks`; install is A4 and A7 | a probe package installed in each CLI, and a model in each read a block by `../../blocks/` |
-| B21 | Install `plannotator` on the PATH on the owner's Mac from a checked release | ❓ | owner approves the install; `command -v plannotator` |
+| B21 | Install `plannotator` on the PATH on the owner's Mac from a checked release | ✅ 0.28.17 in `~/.local/bin`, SHA-256 and `gh attestation verify` passed (2026-10-13) | owner approves the install; `command -v plannotator` |
 
 Rejected for now: `minimal-diff`, `verification-evidence`, `trust-boundary`, `reversibility`. Each
 repeats a rule in the `base-rules`, `done-when-evidence` or `prove-it-works` block, or the global

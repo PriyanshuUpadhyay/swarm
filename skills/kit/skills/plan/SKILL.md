@@ -1,0 +1,13 @@
+---
+name: plan
+description: Plan any task from the kit's blocks, show the plan to the user as a flowchart in Plannotator, and run it as a step run after they approve. Use for "plan this", "plan and do", or a task that has no skill of its own.
+---
+
+# Plan
+
+The kit root, with its `blocks/` and `references/` folders, is two folders up from this skill's folder.
+
+1. Write the plan by `blocks/planner/SKILL.md`.
+2. Check it and draw it by `blocks/plan-chart/SKILL.md`.
+3. Get the user's approval by `blocks/plan-review/SKILL.md`. Nothing runs before that.
+4. Run the approved steps by the kit's `references/step-run.md`. The agent that takes a step reads each block that its Block cell names and follows it.
