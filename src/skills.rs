@@ -318,7 +318,7 @@ fn source_from_helper(helper: &Path) -> Result<std::path::PathBuf> {
         .parent()
         .and_then(Path::parent)
         .ok_or("skills: helper has no bundle parent")?;
-    let source = contents.join("Resources/Skills");
+    let source = contents.join("libexec/skills");
     let resolved = source.canonicalize().map_err(|error| {
         format!(
             "skills: missing bundle source {}: {error}",
@@ -444,7 +444,7 @@ fn stage_tree(source: &Path, stage: &Path, manifest: &Manifest) -> Result<()> {
 }
 
 /// Refresh from a bundled helper into an already selected home; callers own home selection.
-/// Kept explicit so fixtures can exercise cask links and separate homes without global env writes.
+/// Kept explicit so fixtures can exercise Homebrew links and separate homes without global env writes.
 pub fn refresh_from(helper: &Path, root: &Path) -> Result<RefreshOutcome> {
     let source = source_from_helper(helper);
     fs::create_dir_all(root)?;

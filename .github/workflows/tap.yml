@@ -1,8 +1,8 @@
 name: Tap
 
-# Points the Homebrew tap at a release once the owner publishes the draft, so the tarball and the
-# DMG are public. The cask carries the CLI: its binary stanza links swarm on PATH to the copy inside
-# Swarm.app, so one upgrade moves the app and the CLI together (ADR 0048).
+# Points the Homebrew tap at a release once the owner publishes the draft, so the tarball is public.
+# swarm ships as one formula: the CLI with the web UI inside, plus the transcript tool, the notice
+# helper and the skills in libexec (ADR 0079). The same tap commit deletes the old swarm-app cask.
 on:
   release:
     types: [published]
@@ -14,49 +14,47 @@ jobs:
   tap:
     runs-on: ubuntu-latest
     steps:
-      - name: Update the swarm-app cask
+      - name: Update the swarm formula
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
           TAP_DEPLOY_KEY: ${{ secrets.TAP_DEPLOY_KEY }}
         run: |
           version="${RELEASE_TAG#v}"
-          gh release download "$RELEASE_TAG" -R "${{ github.repository }}" -p "Swarm-$version.dmg"
-          dmg_sha=$(sha256sum "Swarm-$version.dmg" | cut -d' ' -f1)
+          tarball="swarm-$version-macos-arm64.tar.gz"
+          gh release download "$RELEASE_TAG" -R "${{ github.repository }}" -p "$tarball"
+          sha=$(sha256sum "$tarball" | cut -d' ' -f1)
 
           install -m 600 /dev/null ~/tap_key
           printf '%s\n' "$TAP_DEPLOY_KEY" > ~/tap_key
           export GIT_SSH_COMMAND="ssh -i ~/tap_key -o IdentitiesOnly=yes"
           git clone -q git@github.com:PriyanshuUpadhyay/homebrew-tap.git tap
-          mkdir -p tap/Casks
-          cat > tap/Casks/swarm-app.rb <<CASK
-          cask "swarm-app" do
-            version "$version"
-            sha256 "$dmg_sha"
-
-            url "https://github.com/PriyanshuUpadhyay/swarm/releases/download/v#{version}/Swarm-#{version}.dmg"
-            name "Swarm"
-            desc "Chat app for a tree of agent CLIs"
+          mkdir -p tap/Formula
+          cat > tap/Formula/swarm.rb <<FORMULA
+          class Swarm < Formula
+            desc "Message bus and pane control for a tree of agent CLIs"
             homepage "https://github.com/PriyanshuUpadhyay/swarm"
+            url "https://github.com/PriyanshuUpadhyay/swarm/releases/download/v$version/$tarball"
+            sha256 "$sha"
+            license "MIT"
 
-            depends_on formula: "tmux"
+            depends_on arch: :arm64
             depends_on macos: :tahoe
+            depends_on "tmux"
 
-            app "Swarm.app"
-            binary "#{appdir}/Swarm.app/Contents/Helpers/swarm"
+            def install
+              bin.install "bin/swarm"
+              libexec.install Dir["libexec/*"]
+            end
 
-            caveats <<~EOS
-              Swarm is not notarized by Apple, so macOS blocks its first launch. Allow it once:
-                1. Open Swarm from Applications. When macOS says it cannot verify the app, click Done.
-                2. Open System Settings > Privacy & Security and scroll to Security.
-                3. Next to "Swarm was blocked", click Open Anyway and confirm with your password.
-              If Open Anyway does not show, or macOS blocks the swarm command, run:
-                xattr -dr com.apple.quarantine /Applications/Swarm.app
-            EOS
+            test do
+              assert_match "swarm #{version}", shell_output("#{bin}/swarm --version")
+            end
           end
-          CASK
+          FORMULA
 
-          git -C tap add Casks/swarm-app.rb
+          git -C tap rm -q --ignore-unmatch Casks/swarm-app.rb
+          git -C tap add Formula/swarm.rb
           git -C tap -c user.name="github-actions[bot]" \
             -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
             commit -qm "swarm $version"

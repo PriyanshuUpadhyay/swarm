@@ -206,7 +206,71 @@ impl Hub {
     }
 }
 
+/// `web/dist`, embedded by `build.rs` when built with the serve feature (ADR 0079). Empty in a dev
+/// build that has no `web/dist`; `--assets DIR` replaces it.
+static WEB_ASSETS: &[(&str, &[u8])] = include!(concat!(env!("OUT_DIR"), "/web_assets.rs"));
+
 pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    let (port, assets, dev_origin) = options(args)?;
+    start(port, assets, dev_origin, None)
+}
+
+/// `swarm ui`: reuse the `swarm ui` server of this home when its recorded URL still answers with its
+/// token, else start one, record its URL in `<root>/ui-url`, and open the page.
+pub fn ui(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    let (port, assets, dev_origin) = options(args)?;
+    if assets.is_none() && WEB_ASSETS.is_empty() {
+        return Err("swarm ui: this build has no web UI; run `pnpm --dir web build` and rebuild, or pass --assets DIR".into());
+    }
+    let record = swarm::paths::root_dir()?.join("ui-url");
+    if let Ok(url) = std::fs::read_to_string(&record)
+        && answers(url.trim())
+    {
+        println!("{}", url.trim());
+        open_page(url.trim());
+        return Ok(());
+    }
+    start(port, assets, dev_origin, Some(record))
+}
+
+/// True when the server at `http://127.0.0.1:<port>/#token=<token>` takes that token.
+fn answers(url: &str) -> bool {
+    let Some((port, token)) = url
+        .strip_prefix("http://127.0.0.1:")
+        .and_then(|rest| rest.split_once("/#token="))
+    else {
+        return false;
+    };
+    let Ok(port) = port.parse::<u16>() else {
+        return false;
+    };
+    let address = std::net::SocketAddr::from((std::net::Ipv4Addr::LOCALHOST, port));
+    let Ok(mut stream) = std::net::TcpStream::connect_timeout(&address, Duration::from_millis(500))
+    else {
+        return false;
+    };
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
+    let request = format!(
+        "GET /api/badge HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nAuthorization: Bearer {token}\r\nConnection: close\r\n\r\n"
+    );
+    let mut status = [0; 12];
+    stream.write_all(request.as_bytes()).is_ok()
+        && stream.read_exact(&mut status).is_ok()
+        && &status == b"HTTP/1.1 200"
+}
+
+fn open_page(url: &str) {
+    if cfg!(target_os = "macos") {
+        let _ = std::process::Command::new("open")
+            .arg(url)
+            .stdin(std::process::Stdio::null())
+            .status();
+    }
+}
+
+type Options = (u16, Option<PathBuf>, Option<String>);
+
+fn options(args: &[String]) -> Result<Options, Box<dyn std::error::Error>> {
     let mut port = 0;
     let mut assets = None;
     let mut dev_origin = None;
@@ -214,18 +278,28 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     while let Some(flag) = args.next() {
         let value = args
             .next()
-            .ok_or("usage: swarm serve [--port N] [--assets DIR] [--dev-origin ORIGIN]")?;
+            .ok_or("usage: swarm serve|ui [--port N] [--assets DIR] [--dev-origin ORIGIN]")?;
         match flag.as_str() {
             "--port" => port = value.parse::<u16>()?,
             "--assets" => assets = Some(std::fs::canonicalize(value)?),
             "--dev-origin" => dev_origin = Some(value.clone()),
             _ => {
                 return Err(
-                    "usage: swarm serve [--port N] [--assets DIR] [--dev-origin ORIGIN]".into(),
+                    "usage: swarm serve|ui [--port N] [--assets DIR] [--dev-origin ORIGIN]".into(),
                 );
             }
         }
     }
+    Ok((port, assets, dev_origin))
+}
+
+/// Serves until killed. With `record`, writes the URL there and opens it (`swarm ui`).
+fn start(
+    port: u16,
+    assets: Option<PathBuf>,
+    dev_origin: Option<String>,
+    record: Option<PathBuf>,
+) -> Result<(), Box<dyn std::error::Error>> {
     let root = swarm::paths::root_dir()?;
     drop(swarm::store::open(&root.join("swarm.db"))?);
     let mut bytes = [0; 32];
@@ -240,6 +314,7 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let tool = std::env::var_os("SWARM_TRANSCRIPT_TOOL")
         .filter(|value| !value.is_empty())
         .map(PathBuf::from)
+        .or_else(|| swarm::paths::bundled("transcript"))
         .unwrap_or_else(|| {
             Path::new(env!("CARGO_MANIFEST_DIR")).join("packages/transcript/zig-out/bin/transcript")
         });
@@ -268,8 +343,21 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         chat_create: tokio::sync::Mutex::new(()),
         usage_refresh: Mutex::new(HashMap::new()),
     });
-    println!("http://127.0.0.1:{port}/#token={}", app.token);
+    let url = format!("http://127.0.0.1:{port}/#token={}", app.token);
+    println!("{url}");
     std::io::stdout().flush()?;
+    if let Some(record) = record {
+        use std::os::unix::fs::OpenOptionsExt;
+        // The token is the API's only key, so only the owner may read the record.
+        let _ = std::fs::remove_file(&record);
+        std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&record)?
+            .write_all(format!("{url}\n").as_bytes())?;
+        open_page(&url);
+    }
     let runtime = tokio::runtime::Runtime::new()?;
     runtime.block_on(async {
         start_coordinator(&app, action_queue);
@@ -4473,9 +4561,6 @@ async fn static_file(State(app): State<App>, request: Request) -> Response {
     if !matches!(*request.method(), Method::GET | Method::HEAD) {
         return StatusCode::METHOD_NOT_ALLOWED.into_response();
     }
-    let Some(assets) = &app.assets else {
-        return StatusCode::NOT_FOUND.into_response();
-    };
     let path = request.uri().path();
     let relative = if path == "/" {
         "index.html"
@@ -4489,20 +4574,20 @@ async fn static_file(State(app): State<App>, request: Request) -> Response {
     {
         return StatusCode::NOT_FOUND.into_response();
     }
-    let path = assets.join(relative);
-    let Ok(path) = tokio::fs::canonicalize(path).await else {
-        return StatusCode::NOT_FOUND.into_response();
+    let bytes: std::borrow::Cow<'static, [u8]> = match &app.assets {
+        Some(assets) => match disk_file(assets, relative).await {
+            Some(bytes) => bytes.into(),
+            None => return StatusCode::NOT_FOUND.into_response(),
+        },
+        None => match WEB_ASSETS.iter().find(|(name, _)| *name == relative) {
+            Some((_, bytes)) => (*bytes).into(),
+            None => return StatusCode::NOT_FOUND.into_response(),
+        },
     };
-    if !path.starts_with(assets) {
-        return StatusCode::NOT_FOUND.into_response();
-    }
-    let Ok(metadata) = tokio::fs::metadata(&path).await else {
-        return StatusCode::NOT_FOUND.into_response();
-    };
-    if !metadata.is_file() {
-        return StatusCode::NOT_FOUND.into_response();
-    }
-    let content_type = match path.extension().and_then(|extension| extension.to_str()) {
+    let content_type = match Path::new(relative)
+        .extension()
+        .and_then(|extension| extension.to_str())
+    {
         Some("html") => "text/html; charset=utf-8",
         Some("js" | "mjs") => "text/javascript; charset=utf-8",
         Some("css") => "text/css; charset=utf-8",
@@ -4512,10 +4597,6 @@ async fn static_file(State(app): State<App>, request: Request) -> Response {
         Some("ico") => "image/x-icon",
         Some("woff2") => "font/woff2",
         _ => "application/octet-stream",
-    };
-    let bytes = match tokio::fs::read(path).await {
-        Ok(bytes) => bytes,
-        Err(_) => return StatusCode::NOT_FOUND.into_response(),
     };
     let length = bytes.len();
     let mut response = Response::new(if request.method() == Method::HEAD {
@@ -4531,6 +4612,15 @@ async fn static_file(State(app): State<App>, request: Request) -> Response {
         HeaderValue::from_str(&length.to_string()).unwrap(),
     );
     response
+}
+
+/// A file under `--assets DIR`, refused when a link leads out of DIR.
+async fn disk_file(assets: &Path, relative: &str) -> Option<Vec<u8>> {
+    let path = tokio::fs::canonicalize(assets.join(relative)).await.ok()?;
+    if !path.starts_with(assets) || !tokio::fs::metadata(&path).await.ok()?.is_file() {
+        return None;
+    }
+    tokio::fs::read(path).await.ok()
 }
 
 #[cfg(test)]

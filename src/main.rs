@@ -272,7 +272,7 @@ fn init() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-const USAGE: &str = "usage: swarm --version | init | skills refresh | skills manifest <source> <out> | setup status --json | setup [--plan [--json] | --digest <digest>] [--cwd <dir>] [--only <hooks|trust|herdr|skills>,...] [--consent <standing|ask>] [--resume] | hooks status --json | hooks setup [--plan [--json] | --digest <digest>] | managed list [--json] | managed revert (<id>... | --all) [--plan [--json] | --digest <digest>] | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session continue <new_id> <old_id> | session archive <id>... | session unarchive <id>... | sessions --json [--archived] | agent add <agent_id> <role> | herdr-split | notify <title> [--body <text>] | notices --json | notices --due | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | guard <claude|codex|agy> PreToolUse | roles --json | roles get <role> [--provider <claude|codex|agy>] | roles check --json | roles save --revision <revision> <profile-json> | roles new <name> --revision <revision> | roles rename <old> <new> --revision <revision> | roles copy <from> <to> --revision <revision> | roles delete <name> --revision <revision> | roles reset --revision <revision> | roles set-min-usage <pct> --revision <revision> | providers --json | models --provider <claude|codex|agy> --json | accounts --provider <claude|codex|agy> --json | accounts login --provider <claude|codex> --name <name> --revision <revision> --json [--cwd <dir>] | accounts reset --revision <revision> --json | usage --json | usage --format openusage | usage --refresh --provider <claude|codex> --json | agents --json [--all] | messages --json [--after <seq>] | run <claude|codex> [--account <auto|NAME>] [-- <args>...] | launch <agent_id> <role> [--provider <claude|codex|agy>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | answer <agent_id> <prompt_id> <choice> | interrupt <agent_id> | key <agent_id> <Up|C-u> | attach <agent_id> | focus <session_id> <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
+const USAGE: &str = "usage: swarm --version | init | skills refresh | skills manifest <source> <out> | setup status --json | setup [--plan [--json] | --digest <digest>] [--cwd <dir>] [--only <hooks|trust|herdr|skills>,...] [--consent <standing|ask>] [--resume] | hooks status --json | hooks setup [--plan [--json] | --digest <digest>] | managed list [--json] | managed revert (<id>... | --all) [--plan [--json] | --digest <digest>] | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session continue <new_id> <old_id> | session archive <id>... | session unarchive <id>... | sessions --json [--archived] | agent add <agent_id> <role> | serve [--port N] [--assets DIR] | ui [--port N] [--assets DIR] | herdr-split | notify <title> [--body <text>] | notices --json | notices --due | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | guard <claude|codex|agy> PreToolUse | roles --json | roles get <role> [--provider <claude|codex|agy>] | roles check --json | roles save --revision <revision> <profile-json> | roles new <name> --revision <revision> | roles rename <old> <new> --revision <revision> | roles copy <from> <to> --revision <revision> | roles delete <name> --revision <revision> | roles reset --revision <revision> | roles set-min-usage <pct> --revision <revision> | providers --json | models --provider <claude|codex|agy> --json | accounts --provider <claude|codex|agy> --json | accounts login --provider <claude|codex> --name <name> --revision <revision> --json [--cwd <dir>] | accounts reset --revision <revision> --json | usage --json | usage --format openusage | usage --refresh --provider <claude|codex> --json | agents --json [--all] | messages --json [--after <seq>] | run <claude|codex> [--account <auto|NAME>] [-- <args>...] | launch <agent_id> <role> [--provider <claude|codex|agy>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | answer <agent_id> <prompt_id> <choice> | interrupt <agent_id> | key <agent_id> <Up|C-u> | attach <agent_id> | focus <session_id> <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
 
 fn env_var(name: &str) -> Result<String, String> {
     env::var(name).map_err(|_| format!("swarm: {name} not set"))
@@ -491,24 +491,13 @@ fn start_notify_helper() {
         .spawn();
 }
 
-/// `SWARM_NOTIFY_APP` alone when set, else the helper beside this swarm (the app bundle's
-/// `Contents/Helpers`), else the installed app's. Never a bundle id: LaunchServices can pick a
-/// dev build.
+/// `SWARM_NOTIFY_APP` alone when set, else the helper that ships with this swarm (ADR 0079). Never
+/// a bundle id: LaunchServices can pick a dev build.
 fn notify_helper() -> Option<std::path::PathBuf> {
     if let Some(path) = env::var_os("SWARM_NOTIFY_APP") {
         return Some(std::path::PathBuf::from(path)).filter(|path| path.exists());
     }
-    let beside = std::env::current_exe()
-        .and_then(std::fs::canonicalize)
-        .ok()
-        .and_then(|exe| Some(exe.parent()?.join("SwarmNotify.app")));
-    [
-        beside,
-        Some("/Applications/Swarm.app/Contents/Helpers/SwarmNotify.app".into()),
-    ]
-    .into_iter()
-    .flatten()
-    .find(|path| path.exists())
+    swarm::paths::bundled("SwarmNotify.app")
 }
 
 /// ADR 0077: take every unposted notice and print the ones the owner's notice preferences post,
@@ -3452,8 +3441,10 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     #[cfg(feature = "serve")]
-    if args.first().map(String::as_str) == Some("serve") {
-        return serve::run(&args[1..]);
+    match args.first().map(String::as_str) {
+        Some("serve") => return serve::run(&args[1..]),
+        Some("ui") => return serve::ui(&args[1..]),
+        _ => {}
     }
     if let [cmd, session_id, agent_id] = args
         && cmd == "focus"
@@ -3461,7 +3452,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         return focus(session_id, agent_id);
     }
     // The commit this binary was built from, which is the only way a machine can tell the bus it
-    // runs from the bus the repository states. `build.rs` stamps it. See `ui/Tools/build.sh`.
+    // runs from the bus the repository states. `build.rs` stamps it.
     if let [flag] = args
         && (flag == "--version" || flag == "-V")
     {

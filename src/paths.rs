@@ -73,6 +73,21 @@ pub fn branch_folder(branch: &str) -> Option<String> {
 }
 
 /// The `.swarm` folder, after `claim` proves that swarm owns it.
+/// A file that the release ships beside `swarm` (ADR 0079): `<prefix>/libexec/<name>`, where
+/// `<prefix>/bin/swarm` is the real binary behind any link (Homebrew links `bin/swarm` into the
+/// Cellar), else `<name>` in the binary's own folder.
+pub fn bundled(name: &str) -> Option<std::path::PathBuf> {
+    let exe = std::env::current_exe()
+        .and_then(std::fs::canonicalize)
+        .ok()?;
+    let dir = exe.parent()?;
+    let libexec = dir.parent().map(|prefix| prefix.join("libexec").join(name));
+    [libexec, Some(dir.join(name))]
+        .into_iter()
+        .flatten()
+        .find(|path| path.exists())
+}
+
 pub fn root_dir() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
     let root = std::path::PathBuf::from(home()?).join(SWARM_DIR);
     claim(&root)?;

@@ -1,93 +1,51 @@
 #!/bin/zsh
+# Builds the release tarball that the Homebrew formula installs (ADR 0079):
+#   swarm-<version>/bin/swarm                    the CLI, with web/dist inside for `swarm ui`
+#   swarm-<version>/libexec/transcript           the row tool that `swarm serve` runs
+#   swarm-<version>/libexec/SwarmNotify.app      the notice helper (ADR 0077)
+#   swarm-<version>/libexec/skills               the source of `swarm skills refresh`
+#   swarm-<version>/libexec/NOTICE               the web UI's third-party notices
 set -euo pipefail
 
 root="${0:A:h:h}"
 repo="${root:h}"
 export ZIG_GLOBAL_CACHE_DIR="${ZIG_GLOBAL_CACHE_DIR:-$root/.build/zig-global}"
 export ZIG_LOCAL_CACHE_DIR="${ZIG_LOCAL_CACHE_DIR:-$root/.build/zig-local}"
-install=0
-for flag in "$@"; do
-  case "$flag" in
-    -r) ;;
-    --install) install=1 ;;
-    *) print -u2 "unknown option: $flag"; exit 1 ;;
-  esac
-done
+if [[ "$(uname -m)" != arm64 ]]; then
+  print -u2 "the tarball is named macos-arm64, so build it on an arm64 Mac"
+  exit 1
+fi
 
 zig build --build-file "$repo/packages/transcript/build.zig" -Doptimize=ReleaseSafe
-# The app runs this swarm from Contents/Helpers; the cask links it onto PATH (ADR 0048). The shell
-# starts `swarm serve`, which needs the serve feature (ADR 0075).
-cargo build --manifest-path "$repo/Cargo.toml" --release --locked --features serve
+# build.rs embeds web/dist, so the web build comes first.
 pnpm --dir "$repo/web" install --frozen-lockfile
 pnpm --dir "$repo/web" build
-# The home changes only on --install: building the app must not migrate the real database. Even then
-# no swarm goes on PATH, because a cargo build there would shadow the cask's link (ADR 0048).
-if (( install )); then
-  "$repo/target/release/swarm" init
-  for adapter in herdr tmux tmux-solo; do
-    "$repo/target/release/swarm" adapter check "$adapter"
-  done
-fi
-swift build --package-path "$root" --disable-sandbox -c release --product SwarmWeb
+cargo build --manifest-path "$repo/Cargo.toml" --release --locked --features serve
 swift build --package-path "$root" --disable-sandbox -c release --product SwarmNotify
 bin_dir="$(swift build --package-path "$root" --disable-sandbox -c release --show-bin-path)"
-app="$root/.build/release/Swarm.app"
+version="$(cargo metadata --manifest-path "$repo/Cargo.toml" --no-deps --format-version 1 | jq -r '.packages[0].version')"
 
-rm -rf "$app"
-mkdir -p "$app/Contents/MacOS" "$app/Contents/Helpers" "$app/Contents/Resources"
-cp -R "$repo/web/dist" "$app/Contents/Resources/web"
-cp "$repo/web/NOTICE" "$app/Contents/Resources/NOTICE"
-skills="$app/Contents/Resources/Skills"
+out="$root/.build/release"
+stage="$out/swarm-$version"
+rm -rf "$stage"
+mkdir -p "$stage/bin" "$stage/libexec"
+cp "$repo/target/release/swarm" "$stage/bin/swarm"
+cp "$repo/packages/transcript/zig-out/bin/transcript" "$stage/libexec/transcript"
+cp "$repo/web/NOTICE" "$stage/libexec/NOTICE"
+skills="$stage/libexec/skills"
 mkdir -p "$skills"
 tar -c -C "$repo/skills" --exclude='.git*' \
   swarm-orchestrator swarm-voice kit/skills kit/references kit/scripts kit/contracts \
   kit/vendor kit/LICENSE kit/README.md | tar -xp -C "$skills"
-"$repo/target/release/swarm" skills manifest "$skills" "$skills/manifest.json"
-# The SwarmWeb shell is the app (ADR 0078). It finds swarm, web and transcript in this bundle.
-cp "$bin_dir/SwarmWeb" "$app/Contents/MacOS/Swarm"
-cp "$repo/packages/transcript/zig-out/bin/transcript" "$app/Contents/MacOS/transcript"
-# Helpers, not MacOS: on a case-insensitive disk MacOS/swarm would overwrite MacOS/Swarm.
-cp "$repo/target/release/swarm" "$app/Contents/Helpers/swarm"
-version="$(cargo metadata --manifest-path "$repo/Cargo.toml" --no-deps --format-version 1 | jq -r '.packages[0].version')"
-# The notice helper (ADR 0077): swarm starts it beside itself, so a notice never starts the app.
-notify="$app/Contents/Helpers/SwarmNotify.app"
+"$stage/bin/swarm" skills manifest "$skills" "$skills/manifest.json"
+notify="$stage/libexec/SwarmNotify.app"
 mkdir -p "$notify/Contents/MacOS"
 cp "$bin_dir/SwarmNotify" "$notify/Contents/MacOS/SwarmNotify"
 cp "$root/Resources/SwarmNotify-Info.plist" "$notify/Contents/Info.plist"
 plutil -insert CFBundleShortVersionString -string "$version" "$notify/Contents/Info.plist"
-cp "$root/Resources/Info.plist" "$app/Contents/Info.plist"
-plutil -insert CFBundleShortVersionString -string "$version" "$app/Contents/Info.plist"
-/usr/libexec/PlistBuddy -c "Add :SwarmBuildDate string $(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-  "$app/Contents/Info.plist"
-# The shell's PATH swarm check runs only when this branch is "" (ADR 0048); the helper picks its own
-# home from the same stamp (ADR 0027). It is the branch that build.rs stamped into the helper, the last word of `swarm --version`: "" only for a release build
-# (SWARM_RELEASE_BUILD=1, set by release.yml), "HEAD" for a dev build on a detached HEAD. A branch
-# name holds no space. plutil takes the value as one argv string, so no quote in a branch name is
-# parsed; the read-back refuses a build whose plist says another branch.
-version_line="$("$repo/target/release/swarm" --version)"
-branch="${version_line#swarm * * }"
-plutil -insert SwarmBuildBranch -string "$branch" "$app/Contents/Info.plist"
-if [[ "$(plutil -extract SwarmBuildBranch raw -o - "$app/Contents/Info.plist")" != "$branch" ]]; then
-  print -u2 "SwarmBuildBranch in Info.plist does not read back as '$branch'"
-  exit 1
-fi
-codesign --force --deep -s - "$app"
-print "==> $app"
+# An ad hoc signature seals the plist to the binary, which the notification center needs.
+codesign --force -s - "$notify"
 
-if (( install )); then
-  destination="$HOME/Applications/Swarm.app"
-  previous="$HOME/Applications/Swarm.app.previous"
-  mkdir -p "$HOME/Applications"
-  if [[ -e "$destination" ]]; then
-    rm -rf "$previous"
-    mv "$destination" "$previous"
-  fi
-  cp -R "$app" "$destination"
-  print "==> $destination"
-  if [[ -n "$branch" ]]; then
-    print "==> This dev build of '$branch' keeps its data in ${SWARM_HOME:-its .swarm-* folder in $HOME}, never ~/.swarm (ADR 0027)."
-  fi
-  # The same text as PathDrift.brewFix; a SwarmWebTests test keeps the two equal.
-  print "==> swarm is no longer put on PATH. The cask links it (ADR 0048):"
-  print "    brew uninstall swarm; brew reinstall --cask --force priyanshuupadhyay/tap/swarm-app"
-fi
+tarball="$out/swarm-$version-macos-arm64.tar.gz"
+tar -czf "$tarball" -C "$out" "swarm-$version"
+print "==> $tarball"

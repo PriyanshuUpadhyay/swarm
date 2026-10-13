@@ -58,10 +58,11 @@ final class Helper: NSObject, NSApplicationDelegate, UNUserNotificationCenterDel
     var again = false
     var idle: Timer?
 
-    /// The env from `swarm`, else the `swarm` beside this bundle in `Swarm.app/Contents/Helpers`.
+    /// The env from `swarm`, else `<prefix>/bin/swarm` for this bundle at `<prefix>/libexec` (ADR 0079).
     var target: Target {
         let env = ProcessInfo.processInfo.environment
-        let bundled = Bundle.main.bundleURL.deletingLastPathComponent().appendingPathComponent("swarm").path
+        let bundled = Bundle.main.bundleURL.deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("bin/swarm").path
         return Target(swarm: env["SWARM_BIN"].flatMap { $0.isEmpty ? nil : $0 } ?? bundled,
                       home: env["SWARM_HOME"].flatMap { $0.isEmpty ? nil : $0 })
     }
