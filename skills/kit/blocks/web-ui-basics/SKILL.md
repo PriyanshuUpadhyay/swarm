@@ -1,7 +1,17 @@
-# web-ui-basics
-Concept: The floor every static one-page site must meet: structure, focus, contrast, layout at each width, and motion.
-Serves: build
-Source: web-interface-guidelines pack: command.md:16-26, :31-35, :53-60, :64, :80, :119-120, :143-146, :153; skills/ink/references/site.md:25, :85-88; skills/ink/references/qa.md:57-58, :110-111; skills/ink/references/story-and-motion.md:59-60; taste-skill pack: skills/taste-skill/SKILL.md:153-154, :225, :260, :522, :529; emilkowalski pack: skills/emil-design-eng/SKILL.md:95-135, :527-531; blocks/headless-shot.md:7 (375 px), :8 (reduced-motion shot)
+---
+name: web-ui-basics
+description: "The floor every static one-page site must meet: structure, focus, contrast, layout at each width, and motion."
+license: MIT
+metadata:
+  kind: rule
+  owns: "the floor for a static one-page site"
+  serves: "build"
+  needs: "a page"
+  gives: "pass or fail per check"
+  conflicts: ""
+  users: "flow"
+  source: "web-interface-guidelines pack: command.md:16-26, :31-35, :53-60, :64, :80, :119-120, :143-146, :153; skills/ink/references/site.md:25, :85-88; skills/ink/references/qa.md:57-58, :110-111; skills/ink/references/story-and-motion.md:59-60; taste-skill pack: skills/taste-skill/SKILL.md:153-154, :225, :260, :522, :529; emilkowalski pack: skills/emil-design-eng/SKILL.md:95-135, :527-531; blocks/headless-shot/SKILL.md:17 (375 px), :18 (reduced-motion shot)"
+---
 
 ## Rules
 Structure
@@ -21,7 +31,7 @@ Motion
 - Animate only `transform` and `opacity`. Never `transition: all`.
 - UI animations stay under 300 ms. Use ease-out to enter. Never ease-in.
 - Honor `prefers-reduced-motion: reduce`: fewer and gentler, not zero. Keep opacity fades; remove movement. Loops and parallax become static.
-- Every key fact shows in a settled state and under reduced motion. Content that waits at opacity 0 is blank in full-page screenshots and skipped by checkers, so check with reduced motion on: take the reduced-motion shot in blocks/headless-shot.md:8.
+- Every key fact shows in a settled state and under reduced motion. Content that waits at opacity 0 is blank in full-page screenshots and skipped by checkers, so check with reduced motion on: take the reduced-motion shot in blocks/headless-shot/SKILL.md:18.
 Copy
 - `…` not `...`. Active voice. Specific button labels: "Copy install command", not "Continue".
 
@@ -38,6 +48,6 @@ Result: the evidence line shows the FAIL and then the PASS for each width.
 
 ## Check (judge)
 - In the shots at 1440, 390, and 375 px, is any content cut off at the right edge or scrolled sideways? Quote each shot path.
-- Does the reduced-motion shot (`{{shots}}/<name>-<W>-reduced.png`, from blocks/headless-shot.md:8) show every key fact? Quote the path and the facts.
+- Does the reduced-motion shot (`{{shots}}/<name>-<W>-reduced.png`, from blocks/headless-shot/SKILL.md:18) show every key fact? Quote the path and the facts.
 - Does a Tab walk show a visible ring on each link and button, with the skip link first? Quote the screenshot paths.
 - Does each diagram have a text description? Quote it.

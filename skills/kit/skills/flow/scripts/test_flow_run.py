@@ -973,6 +973,20 @@ def test_block_frontmatter(tmp):
             assert str(error) == "block a has the name b; a block's name is its id", error
 
 
+def test_kit_block_frontmatter():
+    """Every kit block opens with Agent Skills frontmatter: name (its folder), description, license, and the
+    metadata keys that docs/blocks.md names, each with a value."""
+    keys = ["kind", "owns", "serves", "needs", "gives", "conflicts", "users", "source"]
+    for path in sorted(flow_run.BLOCKS.glob("*/SKILL.md")):
+        text = path.read_text(encoding="utf-8")
+        assert text.startswith("---\n"), f"{path} has no frontmatter"
+        lines = text.split("---\n")[1].splitlines()
+        top = [line.split(":", 1)[0] for line in lines if line[:1] != " "]
+        meta = [line.strip().split(":", 1)[0] for line in lines if line[:1] == " "]
+        assert top == ["name", "description", "license", "metadata"] and meta == keys, (path, top, meta)
+        assert lines[0] == f"name: {path.parent.name}" and all(": " in line for line in lines if line != "metadata:"), path
+
+
 def test_kit_blocks_load(tmp):
     """Every kit block loads, so each has both check sections and its params are the documented ones."""
     root = Path(tmp, "kit-blocks")
@@ -1325,6 +1339,7 @@ with tempfile.TemporaryDirectory() as tmp:
                for text in (p.read_text(encoding="utf-8") for p in folder.glob("0*.md")))
 
     test_skip_text_encoding()
+    test_kit_block_frontmatter()
     test_command_wrong_count(run, folder)
     test_done_wrong_count(run, folder)
     test_take_force(run, folder)
