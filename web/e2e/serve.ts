@@ -1,4 +1,5 @@
-// Global setup: a temp SWARM_HOME with two synthetic chats, and the dev `swarm serve` on it.
+// Global setup: a temp SWARM_HOME with synthetic chats, and the dev `swarm serve` on it. One chat
+// has a live chair on a stand-in adapter, so chat actions run the real CLI with no provider.
 // E2E_SWARM and E2E_TOOL point at other builds of the two binaries, relative to the repo root.
 
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
@@ -26,6 +27,19 @@ function giantLog(session: string, lines: number): string {
     .join("\n") + "\n";
 }
 export const GIANT_LINES = 20_000;
+
+/** A pane adapter that is only shell lines: it logs each verb under $HOME and reads the chair's
+ *  screen from $HOME/screen. While $HOME/fail exists, typing fails with its text. */
+const FIXTURE_ADAPTER = `self = printf fixture-chair
+spawn = printf fixture-new
+list = printf 'fixture-chair sh\\n'
+ring = if [ -e "$HOME/fail" ]; then cat "$HOME/fail" >&2; exit 1; fi; printf '%s\\n' "$SWARM_TEXT" >> "$HOME/typed"
+interrupt = printf 'interrupt %s\\n' "$SWARM_PANE" >> "$HOME/actions"
+key = printf 'key %s %s\\n' "$SWARM_PANE" "$SWARM_KEY" >> "$HOME/actions"
+close = printf 'close %s\\n' "$SWARM_PANE" >> "$HOME/actions"
+capture = cat "$HOME/screen"
+screen = cat "$HOME/screen"
+`;
 
 let server: ChildProcess | undefined;
 
@@ -55,6 +69,21 @@ export default async function setup() {
     else writeFileSync(join(logs, `${chair}.jsonl`), giantLog(chair, GIANT_LINES));
     execFileSync(swarm, ["session", "new", "lane", "--chair", `claude:${chair}`], { cwd, env, stdio: "pipe" });
   }
+  // The live chat: its chair registers from the stand-in pane, as a chair CLI does at start.
+  mkdirSync(join(home, ".swarm/adapters"), { recursive: true });
+  writeFileSync(join(home, ".swarm/adapters/fixture.conf"), FIXTURE_ADAPTER);
+  copyFileSync(join(repo, "tests/fixtures/screens/claude-idle.txt"), join(home, "screen"));
+  const live = join(dir, "ws-live");
+  mkdirSync(live);
+  const liveChair = randomUUID();
+  copyFileSync(join(fixtures, "claude-edit.jsonl"), join(logs, `${liveChair}.jsonl`));
+  const liveEnv = { ...env, SWARM_ADAPTER: "fixture" };
+  const liveSession = execFileSync(swarm, ["session", "new", "lane", "--chair", `claude:${liveChair}`], { cwd: live, env: liveEnv, stdio: "pipe" })
+    .toString()
+    .trim()
+    .split("\n")
+    .pop()!;
+  execFileSync(swarm, ["agent", "add", "orchestrator", "orchestrator"], { env: { ...liveEnv, SWARM_SESSION_ID: liveSession }, stdio: "pipe" });
   // `sessions --json` resolves each chair log and stores its path, which serve reads.
   execFileSync(swarm, ["sessions", "--json"], { env, stdio: "pipe" });
 
@@ -68,6 +97,7 @@ export default async function setup() {
   });
   process.env.SWARM_SERVE_URL = first.trim();
   process.env.SWARM_E2E_HOME = home;
+  process.env.SWARM_E2E_LIVE = liveSession;
   return async () => {
     server?.kill();
     rmSync(dir, { recursive: true, force: true });

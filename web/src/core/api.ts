@@ -164,6 +164,24 @@ export class Api {
     return (await this.json<{ text: string }>(`/api/tool-output?${q}`)).text;
   }
 
+  /** A chat action (P0-U3). A failure throws the server's `error` text as the message. */
+  async action(path: string, body: Record<string, unknown>): Promise<void> {
+    const res = await this.fetch(path, {
+      method: "POST",
+      headers: this.headers({ "Content-Type": "application/json" }),
+      body: JSON.stringify(body),
+    });
+    if (res.ok) return;
+    const text = await res.text();
+    let message = text || `${res.status} ${res.statusText}`;
+    try {
+      message = String(JSON.parse(text).error ?? message);
+    } catch {
+      // Not JSON: keep the body text.
+    }
+    throw new ApiError(res.status, message);
+  }
+
   subscribe(stream: string, keys: SubscribeKey[]): Promise<unknown> {
     return this.json("/api/subscribe", {
       method: "POST",

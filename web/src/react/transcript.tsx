@@ -22,6 +22,7 @@ import type { MarkdownCache } from "../core/markdown";
 import { duration, parsePatch, splitPatch, type Line, type PatchLine, type SplitRow } from "../core/transcript";
 import { ContextMenu, ContextMenuTrigger } from "../components/ui/context-menu";
 import { Kbd } from "../components/ui/kbd";
+import { ChatInput } from "./composer";
 import { copyText } from "./copy";
 import { SourcePopover, TranscriptMenu, type Source } from "./transcript-overlays";
 import { store } from "./store";
@@ -32,20 +33,7 @@ export function ChatView({ app }: { app: App }) {
   return (
     <>
       <Transcript app={app} view={view} />
-      <div className="shrink-0 px-6 pt-1 pb-4">
-        <div className="mx-auto max-w-[820px] rounded-xl border border-border-strong bg-surface focus-within:border-ring">
-          <textarea
-            className="block min-h-[64px] w-full resize-none bg-transparent px-3 pt-2.5 text-base outline-none placeholder:text-faint-foreground"
-            data-testid="composer"
-            placeholder="Composer comes in P1"
-            readOnly
-          />
-          <div className="flex items-center gap-2 px-3 pb-2 text-xs text-faint-foreground">
-            <span className="flex-1">Read only</span>
-            <Kbd>⌘L</Kbd>
-          </div>
-        </div>
-      </div>
+      {view.composer && <ChatInput app={app} composer={view.composer} />}
     </>
   );
 }
@@ -384,7 +372,7 @@ function Bubble({ row, queued, children }: { row: Row; queued?: boolean; childre
     <div className="bubble-row">
       <CopyMessage row={row} />
       <div className={`bubble${queued ? " queued" : ""}`}>
-        {queued && <div className="row-label">Queued</div>}
+        {queued && <div className="row-label">{row.detail || "Queued"}</div>}
         {children}
       </div>
     </div>

@@ -1,0 +1,156 @@
+// Composer rules ported from SwarmCore (ComposerState, ComposerQueue, QueuedMessages,
+// SwarmSessionInteraction, ChatUsage). Pure, so vitest covers them.
+
+import type { Agent, Row, Session } from "./api";
+
+/** `swarm agents --json` `prompt`: a question on the agent's screen (ADR 0029). */
+export type Prompt = { id: string; question: string; choices: string[] };
+
+export type SendKey = "return" | "commandReturn";
+
+/** Settings › Appearance › Send with. P2a serves the owner's choices; until then this key. */
+export const SEND_KEY_STORAGE = "swarm.composer.sendKey";
+
+/** Only a bare Return, or ⌘Return when the setting says so, sends; any other Return adds a line. */
+export function sends(e: Pick<KeyboardEvent, "metaKey" | "shiftKey" | "altKey" | "ctrlKey">, key: SendKey): boolean {
+  return !e.shiftKey && !e.altKey && !e.ctrlKey && e.metaKey === (key === "commandReturn");
+}
+
+/** The text that leaves the box, or null when nothing should be sent. */
+export function outgoing(draft: string): string | null {
+  const text = draft.trim();
+  return text ? text : null;
+}
+
+/** The text to type into a CLI, so the Enter after it can only submit (Composer.submission).
+ *  A typed ESC interrupts the turn, so C0 controls other than TAB and LF go, and CR and CRLF become
+ *  LF. A last word ending in `\` or `:`, or starting with `@`, `$` or `/`, gets one space, so a CLI
+ *  popup does not take the Enter. */
+export function submission(text: string): string {
+  // eslint-disable-next-line no-control-regex
+  const cleaned = text.replace(/\r\n?/g, "\n").replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "");
+  if (!cleaned || /\s$/.test(cleaned)) return cleaned;
+  const word = cleaned.split(/\s+/).pop()!;
+  return word.endsWith("\\") || word.endsWith(":") || "@$/".includes(word[0]) ? cleaned + " " : cleaned;
+}
+
+/** `C-u` presses that empty a CLI box holding `texts`, one per line (QueuePullBack.clearPresses). */
+export function clearPresses(texts: string[]): number {
+  return 2 * texts.join("\n").split("\n").length + 1;
+}
+
+/** What Up found once the queued rows left: texts back in the CLI box, or texts the CLI took. */
+export type PullBack = { state: "pulled"; texts: string[]; presses: number } | { state: "alreadySent"; presses: number } | { state: "waiting" };
+
+/** Decides a pull-back from rows. `queued` are the owner's queued rows when Up was pressed, and
+ *  `before` the row ids then. A queued row that left with a new user row of the same text was taken
+ *  by the CLI; one that left without one was popped into the CLI box. */
+export function decidePullBack(queued: Row[], before: ReadonlySet<string>, rows: readonly Row[]): PullBack {
+  const ids = new Set(rows.map((r) => r.id));
+  if (queued.some((q) => ids.has(q.id))) return { state: "waiting" };
+  const taken = new Map<string, number>();
+  for (const r of rows)
+    if (r.kind === "user" && !before.has(r.id)) {
+      const t = r.text.trim();
+      taken.set(t, (taken.get(t) ?? 0) + 1);
+    }
+  const pulled: string[] = [];
+  for (const q of queued) {
+    const t = q.text.trim();
+    const n = taken.get(t) ?? 0;
+    if (n) taken.set(t, n - 1);
+    else pulled.push(q.text);
+  }
+  if (pulled.length) return { state: "pulled", texts: pulled, presses: clearPresses(pulled) };
+  // Up recalled the last sent prompt into the box; clear that.
+  return { state: "alreadySent", presses: clearPresses([queued[queued.length - 1].text]) };
+}
+
+/** A text typed into a running Codex or AGY chat. Their logs say nothing until the agent takes it. */
+export type Sent = { row: Row; before: ReadonlySet<string> };
+
+let sentSeq = 0;
+
+export function sentRow(text: string, provider: string | null, rows: readonly Row[]): Sent {
+  const n = ++sentSeq;
+  return {
+    row: {
+      id: `sent-${n}`,
+      kind: "queued",
+      text: text.trim(),
+      detail: provider === "codex" ? "Sent · joins after the next tool call" : "Sent",
+      order: [Number.MAX_SAFE_INTEGER, n],
+    },
+    before: new Set(rows.map((r) => r.id)),
+  };
+}
+
+/** Drops each sent text that a new user row now shows; one row confirms one text. Returns the same
+ *  array when nothing left. */
+export function confirmSent(sent: Sent[], rows: readonly Row[]): Sent[] {
+  if (!sent.length) return sent;
+  const used = new Set<string>();
+  const left = sent.filter((s) => {
+    const match = rows.find((r) => r.kind === "user" && !s.before.has(r.id) && !used.has(r.id) && r.text.trim() === s.row.text);
+    if (match) used.add(match.id);
+    return !match;
+  });
+  return left.length === sent.length ? sent : left;
+}
+
+/** What the composer can do for the chat's chair, from the snapshot. */
+export type ChairInput = {
+  provider: string | null;
+  model: string | null;
+  /** Why the composer cannot send now, or null. */
+  disabled: string | null;
+  /** True when no pane takes input at all; ⌘. and the prompt card need one. */
+  unreachable: boolean;
+  running: boolean;
+  prompt: Prompt | null;
+  /** Claude in tmux keeps a queue that Up pulls back (ADR 0038). */
+  pullBack: boolean;
+};
+
+export const MISSING_ADAPTER = "This session does not record an adapter, so Swarm cannot reach its panes.";
+
+export function chairInput(session: Session | undefined, agents: readonly Agent[] | undefined): ChairInput {
+  const chair = agents?.find((a) => a.id === "orchestrator");
+  const provider = (chair?.provider as string | null | undefined) ?? session?.chair_provider ?? null;
+  const prompt = (chair?.prompt as Prompt | null | undefined) ?? null;
+  const adapter = session?.adapter?.trim() || null;
+  let disabled: string | null = null;
+  if (!adapter) disabled = MISSING_ADAPTER;
+  else if (!chair?.pane) disabled = "The chair has no pane to receive input.";
+  else if (chair.alive === false) disabled = "This chat's pane has closed. Start a new chat or switch model.";
+  const unreachable = disabled !== null;
+  // A waiting agent has a dialog open, where Enter means yes, so typed text could approve a tool.
+  if (!disabled && chair?.state === "waiting")
+    disabled = prompt ? "The agent is asking a question. Answer it first." : "The agent is asking a question. Answer it first in its pane.";
+  return {
+    provider,
+    model: (chair?.model as string | undefined) ?? null,
+    disabled,
+    unreachable,
+    running: chair?.state === "working",
+    prompt: unreachable ? null : prompt,
+    pullBack: provider === "claude" && (adapter === "tmux" || adapter === "tmux-solo"),
+  };
+}
+
+/** `/api/rows` `usage` (view::ChatUsage). */
+export type Usage = { context?: { context_tokens?: number | null } | null; remaining_percent?: number | null } | null;
+
+/** The composer's context line (ChatUsage.contextMeter). */
+export function usageLabel(usage: Usage): string {
+  const tokens = usage?.context?.context_tokens;
+  if (tokens == null) return "Usage";
+  if (usage?.remaining_percent != null) return `${usage.remaining_percent}% left`;
+  return new Intl.NumberFormat("en-US", { notation: "compact" }).format(tokens);
+}
+
+export function modelLabel(input: ChairInput): string {
+  if (input.model) return input.model;
+  const p = input.provider;
+  return `${p ? p[0].toUpperCase() + p.slice(1) : "Agent"} · Model not reported`;
+}

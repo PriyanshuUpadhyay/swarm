@@ -2,6 +2,20 @@
 
 import { Api, type Row, type RowFrame, type Snapshot, type SubscribeKey } from "./api";
 import { installKeys, Registry, search, type Command } from "./commands";
+import {
+  chairInput,
+  confirmSent,
+  decidePullBack,
+  outgoing,
+  SEND_KEY_STORAGE,
+  sentRow,
+  submission,
+  type ChairInput,
+  type Prompt,
+  type Sent,
+  type SendKey,
+  type Usage,
+} from "./composer";
 import { MarkdownCache } from "./markdown";
 import { measure, whenPainted, type PerfKind } from "./perf";
 import { readSse, type SseEvent } from "./sse";
@@ -34,6 +48,34 @@ type Chat = {
   full: Map<string, FullText>;
   md: MarkdownCache;
   built: { version: number; lines: Line[]; hidden: number } | null;
+  usage: Usage;
+  /** Texts typed into a running Codex or AGY chair, shown as queued rows until the log has them. */
+  sent: Sent[];
+};
+
+/** A failed chat action: the server's error text, and the same action again. */
+export type Banner = { text: string; retry: () => void };
+
+/** One chat's composer actions in flight. It outlives the chat's rows in the LRU. */
+export type Input = {
+  sending: boolean;
+  stopping: boolean;
+  pulling: boolean;
+  answering: { prompt: string; choice: number } | null;
+  alreadySent: boolean;
+  banner: Banner | null;
+  /** Bumped when the app changes the draft (a send or a pull-back), so the box reloads it. */
+  draftRev: number;
+};
+
+export type Composer = {
+  sessionId: string;
+  chair: ChairInput;
+  state: Input;
+  /** The owner's queued rows at the end of the transcript. */
+  queued: number;
+  usage: Usage;
+  sendKey: SendKey;
 };
 
 export type Find = { open: boolean; query: string; matches: Match[]; index: number; seq: number };
@@ -57,6 +99,7 @@ export type View = {
   full: ReadonlyMap<string, FullText>;
   find: Find;
   paletteOpen: boolean;
+  composer: Composer | null;
 };
 
 export type PaletteEntry = { id: string; title: string; hint?: string; run: () => void };
@@ -65,6 +108,23 @@ const EMPTY: Line[] = [];
 const NO_FULL: ReadonlyMap<string, FullText> = new Map();
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const chatKey = (sessionId: string) => `${sessionId}:chair`;
+const DRAFT_PREFIX = "composer.draft.";
+const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
+const readStore = (key: string): string | null => {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+};
+const writeStore = (key: string, value: string) => {
+  try {
+    if (value) localStorage.setItem(key, value);
+    else localStorage.removeItem(key);
+  } catch {
+    // Keep working without persistence.
+  }
+};
 
 export class App {
   readonly registry = new Registry();
@@ -89,6 +149,9 @@ export class App {
   private frame = 0;
   private snapshotBusy: Promise<void> | null = null;
   private snapshotAgain = false;
+  private inputs = new Map<string, Input>();
+  private drafts = new Map<string, string>();
+  private alreadySentSeq = 0;
 
   constructor(
     readonly api: Api,
@@ -110,8 +173,7 @@ export class App {
 
   private makeView(): View {
     const chat = this.openId ? this.chats.get(this.openId) : undefined;
-    if (chat && chat.built?.version !== chat.version)
-      chat.built = { version: chat.version, ...lines(chat.rows, { showHidden: chat.showHidden, folds: chat.folds, opened: chat.opened }) };
+    if (chat && chat.built?.version !== chat.version) chat.built = { version: chat.version, ...this.build(chat) };
     this.refind(chat);
     return {
       loaded: this.snapshot !== null,
@@ -132,6 +194,25 @@ export class App {
       full: chat?.full ?? NO_FULL,
       find: this.find,
       paletteOpen: this.paletteOpen,
+      composer: chat ? this.composerView(chat) : null,
+    };
+  }
+
+  private build(chat: Chat) {
+    const rows = chat.sent.length ? chat.rows.concat(chat.sent.map((s) => s.row)) : chat.rows;
+    return lines(rows, { showHidden: chat.showHidden, folds: chat.folds, opened: chat.opened });
+  }
+
+  private composerView(chat: Chat): Composer {
+    let queued = 0;
+    for (let i = chat.rows.length - 1; i >= 0 && chat.rows[i].kind === "queued"; i--) queued++;
+    return {
+      sessionId: chat.sessionId,
+      chair: this.chair(chat.sessionId),
+      state: { ...this.input(chat.sessionId) },
+      queued,
+      usage: chat.usage,
+      sendKey: readStore(SEND_KEY_STORAGE) === "commandReturn" ? "commandReturn" : "return",
     };
   }
 
@@ -179,6 +260,15 @@ export class App {
     this.snapshot = snap;
     this.roots = buildTree(snap);
     this.rows = flatten(this.roots, this.collapsed);
+    // A card stays busy until its question goes; the same question shown again is a new ask.
+    for (const [id, input] of this.inputs)
+      if (input.answering && this.chair(id).prompt?.id !== input.answering.prompt) input.answering = null;
+    // A turn that ended took or dropped every typed text (ComposerSentMessages.update).
+    for (const chat of this.chats.values())
+      if (chat.sent.length && !this.chair(chat.sessionId).running) {
+        chat.sent = [];
+        chat.version++;
+      }
     if (!this.selected || !this.rows.some((r) => r.id === this.selected)) this.selected = this.rows[0]?.id ?? null;
     if (this.liveAll) void this.loadAllForLive();
   }
@@ -261,6 +351,8 @@ export class App {
       version: 0,
       shift: false,
       loadingOlder: false,
+      usage: null,
+      sent: [],
       ...this.freshReaderState(),
     };
     this.chats.set(sessionId, chat);
@@ -284,6 +376,8 @@ export class App {
       chat.rows = mergeRows([], page.rows);
       chat.older = page.page.start_offset;
       chat.end = page.page.end_offset;
+      chat.usage = page.usage as Usage;
+      chat.sent = confirmSent(chat.sent, chat.rows);
       chat.state = "ready";
       chat.error = null;
     } catch (err) {
@@ -477,7 +571,7 @@ export class App {
     chat.opened.set(m.id, true);
     chat.version++;
     chat.shift = false;
-    chat.built = { version: chat.version, ...lines(chat.rows, { showHidden: chat.showHidden, folds: chat.folds, opened: chat.opened }) };
+    chat.built = { version: chat.version, ...this.build(chat) };
     this.findVersion = `${chat.sessionId}:${chat.version}:${chat.showHidden}:${f.open}:${f.query}`;
     this.find = { ...f, seq: f.seq + 1 };
   }
@@ -510,6 +604,163 @@ export class App {
     this.find = { ...f, index: (f.index - dir + f.matches.length) % f.matches.length };
     this.reveal(chat, this.find);
     this.notify();
+  }
+
+  // ---- composer ----
+
+  /** The chat's chair as the composer sees it, from the last snapshot. */
+  chair(sessionId: string): ChairInput {
+    return chairInput(
+      this.snapshot?.sessions.find((s) => s.id === sessionId),
+      this.snapshot?.agents[sessionId],
+    );
+  }
+
+  private input(sessionId: string): Input {
+    let input = this.inputs.get(sessionId);
+    if (!input) {
+      input = { sending: false, stopping: false, pulling: false, answering: null, alreadySent: false, banner: null, draftRev: 0 };
+      this.inputs.set(sessionId, input);
+    }
+    return input;
+  }
+
+  private update(sessionId: string, change: Partial<Input>) {
+    Object.assign(this.input(sessionId), change);
+    if (sessionId === this.openId) this.notify();
+  }
+
+  /** Each chat keeps its draft, also across a reload (ComposerDraftStore). */
+  draft(sessionId: string): string {
+    let d = this.drafts.get(sessionId);
+    if (d === undefined) this.drafts.set(sessionId, (d = readStore(DRAFT_PREFIX + sessionId) ?? ""));
+    return d;
+  }
+
+  /** The box calls this on each edit; it does not render. */
+  setDraft(sessionId: string, text: string) {
+    this.drafts.set(sessionId, text);
+    writeStore(DRAFT_PREFIX + sessionId, text);
+  }
+
+  private replaceDraft(sessionId: string, text: string) {
+    this.setDraft(sessionId, text);
+    this.update(sessionId, { draftRev: this.input(sessionId).draftRev + 1 });
+  }
+
+  /** Runs one chat action. A failure shows the server's text in the banner; only Retry runs it again. */
+  private async act(sessionId: string, busy: Partial<Input>, idle: Partial<Input>, run: () => Promise<void>, retry: () => void): Promise<boolean> {
+    this.update(sessionId, { ...busy, banner: null });
+    try {
+      await run();
+      this.update(sessionId, idle);
+      return true;
+    } catch (err) {
+      this.update(sessionId, { ...idle, banner: { text: message(err), retry } });
+      return false;
+    }
+  }
+
+  /** Types `text` into the chair. The draft clears only if it still holds the sent text. */
+  async send(sessionId: string, text: string) {
+    const chair = this.chair(sessionId);
+    const st = this.input(sessionId);
+    const out = outgoing(text);
+    // A send typed while Up and C-u presses run would be cut or garbled.
+    if (!out || st.sending || st.pulling || chair.disabled) return;
+    const typed = submission(out);
+    const ok = await this.act(
+      sessionId,
+      { sending: true },
+      { sending: false },
+      () => this.api.action("/api/chat/send", { session: sessionId, agent: "chair", text: typed }),
+      () => void this.send(sessionId, text),
+    );
+    if (!ok) return;
+    const chat = this.chats.get(sessionId);
+    if (chat && chair.running && (chair.provider === "codex" || chair.provider === "agy")) {
+      chat.sent = [...chat.sent, sentRow(typed, chair.provider, chat.rows)];
+      this.changed(chat);
+    }
+    if (this.draft(sessionId) === text) this.replaceDraft(sessionId, "");
+  }
+
+  /** ⌘. and Stop: interrupt the chair's turn. */
+  async interrupt(sessionId: string) {
+    if (this.input(sessionId).stopping || this.chair(sessionId).unreachable) return;
+    await this.act(
+      sessionId,
+      { stopping: true },
+      { stopping: false },
+      () => this.api.action("/api/chat/interrupt", { session: sessionId, agent: "chair" }),
+      () => void this.interrupt(sessionId),
+    );
+  }
+
+  /** Picks choice `choice` (zero-based); swarm refuses it when the question changed. */
+  async answer(sessionId: string, prompt: Prompt, choice: number) {
+    if (this.input(sessionId).answering?.prompt === prompt.id) return;
+    const ok = await this.act(
+      sessionId,
+      { answering: { prompt: prompt.id, choice } },
+      {},
+      () => this.api.action("/api/chat/answer", { session: sessionId, agent: "chair", prompt_id: prompt.id, choice }),
+      () => void this.answer(sessionId, prompt, choice),
+    );
+    // The card stays busy until the next snapshot drops this prompt.
+    if (!ok) this.update(sessionId, { answering: null });
+  }
+
+  dismissBanner(sessionId: string) {
+    this.update(sessionId, { banner: null });
+  }
+
+  /** ↑ on an empty draft: Claude's queued messages back into the draft, with the CLI's own keys
+   *  (ADR 0038). Up pops the queue into the CLI box, and C-u presses empty that box again. */
+  async pullBack(sessionId: string) {
+    const chat = this.chats.get(sessionId);
+    const st = this.input(sessionId);
+    const chair = this.chair(sessionId);
+    if (!chat || !chair.pullBack || chair.disabled || st.pulling || st.sending) return;
+    const queued = chat.rows.filter((r) => r.kind === "queued");
+    if (!queued.length) return;
+    const before = new Set(chat.rows.map((r) => r.id));
+    const key = (k: string) => this.api.action("/api/chat/key", { session: sessionId, agent: "chair", key: k });
+    const result: { pulled: string[] | null } = { pulled: null };
+    await this.act(
+      sessionId,
+      { pulling: true, alreadySent: false },
+      { pulling: false },
+      async () => {
+        await key("Up");
+        const deadline = performance.now() + 1500;
+        let decision = decidePullBack(queued, before, chat.rows);
+        while (decision.state === "waiting" && performance.now() < deadline) {
+          await sleep(50);
+          decision = decidePullBack(queued, before, chat.rows);
+        }
+        // C-u could wipe text Up pulled, so an unconfirmed box gets none.
+        if (decision.state === "waiting") throw new Error("Could not confirm the pull-back. Check the agent's input box.");
+        for (let i = 0; i < decision.presses; i++) {
+          if (i) await sleep(50);
+          await key("C-u");
+        }
+        if (decision.state === "pulled") result.pulled = decision.texts;
+      },
+      () => void this.pullBack(sessionId),
+    );
+    if (!result.pulled) {
+      if (this.input(sessionId).banner) return;
+      // Only the caption waits, so Send works again at once. A newer caption keeps its own timer.
+      const seq = ++this.alreadySentSeq;
+      this.update(sessionId, { alreadySent: true });
+      setTimeout(() => seq === this.alreadySentSeq && this.update(sessionId, { alreadySent: false }), 2000);
+      return;
+    }
+    // Keep anything typed while the CLI let go of the text.
+    const typed = this.draft(sessionId);
+    const text = result.pulled.join("\n");
+    this.replaceDraft(sessionId, typed ? `${text}\n${typed}` : text);
   }
 
   // ---- palette ----
@@ -590,6 +841,7 @@ export class App {
         chat.end = Math.max(chat.end, Number(f.end_offset));
       }
       if (chat.rows !== before) {
+        chat.sent = confirmSent(chat.sent, chat.rows);
         chat.version++;
         chat.shift = false;
         if (chat.sessionId === this.openId) render = true;
@@ -663,6 +915,13 @@ export class App {
         title: "Focus composer",
         chord: "Meta+L",
         run: () => document.querySelector<HTMLElement>('[data-testid="composer"]')?.focus(),
+      },
+      {
+        id: "chat.stop",
+        title: "Stop the chair",
+        chord: "Meta+.",
+        when: () => this.openId !== null && !this.chair(this.openId).unreachable,
+        run: () => void this.interrupt(this.openId!),
       },
       tree("tree.down", "Select next row", "j", (e) => this.moveSelection(1, e)),
       tree("tree.down2", "Select next row", "ArrowDown", (e) => this.moveSelection(1, e)),
