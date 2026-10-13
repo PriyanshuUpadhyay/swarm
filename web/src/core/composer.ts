@@ -8,9 +8,6 @@ export type Prompt = { id: string; question: string; choices: string[] };
 
 export type SendKey = "return" | "commandReturn";
 
-/** Settings › Appearance › Send with. P2a serves the owner's choices; until then this key. */
-export const SEND_KEY_STORAGE = "swarm.composer.sendKey";
-
 /** Only a bare Return, or ⌘Return when the setting says so, sends; any other Return adds a line. */
 export function sends(e: Pick<KeyboardEvent, "metaKey" | "shiftKey" | "altKey" | "ctrlKey">, key: SendKey): boolean {
   return !e.shiftKey && !e.altKey && !e.ctrlKey && e.metaKey === (key === "commandReturn");

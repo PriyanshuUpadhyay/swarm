@@ -204,6 +204,68 @@ fn operation_json_validation_and_plain_folder_pruning() {
     assert!(o.pinned.is_empty() && o.plain_folders.is_empty() && o.tabs.is_empty());
 }
 
+#[test]
+fn preference_ops_set_swift_keys_mute_listed_projects_and_refuse_bad_values() {
+    let tree = tree();
+    let project = tree.projects[0].path.clone();
+    let mut o = owner();
+    o.prefs = json!({"usageHUD": true, "notices": {"startAtLogin": false}});
+    let mut s = Default::default();
+    let mut apply = |o: &mut OwnerChoices, op: serde_json::Value| {
+        let mut body = json!({"revision": "r"});
+        body.as_object_mut()
+            .unwrap()
+            .extend(op.as_object().unwrap().clone());
+        let write: ChoiceWrite = serde_json::from_value(body).unwrap();
+        choices::apply(o, &mut s, &tree, write.operation, 100)
+    };
+    for op in [
+        json!({"op":"pref","key":"theme","value":"light"}),
+        json!({"op":"pref","key":"sendKey","value":"commandReturn"}),
+        json!({"op":"pref","key":"notices.post","value":false}),
+        json!({"op":"pref","key":"notices.sound","value":false}),
+        json!({"op":"pref","key":"notices.done","value":false}),
+        json!({"op":"pref","key":"notices.badge","value":false}),
+        json!({"op":"mute_project","project":project,"muted":true}),
+        json!({"op":"mute_project","project":project,"muted":true}),
+    ] {
+        apply(&mut o, op).unwrap();
+    }
+    assert_eq!(
+        o.prefs,
+        json!({"usageHUD": true, "theme": "light", "sendKey": "commandReturn", "notices": {
+            "startAtLogin": false, "post": false, "sound": false, "done": false, "badge": false,
+            "mutedProjects": [project]}})
+    );
+    apply(
+        &mut o,
+        json!({"op":"mute_project","project":project,"muted":false}),
+    )
+    .unwrap();
+    assert_eq!(o.prefs["notices"]["mutedProjects"], json!([]));
+    let before = o.prefs.clone();
+    for op in [
+        json!({"op":"pref","key":"theme","value":"blue"}),
+        json!({"op":"pref","key":"sendKey","value":true}),
+        json!({"op":"pref","key":"notices.post","value":"no"}),
+        json!({"op":"pref","key":"notices.startAtLogin","value":true}),
+        json!({"op":"pref","key":"usageHUD","value":true}),
+        json!({"op":"mute_project","project":"/not/listed","muted":true}),
+    ] {
+        assert!(apply(&mut o, op).is_err());
+    }
+    assert_eq!(o.prefs, before);
+    o.prefs["notices"] = json!("broken");
+    assert!(
+        apply(
+            &mut o,
+            json!({"op":"pref","key":"notices.post","value":true})
+        )
+        .is_err()
+    );
+    assert_eq!(o.prefs["notices"], "broken");
+}
+
 #[cfg(target_os = "macos")]
 #[test]
 fn rust_written_choices_pass_production_swift_decoder() {

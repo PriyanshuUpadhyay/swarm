@@ -6,7 +6,6 @@ import {
   agentInput,
   confirmSent,
   outgoing,
-  SEND_KEY_STORAGE,
   sentRow,
   submission,
   type AgentInput,
@@ -21,6 +20,7 @@ import { readSse, type SseEvent } from "./sse";
 import { isChair, movePane, paneCells, paneStatus, type Direction, type PaneCell } from "./panes";
 import { FoldChoices, findMatches, lines, mergeRows, type Line, type Match } from "./transcript";
 import { Lifecycle } from "./lifecycle";
+import { Settings } from "./settings";
 import {
   chatRows,
   foldId,
@@ -225,6 +225,8 @@ export class App {
   readonly registry = new Registry();
   /** New workspace, switch model, archive, delete and Recently closed (S3). */
   readonly life = new Lifecycle(this);
+  /** Usage meters and Settings (S5). */
+  readonly settings = new Settings(this);
   view: View;
   private snapshot: Snapshot | null = null;
   private tree: TreeView | null = null;
@@ -290,7 +292,7 @@ export class App {
       this.dismissed = {};
     }
     this.view = this.makeView();
-    this.registry.add(...this.commands());
+    this.registry.add(...this.commands(), ...this.settings.commands());
   }
 
   subscribe = (fn: () => void) => {
@@ -304,7 +306,7 @@ export class App {
   }
 
   private makeView(): View {
-    const sendKey: SendKey = readStore(SEND_KEY_STORAGE) === "commandReturn" ? "commandReturn" : "return";
+    const sendKey: SendKey = this.tree?.prefs?.sendKey === "commandReturn" ? "commandReturn" : "return";
     const chat = this.open;
     const cells = this.cells();
     // A pane that left the strip takes its focus, its zoom and its Find with it.
@@ -1632,7 +1634,6 @@ export class App {
       { id: "recent.closed", title: "Recently closed…", chord: "Shift+Meta+T", palette: false, run: () => this.life.openClosed() },
       { id: "recent.prev", title: "Previous Recent Chat", chord: "Ctrl+Tab", palette: false, run: (e) => this.stepRecent(-1, e) },
       { id: "recent.next", title: "Next Recent Chat", chord: "Ctrl+Shift+Tab", palette: false, run: (e) => this.stepRecent(1, e) },
-      later("settings", "Settings…", "Meta+,", "S5", false),
       tree("tree.down", "Select next row", "j", (e) => this.moveSelection(1, e)),
       tree("tree.down2", "Select next row", "ArrowDown", (e) => this.moveSelection(1, e)),
       tree("tree.up", "Select previous row", "k", (e) => this.moveSelection(-1, e)),

@@ -12,12 +12,13 @@ import "../styles.css";
 import { PanelToggles, WorkspacePanel } from "./changes";
 import { AskDialog, Home, WorkspaceLanding } from "./home";
 import { LifecycleDialogs } from "./lifecycle";
+import { SettingsDialog } from "./settings";
 import { Palette } from "./palette";
 import { PaneStrip } from "./panes";
 import { Sidebar } from "./sidebar";
 import { store } from "./store";
 import { TabStrip } from "./tabs";
-import { applyTheme, setTheme, useTheme } from "./theme";
+import { applyTheme, chooseTheme, followTheme, useTheme } from "./theme";
 
 // Sidebar side and width stay in this browser until P3b adds their owner choices.
 const SIDE_KEY = "swarm.sidebar.side";
@@ -26,6 +27,7 @@ const frame = { toggle: () => {}, move: () => {} };
 
 function Root({ app, changes }: { app: App; changes: Changes }) {
   useEffect(() => app.start(), [app]);
+  useEffect(() => followTheme(app), [app]);
   const theme = useTheme();
   const sidebar = usePanelRef();
   const [side, setSide] = useState(store.getItem(SIDE_KEY) === "right" ? "right" : "left");
@@ -71,6 +73,7 @@ function Root({ app, changes }: { app: App; changes: Changes }) {
       <Palette app={app} />
       <AskDialog app={app} />
       <LifecycleDialogs app={app} />
+      <SettingsDialog app={app} />
       <Toaster theme={theme} position="bottom-right" />
     </TooltipProvider>
   );
@@ -109,7 +112,7 @@ if (typeof app !== "string") {
     { id: "sidebar.move", title: "Move Sidebar to Other Side", chord: "Shift+Meta+B", run: () => frame.move() },
   );
   for (const t of ["system", "light", "dark"] as const)
-    app.registry.add({ id: `theme.${t}`, title: `Theme: ${t[0].toUpperCase()}${t.slice(1)}`, run: () => setTheme(t) });
+    app.registry.add({ id: `theme.${t}`, title: `Theme: ${t[0].toUpperCase()}${t.slice(1)}`, run: () => chooseTheme(app, t) });
 }
 const root = createRoot(document.getElementById("root")!);
 root.render(typeof app === "string" ? <p className="p-6 text-muted-foreground">{app}</p> : <Root app={app} changes={changes!} />);

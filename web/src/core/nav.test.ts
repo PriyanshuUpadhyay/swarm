@@ -46,6 +46,7 @@ const tree = (sections: Section[], view: TreeView["view"] = "workspaces"): TreeV
   selectedRow: null,
   archivedStatus: null,
   choicesError: null,
+  prefs: {},
 });
 
 // Project /r/app with workspaces main (two chats, the first with a child) and feature; a pinned /r/web.

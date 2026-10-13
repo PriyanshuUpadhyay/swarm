@@ -407,10 +407,83 @@
 .view-switch button:hover {
   color: var(--foreground);
 }
-.view-switch button[aria-selected="true"] {
+.view-switch button[aria-selected="true"],
+.view-switch button[aria-checked="true"] {
   background: var(--selected);
   color: var(--foreground);
   box-shadow: 0 1px 2px rgb(0 0 0 / 0.12);
+}
+
+/* The usage meters in the sidebar footer (S5): one line per window. */
+.usage-meters {
+  display: grid;
+  flex: none;
+  gap: 4px;
+  padding: 6px 10px 8px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+}
+.meter-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 16px;
+}
+.meter-line[data-old] {
+  opacity: 0.6;
+}
+.meter-window {
+  width: 20px;
+  flex: none;
+  color: var(--muted-foreground);
+}
+.meter-bar {
+  position: relative;
+  flex: 1;
+  min-width: 24px;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--selected);
+}
+.meter-bar > span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 2px;
+}
+
+/* A switch on a native checkbox, so the browser keeps its keys and its form role. */
+.toggle {
+  appearance: none;
+  position: relative;
+  flex: none;
+  width: 28px;
+  height: 16px;
+  border-radius: 8px;
+  background: var(--border-strong);
+  transition: background-color 120ms;
+}
+.toggle::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 6px;
+  background: var(--background);
+  transition: transform 120ms;
+}
+.toggle:checked {
+  background: var(--brand);
+}
+.toggle:checked::after {
+  transform: translateX(12px);
+}
+.toggle:focus-visible {
+  outline: 1px solid var(--ring);
+  outline-offset: 2px;
 }
 
 /* jean's Recent rows: two lines, the open one raised as a card. */

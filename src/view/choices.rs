@@ -277,6 +277,16 @@ pub enum ChoiceOp {
         list: String,
         fields: Vec<String>,
     },
+    /// One owner preference under `prefs`, in the Swift `Prefs` keys: `theme`, `sendKey`, or a
+    /// notice switch `notices.post|sound|done|badge` that `swarm notices --due` reads (ADR 0077).
+    Pref {
+        key: String,
+        value: Value,
+    },
+    MuteProject {
+        project: String,
+        muted: bool,
+    },
 }
 fn yes() -> bool {
     true
@@ -446,9 +456,59 @@ pub fn apply(
                 _ => return Err("unknown row field list".into()),
             }
         }
+        ChoiceOp::Pref { key, value } => {
+            let valid = match key.as_str() {
+                "theme" => matches!(value.as_str(), Some("system" | "light" | "dark")),
+                "sendKey" => matches!(value.as_str(), Some("return" | "commandReturn")),
+                "notices.post" | "notices.sound" | "notices.done" | "notices.badge" => {
+                    value.is_boolean()
+                }
+                _ => return Err("unknown preference".into()),
+            };
+            if !valid {
+                return Err(format!("invalid value for {key}"));
+            }
+            let (section, name) = key
+                .split_once('.')
+                .map_or((None, key.as_str()), |(section, name)| {
+                    (Some(section), name)
+                });
+            prefs_object(&mut owner.prefs, section)?.insert(name.into(), value);
+        }
+        ChoiceOp::MuteProject { project, muted } => {
+            if !tree.projects.iter().any(|p| p.path == project) {
+                return Err("unknown project".into());
+            }
+            let paths = prefs_object(&mut owner.prefs, Some("notices"))?
+                .entry("mutedProjects")
+                .or_insert_with(|| Value::Array(Vec::new()))
+                .as_array_mut()
+                .ok_or("prefs.notices.mutedProjects must be a list")?;
+            paths.retain(|path| path != project.as_str());
+            if muted {
+                paths.push(project.into());
+            }
+        }
         op => apply_tab(owner, state, tree, op)?,
     }
     Ok(())
+}
+
+/// `prefs`, or its `section` object made when absent. A value of another type is refused, not
+/// replaced, so a Swift field that Rust does not know survives.
+fn prefs_object<'a>(
+    prefs: &'a mut Value,
+    section: Option<&str>,
+) -> Result<&'a mut serde_json::Map<String, Value>, String> {
+    let prefs = prefs.as_object_mut().ok_or("prefs must be an object")?;
+    match section {
+        None => Ok(prefs),
+        Some(section) => prefs
+            .entry(section)
+            .or_insert_with(object)
+            .as_object_mut()
+            .ok_or_else(|| format!("prefs.{section} must be an object")),
+    }
 }
 
 fn rename(names: &mut BTreeMap<String, String>, key: String, name: String) {

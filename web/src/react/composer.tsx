@@ -197,7 +197,7 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
           onKeyDown={onKeyDown}
         />
         <div className="flex items-center gap-2 px-2 pb-2 text-xs text-muted-foreground">
-          {/* S5 opens the Usage view from the usage line. A child's model does not switch. */}
+          {/* A child's model does not switch. */}
           <button
             type="button"
             data-testid="model-chip"

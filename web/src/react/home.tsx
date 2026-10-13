@@ -3,7 +3,9 @@
 import { CircleCheckIcon, CircleIcon } from "lucide-react";
 import { useState, useSyncExternalStore } from "react";
 import type { App } from "../core/app";
+import type { Load } from "../core/changes";
 import { workspaceRow } from "../core/nav";
+import { USAGE_PROVIDERS, type Usage } from "../core/settings";
 import { Button } from "../components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "../components/ui/dialog";
 import { StatusGlyph } from "./status";
@@ -13,6 +15,7 @@ export function Home({ app }: { app: App }) {
   const recent = view.recent.slice(0, 8);
   const hasProject = (view.tree?.sections.length ?? 0) > 0;
   const hasChat = recent.length > 0;
+  const hasAccount = useSyncExternalStore(app.settings.subscribe, () => signedIn(app.settings.state.usage));
   return (
     <div className="min-h-0 flex-1 overflow-y-auto" data-testid="home">
       <div className="mx-auto grid max-w-[760px] gap-8 px-8 py-8">
@@ -29,7 +32,7 @@ export function Home({ app }: { app: App }) {
           <section className="grid gap-3" aria-label="Get started">
             <h2 className="text-lg font-semibold">Get started</h2>
             <Step done={hasProject} title="Import a project" run={() => app.life.openProject("import")} />
-            <Step done={false} title="Run setup" phase="S5" />
+            <Step done={hasAccount} title="Sign in to an account" run={() => app.settings.show("accounts")} />
             <Step done={hasChat} title="Start a chat" run={hasProject ? () => app.life.newWorkspace() : undefined} />
           </section>
         )}
@@ -59,14 +62,18 @@ export function Home({ app }: { app: App }) {
 }
 
 /** A first-run step: its action, or the phase that brings it. */
-function Step({ done, title, phase, run }: { done: boolean; title: string; phase?: string; run?: () => void }) {
+/** A Claude or Codex account with a sign-in, from the cached meters the sidebar footer reads. */
+function signedIn(usage: Load<Usage>): boolean {
+  return usage.state === "ready" && usage.data.meters.some((m) => USAGE_PROVIDERS.includes(m.provider) && m.state !== "no_source" && m.reason_code !== "no_credentials");
+}
+
+function Step({ done, title, run }: { done: boolean; title: string; run?: () => void }) {
   return (
     <div className="flex items-center gap-3">
       {done ? <CircleCheckIcon className="size-4 text-done" aria-label="Done" /> : <CircleIcon className="size-4 text-muted-foreground" aria-label="To do" />}
-      <Button variant="ghost" size="sm" disabled={!run} title={phase ? `Comes in ${phase}` : undefined} onClick={run}>
+      <Button variant="ghost" size="sm" disabled={!run} onClick={run}>
         {title}
       </Button>
-      {phase && <span className="text-xs text-faint-foreground">comes in {phase}</span>}
     </div>
   );
 }

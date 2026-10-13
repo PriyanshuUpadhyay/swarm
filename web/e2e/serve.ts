@@ -74,6 +74,22 @@ const GH = [
 ].join("\n");
 export const GIANT_DIFF_LINES = 20_000;
 
+/** Provider stand-ins for the usage and account reads (S5): a signed-in Claude account, a keychain
+ *  token that is not a secret, and a usage API answer. Codex has no CLI here, so its account reads
+ *  as unavailable. No case reaches a provider, the network or the real keychain. */
+export const CLAUDE_EMAIL = "owner@example.invalid";
+const STAND_INS: Record<string, string> = {
+  claude: `printf '%s\\n' '{"loggedIn":true,"email":"${CLAUDE_EMAIL}"}'`,
+  security: `printf '%s\\n' '{"claudeAiOauth":{"accessToken":"e2e-not-a-token"}}'`,
+  curl: `cat >/dev/null; printf '%s\\n200' '{"five_hour":{"utilization":13,"resets_at":"2099-01-01T00:00:00Z"},"seven_day":{"utilization":42}}'`,
+};
+/** The login pane stand-in: the shipped tmux-solo adapter with spawn and ring replaced, so
+ *  \`accounts login\` "opens" a pane and the login command it types lands in $HOME/login-typed. */
+export const LOGIN_PANE = "login-pane-e2e";
+const LOGIN_ADAPTER = `spawn = printf ${LOGIN_PANE}
+ring = printf '%s\\n' "$SWARM_TEXT" >> "$HOME/login-typed"
+`;
+
 /** A git workspace on branch `feature`, one commit ahead of origin/main, with a staged, an
  *  unstaged and a 20,000-line untracked file. Its origin is GitHub, for the PR lookup. */
 function gitWorkspace(cwd: string, env: NodeJS.ProcessEnv) {
@@ -110,6 +126,8 @@ export default async function setup() {
   // The stand-in gh comes first on PATH, so no case reaches GitHub.
   mkdirSync(join(dir, "bin"));
   writeFileSync(join(dir, "bin/gh"), GH, { mode: 0o755 });
+  mkdirSync(join(dir, "stand-ins"));
+  for (const [name, body] of Object.entries(STAND_INS)) writeFileSync(join(dir, "stand-ins", name), `#!/bin/sh\n${body}\n`, { mode: 0o755 });
   const env: NodeJS.ProcessEnv = {
     PATH: `${join(dir, "bin")}:${process.env.PATH}`,
     HOME: home,
@@ -117,6 +135,14 @@ export default async function setup() {
     CLAUDE_CONFIG_DIR: join(home, ".claude"),
     CODEX_HOME: join(home, ".codex"),
     SWARM_TRANSCRIPT_TOOL: tool,
+    USER: "e2e",
+    SWARM_CLAUDE_CMD: join(dir, "stand-ins/claude"),
+    SWARM_CODEX_CMD: "/usr/bin/false",
+    SWARM_SECURITY_CMD: join(dir, "stand-ins/security"),
+    SWARM_CURL_CMD: join(dir, "stand-ins/curl"),
+    SWARM_CLAUDE_USAGE_URL: "http://usage.invalid/",
+    // A path that does not exist, so a notice never starts an installed helper.
+    SWARM_NOTIFY_APP: join(dir, "no-notify-helper.app"),
   };
   const logs = join(home, ".claude/projects/e2e");
   mkdirSync(logs, { recursive: true });
@@ -141,6 +167,7 @@ export default async function setup() {
   // The live chat: its chair registers from the stand-in pane, as a chair CLI does at start.
   mkdirSync(join(home, ".swarm/adapters"), { recursive: true });
   writeFileSync(join(home, ".swarm/adapters/fixture.conf"), FIXTURE_ADAPTER);
+  writeFileSync(join(home, ".swarm/adapters/tmux-solo.conf"), LOGIN_ADAPTER);
   copyFileSync(join(repo, "tests/fixtures/screens/claude-idle.txt"), join(home, "screen"));
   const live = join(dir, "ws-live");
   mkdirSync(live);
@@ -252,6 +279,8 @@ export default async function setup() {
     if (!res.ok) throw new Error(`import ${path}: ${res.status} ${await res.text()}`);
   }
   process.env.SWARM_E2E_HOME = home;
+  process.env.SWARM_E2E_SWARM = swarm;
+  process.env.SWARM_E2E_NOTIFY_APP = env.SWARM_NOTIFY_APP;
   process.env.SWARM_E2E_LIVE = liveSession;
   process.env.SWARM_E2E_DIR = dir;
   return async () => {

@@ -44,7 +44,18 @@ const p = (xs, q) => {
 
 function startServer() {
   const child = spawn(swarm, ["serve", "--port", "0", "--assets", dist], {
-    env: { ...process.env, SWARM_HOME: home, SWARM_TRANSCRIPT_TOOL: tool },
+    // The page reads /api/usage at start. Provider homes point into the perf home and the provider
+    // CLIs are stand-ins that fail, so no read reaches the owner's sign-ins or the network.
+    env: {
+      ...process.env,
+      SWARM_HOME: home,
+      SWARM_TRANSCRIPT_TOOL: tool,
+      HOME: home,
+      CLAUDE_CONFIG_DIR: path.join(home, ".claude"),
+      CODEX_HOME: path.join(home, ".codex"),
+      SWARM_CLAUDE_CMD: "/usr/bin/false",
+      SWARM_CODEX_CMD: "/usr/bin/false",
+    },
     stdio: ["ignore", "pipe", "inherit"],
   });
   return new Promise((resolve, reject) => {

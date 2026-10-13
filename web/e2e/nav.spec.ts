@@ -32,6 +32,9 @@ async function openChat(tab: Page, session: string) {
 }
 
 test("a workspace dragged onto the Pinned header is pinned; the menu pins and unpins", async ({ page: tab }) => {
+  // After the other specs the tree is long. WebKit drops a drag that must scroll the list on the
+  // way, so both rows must fit above the usage footer.
+  await tab.setViewportSize({ width: 1280, height: 900 });
   const errors = await open(tab);
   const pinnedIds = async () => (await readTree()).sections.find((s) => s.kind === "pinned")?.rows.filter((r) => r.kind === "workspace").map((r) => r.id) ?? [];
   const live = (await workspaceRow(tab, "ws-live").getAttribute("data-id"))!;

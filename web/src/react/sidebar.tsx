@@ -21,7 +21,8 @@ import { Kbd } from "../components/ui/kbd";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../components/ui/tooltip";
 import { NewChatMenu, RowHints, RowMenu, type NewChatAnchor } from "./row-overlays";
 import { StatusGlyph } from "./status";
-import { setTheme, useTheme, type Theme } from "./theme";
+import { UsageMeters } from "./settings";
+import { chooseTheme, useTheme, type Theme } from "./theme";
 
 export function Sidebar({ app }: { app: App }) {
   const sidebarView = useSyncExternalStore(app.subscribe, () => app.view.sidebarView);
@@ -30,6 +31,7 @@ export function Sidebar({ app }: { app: App }) {
       <SidebarHeader app={app} />
       <ViewSwitch app={app} current={sidebarView} />
       {sidebarView === 2 ? <RecentList app={app} /> : <WorkspaceList app={app} />}
+      <UsageMeters app={app} />
     </div>
   );
 }
@@ -403,14 +405,14 @@ function SidebarHeader({ app }: { app: App }) {
         <span className="flex-1 text-left">Search…</span>
         <Kbd>⌘K</Kbd>
       </button>
-      <ThemeMenu />
+      <ThemeMenu app={app} />
     </div>
   );
 }
 
 const THEME_ICON = { system: MonitorIcon, light: SunIcon, dark: MoonIcon };
 
-function ThemeMenu() {
+function ThemeMenu({ app }: { app: App }) {
   const theme = useTheme();
   const Icon = THEME_ICON[theme];
   return (
@@ -422,7 +424,7 @@ function ThemeMenu() {
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
         <DropdownMenuLabel>Appearance</DropdownMenuLabel>
-        <DropdownMenuRadioGroup value={theme} onValueChange={(v) => setTheme(v as Theme)}>
+        <DropdownMenuRadioGroup value={theme} onValueChange={(v) => chooseTheme(app, v as Theme)}>
           <DropdownMenuRadioItem value="system">
             <MonitorIcon /> System
           </DropdownMenuRadioItem>

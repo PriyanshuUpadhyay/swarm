@@ -252,6 +252,11 @@ export class Lifecycle {
 
   // ---- chats ----
 
+  /** After a profile write in Settings, so the next menu reads the new list. */
+  forgetProfiles() {
+    this.roles = null;
+  }
+
   /** The profiles for the new-chat menu, read once. */
   profiles(): Promise<Profile[]> {
     this.roles ??= this.api.get<{ profiles: Profile[] }>("/api/roles").then(

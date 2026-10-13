@@ -308,10 +308,12 @@ fn router(app: App) -> Router {
         .route("/api/issues", get(panel_read))
         .route("/api/usage", get(usage_read))
         .route("/api/usage/refresh", post(usage_refresh))
-        .route("/api/roles", get(menu_read))
+        .route("/api/roles", get(menu_read).post(owner_write))
         .route("/api/providers", get(menu_read))
         .route("/api/models", get(menu_read))
         .route("/api/accounts", get(menu_read))
+        .route("/api/accounts/login", post(owner_write))
+        .route("/api/accounts/reset", post(owner_write))
         .route("/api/chat/continue", post(continue_chat))
         .route("/api/chat/continue/cancel", post(cancel_continue))
         .route("/api/workspace/new-options", get(lifecycle_read))
@@ -597,6 +599,7 @@ async fn tree_view(
             "selectedRow": selected_row,
             "archivedStatus": archived_status,
             "choicesError": choices_error,
+            "prefs": saved.owner.prefs,
         })))
     })
     .await
@@ -706,6 +709,163 @@ async fn menu_read(
     serde_json::from_str(&text)
         .map(Json)
         .map_err(|_| error(StatusCode::BAD_GATEWAY, "invalid menu JSON from swarm"))
+}
+#[derive(Deserialize)]
+#[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
+enum ProfileOp {
+    Save { profile: Value },
+    New { name: String },
+    Rename { name: String, to: String },
+    Copy { name: String, to: String },
+    Delete { name: String },
+    Reset,
+    MinUsage { pct: u8 },
+}
+#[derive(Deserialize)]
+struct ProfileWrite {
+    revision: String,
+    #[serde(flatten)]
+    op: ProfileOp,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AccountLogin {
+    provider: String,
+    name: String,
+    revision: String,
+    /// The login pane opens here when it is a listed workspace, else in the home folder (Swift).
+    workspace: Option<String>,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AccountReset {
+    revision: String,
+}
+/// Profile and account writes (S5). Each runs the `swarm roles` or `swarm accounts` owner with the
+/// revision the page read.
+#[derive(Deserialize)]
+enum OwnerWrite {
+    Profile(ProfileWrite),
+    Login(AccountLogin),
+    ResetAccounts(AccountReset),
+}
+async fn owner_write(
+    State(app): State<App>,
+    uri: Uri,
+    body: Result<Json<Value>, JsonRejection>,
+) -> Result<Json<Value>, ApiError> {
+    let Json(body) = body.map_err(|e| {
+        error(
+            if e.status() == StatusCode::PAYLOAD_TOO_LARGE {
+                e.status()
+            } else {
+                StatusCode::BAD_REQUEST
+            },
+            &e.body_text(),
+        )
+    })?;
+    let kind = match uri.path() {
+        "/api/roles" => "Profile",
+        "/api/accounts/login" => "Login",
+        _ => "ResetAccounts",
+    };
+    let write = serde_json::from_value(json!({ kind: body }))
+        .map_err(|e| error(StatusCode::BAD_REQUEST, &e.to_string()))?;
+    enqueue_action(&app, Action::Owner(write)).await.map(Json)
+}
+async fn run_owner_write(app: &App, write: OwnerWrite) -> Result<Value, ApiError> {
+    let flag = |revision: String| ["--revision".to_owned(), revision];
+    let args: Vec<String> = match write {
+        OwnerWrite::Profile(ProfileWrite { revision, op }) => {
+            let mut args = vec!["roles".to_owned()];
+            match op {
+                ProfileOp::Save { profile } => {
+                    args.push("save".into());
+                    args.extend(flag(revision));
+                    args.push(profile.to_string());
+                    return owner_cli(app, args).await;
+                }
+                ProfileOp::New { name } => args.extend(["new".into(), name]),
+                ProfileOp::Rename { name, to } => args.extend(["rename".into(), name, to]),
+                ProfileOp::Copy { name, to } => args.extend(["copy".into(), name, to]),
+                ProfileOp::Delete { name } => args.extend(["delete".into(), name]),
+                ProfileOp::Reset => args.push("reset".into()),
+                ProfileOp::MinUsage { pct } => {
+                    args.extend(["set-min-usage".into(), pct.to_string()])
+                }
+            }
+            args.extend(flag(revision));
+            args
+        }
+        OwnerWrite::Login(body) => {
+            if !["claude", "codex"].contains(&body.provider.as_str()) {
+                return Err(error(
+                    StatusCode::BAD_REQUEST,
+                    "Accounts sign in to claude or codex",
+                ));
+            }
+            let listed = match body.workspace {
+                Some(path) => {
+                    let app = app.clone();
+                    tokio::task::spawn_blocking(move || {
+                        (loaded_tree(&app)
+                            .is_ok_and(|(tree, _, _)| lifecycle::workspace(&tree, &path).is_ok())
+                            && Path::new(&path).is_dir())
+                        .then_some(path)
+                    })
+                    .await
+                    .ok()
+                    .flatten()
+                }
+                None => None,
+            };
+            let cwd = listed
+                .or_else(|| std::env::var("HOME").ok())
+                .ok_or_else(|| error(StatusCode::INTERNAL_SERVER_ERROR, "HOME is not set"))?;
+            let mut args = vec![
+                "accounts".to_owned(),
+                "login".into(),
+                "--provider".into(),
+                body.provider,
+                "--name".into(),
+                body.name,
+            ];
+            args.extend(flag(body.revision));
+            args.extend(["--json".into(), "--cwd".into(), cwd]);
+            args
+        }
+        OwnerWrite::ResetAccounts(body) => {
+            let mut args = vec!["accounts".to_owned(), "reset".into()];
+            args.extend(flag(body.revision));
+            args.push("--json".into());
+            args
+        }
+    };
+    owner_cli(app, args).await
+}
+async fn owner_cli(app: &App, args: Vec<String>) -> Result<Value, ApiError> {
+    // The Swift app's adapter, so the login pane opens where its chats do; a credential never
+    // passes through this server.
+    let call = CliCall {
+        args,
+        cwd: app.root.clone(),
+        session: None,
+        adapter: "tmux-solo".into(),
+    };
+    let output = run_cli(app, call, None).await.map_err(|(status, body)| {
+        let stale = body.0["error"]
+            .as_str()
+            .is_some_and(|text| text.contains("changed on disk"));
+        // run_cli reports every refusal as 409. Only a stale revision keeps it, so the page
+        // reloads on a conflict and shows any other refusal as it is.
+        if status == StatusCode::CONFLICT && !stale {
+            (StatusCode::BAD_REQUEST, body)
+        } else {
+            (status, body)
+        }
+    })?;
+    serde_json::from_str(&output)
+        .map_err(|_| error(StatusCode::BAD_GATEWAY, "invalid JSON from swarm"))
 }
 fn apply_choice(app: &App, body: choices::ChoiceWrite) -> Result<Value, ApiError> {
     let snapshot = {
@@ -1629,6 +1789,7 @@ enum Action {
     RefreshView,
     Lifecycle(LifecycleAction),
     UsageRefresh(UsageRefresh),
+    Owner(OwnerWrite),
 }
 
 struct ActionJob {
@@ -1725,6 +1886,7 @@ impl Action {
             | Self::Choices(_)
             | Self::Lifecycle(_)
             | Self::UsageRefresh(_)
+            | Self::Owner(_)
             | Self::RefreshView => None,
         }
     }
@@ -1756,6 +1918,7 @@ fn start_action_queue(app: &App, mut queue: mpsc::Receiver<ActionJob>) {
                             | Action::Choices(_)
                             | Action::Lifecycle(_)
                             | Action::UsageRefresh(_)
+                            | Action::Owner(_)
                     );
                     let result = execute_action(&app, job.action).await;
                     if changed {
@@ -1909,6 +2072,7 @@ async fn execute_action(app: &App, action: Action) -> Result<Value, ApiError> {
         }
         Action::Lifecycle(action) => return execute_lifecycle(app, action).await,
         Action::UsageRefresh(body) => return refresh_usage(app, &body.provider).await,
+        Action::Owner(write) => return run_owner_write(app, write).await,
         Action::RefreshView => {
             let app = app.clone();
             return tokio::task::spawn_blocking(move || refresh_tree(&app))
@@ -4461,6 +4625,121 @@ printf '{"schema":"swarm.usage.v1","meters":[]}\n'
             .lane()
             .is_none()
         );
+    }
+
+    #[tokio::test]
+    async fn profile_and_account_writes_run_their_owner_and_only_a_stale_revision_is_409() {
+        let fixture = action_fixture();
+        std::fs::write(
+            &fixture.app.cli,
+            r#"#!/bin/sh
+printf '%s|%s|%s\n' "$SWARM_ADAPTER" "$PWD" "$*" >> "$SWARM_HOME/actions"
+case "$*" in
+  *stale*) printf 'swarm: profiles changed on disk; reload and try again' >&2; exit 1 ;;
+  *refused*) printf 'swarm: Invalid account name' >&2; exit 1 ;;
+esac
+printf '{"revision":"next"}\n'
+"#,
+        )
+        .unwrap();
+        let write = |route: &'static str, body: Value| {
+            owner_write(
+                State(fixture.app.clone()),
+                Uri::from_static(route),
+                Ok(Json(body)),
+            )
+        };
+        let last_call = || action_calls(&fixture).lines().last().unwrap().to_owned();
+        let root = fixture.app.root.to_str().unwrap().to_owned();
+        for (body, args) in [
+            (
+                json!({"revision":"r1","op":"save","profile":{"name":"chat","runners":[]}}),
+                r#"roles save --revision r1 {"name":"chat","runners":[]}"#,
+            ),
+            (
+                json!({"revision":"r1","op":"new","name":"review"}),
+                "roles new review --revision r1",
+            ),
+            (
+                json!({"revision":"r1","op":"rename","name":"review","to":"check"}),
+                "roles rename review check --revision r1",
+            ),
+            (
+                json!({"revision":"r1","op":"copy","name":"check","to":"check2"}),
+                "roles copy check check2 --revision r1",
+            ),
+            (
+                json!({"revision":"r1","op":"delete","name":"check2"}),
+                "roles delete check2 --revision r1",
+            ),
+            (
+                json!({"revision":"r1","op":"reset"}),
+                "roles reset --revision r1",
+            ),
+            (
+                json!({"revision":"r1","op":"min_usage","pct":7}),
+                "roles set-min-usage 7 --revision r1",
+            ),
+        ] {
+            assert_eq!(
+                write("/api/roles", body).await.unwrap().0["revision"],
+                "next"
+            );
+            assert_eq!(last_call(), format!("tmux-solo|{root}|{args}"));
+        }
+        let home = std::env::var("HOME").unwrap();
+        let repo = env!("CARGO_MANIFEST_DIR");
+        for (workspace, cwd) in [
+            (json!(repo), repo),
+            (json!("/not/listed"), &home),
+            (Value::Null, &home),
+        ] {
+            let body =
+                json!({"provider":"claude","name":"work","revision":"r2","workspace":workspace});
+            assert_eq!(
+                write("/api/accounts/login", body).await.unwrap().0["revision"],
+                "next"
+            );
+            assert_eq!(
+                last_call(),
+                format!(
+                    "tmux-solo|{root}|accounts login --provider claude --name work --revision r2 --json --cwd {cwd}"
+                )
+            );
+        }
+        assert_eq!(
+            write("/api/accounts/reset", json!({"revision":"r3"}))
+                .await
+                .unwrap()
+                .0["revision"],
+            "next"
+        );
+        assert!(last_call().ends_with("|accounts reset --revision r3 --json"));
+        let status = |result: Result<Json<Value>, ApiError>| result.unwrap_err().0;
+        assert_eq!(
+            status(write("/api/roles", json!({"revision":"stale","op":"reset"})).await),
+            StatusCode::CONFLICT
+        );
+        let refused = json!({"provider":"codex","name":"refused","revision":"r2"});
+        assert_eq!(
+            status(write("/api/accounts/login", refused).await),
+            StatusCode::BAD_REQUEST
+        );
+        let calls = action_calls(&fixture).lines().count();
+        for (route, body) in [
+            (
+                "/api/accounts/login",
+                json!({"provider":"agy","name":"a","revision":"r"}),
+            ),
+            (
+                "/api/roles",
+                json!({"revision":"r","op":"min_usage","pct":300}),
+            ),
+            ("/api/accounts/reset", json!({})),
+        ] {
+            assert_eq!(status(write(route, body).await), StatusCode::BAD_REQUEST);
+        }
+        assert_eq!(action_calls(&fixture).lines().count(), calls);
     }
 
     #[tokio::test]
