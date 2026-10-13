@@ -54,7 +54,9 @@ final class SessionsTreeModel {
     private func postTransitions(previous: SessionsTree) {
         updateDockBadge()
         guard let settings = noticeSettings, let noticeCenter else { return }
-        for event in NoticeRule.transitions(previous: previous, current: tree, agentsBySession: tree.agentsBySession) {
+        // ADR 0077: swarm stores each change to waiting as a notice row, which the refresh drains.
+        for event in NoticeRule.transitions(previous: previous, current: tree, agentsBySession: tree.agentsBySession)
+        where event.kind == .done {
             guard let project = tree.projects.first(where: { $0.path == event.projectPath }),
                   let notice = NoticeRule.shouldPost(event: event, prefs: settings.prefs.notices,
                                                      project: project, title: navigation.title(for: event.chat)) else { continue }

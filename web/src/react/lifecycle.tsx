@@ -48,6 +48,13 @@ function Frame({ open, onClose, title, description, children, testid, wide }: { 
   );
 }
 
+declare global {
+  interface Window {
+    /** The Mac shell's one script message (ADR 0077); a plain browser has none. */
+    webkit?: { messageHandlers?: { swarm?: { postMessage: (body: { kind: "pickFolder" }) => Promise<string | null> } } };
+  }
+}
+
 function Label({ text, children }: { text: string; children: ReactNode }) {
   return (
     <label className="grid gap-1 text-xs text-muted-foreground">
@@ -342,6 +349,7 @@ function ProjectBody({ app, mode }: { app: App; mode: "create" | "import" }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const absolute = path.trim().startsWith("/") || path.trim().startsWith("~/");
+  const picker = window.webkit?.messageHandlers?.swarm;
   const save = async (as?: "git" | "folder") => {
     setBusy(true);
     setError(await app.life.saveProject(mode, path.trim(), name.trim() || path.trim().split("/").filter(Boolean).pop() || "", as));
@@ -355,15 +363,33 @@ function ProjectBody({ app, mode }: { app: App; mode: "create" | "import" }) {
         if (absolute && !busy) void save();
       }}
     >
-      <Label text={mode === "create" ? "New folder (full path)" : "Folder (full path)"}>
-        <input autoFocus className={`${FIELD} font-mono`} data-testid="project-path" value={path} disabled={busy || choice !== null} onChange={(e) => setPath(e.target.value)} placeholder="/Users/you/code/project" />
-      </Label>
+      <div className="flex items-end gap-2">
+        <div className="grid flex-1">
+          <Label text={mode === "create" ? "New folder (full path)" : "Folder (full path)"}>
+            <input autoFocus className={`${FIELD} font-mono`} data-testid="project-path" value={path} disabled={busy || choice !== null} onChange={(e) => setPath(e.target.value)} placeholder="/Users/you/code/project" />
+          </Label>
+        </div>
+        {mode === "import" && picker && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            data-testid="project-pick"
+            disabled={busy || choice !== null}
+            onClick={async () => {
+              const picked = await picker.postMessage({ kind: "pickFolder" });
+              if (picked) setPath(picked);
+            }}
+          >
+            Choose…
+          </Button>
+        )}
+      </div>
       {mode === "create" && (
         <Label text="Name">
           <input className={FIELD} data-testid="project-name" value={name} disabled={busy} onChange={(e) => setName(e.target.value)} placeholder={path.split("/").filter(Boolean).pop() ?? ""} />
         </Label>
       )}
-      <p className="text-xs text-muted-foreground">A folder picker comes with the Mac app shell.</p>
       <ErrorLine text={error} />
       {choice !== null ? (
         <div className="grid gap-2" data-testid="import-choice">

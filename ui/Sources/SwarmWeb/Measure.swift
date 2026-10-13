@@ -353,6 +353,8 @@ extension Shell {
             "cmdK_menu_took": menuTook, "palette_open_after_menu_cmdK": paletteOpen ?? NSNull(),
             "menu_calls": try await js("return window.__menuCalls") ?? NSNull(),
             "visibility": try await js("return document.visibilityState") ?? NSNull(),
+            // ADR 0077: a message of the wrong shape gets an error and opens no panel.
+            "bad_shell_message": try await js("try { await window.webkit.messageHandlers.swarm.postMessage({kind: 'pickFolder', path: '/etc'}); return 'accepted' } catch (e) { return e.message }") ?? NSNull(),
             "app_active": NSApp.isActive,
         ]
         print(String(decoding: try JSONSerialization.data(withJSONObject: state, options: [.sortedKeys]), as: UTF8.self))

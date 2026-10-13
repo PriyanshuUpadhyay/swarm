@@ -56,6 +56,7 @@ final class Shell: NSObject, NSApplicationDelegate {
         window.contentView = webView
         window.makeFirstResponder(webView)
         window.orderFrontRegardless()
+        webView.configuration.userContentController.addScriptMessageHandler(self, contentWorld: .page, name: "swarm")
         do {
             try startServe()
             webView.load(URLRequest(url: pageURL()))
@@ -63,6 +64,7 @@ final class Shell: NSObject, NSApplicationDelegate {
             fail("\(error)")
             return
         }
+        if !measuring { followBadge() }
         if measuring {
             Task {
                 do {
@@ -165,6 +167,64 @@ final class Shell: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         true
+    }
+}
+
+/// The page's one script message (ADR 0077). Only `{"kind": "pickFolder"}` is valid.
+enum ShellMessage: Equatable {
+    case pickFolder
+
+    init?(body: Any) {
+        guard let body = body as? [String: Any], body.count == 1,
+              body["kind"] as? String == "pickFolder" else { return nil }
+        self = .pickFolder
+    }
+}
+
+extension Shell: WKScriptMessageHandlerWithReply {
+    /// Replies with the picked folder's path, or null when the owner cancels.
+    func userContentController(_ controller: WKUserContentController,
+                               didReceive message: WKScriptMessage) async -> (Any?, String?) {
+        let page = message.frameInfo.securityOrigin
+        guard message.frameInfo.isMainFrame, "http://\(page.host):\(page.port)" == origin,
+              ShellMessage(body: message.body) == .pickFolder else {
+            return (nil, "swarm: unknown shell message")
+        }
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        let response = await panel.beginSheetModal(for: window)
+        return (response == .OK ? panel.url?.path : nil, nil)
+    }
+}
+
+extension Shell {
+    /// Keeps the Dock badge on `/api/badge`, read again on each snapshot frame of `/api/stream`.
+    /// It stops when `swarm serve` stops.
+    func followBadge() {
+        Task {
+            while children.first?.isRunning == true {
+                do {
+                    let (lines, _) = try await URLSession.shared.bytes(for: request("/api/stream"))
+                    for try await line in lines.lines where line == "event: hello" || line == "event: snapshot" {
+                        let (data, _) = try await URLSession.shared.data(for: request("/api/badge"))
+                        let count = (try JSONSerialization.jsonObject(with: data) as? [String: Any])?["count"] as? Int ?? 0
+                        NSApp.dockTile.badgeLabel = count == 0 ? nil : String(count)
+                    }
+                } catch {
+                    FileHandle.standardError.write(Data("SwarmWeb: badge: \(error)\n".utf8))
+                }
+                try? await Task.sleep(for: .seconds(2))
+            }
+        }
+    }
+
+    func request(_ path: String) -> URLRequest {
+        var request = URLRequest(url: URL(string: "\(origin)\(path)")!)
+        // `token` is the page fragment, `token=<hex>`; the API takes the hex alone.
+        request.setValue("Bearer \(token.replacingOccurrences(of: "token=", with: ""))", forHTTPHeaderField: "Authorization")
+        return request
     }
 }
 

@@ -104,12 +104,13 @@ fn a_claude_permission_request_shows_the_coder_waiting() {
     assert_eq!(coder["state"], "waiting");
     assert_eq!(coder["state_source"], "hook");
     assert!(coder["state_at_s"].as_i64().unwrap() > 0);
+    // ADR 0077: the change to waiting is one notice row for the helper.
     let connection = swarm::store::open(&home.join(".swarm/swarm.db")).unwrap();
     assert_eq!(
         connection
             .query_row("SELECT count(*) FROM notice", [], |r| r.get::<_, i64>(0))
             .unwrap(),
-        0
+        1
     );
 
     let broken = swarm(&home, &as_coder, &["hook", "claude"], "not json");
@@ -1343,12 +1344,32 @@ fn hold_app_lock(path: &Path) -> std::fs::File {
     file
 }
 
+/// Waits up to 1 s for the stand-in `open` to record its arguments.
+fn opened(home: &Path) -> Option<String> {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+    while !home.join("opened").exists() && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    std::fs::read_to_string(home.join("opened")).ok()
+}
+
+/// The `open` arguments that start the notice helper at `helper` for this test's home (ADR 0077).
+fn helper_start(home: &Path, helper: &Path) -> String {
+    format!(
+        "-g {} --env SWARM_HOME={} --env SWARM_BIN={}\n",
+        helper.display(),
+        home.display(),
+        env!("CARGO_BIN_EXE_swarm")
+    )
+}
+
 #[test]
-fn notify_starts_the_app_only_without_its_lock_and_does_not_wait() {
+fn notify_starts_the_helper_only_without_the_app_lock_and_does_not_wait() {
     let home = scratch("notice-open");
     assert!(swarm(&home, &[], &["init"], "").status.success());
-    let missing = home.join("missing.app");
-    let env = [("SWARM_APP_PATH", missing.to_str().unwrap())];
+    let helper = home.join("SwarmNotify.app");
+    std::fs::create_dir_all(&helper).unwrap();
+    let env = [("SWARM_NOTIFY_APP", helper.to_str().unwrap())];
     std::fs::write(
         home.join("bin/open"),
         "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$HOME/opened\"\nsleep 2\n",
@@ -1361,66 +1382,23 @@ fn notify_starts_the_app_only_without_its_lock_and_does_not_wait() {
     let started = std::time::Instant::now();
     assert!(swarm(&home, &env, &["notify", "Done"], "").status.success());
     assert!(started.elapsed() < std::time::Duration::from_secs(1));
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
-    while !home.join("opened").exists() && std::time::Instant::now() < deadline {
-        std::thread::sleep(std::time::Duration::from_millis(10));
-    }
-    assert_eq!(
-        std::fs::read_to_string(home.join("opened")).unwrap(),
-        "-g -b io.github.priyanshuupadhyay.swarm\n"
-    );
+    assert_eq!(opened(&home).unwrap(), helper_start(&home, &helper));
     std::fs::remove_dir_all(home).unwrap();
 }
 
 #[test]
-fn notify_starts_the_app_by_path_when_installed_and_by_bundle_otherwise() {
-    let home = scratch("notice-open-target");
-    let app = home.join("Swarm.app");
+fn notify_starts_nothing_when_the_helper_is_missing() {
+    let home = scratch("notice-open-missing");
     let missing = home.join("missing.app");
-    std::fs::create_dir_all(&app).unwrap();
     std::fs::write(
         home.join("bin/open"),
         "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$HOME/opened\"\n",
     )
     .unwrap();
-    assert!(
-        swarm(
-            &home,
-            &[("SWARM_APP_PATH", app.to_str().unwrap())],
-            &["notify", "Done"],
-            ""
-        )
-        .status
-        .success()
-    );
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
-    while !home.join("opened").exists() && std::time::Instant::now() < deadline {
-        std::thread::sleep(std::time::Duration::from_millis(10));
-    }
-    assert_eq!(
-        std::fs::read_to_string(home.join("opened")).unwrap(),
-        format!("-g {}\n", app.display())
-    );
-
-    let _ = std::fs::remove_file(home.join("opened"));
-    assert!(
-        swarm(
-            &home,
-            &[("SWARM_APP_PATH", missing.to_str().unwrap())],
-            &["notify", "Done"],
-            ""
-        )
-        .status
-        .success()
-    );
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
-    while !home.join("opened").exists() && std::time::Instant::now() < deadline {
-        std::thread::sleep(std::time::Duration::from_millis(10));
-    }
-    assert_eq!(
-        std::fs::read_to_string(home.join("opened")).unwrap(),
-        "-g -b io.github.priyanshuupadhyay.swarm\n"
-    );
+    let env = [("SWARM_NOTIFY_APP", missing.to_str().unwrap())];
+    assert!(swarm(&home, &env, &["notify", "Done"], "").status.success());
+    // No `open -b` fallback: LaunchServices could start any dev build of the full app.
+    assert_eq!(opened(&home), None);
     std::fs::remove_dir_all(home).unwrap();
 }
 
@@ -1519,9 +1497,10 @@ fn focus_names_missing_panes_adapters_and_verbs() {
     std::fs::remove_dir_all(&home).unwrap();
 }
 
-/// Hooks write state for the app; they do not insert an explicit notice or call an adapter.
+/// ADR 0077: each change to waiting is one notice row, and it starts the notice helper, never
+/// the full app. Hooks still call no adapter.
 #[test]
-fn a_change_to_waiting_updates_state_without_posting_a_notice() {
+fn a_change_to_waiting_stores_one_notice_and_starts_the_helper_not_the_app() {
     let home = scratch("notice-waiting");
     let session = stdout(&swarm(&home, &[], &["session", "new", "lane"], ""))
         .trim()
@@ -1536,9 +1515,17 @@ fn a_change_to_waiting_updates_state_without_posting_a_notice() {
         .status
         .success()
     );
+    std::fs::write(
+        home.join("bin/open"),
+        "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$HOME/opened\"\n",
+    )
+    .unwrap();
+    let helper = home.join("SwarmNotify.app");
+    std::fs::create_dir_all(&helper).unwrap();
     let as_coder = [
         ("SWARM_SESSION_ID", session.as_str()),
         ("SWARM_AGENT_ID", "coder"),
+        ("SWARM_NOTIFY_APP", helper.to_str().unwrap()),
     ];
     for event in [
         "PermissionRequest",
@@ -1555,10 +1542,86 @@ fn a_change_to_waiting_updates_state_without_posting_a_notice() {
         assert_eq!(stdout(&reported), "{}\n", "{reported:?}");
     }
     assert_eq!(coder_state(&home, &session)["state"], "waiting");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+    while opened(&home).unwrap_or_default().lines().count() < 2
+        && std::time::Instant::now() < deadline
+    {
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
     assert_eq!(
-        stdout(&swarm(&home, &[], &["notices", "--json"], "")),
-        "[]\n"
+        opened(&home).unwrap(),
+        helper_start(&home, &helper).repeat(2)
     );
+    let rows: serde_json::Value =
+        serde_json::from_str(&stdout(&swarm(&home, &[], &["notices", "--json"], ""))).unwrap();
+    let folder = home.file_name().unwrap().to_str().unwrap();
+    for row in rows.as_array().unwrap() {
+        assert_eq!(row["session_id"], session.as_str());
+        assert_eq!(row["agent_id"], "coder");
+        assert_eq!(row["title"], "Swarm");
+        assert_eq!(row["body"], format!("{folder}: waiting on a permission"));
+    }
+    assert_eq!(rows.as_array().unwrap().len(), 2);
+    std::fs::remove_dir_all(home).unwrap();
+}
+
+/// `notices --due` takes every row and prints only those the owner's notice preferences post.
+#[test]
+fn notices_due_applies_the_notice_preferences() {
+    let home = scratch("notice-due");
+    assert!(swarm(&home, &[], &["init"], "").status.success());
+    let connection = swarm::store::open(&home.join(".swarm/swarm.db")).unwrap();
+    let muted = home.join("muted");
+    let open_project = home.join("open");
+    for folder in [&muted, &open_project] {
+        std::fs::create_dir_all(folder).unwrap();
+    }
+    let in_muted =
+        swarm::store::create_session(&connection, "lane", &muted.join("wt"), None, None).unwrap();
+    let in_open =
+        swarm::store::create_session(&connection, "lane", &open_project, None, None).unwrap();
+    for session in [&in_muted, &in_open] {
+        swarm::store::add_agent(&connection, session, "coder", "coder").unwrap();
+    }
+    swarm::store::set_state(&connection, &in_open, "coder", "waiting", "hook", None, None, 1)
+        .unwrap();
+    let choices = |notices: &str| {
+        std::fs::write(
+            home.join(".swarm/choices.json"),
+            format!(r#"{{"prefs":{{"notices":{notices}}}}}"#),
+        )
+        .unwrap();
+    };
+    let add = |session: Option<&str>, agent: Option<&str>, title: &str| {
+        swarm::store::add_notice(&connection, session, agent, title, "").unwrap();
+    };
+    let due = || -> Vec<(String, bool)> {
+        let out: serde_json::Value =
+            serde_json::from_str(&stdout(&swarm(&home, &[], &["notices", "--due"], ""))).unwrap();
+        out.as_array()
+            .unwrap()
+            .iter()
+            .map(|row| (row["title"].as_str().unwrap().into(), row["sound"] == true))
+            .collect()
+    };
+
+    choices(&format!(
+        r#"{{"done":false,"sound":false,"mutedProjects":["{}"]}}"#,
+        muted.display()
+    ));
+    add(Some(&in_muted), Some("coder"), "muted");
+    add(Some(&in_open), Some("coder"), "waiting");
+    add(None, None, "done");
+    assert_eq!(due(), [("waiting".to_string(), false)]);
+    assert_eq!(due(), []);
+
+    choices(r#"{"post":false}"#);
+    add(Some(&in_open), Some("coder"), "waiting");
+    assert_eq!(due(), []);
+
+    std::fs::remove_file(home.join(".swarm/choices.json")).unwrap();
+    add(Some(&in_muted), Some("coder"), "default");
+    assert_eq!(due(), [("default".to_string(), true)]);
     std::fs::remove_dir_all(home).unwrap();
 }
 

@@ -579,6 +579,45 @@ fn the_coordinator_leaves_notices_for_the_native_shell() {
     assert_eq!(unposted, 1);
 }
 
+/// The shell's Dock badge (ADR 0077) counts the chats that wait, and the owner can turn it off.
+#[test]
+fn badge_counts_waiting_chats_and_honours_the_badge_preference() {
+    // Panes from the fixture adapter keep the agents alive; an ended agent never waits.
+    let server = Server::configured(true, true);
+    let badge = |want: u64| {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            let (status, _, body) = server.request("GET", "/api/badge", "", "", true);
+            assert_eq!(status, 200, "{body}");
+            let count = serde_json::from_str::<Value>(&body).unwrap()["count"].clone();
+            if count == want || Instant::now() > deadline {
+                assert_eq!(count, want);
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+    };
+    let root = server.dir.join("home/.swarm");
+    let connection = swarm::store::open(&root.join("swarm.db")).unwrap();
+    swarm::store::set_state(
+        &connection,
+        &server.session,
+        "worker",
+        "waiting",
+        "hook",
+        None,
+        None,
+        1,
+    )
+    .unwrap();
+    badge(1);
+    let mut choices: Value =
+        serde_json::from_str(&fs::read_to_string(root.join("choices.json")).unwrap()).unwrap();
+    choices["prefs"] = json!({"notices": {"badge": false}});
+    fs::write(root.join("choices.json"), choices.to_string()).unwrap();
+    badge(0);
+}
+
 #[test]
 fn snapshot_transcript_paging_and_static_paths_run_on_the_real_server() {
     let server = Server::new();

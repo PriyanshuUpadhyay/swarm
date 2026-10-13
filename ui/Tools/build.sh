@@ -26,6 +26,7 @@ if (( install )); then
   done
 fi
 swift build --package-path "$root" --disable-sandbox -c release --product Swarm
+swift build --package-path "$root" --disable-sandbox -c release --product SwarmNotify
 bin_dir="$(swift build --package-path "$root" --disable-sandbox -c release --show-bin-path)"
 app="$root/.build/release/Swarm.app"
 
@@ -42,8 +43,14 @@ cp "$bin_dir/Swarm" "$app/Contents/MacOS/Swarm"
 cp "$repo/packages/transcript/zig-out/bin/transcript" "$app/Contents/MacOS/transcript"
 # Helpers, not MacOS: on a case-insensitive disk MacOS/swarm would overwrite MacOS/Swarm.
 cp "$repo/target/release/swarm" "$app/Contents/Helpers/swarm"
-cp "$root/Resources/Info.plist" "$app/Contents/Info.plist"
 version="$(cargo metadata --manifest-path "$repo/Cargo.toml" --no-deps --format-version 1 | jq -r '.packages[0].version')"
+# The notice helper (ADR 0077): swarm starts it beside itself, so a notice never starts the app.
+notify="$app/Contents/Helpers/SwarmNotify.app"
+mkdir -p "$notify/Contents/MacOS"
+cp "$bin_dir/SwarmNotify" "$notify/Contents/MacOS/SwarmNotify"
+cp "$root/Resources/SwarmNotify-Info.plist" "$notify/Contents/Info.plist"
+plutil -insert CFBundleShortVersionString -string "$version" "$notify/Contents/Info.plist"
+cp "$root/Resources/Info.plist" "$app/Contents/Info.plist"
 plutil -insert CFBundleShortVersionString -string "$version" "$app/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Add :SwarmBuildDate string $(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   "$app/Contents/Info.plist"

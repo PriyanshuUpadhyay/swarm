@@ -298,6 +298,7 @@ fn router(app: App) -> Router {
     Router::new()
         .route("/api/snapshot", get(snapshot))
         .route("/api/tree", get(tree_view))
+        .route("/api/badge", get(badge_view))
         .route("/api/tabs", get(tabs_view))
         .route("/api/choices", post(choice_write))
         .route("/api/changes", get(panel_read))
@@ -600,6 +601,28 @@ async fn tree_view(
     })
     .await
     .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "tree task failed"))?
+}
+
+/// The Dock badge of the shell (ADR 0077): the chats that wait, outside archived workspaces, or 0
+/// when the owner turned the badge off.
+async fn badge_view(State(app): State<App>) -> Result<Json<Value>, ApiError> {
+    tokio::task::spawn_blocking(move || {
+        let (tree, saved, _) = loaded_tree(&app)?;
+        let count = if saved.owner.prefs["notices"]["badge"] == false {
+            0
+        } else {
+            tree.projects
+                .iter()
+                .flat_map(|p| &p.workspaces)
+                .filter(|w| !saved.owner.archived.contains(&w.path))
+                .flat_map(|w| &w.chats)
+                .filter(|c| c.status == Some(tree::AgentStatus::Waiting))
+                .count()
+        };
+        Ok(Json(json!({ "count": count })))
+    })
+    .await
+    .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "badge task failed"))?
 }
 
 async fn tabs_view(
