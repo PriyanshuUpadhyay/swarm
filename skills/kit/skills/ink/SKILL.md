@@ -58,7 +58,7 @@ one-prompt task, so do not suggest it is.
    and [build.md](references/build.md).
 
 A website changes most steps: sections replace shots, screen widths replace fps, and a `DESIGN.md`
-joins the look. Read [site.md](references/site.md) at intake when the form is a website.
+joins the look. Use the kit's `blocks/build-site/SKILL.md` from intake on when the form is a website.
 
 A pattern file holds the mechanics of one reusable structure:
 [recursive-zoom.md](references/patterns/recursive-zoom.md) covers worlds inside worlds. Add a

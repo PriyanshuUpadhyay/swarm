@@ -14,7 +14,7 @@ Get these inputs before you build:
 - visual references with provenance, researched from the brief when the user gives none;
 - a start, a middle, and an end frame for each shot, from the user or extracted from a reference;
 - the form, such as a still, a loop, a linear short, a journey, an interactive or scroll-driven
-  piece, a reel background, or a website (see [site.md](site.md));
+  piece, a reel background, or a website (see the kit's `blocks/build-site/SKILL.md`);
 - the aspect ratio, the duration, and the fps;
 - content limits, such as the subject, the words, brand assets, and things that must or must not
   appear;

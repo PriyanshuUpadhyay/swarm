@@ -10,7 +10,7 @@ metadata:
   gives: "pass or fail per check"
   conflicts: ""
   users: "flow"
-  source: "web-interface-guidelines pack: command.md:16-26, :31-35, :53-60, :64, :80, :119-120, :143-146, :153; skills/ink/references/site.md:25, :85-88; skills/ink/references/qa.md:57-58, :110-111; skills/ink/references/story-and-motion.md:59-60; taste-skill pack: skills/taste-skill/SKILL.md:153-154, :225, :260, :522, :529; emilkowalski pack: skills/emil-design-eng/SKILL.md:95-135, :527-531; blocks/headless-shot/SKILL.md:17 (375 px), :18 (reduced-motion shot)"
+  source: "web-interface-guidelines pack: command.md:16-26, :31-35, :53-60, :64, :80, :119-120, :143-146, :153; skills/ink/references/site.md (moved to blocks/build-site 2026-10-13); skills/ink/references/qa.md:57-58, :110-111; skills/ink/references/story-and-motion.md:59-60; taste-skill pack: skills/taste-skill/SKILL.md:153-154, :225, :260, :522, :529; emilkowalski pack: skills/emil-design-eng/SKILL.md:95-135, :527-531; blocks/headless-shot/SKILL.md:17 (375 px), :18 (reduced-motion shot)"
 ---
 
 ## Rules

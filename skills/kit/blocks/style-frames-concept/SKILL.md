@@ -10,7 +10,7 @@ metadata:
   gives: "frames scored beside the reference"
   conflicts: ""
   users: "flow, ink"
-  source: "skills/ink/SKILL.md (step 4); skills/ink/references/site.md (site frames); skills/ink/references/qa.md (reference match and rounds, moved 2026-10-13)"
+  source: "skills/ink/SKILL.md (step 4); skills/ink/references/site.md (site frames, moved to blocks/build-site 2026-10-13); skills/ink/references/qa.md (reference match and rounds, moved 2026-10-13)"
 ---
 
 ## Rules

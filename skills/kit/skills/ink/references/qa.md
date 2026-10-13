@@ -81,8 +81,7 @@ Run these when frames can be rendered by `?t=`; they catch what a few stills mis
 - **Seam vectors:** for each continuity cut, read the carrier's screen velocity from `stateAt` on
   the last frame of shot A and the first frame of shot B. Flag a flipped sign on any axis, or a
   speed ratio outside about 0.5-2 (a starting threshold to tune). Skip cuts marked "jump".
-- **Hidden content:** content that waits at opacity 0 for an animation is skipped by accessibility
-  checkers such as axe-core and is blank in full-page screenshots. Check with reduced motion on.
+- **Hidden content:** check it as the kit's `blocks/web-ui-basics/SKILL.md` says, with reduced motion on.
 - **Read-back:** `ffprobe` the exported file for size, fps, frame count, and duration, and extract a
   few frames from it to inspect.
 
