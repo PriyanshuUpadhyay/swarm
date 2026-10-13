@@ -107,8 +107,8 @@ matching frames.
 
 Record the beats and where the story turns, shot sizes and their order, the length of each shot,
 the transition at each boundary and what it means, recurring motifs, and how on-screen text is
-timed. Map the result to a structure in [story-and-motion.md](story-and-motion.md) (linear, loop,
-journey, vignette, branching). Keep the structure; write your own content.
+timed. Map the result to a structure in the kit's `blocks/story/SKILL.md` (linear, loop, journey,
+vignette, branching). Keep the structure; write your own content.
 
 ## Style grammar template
 

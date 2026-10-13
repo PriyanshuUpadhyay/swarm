@@ -48,9 +48,9 @@ both become `match`.
 
 ## Story checks
 
-- Each beat's key frame reads on its own: the focal subject and the change of state are clear.
+The key frame and pacing checks are in the kit's `blocks/story/SKILL.md`.
+
 - Each transition has a story reason and the reason shows (a match cut really matches).
-- Pacing lets each beat and each line of text read at playback speed, not only when paused.
 - Entities stay consistent across shots: same proportions, colours from the same tokens.
 - Each gate shows a hint for its action, answers a failed try, and has an escape. Play it once as a
   reader who fails.

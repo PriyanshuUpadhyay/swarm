@@ -50,8 +50,8 @@ one-prompt task, so do not suggest it is.
    [references.md](references/references.md).
 2. **Analyse the references** and write `ink/02-look.md` with measured numbers. See
    [references.md](references/references.md).
-3. **Story sheet, shot list, transitions, scene graph.** See
-   [story-and-motion.md](references/story-and-motion.md).
+3. **Story sheet, shot list, transitions, scene graph.** See the kit's `blocks/story/SKILL.md`
+   and [story-and-motion.md](references/story-and-motion.md).
 4. **Style frames** with the real drawing code, one of them the signature shot, scored beside the
    reference for at least two rounds. See [mark-making.md](references/mark-making.md) and
    [qa.md](references/qa.md).
