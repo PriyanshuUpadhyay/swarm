@@ -636,7 +636,8 @@ def test_block_example_params(tmp):
     """A {{param}} only in a block's Example would make every run set it for nothing, so no kit block has
     one; a repo with only source_of_truth starts a close step that names done-when-evidence."""
     for path in sorted(flow_run.BLOCKS.glob("*/SKILL.md")):
-        parts = flow_run.sections(path.read_text(encoding="utf-8"))
+        # The loader drops the frontmatter, so a {{param}} there is never filled and must not count.
+        parts = flow_run.sections(path.read_text(encoding="utf-8").partition("\n---\n")[2])
         rest = {p for head, lines in parts if head != "Example" for p in flow_run.PARAM.findall("\n".join(lines))}
         example = {p for head, lines in parts if head == "Example" for p in flow_run.PARAM.findall("\n".join(lines))}
         assert example <= rest, (path.parent.name, example - rest)

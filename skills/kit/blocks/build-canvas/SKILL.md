@@ -14,7 +14,7 @@ metadata:
 ---
 
 ## Rules
-The item file `references/mark-making.md` in this block's folder holds the mark-making recipes: density, tone, texture, the mass stack, line, surface, depth, generative plates, and libraries. Read it before a detail pass.
+The item file `blocks/build-canvas/references/mark-making.md` in the kit holds the mark-making recipes: density, tone, texture, the mass stack, line, surface, depth, generative plates, and libraries. Read it before a detail pass.
 
 Architecture
 Build a small story engine, so the story, the look, and the motion change in one place each:
@@ -133,7 +133,7 @@ Delivery
 - Style frame or small piece: one HTML file, with libraries from a CDN through an import map.
 - Larger story: a folder with `look.js`, `scenes/`, `story.js` (the shot list), `main.js`, and a
   README, or a Vite project. Browsers block ES modules over `file://`, so give a local server command.
-- Offline delivery: vendor dependencies explicitly.
+- Offline delivery: vendor dependencies explicitly, in a `vendor/` folder.
 
 Technical references
 - p5.js reference: https://p5js.org/reference/
@@ -153,7 +153,7 @@ Action: the user asks for the storm to last two seconds longer. Edit only the `s
 Result: the scene modules, the entities, and the tokens are unchanged, and each frame renders alone with the same pixels on a second run.
 
 ## Check (script)
-- `rg -n -g '*.js' -g '*.mjs' -g '*.ts' 'Math\.random\(|Date\.now\(' {{site}}` prints nothing: no render state comes from an unseeded random or the wall clock.
+- `rg -n -g '*.js' -g '*.mjs' -g '*.ts' -g '!**/vendor/**' -g '!**/node_modules/**' -g '!*.min.js' 'Math\.random\(|Date\.now\(' {{site}}` prints nothing: no render state in the piece's own code comes from an unseeded random or the wall clock.
 
 ## Check (judge)
 - Does one change of each kind (a retime, a new place, a new character, a restyle, a new transition) touch only its one home? Quote the files each touched.
