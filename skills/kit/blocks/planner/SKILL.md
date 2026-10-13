@@ -25,7 +25,8 @@ metadata:
   - Block: one or more block ids, comma-separated. The step's agent reads each `blocks/<id>/SKILL.md` and follows it.
   - Why: one line that says why this step is in the plan.
 - The first step states the requirements (usually `requirements`) unless the task is one question.
-- The last step is the only step whose output no step uses. It holds a `voice-` block that fits the reader: `voice-reply` for the owner, `voice-review` for review comments.
+- A plan whose steps make commits has a `change-review` step after the last build step.
+- The last step is the only step whose output no step uses. It holds a `voice-` block that fits the output: `voice-reply` for a reply to the owner, `voice-teach` when the owner wants to understand a subject, `voice-review` for review comments, and `voice-pr` for PR text.
 - Two blocks that name each other in `conflicts` are alternatives. Keep one and say why in Why.
 - When no block fits a step, write the step with the nearest block and say what is missing in Why. Do not invent a block id.
 - Then run the `plan-chart` block, then the `plan-review` block. Work starts only after the owner approves.
