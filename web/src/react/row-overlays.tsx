@@ -4,12 +4,12 @@
 
 import { ChevronsDownUpIcon, ChevronsUpDownIcon, CopyIcon, MessageSquareIcon } from "lucide-react";
 import { useEffect, useState, type RefObject } from "react";
-import { toast } from "sonner";
 import type { App } from "../core/app";
 import type { TreeRow } from "../core/tree";
 import { ContextMenuContent, ContextMenuItem, ContextMenuLabel, ContextMenuSeparator } from "../components/ui/context-menu";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "../components/ui/hover-card";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../components/ui/tooltip";
+import { copyText as copy } from "./copy";
 import { StatusGlyph } from "./status";
 
 const ROW = '[data-testid="tree-row"]';
@@ -22,15 +22,6 @@ const rowOf = (app: App, el: Element | null): TreeRow | undefined => {
 };
 
 const rowEl = (list: HTMLElement, id: string) => list.querySelector<HTMLElement>(`${ROW}[data-id="${CSS.escape(id)}"]`);
-
-async function copy(text: string, what: string) {
-  try {
-    await navigator.clipboard.writeText(text);
-    toast(`Copied ${what}`);
-  } catch {
-    toast.error(`Could not copy the ${what}`);
-  }
-}
 
 /** Content for the list's one ContextMenu; the row is the one under the right click. */
 export function RowMenu({ app, listRef }: { app: App; listRef: RefObject<HTMLDivElement | null> }) {

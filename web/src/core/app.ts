@@ -1,32 +1,42 @@
 // Framework-free app state. Each view layer reads `view`, which is a new object after every change.
 
-import { Api, type Snapshot, type SubscribeKey, type TranscriptEvent } from "./api";
+import { Api, type Row, type RowFrame, type Snapshot, type SubscribeKey } from "./api";
 import { installKeys, Registry, search, type Command } from "./commands";
 import { MarkdownCache } from "./markdown";
 import { measure, whenPainted, type PerfKind } from "./perf";
 import { readSse, type SseEvent } from "./sse";
-import { Transcript, items, type BlockItem, type Item } from "./transcript";
+import { FoldChoices, findMatches, lines, mergeRows, type Line, type Match } from "./transcript";
 import { buildTree, flatten, workspaces, type TreeNode, type TreeRow } from "./tree";
 
 export const TAIL = 200;
 export const LRU_SIZE = 4;
 const MAX_KEYS = 32;
 
+/** The full text behind a capped preview, fetched on demand. */
+export type FullText = { state: "loading" } | { state: "ready"; text: string; lines: string[] } | { state: "error"; error: string };
+
 type Chat = {
   sessionId: string;
   key: string;
-  model: Transcript;
+  rows: Row[];
+  /** The next older page ends here; 0 means no older rows. */
+  older: number;
+  end: number;
   state: "loading" | "ready" | "error";
   error: string | null;
   version: number;
   shift: boolean;
   loadingOlder: boolean;
-  // Render caches; the LRU drops them.
-  expanded: Set<string>;
-  blockCache: Map<string, { src: string; items: BlockItem[] }>;
+  // Reader state and render caches; the LRU drops them.
+  showHidden: boolean;
+  folds: FoldChoices;
+  opened: Map<string, boolean>;
+  full: Map<string, FullText>;
   md: MarkdownCache;
-  items: { version: number; list: Item[] } | null;
+  built: { version: number; lines: Line[]; hidden: number } | null;
 };
+
+export type Find = { open: boolean; query: string; matches: Match[]; index: number; seq: number };
 
 export type View = {
   loaded: boolean;
@@ -37,16 +47,22 @@ export type View = {
   openId: string | null;
   chatState: "none" | "loading" | "ready" | "error";
   chatError: string | null;
-  items: Item[];
+  lines: Line[];
+  hidden: number;
+  showHidden: boolean;
+  hasOlder: boolean;
+  loadingOlder: boolean;
   shift: boolean;
   md: MarkdownCache | null;
-  expanded: ReadonlySet<string>;
+  full: ReadonlyMap<string, FullText>;
+  find: Find;
   paletteOpen: boolean;
 };
 
 export type PaletteEntry = { id: string; title: string; hint?: string; run: () => void };
 
-const EMPTY: Item[] = [];
+const EMPTY: Line[] = [];
+const NO_FULL: ReadonlyMap<string, FullText> = new Map();
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const chatKey = (sessionId: string) => `${sessionId}:chair`;
 
@@ -67,7 +83,9 @@ export class App {
   private listeners = new Set<() => void>();
   private streamId: string | null = null;
   private sentKeys = "";
-  private pending = new Map<string, { events: TranscriptEvent[]; end: number }>();
+  private pending = new Map<string, RowFrame[]>();
+  private find: Find = { open: false, query: "", matches: [], index: -1, seq: 0 };
+  private findVersion = "";
   private frame = 0;
   private snapshotBusy: Promise<void> | null = null;
   private snapshotAgain = false;
@@ -92,12 +110,9 @@ export class App {
 
   private makeView(): View {
     const chat = this.openId ? this.chats.get(this.openId) : undefined;
-    let list = EMPTY;
-    if (chat) {
-      if (chat.items?.version !== chat.version)
-        chat.items = { version: chat.version, list: items(chat.model.rows, chat.expanded, chat.blockCache) };
-      list = chat.items.list;
-    }
+    if (chat && chat.built?.version !== chat.version)
+      chat.built = { version: chat.version, ...lines(chat.rows, { showHidden: chat.showHidden, folds: chat.folds, opened: chat.opened }) };
+    this.refind(chat);
     return {
       loaded: this.snapshot !== null,
       roots: this.roots,
@@ -107,10 +122,15 @@ export class App {
       openId: this.openId,
       chatState: chat ? chat.state : "none",
       chatError: chat?.error ?? null,
-      items: list,
+      lines: chat?.built?.lines ?? EMPTY,
+      hidden: chat?.built?.hidden ?? 0,
+      showHidden: chat?.showHidden ?? false,
+      hasOlder: (chat?.older ?? 0) > 0,
+      loadingOlder: chat?.loadingOlder ?? false,
       shift: chat?.shift ?? false,
       md: chat?.md ?? null,
-      expanded: chat?.expanded ?? new Set(),
+      full: chat?.full ?? NO_FULL,
+      find: this.find,
       paletteOpen: this.paletteOpen,
     };
   }
@@ -233,27 +253,37 @@ export class App {
     const chat: Chat = {
       sessionId,
       key: chatKey(sessionId),
-      model: new Transcript(),
+      rows: [],
+      older: 0,
+      end: 0,
       state: "loading",
       error: null,
       version: 0,
       shift: false,
       loadingOlder: false,
-      expanded: new Set(),
-      blockCache: new Map(),
-      md: new MarkdownCache(),
-      items: null,
+      ...this.freshReaderState(),
     };
     this.chats.set(sessionId, chat);
     return chat;
   }
 
+  private freshReaderState() {
+    return {
+      showHidden: false,
+      folds: new FoldChoices(),
+      opened: new Map<string, boolean>(),
+      full: new Map<string, FullText>(),
+      md: new MarkdownCache(),
+      built: null,
+    };
+  }
+
   private async loadTail(chat: Chat) {
     try {
-      const page = await this.api.transcript(chat.sessionId, "chair", TAIL);
-      chat.model = new Transcript();
-      chat.model.apply(page.events);
-      chat.model.page = page.page;
+      const page = await this.api.rows(chat.sessionId, "chair", TAIL);
+      chat.rows = mergeRows([], page.rows);
+      chat.older = page.page.start_offset;
+      chat.end = page.page.end_offset;
       chat.state = "ready";
       chat.error = null;
     } catch (err) {
@@ -271,12 +301,8 @@ export class App {
     for (const old of this.lru.slice(LRU_SIZE)) {
       const chat = this.chats.get(old);
       if (!chat) continue;
-      if (this.liveAll) {
-        chat.md = new MarkdownCache();
-        chat.blockCache = new Map();
-        chat.expanded = new Set();
-        chat.items = null;
-      } else this.chats.delete(old);
+      if (this.liveAll) Object.assign(chat, this.freshReaderState());
+      else this.chats.delete(old);
     }
     this.lru = this.lru.slice(0, LRU_SIZE);
   }
@@ -313,7 +339,7 @@ export class App {
   private transcriptPainted(sessionId: string): boolean {
     const el = document.querySelector<HTMLElement>('[data-testid="transcript"]');
     if (!el || el.dataset.chat !== sessionId || el.dataset.state !== "ready") return false;
-    const last = this.view.items.length - 1;
+    const last = this.view.lines.length - 1;
     return last < 0 || el.querySelector(`[data-testid="row"][data-index="${last}"]`) !== null;
   }
 
@@ -351,32 +377,139 @@ export class App {
     if (target.sessionId && target.sessionId !== this.openId) this.openChat(target.sessionId, e);
   }
 
-  toggleOutput(rowId: string) {
-    const chat = this.openId ? this.chats.get(this.openId) : undefined;
-    if (!chat) return;
-    chat.expanded = new Set(chat.expanded);
-    if (!chat.expanded.delete(rowId)) chat.expanded.add(rowId);
+  private get open(): Chat | undefined {
+    return this.openId ? this.chats.get(this.openId) : undefined;
+  }
+
+  /** A reader change: lines rebuild, and the list does not treat it as a prepend. */
+  private changed(chat: Chat) {
     chat.version++;
     chat.shift = false;
-    this.notify();
+    if (chat.sessionId === this.openId) this.notify();
+  }
+
+  /** Opens or closes a fold, a tool card, a thought, or a long system row. */
+  toggleLine(line: Line) {
+    const chat = this.open;
+    if (!chat) return;
+    if (line.row.kind === "fold") chat.folds.set(line.row, !line.open);
+    else chat.opened.set(line.id, !line.open);
+    this.changed(chat);
+  }
+
+  toggleHidden() {
+    const chat = this.open;
+    if (!chat) return;
+    chat.showHidden = !chat.showHidden;
+    this.changed(chat);
+  }
+
+  /** Fetches the full text behind a capped preview once and shows it; the LRU drops it. */
+  async loadFull(previewId: string) {
+    const chat = this.open;
+    if (!chat || (chat.full.has(previewId) && chat.full.get(previewId)!.state !== "error")) return;
+    chat.full = new Map(chat.full).set(previewId, { state: "loading" });
+    this.changed(chat);
+    let next: FullText;
+    try {
+      const text = await this.api.toolOutput(chat.sessionId, "chair", previewId);
+      next = { state: "ready", text, lines: text.split("\n") };
+    } catch (err) {
+      next = { state: "error", error: String(err) };
+    }
+    chat.full = new Map(chat.full).set(previewId, next);
+    this.changed(chat);
+  }
+
+  /** The full text for Copy, without showing it. */
+  async fullText(previewId: string): Promise<string> {
+    const chat = this.open;
+    const have = chat?.full.get(previewId);
+    if (have?.state === "ready") return have.text;
+    if (!chat) throw new Error("no chat open");
+    return this.api.toolOutput(chat.sessionId, "chair", previewId);
   }
 
   /** Pages older rows in above the current ones. */
   async loadOlder() {
-    const chat = this.openId ? this.chats.get(this.openId) : undefined;
-    if (!chat || chat.state !== "ready" || chat.loadingOlder || chat.model.page.start_offset <= 0) return;
+    const chat = this.open;
+    if (!chat || chat.state !== "ready" || chat.loadingOlder || chat.older <= 0) return;
     chat.loadingOlder = true;
     try {
-      const page = await this.api.transcript(chat.sessionId, "chair", TAIL, chat.model.page.start_offset);
-      chat.model.prepend(page.events, page.page);
+      const page = await this.api.rows(chat.sessionId, "chair", TAIL, chat.older);
+      chat.rows = mergeRows(chat.rows, page.rows, page.remove);
+      chat.older = page.page.start_offset;
       chat.version++;
       chat.shift = true;
-      if (this.openId === chat.sessionId) this.notify();
     } catch (err) {
       chat.error = String(err);
     } finally {
       chat.loadingOlder = false;
     }
+    if (this.openId === chat.sessionId) this.notify();
+  }
+
+  // ---- find ----
+
+  /** Matches follow the rows; the current match stays on its row when rows change. */
+  private refind(chat: Chat | undefined) {
+    const f = this.find;
+    const sig = `${chat?.sessionId}:${chat?.version}:${chat?.showHidden}:${f.open}:${f.query}`;
+    if (sig === this.findVersion) return;
+    this.findVersion = sig;
+    if (!f.open || !chat) {
+      if (f.matches.length) this.find = { ...f, matches: [], index: -1 };
+      return;
+    }
+    const current = f.matches[f.index]?.id;
+    const matches = findMatches(chat.rows, f.query, chat.showHidden);
+    const kept = current === undefined ? -1 : matches.findIndex((m) => m.id === current);
+    this.find = { ...f, matches, index: kept >= 0 ? kept : matches.length ? matches.length - 1 : -1 };
+    // A new current match must come into view.
+    if (kept < 0 && matches.length) this.reveal(chat, this.find);
+  }
+
+  /** Opens the fold or card that holds the current match, and asks the list to scroll to it. */
+  private reveal(chat: Chat, f: Find) {
+    const m = f.matches[f.index];
+    if (!m) return;
+    if (m.fold && !chat.folds.isOpen(m.fold)) chat.folds.set(m.fold, true);
+    chat.opened.set(m.id, true);
+    chat.version++;
+    chat.shift = false;
+    chat.built = { version: chat.version, ...lines(chat.rows, { showHidden: chat.showHidden, folds: chat.folds, opened: chat.opened }) };
+    this.findVersion = `${chat.sessionId}:${chat.version}:${chat.showHidden}:${f.open}:${f.query}`;
+    this.find = { ...f, seq: f.seq + 1 };
+  }
+
+  openFind() {
+    if (!this.open) return;
+    this.find = { ...this.find, open: true, seq: this.find.seq + 1 };
+    this.notify();
+    requestAnimationFrame(() => document.querySelector<HTMLInputElement>('[data-testid="find-input"]')?.select());
+  }
+
+  closeFind() {
+    if (!this.find.open) return;
+    this.find = { ...this.find, open: false };
+    this.notify();
+  }
+
+  setFindQuery(query: string) {
+    this.find = { ...this.find, query, matches: [], index: -1 };
+    this.notify();
+  }
+
+  /** Find starts at the newest match. Next (+1) goes to the older one, as up the chat; it wraps. */
+  stepFind(dir: number) {
+    const chat = this.open;
+    const f = this.find;
+    if (!chat) return;
+    if (!f.open) return this.openFind();
+    if (!f.matches.length) return;
+    this.find = { ...f, index: (f.index - dir + f.matches.length) % f.matches.length };
+    this.reveal(chat, this.find);
+    this.notify();
   }
 
   // ---- palette ----
@@ -430,12 +563,11 @@ export class App {
       case "snapshot":
         if (data.version !== this.snapshot?.version) void this.refreshSnapshot();
         break;
-      case "transcript": {
-        const key = String(data.key);
-        const slot = this.pending.get(key) ?? { events: [], end: 0 };
-        for (const ev of (data.events as TranscriptEvent[]) ?? []) slot.events.push(ev);
-        slot.end = Number(data.end_offset);
-        this.pending.set(key, slot);
+      case "rows": {
+        const frame = data as unknown as RowFrame;
+        const slot = this.pending.get(frame.key);
+        if (slot) slot.push(frame);
+        else this.pending.set(frame.key, [frame]);
         this.frame ||= requestAnimationFrame(() => this.flush());
         break;
       }
@@ -445,19 +577,23 @@ export class App {
     }
   }
 
-  /** Applies all buffered stream events once per animation frame. Only the open chat renders. */
+  /** Applies all buffered row frames once per animation frame. Only the open chat renders. */
   private flush() {
     this.frame = 0;
     let render = false;
-    for (const [key, slot] of this.pending) {
+    for (const [key, frames] of this.pending) {
       const chat = this.chats.get(key.slice(0, key.lastIndexOf(":")));
       if (!chat || chat.state !== "ready") continue;
-      if (chat.model.apply(slot.events)) {
+      const before = chat.rows;
+      for (const f of frames) {
+        chat.rows = mergeRows(chat.rows, f.upsert, f.remove);
+        chat.end = Math.max(chat.end, Number(f.end_offset));
+      }
+      if (chat.rows !== before) {
         chat.version++;
         chat.shift = false;
         if (chat.sessionId === this.openId) render = true;
       }
-      chat.model.page = { ...chat.model.page, end_offset: slot.end };
     }
     this.pending.clear();
     if (render) this.notify();
@@ -467,9 +603,7 @@ export class App {
     this.pending.delete(key);
     const chat = this.chats.get(key.slice(0, key.lastIndexOf(":")));
     if (!chat) return;
-    chat.expanded = new Set();
-    chat.blockCache = new Map();
-    chat.md = new MarkdownCache();
+    Object.assign(chat, this.freshReaderState());
     await this.loadTail(chat);
     this.sentKeys = "";
     this.syncSubscriptions();
@@ -491,7 +625,7 @@ export class App {
     const keys: SubscribeKey[] = [];
     for (const id of ids) {
       const chat = this.chats.get(id);
-      if (chat?.state === "ready") keys.push({ key: chat.key, from: chat.model.page.end_offset });
+      if (chat?.state === "ready") keys.push({ key: chat.key, from: chat.end, view: "rows" });
       if (keys.length === MAX_KEYS) break;
     }
     const sig = keys.map((k) => k.key).sort().join(",");
@@ -521,6 +655,9 @@ export class App {
       { id: "workspace.prev", title: "Previous workspace", chord: "Ctrl+Meta+ArrowUp", run: (e) => this.stepWorkspace(-1, e) },
       { id: "chat.next", title: "Next chat", chord: "Shift+Meta+]", run: (e) => this.stepChat(1, e) },
       { id: "chat.prev", title: "Previous chat", chord: "Shift+Meta+[", run: (e) => this.stepChat(-1, e) },
+      { id: "find.open", title: "Find in chat", chord: "Meta+F", when: () => this.openId !== null, run: () => this.openFind() },
+      { id: "find.next", title: "Find next", chord: "Meta+G", when: () => this.openId !== null, run: () => this.stepFind(1) },
+      { id: "find.prev", title: "Find previous", chord: "Shift+Meta+G", when: () => this.openId !== null, run: () => this.stepFind(-1) },
       {
         id: "composer.focus",
         title: "Focus composer",

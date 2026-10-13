@@ -1,112 +1,131 @@
 import { describe, expect, it } from "vitest";
-import { takeToken, type Api, type Snapshot } from "./api";
+import { takeToken, type Api, type Row, type RowPage, type Snapshot } from "./api";
 import { App } from "./app";
 import { eventKey, installKeys, parseChord, Registry, search } from "./commands";
 import { renderMarkdown } from "./markdown";
 import { MAX_RECORDS, measure } from "./perf";
 import { SseParser } from "./sse";
-import { blocks, items, preview, Transcript } from "./transcript";
+import { FoldChoices, findMatches, lines, mergeRows, parsePatch, splitPatch } from "./transcript";
 import { buildTree, flatten, rollUp } from "./tree";
 
-const meta = (uuid: string) => ({ session_id: "s1", uuid, timestamp: "", parent_uuid: null, source_tool_use_id: null });
+// A row as the server sends it; `order` is [source offset, event ordinal].
+const row = (id: string, offset: number, extra: Partial<Row> = {}): Row => ({ id, kind: "assistant", text: id, order: [offset, 0], ...extra });
+const tool = (id: string, offset: number, state: "finished" | "failed" = "finished"): Row =>
+  row(id, offset, { kind: "toolUse", tool: { name: "Bash", input: {}, state, header_title: id } });
+const fold = (id: string, steps: Row[], extra: Partial<Row> = {}): Row =>
+  row(id, steps[0].order[0], { kind: "fold", text: `${steps.length} commands`, steps, ...extra });
+const ids = (rows: { id: string }[]) => rows.map((r) => r.id);
 
-describe("transcript model", () => {
-  it("merges agent chunks that share a uuid into one row", () => {
-    const t = new Transcript();
-    t.apply([
-      { type: "agent_message_chunk", text: "Hello ", meta: meta("a-1") },
-      { type: "session_info", kind: "model", value: "x", meta: meta("a-1") },
-      { type: "agent_message_chunk", text: "world", meta: meta("a-1") },
+describe("row merge", () => {
+  it("replaces a known row in place, appends a newer one, and puts an older one by order", () => {
+    const first = [row("question", 10), row("answer", 20)];
+    const merged = mergeRows(first, [row("answer", 20, { text: "longer answer" }), row("follow-up", 30), row("preamble", 5)]);
+    expect(ids(merged)).toEqual(["preamble", "question", "answer", "follow-up"]);
+    expect(merged[2].text).toBe("longer answer");
+    expect(merged[1]).toBe(first[0]);
+  });
+
+  it("places by offset, then by event ordinal, and keeps queued rows last", () => {
+    const merged = mergeRows([row("queued-prompt", 1, { kind: "queued" })], [row("second-event", 40, { order: [40, 1] }), row("first-event", 40)]);
+    expect(ids(merged)).toEqual(["first-event", "second-event", "queued-prompt"]);
+  });
+
+  it("removes rows by id, and keeps a row that the same frame upserts again", () => {
+    const orphanResult = row("orphan-result", 50, { kind: "toolResult" });
+    const merged = mergeRows([orphanResult, row("answer", 60)], [tool("joined-call", 40), row("answer", 60, { text: "same id" })], ["orphan-result", "answer"]);
+    expect(ids(merged)).toEqual(["joined-call", "answer"]);
+    expect(merged[1].text).toBe("same id");
+  });
+
+  it("returns the same array when a frame changes nothing", () => {
+    const rows = [row("answer", 1)];
+    expect(mergeRows(rows, [], [])).toBe(rows);
+  });
+});
+
+describe("folds and lines", () => {
+  const steps = [tool("read-config", 100), row("model-notice", 101, { kind: "notice", hidden: true }), tool("run-tests", 102)];
+
+  it("draws a closed fold as one line, and an open fold with its shown steps under it", () => {
+    const state = { showHidden: false, folds: new FoldChoices(), opened: new Map() };
+    expect(ids(lines([fold("run", steps)], state).lines)).toEqual(["run"]);
+    expect(ids(lines([fold("run", steps, { default_open: true })], state).lines)).toEqual(["run", "read-config", "run-tests"]);
+    expect(lines([fold("run", steps)], state).hidden).toBe(1);
+    expect(ids(lines([fold("run", steps, { default_open: true })], { ...state, showHidden: true }).lines)).toContain("model-notice");
+  });
+
+  it("keeps the reader's choice when the run gains a step and the fold id changes", () => {
+    const folds = new FoldChoices();
+    const before = fold("fold:read-config", steps.slice(0, 2), { default_open: true });
+    folds.set(before, false);
+    const grown = fold("fold:read-config-v2", steps, { default_open: true });
+    expect(folds.isOpen(grown)).toBe(false);
+    folds.set(grown, true);
+    expect(folds.isOpen(fold("fold:other", [steps[2]]))).toBe(true);
+    expect(folds.isOpen(fold("fold:unseen", [tool("lint", 200)]))).toBe(false);
+  });
+
+  it("opens a failed tool card by default, and the reader's choice wins", () => {
+    const failed = tool("cargo-test", 5, "failed");
+    expect(lines([failed], { showHidden: false, folds: new FoldChoices(), opened: new Map() }).lines[0].open).toBe(true);
+    expect(lines([failed], { showHidden: false, folds: new FoldChoices(), opened: new Map([["cargo-test", false]]) }).lines[0].open).toBe(false);
+  });
+});
+
+describe("find", () => {
+  it("finds a step inside a closed fold and names the fold that holds it", () => {
+    const rows = [row("intro", 1, { text: "Running the parser tests" }), fold("run", [tool("read-config", 10), tool("parser-check", 11)])];
+    const matches = findMatches(rows, "PARSER", false);
+    expect(matches.map((m) => [m.id, m.fold?.id ?? null])).toEqual([
+      ["intro", null],
+      ["parser-check", "run"],
     ]);
-    t.apply([{ type: "agent_message_chunk", text: "!", meta: meta("a-1") }]);
-    expect(t.rows).toEqual([{ id: "a:a-1", kind: "agent", text: "Hello world!" }]);
   });
 
-  it("keeps rows when the batch ends on an event that makes no row", () => {
-    const t = new Transcript();
-    expect(t.apply([{ type: "agent_message_chunk", text: "done", meta: meta("a-9") }, { type: "turn_ended", meta: meta("") }])).toBe(true);
-    expect(t.rows).toHaveLength(1);
-    expect(t.apply([{ type: "turn_ended", meta: meta("") }])).toBe(false);
+  it("skips hidden rows unless they are shown", () => {
+    const rows = [row("model-notice", 1, { kind: "notice", text: "model: opus", hidden: true })];
+    expect(findMatches(rows, "opus", false)).toEqual([]);
+    expect(findMatches(rows, "opus", true)).toHaveLength(1);
   });
 
-  it("keeps chunks with an empty uuid as separate rows", () => {
-    const t = new Transcript();
-    t.apply([
-      { type: "agent_message_chunk", text: "one", meta: meta("") },
-      { type: "agent_message_chunk", text: "two", meta: meta("") },
+  it("opens the fold and the card of the match the reader steps to", async () => {
+    const step = { ...tool("parser-check", 11), tool: { name: "Bash", input: {}, state: "finished" as const, header_title: "cargo test parser" } };
+    const page: RowPage = { page: { start_offset: 0, end_offset: 20 }, rows: [fold("run", [tool("read-config", 10), step])], usage: null };
+    const app = new App({ rows: async () => page } as unknown as Api);
+    const g = globalThis as unknown as { requestAnimationFrame?: unknown; document?: unknown };
+    g.requestAnimationFrame = () => 0;
+    g.document = { querySelector: () => null };
+    try {
+      app.openChat("chat");
+      await new Promise((r) => setTimeout(r, 0));
+      expect(ids(app.view.lines)).toEqual(["run"]);
+      app.openFind();
+      app.setFindQuery("parser");
+      expect(ids(app.view.lines)).toEqual(["run", "read-config", "parser-check"]);
+      expect(app.view.lines[2].open).toBe(true);
+      expect(app.view.find.matches[app.view.find.index].id).toBe("parser-check");
+    } finally {
+      delete g.requestAnimationFrame;
+      delete g.document;
+    }
+  });
+});
+
+describe("patch", () => {
+  it("numbers unified lines and pairs removals with additions side by side", () => {
+    const parsed = parsePatch('diff --git "a/x" "b/x"\n--- "a/x"\n+++ "b/x"\n@@ -3,3 +3,3 @@\n keep\n-old\n+new\n tail\n');
+    expect(parsed.map((l) => [l.kind, l.old ?? null, l.new ?? null])).toEqual([
+      ["meta", null, null],
+      ["meta", null, null],
+      ["meta", null, null],
+      ["hunk", null, null],
+      ["ctx", 3, 3],
+      ["del", 4, null],
+      ["add", null, 4],
+      ["ctx", 5, 5],
     ]);
-    expect(t.rows.map((r) => r.kind === "agent" && r.text)).toEqual(["one", "two"]);
-  });
-
-  it("joins a tool call with its update and diff by tool_call_id, and keeps the row id", () => {
-    const t = new Transcript();
-    t.apply([{ type: "tool_call", tool_call_id: "toolu-build", name: "Bash", input: { command: "make" }, status: "pending", meta: meta("a-2") }]);
-    const first = t.rows[0];
-    t.apply([
-      { type: "agent_message_chunk", text: "while waiting", meta: meta("a-3") },
-      { type: "tool_call_update", tool_call_id: "toolu-build", status: "failed", content: "Exit code 1", meta: meta("u-1") },
-      { type: "tool_diff", tool_call_id: "toolu-build", path: "/w/a.txt", hunks: [], meta: meta("u-1") },
-    ]);
-    expect(t.rows).toHaveLength(2);
-    expect(t.rows[0]).toMatchObject({ id: first.id, kind: "tool", name: "Bash", status: "failed", output: "Exit code 1" });
-    expect(t.rows[0]).not.toBe(first);
-    expect(t.rows[0].kind === "tool" && t.rows[0].diffs[0].path).toBe("/w/a.txt");
-  });
-
-  it("keeps interleaved calls apart and shows an update without a call as its own row", () => {
-    const t = new Transcript();
-    t.apply([
-      { type: "tool_call", tool_call_id: "a", name: "Read", input: {}, status: "pending", meta: meta("1") },
-      { type: "tool_call", tool_call_id: "b", name: "Bash", input: {}, status: "pending", meta: meta("2") },
-      { type: "tool_call_update", tool_call_id: "b", status: "completed", content: "B", meta: meta("3") },
-      { type: "tool_call_update", tool_call_id: "a", status: "completed", content: "A", meta: meta("4") },
-      { type: "tool_call_update", tool_call_id: "lost", status: "completed", content: "L", meta: meta("5") },
-    ]);
-    expect(t.rows.map((r) => r.kind === "tool" && [r.name, r.output])).toEqual([
-      ["Read", "A"],
-      ["Bash", "B"],
-      ["", "L"],
-    ]);
-  });
-
-  it("merges an older page into rows that are split across the page edge", () => {
-    const t = new Transcript();
-    t.apply([
-      { type: "tool_call_update", tool_call_id: "x", status: "completed", content: "out", meta: meta("2") },
-      { type: "agent_message_chunk", text: "tail", meta: meta("m") },
-    ]);
-    const ids = t.rows.map((r) => r.id);
-    t.prepend(
-      [
-        { type: "user_message_chunk", text: "hi", meta: meta("u") },
-        { type: "agent_message_chunk", text: "head ", meta: meta("m0") },
-        { type: "tool_call", tool_call_id: "x", name: "Bash", input: { command: "ls" }, status: "pending", meta: meta("1") },
-      ],
-      { start_offset: 0, end_offset: 100 },
-    );
-    expect(t.rows.map((r) => r.id).slice(-2)).toEqual(ids);
-    expect(t.rows).toHaveLength(4);
-    expect(t.get("t:x")).toMatchObject({ name: "Bash", output: "out" });
-    expect(t.page.start_offset).toBe(0);
-  });
-
-  it("caps the preview at 120 lines and 12,000 characters", () => {
-    const lines = Array.from({ length: 200 }, (_, i) => `line ${i}`).join("\n");
-    const p = preview(lines);
-    expect(p.truncated).toBe(true);
-    expect(p.text.split("\n").filter(Boolean)).toHaveLength(120);
-    const wide = "x".repeat(20_000);
-    expect(preview(wide).text).toHaveLength(12_000);
-    expect(preview("short\n")).toEqual({ text: "short\n", truncated: false });
-  });
-
-  it("splits a 200k-line output into many small blocks that rebuild the text", () => {
-    const text = Array.from({ length: 200_000 }, (_, i) => `row ${i}`).join("\n");
-    const b = blocks("t:x", text);
-    expect(b.length).toBe(1000);
-    expect(b.map((x) => x.text).join("")).toBe(text);
-    const list = items([{ id: "t:x", kind: "tool", name: "", input: null, status: "completed", output: text, diffs: [] }], new Set(["t:x"]), new Map());
-    expect(list).toHaveLength(1001);
+    const split = splitPatch(parsed);
+    expect(split[2]).toEqual({ left: parsed[5], right: parsed[6] });
   });
 });
 
@@ -262,25 +281,26 @@ describe("markdown", () => {
     expect(html).toContain('<a href="https://example.com" target="_blank" rel="noopener noreferrer">c</a>');
   });
 
+  it("gives code blocks and tables a Copy header; a table keeps its markdown source", () => {
+    const html = renderMarkdown("```sh\nmake build\n```\n\n| a | b |\n|---|---|\n| 1 | <2> |\n");
+    expect(html).toContain('<div class="md-code"><div class="md-head"><span>sh</span><button type="button" data-copy="code"');
+    expect(html).toContain('data-raw="| a | b |\n|---|---|\n| 1 | &lt;2&gt; |"');
+    expect(html).toContain('data-copy="table"');
+  });
+
   it("does not load images", () => {
     expect(renderMarkdown("![x](https://example.com/a.png)")).not.toContain("<img");
   });
 });
 
 describe("chat LRU", () => {
-  it("drops the render caches and older pages of the least recent chat when a fifth chat opens", async () => {
+  it("drops the reader state and older pages of the least recent chat when a fifth chat opens", async () => {
     const fetched: string[] = [];
     const api = {
-      transcript: async (session: string, _agent: string, _tail: number, before?: number) => {
+      rows: async (session: string, _agent: string, _tail: number, before?: number): Promise<RowPage> => {
         fetched.push(before === undefined ? `${session} tail` : `${session} before ${before}`);
-        if (before !== undefined) return { page: { start_offset: 0, end_offset: 100 }, events: [{ type: "agent_message_chunk", text: "old", meta: meta(`${session}-old`) }] };
-        return {
-          page: { start_offset: 100, end_offset: 200 },
-          events: [
-            { type: "tool_call", tool_call_id: `${session}-cat`, name: "Bash", input: {}, status: "pending", meta: meta(`${session}-call`) },
-            { type: "tool_call_update", tool_call_id: `${session}-cat`, status: "completed", content: "output", meta: meta(`${session}-result`) },
-          ],
-        };
+        if (before !== undefined) return { page: { start_offset: 0, end_offset: 100 }, rows: [row(`${session}-old`, 50), tool(`${session}-cat`, 150, "failed")], usage: null };
+        return { page: { start_offset: 100, end_offset: 200 }, rows: [tool(`${session}-cat`, 150, "failed")], usage: null };
       },
     } as unknown as Api;
     const settle = () => new Promise((r) => setTimeout(r, 0));
@@ -288,9 +308,12 @@ describe("chat LRU", () => {
     app.openChat("first");
     await settle();
     await app.loadOlder();
-    app.toggleOutput("t:first-cat");
+    app.toggleLine(app.view.lines[1]);
     const firstMarkdown = app.view.md;
-    expect(app.view.items.map((i) => i.kind)).toEqual(["agent", "tool", "block"]);
+    expect(app.view.lines.map((l) => [l.id, l.open])).toEqual([
+      ["first-old", false],
+      ["first-cat", false],
+    ]);
 
     for (const id of ["second", "third", "fourth", "fifth"]) {
       app.openChat(id);
@@ -300,8 +323,7 @@ describe("chat LRU", () => {
     await settle();
 
     expect(fetched.filter((f) => f.startsWith("first"))).toEqual(["first tail", "first before 100", "first tail"]);
-    expect(app.view.items.map((i) => i.kind)).toEqual(["tool"]);
-    expect(app.view.expanded.size).toBe(0);
+    expect(app.view.lines.map((l) => [l.id, l.open])).toEqual([["first-cat", true]]);
     expect(app.view.md).not.toBe(firstMarkdown);
   });
 });

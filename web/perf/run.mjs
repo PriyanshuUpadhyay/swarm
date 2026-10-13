@@ -154,7 +154,7 @@ async function suite(browserName, app, url) {
   // Scroll the 100k-event chat upward, paging older rows in as it goes.
   await openChat(page, chatRows[0]);
   let olderPages = 0;
-  const countOlder = (request) => { if (request.url().includes("/api/transcript") && request.url().includes("before=")) olderPages++; };
+  const countOlder = (request) => { if (request.url().includes("/api/rows") && request.url().includes("before=")) olderPages++; };
   page.on("request", countOlder);
   const scroll = await frames(page, async () => {
     // Scroll until 10k log lines are paged in (pages of TAIL = 200 lines), capped at 90 s.
