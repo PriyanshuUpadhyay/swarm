@@ -73,37 +73,88 @@ fn text(read: &ReadCommands<'_>, args: &[&str]) -> Result<String> {
     String::from_utf8(bytes(read, args)?)
         .map_err(|_| Error::Failed("Git returned invalid UTF-8".into()))
 }
-fn comparison(read: &ReadCommands<'_>, base: Option<&str>) -> Result<Vec<String>> {
+struct Comparison {
+    pair: Vec<String>,
+    refs: Vec<String>,
+}
+fn comparison(read: &ReadCommands<'_>, base: Option<&str>, identity: &Value) -> Result<Comparison> {
     let base = base.ok_or_else(|| Error::Invalid("Select a base ref".into()))?;
     let refs = text(
         read,
         &[
             "for-each-ref",
-            "--format=%(refname)",
+            "--format=%(refname)%09%(objectname)%09%(objecttype)",
             "refs/heads",
             "refs/remotes",
         ],
     )?;
-    let reference = refs
+    let entries: Vec<_> = refs
         .lines()
-        .find(|r| {
-            *r == base
-                || r.strip_prefix("refs/heads/") == Some(base)
-                || r.strip_prefix("refs/remotes/") == Some(base)
+        .map(|line| line.splitn(3, '\t').collect::<Vec<_>>())
+        .collect();
+    let entry = entries
+        .iter()
+        .find(|entry| {
+            entry[0] == base
+                || entry[0].strip_prefix("refs/heads/") == Some(base)
+                || entry[0].strip_prefix("refs/remotes/") == Some(base)
         })
         .ok_or_else(|| Error::Invalid("Select an available base ref".into()))?;
-    let oid = text(
-        read,
-        &[
-            "rev-parse",
-            "--verify",
-            "--end-of-options",
-            &format!("{reference}^{{commit}}"),
-        ],
-    )?;
-    let head = text(read, &["rev-parse", "--verify", "HEAD"])?;
-    let merge = text(read, &["merge-base", oid.trim(), head.trim()])?;
-    Ok(vec![merge.trim().into(), head.trim().into()])
+    let oid = if entry.get(2) == Some(&"commit") {
+        entry[1].to_owned()
+    } else {
+        text(
+            read,
+            &[
+                "rev-parse",
+                "--verify",
+                "--end-of-options",
+                &format!("{}^{{commit}}", entry[0]),
+            ],
+        )?
+        .trim()
+        .into()
+    };
+    let head = match identity["head"].as_str() {
+        Some(head) => head.to_owned(),
+        None => text(read, &["rev-parse", "--verify", "HEAD"])?
+            .trim()
+            .into(),
+    };
+    let merge = text(read, &["merge-base", &oid, &head])?;
+    Ok(Comparison {
+        pair: vec![merge.trim().into(), head],
+        refs: entries.iter().map(|entry| entry[0].to_owned()).collect(),
+    })
+}
+fn stable(
+    read: &ReadCommands<'_>,
+    mode: &Mode,
+    base: Option<&str>,
+    path: Option<&str>,
+    before: &Value,
+    pair: &[String],
+) -> Result<()> {
+    let unchanged = std::thread::scope(|scope| {
+        let identity = scope.spawn(|| identity(read, path));
+        let comparison = scope.spawn(|| -> Result<Vec<String>> {
+            if matches!(mode, Mode::Branch) {
+                Ok(comparison(read, base, before)?.pair)
+            } else {
+                Ok(Vec::new())
+            }
+        });
+        Ok::<_, Error>(
+            identity.join().expect("identity read")? == *before
+                && comparison.join().expect("comparison read")? == pair,
+        )
+    })?;
+    if !unchanged {
+        return Err(Error::Failed(
+            "The branch comparison changed during the read. Refresh it".into(),
+        ));
+    }
+    Ok(())
 }
 fn diff_args(layer: &str, pair: &[String]) -> Vec<String> {
     let mut args: Vec<String> = [
@@ -136,6 +187,34 @@ fn diff(
     args.extend(path.map(String::from));
     bytes(read, &args.iter().map(String::as_str).collect::<Vec<_>>())
 }
+fn patch_and_counts(
+    read: &ReadCommands<'_>,
+    layer: &str,
+    pair: &[String],
+    path: &str,
+) -> Result<(String, BTreeMap<String, Counts>)> {
+    std::thread::scope(|scope| {
+        let patch = scope.spawn(|| diff(read, layer, pair, &[], Some(path)));
+        let counts = scope.spawn(|| {
+            diff(
+                read,
+                if layer == "conflicted" {
+                    "unstaged"
+                } else {
+                    layer
+                },
+                pair,
+                &["--numstat", "-z"],
+                Some(path),
+            )
+        });
+        Ok((
+            String::from_utf8(patch.join().expect("patch read")?)
+                .map_err(|_| Error::Failed("Git returned invalid UTF-8".into()))?,
+            stats(&counts.join().expect("patch counts")?)?,
+        ))
+    })
+}
 fn stats(data: &[u8]) -> Result<BTreeMap<String, Counts>> {
     data.split(|b| *b == 0)
         .filter(|v| !v.is_empty())
@@ -161,16 +240,17 @@ fn stats(data: &[u8]) -> Result<BTreeMap<String, Counts>> {
         })
         .collect()
 }
-fn identity(read: &ReadCommands<'_>) -> Result<Value> {
-    let status = text(
-        read,
-        &[
-            "status",
-            "--porcelain=v2",
-            "--branch",
-            "--untracked-files=no",
-        ],
-    )?;
+fn identity(read: &ReadCommands<'_>, path: Option<&str>) -> Result<Value> {
+    let mut args = vec![
+        "status",
+        "--porcelain=v2",
+        "--branch",
+        "--untracked-files=no",
+    ];
+    if let Some(path) = path {
+        args.extend(["--", path]);
+    }
+    let status = text(read, &args)?;
     let head = status
         .lines()
         .find_map(|s| s.strip_prefix("# branch.oid "))
@@ -182,29 +262,63 @@ fn identity(read: &ReadCommands<'_>) -> Result<Value> {
     Ok(json!({"head":head,"branch":branch}))
 }
 
+fn local_changes(data: &[u8]) -> Result<Vec<Change>> {
+    let mut files = Vec::new();
+    for entry in data.split(|b| *b == 0).filter(|s| !s.is_empty()) {
+        if entry.len() < 4 || entry[2] != b' ' {
+            return Err(Error::Failed("Git returned invalid status".into()));
+        }
+        let path = std::str::from_utf8(&entry[3..])
+            .map_err(|_| Error::Failed("Git returned an invalid path".into()))?;
+        let status = &entry[..2];
+        let layers = if status == b"??" {
+            vec![("untracked", "?".into())]
+        } else if [b"DD", b"AU", b"UD", b"UA", b"DU", b"AA", b"UU"]
+            .iter()
+            .any(|s| s.as_slice() == status)
+        {
+            vec![("conflicted", String::from_utf8_lossy(status).into_owned())]
+        } else {
+            [("staged", status[0]), ("unstaged", status[1])]
+                .into_iter()
+                .filter(|(_, c)| *c != b' ')
+                .map(|(l, c)| (l, char::from(c).to_string()))
+                .collect()
+        };
+        for (layer, status) in layers {
+            files.push(Change {
+                path: path.into(),
+                status,
+                layer: layer.into(),
+                added: None,
+                removed: None,
+            });
+        }
+    }
+    Ok(files)
+}
+
 pub fn list(root: &str, mode: &Mode, base: Option<&str>) -> Result<Value> {
     list_with(&ReadCommands::new(root), mode, base)
 }
 fn list_with(read: &ReadCommands<'_>, mode: &Mode, base: Option<&str>) -> Result<Value> {
-    let before = identity(read)?;
+    let before = identity(read, None)?;
     let mut files = Vec::new();
-    let refs = text(
-        read,
-        &[
-            "for-each-ref",
-            "--format=%(refname)",
-            "refs/heads",
-            "refs/remotes",
-        ],
-    )?;
-    let pair = if matches!(mode, Mode::Branch) {
-        comparison(read, base)?
+    let (refs, pair) = if matches!(mode, Mode::Branch) {
+        let comparison = comparison(read, base, &before)?;
+        (comparison.refs, comparison.pair)
     } else {
-        Vec::new()
+        (Vec::new(), Vec::new())
     };
-    if matches!(mode, Mode::Branch) {
-        let names = diff(read, "branch", &pair, &["--name-status", "-z"], None)?;
-        let counts = stats(&diff(read, "branch", &pair, &["--numstat", "-z"], None)?)?;
+    let refs = if matches!(mode, Mode::Branch) {
+        let (names, counts) = std::thread::scope(|scope| {
+            let names = scope.spawn(|| diff(read, "branch", &pair, &["--name-status", "-z"], None));
+            let counts = scope.spawn(|| diff(read, "branch", &pair, &["--numstat", "-z"], None));
+            Ok::<_, Error>((
+                names.join().expect("change names")?,
+                stats(&counts.join().expect("change counts")?)?,
+            ))
+        })?;
         let parts: Vec<_> = names.split(|b| *b == 0).filter(|s| !s.is_empty()).collect();
         if parts.len() % 2 != 0 {
             return Err(Error::Failed("Git returned incomplete changes".into()));
@@ -221,76 +335,65 @@ fn list_with(read: &ReadCommands<'_>, mode: &Mode, base: Option<&str>) -> Result
                 removed,
             });
         }
+        refs
     } else {
-        let status = bytes(
-            read,
-            &[
-                "status",
-                "--porcelain=v1",
-                "-z",
-                "--no-renames",
-                "--untracked-files=all",
-            ],
-        )?;
-        let staged = stats(&diff(read, "staged", &[], &["--numstat", "-z"], None)?)?;
-        let unstaged = stats(&diff(read, "unstaged", &[], &["--numstat", "-z"], None)?)?;
-        for entry in status.split(|b| *b == 0).filter(|s| !s.is_empty()) {
-            if entry.len() < 4 || entry[2] != b' ' {
-                return Err(Error::Failed("Git returned invalid status".into()));
-            }
-            let path = std::str::from_utf8(&entry[3..])
-                .map_err(|_| Error::Failed("Git returned an invalid path".into()))?;
-            let status = &entry[..2];
-            let layers = if status == b"??" {
-                vec![("untracked", "?".into())]
-            } else if [b"DD", b"AU", b"UD", b"UA", b"DU", b"AA", b"UU"]
-                .iter()
-                .any(|s| s.as_slice() == status)
-            {
-                vec![("conflicted", String::from_utf8_lossy(status).into_owned())]
+        let (refs, status, staged, unstaged) = std::thread::scope(|scope| {
+            let refs = scope.spawn(|| {
+                text(
+                    read,
+                    &[
+                        "for-each-ref",
+                        "--format=%(refname)",
+                        "refs/heads",
+                        "refs/remotes",
+                    ],
+                )
+            });
+            let status = scope.spawn(|| {
+                bytes(
+                    read,
+                    &[
+                        "status",
+                        "--porcelain=v1",
+                        "-z",
+                        "--no-renames",
+                        "--untracked-files=all",
+                    ],
+                )
+            });
+            let staged = scope.spawn(|| diff(read, "staged", &[], &["--numstat", "-z"], None));
+            let unstaged = scope.spawn(|| diff(read, "unstaged", &[], &["--numstat", "-z"], None));
+            Ok::<_, Error>((
+                refs.join().expect("refs read")?,
+                status.join().expect("status read")?,
+                stats(&staged.join().expect("staged counts")?)?,
+                stats(&unstaged.join().expect("unstaged counts")?)?,
+            ))
+        })?;
+        for mut file in local_changes(&status)? {
+            let (added, removed) = if file.layer == "untracked" {
+                match untracked(read, &file.path)? {
+                    Some(source) => (Some(source.full_lines), Some(0)),
+                    None => (None, None),
+                }
             } else {
-                [("staged", status[0]), ("unstaged", status[1])]
-                    .into_iter()
-                    .filter(|(_, c)| *c != b' ')
-                    .map(|(l, c)| (l, char::from(c).to_string()))
-                    .collect()
-            };
-            for (layer, status) in layers {
-                let (added, removed) = if layer == "untracked" {
-                    match untracked(read, path)? {
-                        Some(source) => (Some(source.full_lines), Some(0)),
-                        None => (None, None),
-                    }
+                (if file.layer == "staged" {
+                    &staged
                 } else {
-                    (if layer == "staged" {
-                        &staged
-                    } else {
-                        &unstaged
-                    })
-                    .get(path)
-                    .copied()
-                    .unwrap_or((None, None))
-                };
-                files.push(Change {
-                    path: path.into(),
-                    status,
-                    layer: layer.into(),
-                    added,
-                    removed,
-                });
-            }
+                    &unstaged
+                })
+                .get(&file.path)
+                .copied()
+                .unwrap_or((None, None))
+            };
+            file.added = added;
+            file.removed = removed;
+            files.push(file);
         }
-    }
-    if identity(read)? != before
-        || (matches!(mode, Mode::Branch) && comparison(read, base)? != pair)
-    {
-        return Err(Error::Failed(
-            "The branch comparison changed during the read. Refresh it".into(),
-        ));
-    }
-    Ok(
-        json!({"files":files,"refs":refs.lines().collect::<Vec<_>>(),"comparison":pair,"identity":before}),
-    )
+        refs.lines().map(str::to_owned).collect()
+    };
+    stable(read, mode, base, None, &before, &pair)?;
+    Ok(json!({"files":files,"refs":refs,"comparison":pair,"identity":before}))
 }
 
 pub fn patch(
@@ -302,30 +405,72 @@ pub fn patch(
 ) -> Result<Value> {
     validate_path(path)?;
     let read = ReadCommands::new(root);
-    let listing = list_with(&read, mode, base)?;
-    let candidates: Vec<_> = listing["files"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .filter(|f| f["path"] == path && layer.is_none_or(|l| f["layer"] == l))
+    let before = identity(&read, Some(path))?;
+    let pair = if matches!(mode, Mode::Branch) {
+        comparison(&read, base, &before)?.pair
+    } else {
+        Vec::new()
+    };
+    let (candidates, mut source) = if matches!(mode, Mode::Branch) {
+        let (source, counts) = patch_and_counts(&read, "branch", &pair, path)?;
+        (
+            counts
+                .get(path)
+                .map(|&(added, removed)| Change {
+                    path: path.into(),
+                    status: String::new(),
+                    layer: "branch".into(),
+                    added,
+                    removed,
+                })
+                .into_iter()
+                .collect(),
+            Some(source),
+        )
+    } else {
+        (
+            local_changes(&bytes(
+                &read,
+                &[
+                    "status",
+                    "--porcelain=v1",
+                    "-z",
+                    "--no-renames",
+                    "--untracked-files=all",
+                    "--",
+                    path,
+                ],
+            )?)?,
+            None,
+        )
+    };
+    let mut candidates: Vec<_> = candidates
+        .into_iter()
+        .filter(|f: &Change| f.path == path && layer.is_none_or(|l| f.layer == l))
         .collect();
-    let file = candidates
-        .first()
-        .ok_or_else(|| Error::Invalid("Select a changed file and layer".into()))?;
     if candidates.len() > 1 {
         return Err(Error::Invalid(
             "Select staged or unstaged for this file".into(),
         ));
     }
-    let layer = file["layer"].as_str().unwrap();
-    let pair: Vec<String> = serde_json::from_value(listing["comparison"].clone()).unwrap();
+    let mut file = candidates
+        .pop()
+        .ok_or_else(|| Error::Invalid("Select a changed file and layer".into()))?;
+    let layer = file.layer.as_str();
+    if !matches!(mode, Mode::Branch) && layer != "untracked" {
+        let (patch, counts) = patch_and_counts(&read, layer, &pair, path)?;
+        source = Some(patch);
+        (file.added, file.removed) = counts.get(path).copied().unwrap_or((None, None));
+    }
     let mut full = None;
     let source = if layer == "untracked" {
         let Some(source) = untracked(&read, path)? else {
             return Ok(
-                json!({"path":path,"notice":"Binary file or symbolic link","added":file["added"],"removed":file["removed"]}),
+                json!({"path":path,"notice":"Binary file or symbolic link","added":file.added,"removed":file.removed}),
             );
         };
+        file.added = Some(source.full_lines);
+        file.removed = Some(0);
         let name = serde_json::to_string(&format!("b/{path}")).unwrap();
         let header = format!(
             "diff --git /dev/null {name}\n--- /dev/null\n+++ {name}\n@@ -0,0 +1,{} @@\n",
@@ -354,8 +499,7 @@ pub fn patch(
             }
         )
     } else {
-        String::from_utf8(diff(&read, layer, &pair, &[], Some(path))?)
-            .map_err(|_| Error::Failed("Git returned invalid UTF-8".into()))?
+        source.expect("tracked patch")
     };
     let mut preview = TextPreview::new(&source, 200);
     if let Some((lines, bytes)) = full {
@@ -364,16 +508,10 @@ pub fn patch(
         preview.full_bytes = bytes;
         preview.hidden_lines = lines.saturating_sub(preview.text.lines().count());
     }
-    if identity(&read)? != listing["identity"]
-        || (matches!(mode, Mode::Branch) && comparison(&read, base)? != pair)
-    {
-        return Err(Error::Failed(
-            "The branch comparison changed during the read. Refresh it".into(),
-        ));
-    }
+    stable(&read, mode, base, Some(path), &before, &pair)?;
     Ok(
         json!({"path":path,"layer":layer,"patch":preview.text,"is_truncated":preview.is_truncated,
-        "full_lines":preview.full_lines,"full_bytes":preview.full_bytes,"hidden_lines":preview.hidden_lines,"added":file["added"],"removed":file["removed"]}),
+        "full_lines":preview.full_lines,"full_bytes":preview.full_bytes,"hidden_lines":preview.hidden_lines,"added":file.added,"removed":file.removed}),
     )
 }
 

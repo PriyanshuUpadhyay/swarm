@@ -65,8 +65,10 @@ esac
                 let out = Command::new(std::env::current_exe().unwrap()).args(["--exact", stringify!($name), "--nocapture"])
                     .env_clear().env("HOME", &root).env("PATH", format!("{}:/usr/bin:/bin", root.join("bin").display()))
                     .env("GIT_CEILING_DIRECTORIES", fs::canonicalize(&root).unwrap()).env("GIT_CONFIG_NOSYSTEM", "1")
-                    .env("GIT_CONFIG_GLOBAL", root.join(".gitconfig")).env("SWARM_PANEL_CASE", stringify!($name)).output().unwrap();
+                    .env("GIT_CONFIG_GLOBAL", root.join(".gitconfig")).env("SWARM_PANEL_CASE", stringify!($name))
+                    .envs(std::env::var("SWARM_GIT_BASELINE").ok().map(|value| ("SWARM_GIT_BASELINE", value))).output().unwrap();
                 fs::remove_dir_all(root).unwrap();
+                print!("{}", String::from_utf8_lossy(&out.stdout));
                 assert!(out.status.success(), "{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
                 return;
             }
@@ -75,6 +77,80 @@ esac
         }
     }
 }
+
+isolated!(
+    changes_reads_only_selected_path_and_counts_git_spawns,
+    |fixture| {
+        use std::os::unix::fs::PermissionsExt;
+        fixture.write("file.txt", "base\n");
+        fixture.write("unchanged.txt", "unchanged\n");
+        fixture.commit();
+        fixture.git(&["switch", "-qc", "feature"]);
+        fixture.write("file.txt", &"new\n".repeat(20_000));
+        fixture.commit();
+        fixture.write("file.txt", &"local\n".repeat(20_000));
+        fs::create_dir(PathBuf::from(&fixture.repo).join("folder")).unwrap();
+        fixture.write("folder/child", "");
+        let wrapper = fixture.root.join("bin/git");
+        fs::write(&wrapper, "#!/bin/sh\ncase \"$3\" in --literal-pathspecs) printf '%s\\n' \"$*\" >> \"$HOME/git-calls\" ;; esac\nexec /usr/bin/git \"$@\"\n").unwrap();
+        fs::set_permissions(&wrapper, fs::Permissions::from_mode(0o755)).unwrap();
+        let calls = fixture.root.join("git-calls");
+        let baseline = std::env::var_os("SWARM_GIT_BASELINE").is_some();
+        for (mode, name, list_count, patch_count) in
+            [(Mode::Local, "local", 6, 5), (Mode::Branch, "branch", 8, 8)]
+        {
+            for (patch, expected) in [(false, list_count), (true, patch_count)] {
+                fs::write(&calls, "").unwrap();
+                let start = std::time::Instant::now();
+                let value = if patch {
+                    changes::patch(&fixture.repo, "file.txt", &mode, Some("main"), None)
+                } else {
+                    changes::list(&fixture.repo, &mode, Some("main"))
+                }
+                .unwrap();
+                let elapsed = start.elapsed().as_secs_f64() * 1000.0;
+                if patch {
+                    assert_eq!(value["added"], 20_000);
+                }
+                let commands = fs::read_to_string(&calls).unwrap();
+                let count = commands.lines().count();
+                println!("{name} patch={patch} elapsed_ms={elapsed:.3} git_spawns={count}");
+                if !baseline {
+                    assert_eq!(count, expected);
+                }
+                if patch && !baseline {
+                    assert!(!commands.contains("--numstat -z --\n"));
+                }
+            }
+        }
+        for path in ["unchanged.txt", "missing.txt", "folder"] {
+            assert!(changes::patch(&fixture.repo, path, &Mode::Local, None, None).is_err());
+            assert!(
+                changes::patch(&fixture.repo, path, &Mode::Branch, Some("main"), None).is_err()
+            );
+        }
+        assert!(
+            changes::patch(
+                &fixture.repo,
+                "file.txt",
+                &Mode::Local,
+                None,
+                Some("branch")
+            )
+            .is_err()
+        );
+        assert!(
+            changes::patch(
+                &fixture.repo,
+                "file.txt",
+                &Mode::Branch,
+                Some("main"),
+                Some("unstaged")
+            )
+            .is_err()
+        );
+    }
+);
 
 isolated!(local_layers_counts_and_literal_paths, |fixture| {
     fixture.write("file.txt", "base\n");
@@ -171,7 +247,51 @@ isolated!(branch_comparison_caps_and_conflicts, |fixture| {
     )
     .unwrap();
     assert!(patch["patch"].as_str().unwrap().contains("diff --cc"));
+    assert_eq!(patch["added"], listing["files"][0]["added"]);
+    assert_eq!(patch["removed"], listing["files"][0]["removed"]);
 });
+
+isolated!(
+    changes_reject_head_and_base_changes_during_reads,
+    |fixture| {
+        use std::os::unix::fs::PermissionsExt;
+        fixture.write("file.txt", "base\n");
+        fixture.commit();
+        fixture.git(&["switch", "-qc", "feature"]);
+        fixture.write("file.txt", "feature\n");
+        fixture.commit();
+        fixture.git(&[
+            "-c",
+            "tag.gpgsign=false",
+            "tag",
+            "-a",
+            "-m",
+            "base",
+            "tag-base",
+            "main",
+        ]);
+        let tag = fixture.git(&["rev-parse", "tag-base"]);
+        fixture.git(&["update-ref", "refs/remotes/tag-base", &tag]);
+        let patch = changes::patch(
+            &fixture.repo,
+            "file.txt",
+            &Mode::Branch,
+            Some("refs/remotes/tag-base"),
+            None,
+        )
+        .unwrap();
+        assert_eq!(patch["added"], 1);
+        let wrapper = fixture.root.join("bin/git");
+        fs::write(&wrapper, "#!/bin/sh\n/usr/bin/git \"$@\"\nresult=$?\nif [ \"$4\" = diff ]; then /usr/bin/git -C \"$2\" update-ref refs/heads/main HEAD; fi\nexit \"$result\"\n").unwrap();
+        fs::set_permissions(&wrapper, fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(
+            changes::patch(&fixture.repo, "file.txt", &Mode::Branch, Some("main"), None).is_err()
+        );
+        fixture.write("file.txt", "local\n");
+        fs::write(&wrapper, "#!/bin/sh\n/usr/bin/git \"$@\"\nresult=$?\nif [ \"$4\" = diff ]; then /usr/bin/git -C \"$2\" symbolic-ref HEAD refs/heads/main; fi\nexit \"$result\"\n").unwrap();
+        assert!(changes::patch(&fixture.repo, "file.txt", &Mode::Local, None, None).is_err());
+    }
+);
 
 isolated!(
     preview_refuses_symlinks_traversal_binary_and_large_files,

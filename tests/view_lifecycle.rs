@@ -841,3 +841,37 @@ fn raw_git_timeout_reaps_process() {
     assert!(discovery::run_command(&mut command, 1).is_err());
     assert!(start.elapsed().as_secs_f64() < 2.0);
 }
+
+#[test]
+fn command_timeout_kills_the_waiting_child() {
+    let root = std::env::temp_dir().join(format!("swarm-timeout-{}", uuid::Uuid::now_v7()));
+    fs::create_dir(&root).unwrap();
+    let pid_file = root.join("pid");
+    let mut command = Command::new("/bin/sh");
+    command.args(["-c", "printf '%s' \"$$\" > \"$1\"; exec sleep 5", "fixture"]);
+    command.arg(&pid_file);
+    let start = std::time::Instant::now();
+    let error = discovery::run_command(&mut command, 1).unwrap_err();
+    assert!(
+        error.contains("timed out") || error.contains("Timeout"),
+        "{error}"
+    );
+    assert!(start.elapsed().as_secs_f64() < 2.0);
+    let pid: i32 = fs::read_to_string(pid_file).unwrap().parse().unwrap();
+    unsafe extern "C" {
+        fn kill(pid: i32, signal: i32) -> i32;
+    }
+    // SAFETY: signal zero checks the recorded child without sending a signal.
+    assert_eq!(unsafe { kill(pid, 0) }, -1);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn command_keeps_both_outputs_and_exit_status() {
+    let mut command = Command::new("/bin/sh");
+    command.args(["-c", "printf output; printf error >&2; exit 7"]);
+    let output = discovery::run_command(&mut command, 1).unwrap();
+    assert_eq!(output.status.code(), Some(7));
+    assert_eq!(output.stdout, b"output");
+    assert_eq!(output.stderr, b"error");
+}

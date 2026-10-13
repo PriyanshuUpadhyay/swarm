@@ -981,6 +981,112 @@ fn tree_choices(server: &Server) -> Value {
 }
 
 #[test]
+fn changes_routes_latency_and_git_spawn_counts() {
+    use std::os::unix::fs::PermissionsExt;
+    let server = Server::configured(false, true);
+    let project = server.dir.join("project");
+    let git = |args: &[&str]| {
+        let output = Command::new("/usr/bin/git")
+            .arg("-C")
+            .arg(&project)
+            .args(args)
+            .env("GIT_CEILING_DIRECTORIES", &server.dir)
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{:?}", output);
+    };
+    git(&["config", "user.name", "Fixture"]);
+    git(&["config", "user.email", "fixture@example.com"]);
+    fs::write(project.join("large.txt"), "base\n").unwrap();
+    git(&["add", "."]);
+    git(&["-c", "commit.gpgsign=false", "commit", "-qm", "base"]);
+    git(&["switch", "-qc", "feature"]);
+    fs::write(project.join("large.txt"), "new\n".repeat(20_000)).unwrap();
+    git(&["add", "."]);
+    git(&["-c", "commit.gpgsign=false", "commit", "-qm", "large"]);
+    fs::write(project.join("large.txt"), "local\n".repeat(20_000)).unwrap();
+    let wrapper = server.dir.join("home/bin/git");
+    let trace = std::env::var_os("SWARM_GIT_TRACE").is_some();
+    fs::write(
+        &wrapper,
+        if trace { r#"#!/usr/bin/perl
+use Time::HiRes qw(time);
+my $start = time;
+system '/usr/bin/git', @ARGV;
+my $status = $?;
+if ($ARGV[2] eq '--literal-pathspecs') {
+    open my $log, '>>', "$ENV{HOME}/git-calls" or die $!;
+    printf $log "%.3f\t%s\n", (time - $start) * 1000, join(' ', @ARGV[3 .. $#ARGV]);
+}
+exit($status == -1 ? 127 : ($status & 127) ? 128 + ($status & 127) : $status >> 8);
+"# } else { "#!/bin/sh\ncase \"$3\" in --literal-pathspecs) printf '0\\t%s\\n' \"$*\" >> \"$HOME/git-calls\" ;; esac\nexec /usr/bin/git \"$@\"\n" },
+    )
+    .unwrap();
+    fs::set_permissions(&wrapper, fs::Permissions::from_mode(0o755)).unwrap();
+    let calls = server.dir.join("home/git-calls");
+    let baseline = std::env::var_os("SWARM_GIT_BASELINE").is_some();
+    for (mode, list_count, diff_count) in [("local", 6, 5), ("branch", 8, 8)] {
+        for (route, expected) in [
+            ("/api/changes", list_count),
+            ("/api/changes/diff", diff_count),
+        ] {
+            let query = format!(
+                "{route}?workspace={}&mode={mode}&base=main&path=large.txt&layer={}",
+                project.display(),
+                if mode == "local" {
+                    "unstaged"
+                } else {
+                    "branch"
+                }
+            );
+            let mut timings = Vec::new();
+            let mut counts = Vec::new();
+            let mut commands: std::collections::BTreeMap<String, Vec<f64>> = Default::default();
+            for _ in 0..20 {
+                fs::write(&calls, "").unwrap();
+                let start = Instant::now();
+                let (status, _, body) = server.request("GET", &query, "", "", true);
+                timings.push(start.elapsed().as_secs_f64() * 1000.0);
+                assert_eq!(status, 200, "{body}");
+                if route.ends_with("/diff") {
+                    let patch: Value = serde_json::from_str(&body).unwrap();
+                    assert_eq!(patch["added"], 20_000);
+                    assert_eq!(patch["is_truncated"], true);
+                }
+                let calls = fs::read_to_string(&calls).unwrap();
+                let count = calls.lines().count();
+                for call in calls.lines() {
+                    let (elapsed, command) = call.split_once('\t').unwrap();
+                    commands
+                        .entry(command.into())
+                        .or_default()
+                        .push(elapsed.parse().unwrap());
+                }
+                counts.push(count);
+                if !baseline {
+                    assert_eq!(count, expected, "{mode} {route}");
+                }
+            }
+            timings.sort_by(f64::total_cmp);
+            println!(
+                "{mode} {route} p95_ms={:.3} git_spawns={counts:?}",
+                timings[18]
+            );
+            for (command, mut timings) in commands.into_iter().filter(|_| trace) {
+                timings.sort_by(f64::total_cmp);
+                println!(
+                    "{mode} {route} command={command} samples={} p50_ms={:.3} p95_ms={:.3}",
+                    timings.len(),
+                    timings[timings.len() / 2],
+                    timings[(timings.len() * 95).div_ceil(100) - 1]
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn workspace_lifecycle_http_refuses_unlisted_paths_before_any_change() {
     let server = Server::configured(true, true);
     let outside = server.dir.join("outside");

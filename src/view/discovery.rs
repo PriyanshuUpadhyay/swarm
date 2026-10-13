@@ -54,15 +54,25 @@ pub fn run_command(command: &mut Command, seconds: u64) -> Result<Output, String
         let _ = output.send((false, stderr.read_to_end(&mut bytes).map(|_| bytes)));
     });
     let deadline = Instant::now() + Duration::from_secs(seconds);
-    let status = loop {
-        match child.try_wait() {
-            Ok(Some(status)) => break Ok(status),
-            Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(10)),
-            _ => {
-                stop(&mut child);
-                break Err("command timed out or could not be read".to_owned());
-            }
-        }
+    let pid = child.id();
+    let (finished, completion) = std::sync::mpsc::channel();
+    let wait = std::thread::spawn(move || {
+        let status = child.wait();
+        let _ = finished.send(());
+        (child, status)
+    });
+    let timed_out = completion
+        .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+        .is_err();
+    if timed_out {
+        stop_group(pid);
+    }
+    let (mut child, status) = wait.join().expect("command wait thread");
+    let status = if timed_out || status.is_err() {
+        stop(&mut child);
+        Err("command timed out or could not be read".to_owned())
+    } else {
+        status.map_err(|e| e.to_string())
     };
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
@@ -95,6 +105,11 @@ pub fn run_command(command: &mut Command, seconds: u64) -> Result<Output, String
     })
 }
 fn stop(child: &mut std::process::Child) {
+    stop_group(child.id());
+    let _ = child.kill();
+    let _ = child.wait();
+}
+fn stop_group(pid: u32) {
     #[cfg(unix)]
     {
         unsafe extern "C" {
@@ -102,11 +117,9 @@ fn stop(child: &mut std::process::Child) {
         }
         // SAFETY: this child owns its process group; kill accepts plain integers.
         unsafe {
-            kill(-(child.id() as i32), 9);
+            kill(-(pid as i32), 9);
         }
     }
-    let _ = child.kill();
-    let _ = child.wait();
 }
 fn git(path: &str, args: &[&str]) -> Option<String> {
     let mut flags = vec!["-C", path];
