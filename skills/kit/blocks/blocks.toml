@@ -13,8 +13,9 @@
 # one precise question and the evidence its answer must quote. Form goes to script, meaning goes to
 # judge. A block with no script check says so in one line, `- none: <why>`.
 # `{{name}}` is filled from `[params]` in the repo's `.blocks.toml`; a missing one stops start.
-# The kit blocks use `source_of_truth` (the doc that facts come from; the base block needs it, so
-# every run that names a block sets it), `site` (the folder of the page, its CSS, and its JS), and
+# The kit blocks use `source_of_truth` (the doc that facts come from; the base block needs it, so a
+# repo with no `.blocks.toml` runs without the base and its steps print an `Off:` line for it), `site`
+# (the folder of the page, its CSS, and its JS), and
 # `shots` (the one folder for screenshots and compare images), each a repo-relative path.
 #
 # A step line in ~/.flow/domains.md names a block or an alias as `block:<id>` next to its paths.

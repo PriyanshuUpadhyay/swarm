@@ -767,6 +767,16 @@ def test_toml_no_block_adds_no_base(tmp):
         assert "Skills read: none" in text.splitlines() and "first-principles" not in text, (file.name, text)
 
 
+def test_no_toml_runs_blocks_without_base(tmp):
+    """A repo with no .blocks.toml still runs a block that needs no param, such as one an `any` catalog line
+    names; the base block, which needs source_of_truth, is off with its reason."""
+    out, folder, _, _ = blocks_start(tmp, "no-toml", "- close: block:done-when-evidence\n", None)
+    assert out.returncode == 0, out.stderr
+    close = step_text(folder, "07-close")
+    assert "===== block:done-when-evidence =====" in close and "===== block:first-principles" not in close, close
+    assert "Off: first-principles: the repo has no .blocks.toml, which sets source_of_truth" in close, close
+
+
 def test_param_quoted_in_script_checks(tmp):
     """A [params] value fills a Check (script) command as one shell word, so a space or an option inside it
     stays one path; rules text gets the value as written."""
@@ -1502,6 +1512,7 @@ with tempfile.TemporaryDirectory() as tmp:
     test_start_without_tomllib(tmp)
     test_start_no_block_reads_no_toml(tmp)
     test_toml_no_block_adds_no_base(tmp)
+    test_no_toml_runs_blocks_without_base(tmp)
     test_param_quoted_in_script_checks(tmp)
     test_param_outside_span_in_script_check(tmp)
     test_add_path_errors(tmp)

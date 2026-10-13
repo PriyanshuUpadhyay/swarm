@@ -270,6 +270,10 @@ def resolve_blocks(root, wanted, profile_name):
             raise SystemExit(f"unknown block id {unknown[0]} in the {key} line of ~/.flow/domains.md")
         named[key] = [m for i in ids for m in aliases.get(i, [i])] + added.get(key, [])
     base = kit.get("base", []) if any(named.values()) else []  # a run that names no block stays as before
+    # The base block needs source_of_truth, which only the repo's .blocks.toml sets. A repo with no such file
+    # still runs the blocks that its catalog lines name, such as an `any` line, and the step says the base is off.
+    if base and not repo_file.exists():
+        off = {**{b: "the repo has no .blocks.toml, which sets source_of_truth" for b in base}, **off}
 
     loaded = {}
 
