@@ -46,10 +46,11 @@ Codex and Antigravity read an installed copy, so run their install again after a
 version is copied again.
 
 Do not link a kit skill folder into an agent's skills folder. A tool reads `../../blocks/` from the
-link's own path, not from the kit, so the blocks are not found. The three vendor skills that
-`build-site` and ink read use no blocks, so link them:
+link's own path, not from the kit, so the blocks are not found. The three vendor skills
+(`taste-skill`, `animate`, `break-ui`) use no blocks, so link them:
 
 ```sh
+mkdir -p ~/.claude/skills
 for s in <repo>/skills/kit/vendor/taste-skill/skills/taste-skill/ \
   <repo>/skills/kit/vendor/emil-skills/skills/animate/ <repo>/skills/kit/vendor/emil-skills/skills/break-ui/; do
   ln -sfn "$s" ~/.claude/skills/"$(basename "$s")"
