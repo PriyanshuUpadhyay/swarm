@@ -11,38 +11,21 @@ does the typing. The kit's blocks are in `../../blocks/` from this skill's folde
 
 ## One task file per task
 
-Keep one task file, in the run folder that `~/.claude/references/run-folder.md` names, at:
+Keep the task file as the kit block `blocks/task-file/SKILL.md` says, at
+`<repo-root>/tmp/pair/<YYYY-MM-DD>-<slug>.md`. Besides the block's fields, it holds:
 
-```text
-<repo-root>/tmp/pair/<YYYY-MM-DD>-<slug>.md
-```
-
-It holds:
-
-- the goal in one line;
 - `Repository: <absolute path>` of the product repository, on its own line;
 - `Status: active`, on its own line, flipped to `Status: done` after the last behavior. The
   edit gate hook reads `Repository:` and `Status:` and denies Edit and Write inside that
   repository while the status is active, so a chunk can land only through `patch`;
-- the ordered behaviors, each one testable sentence;
-- the current behavior;
+- the behaviors as the block's steps, each one testable sentence;
 - a chunk log with the chunk number, its intent, its `file:line`, and its outcome
-  (`approved`, `changed`, or `denied`);
-- the commit hash of each finished behavior;
-- one evidence line per finished behavior: the check that ran and its result, or the run that
-  showed the behavior on the real surface;
-- the checks to run;
-- the next step.
+  (`approved`, `changed`, or `denied`).
 
-Give other agents this absolute path, never a paraphrase or a summary. Read the file first after a
-`/clear`, a `/compact`, or a resume, and make the first reply a status block: the behaviors done
-with their hashes, the behaviors pending, the current chunk, and the open decisions, then the next
-chunk. Nothing done is redone. The file is the truth, the chat is not.
-
-The file is a log for a resume, not a display. Keep it to the fields above, with no source survey
-and no essay. Everything the user has to read, which is the behavior list, every chunk, and every
-example, appears inline in the chat as text and fenced code. Never point the user at the task file,
-and never answer with its path in place of the code.
+The status block after a resume also names the current chunk. Everything the user has to read,
+which is the behavior list, every chunk, and every example, appears inline in the chat as text and
+fenced code. Never point the user at the task file, and never answer with its path in place of the
+code.
 
 ## Plan first, short
 
@@ -153,9 +136,7 @@ no cleanup gate, no readability review, no extra tooling to set up or tear down.
 - The task ends at the last behavior. No cleanup gate, no readability review, no teardown step.
 - The commit subject is one imperative line; a body is optional and short.
 - One chunk in front of the user at a time.
-- No second plan file. The task file is the only plan.
-- No task file that git tracks. `tmp/` stays in `.git/info/exclude`.
-- Update the task file after every approved chunk.
+- The task file follows `blocks/task-file/SKILL.md`, and is updated after every approved chunk.
 - Keep replies to the chunk itself. No progress essays, no restated plan.
 - Show the behavior list and every chunk inline in the chat. A file path is never the reply.
 - Every chunk is a unified diff from `diff -u`, never a prose description of the change.
