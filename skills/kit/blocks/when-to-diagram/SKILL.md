@@ -17,7 +17,7 @@ metadata:
 - Draw a diagram when the subject calls across three or more parts in an order that matters; adds, removes, or reorders a branch, a guard, or an async step; moves through a lifecycle, a status, or a retry flow; or changes a schema or a data model.
 - Skip it for one file, a rename, a config value, or a list. Text already shows those.
 - Pick the type from the shape: a sequence for calls over time, a flowchart for decisions, a state diagram for a lifecycle, an entity diagram for a schema.
-- For each diagram, write in `02-design.md` the trigger it meets and the type picked from the shape.
+- For each diagram, write in the design step's file (`02-design.md` in flow) the trigger it meets and the type picked from the shape.
 - Every branch leads somewhere, so the diagram also shows the edge cases.
 - A parts diagram (the parts of a system and how they connect, not the steps of a flow or a sequence) has 12 nodes at most, in 2 to 3 columns. Place the nodes on a grid.
 - A state diagram has 8 states at most. Put the main path on the top row and the ways out below it. Without a grid, labels overlap once arrows cross. No state that cannot be reached. No dead end that is not final.
@@ -35,6 +35,6 @@ Result: one diagram with 5 nodes (4 lanes and "dropped, logged") and every branc
 
 ## Check (judge)
 - Does each parts diagram have 12 nodes or fewer, and each state diagram 8 states or fewer (other types have no node limit)? Quote each diagram's type, its node names, and their count.
-- For each diagram, does `02-design.md` name the trigger it meets and the type picked from the shape? Quote both.
+- For each diagram, does the design step's file name the trigger it meets and the type picked from the shape? Quote both.
 - Does each branch end at a node or a final state? Quote each branch and its end.
 - Is each caption one sentence that says what to notice? Quote the caption.

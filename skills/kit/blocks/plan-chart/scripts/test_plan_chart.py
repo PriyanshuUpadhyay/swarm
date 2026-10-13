@@ -11,7 +11,7 @@ Done when: the settings page has a dark theme; evidence: a screenshot at 375 px 
 
 | File | Needs | Holds | Block | Why |
 |---|---|---|---|---|
-| 01-frame | none | done-when claims | behavior-claims | the claims say when the work is done |
+| 01-frame | none | done-when claims | requirements | the claims say when the work is done |
 | 02-read | frame | findings with paths | local-research | find where the theme is set |
 | 03-tokens | frame | DESIGN.md tokens | design-tokens | the dark colors need tokens |
 | 04-build | read, tokens | the page | build-site, web-ui-basics | make the change |

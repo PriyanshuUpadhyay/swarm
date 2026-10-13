@@ -1,6 +1,6 @@
 ---
-name: behavior-claims
-description: "Write the frame as short true-or-false claims about what someone can now do or see, with done-when evidence and the main risks. Use when you frame a change before design or build."
+name: requirements
+description: "State the requirements as short true-or-false claims about what someone can now do or see, with done-when evidence and the main risks. Use when a task starts, before design or build."
 license: MIT
 metadata:
   kind: rule
@@ -9,7 +9,7 @@ metadata:
   needs: "the request"
   gives: "done-when claims"
   conflicts: ""
-  users: "flow"
+  users: "flow, planner"
   source: "html-plan pack: skills/html-plan/SKILL.md:20-30 (tree levels), :75-78 (rules 1, 2, 4), :87 (no visible behavior); skills/flow/SKILL.md (step table, 01-frame row); pm-skills pack: pm-execution/skills/pre-mortem/SKILL.md:21-25, :27-42, :44-46, :55-57, :84"
 ---
 
@@ -20,7 +20,7 @@ metadata:
 - The level-1 claims are the summary. Read them aloud. They must tell the whole change. Write no TL;DR, no sections list, no steps list.
 - At most 5 children and 3 levels.
 - If the change has no visible behavior, level 1 states the guarantees: "Nothing a caller sees changes."
-- `01-frame.md` holds what the `01-frame.md` row of the step table in `skills/flow/SKILL.md` lists.
+- The frame step's file holds what its caller lists for it: in flow, the `01-frame.md` row of the step table in `skills/flow/SKILL.md`; in a plan, the step's Holds cell.
 - Each done-when names the evidence that will prove it: a command, a screenshot, or a `file:line`.
 - Pre-mortem: imagine the page ships in 14 days and fails. Ask what went wrong, what you missed, and what you were overconfident about.
 - Sort each failure as a Tiger (a real risk, with evidence), a Paper Tiger (a concern that is overblown), or an Elephant (a risk that nobody is discussing or checking). When you are not sure which kind a failure is, call it a Tiger.
@@ -39,7 +39,7 @@ Result: read aloud, the three claims tell the whole page.
 - none: the frame writes only its step file, which holds this block's own Rules and Example.
 
 ## Check (judge)
-- Does `01-frame.md` give the goal, the user, out of scope, done-when, and shared assumptions? Quote each field's line.
+- Does the frame step's file give the goal, the user, out of scope, done-when, and shared assumptions? Quote each field's line.
 - Is each level-1 claim one sentence that can be false, in 12 words or fewer? Quote each claim with its word count.
 - Do the level-1 claims, read alone, tell the whole change, and is no claim a file, a layer, or a step? Quote the claims.
 - Does each done-when name the evidence that will prove it (a command, a screenshot, a `file:line`)? Quote each done-when.

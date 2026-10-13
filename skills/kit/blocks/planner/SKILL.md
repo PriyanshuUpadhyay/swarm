@@ -10,7 +10,7 @@ metadata:
   gives: "plan.md, a step table with blocks"
   conflicts: ""
   users: "plan"
-  source: "docs/blocks.md (The model: plan block, ledger, end condition); references/step-run.md (step table, Needs); blocks/behavior-claims/SKILL.md (done-when claims)"
+  source: "docs/blocks.md (The model: plan block, ledger, end condition); references/step-run.md (step table, Needs); blocks/requirements/SKILL.md (done-when claims)"
 ---
 
 ## Rules
@@ -24,7 +24,7 @@ metadata:
   - Holds: what the step gives, in a few words.
   - Block: one or more block ids, comma-separated. The step's agent reads each `blocks/<id>/SKILL.md` and follows it.
   - Why: one line that says why this step is in the plan.
-- The first step frames the task (usually `behavior-claims`) unless the task is one question.
+- The first step states the requirements (usually `requirements`) unless the task is one question.
 - The last step is the only step whose output no step uses. It holds a `voice-` block that fits the reader: `voice-reply` for the owner, `voice-review` for review comments.
 - Two blocks that name each other in `conflicts` are alternatives. Keep one and say why in Why.
 - When no block fits a step, write the step with the nearest block and say what is missing in Why. Do not invent a block id.
@@ -41,7 +41,7 @@ Done when: the settings page has a dark theme; evidence: screenshots at 375 px a
 
 | File | Needs | Holds | Block | Why |
 |---|---|---|---|---|
-| 01-frame | none | done-when claims | behavior-claims | the claims say when the work is done |
+| 01-frame | none | done-when claims | requirements | the claims say when the work is done |
 | 02-read | frame | findings with paths | local-research | find where the theme is set |
 | 03-tokens | frame | DESIGN.md tokens | design-tokens | the dark colors need tokens |
 | 04-build | read, tokens | the page | build-site, web-ui-basics | make the change |

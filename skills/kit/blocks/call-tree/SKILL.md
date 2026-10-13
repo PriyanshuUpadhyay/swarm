@@ -14,7 +14,7 @@ metadata:
 ---
 
 ## Rules
-- Write the tree as plain text in a fenced block in `04-impact.md`.
+- Write the tree as plain text in a fenced block in the impact step's file (`04-impact.md` in flow).
 - One call per line. Column 0 is the mark: `+` new, `-` removed, `~` changed entrypoint, `?` proposed (the reader can strike it), a space for context.
 - An entrypoint starts at column 2. Each level adds 2 spaces. A blank line starts a new entrypoint.
 - `**bold**` marks a new symbol. A `+` row without bold is a new call to something that exists.
@@ -41,4 +41,4 @@ Result: the reader sees two new symbols, two changed entrypoints, and one option
 ## Check (judge)
 - Does each tree row have a mark in column 0 and `@ path:line`, followed by nothing or by one `-- clause`, and does each tree have 15 rows or fewer? Quote each tree.
 - For a row on code that exists, is its symbol at the cited line, and for a `+` row of a new function, is the cited line the one it goes after? Quote each row and the source line.
-- Does `04-impact.md` name the existing features that change, or say "independent"? Quote the line.
+- Does the impact step's file name the existing features that change, or say "independent"? Quote the line.
