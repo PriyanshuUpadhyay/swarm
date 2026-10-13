@@ -36,7 +36,7 @@ only while a notice is pending or a click is handled.
   `swarm` inserts a `notice` row with the session, the agent, and a body from the workspace folder
   name and the state kind. `swarm notify` inserts its row as before. So every notice is a row, and
   no notice is derived from a tree diff in a UI.
-- After the row, `swarm` starts the helper unless the SwiftUI app holds `app.lock`. It runs
+- After the row, `swarm` starts the helper. It runs
   `open -g <helper> --env SWARM_HOME=<home> --env SWARM_BIN=<this swarm>` detached, and never
   waits. The helper path is `SWARM_NOTIFY_APP` if set, else `SwarmNotify.app` next to the running
   `swarm`, else the one in `/Applications/Swarm.app`. If none exists, nothing starts and the row

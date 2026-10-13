@@ -5,7 +5,6 @@ const MARKER: &str = "swarm-home";
 /// The owner's guard rule list, which `swarm guard` reads (ADR 0040).
 pub const GUARDS: &str = "guards.json";
 /// The app's held file lock, which makes the CLI leave owner notices to the app (ADR 0058).
-pub const APP_LOCK: &str = "app.lock";
 /// The owner's consent for launch folder trust (ADR 0043).
 const CONSENT: &str = "consent.json";
 /// The lock every build takes before it edits a file outside its home (ADR 0043, C6).
@@ -189,10 +188,8 @@ mod tests {
                         vector["branch"].as_str().unwrap(),
                     )
                 });
-            let lock = std::path::Path::new(&home)
-                .join(super::SWARM_DIR)
-                .join(super::APP_LOCK);
-            assert_eq!(lock.to_str().unwrap(), vector["lock"].as_str().unwrap());
+            let root = std::path::Path::new(&home).join(super::SWARM_DIR);
+            assert_eq!(root.to_str().unwrap(), vector["root"].as_str().unwrap());
             let mut probe = std::process::Command::new(std::env::current_exe().unwrap());
             probe
                 .env_clear()

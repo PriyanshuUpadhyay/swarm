@@ -434,13 +434,7 @@ fn hook(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         let _ = swarm::store::update_usage(&connection, &report.session, &report.agent, provider);
     }
     if state == "waiting" && old.as_deref() != Some("waiting") {
-        notice_waiting(
-            &connection,
-            &swarm::paths::root_dir()?,
-            &report.session,
-            &report.agent,
-            kind,
-        )?;
+        notice_waiting(&connection, &report.session, &report.agent, kind)?;
     }
     Ok(())
 }
@@ -448,7 +442,6 @@ fn hook(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
 /// ADR 0077: a change to waiting is a notice row, which the notice helper posts.
 fn notice_waiting(
     connection: &rusqlite::Connection,
-    root: &std::path::Path,
     session: &str,
     agent: &str,
     kind: Option<&str>,
@@ -468,17 +461,14 @@ fn notice_waiting(
         "Swarm",
         &format!("{folder}: {what}"),
     )?;
-    start_notify_helper(root);
+    start_notify_helper();
     Ok(())
 }
 
-/// ADR 0077: a notice starts the small helper, never the full app. While the SwiftUI app holds
-/// its lock it drains the rows itself. Never waits, so the hook keeps its remaining budget.
-fn start_notify_helper(root: &std::path::Path) {
+/// ADR 0077: a notice starts the small helper, never the full app. Never waits, so the hook keeps
+/// its remaining budget.
+fn start_notify_helper() {
     use std::os::unix::process::CommandExt;
-    if app_holds_lock(root) {
-        return;
-    }
     let Some(helper) = notify_helper() else {
         return;
     };
@@ -566,20 +556,6 @@ fn notices_due() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     print_json(&due)
-}
-
-/// Only a held kernel lock means the app is running. The pid is informational.
-fn app_holds_lock(root: &std::path::Path) -> bool {
-    use std::os::fd::AsRawFd;
-    let Ok(file) = std::fs::File::open(root.join(swarm::paths::APP_LOCK)) else {
-        return false;
-    };
-    unsafe extern "C" {
-        fn flock(fd: i32, operation: i32) -> i32;
-    }
-    // SAFETY: file owns this open descriptor; 1 | 4 is LOCK_SH | LOCK_NB on supported Unix hosts.
-    let result = unsafe { flock(file.as_raw_fd(), 1 | 4) };
-    result != 0 && std::io::Error::last_os_error().kind() == std::io::ErrorKind::WouldBlock
 }
 
 fn adapter_name() -> String {
@@ -3348,8 +3324,7 @@ fn list_agents(
                 Ok(true) => {
                     if seen == "waiting"
                         && row.state.as_deref() != Some("waiting")
-                        && let Err(error) =
-                            notice_waiting(connection, root, session_id, &row.id, None)
+                        && let Err(error) = notice_waiting(connection, session_id, &row.id, None)
                     {
                         eprintln!("swarm: {error}");
                     }
@@ -3545,7 +3520,6 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                     .into(),
             );
         }
-        let root = swarm::paths::root_dir()?;
         let connection = swarm::store::open(&swarm::paths::sqlite_db()?)?;
         let caller = identity().ok().filter(|(session, agent)| {
             swarm::store::orchestrator_of(&connection, session).is_ok_and(|chair| chair == *agent)
@@ -3557,7 +3531,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             title,
             body,
         )?;
-        start_notify_helper(&root);
+        start_notify_helper();
         return Ok(());
     }
     if let [cmd, json] = args

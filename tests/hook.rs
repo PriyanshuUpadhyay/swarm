@@ -1333,17 +1333,6 @@ fn notify_records_the_chair_identity_and_refuses_a_worker() {
     std::fs::remove_dir_all(home).unwrap();
 }
 
-fn hold_app_lock(path: &Path) -> std::fs::File {
-    use std::os::fd::AsRawFd;
-    unsafe extern "C" {
-        fn flock(fd: i32, operation: i32) -> i32;
-    }
-    let file = std::fs::File::create(path).unwrap();
-    // SAFETY: the descriptor stays open in the returned file; 2 | 4 is LOCK_EX | LOCK_NB.
-    assert_eq!(unsafe { flock(file.as_raw_fd(), 2 | 4) }, 0);
-    file
-}
-
 /// Waits up to 1 s for the stand-in `open` to record its arguments.
 fn opened(home: &Path) -> Option<String> {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
@@ -1364,7 +1353,7 @@ fn helper_start(home: &Path, helper: &Path) -> String {
 }
 
 #[test]
-fn notify_starts_the_helper_only_without_the_app_lock_and_does_not_wait() {
+fn notify_starts_the_helper_and_does_not_wait() {
     let home = scratch("notice-open");
     assert!(swarm(&home, &[], &["init"], "").status.success());
     let helper = home.join("SwarmNotify.app");
@@ -1375,10 +1364,6 @@ fn notify_starts_the_helper_only_without_the_app_lock_and_does_not_wait() {
         "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$HOME/opened\"\nsleep 2\n",
     )
     .unwrap();
-    let held = hold_app_lock(&home.join(".swarm/app.lock"));
-    assert!(swarm(&home, &env, &["notify", "Done"], "").status.success());
-    assert!(!home.join("opened").exists());
-    drop(held);
     let started = std::time::Instant::now();
     assert!(swarm(&home, &env, &["notify", "Done"], "").status.success());
     assert!(started.elapsed() < std::time::Duration::from_secs(1));

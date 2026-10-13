@@ -53,7 +53,7 @@ Where each Swift-only behaviour goes:
 | PATH swarm alert of 0048, with Copy Command and one answer per path-and-version pair | shell; the fix text follows the tap without the formula: `brew uninstall swarm; brew reinstall --cask --force priyanshuupadhyay/tap/swarm-app` |
 | Home per build branch (0027) | Rust: the bundled `swarm` reads its own stamp |
 | Window frame restore, Edit menu (⌘C, ⌘V in the page) | shell |
-| `app.lock` run lock | none: LaunchServices keeps one app instance, and no process takes the lock now |
+| `app.lock` run lock | removed: LaunchServices keeps one app instance, and `swarm` no longer checks the lock |
 | Done notice from a tree change | ended (0077); a chair sends `swarm notify` |
 | Clipboard, Create Project, settings pages | web app and `swarm serve` |
 | Usage HUD panel, tab groups | dropped (0076) |
