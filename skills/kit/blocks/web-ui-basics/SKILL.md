@@ -28,9 +28,7 @@ Layout
 - Each multi-column layout declares its below-768 px fallback. Use CSS Grid, not flex percentage math. A full-height hero uses `min-height: 100dvh`, not `100vh`.
 - Never disable zoom (`user-scalable=no`, `maximum-scale=1`). Set `color-scheme` and a `<meta name="theme-color">` that matches the background.
 Motion
-- Animate only `transform` and `opacity`. Never `transition: all`.
-- UI animations stay under 300 ms. Use ease-out to enter. Never ease-in.
-- Honor `prefers-reduced-motion: reduce`: fewer and gentler, not zero. Keep opacity fades; remove movement. Loops and parallax become static.
+- UI timing, easing, and reduced motion follow the kit block `blocks/ui-motion/SKILL.md`. The script checks below catch its banned forms.
 - Every key fact shows in a settled state and under reduced motion. Content that waits at opacity 0 is blank in full-page screenshots and skipped by checkers, so check with reduced motion on: take the reduced-motion shot in blocks/headless-shot/SKILL.md:18.
 Copy
 - `…` not `...`. Active voice. Specific button labels: "Copy install command", not "Continue".

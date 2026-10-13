@@ -31,7 +31,7 @@
 
 base = ["base-rules"]
 
-[aliases]  # name = [block ids]; split or rename a block here, and no catalog line changes
+[aliases]  # name = [current block ids], a group that a profile can merge; never an old id of a renamed block
 tech-diagram = ["when-to-diagram", "html-diagram"]
 style-frames = ["look-check", "headless-shot"]
 

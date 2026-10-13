@@ -88,14 +88,14 @@ hash. The loader is complete and tested. `~/.flow/domains.md` names blocks since
 the note in track A). No real run has used a block yet. `docs/blocks.md` maps every kit skill to its
 blocks.
 
-### Blocks that exist (29)
+### Blocks that exist (42)
 
 Each block owns its rule text; the skill that held it points to the block.
 
 | Block | Concept | Serves |
 |---|---|---|
 | base-rules | the rules every step keeps (base) | every step |
-| behavior-claims | frame as true-or-false claims with done-when | frame |
+| requirements | frame as true-or-false claims with done-when (was behavior-claims) | frame |
 | decision-with-default | a real fork asked with a default, and the trade-off form | contracts, design |
 | call-tree | impact as a marked call tree with real paths | impact |
 | prove-it-works | what proves a change works (was the skill's text and red-first-check) | build, review, close |
@@ -123,13 +123,22 @@ Each block owns its rule text; the skill that held it points to the block.
 | link-check | every cited link opens and says the claim | report, merge |
 | report | the shape of a research report and its reply | report, close |
 | tool-trial | try three candidates on the same task (was research 04-test) | research, contracts |
+| planner | which blocks a task uses, in which order, with which inputs | plan |
+| plan-chart | the check and the HTML chart of a plan's step graph | plan |
+| plan-review | the owner's approval of the current plan, then the start | plan |
+| comment-round | one Plannotator round with file hashes, answers and the loop stop | plan, view and talk |
+| page-comments | the comment, fix and check loop for a built page | view and talk |
+| serve-local | a loopback view of the checked build | view and talk |
+| change-review | the full review-check verdict on a plan's commits | review |
+| scratch-home | trial and test state apart from the live home | build, review, research |
+| ui-motion | UI timing and easing from one timing owner | build, review |
+| voice-reply | the final reply, by the session's reply rules | close |
+| voice-teach | an explanation in learning order | close |
+| voice-review | review comments in the reviewer's voice | review, close |
+| voice-pr | a PR title and body draft | close |
 
 ### Known defects
 
-- `behavior-claims`, `call-tree`, `done-when-evidence`, `when-to-diagram` and
-  `diagram-check` name flow step files (`01-frame.md`, `04-impact.md`, `07-close.md`,
-  `02-design.md`, `06-review.md`), so a second workflow cannot use them. `look-check`
-  and `design-tokens` were fixed on 2026-10-13.
 - `references/step_run.py:67-70` drops a `Needs` word that matches no step, with no error.
 - `blocks/web-ui-basics/SKILL.md:44-47` checks only `*.html`, `*.css`, `*.js` and `index.html`, so a TSX
   slice gets no script check.
@@ -157,8 +166,8 @@ the pilot, then packs.
 | B5 | Pilot `web-ui-basics` and `headless-shot` on a static HTML slice (not `web-port`): one `block:` line in the `web-ui` build step of `~/.flow/domains.md` and a `.blocks.toml` | ⬜ | block text in the step file, each block todo closed with evidence, a fresh agent resumes from the files, pair still waits for approval |
 | B6 | Judge the pilot against the same slice without blocks; keep or drop | ⬜ | written result with both runs: defects, review rounds, time, loaded text |
 | B7 | Add `Keywords:` beside `Signals:` in `domains.md`, matched against the filled frame at `take`; the model confirms, drops or adds a match once, with a reason line | ⬜ | a "transition" task in a non-web-ui repo gets the motion pack; a non-motion task gets none |
-| B8 | Motion pack: an index in the emil pack owner, item files, a check, `Keywords:`; ink keeps story motion; web-ui-basics points to it | ⬜ | the step file names one timing owner and an "item files used" todo |
-| B9 | Plan block and template format: predefined templates fix required stages and the end; the plan block may add any block, and may build a ledger with no template when none fits (frame, end condition and close still required); one reason line per block | ⬜ | two tasks run by hand, one with a template and one without |
+| B8 | Motion pack: an index in the emil pack owner, item files, a check, `Keywords:`; ink keeps story motion; web-ui-basics points to it | 🔄 basic `ui-motion` names one timing owner, and web-ui-basics and build-site point to it (branch `plan-blocks`); no item files or `Keywords:` yet | the step file names one timing owner and an "item files used" todo |
+| B9 | Plan block and template format: predefined templates fix required stages and the end; the plan block may add any block, and may build a ledger with no template when none fits (frame, end condition and close still required); one reason line per block | 🔄 basic blocks `planner`, `plan-chart`, `plan-review`, `voice-reply`, `voice-review` and the skill `plan`, branch `plan-blocks` (2026-10-13); the 2026-10-13 block-rules council added 8 blocks, renamed behavior-claims to requirements, and bound plan approval to file hashes; no templates yet, because the owner wants blocks picked per task | two tasks run by hand, one with a template and one without |
 | B10 | Merged into B17 | — | — |
 | B11 | Small judge (Jev or Laya) for pack choice: 2+ missed or wrong packs in 10 trial lines starts a benchmark; adopt only on a held-out win with no missed gate | ⬜ | benchmark result |
 | B12 | One provider-neutral worker-brief section; the five other texts point to it | ✅ `blocks/worker-brief`, branch `skill-blocks` | `rg` for the report-only rule finds one owner |
@@ -168,9 +177,9 @@ the pilot, then packs.
 | B16 | Block format v2: one folder per block with Agent Skills frontmatter (`name`, `description`, `license`, `metadata` with kind, owns, serves, needs, gives, conflicts, users); move the 13 blocks; update `blocks.toml` and the `flow_run.py` resolver in the same step | ✅ branch `skill-blocks`, eb7f603f..3553867d | the flow tests pass; each block validates as an Agent Skills `SKILL.md` |
 | B17 | Cut ink: reference-analysis, story, visual-qa, build-site, build-canvas; one owner for design-tokens, style-frames, headless-shot; ink keeps its contract and its routes as templates | ✅ cut done, branch `skill-blocks`, da3b8566..5213c714; the live run is B18 | ink's references hold no rule that a block holds; an ink `prototype` run still passes |
 | B18 | Second user: a glitch-walk page uses story, design-tokens, headless-shot and visual-qa | ⬜ | one live run, each block todo closed with evidence |
-| B19 | serve-local and annotate-loop (Plannotator, strict): view-and-talk is required in the `walk` template; a missing `plannotator` sets `unavailable plannotator` and stops; each round writes `annotate/<round>.json`; the loop uses the B1 and B2 stop | ⬜ | one glitch-walk run where an owner comment reaches the agent and the page is rebuilt; a run without the binary stops with the status |
+| B19 | serve-local and annotate-loop (Plannotator, strict): view-and-talk is required in the `walk` template; a missing `plannotator` sets `unavailable plannotator` and stops; each round writes `annotate/<round>.json`; the loop uses the B1 and B2 stop | 🔄 basic `serve-local`, `comment-round` (exit 2 with `unavailable plannotator`; round 4 refused in `comment_round.py` until B1 and B2 exist) and `page-comments`, branch `plan-blocks`; no live round yet | one glitch-walk run where an owner comment reaches the agent and the page is rebuilt; a run without the binary stops with the status |
 | B20 | Package the kit as a skills-only Agent Plugins 1.0 package (`plugin.json` at `skills/kit/`); Codex reads it as specified, Claude Code and AGY load its skills (`docs/blocks.md`, Packaging) | ✅ manifests and marketplace on branch `skill-blocks`; install is A4 and A7 | a probe package installed in each CLI, and a model in each read a block by `../../blocks/` |
-| B21 | Install `plannotator` on the PATH on the owner's Mac from a checked release | ❓ | owner approves the install; `command -v plannotator` |
+| B21 | Install `plannotator` on the PATH on the owner's Mac from a checked release | ✅ 0.28.17 in `~/.local/bin`, SHA-256 and `gh attestation verify` passed (2026-10-13) | owner approves the install; `command -v plannotator` |
 
 Rejected for now: `minimal-diff`, `verification-evidence`, `trust-boundary`, `reversibility`. Each
 repeats a rule in the `base-rules`, `done-when-evidence` or `prove-it-works` block, or the global

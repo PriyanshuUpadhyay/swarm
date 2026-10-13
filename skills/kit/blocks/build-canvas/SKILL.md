@@ -17,7 +17,7 @@ metadata:
 The item file `blocks/build-canvas/references/mark-making.md` in the kit holds the mark-making recipes: density, tone, texture, the mass stack, line, surface, depth, generative plates, and libraries. Read it before a detail pass.
 
 Architecture
-Build a small story engine, so the story, the look, and the motion change in one place each:
+Build a small story engine, so the story, the look, and the motion change in one place each. Each entity of the story sheet becomes a draw function with parameters (pose, expression, state, seed), not a one-off drawing, so it appears in many shots and states without new code:
 
 ```text
 config / seed
@@ -132,7 +132,7 @@ not a limit.
 Delivery
 - Style frame or small piece: one HTML file, with libraries from a CDN through an import map.
 - Larger story: a folder with `look.js`, `scenes/`, `story.js` (the shot list), `main.js`, and a
-  README, or a Vite project. Browsers block ES modules over `file://`, so give a local server command.
+  README, or a Vite project. Browsers block ES modules over `file://`, so serve it by the `serve-local` block.
 - Offline delivery: vendor dependencies explicitly, in a `vendor/` folder.
 
 Technical references

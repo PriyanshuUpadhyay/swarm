@@ -33,7 +33,7 @@ Look
 Story and motion
 - The story sheet lists the sections in scroll order, each with the settled state that the scroll driver asks for.
 - The motion list names the loader, the section entrances, the scroll-linked motion, hover and cursor states, and the page transitions.
-- For UI timing and easing, read the `animate` skill from Emil Kowalski's pack.
+- UI timing and easing follow the `ui-motion` block.
 Style frames and animatic
 - Prove the look with the page frames of the `look-check` block.
 - Build a grey-box page: every section as flat boxes with the real text sizes, the final scroll lengths, the loader, and the real transitions. Capture a scroll-through at both widths with `?shot=<section>&u=` frames, and check that each settled state reads.

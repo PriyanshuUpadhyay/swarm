@@ -10,7 +10,7 @@ metadata:
   gives: "an ordered list of units, each with its check"
   conflicts: ""
   users: "pair, deliver, flow"
-  source: "skills/sequence-verifiable-units/SKILL.md (whole text, moved here 2026-10-13)"
+  source: "skills/sequence-verifiable-units/SKILL.md (whole text, moved here 2026-10-13); mined row s4#15 (one record first)"
 ---
 
 ## Rules
@@ -19,6 +19,7 @@ metadata:
 - Each unit is one bracket: a known-good state, one change, the check, then the next unit. Start from a clean base, so every check measures against the real baseline. Never save the checks for one final batch.
 - Order the units so the stack proves itself. A reviewer reads it as an argument, red then green, scaffold then feature, and each commit stands on its own.
 - Two seats may build fix rows with declared, separate files at the same time, under the `deliver` skill's Parallel fix seats (opt-in) section. Each fix still ends in its own check at its place in the stack.
+- When a data change can touch many records and the task allows a sample, the first unit runs it on one record and checks that record before the rest run.
 - The check inside each unit follows the kit block `blocks/prove-it-works/SKILL.md`.
 
 ## Example
