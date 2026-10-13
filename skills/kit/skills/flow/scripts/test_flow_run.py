@@ -639,7 +639,7 @@ def test_block_example_params(tmp):
         parts = flow_run.sections(path.read_text(encoding="utf-8"))
         rest = {p for head, lines in parts if head != "Example" for p in flow_run.PARAM.findall("\n".join(lines))}
         example = {p for head, lines in parts if head == "Example" for p in flow_run.PARAM.findall("\n".join(lines))}
-        assert example <= rest, (path.name, example - rest)
+        assert example <= rest, (path.parent.name, example - rest)
     root = Path(tmp, "example-params")
     root.mkdir()
     (root / ".blocks.toml").write_text('[params]\nsource_of_truth = "README.md"\n', encoding="utf-8")
@@ -971,6 +971,31 @@ def test_block_frontmatter(tmp):
             raise AssertionError("a name that is not the id must stop start")
         except SystemExit as error:
             assert str(error) == "block a has the name b; a block's name is its id", error
+        # A frontmatter that opens and does not close, or that has no name or no description, stops start,
+        # so its lines never reach the step as header text.
+        for broken, reason in (("---\nname: a\ndescription: \"D.\"\n\n## Rules\n", "no closing --- line"),
+                               ("---\nname: a\ndescription: \"D.\"\n--- \n\n## Rules\n", "no closing --- line"),
+                               ("---\ndescription: \"D.\"\n---\n\n## Rules\n", "no name"),
+                               ("---\nname: a\n---\n\n## Rules\n", "no description")):
+            (kit / "a" / "SKILL.md").write_text(broken + "- x\n\n## Check (script)\n- none: x\n\n## Check (judge)\n- none: x\n",
+                                                 encoding="utf-8")
+            try:
+                flow_run.resolve_blocks(Path(tmp), {"build": ["a"]}, "default")
+                raise AssertionError(f"start must stop: {reason}")
+            except SystemExit as error:
+                assert f"block a frontmatter has {reason}" in str(error), error
+
+
+def test_add_folder_block(tmp):
+    """A repo block added as `<folder>/SKILL.md` takes the folder name as its id, as a kit block does."""
+    Path(tmp, "add-folder", "app", "docs", "blocks", "foo").mkdir(parents=True)
+    Path(tmp, "add-folder", "app", "docs", "blocks", "foo", "SKILL.md").write_text(
+        '---\nname: foo\ndescription: "Foo rule."\n---\n\n## Rules\n- FOO RULE\n\n## Check (script)\n- none: x\n\n'
+        "## Check (judge)\n- none: x\n", encoding="utf-8")
+    out, folder, _, _ = blocks_start(tmp, "add-folder", RED_BUILD, PARAMS + '[add]\nbuild = ["docs/blocks/foo/SKILL.md"]\n')
+    assert out.returncode == 0, out.stderr
+    build = step_text(folder, "05-build")
+    assert "===== block:foo =====" in build and "Concept: Foo rule." in build, build
 
 
 def test_kit_block_frontmatter():
@@ -1474,6 +1499,7 @@ with tempfile.TemporaryDirectory() as tmp:
     test_block_frontmatter(tmp)
     test_kit_blocks_load(tmp)
     test_block_repo_file(tmp)
+    test_add_folder_block(tmp)
     test_block_cap(tmp)
     test_block_checks(tmp)
     test_html_diagram_check(tmp)

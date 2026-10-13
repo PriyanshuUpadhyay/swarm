@@ -241,7 +241,8 @@ def resolve_blocks(root, wanted, profile_name):
             # The repo file is repo-owned input, and the step text goes to agents, so no file outside the repo.
             if outside:
                 raise SystemExit(f"[add] {path} leaves the repo; {repo_file} takes repo-relative paths")
-            block = Path(path).stem
+            # A repo block in the kit's layout, <folder>/SKILL.md, takes the folder name as its id.
+            block = Path(path).parent.name if Path(path).name == "SKILL.md" else Path(path).stem
             # The id goes into the step file and take's output, so it is one plain word.
             if not re.fullmatch(r"[A-Za-z0-9._-]+", block):
                 raise SystemExit(f"[add] {path} in {repo_file} has id {block}, which is not only letters, digits, "
@@ -280,14 +281,21 @@ def resolve_blocks(root, wanted, profile_name):
             # A large repo file would fill every step file, and a cut could end inside a check, so it stops start.
             if len(text) > CAP:
                 raise SystemExit(f"block {block} is {len(text)} characters; a block holds at most {CAP}")
-            # Agent Skills frontmatter: only name and description are read. The name is the block id, and the
-            # description goes to the step as the Concept line, in place of the frontmatter.
-            if text.startswith("---\n") and (end := text.find("\n---\n", 3)) > 0:
-                fields = dict(l.split(": ", 1) for l in text[4:end].splitlines() if ": " in l and l[:1] != " ")
+            # Agent Skills frontmatter: only name and description are read, as one-line values in plain or
+            # double quotes; YAML escapes are not decoded. The name is the block id, and the description goes
+            # to the step as the Concept line, in place of the frontmatter.
+            if text.startswith("---\n"):
+                head, close, rest = text[4:].partition("\n---\n")
+                if not close:
+                    raise SystemExit(f"block {block} frontmatter has no closing --- line")
+                fields = dict(l.split(": ", 1) for l in head.splitlines() if ": " in l and l[:1] != " ")
                 fields = {key: value.strip().strip('"') for key, value in fields.items()}
-                if fields.get("name", block) != block:
+                for key in ("name", "description"):
+                    if not fields.get(key):
+                        raise SystemExit(f"block {block} frontmatter has no {key}")
+                if fields["name"] != block:
                     raise SystemExit(f"block {block} has the name {fields['name']}; a block's name is its id")
-                text = f"Concept: {fields.get('description', '')}\n" + text[end + 5:]
+                text = f"Concept: {fields['description']}\n" + rest
             if missing := [p for p in PARAM.findall(text) if p not in params]:
                 raise SystemExit(f"block {block} needs {{{{{missing[0]}}}}}; set it under [params] in {repo_file}")
             def fill(part, quote=False):

@@ -25,7 +25,7 @@
 #
 # The repo file `<repo>/.blocks.toml` has three tables:
 #   [params]  name = "value"                fills {{name}}, e.g. shots = "tmp/shots"
-#   [add]     build = ["path/in/repo.md"]   adds repo blocks to a step; the id is the file stem
+#   [add]     build = ["path/in/repo.md"]   adds repo blocks to a step; the id is the file stem, or the folder of a `SKILL.md`
 #   [off]     block-id = "reason"           drops a block and prints `Off: <id>: <reason>` where it would join
 
 base = ["first-principles"]
