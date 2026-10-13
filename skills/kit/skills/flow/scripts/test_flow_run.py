@@ -1000,7 +1000,7 @@ def test_add_folder_block(tmp):
 
 def test_kit_block_frontmatter():
     """Every kit block opens with Agent Skills frontmatter: name (its folder), description, license, and the
-    metadata keys that docs/blocks.md names, each with a value."""
+    metadata keys that blocks/blocks.toml names, each as `key: value`; only conflicts may be empty."""
     keys = ["kind", "owns", "serves", "needs", "gives", "conflicts", "users", "source"]
     for path in sorted(flow_run.BLOCKS.glob("*/SKILL.md")):
         text = path.read_text(encoding="utf-8")
@@ -1010,6 +1010,8 @@ def test_kit_block_frontmatter():
         meta = [line.strip().split(":", 1)[0] for line in lines if line[:1] == " "]
         assert top == ["name", "description", "license", "metadata"] and meta == keys, (path, top, meta)
         assert lines[0] == f"name: {path.parent.name}" and all(": " in line for line in lines if line != "metadata:"), path
+        assert all(line.split(": ", 1)[1] not in ("", '""') for line in lines
+                   if ": " in line and line.strip().split(":")[0] != "conflicts"), path
 
 
 def test_kit_blocks_load(tmp):
@@ -1019,6 +1021,7 @@ def test_kit_blocks_load(tmp):
     (root / ".blocks.toml").write_text(PARAMS, encoding="utf-8")
     ids = [path.parent.name for path in sorted(flow_run.BLOCKS.glob("*/SKILL.md"))]
     out, _ = flow_run.resolve_blocks(root, {"build": ids}, "default")
+    # The count catches a block folder that lost its SKILL.md, which the glob would skip in silence.
     assert len(ids) == 18 and all(f"===== block:{b} =====" in out["build"][1] for b in ids), (ids, out["build"][0])
 
 
