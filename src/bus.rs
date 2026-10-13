@@ -170,8 +170,9 @@ pub fn argv(
             match resolved.sandbox.as_deref() {
                 // `--sandbox workspace-write` keeps `.git` read-only, so a seat cannot commit. A
                 // permissions profile opens `.git` and keeps its hooks and config, `.codex` and
-                // `.agents` read-only. The profile replaces `--sandbox`, which forces the legacy
-                // sandbox.
+                // `.agents` read-only. Submodule git dirs under `modules` stay read-only too, because
+                // their hooks and config run code when the owner next uses git there. The profile
+                // replaces `--sandbox`, which forces the legacy sandbox.
                 Some("workspace-write") => {
                     let quote = |path: &str| {
                         serde_json::to_string(path).expect("string serialization cannot fail")
@@ -181,16 +182,17 @@ pub fn argv(
                     let root = std::fs::canonicalize(&root)
                         .map_or(root, |path| path.to_string_lossy().into_owned());
                     let mut filesystem = format!(
-                        r#"":workspace_roots"={{".git"="write",".git/hooks"="read",".git/config"="read",".codex"="read",".agents"="read"}},{}="write""#,
+                        r#"":workspace_roots"={{".git"="write",".git/hooks"="read",".git/config"="read",".git/modules"="read",".codex"="read",".agents"="read"}},{}="write""#,
                         quote(&root)
                     );
                     // A linked worktree keeps its git dir in the common dir, outside the workspace.
                     if let Some((git_dir, common)) = outside_git_dirs(cwd) {
                         filesystem += &format!(
-                            r#",{}="write",{}="read",{}="read""#,
+                            r#",{}="write",{}="read",{}="read",{}="read""#,
                             quote(&common),
                             quote(&format!("{common}/hooks")),
-                            quote(&format!("{common}/config"))
+                            quote(&format!("{common}/config")),
+                            quote(&format!("{common}/modules"))
                         );
                         if git_dir != common {
                             filesystem += &format!(
@@ -1256,7 +1258,7 @@ mod tests {
                 "-c",
                 "default_permissions=\"swarm-code\"",
                 "-c",
-                r#"permissions.swarm-code={extends=":workspace",filesystem={":workspace_roots"={".git"="write",".git/hooks"="read",".git/config"="read",".codex"="read",".agents"="read"},"/home x/.swarm"="write"},network={enabled=true}}"#,
+                r#"permissions.swarm-code={extends=":workspace",filesystem={":workspace_roots"={".git"="write",".git/hooks"="read",".git/config"="read",".git/modules"="read",".codex"="read",".agents"="read"},"/home x/.swarm"="write"},network={enabled=true}}"#,
                 "--ask-for-approval",
                 "never"
             ]
@@ -1365,7 +1367,7 @@ mod tests {
         };
         let common = repo.join(".git").to_string_lossy().into_owned();
         assert!(profile(&tree).contains(&format!(
-            r#","{common}"="write","{common}/hooks"="read","{common}/config"="read","{common}/worktrees/tree"="write","{common}/worktrees/tree/config.worktree"="read"}}"#
+            r#","{common}"="write","{common}/hooks"="read","{common}/config"="read","{common}/modules"="read","{common}/worktrees/tree"="write","{common}/worktrees/tree/config.worktree"="read"}}"#
         )));
         // The main checkout's git dir is inside the workspace, which `.git` already covers.
         assert!(!profile(&repo).contains(&common));
