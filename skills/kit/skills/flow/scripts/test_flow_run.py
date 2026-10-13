@@ -953,6 +953,26 @@ def test_block_fail_closed(tmp):
                 assert reason in str(error) and "\n" not in str(error), error
 
 
+def test_block_frontmatter(tmp):
+    """A block's frontmatter description is the step's Concept line, no frontmatter line reaches the step,
+    and a name that is not the block id stops start."""
+    kit = Path(tmp, "front")
+    (kit / "a").mkdir(parents=True)
+    (kit / "blocks.toml").write_text("[profiles.default]\n", encoding="utf-8")
+    block = ('---\nname: %s\ndescription: "Says hello."\nmetadata:\n  kind: rule\n---\n\n## Rules\n- Say hello.\n\n'
+             "## Check (script)\n- none: no output\n\n## Check (judge)\n- none: no output\n")
+    with patch.object(flow_run, "BLOCKS", kit):
+        (kit / "a" / "SKILL.md").write_text(block % "a", encoding="utf-8")
+        text = flow_run.resolve_blocks(Path(tmp), {"build": ["a"]}, "default")[0]["build"][1]
+        assert "Concept: Says hello." in text and "---" not in text and "kind: rule" not in text, text
+        (kit / "a" / "SKILL.md").write_text(block % "b", encoding="utf-8")
+        try:
+            flow_run.resolve_blocks(Path(tmp), {"build": ["a"]}, "default")
+            raise AssertionError("a name that is not the id must stop start")
+        except SystemExit as error:
+            assert str(error) == "block a has the name b; a block's name is its id", error
+
+
 def test_kit_blocks_load(tmp):
     """Every kit block loads, so each has both check sections and its params are the documented ones."""
     root = Path(tmp, "kit-blocks")
@@ -1436,6 +1456,7 @@ with tempfile.TemporaryDirectory() as tmp:
     test_param_outside_span_in_script_check(tmp)
     test_add_path_errors(tmp)
     test_block_fail_closed(tmp)
+    test_block_frontmatter(tmp)
     test_kit_blocks_load(tmp)
     test_block_repo_file(tmp)
     test_block_cap(tmp)

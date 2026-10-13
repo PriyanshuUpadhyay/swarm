@@ -280,6 +280,14 @@ def resolve_blocks(root, wanted, profile_name):
             # A large repo file would fill every step file, and a cut could end inside a check, so it stops start.
             if len(text) > CAP:
                 raise SystemExit(f"block {block} is {len(text)} characters; a block holds at most {CAP}")
+            # Agent Skills frontmatter: only name and description are read. The name is the block id, and the
+            # description goes to the step as the Concept line, in place of the frontmatter.
+            if text.startswith("---\n") and (end := text.find("\n---\n", 3)) > 0:
+                fields = dict(l.split(": ", 1) for l in text[4:end].splitlines() if ": " in l and l[:1] != " ")
+                fields = {key: value.strip().strip('"') for key, value in fields.items()}
+                if fields.get("name", block) != block:
+                    raise SystemExit(f"block {block} has the name {fields['name']}; a block's name is its id")
+                text = f"Concept: {fields.get('description', '')}\n" + text[end + 5:]
             if missing := [p for p in PARAM.findall(text) if p not in params]:
                 raise SystemExit(f"block {block} needs {{{{{missing[0]}}}}}; set it under [params] in {repo_file}")
             def fill(part, quote=False):

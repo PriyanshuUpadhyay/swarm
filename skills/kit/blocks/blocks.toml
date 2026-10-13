@@ -1,8 +1,11 @@
 # Block catalog for the flow skill. This file owns the format; skills/flow/SKILL.md points here.
 #
-# A block is a folder here holding one `SKILL.md`, and the folder name is its id: `# <id>`, `Concept:`, `Serves:`, `Source:`, then `## Rules`,
-# `## Example`, `## Check (script)`, and `## Check (judge)`; every block has all four. `Source:` cites
-# kit-relative paths with lines or a pack name, never a machine path.
+# A block is a folder here with one `SKILL.md`, and the folder name is its id. The file opens with
+# Agent Skills frontmatter: `name` (the id), `description` (the concept; start writes it to the step as
+# `Concept:`), `license`, and `metadata` with string values kind, owns, serves, needs, gives, conflicts,
+# users, and source. A repo block from `[add]` may leave the frontmatter out. Then come `## Rules`,
+# `## Example`, `## Check (script)`, and `## Check (judge)`; every block has all four. `metadata.source`
+# cites kit-relative paths with lines or a pack name, never a machine path.
 # A script check is a command that runs as written, then what it proves. It reads only the work's own
 # output (the page, its CSS and JS, the {{shots}} folder, the commit range), never a step file:
 # start copies the block's Rules and Example into the step file, so a search there matches them.
