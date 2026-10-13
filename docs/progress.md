@@ -133,7 +133,7 @@ the pilot, then packs.
 | B6 | Judge the pilot against the same slice without blocks; keep or drop | ⬜ | written result with both runs: defects, review rounds, time, loaded text |
 | B7 | Add `Keywords:` beside `Signals:` in `domains.md`, matched against the filled frame at `take`; the model confirms, drops or adds a match once, with a reason line | ⬜ | a "transition" task in a non-web-ui repo gets the motion pack; a non-motion task gets none |
 | B8 | Motion pack: an index in the emil pack owner, item files, a check, `Keywords:`; ink keeps story motion; web-ui-basics points to it | ⬜ | the step file names one timing owner and an "item files used" todo |
-| B9 | Plan block and template format: the plan block reads the task, a template and the catalog, writes the ledger once, and gives a reason line per block; a template fixes its required stages and end | ⬜ | one task run by hand through a written template |
+| B9 | Plan block and template format: predefined templates fix required stages and the end; the plan block may add any block, and may build a ledger with no template when none fits (frame, end condition and close still required); one reason line per block | ⬜ | two tasks run by hand, one with a template and one without |
 | B10 | Merged into B17 | — | — |
 | B11 | Small judge (Jev or Laya) for pack choice: 2+ missed or wrong packs in 10 trial lines starts a benchmark; adopt only on a held-out win with no missed gate | ⬜ | benchmark result |
 | B12 | One provider-neutral worker-brief section; the five other texts point to it | ⬜ | `rg` for the report-only rule finds one owner |
@@ -143,8 +143,9 @@ the pilot, then packs.
 | B16 | Block format v2: one folder per block with Agent Skills frontmatter (`name`, `description`, `license`, `metadata` with kind, owns, serves, needs, gives, conflicts, users); move the 13 blocks; update `blocks.toml` and the `flow_run.py` resolver in the same step | ⬜ | the flow tests pass; each block validates as an Agent Skills `SKILL.md` |
 | B17 | Cut ink: reference-analysis, story, visual-qa, build-site, build-canvas; one owner for look-grammar, style-frames, headless-shot; ink keeps its contract and its routes as templates | ⬜ | ink's references hold no rule that a block holds; an ink `prototype` run still passes |
 | B18 | Second user: a glitch-walk page uses story, look-grammar, headless-shot and visual-qa | ⬜ | one live run, each block todo closed with evidence |
-| B19 | serve-local and annotate-loop blocks for a view-and-talk stage; the loop uses the B1 and B2 stop | ⬜ | one glitch-walk run where an owner comment reaches the agent and the page is rebuilt |
-| B20 | Package the kit as an Agent Plugins 1.0 package (`plugin.json` at `skills/kit/`); first check which CLIs load the format natively | ❓ | owner decides after the check |
+| B19 | serve-local and annotate-loop (Plannotator, strict): view-and-talk is required in the `walk` template; a missing `plannotator` sets `unavailable plannotator` and stops; each round writes `annotate/<round>.json`; the loop uses the B1 and B2 stop | ⬜ | one glitch-walk run where an owner comment reaches the agent and the page is rebuilt; a run without the binary stops with the status |
+| B20 | Package the kit as a skills-only Agent Plugins 1.0 package (`plugin.json` at `skills/kit/`); Codex reads it as specified, Claude Code and AGY load its skills (`docs/blocks.md`, Packaging) | ⬜ | `codex plugin add`, `claude plugin details`, `agy plugin validate` each list the kit's skills |
+| B21 | Install `plannotator` on the PATH on the owner's Mac from a checked release | ❓ | owner approves the install; `command -v plannotator` |
 
 Rejected for now: `minimal-diff`, `verification-evidence`, `trust-boundary`, `reversibility`. Each
 repeats a rule in `first-principles.md`, `done-when-evidence.md`, `red-first-check.md` or the global

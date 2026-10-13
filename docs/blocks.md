@@ -35,9 +35,11 @@ The parts and their owners:
 - **Template.** The stage shape for one kind of task, such as `walk`, `site`, `question` or `change`.
   It fixes the required stages and the end. A skill such as `ink` or `research` becomes one or more
   templates plus its contract.
-- **Plan block.** It reads the task, one template and the block catalog, then writes the ledger. It
-  fills the optional blocks of each stage, with one reason line for each block it adds or leaves out.
-  It cannot drop a stage that the template marks as required.
+- **Plan block.** It reads the task and the block catalog, then writes the ledger, with one reason
+  line for each block it adds or leaves out. When a template fits, it starts from that template and
+  may add any block to a stage, but it cannot drop a stage that the template marks as required. When
+  no template fits, it builds the ledger from the catalog alone, and that ledger must still hold a
+  frame, an end condition that code can check, and a close stage (owner decision, 2026-10-13).
 - **Ledger.** The step-run folder. `references/step_run.py` runs it. A step whose needs are done runs
   in the same turn as its siblings, and a step with an open need waits. So "in parallel or one by
   one" is the `Needs` column. A change is a re-plan folder that names its parent.
@@ -84,8 +86,8 @@ metadata:
   falls as the list grows. Only the plan block and the loader read `blocks/`.
 - The kit can become one Agent Plugins 1.0 package: a `plugin.json` at `skills/kit/`, skills under
   `skills/`, and `blocks/` beside them. Clients discover only `skills/` and `mcp.json`. A package path
-  must resolve inside the package root, so no block may link outside the kit. Which of Claude Code,
-  Codex and AGY load this package format natively is not checked yet.
+  must resolve inside the package root, so no block may link outside the kit. See Packaging below
+  for what each CLI loads.
 - The 13 blocks today are flat files `blocks/<id>.md` with `Concept:`, `Serves:` and `Source:` lines.
   Moving them to folders with frontmatter is progress.md B16, and it changes the `flow_run.py`
   resolver and `blocks.toml` in the same step.
@@ -128,7 +130,7 @@ Status: ✅ exists, ✂️ cut from a skill next, ⬜ later, 🆕 new, 🔒 stay
 | visual-qa | step | the visual verdict | shots, reference → pass or miss per check | ink `qa.md` reference match, frame and motion checks | ink, glitch-walk, any page | ✂️ ink |
 | web-ui-basics | rule | the floor for one static page | page → pass or fail | `blocks/web-ui-basics.md` | any static page | ✅ HTML only |
 | serve-local | step | a local view of the output | built folder → URL, stop command | none | glitch-walk, ink sites, any page | 🆕 |
-| annotate-loop | step | comments from the owner to the agent | URL → comment file per round | none; Plannotator trial of 2026-10-12 | glitch-walk, any page | 🆕 |
+| annotate-loop | step | comments from the owner to the agent | URL → comment file per round | Plannotator (`plannotator annotate <page> --json`); trial of 2026-10-12 | glitch-walk, any page | 🆕 strict |
 | review | step | the review verdict | range → verdict | `skills/review-check` (stays whole; the block calls it) | flow, deliver | 🔒 |
 | report | step | the written answer | findings → report with checked links | research 05-report, `references/plan-layout.md` first screen | research, council, reviews | ⬜ |
 | done-when-evidence | rule | close maps claims to evidence | frame, results → evidence rows | `blocks/done-when-evidence.md` | every template | ✅ |
@@ -197,13 +199,38 @@ The review stops and the ledger checks come first (progress.md B1-B3). Then:
 2. Give each cut block a second user in one live run: a glitch-walk page uses story, look-grammar,
    headless-shot and visual-qa. This is the live run that the earlier councils asked for.
 3. Add serve-local and annotate-loop for the glitch-walk view-and-talk stage.
-4. Write the plan block and the template format, then run one task through them by hand.
+4. Write the plan block and the template format, then run one task with a template and one without
+   by hand.
 5. Cut the next skill, in the order of most blocks shared with what exists.
+
+## annotate-loop is strict
+
+The 2026-10-12 glitch walk had no comment round. The `plannotator` binary was only in the trial's
+scratch folder, not on the PATH, and no glitch-walk step called it, so nothing ran and nothing
+reported the gap. Plannotator is the tool (owner decision, 2026-10-13); no comment server is built.
+
+1. The `walk` template marks view-and-talk as required, so the plan block cannot drop it.
+2. Before the stage starts, a script runs `command -v plannotator`. When it fails, the step status is
+   `unavailable plannotator` and the run stops and tells the owner. It never skips the stage.
+3. Each round writes Plannotator's JSON output to `annotate/<round>.json` in the run folder. The
+   step closes only when the newest file holds the owner's `done`, or the loop stop fires.
+4. The agent's answer to each comment goes in the step file beside the comment's text quote, because
+   the page closes on submit and does not show replies.
+
+## Packaging
+
+On 2026-10-13 a probe package (root `plugin.json`, `skills/`, `mcp.json`) was tested in each CLI:
+
+| CLI | Root `plugin.json` | Skills from `skills/` | MCP file it reads |
+|---|---|---|---|
+| Codex 0.162.1 | read, spec name rule enforced | installed and enabled | `mcp.json`, as the spec says |
+| Claude Code 2.1.296 | not read; uses `.claude-plugin/plugin.json` | found | `.mcp.json` |
+| AGY 1.3.4 | required | found | `mcp_config.json` |
+
+So the kit can ship as a skills-only package that all three load. An MCP server would need one
+file per CLI, made by one script. The research report is in the owner's private reports folder.
 
 ## Open questions
 
-- Can the plan block build a ledger for a task with no template? The council's rule is: only after
-  the same new kind of task has been done by hand three times.
-- Which CLIs load an Agent Plugins 1.0 package natively?
-- Is Plannotator enough for two-way comments, or does annotate-loop need a small comment server so
-  replies show in the page?
+- How many required stages does a ledger with no template need beyond frame, end condition and close?
+- Who installs `plannotator` on the PATH, and from which release, on each Mac?
