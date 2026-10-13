@@ -4,10 +4,12 @@ import { usePanelRef, useDefaultLayout } from "react-resizable-panels";
 import { toast } from "sonner";
 import type { App } from "../core/app";
 import { boot } from "../core/boot";
+import { Changes } from "../core/changes";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "../components/ui/resizable";
 import { Toaster } from "../components/ui/sonner";
 import { TooltipProvider } from "../components/ui/tooltip";
 import "../styles.css";
+import { PanelToggles, WorkspacePanel } from "./changes";
 import { AskDialog, Home, WorkspaceLanding } from "./home";
 import { Palette } from "./palette";
 import { PaneStrip } from "./panes";
@@ -21,7 +23,7 @@ const SIDE_KEY = "swarm.sidebar.side";
 // ⌘B and ⇧⌘B are registered before the panel exists; Root points them at it.
 const frame = { toggle: () => {}, move: () => {} };
 
-function Root({ app }: { app: App }) {
+function Root({ app, changes }: { app: App; changes: Changes }) {
   useEffect(() => app.start(), [app]);
   const theme = useTheme();
   const sidebar = usePanelRef();
@@ -57,7 +59,7 @@ function Root({ app }: { app: App }) {
   );
   const main = (
     <ResizablePanel key="main" id="main-panel" minSize="360px">
-      <Main app={app} />
+      <Main app={app} changes={changes} />
     </ResizablePanel>
   );
   return (
@@ -72,21 +74,33 @@ function Root({ app }: { app: App }) {
   );
 }
 
-/** The open chat, else the selected workspace's landing, else Home. */
-function Main({ app }: { app: App }) {
+/** The open chat, else the selected workspace's landing, else Home; the workspace panel beside it. */
+function Main({ app, changes }: { app: App; changes: Changes }) {
   const openId = useSyncExternalStore(app.subscribe, () => app.view.openId);
   const workspace = useSyncExternalStore(app.subscribe, () => app.view.workspace);
   return (
     <div className="flex h-full min-w-0 flex-col">
-      {workspace && <TabStrip app={app} />}
-      {openId ? <PaneStrip app={app} /> : workspace ? <WorkspaceLanding app={app} /> : <Home app={app} />}
+      {workspace && (
+        <div className="flex min-w-0">
+          <div className="min-w-0 flex-1">
+            <TabStrip app={app} />
+          </div>
+          <PanelToggles changes={changes} />
+        </div>
+      )}
+      <div className="flex min-h-0 flex-1">
+        <div className="flex min-w-0 flex-1 flex-col">{openId ? <PaneStrip app={app} /> : workspace ? <WorkspaceLanding app={app} /> : <Home app={app} />}</div>
+        <WorkspacePanel app={app} changes={changes} />
+      </div>
     </div>
   );
 }
 
 applyTheme();
 const app = boot();
+const changes = typeof app === "string" ? null : new Changes(app);
 if (typeof app !== "string") {
+  app.registry.add(...changes!.commands());
   app.notice = (text, error) => (error ? toast.error(text) : toast(text));
   app.registry.add(
     { id: "sidebar.toggle", title: "Toggle Sidebar", chord: "Meta+B", run: () => frame.toggle() },
@@ -96,4 +110,4 @@ if (typeof app !== "string") {
     app.registry.add({ id: `theme.${t}`, title: `Theme: ${t[0].toUpperCase()}${t.slice(1)}`, run: () => setTheme(t) });
 }
 const root = createRoot(document.getElementById("root")!);
-root.render(typeof app === "string" ? <p className="p-6 text-muted-foreground">{app}</p> : <Root app={app} />);
+root.render(typeof app === "string" ? <p className="p-6 text-muted-foreground">{app}</p> : <Root app={app} changes={changes!} />);

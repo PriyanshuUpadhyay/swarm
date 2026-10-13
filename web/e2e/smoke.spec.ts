@@ -18,7 +18,7 @@ test("select a chat by keyboard and see its rows", async ({ page: tab }) => {
   expect(new URL(tab.url()).hash).toBe("");
 
   const sidebar = tab.getByTestId("sidebar");
-  await expect(sidebar.locator('[data-testid="tree-row"][data-kind="chat"]')).toHaveCount(8);
+  await expect(sidebar.locator('[data-testid="tree-row"][data-kind="chat"]')).toHaveCount(9);
 
   // The first row (a project header) is selected; move down past its workspace to its first chat, then open it.
   await tab.keyboard.press("j");
