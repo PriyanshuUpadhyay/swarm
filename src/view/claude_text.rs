@@ -1,4 +1,4 @@
-//! Claude's input cleaner, ported from SwarmCore/Composer/ClaudeInvisibleText.swift.
+//! Claude's input cleaner, ported from the SwiftUI app's ClaudeInvisibleText.swift.
 use super::claude_properties as p;
 
 type Set = &'static [(u32, u32)];

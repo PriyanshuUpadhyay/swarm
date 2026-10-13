@@ -1,21 +1,16 @@
 .DEFAULT_GOAL := help
-.PHONY: help build test lint app install run dmg
+.PHONY: help build test app install run dmg
 export ZIG_GLOBAL_CACHE_DIR := $(CURDIR)/.build/zig-global
 export ZIG_LOCAL_CACHE_DIR := $(CURDIR)/.build/zig-local
 
 help:
-	@printf '%s\n' 'make build    Build all Swift targets' 'make test     Build transcript and run tests' 'make lint     Check source boundaries' 'make app      Build a release Swarm.app' 'make install  Keep the old app and install the new one' 'make run      Build and launch Swarm.app' 'make dmg      Build Swarm.app and package it as a DMG'
+	@printf '%s\n' 'make build    Build the shell and the notice helper' 'make test     Run the Swift tests' 'make app      Build a release Swarm.app' 'make install  Keep the old app and install the new one' 'make run      Build and launch Swarm.app' 'make dmg      Build Swarm.app and package it as a DMG'
 
 build:
 	swift build
 
 test:
-	zig build --build-file ../packages/transcript/build.zig -Doptimize=ReleaseSafe
-	# Transcript subprocess tests can stall when Swift Testing runs them in parallel.
-	SWARM_TRANSCRIPT_TOOL=$(abspath ../packages/transcript/zig-out/bin/transcript) swift test --disable-sandbox --no-parallel
-
-lint:
-	./Tools/lint.sh
+	swift test --disable-sandbox
 
 app:
 	./Tools/build.sh -r

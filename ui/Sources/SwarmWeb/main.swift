@@ -1,5 +1,6 @@
-// SwarmWeb: one window with one WKWebView on a `swarm serve` child. A pilot shell, not the app.
-// usage: SwarmWeb --swarm BIN --assets DIR [--app react|solid]
+// SwarmWeb: Swarm.app's main executable. One window with one WKWebView on a `swarm serve` child.
+// usage: SwarmWeb [--swarm BIN] [--assets DIR] [--app react|solid]
+//        In the app bundle, BIN is SWARM_BIN or Contents/Helpers/swarm and DIR is Contents/Resources/web.
 //        SwarmWeb ... --smoke
 //        SwarmWeb ... --measure OUT.json [--live-seconds N] [--soak-minutes N] [--gen web/perf/gen.mjs]
 // It never activates itself: the window comes to the front of its level only (owner rule).
@@ -35,6 +36,13 @@ final class Shell: NSObject, NSApplicationDelegate {
     }
 
     var entry: String { options["app"] == "solid" ? "/solid.html" : "/" }
+    var swarm: String {
+        options["swarm"] ?? ProcessInfo.processInfo.environment["SWARM_BIN"]
+            ?? Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/swarm").path
+    }
+    var assets: String {
+        options["assets"] ?? Bundle.main.bundleURL.appendingPathComponent("Contents/Resources/web").path
+    }
     var measuring: Bool { options["measure"] != nil || options["smoke"] != nil }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -48,32 +56,40 @@ final class Shell: NSObject, NSApplicationDelegate {
         }
         NSApp.mainMenu = makeMenu()
         let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
-        let size = NSSize(width: 900, height: 600)
+        // A measure run sits in the bottom-right corner at a fixed size, so runs compare.
+        let size = measuring ? NSSize(width: 900, height: 600) : NSSize(width: 1280, height: 800)
         window = NSWindow(
             contentRect: NSRect(origin: NSPoint(x: screen.maxX - size.width, y: screen.minY), size: size),
             styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
-        window.title = "SwarmWeb"
+        window.title = "Swarm"
+        if !measuring {
+            window.center()
+            window.setFrameAutosaveName("Swarm")
+        }
         window.contentView = webView
         window.makeFirstResponder(webView)
         window.orderFrontRegardless()
         webView.configuration.userContentController.addScriptMessageHandler(self, contentWorld: .page, name: "swarm")
-        do {
-            try startServe()
-            webView.load(URLRequest(url: pageURL()))
-        } catch {
-            fail("\(error)")
-            return
-        }
-        if !measuring { followBadge() }
-        if measuring {
-            Task {
-                do {
-                    if options["smoke"] != nil { try await smoke() } else { try await measure() }
-                    quit(0)
-                } catch {
-                    FileHandle.standardError.write(Data("SwarmWeb: \(error)\n".utf8))
-                    quit(1)
-                }
+        Task {
+            let login = await Task.detached { LoginPath.discover() }.value
+            do {
+                try startServe(login: login)
+                webView.load(URLRequest(url: pageURL()))
+            } catch {
+                fail("\(error)")
+                return
+            }
+            guard measuring else {
+                followBadge()
+                await warnPathDrift(login: login)
+                return
+            }
+            do {
+                if options["smoke"] != nil { try await smoke() } else { try await measure() }
+                quit(0)
+            } catch {
+                FileHandle.standardError.write(Data("SwarmWeb: \(error)\n".utf8))
+                quit(1)
             }
         }
     }
@@ -82,15 +98,22 @@ final class Shell: NSObject, NSApplicationDelegate {
         URL(string: "\(origin)\(entry)\(query)#\(token)")!
     }
 
-    /// Starts `swarm serve` and reads the URL from its first stdout line.
-    func startServe() throws {
-        guard let swarm = options["swarm"], let assets = options["assets"] else {
-            throw ShellError("usage: SwarmWeb --swarm BIN --assets DIR [--app react|solid] [--smoke] [--measure OUT.json]")
-        }
+    /// Starts `swarm serve` and reads the URL from its first stdout line. `login` is the login
+    /// shell's PATH.
+    func startServe(login: [String]) throws {
         let serve = Process()
         serve.executableURL = URL(fileURLWithPath: swarm)
         serve.arguments = ["serve", "--port", "0", "--assets", assets]
-        // The child inherits the environment, so SWARM_HOME and SWARM_TRANSCRIPT_TOOL pass through.
+        // SWARM_HOME passes through. Serve's own transcript default is a path in the build checkout.
+        var environment = ProcessInfo.processInfo.environment
+        environment["PATH"] = LoginPath.merged(
+            login: login, inherited: environment["PATH"] ?? "", home: NSHomeDirectory())
+        let transcript = Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS/transcript").path
+        if environment["SWARM_TRANSCRIPT_TOOL", default: ""].isEmpty,
+           FileManager.default.isExecutableFile(atPath: transcript) {
+            environment["SWARM_TRANSCRIPT_TOOL"] = transcript
+        }
+        serve.environment = environment
         let stdout = Pipe()
         serve.standardOutput = stdout
         serve.terminationHandler = { process in
@@ -126,7 +149,17 @@ final class Shell: NSObject, NSApplicationDelegate {
     func makeMenu() -> NSMenu {
         let main = NSMenu()
         let app = NSMenu()
-        app.addItem(withTitle: "Quit SwarmWeb", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        app.addItem(withTitle: "Hide Swarm", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        app.addItem(withTitle: "Quit Swarm", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        // The web view's text fields get ⌘C, ⌘V and the rest only through these menu items.
+        let edit = NSMenu(title: "Edit")
+        for (title, action, key, mods) in [
+            ("Undo", "undo:", "z", NSEvent.ModifierFlags.command), ("Redo", "redo:", "z", [.command, .shift]),
+            ("Cut", "cut:", "x", .command), ("Copy", "copy:", "c", .command), ("Paste", "paste:", "v", .command),
+            ("Select All", "selectAll:", "a", .command),
+        ] {
+            edit.addItem(withTitle: title, action: Selector(action), keyEquivalent: key).keyEquivalentModifierMask = mods
+        }
         let go = NSMenu(title: "Go")
         for command in Self.commands {
             let item = NSMenuItem(title: command.title, action: #selector(runCommand(_:)), keyEquivalent: command.key)
@@ -135,7 +168,7 @@ final class Shell: NSObject, NSApplicationDelegate {
             item.target = self
             go.addItem(item)
         }
-        for menu in [app, go] {
+        for menu in [app, edit, go] {
             let item = NSMenuItem()
             item.submenu = menu
             main.addItem(item)
@@ -200,6 +233,29 @@ extension Shell: WKScriptMessageHandlerWithReply {
 }
 
 extension Shell {
+    /// One alert per launch when Terminal's `swarm` is another build (ADR 0048). Copy Command and
+    /// Not Now both store the pair, so it never asks again.
+    func warnPathDrift(login: [String]) async {
+        let key = "dismissedPathSwarms"
+        let dismissed = UserDefaults.standard.stringArray(forKey: key) ?? []
+        let branch = Bundle.main.object(forInfoDictionaryKey: "SwarmBuildBranch") as? String ?? ""
+        let swarm = swarm
+        guard let drift = await Task.detached(operation: {
+            PathDrift.check(branch: branch, loginPath: login, helper: swarm, dismissed: dismissed)
+        }).value else { return }
+        let alert = NSAlert()
+        alert.messageText = "Terminal runs another swarm"
+        alert.informativeText = drift.message
+        alert.addButton(withTitle: "Copy Command")
+        alert.addButton(withTitle: "Not Now")
+        let response = await alert.beginSheetModal(for: window)
+        UserDefaults.standard.set(dismissed + [drift.key], forKey: key)
+        if response == .alertFirstButtonReturn {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(drift.fixCommand, forType: .string)
+        }
+    }
+
     /// Keeps the Dock badge on `/api/badge`, read again on each snapshot frame of `/api/stream`.
     /// It stops when `swarm serve` stops.
     func followBadge() {

@@ -1,4 +1,4 @@
-// Composer rules ported from SwarmCore (ComposerState, ComposerQueue, QueuedMessages,
+// Composer rules ported from the SwiftUI app (ComposerState, ComposerQueue, QueuedMessages,
 // SwarmSessionInteraction, ChatUsage). Pure, so vitest covers them.
 
 import type { Agent, Row, Session } from "./api";

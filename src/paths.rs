@@ -38,8 +38,7 @@ pub fn branch_home(home: &str, branch: &str) -> String {
     }
 }
 
-/// The folder a branch build keeps its data in; `ui/Sources/SwarmCore/System/SwarmHome.swift`
-/// must give the same bytes. A branch of at most 200 bytes made only of `[a-z0-9._-]` that does
+/// The folder a branch build keeps its data in. A branch of at most 200 bytes made only of `[a-z0-9._-]` that does
 /// not start with `.` or `-` is `.swarm-<branch>`, whole. Any other branch is
 /// `.swarm-<slug>+<hash>`: the slug lowercases ASCII `A-Z`, maps each other UTF-8 byte outside that
 /// set to `-`, and keeps at most 200 bytes, and the hash is the 64-bit FNV-1a of the whole branch's
@@ -230,7 +229,6 @@ mod tests {
         );
     }
 
-    /// Shared with `ui/Tests/SwarmCoreTests/SwarmHomeTests.swift`; keep both lists the same.
     const VECTORS: [(&str, Option<&str>); 15] = [
         ("main", Some(".swarm-main")),
         ("", None),
@@ -249,7 +247,6 @@ mod tests {
         ("UI-Polish", Some(".swarm-ui-polish+39b24d57f056cb17")),
     ];
 
-    /// Long names, shared with `ui/Tests/SwarmCoreTests/SwarmHomeTests.swift` like `VECTORS`.
     fn long_vectors() -> Vec<(String, Option<String>)> {
         let a = |count: usize| "a".repeat(count);
         vec![

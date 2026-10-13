@@ -38,7 +38,8 @@ model. Each agent learns its part from a skill: `swarm-orchestrator` for the cha
 
 Panes live in [tmux](https://github.com/tmux/tmux) (the default) or in
 [Herdr](https://github.com/herdrdev/herdr). In a Herdr pane, swarm picks Herdr by itself.
-Swarm.app is a macOS chat window over the same sessions.
+Swarm.app is a macOS chat window over the same sessions. It is a web UI that `swarm serve` serves
+on 127.0.0.1, in a thin Swift window (ADR 0075, ADR 0078).
 
 ## Install
 
@@ -53,15 +54,13 @@ swarm init                               # creates ~/.swarm with the db, runs/, 
 ```
 
 Update with `brew upgrade priyanshuupadhyay/tap/swarm-app`. If you had a Swarm.app dragged from the
-DMG, run this once. The cask reinstall links `swarm` to the app, and `--force` lets it replace a
-dragged app:
+DMG, or the old `swarm` formula, run this once. The formula is no longer in the tap, so its keg goes
+(this step fails alone when there is none). The cask reinstall links `swarm` to the app, and
+`--force` lets it replace a dragged app:
 
 ```sh
-brew reinstall --cask --force priyanshuupadhyay/tap/swarm-app
+brew uninstall swarm; brew reinstall --cask --force priyanshuupadhyay/tap/swarm-app
 ```
-
-If you still have the old `swarm` formula installed, run `brew uninstall swarm` once, because the
-formula is no longer in the tap.
 
 The app warns at launch when Terminal's `swarm` is another build than its own, and names the same
 command. A `swarm` that brew did not install, such as `~/.cargo/bin/swarm`, you remove yourself.
@@ -90,8 +89,7 @@ If **Open Anyway** does not show, run `xattr -dr com.apple.quarantine /Applicati
 
 1. **Install an agent CLI and sign in.** Swarm starts [Claude Code](https://docs.claude.com/en/docs/claude-code),
    [Codex](https://github.com/openai/codex), and AGY. A runner whose CLI is not on `PATH` is skipped.
-2. **Prepare the bundled skills.** The app refreshes its skills copy on start. To prepare it
-   from a terminal, use the helper shipped with Swarm.app:
+2. **Prepare the bundled skills.** In a terminal, use the helper shipped with Swarm.app:
 
    ```sh
    swarm skills refresh
@@ -106,20 +104,18 @@ If **Open Anyway** does not show, run `xattr -dr com.apple.quarantine /Applicati
 
 3. **Check your profiles.** A profile maps a role, such as `code.small` or `review.deep`, to an
    ordered list of runners (provider, model, effort). Swarm ships defaults in
-   `default-profiles.json`. Edit them on the app's Home, or read them with
+   `default-profiles.json`. Edit them in the app's **Settings › Profiles**, or read them with
    `swarm roles check --json`. [Profiles](#profiles-and-runners) has the details.
-4. **Approve the setup plan.** On first launch the app asks "Let swarm set up this Mac?" and
-   shows each file it would change, under its group: the Codex and AGY hooks, so worker columns
-   show their chat and state, Skills for the bundled workflows, and folder trust, so a seat in a git repo or a swarm scratch folder
-   starts with no trust dialog. Clear a group's box to leave it as it is, and pick under folder
-   trust whether swarm trusts each folder that passes the safety check or asks in the agent's
-   column. Click **Approve and apply**. Until you approve folder trust, a seat
-   in a new folder stops at its CLI's own trust question, and the chair's launch prints
-   `trust-pending` with the diff. A chat's own folder counts as approved, because you picked it,
-   and the chat says so. You can do it later from **Swarm > Set Up Swarm…**, or in a
-   terminal with `swarm setup --plan` and the `swarm setup --digest …` it prints.
-   **Swarm > Managed Changes…** lists each entry swarm added and removes one after you see the
-   diff, as `swarm managed revert` does.
+4. **Approve the setup plan.** In a terminal, `swarm setup --plan` shows each file it would change,
+   under its group: the Codex and AGY hooks, so worker columns show their chat and state, Skills for
+   the bundled workflows, and folder trust, so a seat in a git repo or a swarm scratch folder starts
+   with no trust dialog. `--only <group>,...` leaves the other groups as they are, and
+   `--consent standing|ask` picks whether swarm trusts each folder that passes the safety check or
+   asks in the agent's column. Apply with the `swarm setup --digest …` it prints. Until you approve
+   folder trust, a seat in a new folder stops at its CLI's own trust question, and the chair's
+   launch prints `trust-pending` with the diff. A chat's own folder counts as approved, because you
+   picked it. `swarm managed list` lists each entry swarm added, and `swarm managed revert` removes
+   one after you see the diff.
 
 ### Accounts and usage
 
@@ -145,9 +141,8 @@ It needs no other tool.
   the launch falls through to the next runner.
 - Swarm reads Claude usage with the account's own Keychain token (ADR 0072). The token stays in
   memory and is written to no file.
-- The usage HUD is a panel at the top of the screen that shows each account's limits. The app
-  asks one time, "Add the usage HUD?". **Settings › Accounts › Show usage HUD** changes the answer
-  later, and **View › Usage HUD** opens and closes the panel (ADR 0073).
+- Compact usage meters in the app show each account's limits. The notch usage HUD panel left with
+  the SwiftUI app (ADR 0076).
 
 AGY has no account source yet.
 
@@ -193,44 +188,22 @@ The chair follows `swarm-orchestrator`, and the worker pane opens beside it.
 3. Type your task. When the chair launches a worker, the worker's pane opens as a column to the
    right of the chat, and you can type into it.
 
-![Swarm.app Home: each profile and the runner a launch would take](docs/images/app-profiles.png)
-
 ## Swarm app reference
 
-Swarm.app opens on Home, where routed roles show their models. Import Project adds a folder to the
-project list and selects it; a folder that is not a Git repository first gets an offer to run
-`git init`. **Keep as Folder** adds it as a plain project and remembers that choice.
-Create Project makes a folder, runs `git init`, and makes a first commit with `.gitignore` to keep
-`tmp/` out of Changes. If git has no identity or the commit fails, Swarm keeps the project and
-shows why. It adds and selects the project. Creating or importing a project starts no agent.
-New chat starts the chat profile at once with no sheet (ADR 0059): a "New chat" tab shows at once and becomes the
-chat when the chair is up, or shows the launch error with Retry. Press and hold or right-click a workspace's **+** or
-**New chat**, or click its menu indicator, to open **New chat as…** and choose any profile. The chat profile is first and
-marked as the one-click default; each caption shows its first runner's provider and model.
-Codex and AGY list CLI models; Claude lists aliases and accepts a full model name in Other model. In a chat,
-Switch model asks the live chair
-for a compact summary, starts the chosen Claude or Codex model, and keeps both parts in one chat
-tab. If the old pane has closed, the new chair receives recent messages and makes its own compact
-summary.
+The app's scope is ADR 0076 (Scope v1). The sidebar shows Pinned workspaces, then one header per
+project with its workspaces and chats, and Archived. A Recent list spans every project. Chats of a
+workspace are tabs (⌘1 to ⌘9), and ⌘K opens a palette that finds actions, workspaces and chats.
+New workspace makes a branch in its own worktree from a new branch, an existing branch, a pull
+request, or a GitHub issue, and can run the project's setup script. New chat starts the `chat`
+profile or another profile. Switch model hands the chat to another model with a compact summary.
+Child agents show as panes beside the chat. Changes shows the workspace diff, and a line comment
+goes to the agent. Rows show PR and CI status, and compact meters show account usage. Settings has
+Appearance, the send key, Notifications, Profiles, and Accounts.
 
-The sidebar shows one header per project, with its workspaces under it in last-activity order, and
-Pinned workspaces in their own section at the top (ADR 0037). A header collapses with its chevron and
-then shows its most urgent status. The **+** at the top makes or imports a project (⇧⌘N). A project's
-**+** makes a workspace there, and ⌘N makes one in the current project. The sheet can make a new
-branch from a base, use an existing branch that no worktree holds, or fetch a GitHub pull request.
-Each project can set its worktree folder and branch prefix. The default folder is beside the
-project, or `wt/` in a bare hub, and the default prefix is `swarm/`.
-The new workspace is selected without starting an agent; its empty page shows **New chat**.
-In a repository with no commit yet, the branch starts empty (an orphan
-branch). A plain-folder project offers `git init` first. If **Keep as Folder** was remembered,
-it stays plain until you choose **Run git init…**. A workspace row's **+** adds a chat in it
-(⌘T). Empty task worktrees stay in the sidebar with 0 chats. The command palette (⌘K) finds
-workspace names, projects, branches, and chat titles. Chats in the selected workspace appear as
-underlined tabs above the transcript. The plus button starts another chat in that workspace.
-Pins, workspace names, and the last selected chat survive restarts. Archive workspace hides its
-row without deleting files, archiving chats, or stopping agents; Archived offers Restore workspace.
-Herdr-hosted agents with live panes attach through Herdr's direct terminal stream, so the pane
-accepts input in Swarm. A closed connection can be reopened with Reconnect.
+The app starts `swarm serve` from its bundle with the login shell's PATH, so the agent CLIs it
+starts find the same tools as Terminal. Notices come from the small SwarmNotify helper inside the
+app, so a waiting agent never starts the app, and nothing starts at login (ADR 0077). The app
+keeps the Dock badge while it runs.
 
 ## Environment
 
@@ -312,7 +285,7 @@ id. A chair gets both from its pane, which `swarm session new` registers. A chil
 | `host-context --provider <claude\|codex\|agy>` | any | Print the session's host contract in that provider's hook format, or nothing outside a visible host. |
 | `hook <claude\|codex\|agy> [event]` | any | Read a provider hook's JSON on stdin and record the agent's state (`working`, `waiting`, `done`, `failed`) for `SWARM_AGENT_ID`. A Claude or Codex `Stop` also stores the model and token total. Claude reads at most 8 MiB per Stop and adds new message usage; Codex copies its cumulative total. A cost is stored only from a complete provider record. Does nothing outside a swarm agent. Always prints `{}` and exits 0. AGY sends no event name, so its hook passes it, as in `swarm hook agy Stop`. |
 | `notify <title> [--body <text>]` | orchestrator or owner | Store one owner notice, with chair ids when known. Start the small SwarmNotify helper if needed, never the full app. Needs no session and refuses a worker. The helper posts it with the notice settings (ADR 0077). |
-| `notices --json` | app or owner | Read unposted owner notices and mark them posted in one store transaction. Each row carries `id`, `session_id`, `agent_id`, `title`, and `body`. |
+| `notices --json` | owner | Read unposted owner notices and mark them posted in one store transaction. Each row carries `id`, `session_id`, `agent_id`, `title`, and `body`. |
 | `notices --due` | SwarmNotify helper | Like `notices --json`, but apply the notice preferences in `choices.json` (`prefs.notices`) first, so muted or switched-off rows are marked and not returned (ADR 0077). |
 | `herdr-split` | any | Split a child pane right of `HERDR_PANE_ID`, stack it under earlier children at equal height, and print its id. The herdr adapter's spawn verb. |
 | `roles --json` | any | Print every profile, the file's `revision`, and `imported` when the file came from the old routing file. Reads no usage. |
@@ -384,17 +357,6 @@ SWARM_SUMMARIZER='head -c 200' swarm drain            # done 1
 
 ## Performance profiling
 
-Turn on **Debug > Performance Logging** in Swarm.app. Then open a slow chat or start a new one.
-In Terminal, watch the stage times in milliseconds:
-
-```sh
-/usr/bin/log stream --style compact --level info --predicate 'subsystem == "io.github.priyanshuupadhyay.swarm" AND category == "performance"'
-```
-
-For a saved trace, use `/usr/bin/log show --last 10m --style compact --info` with the same predicate.
-The logs show stage names, times, and item counts. They do not include chat text, paths, or
-command arguments. Turn off the menu switch when done. Set `SWARM_PERF=1` to enable the same
-timings for a command-line run. In Instruments, use Time Profiler for CPU work and Points of
-Interest for the stage intervals. `AppStarted` and `WindowReady` mark startup.
-`ChatSelected`, `ChatDetailAppeared`, and `ChatRowsShown` mark the visible chat-open path;
-`InitialRefresh`, `WorkspaceTree`, and `TranscriptPoll` show where the time goes before that.
+`node web/perf/run.mjs --browsers chromium,webkit` runs the web UI's speed budgets (key to paint,
+chat switch, cold open, scroll, live load, giant tool output, memory soak) in Playwright, and
+`SwarmWeb --measure OUT.json` runs the same scenarios in the app's own WKWebView (ADR 0075).

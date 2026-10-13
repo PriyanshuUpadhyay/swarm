@@ -17,21 +17,8 @@
     <key>LSApplicationCategoryType</key>
     <string>public.app-category.developer-tools</string>
     <key>NSHumanReadableCopyright</key>
-    <string>Swarm UI. Includes code by Spatie, MIT licence.</string>
+    <string>Swarm. Third-party notices are in Contents/Resources/NOTICE.</string>
     <key>NSSupportsSuddenTermination</key>
     <false/>
-    <key>UTExportedTypeDeclarations</key>
-    <array>
-        <dict>
-            <key>UTTypeIdentifier</key>
-            <string>io.github.priyanshuupadhyay.swarm.workspace</string>
-            <key>UTTypeDescription</key>
-            <string>Swarm workspace</string>
-            <key>UTTypeConformsTo</key>
-            <array>
-                <string>public.data</string>
-            </array>
-        </dict>
-    </array>
 </dict>
 </plist>

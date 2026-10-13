@@ -1,4 +1,4 @@
-// Agent pane strip rules ported from SwarmCore (AgentStatus, SwarmPanePolicy, PaneStripLayout,
+// Agent pane strip rules ported from the SwiftUI app (AgentStatus, SwarmPanePolicy, PaneStripLayout,
 // SwarmAgentID.attachCommand). Pure, so vitest covers them.
 
 import type { Agent, Session } from "./api";

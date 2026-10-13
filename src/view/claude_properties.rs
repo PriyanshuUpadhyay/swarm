@@ -1,5 +1,5 @@
-// Generated from ClaudeInvisibleText.swift Foundation Unicode sets on 2026-10-13.
-// Regenerate with tests/generate_claude_properties.py on macOS.
+// Generated from ClaudeInvisibleText.swift Foundation Unicode sets on 2026-10-13. That Swift file
+// and its generator left with the SwiftUI app (ADR 0078); a new Unicode version needs a new generator.
 #[rustfmt::skip]
 pub(super) const LETTER: &[(u32, u32)] = &[
     (0x41, 0x5A),

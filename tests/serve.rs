@@ -1440,66 +1440,6 @@ fn stale_choices_http_changes_nothing_and_routes_are_guarded() {
         200
     );
 }
-#[cfg(target_os = "macos")]
-#[test]
-fn web_choices_are_read_by_production_swift_decoder_fixture() {
-    let server = Server::new();
-    let workspace = env!("CARGO_MANIFEST_DIR");
-    write_choices(&server, json!({"op":"pin","workspace":workspace}));
-    write_choices(
-        &server,
-        json!({"op":"rename_workspace","workspace":workspace,"name":"From web"}),
-    );
-    let source = include_str!("../ui/Sources/SwarmCore/Agent/OwnerChoices.swift")
-        .split("public struct OwnerChoicesFailure")
-        .next()
-        .unwrap();
-    fs::write(server.dir.join("OwnerChoices.swift"), source).unwrap();
-    let fields = include_str!("../ui/Sources/SwarmCore/Presentation/RowFields.swift")
-        .split("public struct RowFieldValue")
-        .next()
-        .unwrap();
-    fs::write(server.dir.join("RowFields.swift"), fields).unwrap();
-    fs::write(
-        server.dir.join("TabStrip.swift"),
-        include_str!("../ui/Sources/SwarmCore/Presentation/TabStrip.swift"),
-    )
-    .unwrap();
-    fs::write(
-        server.dir.join("main.swift"),
-        include_str!("fixtures/choices-parser/main.swift"),
-    )
-    .unwrap();
-    let output = Command::new("/usr/bin/swiftc")
-        .arg("-module-cache-path")
-        .arg(server.dir.join("swift-cache"))
-        .args([
-            server.dir.join("OwnerChoices.swift"),
-            server.dir.join("RowFields.swift"),
-            server.dir.join("TabStrip.swift"),
-            server.dir.join("main.swift"),
-        ])
-        .arg("-o")
-        .arg(server.dir.join("choices-parser"))
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let output = Command::new(server.dir.join("choices-parser"))
-        .arg(server.dir.join("home/.swarm/choices.json"))
-        .arg(workspace)
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    assert!(String::from_utf8_lossy(&output.stdout).contains("PASS"));
-}
 #[test]
 fn choices_external_refresh_busy_and_corrupt_state_keep_tree_visible() {
     let server = Server::new();
