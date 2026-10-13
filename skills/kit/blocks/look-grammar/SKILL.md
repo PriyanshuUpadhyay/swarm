@@ -1,7 +1,17 @@
-# look-grammar
-Concept: The look is measured from references, written once as tokens in `DESIGN.md`, and the page code reads only those tokens.
-Serves: design
-Source: skills/ink/SKILL.md:23-27, :30; skills/ink/references/references.md:79, :89, :94-95, :113-143 (grammar template), :147-155 (evidence); skills/ink/references/site.md:42-53, :58-59; impeccable pack: plugin/skills/impeccable/SKILL.md:35-40 (modes); taste-skill pack: skills/taste-skill/SKILL.md:25-26, :38-39, :186, :217, :236, :531-535, :601, :687
+---
+name: look-grammar
+description: "The look is measured from references, written once as tokens in `DESIGN.md`, and the page code reads only those tokens."
+license: MIT
+metadata:
+  kind: step
+  owns: "the look as measured tokens in DESIGN.md"
+  serves: "design"
+  needs: "references"
+  gives: "DESIGN.md tokens"
+  conflicts: ""
+  users: "flow"
+  source: "skills/ink/SKILL.md:23-27, :30; skills/ink/references/references.md:79, :89, :94-95, :113-143 (grammar template), :147-155 (evidence); skills/ink/references/site.md:42-53, :58-59; impeccable pack: plugin/skills/impeccable/SKILL.md:35-40 (modes); taste-skill pack: skills/taste-skill/SKILL.md:25-26, :38-39, :186, :217, :236, :531-535, :601, :687"
+---
 
 ## Rules
 - Before code, write one line: "Reading this as: <page kind> for <audience>, with a <vibe> language, leaning toward <aesthetic family>."
