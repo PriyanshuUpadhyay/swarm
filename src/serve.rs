@@ -1,8 +1,8 @@
 use axum::{
     Json, Router,
     body::Body,
-    extract::{DefaultBodyLimit, Query, Request, State},
-    http::{HeaderValue, Method, StatusCode, header},
+    extract::{DefaultBodyLimit, Query, Request, State, rejection::JsonRejection},
+    http::{HeaderValue, Method, StatusCode, Uri, header},
     middleware::{self, Next},
     response::{IntoResponse, Response, Sse, sse::Event},
     routing::{get, post},
@@ -26,7 +26,7 @@ use std::{
 use swarm::view::transcript::{self as view, Record, Row};
 use tokio::{
     io::{AsyncBufReadExt, BufReader},
-    sync::watch,
+    sync::{mpsc, oneshot, watch},
 };
 use tokio_stream::Stream;
 
@@ -48,6 +48,8 @@ struct Server {
     hub: Mutex<Hub>,
     directories: Mutex<HashMap<String, (Option<String>, String)>>,
     stopped: AtomicBool,
+    cli: PathBuf,
+    actions: mpsc::Sender<ActionJob>,
 }
 
 struct Hub {
@@ -219,6 +221,7 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or_else(|| {
             Path::new(env!("CARGO_MANIFEST_DIR")).join("packages/transcript/zig-out/bin/transcript")
         });
+    let (actions, action_queue) = mpsc::channel(64);
     let app = Arc::new(Server {
         root,
         tool,
@@ -236,12 +239,14 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         }),
         directories: Mutex::new(HashMap::new()),
         stopped: AtomicBool::new(false),
+        cli: std::env::current_exe()?,
+        actions,
     });
-    start_coordinator(&app);
     println!("http://127.0.0.1:{port}/#token={}", app.token);
     std::io::stdout().flush()?;
     let runtime = tokio::runtime::Runtime::new()?;
     runtime.block_on(async {
+        start_coordinator(&app, action_queue);
         let listener = tokio::net::TcpListener::from_std(listener)?;
         let ping_app = Arc::downgrade(&app);
         tokio::spawn(async move {
@@ -271,6 +276,15 @@ fn router(app: App) -> Router {
         .route("/api/tool-output", get(tool_output))
         .route("/api/stream", get(stream))
         .route("/api/subscribe", post(subscribe))
+        .route("/api/chat/send", post(chat_action))
+        .route("/api/chat/interrupt", post(chat_action))
+        .route("/api/chat/key", post(chat_action))
+        .route("/api/chat/answer", post(chat_action))
+        .route("/api/agent/close", post(chat_action))
+        .route("/api/sessions/archive", post(chat_action))
+        .route("/api/sessions/unarchive", post(chat_action))
+        .route("/api/chat/new", post(chat_action))
+        .route("/api/sessions/archived", get(archived_sessions))
         .fallback(static_file)
         .layer(DefaultBodyLimit::max(64 * 1024))
         .layer(middleware::from_fn_with_state(app.clone(), guard))
@@ -409,7 +423,537 @@ fn snapshot_value(app: &Server) -> Result<Value, Box<dyn std::error::Error>> {
     Ok(json!({"version": hub.version, "sessions": sessions, "agents": hub.agents}))
 }
 
-fn start_coordinator(app: &App) {
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ActionTarget {
+    session: String,
+    agent: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SendAction {
+    session: String,
+    agent: String,
+    text: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct KeyAction {
+    session: String,
+    agent: String,
+    key: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AnswerAction {
+    session: String,
+    agent: String,
+    prompt_id: String,
+    choice: usize,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SessionAction {
+    ids: Vec<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NewChat {
+    cwd: String,
+    role: Option<String>,
+    provider: Option<String>,
+    model: Option<String>,
+    account: Option<String>,
+}
+
+#[derive(Deserialize)]
+enum Action {
+    Send(SendAction),
+    Interrupt(ActionTarget),
+    Key(KeyAction),
+    Answer(AnswerAction),
+    Close(ActionTarget),
+    Archive(SessionAction),
+    Unarchive(SessionAction),
+    New(NewChat),
+    Archived,
+}
+
+struct ActionJob {
+    action: Action,
+    reply: oneshot::Sender<Result<Value, ApiError>>,
+}
+
+struct CliCall {
+    args: Vec<String>,
+    cwd: PathBuf,
+    session: Option<String>,
+    adapter: String,
+}
+
+impl CliCall {
+    fn args(&self, args: &[&str]) -> Self {
+        Self {
+            args: args.iter().map(|arg| (*arg).to_owned()).collect(),
+            cwd: self.cwd.clone(),
+            session: self.session.clone(),
+            adapter: self.adapter.clone(),
+        }
+    }
+}
+
+async fn chat_action(
+    State(app): State<App>,
+    uri: Uri,
+    body: Result<Json<Value>, JsonRejection>,
+) -> Result<Json<Value>, ApiError> {
+    let Json(body) = body.map_err(|rejection| {
+        let status = if rejection.status() == StatusCode::PAYLOAD_TOO_LARGE {
+            StatusCode::PAYLOAD_TOO_LARGE
+        } else {
+            StatusCode::BAD_REQUEST
+        };
+        error(status, &rejection.body_text())
+    })?;
+    if !body.is_object() {
+        return Err(error(StatusCode::BAD_REQUEST, "JSON object required"));
+    }
+    let kind = match uri.path() {
+        "/api/chat/send" => "Send",
+        "/api/chat/interrupt" => "Interrupt",
+        "/api/chat/key" => "Key",
+        "/api/chat/answer" => "Answer",
+        "/api/agent/close" => "Close",
+        "/api/sessions/archive" => "Archive",
+        "/api/sessions/unarchive" => "Unarchive",
+        "/api/chat/new" => "New",
+        _ => return Err(error(StatusCode::NOT_FOUND, "unknown action")),
+    };
+    let action = serde_json::from_value(json!({kind: body}))
+        .map_err(|err| error(StatusCode::BAD_REQUEST, &err.to_string()))?;
+    enqueue_action(&app, action).await.map(Json)
+}
+
+async fn archived_sessions(State(app): State<App>) -> Result<Json<Value>, ApiError> {
+    enqueue_action(&app, Action::Archived).await.map(Json)
+}
+
+async fn enqueue_action(app: &App, action: Action) -> Result<Value, ApiError> {
+    let (reply, result) = oneshot::channel();
+    app.actions
+        .send(ActionJob { action, reply })
+        .await
+        .map_err(|_| {
+            error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "action coordinator stopped",
+            )
+        })?;
+    result.await.map_err(|_| {
+        error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "action coordinator failed",
+        )
+    })?
+}
+
+impl Action {
+    fn lane(&self) -> Option<&str> {
+        match self {
+            Self::Send(body) => Some(&body.session),
+            Self::Interrupt(body) | Self::Close(body) => Some(&body.session),
+            Self::Key(body) => Some(&body.session),
+            Self::Answer(body) => Some(&body.session),
+            Self::New(_) | Self::Archive(_) | Self::Unarchive(_) | Self::Archived => None,
+        }
+    }
+}
+
+fn start_action_queue(app: &App, mut queue: mpsc::Receiver<ActionJob>) {
+    let weak = Arc::downgrade(app);
+    tokio::spawn(async move {
+        let mut pending: VecDeque<(Option<String>, ActionJob)> = VecDeque::new();
+        let mut active = HashSet::new();
+        let mut workers = tokio::task::JoinSet::new();
+        let mut accepting = true;
+        loop {
+            let mut index = 0;
+            while index < pending.len() {
+                if active.contains(&pending[index].0) {
+                    index += 1;
+                    continue;
+                }
+                let (lane, job) = pending.remove(index).unwrap();
+                let Some(app) = weak.upgrade() else { return };
+                active.insert(lane.clone());
+                workers.spawn(async move {
+                    // An accepted action continues if its HTTP connection closes.
+                    let changed = !matches!(job.action, Action::Archived);
+                    let result = execute_action(&app, job.action).await;
+                    if changed {
+                        app.hub.lock().unwrap().bump();
+                    }
+                    let _ = job.reply.send(result);
+                    lane
+                });
+            }
+            if !accepting && workers.is_empty() {
+                break;
+            }
+            tokio::select! {
+                // Bound queued and running work; keep only lanes with active jobs in memory.
+                job = queue.recv(), if accepting && pending.len() + active.len() < 64 => {
+                    match job {
+                        Some(job) => pending.push_back((job.action.lane().map(str::to_owned), job)),
+                        None => accepting = false,
+                    }
+                }
+                result = workers.join_next(), if !workers.is_empty() => {
+                    match result {
+                        Some(Ok(lane)) => { active.remove(&lane); }
+                        // A failed owner stops all lanes rather than retrying uncertain mutations.
+                        _ => break,
+                    }
+                }
+            }
+        }
+    });
+}
+
+fn action_session(app: &Server, session: &str) -> Result<CliCall, ApiError> {
+    let connection = read_connection(&app.root)
+        .map_err(|err| error(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()))?;
+    let row = connection
+        .query_row(
+            "SELECT cwd, adapter FROM session WHERE id = ?1",
+            [session],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?)),
+        )
+        .optional()
+        .map_err(|err| error(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()))?;
+    let (cwd, adapter) = row.ok_or_else(|| error(StatusCode::NOT_FOUND, "unknown session"))?;
+    Ok(CliCall {
+        args: Vec::new(),
+        cwd: cwd.into(),
+        session: Some(session.to_owned()),
+        adapter: adapter.unwrap_or_default(),
+    })
+}
+
+fn action_target(app: &Server, session: &str, agent: &str) -> Result<(CliCall, String), ApiError> {
+    let call = action_session(app, session)?;
+    let agent = if agent == "chair" {
+        "orchestrator"
+    } else {
+        agent
+    };
+    let connection = read_connection(&app.root)
+        .map_err(|err| error(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()))?;
+    let exists = connection
+        .query_row(
+            "SELECT 1 FROM agent WHERE session_id = ?1 AND id = ?2",
+            (session, agent),
+            |_| Ok(()),
+        )
+        .optional()
+        .map_err(|err| error(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()))?
+        .is_some();
+    if !exists {
+        return Err(error(StatusCode::NOT_FOUND, "unknown session or agent"));
+    }
+    if call.adapter.trim().is_empty() {
+        return Err(error(
+            StatusCode::CONFLICT,
+            "This session does not record an adapter, so Swarm cannot reach its panes.",
+        ));
+    }
+    Ok((call, agent.to_owned()))
+}
+
+async fn execute_action(app: &App, action: Action) -> Result<Value, ApiError> {
+    let default_call = || CliCall {
+        args: Vec::new(),
+        cwd: app.root.clone(),
+        session: None,
+        adapter: "tmux-solo".into(),
+    };
+    let interrupt = matches!(action, Action::Interrupt(_));
+    let archive = matches!(action, Action::Archive(_));
+    let (call, text) = match action {
+        Action::Send(body) => {
+            if body.text.trim().is_empty() {
+                return Err(error(StatusCode::BAD_REQUEST, "swarm: empty text"));
+            }
+            let (call, agent) = action_target(app, &body.session, &body.agent)?;
+            (call.args(&["type", &agent]), Some(body.text))
+        }
+        Action::Interrupt(body) | Action::Close(body) => {
+            let verb = if interrupt { "interrupt" } else { "close" };
+            let (call, agent) = action_target(app, &body.session, &body.agent)?;
+            (call.args(&[verb, &agent]), None)
+        }
+        Action::Key(body) => {
+            if !matches!(body.key.as_str(), "Up" | "C-u") {
+                return Err(error(
+                    StatusCode::BAD_REQUEST,
+                    "only Up and C-u are allowed",
+                ));
+            }
+            let (call, agent) = action_target(app, &body.session, &body.agent)?;
+            (call.args(&["key", &agent, &body.key]), None)
+        }
+        Action::Answer(body) => {
+            if body.prompt_id.trim().is_empty() || body.prompt_id.contains('\0') {
+                return Err(error(StatusCode::BAD_REQUEST, "prompt_id required"));
+            }
+            let (call, agent) = action_target(app, &body.session, &body.agent)?;
+            (
+                call.args(&["answer", &agent, &body.prompt_id, &body.choice.to_string()]),
+                None,
+            )
+        }
+        Action::Archive(body) | Action::Unarchive(body) => {
+            let verb = if archive { "archive" } else { "unarchive" };
+            if body.ids.is_empty() {
+                return Err(error(StatusCode::BAD_REQUEST, "session ids required"));
+            }
+            for id in &body.ids {
+                action_session(app, id)?;
+            }
+            let mut call = default_call().args(&["session", verb]);
+            call.args.extend(body.ids);
+            (call, None)
+        }
+        Action::New(body) => return new_chat(app, body).await,
+        Action::Archived => {
+            let output = run_cli(
+                app,
+                default_call().args(&["sessions", "--json", "--archived"]),
+                None,
+            )
+            .await?;
+            let mut value: Value = serde_json::from_str(&output).map_err(|_| {
+                error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "swarm returned invalid JSON",
+                )
+            })?;
+            let sessions = value["sessions"].as_array_mut().ok_or_else(|| {
+                error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "swarm returned invalid sessions",
+                )
+            })?;
+            sessions.retain(|session| !session["archivedAt"].is_null());
+            value["ok"] = json!(true);
+            return Ok(value);
+        }
+    };
+    run_cli(app, call, text).await?;
+    Ok(json!({"ok": true}))
+}
+
+async fn new_chat(app: &App, body: NewChat) -> Result<Value, ApiError> {
+    let role = body.role.as_deref().unwrap_or("chat");
+    let account = body.account.as_deref().or(if body.provider.is_none() {
+        Some("auto")
+    } else {
+        None
+    });
+    for value in [
+        Some(role),
+        body.provider.as_deref(),
+        body.model.as_deref(),
+        account,
+    ]
+    .into_iter()
+    .flatten()
+    {
+        if !swarm::config::valid_name(value) {
+            return Err(error(StatusCode::BAD_REQUEST, "invalid launch option"));
+        }
+    }
+    if body.cwd.contains('\0') || !Path::new(&body.cwd).is_absolute() {
+        return Err(error(StatusCode::BAD_REQUEST, "absolute cwd required"));
+    }
+    let snapshot_app = app.clone();
+    let allowed_cwd = body.cwd.clone();
+    let allowed = tokio::task::spawn_blocking(move || {
+        snapshot_value(&snapshot_app)
+            .map(|snapshot| {
+                snapshot["sessions"].as_array().is_some_and(|rows| {
+                    rows.iter().any(|row| {
+                        ["cwd", "project", "workspace"]
+                            .iter()
+                            .any(|key| row[*key].as_str() == Some(allowed_cwd.as_str()))
+                    })
+                })
+            })
+            .map_err(|err| err.to_string())
+    })
+    .await
+    .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "cwd check failed"))?
+    .map_err(|err| error(StatusCode::INTERNAL_SERVER_ERROR, &err))?;
+    if !allowed {
+        return Err(error(StatusCode::FORBIDDEN, "cwd is outside the snapshot"));
+    }
+    let mut call = CliCall {
+        args: Vec::new(),
+        cwd: body.cwd.into(),
+        session: None,
+        adapter: "tmux-solo".into(),
+    };
+    run_cli(app, call.args(&["init"]), None).await?;
+    let output = run_cli(app, call.args(&["session", "new", "lane"]), None).await?;
+    let session = output.trim();
+    if uuid::Uuid::parse_str(session).is_err() {
+        return Err(error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "swarm returned an invalid session id",
+        ));
+    }
+    call.session = Some(session.to_owned());
+    call.args = vec!["launch".into(), "orchestrator".into(), role.to_owned()];
+    for (flag, value) in [
+        ("--provider", body.provider.as_deref()),
+        ("--model", body.model.as_deref()),
+        ("--account", account),
+    ] {
+        if let Some(value) = value {
+            call.args.extend([flag.to_owned(), value.to_owned()]);
+        }
+    }
+    let output = run_cli(app, call, None).await?;
+    let pane = output
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .ok_or_else(|| error(StatusCode::INTERNAL_SERVER_ERROR, "swarm returned no pane"))?;
+    Ok(json!({"ok": true, "session": session, "agent": "orchestrator", "pane": pane}))
+}
+
+async fn run_cli(app: &Server, call: CliCall, text: Option<String>) -> Result<String, ApiError> {
+    let timeout = if call.args.first().is_some_and(|arg| arg == "launch") {
+        60
+    } else {
+        20
+    };
+    run_cli_with_timeout(app, call, text, Duration::from_secs(timeout)).await
+}
+
+async fn run_cli_with_timeout(
+    app: &Server,
+    call: CliCall,
+    text: Option<String>,
+    timeout: Duration,
+) -> Result<String, ApiError> {
+    use tokio::io::AsyncWriteExt;
+    let mut command = tokio::process::Command::new(&app.cli);
+    // Match ChildProcessEnvironment.swarmCall so key and answer remain owner actions even when
+    // serve was opened from an agent pane. Identity never comes from the HTTP request.
+    for (name, _) in std::env::vars_os() {
+        let key = name.to_string_lossy();
+        if [
+            "CLAUDECODE",
+            "CLAUDE_PID",
+            "AI_AGENT",
+            "SWARM_SESSION_ID",
+            "SWARM_AGENT_ID",
+            "SWARM_ADAPTER",
+            "SWARM_PANE",
+            "TMUX_PANE",
+            "SUPERSET_TERMINAL_ID",
+        ]
+        .contains(&key.as_ref())
+            || key.starts_with("HERDR_")
+            || key.starts_with("CLAUDE_CODE_")
+        {
+            command.env_remove(name);
+        }
+    }
+    command
+        .args(&call.args)
+        .current_dir(&call.cwd)
+        .env("PWD", &call.cwd)
+        .env("SWARM_HOME", app.root.parent().expect("swarm home"))
+        .env("SWARM_ADAPTER", &call.adapter)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true)
+        .process_group(0);
+    if let Some(session) = &call.session {
+        command
+            .env("SWARM_SESSION_ID", session)
+            .env("SWARM_AGENT_ID", "orchestrator");
+    }
+    let mut child = command
+        .spawn()
+        .map_err(|err| error(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()))?;
+    let mut group = ActionProcessGroup(Some(child.id().expect("running child") as i32));
+    let result = tokio::time::timeout(timeout, async {
+        let mut stdin = child.stdin.take().expect("piped stdin");
+        if let Some(text) = text {
+            stdin.write_all(text.as_bytes()).await?;
+        }
+        drop(stdin);
+        child.wait_with_output().await
+    })
+    .await;
+    let output = match result {
+        Ok(Ok(output)) => output,
+        Ok(Err(err)) => {
+            return Err(error(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()));
+        }
+        Err(_) => {
+            return Err(error(StatusCode::GATEWAY_TIMEOUT, "swarm action timed out"));
+        }
+    };
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let message = if stderr.trim().is_empty() {
+            stdout.trim()
+        } else {
+            stderr.trim()
+        };
+        return Err(error(
+            StatusCode::CONFLICT,
+            if message.is_empty() {
+                "swarm action failed"
+            } else {
+                message
+            },
+        ));
+    }
+    // Launch can create a detached pane. Only failed or cancelled calls stop their process group.
+    group.0 = None;
+    Ok(stdout)
+}
+
+struct ActionProcessGroup(Option<i32>);
+
+impl Drop for ActionProcessGroup {
+    fn drop(&mut self) {
+        if let Some(group) = self.0 {
+            unsafe extern "C" {
+                fn kill(pid: i32, signal: i32) -> i32;
+            }
+            // SAFETY: the child has its own process group; kill takes plain integers only.
+            unsafe {
+                kill(-group, 9);
+            }
+        }
+    }
+}
+
+fn start_coordinator(app: &App, action_queue: mpsc::Receiver<ActionJob>) {
+    start_action_queue(app, action_queue);
     let weak = Arc::downgrade(app);
     std::thread::spawn(move || {
         let Some(app) = weak.upgrade() else {
@@ -1540,6 +2084,7 @@ mod tests {
             .unwrap();
             swarm::store::set_chair_log(&connection, &session, &log).unwrap();
             swarm::store::add_agent(&connection, &session, "worker", "chat").unwrap();
+            let (actions, action_queue) = mpsc::channel(64);
             let app = Arc::new(Server {
                 root,
                 tool: Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -1558,7 +2103,11 @@ mod tests {
                 }),
                 directories: Mutex::new(HashMap::new()),
                 stopped: AtomicBool::new(false),
+                cli: dir.join("action-cli"),
+                actions,
             });
+            // Most row tests need no action worker and may not run inside a Tokio runtime.
+            drop(action_queue);
             Self {
                 app,
                 dir,
@@ -1573,6 +2122,477 @@ mod tests {
             self.app.stopped.store(true, Ordering::Relaxed);
             std::fs::remove_dir_all(&self.dir).unwrap();
         }
+    }
+
+    fn action_fixture() -> Fixture {
+        use std::os::unix::fs::PermissionsExt;
+        let mut fixture = Fixture::new();
+        let connection = swarm::store::open(&fixture.app.root.join("swarm.db")).unwrap();
+        connection
+            .execute(
+                "UPDATE session SET adapter = 'fixture' WHERE id = ?1",
+                [&fixture.session],
+            )
+            .unwrap();
+        swarm::store::add_agent(&connection, &fixture.session, "orchestrator", "chat").unwrap();
+        let cli = &fixture.app.cli;
+        let new_id = uuid::Uuid::now_v7();
+        std::fs::write(cli, format!(r#"#!/bin/sh
+printf '%s\n' "$SWARM_ADAPTER|${{SWARM_SESSION_ID-}}|${{SWARM_AGENT_ID-}}|$PWD|$*" >> "$SWARM_HOME/actions"
+case "$1 $2" in
+  'session new') printf '%s\n' '{new_id}' ;;
+  'launch orchestrator') printf 'fixture-pane\n' ;;
+  'sessions --json') printf '%s\n' '{{"sessions":[{{"id":"archived","archivedAt":42}},{{"id":"active"}}]}}' ;;
+  *) if [ "$1" = type ]; then cat > "$SWARM_HOME/text"; fi ;;
+esac
+"#)).unwrap();
+        std::fs::set_permissions(cli, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let (actions, queue) = mpsc::channel(64);
+        Arc::get_mut(&mut fixture.app).unwrap().actions = actions;
+        start_action_queue(&fixture.app, queue);
+        fixture
+    }
+
+    async fn call_action(
+        fixture: &Fixture,
+        route: &str,
+        body: Value,
+    ) -> Result<Json<Value>, ApiError> {
+        chat_action(
+            State(fixture.app.clone()),
+            route.parse().unwrap(),
+            Ok(Json(body)),
+        )
+        .await
+    }
+
+    fn action_calls(fixture: &Fixture) -> String {
+        std::fs::read_to_string(fixture.app.root.parent().unwrap().join("actions"))
+            .unwrap_or_default()
+    }
+
+    macro_rules! target_route_test {
+        ($name:ident, $route:literal, $extra:expr, $args:literal) => {
+            #[tokio::test]
+            async fn $name() {
+                let fixture = action_fixture();
+                let mut body = json!({"session": fixture.session, "agent": "chair"});
+                for (key, value) in $extra.as_object().unwrap() { body[key] = value.clone(); }
+                let before = fixture.app.hub.lock().unwrap().version;
+                assert_eq!(call_action(&fixture, $route, body.clone()).await.unwrap().0, json!({"ok": true}));
+                assert!(fixture.app.hub.lock().unwrap().version > before);
+                let calls = action_calls(&fixture);
+                let expected = format!("fixture|{}|orchestrator|{}|{}", fixture.session,
+                    env!("CARGO_MANIFEST_DIR"), $args);
+                assert!(calls.contains(&expected), "{calls}");
+                body["session"] = json!("unknown");
+                assert_eq!(call_action(&fixture, $route, body.clone()).await.unwrap_err().0, StatusCode::NOT_FOUND);
+                body["session"] = json!(fixture.session);
+                body["agent"] = json!("unknown");
+                assert_eq!(call_action(&fixture, $route, body).await.unwrap_err().0, StatusCode::NOT_FOUND);
+                assert_eq!(call_action(&fixture, $route, json!({})).await.unwrap_err().0, StatusCode::BAD_REQUEST);
+                assert_eq!(action_calls(&fixture), calls);
+            }
+        };
+    }
+
+    target_route_test!(
+        send_route,
+        "/api/chat/send",
+        json!({"text": "hello ' $()\nworld"}),
+        "type orchestrator"
+    );
+    target_route_test!(
+        interrupt_route,
+        "/api/chat/interrupt",
+        json!({}),
+        "interrupt orchestrator"
+    );
+    target_route_test!(
+        key_route,
+        "/api/chat/key",
+        json!({"key": "Up"}),
+        "key orchestrator Up"
+    );
+    target_route_test!(
+        answer_route,
+        "/api/chat/answer",
+        json!({"prompt_id": "prompt", "choice": 1}),
+        "answer orchestrator prompt 1"
+    );
+    target_route_test!(
+        close_route,
+        "/api/agent/close",
+        json!({}),
+        "close orchestrator"
+    );
+
+    macro_rules! session_route_test {
+        ($name:ident, $route:literal, $verb:literal) => {
+            #[tokio::test]
+            async fn $name() {
+                let fixture = action_fixture();
+                assert_eq!(call_action(&fixture, $route, json!({"ids": [fixture.session]})).await.unwrap().0, json!({"ok": true}));
+                let calls = action_calls(&fixture);
+                assert!(calls.contains(&format!("session {} {}", $verb, fixture.session)));
+                assert_eq!(call_action(&fixture, $route, json!({"ids": [fixture.session, "unknown"]})).await.unwrap_err().0, StatusCode::NOT_FOUND);
+                for bad in [json!({}), json!({"ids": []}), json!({"ids": [1]})] {
+                    assert_eq!(call_action(&fixture, $route, bad).await.unwrap_err().0, StatusCode::BAD_REQUEST);
+                }
+                assert_eq!(action_calls(&fixture), calls);
+            }
+        };
+    }
+
+    session_route_test!(archive_route, "/api/sessions/archive", "archive");
+    session_route_test!(unarchive_route, "/api/sessions/unarchive", "unarchive");
+
+    #[tokio::test]
+    async fn new_chat_route() {
+        let fixture = action_fixture();
+        let body = json!({"cwd": env!("CARGO_MANIFEST_DIR"), "provider": "codex", "model": "gpt-test", "account": "auto"});
+        let response = call_action(&fixture, "/api/chat/new", body)
+            .await
+            .unwrap()
+            .0;
+        assert_eq!(response["ok"], true);
+        assert!(uuid::Uuid::parse_str(response["session"].as_str().unwrap()).is_ok());
+        assert_eq!(response["agent"], "orchestrator");
+        assert_eq!(response["pane"], "fixture-pane");
+        let calls = action_calls(&fixture);
+        let lines: Vec<_> = calls.lines().collect();
+        assert_eq!(lines.len(), 3);
+        assert!(lines[0].ends_with("|init"));
+        assert!(lines[1].ends_with("|session new lane"));
+        assert!(lines[2].ends_with(
+            "|launch orchestrator chat --provider codex --model gpt-test --account auto"
+        ));
+        assert_eq!(
+            call_action(
+                &fixture,
+                "/api/chat/new",
+                json!({"cwd": "/not-in-snapshot"})
+            )
+            .await
+            .unwrap_err()
+            .0,
+            StatusCode::FORBIDDEN
+        );
+        for bad in [
+            json!({}),
+            json!({"cwd": 3}),
+            json!({"cwd": "relative"}),
+            json!({"cwd": env!("CARGO_MANIFEST_DIR"), "model": "--bad"}),
+        ] {
+            assert_eq!(
+                call_action(&fixture, "/api/chat/new", bad)
+                    .await
+                    .unwrap_err()
+                    .0,
+                StatusCode::BAD_REQUEST
+            );
+        }
+        assert_eq!(action_calls(&fixture), calls);
+        let _ = call_action(
+            &fixture,
+            "/api/chat/new",
+            json!({"cwd": env!("CARGO_MANIFEST_DIR")}),
+        )
+        .await
+        .unwrap();
+        assert!(action_calls(&fixture).ends_with("|launch orchestrator chat --account auto\n"));
+    }
+
+    #[tokio::test]
+    async fn archived_sessions_route_filters_active_rows() {
+        let fixture = action_fixture();
+        let before = fixture.app.hub.lock().unwrap().version;
+        let value = archived_sessions(State(fixture.app.clone()))
+            .await
+            .unwrap()
+            .0;
+        assert_eq!(
+            value,
+            json!({"ok": true, "sessions": [{"id": "archived", "archivedAt": 42}]})
+        );
+        assert!(action_calls(&fixture).ends_with("|sessions --json --archived\n"));
+        assert_eq!(fixture.app.hub.lock().unwrap().version, before);
+    }
+
+    #[tokio::test]
+    async fn invalid_values_fail_before_a_cli_call_and_send_preserves_stdin() {
+        let fixture = action_fixture();
+        for (route, fields) in [
+            ("/api/chat/send", json!({"text": "  "})),
+            ("/api/chat/key", json!({"key": "Escape"})),
+            ("/api/chat/answer", json!({"prompt_id": "p", "choice": -1})),
+            ("/api/chat/answer", json!({"prompt_id": "", "choice": 0})),
+            (
+                "/api/chat/interrupt",
+                json!({"env": {"SWARM_ADAPTER": "bad"}}),
+            ),
+        ] {
+            let mut body = json!({"session": fixture.session, "agent": "worker"});
+            for (key, value) in fields.as_object().unwrap() {
+                body[key] = value.clone();
+            }
+            assert_eq!(
+                call_action(&fixture, route, body).await.unwrap_err().0,
+                StatusCode::BAD_REQUEST
+            );
+        }
+        assert_eq!(
+            call_action(
+                &fixture,
+                "/api/chat/interrupt",
+                json!([fixture.session, "chair"])
+            )
+            .await
+            .unwrap_err()
+            .0,
+            StatusCode::BAD_REQUEST
+        );
+        assert_eq!(action_calls(&fixture), "");
+        let text = "hello ' $()\nworld";
+        let _ = call_action(
+            &fixture,
+            "/api/chat/send",
+            json!({"session": fixture.session, "agent": "worker", "text": text}),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            std::fs::read_to_string(fixture.app.root.parent().unwrap().join("text")).unwrap(),
+            text
+        );
+    }
+
+    #[tokio::test]
+    async fn action_queue_serializes_calls_and_preserves_cli_errors_without_retry() {
+        let fixture = action_fixture();
+        std::fs::write(
+            &fixture.app.cli,
+            r#"#!/bin/sh
+printf 'start\n' >> "$SWARM_HOME/actions"
+sleep 0.01
+printf 'end\n' >> "$SWARM_HOME/actions"
+printf 'exact CLI error\n' >&2
+exit 1
+"#,
+        )
+        .unwrap();
+        let one = call_action(
+            &fixture,
+            "/api/chat/interrupt",
+            json!({"session": fixture.session, "agent": "worker"}),
+        );
+        let two = call_action(
+            &fixture,
+            "/api/chat/interrupt",
+            json!({"session": fixture.session, "agent": "worker"}),
+        );
+        let (one, two) = tokio::join!(one, two);
+        for result in [one, two] {
+            let (status, Json(error)) = result.unwrap_err();
+            assert_eq!(status, StatusCode::CONFLICT);
+            assert_eq!(error["error"], "exact CLI error");
+        }
+        assert_eq!(action_calls(&fixture), "start\nend\nstart\nend\n");
+    }
+
+    #[tokio::test]
+    async fn a_session_send_finishes_while_another_session_action_or_launch_is_running() {
+        for slow_route in ["/api/chat/interrupt", "/api/chat/new"] {
+            let fixture = action_fixture();
+            let connection = swarm::store::open(&fixture.app.root.join("swarm.db")).unwrap();
+            let other = swarm::store::create_session(
+                &connection,
+                "lane",
+                Path::new(env!("CARGO_MANIFEST_DIR")),
+                None,
+                Some("fixture"),
+            )
+            .unwrap();
+            swarm::store::add_agent(&connection, &other, "worker", "chat").unwrap();
+            let new_id = uuid::Uuid::now_v7();
+            std::fs::write(
+                &fixture.app.cli,
+                format!(
+                    r#"#!/bin/sh
+case "$1 $2" in
+  'session new') printf '%s\n' '{new_id}'; exit 0 ;;
+esac
+if [ "$1" = interrupt ] || [ "$1" = launch ]; then
+  printf 'running\n' > "$SWARM_HOME/slow-start"
+  while [ ! -f "$SWARM_HOME/release" ]; do sleep 0.01; done
+  printf 'fixture-pane\n'
+fi
+if [ "$1" = type ]; then cat > "$SWARM_HOME/text"; fi
+"#
+                ),
+            )
+            .unwrap();
+            let slow_app = fixture.app.clone();
+            let slow_body = if slow_route == "/api/chat/new" {
+                json!({"cwd": env!("CARGO_MANIFEST_DIR")})
+            } else {
+                json!({"session": other, "agent": "worker"})
+            };
+            let slow = tokio::spawn(async move {
+                chat_action(
+                    State(slow_app),
+                    slow_route.parse().unwrap(),
+                    Ok(Json(slow_body)),
+                )
+                .await
+            });
+            let home = fixture.app.root.parent().unwrap();
+            tokio::time::timeout(Duration::from_secs(3), async {
+                while !home.join("slow-start").exists() {
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            })
+            .await
+            .unwrap();
+            let send = tokio::time::timeout(
+                Duration::from_secs(2),
+                call_action(
+                    &fixture,
+                    "/api/chat/send",
+                    json!({"session": fixture.session, "agent": "worker", "text": "parallel send"}),
+                ),
+            )
+            .await;
+            let still_running = !slow.is_finished();
+            // Release the stand-in before an assertion so a failed test cannot leave it waiting.
+            std::fs::write(home.join("release"), "release").unwrap();
+            let _ = tokio::time::timeout(Duration::from_secs(3), slow)
+                .await
+                .unwrap()
+                .unwrap()
+                .unwrap();
+            assert!(still_running, "slow action ended before the send finished");
+            assert_eq!(
+                send.expect("send must not wait for another session or launch")
+                    .unwrap()
+                    .0,
+                json!({"ok": true})
+            );
+            assert_eq!(
+                std::fs::read_to_string(home.join("text")).unwrap(),
+                "parallel send"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn archive_and_unarchive_share_a_lane_without_blocking_a_session_send() {
+        let fixture = action_fixture();
+        std::fs::write(
+            &fixture.app.cli,
+            r#"#!/bin/sh
+case "$1 $2" in
+  'session archive')
+    printf 'running\n' > "$SWARM_HOME/slow-start"
+    while [ ! -f "$SWARM_HOME/release" ]; do sleep 0.01; done ;;
+  'session unarchive') printf 'restored\n' > "$SWARM_HOME/restored" ;;
+  *) if [ "$1" = type ]; then cat > "$SWARM_HOME/text"; fi ;;
+esac
+"#,
+        )
+        .unwrap();
+        let home = fixture.app.root.parent().unwrap();
+        let archive_app = fixture.app.clone();
+        let ids = json!({"ids": [fixture.session]});
+        let archive_ids = ids.clone();
+        let archive = tokio::spawn(async move {
+            chat_action(
+                State(archive_app),
+                "/api/sessions/archive".parse().unwrap(),
+                Ok(Json(archive_ids)),
+            )
+            .await
+        });
+        tokio::time::timeout(Duration::from_secs(3), async {
+            while !home.join("slow-start").exists() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+        let restore_app = fixture.app.clone();
+        let restore = tokio::spawn(async move {
+            chat_action(
+                State(restore_app),
+                "/api/sessions/unarchive".parse().unwrap(),
+                Ok(Json(ids)),
+            )
+            .await
+        });
+        let send = tokio::time::timeout(
+            Duration::from_secs(2),
+            call_action(
+                &fixture,
+                "/api/chat/send",
+                json!({"session": fixture.session, "agent": "worker", "text": "parallel send"}),
+            ),
+        )
+        .await;
+        let restore_waited = !restore.is_finished() && !home.join("restored").exists();
+        std::fs::write(home.join("release"), "release").unwrap();
+        let _ = tokio::time::timeout(Duration::from_secs(3), archive)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        let _ = tokio::time::timeout(Duration::from_secs(3), restore)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        assert!(
+            restore_waited,
+            "unarchive must wait for archive in the shared lane"
+        );
+        assert_eq!(
+            send.expect("send must not wait for the shared lane")
+                .unwrap()
+                .0,
+            json!({"ok": true})
+        );
+        assert!(home.join("restored").exists());
+    }
+
+    #[tokio::test]
+    async fn action_timeout_kills_the_process_group_without_retry() {
+        let fixture = action_fixture();
+        std::fs::write(
+            &fixture.app.cli,
+            r#"#!/bin/sh
+printf 'start\n' >> "$SWARM_HOME/actions"
+sleep 30 &
+printf '%s\n' "$!" > "$SWARM_HOME/sleeper"
+wait
+"#,
+        )
+        .unwrap();
+        let call = action_session(&fixture.app, &fixture.session)
+            .unwrap()
+            .args(&["interrupt", "worker"]);
+        let result = run_cli_with_timeout(&fixture.app, call, None, Duration::from_secs(1)).await;
+        assert_eq!(result.unwrap_err().0, StatusCode::GATEWAY_TIMEOUT);
+        assert_eq!(action_calls(&fixture), "start\n");
+        let pid =
+            std::fs::read_to_string(fixture.app.root.parent().unwrap().join("sleeper")).unwrap();
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        assert!(
+            !std::process::Command::new("/bin/kill")
+                .args(["-0", pid.trim()])
+                .stderr(std::process::Stdio::null())
+                .status()
+                .unwrap()
+                .success()
+        );
     }
 
     #[test]

@@ -21,6 +21,10 @@ struct Server {
 
 impl Server {
     fn new() -> Self {
+        Self::with_actions(false)
+    }
+
+    fn with_actions(actions: bool) -> Self {
         let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let dir = repo
             .join("tmp/web-pilot")
@@ -40,7 +44,7 @@ impl Server {
             "lane",
             &repo,
             Some(("claude", "synthetic")),
-            None,
+            actions.then_some("fixture"),
         )
         .unwrap();
         swarm::store::set_chair_log(&connection, &session, &log).unwrap();
@@ -48,6 +52,37 @@ impl Server {
         swarm::store::set_provider(&connection, &session, "worker", "claude").unwrap();
         swarm::store::set_log(&connection, &session, "worker", &log).unwrap();
         swarm::store::add_notice(&connection, Some(&session), None, "synthetic", "notice").unwrap();
+        let bin = home.join("bin");
+        fs::create_dir_all(&bin).unwrap();
+        if actions {
+            swarm::store::add_agent(&connection, &session, "orchestrator", "chat").unwrap();
+            swarm::store::set_pane(&connection, &session, "orchestrator", "fixture-chair").unwrap();
+            swarm::store::set_pane(&connection, &session, "worker", "fixture-worker").unwrap();
+            fs::write(
+                home.join("screen"),
+                include_str!("fixtures/screens/claude-waiting.txt"),
+            )
+            .unwrap();
+            fs::create_dir_all(root.join("adapters")).unwrap();
+            let adapter = r#"self = printf fixture-chair
+spawn = printf 'spawn %s %s %s\n' "$SWARM_SESSION_ID" "$SWARM_AGENT_ID" "$SWARM_ADAPTER" >> "$HOME/actions"; printf fixture-new
+ring = printf 'ring %s %s %s\n' "$SWARM_SESSION_ID" "$SWARM_AGENT_ID" "$SWARM_ADAPTER" >> "$HOME/actions"; printf '%s' "$SWARM_TEXT" > "$HOME/text"
+list = printf 'fixture-chair sh\nfixture-worker sh\nfixture-new sh\n'
+close = printf 'close %s\n' "$SWARM_PANE" >> "$HOME/actions"
+capture = cat "$HOME/screen"
+screen = cat "$HOME/screen"
+interrupt = printf 'interrupt %s\n' "$SWARM_PANE" >> "$HOME/actions"
+key = printf 'key %s %s\n' "$SWARM_PANE" "$SWARM_KEY" >> "$HOME/actions"
+"#;
+            fs::write(root.join("adapters/fixture.conf"), adapter).unwrap();
+            fs::write(root.join("adapters/tmux-solo.conf"), adapter).unwrap();
+            fs::write(root.join("consent.json"), r#"{"trust":"standing"}"#).unwrap();
+            fs::create_dir_all(home.join(".config/agent-routing")).unwrap();
+            fs::write(home.join(".config/agent-routing/roles.json"), r#"{"routes":{"chat":["fixture"]},"runners":{"fixture":{"provider":"agy","model":"flash"}}}"#).unwrap();
+            use std::os::unix::fs::PermissionsExt;
+            fs::write(bin.join("agy"), "#!/bin/sh\nexit 0\n").unwrap();
+            fs::set_permissions(bin.join("agy"), fs::Permissions::from_mode(0o755)).unwrap();
+        }
         drop(connection);
         let assets = dir.join("assets");
         fs::create_dir(&assets).unwrap();
@@ -55,6 +90,14 @@ impl Server {
         fs::write(assets.join("app.js"), "console.log('pilot');").unwrap();
         std::os::unix::fs::symlink(&log, assets.join("escape.jsonl")).unwrap();
         let mut child = Command::new(env!("CARGO_BIN_EXE_swarm"))
+            .env_clear()
+            .env("HOME", &home)
+            .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
+            // Serve must remove inherited host identity before an owner key/answer call.
+            .env("TMUX_PANE", "inherited-pane")
+            .env("HERDR_PANE_ID", "inherited-pane")
+            .env("SWARM_SESSION_ID", "inherited-session")
+            .env("SWARM_AGENT_ID", "inherited-worker")
             .args(["serve", "--port", "0", "--assets"])
             .arg(assets)
             .args(["--dev-origin", "http://127.0.0.1:5173"])
@@ -72,10 +115,12 @@ impl Server {
         BufReader::new(child.stdout.take().unwrap())
             .read_line(&mut first)
             .unwrap();
-        let (address, token) = first
-            .trim()
-            .split_once("/#token=")
-            .expect("server URL and token");
+        let Some((address, token)) = first.trim().split_once("/#token=") else {
+            let _ = child.kill();
+            let _ = child.wait();
+            fs::remove_dir_all(&dir).unwrap();
+            panic!("serve failed before the server URL and token");
+        };
         let port = address.rsplit_once(':').unwrap().1.parse().unwrap();
         assert_eq!(token.len(), 64);
         assert!(token.bytes().all(|byte| byte.is_ascii_hexdigit()));
@@ -541,4 +586,135 @@ fn row_routes_guard_input_cap_output_and_stream_stable_ids() {
             .0,
         404
     );
+}
+
+#[test]
+fn chat_posts_are_guarded_before_any_action_runs() {
+    let server = Server::with_actions(true);
+    let body =
+        json!({"session": server.session, "agent": "chair", "text": "must not run"}).to_string();
+    for (headers, auth, expected) in [
+        ("Content-Type: application/json\r\n", false, 401),
+        (
+            "Content-Type: application/json\r\nOrigin: https://evil.test\r\n",
+            true,
+            403,
+        ),
+        ("Content-Type: text/plain\r\n", true, 415),
+    ] {
+        assert_eq!(
+            server
+                .request("POST", "/api/chat/send", headers, &body, auth)
+                .0,
+            expected
+        );
+    }
+    let oversized =
+        json!({"session":server.session,"agent":"chair","text":"x".repeat(65536)}).to_string();
+    assert_eq!(
+        server
+            .request(
+                "POST",
+                "/api/chat/send",
+                "Content-Type: application/json\r\n",
+                &oversized,
+                true
+            )
+            .0,
+        413
+    );
+    assert!(!server.dir.join("home/actions").exists());
+}
+
+#[test]
+fn chat_routes_run_the_real_cli_against_a_fake_provider_and_adapter() {
+    let server = Server::with_actions(true);
+    let post = |route: &str, body: Value| {
+        let (status, _, response) = server.request(
+            "POST",
+            route,
+            "Content-Type: application/json\r\n",
+            &body.to_string(),
+            true,
+        );
+        assert_eq!(status, 200, "{route}: {response}");
+        let response: Value = serde_json::from_str(&response).unwrap();
+        assert_eq!(response["ok"], true);
+        response
+    };
+    let target = json!({"session": server.session, "agent": "chair"});
+    let text = "quotes ' and $(touch injected)\nsecond line";
+    let mut send = target.clone();
+    send["text"] = json!(text);
+    let mut stream = server.sse();
+    let _ = named_event(&mut stream, "hello");
+    post("/api/chat/send", send);
+    assert!(
+        named_event(&mut stream, "snapshot")["version"]
+            .as_u64()
+            .unwrap()
+            > 1
+    );
+    assert_eq!(
+        fs::read_to_string(server.dir.join("home/text")).unwrap(),
+        text
+    );
+    assert!(!server.dir.join("home/injected").exists());
+    post("/api/chat/interrupt", target.clone());
+    for key in ["Up", "C-u"] {
+        let mut body = target.clone();
+        body["key"] = json!(key);
+        post("/api/chat/key", body);
+    }
+    let prompt =
+        swarm::screen::prompt(include_str!("fixtures/screens/claude-waiting.txt")).unwrap();
+    let mut answer = target.clone();
+    answer["prompt_id"] = json!(prompt.id);
+    answer["choice"] = json!(0);
+    post("/api/chat/answer", answer);
+    let actions = || fs::read_to_string(server.dir.join("home/actions")).unwrap();
+    assert!(actions().contains(&format!("ring {} orchestrator fixture\n", server.session)));
+    assert!(actions().contains("key fixture-chair 1\n"));
+    // Numbered choices send the digit alone; arrow choices send Enter (Prompt::keys).
+    assert!(!actions().contains("key fixture-chair Enter\n"));
+    assert!(actions().contains("interrupt fixture-chair\n"));
+    post("/api/agent/close", target);
+    let connection = rusqlite::Connection::open(server.dir.join("home/.swarm/swarm.db")).unwrap();
+    assert_eq!(
+        swarm::store::pane_of(&connection, &server.session, "orchestrator").unwrap(),
+        None
+    );
+    assert!(actions().contains("close fixture-chair\n"));
+    post("/api/sessions/archive", json!({"ids": [server.session]}));
+    let (status, _, body) = server.request("GET", "/api/sessions/archived", "", "", true);
+    assert_eq!(status, 200);
+    let archived: Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(archived["sessions"][0]["id"], server.session);
+    assert!(archived["sessions"][0]["archivedAt"].as_i64().is_some());
+    post("/api/sessions/unarchive", json!({"ids": [server.session]}));
+    let (_, _, body) = server.request("GET", "/api/sessions/archived", "", "", true);
+    assert_eq!(
+        serde_json::from_str::<Value>(&body).unwrap()["sessions"],
+        json!([])
+    );
+    let created = post(
+        "/api/chat/new",
+        json!({"cwd": env!("CARGO_MANIFEST_DIR"), "provider":"agy", "model":"flash", "account":"auto"}),
+    );
+    let session = created["session"].as_str().unwrap();
+    assert_ne!(session, server.session);
+    assert_eq!(
+        swarm::store::session_cwd(&connection, session)
+            .unwrap()
+            .as_deref(),
+        Some(env!("CARGO_MANIFEST_DIR"))
+    );
+    assert_eq!(
+        swarm::store::pane_of(&connection, session, "orchestrator")
+            .unwrap()
+            .as_deref(),
+        Some("fixture-new")
+    );
+    assert!(actions().contains(&format!("spawn {session} orchestrator tmux-solo\n")));
+    post("/api/chat/new", json!({"cwd": env!("CARGO_MANIFEST_DIR")}));
 }
