@@ -200,10 +200,10 @@ story before production, and render from time and one seed. Reference rules poin
 | `references.md` Research references, Pass 1-5, Evidence language | `blocks/reference-analysis` |
 | `references.md` Style grammar template | stays |
 | `story-and-motion.md` Story sheet, Structures, Shot list, Pacing | `blocks/story` |
-| `story-and-motion.md` Drivers, Transition catalogue, Seam law, Scene graph, Timeline, Motion feel, Web-native media ideas, Seam design | stay |
+| `story-and-motion.md` Drivers (its settled-state line points to `blocks/web-ui-basics`), Transition catalogue, Seam law, Scene graph, Timeline, Motion feel, Web-native media ideas, Seam design | stay |
 | `qa.md` Required evidence | stays; the contact-sheet rule moved to `blocks/visual-qa` |
 | `qa.md` Reference match | scoring to `blocks/style-frames-concept`, compare command to `blocks/headless-shot`; ink's example stays |
-| `qa.md` Story checks | stay; key frame and pacing checks moved to `blocks/story` |
+| `qa.md` Story checks | stay; key frame and pacing checks moved to `blocks/story`; the scroll-story check points to the settled-state rule of `blocks/web-ui-basics` |
 | `qa.md` Frame checks, Motion checks | `blocks/visual-qa`; mass, paper, seam law, boil and loop seam checks stay |
 | `qa.md` Automated checks | stay; hidden content points to `blocks/web-ui-basics` |
 | `qa.md` QA log | `blocks/visual-qa`; ink's step names stay |

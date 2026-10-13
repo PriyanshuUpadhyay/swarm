@@ -21,7 +21,7 @@ Build a small story engine, so the story, the look, and the motion change in one
 
 ```text
 config / seed
-look          token object from the look file (palette roles, light direction, line widths,
+look          token object from the look file, the step file that holds the look (palette roles, light direction, line widths,
               halftone cell, texture opacities); the passes are in references/mark-making.md
 entities      draw functions with parameters: character(ctx, look, {pose, mood, seed})
 scenes        draw(ctx, u, t, look, params): own coordinates, no colour literals, no story timing

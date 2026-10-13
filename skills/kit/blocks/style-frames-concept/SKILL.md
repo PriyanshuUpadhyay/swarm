@@ -26,7 +26,7 @@ Action: render `{{shots}}/home-1440.png`, `home-390.png`, and `flow-1440.png`, a
 Result: the step file holds both score tables and the compare image paths. The build may start.
 
 ## Check (script)
-- `ls {{shots}}/compare-*.png | wc -l` prints 3 or more: one compare image per frame exists, for a page or a reel.
+- `ls {{shots}}/compare-*.png | wc -l` prints 1 or more: a compare image exists. The judge checks one per frame, three for a page.
 
 ## Check (judge)
 - For a page, do `<page>-1440.png`, `<page>-390.png`, and one `<section>-1440.png` exist in {{shots}}; for a reel, is one frame the signature shot? Quote the paths.
