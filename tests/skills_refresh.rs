@@ -16,8 +16,8 @@ impl Fixture {
     fn new(role: &str) -> Self {
         let root = std::env::temp_dir().join(format!("swarm-skills-{role}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
-        let helper = root.join("Swarm.app/Contents/Helpers/swarm");
-        let source = root.join("Swarm.app/Contents/Resources/Skills");
+        let helper = root.join("Cellar/swarm/0.13.0/bin/swarm");
+        let source = root.join("Cellar/swarm/0.13.0/libexec/skills");
         fs::create_dir_all(helper.parent().unwrap()).unwrap();
         fs::write(&helper, "fixture helper").unwrap();
         fs::create_dir_all(&source).unwrap();
@@ -101,13 +101,13 @@ fn incomplete_previous_copy_does_not_block_a_valid_source() {
 }
 
 #[test]
-fn first_copy_noop_and_whole_replacement_use_cask_source() {
+fn first_copy_noop_and_whole_replacement_use_linked_source() {
     let f = Fixture::new("first-copy");
-    let cask = f.root.join("cask/swarm");
-    fs::create_dir_all(cask.parent().unwrap()).unwrap();
-    symlink(&f.helper, &cask).unwrap();
+    let linked = f.root.join("bin/swarm");
+    fs::create_dir_all(linked.parent().unwrap()).unwrap();
+    symlink(&f.helper, &linked).unwrap();
     assert_eq!(
-        swarm::skills::refresh_from(&cask, &f.home).unwrap(),
+        swarm::skills::refresh_from(&linked, &f.home).unwrap(),
         swarm::skills::RefreshOutcome::Updated
     );
     let before = f.installed();

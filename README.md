@@ -4,7 +4,7 @@ Message bus and pane control for a tree of agent CLIs. One agent, the chair, sta
 CLIs (Claude Code, Codex, or AGY) in visible terminal panes, sends them work, and collects their
 answers. You see every worker and can type into any of them.
 
-![Swarm.app: the chair on the left, a worker's pane on the right](docs/images/app-chat-worker.png)
+![The web UI: the chair on the left, a worker's pane on the right](docs/images/app-chat-worker.png)
 
 ## How it works
 
@@ -38,58 +38,50 @@ model. Each agent learns its part from a skill: `swarm-orchestrator` for the cha
 
 Panes live in [tmux](https://github.com/tmux/tmux) (the default) or in
 [Herdr](https://github.com/herdrdev/herdr). In a Herdr pane, swarm picks Herdr by itself.
-Swarm.app is a macOS chat window over the same sessions. It is a web UI that `swarm serve` serves
-on 127.0.0.1, in a thin Swift window (ADR 0075, ADR 0078).
+`swarm ui` opens a chat UI over the same sessions in your browser. The web UI is inside the `swarm`
+binary, and `swarm serve` serves it on 127.0.0.1 (ADR 0075, ADR 0079).
 
 ## Install
 
-One Homebrew cask installs Swarm.app, links the `swarm` CLI inside the app onto PATH, and installs
-tmux, so the app and the CLI always come from one release. It needs macOS 26 (Tahoe) or newer:
+One Homebrew formula installs `swarm` with its web UI, the notice helper, the bundled skills, and
+tmux. It needs an Apple silicon Mac with macOS 26 (Tahoe) or newer:
 
 ```sh
 brew tap priyanshuupadhyay/tap
 brew trust --tap priyanshuupadhyay/tap   # Homebrew 6 or newer
-brew install --cask priyanshuupadhyay/tap/swarm-app
+brew install priyanshuupadhyay/tap/swarm
 swarm init                               # creates ~/.swarm with the db, runs/, and adapters/
 ```
 
-Update with `brew upgrade priyanshuupadhyay/tap/swarm-app`. If you had a Swarm.app dragged from the
-DMG, or the old `swarm` formula, run this once. The formula is no longer in the tap, so its keg goes
-(this step fails alone when there is none). The cask reinstall links `swarm` to the app, and
-`--force` lets it replace a dragged app:
+Update with `brew upgrade priyanshuupadhyay/tap/swarm`. If you had the `swarm-app` cask or a
+Swarm.app from a DMG, remove it once, because the tap no longer has the cask and the cask's link
+blocks the formula's `bin/swarm`. Your data in `~/.swarm` stays:
 
 ```sh
-brew uninstall swarm; brew reinstall --cask --force priyanshuupadhyay/tap/swarm-app
+brew uninstall --cask swarm-app; brew install priyanshuupadhyay/tap/swarm
 ```
 
-The app warns at launch when Terminal's `swarm` is another build than its own, and names the same
-command. A `swarm` that brew did not install, such as `~/.cargo/bin/swarm`, you remove yourself.
+Drag a Swarm.app that brew did not install to the Trash. A `swarm` that brew did not install, such
+as `~/.cargo/bin/swarm`, you remove yourself; `swarm --version` names the build that runs.
 
-The CLI alone, on an older macOS or on Linux: `SWARM_RELEASE_BUILD=1 cargo install --path .` from
-a clone of a release tag, then `swarm init`. It needs tmux. Without `SWARM_RELEASE_BUILD=1` the
-build is a dev build, which keeps its data in a branch folder and not in `~/.swarm`.
+Without Homebrew, on an older macOS, or on Linux, build from a clone of a release tag. It needs
+tmux, and pnpm for the web UI:
 
-### Swarm app without Homebrew
+```sh
+pnpm --dir web install --frozen-lockfile && pnpm --dir web build
+SWARM_RELEASE_BUILD=1 cargo install --path . --features serve
+swarm init
+```
 
-Download `Swarm-<version>.dmg` from the
-[latest release](https://github.com/PriyanshuUpadhyay/swarm/releases/latest), open it, and drag
-Swarm onto Applications. The app carries its own `swarm` CLI but puts nothing on PATH. It still
-needs tmux (`brew install tmux`) and at least one agent CLI (`claude`, `codex`, or `agy`).
-
-The app is not notarized by Apple, so macOS blocks the first launch. Allow it once:
-
-1. Open Swarm from Applications. macOS says it cannot verify the app. Click **Done**.
-2. Open **System Settings > Privacy & Security** and scroll to **Security**.
-3. Next to "Swarm was blocked", click **Open Anyway**, then confirm with your password.
-
-On macOS 15 and later, a Control-click on the app and **Open** no longer skips this check.
-If **Open Anyway** does not show, run `xattr -dr com.apple.quarantine /Applications/Swarm.app`.
+Without `SWARM_RELEASE_BUILD=1` the build is a dev build, which keeps its data in a branch folder
+and not in `~/.swarm`. Without `--features serve` the build has no `swarm ui`. Such a build has no
+notice helper and no bundled skills.
 
 ## Set up
 
 1. **Install an agent CLI and sign in.** Swarm starts [Claude Code](https://docs.claude.com/en/docs/claude-code),
    [Codex](https://github.com/openai/codex), and AGY. A runner whose CLI is not on `PATH` is skipped.
-2. **Prepare the bundled skills.** In a terminal, use the helper shipped with Swarm.app:
+2. **Prepare the bundled skills.** The formula ships them beside `swarm`. In a terminal, run:
 
    ```sh
    swarm skills refresh
@@ -104,7 +96,7 @@ If **Open Anyway** does not show, run `xattr -dr com.apple.quarantine /Applicati
 
 3. **Check your profiles.** A profile maps a role, such as `code.small` or `review.deep`, to an
    ordered list of runners (provider, model, effort). Swarm ships defaults in
-   `default-profiles.json`. Edit them in the app's **Settings › Profiles**, or read them with
+   `default-profiles.json`. Edit them in the web UI's **Settings › Profiles**, or read them with
    `swarm roles check --json`. [Profiles](#profiles-and-runners) has the details.
 4. **Approve the setup plan.** In a terminal, `swarm setup --plan` shows each file it would change,
    under its group: the Codex and AGY hooks, so worker columns show their chat and state, Skills for
@@ -122,7 +114,7 @@ If **Open Anyway** does not show, run `xattr -dr com.apple.quarantine /Applicati
 Swarm keeps more than one Claude or Codex account and reads how much usage each one has left.
 It needs no other tool.
 
-- **Settings › Accounts** in the app lists the accounts of each provider with their sign-in state
+- **Settings › Accounts** in the web UI lists the accounts of each provider with their sign-in state
   and usage. **Add account** opens the provider's own login in a pane. `swarm accounts login` is
   the same step for a script.
 - A Claude account is a login in the macOS Keychain. Every Claude account uses the chats, settings and
@@ -141,7 +133,7 @@ It needs no other tool.
   the launch falls through to the next runner.
 - Swarm reads Claude usage with the account's own Keychain token (ADR 0072). The token stays in
   memory and is written to no file.
-- Compact usage meters in the app show each account's limits. The notch usage HUD panel left with
+- Compact usage meters in the web UI show each account's limits. The notch usage HUD panel left with
   the SwiftUI app (ADR 0076).
 
 AGY has no account source yet.
@@ -179,18 +171,22 @@ claude
 
 The chair follows `swarm-orchestrator`, and the worker pane opens beside it.
 
-### From the app
+### From the web UI
 
-1. Click **Import Project…** and choose a folder. Swarm adds and selects the project without
+Run `swarm ui`. It starts the server, prints the URL, opens it in your browser, and runs until
+Ctrl-C. A second `swarm ui` for the same home opens the running server's page and exits: it keeps
+the URL in `~/.swarm/ui-url` and checks that the server still answers with that URL's token.
+
+1. Click **Import Project…** and type the folder's full path. Swarm adds and selects the project without
    starting an agent. Click **New chat** to start the `chat` profile. A folder that is not a Git repository gets an offer to run `git init`.
    The **+** on a project's header makes a workspace (a branch in its own worktree) there.
 2. To use another model, click **Switch model** in the chat.
 3. Type your task. When the chair launches a worker, the worker's pane opens as a column to the
    right of the chat, and you can type into it.
 
-## Swarm app reference
+## Web UI reference
 
-The app's scope is ADR 0076 (Scope v1). The sidebar shows Pinned workspaces, then one header per
+The web UI's scope is ADR 0076 (Scope v1). The sidebar shows Pinned workspaces, then one header per
 project with its workspaces and chats, and Archived. A Recent list spans every project. Chats of a
 workspace are tabs (⌘1 to ⌘9), and ⌘K opens a palette that finds actions, workspaces and chats.
 New workspace makes a branch in its own worktree from a new branch, an existing branch, a pull
@@ -200,10 +196,9 @@ Child agents show as panes beside the chat. Changes shows the workspace diff, an
 goes to the agent. Rows show PR and CI status, and compact meters show account usage. Settings has
 Appearance, the send key, Notifications, Profiles, and Accounts.
 
-The app starts `swarm serve` from its bundle with the login shell's PATH, so the agent CLIs it
-starts find the same tools as Terminal. Notices come from the small SwarmNotify helper inside the
-app, so a waiting agent never starts the app, and nothing starts at login (ADR 0077). The app
-keeps the Dock badge while it runs.
+`swarm ui` runs with your terminal's PATH, so the agent CLIs it starts find the same tools.
+Notices come from the small SwarmNotify helper that ships beside `swarm`, so a notice needs no open
+page, and nothing starts at login (ADR 0077, ADR 0079). A click on a notice focuses the agent's pane.
 
 ## Environment
 
@@ -266,7 +261,9 @@ id. A chair gets both from its pane, which `swarm session new` registers. A chil
 |---|---|---|
 | `--version` | any | Print the package version and build commit. |
 | `init` | any | Claim `.swarm/` (ADR 0036), then create `runs/`, `adapters/`, and the database. Shipped adapters stay in the binary; matching old disk copies are removed. |
-| `skills refresh` | any | Validate and refresh the complete bundled skills copy in this build's swarm home. The command requires the helper shipped with Swarm.app. Setup uses this copy for link targets. |
+| `ui [--port N] [--assets DIR]` | any | Serve the web UI that is inside the binary on 127.0.0.1, print the URL with its token, open it in the browser, and run until Ctrl-C. When `.swarm/ui-url` names a server of this home that still takes its token, open that one and exit. `--assets DIR` serves a `web/dist` folder instead. Needs a build with `--features serve`. |
+| `serve [--port N] [--assets DIR] [--dev-origin ORIGIN]` | any | The same server with no browser and no `ui-url` record; it prints the URL and runs until stopped. |
+| `skills refresh` | any | Validate and refresh the complete bundled skills copy in this build's swarm home. It reads the skills that ship beside `swarm` in `libexec/skills`. Setup uses this copy for link targets. |
 | `setup status --json` | any | Print whether each setup group has nothing pending: `hooks` (swarm's Codex and AGY state hooks), `guard` (as for `hooks status`), `trust` (the owner's answer, `standing` or `ask`, for launch folder trust in `~/.swarm/consent.json`), `herdr` (always true until a Herdr writer ships), and `skills` (all catalog links recorded and present, with a complete default copy). More groups may come (ADR 0043). |
 | `setup [--plan [--json] \| --digest <digest>] [--cwd <dir>] [--only <group>,...] [--consent <standing\|ask>] [--resume]` | any | One plan of every write swarm makes outside its home, with one digest: the `hooks` group as `hooks setup` writes it, then the `trust` group, the consent file (set to `--consent`, by default the recorded answer, else `standing`, as a managed edit whose undo means `ask`) and each trust entry a seat launched in `--cwd` (default the current folder) would need, or with `--resume` a resuming seat, whose Claude runs in that folder itself. The `skills` group follows `herdr` and plans links into the current build home. `--plan` prints a unified diff per file, each conflict, and each skipped part with its reason, and with `--json` gives each file and conflict its `group`. Apply writes each file in plan order and records each trust entry and the consent (ADR 0042); with nothing pending it prints `already set up` and exits 0 (ADR 0043). |
 | `hooks status --json` | any | Print whether swarm's own Codex and AGY state hooks are set up, and as `guard` whether the guard registrations match the rule list: all in place while `~/.swarm/guards.json` exists, none left once it is gone (ADR 0040). |
@@ -320,7 +317,7 @@ id. A chair gets both from its pane, which `swarm session new` registers. A chil
 | `ack <seq>` | agent | Mark one message read. |
 
 The Herdr adapter's spawn verb runs `swarm herdr-split` through `$SWARM_EXE`, the path of the binary
-that runs the verb, so Swarm.app finds it even with a short `PATH`. A disk adapter's spawn verb must pass
+that runs the verb, so `swarm serve` finds it even with a short `PATH`. A disk adapter's spawn verb must pass
 `SWARM_HOME` and `SWARM_SESSION_ID` to the pane, because the Codex and AGY state hooks find the
 pane's own swarm through them (ADR 0034). Claude, Codex, and AGY run
 `swarm host-context --provider <claude|codex|agy>` as a SessionStart hook to learn the host contract.
@@ -358,5 +355,4 @@ SWARM_SUMMARIZER='head -c 200' swarm drain            # done 1
 ## Performance profiling
 
 `node web/perf/run.mjs --browsers chromium,webkit` runs the web UI's speed budgets (key to paint,
-chat switch, cold open, scroll, live load, giant tool output, memory soak) in Playwright, and
-`SwarmWeb --measure OUT.json` runs the same scenarios in the app's own WKWebView (ADR 0075).
+chat switch, cold open, scroll, live load, giant tool output, memory soak) in Playwright (ADR 0075).
