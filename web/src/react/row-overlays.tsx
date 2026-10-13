@@ -2,11 +2,12 @@
 // (decision 3). A Radix root per row would cost every key move and scroll frame. These components keep
 // their own state, so a hover or a menu never re-renders the rows; they find the row from the DOM event.
 
-import { ChevronsDownUpIcon, ChevronsUpDownIcon, CopyIcon, MessageSquareIcon, PinIcon, PinOffIcon, PencilIcon, PlusIcon } from "lucide-react";
+import { ArchiveIcon, ArchiveRestoreIcon, ChevronsDownUpIcon, ChevronsUpDownIcon, CopyIcon, MessageSquareIcon, PinIcon, PinOffIcon, PencilIcon, PlusIcon, SquareIcon, TerminalIcon, Trash2Icon } from "lucide-react";
 import { useEffect, useState, type RefObject } from "react";
 import type { App } from "../core/app";
+import type { Profile } from "../core/lifecycle";
 import type { NavRow, SidebarRow } from "../core/nav";
-import { ContextMenuContent, ContextMenuItem, ContextMenuLabel, ContextMenuSeparator, ContextMenuShortcut } from "../components/ui/context-menu";
+import { ContextMenuContent, ContextMenuItem, ContextMenuLabel, ContextMenuSeparator } from "../components/ui/context-menu";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "../components/ui/dropdown-menu";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "../components/ui/hover-card";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../components/ui/tooltip";
@@ -23,16 +24,6 @@ const rowOf = (app: App, el: Element | null): NavRow | undefined => {
 };
 
 const rowEl = (list: HTMLElement, id: string) => list.querySelector<HTMLElement>(`${ROW}[data-id="${CSS.escape(id)}"]`);
-
-/** A menu item whose action comes in a later phase. */
-function Later({ children, phase }: { children: React.ReactNode; phase: string }) {
-  return (
-    <ContextMenuItem disabled>
-      {children}
-      <ContextMenuShortcut>{phase}</ContextMenuShortcut>
-    </ContextMenuItem>
-  );
-}
 
 /** Content for the list's one ContextMenu; the row is the one under the right click. */
 export function RowMenu({ app, listRef }: { app: App; listRef: RefObject<HTMLDivElement | null> }) {
@@ -54,8 +45,22 @@ export function RowMenu({ app, listRef }: { app: App; listRef: RefObject<HTMLDiv
       rowEl(list, target.id)?.setAttribute("data-menu", "true");
       setRow(target);
     };
+    // Shift+F10 and the ContextMenu key open the focused row's menu. WebKit fires no contextmenu
+    // for either, and Chromium none for Shift+F10, so one is sent at the row's corner.
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "ContextMenu" && !(e.key === "F10" && e.shiftKey)) return;
+      const row = (e.target as Element).closest<HTMLElement>(ROW);
+      if (!row) return;
+      e.preventDefault();
+      const r = row.getBoundingClientRect();
+      row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: r.left + 24, clientY: r.bottom, button: 2 }));
+    };
     list.addEventListener("contextmenu", onContextMenu);
-    return () => list.removeEventListener("contextmenu", onContextMenu);
+    list.addEventListener("keydown", onKey);
+    return () => {
+      list.removeEventListener("contextmenu", onContextMenu);
+      list.removeEventListener("keydown", onKey);
+    };
   }, [app, listRef]);
 
   const onClose = () => listRef.current?.querySelector('[data-menu="true"]')?.removeAttribute("data-menu");
@@ -73,18 +78,31 @@ export function RowMenu({ app, listRef }: { app: App; listRef: RefObject<HTMLDiv
       <ContextMenuLabel className="max-w-[260px] truncate normal-case">{r ? r.title : row.section.title}</ContextMenuLabel>
       {!r && row.kind === "project" && (
         <>
-          {!archive && <Later phase="S3">New Workspace…</Later>}
+          {!archive && row.section.path && (
+            <ContextMenuItem onSelect={() => app.life.newWorkspace(row.section.path!)}>
+              <PlusIcon /> New Workspace…
+            </ContextMenuItem>
+          )}
           <ContextMenuItem onSelect={() => app.renameProject(row.section.path ?? "", row.section.title)}>
             <PencilIcon /> Rename Project…
           </ContextMenuItem>
-          <Later phase="S3">Remove Project…</Later>
+          {!archive && row.section.path && (
+            <ContextMenuItem onSelect={() => app.life.editSetupScript(row.section.path!, row.section.title)}>
+              <TerminalIcon /> Setup script…
+            </ContextMenuItem>
+          )}
+          {row.section.path && (
+            <ContextMenuItem onSelect={() => app.life.removeProject(row.section.path!, row.section.title)}>
+              Remove Project…
+            </ContextMenuItem>
+          )}
           {fold && <ContextMenuSeparator />}
           {fold}
         </>
       )}
       {!r && row.kind === "pinned" && fold}
       {r?.kind === "chat" && <ChatItems app={app} row={r} fold={fold} />}
-      {r?.kind === "workspace" && <WorkspaceItems app={app} row={r} fold={fold} archive={archive} />}
+      {r?.kind === "workspace" && <WorkspaceItems app={app} row={r} fold={fold} archive={archive} project={row.section.title} />}
     </ContextMenuContent>
   );
 }
@@ -97,8 +115,12 @@ function ChatItems({ app, row, fold }: { app: App; row: SidebarRow; fold: React.
       <ContextMenuItem disabled={!session} onSelect={() => session && app.renameChat(session)}>
         <PencilIcon /> Rename chat…
       </ContextMenuItem>
-      <Later phase="S3">End chat…</Later>
-      <Later phase="S3">Archive chat</Later>
+      <ContextMenuItem disabled={!session} onSelect={() => session && app.life.endChat(session, false)}>
+        <SquareIcon /> End chat…
+      </ContextMenuItem>
+      <ContextMenuItem disabled={!session} onSelect={() => session && app.life.endChat(session, true)}>
+        <ArchiveIcon /> Archive chat
+      </ContextMenuItem>
       <ContextMenuSeparator />
       {session && (
         <ContextMenuItem onSelect={() => app.openChat(session)}>
@@ -115,12 +137,16 @@ function ChatItems({ app, row, fold }: { app: App; row: SidebarRow; fold: React.
   );
 }
 
-function WorkspaceItems({ app, row, fold, archive }: { app: App; row: SidebarRow; fold: React.ReactNode; archive: boolean }) {
+function WorkspaceItems({ app, row, fold, archive, project }: { app: App; row: SidebarRow; fold: React.ReactNode; archive: boolean; project: string }) {
   if (row.archived || archive)
     return (
       <>
-        <Later phase="S3">Restore workspace</Later>
-        <Later phase="S3">Delete workspace…</Later>
+        <ContextMenuItem onSelect={() => app.life.restoreWorkspace(row.id)}>
+          <ArchiveRestoreIcon /> Restore workspace
+        </ContextMenuItem>
+        <ContextMenuItem onSelect={() => void app.life.deleteWorkspace(row.id)}>
+          <Trash2Icon /> Delete workspace…
+        </ContextMenuItem>
       </>
     );
   const up = app.workspaceMoveTarget(row.id, -1);
@@ -142,9 +168,13 @@ function WorkspaceItems({ app, row, fold, archive }: { app: App; row: SidebarRow
       <ContextMenuItem disabled={!down} onSelect={() => down && void app.choose({ op: "reorder_workspace", workspace: row.id, target: down })}>
         Move Down
       </ContextMenuItem>
-      <Later phase="S3">Archive workspace</Later>
-      <Later phase="S3">Delete workspace…</Later>
-      {row.missing && <Later phase="S3">Prune worktree…</Later>}
+      <ContextMenuItem onSelect={() => void app.life.archiveWorkspace(row.id)}>
+        <ArchiveIcon /> Archive workspace
+      </ContextMenuItem>
+      <ContextMenuItem onSelect={() => void app.life.deleteWorkspace(row.id)}>
+        <Trash2Icon /> Delete workspace…
+      </ContextMenuItem>
+      {row.missing && <ContextMenuItem onSelect={() => void app.life.pruneWorkspace(row.id, project)}>Prune worktree…</ContextMenuItem>}
       <ContextMenuSeparator />
       {fold}
       <ContextMenuItem onSelect={() => void copy(row.id, "path")}>
@@ -156,15 +186,19 @@ function WorkspaceItems({ app, row, fold, archive }: { app: App; row: SidebarRow
 
 export type NewChatAnchor = { rect: DOMRect; workspace: SidebarRow };
 
-/** The list's one "+" menu (NewChatProfileMenu). Profiles come in S3; the default starts a chat now. */
+/** The list's one "+" menu (NewChatProfileMenu): the default profile, then each saved profile. */
 export function NewChatMenu({ app, open }: { app: App; open: RefObject<((anchor: NewChatAnchor) => void) | null> }) {
   const [anchor, setAnchor] = useState<NewChatAnchor | null>(null);
+  const [profiles, setProfiles] = useState<Profile[] | string | null>(null);
   useEffect(() => {
     open.current = setAnchor;
     return () => {
       open.current = null;
     };
   }, [open]);
+  useEffect(() => {
+    if (anchor) app.life.profiles().then(setProfiles, (err) => setProfiles(String(err instanceof Error ? err.message : err)));
+  }, [app, anchor]);
   return (
     <DropdownMenu open={anchor !== null} onOpenChange={(o) => !o && setAnchor(null)}>
       <DropdownMenuTrigger asChild>{anchor ? <Ghost rect={anchor.rect} /> : <span hidden />}</DropdownMenuTrigger>
@@ -174,7 +208,15 @@ export function NewChatMenu({ app, open }: { app: App; open: RefObject<((anchor:
           <DropdownMenuItem onSelect={() => void app.startChat(anchor.workspace.id)}>
             <PlusIcon /> Default profile
           </DropdownMenuItem>
-          <DropdownMenuItem disabled>Other profiles come in S3</DropdownMenuItem>
+          {profiles === null && <DropdownMenuItem disabled>Reading profiles…</DropdownMenuItem>}
+          {typeof profiles === "string" && <DropdownMenuItem disabled>Profiles unavailable: {profiles}</DropdownMenuItem>}
+          {Array.isArray(profiles) &&
+            profiles.map((p) => (
+              <DropdownMenuItem key={p.name} data-testid="profile-item" onSelect={() => void app.startChat(anchor.workspace.id, { role: p.name })}>
+                <span className="flex-1">{p.name}</span>
+                {p.runners[0] && <span className="text-xs text-faint-foreground">{[p.runners[0].provider, p.runners[0].model].filter(Boolean).join(" ")}</span>}
+              </DropdownMenuItem>
+            ))}
         </DropdownMenuContent>
       )}
     </DropdownMenu>

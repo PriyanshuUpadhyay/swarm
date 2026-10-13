@@ -17,20 +17,20 @@ export function Home({ app }: { app: App }) {
     <div className="min-h-0 flex-1 overflow-y-auto" data-testid="home">
       <div className="mx-auto grid max-w-[760px] gap-8 px-8 py-8">
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" disabled title="Comes in S3">
-            Import Project… <span className="text-faint-foreground">S3</span>
+          <Button variant="outline" size="sm" onClick={() => app.life.openProject("import")}>
+            Import Project…
           </Button>
-          <Button variant="outline" size="sm" disabled title="Comes in S3">
-            Create Project… <span className="text-faint-foreground">S3</span>
+          <Button variant="outline" size="sm" onClick={() => app.life.openProject("create")}>
+            Create Project…
           </Button>
         </div>
         {view.error && <p className="text-sm text-failed select-text">Chats unavailable: {view.error}</p>}
         {(!hasProject || !hasChat) && (
           <section className="grid gap-3" aria-label="Get started">
             <h2 className="text-lg font-semibold">Get started</h2>
-            <Step done={hasProject} title="Import a project" phase="S3" />
+            <Step done={hasProject} title="Import a project" run={() => app.life.openProject("import")} />
             <Step done={false} title="Run setup" phase="S5" />
-            <Step done={hasChat} title="Start a chat" phase="S3" />
+            <Step done={hasChat} title="Start a chat" run={hasProject ? () => app.life.newWorkspace() : undefined} />
           </section>
         )}
         <section className="grid gap-1" aria-label="Recent work">
@@ -47,7 +47,7 @@ export function Home({ app }: { app: App }) {
               <span className="grid w-4 place-items-center">{r.status && <StatusGlyph status={r.status} />}</span>
               <span className="grid min-w-0 flex-1">
                 <span className="truncate font-medium">{r.title}</span>
-                <span className="truncate text-xs text-muted-foreground">{r.workspace}</span>
+                <span className="truncate text-xs text-muted-foreground">{r.project && r.project !== r.workspace ? `${r.project} · ${r.workspace}` : r.workspace}</span>
               </span>
               <span className="text-xs text-muted-foreground tabular-nums">{r.age}</span>
             </button>
@@ -58,15 +58,15 @@ export function Home({ app }: { app: App }) {
   );
 }
 
-/** A first-run step; its action comes in a later phase. */
-function Step({ done, title, phase }: { done: boolean; title: string; phase: string }) {
+/** A first-run step: its action, or the phase that brings it. */
+function Step({ done, title, phase, run }: { done: boolean; title: string; phase?: string; run?: () => void }) {
   return (
     <div className="flex items-center gap-3">
       {done ? <CircleCheckIcon className="size-4 text-done" aria-label="Done" /> : <CircleIcon className="size-4 text-muted-foreground" aria-label="To do" />}
-      <Button variant="ghost" size="sm" disabled title={`Comes in ${phase}`}>
+      <Button variant="ghost" size="sm" disabled={!run} title={phase ? `Comes in ${phase}` : undefined} onClick={run}>
         {title}
       </Button>
-      <span className="text-xs text-faint-foreground">comes in {phase}</span>
+      {phase && <span className="text-xs text-faint-foreground">comes in {phase}</span>}
     </div>
   );
 }

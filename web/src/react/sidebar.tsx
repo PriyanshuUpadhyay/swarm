@@ -71,7 +71,7 @@ function WorkspaceList({ app }: { app: App }) {
     const action = (e.target as Element).closest("[data-action]")?.getAttribute("data-action");
     if (action === "toggle") app.toggle(row.id);
     else if (action === "new-chat" && row.row) newChat.current?.({ rect: (e.target as Element).closest("[data-action]")!.getBoundingClientRect(), workspace: row.row });
-    else if (action === "new-workspace") app.notice("New Workspace comes in S3.");
+    else if (action === "new-workspace") app.life.newWorkspace(row.section.path ?? undefined);
     else app.clickRow(row.id);
   };
 
@@ -148,7 +148,7 @@ function WorkspaceList({ app }: { app: App }) {
               <RowView key={row.id} row={row} selected={row.id === selected} current={isCurrent(row, openId, workspace)} archive={archive} />
             ))}
             {!loaded && !error && <SidebarSkeleton />}
-            {loaded && rows.length === 0 && <SidebarNote title={archive ? "No archived workspaces" : "No projects yet"} body={archive ? "" : "Import or create a project; that comes in S3."} />}
+            {loaded && rows.length === 0 && <SidebarNote title={archive ? "No archived workspaces" : "No projects yet"} body={archive ? "" : "Import or create a project from the + menu above."} />}
             {error && rows.length === 0 && <SidebarNote error title="Could not load the workspaces" body={error} />}
           </div>
         </ContextMenuTrigger>
@@ -221,7 +221,7 @@ const RowView = memo(function RowView({ row, selected, current, archive }: { row
           {chev()}
           <span className="flex-1" />
           {s.kind === "project" && !archive && (
-            <button className="row-btn" data-action="new-workspace" aria-label={`New workspace in ${s.title}`} title="New workspace comes in S3">
+            <button className="row-btn" data-action="new-workspace" aria-label={`New workspace in ${s.title}`} title="New workspace">
               <PlusIcon />
             </button>
           )}
@@ -373,8 +373,10 @@ function SidebarHeader({ app }: { app: App }) {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start">
-          <DropdownMenuItem disabled>Create Project… (S3)</DropdownMenuItem>
-          <DropdownMenuItem disabled>Import Project… (S3)</DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => app.life.openProject("create")}>Create Project…</DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => app.life.openProject("import")}>Import Project…</DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => app.life.newWorkspace()}>New Workspace…</DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => app.life.openClosed()}>Recently closed…</DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
       <button className="search-box" aria-label="Command palette" onClick={() => app.setPalette(true)}>

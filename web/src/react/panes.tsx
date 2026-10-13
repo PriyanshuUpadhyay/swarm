@@ -365,7 +365,7 @@ function PaneView({ app, cell, pane, focused, zoomed, actions }: { app: App; cel
           {cell.role} · {cell.model}
         </span>
         {actions.map((a) => (
-          <button key={a.label} type="button" className="icon-btn" tabIndex={-1} aria-label={a.label} title={a.title} disabled={a.disabled} onClick={a.run}>
+          <button key={a.label} type="button" className="icon-btn" aria-label={a.label} title={a.title} disabled={a.disabled} onClick={a.run}>
             {a.icon}
           </button>
         ))}

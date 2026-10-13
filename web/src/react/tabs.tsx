@@ -219,7 +219,7 @@ function TabMenu({ app, tabs, scroller }: { app: App; tabs: Tabs | null; scrolle
       <ContextMenuItem onSelect={() => app.renameChat(tab.session)}>
         <PencilIcon /> Rename chat…
       </ContextMenuItem>
-      {later("Switch model…", "S3")}
+      <ContextMenuItem onSelect={() => app.life.openSwitchModel(tab.session)}>Switch model…</ContextMenuItem>
       <ContextMenuItem disabled={!left} onSelect={() => left && void app.choose({ op: "step_tab", workspace, chat: tab.id, target: left })}>
         Move Left
       </ContextMenuItem>
@@ -235,8 +235,10 @@ function TabMenu({ app, tabs, scroller }: { app: App; tabs: Tabs | null; scrolle
       <ContextMenuItem disabled={!tab.canHide} onSelect={() => void app.closeTab(tab.id)}>
         Close tab
       </ContextMenuItem>
-      {later("End chat…", "S3")}
-      {later("Archive chat", "S3")}
+      <ContextMenuItem disabled={!tab.canClose} onSelect={() => app.life.endChat(tab.session, false)}>
+        End chat…
+      </ContextMenuItem>
+      <ContextMenuItem onSelect={() => app.life.endChat(tab.session, true)}>Archive chat</ContextMenuItem>
     </ContextMenuContent>
   );
 }

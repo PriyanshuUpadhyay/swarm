@@ -127,6 +127,15 @@ export function takeToken(loc: Loc, hist: Hist): string | null {
   return token || null;
 }
 
+/** The server's `error` text, else the body, else the status. */
+function errorText(text: string, res: Response): string {
+  try {
+    return String(JSON.parse(text).error ?? text);
+  } catch {
+    return text || `${res.status} ${res.statusText}`;
+  }
+}
+
 export class ApiError extends Error {
   constructor(readonly status: number, message: string) {
     super(message);
@@ -179,6 +188,15 @@ export class Api {
     return this.post("/api/choices", { revision, ...op });
   }
 
+  /** A GET with query values. A failure throws the server's `error` text as the message. */
+  async get<T>(path: string, query: Record<string, string> = {}): Promise<T> {
+    const q = new URLSearchParams(query).toString();
+    const res = await this.fetch(q ? `${path}?${q}` : path, { headers: this.headers() });
+    const text = await res.text();
+    if (res.ok) return JSON.parse(text) as T;
+    throw new ApiError(res.status, errorText(text, res));
+  }
+
   /** A chat action (P0-U3). A failure throws the server's `error` text as the message. */
   async action(path: string, body: Record<string, unknown>): Promise<void> {
     await this.post(path, body);
@@ -193,13 +211,7 @@ export class Api {
     });
     const text = await res.text();
     if (res.ok) return (text ? JSON.parse(text) : null) as T;
-    let message = text || `${res.status} ${res.statusText}`;
-    try {
-      message = String(JSON.parse(text).error ?? message);
-    } catch {
-      // Not JSON: keep the body text.
-    }
-    throw new ApiError(res.status, message);
+    throw new ApiError(res.status, errorText(text, res));
   }
 
   subscribe(stream: string, keys: SubscribeKey[]): Promise<unknown> {

@@ -20,6 +20,7 @@ import { measure, whenPainted, type PerfKind } from "./perf";
 import { readSse, type SseEvent } from "./sse";
 import { isChair, movePane, paneCells, paneStatus, type Direction, type PaneCell } from "./panes";
 import { FoldChoices, findMatches, lines, mergeRows, type Line, type Match } from "./transcript";
+import { Lifecycle } from "./lifecycle";
 import {
   chatRows,
   foldId,
@@ -222,6 +223,8 @@ const writeStore = (key: string, value: string) => {
 
 export class App {
   readonly registry = new Registry();
+  /** New workspace, switch model, archive, delete and Recently closed (S3). */
+  readonly life = new Lifecycle(this);
   view: View;
   private snapshot: Snapshot | null = null;
   private tree: TreeView | null = null;
@@ -425,6 +428,16 @@ export class App {
 
   // ---- snapshot, tree and tabs ----
 
+  /** Reads the snapshot, tree and tabs again, after a write outside the choices. */
+  refresh(): Promise<void> {
+    return this.refreshSnapshot();
+  }
+
+  /** A session's snapshot row and its agents. */
+  agentsOf(session: string) {
+    return { info: this.snapshot?.sessions.find((s) => s.id === session), agents: this.snapshot?.agents[session] ?? [] };
+  }
+
   private refreshSnapshot(): Promise<void> {
     if (this.snapshotBusy) {
       this.snapshotAgain = true;
@@ -600,7 +613,7 @@ export class App {
     const row = nav.row;
     if (!row) return this.toggle(nav.id);
     const sel = row.selection;
-    // The archive view only shows; Restore comes in S3, and an archived workspace takes no selection.
+    // The archive view only shows; Restore is in the menu, and an archived workspace takes no selection.
     if (this.treeName === "archived") {
       if (row.kind === "chat" && sel.chat) this.openChat(sel.chat, e, { write: false });
       return;
@@ -709,15 +722,16 @@ export class App {
     this.notify();
   }
 
-  /** ⌘T, a "+" and New chat: starts the default profile in the workspace. The pending tab and the
-   *  profile menu come in P3c; until then a notice shows while `swarm launch` runs. */
-  async startChat(workspace = this.workspace) {
+  /** ⌘T, a "+" and New chat: starts a profile (the default one unless `launch` names it) in the
+   *  workspace. A notice shows while `swarm launch` runs; `draft` goes into the new chat's composer. */
+  async startChat(workspace = this.workspace, launch: { role?: string } = {}, draft = "") {
     const row = workspaceRow(this.tree, workspace);
     if (!workspace || this.starting || (row && !row.newChatEnabled)) return;
     this.starting = true;
     this.notice("Starting a chat…");
     try {
-      const started = await this.api.post<{ session: string }>("/api/chat/new", { cwd: workspace });
+      const started = await this.api.post<{ session: string }>("/api/chat/new", { cwd: workspace, ...launch });
+      if (draft) this.setDraft(started.session, draft);
       await this.refreshSnapshot();
       this.openChat(started.session);
     } catch (err) {
@@ -725,6 +739,25 @@ export class App {
     } finally {
       this.starting = false;
     }
+  }
+
+  /** An archived chat leaves the page; its workspace's landing shows. */
+  leaveChat(session: string) {
+    if (this.openId !== session) return;
+    this.navSeq++;
+    this.leavePanes("");
+    this.openId = null;
+    this.notify();
+  }
+
+  /** An archived or deleted workspace leaves the page; Home shows. */
+  leaveWorkspace(workspace: string) {
+    if (this.workspace === workspace) this.showHome();
+  }
+
+  /** A chat's title as the tree lists it. */
+  chatTitle(session: string): string {
+    return chatRows(this.tree).find((r) => r.selection.chat === session)?.title ?? session.slice(0, 8);
   }
 
   // ---- tabs ----
@@ -1372,12 +1405,12 @@ export class App {
     if (open)
       items.push(
         chatAction("closeTab", "Close Tab", () => void this.closeTab()),
-        chatAction("endChat", "End chat", "S3"),
-        chatAction("archiveChat", "Archive chat", "S3"),
+        chatAction("endChat", "End chat", () => this.life.endChat(open, false)),
+        chatAction("archiveChat", "Archive chat", () => this.life.endChat(open, true)),
         chatAction("renameChat", "Rename chat", () => this.renameChat(open)),
       );
-    items.push(chatAction("reopenChat", "Reopen closed chat", "S3"));
-    if (open) items.push(chatAction("switchModel", "Switch model", "S3"));
+    items.push(chatAction("reopenChat", "Reopen closed chat", () => this.life.openClosed()));
+    if (open) items.push(chatAction("switchModel", "Switch model", () => this.life.openSwitchModel(open)));
     const sources = paletteSources(this.tree, this.snapshot);
     const chats: PaletteItem[] = [];
     const agents: PaletteItem[] = [];
@@ -1447,6 +1480,10 @@ export class App {
       }
       case "reset":
         void this.reset(String(data.key));
+        break;
+      case "setup":
+      case "handoff":
+        this.life.onFrame(e.event, data);
         break;
     }
   }
@@ -1549,7 +1586,7 @@ export class App {
     });
     const chat = () => this.openId !== null;
     const cmds: Command[] = [
-      later("workspace.new", "New Workspace", "Meta+N", "S3"),
+      { id: "workspace.new", title: "New Workspace", chord: "Meta+N", run: () => this.life.newWorkspace() },
       {
         id: "chat.new",
         title: "New Chat",
@@ -1558,7 +1595,7 @@ export class App {
         // A held key must not start one chat per repeat.
         run: (e) => void (e?.repeat || this.startChat()),
       },
-      later("project.new", "New Project…", "Shift+Meta+N", "S3"),
+      { id: "project.new", title: "New Project…", chord: "Shift+Meta+N", run: () => this.life.openProject("create") },
       { id: "workspace.next", title: "Next Workspace", chord: "Ctrl+Meta+ArrowDown", run: (e) => this.stepWorkspace(1, e) },
       { id: "workspace.prev", title: "Previous Workspace", chord: "Ctrl+Meta+ArrowUp", run: (e) => this.stepWorkspace(-1, e) },
       { id: "chat.next", title: "Next Chat", chord: "Shift+Meta+]", run: (e) => this.stepChat(1, e) },
@@ -1592,7 +1629,7 @@ export class App {
       { id: "find.prev", title: "Find Previous", chord: "Shift+Meta+G", palette: false, when: chat, run: () => this.stepFind(-1) },
       { id: "tab.close", title: "Close Tab", chord: "Meta+W", palette: false, run: () => void this.closeTab() },
       later("window.close", "Close Window", "Shift+Meta+W", "S6", false),
-      later("recent.closed", "Recently closed…", "Shift+Meta+T", "S3", false),
+      { id: "recent.closed", title: "Recently closed…", chord: "Shift+Meta+T", palette: false, run: () => this.life.openClosed() },
       { id: "recent.prev", title: "Previous Recent Chat", chord: "Ctrl+Tab", palette: false, run: (e) => this.stepRecent(-1, e) },
       { id: "recent.next", title: "Next Recent Chat", chord: "Ctrl+Shift+Tab", palette: false, run: (e) => this.stepRecent(1, e) },
       later("settings", "Settings…", "Meta+,", "S5", false),

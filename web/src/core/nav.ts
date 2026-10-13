@@ -95,7 +95,8 @@ export type ChoiceOp =
   | { op: "open_tab" | "close_tab"; workspace: string; chat: string }
   | { op: "move_tab" | "step_tab"; workspace: string; chat: string; target: string }
   | { op: "selected_chat"; workspace: string; chat: string | null; recording_history?: boolean }
-  | { op: "seen"; workspace: string; chat: string };
+  | { op: "seen"; workspace: string; chat: string }
+  | { op: "setup_script"; project: string; setup_script: string };
 
 /** The new tree, with each row and section that did not change kept as the old object, so a
  *  memoized row skips its render on a refresh. */

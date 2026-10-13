@@ -20,9 +20,12 @@ test("select a chat by keyboard and see its rows", async ({ page: tab }) => {
   const sidebar = tab.getByTestId("sidebar");
   await expect(sidebar.locator('[data-testid="tree-row"][data-kind="chat"]')).toHaveCount(8);
 
-  // The first row (a project header) is selected; move down past its workspace to its first chat, then open it.
-  await tab.keyboard.press("j");
-  await tab.keyboard.press("j");
+  // The first row (a project header) is selected; move down to the first chat, then open it. The Git
+  // projects of the lifecycle cases list workspaces with no chat, so the chat may sit further down.
+  const rows = sidebar.locator('[data-testid="tree-row"]');
+  const ids = await rows.evaluateAll((els) => els.map((e) => e.getAttribute("data-id")!));
+  const first = (await rows.evaluateAll((els) => els.map((e) => e.getAttribute("data-kind")))).indexOf("chat");
+  for (let i = 0; i < first; i++) await tab.keyboard.press("j");
   const selected = sidebar.locator('[aria-selected="true"]');
   await expect(selected).toHaveAttribute("data-kind", "chat");
   const rowId = (await selected.getAttribute("data-id"))!;
@@ -34,10 +37,10 @@ test("select a chat by keyboard and see its rows", async ({ page: tab }) => {
 
   // Records land in the frame after the paint, so poll.
   await expect.poll(() => tab.evaluate(() => window.__swarmPerf.map((p) => `${p.kind}:${p.target}`))).toEqual([
-    "key:" + (await sidebar.locator('[data-testid="tree-row"]').nth(1).getAttribute("data-id")),
-    `key:${rowId}`,
+    ...ids.slice(1, first + 1).map((id) => `key:${id}`),
     `open:${chatId}`,
   ]);
+  expect(ids[first]).toBe(rowId);
   expect(errors).toEqual([]);
 });
 

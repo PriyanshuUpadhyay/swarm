@@ -375,10 +375,11 @@
   border-radius: var(--radius-md);
   background: transparent;
   font-size: 12px;
-  color: var(--faint-foreground);
+  /* Muted, not faint: an enabled label needs 4.5:1 in both themes. */
+  color: var(--muted-foreground);
 }
 .search-box:hover {
-  color: var(--muted-foreground);
+  color: var(--foreground);
   border-color: var(--border-strong);
 }
 .search-box svg {

@@ -9,6 +9,7 @@ import { Toaster } from "../components/ui/sonner";
 import { TooltipProvider } from "../components/ui/tooltip";
 import "../styles.css";
 import { AskDialog, Home, WorkspaceLanding } from "./home";
+import { LifecycleDialogs } from "./lifecycle";
 import { Palette } from "./palette";
 import { PaneStrip } from "./panes";
 import { Sidebar } from "./sidebar";
@@ -67,6 +68,7 @@ function Root({ app }: { app: App }) {
       </ResizablePanelGroup>
       <Palette app={app} />
       <AskDialog app={app} />
+      <LifecycleDialogs app={app} />
       <Toaster theme={theme} position="bottom-right" />
     </TooltipProvider>
   );

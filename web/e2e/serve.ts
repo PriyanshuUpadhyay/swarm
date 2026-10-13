@@ -4,7 +4,7 @@
 
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createInterface } from "node:readline";
@@ -48,6 +48,24 @@ close = printf 'close %s\\n' "$SWARM_PANE" >> "$HOME/actions"; touch "$HOME/clos
 capture = cat "$HOME/screen-$SWARM_PANE" 2>/dev/null || cat "$HOME/screen"
 screen = cat "$HOME/screen-$SWARM_PANE" 2>/dev/null || cat "$HOME/screen"
 `;
+
+/** Issues that the stand-in `gh` lists: one per browser, so each makes its own workspace. */
+export const ISSUES = [
+  { number: 7, title: "Fix Sidebar", body: "Use less space in the sidebar." },
+  { number: 8, title: "Tidy Tabs", body: "Close a tab when its chat is archived." },
+];
+
+/** A stand-in `gh` for the lifecycle cases: a pull request view, the issue list and each issue.
+ *  The JSON has no single quote, so it sits in shell single quotes. */
+const issueJson = (i: (typeof ISSUES)[number]) => ({ ...i, url: `https://github.com/acme/demo/issues/${i.number}`, state: "OPEN" });
+const GH = [
+  "#!/bin/sh",
+  `if [ "$1 $2" = "pr view" ]; then printf '{"number":%s}\\n' "$3"; exit 0; fi`,
+  `if [ "$1 $2" = "issue list" ]; then printf '%s\\n' '${JSON.stringify(ISSUES.map((i) => ({ ...issueJson(i), labels: [] })))}'; exit 0; fi`,
+  ...ISSUES.map((i) => `if [ "$1 $2 $3" = "issue view ${i.number}" ]; then printf '%s\\n' '${JSON.stringify(issueJson(i))}'; exit 0; fi`),
+  'echo "unexpected gh $*" >&2; exit 1',
+  "",
+].join("\n");
 
 let server: ChildProcess | undefined;
 
@@ -143,6 +161,36 @@ export default async function setup() {
   // `sessions --json` resolves each chair log and stores its path, which serve reads.
   execFileSync(swarm, ["sessions", "--json"], { env, stdio: "pipe" });
 
+  // Two Git projects for the lifecycle cases. proj-gh has a GitHub origin, for issues, and a free
+  // branch per browser. proj-pr has a local origin that holds pull request 7, since `git fetch`
+  // cannot reach github.com here. The server finds `gh` first on its PATH.
+  const gitEnv = { ...env, GIT_CEILING_DIRECTORIES: dir };
+  const git = (cwd: string, ...args: string[]) => execFileSync("git", ["-c", "user.name=E2E", "-c", "user.email=e2e@example.invalid", ...args], { cwd, env: gitEnv, stdio: "pipe" });
+  const ghProject = join(dir, "proj-gh");
+  const prProject = join(dir, "proj-pr");
+  const origin = join(dir, "pr-origin.git");
+  mkdirSync(ghProject);
+  git(ghProject, "init", "-q", "-b", "main");
+  writeFileSync(join(ghProject, "README.md"), "demo\n");
+  git(ghProject, "add", "README.md");
+  git(ghProject, "commit", "-q", "-m", "first");
+  for (const project of PANE_PROJECTS) git(ghProject, "branch", `topic-${project}`);
+  git(ghProject, "checkout", "-q", "-b", "pr-7");
+  writeFileSync(join(ghProject, "review.md"), "the change under review\n");
+  git(ghProject, "add", "review.md");
+  git(ghProject, "commit", "-q", "-m", "change under review");
+  git(dir, "init", "-q", "--bare", "-b", "main", origin);
+  git(ghProject, "push", "-q", origin, "main", "pr-7:refs/pull/7/head");
+  git(ghProject, "checkout", "-q", "main");
+  git(ghProject, "branch", "-q", "-D", "pr-7");
+  git(ghProject, "remote", "add", "origin", "https://github.com/acme/demo.git");
+  git(dir, "clone", "-q", origin, prProject);
+  const bin = join(dir, "bin");
+  mkdirSync(bin);
+  writeFileSync(join(bin, "gh"), GH);
+  chmodSync(join(bin, "gh"), 0o755);
+  env.PATH = `${bin}:${process.env.PATH}`;
+
   server = spawn(swarm, ["serve", "--port", "0", "--assets", resolve(import.meta.dirname, "../dist")], {
     env,
     stdio: ["ignore", "pipe", "inherit"],
@@ -152,6 +200,16 @@ export default async function setup() {
     server!.once("exit", (code) => fail(new Error(`swarm serve exited with ${code}`)));
   });
   process.env.SWARM_SERVE_URL = first.trim();
+  const url = new URL(first.trim());
+  const token = new URLSearchParams(url.hash.slice(1)).get("token");
+  for (const path of [ghProject, prProject]) {
+    const res = await fetch(`${url.origin}/api/project/import`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ path }),
+    });
+    if (!res.ok) throw new Error(`import ${path}: ${res.status} ${await res.text()}`);
+  }
   process.env.SWARM_E2E_HOME = home;
   process.env.SWARM_E2E_LIVE = liveSession;
   process.env.SWARM_E2E_DIR = dir;

@@ -197,8 +197,15 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
           onKeyDown={onKeyDown}
         />
         <div className="flex items-center gap-2 px-2 pb-2 text-xs text-muted-foreground">
-          {/* S3 opens Switch model here, and S5 the Usage view. */}
-          <button type="button" data-testid="model-chip" className="flex min-w-0 items-center gap-1 rounded-md px-1.5 py-1 hover:bg-hover" title="Switch model comes in S3">
+          {/* S5 opens the Usage view from the usage line. A child's model does not switch. */}
+          <button
+            type="button"
+            data-testid="model-chip"
+            className="flex min-w-0 items-center gap-1 rounded-md px-1.5 py-1 hover:bg-hover disabled:pointer-events-none"
+            title={chair.who ? undefined : "Switch model"}
+            disabled={chair.who !== null}
+            onClick={() => app.life.openSwitchModel(sessionId)}
+          >
             <span className="truncate">{modelLabel(chair)}</span>
             <ChevronDownIcon className="size-3 shrink-0" />
           </button>
