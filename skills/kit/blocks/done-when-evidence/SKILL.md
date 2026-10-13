@@ -1,7 +1,17 @@
-# done-when-evidence
-Concept: Close maps each done-when of the frame to its evidence, or marks it unverified.
-Serves: close
-Source: skills/flow/SKILL.md (step table, 07-close row); references/plan-layout.md:31-33 (Verification); skills/prove-it-works/SKILL.md:46 (below step 4 is unproven)
+---
+name: done-when-evidence
+description: "Close maps each done-when of the frame to its evidence, or marks it unverified."
+license: MIT
+metadata:
+  kind: rule
+  owns: "the map from each done-when claim to its evidence"
+  serves: "close"
+  needs: "the frame's done-when"
+  gives: "one evidence row per claim"
+  conflicts: ""
+  users: "flow"
+  source: "skills/flow/SKILL.md (step table, 07-close row); references/plan-layout.md:31-33 (Verification); skills/prove-it-works/SKILL.md:46 (below step 4 is unproven)"
+---
 
 ## Rules
 - `07-close.md` lists every done-when of `01-frame.md`, each with its evidence.
