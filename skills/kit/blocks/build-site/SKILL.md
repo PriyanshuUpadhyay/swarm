@@ -25,7 +25,7 @@ Intake
 - Research sources for sites: threeui.com (three.js site templates, some with their prompt), 21st.dev (components and page templates), and the GSAP showcase. A template's prompt is a `stated` source. Its rendered page is the `visible` one.
 - The look file is the step file that holds the look, such as ink's `02-look.md`. When the page borrows a component or effect from a repo, record its licence and its last release date there.
 Look
-- Write `DESIGN.md` beside the page code as the `look-grammar` block says, never under a run folder, because the code and other design tools read it there.
+- Write `DESIGN.md` beside the page code as the `design-tokens` block says, never under a run folder, because the code and other design tools read it there.
 - For a page with 3D or texture, the look file also keeps light, 3D, texture, and the mark budget.
 - A `look` token object in page code loads the tokens from `npx @google/design.md export --format dtcg DESIGN.md`, which keeps typography. The `css-vars` format drops it.
 - A `DESIGN.md` pulled from a live site (the design-md-chrome extension) or taken from a collection, such as VoltAgent's on GitHub, is `stated` evidence. Measure the rendered pages before you trust its values.
@@ -35,7 +35,7 @@ Story and motion
 - The motion list names the loader, the section entrances, the scroll-linked motion, hover and cursor states, and the page transitions.
 - For UI timing and easing, read the `animate` skill from Emil Kowalski's pack.
 Style frames and animatic
-- Prove the look with the page frames of the `style-frames-concept` block.
+- Prove the look with the page frames of the `look-check` block.
 - Build a grey-box page: every section as flat boxes with the real text sizes, the final scroll lengths, the loader, and the real transitions. Capture a scroll-through at both widths with `?shot=<section>&u=` frames, and check that each settled state reads.
 QA
 - The page meets the `web-ui-basics` block at each width.
@@ -47,7 +47,7 @@ Action: the sections become loader, hero, three feature sections, and footer, ea
 Result: the coffee brand keeps its own name, logo, product, and copy. The page borrows the loader idea, the density, and the motion grammar.
 
 ## Check (script)
-- none: the page checks are the script checks of the `web-ui-basics`, `look-grammar`, and `headless-shot` blocks.
+- none: the page checks are the script checks of the `web-ui-basics`, `design-tokens`, and `headless-shot` blocks.
 
 ## Check (judge)
 - Does the step file list each section with its job and its start, settled, and end state? Quote the list.

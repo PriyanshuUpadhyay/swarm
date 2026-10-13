@@ -1,5 +1,5 @@
 ---
-name: style-frames-concept
+name: look-check
 description: "Prove the look before the full build with frames rendered from the real page code, scored beside the reference; a miss blocks."
 license: MIT
 metadata:

@@ -30,7 +30,7 @@ contact-sheet.png
 ## Reference match
 
 Score each style frame or key frame against its reference crop as the kit's
-`blocks/style-frames-concept/SKILL.md` says, with the compare image that
+`blocks/look-check/SKILL.md` says, with the compare image that
 `blocks/headless-shot/SKILL.md` makes. In ink, a `miss` blocks production scenes.
 
 Example. Round 1 of a cloud frame scores the palette `match`, the tone `miss` (flat fills, no dots),

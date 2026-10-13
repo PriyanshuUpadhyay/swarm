@@ -1,5 +1,5 @@
 ---
-name: tech-diagram-concept
+name: when-to-diagram
 description: "A diagram is drawn only when the subject has a shape text cannot hold, and its type and size follow that shape."
 license: MIT
 metadata:

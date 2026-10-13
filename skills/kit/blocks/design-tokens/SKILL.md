@@ -1,5 +1,5 @@
 ---
-name: look-grammar
+name: design-tokens
 description: "The look is measured from references, written once as tokens in `DESIGN.md`, and the page code reads only those tokens."
 license: MIT
 metadata:

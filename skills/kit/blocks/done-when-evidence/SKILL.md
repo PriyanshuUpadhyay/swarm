@@ -26,7 +26,7 @@ Action: write in `07-close.md`:
 | Done-when | Check | Evidence |
 |---|---|---|
 | Hero states the tool in 20 words | word count script | `checks/hero.mjs -> PASS 18 words` |
-| Diagram 2 matches `docs/architecture.md` | diagram-correctness table | `06-review.md` rows 1-7, all cited |
+| Diagram 2 matches `docs/architecture.md` | diagram-check table | `06-review.md` rows 1-7, all cited |
 | Page looks right on a phone | screenshot at 390 px | `tmp/shots/hero-390.png`; taste awaiting the user's review |
 Result: two rows proved, one partial row named as partial.
 

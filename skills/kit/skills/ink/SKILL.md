@@ -49,7 +49,7 @@ one-prompt task, so do not suggest it is.
 3. **Story sheet, shot list, transitions, scene graph.** See the kit's `blocks/story/SKILL.md`
    and [story-and-motion.md](references/story-and-motion.md).
 4. **Style frames** with the real drawing code, one of them the signature shot, scored beside the
-   reference for at least two rounds, as the kit's `blocks/style-frames-concept/SKILL.md` says. See
+   reference for at least two rounds, as the kit's `blocks/look-check/SKILL.md` says. See
    the kit's `blocks/build-canvas/references/mark-making.md` and [qa.md](references/qa.md).
 5. **Animatic.** Flat shapes, final timing, real transitions. See [build.md](references/build.md).
 6. **Detail passes** up to the style frames, with scenes in batches of about eight. Build with the

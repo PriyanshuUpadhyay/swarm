@@ -63,7 +63,7 @@ Setup reports Skills ready, because it skips owner entries (ADR 0062 amendment,
 | A6 | Make Setup show skipped skill links as not ready, or say where each one points | ❓ | owner decides if Setup should change |
 
 Note. On 2026-10-13 the creative-coding lines of `~/.flow/domains.md` gained `block:` items
-(reference-analysis, look-grammar, story, build-canvas, style-frames, visual-qa). Only the flow of
+(reference-analysis, design-tokens, story, build-canvas, style-frames, visual-qa). Only the flow of
 branch `skill-blocks` knows these blocks, so a creative-coding run on the live agent-kit flow stops
 with "unknown block id" until A4. Such a repo also needs a `.blocks.toml` with `source_of_truth`,
 `site` and `shots`.
@@ -83,17 +83,17 @@ hash. The loader is complete and tested. No real run has used a block yet, becau
 
 | Block | Concept | Serves | Rule owner today |
 |---|---|---|---|
-| first-principles | the rules every step keeps (base) | every step | prove-it-works, review-check lens |
+| base-rules | the rules every step keeps (base) | every step | prove-it-works, review-check lens |
 | behavior-claims | frame as true-or-false claims with done-when | frame | html-plan pack, pre-mortem |
 | decision-with-default | a real fork asked on its claim, with a default | contracts, design | html-plan pack, plan-layout |
 | call-tree | impact as a marked call tree with real paths | impact | html-plan pack |
 | red-first-check | each behavior's check fails before the change | build | prove-it-works (copy) |
 | done-when-evidence | close maps each done-when to evidence | close | flow, prove-it-works |
-| tech-diagram-concept | draw only when text cannot hold the shape | design, build | explain-formats |
+| when-to-diagram | draw only when text cannot hold the shape | design, build | explain-formats |
 | html-diagram | diagrams as HTML boxes that reflow | design, build | this block (explain-formats points here) |
-| diagram-correctness | each diagram tells the truth and reads on a phone | review | explain-formats, ink qa |
-| look-grammar | the look as tokens in `DESIGN.md` | design | this block |
-| style-frames-concept | frames from real code, scored beside the reference | design | this block |
+| diagram-check | each diagram tells the truth and reads on a phone | review | explain-formats, ink qa |
+| design-tokens | the look as tokens in `DESIGN.md` | design | this block |
+| look-check | frames from real code, scored beside the reference | design | this block |
 | headless-shot | screenshots with chrome-headless-shell | design, build, review | this block |
 | story | story sheet, structures, shot list, pacing | design, story | this block (cut from ink) |
 | reference-analysis | find, inspect, measure and label references | design | this block (cut from ink) |
@@ -109,10 +109,10 @@ texts. B1 fixes this for each block that a run loads.
 
 - `blocks/decision-with-default/SKILL.md:18` says to ask only about real forks, but its judge
   check at `:37` fails a plan with fewer than 2 questions.
-- `behavior-claims`, `call-tree`, `done-when-evidence`, `tech-diagram-concept` and
-  `diagram-correctness` name flow step files (`01-frame.md`, `04-impact.md`, `07-close.md`,
-  `02-design.md`, `06-review.md`), so a second workflow cannot use them. `style-frames-concept`
-  and `look-grammar` were fixed on 2026-10-13.
+- `behavior-claims`, `call-tree`, `done-when-evidence`, `when-to-diagram` and
+  `diagram-check` name flow step files (`01-frame.md`, `04-impact.md`, `07-close.md`,
+  `02-design.md`, `06-review.md`), so a second workflow cannot use them. `look-check`
+  and `design-tokens` were fixed on 2026-10-13.
 - `references/step_run.py:67-70` drops a `Needs` word that matches no step, with no error.
 - `blocks/web-ui-basics/SKILL.md:44-47` checks only `*.html`, `*.css`, `*.js` and `index.html`, so a TSX
   slice gets no script check.
@@ -126,8 +126,8 @@ texts. B1 fixes this for each block that a run loads.
 | flow | compose (first); writes the ledger for code tasks | the loader is already in `flow_run.py` |
 | research | writes the ledger for questions; `web needs local` only when local findings set the query | the owner's local-then-web example |
 | motion (pack) | emil pack owns UI motion, ink owns story motion; transitions.dev is link or install only | license forbids copying its library |
-| ink | compose (second) by pointer lines to look-grammar, style-frames-concept, headless-shot; delete its copies | the blocks were cut from ink |
-| explain-formats (reference) | point to tech-diagram-concept, html-diagram, diagram-correctness | already points to html-diagram |
+| ink | compose (second) by pointer lines to design-tokens, look-check, headless-shot; delete its copies | the blocks were cut from ink |
+| explain-formats (reference) | point to when-to-diagram, html-diagram, diagram-check | already points to html-diagram |
 | pair, deliver, review-check core, decisions, council protocol, step-run, web-search depth gate | keep whole | each is one control loop or gate; a split breaks it |
 | orchestrate-claude, -codex, -agy, council, web-search | point to one worker-brief owner section (B12) | the report-only rule has six texts that disagree |
 
@@ -154,14 +154,14 @@ the pilot, then packs.
 | B14 | Move `resolve_blocks` from `flow_run.py` into one shared kit script when a second skill has a run script that needs it | ⬜ | two run scripts import one resolver |
 | B15 | Write the split map: every skill's parts as blocks, rule cards, or units that stay whole | 🔄 draft; ink done, the other skills open | `docs/blocks.md` |
 | B16 | Block format v2: one folder per block with Agent Skills frontmatter (`name`, `description`, `license`, `metadata` with kind, owns, serves, needs, gives, conflicts, users); move the 13 blocks; update `blocks.toml` and the `flow_run.py` resolver in the same step | ✅ branch `skill-blocks`, eb7f603f..3553867d | the flow tests pass; each block validates as an Agent Skills `SKILL.md` |
-| B17 | Cut ink: reference-analysis, story, visual-qa, build-site, build-canvas; one owner for look-grammar, style-frames, headless-shot; ink keeps its contract and its routes as templates | ✅ cut done, branch `skill-blocks`, da3b8566..5213c714; the live run is B18 | ink's references hold no rule that a block holds; an ink `prototype` run still passes |
-| B18 | Second user: a glitch-walk page uses story, look-grammar, headless-shot and visual-qa | ⬜ | one live run, each block todo closed with evidence |
+| B17 | Cut ink: reference-analysis, story, visual-qa, build-site, build-canvas; one owner for design-tokens, style-frames, headless-shot; ink keeps its contract and its routes as templates | ✅ cut done, branch `skill-blocks`, da3b8566..5213c714; the live run is B18 | ink's references hold no rule that a block holds; an ink `prototype` run still passes |
+| B18 | Second user: a glitch-walk page uses story, design-tokens, headless-shot and visual-qa | ⬜ | one live run, each block todo closed with evidence |
 | B19 | serve-local and annotate-loop (Plannotator, strict): view-and-talk is required in the `walk` template; a missing `plannotator` sets `unavailable plannotator` and stops; each round writes `annotate/<round>.json`; the loop uses the B1 and B2 stop | ⬜ | one glitch-walk run where an owner comment reaches the agent and the page is rebuilt; a run without the binary stops with the status |
 | B20 | Package the kit as a skills-only Agent Plugins 1.0 package (`plugin.json` at `skills/kit/`); Codex reads it as specified, Claude Code and AGY load its skills (`docs/blocks.md`, Packaging) | ⬜ | `codex plugin add`, `claude plugin details`, `agy plugin validate` each list the kit's skills |
 | B21 | Install `plannotator` on the PATH on the owner's Mac from a checked release | ❓ | owner approves the install; `command -v plannotator` |
 
 Rejected for now: `minimal-diff`, `verification-evidence`, `trust-boundary`, `reversibility`. Each
-repeats a rule in `first-principles.md`, `done-when-evidence.md`, `red-first-check.md` or the global
+repeats a rule in `base-rules.md`, `done-when-evidence.md`, `red-first-check.md` or the global
 `AGENTS.md`.
 
 Trial evidence (2026-10-09, two rounds, small samples): Sonnet gained from blocks, Codex gained only

@@ -20,12 +20,12 @@ task and the `walk` template, then writes this ledger:
 | start | glitch-walk start (its script) | one by one | the script prints `READY` |
 | research | local-research ×2 | in parallel | each seat's notes file is done |
 | plan the page | story, diagram | in parallel, then one merge | each section names its block |
-| build | build-site, look-grammar, web-ui-basics | one by one | the page checks pass |
+| build | build-site, design-tokens, web-ui-basics | one by one | the page checks pass |
 | view and talk | serve-local, annotate-loop | a loop with a cap | the owner writes `done`, or the loop stop fires |
 | close | done-when-evidence | one by one | each done-when claim has evidence |
 
 A different task uses the same blocks in a different ledger. "Make a site like this reference" uses
-reference-analysis, look-grammar, story, motion, style-frames and build-site, and it skips the walk
+reference-analysis, design-tokens, story, motion, style-frames and build-site, and it skips the walk
 start.
 
 The parts and their owners:
@@ -117,12 +117,12 @@ Status: ✅ exists, ✂️ cut from a skill next, ⬜ later, 🆕 new, 🔒 stay
 | frame | step | goal, done-when claims, out of scope | request → frame | flow 01-frame, research 01-question, ink intake | flow, research, ink | ⬜ |
 | local-research | step | what local sources say | question → findings with paths | research 02-local, `references/fan-out.md` | research, glitch-walk, flow contracts | ⬜ |
 | web-research | step | web evidence | query brief → findings with links | `skills/web-search` (stays whole; the block calls it) | research, reference-analysis, motion | ⬜ |
-| reference-analysis | step | measured facts of a reference | references → measured notes with evidence levels | `blocks/reference-analysis` | ink, look-grammar | ✅ |
-| look-grammar | step | the look as tokens | measured notes → `DESIGN.md` tokens | `blocks/look-grammar` (owner of the token rules) | ink, glitch-walk, any page | ✅ owner fix |
+| reference-analysis | step | measured facts of a reference | references → measured notes with evidence levels | `blocks/reference-analysis` | ink, design-tokens | ✅ |
+| design-tokens | step | the look as tokens | measured notes → `DESIGN.md` tokens | `blocks/design-tokens` (owner of the token rules) | ink, glitch-walk, any page | ✅ owner fix |
 | story | step | order, beats, key frames, pacing | brief, facts → story sheet, shot list | `blocks/story` | ink | ✅ |
 | motion | pack | how things move | story sheet or UI states → timings, eases, one timing owner | emil pack (UI), ink `story-and-motion.md` transition catalogue and motion feel (story) | ink, any UI, sites | ✂️ B8 |
-| diagram | rule set | when and how to draw | subject → diagram | `blocks/tech-diagram-concept`, `html-diagram`, `diagram-correctness`, `call-tree` | flow, research, glitch-walk, plans | ✅ |
-| style-frames | step | "does it match the look" before the full build | tokens, page code → scored frames | `blocks/style-frames-concept` (owner of reference scoring) | flow, ink | ✅ |
+| diagram | rule set | when and how to draw | subject → diagram | `blocks/when-to-diagram`, `html-diagram`, `diagram-check`, `call-tree` | flow, research, glitch-walk, plans | ✅ |
+| style-frames | step | "does it match the look" before the full build | tokens, page code → scored frames | `blocks/look-check` (owner of reference scoring) | flow, ink | ✅ |
 | build-site | step | what changes when the piece is a website | look, story → page | `blocks/build-site` | ink | ✅ |
 | build-canvas | pack | a drawn piece rendered from time and one seed | look, story, shot list → piece | `blocks/build-canvas` with `references/mark-making.md` | ink | ✅ |
 | build-3d | pack | a 3D scene or hero | tokens, story → scene | ink `build.md` toolbox | ink, 3D sites | ⬜ after a second 3D task |
@@ -139,7 +139,7 @@ Status: ✅ exists, ✂️ cut from a skill next, ⬜ later, 🆕 new, 🔒 stay
 
 | Block | Owns | Today's text | Status |
 |---|---|---|---|
-| first-principles | the rules every step keeps | `blocks/first-principles` | ✅ |
+| base-rules | the rules every step keeps | `blocks/base-rules` | ✅ |
 | behavior-claims | a frame as true-or-false claims | `blocks/behavior-claims` | ✅ |
 | decision-with-default | a real fork with a marked default | `blocks/decision-with-default` | ✅ defect at `:8` vs `:27` |
 | red-first-check | a check fails before the change | `blocks/red-first-check`, repeats `prove-it-works` | ✅ owner fix |
@@ -172,7 +172,7 @@ ink becomes templates plus its contract. Its routes become the templates.
 | ink step today | Blocks |
 |---|---|
 | 1 Intake | frame, web-research (when no references are given) |
-| 2 Analyse the references | reference-analysis, look-grammar |
+| 2 Analyse the references | reference-analysis, design-tokens |
 | 3 Story sheet, shots, transitions | story, motion (story route) |
 | 4 Style frames | style-frames, headless-shot, visual-qa |
 | 5 Animatic | build-site or build-canvas, flat pass |
@@ -202,12 +202,12 @@ story before production, and render from time and one seed. Reference rules poin
 | `story-and-motion.md` Story sheet, Structures, Shot list, Pacing | `blocks/story` |
 | `story-and-motion.md` Drivers (its settled-state line points to `blocks/web-ui-basics`), Transition catalogue, Seam law, Scene graph, Timeline, Motion feel, Web-native media ideas, Seam design | stay |
 | `qa.md` Required evidence | stays; the contact-sheet rule moved to `blocks/visual-qa` |
-| `qa.md` Reference match | scoring to `blocks/style-frames-concept`, compare command to `blocks/headless-shot`; ink's example stays |
+| `qa.md` Reference match | scoring to `blocks/look-check`, compare command to `blocks/headless-shot`; ink's example stays |
 | `qa.md` Story checks | stay; key frame and pacing checks moved to `blocks/story`; the scroll-story check points to the settled-state rule of `blocks/web-ui-basics` |
 | `qa.md` Frame checks, Motion checks | `blocks/visual-qa`; mass, paper, seam law, boil and loop seam checks stay |
 | `qa.md` Automated checks | stay; hidden content points to `blocks/web-ui-basics` |
 | `qa.md` QA log | `blocks/visual-qa`; ink's step names stay |
-| `site.md` (whole file, removed) | `blocks/build-site`; DESIGN.md rules to `blocks/look-grammar`, page frames to `blocks/style-frames-concept`, page floor to `blocks/web-ui-basics` |
+| `site.md` (whole file, removed) | `blocks/build-site`; DESIGN.md rules to `blocks/design-tokens`, page frames to `blocks/look-check`, page floor to `blocks/web-ui-basics` |
 | `build.md` Architecture, Determinism, Debug modes, Performance, Toolbox, Delivery, Technical references | `blocks/build-canvas` |
 | `build.md` Style frames, Animatic, Frame export, Handoff | stay; the shot command points to `blocks/headless-shot` |
 | `mark-making.md` (whole file) | `blocks/build-canvas/references/mark-making.md` |
@@ -217,8 +217,8 @@ story before production, and render from time and one seed. Reference rules poin
 The review stops and the ledger checks come first (progress.md B1-B3). Then:
 
 1. Cut ink: reference-analysis, story, visual-qa, build-site and build-canvas get folders, and ink
-   points to them. The three ink copies (look-grammar, style-frames, headless-shot) get one owner.
-2. Give each cut block a second user in one live run: a glitch-walk page uses story, look-grammar,
+   points to them. The three ink copies (design-tokens, style-frames, headless-shot) get one owner.
+2. Give each cut block a second user in one live run: a glitch-walk page uses story, design-tokens,
    headless-shot and visual-qa. This is the live run that the earlier councils asked for.
 3. Add serve-local and annotate-loop for the glitch-walk view-and-talk stage.
 4. Write the plan block and the template format, then run one task with a template and one without

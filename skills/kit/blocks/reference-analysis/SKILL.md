@@ -9,7 +9,7 @@ metadata:
   needs: "a brief and its references, or a brief alone"
   gives: "measured notes per reference with evidence labels"
   conflicts: ""
-  users: "ink, look-grammar"
+  users: "ink, design-tokens"
   source: "skills/ink/references/references.md (research references, inspection, passes 1-5, evidence language; moved 2026-10-13); skills/ink/SKILL.md (contract: inspected pixels, borrow not copy, density)"
 ---
 

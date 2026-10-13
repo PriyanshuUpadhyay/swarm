@@ -1,5 +1,5 @@
 ---
-name: diagram-correctness
+name: diagram-check
 description: "A reviewer proves each diagram tells the truth about its source, invents nothing, and reads on a phone."
 license: MIT
 metadata:

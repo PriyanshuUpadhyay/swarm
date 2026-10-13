@@ -29,11 +29,11 @@
 #   [add]     build = ["path/in/repo.md"]   adds repo blocks to a step; the id is the file stem, or the folder of a `SKILL.md`
 #   [off]     block-id = "reason"           drops a block and prints `Off: <id>: <reason>` where it would join
 
-base = ["first-principles"]
+base = ["base-rules"]
 
 [aliases]  # name = [block ids]; split or rename a block here, and no catalog line changes
-tech-diagram = ["tech-diagram-concept", "html-diagram"]
-style-frames = ["style-frames-concept", "headless-shot"]
+tech-diagram = ["when-to-diagram", "html-diagram"]
+style-frames = ["look-check", "headless-shot"]
 
 [profiles.default]  # one block per section, with examples
 merge = []           # alias names whose members are written as one merged block

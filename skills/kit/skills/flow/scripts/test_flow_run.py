@@ -566,14 +566,14 @@ def test_block_alias_and_base(tmp):
     out, folder, _, _ = blocks_start(tmp, "d2", "- design: block:tech-diagram, block:html-diagram\n" + RED_BUILD)
     assert out.returncode == 0, out.stderr
     design = step_text(folder, "02-design")
-    for block in ("first-principles", "tech-diagram-concept", "html-diagram"):
+    for block in ("base-rules", "when-to-diagram", "html-diagram"):
         assert design.count(f"===== block:{block} =====") == 1, (block, design)
     # html-diagram comes twice, through the alias and alone; a merged group prints one header either way.
     skills = next(line for line in design.splitlines() if line.startswith("Skills read: "))
     assert skills.count("block:html-diagram@") == 1, skills
     assert len(set(rule_lines(design))) == len(rule_lines(design)), rule_lines(design)
     for step in ("01-frame", "02-design", "03-contracts", "04-impact", "05-build", "06-review", "07-close"):
-        assert step_text(folder, step).count("===== block:first-principles =====") == 1, step
+        assert step_text(folder, step).count("===== block:base-rules =====") == 1, step
 
 
 def test_block_hash_bytes(tmp):
@@ -603,7 +603,7 @@ def rule_lines(text):
 def test_block_profile(tmp):
     """The merged profile writes each alias as one block and folds base in, with the same rule and
     check lines as the split form, and drops the Example sections."""
-    catalog = "- design: block:tech-diagram, block:style-frames, block:look-grammar\n"
+    catalog = "- design: block:tech-diagram, block:style-frames, block:design-tokens\n"
     split, split_folder, _, _ = blocks_start(tmp, "d3-split", catalog)
     merged, merged_folder, _, _ = blocks_start(tmp, "d3-merged", catalog, PARAMS, "--profile", "merged")
     assert split.returncode == 0 and merged.returncode == 0, (split.stderr, merged.stderr)
@@ -650,11 +650,11 @@ def test_block_example_params(tmp):
 
 def test_block_params(tmp):
     """A {{name}} takes its value from the repo's .blocks.toml; a missing one stops start and names it."""
-    out, folder, _, _ = blocks_start(tmp, "d4", "- review: block:diagram-correctness\n")
+    out, folder, _, _ = blocks_start(tmp, "d4", "- review: block:diagram-check\n")
     assert out.returncode == 0, out.stderr
     review = step_text(folder, "06-review")
     assert "The source of truth is docs/spec.md." in review and "{{" not in review, review
-    out, folder, repo, _ = blocks_start(tmp, "d4-missing", "- review: block:diagram-correctness\n", "")
+    out, folder, repo, _ = blocks_start(tmp, "d4-missing", "- review: block:diagram-check\n", "")
     assert out.returncode == 1 and "{{source_of_truth}}" in out.stderr and "Traceback" not in out.stderr, out.stderr
     assert not (repo / "tmp" / "flow").exists(), "a failed start must not leave a folder"
 
@@ -764,7 +764,7 @@ def test_toml_no_block_adds_no_base(tmp):
     assert out.returncode == 0, out.stderr
     for file in sorted(folder.glob("0*.md")):
         text = file.read_text(encoding="utf-8")
-        assert "Skills read: none" in text.splitlines() and "first-principles" not in text, (file.name, text)
+        assert "Skills read: none" in text.splitlines() and "base-rules" not in text, (file.name, text)
 
 
 def test_no_toml_runs_blocks_without_base(tmp):
@@ -773,15 +773,15 @@ def test_no_toml_runs_blocks_without_base(tmp):
     out, folder, _, _ = blocks_start(tmp, "no-toml", "- close: block:done-when-evidence\n", None)
     assert out.returncode == 0, out.stderr
     close = step_text(folder, "07-close")
-    assert "===== block:done-when-evidence =====" in close and "===== block:first-principles" not in close, close
-    assert "Off: first-principles: the repo has no .blocks.toml, which sets source_of_truth" in close, close
+    assert "===== block:done-when-evidence =====" in close and "===== block:base-rules" not in close, close
+    assert "Off: base-rules: the repo has no .blocks.toml, which sets source_of_truth" in close, close
 
 
 def test_param_quoted_in_script_checks(tmp):
     """A [params] value fills a Check (script) command as one shell word, so a space or an option inside it
     stays one path; rules text gets the value as written."""
     toml = PARAMS.replace('site = "site"', 'site = "my site --files"')
-    out, folder, repo, _ = blocks_start(tmp, "param-quote", "- build: block:web-ui-basics\n- design: block:look-grammar\n", toml)
+    out, folder, repo, _ = blocks_start(tmp, "param-quote", "- build: block:web-ui-basics\n- design: block:design-tokens\n", toml)
     assert out.returncode == 0, out.stderr
     build = step_text(folder, "05-build")
     todo = next(l for l in build.splitlines() if "'prefers-reduced-motion'" in l)
@@ -1175,8 +1175,8 @@ def test_block_checks(tmp):
     rules_at, judge_at, todo_at = (review.index(h) for h in (flow_run.RULES_HEAD, flow_run.JUDGE_HEAD, flow_run.TODO_HEAD))
     assert rules_at < judge_at < todo_at and judge in review[judge_at:todo_at], review
     assert flow_run.step_run.todo_scan(review)[0] == todo_at, review
-    assert "block first-principles judge: Does every fact in the result trace to a line in docs/spec.md?" in review, review
-    assert review.count("block first-principles judge:") == 2, "base judge lines appear once per run"
+    assert "block base-rules judge: Does every fact in the result trace to a line in docs/spec.md?" in review, review
+    assert review.count("block base-rules judge:") == 2, "base judge lines appear once per run"
     f = folder / "05-build.md"
     fill(f)
     text = f.read_text(encoding="utf-8")
@@ -1221,7 +1221,7 @@ def block_rg(name, site):
 
 
 def test_look_grammar_colors(tmp):
-    """The look-grammar color check finds each color literal in a declaration (also before a comma or on a
+    """The design-tokens color check finds each color literal in a declaration (also before a comma or on a
     later line of a value), and not a selector that looks like a hex color. A literal in the :root token block,
     or in a :root that is all of @media (prefers-color-scheme: dark), is no hit; a :root anywhere else is."""
     site = Path(tmp, "colors-site")
@@ -1253,17 +1253,17 @@ def test_look_grammar_colors(tmp):
         ":root{--bg:#fff}@media (prefers-color-scheme: dark){:root{--bg:#111}}",  # 23 both blocks, minified
         "@media (prefers-color-scheme: dark) { :root { --bg: #111; } h { color: #333; } }",  # 24 more than :root
     ]) + "\n", encoding="utf-8")
-    colors = block_rg("look-grammar", site)[0]
+    colors = block_rg("design-tokens", site)[0]
     assert colors.returncode == 0, colors.stderr
     lines = sorted(int(line.split(":")[1]) for line in colors.stdout.splitlines())
     assert lines == [5, 6, 9, 12, 13, 14, 16, 21, 22, 24], (lines, colors.stdout)
 
 
 def test_diagram_shot_check(tmp):
-    """The diagram-correctness script check prints a 375 px PNG line for each diagram shot, and another line
+    """The diagram-check script check prints a 375 px PNG line for each diagram shot, and another line
     for a missing, empty, or wrong-width shot; it reads no page markup, which another block may own."""
     root = Path(tmp, "shot-check")
-    text = (flow_run.BLOCKS / "diagram-correctness" / "SKILL.md").read_text(encoding="utf-8")
+    text = (flow_run.BLOCKS / "diagram-check" / "SKILL.md").read_text(encoding="utf-8")
     command = re.search(r"`([^`]+)`", text.split("## Check (script)\n", 1)[1])[1].replace("{{shots}}", "shots")
     png = lambda width: (b"\x89PNG\r\n\x1a\n" + (13).to_bytes(4, "big") + b"IHDR" + width.to_bytes(4, "big")
                          + (812).to_bytes(4, "big") + bytes([8, 6, 0, 0, 0]) + bytes(4))
@@ -1281,7 +1281,7 @@ def test_diagram_shot_check(tmp):
 
 
 def test_look_grammar_page_code_colors(tmp):
-    """The look-grammar page-code check finds a color function in JS and TS files, and not a quoted hex, which
+    """The design-tokens page-code check finds a color function in JS and TS files, and not a quoted hex, which
     could be an id selector such as "#feed" (the judge line asks about quoted hex colors), nor a private field;
     a page whose code reads only tokens prints nothing."""
     site = Path(tmp, "code-colors-site")
@@ -1296,17 +1296,17 @@ def test_look_grammar_page_code_colors(tmp):
         'document.querySelector("#feed");',  # 6 an id selector made of hex letters
     ]) + "\n", encoding="utf-8")
     (site / "view.tsx").write_text("const c = `#abc`;\nconst d = hsl(1, 2, 3);\n", encoding="utf-8")
-    code = block_rg("look-grammar", site)[2]
+    code = block_rg("design-tokens", site)[2]
     hits = sorted(line.split(":", 2)[0].rsplit("/", 1)[1] + ":" + line.split(":", 2)[1] for line in code.stdout.splitlines())
     assert hits == ["main.js:2", "view.tsx:2"], (hits, code.stdout)
     (site / "main.js").write_text("el.style.color = 'var(--fg)';\nclass A { #abc = 1; }\n", encoding="utf-8")
     (site / "view.tsx").unlink()
-    code = block_rg("look-grammar", site)[2]
+    code = block_rg("design-tokens", site)[2]
     assert code.returncode == 1 and not code.stdout, code
 
 
 def test_look_grammar_dashes(tmp):
-    """The look-grammar dash check finds an em or en dash as a character, a named entity, or a numeric
+    """The design-tokens dash check finds an em or en dash as a character, a named entity, or a numeric
     entity, and passes a page with only hyphens and other entities."""
     site = Path(tmp, "dash-site")
     site.mkdir()
@@ -1314,7 +1314,7 @@ def test_look_grammar_dashes(tmp):
               "&#08212;", "&#x002014;", "&#0008211;", "&#X02013;")
     for text, found in [(d, True) for d in dashes] + [("a - b &amp; &#8210; &#821; &#08210; &#x02012;", False), ("", False)]:
         (site / "index.html").write_text(f"<p>tool {text} text</p>\n", encoding="utf-8")
-        out = block_rg("look-grammar", site)[1]
+        out = block_rg("design-tokens", site)[1]
         assert (out.stdout.strip() != "") == found, (text, out)
 
 

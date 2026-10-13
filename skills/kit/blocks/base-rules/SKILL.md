@@ -1,5 +1,5 @@
 ---
-name: first-principles
+name: base-rules
 description: "The few rules every step of every workflow keeps."
 license: MIT
 metadata:
