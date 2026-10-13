@@ -60,16 +60,19 @@ Setup reports Skills ready, because it skips owner entries (ADR 0062 amendment,
 | A1 | Make a read-only matrix of every bundled skill × `.claude/skills`, `.agents/skills`, `.gemini/config/skills`: real target, revision, local differences, proposed link | ⬜ | each name has one future source, and each difference has a preserve-or-merge row |
 | A2 | Pull agent-kit `3b57571` into `skills/kit/` on a branch | ⬜ | `diff -r` of agent-kit `skills/` and `skills/kit/skills/` is empty |
 | A3 | Stop edits in agent-kit; add its README pointer and archive it | ⬜ | no agent-kit commit after the pull |
-| A4 | Repoint the owner's links to `~/work/swarm/wt/main/skills/kit/skills/*` in one dotfiles commit; replace the real folders in `~/.claude/skills` with links | ⬜ | `realpath` of each kit name resolves under `skills/kit/`; new Claude, Codex and AGY sessions list the same skills as before |
+| A4 | Repoint the owner's links to `~/work/swarm/wt/main/skills/kit/skills/*` in one dotfiles commit; replace the real folders in `~/.claude/skills` with links; link `~/.claude/blocks` to `skills/kit/blocks`; switch the `any` build and close lines of `~/.flow/domains.md` to `block:prove-it-works` | ⬜ | `realpath` of each kit name resolves under `skills/kit/`; new Claude, Codex and AGY sessions list the same skills as before |
 | A5 | Amend ADR 0066: the owner's Mac reads the checkout, other Macs read the Setup copy | ⬜ | ADR text |
 | A6 | Make Setup show skipped skill links as not ready, or say where each one points | ❓ | owner decides if Setup should change |
+| A7 | Make Setup link `~/.claude/blocks` to the bundled kit's `blocks/` on other Macs, because skills point to blocks by that path | ⬜ | `realpath ~/.claude/blocks` on a Setup-only Mac |
 
-Note. On 2026-10-13 `~/.flow/domains.md` gained `block:` items: the `any` build and close lines
-name `block:prove-it-works`, and the creative-coding lines name reference-analysis, design-tokens,
-story, build-canvas, style-frames and visual-qa. Only the flow of branch `skill-blocks` knows these
-blocks, so every flow run on the live agent-kit flow stops with "unknown block id" until
-`skill-blocks` is merged to main and A4 repoints the links. A repo with no `.blocks.toml` runs the
-blocks without the base block; the creative-coding blocks also need `site` and `shots` there.
+Note. On 2026-10-13 the creative-coding lines of `~/.flow/domains.md` gained `block:` items
+(reference-analysis, design-tokens, story, build-canvas, style-frames, visual-qa). Only the flow of
+branch `skill-blocks` knows these blocks, so a creative-coding run on the live agent-kit flow stops
+with "unknown block id" until `skill-blocks` is merged to main and A4 repoints the links. The `any`
+lines keep the `prove-it-works` skill path until A4, because a `block:` item there would stop every
+live flow run. A repo with no `.blocks.toml` runs the blocks without the base block; the
+creative-coding blocks also need `site` and `shots` there. Once a catalog line in every repo names a
+block, `flow_run.py start` reads TOML, so it needs Python 3.11 or later (`/usr/bin/python3` is 3.9).
 
 Note. `~/.claude/skills/deliver` differs from agent-kit only by `scripts/__pycache__`, so no local
 skill edit is at risk in A4.

@@ -12,7 +12,7 @@ synthesize. Do not vote as a fourth voice.
 The council never makes the user's final design decision and never starts implementation. Seats
 inspect evidence and write only council scratch artifacts. Briefs and seats follow the kit block
 `blocks/worker-brief/SKILL.md`, and the chair runs seats as the kit block `blocks/run-workers/SKILL.md`
-says. The kit's blocks are in `../../blocks/` from this skill's folder. End with the options, evidence, disagreement, and the decision
+says. The kit's blocks are in `~/.claude/blocks/`, a link to the kit's `blocks/` folder. End with the options, evidence, disagreement, and the decision
 that remains with the user.
 
 ## Start or continue
@@ -20,7 +20,7 @@ that remains with the user.
 A council is a step run, so the kit's `references/step-run.md` owns the status line, pick-up,
 close, and when a step waits for the user. The run folder is the decision-log folder below,
 `<log>/<YYYY-MM-DD>-<slug>/`, next to the log file. "council continue <folder>" picks it up. Make the folder with
-`python3 <kit>/references/step_run.py start <folder> <this SKILL.md>`, and close each step with `done`.
+`python3 ~/.claude/references/step_run.py start <folder> <this SKILL.md>`, and close each step with `done`.
 
 | File | Needs | Holds |
 |---|---|---|
@@ -40,7 +40,8 @@ The runtime adapter (`orchestrate-claude`) selects the host and its reference; t
 - Every voice is a persistent, visible, interactive pane rooted at the invoking surface. A native
   subagent does not replace a voice.
 - The roles are `council.claude`, `council.gpt`, and `council.gemini`.
-- Every seat is report-only and writes only its council scratch result.
+- Every seat is report-only, as `blocks/worker-brief/SKILL.md` says; its result file is its council
+  scratch result.
 - Reuse the same three seats for every round, and never start the next round while a seat is
   working.
 
@@ -63,9 +64,7 @@ streams into the chair context.
 
 ## Pinned brief
 
-Every voice receives the same brief, pinned as `blocks/worker-brief/SKILL.md` says for a judgment:
-the artifact or question word for word, the constraints the user settled, the exact coordinates it
-may read, the "do not look outside these" line, and the output shape.
+Every voice receives the same brief, pinned for a judgment as `blocks/worker-brief/SKILL.md` says.
 
 ## Protocol
 

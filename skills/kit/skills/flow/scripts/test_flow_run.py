@@ -500,7 +500,7 @@ def git_env():
     return {**{k: v for k, v in os.environ.items() if not k.startswith("GIT_")}, **GIT_ENV}
 
 PARAMS = '[params]\nsource_of_truth = "docs/spec.md"\nsite = "site"\nshots = "tmp/shots"\n'
-RED_BUILD = "- build: block:prove-it-works\n"  # the catalog line most block tests start from
+PROVE_BUILD = "- build: block:prove-it-works\n"  # the catalog line most block tests start from
 
 
 def blocks_start(tmp, name, catalog, repo_toml=PARAMS, *args, env=None, python=sys.executable):
@@ -536,7 +536,7 @@ def test_git_env_ignores_caller_git_dir(tmp):
     subprocess.run(["git", "init", "-q", "-b", "main", str(decoy)], env=git_env(), check=True)
     hook = {"GIT_DIR": str(decoy / ".git"), "GIT_WORK_TREE": str(decoy), "GIT_INDEX_FILE": str(decoy / ".git" / "index")}
     with patch.dict(os.environ, hook):
-        out, folder, repo, _ = blocks_start(tmp, "hooked", RED_BUILD)
+        out, folder, repo, _ = blocks_start(tmp, "hooked", PROVE_BUILD)
         subprocess.run(["git", "commit", "-q", "--allow-empty", "-m", "one"], cwd=repo, env=git_env(), check=True)
     assert out.returncode == 0 and folder.resolve().is_relative_to(repo.resolve()), out
     log = subprocess.run(["git", "log", "--oneline"], cwd=decoy, env=git_env(), capture_output=True, text=True)
@@ -546,7 +546,7 @@ def test_git_env_ignores_caller_git_dir(tmp):
 def test_block_in_step(tmp):
     """A catalog step line naming block:<id> writes that block into the step file, and the
     Skills read line names the profile and the block with its content hash."""
-    out, folder, repo, run = blocks_start(tmp, "d1", RED_BUILD)
+    out, folder, repo, run = blocks_start(tmp, "d1", PROVE_BUILD)
     assert out.returncode == 0, out.stderr
     build = step_text(folder, "05-build")
     assert "===== block:prove-it-works =====" in build and "Rank each claim on the ladder" in build, build
@@ -563,7 +563,7 @@ def test_block_in_step(tmp):
 
 def test_block_alias_and_base(tmp):
     """An alias expands to its members, duplicates drop, and base joins every step once."""
-    out, folder, _, _ = blocks_start(tmp, "d2", "- design: block:tech-diagram, block:html-diagram\n" + RED_BUILD)
+    out, folder, _, _ = blocks_start(tmp, "d2", "- design: block:tech-diagram, block:html-diagram\n" + PROVE_BUILD)
     assert out.returncode == 0, out.stderr
     design = step_text(folder, "02-design")
     for block in ("base-rules", "when-to-diagram", "html-diagram"):
@@ -581,7 +581,7 @@ def test_block_hash_bytes(tmp):
     Path(tmp, "crlf", "app", "docs").mkdir(parents=True)
     data = b"# crlf\r\n\r\n## Rules\r\n- CRLF RULE 3\r\n## Check (script)\r\n- none: x\r\n## Check (judge)\r\n- Is it CRLF?\r\n"
     Path(tmp, "crlf", "app", "docs", "crlf.md").write_bytes(data)
-    out, folder, _, _ = blocks_start(tmp, "crlf", RED_BUILD, PARAMS + '[add]\nbuild = ["docs/crlf.md"]\n')
+    out, folder, _, _ = blocks_start(tmp, "crlf", PROVE_BUILD, PARAMS + '[add]\nbuild = ["docs/crlf.md"]\n')
     assert out.returncode == 0, out.stderr
     build = step_text(folder, "05-build")
     skills = next(line for line in build.splitlines() if line.startswith("Skills read:"))
@@ -618,7 +618,7 @@ def test_block_profile(tmp):
 
 def test_profile_on_second_start(tmp):
     """A second start checks the profile name too, and says a known non-default profile was not applied."""
-    out, folder, _, run = blocks_start(tmp, "d3-again", RED_BUILD)
+    out, folder, _, run = blocks_start(tmp, "d3-again", PROVE_BUILD)
     assert out.returncode == 0, out.stderr
     before = {p.name: p.read_bytes() for p in folder.iterdir()}
     again = run("start", "--profile", "nosuch")
@@ -674,7 +674,7 @@ def test_block_controls(tmp):
     # A control byte inside a placeholder is dropped before the param check, so a missing name gets one line.
     Path(tmp, "controls-param", "app", "docs").mkdir(parents=True)
     Path(tmp, "controls-param", "app", "docs", "y.md").write_text("# y\n\n## Rules\n- see {{no\x1bpe}}\n", encoding="utf-8")
-    out, _, repo, _ = blocks_start(tmp, "controls-param", RED_BUILD, PARAMS + '[add]\nbuild = ["docs/y.md"]\n')
+    out, _, repo, _ = blocks_start(tmp, "controls-param", PROVE_BUILD, PARAMS + '[add]\nbuild = ["docs/y.md"]\n')
     assert out.returncode == 1 and "block y needs {{nope}}" in out.stderr and "Traceback" not in out.stderr, out.stderr
     assert not (repo / "tmp" / "flow").exists()
     # Count the block's script checks with a plain read, not with the code that writes the todos.
@@ -694,7 +694,7 @@ def test_block_headings(tmp):
     skill = Path(tmp, "fake-skill.md")
     skill.write_text("# skill\n\n## Todo (x)\n- [x] a: ok\n\n## Result\nfine \x1b[2J\n", encoding="utf-8")
     for name, catalog, repo_toml, kept in (
-            ("fake-todo", RED_BUILD, PARAMS + '[add]\ndesign = ["docs/fake.md"]\n', ["### Todo (fake)"]),
+            ("fake-todo", PROVE_BUILD, PARAMS + '[add]\ndesign = ["docs/fake.md"]\n', ["### Todo (fake)"]),
             ("fake-skill", f"- design: {skill}\n", PARAMS, ["# skill\n", "### Todo (x)"])):
         out, folder, _, run = blocks_start(tmp, name, catalog, repo_toml)
         assert out.returncode == 0, out.stderr
@@ -722,7 +722,7 @@ def test_skill_fenced_headings(tmp):
 def test_start_without_tomllib(tmp):
     """On a Python before 3.11, which has no tomllib, status still runs, and start of a run that names a block
     stops with one line."""
-    out, folder, repo, _ = blocks_start(tmp, "no-tomllib", RED_BUILD)
+    out, folder, repo, _ = blocks_start(tmp, "no-tomllib", PROVE_BUILD)
     assert out.returncode == 0, out.stderr
     code = "import runpy, sys; sys.modules['tomllib'] = None; sys.argv = sys.argv[1:]; runpy.run_path(sys.argv[0], run_name='__main__')"
     env = {**git_env(), "HOME": str(Path(tmp, "no-tomllib", "home"))}
@@ -775,6 +775,10 @@ def test_no_toml_runs_blocks_without_base(tmp):
     close = step_text(folder, "07-close")
     assert "===== block:done-when-evidence =====" in close and "===== block:base-rules" not in close, close
     assert "Off: base-rules: the repo has no .blocks.toml, which sets source_of_truth" in close, close
+    # A named block that needs a param still stops start, and the message names the file to make.
+    out, _, repo, _ = blocks_start(tmp, "no-toml-param", "- build: block:web-ui-basics\n", None)
+    assert out.returncode == 1 and "set it under [params] in" in out.stderr and ".blocks.toml" in out.stderr, out.stderr
+    assert not (repo / "tmp" / "flow").exists(), "a failed start must not leave a folder"
 
 
 def test_param_quoted_in_script_checks(tmp):
@@ -802,7 +806,7 @@ def test_param_outside_span_in_script_check(tmp):
         "# x\n\n## Rules\n- r\n\n## Check (script)\n- Look at {{site}} outside backticks and run `ls {{site}}`: prose.\n\n## Check (judge)\n",
         encoding="utf-8")
     toml = PARAMS.replace('site = "site"', 'site = "my site"') + '[add]\nbuild = ["docs/x.md"]\n'
-    out, folder, _, _ = blocks_start(tmp, "param-prose", RED_BUILD, toml)
+    out, folder, _, _ = blocks_start(tmp, "param-prose", PROVE_BUILD, toml)
     assert out.returncode == 0, out.stderr
     todo = next(l for l in step_text(folder, "05-build").splitlines() if l.startswith("- [ ] block x script:"))
     assert todo == "- [ ] block x script: Look at my site outside backticks and run `ls 'my site'`: prose.: ", todo
@@ -820,7 +824,7 @@ def test_add_path_errors(tmp):
             Path(tmp, name, "app").mkdir(parents=True)
             if case == "loop":
                 Path(tmp, name, "app", path).symlink_to(path)
-            out, _, _, _ = blocks_start(tmp, name, RED_BUILD, PARAMS + f'[add]\nbuild = ["{path}"]\n', python=python)
+            out, _, _, _ = blocks_start(tmp, name, PROVE_BUILD, PARAMS + f'[add]\nbuild = ["{path}"]\n', python=python)
             assert out.returncode == 1 and out.stderr.startswith(f"[add] {path} in ") and out.stderr.endswith(
                 " is not a file\n") and len(out.stderr.splitlines()) == 1, (python, case, out.stderr[-300:])
 
@@ -837,8 +841,8 @@ def test_block_fail_closed(tmp):
         # The Off line prints the reason through one_line, so control characters alone are an empty reason.
         ("off-controls", "- design: block:tech-diagram\n", PARAMS + '[off]\nhtml-diagram = "\\u001b\\u0007"\n', (), "[off] html-diagram needs a reason"),
         ("off-unknown", "- design: block:tech-diagram\n", PARAMS + '[off]\nnope = "x"\n', (), "unknown block id nope"),
-        ("duplicate", RED_BUILD, PARAMS + '[add]\nbuild = ["prove-it-works.md"]\n', (), "duplicate block id prove-it-works"),
-        ("profile", RED_BUILD, PARAMS, ("--profile", "nope"), "unknown profile nope"),
+        ("duplicate", PROVE_BUILD, PARAMS + '[add]\nbuild = ["prove-it-works.md"]\n', (), "duplicate block id prove-it-works"),
+        ("profile", PROVE_BUILD, PARAMS, ("--profile", "nope"), "unknown profile nope"),
     ]
     Path(tmp, "duplicate", "app").mkdir(parents=True)
     Path(tmp, "duplicate", "app", "prove-it-works.md").write_text("# prove-it-works\n", encoding="utf-8")
@@ -847,17 +851,17 @@ def test_block_fail_closed(tmp):
                        ("add-parent", "../outside.md"), ("add-symlink", "link.md")):
         Path(tmp, name, "app").mkdir(parents=True)
         Path(tmp, name, "outside.md").write_text("# outside\nSECRET\n", encoding="utf-8")
-        cases.append((name, RED_BUILD, PARAMS + f'[add]\nbuild = ["{path}"]\n', (),
+        cases.append((name, PROVE_BUILD, PARAMS + f'[add]\nbuild = ["{path}"]\n', (),
                       f"[add] {path} leaves the repo"))
     Path(tmp, "add-symlink", "app", "link.md").symlink_to(Path(tmp, "add-symlink", "outside.md"))
     # A repo block whose id equals a kit alias name would mix with the alias.
     Path(tmp, "add-alias", "app", "docs").mkdir(parents=True)
     Path(tmp, "add-alias", "app", "docs", "tech-diagram.md").write_text("# tech-diagram\n", encoding="utf-8")
-    cases.append(("add-alias", RED_BUILD, PARAMS + '[add]\nbuild = ["docs/tech-diagram.md"]\n', (),
+    cases.append(("add-alias", PROVE_BUILD, PARAMS + '[add]\nbuild = ["docs/tech-diagram.md"]\n', (),
                   "has id tech-diagram, which is an alias"))
     # A TOML syntax error or a wrong value type in the repo file names the file, with no traceback.
     # A top-level key goes before [params], or TOML puts it in that table.
-    cases += [(f"type-{name}", RED_BUILD, toml, (), reason) for name, toml, reason in (
+    cases += [(f"type-{name}", PROVE_BUILD, toml, (), reason) for name, toml, reason in (
         ("syntax", "[params\nx = 1\n", ".blocks.toml is not valid TOML"),
         ("deep", "x = " + "[" * 500 + "]" * 500 + "\n" + PARAMS, ".blocks.toml is not valid TOML"),  # RecursionError
         ("bigint", PARAMS + "big = " + "9" * 5000 + "\n", ".blocks.toml is not valid TOML"),  # ValueError, int digit limit
@@ -866,35 +870,35 @@ def test_block_fail_closed(tmp):
         ("add", "add = 3\n" + PARAMS, ".blocks.toml: add must be a table"),
         ("add-string", PARAMS + '[add]\nbuild = "docs/x.md"\n', "must be a list of paths"))]
     cases += [
-        ("add-missing", RED_BUILD, PARAMS + '[add]\nbuild = ["docs/none.md"]\n', (), "[add] docs/none.md in"),
-        ("add-step", RED_BUILD, PARAMS + '[add]\nship = ["docs/x.md"]\n', (), "[add] ship in"),
-        ("table", RED_BUILD, PARAMS + "[extra]\nx = 1\n", (), "unknown table [extra]"),
-        ("param-dash", RED_BUILD, PARAMS.replace('site = "site"', 'site = "--version"'), (), "[params] site starts with '-'"),
-        ("param-dash-space", RED_BUILD, PARAMS.replace('site = "site"', 'site = "\\n -x"'), (), "[params] site starts with '-'"),
-        ("param-backtick", RED_BUILD, PARAMS.replace('site = "site"', 'site = "x`; echo PWNED; `y"'), (), "[params] site holds a backtick"),
+        ("add-missing", PROVE_BUILD, PARAMS + '[add]\nbuild = ["docs/none.md"]\n', (), "[add] docs/none.md in"),
+        ("add-step", PROVE_BUILD, PARAMS + '[add]\nship = ["docs/x.md"]\n', (), "[add] ship in"),
+        ("table", PROVE_BUILD, PARAMS + "[extra]\nx = 1\n", (), "unknown table [extra]"),
+        ("param-dash", PROVE_BUILD, PARAMS.replace('site = "site"', 'site = "--version"'), (), "[params] site starts with '-'"),
+        ("param-dash-space", PROVE_BUILD, PARAMS.replace('site = "site"', 'site = "\\n -x"'), (), "[params] site starts with '-'"),
+        ("param-backtick", PROVE_BUILD, PARAMS.replace('site = "site"', 'site = "x`; echo PWNED; `y"'), (), "[params] site holds a backtick"),
         # An empty value would reach a script check as '', which rg reads as a missing path.
-        ("param-empty", RED_BUILD, PARAMS.replace('site = "site"', 'site = ""'), (), "[params] site is empty"),
-        ("param-blank", RED_BUILD, PARAMS.replace('site = "site"', 'site = " \\u001b "'), (), "[params] site is empty"),
+        ("param-empty", PROVE_BUILD, PARAMS.replace('site = "site"', 'site = ""'), (), "[params] site is empty"),
+        ("param-blank", PROVE_BUILD, PARAMS.replace('site = "site"', 'site = " \\u001b "'), (), "[params] site is empty"),
         # A value that is not a string would reach a block sentence as a Python repr, such as ['a', 'b'] or True.
-        *[(f"param-{kind}", RED_BUILD, PARAMS.replace('site = "site"', f"site = {value}"), (), "[params] site must be a string")
+        *[(f"param-{kind}", PROVE_BUILD, PARAMS.replace('site = "site"', f"site = {value}"), (), "[params] site must be a string")
           for kind, value in (("list", '["a", "b"]'), ("bool", "true"), ("number", "3"), ("table", "{ a = 1 }"))],
     ]
     # Bytes that are not UTF-8 in the repo file or in an [add] block name the file, with no traceback.
     Path(tmp, "utf8-toml", "app").mkdir(parents=True)
     Path(tmp, "utf8-toml", "app", ".blocks.toml").write_bytes(PARAMS.encode() + b'x = "\xff"\n')
-    cases.append(("utf8-toml", RED_BUILD, None, (), ".blocks.toml is not UTF-8"))
+    cases.append(("utf8-toml", PROVE_BUILD, None, (), ".blocks.toml is not UTF-8"))
     Path(tmp, "utf8-add", "app", "docs").mkdir(parents=True)
     Path(tmp, "utf8-add", "app", "docs", "x.md").write_bytes(b"# x\n\xff\n")
-    cases.append(("utf8-add", RED_BUILD, PARAMS + '[add]\nbuild = ["docs/x.md"]\n', (), "x.md is not UTF-8"))
+    cases.append(("utf8-add", PROVE_BUILD, PARAMS + '[add]\nbuild = ["docs/x.md"]\n', (), "x.md is not UTF-8"))
     # A repo file that cannot be read, an [add] path with a NUL byte, and control characters in repo
     # text each give one clean line.
     Path(tmp, "toml-dir", "app", ".blocks.toml").mkdir(parents=True)
     cases += [
-        ("toml-dir", RED_BUILD, None, (), ".blocks.toml cannot be read"),
-        ("add-nul", RED_BUILD, PARAMS + '[add]\nbuild = ["a\\u0000b.md"]\n', (), "holds a NUL byte"),
-        ("add-id-controls", RED_BUILD, PARAMS + '[add]\nbuild = ["docs/x\\u001b[2Jy\\n- [ ] injected.md"]\n', (), "rename the file"),
-        ("add-id-space", RED_BUILD, PARAMS + '[add]\nbuild = ["docs/my block.md"]\n', (), "has id my block, which is not only"),
-        ("controls", RED_BUILD, PARAMS + '["\\u001b[2Jx\\ny"]\n', (), "unknown table [[2Jx y]"),
+        ("toml-dir", PROVE_BUILD, None, (), ".blocks.toml cannot be read"),
+        ("add-nul", PROVE_BUILD, PARAMS + '[add]\nbuild = ["a\\u0000b.md"]\n', (), "holds a NUL byte"),
+        ("add-id-controls", PROVE_BUILD, PARAMS + '[add]\nbuild = ["docs/x\\u001b[2Jy\\n- [ ] injected.md"]\n', (), "rename the file"),
+        ("add-id-space", PROVE_BUILD, PARAMS + '[add]\nbuild = ["docs/my block.md"]\n', (), "has id my block, which is not only"),
+        ("controls", PROVE_BUILD, PARAMS + '["\\u001b[2Jx\\ny"]\n', (), "unknown table [[2Jx y]"),
     ]
     # A catalog skill path that cannot be read, or is not UTF-8, stops start before any step file exists.
     Path(tmp, "skill-dir", "skill").mkdir(parents=True)
@@ -912,18 +916,18 @@ def test_block_fail_closed(tmp):
     for name, head in (("check-case", "Check (Script)"), ("check-space", "Check(script)")):
         Path(tmp, name, "app", "docs").mkdir(parents=True)
         Path(tmp, name, "app", "docs", "c.md").write_text(f"# c\n\n## Rules\n- r\n\n## {head}\n- `true` runs: ok\n", encoding="utf-8")
-        cases.append((name, RED_BUILD, PARAMS + '[add]\nbuild = ["docs/c.md"]\n', (), f"block c has the section heading ## {head}"))
+        cases.append((name, PROVE_BUILD, PARAMS + '[add]\nbuild = ["docs/c.md"]\n', (), f"block c has the section heading ## {head}"))
     # A param value that starts with `#` would put a step heading, such as `## Todo (` or `## Result`, into rules text.
     Path(tmp, "param-heading", "app", "docs").mkdir(parents=True)
     Path(tmp, "param-heading", "app", "docs", "fake.md").write_text("# fake\n\n## Rules\n{{a}}\n- [x] nothing: ok\n{{b}}\n",
                                                                    encoding="utf-8")
-    cases.append(("param-heading", RED_BUILD, PARAMS + 'a = "## Todo (x)"\nb = "## Result"\n[add]\ndesign = ["docs/fake.md"]\n', (),
+    cases.append(("param-heading", PROVE_BUILD, PARAMS + 'a = "## Todo (x)"\nb = "## Result"\n[add]\ndesign = ["docs/fake.md"]\n', (),
                   "[params] a starts with '#'"))
     # A block line that a param fills into a `## ` line would also be a step heading in the rules text.
     Path(tmp, "param-filled-heading", "app", "docs").mkdir(parents=True)
     Path(tmp, "param-filled-heading", "app", "docs", "fake.md").write_text(
         "# fake\n\n## Rules\n##{{a}}\n- [x] nothing: ok\n##{{b}}\n", encoding="utf-8")
-    cases.append(("param-filled-heading", RED_BUILD,
+    cases.append(("param-filled-heading", PROVE_BUILD,
                   PARAMS + 'a = " Todo (x)"\nb = " Result"\n[add]\ndesign = ["docs/fake.md"]\n', (),
                   "block fake has the line '## Todo (x)' once its params are filled"))
     # A check line that is not a `- ` item would be dropped without a word too.
@@ -931,14 +935,14 @@ def test_block_fail_closed(tmp):
         Path(tmp, name, "app", "docs").mkdir(parents=True)
         Path(tmp, name, "app", "docs", "c.md").write_text(f"# c\n\n## Rules\n- r\n\n## Check (script)\n- `true` runs: ok\n{line}\n",
                                                           encoding="utf-8")
-        cases.append((name, RED_BUILD, PARAMS + '[add]\nbuild = ["docs/c.md"]\n', (),
+        cases.append((name, PROVE_BUILD, PARAMS + '[add]\nbuild = ["docs/c.md"]\n', (),
                       f"block c has the line {line!r} under ## Check (script)"))
     # Every block has both check sections; `- none: <why>` is the way to have no check, so a missing one stops start.
     for name, text, head in (("no-checks", "# c\n\n## Rules\n- r\n", "Check (script)"),
                              ("no-judge", "# c\n\n## Rules\n- r\n\n## Check (script)\n- none: no command\n", "Check (judge)")):
         Path(tmp, name, "app", "docs").mkdir(parents=True)
         Path(tmp, name, "app", "docs", "c.md").write_text(text, encoding="utf-8")
-        cases.append((name, RED_BUILD, PARAMS + '[add]\nbuild = ["docs/c.md"]\n', (), f"block c has no ## {head} section"))
+        cases.append((name, PROVE_BUILD, PARAMS + '[add]\nbuild = ["docs/c.md"]\n', (), f"block c has no ## {head} section"))
     for name, catalog, repo_toml, args, reason in cases:
         out, _, repo, _ = blocks_start(tmp, name, catalog, repo_toml, *args)
         assert out.returncode == 1 and reason in out.stderr and "Traceback" not in out.stderr, (name, out.stderr)
@@ -1005,13 +1009,13 @@ def test_add_folder_block(tmp):
     Path(tmp, "add-folder", "app", "docs", "blocks", "foo", "SKILL.md").write_text(
         '---\nname: foo\ndescription: "Foo rule."\n---\n\n## Rules\n- FOO RULE\n\n## Check (script)\n- none: x\n\n'
         "## Check (judge)\n- none: x\n", encoding="utf-8")
-    out, folder, _, _ = blocks_start(tmp, "add-folder", RED_BUILD, PARAMS + '[add]\nbuild = ["docs/blocks/foo/SKILL.md"]\n')
+    out, folder, _, _ = blocks_start(tmp, "add-folder", PROVE_BUILD, PARAMS + '[add]\nbuild = ["docs/blocks/foo/SKILL.md"]\n')
     assert out.returncode == 0, out.stderr
     build = step_text(folder, "05-build")
     assert "===== block:foo =====" in build and "Concept: Foo rule." in build, build
     # A SKILL.md with no plain folder name above it has no id.
     for path in ("SKILL.md", "docs/blocks/foo/../SKILL.md"):
-        out, _, _, _ = blocks_start(tmp, f"add-folder-{len(path)}", RED_BUILD, PARAMS + f'[add]\nbuild = ["{path}"]\n')
+        out, _, _, _ = blocks_start(tmp, f"add-folder-{len(path)}", PROVE_BUILD, PARAMS + f'[add]\nbuild = ["{path}"]\n')
         assert out.returncode == 1 and "a SKILL.md block sits in a folder named for its id" in out.stderr, out.stderr
 
 
@@ -1071,7 +1075,7 @@ def test_block_cap(tmp):
         Path(tmp, name, "app", "docs").mkdir(parents=True)
         pad = "- " + "x" * (size - len(head) - len(tail) - 3) + "\n"
         Path(tmp, name, "app", "docs", "big.md").write_text(head + pad + tail, encoding="utf-8")
-        out, folder, repo, _ = blocks_start(tmp, name, RED_BUILD, PARAMS + '[add]\nbuild = ["docs/big.md"]\n')
+        out, folder, repo, _ = blocks_start(tmp, name, PROVE_BUILD, PARAMS + '[add]\nbuild = ["docs/big.md"]\n')
         if name == "big-ok":
             assert out.returncode == 0 and "BIG CHECK" in step_text(folder, "05-build"), out.stderr
         else:
@@ -1225,7 +1229,7 @@ def block_rg(name, site):
     return runs
 
 
-def test_look_grammar_colors(tmp):
+def test_design_tokens_colors(tmp):
     """The design-tokens color check finds each color literal in a declaration (also before a comma or on a
     later line of a value), and not a selector that looks like a hex color. A literal in the :root token block,
     or in a :root that is all of @media (prefers-color-scheme: dark), is no hit; a :root anywhere else is."""
@@ -1285,7 +1289,7 @@ def test_diagram_shot_check(tmp):
         assert not ok(), bad
 
 
-def test_look_grammar_page_code_colors(tmp):
+def test_design_tokens_page_code_colors(tmp):
     """The design-tokens page-code check finds a color function in JS and TS files, and not a quoted hex, which
     could be an id selector such as "#feed" (the judge line asks about quoted hex colors), nor a private field;
     a page whose code reads only tokens prints nothing."""
@@ -1310,7 +1314,7 @@ def test_look_grammar_page_code_colors(tmp):
     assert code.returncode == 1 and not code.stdout, code
 
 
-def test_look_grammar_dashes(tmp):
+def test_design_tokens_dashes(tmp):
     """The design-tokens dash check finds an em or en dash as a character, a named entity, or a numeric
     entity, and passes a page with only hyphens and other entities."""
     site = Path(tmp, "dash-site")
@@ -1529,10 +1533,10 @@ with tempfile.TemporaryDirectory() as tmp:
     test_block_cap(tmp)
     test_block_checks(tmp)
     test_html_diagram_check(tmp)
-    test_look_grammar_colors(tmp)
-    test_look_grammar_page_code_colors(tmp)
+    test_design_tokens_colors(tmp)
+    test_design_tokens_page_code_colors(tmp)
     test_diagram_shot_check(tmp)
-    test_look_grammar_dashes(tmp)
+    test_design_tokens_dashes(tmp)
     test_web_ui_basics_checks(tmp)
     test_block_ascii_locale(tmp)
     test_review_read_encoding(tmp)

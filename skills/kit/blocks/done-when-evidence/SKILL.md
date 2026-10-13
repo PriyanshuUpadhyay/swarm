@@ -10,7 +10,7 @@ metadata:
   gives: "one evidence row per claim"
   conflicts: ""
   users: "flow"
-  source: "skills/flow/SKILL.md (step table, 07-close row); references/plan-layout.md:31-33 (Verification); skills/prove-it-works/SKILL.md:46 (below step 4 is unproven)"
+  source: "skills/flow/SKILL.md (step table, 07-close row); references/plan-layout.md:31-33 (Verification); blocks/prove-it-works/SKILL.md (the ladder: below step 4 is unproven)"
 ---
 
 ## Rules

@@ -9,7 +9,7 @@ metadata:
   needs: "a tool question and a real task"
   gives: "a table of candidates with install, task, time, and result"
   conflicts: ""
-  users: "research, flow"
+  users: "research"
   source: "skills/research/SKILL.md (04-test, moved here 2026-10-13)"
 ---
 

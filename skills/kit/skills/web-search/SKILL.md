@@ -10,7 +10,7 @@ tools, and each writes its findings to a file. The chair merges them into one re
 blocked fetch is another seat's open page, so the coverage is wider than any single session.
 
 The runtime adapter (`orchestrate-claude`) selects the host and its reference; web search names no host. Without a visible host, stop and say so; a hidden or headless seat is not a substitute.
-The kit's blocks are in `../../blocks/` from this skill's folder.
+The kit's blocks are in `~/.claude/blocks/`, a link to the kit's `blocks/` folder.
 
 ## Start or continue
 
@@ -18,7 +18,7 @@ A web search is a step run, so the kit's `references/step-run.md` owns the statu
 close, and when a step waits for the user. The run folder is
 `~/.claude/reports/<YYYY-MM-DD>-<slug>-seats/`, which also keeps the seat reports at the end.
 "web-search continue <folder>" picks it up. Make the folder with
-`python3 <kit>/references/step_run.py start <folder> <this SKILL.md>`, and close each step with `done`.
+`python3 ~/.claude/references/step_run.py start <folder> <this SKILL.md>`, and close each step with `done`.
 
 | File | Needs | Holds |
 |---|---|---|
@@ -42,6 +42,9 @@ These three details differ from a council run.
   or AGY trust dialog. Never use `~/.swarm/runs`, because that is swarm's own message store.
 - The seats resolve `search.web`, not `council.*`; the council keeps `council.gpt`,
   `council.gemini`, and `council.claude`.
+- A Codex `search.web` seat gets `-- -c features.network_proxy.allow_local_binding=true` at
+  `swarm launch`, so its browser rows reach the local `playwriter` relay. No other Codex seat gets
+  this flag.
 
 ## Default site sets
 
@@ -103,13 +106,14 @@ the `03-web` section of `research`.
 
 One brief, one section per seat. It holds:
 
-1. the question, verbatim;
+1. the question, verbatim, and the three to six sub-questions, which the chair splits once before
+   any seat starts, so every seat reports against the same ones;
 2. the site set for that seat;
 3. an "already cited, do not re-cite" list;
 4. **depth** — the deep-search block and the Yield and Floor rules above, quoted in full, with the
    known list and the seeds filled in;
-5. **method** — use your own native search and fetch tools and the Reach tools block; prefer
-   2025-2026 material; when a site blocks you, try in order the Reach tool for that site, the
+5. **method** — use your own native search and fetch tools and the Reach tools block; when a
+   site blocks you, try in order the Reach tool for that site, the
    browser row, the Jina reader, the search snippet, `old.reddit.com`, `<url>.json`, a public mirror,
    `web.archive.org`, and `archive.ph`; cite as `blocks/cite-sources/SKILL.md` says, with that
    block's Rules quoted; stop after about 20 minutes;
@@ -159,6 +163,6 @@ words.
 
 ## Guards
 
-- Seats are report-only. They write their own report file and nothing else. Briefs and seats
-  follow the kit block `blocks/worker-brief/SKILL.md`.
+- Seats are report-only, as the kit block `blocks/worker-brief/SKILL.md` says; each writes only its
+  report file.
 - Every claim follows `blocks/cite-sources/SKILL.md`.

@@ -6,5 +6,4 @@ disable-model-invocation: true
 
 # Prove it works
 
-The rule is the kit block `blocks/prove-it-works/SKILL.md`. The kit's blocks are in `../../blocks/`
-from this skill's folder. Read the block in full and apply it.
+The rule is the kit block `blocks/prove-it-works/SKILL.md`. The kit's blocks are in `~/.claude/blocks/`, a link to the kit's `blocks/` folder. Read the block in full and apply it.

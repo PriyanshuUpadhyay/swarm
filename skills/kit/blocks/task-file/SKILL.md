@@ -15,7 +15,7 @@ metadata:
 
 ## Rules
 - Keep one task file per task at `<repo-root>/tmp/<skill>/<YYYY-MM-DD>-<slug>.md`, as the kit's `references/run-folder.md` says. `tmp/` stays in `.git/info/exclude`, so git never tracks the file. Keep no second plan file.
-- The file holds the goal in one line, the steps or behaviors in order, the current one, one evidence line per finished one (the check that ran and its result), the commit of each finished one, the checks to run, and the next step. The skill that uses this block names any extra field.
+- The file holds the goal in one line, the steps or behaviors in order, the current one, one evidence line per finished one (the check that ran and its result, or the run that showed it on the real surface), the commit of each finished one, the checks to run, and the next step. The skill that uses this block names any extra field.
 - Update the file after every finished step.
 - Read the file first after a `/clear`, a `/compact`, or a resume. Make the first reply a status block: what is done with its commits, what is open, the current step, and the open decisions, then the next step. Redo nothing that is done. The file is the truth, not the chat.
 - The file is a log for a resume, not a display. Keep it to its fields, with no source survey and no essay. What the user must read goes in the chat, never only in the file.

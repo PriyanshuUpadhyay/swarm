@@ -14,7 +14,7 @@ metadata:
 ---
 
 ## Rules
-- A decision sits on the claim it changes, after that claim's exhibit and before its child claims.
+- A claim decision sits on the claim it changes, after that claim's exhibit and before its child claims.
 - Ask only about forks that change what you build, at most 5 per plan. A plan with no such fork asks nothing.
 - Mark the option you would pick. The marked option is your recommendation, so "I changed nothing" is a full answer. Never leave a choice with no default.
 - If an option removes a claim, say so: "claim 4 goes".
@@ -47,7 +47,7 @@ Result: the user answers "kept as proposed". The builder draws one static diagra
 - none: the decisions live only in the step file, which holds this block's own Example decision.
 
 ## Check (judge)
-- Are there 5 decisions or fewer, and does each have exactly one `(x)` option? Quote each question with its options, or write "no fork".
+- Are there 5 claim decisions or fewer, and does each have exactly one `(x)` option? A trade-off form is not a claim decision. Quote each question with its options, or write "no fork".
 - Does each decision sit on the claim it changes, after that claim's exhibit and before its child claims? Quote the decision and the claim.
 - Is each question 15 words or fewer? Quote each question with its word count.
 - Does each "not opened" answer on an important decision have a follow-up question in chat, or a line that says why none was needed? Quote both.

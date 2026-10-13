@@ -10,7 +10,7 @@ metadata:
   gives: "steps that keep the base rules"
   conflicts: ""
   users: "flow"
-  source: "skills/prove-it-works/SKILL.md:9-10, :55-56 (evidence, not a proxy); html-plan pack: skills/html-plan/SKILL.md:82 (real over drawn); skills/review-check/references/lens.md:28 (no speculative generality)"
+  source: "blocks/prove-it-works/SKILL.md (rule 1, a proxy does not prove; last rule, a rerunnable check); html-plan pack: skills/html-plan/SKILL.md:82 (real over drawn); skills/review-check/references/lens.md:28 (no speculative generality)"
 ---
 
 ## Rules

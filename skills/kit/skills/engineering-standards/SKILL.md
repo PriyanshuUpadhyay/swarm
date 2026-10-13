@@ -94,8 +94,7 @@ Whether retry-with-backoff or backpressure and load-shedding should be the defau
 
 This section has no table, because no rule and no checker decides a trade-off. When a `Scope`
 forks, two rows conflict, or an item is contested, emit the trade-off form of the kit block
-`blocks/decision-with-default/SKILL.md` and stop. The kit's blocks are in `../../blocks/` from this
-skill's folder. This skill does not write an ADR.
+`blocks/decision-with-default/SKILL.md` and stop. The kit's blocks are in `~/.claude/blocks/`, a link to the kit's `blocks/` folder. This skill does not write an ADR.
 
 ## Refusals
 

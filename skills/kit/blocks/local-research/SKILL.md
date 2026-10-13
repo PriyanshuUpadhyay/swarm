@@ -9,7 +9,7 @@ metadata:
   needs: "a question"
   gives: "findings with paths, contrary evidence, and gaps"
   conflicts: ""
-  users: "research, flow"
+  users: "research"
   source: "skills/research/SKILL.md (02-local, moved here 2026-10-13)"
 ---
 
@@ -17,7 +17,7 @@ metadata:
 - Read the local sources as the kit's `references/fan-out.md` says. When they disagree, trust them in this order: the repository at hand, its docs, prior reports under `~/.claude/reports/`, then council logs under `~/dotfiles/docs/council/`.
 - For each decision, track the open question, the primary evidence, the contrary evidence, and the gap that remains.
 - Read the source's actual method or code before you accept its headline.
-- Separate independent origins from pages that repeat one origin. A page count or agents that agree do not make a claim correct.
+- Count sources as the kit block `blocks/cite-sources/SKILL.md` says. A page count or agents that agree do not make a claim correct.
 - When the evidence is thin, name the gap; do not make the claim stronger. Do the deeper pass yourself; the user does not need to ask for it.
 - Each finding cites its `path:line` or its report path.
 

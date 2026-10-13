@@ -6,5 +6,4 @@ disable-model-invocation: true
 
 # Sequence work into verifiable units
 
-The rule is the kit block `blocks/checked-units/SKILL.md`. The kit's blocks are in `../../blocks/`
-from this skill's folder. Read the block in full and apply it.
+The rule is the kit block `blocks/checked-units/SKILL.md`. The kit's blocks are in `~/.claude/blocks/`, a link to the kit's `blocks/` folder. Read the block in full and apply it.

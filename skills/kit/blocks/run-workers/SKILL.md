@@ -19,16 +19,15 @@ metadata:
 - Load the host reference that the contract names. The host owns pane creation, sending, liveness, result collection, and close.
 - Resolve every seat role with `swarm roles get <role>` before launch. Keep `runnerId`, `provider`, `mode`, `model`, `effort`, and `fallbackRunnerIds`. Use only the declared fallbacks. Refuse a role that does not resolve or that the host cannot run. Never hardcode a model, an effort, a sandbox, or an approval value.
 - Give the host one entry per seat: a unique name, the routed runner, the working folder, the permission level, the input digest, the brief, the expected result file, and the deadline. The host picks the run folder under its message root, because every worker sandbox can write there. Never brief a worker to write into a home-state path.
-- Never use a headless CLI or a detached process. When the skill or the host contract asks for visible seats, every seat is a visible, interactive pane owned by this run. Otherwise a native subagent of the runtime is allowed; the runtime adapter names which. If a visible seat cannot launch or stay interactive, retry once, then replace it with another visible seat and tell the user the run is degraded.
-- Send the briefs of one stage under one deadline. Sending returns when the worker took the task, not when it finished; the worker's finish rings the chair. The kit's `references/fan-out.md` owns what goes out in parallel.
+- Never use a headless CLI or a detached process. When the skill or the host contract asks for visible seats, every seat is a visible, interactive pane owned by this run. Otherwise a native subagent of the runtime is allowed; the runtime adapter names which.
+- If a visible seat cannot launch or stay interactive, retry it once. Then start a visible seat on the role's next declared fallback runner, and tell the user the run is degraded. With no fallback left, go on without that seat only when the skill allows it.
+- Send the briefs of one stage under one deadline. Sending returns when the worker took the task, not when it finished; the worker's finish rings the chair. The kit's `references/fan-out.md` owns what goes out in parallel and the chair's work while seats run.
 - Accept only a result that the host's durable channel confirms and that names its seat. Pass the skill's refusal or degraded state to the chair as the skill says.
 - At the end, close only the seats this run started, and check that they are gone.
-- A skill that keeps a task file across `/clear` keeps it in `<repo-root>/tmp/<skill>/`, as the kit's `references/run-folder.md` says. Reports go to `~/.claude/reports/`, and a step run whose result is a report keeps its folder there. `<kit>` is `~/.claude`, so the kit's references are in `~/.claude/references/`.
-- A Codex `search.web` seat for `web-search` gets `-- -c features.network_proxy.allow_local_binding=true` at `swarm launch`, so its browser rows reach the local `playwriter` relay. No other Codex seat gets this flag.
 
 ## Example
 Initial state: a council needs three seats, `council.claude`, `council.gpt`, and `council.gemini`.
-Action: run `swarm roles get` for each role, launch three visible panes with unique names, send one brief to each in the same turn, and end the turn. The GPT pane fails to launch twice, so a second visible Codex pane replaces it, and the chair tells the user.
+Action: run `swarm roles get` for each role, launch three visible panes with unique names, send one brief to each in the same turn, and end the turn. The GPT pane fails to launch twice, so a visible pane on the role's fallback runner replaces it, and the chair tells the user.
 Result: three result files, each confirmed by an inbox message from its seat; at the end `swarm close` runs for the three names this run started, and `swarm agents` no longer lists them.
 
 ## Check (script)

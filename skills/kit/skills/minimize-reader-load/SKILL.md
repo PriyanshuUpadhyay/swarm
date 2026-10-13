@@ -6,5 +6,4 @@ disable-model-invocation: true
 
 # Minimize reader load
 
-The rule is the kit block `blocks/when-to-extract/SKILL.md`. The kit's blocks are in `../../blocks/`
-from this skill's folder. Read the block in full and apply it.
+The rule is the kit block `blocks/when-to-extract/SKILL.md`. The kit's blocks are in `~/.claude/blocks/`, a link to the kit's `blocks/` folder. Read the block in full and apply it.

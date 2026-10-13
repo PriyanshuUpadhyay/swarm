@@ -48,8 +48,8 @@ Completion is the accepted inbox message, and you must never read the screen for
 
 ## Report-only seats
 
-The seat brief must forbid repository edits, commits, worker spawns, and user notifications.
-The seat writes only its attributed result to scratch and sends that result with `swarm finish`.
+A report-only seat follows the kit block `blocks/worker-brief/SKILL.md`. It sends its result with
+`swarm finish`.
 
 ## Uptake
 

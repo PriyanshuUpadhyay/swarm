@@ -97,7 +97,8 @@ The flow owns the step list, the order, the status, the profiles, and the domain
 `pair` or `deliver` owns the plan, the chunks, and the commits; the flow never starts `deliver`
 by itself.
 `review-check` owns the review and its verdict; the flow never fixes a finding itself. An `INCOMPLETE` verdict is no review.
-The kit block `blocks/prove-it-works/SKILL.md` owns the choice of check and the evidence.
+The kit's blocks are in `~/.claude/blocks/`, a link to the kit's `blocks/` folder. The kit block
+`blocks/prove-it-works/SKILL.md` owns the choice of check and the evidence.
 The kit block `blocks/checked-units/SKILL.md` owns the unit order. `decisions` owns the ADRs. The flow never pushes.
 
 ## Trial log

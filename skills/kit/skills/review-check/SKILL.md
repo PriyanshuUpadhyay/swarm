@@ -71,8 +71,8 @@ For each unit, read its full range in `head/`, the diff hunks, and every place t
 `checklist.json` lists under `refs`. Then check the unit against each rule ID in its checklist.
 The rules live in `references/lens.md`, `references/lens-<name>.md`, and the repo's rules file that
 `01-units.md` names. Also read the kit block `blocks/when-to-extract/SKILL.md` (the kit's blocks are
-in `../../blocks/` from this skill's folder), the `engineering-standards` skill, the repo's own
-convention docs, and the `review` paths of each domain in `~/.flow/domains.md` whose `Signals:`
+in `~/.claude/blocks/`, a link to the kit's `blocks/` folder), the `engineering-standards` skill, the
+repo's own convention docs, and the `review` paths of each domain in `~/.flow/domains.md` whose `Signals:`
 line matches the file. A defect that no rule names is still a finding, with rule `-`.
 
 `REF` means the change can break a place that names its symbol. Check each listed place against

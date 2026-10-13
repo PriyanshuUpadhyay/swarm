@@ -273,7 +273,7 @@ def resolve_blocks(root, wanted, profile_name):
     # The base block needs source_of_truth, which only the repo's .blocks.toml sets. A repo with no such file
     # still runs the blocks that its catalog lines name, such as an `any` line, and the step says the base is off.
     if base and not repo_file.exists():
-        off = {**{b: "the repo has no .blocks.toml, which sets source_of_truth" for b in base}, **off}
+        off = {b: "the repo has no .blocks.toml, which sets source_of_truth" for b in base}  # no file, no [off]
 
     loaded = {}
 

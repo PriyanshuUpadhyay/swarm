@@ -83,8 +83,9 @@ metadata:
   install. `kind: step` does work and writes its `gives` artifact.
 - Blocks live under `blocks/`, not `skills/`. The Agent Skills spec loads the name and description
   of every discovered skill at startup, so 40 blocks there would crowd the skill list, and selection
-  falls as the list grows. A skill points to the blocks it uses by path (`../../blocks/<id>/SKILL.md`
-  from the skill's folder), and the flow loader copies the blocks that a catalog line names into the
+  falls as the list grows. A skill points to the blocks it uses by path (`~/.claude/blocks/<id>/SKILL.md`,
+  a link to the kit's `blocks/` folder; a relative `../../blocks/` fails through an installed skill
+  link, because a Read tool resolves `..` on the link path), and the flow loader copies the blocks that a catalog line names into the
   step files. No CLI lists a block as a skill.
 - The kit can become one Agent Plugins 1.0 package: a `plugin.json` at `skills/kit/`, skills under
   `skills/`, and `blocks/` beside them. Clients discover only `skills/` and `mcp.json`. A package path
@@ -201,7 +202,7 @@ path that names the skill still works.
 | cleanup-gate | when-to-extract (by its rules file) | the six-step pass (stays whole) |
 | decisions | none | the whole capture contract (stays whole) |
 | flow | prove-it-works, checked-units, and every block its catalog lines name | the step graph and the loader |
-| ink | reference-analysis, design-tokens, story, look-check, headless-shot, visual-qa, build-site, build-canvas, web-ui-basics | the contract, the routes, the seam law, the reel rules |
+| ink | reference-analysis, story, look-check, headless-shot, visual-qa, build-site (which points to design-tokens), build-canvas, web-ui-basics | the contract, the routes, the seam law, the reel rules |
 
 Plans that stay open: research writes the ledger for questions, with `web needs local` only when
 local findings set the query (the owner's local-then-web example); the emil pack owns UI motion and
