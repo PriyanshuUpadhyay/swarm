@@ -1583,8 +1583,17 @@ fn notices_due_applies_the_notice_preferences() {
     for session in [&in_muted, &in_open] {
         swarm::store::add_agent(&connection, session, "coder", "coder").unwrap();
     }
-    swarm::store::set_state(&connection, &in_open, "coder", "waiting", "hook", None, None, 1)
-        .unwrap();
+    swarm::store::set_state(
+        &connection,
+        &in_open,
+        "coder",
+        "waiting",
+        "hook",
+        None,
+        None,
+        1,
+    )
+    .unwrap();
     let choices = |notices: &str| {
         std::fs::write(
             home.join(".swarm/choices.json"),

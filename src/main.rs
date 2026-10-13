@@ -489,7 +489,9 @@ fn start_notify_helper(root: &std::path::Path) {
         command.arg("--env").arg(format!("SWARM_HOME={home}"));
     }
     if let Ok(exe) = std::env::current_exe() {
-        command.arg("--env").arg(format!("SWARM_BIN={}", exe.display()));
+        command
+            .arg("--env")
+            .arg(format!("SWARM_BIN={}", exe.display()));
     }
     let _ = command
         .stdin(std::process::Stdio::null())
