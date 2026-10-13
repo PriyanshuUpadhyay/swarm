@@ -42,6 +42,9 @@ run beside A and B, because they touch other files.
 8. Review loops stop in code. `review_check.py start` owns a 3-round cap keyed by an explicit
    parent-loop key that fixes and re-plans inherit (K1). The no-progress stop compares open issues,
    not the fix count (P2). Both are owner choices of 2026-10-13.
+9. Skills are cut into blocks now, one skill at a time, starting with ink; each cut block gets a
+   second user in one live run (owner choice of 2026-10-13). `docs/blocks.md` holds the split map,
+   the model (template, plan block, ledger, end condition) and the block format.
 
 ## A. Skills setup (one kit source)
 
@@ -130,12 +133,18 @@ the pilot, then packs.
 | B6 | Judge the pilot against the same slice without blocks; keep or drop | ⬜ | written result with both runs: defects, review rounds, time, loaded text |
 | B7 | Add `Keywords:` beside `Signals:` in `domains.md`, matched against the filled frame at `take`; the model confirms, drops or adds a match once, with a reason line | ⬜ | a "transition" task in a non-web-ui repo gets the motion pack; a non-motion task gets none |
 | B8 | Motion pack: an index in the emil pack owner, item files, a check, `Keywords:`; ink keeps story motion; web-ui-basics points to it | ⬜ | the step file names one timing owner and an "item files used" todo |
-| B9 | Plan block: the step that picks blocks for a task and writes the ledger; blocks declare `conflicts:` | ❓ | owner discussion, 2026-10-13 |
-| B10 | ink points to its three blocks and deletes its copies | ⬜ | ink's references hold no rule that a block holds |
+| B9 | Plan block and template format: the plan block reads the task, a template and the catalog, writes the ledger once, and gives a reason line per block; a template fixes its required stages and end | ⬜ | one task run by hand through a written template |
+| B10 | Merged into B17 | — | — |
 | B11 | Small judge (Jev or Laya) for pack choice: 2+ missed or wrong packs in 10 trial lines starts a benchmark; adopt only on a held-out win with no missed gate | ⬜ | benchmark result |
 | B12 | One provider-neutral worker-brief section; the five other texts point to it | ⬜ | `rg` for the report-only rule finds one owner |
 | B13 | List block candidates by reuse count; extract only rules with two or more real users | ⬜ | each new block names its two users |
 | B14 | Move `resolve_blocks` from `flow_run.py` into one shared kit script when a second skill has a run script that needs it | ⬜ | two run scripts import one resolver |
+| B15 | Write the split map: every skill's parts as blocks, rule cards, or units that stay whole | 🔄 draft | `docs/blocks.md` |
+| B16 | Block format v2: one folder per block with Agent Skills frontmatter (`name`, `description`, `license`, `metadata` with kind, owns, serves, needs, gives, conflicts, users); move the 13 blocks; update `blocks.toml` and the `flow_run.py` resolver in the same step | ⬜ | the flow tests pass; each block validates as an Agent Skills `SKILL.md` |
+| B17 | Cut ink: reference-analysis, story, visual-qa, build-site, build-canvas; one owner for look-grammar, style-frames, headless-shot; ink keeps its contract and its routes as templates | ⬜ | ink's references hold no rule that a block holds; an ink `prototype` run still passes |
+| B18 | Second user: a glitch-walk page uses story, look-grammar, headless-shot and visual-qa | ⬜ | one live run, each block todo closed with evidence |
+| B19 | serve-local and annotate-loop blocks for a view-and-talk stage; the loop uses the B1 and B2 stop | ⬜ | one glitch-walk run where an owner comment reaches the agent and the page is rebuilt |
+| B20 | Package the kit as an Agent Plugins 1.0 package (`plugin.json` at `skills/kit/`); first check which CLIs load the format natively | ❓ | owner decides after the check |
 
 Rejected for now: `minimal-diff`, `verification-evidence`, `trust-boundary`, `reversibility`. Each
 repeats a rule in `first-principles.md`, `done-when-evidence.md`, `red-first-check.md` or the global
@@ -187,5 +196,6 @@ is deleted.
 - Earlier councils: `2026-09-27-public-repo-split`, `2026-10-09-skill-building-blocks`,
   `2026-10-12-swarm-web-ui`, `2026-10-12-swarm-owns-accounts-isolation` (same folder)
 - Blocks trial: `~/.claude/reports/2026-10-09-blocks-trial.md`
+- Block split map: `docs/blocks.md`
 - Council log `2026-10-13-composable-blocks` and report `~/.claude/reports/2026-10-13-composable-skill-blocks.md`
 - ADRs 0031, 0062, 0063, 0066, 0071, 0073, 0075 in `docs/decisions/`
