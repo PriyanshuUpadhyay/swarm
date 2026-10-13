@@ -21,7 +21,8 @@ only the user can give.
 2. Each iteration makes the smallest change the evidence justifies, verifies it against the
    predicate, commits when it advanced, and discards a change that did not help. A change that
    "might help" is reverted, not left to ride. Order the work per the
-   `sequence-verifiable-units` skill, and judge each check per the `prove-it-works` skill.
+   kit block `blocks/checked-units/SKILL.md`, and judge each check per the kit block
+   `blocks/prove-it-works/SKILL.md`. The kit's blocks are in `../../blocks/` from this skill's folder.
 3. A mid-run discovery is yours when it blocks the predicate. Fix it, such as a broken helper or a
    flaky check, in its own commit, then return to the predicate. Do not park reversible work for
    the user. Report any other defect in the final result and leave it unfixed.

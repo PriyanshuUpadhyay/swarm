@@ -7,7 +7,7 @@ description: Coding partner that writes the code with the user. Use when the use
 
 Write the code together, one small chunk at a time. The user approves every chunk before it touches
 a file, and every finished behavior is committed at once. The user keeps the mental model; the agent
-does the typing.
+does the typing. The kit's blocks are in `../../blocks/` from this skill's folder.
 
 ## One task file per task
 
@@ -81,11 +81,11 @@ what comes in. Keep the diff to the hunks of the chunk.
 
 A chunk touches only what its behavior sentence names. No new helper, field, export, flag, or
 todo goes in unless the sentence names it. A new symbol lands with its first caller, as the
-`sequence-verifiable-units` skill says. An edited function stays where it is, so the diff
+kit block `blocks/checked-units/SKILL.md` says. An edited function stays where it is, so the diff
 shows an edit, not a delete plus an add; a move is its own chunk.
 
 Code stays inline by default. Before a chunk adds or splits out a function, file, or module, apply
-`~/.claude/skills/minimize-reader-load/SKILL.md`, and name the condition that holds in the
+the kit block `blocks/when-to-extract/SKILL.md`, and name the reason that holds in the
 intent line.
 
 A file delete, a rename, or a merge-conflict resolution is its own chunk and never rides along
@@ -143,7 +143,7 @@ no cleanup gate, no readability review, no extra tooling to set up or tear down.
   behavior is split in the list, never walked up in stages.
 - A chunk touches only what its behavior names. A new symbol lands with its first caller. An
   edited function stays in place.
-- Code stays inline unless `~/.claude/skills/minimize-reader-load/SKILL.md` allows the
+- Code stays inline unless the kit block `blocks/when-to-extract/SKILL.md` allows the
   extraction.
 - A delete, rename, or conflict resolution is its own chunk, shown as `git diff --stat` plus
   the file list.

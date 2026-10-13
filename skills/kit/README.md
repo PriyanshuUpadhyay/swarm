@@ -18,9 +18,9 @@ Workflow skills for coding agents (Claude Code, Codex, Antigravity). Each skill 
 | `decisions` | Record consequential choices as in-repo ADRs |
 | `cleanup-gate` | A full cleanup pass, only on request |
 | `engineering-standards` | Scoped engineering rules for design, code and review |
-| `prove-it-works` | What counts as proof that a change works |
-| `sequence-verifiable-units` | Order multi-step work so each step can be checked |
-| `minimize-reader-load` | When code gets its own function, file or module |
+| `prove-it-works` | What counts as proof that a change works (points to `blocks/prove-it-works`) |
+| `sequence-verifiable-units` | Order multi-step work so each step can be checked (points to `blocks/checked-units`) |
+| `minimize-reader-load` | When code gets its own function, file or module (points to `blocks/when-to-extract`) |
 | `ink` | Pictures, generative plates, films, and websites drawn by code, from a story or a visual reference |
 | `orchestrate-claude`, `orchestrate-codex`, `orchestrate-agy` | Runtime adapters that bind the skills' worker needs to each agent CLI |
 
