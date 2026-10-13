@@ -32,7 +32,7 @@ destinations. Ask for them.
 
 Record each reference in `ink/01-intake.md`. Find, inspect, and measure the references as the
 kit's `blocks/reference-analysis/SKILL.md` says. In ink, the recipes in
-[mark-making.md](mark-making.md) give starting numbers where a reference is too small to measure.
+the kit's `blocks/build-canvas/references/mark-making.md` give starting numbers where a reference is too small to measure.
 
 ## Style grammar template
 

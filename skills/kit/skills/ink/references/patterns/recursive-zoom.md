@@ -45,4 +45,4 @@ wrong first prototype. Check `t=0` against `t=1` and run the pops check in [qa.m
 ancestor skip shows up there as a pop if a rule above is broken.
 
 This pattern sets the structure only. The look comes from the references, built with
-[mark-making.md](../mark-making.md).
+the kit's `blocks/build-canvas/references/mark-making.md`.

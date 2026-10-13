@@ -16,7 +16,7 @@
 A frame with the right palette but flat fills reads as clip art. Frames that people call
 hand-drawn have more layers on each mass, lines that swell, tone made from marks, and a paper
 surface. This file gives recipes with starting numbers. Measure the reference, then replace the
-numbers with the measured ones in `ink/02-look.md`.
+numbers with the measured ones in the look file.
 
 Example. A 2026-09 trial drew a cloud tunnel with one flat fill and one even black outline per ring.
 The reference cloud had a base, a lit plane, a core shadow, halftone dots only in that shadow, a
@@ -175,7 +175,7 @@ misregistered plate, or a stray mark).
 | spectral.js | pigment mixing, also in GLSL | any | MIT |
 
 Every recipe above also fits in a few lines of plain Canvas 2D. On a GPU, each surface layer becomes
-a post pass (see the toolbox in [build.md](build.md)).
+a post pass (see the toolbox in [../SKILL.md](../SKILL.md)).
 
 ## Sources
 
