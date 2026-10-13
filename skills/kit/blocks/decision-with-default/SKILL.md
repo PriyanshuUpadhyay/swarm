@@ -1,7 +1,17 @@
-# decision-with-default
-Concept: A real fork is asked as a decision on the claim it changes, with your recommendation pre-picked.
-Serves: contracts, design
-Source: html-plan pack: skills/html-plan/SKILL.md:80 (rule 6), :162-165 (answer endings), skills/html-plan/references/blocks.md:163-166 (doc-ask); references/plan-layout.md:14-15 (unanswered choice)
+---
+name: decision-with-default
+description: "A real fork is asked as a decision on the claim it changes, with your recommendation pre-picked."
+license: MIT
+metadata:
+  kind: rule
+  owns: "a real fork asked on the claim it changes, with a default"
+  serves: "contracts, design"
+  needs: "a claim or step id"
+  gives: "one answer line per decision"
+  conflicts: ""
+  users: "flow"
+  source: "html-plan pack: skills/html-plan/SKILL.md:80 (rule 6), :162-165 (answer endings), skills/html-plan/references/blocks.md:163-166 (doc-ask); references/plan-layout.md:14-15 (unanswered choice)"
+---
 
 ## Rules
 - A decision sits on the claim it changes, after that claim's exhibit and before its child claims.

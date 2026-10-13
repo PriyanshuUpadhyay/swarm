@@ -1,7 +1,17 @@
-# red-first-check
-Concept: Each behavior gets the check its layer needs, the check fails before the change, and the evidence is the command and its output.
-Serves: build
-Source: skills/prove-it-works/SKILL.md:9-10 (proxy), :12-15 (expected results first), :17-18 (smallest check per behavior), :21-29 (check by layer), :38-46 (ladder), :55-56 (rerunnable)
+---
+name: red-first-check
+description: "Each behavior gets the check its layer needs, the check fails before the change, and the evidence is the command and its output."
+license: MIT
+metadata:
+  kind: rule
+  owns: "the check for a behavior, failing before the change"
+  serves: "build"
+  needs: "a behavior"
+  gives: "a failing then passing check with its output"
+  conflicts: ""
+  users: "flow"
+  source: "skills/prove-it-works/SKILL.md:9-10 (proxy), :12-15 (expected results first), :17-18 (smallest check per behavior), :21-29 (check by layer), :38-46 (ladder), :55-56 (rerunnable)"
+---
 
 ## Rules
 - Choose the expected result from the requested behavior and the contracts before you look at the code. Include failure and boundary cases.
