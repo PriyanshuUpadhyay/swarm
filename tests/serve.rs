@@ -1501,3 +1501,43 @@ fn a_pi_chair_log_reads_as_rows() {
         assert!(body.contains(text), "{text} missing from {body}");
     }
 }
+
+/// pi has no hook to report its log, so the server finds it by the session id that `launch` gave
+/// pi, `<session>-<agent>` (ADR 0086).
+#[test]
+fn a_pi_log_is_found_by_its_session_id() {
+    let server = Server::new();
+    let sessions = server.dir.join("home/.pi/agent/sessions/--work--");
+    fs::create_dir_all(&sessions).unwrap();
+    let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("packages/transcript/src/fixtures/pi-chat.jsonl");
+    let connection = swarm::store::open(&server.dir.join("home/.swarm/swarm.db")).unwrap();
+    let chair = format!("{}-orchestrator", server.session);
+    swarm::store::set_chair(&connection, &server.session, Some(("pi", &chair))).unwrap();
+    swarm::store::add_agent(&connection, &server.session, "piseat", "chat").unwrap();
+    swarm::store::set_provider(&connection, &server.session, "piseat", "pi").unwrap();
+    for agent in ["chair", "piseat"] {
+        let path = format!(
+            "/api/rows?session={}&agent={agent}&tail=200",
+            server.session
+        );
+        let (status, _, body) = server.request("GET", &path, "", "", true);
+        assert_eq!(status, 404, "{agent} before its log: {body}");
+    }
+    for id in [chair, format!("{}-piseat", server.session)] {
+        fs::copy(
+            &fixture,
+            sessions.join(format!("2026-10-14T10-00-00-000Z_{id}.jsonl")),
+        )
+        .unwrap();
+    }
+    for agent in ["chair", "piseat"] {
+        let path = format!(
+            "/api/rows?session={}&agent={agent}&tail=200",
+            server.session
+        );
+        let (status, _, body) = server.request("GET", &path, "", "", true);
+        assert_eq!(status, 200, "{agent}: {body}");
+        assert!(body.contains("One test fails."), "{agent}: {body}");
+    }
+}

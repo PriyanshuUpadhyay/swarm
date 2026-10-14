@@ -2912,19 +2912,20 @@ fn resolve_log(root: &Path, session: &str, agent: &str) -> Result<Log, ApiError>
         .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "database read failed"))?;
     let row = connection
         .query_row(
-            "SELECT chair_log, chair_provider FROM session WHERE id = ?1",
+            "SELECT chair_log, chair_provider, chair_id FROM session WHERE id = ?1",
             [session],
             |row| {
                 Ok((
                     row.get::<_, Option<String>>(0)?,
                     row.get::<_, Option<String>>(1)?,
+                    row.get::<_, Option<String>>(2)?,
                 ))
             },
         )
         .optional()
         .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "session read failed"))?
         .ok_or_else(|| error(StatusCode::NOT_FOUND, "unknown session"))?;
-    let (path, format) = if agent == "chair" {
+    let (path, format, pi_id) = if agent == "chair" {
         row
     } else {
         let row = swarm::store::agents(&connection, session)
@@ -2932,11 +2933,18 @@ fn resolve_log(root: &Path, session: &str, agent: &str) -> Result<Log, ApiError>
             .into_iter()
             .find(|row| row.id == agent)
             .ok_or_else(|| error(StatusCode::NOT_FOUND, "unknown agent"))?;
-        (row.log, row.provider)
+        (row.log, row.provider, Some(format!("{session}-{agent}")))
     };
-    let path = path
-        .filter(|path| !path.is_empty())
-        .ok_or_else(|| error(StatusCode::NOT_FOUND, "no transcript log"))?;
+    // pi has no hook to report its log; `launch` gave it the id `<session>-<agent>` (ADR 0086).
+    // ponytail: each read scans pi's session folders until a log is stored; store the found path
+    // if a read gets slow.
+    let path = path.filter(|path| !path.is_empty()).or_else(|| {
+        (format.as_deref() == Some("pi"))
+            .then(|| crate::pi_chair_log(pi_id.as_deref()?))
+            .flatten()
+            .map(|path| path.to_string_lossy().into_owned())
+    });
+    let path = path.ok_or_else(|| error(StatusCode::NOT_FOUND, "no transcript log"))?;
     let format = format
         .filter(|format| swarm::view::transcript::LOG_FORMATS.contains(&format.as_str()))
         .ok_or_else(|| error(StatusCode::NOT_FOUND, "no transcript format"))?;
