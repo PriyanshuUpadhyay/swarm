@@ -106,17 +106,19 @@ fn parseAssistant(arena: std.mem.Allocator, events: *std.ArrayList(root.Event), 
             const input = root.tokenCount(usage.object, "input");
             const read = root.tokenCount(usage.object, "cacheRead");
             const write = root.tokenCount(usage.object, "cacheWrite");
-            try events.append(arena, .{ .usage = .{
-                .meta = meta,
-                .source = .pi,
-                .kind = .context,
-                // Pi counts cached input apart from `input`, as Claude does.
-                .context_tokens = if (input != null and read != null and write != null) input.? + read.? + write.? else null,
-                .input_tokens = input,
-                .output_tokens = root.tokenCount(usage.object, "output"),
-                .cache_read_tokens = read,
-                .cache_write_tokens = write,
-            } });
+            try events.append(arena, .{
+                .usage = .{
+                    .meta = meta,
+                    .source = .pi,
+                    .kind = .context,
+                    // Pi counts cached input apart from `input`, as Claude does.
+                    .context_tokens = if (input != null and read != null and write != null) input.? + read.? + write.? else null,
+                    .input_tokens = input,
+                    .output_tokens = root.tokenCount(usage.object, "output"),
+                    .cache_read_tokens = read,
+                    .cache_write_tokens = write,
+                },
+            });
         }
     }
     var called_tool = false;
