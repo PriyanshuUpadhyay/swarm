@@ -123,12 +123,18 @@ fn parseAssistant(arena: std.mem.Allocator, events: *std.ArrayList(root.Event), 
     }
     var called_tool = false;
     var has_unknown = false;
+    var wrote_text = false;
     if (content == .array) {
         for (content.array.items) |block| {
             const block_type = if (block == .object) root.str(block.object, "type") else "";
             if (std.mem.eql(u8, block_type, "text")) {
                 const text = root.str(block.object, "text");
-                if (text.len != 0) try events.append(arena, .{ .agent_message_chunk = .{ .meta = meta, .text = text } });
+                if (text.len == 0) continue;
+                // Every block of one reply shares its id, and the view joins chunks of one row
+                // with no separator, so a later block starts a new paragraph.
+                const chunk = if (wrote_text) try std.mem.concat(arena, u8, &.{ "\n\n", text }) else text;
+                try events.append(arena, .{ .agent_message_chunk = .{ .meta = meta, .text = chunk } });
+                wrote_text = true;
             } else if (std.mem.eql(u8, block_type, "thinking")) {
                 const thinking = root.str(block.object, "thinking");
                 if (thinking.len != 0) try events.append(arena, .{ .agent_thought_chunk = .{ .meta = meta, .text = thinking } });
@@ -254,6 +260,17 @@ test "pi records keep their ids, tool links, and turn ends" {
     try std.testing.expectEqual(.aborted, events[23].turn_ended.reason);
     try std.testing.expectEqualStrings("compaction", events[24].system_message.kind);
     try std.testing.expectEqual(root.SessionInfoKind.title, events[25].session_info.kind);
+}
+
+test "two text blocks of one pi reply stay apart" {
+    var state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer state.deinit();
+    const events = try parseLine(state.allocator(),
+        \\{"type":"message","id":"a1","parentId":"u1","timestamp":"t","message":{"role":"assistant","content":[{"type":"text","text":"First."},{"type":"text","text":"Second."}],"stopReason":"toolUse"}}
+    );
+    // The view joins chunks of one row with no separator.
+    try std.testing.expectEqualStrings("First.", events[0].agent_message_chunk.text);
+    try std.testing.expectEqualStrings("\n\nSecond.", events[1].agent_message_chunk.text);
 }
 
 test "a pi session id comes from its file name" {
