@@ -1309,6 +1309,7 @@ async fn workspace_live_targets(
     let sessions: Vec<_> = workspace
         .chats
         .iter()
+        .chain(&workspace.unlisted)
         .flat_map(|c| c.sessions.iter().cloned())
         .collect();
     if sessions.is_empty() {

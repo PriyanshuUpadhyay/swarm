@@ -139,7 +139,6 @@ fn live_no_chair_ended_order() {
     let mut agents = json!({});
     for (id, at, state, provider) in [
         ("ended-new", 50, "ended", Some("codex")),
-        ("no-chair", 40, "working", None),
         ("live-old", 10, "working", Some("codex")),
         ("ended-old", 20, "ended", Some("codex")),
         ("live-new", 30, "working", Some("codex")),
@@ -154,37 +153,21 @@ fn live_no_chair_ended_order() {
     let tree = tree::build(&folder_snapshot(sessions, agents), &OwnerChoices::default());
     assert_eq!(
         tree.chats().map(|c| c.id.as_str()).collect::<Vec<_>>(),
-        ["live-new", "live-old", "no-chair", "ended-new", "ended-old"]
+        ["live-new", "live-old", "ended-new", "ended-old"]
     );
 }
 #[test]
 fn provider_and_title_fallback() {
     let mut s = session("provider-session", "/repo", 1);
-    s["chair_provider"] = Value::Null;
     s["title"] = Value::Null;
-    let mut worker = agent("worker", "working");
-    worker["provider"] = json!("claude");
     let snapshot = folder_snapshot(
-        vec![s.clone()],
-        json!({"provider-session":[worker.clone(),agent("orchestrator","working")]}),
+        vec![s],
+        json!({"provider-session":[agent("orchestrator","working")]}),
     );
     let tree = tree::build(&snapshot, &OwnerChoices::default());
     let c = tree.chats().next().unwrap();
     assert_eq!(c.provider.as_deref(), Some("codex"));
     assert_eq!(c.title, "codex provider");
-    let tree = tree::build(
-        &folder_snapshot(vec![s.clone()], json!({"provider-session":[worker]})),
-        &OwnerChoices::default(),
-    );
-    assert_eq!(
-        tree.chats().next().unwrap().provider.as_deref(),
-        Some("claude")
-    );
-    let tree = tree::build(
-        &folder_snapshot(vec![s], json!({})),
-        &OwnerChoices::default(),
-    );
-    assert_eq!(tree.chats().next().unwrap().title, "Chat provider");
 }
 #[test]
 fn resolved_names_and_titles() {
@@ -370,6 +353,35 @@ fn hides_a_closed_chat_with_no_log() {
     assert_eq!(
         rows.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(),
         ["/repo", "chat:logged", "chat:starting"]
+    );
+}
+#[test]
+fn hides_a_live_chat_whose_log_swarm_cannot_read() {
+    // A lane that a pi chair opened names no chair CLI, so its log can never be read.
+    let mut lane = session("lane", "/repo", 1);
+    lane["chair_provider"] = Value::Null;
+    let snap = folder_snapshot(
+        vec![lane, session("logged", "/repo", 2)],
+        json!({"lane":[agent("orchestrator","working"),agent("worker","working")],"logged":[agent("orchestrator","ended")]}),
+    );
+    let owner = OwnerChoices::default();
+    let rows = sections(&snap, &owner, &ViewState::default(), false)
+        .remove(0)
+        .rows;
+    assert_eq!(
+        rows.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(),
+        ["/repo", "chat:logged"]
+    );
+    // The workspace still holds it, so a workspace delete closes its live agents.
+    let tree = tree::build(&snap, &owner);
+    let workspace = &tree.projects[0].workspaces[0];
+    assert_eq!(
+        workspace
+            .unlisted
+            .iter()
+            .map(|c| c.id.as_str())
+            .collect::<Vec<_>>(),
+        ["lane"]
     );
 }
 #[test]

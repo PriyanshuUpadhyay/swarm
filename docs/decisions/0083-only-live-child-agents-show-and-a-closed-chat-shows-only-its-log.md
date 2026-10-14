@@ -16,7 +16,9 @@ In the context of the pane strip, the sidebar and the chat page, facing a strip 
 full of ended agents and a disabled composer on chats whose chair pane had closed, we chose to show
 a child agent only while its pane is alive (in the strip, the sidebar rows and the counts), and to
 show a chat whose chair has no live pane as its log with one "Continue chat" button that opens
-Switch model, and to list no chat whose agents have all ended and that has no log, and neglected
-keeping finished children dimmed until dismissed (ADR 0056), to achieve a view of only the work
-that can still act, accepting that a finished child's final answer is read in the chair's log or
-with `swarm attach`, not in its own column.
+Switch model, and to list no chat that the app cannot open (its chair CLI has no log format that
+swarm reads, or all its agents ended and it has no log) while a workspace delete still closes its
+live agents, and neglected keeping finished children dimmed until dismissed (ADR 0056), to achieve
+a view of only the work that can still act, accepting that a finished child's final answer is read
+in the chair's log or with `swarm attach`, not in its own column, and that a lane a pi chair opens
+does not show, with its child agents.

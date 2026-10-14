@@ -132,6 +132,9 @@ pub struct Workspace {
     pub mark: Option<String>,
     pub removed: bool,
     pub chats: Vec<Chat>,
+    /// Chats the app cannot open, so no view lists them (ADR 0083). A workspace delete still
+    /// closes their live agents.
+    pub unlisted: Vec<Chat>,
 }
 impl Workspace {
     pub fn chat(&self, id: &str) -> Option<&Chat> {
@@ -335,6 +338,7 @@ pub fn build(snapshot: &Value, owner: &OwnerChoices) -> Tree {
             if matching.is_empty() && !ws.missing && !opened {
                 continue;
             }
+            let (listed, unlisted) = chats(matching, snapshot, owner);
             workspaces.push(Workspace {
                 path: ws.path.clone(),
                 name: ws.branch.clone().unwrap_or_else(|| basename(&ws.path)),
@@ -348,7 +352,8 @@ pub fn build(snapshot: &Value, owner: &OwnerChoices) -> Tree {
                     None
                 },
                 removed: false,
-                chats: chats(matching, snapshot, owner),
+                chats: listed,
+                unlisted,
             });
         }
         let unmatched: Vec<_> = project_sessions
@@ -360,6 +365,7 @@ pub fn build(snapshot: &Value, owner: &OwnerChoices) -> Tree {
         });
         for (removed, sessions) in [(false, hub), (true, removed)] {
             if !sessions.is_empty() {
+                let (listed, unlisted) = chats(sessions, snapshot, owner);
                 workspaces.push(Workspace {
                     path: if removed {
                         format!("{}#removed", fact.path)
@@ -375,7 +381,8 @@ pub fn build(snapshot: &Value, owner: &OwnerChoices) -> Tree {
                     missing: false,
                     mark: None,
                     removed,
-                    chats: chats(sessions, snapshot, owner),
+                    chats: listed,
+                    unlisted,
                 });
             }
         }
@@ -425,7 +432,8 @@ pub fn build(snapshot: &Value, owner: &OwnerChoices) -> Tree {
     Tree { projects }
 }
 
-fn chats(sessions: Vec<Value>, snapshot: &Value, owner: &OwnerChoices) -> Vec<Chat> {
+/// The chats the app can open, then the ones it cannot.
+fn chats(sessions: Vec<Value>, snapshot: &Value, owner: &OwnerChoices) -> (Vec<Chat>, Vec<Chat>) {
     let by_id: BTreeMap<_, _> = sessions
         .iter()
         .filter_map(|s| s["id"].as_str().map(|id| (id, s)))
@@ -455,6 +463,7 @@ fn chats(sessions: Vec<Value>, snapshot: &Value, owner: &OwnerChoices) -> Vec<Ch
         groups.entry(group).or_default().push(session.clone());
     }
     let mut result = Vec::new();
+    let mut unlisted = Vec::new();
     for mut sessions in groups.into_values() {
         sessions.sort_by(|a, b| {
             b["created_at"]
@@ -501,25 +510,18 @@ fn chats(sessions: Vec<Value>, snapshot: &Value, owner: &OwnerChoices) -> Vec<Ch
             .as_array()
             .cloned()
             .unwrap_or_default();
-        // A closed chat with no log has nothing to show, so it is not listed (ADR 0083). A chat
-        // with an agent that may be live stays, so workspace delete still finds and closes it.
-        if known
+        // The rows route reads a chair log only in these formats, and a closed chat with no log
+        // has nothing to show (ADR 0083).
+        let readable = matches!(
+            current["chair_provider"].as_str(),
+            Some("claude" | "codex" | "agy")
+        );
+        let closed_without_log = known
             && nonblank(current["chair_log"].as_str()).is_none()
             && agents
                 .iter()
-                .all(|a| AgentStatus::agent(a) == AgentStatus::Ended)
-        {
-            continue;
-        }
-        let provider = nonblank(current["chair_provider"].as_str())
-            .or_else(|| {
-                nonblank(
-                    all.iter()
-                        .find(|a| a["id"] == "orchestrator")
-                        .and_then(|a| a["provider"].as_str()),
-                )
-            })
-            .or_else(|| nonblank(all.first().and_then(|a| a["provider"].as_str())));
+                .all(|a| AgentStatus::agent(a) == AgentStatus::Ended);
+        let provider = nonblank(current["chair_provider"].as_str());
         let title = nonblank(owner.chat_names.get(&key).map(String::as_str))
             .or_else(|| {
                 sessions
@@ -569,7 +571,7 @@ fn chats(sessions: Vec<Value>, snapshot: &Value, owner: &OwnerChoices) -> Vec<Ch
             })
             .cloned()
             .collect();
-        result.push(Chat {
+        let chat = Chat {
             id,
             key,
             sessions,
@@ -581,7 +583,12 @@ fn chats(sessions: Vec<Value>, snapshot: &Value, owner: &OwnerChoices) -> Vec<Ch
             is_running,
             status,
             counts,
-        });
+        };
+        if readable && !closed_without_log {
+            result.push(chat);
+        } else {
+            unlisted.push(chat);
+        }
     }
     result.sort_by(|a, b| {
         a.state_order()
@@ -589,7 +596,7 @@ fn chats(sessions: Vec<Value>, snapshot: &Value, owner: &OwnerChoices) -> Vec<Ch
             .then_with(|| b.last_activity.cmp(&a.last_activity))
             .then_with(|| a.key.cmp(&b.key))
     });
-    result
+    (result, unlisted)
 }
 
 pub fn order_workspaces(
