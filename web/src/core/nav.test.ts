@@ -151,6 +151,12 @@ describe("recent work", () => {
     ]);
     expect(recentWork(sample, snap, 1)).toHaveLength(1);
   });
+
+  it("skips a more row, which the server sends with no selection", () => {
+    const more = row("more:/r/app", "more", 1, { selection: null });
+    const withMore = tree([section("/r/app", "project", [appMain, docs, more])]);
+    expect(recentWork(withMore, null).map((r) => r.session)).toEqual(["docs"]);
+  });
 });
 
 describe("owner choices", () => {

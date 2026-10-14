@@ -108,7 +108,7 @@ export function RowMenu({ app, listRef }: { app: App; listRef: RefObject<HTMLDiv
 }
 
 function ChatItems({ app, row, fold }: { app: App; row: SidebarRow; fold: React.ReactNode }) {
-  const session = row.selection.chat;
+  const session = row.selection?.chat;
   if (row.archived) return null;
   return (
     <>
@@ -335,7 +335,7 @@ function RowCard({ row }: { row: SidebarRow }) {
             <StatusGlyph status={c.status} /> {c.count}
           </span>
         ))}
-        {row.selection.chat && <span className="font-mono">{row.selection.chat.slice(0, 8)}</span>}
+        {row.selection?.chat && <span className="font-mono">{row.selection?.chat.slice(0, 8)}</span>}
       </div>
     </div>
   );

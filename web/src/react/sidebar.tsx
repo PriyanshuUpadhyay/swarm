@@ -179,7 +179,7 @@ function WorkspaceList({ app }: { app: App }) {
 
 /** The open chat's row, or with no chat open, the selected workspace's. */
 const isCurrent = (row: NavRow, openId: string | null, workspace: string | null) =>
-  openId ? row.kind === "chat" && row.row?.selection.chat === openId : row.kind === "workspace" && row.id === workspace;
+  openId ? row.kind === "chat" && row.row?.selection?.chat === openId : row.kind === "workspace" && row.id === workspace;
 
 /** One sidebar line. Memoized on its wire object, so a key move renders only two rows. */
 const RowView = memo(function RowView({ row, selected, current, archive }: { row: NavRow; selected: boolean; current: boolean; archive: boolean }) {
@@ -244,7 +244,7 @@ const RowView = memo(function RowView({ row, selected, current, archive }: { row
     <div
       {...common}
       className="trow"
-      data-session={r.kind === "chat" ? (r.selection.chat ?? undefined) : undefined}
+      data-session={r.kind === "chat" ? (r.selection?.chat ?? undefined) : undefined}
       data-dimmed={r.dimmed || undefined}
       draggable={r.kind === "workspace" && !r.archived && !archive ? true : undefined}
       style={{ paddingLeft: 12 + r.depth * 14 }}

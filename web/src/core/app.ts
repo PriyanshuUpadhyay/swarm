@@ -494,7 +494,7 @@ export class App {
       this.restored = true;
       const row = tree.sections.flatMap((s) => s.rows).find((r) => r.id === tree.selectedRow);
       if (row && !this.openId && !this.workspace) {
-        if (row.selection.chat) this.openChat(row.selection.chat, undefined, { write: false });
+        if (row.selection?.chat) this.openChat(row.selection?.chat, undefined, { write: false });
         else if (row.kind === "workspace") this.workspace = row.id;
         void this.refreshSnapshot();
       }
@@ -614,7 +614,7 @@ export class App {
   private runRow(nav: NavRow, e?: KeyboardEvent) {
     const row = nav.row;
     if (!row) return this.toggle(nav.id);
-    const sel = row.selection;
+    const sel = row.selection ?? { workspace: null, chat: null, agentSession: null, agent: null };
     // The archive view only shows; Restore is in the menu, and an archived workspace takes no selection.
     if (this.treeName === "archived") {
       if (row.kind === "chat" && sel.chat) this.openChat(sel.chat, e, { write: false });
@@ -759,7 +759,7 @@ export class App {
 
   /** A chat's title as the tree lists it. */
   chatTitle(session: string): string {
-    return chatRows(this.tree).find((r) => r.selection.chat === session)?.title ?? session.slice(0, 8);
+    return chatRows(this.tree).find((r) => r.selection?.chat === session)?.title ?? session.slice(0, 8);
   }
 
   // ---- tabs ----
@@ -898,12 +898,12 @@ export class App {
     const workspace = workspaceOf(this.tree, this.snapshot, sessionId);
     const moved = workspace !== null && workspace !== this.workspace;
     if (workspace) this.workspace = workspace;
-    const row = chatRows(this.tree).find((r) => r.selection.chat === sessionId);
+    const row = chatRows(this.tree).find((r) => r.selection?.chat === sessionId);
     // A restore leaves the keyboard row where it was.
     if (row && opts.write !== false) this.selected = row.id;
     if (workspace && this.revision !== null && opts.write !== false) {
       // Swift's select: open the tab, then select; only a move to another workspace opens its project.
-      const section = this.tree?.sections.find((s) => s.rows.some((r) => r.selection.chat === sessionId));
+      const section = this.tree?.sections.find((s) => s.rows.some((r) => r.selection?.chat === sessionId));
       if (moved && section && !section.expanded) void this.choose({ op: "expand", id: section.collapseId });
       void this.choose({ op: "open_tab", workspace, chat: sessionId });
       void this.choose({ op: "selected_chat", workspace, chat: sessionId, recording_history: opts.history !== false });
@@ -1376,7 +1376,7 @@ export class App {
 
   renameChat(session: string) {
     const workspace = workspaceOf(this.tree, this.snapshot, session);
-    const row = chatRows(this.tree).find((r) => r.selection.chat === session);
+    const row = chatRows(this.tree).find((r) => r.selection?.chat === session);
     if (!workspace) return;
     this.ask({ title: "Rename chat", value: row?.title ?? "", save: (name) => void this.choose({ op: "rename_chat", workspace, chat: session, name }) });
   }
@@ -1421,7 +1421,7 @@ export class App {
       const title = w.project && !w.row.pinned ? `${w.project} / ${w.row.title}` : w.row.title;
       items.push({ id: `workspace:${w.row.id}`, title, subtitle: w.row.detail || undefined, group: "workspace", status: w.row.status, recency: w.at, run: () => void this.selectWorkspace(w.row.id) });
       for (const c of w.chats) {
-        const session = c.selection.chat!;
+        const session = c.selection?.chat!;
         chats.push({ id: `chat:${session}`, title: c.title, subtitle: title, group: "chat", status: c.status, recency: recency(this.snapshot, session), run: () => this.openChat(session) });
         const info = this.snapshot?.sessions.find((s) => s.id === session);
         for (const a of this.snapshot?.agents[session] ?? [])

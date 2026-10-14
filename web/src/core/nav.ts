@@ -28,7 +28,8 @@ export type SidebarRow = {
   newChatEnabled: boolean;
   dimmed: boolean;
   fields: Field[];
-  selection: Selection;
+  // Null on a "more" row (Option<Selection> in src/view/sidebar.rs).
+  selection: Selection | null;
 };
 
 export type Section = {
@@ -177,7 +178,7 @@ export function chatRows(tree: TreeView | null): SidebarRow[] {
 
 /** The workspace a session belongs to: from the tree, else from the snapshot. */
 export function workspaceOf(tree: TreeView | null, snapshot: Snapshot | null, session: string): string | null {
-  for (const s of tree?.sections ?? []) for (const r of s.rows) if (r.selection.chat === session && r.selection.workspace) return r.selection.workspace;
+  for (const s of tree?.sections ?? []) for (const r of s.rows) if (r.selection?.chat === session && r.selection?.workspace) return r.selection?.workspace;
   const row = snapshot?.sessions.find((s) => s.id === session);
   return row ? (row.workspace ?? row.cwd) : null;
 }
@@ -237,10 +238,10 @@ export function recentWork(tree: TreeView | null, snapshot: Snapshot | null, lim
   const out: (RecentChat & { at: number })[] = [];
   for (const section of tree?.sections ?? [])
     for (const row of section.rows) {
-      const session = row.selection.chat;
+      const session = row.selection?.chat;
       if (row.kind !== "chat" || !session || seen.has(session)) continue;
       seen.add(session);
-      const path = row.selection.workspace ?? "";
+      const path = row.selection?.workspace ?? "";
       const ws = workspaceRow(tree, path);
       // The pinned section mixes projects; its project is the one whose section also lists the workspace.
       const home = section.kind === "project" ? section : tree!.sections.find((s) => s.kind === "project" && s.rows.some((r) => r.id === path));
@@ -320,8 +321,8 @@ export function paletteSources(tree: TreeView | null, snapshot: Snapshot | null)
   for (const section of tree?.sections ?? [])
     for (const row of section.rows) {
       if (row.kind !== "workspace" || workspaces.some((w) => w.row.id === row.id)) continue;
-      const chats = section.rows.filter((r) => r.kind === "chat" && r.selection.workspace === row.id);
-      const ats = chats.map((c) => (c.selection.chat ? recency(snapshot, c.selection.chat) : null)).filter((a): a is number => a != null);
+      const chats = section.rows.filter((r) => r.kind === "chat" && r.selection?.workspace === row.id);
+      const ats = chats.map((c) => (c.selection?.chat ? recency(snapshot, c.selection?.chat) : null)).filter((a): a is number => a != null);
       workspaces.push({ row, project: section.kind === "project" ? section.title : "", at: ats.length ? Math.max(...ats) : null, chats });
     }
   const byActivity = [...workspaces].sort((a, b) => (b.at ?? 0) - (a.at ?? 0) || (a.row.id < b.row.id ? -1 : 1));
