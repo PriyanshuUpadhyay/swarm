@@ -16,7 +16,8 @@ hook config that swarm can pass at launch, and a state signal that pi already se
 that standard from the pane, where the tmux-swarm adapter pipes each pane's raw output to
 `swarm status-feed`, which stores each root report as the agent's state the way `swarm hook`
 does, and to give each pi agent the session id `<swarm session>-<agent>` with `--session-id`, so
-the chair is named at launch and the server finds any pi log by that id, and to pass the host
+the chair is named at launch, the feed stores each pi agent's log found by that id, and the
+server finds an unstored pi log by that id too, and to pass the host
 contract with `--append-system-prompt`, and neglected a swarm pi extension that calls `swarm
 hook`, the Agent Host Protocol, and a new store column for pi's id, to achieve live state, rows,
 and a host contract for pi with no file in pi's config and a state path that any agent that
