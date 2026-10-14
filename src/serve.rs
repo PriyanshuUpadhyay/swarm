@@ -2938,7 +2938,7 @@ fn resolve_log(root: &Path, session: &str, agent: &str) -> Result<Log, ApiError>
         .filter(|path| !path.is_empty())
         .ok_or_else(|| error(StatusCode::NOT_FOUND, "no transcript log"))?;
     let format = format
-        .filter(|format| matches!(format.as_str(), "claude" | "codex" | "agy"))
+        .filter(|format| swarm::view::transcript::LOG_FORMATS.contains(&format.as_str()))
         .ok_or_else(|| error(StatusCode::NOT_FOUND, "no transcript format"))?;
     if !Path::new(&path).is_file() {
         return Err(error(StatusCode::NOT_FOUND, "transcript log unavailable"));

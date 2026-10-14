@@ -11,7 +11,7 @@ fn fail(init: std.process.Init, message: []const u8) noreturn {
 
 pub fn main(init: std.process.Init) !void {
     const args = try init.minimal.args.toSlice(init.arena.allocator());
-    const usage = "usage: transcript [--follow] [--format claude|codex|agy] [--tail N] [--before OFFSET] [--from OFFSET] <file.jsonl>\n";
+    const usage = "usage: transcript [--follow] [--format claude|codex|agy|pi] [--tail N] [--before OFFSET] [--from OFFSET] <file.jsonl>\n";
     var follow = false;
     var format: transcript.Format = .claude;
     var has_format = false;
@@ -33,6 +33,8 @@ pub fn main(init: std.process.Init) !void {
                 format = .codex;
             } else if (std.mem.eql(u8, name, "agy")) {
                 format = .agy;
+            } else if (std.mem.eql(u8, name, "pi")) {
+                format = .pi;
             } else {
                 fail(init, usage);
             }
@@ -60,7 +62,11 @@ pub fn main(init: std.process.Init) !void {
     if ((before != null and tail == null) or (before != null and follow)) fail(init, usage);
     if (from != null and (!follow or tail != null or before != null)) fail(init, usage);
     const path = args[index];
-    const session_id = if (format == .agy) transcript.agySessionIdFromPath(path) else "";
+    const session_id = switch (format) {
+        .agy => transcript.agySessionIdFromPath(path),
+        .pi => transcript.piSessionIdFromPath(path),
+        else => "",
+    };
 
     const file = std.Io.Dir.cwd().openFile(init.io, path, .{}) catch
         fail(init, "error: cannot read input file\n");

@@ -63,3 +63,11 @@ mid-turn; its second follows a final reply with no tool call, where the parser e
 that ring wakes an idle agent.
 
 `ChairRunFixtureTests` runs all three through the real Zig executable.
+
+## Pi
+
+`pi-chat.jsonl` follows the record shapes of pi 1.2.0 session files (`docs/session-format.md`,
+version 3), checked against 40 local session files on 2026-10-14. It keeps the entry and message
+keys, the block types (text, thinking, toolCall), the usage keys, and the stop reasons seen there.
+Ids, text, models, and paths are neutral values. `bashExecution` and `session_info` follow the docs;
+no local file had them.

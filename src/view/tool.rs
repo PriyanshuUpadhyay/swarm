@@ -49,7 +49,7 @@ pub fn command(input: &Value, name: &str) -> Option<String> {
     }
 }
 pub fn path(input: &Value) -> Option<String> {
-    ["file_path", "TargetFile", "AbsolutePath"]
+    ["file_path", "TargetFile", "AbsolutePath", "path"]
         .into_iter()
         .find_map(|key| input[key].as_str().map(str::to_owned))
 }

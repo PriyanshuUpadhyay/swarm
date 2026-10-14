@@ -256,6 +256,9 @@ impl Row {
         parts.join("\n")
     }
 }
+/// The log formats the transcript tool reads, by provider id.
+pub const LOG_FORMATS: [&str; 4] = ["claude", "codex", "agy", "pi"];
+
 pub fn is_active(rows: &[Row]) -> bool {
     rows.iter()
         .rposition(|row| {

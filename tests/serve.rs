@@ -1475,3 +1475,29 @@ fn choices_external_refresh_busy_and_corrupt_state_keep_tree_visible() {
     assert!(failed["choicesError"].as_str().is_some());
     assert!(failed.to_string().contains("External name"));
 }
+
+#[test]
+fn a_pi_chair_log_reads_as_rows() {
+    let server = Server::new();
+    let log = server.dir.join("pi.jsonl");
+    fs::copy(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("packages/transcript/src/fixtures/pi-chat.jsonl"),
+        &log,
+    )
+    .unwrap();
+    let connection = swarm::store::open(&server.dir.join("home/.swarm/swarm.db")).unwrap();
+    swarm::store::set_chair(&connection, &server.session, Some(("pi", "s1"))).unwrap();
+    swarm::store::set_chair_log(&connection, &server.session, &log).unwrap();
+    let path = format!("/api/rows?session={}&agent=chair&tail=200", server.session);
+    let (status, _, body) = server.request("GET", &path, "", "", true);
+    assert_eq!(status, 200, "{body}");
+    for text in [
+        "Run the tests",
+        "One test fails.",
+        "cargo test",
+        "overloaded",
+    ] {
+        assert!(body.contains(text), "{text} missing from {body}");
+    }
+}

@@ -537,10 +537,9 @@ fn chats(sessions: Vec<Value>, snapshot: &Value, owner: &OwnerChoices) -> (Vec<C
         let started_by_app = current["adapter"] == "tmux-swarm";
         // The rows route reads a chair log only in these formats, and a closed chat with no log
         // has nothing to show (ADR 0083).
-        let readable = matches!(
-            current["chair_provider"].as_str(),
-            Some("claude" | "codex" | "agy")
-        );
+        let readable = current["chair_provider"]
+            .as_str()
+            .is_some_and(|format| super::transcript::LOG_FORMATS.contains(&format));
         let closed_without_log = known
             && nonblank(current["chair_log"].as_str()).is_none()
             && agents

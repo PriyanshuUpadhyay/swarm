@@ -1282,6 +1282,16 @@ fn header_title() {
     assert_eq!(view::title(&Value::Null, None, None), "");
 }
 #[test]
+fn a_pi_tool_names_its_file_by_path() {
+    let input = json!({"path":"/work/ui/a.swift","offset":3,"limit":2});
+    let path = view::path(&input);
+    assert_eq!(path.as_deref(), Some("/work/ui/a.swift"));
+    assert_eq!(
+        view::title(&input, None, path.as_deref()),
+        "a.swift · lines 3–4"
+    );
+}
+#[test]
 fn read_range_edges() {
     for (input, expected) in [
         (

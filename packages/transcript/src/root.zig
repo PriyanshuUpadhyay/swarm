@@ -1,6 +1,6 @@
 const std = @import("std");
 
-pub const Format = enum { claude, codex, agy };
+pub const Format = enum { claude, codex, agy, pi };
 
 pub const Meta = struct {
     session_id: []const u8,
@@ -21,7 +21,7 @@ pub const SessionInfoKind = enum { title, agent_name, model, cwd };
 pub const SessionInfo = struct { meta: Meta, kind: SessionInfoKind, value: []const u8 };
 pub const Usage = struct {
     meta: Meta,
-    source: enum { claude, codex },
+    source: enum { claude, codex, pi },
     kind: enum { context, cost },
     context_tokens: ?i64 = null,
     context_capacity_tokens: ?i64 = null,
@@ -672,6 +672,8 @@ pub fn findTailStart(file: std.Io.File, io: std.Io, end_offset: u64, line_count:
     return 0;
 }
 
+pub const piSessionIdFromPath = @import("pi.zig").sessionIdFromPath;
+
 pub fn agySessionIdFromPath(path: []const u8) []const u8 {
     var parts = std.mem.splitScalar(u8, path, std.fs.path.sep);
     while (parts.next()) |part| {
@@ -728,6 +730,7 @@ const Translator = struct {
                 .claude => parseLine(translator.arena_state.allocator(), line),
                 .codex => @import("codex.zig").parseLine(translator.arena_state.allocator(), line),
                 .agy => @import("agy.zig").parseLine(translator.arena_state.allocator(), line),
+                .pi => @import("pi.zig").parseLine(translator.arena_state.allocator(), line),
             };
             if (translator.format == .codex) {
                 for (events) |event| {
@@ -786,6 +789,10 @@ const Translator = struct {
             } else if (translator.format == .codex and (std.mem.eql(u8, record_type, "response_item") or std.mem.eql(u8, record_type, "event_msg"))) {
                 if (rec.get("payload")) |payload| {
                     if (payload == .object) detail = str(payload.object, "type");
+                }
+            } else if (translator.format == .pi and std.mem.eql(u8, record_type, "message")) {
+                if (rec.get("message")) |message| {
+                    if (message == .object) detail = str(message.object, "role");
                 }
             } else if (translator.format == .agy) {
                 detail = str(rec, "status");
