@@ -387,7 +387,7 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]Event {
             "task_reminder",          "compact_file_reference",    "invoked_skills",
             "date_change",            "dynamic_skill",             "task_status",
             "plan_mode_exit",         "thinking_stripped",         "read_truncation_notice",
-            "plan_mode",              "credential_org",
+            "plan_mode",              "credential_org",            "thinking_drop",
         })) {
             try events.append(arena, .{ .ignored = .{ .meta = meta, .kind = try std.fmt.allocPrint(arena, "attachment/{s}", .{kind}) } });
         } else {
@@ -444,9 +444,11 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]Event {
         return events.items;
     }
     if (oneOf(record_type, &.{
-        "last-prompt",               "atis-latch",               "mode",           "permission-mode", "file-history-snapshot",
-        "file-history-delta",        "pr-link",                  "bridge-session", "frame-link",      "history-suppression",
-        "artifact-autoreact-ledger", "artifact-comment-monitor", "continued-in",   "worktree-state",  "relocated",
+        "last-prompt",               "atis-latch",               "mode",              "permission-mode", "file-history-snapshot",
+        "file-history-delta",        "pr-link",                  "bridge-session",    "frame-link",      "history-suppression",
+        "artifact-autoreact-ledger", "artifact-comment-monitor", "continued-in",      "worktree-state",  "relocated",
+        // Claude Code 2.1.300 keeps each raw model request; the user and assistant records hold the chat.
+        "api-request",               "api-request-blob",         "api-request-shape",
     })) {
         try events.append(arena, .{ .ignored = .{ .meta = meta, .kind = record_type } });
         return events.items;
@@ -1232,6 +1234,19 @@ test "Claude credential, worktree, and relocation records are ignored" {
     try std.testing.expectEqualStrings("attachment/credential_org", credential[0].ignored.kind);
     try std.testing.expectEqualStrings("worktree-state", worktree[0].ignored.kind);
     try std.testing.expectEqualStrings("relocated", relocated[0].ignored.kind);
+}
+
+test "Claude 2.1.300 request records and dropped thinking are ignored" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    for ([_][]const u8{ "api-request", "api-request-blob", "api-request-shape" }) |kind| {
+        const line = try std.fmt.allocPrint(arena, "{{\"type\":\"{s}\",\"sessionId\":\"s1\",\"version\":\"2.1.300\"}}", .{kind});
+        const events = try parseLine(arena, line);
+        try std.testing.expectEqualStrings(kind, events[0].ignored.kind);
+    }
+    const drop = try parseLine(arena, "{\"type\":\"attachment\",\"attachment\":{\"type\":\"thinking_drop\",\"thinkingBlocksSent\":1}}");
+    try std.testing.expectEqualStrings("attachment/thinking_drop", drop[0].ignored.kind);
 }
 
 test "Claude titles agent name and model become session info" {
