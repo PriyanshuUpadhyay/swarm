@@ -143,6 +143,28 @@ impl Adapter {
         for (key, value) in vars {
             command.env(format!("SWARM_{}", key.to_uppercase()), value);
         }
+        // tmux runs a `pipe-pane` line with its server's environment, which another session or
+        // build may have started, so the feed line names its own binary, ids, and home.
+        let var = |name: &str| vars.iter().find(|(key, _)| *key == name).map(|(_, v)| *v);
+        if let (Ok(exe), Some(session), Some(agent), Some(home)) = (
+            std::env::current_exe(),
+            var("session_id"),
+            var("agent_id"),
+            var("home"),
+        ) {
+            command.env(
+                "SWARM_FEED",
+                shell_line(&[
+                    "exec".into(),
+                    "env".into(),
+                    format!("SWARM_SESSION_ID={session}"),
+                    format!("SWARM_AGENT_ID={agent}"),
+                    format!("SWARM_HOME={home}"),
+                    exe.to_string_lossy().into_owned(),
+                    "status-feed".into(),
+                ]),
+            );
+        }
         command
     }
 

@@ -272,7 +272,7 @@ fn init() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-const USAGE: &str = "usage: swarm --version | init | skills refresh | skills manifest <source> <out> | setup status --json | setup [--plan [--json] | --digest <digest>] [--cwd <dir>] [--only <hooks|trust|herdr|skills>,...] [--consent <standing|ask>] [--resume] | hooks status --json | hooks setup [--plan [--json] | --digest <digest>] | managed list [--json] | managed revert (<id>... | --all) [--plan [--json] | --digest <digest>] | adapter check <name> | session new <talk_mode> [--chair <claude|codex|pi>:<id>] (cwd: pwd -P) | session chair <claude|codex|pi>:<id> | session continue <new_id> <old_id> | session archive <id>... | session unarchive <id>... | sessions --json [--archived] | agent add <agent_id> <role> | serve [--port N] [--assets DIR] | ui [--port N] [--assets DIR] | herdr-split | notify <title> [--body <text>] | notices --json | notices --due | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | guard <claude|codex|agy> PreToolUse | roles --json | roles get <role> [--provider <claude|codex|agy>] | roles check --json | roles save --revision <revision> <profile-json> | roles new <name> --revision <revision> | roles rename <old> <new> --revision <revision> | roles copy <from> <to> --revision <revision> | roles delete <name> --revision <revision> | roles reset --revision <revision> | roles set-min-usage <pct> --revision <revision> | providers --json | models --provider <claude|codex|agy> --json | accounts --provider <claude|codex|agy> --json | accounts login --provider <claude|codex> --name <name> --revision <revision> --json [--cwd <dir>] | accounts reset --revision <revision> --json | accounts pick --provider <claude|codex> [--account <auto|NAME> | --session <id> | --last [--all]] [--model <model>] --json | usage --json | usage --format openusage | usage --refresh --provider <claude|codex> --json | agents --json [--all] | messages --json [--after <seq>] | run <claude|codex> [--account <auto|NAME>] [-- <args>...] | launch <agent_id> <role> [--provider <claude|codex|agy>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | answer <agent_id> <prompt_id> <choice> | interrupt <agent_id> | key <agent_id> <Up|C-u> | attach <agent_id> | focus <session_id> <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
+const USAGE: &str = "usage: swarm --version | init | skills refresh | skills manifest <source> <out> | setup status --json | setup [--plan [--json] | --digest <digest>] [--cwd <dir>] [--only <hooks|trust|herdr|skills>,...] [--consent <standing|ask>] [--resume] | hooks status --json | hooks setup [--plan [--json] | --digest <digest>] | managed list [--json] | managed revert (<id>... | --all) [--plan [--json] | --digest <digest>] | adapter check <name> | session new <talk_mode> [--chair <claude|codex|pi>:<id>] (cwd: pwd -P) | session chair <claude|codex|pi>:<id> | session continue <new_id> <old_id> | session archive <id>... | session unarchive <id>... | sessions --json [--archived] | agent add <agent_id> <role> | serve [--port N] [--assets DIR] | ui [--port N] [--assets DIR] | herdr-split | notify <title> [--body <text>] | notices --json | notices --due | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | status-feed | guard <claude|codex|agy> PreToolUse | roles --json | roles get <role> [--provider <claude|codex|agy>] | roles check --json | roles save --revision <revision> <profile-json> | roles new <name> --revision <revision> | roles rename <old> <new> --revision <revision> | roles copy <from> <to> --revision <revision> | roles delete <name> --revision <revision> | roles reset --revision <revision> | roles set-min-usage <pct> --revision <revision> | providers --json | models --provider <claude|codex|agy> --json | accounts --provider <claude|codex|agy> --json | accounts login --provider <claude|codex> --name <name> --revision <revision> --json [--cwd <dir>] | accounts reset --revision <revision> --json | accounts pick --provider <claude|codex> [--account <auto|NAME> | --session <id> | --last [--all]] [--model <model>] --json | usage --json | usage --format openusage | usage --refresh --provider <claude|codex> --json | agents --json [--all] | messages --json [--after <seq>] | run <claude|codex> [--account <auto|NAME>] [-- <args>...] | launch <agent_id> <role> [--provider <claude|codex|agy>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | answer <agent_id> <prompt_id> <choice> | interrupt <agent_id> | key <agent_id> <Up|C-u> | attach <agent_id> | focus <session_id> <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
 
 fn env_var(name: &str) -> Result<String, String> {
     env::var(name).map_err(|_| format!("swarm: {name} not set"))
@@ -409,39 +409,84 @@ fn hook(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             swarm::store::set_chair_log(&connection, &report.session, log)?;
         }
     }
-    let Some(swarm::host::HookState {
-        state,
-        detail,
-        kind,
-    }) = report.state
-    else {
+    let Some(state) = &report.state else {
         return Ok(());
     };
+    if store_state(&connection, &report.session, &report.agent, state)?
+        && let Some(provider) = &report.usage_provider
+    {
+        // Store the state before a usage read can wait on the log or bus.
+        let _ = swarm::store::update_usage(&connection, &report.session, &report.agent, provider);
+    }
+    Ok(())
+}
+
+/// Stores an agent's own report of its state, and posts a notice when it starts to wait. False
+/// when the session holds no such agent.
+fn store_state(
+    connection: &rusqlite::Connection,
+    session: &str,
+    agent: &str,
+    report: &swarm::host::HookState,
+) -> Result<bool, Box<dyn std::error::Error>> {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)?
         .as_secs() as i64;
     // An agent the session does not hold has no row to change, so it gets no notice.
     let Some(old) = swarm::store::set_state(
-        &connection,
-        &report.session,
-        &report.agent,
-        state,
+        connection,
+        session,
+        agent,
+        report.state,
         "hook",
-        detail.as_deref(),
-        kind,
+        report.detail.as_deref(),
+        report.kind,
         now,
     )?
     else {
+        return Ok(false);
+    };
+    if report.state == "waiting" && old.as_deref() != Some("waiting") {
+        notice_waiting(connection, session, agent, report.kind)?;
+    }
+    Ok(true)
+}
+
+/// Reads a pane's raw output until it closes and stores each OSC 7501 report in it, so an agent
+/// that speaks the Program Status Protocol needs no swarm hook. The adapter pipes the pane here.
+fn status_feed() -> Result<(), Box<dyn std::error::Error>> {
+    use std::io::Read;
+    let (Ok(session), Ok(agent)) = (env::var("SWARM_SESSION_ID"), env::var("SWARM_AGENT_ID"))
+    else {
         return Ok(());
     };
-    if let Some(provider) = &report.usage_provider {
-        // Store the state before a usage read can wait on the log or bus.
-        let _ = swarm::store::update_usage(&connection, &report.session, &report.agent, provider);
+    let mut scanner = swarm::host::StatusScanner::default();
+    let mut seen_work = false;
+    let mut stdin = std::io::stdin().lock();
+    let mut chunk = [0; 8192];
+    loop {
+        let read = stdin.read(&mut chunk)?;
+        if read == 0 {
+            return Ok(());
+        }
+        for body in scanner.push(&chunk[..read]) {
+            let Some(report) = swarm::host::program_status(&body, seen_work) else {
+                continue;
+            };
+            seen_work |= report.state == "working";
+            let stored = swarm::paths::sqlite_db()
+                .and_then(|db| swarm::store::open(&db))
+                .and_then(|connection| {
+                    connection.busy_timeout(std::time::Duration::from_secs(1))?;
+                    store_state(&connection, &session, &agent, &report)
+                });
+            // The feed must keep reading, or the pane's output backs up; a lost report is the
+            // smaller harm, and the next one corrects it.
+            if let Err(error) = stored {
+                eprintln!("swarm status-feed: {error}");
+            }
+        }
     }
-    if state == "waiting" && old.as_deref() != Some("waiting") {
-        notice_waiting(&connection, &report.session, &report.agent, kind)?;
-    }
-    Ok(())
 }
 
 /// ADR 0077: a change to waiting is a notice row, which the notice helper posts.
@@ -4700,6 +4745,14 @@ fn main() {
         print!("{stdout}");
         eprint!("{stderr}");
         std::process::exit(code);
+    }
+    if let [cmd] = args.as_slice()
+        && cmd == "status-feed"
+    {
+        if let Err(error) = status_feed() {
+            eprintln!("swarm status-feed: {error}");
+        }
+        return;
     }
     if let [cmd, rest @ ..] = args.as_slice()
         && cmd == "hook"

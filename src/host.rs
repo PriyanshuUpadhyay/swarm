@@ -211,6 +211,135 @@ pub fn hook_state(provider: &str, event: &str, payload: &serde_json::Value) -> O
     })
 }
 
+/// The state in one OSC 7501 report body, the Program Status Protocol 0.4
+/// (<https://www.superlogical.com/rex/docs/build/program-status>). Only the root record is the
+/// agent's own state. `seen_work` keeps the `idle` an agent reports at start from reading as a
+/// finished turn; after work, `idle` means the owner cancelled it.
+pub fn program_status(body: &str, seen_work: bool) -> Option<HookState> {
+    let mut pairs = std::collections::HashMap::new();
+    for pair in body.split(':') {
+        let Some((key, value)) = pair.split_once('=') else {
+            continue;
+        };
+        let (key, value) = (key.trim(), value.trim());
+        let value_ok = value
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"_.,+/=-".contains(&b));
+        if !key.is_empty() && key.bytes().all(|b| b.is_ascii_lowercase()) && value_ok {
+            pairs.insert(key, value);
+        }
+    }
+    if pairs.get("id").is_some_and(|id| !id.is_empty()) {
+        return None;
+    }
+    // The spec discards a whole report whose message is bad base64 or holds a control character.
+    let message = match pairs.get("msg") {
+        Some(msg) => Some(base64_text(msg).filter(|text| !text.chars().any(char::is_control))?),
+        None => None,
+    };
+    let (state, kind) = match *pairs.get("state")? {
+        "working" => ("working", None),
+        "blocked" => match pairs.get("kind").copied() {
+            Some("permission") => ("waiting", Some("permission")),
+            Some("question") => ("waiting", Some("question")),
+            _ => ("waiting", None),
+        },
+        "done" => ("done", None),
+        "idle" if seen_work => ("done", None),
+        "error" => ("failed", None),
+        _ => return None,
+    };
+    Some(HookState {
+        state,
+        detail: if state == "failed" { message } else { None },
+        kind,
+    })
+}
+
+/// Standard base64 with optional padding, decoded as UTF-8.
+fn base64_text(text: &str) -> Option<String> {
+    let text = text.trim_end_matches('=');
+    if text.len() % 4 == 1 {
+        return None;
+    }
+    let mut bytes = Vec::new();
+    let (mut bits, mut count) = (0u32, 0);
+    for c in text.bytes() {
+        let value = match c {
+            b'A'..=b'Z' => c - b'A',
+            b'a'..=b'z' => c - b'a' + 26,
+            b'0'..=b'9' => c - b'0' + 52,
+            b'+' => 62,
+            b'/' => 63,
+            _ => return None,
+        };
+        bits = (bits << 6) | u32::from(value);
+        count += 6;
+        if count >= 8 {
+            count -= 8;
+            bytes.push((bits >> count) as u8);
+        }
+    }
+    String::from_utf8(bytes).ok()
+}
+
+/// Finds OSC 7501 report bodies in a pane's raw output. A report can arrive split across reads.
+#[derive(Default)]
+pub struct StatusScanner {
+    pending: Vec<u8>,
+}
+
+impl StatusScanner {
+    const START: &[u8] = b"\x1b]7501;";
+    /// The spec's cap on one whole sequence.
+    const MAX: usize = 4096;
+
+    pub fn push(&mut self, bytes: &[u8]) -> Vec<String> {
+        self.pending.extend_from_slice(bytes);
+        let mut bodies = Vec::new();
+        loop {
+            let Some(start) = find(&self.pending, Self::START) else {
+                // Keep a tail that may hold the start of a split sequence.
+                let keep = self.pending.len().min(Self::START.len() - 1);
+                self.pending.drain(..self.pending.len() - keep);
+                return bodies;
+            };
+            let body = start + Self::START.len();
+            let end = self.pending[body..]
+                .iter()
+                .enumerate()
+                .find_map(|(i, &b)| match b {
+                    0x07 => Some((i, 1)),
+                    0x1b if self.pending.get(body + i + 1) == Some(&b'\\') => Some((i, 2)),
+                    _ => None,
+                });
+            match end {
+                Some((len, terminator)) => {
+                    if body + len + terminator - start <= Self::MAX
+                        && let Ok(text) = std::str::from_utf8(&self.pending[body..body + len])
+                    {
+                        bodies.push(text.to_string());
+                    }
+                    self.pending.drain(..body + len + terminator);
+                }
+                None if self.pending.len() - start > Self::MAX => {
+                    self.pending.drain(..body);
+                }
+                None => {
+                    self.pending.drain(..start);
+                    return bodies;
+                }
+            }
+        }
+    }
+}
+
+fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack
+        .windows(needle.len())
+        .position(|window| window == needle)
+}
+
 /// The newest model and cumulative cost in a provider log; None means no source for that field.
 #[derive(Debug, Default)]
 pub struct UsageSnapshot {
@@ -478,6 +607,63 @@ mod tests {
 
     const HERDR: [(&str, &str); 2] = [("HERDR_ENV", "1"), ("HERDR_PANE_ID", "wK:p1")];
 
+    #[test]
+    fn program_status_maps_the_root_record() {
+        let state = |body: &str, seen_work: bool| {
+            program_status(body, seen_work).map(|s| (s.state, s.kind, s.detail))
+        };
+        assert_eq!(
+            state("state=working:app=pi", false),
+            Some(("working", None, None))
+        );
+        assert_eq!(
+            state("state=blocked:kind=question", true),
+            Some(("waiting", Some("question"), None))
+        );
+        assert_eq!(
+            state("state=blocked:kind=auth", true),
+            Some(("waiting", None, None))
+        );
+        assert_eq!(state("state=done:app=pi", true), Some(("done", None, None)));
+        // pi reports idle when it starts and when the owner cancels a run.
+        assert_eq!(state("state=idle:app=pi", false), None);
+        assert_eq!(state("state=idle:app=pi", true), Some(("done", None, None)));
+        // "rate limited", base64 without padding.
+        assert_eq!(
+            state("state=error:msg=cmF0ZSBsaW1pdGVk", true),
+            Some(("failed", None, Some("rate limited".into())))
+        );
+        assert_eq!(state("state=working:id=build/test", true), None);
+        assert_eq!(state("state=clear", true), None);
+        assert_eq!(state("state=paused", true), None);
+        assert_eq!(state("app=pi", true), None);
+        // A message with a newline ("a\nb") or bad base64 discards the report, but a pair with
+        // a byte outside the value set is skipped.
+        assert_eq!(state("state=error:msg=YQpi", true), None);
+        assert_eq!(state("state=error:msg=A", true), None);
+        assert_eq!(
+            state("state=error:msg=***", true),
+            Some(("failed", None, None))
+        );
+        // A malformed pair is skipped and the rest still counts.
+        assert_eq!(state("junk:state=done", true), Some(("done", None, None)));
+    }
+
+    #[test]
+    fn status_scanner_finds_reports_across_reads() {
+        let mut scanner = StatusScanner::default();
+        assert!(scanner.push(b"text \x1b]75").is_empty());
+        assert_eq!(scanner.push(b"01;state=working\x07more"), ["state=working"]);
+        assert!(scanner.push(b"\x1b]7501;state=do").is_empty());
+        assert_eq!(
+            scanner.push(b"ne\x1b\\\x1b]0;title\x07\x1b]7501;state=idle\x1b\\"),
+            ["state=done", "state=idle"]
+        );
+        let mut long = b"\x1b]7501;state=working:msg=".to_vec();
+        long.extend(std::iter::repeat_n(b'A', 5000));
+        long.extend(b"\x07\x1b]7501;state=done\x07");
+        assert_eq!(scanner.push(&long), ["state=done"]);
+    }
     #[test]
     fn a_herdr_pane_picks_herdr_unless_swarm_adapter_names_another() {
         assert_eq!(adapter(env(&HERDR)), "herdr");

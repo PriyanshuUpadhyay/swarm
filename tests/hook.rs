@@ -1824,3 +1824,56 @@ fn a_pi_chair_names_its_session_and_log() {
         )
     );
 }
+
+#[test]
+fn a_pane_status_feed_sets_the_agent_state() {
+    let home = scratch("status-feed");
+    let session = stdout(&swarm(&home, &[], &["session", "new", "lane"], ""))
+        .trim()
+        .to_string();
+    let connection = swarm::store::open(&home.join(".swarm/swarm.db")).unwrap();
+    swarm::store::add_agent(&connection, &session, "coder", "coder").unwrap();
+    let env = [
+        ("SWARM_SESSION_ID", session.as_str()),
+        ("SWARM_AGENT_ID", "coder"),
+    ];
+    let state = || -> (Option<String>, Option<String>) {
+        connection
+            .query_row(
+                "SELECT state, state_kind FROM agent WHERE session_id = ?1 AND id = 'coder'",
+                [&session],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap()
+    };
+    // The pane's raw output: screen text with pi's reports in it. The start-up idle is no state.
+    let fed = swarm(
+        &home,
+        &env,
+        &["status-feed"],
+        "\x1b[2J\x1b]7501;state=idle:app=pi\x1b\\hello\x1b]7501;state=working:app=pi\x07",
+    );
+    assert!(
+        fed.status.success(),
+        "{}",
+        String::from_utf8_lossy(&fed.stderr)
+    );
+    assert_eq!(state(), (Some("working".into()), None));
+    swarm(
+        &home,
+        &env,
+        &["status-feed"],
+        "\x1b]7501;state=blocked:kind=permission:app=pi\x07",
+    );
+    assert_eq!(state(), (Some("waiting".into()), Some("permission".into())));
+    let notices: serde_json::Value =
+        serde_json::from_str(&stdout(&swarm(&home, &[], &["notices", "--json"], ""))).unwrap();
+    assert_eq!(notices[0]["agent_id"], "coder");
+    swarm(
+        &home,
+        &env,
+        &["status-feed"],
+        "\x1b]7501;state=done:app=pi\x07",
+    );
+    assert_eq!(state(), (Some("done".into()), None));
+}
