@@ -601,6 +601,20 @@ fn adapter_name() -> String {
     swarm::host::adapter(|name| env::var(name).ok())
 }
 
+/// The host contract that `swarm host-context` would print in a pane that `launch` is about to
+/// open, for a CLI with no SessionStart hook. The pane gets these ids, and a tmux-swarm pane
+/// always has `TMUX_PANE`.
+fn pane_context(provider: &str, session: &str, agent_id: &str) -> Option<String> {
+    let adapter = adapter_name();
+    swarm::host::context(provider, |name| match name {
+        "SWARM_SESSION_ID" => Some(session.into()),
+        "SWARM_AGENT_ID" => Some(agent_id.into()),
+        "SWARM_ADAPTER" => Some(adapter.clone()),
+        "TMUX_PANE" if adapter == "tmux-swarm" => Some("pane".into()),
+        _ => env::var(name).ok(),
+    })
+}
+
 /// A pane that `swarm launch` made carries its ids in its env. A chair keeps none: `swarm session
 /// new` records the chair's pane, and the chair is found from that pane.
 fn identity() -> Result<(String, String), String> {
@@ -4368,6 +4382,20 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                     kind.id()
                 ),
             },
+            Provider::Pi => {
+                // pi has no hooks. It takes the session id swarm gives it, so its log is found by
+                // that id, and it reads the host contract from its system prompt (ADR 0086).
+                let session = session_id()?;
+                let id = format!("{session}-{agent_id}");
+                let mut args = vec!["--session-id".to_string(), id.clone()];
+                if let Some(context) = pane_context(kind.id(), &session, agent_id) {
+                    args.extend(["--append-system-prompt".into(), context]);
+                }
+                extra.splice(0..0, args);
+                if agent_id == "orchestrator" {
+                    swarm::store::set_chair(&connection, &session, Some((kind.id(), &id)))?;
+                }
+            }
             Provider::Claude => {
                 // The app hides the chair's pane, so a trust dialog there waits for nobody. The
                 // chair runs in cwd itself, as a resuming child does (ADR 0008).

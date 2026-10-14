@@ -57,7 +57,8 @@ pub fn normalize(
             &payload["toolCall"]["args"],
             &payload["conversationId"],
         ),
-        Provider::Claude | Provider::Codex => (
+        // pi has no hook; an extension that calls the guard sends Claude's keys.
+        Provider::Claude | Provider::Codex | Provider::Pi => (
             &payload["tool_name"],
             &payload["tool_input"],
             &payload["session_id"],
@@ -245,13 +246,17 @@ fn run(
 /// always get a decision, because `{}` makes it refuse every tool.
 pub fn render(provider: Provider, verdict: &Verdict) -> (String, String, i32) {
     match (provider, verdict) {
-        (Provider::Claude | Provider::Codex, Verdict::Allow) => (String::new(), String::new(), 0),
+        (Provider::Claude | Provider::Codex | Provider::Pi, Verdict::Allow) => {
+            (String::new(), String::new(), 0)
+        }
         (Provider::Claude, Verdict::Deny(reason)) => (
             serde_json::json!({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": reason}}).to_string() + "\n",
             String::new(),
             0,
         ),
-        (Provider::Codex, Verdict::Deny(reason)) => (String::new(), format!("{reason}\n"), 2),
+        (Provider::Codex | Provider::Pi, Verdict::Deny(reason)) => {
+            (String::new(), format!("{reason}\n"), 2)
+        }
         (Provider::Agy, Verdict::Allow) => ("{\"decision\":\"allow\"}\n".into(), String::new(), 0),
         (Provider::Agy, Verdict::Deny(reason)) => (
             serde_json::json!({"decision": "deny", "reason": reason}).to_string() + "\n",

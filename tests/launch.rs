@@ -2246,3 +2246,62 @@ fn a_spawned_owner_command_can_be_a_shell_function_of_the_pane() {
         "one\n"
     );
 }
+
+/// pi has no hooks: its chair is known at launch from the session id swarm gives it, it reads the
+/// host contract from its system prompt, and it reports its state by OSC 7501 (ADR 0086).
+#[test]
+fn a_pi_chair_is_named_at_launch_and_gets_the_host_contract() {
+    let home = scratch("pi-chair");
+    tool(&home, "pi", "true");
+    std::fs::create_dir_all(home.join(".config/agent-routing")).unwrap();
+    std::fs::write(
+        home.join(".config/agent-routing/roles.json"),
+        r#"{"routes": {"pi.chair": ["pi-haiku"]},
+            "runners": {"pi-haiku": {"provider": "pi", "model": "anthropic/claude-haiku-5-5", "effort": "low"}}}"#,
+    )
+    .unwrap();
+    // The app's adapter, with verbs that touch no tmux server.
+    std::fs::create_dir_all(home.join(".swarm/adapters")).unwrap();
+    std::fs::write(
+        home.join(".swarm/adapters/tmux-swarm.conf"),
+        "self = printf chair\nspawn = printf pane\nring = true\nlist = true\nclose = true\ncapture = true\n",
+    )
+    .unwrap();
+    let app = [("SWARM_ADAPTER", "tmux-swarm")];
+    let session = swarm(&home, &app, &["session", "new", "lane"]);
+    assert!(session.status.success(), "{}", stderr(&session));
+    let session = String::from_utf8(session.stdout)
+        .unwrap()
+        .trim()
+        .to_string();
+    let env = [
+        ("SWARM_ADAPTER", "tmux-swarm"),
+        ("SWARM_SESSION_ID", session.as_str()),
+        ("SWARM_AGENT_ID", "orchestrator"),
+    ];
+    let cwd = home.to_string_lossy().into_owned();
+    let output = swarm(
+        &home,
+        &env,
+        &["launch", "orchestrator", "pi.chair", "--cwd", &cwd],
+    );
+    assert!(output.status.success(), "{}", stderr(&output));
+
+    let script =
+        std::fs::read_to_string(home.join(format!(".swarm/runs/{session}/orchestrator.sh")))
+            .unwrap();
+    let id = format!("{session}-orchestrator");
+    assert!(
+        script.contains(&format!(
+            "'env' 'PI_PROGRAM_STATUS=1' 'pi' '--model' 'anthropic/claude-haiku-5-5' '--thinking' 'low' '--session-id' '{id}' '--append-system-prompt' '[agent-host: swarm-app]"
+        )),
+        "{script}"
+    );
+    assert!(!script.contains("[agent-runtime"), "{script}");
+
+    let sessions = swarm(&home, &[], &["sessions", "--json"]);
+    let sessions: serde_json::Value = serde_json::from_slice(&sessions.stdout).unwrap();
+    let row = &sessions["sessions"][0];
+    assert_eq!(row["chair_provider"], "pi");
+    assert_eq!(row["chair_id"], id.as_str());
+}

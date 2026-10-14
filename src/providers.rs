@@ -12,6 +12,7 @@ pub enum Provider {
     Claude,
     Codex,
     Agy,
+    Pi,
 }
 
 /// One flag a provider takes beside model and effort, as a profile runner field.
@@ -92,7 +93,12 @@ const AGY_FIELDS: &[Field] = &[Field {
 }];
 
 impl Provider {
-    pub const ALL: [Provider; 3] = [Provider::Claude, Provider::Codex, Provider::Agy];
+    pub const ALL: [Provider; 4] = [
+        Provider::Claude,
+        Provider::Codex,
+        Provider::Agy,
+        Provider::Pi,
+    ];
 
     pub fn parse(name: &str) -> Option<Provider> {
         Provider::ALL
@@ -106,6 +112,7 @@ impl Provider {
             Provider::Claude => "claude",
             Provider::Codex => "codex",
             Provider::Agy => "agy",
+            Provider::Pi => "pi",
         }
     }
 
@@ -122,6 +129,12 @@ impl Provider {
                 CODEX_FIELDS,
             ),
             Provider::Agy => ("Gemini", &["low", "medium", "high", "max"], AGY_FIELDS),
+            // pi's `--thinking` levels.
+            Provider::Pi => (
+                "Pi",
+                &["off", "minimal", "low", "medium", "high", "xhigh", "max"],
+                &[],
+            ),
         };
         Info {
             id: self.id(),
@@ -133,16 +146,16 @@ impl Provider {
         }
     }
 
-    /// AGY has no native account adapter and uses its CLI login.
+    /// AGY and pi have no native account adapter and use their CLI login.
     pub fn has_accounts(self) -> bool {
-        !matches!(self, Provider::Agy)
+        !matches!(self, Provider::Agy | Provider::Pi)
     }
 
     pub fn login_argv(self) -> Option<&'static [&'static str]> {
         match self {
             Provider::Codex => Some(&["codex", "login"]),
             Provider::Claude => Some(&["claude", "auth", "login"]),
-            Provider::Agy => None,
+            Provider::Agy | Provider::Pi => None,
         }
     }
 
@@ -155,7 +168,7 @@ impl Provider {
                 "AGENT_PROFILE_LABEL",
             ],
             Provider::Codex => &["CODEX_HOME"],
-            Provider::Agy => &[],
+            Provider::Agy | Provider::Pi => &[],
         }
     }
 
@@ -172,7 +185,7 @@ impl Provider {
                 })
             }
             Provider::Codex => BTreeMap::from([("CODEX_HOME".into(), dir.into())]),
-            Provider::Agy => BTreeMap::new(),
+            Provider::Agy | Provider::Pi => BTreeMap::new(),
         }
     }
 
@@ -196,11 +209,13 @@ impl Provider {
             Provider::Claude => Ok(claude_models()),
             Provider::Codex => codex_models(run("codex", &["debug", "models"])?.as_bytes()),
             Provider::Agy => Ok(agy_models(&run("agy", &["models"])?)),
+            Provider::Pi => Ok(pi_models(&run("pi", &["--list-models"])?)),
         }
     }
 
     /// What the provider CLI on PATH knows as models, for `model_known`. None when the check
-    /// cannot run; agy is skipped because `agy models` asks the network (about 5 s).
+    /// cannot run; agy is skipped because `agy models` asks the network (about 5 s), and pi
+    /// because it takes a model pattern, not only a listed id.
     pub fn catalog(self, account_env: &BTreeMap<String, String>) -> Option<Vec<u8>> {
         match self {
             Provider::Claude => std::env::split_paths(&std::env::var_os("PATH")?)
@@ -214,7 +229,7 @@ impl Provider {
                 .ok()
                 .filter(|output| output.status.success())
                 .map(|output| output.stdout),
-            Provider::Agy => None,
+            Provider::Agy | Provider::Pi => None,
         }
     }
 
@@ -243,6 +258,13 @@ impl Provider {
                 "--sandbox",
                 "-a",
                 "--ask-for-approval",
+            ],
+            Provider::Pi => &[
+                "--model",
+                "--provider",
+                "--thinking",
+                "--session-id",
+                "--session",
             ],
             Provider::Claude | Provider::Agy => &[
                 "--model",
@@ -348,6 +370,24 @@ fn agy_models(output: &str) -> Vec<Model> {
         .collect()
 }
 
+/// The table of `pi --list-models`: a header row, then `provider model context ...` rows.
+fn pi_models(output: &str) -> Vec<Model> {
+    output
+        .lines()
+        .skip_while(|line| !line.starts_with("provider "))
+        .skip(1)
+        .filter_map(|line| {
+            let mut columns = line.split_whitespace();
+            let (provider, model) = (columns.next()?, columns.next()?);
+            Some(Model {
+                id: format!("{provider}/{model}"),
+                label: format!("{model} ({provider})"),
+                efforts: None,
+            })
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -398,6 +438,29 @@ mod tests {
                 efforts: None,
             }]
         );
+    }
+
+    #[test]
+    fn pi_lists_its_models_as_provider_slash_id() {
+        let listed = "provider       model            context  max-out  thinking  images\nanthropic      claude-haiku-5-5 1M       128K     yes       yes\nopenai-codex   gpt-6-sol        272K     128K     yes       yes\n\n";
+        assert_eq!(
+            pi_models(listed),
+            vec![
+                Model {
+                    id: "anthropic/claude-haiku-5-5".into(),
+                    label: "claude-haiku-5-5 (anthropic)".into(),
+                    efforts: None,
+                },
+                Model {
+                    id: "openai-codex/gpt-6-sol".into(),
+                    label: "gpt-6-sol (openai-codex)".into(),
+                    efforts: None,
+                },
+            ]
+        );
+        assert!(pi_models("No models available.\n").is_empty());
+        assert!(!Provider::Pi.has_accounts());
+        assert!(Provider::Pi.info().efforts.contains(&"off"));
     }
 
     #[test]

@@ -261,6 +261,24 @@ pub fn argv(
             }
             Ok(args)
         }
+        Provider::Pi => {
+            // pi sends OSC 7501 only to a terminal that answers its query, and tmux does not;
+            // the variable makes it send, and the tmux-swarm pane feed reads it (ADR 0086).
+            let mut args = vec![
+                "env".into(),
+                "PI_PROGRAM_STATUS=1".into(),
+                provider.id().into(),
+            ];
+            if let Some(model) = resolved
+                .model
+                .as_deref()
+                .filter(|model| *model != "default")
+            {
+                args.extend(["--model".into(), model.into()]);
+            }
+            args.extend(["--thinking".into(), effort()?.into()]);
+            Ok(args)
+        }
     }
 }
 
@@ -1309,6 +1327,34 @@ mod tests {
                 .map(String::from)
                 .collect())
         );
+    }
+
+    #[test]
+    fn pi_reports_its_state_by_osc_7501() {
+        let mut pi = role("pi");
+        pi.model = Some("anthropic/claude-haiku-5-5".into());
+        assert_eq!(
+            argv("coder", "coder", &pi, "/home", std::path::Path::new("/")),
+            Ok(vec![
+                "env",
+                "PI_PROGRAM_STATUS=1",
+                "pi",
+                "--model",
+                "anthropic/claude-haiku-5-5",
+                "--thinking",
+                "high"
+            ]
+            .into_iter()
+            .map(String::from)
+            .collect())
+        );
+        pi.model = Some("default".into());
+        assert_eq!(
+            argv("coder", "coder", &pi, "/home", std::path::Path::new("/")).unwrap()[3..],
+            ["--thinking", "high"]
+        );
+        assert!(extra_args(Provider::Pi, &strings(&["--thinking", "max"])).is_err());
+        assert!(extra_args(Provider::Pi, &strings(&["--session-id", "x"])).is_err());
     }
 
     #[test]

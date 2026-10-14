@@ -109,10 +109,12 @@ pub fn context(provider: &str, env: impl Fn(&str) -> Option<String>) -> Option<S
         true => worker.to_string(),
         false => chair.to_string(),
     };
+    // pi has no runtime adapter skill, so it gets only the host contract.
     let adapter = match provider {
         "claude" => "~/.claude/skills/orchestrate-claude/SKILL.md",
         "codex" => "~/.agents/skills/orchestrate-codex/SKILL.md",
-        _ => "~/.gemini/config/skills/orchestrate-agy/SKILL.md",
+        "agy" => "~/.gemini/config/skills/orchestrate-agy/SKILL.md",
+        _ => return Some(context),
     };
     context.push_str(&format!("\n\n[agent-runtime: {provider}]\nBefore executing any portable skill that requests workers, load `{adapter}`.\nThe runtime adapter translates workflow requirements; the active agent-host contract owns worker lifecycle and visibility."));
     Some(context)
