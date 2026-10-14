@@ -12,8 +12,9 @@ jobs:
     uses: ./.github/workflows/ci.yml
     secrets: inherit
 
+  # The draft and its tarball build beside the checks. The owner publishes the draft only after
+  # the whole run passes, so the checks still gate the release.
   source:
-    needs: checks
     runs-on: ubuntu-latest
     permissions:
       contents: write

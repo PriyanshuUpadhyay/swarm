@@ -18,6 +18,8 @@ jobs:
           version: 0.16.0
       - run: zig build -Doptimize=ReleaseSafe
         working-directory: packages/transcript
+      # Tag runs read the cache that main saves, so a release compiles only the changed crates.
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - run: cargo fmt --check
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test
@@ -59,6 +61,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: sudo apt-get install -y tmux
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - run: cargo install --locked --path . --root "$RUNNER_TEMP/swarm"
       - name: Launch with an empty HOME
         run: |
