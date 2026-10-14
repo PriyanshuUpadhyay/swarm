@@ -800,7 +800,7 @@ async fn menu_read(
     if matches!(command, "models" | "accounts") {
         let provider = query
             .provider
-            .filter(|p| matches!(p.as_str(), "claude" | "codex" | "agy"))
+            .filter(|p| swarm::providers::Provider::parse(p).is_some())
             .ok_or_else(|| error(StatusCode::BAD_REQUEST, "known provider required"))?;
         args.extend(["--provider".into(), provider]);
     } else if query.provider.is_some() {

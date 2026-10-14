@@ -312,6 +312,12 @@ cat "$SWARM_HOME/menu.json"
             "models --provider codex --json",
         ),
         (
+            "models",
+            Some("pi"),
+            json!({"provider":"pi","models":[{"id":"anthropic/claude-haiku-5-5"}]}),
+            "models --provider pi --json",
+        ),
+        (
             "accounts",
             Some("claude"),
             json!({"revision":"accounts-r","accounts":[{"name":"default"}]}),

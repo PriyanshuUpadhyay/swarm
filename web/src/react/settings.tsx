@@ -12,7 +12,7 @@ import { store } from "./store";
 import { chooseTheme, useTheme, type Theme } from "./theme";
 
 const FIELD = "h-8 min-w-0 rounded-md border border-border-strong bg-background px-2 outline-none focus:border-ring disabled:opacity-60";
-const PROVIDER_LABEL: Record<string, string> = { claude: "Claude", codex: "Codex", agy: "Gemini" };
+const PROVIDER_LABEL: Record<string, string> = { claude: "Claude", codex: "Codex", agy: "Gemini", pi: "Pi" };
 const label = (provider: string) => PROVIDER_LABEL[provider] ?? provider;
 
 function useSettings<K extends keyof SettingsState>(app: App, key: K): SettingsState[K] {
