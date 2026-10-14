@@ -26,13 +26,13 @@ pub struct Adapter {
 /// The adapters this binary carries, which are the ones it is tested against.
 ///
 /// **A shipped adapter lives here and not on disk.** `swarm init` used to write these files and
-/// then leave them alone for ever, so `adapters/tmux-solo.conf` changing `self` from `true` to the
+/// then leave them alone for ever, so `adapters/tmux-swarm.conf` changing `self` from `true` to the
 /// pane id reached the repository and never reached the machine: `agent add` recorded no pane and
 /// every `type` answered `no pane recorded`. A deployed file is an edit now, and it overrides only
 /// the verbs it names, so one edited verb cannot hold back a fix to any other. See `load`.
 pub const SHIPPED: [(&str, &str); 4] = [
     ("tmux", include_str!("../adapters/tmux.conf")),
-    ("tmux-solo", include_str!("../adapters/tmux-solo.conf")),
+    ("tmux-swarm", include_str!("../adapters/tmux-swarm.conf")),
     ("herdr", include_str!("../adapters/herdr.conf")),
     ("superset", include_str!("../adapters/superset.conf")),
 ];
@@ -509,7 +509,7 @@ mod tests {
         assert_eq!(shell_line(&args), "'echo' 'a b' 'it'\\''s'");
     }
 
-    /// The fault of 2026-09-21. `adapters/tmux-solo.conf` changed `self` to print the pane id, the
+    /// The fault of 2026-09-21. `adapters/tmux-swarm.conf` changed `self` to print the pane id, the
     /// deployed copy kept `self = true`, and every chat answered `no pane recorded` at its first
     /// message. A deployed file now speaks for the verbs it names and for nothing else.
     #[test]

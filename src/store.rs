@@ -25,6 +25,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0008.sql"),
     include_str!("../migrations/0009.sql"),
     include_str!("../migrations/0010.sql"),
+    include_str!("../migrations/0011.sql"),
 ];
 
 #[derive(serde::Serialize)]
@@ -172,6 +173,11 @@ fn migrate(connection: &mut Connection) -> Result<(), Box<dyn std::error::Error>
     if version < 10 {
         tx.execute_batch(MIGRATIONS[9])?;
         tx.pragma_update(None, "user_version", 10)?;
+    }
+
+    if version < 11 {
+        tx.execute_batch(MIGRATIONS[10])?;
+        tx.pragma_update(None, "user_version", 11)?;
     }
 
     tx.commit()?;
@@ -1811,7 +1817,7 @@ mod tests {
             "lane",
             Path::new("/solo"),
             None,
-            Some("tmux-solo"),
+            Some("tmux-swarm"),
         )
         .unwrap();
         for session in [&tmux, &same, &solo] {
@@ -2348,7 +2354,7 @@ mod tests {
         let version: i64 = connection
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 10);
+        assert_eq!(version, 11);
         let old = create_session(&connection, "lane", Path::new("/work"), None, None).unwrap();
         let new = create_session(&connection, "lane", Path::new("/work"), None, None).unwrap();
         continue_session(&connection, &new, &old).unwrap();
@@ -2375,7 +2381,7 @@ mod tests {
         let version: i64 = connection
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 10);
+        assert_eq!(version, 11);
         let coder = &agents(&connection, SESSION).unwrap()[0];
         assert_eq!(coder.state, None);
         set_state(
@@ -2417,7 +2423,35 @@ mod tests {
         let version: i64 = connection
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 10);
+        assert_eq!(version, 11);
+    }
+
+    #[test]
+    fn migration_renames_the_tmux_solo_adapter_to_tmux_swarm() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        for migration in &MIGRATIONS[..10] {
+            connection.execute_batch(migration).unwrap();
+        }
+        connection.pragma_update(None, "user_version", 10).unwrap();
+        connection
+            .execute_batch(
+                "INSERT INTO session (id, talk_mode, cwd, adapter) VALUES ('solo', 'lane', '/t', 'tmux-solo');
+                 INSERT INTO session (id, talk_mode, cwd, adapter) VALUES ('herdr', 'lane', '/t', 'herdr');",
+            )
+            .unwrap();
+        migrate(&mut connection).unwrap();
+        let adapters: Vec<String> = connection
+            .prepare("SELECT adapter FROM session ORDER BY id")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(adapters, ["herdr", "tmux-swarm"]);
+        let version: i64 = connection
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, 11);
     }
 
     #[test]
@@ -2882,7 +2916,7 @@ mod tests {
         let db = root.join("swarm.db");
         let connection = Connection::open(&db).unwrap();
         connection
-            .execute_batch("PRAGMA user_version = 11")
+            .execute_batch("PRAGMA user_version = 12")
             .unwrap();
         drop(connection);
 

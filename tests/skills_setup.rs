@@ -445,7 +445,7 @@ fn every_host_skill_path_names_a_catalog_skill_and_a_planned_cli_destination() {
                 ("herdr", "HERDR_ENV") => Some("1".into()),
                 ("herdr", "HERDR_PANE_ID") => Some("fixture-pane".into()),
                 ("superset", "SUPERSET_TERMINAL_ID") => Some("fixture-terminal".into()),
-                ("app", "SWARM_ADAPTER") => Some("tmux-solo".into()),
+                ("app", "SWARM_ADAPTER") => Some("tmux-swarm".into()),
                 ("app", "SWARM_SESSION_ID") => Some("fixture-session".into()),
                 ("app", "TMUX_PANE") => Some("fixture-pane".into()),
                 (_, "SWARM_AGENT_ID") if worker => Some("fixture-worker".into()),

@@ -403,6 +403,11 @@ fn hook(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     connection.busy_timeout(std::time::Duration::from_secs(1))?;
     if let Some(log) = &report.log {
         swarm::store::set_log(&connection, &report.session, &report.agent, log)?;
+        // The orchestrator is the chair, so its log is the chat's log. Only `swarm sessions
+        // --json` looks a chair log up from its id, and the app never runs it for a live chat.
+        if report.agent == "orchestrator" {
+            swarm::store::set_chair_log(&connection, &report.session, log)?;
+        }
     }
     let Some(swarm::host::HookState {
         state,
@@ -3977,7 +3982,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             Some(&adapter),
         )?;
         // A chair in a Herdr, Superset, or tmux pane is registered here, so it needs no ids of its
-        // own. The app's `tmux-solo` chair is launched as an agent instead. A child pane already
+        // own. The app's `tmux-swarm` chair is launched as an agent instead. A child pane already
         // has an agent id, and registering it would take its pane from its own session.
         if env::var_os("SWARM_AGENT_ID").is_none()
             && matches!(adapter.as_str(), "herdr" | "superset" | "tmux")

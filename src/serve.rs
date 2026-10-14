@@ -938,7 +938,7 @@ async fn owner_cli(app: &App, args: Vec<String>) -> Result<Value, ApiError> {
         args,
         cwd: app.root.clone(),
         session: None,
-        adapter: "tmux-solo".into(),
+        adapter: "tmux-swarm".into(),
     };
     let output = run_cli(app, call, None).await.map_err(|(status, body)| {
         let stale = body.0["error"]
@@ -1319,7 +1319,7 @@ async fn workspace_live_targets(
         args: vec!["agents".into(), "--json".into(), "--all".into()],
         cwd: app.root.clone(),
         session: None,
-        adapter: "tmux-solo".into(),
+        adapter: "tmux-swarm".into(),
     };
     let batch = run_cli(app, call, None)
         .await
@@ -2095,7 +2095,7 @@ async fn execute_action(app: &App, action: Action) -> Result<Value, ApiError> {
         args: Vec::new(),
         cwd: app.root.clone(),
         session: None,
-        adapter: "tmux-solo".into(),
+        adapter: "tmux-swarm".into(),
     };
     let interrupt = matches!(action, Action::Interrupt(_));
     let archive = matches!(action, Action::Archive(_));
@@ -2343,7 +2343,7 @@ async fn new_chat(app: &App, body: NewChat) -> Result<Value, ApiError> {
         args: Vec::new(),
         cwd: body.cwd.into(),
         session: None,
-        adapter: "tmux-solo".into(),
+        adapter: "tmux-swarm".into(),
     };
     let create = app.chat_create.lock().await;
     run_cli(app, call.args(&["init"]), None).await?;
@@ -2588,7 +2588,7 @@ async fn execute_continue_timed(
         }).await;
         ready.map_err(|_| error(StatusCode::GATEWAY_TIMEOUT, "The new agent did not become ready to receive the summary"))??;
         continue_phase(app, old, "delivering")?;
-        let new_call = CliCall { args: vec![], cwd: call.cwd.clone(), session: Some(session.into()), adapter: "tmux-solo".into() };
+        let new_call = CliCall { args: vec![], cwd: call.cwd.clone(), session: Some(session.into()), adapter: "tmux-swarm".into() };
         run_cli(app, new_call.args(&["type", "orchestrator"]), Some(handoff::first_message(&context, summary))).await?;
         run_cli(app, call.args(&["session", "continue", session, old]), None).await?;
         Ok(started)
@@ -4776,7 +4776,7 @@ printf '{"revision":"next"}\n'
                 write("/api/roles", body).await.unwrap().0["revision"],
                 "next"
             );
-            assert_eq!(last_call(), format!("tmux-solo|{root}|{args}"));
+            assert_eq!(last_call(), format!("tmux-swarm|{root}|{args}"));
         }
         let home = std::env::var("HOME").unwrap();
         let repo = env!("CARGO_MANIFEST_DIR");
@@ -4794,7 +4794,7 @@ printf '{"revision":"next"}\n'
             assert_eq!(
                 last_call(),
                 format!(
-                    "tmux-solo|{root}|accounts login --provider claude --name work --revision r2 --json --cwd {cwd}"
+                    "tmux-swarm|{root}|accounts login --provider claude --name work --revision r2 --json --cwd {cwd}"
                 )
             );
         }
@@ -4942,7 +4942,7 @@ printf '{"revision":"next"}\n'
                 "lane",
                 Path::new(env!("CARGO_MANIFEST_DIR")),
                 Some(("claude", "synthetic")),
-                None,
+                Some("tmux-swarm"),
             )
             .unwrap();
             swarm::store::set_chair_log(&connection, &session, &log).unwrap();
@@ -5000,7 +5000,7 @@ printf '{"revision":"next"}\n'
         let connection = swarm::store::open(&fixture.app.root.join("swarm.db")).unwrap();
         connection
             .execute(
-                "UPDATE session SET adapter = 'fixture' WHERE id = ?1",
+                "UPDATE session SET adapter = 'tmux-swarm' WHERE id = ?1",
                 [&fixture.session],
             )
             .unwrap();
@@ -5052,7 +5052,7 @@ esac
                 assert_eq!(call_action(&fixture, $route, body.clone()).await.unwrap().0, json!({"ok": true}));
                 assert!(fixture.app.hub.lock().unwrap().version > before);
                 let calls = action_calls(&fixture);
-                let expected = format!("fixture|{}|orchestrator|{}|{}", fixture.session,
+                let expected = format!("tmux-swarm|{}|orchestrator|{}|{}", fixture.session,
                     env!("CARGO_MANIFEST_DIR"), $args);
                 assert!(calls.contains(&expected), "{calls}");
                 body["session"] = json!("unknown");
@@ -6377,7 +6377,7 @@ wait
         let connection = swarm::store::open(&fixture.app.root.join("swarm.db")).unwrap();
         connection
             .execute(
-                "UPDATE session SET adapter = 'tmux-solo' WHERE id = ?1",
+                "UPDATE session SET adapter = 'tmux-swarm' WHERE id = ?1",
                 [&fixture.session],
             )
             .unwrap();

@@ -131,8 +131,8 @@ function harness(agents: Agent[] = [chair, agent("reviewer", { created_at: 1 }),
   const app = new App(api);
   const inner = app as unknown as { applySnapshot(s: Snapshot): void; notify(): void; streamId: string; pending: Map<string, RowFrame[]>; flush(): void };
   inner.streamId = "stream";
-  const snapshot = (list = agents) => {
-    inner.applySnapshot({ version: 1, sessions: [session()], agents: { chat: list } });
+  const snapshot = (list = agents, s = session()) => {
+    inner.applySnapshot({ version: 1, sessions: [s], agents: { chat: list } });
     inner.notify();
   };
   snapshot();
@@ -225,6 +225,21 @@ describe("child columns", () => {
     await settle();
     const input = (id: string) => app.view.strip.panes.get(id)!.composer!.agent;
     expect(input("asking").disabled).toBe("asking waits on a question the app cannot read. Run `swarm attach asking` in a terminal to answer it.");
+  });
+});
+
+describe("a new chat", () => {
+  it("waits for the chair's log, then loads it", async () => {
+    const { app, rowCalls, snapshot } = harness();
+    snapshot(undefined, session({ chair_log: null }));
+    app.openChat("chat");
+    await settle();
+    expect(rowCalls).not.toContain("chair");
+    expect(app.view.chatState).toBe("none");
+    snapshot(undefined, session({ chair_log: "/logs/chair.jsonl" }));
+    await settle();
+    expect(rowCalls).toContain("chair");
+    expect(app.view.chatState).toBe("ready");
   });
 });
 

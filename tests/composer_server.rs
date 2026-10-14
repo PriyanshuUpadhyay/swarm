@@ -203,13 +203,13 @@ fn pull_back_already_sent() {
 }
 #[test]
 fn pull_back_needs_key_verb() {
-    for adapter in ["tmux", "tmux-solo"] {
+    for adapter in ["tmux", "tmux-swarm"] {
         assert!(queue::can_pull_back(Some("claude"), adapter));
     }
     for (provider, adapter) in [
         (Some("claude"), "herdr"),
         (Some("claude"), ""),
-        (Some("codex"), "tmux-solo"),
+        (Some("codex"), "tmux-swarm"),
     ] {
         assert!(!queue::can_pull_back(provider, adapter));
     }

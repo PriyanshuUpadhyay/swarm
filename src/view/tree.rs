@@ -510,6 +510,8 @@ fn chats(sessions: Vec<Value>, snapshot: &Value, owner: &OwnerChoices) -> (Vec<C
             .as_array()
             .cloned()
             .unwrap_or_default();
+        // The app lists only the chats it started, which run on its own adapter (ADR 0084).
+        let started_by_app = current["adapter"] == "tmux-swarm";
         // The rows route reads a chair log only in these formats, and a closed chat with no log
         // has nothing to show (ADR 0083).
         let readable = matches!(
@@ -584,7 +586,7 @@ fn chats(sessions: Vec<Value>, snapshot: &Value, owner: &OwnerChoices) -> (Vec<C
             status,
             counts,
         };
-        if readable && !closed_without_log {
+        if started_by_app && readable && !closed_without_log {
             result.push(chat);
         } else {
             unlisted.push(chat);

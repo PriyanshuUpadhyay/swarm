@@ -1462,7 +1462,7 @@ fn focus_names_missing_panes_adapters_and_verbs() {
         String::from_utf8_lossy(&focused.stderr),
         "swarm: session has no adapter\n"
     );
-    for adapter in ["tmux-solo", "superset"] {
+    for adapter in ["tmux-swarm", "superset"] {
         swarm::store::set_adapter(&connection, &session, adapter).unwrap();
         let missing = swarm(&home, &[], &["focus", &session, "coder"], "");
         assert!(!missing.status.success(), "{missing:?}");
@@ -1693,4 +1693,52 @@ fn focus_retries_the_chair_and_raises_the_clients_app() {
         "swarm: pane closed\n"
     );
     std::fs::remove_dir_all(home).unwrap();
+}
+
+#[test]
+fn the_chair_agent_log_becomes_the_chat_log() {
+    let home = scratch("chair-log");
+    let session = stdout(&swarm(&home, &[], &["session", "new", "lane"], ""))
+        .trim()
+        .to_string();
+    let in_session = [("SWARM_SESSION_ID", session.as_str())];
+    // `session new` makes the orchestrator, the chair.
+    assert!(
+        swarm(&home, &in_session, &["agent", "add", "coder", "coder"], "")
+            .status
+            .success()
+    );
+    let chair_log = || -> Option<String> {
+        swarm::store::open(&home.join(".swarm/swarm.db"))
+            .unwrap()
+            .query_row(
+                "SELECT chair_log FROM session WHERE id = ?1",
+                [&session],
+                |r| r.get(0),
+            )
+            .unwrap()
+    };
+    // A child's log is its own; only the chair the app launched writes the chat's log.
+    for agent in ["coder", "orchestrator"] {
+        let log = home.join(format!("{agent}.jsonl"));
+        std::fs::write(&log, "").unwrap();
+        let payload =
+            serde_json::json!({"hook_event_name": "SessionStart", "transcript_path": log});
+        let env = [
+            ("SWARM_SESSION_ID", session.as_str()),
+            ("SWARM_AGENT_ID", agent),
+        ];
+        assert!(
+            swarm(&home, &env, &["hook", "claude"], &payload.to_string())
+                .status
+                .success()
+        );
+        if agent == "coder" {
+            assert_eq!(chair_log(), None);
+        }
+    }
+    assert_eq!(
+        chair_log().unwrap(),
+        home.join("orchestrator.jsonl").to_string_lossy()
+    );
 }

@@ -68,7 +68,7 @@ impl Server {
             "lane",
             &source,
             Some(("claude", "synthetic")),
-            actions.then_some("fixture"),
+            Some("tmux-swarm"),
         )
         .unwrap();
         swarm::store::set_chair_log(&connection, &session, &log).unwrap();
@@ -99,7 +99,7 @@ interrupt = printf 'interrupt %s\n' "$SWARM_PANE" >> "$HOME/actions"
 key = printf 'key %s %s\n' "$SWARM_PANE" "$SWARM_KEY" >> "$HOME/actions"
 "#;
             fs::write(root.join("adapters/fixture.conf"), adapter).unwrap();
-            fs::write(root.join("adapters/tmux-solo.conf"), adapter).unwrap();
+            fs::write(root.join("adapters/tmux-swarm.conf"), adapter).unwrap();
             fs::write(root.join("consent.json"), r#"{"trust":"standing"}"#).unwrap();
             fs::create_dir_all(home.join(".config/agent-routing")).unwrap();
             fs::write(home.join(".config/agent-routing/roles.json"), r#"{"routes":{"chat":["fixture"]},"runners":{"fixture":{"provider":"agy","model":"flash"}}}"#).unwrap();
@@ -310,7 +310,7 @@ fi
         )
         .unwrap();
         fs::set_permissions(home.join("handoff-ring"), fs::Permissions::from_mode(0o755)).unwrap();
-        for adapter in ["fixture", "tmux-solo"] {
+        for adapter in ["fixture", "tmux-swarm"] {
             let file = root.join(format!("adapters/{adapter}.conf"));
             let text = fs::read_to_string(&file).unwrap();
             let text = text
@@ -967,7 +967,10 @@ fn chat_routes_run_the_real_cli_against_a_fake_provider_and_adapter() {
     answer["choice"] = json!(0);
     post("/api/chat/answer", answer);
     let actions = || fs::read_to_string(server.dir.join("home/actions")).unwrap();
-    assert!(actions().contains(&format!("ring {} orchestrator fixture\n", server.session)));
+    assert!(actions().contains(&format!(
+        "ring {} orchestrator tmux-swarm\n",
+        server.session
+    )));
     assert!(actions().contains("key fixture-chair 1\n"));
     // Numbered choices send the digit alone; arrow choices send Enter (Prompt::keys).
     assert!(!actions().contains("key fixture-chair Enter\n"));
@@ -1009,7 +1012,7 @@ fn chat_routes_run_the_real_cli_against_a_fake_provider_and_adapter() {
             .as_deref(),
         Some("fixture-new")
     );
-    assert!(actions().contains(&format!("spawn {session} orchestrator tmux-solo\n")));
+    assert!(actions().contains(&format!("spawn {session} orchestrator tmux-swarm\n")));
     post("/api/chat/new", json!({"cwd": env!("CARGO_MANIFEST_DIR")}));
 }
 

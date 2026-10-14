@@ -356,6 +356,28 @@ fn hides_a_closed_chat_with_no_log() {
     );
 }
 #[test]
+fn lists_only_chats_that_the_app_started() {
+    // A lane that a CLI in a Herdr or tmux pane opened is not the app's chat.
+    let mut herdr = session("herdr", "/repo", 1);
+    herdr["adapter"] = json!("herdr");
+    let snap = folder_snapshot(
+        vec![herdr, session("app", "/repo", 2)],
+        json!({"herdr":[agent("orchestrator","working")],"app":[agent("orchestrator","working")]}),
+    );
+    let rows = sections(
+        &snap,
+        &OwnerChoices::default(),
+        &ViewState::default(),
+        false,
+    )
+    .remove(0)
+    .rows;
+    assert_eq!(
+        rows.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(),
+        ["/repo", "chat:app"]
+    );
+}
+#[test]
 fn hides_a_live_chat_whose_log_swarm_cannot_read() {
     // A lane that a pi chair opened names no chair CLI, so its log can never be read.
     let mut lane = session("lane", "/repo", 1);

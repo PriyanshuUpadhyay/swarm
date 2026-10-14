@@ -10,7 +10,7 @@ const session = (extra: Partial<Session> = {}): Session => ({
   cwd: "/work/app",
   created_at: 0,
   chair_provider: "claude",
-  adapter: "tmux-solo",
+  adapter: "tmux-swarm",
   project: null,
   workspace: "/work/app",
   ...extra,

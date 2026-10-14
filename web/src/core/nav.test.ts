@@ -216,6 +216,34 @@ describe("owner choices", () => {
   });
 });
 
+describe("a new chat", () => {
+  it("opens once the tree lists it, since the server's tree can lag the start", async () => {
+    let reads = 0;
+    const writes: { op: string; chat?: string }[] = [];
+    const withNew = tree([section("/r/app", "project", [appMain, chat("new", "/r/app")])]);
+    const api = {
+      snapshot: async (): Promise<Snapshot> => ({ version: reads, sessions: [], agents: {} }),
+      tree: async () => (++reads > 2 ? withNew : sample),
+      tabs: async () => {
+        throw new ApiError(404, "unknown workspace");
+      },
+      post: async () => ({ session: "new" }),
+      choice: async (rev: string, op: { op: string; chat?: string }) => {
+        writes.push({ op: op.op, chat: op.chat });
+        if (!withNew.sections[0].rows.some((r) => r.selection?.chat === op.chat)) throw new ApiError(400, "unknown chat in workspace");
+        return { revision: rev, version: 1 };
+      },
+    } as unknown as Api;
+    const app = new App(api);
+    app.notice = () => {};
+    await (app as unknown as { refreshSnapshot(): Promise<void> }).refreshSnapshot();
+    await app.startChat("/r/app");
+    expect(reads).toBeGreaterThan(2);
+    expect(app.view.openId).toBe("new");
+    expect(writes.filter((w) => w.chat === "new").map((w) => w.op)).toContain("open_tab");
+  });
+});
+
 describe("tree refresh", () => {
   it("keeps the old object of each row and section that did not change", () => {
     const next = JSON.parse(JSON.stringify(sample)) as TreeView;

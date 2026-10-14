@@ -37,13 +37,18 @@ const TAB_PANES = ["fixture-tabs-1", "fixture-tabs-2"];
 const GIT_PANE = "fixture-git";
 const PANES = ["fixture-chair", ...TAB_PANES, GIT_PANE, ...PANE_PROJECTS.flatMap((p) => ["chair", "reviewer", "tester"].map((a) => paneOf(p, a)))];
 
-/** A pane adapter that is only shell lines: it logs each verb under $HOME and reads a pane's screen
- *  from $HOME/screen-<pane>, else from $HOME/screen. While $HOME/fail exists, typing fails with its
- *  text. An agent registers on the pane that FIXTURE_PANE names, and a closed pane leaves the list. */
+/** The login pane stand-in: \`accounts login\` "opens" it, and the login command typed into it
+ *  lands in $HOME/login-typed. */
+export const LOGIN_PANE = "login-pane-e2e";
+
+/** The app's own adapter (tmux-swarm), as only shell lines, because the sidebar lists only chats on
+ *  it. It logs each verb under $HOME and reads a pane's screen from $HOME/screen-<pane>, else from
+ *  $HOME/screen. While $HOME/fail exists, typing fails with its text. An agent registers on the
+ *  pane that FIXTURE_PANE names, and a closed pane leaves the list. */
 const FIXTURE_ADAPTER = `self = printf '%s' "\${FIXTURE_PANE:-fixture-chair}"
-spawn = printf fixture-new
+spawn = printf ${LOGIN_PANE}
 list = for p in ${PANES.join(" ")}; do [ -e "$HOME/closed-$p" ] || printf '%s sh\\n' "$p"; done
-ring = if [ -e "$HOME/fail" ]; then cat "$HOME/fail" >&2; exit 1; fi; printf '%s\\n' "$SWARM_TEXT" >> "$HOME/typed"
+ring = if [ -e "$HOME/fail" ]; then cat "$HOME/fail" >&2; exit 1; fi; if [ "$SWARM_PANE" = ${LOGIN_PANE} ]; then f=login-typed; else f=typed; fi; printf '%s\\n' "$SWARM_TEXT" >> "$HOME/$f"
 interrupt = printf 'interrupt %s\\n' "$SWARM_PANE" >> "$HOME/actions"
 key = printf 'key %s %s\\n' "$SWARM_PANE" "$SWARM_KEY" >> "$HOME/actions"
 close = printf 'close %s\\n' "$SWARM_PANE" >> "$HOME/actions"; touch "$HOME/closed-$SWARM_PANE"
@@ -83,12 +88,6 @@ const STAND_INS: Record<string, string> = {
   security: `printf '%s\\n' '{"claudeAiOauth":{"accessToken":"e2e-not-a-token"}}'`,
   curl: `cat >/dev/null; printf '%s\\n200' '{"five_hour":{"utilization":13,"resets_at":"2099-01-01T00:00:00Z"},"seven_day":{"utilization":42}}'`,
 };
-/** The login pane stand-in: the shipped tmux-solo adapter with spawn and ring replaced, so
- *  \`accounts login\` "opens" a pane and the login command it types lands in $HOME/login-typed. */
-export const LOGIN_PANE = "login-pane-e2e";
-const LOGIN_ADAPTER = `spawn = printf ${LOGIN_PANE}
-ring = printf '%s\\n' "$SWARM_TEXT" >> "$HOME/login-typed"
-`;
 
 /** A git workspace on branch `feature`, one commit ahead of origin/main, with a staged, an
  *  unstaged and a 20,000-line untracked file. Its origin is GitHub, for the PR lookup. */
@@ -166,14 +165,13 @@ export default async function setup() {
   }
   // The live chat: its chair registers from the stand-in pane, as a chair CLI does at start.
   mkdirSync(join(home, ".swarm/adapters"), { recursive: true });
-  writeFileSync(join(home, ".swarm/adapters/fixture.conf"), FIXTURE_ADAPTER);
-  writeFileSync(join(home, ".swarm/adapters/tmux-solo.conf"), LOGIN_ADAPTER);
+  writeFileSync(join(home, ".swarm/adapters/tmux-swarm.conf"), FIXTURE_ADAPTER);
   copyFileSync(join(repo, "tests/fixtures/screens/claude-idle.txt"), join(home, "screen"));
   const live = join(dir, "ws-live");
   mkdirSync(live);
   const liveChair = randomUUID();
   copyFileSync(join(fixtures, "claude-edit.jsonl"), join(logs, `${liveChair}.jsonl`));
-  const liveEnv = { ...env, SWARM_ADAPTER: "fixture" };
+  const liveEnv = { ...env, SWARM_ADAPTER: "tmux-swarm" };
   const liveSession = execFileSync(swarm, ["session", "new", "lane", "--chair", `claude:${liveChair}`], { cwd: live, env: liveEnv, stdio: "pipe" })
     .toString()
     .trim()
@@ -205,8 +203,10 @@ export default async function setup() {
   // spawn` gives a child its pane and its hooks report its log; here the store gets both directly.
   const db = execFileSync("fd", ["-HI", "-t", "f", "^swarm.db$", home], { encoding: "utf8" }).trim().split("\n")[0];
   const sql = (text: string) => `'${text.replaceAll("'", "''")}'`;
-  for (const { session, log } of plain)
+  for (const { session, log } of plain) {
+    execFileSync("sqlite3", [db, `UPDATE session SET adapter = 'tmux-swarm' WHERE id = ${sql(session)};`]);
     execFileSync("sqlite3", [db, `INSERT INTO agent (id, session_id, role, provider, created_at, log) VALUES ('orchestrator', ${sql(session)}, 'orchestrator', 'claude', ${Math.floor(Date.now() / 1000)}, ${sql(log)});`]);
+  }
   for (const project of PANE_PROJECTS) {
     const cwd = join(dir, `ws-panes-${project}`);
     mkdirSync(cwd);

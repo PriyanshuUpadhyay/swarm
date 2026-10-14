@@ -3,7 +3,6 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { App, Banner, Composer, Input } from "../core/app";
 import { modelLabel, outgoing, sends, usageLabel, type Prompt } from "../core/composer";
 import { Button } from "../components/ui/button";
-import { Kbd } from "../components/ui/kbd";
 
 /** Below the transcript: the error banner, the agent's question, and the composer. */
 export function ChatInput({ app, composer }: { app: App; composer: Composer }) {
@@ -197,7 +196,7 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
           className="block max-h-[200px] w-full resize-none bg-transparent px-3 pt-2.5 text-base outline-none placeholder:text-faint-foreground"
           data-testid="composer"
           aria-label={`Message ${target}`}
-          placeholder={`Message ${target}`}
+          placeholder={chair.who ? `Message ${target}` : `Message ${target}. Press ⌘L to focus.`}
           value={text}
           onChange={(e) => change(e.target.value)}
           onKeyDown={onKeyDown}
@@ -243,7 +242,6 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
       </div>
       <div className="flex min-h-5 items-center gap-2 px-1 pt-1 text-xs text-muted-foreground" data-testid="composer-status">
         <span className="flex-1">{chair.disabled ?? caption}</span>
-        {!chair.who && <Kbd>⌘L</Kbd>}
       </div>
     </div>
   );

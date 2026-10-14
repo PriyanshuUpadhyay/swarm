@@ -32,7 +32,7 @@ export function ChatView({ app }: { app: App }) {
   const view = useSyncExternalStore(app.subscribe, () => app.view);
   return (
     <>
-      <Transcript app={app} view={view} />
+      <Transcript app={app} view={view} empty={view.openId ? "No messages yet. Send the first one below." : undefined} />
       {view.composer && <ChatInput app={app} composer={view.composer} />}
     </>
   );

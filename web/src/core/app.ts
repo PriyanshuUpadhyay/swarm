@@ -309,7 +309,7 @@ export class App {
     p.reveal = has(p.reveal);
     if (this.findId && !cells.some((c) => paneId(this.openId!, c.id) === this.findId)) this.findId = null;
     return {
-      ...(chat ? this.paneView(chat, sendKey) : NO_PANE),
+      ...(chat ? this.paneView(chat, sendKey, this.chairHasLog(chat.sessionId)) : NO_PANE),
       loaded: this.tree !== null,
       tree: this.tree,
       treeName: this.treeName,
@@ -503,7 +503,8 @@ export class App {
         chat.sent = [];
         chat.version++;
       }
-    // A child's hooks report its log after its column shows.
+    // A chair's and a child's log can show up after the chat opens.
+    if (this.open) this.loadChair(this.open);
     for (const id of this.visible) this.loadPane(id);
     if (this.liveAll) void this.loadAllForLive();
   }
@@ -725,7 +726,14 @@ export class App {
     try {
       const started = await this.api.post<{ session: string }>("/api/chat/new", { cwd: workspace, ...launch });
       if (draft) this.setDraft(started.session, draft);
-      await this.refreshSnapshot();
+      // The server's tree lists a new chat after its agent poll sees the chair's pane, about a
+      // second later, and opening the chat writes a tab that the server checks against that tree.
+      const listed = () => chatRows(this.tree).some((r) => r.selection?.chat === started.session);
+      for (let i = 0; i < 20; i++) {
+        await this.refreshSnapshot();
+        if (listed()) break;
+        await sleep(250);
+      }
       this.openChat(started.session);
     } catch (err) {
       this.notice(message(err), true);
@@ -903,11 +911,8 @@ export class App {
     let chat = this.chats.get(sessionId);
     if (!chat) {
       chat = this.newChat(sessionId);
-      const c = chat;
-      void this.loadTail(c).then(() => {
-        this.syncSubscriptions();
-        if (this.openId === c.sessionId) this.notify();
-      });
+      chat.loaded = false;
+      this.loadChair(chat);
     } else if (!this.liveAll) this.syncSubscriptions();
     this.notify();
     if (e) measure(kind, sessionId, e.timeStamp, () => this.transcriptPainted(sessionId));
@@ -1258,6 +1263,22 @@ export class App {
     this.visible.clear();
     this.findId = null;
     this.pane = { focused: null, zoomed: null, reveal: null, revealSeq: this.pane.revealSeq };
+  }
+
+  /** A new chat's CLI writes its log on the first turn; until then the rows route has nothing. */
+  private chairHasLog(sessionId: string): boolean {
+    const log = this.snapshot?.sessions.find((s) => s.id === sessionId)?.chair_log;
+    return log !== null && log !== "";
+  }
+
+  /** Loads a chair's chat once its log exists. */
+  private loadChair(chat: Chat) {
+    if (chat.loaded || !this.chairHasLog(chat.sessionId)) return;
+    chat.loaded = true;
+    void this.loadTail(chat).then(() => {
+      this.syncSubscriptions();
+      if (this.openId === chat.sessionId) this.notify();
+    });
   }
 
   /** Loads a child's chat once its hooks have reported a log. */

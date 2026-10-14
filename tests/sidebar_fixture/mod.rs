@@ -7,7 +7,7 @@ use swarm::view::{
 };
 
 pub fn session(id: &str, workspace: &str, at: i64) -> Value {
-    json!({"id":id,"cwd":workspace,"workspace":workspace,"project":"/repo","project_id":"repository:/repo/.bare","created_at":at,"agents":2,"chair_provider":"codex","chair_log":format!("/logs/{id}.jsonl"),"title":id})
+    json!({"id":id,"cwd":workspace,"workspace":workspace,"project":"/repo","project_id":"repository:/repo/.bare","created_at":at,"agents":2,"chair_provider":"codex","chair_log":format!("/logs/{id}.jsonl"),"adapter":"tmux-swarm","title":id})
 }
 pub fn agent(id: &str, status: &str) -> Value {
     json!({"id":id,"role":if id == "orchestrator" { "chair" } else { "code" },"pane":format!("pane-{id}"),"alive":status != "ended","state":status,"provider":"codex"})

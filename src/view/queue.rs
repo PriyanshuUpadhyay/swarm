@@ -38,7 +38,7 @@ pub fn replay<'a>(events: impl IntoIterator<Item = &'a Value>) -> Vec<String> {
 }
 
 pub fn can_pull_back(provider: Option<&str>, adapter: &str) -> bool {
-    provider == Some("claude") && matches!(adapter, "tmux" | "tmux-solo")
+    provider == Some("claude") && matches!(adapter, "tmux" | "tmux-swarm")
 }
 
 #[derive(Debug, PartialEq, Eq)]
