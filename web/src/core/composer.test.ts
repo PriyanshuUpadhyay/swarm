@@ -191,6 +191,23 @@ describe("chat actions", () => {
     app.openChat("chat");
     expect(app.view.lines.map((l) => l.row.kind)).toEqual(["user"]);
   });
+
+  it("shows a running pi send as a Sent row, because pi logs it only when the current reply ends", async () => {
+    const { app, snapshot } = harness();
+    snapshot();
+    (app as unknown as { applySnapshot(s: Snapshot): void }).applySnapshot({
+      version: 2,
+      sessions: [session({ chair_provider: "pi" })],
+      agents: { chat: [chair({ state: "working" })] },
+    });
+    app.openChat("chat");
+    await settle();
+    await app.send("chat", "also check the docs");
+    expect(app.view.lines.map((l) => [l.row.kind, l.row.text, l.row.detail])).toEqual([
+      ["user", "hello", undefined],
+      ["queued", "also check the docs", "Sent"],
+    ]);
+  });
 });
 
 describe("pull-back through the app", () => {

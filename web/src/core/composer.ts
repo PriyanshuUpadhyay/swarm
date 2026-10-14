@@ -31,7 +31,7 @@ export function submission(text: string): string {
   return word.endsWith("\\") || word.endsWith(":") || "@$/".includes(word[0]) ? cleaned + " " : cleaned;
 }
 
-/** A text typed into a running Codex or AGY chat. Their logs say nothing until the agent takes it. */
+/** A text typed into a running Codex, AGY, or pi chat. Their logs say nothing until the agent takes it. */
 export type Sent = { row: Row; before: ReadonlySet<string> };
 
 let sentSeq = 0;

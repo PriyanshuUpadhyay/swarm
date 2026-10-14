@@ -1183,7 +1183,7 @@ export class App {
     );
     if (!ok) return false;
     const chat = this.chats.get(sessionId);
-    if (chat && chair.running && (chair.provider === "codex" || chair.provider === "agy")) {
+    if (chat && chair.running && ["codex", "agy", "pi"].includes(chair.provider ?? "")) {
       chat.sent = [...chat.sent, sentRow(typed, chair.provider, chat.rows)];
       this.changed(chat);
     }
