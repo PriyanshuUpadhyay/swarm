@@ -24,5 +24,6 @@ and a host contract for pi with no file in pi's config and a state path that any
 speaks OSC 7501 also gets, accepting that the feed runs only in tmux-swarm panes (Herdr reads pi
 state through its own pi extension, and does not plan OSC 7501), that pi has no swarm guard,
 accounts, or usage meters, that the server scans pi's session folders on a read until a log
-is stored, and that every tmux-swarm pane, of any provider, runs one feed process that reads its
-output.
+is stored, that every tmux-swarm pane, of any provider, runs one feed process that reads its
+output, and that a pi log moved by `PI_CODING_AGENT_SESSION_DIR`, pi's `sessionDir` setting, or a
+`PI_CODING_AGENT_DIR` that only the pane's shell sets is not found, so its rows stay empty.
