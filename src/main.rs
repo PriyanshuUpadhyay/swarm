@@ -2299,12 +2299,12 @@ fn codex_chair_log(id: &str, days: &[String; 3]) -> Option<std::path::PathBuf> {
 /// command the file of its own session, so that comes first.
 fn pi_chair_log(id: &str) -> Option<std::path::PathBuf> {
     let suffix = format!("_{id}.jsonl");
+    // The name test comes first, so a scan of every session file stats only the match.
     let named = |path: &std::path::Path| {
-        path.is_file()
-            && path
-                .file_name()
-                .and_then(|name| name.to_str())
-                .is_some_and(|name| name.ends_with(&suffix))
+        path.file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.ends_with(&suffix))
+            && path.is_file()
     };
     if let Some(file) = env::var_os("PI_SESSION_FILE").map(std::path::PathBuf::from)
         && named(&file)
