@@ -57,7 +57,7 @@ pub fn normalize(
             &payload["toolCall"]["args"],
             &payload["conversationId"],
         ),
-        // pi has no hook; an extension that calls the guard sends Claude's keys.
+        // pi has no swarm guard (ADR 0086); a caller that names pi is read with Claude's keys.
         Provider::Claude | Provider::Codex | Provider::Pi => (
             &payload["tool_name"],
             &payload["tool_input"],

@@ -66,7 +66,7 @@ that ring wakes an idle agent.
 
 ## Pi
 
-`pi-chat.jsonl` follows the record shapes of pi 1.2.0 session files (`docs/session-format.md`,
+`pi-chat.jsonl` follows the record shapes of pi 1.2.0 session files (pi's own `docs/session-format.md`,
 version 3), checked against 40 local session files on 2026-10-14. It keeps the entry and message
 keys, the block types (text, thinking, toolCall), the usage keys, and the stop reasons seen there.
 Ids, text, models, and paths are neutral values. `bashExecution` and `session_info` follow the docs;
