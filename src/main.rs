@@ -109,17 +109,7 @@ fn ring_pane(
     if proof == Proof::Wait
         && let Some(provider) = provider.filter(|provider| swarm::screen::reads_composer(provider))
     {
-        let ready = std::time::Instant::now() + RING_READY_TIMEOUT;
-        // A question on screen, such as a folder trust prompt, also ends the wait.
-        while std::time::Instant::now() < ready {
-            let rows = read();
-            if swarm::screen::composer(provider, &rows).is_some()
-                || swarm::screen::prompt(&rows).is_some()
-            {
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(200));
-        }
+        let _ = wait_for_input_box(provider, &read);
     }
     let rung_at = unix_now()?;
     adapter.run("ring", &[("pane", pane), ("text", &text)])?;
@@ -160,6 +150,63 @@ fn ring_pane(
             return Ok(Some(Delivery::Unconfirmed));
         }
     }
+}
+
+/// Wait until `provider`'s CLI draws its input box, for at most `RING_READY_TIMEOUT`. A question on
+/// screen, such as a folder trust prompt, also ends the wait. True when the first read ends it, so
+/// the CLI was not starting.
+fn wait_for_input_box(provider: &str, read: &impl Fn() -> String) -> bool {
+    let ready = std::time::Instant::now() + RING_READY_TIMEOUT;
+    let mut first = true;
+    while std::time::Instant::now() < ready {
+        let rows = read();
+        if swarm::screen::composer(provider, &rows).is_some()
+            || swarm::screen::prompt(&rows).is_some()
+        {
+            return first;
+        }
+        first = false;
+        std::thread::sleep(std::time::Duration::from_millis(200));
+    }
+    false
+}
+
+/// Type the owner's `text` into `agent_id`'s `pane`, for `swarm type`. A CLI that is still
+/// starting loses text typed before its input box is drawn, or keeps it unsent in the box, so as a
+/// ring does, the text waits for a box that swarm can read, and Enter is pressed again while the
+/// box still holds it. A CLI whose box was already drawn takes the text and its Enter, so the
+/// owner's send to it returns at once.
+fn type_text(
+    connection: &rusqlite::Connection,
+    adapter: &swarm::adapter::Adapter,
+    session_id: &str,
+    agent_id: &str,
+    pane: &str,
+    text: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let provider = swarm::store::provider_of(connection, session_id, agent_id)?
+        .filter(|provider| swarm::screen::reads_composer(provider));
+    let vars = [("pane", pane)];
+    let read = || {
+        adapter
+            .capture_within(&vars, std::time::Duration::from_secs(1))
+            .unwrap_or_default()
+    };
+    let started = provider
+        .as_deref()
+        .is_some_and(|provider| wait_for_input_box(provider, &read));
+    adapter.run("ring", &[("pane", pane), ("text", text)])?;
+    let Some(provider) = provider.filter(|_| !started && adapter.key.is_some()) else {
+        return Ok(());
+    };
+    for _ in 0..RING_ENTER_RETRIES {
+        std::thread::sleep(RING_POLL);
+        if !swarm::screen::holds(&provider, &read(), text) {
+            break;
+        }
+        adapter.run("key", &[("pane", pane), ("key", "Enter")])?;
+    }
+    Ok(())
 }
 
 /// The pane's screen for `ring_proof`: the `screen` verb's output, or the capture `rows` when the
@@ -4529,7 +4576,8 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         if text.trim().is_empty() {
             return Err("swarm: empty text".into());
         }
-        let pane = swarm::store::pane_of(&connection, &session_id()?, agent_id)?
+        let session_id = session_id()?;
+        let pane = swarm::store::pane_of(&connection, &session_id, agent_id)?
             .ok_or("swarm: no pane recorded")?;
         let adapter = swarm::adapter::load(&root, &adapter_name())?;
         if !adapter.has_pane(&pane)? {
@@ -4537,8 +4585,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 "swarm: this chat's pane has closed; start a new chat or switch model".into(),
             );
         }
-        adapter.run("ring", &[("pane", &pane), ("text", &text)])?;
-        return Ok(());
+        return type_text(&connection, &adapter, &session_id, agent_id, &pane, &text);
     }
     if let [cmd, agent_id, prompt_id, choice] = args
         && cmd == "answer"
@@ -5508,6 +5555,46 @@ mod tests {
         assert_eq!(
             std::fs::read_to_string(dir.join("log")).unwrap(),
             "read\nread\nread\nring\nread\nEnter\nread\n"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A fake pi pane that draws its input box on the third read, keeps the text unsent in the
+    /// box as a starting pi does, and starts a turn on Enter.
+    #[test]
+    fn typed_text_waits_for_the_input_box_and_presses_enter_until_it_sends() {
+        let (dir, connection, session) = ring_session("type-pane", Some("pi"), "", "$ pi\n");
+        let box_rows = |text: &str| format!("────\n{text}\n────\n~/project\n");
+        std::fs::write(dir.join("empty"), box_rows("")).unwrap();
+        std::fs::write(
+            dir.join("working"),
+            "hi\n── ⠏ Working ──\n\n────\n~/project\n",
+        )
+        .unwrap();
+        let d = dir.display();
+        let adapter = swarm::adapter::parse(
+            "fake",
+            &format!(
+                "self = true\nspawn = true\nlist = true\nclose = true\n\
+                 capture = n=$(($(cat '{d}/reads' 2>/dev/null || echo 0) + 1)); echo $n > '{d}/reads'; \
+                 [ $n = 3 ] && cp '{d}/empty' '{d}/screen'; echo read >> '{d}/log'; cat '{d}/screen'\n\
+                 ring = echo ring >> '{d}/log'; printf '────\\n%s\\n────\\n~/project\\n' \"$SWARM_TEXT\" > '{d}/screen'\n\
+                 key = echo \"$SWARM_KEY\" >> '{d}/log'; cp '{d}/working' '{d}/screen'\n"
+            ),
+        )
+        .unwrap();
+        type_text(&connection, &adapter, &session, CODER, "%2", "hi").unwrap();
+        assert_eq!(
+            std::fs::read_to_string(dir.join("log")).unwrap(),
+            "read\nread\nread\nring\nread\nEnter\nread\n"
+        );
+        // A pi that drew its box before the send takes the text and its Enter, so no read follows.
+        std::fs::remove_file(dir.join("log")).unwrap();
+        std::fs::copy(dir.join("empty"), dir.join("screen")).unwrap();
+        type_text(&connection, &adapter, &session, CODER, "%2", "hi").unwrap();
+        assert_eq!(
+            std::fs::read_to_string(dir.join("log")).unwrap(),
+            "read\nring\n"
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
