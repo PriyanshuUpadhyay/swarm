@@ -691,17 +691,23 @@ pub fn socket_refusal(herdr_status_stderr: &str) -> Option<&'static str> {
 }
 
 fn has_flag(args: &[String], flags: &[&str]) -> bool {
+    find_flag(args, flags).is_some()
+}
+
+/// The first of `flags` that `args` sets, as `--flag` or `--flag=value`.
+fn find_flag<'a>(args: &'a [String], flags: &[&str]) -> Option<&'a str> {
     // Everything past a bare `--` is a positional prompt, not a flag.
     args.iter()
         .take_while(|arg| *arg != "--")
-        .any(|arg| flags.contains(&arg.split('=').next().unwrap_or(arg)))
+        .map(|arg| arg.split('=').next().unwrap_or(arg))
+        .find(|flag| flags.contains(flag))
 }
 
 /// The caller's extra args for `provider`, checked and in the provider's shape.
 pub fn extra_args(provider: Provider, extra: &[String]) -> Result<Vec<String>, String> {
-    if has_flag(extra, provider.owned_flags()) {
+    if let Some(flag) = find_flag(extra, provider.owned_flags()) {
         return Err(format!(
-            "swarm: the role owns {} model, effort, sandbox, and approval flags; remove them from the extra args",
+            "swarm: the role owns the {} flag {flag}; remove it from the extra args",
             provider.id()
         ));
     }
@@ -1371,6 +1377,10 @@ mod tests {
             );
         }
         assert!(extra_args(Provider::Pi, &strings(&["--name", "x"])).is_ok());
+        assert_eq!(
+            extra_args(Provider::Pi, &strings(&["--name", "x", "--no-session"])).unwrap_err(),
+            "swarm: the role owns the pi flag --no-session; remove it from the extra args"
+        );
     }
 
     #[test]
