@@ -211,6 +211,95 @@ fn auto_run_and_named_run_apply_each_providers_launch_env() {
 }
 
 #[test]
+fn accounts_pick_prints_the_account_that_run_would_use() {
+    let home = fixture("pick");
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    for provider in ["claude", "codex"] {
+        let path = home.join(if provider == "claude" {
+            ".claude/.profiles/work"
+        } else {
+            ".codex-work"
+        });
+        let cache = serde_json::json!({"accounts":[{"home":path,"meters":[{"provider":provider,"account":"work","label":"work","used_pct":10,"state":"fresh","as_of_seconds":now}]}]});
+        std::fs::write(
+            home.join(format!(".swarm/{provider}-usage.json")),
+            cache.to_string(),
+        )
+        .unwrap();
+        let (key, value) = if provider == "codex" {
+            ("CODEX_HOME", path.display().to_string())
+        } else {
+            (
+                "CLAUDE_SECURESTORAGE_CONFIG_DIR",
+                format!("{}/.claude-work", home.display()),
+            )
+        };
+        for selection in [None, Some("auto"), Some("work")] {
+            let mut args = vec!["accounts", "pick", "--provider", provider];
+            if let Some(selection) = selection {
+                args.extend(["--account", selection]);
+            }
+            args.push("--json");
+            let output = command(&home, &args).output().unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let picked: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+            assert_eq!(picked["schema"], "swarm.account-pick.v1");
+            assert_eq!(picked["name"], "work", "{picked}");
+            assert_eq!(picked["home"], path.display().to_string());
+            assert_eq!(picked["env"][key], value, "{picked}");
+            assert!(picked["clear"].as_array().unwrap().iter().any(|k| k == key));
+            assert!(!home.join("child-env").exists(), "pick runs no CLI session");
+        }
+        let output = command(
+            &home,
+            &[
+                "accounts",
+                "pick",
+                "--provider",
+                provider,
+                "--account",
+                "absent",
+                "--json",
+            ],
+        )
+        .output()
+        .unwrap();
+        assert!(!output.status.success());
+        assert!(String::from_utf8_lossy(&output.stderr).contains("unknown"));
+    }
+    tool(
+        &home,
+        "claude",
+        "if [ \"$*\" = 'auth status' ]; then exit 1; fi",
+    );
+    std::fs::remove_file(home.join(".swarm/claude-usage.json")).unwrap();
+    let output = command(
+        &home,
+        &["accounts", "pick", "--provider", "claude", "--json"],
+    )
+    .output()
+    .unwrap();
+    assert!(output.status.success());
+    let picked: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(picked["name"].is_null(), "{picked}");
+    assert_eq!(picked["env"], serde_json::json!({}));
+    assert!(
+        picked["clear"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|k| k == "AGENT_PROFILE_LABEL")
+    );
+}
+
+#[test]
 fn unknown_and_signed_out_accounts_never_execute_the_cli() {
     let home = fixture("refuse");
     for provider in ["claude", "codex"] {
