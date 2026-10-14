@@ -3865,7 +3865,8 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     if let [cmd, flag, provider] = args
         && cmd == "host-context"
         && flag == "--provider"
-        && Provider::parse(provider).is_some()
+        // pi has no SessionStart hook to call this; `launch` passes it the context (ADR 0086).
+        && Provider::parse(provider).is_some_and(|provider| provider != Provider::Pi)
     {
         let mut payload = String::new();
         std::io::Read::read_to_string(&mut std::io::stdin(), &mut payload)?;

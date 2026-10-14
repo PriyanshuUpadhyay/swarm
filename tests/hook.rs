@@ -1931,3 +1931,16 @@ fn a_pane_status_feed_stores_the_pi_log_named_by_its_session_id() {
             .ends_with(&format!("_{session}-orchestrator.jsonl"))
     );
 }
+
+#[test]
+fn host_context_refuses_pi_which_gets_its_context_at_launch() {
+    let home = scratch("host-context-pi");
+    let refused = swarm(&home, &[], &["host-context", "--provider", "pi"], "");
+    assert!(!refused.status.success());
+    assert!(!stdout(&refused).contains("injectSteps"));
+    assert!(
+        swarm(&home, &[], &["host-context", "--provider", "agy"], "")
+            .status
+            .success()
+    );
+}
