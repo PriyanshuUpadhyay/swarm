@@ -642,7 +642,7 @@ impl Probe {
         let mut cache = self.accounts.borrow_mut();
         let accounts = cache
             .entry(provider)
-            .or_insert_with(|| swarm::profiles::native::load(provider, self.deadline));
+            .or_insert_with(|| pick_accounts(provider, self.deadline, self.account.is_none()));
         // An explicit account bypasses the Fable guard; authentication and general limits still apply.
         let model = self.account.is_none().then_some(runner.model.as_str());
         let scoped = accounts.as_ref().ok().map(|list| list.for_model(model));
@@ -800,6 +800,26 @@ fn load_accounts(
         .map_err(|error| format!("swarm: {error}").into())
 }
 
+/// The accounts for a pick. An automatic pick ranks accounts by usage left, so it first refreshes
+/// a usage cache that is missing or older than the freshness limit; a named pick reads no usage.
+fn pick_accounts(
+    provider: Provider,
+    deadline: std::time::Instant,
+    auto: bool,
+) -> Result<swarm::profiles::AccountList, String> {
+    let mut accounts = swarm::profiles::native::load(provider, deadline)?;
+    if auto
+        && let Some(meters) = swarm::usage::refresh_if_old(
+            provider,
+            &accounts,
+            swarm::profiles::native::deadline(USAGE_PICK_REFRESH_TIMEOUT_SECONDS),
+        )
+    {
+        swarm::profiles::apply_usage(&mut accounts, &meters);
+    }
+    Ok(accounts)
+}
+
 fn select_account(
     provider: Provider,
     requested: &str,
@@ -845,9 +865,10 @@ fn run_cli(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let provider = Provider::parse(provider)
         .filter(|provider| provider.has_accounts())
         .ok_or("swarm: run requires claude or codex")?;
-    let accounts = swarm::profiles::native::load(
+    let accounts = pick_accounts(
         provider,
         swarm::profiles::native::deadline(ACCOUNT_PICK_TIMEOUT_SECONDS),
+        requested == "auto",
     );
     let account = select_account(
         provider,
@@ -896,13 +917,15 @@ fn account_pick(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     if !json {
         return Err(USAGE.into());
     }
-    let accounts = swarm::profiles::native::load(
+    let requested = options.get("--account").copied().unwrap_or("auto");
+    let accounts = pick_accounts(
         provider,
         swarm::profiles::native::deadline(ACCOUNT_PICK_TIMEOUT_SECONDS),
+        requested == "auto",
     );
     let account = select_account(
         provider,
-        options.get("--account").copied().unwrap_or("auto"),
+        requested,
         options.get("--model").copied(),
         swarm::config::min_usage_left_pct(),
         accounts.as_ref().map_err(Clone::clone),
@@ -3476,6 +3499,8 @@ fn all_agent_listings(
 }
 
 const ACCOUNT_PICK_TIMEOUT_SECONDS: u64 = 2;
+/// A usage refresh before an automatic pick: one CLI start and one quota read per account.
+const USAGE_PICK_REFRESH_TIMEOUT_SECONDS: u64 = 8;
 // Leave time for CLI output before SwarmCLIProfileSource kills its process at 20 seconds.
 const NATIVE_READ_TIMEOUT_SECONDS: u64 = 18;
 const LOGIN_ADAPTER_TIMEOUT_SECONDS: u64 = 18;
@@ -4073,7 +4098,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 let mut cache = probe.accounts.borrow_mut();
                 let accounts = cache
                     .entry(kind)
-                    .or_insert_with(|| swarm::profiles::native::load(kind, account_deadline));
+                    .or_insert_with(|| pick_accounts(kind, account_deadline, requested == "auto"));
                 select_account(
                     kind,
                     requested,

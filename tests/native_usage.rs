@@ -667,3 +667,46 @@ fn failed_refresh_keeps_failed_windows_beside_retained_good_windows() {
     assert_eq!(work["usage_state"], "failed");
     assert!(work["remaining_pct"].is_null());
 }
+
+#[test]
+fn auto_pick_refreshes_a_missing_or_old_usage_cache_once_per_window() {
+    let home = fixture("auto-refresh");
+    let reads = |home: &Path| {
+        std::fs::read_to_string(home.join("requests"))
+            .unwrap_or_default()
+            .matches("rateLimits/read")
+            .count()
+    };
+    let pick = |home: &Path, args: &[&str]| {
+        let mut all = vec!["accounts", "pick", "--provider", "codex"];
+        all.extend(args);
+        all.push("--json");
+        json(run(home, &all))
+    };
+    let age = |home: &Path| {
+        std::fs::File::options()
+            .write(true)
+            .open(home.join(".swarm/codex-usage.json"))
+            .unwrap()
+            .set_modified(std::time::SystemTime::now() - std::time::Duration::from_secs(400))
+            .unwrap();
+    };
+    assert_eq!(pick(&home, &[])["name"], "work");
+    assert_eq!(reads(&home), 1, "a missing cache is refreshed");
+    assert_eq!(pick(&home, &[])["name"], "work");
+    assert_eq!(
+        reads(&home),
+        1,
+        "a cache inside the window is used as it is"
+    );
+    age(&home);
+    assert_eq!(pick(&home, &["--account", "auto"])["name"], "work");
+    assert_eq!(
+        reads(&home),
+        2,
+        "a cache older than the window is refreshed"
+    );
+    age(&home);
+    assert_eq!(pick(&home, &["--account", "work"])["name"], "work");
+    assert_eq!(reads(&home), 2, "a named pick does not rank by usage");
+}

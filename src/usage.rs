@@ -426,9 +426,39 @@ pub fn refresh_claude(deadline: Instant) -> Result<Usage, String> {
     refresh(Provider::Claude, deadline)
 }
 
+/// Refreshes `provider`'s usage for an automatic pick when its cache is missing or older than
+/// MAX_AGE_SECONDS, so at most one refresh runs in each window, even when an account's read keeps
+/// failing. None when the cache is new enough or the refresh fails; the pick then uses the cache.
+pub fn refresh_if_old(
+    provider: Provider,
+    accounts: &AccountList,
+    deadline: Instant,
+) -> Option<Vec<UsageMeter>> {
+    let age = std::fs::metadata(cache_path(provider.id()).ok()?)
+        .and_then(|metadata| metadata.modified())
+        .ok()
+        .and_then(|modified| modified.elapsed().ok());
+    if age.is_some_and(|age| age.as_secs() <= MAX_AGE_SECONDS as u64) {
+        return None;
+    }
+    refresh_accounts(provider, accounts.accounts.clone(), deadline)
+        .ok()
+        .map(|usage| usage.meters)
+}
+
 fn refresh(provider: Provider, deadline: Instant) -> Result<Usage, String> {
-    let path = cache_path(provider.id())?;
+    // The path check comes before the account read, which creates the swarm home.
+    cache_path(provider.id())?;
     let accounts = crate::profiles::native::identities(provider, deadline)?.accounts;
+    refresh_accounts(provider, accounts, deadline)
+}
+
+fn refresh_accounts(
+    provider: Provider,
+    accounts: Vec<Account>,
+    deadline: Instant,
+) -> Result<Usage, String> {
+    let path = cache_path(provider.id())?;
     let previous = cached_accounts(provider.id(), &accounts, now_seconds())?;
     let resolved_cache = resolved_parent(&path);
     if accounts.iter().any(|account| {
@@ -436,22 +466,35 @@ fn refresh(provider: Provider, deadline: Instant) -> Result<Usage, String> {
     }) {
         return Err("Swarm usage cache must be outside provider homes".into());
     }
+    // Each read starts the CLI or a request, so the accounts are read at once under the deadline.
+    let reads: Vec<_> = std::thread::scope(|scope| {
+        let reads: Vec<_> = accounts
+            .iter()
+            .map(|account| {
+                scope.spawn(move || match account.auth_state {
+                    AuthState::SignedOut => None,
+                    _ if provider == Provider::Codex => Some(fresh_codex(account, deadline)),
+                    _ => Some(fresh_claude(account, deadline)),
+                })
+            })
+            .collect();
+        reads
+            .into_iter()
+            .map(|read| read.join().expect("a usage read panicked"))
+            .collect()
+    });
     let mut cache = Cache::default();
     let mut meters = Vec::new();
-    for account in accounts {
-        let account_meters = match account.auth_state {
-            AuthState::SignedOut => vec![status_meter(
+    for (account, read) in accounts.into_iter().zip(reads) {
+        let account_meters = match read {
+            None => vec![status_meter(
                 provider.id(),
                 Some(&account),
                 "missing",
                 ReasonCode::NoCredentials,
                 None,
             )],
-            _ => match if provider == Provider::Codex {
-                fresh_codex(&account, deadline)
-            } else {
-                fresh_claude(&account, deadline)
-            } {
+            Some(read) => match read {
                 Ok(meters) => meters,
                 Err(_) => {
                     let retained: Vec<_> = previous
