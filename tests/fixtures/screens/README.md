@@ -13,6 +13,9 @@ Bottom rows of agent panes for the screen check tests in `src/screen.rs`.
   2026-09-29 (the folder trust screen and an `ask_question` prompt). The other `agy-*.txt` are
   synthesized from Herdr 0.9.1's AGY detection rules, not captured. `agy-waiting.txt` stays
   synthesized: with the terminal sandbox on, AGY ran every probe command without an approval.
+- `pi-*.txt` are real `tmux capture-pane -p -J` output from pi 1.2.0 on 2026-10-15 (an empty
+  input box, a ring left unsent in it, and a running turn), cut to the rows from the box up and
+  with the folder replaced by `~/project`.
 
 Digit keys, checked live on the same versions: a digit picks a Claude permission or
 AskUserQuestion choice, a Codex approval choice, and an AGY `ask_question` choice with no Enter.

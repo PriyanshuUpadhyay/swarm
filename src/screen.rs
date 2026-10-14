@@ -550,10 +550,25 @@ pub fn codex_composer(rows: &str) -> Option<String> {
     Some(text.join(" ").trim_start_matches('›').trim().to_string())
 }
 
+/// The text in pi's input box: the rows between the last two rules, joined. Pi draws its folder
+/// and model rows under the box, and while a turn runs the top rule reads `── ⠋ Working ──`.
+/// None until the box is drawn.
+pub fn pi_composer(rows: &str) -> Option<String> {
+    let lines: Vec<&str> = rows.trim_end().lines().collect();
+    let rule = |line: &&str| line.trim_start().starts_with('─');
+    let bottom = lines.iter().rposition(rule)?;
+    let top = lines[..bottom].iter().rposition(rule)?;
+    let text: Vec<&str> = lines[top + 1..bottom]
+        .iter()
+        .map(|line| line.trim())
+        .collect();
+    Some(text.join(" ").trim().to_string())
+}
+
 /// Whether swarm can read the input box of `provider`'s CLI. AGY's idle prompt was never
 /// captured, so its box is never read.
 pub fn reads_composer(provider: &str) -> bool {
-    matches!(provider, "claude" | "codex")
+    matches!(provider, "claude" | "codex" | "pi")
 }
 
 /// The text in the input box of `provider`'s CLI, or None while it is not drawn or swarm cannot
@@ -562,6 +577,7 @@ pub fn composer(provider: &str, rows: &str) -> Option<String> {
     match provider {
         "claude" => claude_composer(rows),
         "codex" => codex_composer(rows),
+        "pi" => pi_composer(rows),
         _ => None,
     }
 }
@@ -608,6 +624,20 @@ mod tests {
         // A starting CLI has no box yet, and a question is never a held ring.
         assert_eq!(claude_composer("$ claude --model haiku\n"), None);
         assert!(!holds("claude", fixture!("claude-waiting"), ring));
+    }
+
+    #[test]
+    fn pi_input_box_holds_only_an_unsent_ring() {
+        let ring = "Reply with only the word ok.";
+        assert!(reads_composer("pi"));
+        assert!(holds("pi", fixture!("pi-ring-unsent"), ring));
+        // The box is empty while idle and once the ring is sent, even though the sent text stays
+        // in the history above the box.
+        assert_eq!(composer("pi", fixture!("pi-idle")).as_deref(), Some(""));
+        assert_eq!(composer("pi", fixture!("pi-working")).as_deref(), Some(""));
+        assert!(!holds("pi", fixture!("pi-working"), ring));
+        // A starting pi has no box yet.
+        assert_eq!(composer("pi", "$ pi --model x\n"), None);
     }
 
     #[test]
