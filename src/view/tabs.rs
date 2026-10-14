@@ -435,14 +435,7 @@ pub fn view(
         else {
             continue;
         };
-        let children: Vec<_> = chat
-            .children()
-            .into_iter()
-            .filter(|a| {
-                a["alive"] == true
-                    && super::tree::AgentStatus::agent(a) != super::tree::AgentStatus::Ended
-            })
-            .collect();
+        let children = chat.children();
         let waiting: Vec<_> = children
             .iter()
             .filter(|a| super::tree::AgentStatus::agent(a) == super::tree::AgentStatus::Waiting)

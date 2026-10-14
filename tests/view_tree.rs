@@ -320,7 +320,7 @@ fn chat_cut_and_order() {
     assert_eq!(sections(&snap, &owner, &state, false)[0].rows.len(), 7);
 }
 #[test]
-fn child_folds_and_dimmed_finished_children() {
+fn child_folds_and_hides_ended_children() {
     let snap = folder_snapshot(
         vec![session("chat", "/repo", 1)],
         json!({"chat":[agent("orchestrator","working"),agent("review","waiting"),json!({"id":"code","role":"code","pane":null,"alive":false,"state":"done"})]}),
@@ -332,19 +332,17 @@ fn child_folds_and_dimmed_finished_children() {
     assert!(!folded[1].expanded);
     assert_eq!(
         folded[1].children_summary.as_deref(),
-        Some("2 agents · 1 waiting")
+        Some("1 agent · 1 waiting")
     );
     assert_eq!(folded[1].status, Some(Status::Waiting));
     state.fold("chat:chat", false);
     let opened = sections(&snap, &owner, &state, false).remove(0).rows;
     assert_eq!(
         opened.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(),
-        ["/repo", "chat:chat", "child:chat/code", "child:chat/review"]
+        ["/repo", "chat:chat", "child:chat/review"]
     );
     assert_eq!(opened[1].status, Some(Status::Working));
-    assert_eq!(opened[2].status, Some(Status::Ended));
-    assert!(opened[2].dimmed);
-    assert!(!opened[3].dimmed);
+    assert!(!opened[2].dimmed);
     assert_eq!(opened[2].detail, "· code");
     state.fold("/repo", true);
     let folded = sections(&snap, &owner, &state, false).remove(0).rows;
@@ -368,19 +366,14 @@ fn stable_chain_child_ids_and_current_urgency() {
             .rows;
         assert_eq!(
             rows.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(),
-            [
-                "/repo",
-                "chat:root",
-                "child:next/finished",
-                "child:next/worker"
-            ]
+            ["/repo", "chat:root", "child:next/worker"]
         );
         assert_eq!(rows[0].status, Some(Status::Working));
         assert_eq!(
             rows[2].selection.as_ref().unwrap().agent_session.as_deref(),
             Some("next")
         );
-        assert!(rows[2].dimmed && rows[3].dimmed);
+        assert!(rows[2].dimmed);
     }
     let rows = sections(
         &folder_snapshot(
@@ -449,7 +442,7 @@ fn pinned_archived_and_empty_section_visibility() {
 fn urgent_collapsed_headers_and_counts() {
     let snap = folder_snapshot(
         vec![session("chat", "/repo", 1)],
-        json!({"chat":[agent("coder","working"),agent("tester","working"),agent("reviewer","waiting")]}),
+        json!({"chat":[agent("coder","working"),agent("tester","working"),agent("reviewer","waiting"),agent("old","ended")]}),
     );
     let mut state = ViewState::default();
     state.fold("project:/repo", true);

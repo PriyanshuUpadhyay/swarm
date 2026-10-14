@@ -13,11 +13,18 @@ export function ChatInput({ app, composer }: { app: App; composer: Composer }) {
       <div className="mx-auto grid max-w-[820px] gap-2">
         {state.banner && <ChatBanner app={app} sessionId={id} banner={state.banner} />}
         {agent.prompt && <PromptCard app={app} sessionId={id} who={agent.who} prompt={agent.prompt} state={state} />}
-        {/* A child with no pane shows only the reason (ChildColumnView). */}
+        {/* A child with no pane shows only the reason (ChildColumnView). A chair with none shows
+            only its log, and Continue chat starts a new chat from its summary (ADR 0083). */}
         {agent.who && agent.unreachable ? (
           <p className="text-xs text-muted-foreground" data-testid="composer-status">
             {agent.disabled}
           </p>
+        ) : agent.unreachable ? (
+          <div className="flex justify-center">
+            <Button variant="outline" size="sm" data-testid="continue-chat" onClick={() => app.life.openSwitchModel(id)}>
+              Continue chat
+            </Button>
+          </div>
         ) : (
           <ComposerBox key={id} app={app} composer={composer} />
         )}
@@ -190,8 +197,7 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
           className="block max-h-[200px] w-full resize-none bg-transparent px-3 pt-2.5 text-base outline-none placeholder:text-faint-foreground"
           data-testid="composer"
           aria-label={`Message ${target}`}
-          placeholder={chair.unreachable ? "This chat cannot take input" : `Message ${target}`}
-          disabled={chair.unreachable}
+          placeholder={`Message ${target}`}
           value={text}
           onChange={(e) => change(e.target.value)}
           onKeyDown={onKeyDown}
@@ -237,7 +243,7 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
       </div>
       <div className="flex min-h-5 items-center gap-2 px-1 pt-1 text-xs text-muted-foreground" data-testid="composer-status">
         <span className="flex-1">{chair.disabled ?? caption}</span>
-        {!chair.unreachable && !chair.who && <Kbd>⌘L</Kbd>}
+        {!chair.who && <Kbd>⌘L</Kbd>}
       </div>
     </div>
   );

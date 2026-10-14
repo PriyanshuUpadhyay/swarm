@@ -88,11 +88,10 @@ export function agentInput(session: Session | undefined, agents: readonly Agent[
   const prompt = (agent?.prompt as Prompt | null | undefined) ?? null;
   const adapter = session?.adapter?.trim() || null;
   let disabled: string | null = null;
+  // A child with no live pane has no column (ADR 0083), so only the chair's pane is checked here.
   if (!adapter) disabled = MISSING_ADAPTER;
-  else if (child) {
-    if (!agent?.pane || agent.alive === false) disabled = "This agent has ended.";
-  } else if (!agent?.pane) disabled = "The chair has no pane to receive input.";
-  else if (agent.alive === false) disabled = "This chat's pane has closed. Start a new chat or switch model.";
+  else if (!child && !agent?.pane) disabled = "The chair has no pane to receive input.";
+  else if (!child && agent?.alive === false) disabled = "This chat's pane has closed. Start a new chat or switch model.";
   const unreachable = disabled !== null;
   // A waiting agent has a dialog open, where Enter means yes, so typed text could approve a tool.
   if (!disabled && agent?.state === "waiting")

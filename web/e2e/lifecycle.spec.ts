@@ -235,6 +235,19 @@ test("Archive chat moves a chat to Recently closed, and ⇧⌘T reopens it", asy
   expect(errors).toEqual([]);
 });
 
+test("A chat whose chair has no pane shows only its log, and Continue chat opens Switch model", async ({ page: tab }) => {
+  const errors = await open(tab);
+  const session = (await workspace(tab, "ws-edit").locator("xpath=following-sibling::*[@data-kind='chat']").first().getAttribute("data-session"))!;
+  await tab.locator(`[data-testid="tree-row"][data-session="${session}"]`).click();
+  await expect(tab.locator(`[data-testid="transcript"][data-chat="${session}"][data-state="ready"]`)).toBeVisible();
+  await expect(tab.getByTestId("composer")).toHaveCount(0);
+  await expect(tab.getByTestId("composer-status")).toHaveCount(0);
+  await tab.getByTestId("continue-chat").click();
+  await expect(tab.getByTestId("switch-model")).toBeVisible();
+  await tab.keyboard.press("Escape");
+  expect(errors).toEqual([]);
+});
+
 test("Switch model shows its progress, and Cancel stops it while the chair writes its summary", async ({ page: tab }, info) => {
   const errors = await open(tab);
   const live = process.env.SWARM_E2E_LIVE!;

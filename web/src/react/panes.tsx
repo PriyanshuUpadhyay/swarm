@@ -3,7 +3,7 @@
 // column to split it; a double-click resets (ADR 0026). A finished child stays dimmed until it is
 // dismissed (ADR 0056). One context menu serves every pane header (decision 3).
 
-import { CopyIcon, Maximize2Icon, Minimize2Icon, PowerIcon, SquareIcon, TerminalIcon, XIcon } from "lucide-react";
+import { CopyIcon, Maximize2Icon, Minimize2Icon, PowerIcon, SquareIcon, TerminalIcon } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { flushSync } from "react-dom";
 import { toast } from "sonner";
@@ -105,7 +105,6 @@ export function PaneStrip({ app }: { app: App }) {
   }, [openId]);
 
   const actions = (cell: PaneCell): Action[] => {
-    const ended = cell.status === "ended";
     const zoomed = strip.zoomed === cell.id;
     const list: Action[] = [
       { title: "Stop", label: `Stop ${cell.id}`, icon: <SquareIcon className="fill-current" />, disabled: !midTurn(cell.status), run: () => void app.stopPane(cell.id).catch(failed) },
@@ -113,7 +112,6 @@ export function PaneStrip({ app }: { app: App }) {
         title: "Close agent…",
         label: `Close agent ${cell.id}`,
         icon: <PowerIcon />,
-        disabled: ended,
         // Only a child in a turn asks first (SwarmAgentCell.requiresCloseConfirmation).
         run: () => (midTurn(cell.status) ? setClosing(cell.id) : void app.closePane(cell.id).catch(failed)),
       },
@@ -126,7 +124,6 @@ export function PaneStrip({ app }: { app: App }) {
         run: () => app.toggleZoom(cell.id),
       },
     ];
-    if (ended) list.push({ title: "Dismiss finished agent", label: `Dismiss ${cell.id}`, icon: <XIcon />, run: () => app.dismissPanes([cell.id]) });
     return list;
   };
 
@@ -146,7 +143,6 @@ export function PaneStrip({ app }: { app: App }) {
     widths.current = saveSplit(widths.current, openId!, cols.map((c) => c[0].id), column, share === null ? null : splitShare(share));
   };
 
-  const hasFinished = cells.some((c) => c.status === "ended");
   const menuCell = cells.find((c) => c.id === menu);
   const pane = (cell: PaneCell) => (
     <PaneView
@@ -162,13 +158,6 @@ export function PaneStrip({ app }: { app: App }) {
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      {hasPanes && (
-        <div className="flex h-7 shrink-0 items-center justify-end border-b border-border px-3">
-          <button type="button" className="t-link" data-testid="clear-finished" hidden={!hasFinished} onClick={() => app.dismissPanes(cells.map((c) => c.id))}>
-            Clear finished
-          </button>
-        </div>
-      )}
       {/* A zoomed pane fills this box, over the strip. */}
       <div className="relative min-h-0 flex-1">
         <div ref={scroller} className="strip" data-panes={hasPanes} data-testid="strip">
@@ -272,7 +261,7 @@ export function PaneStrip({ app }: { app: App }) {
 function Asking({ app, strip }: { app: App; strip: Strip }) {
   const asking = strip.cells.flatMap((cell) => {
     const pane = strip.panes.get(cell.id);
-    const prompt = cell.status === "ended" ? null : pane?.composer?.agent.prompt;
+    const prompt = pane?.composer?.agent.prompt;
     return pane?.composer && prompt ? [{ cell, pane, prompt, state: pane.composer.state }] : [];
   });
   if (!asking.length) return null;

@@ -186,7 +186,6 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 /** The chat id of a child agent's column. It is also the agent's stream key. */
 export const paneId = (sessionId: string, agent: string) => `${sessionId}:${agent}`;
 const DRAFT_PREFIX = "composer.draft.";
-const DISMISSED_STORAGE = "swarm.panes.dismissed";
 const NO_FIND: Find = { open: false, query: "", matches: [], index: -1, seq: 0 };
 const NO_PANE: Pane = {
   id: "",
@@ -274,9 +273,7 @@ export class App {
   private pane = { focused: null as string | null, zoomed: null as string | null, reveal: null as string | null, revealSeq: 0 };
   /** Chat ids of the child columns on screen. Only these follow their logs. */
   private visible = new Set<string>();
-  /** Finished children the owner dismissed, per session (ADR 0056). P2 moves this to view state. */
-  private dismissed: Record<string, string[]>;
-  private cellsMemo: { snapshot: Snapshot | null; openId: string | null; dismissed: string[] | undefined; cells: PaneCell[] } | null = null;
+  private cellsMemo: { snapshot: Snapshot | null; openId: string | null; cells: PaneCell[] } | null = null;
   private strip: Strip = { cells: NO_CELLS, panes: new Map(), focused: null, zoomed: null, reveal: null, revealSeq: 0 };
   private readers = new Map<string, Reader>();
   /** Shows a short message to the owner; the view layer sets it (a toast). */
@@ -286,11 +283,6 @@ export class App {
     readonly api: Api,
     readonly liveAll = false,
   ) {
-    try {
-      this.dismissed = JSON.parse(readStore(DISMISSED_STORAGE) ?? "{}");
-    } catch {
-      this.dismissed = {};
-    }
     this.view = this.makeView();
     this.registry.add(...this.commands(), ...this.settings.commands());
   }
@@ -369,11 +361,10 @@ export class App {
   private cells(): PaneCell[] {
     const id = this.openId;
     if (!id) return NO_CELLS;
-    const dismissed = this.dismissed[id];
     const m = this.cellsMemo;
-    if (m && m.snapshot === this.snapshot && m.openId === id && m.dismissed === dismissed) return m.cells;
-    const cells = paneCells(this.snapshot?.sessions.find((s) => s.id === id), this.snapshot?.agents[id], dismissed);
-    this.cellsMemo = { snapshot: this.snapshot, openId: id, dismissed, cells };
+    if (m && m.snapshot === this.snapshot && m.openId === id) return m.cells;
+    const cells = paneCells(this.snapshot?.sessions.find((s) => s.id === id), this.snapshot?.agents[id]);
+    this.cellsMemo = { snapshot: this.snapshot, openId: id, cells };
     return cells;
   }
 
@@ -1334,20 +1325,6 @@ export class App {
     this.loadPane(paneId(this.openId, id));
     this.syncSubscriptions();
     this.notify();
-  }
-
-  /** Removes finished children from the strip: one pane's ×, or "Clear finished" (ADR 0056). */
-  dismissPanes(agents: string[]) {
-    const id = this.openId;
-    if (!id) return;
-    const finished = this.cells().filter((c) => c.status === "ended" && agents.includes(c.id)).map((c) => c.id);
-    if (!finished.length) return;
-    this.dismissed = { ...this.dismissed, [id]: [...(this.dismissed[id] ?? []), ...finished] };
-    writeStore(DISMISSED_STORAGE, JSON.stringify(this.dismissed));
-    for (const agent of finished) this.visible.delete(paneId(id, agent));
-    if (finished.includes(this.pane.focused!) || finished.includes(this.pane.zoomed!)) this.revealChat();
-    else this.notify();
-    this.syncSubscriptions();
   }
 
   /** The header's Stop: interrupts a child's turn. A failure throws the server's text. */

@@ -32,13 +32,9 @@ describe("pane cells", () => {
     expect(cells.map((c) => c.id)).toEqual(["reviewer", "tester", "writer"]);
   });
 
-  it("keeps a finished child until the owner dismisses it, and never hides a live one", () => {
-    const agents = [chair, agent("finished", { alive: false }), agent("live")];
-    expect(paneCells(session(), agents).map((c) => [c.id, c.status])).toEqual([
-      ["finished", "ended"],
-      ["live", "done"],
-    ]);
-    expect(paneCells(session(), agents, ["finished", "live"]).map((c) => c.id)).toEqual(["live"]);
+  it("shows only children whose pane is alive", () => {
+    const agents = [chair, agent("finished", { alive: false }), agent("closed", { pane: null, alive: null }), agent("live")];
+    expect(paneCells(session(), agents).map((c) => [c.id, c.status])).toEqual([["live", "done"]]);
   });
 
   it("names the model, else the provider, and whether the hooks reported a log", () => {
@@ -223,17 +219,16 @@ describe("child columns", () => {
     expect(app.view.composer!.state.answering).toBeNull();
   });
 
-  it("says why a child cannot take input", async () => {
-    const { app } = harness([chair, agent("ended", { alive: false }), agent("asking", { state: "waiting" })]);
+  it("says why a waiting child cannot take input", async () => {
+    const { app } = harness([chair, agent("asking", { state: "waiting" })]);
     app.openChat("chat");
     await settle();
     const input = (id: string) => app.view.strip.panes.get(id)!.composer!.agent;
-    expect(input("ended")).toMatchObject({ unreachable: true, disabled: "This agent has ended." });
     expect(input("asking").disabled).toBe("asking waits on a question the app cannot read. Run `swarm attach asking` in a terminal to answer it.");
   });
 });
 
-describe("pane focus, zoom and dismiss", () => {
+describe("pane focus and zoom", () => {
   it("moves focus from the chat to the panes and back, and bumps the reveal each time", async () => {
     const { app } = harness();
     app.openChat("chat");
@@ -265,17 +260,6 @@ describe("pane focus, zoom and dismiss", () => {
     app.toggleZoom();
     expect(app.view.strip.zoomed).toBeNull();
     expect(subscriptions.at(-1)).toEqual(["chat:chair", "chat:reviewer", "chat:tester"]);
-  });
-
-  it("dismisses only finished children, and Clear finished leaves the live ones", async () => {
-    const { app } = harness([chair, agent("finished", { alive: false }), agent("live")]);
-    app.openChat("chat");
-    await settle();
-    app.focusPane("finished");
-    app.dismissPanes(["finished", "live"]);
-    expect(app.view.strip.cells.map((c) => c.id)).toEqual(["live"]);
-    // The focused pane left, so the chat page shows.
-    expect(app.view.strip.focused).toBeNull();
   });
 
   it("finds in the focused pane, and in the chat when no pane has focus", async () => {

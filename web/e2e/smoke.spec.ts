@@ -312,10 +312,7 @@ test("a chat with two children shows their panes; keys move focus and zoom; a pa
     expect((await closed).postDataJSON()).toMatchObject({ agent: "tester" });
     await expect.poll(() => read("actions")).toContain(`close fixture-${project}-tester`);
 
-    // The finished child stays, dimmed, until it is dismissed (ADR 0056).
-    await expect(tester).toHaveAttribute("data-status", "ended");
-    await expect(tester).toContainText("This agent has ended.");
-    await tab.getByTestId("clear-finished").click();
+    // An ended child leaves the strip at once (ADR 0083).
     await expect(panes).toHaveCount(1);
   } finally {
     writeFileSync(testerScreen, readFileSync(join(screens, "claude-idle.txt"), "utf8"));

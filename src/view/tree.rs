@@ -90,12 +90,14 @@ impl Chat {
             .iter()
             .find(|a| a["id"] == "orchestrator" || (chair.is_some() && a["id"].as_str() == chair))
     }
+    /// The chat's child agents whose pane is alive. An ended child shows nowhere (ADR 0083).
     pub fn children(&self) -> Vec<&Value> {
         let chair = self.sessions[0]["chair_id"].as_str();
         let mut children: Vec<_> = self
             .agents
             .iter()
             .filter(|a| a["id"] != "orchestrator" && (chair.is_none() || a["id"].as_str() != chair))
+            .filter(|a| a["alive"] == true && AgentStatus::agent(a) != AgentStatus::Ended)
             .collect();
         children.sort_by(|a, b| a["id"].as_str().cmp(&b["id"].as_str()));
         children
@@ -656,9 +658,10 @@ pub struct StatusCount {
     pub status: AgentStatus,
     pub count: usize,
 }
+/// Counts only live agents, so a closed chat shows no badge (ADR 0083).
 pub fn status_counts(statuses: impl IntoIterator<Item = AgentStatus>) -> Vec<StatusCount> {
     let mut counts = BTreeMap::new();
-    for status in statuses {
+    for status in statuses.into_iter().filter(|s| *s != AgentStatus::Ended) {
         *counts.entry(status).or_insert(0) += 1;
     }
     counts

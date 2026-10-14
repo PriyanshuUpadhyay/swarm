@@ -20,12 +20,12 @@ export type PaneCell = { id: string; role: string; model: string; status: PaneSt
 
 export const isChair = (agent: Agent, session: Session) => agent.id === "orchestrator" || agent.id === session.chair_id;
 
-/** The chat's child agents, oldest first. A finished child stays until it is dismissed (ADR 0056). */
-export function paneCells(session: Session | undefined, agents: readonly Agent[] | undefined, dismissed: readonly string[] = []): PaneCell[] {
+/** The chat's child agents whose pane is alive, oldest first. An ended child shows nowhere (ADR 0083). */
+export function paneCells(session: Session | undefined, agents: readonly Agent[] | undefined): PaneCell[] {
   if (!session || !agents) return [];
   const created = (a: Agent) => (typeof a.created_at === "number" ? a.created_at : Infinity);
   return agents
-    .filter((a) => !isChair(a, session) && (paneStatus(a) !== "ended" || !dismissed.includes(a.id)))
+    .filter((a) => !isChair(a, session) && paneStatus(a) !== "ended")
     .sort((a, b) => created(a) - created(b) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
     .map((a) => {
       const provider = (a.provider as string | null | undefined) ?? null;
