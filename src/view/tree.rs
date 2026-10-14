@@ -501,6 +501,16 @@ fn chats(sessions: Vec<Value>, snapshot: &Value, owner: &OwnerChoices) -> Vec<Ch
             .as_array()
             .cloned()
             .unwrap_or_default();
+        // A closed chat with no log has nothing to show, so it is not listed (ADR 0083). A chat
+        // with an agent that may be live stays, so workspace delete still finds and closes it.
+        if known
+            && nonblank(current["chair_log"].as_str()).is_none()
+            && agents
+                .iter()
+                .all(|a| AgentStatus::agent(a) == AgentStatus::Ended)
+        {
+            continue;
+        }
         let provider = nonblank(current["chair_provider"].as_str())
             .or_else(|| {
                 nonblank(

@@ -350,6 +350,29 @@ fn child_folds_and_hides_ended_children() {
     assert_eq!(folded[0].status, Some(Status::Waiting));
 }
 #[test]
+fn hides_a_closed_chat_with_no_log() {
+    let mut closed = session("closed", "/repo", 1);
+    closed["chair_log"] = Value::Null;
+    let mut starting = session("starting", "/repo", 2);
+    starting["chair_log"] = Value::Null;
+    let snap = folder_snapshot(
+        vec![closed, starting, session("logged", "/repo", 3)],
+        json!({"closed":[agent("orchestrator","ended")],"starting":[agent("orchestrator","working")],"logged":[agent("orchestrator","ended")]}),
+    );
+    let rows = sections(
+        &snap,
+        &OwnerChoices::default(),
+        &ViewState::default(),
+        false,
+    )
+    .remove(0)
+    .rows;
+    assert_eq!(
+        rows.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(),
+        ["/repo", "chat:logged", "chat:starting"]
+    );
+}
+#[test]
 fn stable_chain_child_ids_and_current_urgency() {
     let old = session("root", "/repo", 1);
     let mut next = session("next", "/repo", 2);
