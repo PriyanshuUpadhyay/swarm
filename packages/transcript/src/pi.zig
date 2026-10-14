@@ -156,8 +156,10 @@ fn parseAssistant(arena: std.mem.Allocator, events: *std.ArrayList(root.Event), 
     if (has_unknown) try events.append(arena, try root.unknownEvent(arena, meta, line));
     const stop = root.str(message, "stopReason");
     if (std.mem.eql(u8, stop, "error")) {
-        // Pi may retry an error, so it ends no turn here; a later reply or turn end follows.
+        // A failed reply that pi gives up on, such as a failed login, writes nothing after it, so
+        // it ends the turn. A retry that works adds its reply after this turn end.
         try events.append(arena, .{ .@"error" = .{ .meta = meta, .message = root.str(message, "errorMessage") } });
+        try events.append(arena, .{ .turn_ended = .{ .meta = meta, .duration_ms = null, .reason = .aborted } });
     } else if (std.mem.eql(u8, stop, "aborted")) {
         try events.append(arena, .{ .turn_ended = .{ .meta = meta, .duration_ms = null, .reason = .aborted } });
     } else if (!called_tool and root.oneOf(stop, &.{ "stop", "length" })) {
@@ -221,7 +223,7 @@ test "a pi chat becomes rows, with no unknown record" {
             "session_info usage agent_thought_chunk tool_call tool_call_update " ++
             "session_info usage agent_message_chunk turn_ended system_message " ++
             "system_message system_message session_info usage turn_ended " ++
-            "session_info usage error system_message session_info ",
+            "session_info usage error turn_ended system_message session_info ",
         tags.items,
     );
 }
@@ -248,8 +250,10 @@ test "pi records keep their ids, tool links, and turn ends" {
     try std.testing.expectEqualStrings("e9", events[16].system_message.meta.parent_uuid.?);
     try std.testing.expectEqual(.aborted, events[19].turn_ended.reason);
     try std.testing.expectEqualStrings("overloaded", events[22].@"error".message);
-    try std.testing.expectEqualStrings("compaction", events[23].system_message.kind);
-    try std.testing.expectEqual(root.SessionInfoKind.title, events[24].session_info.kind);
+    // A failed reply ends the turn, or a chat whose login failed stays busy for good.
+    try std.testing.expectEqual(.aborted, events[23].turn_ended.reason);
+    try std.testing.expectEqualStrings("compaction", events[24].system_message.kind);
+    try std.testing.expectEqual(root.SessionInfoKind.title, events[25].session_info.kind);
 }
 
 test "a pi session id comes from its file name" {
