@@ -259,12 +259,20 @@ impl Provider {
                 "-a",
                 "--ask-for-approval",
             ],
+            // The session flags would move or drop the log the app finds by its fixed id.
             Provider::Pi => &[
                 "--model",
                 "--provider",
                 "--thinking",
                 "--session-id",
                 "--session",
+                "--session-dir",
+                "--no-session",
+                "--continue",
+                "-c",
+                "--resume",
+                "-r",
+                "--fork",
             ],
             Provider::Claude | Provider::Agy => &[
                 "--model",

@@ -1355,6 +1355,22 @@ mod tests {
         );
         assert!(extra_args(Provider::Pi, &strings(&["--thinking", "max"])).is_err());
         assert!(extra_args(Provider::Pi, &strings(&["--session-id", "x"])).is_err());
+        // The app finds a pi log by its fixed id under pi's own session folder (ADR 0086).
+        for flag in [
+            "--no-session",
+            "--session-dir=/x",
+            "--continue",
+            "-c",
+            "--resume",
+            "-r",
+            "--fork",
+        ] {
+            assert!(
+                extra_args(Provider::Pi, &strings(&[flag])).is_err(),
+                "{flag}"
+            );
+        }
+        assert!(extra_args(Provider::Pi, &strings(&["--name", "x"])).is_ok());
     }
 
     #[test]
