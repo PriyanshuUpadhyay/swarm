@@ -3275,15 +3275,32 @@ fn list_agents(
     session_id: &str,
     adapter: &swarm::adapter::Adapter,
 ) -> Result<AgentListOutput, Box<dyn std::error::Error>> {
-    let rows = swarm::store::agents(connection, session_id)?;
-    let listing = match adapter.run("list", &[]) {
-        Ok(listing) => Some(listing),
+    let listing = read_pane_list(adapter)?;
+    list_agents_from(connection, root, session_id, adapter, listing)
+}
+
+/// The adapter's `list` output, or None when it fails before the deadline.
+fn read_pane_list(
+    adapter: &swarm::adapter::Adapter,
+) -> Result<Option<String>, Box<dyn std::error::Error>> {
+    match adapter.run("list", &[]) {
+        Ok(listing) => Ok(Some(listing)),
         Err(error) => {
             adapter.check_deadline()?;
             eprintln!("swarm: {}", error.to_string().replace(['\r', '\n'], " "));
-            None
+            Ok(None)
         }
-    };
+    }
+}
+
+fn list_agents_from(
+    connection: &mut rusqlite::Connection,
+    root: &std::path::Path,
+    session_id: &str,
+    adapter: &swarm::adapter::Adapter,
+    listing: Option<String>,
+) -> Result<AgentListOutput, Box<dyn std::error::Error>> {
+    let rows = swarm::store::agents(connection, session_id)?;
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)?
         .as_secs() as i64;
@@ -3513,16 +3530,74 @@ fn all_agent_listings(
                     .is_some_and(|name| !name.trim().is_empty())
         })
         .collect();
-    for (index, session) in sessions.iter().enumerate() {
-        let adapter = session.adapter.as_deref().expect("filtered adapter").trim();
-        let listing = swarm::adapter::load(root, adapter).and_then(|mut adapter| {
-            adapter.session_id = Some(session.id.clone());
-            let now = std::time::Instant::now();
-            adapter.deadline = Some(
-                now + deadline.saturating_duration_since(now) / (sessions.len() - index) as u32,
-            );
-            list_agents(connection, root, &session.id, &adapter)
+    fn adapter_of(session: &swarm::store::SessionRow) -> &str {
+        session.adapter.as_deref().expect("filtered adapter").trim()
+    }
+    // Every shipped adapter's `list` names all panes, not one session's, so it runs once per
+    // adapter, with the env of the first session that uses it. An Err leaves those sessions out.
+    let mut pane_lists: Vec<(&str, Result<Option<String>, String>)> = Vec::new();
+    for session in &sessions {
+        if !pane_lists
+            .iter()
+            .any(|(name, _)| *name == adapter_of(session))
+        {
+            pane_lists.push((adapter_of(session), Ok(None)));
+        }
+    }
+    let adapters = pane_lists.len();
+    for (index, (name, panes)) in pane_lists.iter_mut().enumerate() {
+        let first = sessions
+            .iter()
+            .find(|s| adapter_of(s) == *name)
+            .expect("listed adapter");
+        *panes = swarm::adapter::load(root, name)
+            .and_then(|mut adapter| {
+                adapter.session_id = Some(first.id.clone());
+                let now = std::time::Instant::now();
+                adapter.deadline =
+                    Some(now + deadline.saturating_duration_since(now) / (adapters - index) as u32);
+                read_pane_list(&adapter)
+            })
+            .map_err(|error| error.to_string());
+    }
+    let panes_of = |session: &swarm::store::SessionRow| {
+        &pane_lists
+            .iter()
+            .find(|(name, _)| *name == adapter_of(session))
+            .expect("listed adapter")
+            .1
+    };
+    // Only a session with a live pane reads its screen, so only those share the time left. A
+    // session whose panes are unknown counts as live.
+    let mut live = Vec::with_capacity(sessions.len());
+    for session in &sessions {
+        let rows = swarm::store::agents(connection, &session.id)?;
+        live.push(match panes_of(session) {
+            Ok(Some(panes)) => rows.iter().any(|row| {
+                row.pane
+                    .as_deref()
+                    .is_some_and(|pane| swarm::adapter::listing_has_pane(panes, pane))
+            }),
+            _ => true,
         });
+    }
+    for (index, session) in sessions.iter().enumerate() {
+        let sharers = if live[index] {
+            live[index..].iter().filter(|live| **live).count()
+        } else {
+            sessions.len() - index
+        };
+        let listing = panes_of(session)
+            .clone()
+            .map_err(Into::into)
+            .and_then(|panes| {
+                let mut adapter = swarm::adapter::load(root, adapter_of(session))?;
+                adapter.session_id = Some(session.id.clone());
+                let now = std::time::Instant::now();
+                adapter.deadline =
+                    Some(now + deadline.saturating_duration_since(now) / sharers as u32);
+                list_agents_from(connection, root, &session.id, &adapter, panes)
+            });
         match listing {
             Ok(listing) => {
                 listings.insert(session.id.clone(), listing);
@@ -4803,6 +4878,70 @@ mod tests {
         // The single-session list keeps its original unbounded list and bounded screen behavior.
         let adapter = swarm::adapter::load(&root, "slow-list").unwrap();
         assert!(list_agents(&mut connection, &root, &ids[0], &adapter).is_ok());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn batch_lists_the_panes_of_one_adapter_once() {
+        let root =
+            std::env::temp_dir().join(format!("swarm-batch-list-once-{}", uuid::Uuid::now_v7()));
+        std::fs::create_dir_all(root.join("adapters")).unwrap();
+        let calls = root.join("calls");
+        let calls_path = swarm::adapter::shell_line(&[calls.to_string_lossy().into_owned()]);
+        std::fs::write(root.join("adapters/fake.conf"), format!(
+            "self = true\nspawn = true\nring = true\nlist = echo >> {calls_path}; printf pane\nclose = true\ncapture = true\nscreen = true\n"
+        )).unwrap();
+        let mut connection = swarm::store::open(&root.join("swarm.db")).unwrap();
+        let mut ids = Vec::new();
+        for _ in 0..3 {
+            let session =
+                swarm::store::create_session(&connection, "lane", &root, None, Some("fake"))
+                    .unwrap();
+            swarm::store::add_agent(&connection, &session, CODER, "code").unwrap();
+            swarm::store::set_pane(&connection, &session, CODER, "pane").unwrap();
+            ids.push(session);
+        }
+        let listings =
+            all_agent_listings(&mut connection, &root, std::time::Duration::from_secs(5)).unwrap();
+        assert_eq!(std::fs::read_to_string(&calls).unwrap().lines().count(), 1);
+        for id in &ids {
+            assert_eq!(listings[id].agents.len(), 1);
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn batch_gives_its_budget_to_sessions_with_a_live_pane() {
+        let root =
+            std::env::temp_dir().join(format!("swarm-batch-live-share-{}", uuid::Uuid::now_v7()));
+        std::fs::create_dir_all(root.join("adapters")).unwrap();
+        std::fs::write(root.join("adapters/fake.conf"),
+            "self = true\nspawn = true\nring = true\nlist = printf pane\nclose = true\ncapture = true\nscreen = sleep 0.2; printf '{\"result\":{\"agent\":{\"agent_status\":\"idle\"}}}'\n"
+        ).unwrap();
+        let mut connection = swarm::store::open(&root.join("swarm.db")).unwrap();
+        let mut live = String::new();
+        // The live session lists first; an even split would give it 1/21 of the budget.
+        for index in 0..21 {
+            let session =
+                swarm::store::create_session(&connection, "lane", &root, None, Some("fake"))
+                    .unwrap();
+            swarm::store::add_agent(&connection, &session, CODER, "code").unwrap();
+            let pane = if index == 0 { "pane" } else { "closed" };
+            swarm::store::set_pane(&connection, &session, CODER, pane).unwrap();
+            connection
+                .execute(
+                    "UPDATE session SET created_at = ?1 WHERE id = ?2",
+                    rusqlite::params![100 - index as i64, session],
+                )
+                .unwrap();
+            if index == 0 {
+                live = session;
+            }
+        }
+        let listings =
+            all_agent_listings(&mut connection, &root, std::time::Duration::from_secs(1)).unwrap();
+        assert_eq!(listings.len(), 21);
+        assert!(listings[&live].agents[0].alive == Some(true));
         std::fs::remove_dir_all(root).unwrap();
     }
 
