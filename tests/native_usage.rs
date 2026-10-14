@@ -383,7 +383,7 @@ fn refresh_finishes_before_the_swift_timeout_and_reaps_its_process() {
         &home,
         "codex",
         r#"echo "$*" >> "$HOME/processes"
-echo "$$" > "$HOME/child-pid"
+echo "$$" >> "$HOME/child-pids"
 exec /bin/sleep 25"#,
     );
     let start = std::time::Instant::now();
@@ -403,23 +403,28 @@ exec /bin/sleep 25"#,
                 && row["reason"] == "Codex usage read failed"
                 && row["reason_code"] == "read_failed")
     );
+    // One read per Codex home, all started at once under the one deadline.
     assert_eq!(
         std::fs::read_to_string(home.join("processes"))
             .unwrap()
             .lines()
             .count(),
-        1
+        3
     );
-    let pid = std::fs::read_to_string(home.join("child-pid")).unwrap();
-    assert!(
-        !Command::new("/bin/kill")
-            .args(["-0", pid.trim()])
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .unwrap()
-            .success()
-    );
+    for pid in std::fs::read_to_string(home.join("child-pids"))
+        .unwrap()
+        .lines()
+    {
+        assert!(
+            !Command::new("/bin/kill")
+                .args(["-0", pid])
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .unwrap()
+                .success()
+        );
+    }
 }
 
 #[test]

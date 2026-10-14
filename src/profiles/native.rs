@@ -168,25 +168,40 @@ fn load_inner(
     let homes = crate::accounts::merge(provider, discovery.homes, &metadata.accounts);
     list.source = Some("swarm".into());
     list.state = "ready".into();
-    for (name, path) in homes {
-        let path = path.to_string_lossy().into_owned();
-        let env = provider.launch_env(&name, &path);
-        let identity_env = provider.identity_env(&name, &path);
-        let identity = match provider {
-            Provider::Codex => AppServer::start(&identity_env, deadline)
-                .and_then(|mut server| {
-                    server.request(2, "account/read", json!({"refreshToken":false}))
+    // Each read starts the CLI, which takes about a second, so the homes are read at once: in a row,
+    // every home after the first few would pass the shared deadline.
+    let homes: Vec<_> = homes
+        .into_iter()
+        .map(|(name, path)| (name, path.to_string_lossy().into_owned()))
+        .collect();
+    let identities: Vec<_> = std::thread::scope(|scope| {
+        let reads: Vec<_> = homes
+            .iter()
+            .map(|(name, path)| {
+                let identity_env = provider.identity_env(name, path);
+                scope.spawn(move || match provider {
+                    Provider::Codex => AppServer::start(&identity_env, deadline)
+                        .and_then(|mut server| {
+                            server.request(2, "account/read", json!({"refreshToken":false}))
+                        })
+                        .and_then(|result| {
+                            let api_key = result["account"]["type"] == "apiKey";
+                            codex_identity(result)
+                                .map(|(state, email)| (state, email, api_key))
+                                .map_err(NativeReadError::from)
+                        }),
+                    _ => claude_identity(&identity_env, deadline)
+                        .map(|(state, email)| (state, email, false)),
                 })
-                .and_then(|result| {
-                    let api_key = result["account"]["type"] == "apiKey";
-                    codex_identity(result)
-                        .map(|(state, email)| (state, email, api_key))
-                        .map_err(NativeReadError::from)
-                }),
-            _ => {
-                claude_identity(&identity_env, deadline).map(|(state, email)| (state, email, false))
-            }
-        };
+            })
+            .collect();
+        reads
+            .into_iter()
+            .map(|read| read.join().expect("an account read panicked"))
+            .collect()
+    });
+    for ((name, path), identity) in homes.into_iter().zip(identities) {
+        let env = provider.launch_env(&name, &path);
         if matches!(identity, Err(NativeReadError::CliUnavailable)) {
             list.state = "unavailable".into();
         }

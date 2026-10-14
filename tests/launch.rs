@@ -1676,12 +1676,13 @@ fn named_launch_reuses_the_role_probe_deadline() {
         "{:?}",
         start.elapsed()
     );
+    // One read per home (default and work), all started at once under the one deadline.
     assert_eq!(
         std::fs::read_to_string(home.join("native-reads"))
             .unwrap()
             .lines()
             .count(),
-        1
+        2
     );
 }
 

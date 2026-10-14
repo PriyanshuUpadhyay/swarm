@@ -300,6 +300,44 @@ fn accounts_pick_prints_the_account_that_run_would_use() {
 }
 
 #[test]
+fn a_named_pick_reads_every_account_within_the_pick_deadline() {
+    let home = fixture("slow-logins");
+    for name in ["a", "b", "c"] {
+        std::fs::create_dir_all(home.join(format!(".codex-{name}"))).unwrap();
+    }
+    // Each login read takes 0.7 s, so five reads in a row pass the 2 s pick deadline.
+    tool(
+        &home,
+        "codex",
+        &format!(
+            "sleep 0.7\n{}",
+            include_str!("fixtures/accounts/work-app-server.sh")
+        ),
+    );
+    for name in ["work", "a", "b", "c"] {
+        let output = command(
+            &home,
+            &[
+                "accounts",
+                "pick",
+                "--provider",
+                "codex",
+                "--account",
+                name,
+                "--json",
+            ],
+        )
+        .output()
+        .unwrap();
+        assert!(
+            output.status.success(),
+            "{name}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+}
+
+#[test]
 fn unknown_and_signed_out_accounts_never_execute_the_cli() {
     let home = fixture("refuse");
     for provider in ["claude", "codex"] {

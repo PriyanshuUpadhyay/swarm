@@ -36,15 +36,23 @@ Chosen: `swarm accounts pick --provider <claude|codex> [--account <auto|NAME>] [
 - `pi()` calls it once for Claude and once for Codex. `--profile NAME` and `--codex-profile NAME`
   pass the name, and each picks `auto` when it is not given. Pi then sets `PI_CODEX_PROFILE` and
   `PI_CODEX_HOME` from the Codex pick.
+- `codex()` calls it for each command that starts a session. `--profile NAME` passes the name. A
+  caller-set `CODEX_HOME` is kept, and plumbing commands such as `--version` or `mcp` pick nothing.
+- The account reads run at the same time, one per home, so a named pick of the last home finishes
+  inside the 2 s pick limit. In a row, a Mac with four Codex homes ran out of time at the third.
 
 ## Consequences
 
-- Good: Pi, `swarm run` and `swarm launch` pick by the same rule, so yelo is not needed for Pi.
+- Good: Pi, `codex`, `swarm run` and `swarm launch` pick by the same rule.
 - Bad: a valueless `--profile` no longer opens yelo's numbered menu, so the owner must type a name.
+- Bad: `codex resume`, `fork`, `login` and the other commands bound to one home need `--profile`,
+  because yelo found the home that holds a session and swarm does not.
+- Bad: `codex profile list|create|sessions` is gone; `swarm accounts --provider codex --json` lists
+  the accounts.
 - Bad: Pi's Claude bridge now uses the native Claude home with the account's Keychain entry (0071),
   so chats that yelo kept in a separate profile home are not in Pi's history.
-- Bad: the `claude`, `cc`, `codex` and `prime-agent` wrappers in yelo's `shell.sh` still pick
-  through yelo, so yelo stays installed until those wrappers have a swarm form too.
+- Bad: the `claude` wrapper in yelo's `shell.sh` still picks through yelo, so yelo stays installed
+  until `claude` has a swarm form too.
 
 ## Links
 
