@@ -45,6 +45,82 @@ fn resolved(path: PathBuf) -> PathBuf {
     std::fs::canonicalize(&path).unwrap_or(path)
 }
 
+/// A Codex session that a pick follows: one id, or the newest session started in a folder (None:
+/// in any folder).
+pub enum CodexSession {
+    Id(String),
+    Last(Option<PathBuf>),
+}
+
+/// The account whose home holds the session. Codex keeps each session inside one home, so
+/// `resume`, `fork` and the other session commands work only with that account. A rollout is
+/// `rollout-<YYYY-MM-DDThh-mm-ss>-<uuid>.jsonl` under `sessions/<y>/<m>/<d>/`; an id also matches
+/// one that Codex moved to `archived_sessions/`.
+pub fn codex_session_owner<'a>(
+    accounts: &'a [Account],
+    session: &CodexSession,
+) -> Option<&'a Account> {
+    let entries = |dir: PathBuf| -> Vec<PathBuf> {
+        std::fs::read_dir(dir)
+            .into_iter()
+            .flatten()
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .collect()
+    };
+    let mut rollouts = Vec::new();
+    for account in accounts {
+        let home = Path::new(&account.home);
+        let mut files: Vec<_> = entries(home.join("sessions"))
+            .into_iter()
+            .flat_map(entries)
+            .flat_map(entries)
+            .flat_map(entries)
+            .collect();
+        if matches!(session, CodexSession::Id(_)) {
+            files.extend(entries(home.join("archived_sessions")));
+        }
+        rollouts.extend(files.into_iter().filter_map(|path| {
+            let name = path.file_name()?.to_str()?;
+            let rest = name.strip_prefix("rollout-")?.strip_suffix(".jsonl")?;
+            let (started, id) = rest.split_at_checked(19)?;
+            let id = id.strip_prefix('-').filter(|id| id.len() == 36)?;
+            uuid::Uuid::parse_str(id).ok()?;
+            Some((started.to_string(), id.to_ascii_lowercase(), path, account))
+        }));
+    }
+    match session {
+        CodexSession::Id(wanted) => rollouts
+            .into_iter()
+            .find(|(_, id, _, _)| *id == wanted.to_ascii_lowercase())
+            .map(|(.., account)| account),
+        CodexSession::Last(cwd) => {
+            rollouts.sort_by(|left, right| right.0.cmp(&left.0));
+            let cwd = cwd.clone().map(resolved);
+            rollouts
+                .into_iter()
+                .find(|(_, _, path, _)| {
+                    cwd.as_ref().is_none_or(|cwd| {
+                        rollout_cwd(path).is_some_and(|dir| resolved(dir) == *cwd)
+                    })
+                })
+                .map(|(.., account)| account)
+        }
+    }
+}
+
+/// The folder a rollout's session started in, from its first line, the `session_meta` record.
+fn rollout_cwd(path: &Path) -> Option<PathBuf> {
+    let mut line = String::new();
+    BufReader::new(std::fs::File::open(path).ok()?)
+        .read_line(&mut line)
+        .ok()?;
+    let meta: Value = serde_json::from_str(&line).ok()?;
+    (meta["type"] == "session_meta")
+        .then(|| meta["payload"]["cwd"].as_str().map(PathBuf::from))
+        .flatten()
+}
+
 pub struct Discovery {
     pub homes: Vec<(String, PathBuf)>,
     pub current: PathBuf,

@@ -338,6 +338,106 @@ fn a_named_pick_reads_every_account_within_the_pick_deadline() {
 }
 
 #[test]
+fn accounts_pick_finds_the_codex_home_that_holds_a_session() {
+    let home = fixture("session-owner");
+    let rollout = |codex: &str, folder: &str, started: &str, id: &str, cwd: &Path| {
+        let dir = home.join(codex).join(folder);
+        std::fs::create_dir_all(&dir).unwrap();
+        let meta = serde_json::json!({"type":"session_meta","payload":{"id":id,"cwd":cwd}});
+        std::fs::write(
+            dir.join(format!("rollout-{started}-{id}.jsonl")),
+            format!("{meta}\n"),
+        )
+        .unwrap();
+    };
+    let (project, other, empty) = (home.join("project"), home.join("other"), home.join("empty"));
+    for dir in [&project, &other, &empty] {
+        std::fs::create_dir_all(dir).unwrap();
+    }
+    let first = "0199a000-0000-7000-8000-000000000001";
+    let second = "0199a000-0000-7000-8000-000000000002";
+    let archived = "0199a000-0000-7000-8000-000000000003";
+    rollout(
+        ".codex-work",
+        "sessions/2026/10/01",
+        "2026-10-01T10-00-00",
+        first,
+        &project,
+    );
+    rollout(
+        ".codex-b",
+        "sessions/2026/10/02",
+        "2026-10-02T10-00-00",
+        second,
+        &other,
+    );
+    rollout(
+        ".codex-b",
+        "archived_sessions",
+        "2026-09-01T10-00-00",
+        archived,
+        &project,
+    );
+    let pick = |cwd: &Path, args: &[&str]| {
+        let mut all = vec!["accounts", "pick", "--provider", "codex"];
+        all.extend(args);
+        all.push("--json");
+        command(&home, &all).current_dir(cwd).output().unwrap()
+    };
+    let name = |output: std::process::Output| {
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        serde_json::from_slice::<serde_json::Value>(&output.stdout).unwrap()["name"].clone()
+    };
+    assert_eq!(name(pick(&home, &["--session", first])), "work");
+    assert_eq!(
+        name(pick(&home, &["--session", &first.to_uppercase()])),
+        "work"
+    );
+    assert_eq!(name(pick(&home, &["--session", archived])), "b");
+    assert_eq!(name(pick(&project, &["--last"])), "work");
+    assert_eq!(name(pick(&project, &["--last", "--all"])), "b");
+    for (cwd, args, message) in [
+        (
+            &home,
+            vec!["--session", "0199a000-0000-7000-8000-00000000000f"],
+            "not in any codex account",
+        ),
+        (&empty, vec!["--last"], "no codex session"),
+        (
+            &home,
+            vec!["--session", first, "--account", "work"],
+            "usage",
+        ),
+    ] {
+        let output = pick(cwd, &args);
+        assert!(!output.status.success());
+        assert!(
+            String::from_utf8_lossy(&output.stderr).contains(message),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    let output = command(
+        &home,
+        &[
+            "accounts",
+            "pick",
+            "--provider",
+            "claude",
+            "--last",
+            "--json",
+        ],
+    )
+    .output()
+    .unwrap();
+    assert!(!output.status.success());
+}
+
+#[test]
 fn unknown_and_signed_out_accounts_never_execute_the_cli() {
     let home = fixture("refuse");
     for provider in ["claude", "codex"] {

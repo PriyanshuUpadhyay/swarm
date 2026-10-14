@@ -272,7 +272,7 @@ fn init() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-const USAGE: &str = "usage: swarm --version | init | skills refresh | skills manifest <source> <out> | setup status --json | setup [--plan [--json] | --digest <digest>] [--cwd <dir>] [--only <hooks|trust|herdr|skills>,...] [--consent <standing|ask>] [--resume] | hooks status --json | hooks setup [--plan [--json] | --digest <digest>] | managed list [--json] | managed revert (<id>... | --all) [--plan [--json] | --digest <digest>] | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session continue <new_id> <old_id> | session archive <id>... | session unarchive <id>... | sessions --json [--archived] | agent add <agent_id> <role> | serve [--port N] [--assets DIR] | ui [--port N] [--assets DIR] | herdr-split | notify <title> [--body <text>] | notices --json | notices --due | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | guard <claude|codex|agy> PreToolUse | roles --json | roles get <role> [--provider <claude|codex|agy>] | roles check --json | roles save --revision <revision> <profile-json> | roles new <name> --revision <revision> | roles rename <old> <new> --revision <revision> | roles copy <from> <to> --revision <revision> | roles delete <name> --revision <revision> | roles reset --revision <revision> | roles set-min-usage <pct> --revision <revision> | providers --json | models --provider <claude|codex|agy> --json | accounts --provider <claude|codex|agy> --json | accounts login --provider <claude|codex> --name <name> --revision <revision> --json [--cwd <dir>] | accounts reset --revision <revision> --json | accounts pick --provider <claude|codex> [--account <auto|NAME>] [--model <model>] --json | usage --json | usage --format openusage | usage --refresh --provider <claude|codex> --json | agents --json [--all] | messages --json [--after <seq>] | run <claude|codex> [--account <auto|NAME>] [-- <args>...] | launch <agent_id> <role> [--provider <claude|codex|agy>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | answer <agent_id> <prompt_id> <choice> | interrupt <agent_id> | key <agent_id> <Up|C-u> | attach <agent_id> | focus <session_id> <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
+const USAGE: &str = "usage: swarm --version | init | skills refresh | skills manifest <source> <out> | setup status --json | setup [--plan [--json] | --digest <digest>] [--cwd <dir>] [--only <hooks|trust|herdr|skills>,...] [--consent <standing|ask>] [--resume] | hooks status --json | hooks setup [--plan [--json] | --digest <digest>] | managed list [--json] | managed revert (<id>... | --all) [--plan [--json] | --digest <digest>] | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session continue <new_id> <old_id> | session archive <id>... | session unarchive <id>... | sessions --json [--archived] | agent add <agent_id> <role> | serve [--port N] [--assets DIR] | ui [--port N] [--assets DIR] | herdr-split | notify <title> [--body <text>] | notices --json | notices --due | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | guard <claude|codex|agy> PreToolUse | roles --json | roles get <role> [--provider <claude|codex|agy>] | roles check --json | roles save --revision <revision> <profile-json> | roles new <name> --revision <revision> | roles rename <old> <new> --revision <revision> | roles copy <from> <to> --revision <revision> | roles delete <name> --revision <revision> | roles reset --revision <revision> | roles set-min-usage <pct> --revision <revision> | providers --json | models --provider <claude|codex|agy> --json | accounts --provider <claude|codex|agy> --json | accounts login --provider <claude|codex> --name <name> --revision <revision> --json [--cwd <dir>] | accounts reset --revision <revision> --json | accounts pick --provider <claude|codex> [--account <auto|NAME> | --session <id> | --last [--all]] [--model <model>] --json | usage --json | usage --format openusage | usage --refresh --provider <claude|codex> --json | agents --json [--all] | messages --json [--after <seq>] | run <claude|codex> [--account <auto|NAME>] [-- <args>...] | launch <agent_id> <role> [--provider <claude|codex|agy>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | answer <agent_id> <prompt_id> <choice> | interrupt <agent_id> | key <agent_id> <Up|C-u> | attach <agent_id> | focus <session_id> <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
 
 fn env_var(name: &str) -> Result<String, String> {
     env::var(name).map_err(|_| format!("swarm: {name} not set"))
@@ -891,17 +891,19 @@ fn run_cli(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
 
 /// The account `swarm run` would use, for a shell wrapper such as `pi` that starts the CLI itself.
 /// `clear` names the account variables to unset first; `name` is null when the CLI keeps its own
-/// login.
+/// login. `--session ID` or `--last [--all]` picks the Codex account that holds that session.
 fn account_pick(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let mut options = std::collections::BTreeMap::new();
-    let mut json = false;
+    let mut flags = std::collections::BTreeSet::new();
     let mut arguments = args.iter();
     while let Some(flag) = arguments.next() {
-        if flag == "--json" && !json {
-            json = true;
+        if ["--json", "--last", "--all"].contains(&flag.as_str()) {
+            if !flags.insert(flag.as_str()) {
+                return Err(USAGE.into());
+            }
             continue;
         }
-        if !["--provider", "--account", "--model"].contains(&flag.as_str()) {
+        if !["--provider", "--account", "--model", "--session"].contains(&flag.as_str()) {
             return Err(USAGE.into());
         }
         let value = arguments.next().ok_or(USAGE)?;
@@ -914,18 +916,51 @@ fn account_pick(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         .and_then(|name| Provider::parse(name))
         .filter(|provider| provider.has_accounts())
         .ok_or("swarm: accounts pick needs claude or codex")?;
-    if !json {
+    use swarm::profiles::native::CodexSession;
+    let session = match (options.get("--session"), flags.contains("--last")) {
+        (Some(id), false) if !flags.contains("--all") => Some(CodexSession::Id(id.to_string())),
+        (None, true) => Some(CodexSession::Last(
+            (!flags.contains("--all"))
+                .then(std::env::current_dir)
+                .transpose()?,
+        )),
+        (None, false) if !flags.contains("--all") => None,
+        _ => return Err(USAGE.into()),
+    };
+    if !flags.contains("--json") || session.is_some() && options.contains_key("--account") {
         return Err(USAGE.into());
     }
-    let requested = options.get("--account").copied().unwrap_or("auto");
+    if session.is_some() && provider != Provider::Codex {
+        return Err("swarm: --session and --last pick only codex accounts".into());
+    }
+    let mut requested = options
+        .get("--account")
+        .copied()
+        .unwrap_or("auto")
+        .to_string();
     let accounts = pick_accounts(
         provider,
         swarm::profiles::native::deadline(ACCOUNT_PICK_TIMEOUT_SECONDS),
-        requested == "auto",
+        requested == "auto" && session.is_none(),
     );
+    if let Some(session) = &session {
+        let list = accounts
+            .as_ref()
+            .map_err(|error| format!("swarm: {error}"))?;
+        requested = swarm::profiles::native::codex_session_owner(&list.accounts, session)
+            .ok_or(match session {
+                CodexSession::Id(id) => format!("swarm: session {id} is not in any codex account"),
+                CodexSession::Last(Some(cwd)) => {
+                    format!("swarm: no codex session in {}", cwd.display())
+                }
+                CodexSession::Last(None) => "swarm: no codex session in any account".into(),
+            })?
+            .name
+            .clone();
+    }
     let account = select_account(
         provider,
-        requested,
+        &requested,
         options.get("--model").copied(),
         swarm::config::min_usage_left_pct(),
         accounts.as_ref().map_err(Clone::clone),
