@@ -135,7 +135,8 @@ pub fn sections(
             name
         };
         let status = AgentStatus::aggregate(project_rows.iter().filter_map(|r| r.status));
-        let context = fields::workspace_context(&project.workspaces, &title, state, now, cache);
+        let context =
+            fields::workspace_context(&project.workspaces, &title, owner, state, now, cache);
         let collapse_id = format!("project:{}", project.path);
         sections.push(Section {
             id: format!("project:{}", project.id),
@@ -179,10 +180,16 @@ fn rows(
         detail.push_str(&format!(" · {mark}"));
     }
     let status = workspace.status();
-    let mut context =
-        fields::workspace_context(std::slice::from_ref(workspace), &title, state, now, cache);
+    let mut context = fields::workspace_context(
+        std::slice::from_ref(workspace),
+        &title,
+        owner,
+        state,
+        now,
+        cache,
+    );
     if owner.fields.workspace.iter().any(|f| f == "title") {
-        let suffix = fields::count_text(workspace.chats.len(), "chat");
+        let suffix = fields::count_text(workspace.listed_chats(owner).count(), "chat");
         context.text.insert(
             "branch".into(),
             detail
@@ -198,10 +205,7 @@ fn rows(
         depth: 0,
         parent_id: None,
         expanded: !state.is_collapsed(&workspace.path),
-        has_children: workspace
-            .chats
-            .iter()
-            .any(|c| !owner.tab_chats.contains(&c.key)),
+        has_children: workspace.listed_chats(owner).next().is_some(),
         children_summary: None,
         title,
         detail,
@@ -240,12 +244,7 @@ fn rows(
     if state.is_collapsed(&workspace.path) {
         return result;
     }
-    // A chat started in a tab shows only as a tab.
-    let mut chats: Vec<_> = workspace
-        .chats
-        .iter()
-        .filter(|c| !owner.tab_chats.contains(&c.key))
-        .collect();
+    let mut chats: Vec<_> = workspace.listed_chats(owner).collect();
     chats.sort_by(|a, b| {
         b.last_activity
             .cmp(&a.last_activity)

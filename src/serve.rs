@@ -1050,9 +1050,11 @@ fn refresh_tree(app: &App) -> Result<Value, ApiError> {
             strip.pruned(&w.chats.iter().map(|c| c.key.clone()).collect()) != *strip
         })
     });
-    let saved = if normalized_state != saved.state || needs_tabs || needs_projects {
+    let needs_keys = saved.owner.clone().forget_gone_chats(&tree);
+    let saved = if normalized_state != saved.state || needs_tabs || needs_projects || needs_keys {
         choices_store::update(&app.root, Some(&saved.revision), |owner, state| {
             state.record_first_sight(&tree);
+            owner.forget_gone_chats(&tree);
             for p in &tree.projects {
                 if !owner.project_paths.contains(&p.path)
                     && !owner.project_paths.contains(&p.launch_directory)

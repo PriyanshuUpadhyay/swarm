@@ -857,6 +857,14 @@ fn a_chat_started_in_a_tab_stays_out_of_the_sidebar() {
     let tree = tree();
     let mut owner = owner();
     let mut state = ViewState::default();
+    let main_row = |owner: &OwnerChoices, state: &ViewState| {
+        swarm::view::tree::sections(&tree, owner, state, false, 1, &BTreeMap::new())
+            .into_iter()
+            .flat_map(|s| s.rows)
+            .find(|r| r.id == "/repo/wt/main")
+            .unwrap()
+    };
+    let before = main_row(&owner, &state);
     choices::apply(
         &mut owner,
         &mut state,
@@ -877,6 +885,13 @@ fn a_chat_started_in_a_tab_stays_out_of_the_sidebar() {
             .collect();
     assert!(rows.contains(&"chat:design".to_owned()));
     assert!(!rows.contains(&"chat:review".to_owned()));
+    // The workspace row counts only the chats that the sidebar lists.
+    let count = |detail: &str| -> usize {
+        let part = detail.rsplit(" · ").next().unwrap();
+        part.split(' ').next().unwrap().parse().unwrap()
+    };
+    let after = main_row(&owner, &state);
+    assert_eq!(count(&after.detail), count(&before.detail) - 1);
     let view = tabs::view(&tree, &owner, &state, "/repo/wt/main", 1, &BTreeMap::new()).unwrap();
     let tab_only = |id: &str| view.tabs.iter().find(|t| t.id == id).unwrap().tab_only;
     assert!(tab_only("review"));

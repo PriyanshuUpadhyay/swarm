@@ -764,4 +764,16 @@ fn a_chat_from_another_adapter_with_a_log_can_be_imported() {
         .remove(0)
         .rows;
     assert!(rows.iter().any(|r| r.id == "chat:herdr"));
+
+    // Once the chat is archived, the owner's choices forget its key; a chat still there keeps it.
+    let key = tree.importable[0].1.key.clone();
+    owner.tab_chats.insert(key.clone());
+    let listed = swarm::view::tree::build(&snap, &owner);
+    assert!(!owner.forget_gone_chats(&listed));
+    assert!(owner.imported.contains(&key) && owner.tab_chats.contains(&key));
+    let mut archived = snap.clone();
+    archived["sessions"][0]["archivedAt"] = json!(42);
+    let gone = swarm::view::tree::build(&archived, &owner);
+    assert!(owner.forget_gone_chats(&gone));
+    assert!(owner.imported.is_empty() && owner.tab_chats.is_empty());
 }

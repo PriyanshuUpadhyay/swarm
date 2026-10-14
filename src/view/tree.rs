@@ -139,6 +139,12 @@ pub struct Workspace {
     pub unlisted: Vec<Chat>,
 }
 impl Workspace {
+    /// The chats the sidebar lists: a chat started in a tab shows only as a tab (ADR 0085).
+    pub fn listed_chats<'a>(&'a self, owner: &'a OwnerChoices) -> impl Iterator<Item = &'a Chat> {
+        self.chats
+            .iter()
+            .filter(|c| !owner.tab_chats.contains(&c.key))
+    }
     pub fn chat(&self, id: &str) -> Option<&Chat> {
         self.chats
             .iter()

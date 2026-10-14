@@ -2,7 +2,7 @@
 // new chat with a profile, switch model, archive, delete, prune and Recently closed, on the P3a, P3b
 // and S2 routes. Framework-free; the dialogs read `state`, which is a new object after each change.
 
-import { ApiError } from "./api";
+import { ApiError, sleep } from "./api";
 import type { App } from "./app";
 import { isChair } from "./panes";
 
@@ -441,7 +441,15 @@ export class Lifecycle {
   async reopen(session: string) {
     await this.api.action("/api/sessions/unarchive", { ids: [session] });
     this.set({ closed: false });
-    await this.app.refresh();
+    // The server's tree shows the chat again about a second later. A chat from another adapter
+    // loses its import when archived (ADR 0085), so import it again.
+    for (let i = 0; i < 20; i++) {
+      await this.app.refresh();
+      if (this.app.listsChat(session)) break;
+      const imported = (await this.importableChats()).find((c) => c.id === session);
+      if (imported) return this.importChat(imported);
+      await sleep(250);
+    }
     this.app.openChat(session);
   }
 

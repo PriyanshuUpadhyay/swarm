@@ -7,7 +7,7 @@ const NEW_WORKSPACE = "/work/proj-worktrees/fix";
 const OTHER_WORKSPACE = "/work/proj-worktrees/other";
 
 /** An App stand-in that records what Lifecycle asks of it. `post` answers by path. */
-function fakeApp(post: (path: string, body: Record<string, unknown>) => Promise<unknown>, agents: { id: string; alive: boolean }[] = []) {
+function fakeApp(post: (path: string, body: Record<string, unknown>) => Promise<unknown>, agents: { id: string; alive: boolean }[] = [], importable: { id: string; workspace: string }[] = []) {
   const calls: string[] = [];
   const app = {
     api: {
@@ -16,10 +16,13 @@ function fakeApp(post: (path: string, body: Record<string, unknown>) => Promise<
         return post(path, body);
       },
       action: async (path: string, body: Record<string, unknown>) => void calls.push(`${path} ${JSON.stringify(body)}`),
+      get: async () => ({ chats: importable }),
     },
+    choose: async (op: Record<string, unknown>) => (calls.push(`choose ${JSON.stringify(op)}`), true),
     view: { tree: null, workspace: null },
     notice: (text: string) => calls.push(`notice ${text}`),
     refresh: async () => {},
+    listsChat: (session: string) => !importable.some((c) => c.id === session),
     selectWorkspace: async (path: string) => void calls.push(`select ${path}`),
     startChat: async (workspace: string, _launch: unknown, draft: string) => void calls.push(`chat ${workspace} ${draft}`),
     openChat: (session: string) => calls.push(`open ${session}`),
@@ -30,6 +33,17 @@ function fakeApp(post: (path: string, body: Record<string, unknown>) => Promise<
   };
   return { life: new Lifecycle(app as unknown as App), calls };
 }
+
+describe("reopen", () => {
+  it("imports a reopened chat from another adapter, so the sidebar lists it again", async () => {
+    const { life, calls } = fakeApp(async () => ({}), [], [{ id: "herdr", workspace: "/w" }]);
+    await life.reopen("herdr");
+    expect(calls).toEqual(['/api/sessions/unarchive {"ids":["herdr"]}', 'choose {"op":"import_chat","workspace":"/w","chat":"herdr"}', "open herdr"]);
+    const own = fakeApp(async () => ({}));
+    await own.life.reopen("own");
+    expect(own.calls).toEqual(['/api/sessions/unarchive {"ids":["own"]}', "open own"]);
+  });
+});
 
 describe("setup frames", () => {
   it("follows the first workspace that starts, appends its output, and ends on its final frame", () => {

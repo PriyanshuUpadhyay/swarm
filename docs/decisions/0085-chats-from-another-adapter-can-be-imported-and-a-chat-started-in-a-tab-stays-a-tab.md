@@ -16,5 +16,7 @@ choices, so the app lists it, and a `tab_only` mark on a chat started with ⌘T 
 "+", kept in `tab_chats`, so the chat shows only as a tab and closing its tab archives it to
 Recently closed, and neglected listing every lane again or hiding a tab chat's row only while its
 tab is open, to achieve a sidebar of the chats the owner chose and a tab strip that holds its own
-chats, accepting that an imported chat on another adapter is still driven from its own host and
-that both sets keep the keys of chats that were later archived.
+chats, where a workspace row counts only the chats the sidebar lists and an archived chat's key
+leaves both sets, accepting that an imported chat on another adapter is still driven from its
+own host and that a reopened chat comes back in the sidebar, not as a tab-only chat, and a
+reopened chat from another adapter is imported again.

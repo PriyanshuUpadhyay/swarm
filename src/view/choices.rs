@@ -81,6 +81,23 @@ impl Default for OwnerChoices {
 }
 
 impl OwnerChoices {
+    /// Drops the imported and tab-only keys of chats that are gone from the tree, such as an
+    /// archived chat. Returns whether a key was dropped.
+    pub fn forget_gone_chats(&mut self, tree: &Tree) -> bool {
+        let known: BTreeSet<&str> = tree
+            .projects
+            .iter()
+            .flat_map(|p| &p.workspaces)
+            .flat_map(|w| w.chats.iter().chain(&w.unlisted))
+            .chain(tree.importable.iter().map(|(_, c)| c))
+            .map(|c| c.key.as_str())
+            .collect();
+        let before = self.imported.len() + self.tab_chats.len();
+        self.imported.retain(|k| known.contains(k.as_str()));
+        self.tab_chats.retain(|k| known.contains(k.as_str()));
+        before != self.imported.len() + self.tab_chats.len()
+    }
+
     pub fn remove_project(&mut self, path: &str, workspaces: &[String]) {
         let removed: BTreeSet<_> = workspaces
             .iter()

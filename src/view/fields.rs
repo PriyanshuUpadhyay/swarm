@@ -221,6 +221,7 @@ pub fn chat_context(
 pub fn workspace_context(
     workspaces: &[Workspace],
     title: &str,
+    owner: &super::choices::OwnerChoices,
     state: &ViewState,
     now: i64,
     cache: &BTreeMap<String, WorkspaceFields>,
@@ -252,9 +253,16 @@ pub fn workspace_context(
             .collect::<Vec<_>>()
             .join(" · "),
     );
-    context
-        .text
-        .insert("children".into(), count_text(chats.len(), "chat"));
+    context.text.insert(
+        "children".into(),
+        count_text(
+            workspaces
+                .iter()
+                .flat_map(|w| w.listed_chats(owner))
+                .count(),
+            "chat",
+        ),
+    );
     if let Some(latest) = chats.iter().map(|c| c.last_activity).max() {
         context.text.insert("age".into(), age(latest, now));
     }

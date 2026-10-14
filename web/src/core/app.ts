@@ -1,6 +1,6 @@
 // Framework-free app state. Each view layer reads `view`, which is a new object after every change.
 
-import { Api, ApiError, type Row, type RowFrame, type Snapshot, type SubscribeKey } from "./api";
+import { Api, ApiError, sleep, type Row, type RowFrame, type Snapshot, type SubscribeKey } from "./api";
 import { installKeys, Registry, type Command } from "./commands";
 import {
   agentInput,
@@ -182,7 +182,6 @@ export const SIDEBAR_VIEWS = ["Workspaces", "Recent"];
 
 const EMPTY: Line[] = [];
 const NO_FULL: ReadonlyMap<string, FullText> = new Map();
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 /** The chat id of a child agent's column. It is also the agent's stream key. */
 export const paneId = (sessionId: string, agent: string) => `${sessionId}:${agent}`;
 const DRAFT_PREFIX = "composer.draft.";
@@ -424,6 +423,11 @@ export class App {
   /** Reads the snapshot, tree and tabs again, after a write outside the choices. */
   refresh(): Promise<void> {
     return this.refreshSnapshot();
+  }
+
+  /** Whether the sidebar lists the chat. */
+  listsChat(session: string) {
+    return chatRows(this.tree).some((r) => r.selection?.chat === session);
   }
 
   /** A session's snapshot row and its agents. */
@@ -729,10 +733,9 @@ export class App {
       if (draft) this.setDraft(started.session, draft);
       // The server's tree lists a new chat after its agent poll sees the chair's pane, about a
       // second later, and opening the chat writes a tab that the server checks against that tree.
-      const listed = () => chatRows(this.tree).some((r) => r.selection?.chat === started.session);
       for (let i = 0; i < 20; i++) {
         await this.refreshSnapshot();
-        if (listed()) break;
+        if (this.listsChat(started.session)) break;
         await sleep(250);
       }
       this.openChat(started.session, undefined, { tabOnly: inTab });
