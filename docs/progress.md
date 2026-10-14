@@ -14,7 +14,7 @@ Last checked: 2026-10-13, on main at `dabc9ef8`. Installed swarm is 0.12.0.
 |---|---|---|
 | A. Skills setup (one kit source) | ⬜ next | main, dotfiles |
 | B. Skills from blocks | ⬜ after A1-A4 | main `skills/kit/` |
-| C. yelo retirement | 🔄 code done, Mac not done | main, the owner's Mac |
+| C. yelo retirement | 🔄 yelo removed and archived; C1 has open items | main, the owner's Mac |
 | D. Web UI port | 🔄 merged, one budget miss | main |
 | E. Records and branches | ⬜ | `docs/decisions/`, `wt/` |
 
@@ -191,18 +191,18 @@ an earlier test, so B10 and B12 must show the agent read the pointed file.
 
 ## C. yelo retirement
 
-Code is done. Main has no `yelo` reference in `src/` or `ui/` (PR #54). On the owner's Mac, yelo
-0.10.0, the `io.github.priyanshuupadhyay.yelo-hud` LaunchAgent and `UsageHUD.app` are still
-installed. ADR 0071 keeps yelo profile folders and Keychain entries by reference, so no account
-data moves.
+Main has no `yelo` reference in `src/` or `ui/` (PR #54). On 2026-10-14 the shell wrappers moved
+to `swarm accounts pick` (ADR 0081, release 0.0.2), and yelo was removed from the owner's Mac and
+archived. ADR 0071 keeps yelo profile folders and Keychain entries by reference, so no account
+data moves. The removed files are in the owner's Trash.
 
 | # | Step | State | Check |
 |---|---|---|---|
-| C1 | Test on the installed release: named and auto account launch, shared Claude chats, Codex resume with an explicit account, usage failure states, HUD panel | ⬜ | each item seen working |
-| C2 | Write down that yelo's Codex session-owner lookup is lost (deferred by the 2026-10-12 accounts council) | ⬜ | a line in ADR 0071 or this file |
-| C3 | Remove the yelo zsh integration from dotfiles before the binary | ⬜ | a new shell starts `claude` and `codex` with no yelo call |
-| C4 | Unload the HUD LaunchAgent, remove `UsageHUD.app`, `brew uninstall yelo` | ⬜ | `command -v yelo` is empty; no yelo LaunchAgent |
-| C5 | Deprecate the tap formula with a pointer; add a README pointer and archive the yelo repo | ⬜ | tap and repo state |
+| C1 | Test on the installed release: named and auto account launch, shared Claude chats, Codex resume with an explicit account, usage failure states, HUD panel | 🔄 | 0.0.2 in real panes: auto `claude` (`acct sirsendu`), `pi --profile abhi`, `codex resume --last` in the session's home. Not seen: shared Claude chats across accounts, usage failure states, the usage panel |
+| C2 | yelo's Codex session-owner lookup | ✅ | ported, not lost: `accounts pick --session ID` and `--last [--all]` (ADR 0081, `a6609421`) |
+| C3 | Remove the yelo zsh integration from dotfiles before the binary | ✅ | dotfiles `7207d2c`; a new shell has `claude`, `codex` and `pi` functions and no `_yelo_profiles` |
+| C4 | Unload the HUD LaunchAgent, remove `UsageHUD.app`, `brew uninstall yelo` | ✅ | `command -v yelo` is empty; `launchctl print` finds no yelo service |
+| C5 | Remove the tap formula and archive the yelo repo | ✅ | tap `66be8a0` deletes `Formula/yelo.rb` and points the README at swarm; `PriyanshuUpadhyay/yelo` is archived with no README pointer |
 
 ## D. Web UI port (ADR 0075)
 
