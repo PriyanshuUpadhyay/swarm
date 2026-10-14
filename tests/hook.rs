@@ -1877,3 +1877,57 @@ fn a_pane_status_feed_sets_the_agent_state() {
     );
     assert_eq!(state(), (Some("done".into()), None));
 }
+
+#[test]
+fn a_pane_status_feed_stores_the_pi_log_named_by_its_session_id() {
+    let home = scratch("status-feed-pi-log");
+    let session = stdout(&swarm(&home, &[], &["session", "new", "lane"], ""))
+        .trim()
+        .to_string();
+    let connection = swarm::store::open(&home.join(".swarm/swarm.db")).unwrap();
+    swarm::store::add_agent(&connection, &session, "orchestrator", "chair").unwrap();
+    swarm::store::add_agent(&connection, &session, "coder", "coder").unwrap();
+    // `launch` gave each pi agent the session id `<session>-<agent>` (ADR 0086).
+    let pi = home.join("pi");
+    let folder = pi.join("sessions/--tmp-proj--");
+    std::fs::create_dir_all(&folder).unwrap();
+    for agent in ["orchestrator", "coder"] {
+        let log = folder.join(format!("2026-10-14T00-00-00-000Z_{session}-{agent}.jsonl"));
+        std::fs::write(&log, "{}\n").unwrap();
+        let fed = swarm(
+            &home,
+            &[
+                ("SWARM_SESSION_ID", session.as_str()),
+                ("SWARM_AGENT_ID", agent),
+                ("PI_CODING_AGENT_DIR", pi.to_str().unwrap()),
+            ],
+            &["status-feed"],
+            "\x1b]7501;state=working:app=pi\x07",
+        );
+        assert!(
+            fed.status.success(),
+            "{}",
+            String::from_utf8_lossy(&fed.stderr)
+        );
+        let stored: Option<String> = connection
+            .query_row(
+                "SELECT log FROM agent WHERE session_id = ?1 AND id = ?2",
+                [&session, agent],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(stored.as_deref(), log.to_str());
+    }
+    let chair: Option<String> = connection
+        .query_row(
+            "SELECT chair_log FROM session WHERE id = ?1",
+            [&session],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert!(
+        chair
+            .unwrap()
+            .ends_with(&format!("_{session}-orchestrator.jsonl"))
+    );
+}

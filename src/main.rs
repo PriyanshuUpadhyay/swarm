@@ -402,12 +402,7 @@ fn hook(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     // The providers give a hook about 3 s; a busy bus loses this report rather than the turn.
     connection.busy_timeout(std::time::Duration::from_secs(1))?;
     if let Some(log) = &report.log {
-        swarm::store::set_log(&connection, &report.session, &report.agent, log)?;
-        // The orchestrator is the chair, so its log is the chat's log. Only `swarm sessions
-        // --json` looks a chair log up from its id, and the app never runs it for a live chat.
-        if report.agent == "orchestrator" {
-            swarm::store::set_chair_log(&connection, &report.session, log)?;
-        }
+        store_log(&connection, &report.session, &report.agent, log)?;
     }
     let Some(state) = &report.state else {
         return Ok(());
@@ -417,6 +412,21 @@ fn hook(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     {
         // Store the state before a usage read can wait on the log or bus.
         let _ = swarm::store::update_usage(&connection, &report.session, &report.agent, provider);
+    }
+    Ok(())
+}
+
+/// The orchestrator is the chair, so its log is the chat's log. Only `swarm sessions --json`
+/// looks a chair log up from its id, and the app never runs it for a live chat.
+fn store_log(
+    connection: &rusqlite::Connection,
+    session: &str,
+    agent: &str,
+    log: &std::path::Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    swarm::store::set_log(connection, session, agent, log)?;
+    if agent == "orchestrator" {
+        swarm::store::set_chair_log(connection, session, log)?;
     }
     Ok(())
 }
@@ -462,6 +472,9 @@ fn status_feed() -> Result<(), Box<dyn std::error::Error>> {
     };
     let mut scanner = swarm::host::StatusScanner::default();
     let mut seen_work = false;
+    // pi has no hook to name its log, but `launch` gave it the id `<session>-<agent>` (ADR 0086).
+    // pi may write the file only after its first turn, so each report looks until it is found.
+    let mut logged = false;
     let mut stdin = std::io::stdin().lock();
     let mut chunk = [0; 8192];
     loop {
@@ -478,6 +491,10 @@ fn status_feed() -> Result<(), Box<dyn std::error::Error>> {
                 .and_then(|db| swarm::store::open(&db))
                 .and_then(|connection| {
                     connection.busy_timeout(std::time::Duration::from_secs(1))?;
+                    if !logged && let Some(path) = pi_chair_log(&format!("{session}-{agent}")) {
+                        store_log(&connection, &session, &agent, &path)?;
+                        logged = true;
+                    }
                     store_state(&connection, &session, &agent, &report)
                 });
             // The feed must keep reading, or the pane's output backs up; a lost report is the
