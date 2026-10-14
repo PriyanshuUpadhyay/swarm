@@ -77,6 +77,8 @@ export type Tab = {
   pending: "starting" | "failed" | "closing" | null;
   fields: Field[];
   children: { count: number; waiting: number; firstWaiting: string | null; text: string } | null;
+  /** A chat started in a tab: it is not in the sidebar, and closing its tab archives it. */
+  tabOnly: boolean;
 };
 
 /** A workspace's tab strip. Tab groups are not shown (ADR 0076), so `tabs` is the owner's order. */
@@ -101,7 +103,8 @@ export type ChoiceOp =
   | { op: "rename_workspace"; workspace: string; name: string }
   | { op: "rename_chat"; workspace: string; chat: string; name: string }
   | { op: "rename_project"; project: string; name: string }
-  | { op: "open_tab" | "close_tab"; workspace: string; chat: string }
+  | { op: "open_tab"; workspace: string; chat: string; tab_only?: boolean }
+  | { op: "close_tab" | "import_chat"; workspace: string; chat: string }
   | { op: "move_tab" | "step_tab"; workspace: string; chat: string; target: string }
   | { op: "selected_chat"; workspace: string; chat: string | null; recording_history?: boolean }
   | { op: "seen"; workspace: string; chat: string }

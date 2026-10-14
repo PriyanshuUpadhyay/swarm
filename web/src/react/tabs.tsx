@@ -123,7 +123,7 @@ export function TabStrip({ app }: { app: App }) {
           ))}
         </DropdownMenuContent>
       </DropdownMenu>
-      <button className="icon-btn" aria-label="New chat in this workspace" title="New chat in this workspace" disabled={ws ? !ws.newChatEnabled : true} onClick={() => void app.startChat()}>
+      <button className="icon-btn" aria-label="New chat in this workspace" title="New chat in this workspace" disabled={ws ? !ws.newChatEnabled : true} onClick={() => void app.startChat(undefined, {}, "", true)}>
         <PlusIcon />
       </button>
     </div>

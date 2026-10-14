@@ -244,6 +244,36 @@ describe("a new chat", () => {
   });
 });
 
+describe("a chat started in a tab", () => {
+  it("opens as a tab only, and closing its tab archives it to Recently closed", async () => {
+    const writes: Record<string, unknown>[] = [];
+    const actions: { path: string; body: unknown }[] = [];
+    const withNew = tree([section("/r/app", "project", [appMain, chat("new", "/r/app")])]);
+    const tab = { id: "new", session: "new", title: "new", status: null, badge: null, canClose: true, canHide: true, pending: null, fields: [], children: null, tabOnly: true };
+    const api = {
+      snapshot: async (): Promise<Snapshot> => ({ version: 1, sessions: [], agents: {} }),
+      tree: async () => withNew,
+      tabs: async (workspace: string) => ({ version: 1, revision: "rev-1", view: { workspace, tabs: [tab], history: [], selectedChat: "new", previousRecent: null, nextRecent: null, stepTargets: {} } }),
+      post: async () => ({ session: "new" }),
+      action: async (path: string, body: unknown) => void actions.push({ path, body }),
+      choice: async (rev: string, op: Record<string, unknown>) => {
+        writes.push(op);
+        return { revision: rev, version: 1 };
+      },
+    } as unknown as Api;
+    const app = new App(api);
+    app.notice = () => {};
+    await (app as unknown as { refreshSnapshot(): Promise<void> }).refreshSnapshot();
+    await app.startChat("/r/app", {}, "", true);
+    expect(writes.find((w) => w.op === "open_tab")).toMatchObject({ chat: "new", tab_only: true });
+    await (app as unknown as { refreshSnapshot(): Promise<void> }).refreshSnapshot();
+    await app.closeTab("new");
+    await new Promise((r) => setTimeout(r, 0));
+    expect(actions).toEqual([{ path: "/api/sessions/archive", body: { ids: ["new"] } }]);
+    expect(writes.some((w) => w.op === "close_tab")).toBe(false);
+  });
+});
+
 describe("tree refresh", () => {
   it("keeps the old object of each row and section that did not change", () => {
     const next = JSON.parse(JSON.stringify(sample)) as TreeView;

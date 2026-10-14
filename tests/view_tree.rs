@@ -3,7 +3,7 @@ use serde_json::{Value, json};
 use sidebar_fixture::*;
 use std::collections::BTreeMap;
 use swarm::view::{
-    choices::{OwnerChoices, ViewState},
+    choices::{self, ChoiceOp, OwnerChoices, ViewState},
     navigation,
     tree::{self, AgentStatus as Status},
 };
@@ -730,4 +730,38 @@ fn independent_folds_and_case_keys() {
     );
     assert_eq!(navigation::title_key("Docs"), navigation::title_key("docs"));
     assert_ne!(navigation::title_key("dogs"), navigation::title_key("docs"));
+}
+
+#[test]
+fn a_chat_from_another_adapter_with_a_log_can_be_imported() {
+    let mut herdr = session("herdr", "/repo", 1);
+    herdr["adapter"] = json!("herdr");
+    let mut no_log = session("nolog", "/repo", 2);
+    no_log["adapter"] = json!("herdr");
+    no_log["chair_log"] = Value::Null;
+    let snap = folder_snapshot(
+        vec![herdr, no_log],
+        json!({"herdr":[agent("orchestrator","ended")],"nolog":[agent("orchestrator","ended")]}),
+    );
+    let mut owner = OwnerChoices::default();
+    let tree = swarm::view::tree::build(&snap, &owner);
+    // The project lists no chat, so it is not in the tree, but its chat can still be imported.
+    assert!(tree.workspace("/repo").is_none());
+    let importable: Vec<_> = tree
+        .importable
+        .iter()
+        .map(|(workspace, c)| (workspace.as_str(), c.id.as_str()))
+        .collect();
+    assert_eq!(importable, [("/repo", "herdr")]);
+    let mut state = ViewState::default();
+    let import = |chat: &str| ChoiceOp::ImportChat {
+        workspace: "/repo".into(),
+        chat: chat.into(),
+    };
+    assert!(choices::apply(&mut owner, &mut state, &tree, import("nolog"), 1).is_err());
+    choices::apply(&mut owner, &mut state, &tree, import("herdr"), 1).unwrap();
+    let rows = sections(&snap, &owner, &ViewState::default(), false)
+        .remove(0)
+        .rows;
+    assert!(rows.iter().any(|r| r.id == "chat:herdr"));
 }

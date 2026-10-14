@@ -717,8 +717,9 @@ export class App {
   }
 
   /** ⌘T, a "+" and New chat: starts a profile (the default one unless `launch` names it) in the
-   *  workspace. A notice shows while `swarm launch` runs; `draft` goes into the new chat's composer. */
-  async startChat(workspace = this.workspace, launch: { role?: string } = {}, draft = "") {
+   *  workspace. A notice shows while `swarm launch` runs; `draft` goes into the new chat's composer.
+   *  `inTab` (⌘T and the strip's "+") keeps the chat out of the sidebar. */
+  async startChat(workspace = this.workspace, launch: { role?: string } = {}, draft = "", inTab = false) {
     const row = workspaceRow(this.tree, workspace);
     if (!workspace || this.starting || (row && !row.newChatEnabled)) return;
     this.starting = true;
@@ -734,7 +735,7 @@ export class App {
         if (listed()) break;
         await sleep(250);
       }
-      this.openChat(started.session);
+      this.openChat(started.session, undefined, { tabOnly: inTab });
     } catch (err) {
       this.notice(message(err), true);
     } finally {
@@ -792,11 +793,13 @@ export class App {
     if (tab && tab.session !== this.openId) this.openChat(tab.session, e, { history: false });
   }
 
-  /** ⌘W and a tab's ×. Closing the open tab shows the chat the server picks, else the landing. */
+  /** ⌘W and a tab's ×. Closing the open tab shows the chat the server picks, else the landing. A
+   *  chat started in a tab is in no sidebar, so closing its tab archives it to Recently closed. */
   async closeTab(key?: string) {
     const workspace = this.workspace;
     const tab = this.stripTabs().find((t) => (key ? t.id === key : t.session === this.openId));
     if (!workspace || !tab?.canHide) return;
+    if (tab.tabOnly) return this.life.endChat(tab.session, true);
     const wasOpen = tab.session === this.openId;
     const seq = ++this.navSeq;
     if (!(await this.choose({ op: "close_tab", workspace, chat: tab.id })) || !wasOpen) return;
@@ -889,7 +892,7 @@ export class App {
 
   /** Opens a chat: its tab, the owner's selected chat, and its transcript. `write: false` only
    *  shows it (a restore at start); `history: false` keeps the tab history order (⌃Tab). */
-  openChat(sessionId: string, e?: KeyboardEvent, opts: { write?: boolean; history?: boolean } = {}) {
+  openChat(sessionId: string, e?: KeyboardEvent, opts: { write?: boolean; history?: boolean; tabOnly?: boolean } = {}) {
     this.navSeq++;
     const kind: PerfKind = this.lru.includes(sessionId) ? "switch" : "open";
     if (this.openId !== sessionId) this.leavePanes(sessionId);
@@ -904,7 +907,7 @@ export class App {
       // Swift's select: open the tab, then select; only a move to another workspace opens its project.
       const section = this.tree?.sections.find((s) => s.rows.some((r) => r.selection?.chat === sessionId));
       if (moved && section && !section.expanded) void this.choose({ op: "expand", id: section.collapseId });
-      void this.choose({ op: "open_tab", workspace, chat: sessionId });
+      void this.choose({ op: "open_tab", workspace, chat: sessionId, ...(opts.tabOnly && { tab_only: true }) });
       void this.choose({ op: "selected_chat", workspace, chat: sessionId, recording_history: opts.history !== false });
     } else if (moved) void this.refreshSnapshot();
     this.touch(sessionId);
@@ -1594,7 +1597,7 @@ export class App {
         chord: "Meta+T",
         when: () => this.workspace !== null,
         // A held key must not start one chat per repeat.
-        run: (e) => void (e?.repeat || this.startChat()),
+        run: (e) => void (e?.repeat || this.startChat(undefined, {}, "", true)),
       },
       { id: "project.new", title: "New Project…", chord: "Shift+Meta+N", run: () => this.life.openProject("create") },
       { id: "workspace.next", title: "Next Workspace", chord: "Ctrl+Meta+ArrowDown", run: (e) => this.stepWorkspace(1, e) },

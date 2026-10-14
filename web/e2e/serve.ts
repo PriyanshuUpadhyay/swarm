@@ -207,6 +207,20 @@ export default async function setup() {
     execFileSync("sqlite3", [db, `UPDATE session SET adapter = 'tmux-swarm' WHERE id = ${sql(session)};`]);
     execFileSync("sqlite3", [db, `INSERT INTO agent (id, session_id, role, provider, created_at, log) VALUES ('orchestrator', ${sql(session)}, 'orchestrator', 'claude', ${Math.floor(Date.now() / 1000)}, ${sql(log)});`]);
   }
+  // One chat per browser that a CLI started on another adapter, for Import chats. Its adapter
+  // lists no pane, so the chat is closed and shows its log.
+  writeFileSync(join(home, ".swarm/adapters/other.conf"), ["self", "spawn", "ring", "list", "close", "capture"].map((verb) => `${verb} = true`).join("\n") + "\n");
+  for (const project of PANE_PROJECTS) {
+    const cwd = join(dir, `ws-import-${project}`);
+    mkdirSync(cwd);
+    const chair = randomUUID();
+    const log = join(logs, `${chair}.jsonl`);
+    copyFileSync(join(fixtures, "claude-edit.jsonl"), log);
+    const session = execFileSync(swarm, ["session", "new", "lane", "--chair", `claude:${chair}`], { cwd, env, stdio: "pipe" }).toString().trim().split("\n").pop()!;
+    execFileSync("sqlite3", [db, `UPDATE session SET adapter = 'other' WHERE id = ${sql(session)};`]);
+    execFileSync("sqlite3", [db, `INSERT INTO agent (id, session_id, role, provider, created_at, log) VALUES ('orchestrator', ${sql(session)}, 'orchestrator', 'claude', ${Math.floor(Date.now() / 1000)}, ${sql(log)});`]);
+    process.env[`SWARM_E2E_IMPORT_${project}`] = session;
+  }
   for (const project of PANE_PROJECTS) {
     const cwd = join(dir, `ws-panes-${project}`);
     mkdirSync(cwd);

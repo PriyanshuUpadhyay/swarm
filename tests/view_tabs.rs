@@ -567,6 +567,7 @@ fn open_hide_move_and_cross_workspace_guards() {
         ChoiceOp::OpenTab {
             workspace: "/repo/wt/main".into(),
             chat: "ended".into(),
+            tab_only: false,
         },
         1,
     )
@@ -609,7 +610,8 @@ fn open_hide_move_and_cross_workspace_guards() {
             &tree,
             ChoiceOp::OpenTab {
                 workspace: "/missing".into(),
-                chat: "review".into()
+                chat: "review".into(),
+                tab_only: false
             },
             1
         )
@@ -709,6 +711,7 @@ fn ended_tabs_hide_when_leaving() {
         ChoiceOp::OpenTab {
             workspace: "/repo/wt/main".into(),
             chat: "ended".into(),
+            tab_only: false,
         },
         1,
     )
@@ -847,4 +850,35 @@ fn continued_tab_key_survives_session_change() {
     )
     .unwrap();
     assert_eq!(owner.tabs["/repo/wt/main"].open, ["old"]);
+}
+
+#[test]
+fn a_chat_started_in_a_tab_stays_out_of_the_sidebar() {
+    let tree = tree();
+    let mut owner = owner();
+    let mut state = ViewState::default();
+    choices::apply(
+        &mut owner,
+        &mut state,
+        &tree,
+        ChoiceOp::OpenTab {
+            workspace: "/repo/wt/main".into(),
+            chat: "review".into(),
+            tab_only: true,
+        },
+        1,
+    )
+    .unwrap();
+    let rows: Vec<_> =
+        swarm::view::tree::sections(&tree, &owner, &state, false, 1, &BTreeMap::new())
+            .into_iter()
+            .flat_map(|s| s.rows)
+            .map(|r| r.id)
+            .collect();
+    assert!(rows.contains(&"chat:design".to_owned()));
+    assert!(!rows.contains(&"chat:review".to_owned()));
+    let view = tabs::view(&tree, &owner, &state, "/repo/wt/main", 1, &BTreeMap::new()).unwrap();
+    let tab_only = |id: &str| view.tabs.iter().find(|t| t.id == id).unwrap().tab_only;
+    assert!(tab_only("review"));
+    assert!(!tab_only("design"));
 }

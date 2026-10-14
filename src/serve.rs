@@ -429,6 +429,7 @@ fn router(app: App) -> Router {
         .route("/api/sessions/unarchive", post(chat_action))
         .route("/api/chat/new", post(chat_action))
         .route("/api/sessions/archived", get(archived_sessions))
+        .route("/api/chats/importable", get(importable_chats))
         .fallback(static_file)
         .layer(DefaultBodyLimit::max(64 * 1024))
         .layer(middleware::from_fn_with_state(app.clone(), guard))
@@ -692,6 +693,32 @@ async fn tree_view(
     })
     .await
     .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "tree task failed"))?
+}
+
+/// The chats that run on another adapter and have something to show, newest first (ADR 0085).
+/// The `import_chat` choice lists one.
+async fn importable_chats(State(app): State<App>) -> Result<Json<Value>, ApiError> {
+    tokio::task::spawn_blocking(move || {
+        let (tree, _, _) = loaded_tree(&app)?;
+        let mut chats: Vec<_> = tree.importable.iter().collect();
+        chats.sort_by_key(|(_, c)| std::cmp::Reverse(c.last_activity));
+        let chats: Vec<_> = chats
+            .into_iter()
+            .map(|(workspace, c)| {
+                json!({
+                    "id": c.id,
+                    "workspace": workspace,
+                    "title": c.title,
+                    "provider": c.provider,
+                    "lastActivity": c.last_activity,
+                    "running": c.is_running == Some(true),
+                })
+            })
+            .collect();
+        Ok(Json(json!({ "chats": chats })))
+    })
+    .await
+    .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "importable task failed"))?
 }
 
 /// The Dock badge of the shell (ADR 0077): the chats that wait, outside archived workspaces, or 0
@@ -5171,6 +5198,31 @@ esac
         .await
         .unwrap();
         assert!(action_calls(&fixture).ends_with("|launch orchestrator chat --account auto\n"));
+    }
+
+    #[tokio::test]
+    async fn importable_route_lists_a_chat_from_another_adapter() {
+        let fixture = Fixture::new();
+        let connection = swarm::store::open(&fixture.app.root.join("swarm.db")).unwrap();
+        let listed = importable_chats(State(fixture.app.clone()))
+            .await
+            .unwrap()
+            .0;
+        assert_eq!(listed, json!({"chats": []}));
+        connection
+            .execute(
+                "UPDATE session SET adapter = 'herdr' WHERE id = ?1",
+                [&fixture.session],
+            )
+            .unwrap();
+        let listed = importable_chats(State(fixture.app.clone()))
+            .await
+            .unwrap()
+            .0;
+        let chat = &listed["chats"][0];
+        assert_eq!(chat["id"], fixture.session.as_str());
+        assert_eq!(chat["workspace"], env!("CARGO_MANIFEST_DIR"));
+        assert_eq!(chat["provider"], "claude");
     }
 
     #[tokio::test]

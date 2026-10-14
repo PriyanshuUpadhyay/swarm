@@ -51,6 +51,9 @@ export type Confirm = { title: string; body: string; action: string; blocked?: b
 /** One row of `GET /api/sessions/archived`. */
 export type ClosedChat = { id: string; cwd: string; archivedAt: number; chair_provider: string | null };
 
+/** `GET /api/chats/importable`: a chat on another adapter that the app can show. */
+export type ImportableChat = { id: string; workspace: string; title: string; provider: string | null; lastActivity: number; running: boolean };
+
 export type Profile = { name: string; runners: { provider: string; model?: string }[] };
 
 export type LifeState = {
@@ -66,6 +69,7 @@ export type LifeState = {
   handoff: Handoff | null;
   confirm: Confirm | null;
   closed: boolean;
+  imports: boolean;
 };
 
 // ponytail: the dialog keeps the last 256 KiB of setup output; a log view if scripts get chatty.
@@ -98,7 +102,7 @@ export function setupFailure(run: SetupRun): string {
 }
 
 export class Lifecycle {
-  state: LifeState = { newWorkspace: null, create: null, project: null, importChoice: null, setupScript: null, switchModel: null, handoff: null, confirm: null, closed: false };
+  state: LifeState = { newWorkspace: null, create: null, project: null, importChoice: null, setupScript: null, switchModel: null, handoff: null, confirm: null, closed: false, imports: false };
   private listeners = new Set<() => void>();
   private roles: Promise<Profile[]> | null = null;
 
@@ -131,7 +135,7 @@ export class Lifecycle {
   }
 
   close<K extends keyof LifeState>(key: K) {
-    this.set({ [key]: key === "closed" ? false : null } as Partial<LifeState>);
+    this.set({ [key]: key === "closed" || key === "imports" ? false : null } as Partial<LifeState>);
   }
 
   // ---- projects ----
@@ -439,6 +443,25 @@ export class Lifecycle {
     this.set({ closed: false });
     await this.app.refresh();
     this.app.openChat(session);
+  }
+
+  // ---- Import chats ----
+
+  openImports() {
+    this.set({ imports: true });
+  }
+
+  async importableChats(): Promise<ImportableChat[]> {
+    return (await this.api.get<{ chats: ImportableChat[] }>("/api/chats/importable")).chats;
+  }
+
+  /** Lists a chat from another adapter in the sidebar, then opens it. A refused write shows its
+   *  notice and keeps the dialog. */
+  async importChat(chat: ImportableChat) {
+    if (!(await this.app.choose({ op: "import_chat", workspace: chat.workspace, chat: chat.id }))) return;
+    this.set({ imports: false });
+    await this.app.refresh();
+    this.app.openChat(chat.id);
   }
 
   // ---- confirm ----

@@ -374,3 +374,26 @@ test("Home's recent rows name the project beside the workspace", async ({ page: 
   }
   expect(errors).toEqual([]);
 });
+
+test("Import chats lists a chat that another adapter started, and importing it lists it in the sidebar", async ({ page: tab }, info) => {
+  const errors = await open(tab);
+  const session = process.env[`SWARM_E2E_IMPORT_${info.project.name}`]!;
+  const row = tab.locator(`[data-testid="tree-row"][data-session="${session}"]`);
+  await expect(workspace(tab, `ws-import-${info.project.name}`)).toHaveCount(0);
+  try {
+    await tab.getByRole("button", { name: "Add project" }).click();
+    await tab.getByRole("menuitem", { name: "Import chats…" }).click();
+    const dialog = tab.getByTestId("import-chats");
+    await dialog.locator(`[data-testid="importable-chat"][data-session="${session}"]`).click();
+    await expect(dialog).toBeHidden();
+    await expect(row).toBeVisible();
+    await expect(tab.locator(`[data-testid="transcript"][data-chat="${session}"][data-state="ready"]`)).toBeVisible();
+  } finally {
+    // The other cases count the listed chats, so this one leaves the sidebar as it found it. The
+    // server's refresh then drops the chat's tab and writes a new revision, so wait for it, else
+    // the next case can load the old revision and get a 409.
+    await api("/api/sessions/archive", { ids: [session] });
+    await expect.poll(async () => JSON.stringify(await readTree()).includes(session), { timeout: 10_000 }).toBe(false);
+  }
+  expect(errors).toEqual([]);
+});

@@ -79,6 +79,8 @@ pub struct Chat {
     pub is_running: Option<bool>,
     pub status: Option<AgentStatus>,
     pub counts: Vec<StatusCount>,
+    /// An unlisted chat that the owner can import: it has a log or a live chair to show.
+    pub importable: bool,
 }
 impl Chat {
     pub fn contains(&self, id: &str) -> bool {
@@ -176,6 +178,9 @@ pub struct Project {
 #[derive(Clone, Debug, Default)]
 pub struct Tree {
     pub projects: Vec<Project>,
+    /// Each chat the owner can import, with its workspace. A project whose chats are all
+    /// unlisted is not in `projects`, so these are kept apart.
+    pub importable: Vec<(String, Chat)>,
 }
 impl Tree {
     pub fn workspace(&self, path: &str) -> Option<(&Project, &Workspace)> {
@@ -289,6 +294,7 @@ pub fn build(snapshot: &Value, owner: &OwnerChoices) -> Tree {
         }
     }
     let mut projects = Vec::new();
+    let mut importable = Vec::new();
     for fact in facts {
         if owner.removed_projects.contains(&fact.path) {
             continue;
@@ -386,6 +392,14 @@ pub fn build(snapshot: &Value, owner: &OwnerChoices) -> Tree {
                 });
             }
         }
+        for w in &workspaces {
+            importable.extend(
+                w.unlisted
+                    .iter()
+                    .filter(|c| c.importable)
+                    .map(|c| (w.path.clone(), c.clone())),
+            );
+        }
         if workspaces.is_empty() && !opened {
             continue;
         }
@@ -429,7 +443,10 @@ pub fn build(snapshot: &Value, owner: &OwnerChoices) -> Tree {
         });
     }
     projects.sort_by(|a, b| natural_cmp(&a.path, &b.path));
-    Tree { projects }
+    Tree {
+        projects,
+        importable,
+    }
 }
 
 /// The chats the app can open, then the ones it cannot.
@@ -573,7 +590,10 @@ fn chats(sessions: Vec<Value>, snapshot: &Value, owner: &OwnerChoices) -> (Vec<C
             })
             .cloned()
             .collect();
+        let openable = readable && !closed_without_log;
+        let listed = openable && (started_by_app || owner.imported.contains(&key));
         let chat = Chat {
+            importable: openable && !listed,
             id,
             key,
             sessions,
@@ -586,7 +606,7 @@ fn chats(sessions: Vec<Value>, snapshot: &Value, owner: &OwnerChoices) -> (Vec<C
             status,
             counts,
         };
-        if started_by_app && readable && !closed_without_log {
+        if listed {
             result.push(chat);
         } else {
             unlisted.push(chat);

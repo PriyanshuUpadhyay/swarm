@@ -40,6 +40,12 @@ pub struct OwnerChoices {
     pub workspace_order: BTreeMap<String, Vec<String>>,
     #[serde(deserialize_with = "null_default")]
     pub tabs: BTreeMap<String, TabStrip>,
+    /// Chat keys started in a tab. They show only as tabs, not in the sidebar (ADR 0085).
+    #[serde(deserialize_with = "null_default")]
+    pub tab_chats: BTreeSet<String>,
+    /// Chat keys from another adapter that the owner imported, so the app lists them (ADR 0085).
+    #[serde(deserialize_with = "null_default")]
+    pub imported: BTreeSet<String>,
     #[serde(deserialize_with = "null_default")]
     pub fields: RowFieldLists,
     #[serde(default = "object")]
@@ -65,6 +71,8 @@ impl Default for OwnerChoices {
             project_defaults: Default::default(),
             workspace_order: Default::default(),
             tabs: Default::default(),
+            tab_chats: Default::default(),
+            imported: Default::default(),
             fields: Default::default(),
             prefs: object(),
             extra: Default::default(),
@@ -215,6 +223,13 @@ pub enum ChoiceOp {
         setup_script: String,
     },
     OpenTab {
+        workspace: String,
+        chat: String,
+        /// A chat started in a tab: it stays out of the sidebar.
+        #[serde(default)]
+        tab_only: bool,
+    },
+    ImportChat {
         workspace: String,
         chat: String,
     },
@@ -396,6 +411,14 @@ pub fn apply(
                 .ok_or("unknown chat in workspace")?;
             rename(&mut owner.chat_names, chat.key.clone(), name);
         }
+        ChoiceOp::ImportChat { workspace, chat } => {
+            let (_, chat) = tree
+                .importable
+                .iter()
+                .find(|(w, c)| *w == workspace && c.contains(&chat))
+                .ok_or("no chat to import in workspace")?;
+            owner.imported.insert(chat.key.clone());
+        }
         ChoiceOp::Seen { workspace, chat } => {
             let chat = tree
                 .chat_in(&workspace, &chat)
@@ -557,7 +580,10 @@ fn apply_tab(
         Ok(k)
     };
     *strip = match op {
-        ChoiceOp::OpenTab { chat, .. } => {
+        ChoiceOp::OpenTab { chat, tab_only, .. } => {
+            if tab_only {
+                owner.tab_chats.insert(key(&chat)?);
+            }
             let current = state
                 .selected_chats
                 .get(&workspace)

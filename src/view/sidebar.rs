@@ -198,7 +198,10 @@ fn rows(
         depth: 0,
         parent_id: None,
         expanded: !state.is_collapsed(&workspace.path),
-        has_children: !workspace.chats.is_empty(),
+        has_children: workspace
+            .chats
+            .iter()
+            .any(|c| !owner.tab_chats.contains(&c.key)),
         children_summary: None,
         title,
         detail,
@@ -237,7 +240,12 @@ fn rows(
     if state.is_collapsed(&workspace.path) {
         return result;
     }
-    let mut chats: Vec<_> = workspace.chats.iter().collect();
+    // A chat started in a tab shows only as a tab.
+    let mut chats: Vec<_> = workspace
+        .chats
+        .iter()
+        .filter(|c| !owner.tab_chats.contains(&c.key))
+        .collect();
     chats.sort_by(|a, b| {
         b.last_activity
             .cmp(&a.last_activity)

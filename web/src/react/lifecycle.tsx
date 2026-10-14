@@ -5,7 +5,7 @@
 import { CheckIcon, CircleIcon, LoaderCircleIcon, TriangleAlertIcon, XIcon } from "lucide-react";
 import { useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import type { App } from "../core/app";
-import { setupFailure, type ClosedChat, type Issue, type LifeState, type Mode, type NewOptions, type NewRequest } from "../core/lifecycle";
+import { setupFailure, type ClosedChat, type ImportableChat, type Issue, type LifeState, type Mode, type NewOptions, type NewRequest } from "../core/lifecycle";
 import { Button } from "../components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "../components/ui/dialog";
 
@@ -25,6 +25,7 @@ export function LifecycleDialogs({ app }: { app: App }) {
       <SwitchModelDialog app={app} />
       <ConfirmDialog app={app} />
       <ClosedDialog app={app} />
+      <ImportDialog app={app} />
     </>
   );
 }
@@ -736,6 +737,67 @@ function ClosedBody({ app }: { app: App }) {
       <ErrorLine text={error} />
       <div className="flex justify-end">
         <Button type="button" variant="ghost" size="sm" onClick={() => app.life.close("closed")}>
+          Close
+        </Button>
+      </div>
+    </>
+  );
+}
+
+// ---- Import chats ----
+
+function ImportDialog({ app }: { app: App }) {
+  const open = useLife(app, "imports");
+  return (
+    <Frame open={open} onClose={() => app.life.close("imports")} title="Import chats" description="Chats that a CLI started outside the app, in Herdr, tmux or another host. Import one to list it." testid="import-chats">
+      {open && <ImportBody app={app} />}
+    </Frame>
+  );
+}
+
+function ImportBody({ app }: { app: App }) {
+  const [chats, setChats] = useState<ImportableChat[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    app.life.importableChats().then(setChats, (err) => setError(message(err)));
+  }, [app]);
+  const pick = async (chat: ImportableChat) => {
+    setBusy(true);
+    try {
+      await app.life.importChat(chat);
+    } catch (err) {
+      setError(message(err));
+    }
+    setBusy(false);
+  };
+  return (
+    <>
+      <div role="list" className="grid max-h-[320px] overflow-y-auto">
+        {!chats && !error && <p className="text-sm text-muted-foreground">Reading chats…</p>}
+        {chats?.length === 0 && <p className="text-sm text-muted-foreground">No chats to import.</p>}
+        {chats?.map((c) => (
+          <button
+            key={c.id}
+            role="listitem"
+            type="button"
+            disabled={busy}
+            data-testid="importable-chat"
+            data-session={c.id}
+            title={c.workspace}
+            className="grid gap-0.5 rounded-md px-2 py-1.5 text-left hover:bg-hover focus-visible:bg-selected focus-visible:outline-none"
+            onClick={() => void pick(c)}
+          >
+            <span className="truncate text-sm font-medium">{c.title}</span>
+            <span className="truncate text-xs text-muted-foreground">
+              {c.provider ?? "chat"} · {c.running ? "running" : `last active ${ageText(c.lastActivity)} ago`} · {c.workspace}
+            </span>
+          </button>
+        ))}
+      </div>
+      <ErrorLine text={error} />
+      <div className="flex justify-end">
+        <Button type="button" variant="ghost" size="sm" onClick={() => app.life.close("imports")}>
           Close
         </Button>
       </div>
