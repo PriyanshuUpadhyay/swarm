@@ -597,7 +597,7 @@ dependencies = [
 
 [[package]]
 name = "swarm"
-version = "0.0.6"
+version = "0.0.7"
 dependencies = [
  "axum",
  "rusqlite",
