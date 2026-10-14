@@ -272,7 +272,7 @@ fn init() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-const USAGE: &str = "usage: swarm --version | init | skills refresh | skills manifest <source> <out> | setup status --json | setup [--plan [--json] | --digest <digest>] [--cwd <dir>] [--only <hooks|trust|herdr|skills>,...] [--consent <standing|ask>] [--resume] | hooks status --json | hooks setup [--plan [--json] | --digest <digest>] | managed list [--json] | managed revert (<id>... | --all) [--plan [--json] | --digest <digest>] | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session continue <new_id> <old_id> | session archive <id>... | session unarchive <id>... | sessions --json [--archived] | agent add <agent_id> <role> | serve [--port N] [--assets DIR] | ui [--port N] [--assets DIR] | herdr-split | notify <title> [--body <text>] | notices --json | notices --due | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | guard <claude|codex|agy> PreToolUse | roles --json | roles get <role> [--provider <claude|codex|agy>] | roles check --json | roles save --revision <revision> <profile-json> | roles new <name> --revision <revision> | roles rename <old> <new> --revision <revision> | roles copy <from> <to> --revision <revision> | roles delete <name> --revision <revision> | roles reset --revision <revision> | roles set-min-usage <pct> --revision <revision> | providers --json | models --provider <claude|codex|agy> --json | accounts --provider <claude|codex|agy> --json | accounts login --provider <claude|codex> --name <name> --revision <revision> --json [--cwd <dir>] | accounts reset --revision <revision> --json | accounts pick --provider <claude|codex> [--account <auto|NAME> | --session <id> | --last [--all]] [--model <model>] --json | usage --json | usage --format openusage | usage --refresh --provider <claude|codex> --json | agents --json [--all] | messages --json [--after <seq>] | run <claude|codex> [--account <auto|NAME>] [-- <args>...] | launch <agent_id> <role> [--provider <claude|codex|agy>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | answer <agent_id> <prompt_id> <choice> | interrupt <agent_id> | key <agent_id> <Up|C-u> | attach <agent_id> | focus <session_id> <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
+const USAGE: &str = "usage: swarm --version | init | skills refresh | skills manifest <source> <out> | setup status --json | setup [--plan [--json] | --digest <digest>] [--cwd <dir>] [--only <hooks|trust|herdr|skills>,...] [--consent <standing|ask>] [--resume] | hooks status --json | hooks setup [--plan [--json] | --digest <digest>] | managed list [--json] | managed revert (<id>... | --all) [--plan [--json] | --digest <digest>] | adapter check <name> | session new <talk_mode> [--chair <claude|codex|pi>:<id>] (cwd: pwd -P) | session chair <claude|codex|pi>:<id> | session continue <new_id> <old_id> | session archive <id>... | session unarchive <id>... | sessions --json [--archived] | agent add <agent_id> <role> | serve [--port N] [--assets DIR] | ui [--port N] [--assets DIR] | herdr-split | notify <title> [--body <text>] | notices --json | notices --due | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | guard <claude|codex|agy> PreToolUse | roles --json | roles get <role> [--provider <claude|codex|agy>] | roles check --json | roles save --revision <revision> <profile-json> | roles new <name> --revision <revision> | roles rename <old> <new> --revision <revision> | roles copy <from> <to> --revision <revision> | roles delete <name> --revision <revision> | roles reset --revision <revision> | roles set-min-usage <pct> --revision <revision> | providers --json | models --provider <claude|codex|agy> --json | accounts --provider <claude|codex|agy> --json | accounts login --provider <claude|codex> --name <name> --revision <revision> --json [--cwd <dir>] | accounts reset --revision <revision> --json | accounts pick --provider <claude|codex> [--account <auto|NAME> | --session <id> | --last [--all]] [--model <model>] --json | usage --json | usage --format openusage | usage --refresh --provider <claude|codex> --json | agents --json [--all] | messages --json [--after <seq>] | run <claude|codex> [--account <auto|NAME>] [-- <args>...] | launch <agent_id> <role> [--provider <claude|codex|agy>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | answer <agent_id> <prompt_id> <choice> | interrupt <agent_id> | key <agent_id> <Up|C-u> | attach <agent_id> | focus <session_id> <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
 
 fn env_var(name: &str) -> Result<String, String> {
     env::var(name).map_err(|_| format!("swarm: {name} not set"))
@@ -1121,7 +1121,7 @@ fn valid_chair_id(id: &str) -> bool {
 
 fn parse_chair(value: &str) -> Result<Option<(&str, &str)>, String> {
     let (provider, id) = value.split_once(':').ok_or_else(|| USAGE.to_string())?;
-    if !matches!(provider, "claude" | "codex") {
+    if !matches!(provider, "claude" | "codex" | "pi") {
         return Err(USAGE.to_string());
     }
     Ok(valid_chair_id(id).then_some((provider, id)))
@@ -1131,6 +1131,7 @@ fn env_chair() -> Option<(String, String)> {
     for (provider, variable) in [
         ("claude", "CLAUDE_CODE_SESSION_ID"),
         ("codex", "CODEX_THREAD_ID"),
+        ("pi", "PI_SESSION_ID"),
     ] {
         if let Ok(id) = env::var(variable) {
             return valid_chair_id(&id).then(|| (provider.to_string(), id));
@@ -2218,6 +2219,52 @@ fn codex_chair_log(id: &str, days: &[String; 3]) -> Option<std::path::PathBuf> {
         })
 }
 
+/// A pi session file, `<agent dir>/sessions/--<cwd>--/<time>_<id>.jsonl`. Pi gives each tool
+/// command the file of its own session, so that comes first.
+fn pi_chair_log(id: &str) -> Option<std::path::PathBuf> {
+    let suffix = format!("_{id}.jsonl");
+    let named = |path: &std::path::Path| {
+        path.is_file()
+            && path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.ends_with(&suffix))
+    };
+    if let Some(file) = env::var_os("PI_SESSION_FILE").map(std::path::PathBuf::from)
+        && named(&file)
+    {
+        return Some(file);
+    }
+    let agent = env::var_os("PI_CODING_AGENT_DIR")
+        .map(std::path::PathBuf::from)
+        .or_else(|| {
+            env::var_os("HOME").map(|home| std::path::PathBuf::from(home).join(".pi/agent"))
+        })?;
+    std::fs::read_dir(agent.join("sessions"))
+        .ok()?
+        .filter_map(Result::ok)
+        .filter_map(|dir| std::fs::read_dir(dir.path()).ok())
+        .flatten()
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .find(|path| named(path))
+}
+
+/// The app reads a live chat's log from its session row, and a pi chair's file is known when
+/// the chair is named, so it is recorded then.
+fn record_pi_log(
+    connection: &rusqlite::Connection,
+    session: &str,
+    chair: Option<(&str, &str)>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if let Some(("pi", id)) = chair
+        && let Some(log) = pi_chair_log(id)
+    {
+        swarm::store::set_chair_log(connection, session, &log)?;
+    }
+    Ok(())
+}
+
 fn resolved_chair_log(row: &swarm::store::SessionRow) -> Option<std::path::PathBuf> {
     if let Some(path) = row.chair_log.as_deref().map(std::path::PathBuf::from)
         && path.is_file()
@@ -2229,6 +2276,7 @@ fn resolved_chair_log(row: &swarm::store::SessionRow) -> Option<std::path::PathB
     match provider {
         "claude" => claude_chair_log(id),
         "codex" => codex_chair_log(id, &row.chair_days),
+        "pi" => pi_chair_log(id),
         _ => None,
     }
 }
@@ -3981,6 +4029,11 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 .map(|(provider, id)| (provider.as_str(), id.as_str())),
             Some(&adapter),
         )?;
+        record_pi_log(
+            &connection,
+            &session,
+            chair.as_ref().map(|(p, id)| (p.as_str(), id.as_str())),
+        )?;
         // A chair in a Herdr, Superset, or tmux pane is registered here, so it needs no ids of its
         // own. The app's `tmux-swarm` chair is launched as an agent instead. A child pane already
         // has an agent id, and registering it would take its pane from its own session.
@@ -4005,7 +4058,9 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         && sub == "chair"
     {
         let (session_id, agent_id) = identity()?;
-        set_chair_for_caller(&connection, &session_id, &agent_id, parse_chair(value)?)?;
+        let chair = parse_chair(value)?;
+        set_chair_for_caller(&connection, &session_id, &agent_id, chair)?;
+        record_pi_log(&connection, &session_id, chair)?;
         return Ok(());
     }
     if let [cmd, sub, new_id, old_id] = args

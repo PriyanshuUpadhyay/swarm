@@ -1742,3 +1742,85 @@ fn the_chair_agent_log_becomes_the_chat_log() {
         home.join("orchestrator.jsonl").to_string_lossy()
     );
 }
+
+#[test]
+fn a_pi_chair_names_its_session_and_log() {
+    let home = scratch("pi-chair");
+    let sessions = home.join(".pi/agent/sessions/--work--");
+    std::fs::create_dir_all(&sessions).unwrap();
+    let log = |id: &str| {
+        let path = sessions.join(format!("2026-10-14T10-00-00-000Z_{id}.jsonl"));
+        std::fs::write(
+            &path,
+            format!("{{\"type\":\"session\",\"version\":3,\"id\":\"{id}\"}}\n"),
+        )
+        .unwrap();
+        path
+    };
+    let row = |session: &str| -> (Option<String>, Option<String>, Option<String>) {
+        swarm::store::open(&home.join(".swarm/swarm.db"))
+            .unwrap()
+            .query_row(
+                "SELECT chair_provider, chair_id, chair_log FROM session WHERE id = ?1",
+                [session],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap()
+    };
+    // Pi gives each tool command its session id and file, so `session new` records both.
+    let first = log("pi-one");
+    let first_text = first.to_string_lossy().into_owned();
+    let pi_env = [
+        ("PI_SESSION_ID", "pi-one"),
+        ("PI_SESSION_FILE", first_text.as_str()),
+    ];
+    let session = stdout(&swarm(&home, &pi_env, &["session", "new", "lane"], ""))
+        .trim()
+        .to_string();
+    assert_eq!(
+        row(&session),
+        (Some("pi".into()), Some("pi-one".into()), Some(first_text))
+    );
+    // A lane that started with no chair names it later; the listing finds its file by id.
+    let second = log("pi-two");
+    let caller = [
+        ("SWARM_SESSION_ID", session.as_str()),
+        ("SWARM_AGENT_ID", "orchestrator"),
+    ];
+    swarm::store::add_agent(
+        &swarm::store::open(&home.join(".swarm/swarm.db")).unwrap(),
+        &session,
+        "orchestrator",
+        "orchestrator",
+    )
+    .unwrap();
+    let named = swarm(&home, &caller, &["session", "chair", "pi:pi-two"], "");
+    assert!(
+        named.status.success(),
+        "{}",
+        String::from_utf8_lossy(&named.stderr)
+    );
+    let second_text = second.to_string_lossy().into_owned();
+    assert_eq!(row(&session).2.as_deref(), Some(second_text.as_str()));
+    // The listing finds the file by id too, as it does for a row whose log was never recorded.
+    swarm::store::open(&home.join(".swarm/swarm.db"))
+        .unwrap()
+        .execute(
+            "UPDATE session SET chair_log = NULL WHERE id = ?1",
+            [&session],
+        )
+        .unwrap();
+    assert!(
+        swarm(&home, &[], &["sessions", "--json"], "")
+            .status
+            .success()
+    );
+    assert_eq!(
+        row(&session),
+        (
+            Some("pi".into()),
+            Some("pi-two".into()),
+            Some(second.to_string_lossy().into_owned())
+        )
+    );
+}
