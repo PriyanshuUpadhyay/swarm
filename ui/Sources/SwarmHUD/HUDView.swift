@@ -51,10 +51,15 @@ struct Theme {
 }
 
 enum Layout {
-    /// Room for `~100%` at 12 pt (43.4 pt) plus 10 pt outer padding.
+    /// The left wing: room for the provider mark plus 10 pt outer padding.
     static let wing: CGFloat = 56
+    /// The right wing: room for `~name · 12h left` at 12 pt with a short name, plus 10 pt outer
+    /// padding. Only this side grows, so the closed shape covers no more of the menu bar on the left.
+    static let infoWing: CGFloat = 132
+    /// How far right of the camera the closed shape's centre sits.
+    static let closedShift: CGFloat = (infoWing - wing) / 2
     static let openWidth: CGFloat = 1088
-    /// 13 accounts fit; the panel adds room for the shadow.
+    /// 11 accounts in two provider groups fit; the panel adds room for the shadow.
     static let maxOpenHeight: CGFloat = 600
     /// The open shape's concave top corners, which the content must clear.
     static let ear: CGFloat = 14
@@ -62,7 +67,8 @@ enum Layout {
     static let rowPadding: CGFloat = 8
     static let belowStatus: CGFloat = 12
     static let headings: CGFloat = 24
-    static let row: CGFloat = 36
+    /// Two lines: use and reset, then the pace.
+    static let row: CGFloat = 42
     static let legend: CGFloat = 26
     static let bottom: CGFloat = 10
     static let markColumn: CGFloat = 20
@@ -80,11 +86,12 @@ enum Layout {
 
 extension UsageModel {
     var closedSize: CGSize {
-        CGSize(width: max(notch.width, 32) + 2 * Layout.wing, height: notch.height)
+        CGSize(width: max(notch.width, 32) + Layout.wing + Layout.infoWing, height: notch.height)
     }
 
     var openSize: CGSize {
-        let height = Layout.band(notch: notch) + Layout.belowStatus + Layout.headings
+        let height = Layout.band(notch: notch) + Layout.belowStatus
+            + CGFloat(providerGroups(accounts).count) * Layout.headings
             + CGFloat(accounts.count) * Layout.row + Layout.legend + Layout.bottom
         return CGSize(width: Layout.openWidth, height: min(height, Layout.maxOpenHeight))
     }
@@ -142,12 +149,13 @@ struct HUDView: View {
                     OpenContent(model: model, theme: theme, now: now)
                         .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.97, anchor: .top)))
                 } else {
-                    ClosedWings(model: model)
+                    ClosedWings(model: model, live: live, now: now)
                 }
             }
             .frame(width: size.width, height: size.height, alignment: .top)
             .clipShape(shape)
             .shadow(color: .black.opacity(open ? 0.46 : 0), radius: open ? 13 : 0, y: open ? 10 : 0)
+            .offset(x: open ? 0 : Layout.closedShift)
             .animation(geometryAnimation, value: open)
             .animation(live && !reduceMotion ? .easeInOut(duration: 2) : nil, value: model.phase)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -191,18 +199,81 @@ struct ProviderMark: View {
     }
 }
 
-/// Closed: the worst window's provider on the left and its use on the right, nothing over the camera.
-struct ClosedWings: View {
-    let model: UsageModel
+/// Turns slowly while an agent of its provider works; with Reduce Motion it pulses instead.
+struct WorkingMark: View {
+    let provider: String
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var moving = false
 
     var body: some View {
-        let worst = worstWindow(model.accounts)
+        ProviderMark(provider: provider)
+            .rotationEffect(.degrees(!reduceMotion && moving ? 360 : 0))
+            .opacity(reduceMotion && moving ? 0.4 : 1)
+            .onAppear {
+                withAnimation(reduceMotion ? .easeInOut(duration: 1.2).repeatForever(autoreverses: true)
+                                           : .linear(duration: 2.4).repeatForever(autoreverses: false)) { moving = true }
+            }
+    }
+}
+
+/// "2h 10m" until 100%; under a minute still reads "1m", because shortDuration says "now" there.
+func fillDuration(_ seconds: TimeInterval, now: Date) -> String {
+    shortDuration(until: now.addingTimeInterval(max(seconds, 60)), now: now)
+}
+
+extension BestAccount {
+    /// "3h left", "lasts", "resets 2h 10m" in the wing; "full in 3h 10m", "lasts to reset" in the card.
+    func paceText(short: Bool, now: Date) -> String {
+        switch outlook {
+        case .left(let seconds):
+            return short ? leftText(seconds) : "full in \(fillDuration(seconds, now: now))"
+        case .lasts:
+            return short ? "lasts" : "lasts to reset"
+        case .allFull(let resetAt):
+            let reset = resetAt.map { shortDuration(until: $0, now: now) }
+            return short ? reset.map { "resets \($0)" } ?? "full" : "all full" + (reset.map { " · resets in \($0)" } ?? "")
+        }
+    }
+
+    var severity: Severity {
+        switch outlook {
+        case .left(let seconds): return seconds < 3600 ? .critical : .warn
+        case .lasts: return .calm
+        case .allFull: return .critical
+        }
+    }
+
+    /// A failed read keeps the last numbers, so they are marked old like a stale meter.
+    func isOld(readFailed: Bool) -> Bool { readFailed || account.windows.contains { !$0.isFresh } }
+
+    func spoken(now: Date) -> String {
+        switch outlook {
+        case .left(let seconds): return "Best account \(account.name), a limit fills in \(fillDuration(seconds, now: now))"
+        case .lasts: return "Best account \(account.name), lasts to reset"
+        case .allFull(let resetAt):
+            return "All accounts full" + (resetAt.map { ", \(account.name) resets in \(shortDuration(until: $0, now: now))" } ?? "")
+        }
+    }
+}
+
+/// Closed: a provider mark on the left, moving while its agents work, and the best account with its
+/// pace on the right; nothing over the camera.
+struct ClosedWings: View {
+    let model: UsageModel
+    let live: Bool
+    let now: Date
+
+    var body: some View {
+        let best = bestAccount(model.accounts, history: model.history, now: now)
+        let provider = markProvider(working: model.working, best: best)
+        let working = provider.map { model.working[$0, default: 0] } ?? 0
         HStack(spacing: 0) {
-            ZStack(alignment: .topTrailing) {
-                if let worst {
-                    ProviderMark(provider: worst.account.provider)
-                    if worst.window.severity == .critical {
-                        Text("!").font(.system(size: 8, weight: .heavy)).foregroundStyle(Palette.critical).offset(x: 6, y: -4)
+            Group {
+                if let provider {
+                    if working > 0 && live {
+                        WorkingMark(provider: provider).id(provider)
+                    } else {
+                        ProviderMark(provider: provider)
                     }
                 } else {
                     Text("!").font(.system(size: 12, weight: .bold)).foregroundStyle(Palette.secondary)
@@ -212,22 +283,30 @@ struct ClosedWings: View {
             .padding(.leading, 10)
             Spacer(minLength: 0)
             Group {
-                if let worst {
-                    // A failed read keeps the last numbers, so they are marked old like a stale meter.
-                    Text("\(worst.window.isFresh && model.readError == nil ? "" : "~")\(worst.window.usedPct)%")
-                        .foregroundStyle(Palette.ink(worst.window.severity))
+                if let best {
+                    // The name gives way in the middle; the pace always shows.
+                    HStack(spacing: 0) {
+                        if best.isOld(readFailed: model.readError != nil) { Text("~").fixedSize() }
+                        if case .allFull = best.outlook {} else {
+                            Text(best.account.name).lineLimit(1).truncationMode(.middle)
+                            Text(" · ").fixedSize()
+                        }
+                        Text(best.paceText(short: true, now: now)).fixedSize()
+                            .foregroundStyle(best.severity == .calm ? Palette.primary : Palette.ink(best.severity))
+                    }
+                    .foregroundStyle(Palette.primary)
                 } else {
                     Text("—").foregroundStyle(Palette.secondary)
                 }
             }
             .font(.system(size: 12, weight: .semibold).monospacedDigit())
-            .lineLimit(1)
-            .frame(width: Layout.wing - 10, alignment: .trailing)
+            .frame(width: Layout.infoWing - 10, alignment: .trailing)
             .padding(.trailing, 10)
         }
         .frame(maxHeight: .infinity)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(worst.map { "\($0.account.name) \($0.window.kind.title) \($0.window.usedPct) percent used" } ?? "No usage reading")
+        .accessibilityLabel((best?.spoken(now: now) ?? "No usage reading")
+            + (working > 0 ? ", \(working) \(providerTitle(provider!)) agent\(working == 1 ? "" : "s") working" : ""))
         .accessibilityAddTraits(.isButton)
         .accessibilityHint(model.hotKeyReady ? "Opens the usage card. Control Option Command U also opens it." : "Opens the usage card.")
         .accessibilityAction { model.toggleFromKeyboard?() }
@@ -239,41 +318,47 @@ struct OpenContent: View {
     let theme: Theme
     let now: Date
 
-    private let kinds = WindowKind.allCases
-
     var body: some View {
+        let groups = providerGroups(model.accounts)
+        // Every group draws as many columns as the widest one, so a column is as wide in each group.
+        let columns = groups.map(\.kinds.count).max() ?? 0
         VStack(spacing: 0) {
             status.frame(height: Layout.band(notch: model.notch))
             Spacer().frame(height: Layout.belowStatus)
-            HStack(spacing: Layout.gap) {
-                Spacer().frame(width: Layout.markColumn)
-                Text("Account").frame(width: Layout.nameColumn, alignment: .leading)
-                Text("Reading").frame(width: Layout.readingColumn, alignment: .leading)
-                ForEach(kinds, id: \.self) { kind in
-                    Text(kind.title).frame(maxWidth: .infinity, alignment: .leading)
-                }
-            }
-            .font(.system(size: 11, weight: .medium))
-            .foregroundStyle(Palette.tertiary)
-            .padding(.horizontal, Layout.rowPadding)
-            .frame(height: Layout.headings)
-            // Each row's label names its windows, so VoiceOver skips these titles.
-            .accessibilityHidden(true)
-            // Account order is the reader's, so a sign-in never moves a row.
-            ForEach(Array(model.accounts.enumerated()), id: \.element.id) { index, account in
-                Group {
-                    if account.windows.isEmpty {
-                        SignedOutRow(account: account)
-                    } else {
-                        AccountRow(account: account, kinds: kinds, theme: theme, now: now,
-                                   readFailed: model.readError != nil, readAt: model.readAt)
+            ForEach(groups) { group in
+                HStack(spacing: Layout.gap) {
+                    Spacer().frame(width: Layout.markColumn)
+                    Text(providerTitle(group.provider)).frame(width: Layout.nameColumn, alignment: .leading)
+                    Text("Reading").frame(width: Layout.readingColumn, alignment: .leading)
+                    ForEach(group.kinds, id: \.self) { kind in
+                        Text(kind.title).frame(maxWidth: .infinity, alignment: .leading)
                     }
+                    ForEach(group.kinds.count..<columns, id: \.self) { _ in Color.clear.frame(maxWidth: .infinity) }
                 }
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(Palette.tertiary)
                 .padding(.horizontal, Layout.rowPadding)
-                .background(index.isMultiple(of: 2) ? Color.clear : theme.stripe)
-                .overlay(alignment: .top) { Palette.rule.frame(height: 1) }
+                .frame(height: Layout.headings)
+                // Each row's label names its windows, so VoiceOver reads only the group name here.
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(providerTitle(group.provider))
+                .accessibilityAddTraits(.isHeader)
+                // Account order is the reader's, so a sign-in never moves a row.
+                ForEach(Array(group.accounts.enumerated()), id: \.element.id) { index, account in
+                    Group {
+                        if account.windows.isEmpty {
+                            SignedOutRow(account: account)
+                        } else {
+                            AccountRow(account: account, kinds: group.kinds, columns: columns, theme: theme, now: now,
+                                       history: model.history, readFailed: model.readError != nil, readAt: model.readAt)
+                        }
+                    }
+                    .padding(.horizontal, Layout.rowPadding)
+                    .background(index.isMultiple(of: 2) ? Color.clear : theme.stripe)
+                    .overlay(alignment: .top) { Palette.rule.frame(height: 1) }
+                }
             }
-            Text("Each limit shows used % · resets in. A dash means no reading for that limit.")
+            Text("Each limit shows used % · resets in; the line below says when it fills at this pace. A dash means no reading.")
                 .font(.system(size: 11))
                 .foregroundStyle(Palette.tertiary)
                 .frame(maxWidth: .infinity, minHeight: Layout.legend, alignment: .leading)
@@ -283,20 +368,25 @@ struct OpenContent: View {
         .padding(.horizontal, Layout.inset)
     }
 
-    /// The worst window left of the camera, the phase and read age right of it.
+    /// The best account and its pace left of the camera, the phase and read age right of it.
     private var status: some View {
         let wing = max((Layout.openWidth - 2 * Layout.inset - model.notch.width) / 2 - 12, 0)
         return HStack(spacing: 0) {
             HStack(spacing: 8) {
-                if let worst = worstWindow(model.accounts) {
-                    Circle().fill(theme.fill(worst.window.severity)).frame(width: 7, height: 7)
-                    // A long name gives way; the window and its value always show.
+                if let best = bestAccount(model.accounts, history: model.history, now: now) {
+                    Circle().fill(theme.fill(best.severity)).frame(width: 7, height: 7)
+                    // A long name gives way; the pace always shows.
                     HStack(spacing: 0) {
-                        Text(worst.account.name).lineLimit(1).truncationMode(.middle)
-                        Text(" · \(worst.window.kind.title) · ").fixedSize()
-                        Text("\(worst.window.usedPct)% used").foregroundStyle(Palette.ink(worst.window.severity)).fixedSize()
+                        Text("Best ").foregroundStyle(Palette.tertiary).fixedSize()
+                        if best.isOld(readFailed: model.readError != nil) { Text("~").fixedSize() }
+                        Text(best.account.name).lineLimit(1).truncationMode(.middle)
+                        Text(" · \(providerTitle(best.account.provider)) · ").fixedSize()
+                        Text(best.paceText(short: false, now: now)).fixedSize()
+                            .foregroundStyle(best.severity == .calm ? Palette.primary : Palette.ink(best.severity))
                     }
                     .foregroundStyle(Palette.primary)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(best.spoken(now: now))
                 } else {
                     // The cause names the fix (for example "swarm not found; set SWARM_BIN").
                     Text(model.readError.map { "\($0) · retries each minute" } ?? "No usage reading")
@@ -361,8 +451,11 @@ struct AccountName: View {
 struct AccountRow: View {
     let account: UsageAccount
     let kinds: [WindowKind]
+    /// The widest group's column count; the rest of the row stays empty.
+    let columns: Int
     let theme: Theme
     let now: Date
+    let history: [HistorySample]
     /// The last read failed, so every number on screen is at least as old as `readAt`.
     let readFailed: Bool
     let readAt: Date?
@@ -375,13 +468,15 @@ struct AccountRow: View {
             reading.font(.system(size: 11)).lineLimit(1).frame(width: Layout.readingColumn, alignment: .leading)
             ForEach(kinds, id: \.self) { kind in
                 if let window = account.windows.first(where: { $0.kind == kind }) {
-                    WindowCell(window: window, theme: theme, now: now)
+                    WindowCell(window: window, pace: pace(account: account, window: window, history: history, now: now),
+                               theme: theme, now: now)
                 } else {
                     Text("—").font(.system(size: 12)).foregroundStyle(Palette.tertiary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .accessibilityLabel("\(kind.title) no reading")
                 }
             }
+            ForEach(kinds.count..<columns, id: \.self) { _ in Color.clear.frame(maxWidth: .infinity) }
         }
         .accessibilityElement(children: .combine)
         .frame(height: Layout.row)
@@ -407,10 +502,38 @@ struct AccountRow: View {
 
 struct WindowCell: View {
     let window: UsageWindow
+    /// nil while there are too few samples; the second line then stays blank.
+    let pace: Pace?
     let theme: Theme
     let now: Date
 
+    private var paceText: String? {
+        switch pace {
+        case .full: return "full now"
+        case .fillsIn(let seconds): return "full in \(fillDuration(seconds, now: now))"
+        case .lasts: return "lasts to reset"
+        case nil: return nil
+        }
+    }
+
     var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            usage
+            // A blank line keeps the first line where it is in every row.
+            Text(paceText ?? " ")
+                .font(.system(size: 11).monospacedDigit())
+                .foregroundStyle(pace.map { $0 == .lasts ? Palette.tertiary : Palette.ink($0.severity(window: window)) } ?? Palette.tertiary)
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(window.kind.title) \(window.usedPct) percent used"
+            + (window.severity == .critical ? ", critical" : "")
+            + (window.resetAt.map { ", resets in \(shortDuration(until: $0, now: now))" } ?? "")
+            + (paceText.map { ", \($0)" } ?? ""))
+    }
+
+    private var usage: some View {
         HStack(spacing: 8) {
             UsageBar(fraction: Double(window.usedPct) / 100, color: theme.fill(window.severity))
             Text("\(window.usedPct)%")
@@ -428,11 +551,6 @@ struct WindowCell: View {
                 .lineLimit(1)
                 .frame(width: Layout.resetColumn, alignment: .trailing)
         }
-        .frame(maxWidth: .infinity)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(window.kind.title) \(window.usedPct) percent used"
-            + (window.severity == .critical ? ", critical" : "")
-            + (window.resetAt.map { ", resets in \(shortDuration(until: $0, now: now))" } ?? ""))
     }
 }
 

@@ -2,8 +2,9 @@ import AppKit
 import SwarmHUDCore
 import SwiftUI
 
-// `SwarmHUD --snapshot <dir> --fixture <usage.json> [--now <seconds>]` renders the closed and open
-// HUD for every phase to PNG files, for design review and tests. Without it the HUD runs.
+// `SwarmHUD --snapshot <dir> --fixture <usage.json> [--history <history.json>] [--working <working.json>]
+// [--now <seconds>]` renders the closed and open HUD for every phase to PNG files, for design review
+// and tests. Without it the HUD runs.
 let arguments = CommandLine.arguments
 if let at = arguments.firstIndex(of: "--snapshot"), arguments.count > at + 1 {
     MainActor.assumeIsolated { snapshot(to: URL(fileURLWithPath: arguments[at + 1]), arguments: arguments) }
@@ -38,6 +39,10 @@ func snapshot(to directory: URL, arguments: [String]) {
     }
     let model = UsageModel()
     model.accounts = accounts(from: usage.meters)
+    // Fixture history only: the owner's saved history would make the pictures change from run to run.
+    model.history = value("--history").flatMap { FileManager.default.contents(atPath: $0) }
+        .flatMap { try? JSONDecoder().decode([HistorySample].self, from: $0) } ?? []
+    model.working = value("--working").flatMap { FileManager.default.contents(atPath: $0) }.map(WorkingSnapshot.counts) ?? [:]
     model.readAt = now.addingTimeInterval(-120)
     model.now = now
     for phase in DayPhase.allCases {

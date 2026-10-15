@@ -6,9 +6,12 @@ swarm ships as one Homebrew formula (ADR 0079). The web UI is inside the `swarm`
 `SwarmNotify` is the notice helper (ADR 0077). It ships at `libexec/SwarmNotify.app` beside
 `bin/swarm`. `swarm` starts it for a notice, and it exits when idle.
 
-`SwarmHUD` is the notch usage HUD (ADR 0087). It ships at `libexec/SwarmHUD.app` and reads
-`swarm usage --json`. `swarm hud install` starts it at login. `SwarmHUD --snapshot <dir> --fixture
-Tests/SwarmHUDTests/fixtures/nine-accounts.json` renders each theme to PNG files with no window.
+`SwarmHUD` is the notch usage HUD (ADR 0087). It ships at `libexec/SwarmHUD.app`, reads
+`swarm usage --json` each minute and `swarm working --json` every 3 s, and keeps 7 days of samples
+for the pace in `~/Library/Application Support/SwarmHUD/history.json`. `swarm hud install` starts it
+at login. `SwarmHUD --snapshot <dir> --fixture Tests/SwarmHUDTests/fixtures/nine-accounts.json
+--history Tests/SwarmHUDTests/fixtures/history.json --working Tests/SwarmHUDTests/fixtures/working.json
+--now 1792050120` renders each theme to PNG files with no window.
 
 Run `make build` to compile the helpers.
 Run `make package` to build `.build/release/swarm-<version>-macos-arm64.tar.gz`. It builds the Zig
