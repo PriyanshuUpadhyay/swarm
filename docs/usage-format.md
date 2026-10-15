@@ -13,6 +13,8 @@ does not know. A removed or renamed field, or a changed unit, needs `v2`.
 ## Usage object
 
 `{"schema": "swarm.usage.v1", "meters": [meter, ...]}`. A meter is one usage window of one account.
+Two accounts of one provider that sign in with the same email are one account, so only one of them
+has meters: the one with a reading, else the one not named `default`, else the first.
 
 | Field | Type | Meaning |
 |---|---|---|
