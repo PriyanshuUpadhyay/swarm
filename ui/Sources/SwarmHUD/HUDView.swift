@@ -392,7 +392,8 @@ struct AccountRow: View {
 
     var body: some View {
         HStack(spacing: Layout.gap) {
-            ProviderMark(provider: account.provider, size: 16).frame(width: Layout.markColumn)
+            // The subtitle already names the provider, so the mark is not read twice.
+            ProviderMark(provider: account.provider, size: 16).frame(width: Layout.markColumn).accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(account.name).font(.system(size: 13, weight: .medium)).foregroundStyle(Palette.primary)
                     .lineLimit(1).truncationMode(.middle).help(account.name)
@@ -407,6 +408,7 @@ struct AccountRow: View {
                 }
             }
         }
+        .accessibilityElement(children: .combine)
         .frame(height: Layout.row)
         .overlay(alignment: .top) { Palette.rule.frame(height: 1) }
     }
@@ -488,6 +490,7 @@ struct SignedOutRow: View {
                 .lineLimit(2).truncationMode(.tail).help(account.problem ?? "")
             Spacer()
         }
+        .accessibilityElement(children: .combine)
         .frame(height: Layout.signedOutRow)
         .overlay(alignment: .top) { Palette.rule.frame(height: 1) }
     }
