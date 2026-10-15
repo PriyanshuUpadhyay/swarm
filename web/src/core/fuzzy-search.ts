@@ -1,5 +1,5 @@
 // Copied from jean (https://github.com/coollabsio/jean, src/lib/fuzzy-search.ts at bda4576e).
-// Only `fuzzySearchItems` is kept; the palette is its one caller.
+// Only `fuzzySearchItems` is kept; the palette and the composer's `/` menu call it.
 //
 // Copyright 2025 Andras Bacsai
 //

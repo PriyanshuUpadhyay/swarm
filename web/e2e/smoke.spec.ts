@@ -189,6 +189,66 @@ test("the composer types into the chair, ⌘. interrupts, errors show in a banne
   expect(errors).toEqual([]);
 });
 
+test("the / menu lists the CLI's commands; the send key runs a whole command, a dialog row and Tab only insert, Esc closes it", async ({ page: tab }) => {
+  const errors: string[] = [];
+  tab.on("pageerror", (e) => !e.message.startsWith("ResizeObserver loop") && errors.push(e.message));
+  tab.on("console", (m) => m.type() === "error" && errors.push(m.text()));
+  const home = process.env.SWARM_E2E_HOME!;
+  const typed = () => (existsSync(join(home, "typed")) ? readFileSync(join(home, "typed"), "utf8") : "");
+  const url = new URL(process.env.SWARM_SERVE_URL!);
+  await tab.goto(`${url.origin}/${url.hash}`);
+  await tab.waitForFunction(() => window.__swarmReady === true);
+  await tab.locator(`[data-testid="tree-row"][data-session="${process.env.SWARM_E2E_LIVE}"]`).click();
+  const composer = tab.getByTestId("composer");
+  const menu = tab.getByTestId("slash-menu");
+  await expect(composer).toBeEnabled();
+  await composer.click();
+
+  // The rows come from the chair's CLI (the stand-in claude), plus the built-ins it omits.
+  await tab.keyboard.type("/swa");
+  await expect(menu.getByTestId("slash-row").first()).toContainText("/swarm:plan");
+  await expect(menu).toContainText("Plan one change");
+  await tab.keyboard.press("Tab");
+  await expect(composer).toHaveValue("/swarm:plan ");
+  await expect(menu).toBeHidden();
+  await tab.keyboard.press("Escape");
+  await expect(composer).toHaveValue("");
+
+  // Esc closes the menu first and keeps the text; Up and Down move the selection.
+  await tab.keyboard.type("/");
+  await expect(menu).toBeVisible();
+  await tab.keyboard.press("ArrowDown");
+  await expect(menu.locator('[aria-selected="true"]')).toHaveCount(1);
+  await tab.keyboard.press("Escape");
+  await expect(menu).toBeHidden();
+  await expect(composer).toHaveValue("/");
+  await tab.keyboard.press("Escape");
+  await expect(composer).toHaveValue("");
+
+  // A dialog command is inserted and never sent, and says why.
+  await tab.keyboard.type("/mode");
+  await expect(menu.getByTestId("slash-row").first()).toContainText("opens in pane");
+  await tab.keyboard.press("Enter");
+  await expect(composer).toHaveValue("/model ");
+  expect(typed()).not.toContain("/model");
+  await tab.keyboard.press("Escape");
+
+  // The send key on a whole-draft command picks it and sends the picked text once, hint or not.
+  const before = typed().split("/clear ").length;
+  await tab.keyboard.type("/cle");
+  await expect(menu.getByTestId("slash-row").first()).toContainText("/clear");
+  await tab.keyboard.press("Enter");
+  await expect.poll(() => typed().split("/clear ").length).toBe(before + 1);
+  await expect(composer).toHaveValue("");
+  expect(typed()).not.toContain("/cle\n");
+
+  // Mid-draft, a / that matches nothing shows no menu, so a path types as text.
+  await tab.keyboard.type("see src/main.rs");
+  await expect(menu).toBeHidden();
+  await tab.keyboard.press("Escape");
+  expect(errors).toEqual([]);
+});
+
 test("a chat with two children shows their panes; keys move focus and zoom; a pane types, asks and closes", async ({ page: tab }, info) => {
   const errors: string[] = [];
   // WebKit reports a ResizeObserver loop when a short row list opens, also in a chat with no panes
