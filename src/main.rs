@@ -4792,6 +4792,9 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 }
                 _ => return Err(USAGE.into()),
             };
+            if let Some(refusal) = swarm::bus::sweep_refusal(&adapter_name(), every.is_some()) {
+                return Err(refusal.into());
+            }
             let adapter = swarm::adapter::load(&root, &adapter_name())?;
             loop {
                 let mut lines = Vec::new();

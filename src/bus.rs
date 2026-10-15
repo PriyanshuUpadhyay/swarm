@@ -681,6 +681,16 @@ pub fn setup_refusal(
         .then_some("swarm: a child agent cannot apply swarm setup; ask the orchestrator")
 }
 
+/// Why `swarm sweep --every` may not run on `adapter`, or None. The app's listing already rings an
+/// idle chair again, and a chair whose CLI has no background task (pi) waits on the loop, so its
+/// CLI queues every ring until someone stops the command.
+pub fn sweep_refusal(adapter: &str, every: bool) -> Option<&'static str> {
+    (every && adapter == "tmux-swarm").then_some(
+        "swarm: the app rings an idle chair again, and a chair that waits on `swarm sweep --every` \
+         gets no ring until the loop ends; end the turn instead",
+    )
+}
+
 fn child_agent(swarm_agent: Option<&str>, herdr_agent_pane: Option<&str>) -> bool {
     swarm_agent.is_some_and(|agent| agent != "orchestrator") || herdr_agent_pane == Some("1")
 }
@@ -2186,6 +2196,14 @@ mod tests {
 
     fn strings(args: &[&str]) -> Vec<String> {
         args.iter().map(|arg| arg.to_string()).collect()
+    }
+
+    #[test]
+    fn a_looping_sweep_is_refused_only_under_the_app() {
+        assert!(sweep_refusal("tmux-swarm", true).is_some());
+        assert!(sweep_refusal("tmux-swarm", false).is_none());
+        assert!(sweep_refusal("herdr", true).is_none());
+        assert!(sweep_refusal("tmux", true).is_none());
     }
 
     #[test]
