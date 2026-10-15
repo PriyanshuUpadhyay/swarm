@@ -2,8 +2,11 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { createRoot } from "react-dom/client";
 import { usePanelRef, useDefaultLayout } from "react-resizable-panels";
 import { toast } from "sonner";
+import { CopyIcon } from "lucide-react";
+import { forgetToken } from "../core/api";
 import type { App } from "../core/app";
-import { boot } from "../core/boot";
+import { boot, NO_TOKEN, savedStore } from "../core/boot";
+import { shortId } from "../core/route";
 import { Changes } from "../core/changes";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "../components/ui/resizable";
 import { Toaster } from "../components/ui/sonner";
@@ -19,6 +22,7 @@ import { Sidebar } from "./sidebar";
 import { store } from "./store";
 import { TabStrip } from "./tabs";
 import { applyTheme, chooseTheme, followTheme, useTheme } from "./theme";
+import { copyText } from "./copy";
 
 // Sidebar side and width stay in this browser until P3b adds their owner choices.
 const SIDE_KEY = "swarm.sidebar.side";
@@ -85,11 +89,10 @@ function Main({ app, changes }: { app: App; changes: Changes }) {
   const workspace = useSyncExternalStore(app.subscribe, () => app.view.workspace);
   return (
     <div className="flex h-full min-w-0 flex-col">
-      {workspace && (
+      {(workspace || openId) && (
         <div className="flex min-w-0">
-          <div className="min-w-0 flex-1">
-            <TabStrip app={app} />
-          </div>
+          <div className="min-w-0 flex-1">{workspace && <TabStrip app={app} />}</div>
+          {openId && <ChatId id={openId} short={shortId(openId, app.chatIds())} />}
           <PanelToggles changes={changes} />
         </div>
       )}
@@ -101,12 +104,33 @@ function Main({ app, changes }: { app: App; changes: Changes }) {
   );
 }
 
+/** The open chat's short id, as the URL and `swarm` name it; a click copies the full id. */
+function ChatId({ id, short }: { id: string; short: string }) {
+  return (
+    <button
+      type="button"
+      className="flex shrink-0 items-center gap-1 self-center px-2 font-mono text-xs text-muted-foreground hover:text-foreground"
+      aria-label={`Copy chat id ${id}`}
+      title="Copy chat id"
+      onClick={() => void copyText(id, "chat id")}
+    >
+      {short}
+      <CopyIcon className="size-3" aria-hidden />
+    </button>
+  );
+}
+
 applyTheme();
 const app = boot();
 const changes = typeof app === "string" ? null : new Changes(app);
 if (typeof app !== "string") {
   app.registry.add(...changes!.commands());
   app.notice = (text, error) => (error ? toast.error(text) : toast(text));
+  // A token that the server refuses is forgotten, so the next link that swarm ui opens saves its own.
+  app.unauthorized = () => {
+    forgetToken(savedStore());
+    root.render(<p className="p-6 text-muted-foreground">{NO_TOKEN}</p>);
+  };
   app.registry.add(
     { id: "sidebar.toggle", title: "Toggle Sidebar", chord: "Meta+B", run: () => frame.toggle() },
     { id: "sidebar.move", title: "Move Sidebar to Other Side", chord: "Shift+Meta+B", run: () => frame.move() },

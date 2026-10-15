@@ -16,6 +16,7 @@ import {
 } from "./composer";
 import { MarkdownCache } from "./markdown";
 import { measure, whenPainted, type PerfKind } from "./perf";
+import { chatFromPath, chatPath, resolveChat } from "./route";
 import { readSse, type SseEvent } from "./sse";
 import { isChair, movePane, paneCells, paneStatus, type Direction, type PaneCell } from "./panes";
 import { FoldChoices, findMatches, lines, mergeRows, type Line, type Match } from "./transcript";
@@ -246,6 +247,10 @@ export class App {
   /** Bumped by each write, so a read that started before it does not take back its revision. */
   private writeSeq = 0;
   private restored = false;
+  /** The chat that the page's URL named when it opened (ADR 0088), and whether the URL has
+   *  followed the open chat yet; the first follow replaces the URL and later ones push. */
+  private readonly urlChat = typeof location === "undefined" ? null : chatFromPath(location.pathname);
+  private urlFollowed = false;
   /** Bumped by each move between chats, so a slow workspace step does not undo a newer one. */
   private navSeq = 0;
   private starting = false;
@@ -277,6 +282,8 @@ export class App {
   private readers = new Map<string, Reader>();
   /** Shows a short message to the owner; the view layer sets it (a toast). */
   notice: (text: string, error?: boolean) => void = () => {};
+  /** The server refused the token. */
+  unauthorized: () => void = () => {};
 
   constructor(
     readonly api: Api,
@@ -292,8 +299,20 @@ export class App {
   };
 
   private notify() {
+    this.followUrl();
     this.view = this.makeView();
     for (const fn of this.listeners) fn();
+  }
+
+  /** Points the URL at the open chat once the first tree has restored one. */
+  private followUrl() {
+    if (typeof location === "undefined" || !this.restored) return;
+    const path = chatPath(this.openId);
+    if (location.pathname !== path) {
+      if (this.urlFollowed) history.pushState(null, "", path + location.search);
+      else history.replaceState(history.state, "", path + location.search);
+    }
+    this.urlFollowed = true;
   }
 
   private makeView(): View {
@@ -405,6 +424,17 @@ export class App {
     window.__swarmPerf = [];
     const uninstall = installKeys(this.registry);
     const abort = new AbortController();
+    // Back and forward open the chat that the URL names, or leave the open one.
+    addEventListener(
+      "popstate",
+      () => {
+        const id = chatFromPath(location.pathname);
+        const chat = id && resolveChat(id, this.chatIds());
+        if (chat) this.openChat(chat, undefined, { history: false });
+        else if (this.openId) this.leaveChat(this.openId);
+      },
+      { signal: abort.signal },
+    );
     void this.refreshSnapshot().then(() => {
       whenPainted(
         () => document.querySelector('[data-testid="sidebar"][data-loaded="true"]') !== null,
@@ -430,6 +460,11 @@ export class App {
     return chatRows(this.tree).some((r) => r.selection?.chat === session);
   }
 
+  /** Every session id that the snapshot lists. */
+  chatIds(): string[] {
+    return this.snapshot?.sessions.map((s) => s.id) ?? [];
+  }
+
   /** A session's snapshot row and its agents. */
   agentsOf(session: string) {
     return { info: this.snapshot?.sessions.find((s) => s.id === session), agents: this.snapshot?.agents[session] ?? [] };
@@ -450,6 +485,7 @@ export class App {
           this.error = null;
         } catch (err) {
           this.error = String(err);
+          if (err instanceof ApiError && err.status === 401) this.unauthorized();
         }
         this.notify();
       } while (this.snapshotAgain);
@@ -487,8 +523,12 @@ export class App {
     if (!this.selected || !this.rows.some((r) => r.id === this.selected)) this.selected = this.rows[0]?.id ?? null;
     if (!this.restored) {
       this.restored = true;
+      const asked = this.urlChat && resolveChat(this.urlChat, this.chatIds());
       const row = tree.sections.flatMap((s) => s.rows).find((r) => r.id === tree.selectedRow);
-      if (row && !this.openId && !this.workspace) {
+      if (asked && !this.openId) {
+        this.openChat(asked);
+        void this.refreshSnapshot();
+      } else if (row && !this.openId && !this.workspace) {
         if (row.selection?.chat) this.openChat(row.selection?.chat, undefined, { write: false });
         else if (row.kind === "workspace") this.workspace = row.id;
         void this.refreshSnapshot();
