@@ -30,18 +30,21 @@ skills point to.
 
 ## Install
 
-The kit is one plugin, `swarm`, for Claude Code, Codex and Antigravity. Each CLI installs a copy of
-the whole kit, so a skill reaches the kit's `blocks/` and `references/` two folders up from its own
-folder. Install it from a clone of this repo:
+The kit is one plugin, `swarm`, for Claude Code, Codex, Antigravity and pi. Each CLI installs the
+whole kit, so a skill reaches the kit's `blocks/` and `references/` two folders up from its own
+folder. `swarm setup plugin` installs the kit that ships with swarm in each CLI on `PATH` after
+you say yes. By hand, from a clone, the kit folder is its own marketplace:
 
 ```sh
-claude plugin marketplace add <repo> && claude plugin install swarm@swarm
-codex plugin marketplace add <repo> && codex plugin add swarm@swarm
+claude plugin marketplace add <repo>/skills/kit && claude plugin install swarm@swarm
+codex plugin marketplace add <repo>/skills/kit && codex plugin add swarm@swarm
 agy plugin install <repo>/skills/kit
+pi install <repo>/skills/kit
 ```
 
-Claude Code shows each skill with the plugin name in front, for example `/swarm:flow`. Claude Code
-reads a marketplace on a local folder in place, so an edit in the clone reaches its next session.
+Claude Code shows each skill with the plugin name in front, for example `/swarm:flow`; pi shows
+`/skill:flow`. Claude Code and pi read a local folder in place, so an edit in the clone reaches
+their next session.
 Codex and Antigravity read an installed copy, so run their install again after an edit; the same
 version is copied again.
 

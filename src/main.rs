@@ -319,7 +319,7 @@ fn init() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-const USAGE: &str = "usage: swarm --version | init | skills refresh | skills manifest <source> <out> | setup status --json | setup [--plan [--json] | --digest <digest>] [--cwd <dir>] [--only <hooks|trust|herdr|skills>,...] [--consent <standing|ask>] [--resume] | hooks status --json | hooks setup [--plan [--json] | --digest <digest>] | managed list [--json] | managed revert (<id>... | --all) [--plan [--json] | --digest <digest>] | adapter check <name> | session new <talk_mode> [--chair <claude|codex|pi>:<id>] (cwd: pwd -P) | session chair <claude|codex|pi>:<id> | session continue <new_id> <old_id> | session archive <id>... | session unarchive <id>... | sessions --json [--archived] | agent add <agent_id> <role> | serve [--port N] [--assets DIR] | ui [stop | --foreground] [--port N] [--assets DIR] | herdr-split | notify <title> [--body <text>] | hud <install|uninstall|status> [--json] | notices --json | notices --due | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | status-feed | guard <claude|codex|agy> PreToolUse | roles --json | roles get <role> [--provider <claude|codex|agy|pi>] | roles check --json | roles save --revision <revision> <profile-json> | roles new <name> --revision <revision> | roles rename <old> <new> --revision <revision> | roles copy <from> <to> --revision <revision> | roles delete <name> --revision <revision> | roles reset --revision <revision> | roles set-min-usage <pct> --revision <revision> | providers --json | models --provider <claude|codex|agy|pi> --json | accounts --provider <claude|codex|agy|pi> --json | accounts login --provider <claude|codex> --name <name> --revision <revision> --json [--cwd <dir>] | accounts reset --revision <revision> --json | accounts pick --provider <claude|codex> [--account <auto|NAME> | --session <id> | --last [--all]] [--model <model>] --json | usage --json | usage --format openusage | working --json | usage --refresh --provider <claude|codex> --json | agents --json [--all] | messages --json [--after <seq>] | run <claude|codex> [--account <auto|NAME>] [-- <args>...] | launch <agent_id> <role> [--provider <claude|codex|agy|pi>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | answer <agent_id> <prompt_id> <choice> | interrupt <agent_id> | key <agent_id> <Up|C-u> | attach <agent_id> | focus <session_id> <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
+const USAGE: &str = "usage: swarm --version | init | skills refresh | skills manifest <source> <out> | setup status --json | setup plugin [--yes] | setup [--plan [--json] | --digest <digest>] [--cwd <dir>] [--only <hooks|trust|herdr|skills>,...] [--consent <standing|ask>] [--resume] | hooks status --json | hooks setup [--plan [--json] | --digest <digest>] | managed list [--json] | managed revert (<id>... | --all) [--plan [--json] | --digest <digest>] | adapter check <name> | session new <talk_mode> [--chair <claude|codex|pi>:<id>] (cwd: pwd -P) | session chair <claude|codex|pi>:<id> | session continue <new_id> <old_id> | session archive <id>... | session unarchive <id>... | sessions --json [--archived] | agent add <agent_id> <role> | serve [--port N] [--assets DIR] | ui [stop | --foreground] [--port N] [--assets DIR] | herdr-split | notify <title> [--body <text>] | hud <install|uninstall|status> [--json] | notices --json | notices --due | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | status-feed | guard <claude|codex|agy> PreToolUse | roles --json | roles get <role> [--provider <claude|codex|agy|pi>] | roles check --json | roles save --revision <revision> <profile-json> | roles new <name> --revision <revision> | roles rename <old> <new> --revision <revision> | roles copy <from> <to> --revision <revision> | roles delete <name> --revision <revision> | roles reset --revision <revision> | roles set-min-usage <pct> --revision <revision> | providers --json | models --provider <claude|codex|agy|pi> --json | accounts --provider <claude|codex|agy|pi> --json | accounts login --provider <claude|codex> --name <name> --revision <revision> --json [--cwd <dir>] | accounts reset --revision <revision> --json | accounts pick --provider <claude|codex> [--account <auto|NAME> | --session <id> | --last [--all]] [--model <model>] --json | usage --json | usage --format openusage | working --json | usage --refresh --provider <claude|codex> --json | agents --json [--all] | messages --json [--after <seq>] | run <claude|codex> [--account <auto|NAME>] [-- <args>...] | launch <agent_id> <role> [--provider <claude|codex|agy|pi>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | answer <agent_id> <prompt_id> <choice> | interrupt <agent_id> | key <agent_id> <Up|C-u> | attach <agent_id> | focus <session_id> <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
 
 fn env_var(name: &str) -> Result<String, String> {
     env::var(name).map_err(|_| format!("swarm: {name} not set"))
@@ -1905,6 +1905,122 @@ fn skills_setup_status() -> Result<bool, Box<dyn std::error::Error>> {
     })
 }
 
+/// `swarm setup plugin [--yes]`: install the kit that ships beside `swarm` as the plugin `swarm` in each of Claude, Codex, AGY and pi that is on PATH (ADR 0090). It prints
+/// the commands and runs them only after the owner answers yes, or with `--yes`. The commands go
+/// through each CLI's own plugin command, so swarm records no managed edit for them.
+fn setup_plugin(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    use std::io::{BufRead, IsTerminal, Write};
+    let yes = match args {
+        [] => false,
+        [flag] if flag == "--yes" => true,
+        _ => return Err(USAGE.into()),
+    };
+    let kit = swarm::paths::bundled("skills/kit")
+        .and_then(|kit| std::fs::canonicalize(kit).ok())
+        .ok_or("swarm: this build ships no kit in libexec/skills/kit")?;
+    if !kit.join(".claude-plugin/marketplace.json").is_file() {
+        return Err(format!(
+            "swarm: {} is not the swarm kit: it has no .claude-plugin/marketplace.json",
+            kit.display()
+        )
+        .into());
+    }
+    let user_home = std::path::PathBuf::from(env_var("HOME")?);
+    let link = swarm::paths::root_dir()?.join("kit");
+    let found: Vec<&str> = swarm::plugin::CLIS
+        .into_iter()
+        .filter(|cli| installed(cli))
+        .collect();
+    let mut codex = Vec::new();
+    if found.contains(&"codex") {
+        for home in codex_homes(&user_home)? {
+            if !home.is_dir() {
+                continue;
+            }
+            let listed = std::process::Command::new("codex")
+                .args(["plugin", "marketplace", "list", "--json"])
+                .env("CODEX_HOME", &home)
+                .output()?;
+            codex.push(swarm::plugin::CodexHome {
+                swarm_root: swarm::plugin::codex_swarm_root(&listed.stdout),
+                home,
+            });
+        }
+    }
+    let steps = swarm::plugin::steps(&link, &kit, &found, &codex);
+    if steps.is_empty() {
+        return Err(
+            "swarm: none of claude, codex, agy or pi is on PATH; nothing to install".into(),
+        );
+    }
+
+    let target = swarm::plugin::stable_kit(&kit);
+    println!("Install the plugin swarm from {}", target.display());
+    for cli in swarm::plugin::CLIS
+        .iter()
+        .filter(|cli| !found.contains(cli))
+    {
+        println!("skipped: {cli} is not on PATH");
+    }
+    let relink = std::fs::read_link(&link).ok().as_ref() != Some(&target);
+    if relink {
+        println!("link {} -> {}", link.display(), target.display());
+    }
+    for step in &steps {
+        println!("run  {}", step.line());
+    }
+    for clash in swarm::plugin::clashes(&kit, &user_home) {
+        println!(
+            "note: {} is your own skill; it stays, and the CLI lists it beside the plugin's",
+            clash.display()
+        );
+    }
+    if let Some(reason) = swarm::bus::setup_refusal(
+        env::var("SWARM_AGENT_ID").ok().as_deref(),
+        env::var("HERDR_AGENT_PANE").ok().as_deref(),
+    ) {
+        return Err(reason.into());
+    }
+    if !yes {
+        if !std::io::stdin().is_terminal() {
+            return Err("swarm: nothing changed; run `swarm setup plugin --yes` to install".into());
+        }
+        print!("Run these commands? [y/N] ");
+        std::io::stdout().flush()?;
+        let mut answer = String::new();
+        std::io::stdin().lock().read_line(&mut answer)?;
+        if !matches!(answer.trim(), "y" | "Y" | "yes") {
+            println!("swarm: nothing changed");
+            return Ok(());
+        }
+    }
+    if relink {
+        // Only a link of swarm's own is replaced; a real folder there is the owner's.
+        if link.symlink_metadata().is_ok_and(|meta| meta.is_symlink()) {
+            std::fs::remove_file(&link)?;
+        }
+        std::os::unix::fs::symlink(&target, &link)
+            .map_err(|error| format!("swarm: cannot link {}: {error}", link.display()))?;
+    }
+    for step in &steps {
+        let mut command = std::process::Command::new(&step.argv[0]);
+        command.args(&step.argv[1..]);
+        if let Some(home) = &step.codex_home {
+            command.env("CODEX_HOME", home);
+        }
+        let status = command.status()?;
+        if !status.success() {
+            return Err(format!(
+                "swarm: `{}` failed ({status}); the commands before it ran",
+                step.line()
+            )
+            .into());
+        }
+    }
+    println!("swarm: the plugin swarm is installed; a new session loads it");
+    Ok(())
+}
+
 /// The key of `~/.swarm/consent.json` that holds the owner's answer for launch folder trust, and
 /// its two answers (ADR 0043). Reader and writer share these, so a typo cannot read as `ask`.
 const TRUST_KEY: &str = "trust";
@@ -1973,6 +2089,9 @@ fn consent_plan(answer: &str) -> Result<swarm::managed::FilePlan, Box<dyn std::e
 /// `--resume`, and `herdr`, followed by `skills`. Running it, or applying the plan's digest, is the owner's consent, as
 /// for `hooks setup`, so a child pane may plan but not apply.
 fn setup(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    if args.first().map(String::as_str) == Some("plugin") {
+        return setup_plugin(&args[1..]);
+    }
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
     if args == ["status", "--json"] {
         let files = HookFiles::of(&std::path::PathBuf::from(env_var("HOME")?))?;

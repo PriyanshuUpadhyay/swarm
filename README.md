@@ -81,18 +81,19 @@ notice helper and no bundled skills.
 
 1. **Install an agent CLI and sign in.** Swarm starts [Claude Code](https://docs.claude.com/en/docs/claude-code),
    [Codex](https://github.com/openai/codex), and AGY. A runner whose CLI is not on `PATH` is skipped.
-2. **Prepare the bundled skills.** The formula ships them beside `swarm`. In a terminal, run:
+2. **Install the skill kit.** The formula ships the kit beside `swarm` as the plugin `swarm`. In a
+   terminal, run:
 
    ```sh
-   swarm skills refresh
-   swarm setup --plan --only skills
+   swarm setup plugin
    ```
 
-   Apply the displayed digest with `swarm setup --digest <digest> --only skills` after you
-   review the links. Setup records 23 links in each of `~/.claude/skills`, `~/.agents/skills`
-   (Codex), and `~/.gemini/config/skills` (AGY). A foreign link is a conflict. If dotfiles manages
-   it, remove that link from dotfiles first so a later sync cannot create it again. Keep the
-   dotfiles support references and scripts. Setup never adopts or replaces a foreign link.
+   It prints the install command of each of Claude Code, Codex (once for each Codex home), AGY and
+   pi that is on `PATH`, and runs them after you answer `y`. Each CLI installs from the link
+   `~/.swarm/kit`, which names the kit through Homebrew's `opt/swarm` path, so it still holds
+   after `brew upgrade`. `--yes` skips the question. Run it again after an upgrade, because Codex
+   and AGY keep a copy. A skill of the same name in your own skills folders stays, and the command
+   names it, because the CLI then lists both (ADR 0090).
 
 3. **Check your profiles.** A profile maps a role, such as `code.small` or `review.deep`, to an
    ordered list of runners (provider, model, effort). Swarm ships defaults in
@@ -140,22 +141,29 @@ AGY has no account source yet.
 
 ### Bundled workflow skills
 
-Swarm bundles the workflow skills from [agent-kit](https://github.com/PriyanshuUpadhyay/agent-kit).
-These skills run workers in visible swarm panes:
+The plugin `swarm` holds the skills in `skills/kit/skills/` and the blocks they read in
+`skills/kit/blocks/`. A block is never called by itself: a skill reads it, and `plan` and `flow`
+put blocks into the steps of a run. Claude Code shows a skill as `/swarm:<name>`, pi as
+`/skill:<name>`.
 
-| Skill | What it does with swarm |
+| Skill | Use |
 |---|---|
-| [`council`](https://github.com/PriyanshuUpadhyay/agent-kit/tree/main/skills/council) | Claude, GPT, and Gemini voices debate in panes and end in one verdict |
-| [`web-search`](https://github.com/PriyanshuUpadhyay/agent-kit/tree/main/skills/web-search) | Three seats search different parts of the web; the chair merges |
-| [`research`](https://github.com/PriyanshuUpadhyay/agent-kit/tree/main/skills/research) | Answers one question in a short report; can send the web part to a `search.web` seat |
-| [`review-check`](https://github.com/PriyanshuUpadhyay/agent-kit/tree/main/skills/review-check) | Seats judge each changed unit of a diff; a script gives the verdict |
-| [`orchestrate-claude`](https://github.com/PriyanshuUpadhyay/agent-kit/tree/main/skills/orchestrate-claude), [`-codex`](https://github.com/PriyanshuUpadhyay/agent-kit/tree/main/skills/orchestrate-codex), [`-agy`](https://github.com/PriyanshuUpadhyay/agent-kit/tree/main/skills/orchestrate-agy) | Bind a skill's worker needs to each agent CLI |
+| `plan` | Plan any task from the blocks, show the plan as a flowchart, and run it after you approve |
+| `research` | Answer one question in a short report; can send the web part to a `search.web` seat |
+| `web-search` | Three seats search different parts of the web; the chair merges |
+| `council` | Claude, GPT, and Gemini voices debate in panes and end in one verdict |
+| `pair` | Write code with you, one approved diff of about 40 lines at a time |
+| `deliver` | Drive one named task to a checkable end, and stop before a push or merge |
+| `flow` | Run one change through frame, design, contracts, impact, build, review, and close |
+| `review-check`, `review-walk` | Judge a diff with a script verdict; walk a PR into a pending review |
+| `ink` | Pictures, films, and sites drawn by code |
+| `decisions`, `cleanup-gate`, `engineering-standards` | ADRs, a cleanup pass on request, and engineering rules |
+| `prove-it-works`, `sequence-verifiable-units`, `minimize-reader-load` | Rules that point to one block each |
+| `orchestrate-claude`, `-codex`, `-agy` | Bind a skill's worker needs to each agent CLI |
 
 The roles these skills ask for (`council.gpt`, `search.web`, `review.deep`, and others) are the
-profile names in `default-profiles.json`. The Skills group in Setup records their links.
-Some workflows also need the dotfiles references, scripts, or private expert packs described in
-the [agent-kit README](https://github.com/PriyanshuUpadhyay/agent-kit). These support files are
-not bundled or linked by Setup.
+profile names in `default-profiles.json`. Some workflows also need the dotfiles references,
+scripts, or private expert packs that `skills/kit/README.md` describes.
 
 ## Use it
 
@@ -267,6 +275,7 @@ id. A chair gets both from its pane, which `swarm session new` registers. A chil
 | `ui [stop \| --foreground] [--port N] [--assets DIR]` | any | Start the web UI server that is inside the binary on 127.0.0.1:4747 in the background (log in `.swarm/ui.log`), print the URL with its token, open it in the browser, start the usage HUD when it is not running, and exit. When `.swarm/ui-url` names a server of this home that still takes its token, open that one. The token lasts in `.swarm/ui-token` (mode 0600). `stop` stops the server; `--foreground` serves in this process until Ctrl-C. `--assets DIR` serves a `web/dist` folder instead. Needs a build with `--features serve` (ADR 0088). |
 | `serve [--port N] [--assets DIR] [--dev-origin ORIGIN]` | any | The same server with no browser and no `ui-url` record; it prints the URL and runs until stopped. |
 | `skills refresh` | any | Validate and refresh the complete bundled skills copy in this build's swarm home. It reads the skills that ship beside `swarm` in `libexec/skills`. Setup uses this copy for link targets. |
+| `setup plugin [--yes]` | any | Install the kit in `libexec/skills/kit` as the plugin `swarm` in each of Claude Code, Codex (each Codex home), AGY and pi on `PATH`. Point `~/.swarm/kit` at the kit, through `<prefix>/opt/swarm` for a Homebrew install, print each command, and run them after a `y` on the terminal or with `--yes`; with no terminal and no `--yes` it changes nothing and exits 1. A Codex home whose `swarm` marketplace holds another folder removes it first. A child caller is refused (ADR 0090). |
 | `setup status --json` | any | Print whether each setup group has nothing pending: `hooks` (swarm's Codex and AGY state hooks), `guard` (as for `hooks status`), `trust` (the owner's answer, `standing` or `ask`, for launch folder trust in `~/.swarm/consent.json`), `herdr` (always true until a Herdr writer ships), and `skills` (all catalog links recorded and present, with a complete default copy). More groups may come (ADR 0043). |
 | `setup [--plan [--json] \| --digest <digest>] [--cwd <dir>] [--only <group>,...] [--consent <standing\|ask>] [--resume]` | any | One plan of every write swarm makes outside its home, with one digest: the `hooks` group as `hooks setup` writes it, then the `trust` group, the consent file (set to `--consent`, by default the recorded answer, else `standing`, as a managed edit whose undo means `ask`) and each trust entry a seat launched in `--cwd` (default the current folder) would need, or with `--resume` a resuming seat, whose Claude runs in that folder itself. The `skills` group follows `herdr` and plans links into the current build home. `--plan` prints a unified diff per file, each conflict, and each skipped part with its reason, and with `--json` gives each file and conflict its `group`. Apply writes each file in plan order and records each trust entry and the consent (ADR 0042); with nothing pending it prints `already set up` and exits 0 (ADR 0043). |
 | `hooks status --json` | any | Print whether swarm's own Codex and AGY state hooks are set up, and as `guard` whether the guard registrations match the rule list: all in place while `~/.swarm/guards.json` exists, none left once it is gone (ADR 0040). |
