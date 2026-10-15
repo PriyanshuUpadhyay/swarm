@@ -59,6 +59,15 @@ struct Server {
     chat_create: tokio::sync::Mutex<()>,
     // shortcut: the cooldown resets on server restart; seed from cache if restart bursts matter.
     usage_refresh: Mutex<HashMap<String, (tokio::time::Instant, Option<ApiError>)>>,
+    commands: Mutex<HashMap<(String, String), Arc<CommandsSlot>>>,
+}
+
+/// One agent's `/` menu list: the last answer and when it goes stale, and the lock its one
+/// running probe holds.
+#[derive(Default)]
+struct CommandsSlot {
+    last: Mutex<Option<(tokio::time::Instant, Value)>>,
+    probe: tokio::sync::Mutex<()>,
 }
 
 #[derive(Default)]
@@ -535,6 +544,7 @@ fn start(
         handoffs: Mutex::new(HashMap::new()),
         chat_create: tokio::sync::Mutex::new(()),
         usage_refresh: Mutex::new(HashMap::new()),
+        commands: Mutex::new(HashMap::new()),
     });
     let url = format!("http://127.0.0.1:{port}/#token={}", app.token);
     println!("{url}");
@@ -617,6 +627,7 @@ fn router(app: App) -> Router {
         .route("/api/chat/interrupt", post(chat_action))
         .route("/api/chat/key", post(chat_action))
         .route("/api/chat/answer", post(chat_action))
+        .route("/api/chat/commands", get(chat_commands))
         .route("/api/agent/close", post(chat_action))
         .route("/api/sessions/archive", post(chat_action))
         .route("/api/sessions/unarchive", post(chat_action))
@@ -2316,6 +2327,80 @@ fn action_session(app: &Server, session: &str) -> Result<CliCall, ApiError> {
         session: Some(session.to_owned()),
         adapter: adapter.unwrap_or_default(),
     })
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CommandsQuery {
+    session: String,
+    agent: String,
+}
+
+/// How long a listed menu stays fresh, and how long a failed probe waits before the next.
+const COMMANDS_FRESH: Duration = Duration::from_secs(60);
+const COMMANDS_RETRY: Duration = Duration::from_secs(5);
+
+/// The `/` menu rows of one agent (`swarm commands`). A cached list returns at once, and past its
+/// age one probe refreshes it behind the reply, so a typed `/` waits on a CLI only the first time.
+async fn chat_commands(
+    State(app): State<App>,
+    Query(query): Query<CommandsQuery>,
+) -> Result<Json<Value>, ApiError> {
+    let (call, agent) = action_target(&app, &query.session, &query.agent)?;
+    let slot = app
+        .commands
+        .lock()
+        .unwrap()
+        .entry((query.session, agent.clone()))
+        .or_default()
+        .clone();
+    let cached = slot.last.lock().unwrap().clone();
+    if let Some((stale_at, value)) = cached {
+        if tokio::time::Instant::now() >= stale_at {
+            tokio::spawn(async move {
+                let Ok(_probe) = slot.probe.try_lock() else {
+                    return;
+                };
+                if slot
+                    .last
+                    .lock()
+                    .unwrap()
+                    .as_ref()
+                    .is_some_and(|(at, _)| tokio::time::Instant::now() < *at)
+                {
+                    return;
+                }
+                probe_commands(&app, &slot, call, &agent).await;
+            });
+        }
+        return Ok(Json(value));
+    }
+    let _probe = slot.probe.lock().await;
+    if let Some((_, value)) = slot.last.lock().unwrap().clone() {
+        return Ok(Json(value));
+    }
+    Ok(Json(probe_commands(&app, &slot, call, &agent).await))
+}
+
+/// Runs `swarm commands` and stores its answer. A failure is stored as a note with no rows, so
+/// the menu says why, and a burst of `/` keys starts no second probe before `COMMANDS_RETRY`.
+async fn probe_commands(app: &Server, slot: &CommandsSlot, call: CliCall, agent: &str) -> Value {
+    let read = run_cli(app, call.args(&["commands", agent, "--json"]), None)
+        .await
+        .and_then(|text| {
+            serde_json::from_str::<Value>(&text)
+                .map_err(|_| error(StatusCode::BAD_GATEWAY, "invalid commands JSON from swarm"))
+        });
+    let now = tokio::time::Instant::now();
+    let (stale_at, value) = match read {
+        Ok(value) => (now + COMMANDS_FRESH, value),
+        Err(err) => (
+            now + COMMANDS_RETRY,
+            json!({"commands": [], "note": err.1.0["error"]}),
+        ),
+    };
+    *slot.last.lock().unwrap() = Some((stale_at, value.clone()));
+    value
 }
 
 fn action_target(app: &Server, session: &str, agent: &str) -> Result<(CliCall, String), ApiError> {
@@ -4951,6 +5036,82 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn commands_share_one_probe_serve_the_cache_and_refresh_it_behind_the_reply() {
+        let fixture = action_fixture();
+        std::fs::write(
+            &fixture.app.cli,
+            r#"#!/bin/sh
+printf '%s\n' "$SWARM_SESSION_ID|$*" >> "$SWARM_HOME/actions"
+if [ -f "$SWARM_HOME/fail" ]; then printf 'probe failed' >&2; exit 2; fi
+sleep 0.2
+printf '{"commands":[{"insert":"/clear"}],"note":null}\n'
+"#,
+        )
+        .unwrap();
+        let read = |agent: &str| {
+            chat_commands(
+                State(fixture.app.clone()),
+                Query(CommandsQuery {
+                    session: fixture.session.clone(),
+                    agent: agent.into(),
+                }),
+            )
+        };
+        let probes = || {
+            action_calls(&fixture)
+                .matches("commands orchestrator --json")
+                .count()
+        };
+        let (one, two) = tokio::join!(read("chair"), read("orchestrator"));
+        assert_eq!(one.unwrap().0["commands"][0]["insert"], "/clear");
+        assert_eq!(two.unwrap().0["commands"][0]["insert"], "/clear");
+        assert_eq!(probes(), 1, "two reads at once share one probe");
+        assert!(action_calls(&fixture).starts_with(&format!("{}|", fixture.session)));
+
+        let _ = read("chair").await.unwrap();
+        assert_eq!(probes(), 1, "a fresh list is served from the cache");
+
+        std::fs::write(fixture.app.root.parent().unwrap().join("fail"), "").unwrap();
+        let slot = fixture
+            .app
+            .commands
+            .lock()
+            .unwrap()
+            .values()
+            .next()
+            .unwrap()
+            .clone();
+        slot.last.lock().unwrap().as_mut().unwrap().0 = tokio::time::Instant::now();
+        let stale = read("chair").await.unwrap().0;
+        assert_eq!(
+            stale["commands"][0]["insert"], "/clear",
+            "a stale list returns at once"
+        );
+        for _ in 0..50 {
+            if probes() == 2 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        assert_eq!(probes(), 2, "the stale read refreshed behind the reply");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        let failed = read("chair").await.unwrap().0;
+        assert_eq!(failed, json!({"commands": [], "note": "probe failed"}));
+        let _ = read("chair").await.unwrap();
+        assert_eq!(probes(), 2, "a failure is not probed again at once");
+
+        let unknown = chat_commands(
+            State(fixture.app.clone()),
+            Query(CommandsQuery {
+                session: fixture.session.clone(),
+                agent: "nobody".into(),
+            }),
+        )
+        .await;
+        assert_eq!(unknown.unwrap_err().0, StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
     async fn usage_reads_cache_and_reserves_provider_refresh_even_on_failure() {
         let fixture = action_fixture();
         std::fs::write(
@@ -5303,6 +5464,7 @@ printf '{"revision":"next"}\n'
                 handoffs: Mutex::new(HashMap::new()),
                 chat_create: tokio::sync::Mutex::new(()),
                 usage_refresh: Mutex::new(HashMap::new()),
+                commands: Mutex::new(HashMap::new()),
             });
             // Most row tests need no action worker and may not run inside a Tokio runtime.
             drop(action_queue);

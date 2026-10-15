@@ -1,8 +1,10 @@
 import { ArrowUpIcon, ChevronDownIcon, CircleHelpIcon, LoaderCircleIcon, SquareIcon, TriangleAlertIcon } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import type { App, Banner, Composer, Input } from "../core/app";
 import { modelLabel, outgoing, sends, usageLabel, type Prompt } from "../core/composer";
+import { matches, menuAt, moved, offered, pick, picksAndSends, showsEmpty, type CommandList, type MenuRow } from "../core/slash";
 import { Button } from "../components/ui/button";
+import { cn } from "../lib/utils";
 
 /** Below the transcript: the error banner, the agent's question, and the composer. */
 export function ChatInput({ app, composer }: { app: App; composer: Composer }) {
@@ -127,17 +129,57 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
   const target = chair.who ?? "the chair";
   const [text, setText] = useState(() => app.draft(sessionId));
   const box = useRef<HTMLTextAreaElement>(null);
+  const [caret, setCaret] = useState(0);
+  const [focused, setFocused] = useState(false);
+  const [list, setList] = useState<CommandList | null>(null);
+  const [selected, setSelected] = useState(0);
+  // The start of the token whose menu Escape closed; the menu stays shut until the token changes.
+  const [dismissed, setDismissed] = useState<number | null>(null);
+  const pickedCaret = useRef<number | null>(null);
+  const listId = useId();
 
   // A send or a pull-back changed the draft in the app.
   useEffect(() => setText(app.draft(sessionId)), [app, sessionId, state.draftRev]);
 
-  // Grows with the text up to about 8 lines.
+  // Grows with the text up to about 8 lines. After a pick the caret goes after the inserted text.
   useLayoutEffect(() => {
     const el = box.current;
     if (!el) return;
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+    if (pickedCaret.current !== null) {
+      el.setSelectionRange(pickedCaret.current, pickedCaret.current);
+      pickedCaret.current = null;
+    }
   }, [text]);
+
+  const menu = focused && !chair.disabled ? menuAt(text, caret, chair.provider) : null;
+  const rows = menu && list ? matches(offered(list.commands, menu), menu.query) : [];
+  const open = menu !== null && dismissed !== menu.start && (rows.length > 0 || showsEmpty(menu));
+  const current = Math.min(selected, Math.max(rows.length - 1, 0));
+  const menuKey = menu ? `${menu.opener}${menu.start}` : null;
+
+  // Each opening asks again; the server answers from its cache and refreshes a stale list.
+  useEffect(() => {
+    if (!menuKey) {
+      setDismissed(null);
+      return;
+    }
+    let live = true;
+    app.menuCommands(sessionId).then(
+      (next) => live && setList(next),
+      (err: unknown) => live && setList((old) => ({ commands: old?.commands ?? [], note: err instanceof Error ? err.message : String(err) })),
+    );
+    return () => {
+      live = false;
+    };
+  }, [app, sessionId, menuKey]);
+  useEffect(() => {
+    setSelected(0);
+  }, [menuKey, menu?.query]);
+  useEffect(() => {
+    document.getElementById(`${listId}-${current}`)?.scrollIntoView({ block: "nearest" });
+  }, [listId, current]);
 
   const change = (next: string) => {
     setText(next);
@@ -147,8 +189,41 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
   const canPullBack = chair.pullBack && !chair.disabled && composer.queued > 0;
   const submit = () => canSend && void app.send(sessionId, text);
 
+  /** Puts the row in the draft; `send` also sends that new draft at once. */
+  const choose = (row: MenuRow, send: boolean) => {
+    if (!menu) return;
+    const next = pick(text, menu, row);
+    change(next.text);
+    if (send) return void app.send(sessionId, next.text);
+    setCaret(next.caret);
+    pickedCaret.current = next.caret;
+  };
+
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.nativeEvent.isComposing) return;
+    if (open) {
+      const row = rows[current];
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        setSelected(moved(current, rows.length, e.key === "ArrowDown" ? 1 : -1));
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setDismissed(menu.start);
+        return;
+      }
+      if (row && e.key === "Tab" && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        choose(row, false);
+        return;
+      }
+      if (row && e.key === "Enter" && sends(e, sendKey)) {
+        e.preventDefault();
+        choose(row, picksAndSends(text, menu, row));
+        return;
+      }
+    }
     // ⇧⌘↩ zooms the pane.
     if (e.key === "Enter" && e.shiftKey && e.metaKey) return;
     if (e.key === "Enter") {
@@ -188,8 +263,53 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
     <div>
       <div
         data-testid="composer-box"
-        className="rounded-lg border border-border-strong bg-surface shadow-sm focus-within:border-ring has-[textarea:disabled]:opacity-70"
+        className="relative rounded-lg border border-border-strong bg-surface shadow-sm focus-within:border-ring has-[textarea:disabled]:opacity-70"
       >
+        {open && (
+          <div
+            id={listId}
+            role="listbox"
+            aria-label="Commands and skills"
+            data-testid="slash-menu"
+            className="absolute right-0 bottom-full left-0 z-20 mb-1 max-h-72 overflow-y-auto rounded-lg border border-border-strong bg-surface p-1 text-sm shadow-lg"
+          >
+            {rows.map((r, i) => (
+              <div
+                key={r.insert}
+                id={`${listId}-${i}`}
+                role="option"
+                aria-selected={i === current}
+                data-testid="slash-row"
+                className={cn("flex cursor-default items-baseline gap-2 rounded-md px-2 py-1", i === current && "bg-hover")}
+                onMouseMove={() => setSelected(i)}
+                onMouseDown={(e) => {
+                  // A click inserts only, and the text area keeps the focus.
+                  e.preventDefault();
+                  choose(r, false);
+                }}
+              >
+                <span className="shrink-0 font-mono">{r.insert}</span>
+                {r.hint && <span className="shrink-0 font-mono text-xs text-faint-foreground">{r.hint}</span>}
+                <span className="min-w-0 flex-1 truncate text-muted-foreground">{r.description}</span>
+                {r.dialog && (
+                  <span
+                    className="shrink-0 text-xs text-waiting"
+                    title={`Opens a picker in the pane, so Swarm only inserts it. Run \`swarm attach ${chair.who ?? "orchestrator"}\` to use the picker.`}
+                  >
+                    opens in pane
+                  </span>
+                )}
+                {r.source && <span className="shrink-0 text-xs text-faint-foreground">{r.source}</span>}
+              </div>
+            ))}
+            {rows.length === 0 && (
+              <div className="px-2 py-1 text-muted-foreground" data-testid="slash-status">
+                {list ? "No matches" : "Loading commands…"}
+              </div>
+            )}
+            {list?.note && <div className="px-2 py-1 text-xs text-failed">{list.note}</div>}
+          </div>
+        )}
         <textarea
           ref={box}
           rows={2}
@@ -197,8 +317,17 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
           data-testid="composer"
           aria-label={`Message ${target}`}
           placeholder={chair.who ? `Message ${target}` : `Message ${target}. Press ⌘L to focus.`}
+          aria-expanded={open}
+          aria-controls={open ? listId : undefined}
+          aria-activedescendant={open && rows.length ? `${listId}-${current}` : undefined}
           value={text}
-          onChange={(e) => change(e.target.value)}
+          onChange={(e) => {
+            change(e.target.value);
+            setCaret(e.target.selectionStart);
+          }}
+          onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
           onKeyDown={onKeyDown}
         />
         <div className="flex items-center gap-2 px-2 pb-2 text-xs text-muted-foreground">

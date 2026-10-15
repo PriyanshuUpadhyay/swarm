@@ -1,6 +1,7 @@
 pub mod accounts;
 pub mod adapter;
 pub mod bus;
+pub mod commands;
 pub mod config;
 pub mod diff;
 pub mod guard;

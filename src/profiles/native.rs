@@ -189,6 +189,21 @@ pub fn discover(provider: Provider, home: &Path, active: Option<PathBuf>) -> Dis
     }
 }
 
+/// The account variables a chat launched on account `name` got, found with no CLI read.
+pub fn launch_env(provider: Provider, name: &str) -> Result<BTreeMap<String, String>, String> {
+    let home = PathBuf::from(std::env::var_os("HOME").ok_or("HOME is not set")?);
+    let metadata = crate::accounts::load()?;
+    crate::accounts::merge(
+        provider,
+        discover(provider, &home, None).homes,
+        &metadata.accounts,
+    )
+    .into_iter()
+    .find(|(known, _)| known == name)
+    .map(|(name, path)| provider.launch_env(&name, &path.to_string_lossy()))
+    .ok_or_else(|| format!("unknown {} account {name}", provider.id()))
+}
+
 pub fn load(provider: Provider, deadline: Instant) -> Result<AccountList, String> {
     load_inner(provider, deadline, true)
 }

@@ -21,6 +21,7 @@ import { readSse, type SseEvent } from "./sse";
 import { isChair, movePane, paneCells, paneStatus, type Direction, type PaneCell } from "./panes";
 import { FoldChoices, findMatches, lines, mergeRows, type Line, type Match } from "./transcript";
 import { Lifecycle } from "./lifecycle";
+import type { CommandList } from "./slash";
 import { Settings } from "./settings";
 import {
   chatRows,
@@ -1229,6 +1230,11 @@ export class App {
     }
     if (this.draft(sessionId) === text) this.replaceDraft(sessionId, "");
     return true;
+  }
+
+  /** The `/` menu rows of the chat's agent, as its CLI lists them (`swarm commands`). */
+  menuCommands(sessionId: string): Promise<CommandList> {
+    return this.api.get<CommandList>("/api/chat/commands", this.target(sessionId));
   }
 
   /** ⌘. and Stop: interrupt the chair's turn. */
