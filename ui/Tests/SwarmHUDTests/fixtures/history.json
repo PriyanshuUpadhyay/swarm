@@ -1,0 +1,7 @@
+[
+  {"account": "claude/work", "window": "session", "pct": 5, "asOf": 1792046400},
+  {"account": "claude/lab", "window": "session", "pct": 4, "asOf": 1792046400},
+  {"account": "claude/lab", "window": "session", "pct": 19, "asOf": 1792048200},
+  {"account": "claude/work", "window": "session", "pct": 15, "asOf": 1792050000},
+  {"account": "claude/lab", "window": "session", "pct": 34, "asOf": 1792050000}
+]

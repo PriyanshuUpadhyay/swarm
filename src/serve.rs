@@ -212,25 +212,211 @@ static WEB_ASSETS: &[(&str, &[u8])] = include!(concat!(env!("OUT_DIR"), "/web_as
 
 pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let (port, assets, dev_origin) = options(args)?;
-    start(port, assets, dev_origin, None)
+    start(port.unwrap_or(0), assets, dev_origin, None)
 }
 
+/// The port `swarm ui` takes when no `--port` names one. A fixed port keeps the page's origin, so
+/// the token that the page saves in local storage is there after a restart (ADR 0088).
+const UI_PORT: u16 = 4747;
+
 /// `swarm ui`: reuse the `swarm ui` server of this home when its recorded URL still answers with its
-/// token, else start one, record its URL in `<root>/ui-url`, and open the page.
+/// token, else start one in the background and wait until it answers. Then open the page and start
+/// the usage HUD when it is not running. `--foreground` serves in this process until Ctrl-C, and
+/// `stop` stops the recorded server.
 pub fn ui(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
-    let (port, assets, dev_origin) = options(args)?;
+    let root = swarm::paths::root_dir()?;
+    let record = root.join("ui-url");
+    if args.first().map(String::as_str) == Some("stop") {
+        if args.len() > 1 {
+            return Err("usage: swarm ui stop".into());
+        }
+        return stop_ui(&record);
+    }
+    let foreground = args.first().map(String::as_str) == Some("--foreground");
+    let rest = if foreground { &args[1..] } else { args };
+    let (port, assets, dev_origin) = options(rest)?;
     if assets.is_none() && WEB_ASSETS.is_empty() {
         return Err("swarm ui: this build has no web UI; run `pnpm --dir web build` and rebuild, or pass --assets DIR".into());
     }
-    let record = swarm::paths::root_dir()?.join("ui-url");
-    if let Ok(url) = std::fs::read_to_string(&record)
-        && answers(url.trim())
-    {
-        println!("{}", url.trim());
-        open_page(url.trim());
-        return Ok(());
+    let running = recorded(&record).filter(|(url, _)| answers(url));
+    if foreground {
+        if let Some((url, _)) = running {
+            return Err(format!(
+                "swarm ui: a server of this home already runs at {}; run `swarm ui stop` first",
+                page_base(&url)
+            )
+            .into());
+        }
+        return start(port.unwrap_or(UI_PORT), assets, dev_origin, Some(record));
     }
-    start(port, assets, dev_origin, Some(record))
+    let url = match running {
+        Some((url, _)) => url,
+        None => spawn_ui(&root, &record, rest)?,
+    };
+    println!("{url}");
+    open_page(&url);
+    start_hud();
+    Ok(())
+}
+
+/// The URL and server pid in `record`: the first line and the second.
+fn recorded(record: &Path) -> Option<(String, Option<i32>)> {
+    let text = std::fs::read_to_string(record).ok()?;
+    let mut lines = text.lines();
+    let url = lines.next()?.trim().to_string();
+    let pid = lines.next().and_then(|line| line.trim().parse().ok());
+    Some((url, pid))
+}
+
+/// The URL without its `#token=` fragment, for a message that may be shown or logged.
+fn page_base(url: &str) -> &str {
+    url.split_once('#').map_or(url, |(base, _)| base)
+}
+
+/// Start `swarm ui --foreground` with `args` as a background process whose output goes to
+/// `<root>/ui.log`, and wait until the URL that it records answers.
+fn spawn_ui(
+    root: &Path,
+    record: &Path,
+    args: &[String],
+) -> Result<String, Box<dyn std::error::Error>> {
+    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+    use std::os::unix::process::CommandExt;
+    let log_path = root.join("ui.log");
+    // The server prints its URL with the token, so only the owner may read the log.
+    let log = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .mode(0o600)
+        .open(&log_path)?;
+    log.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+    let _ = std::fs::remove_file(record);
+    let mut child = std::process::Command::new(std::env::current_exe()?)
+        .arg("ui")
+        .arg("--foreground")
+        .args(args)
+        .stdin(std::process::Stdio::null())
+        .stdout(log.try_clone()?)
+        .stderr(log)
+        // Its own process group, so a Ctrl-C in this terminal does not stop it.
+        .process_group(0)
+        .spawn()?;
+    let deadline = std::time::Instant::now() + Duration::from_secs(15);
+    while std::time::Instant::now() < deadline {
+        if child.try_wait()?.is_some() {
+            let log = std::fs::read_to_string(&log_path).unwrap_or_default();
+            let last = log.lines().last().unwrap_or("no output");
+            return Err(format!("{last} (log: {})", log_path.display()).into());
+        }
+        if let Some((url, _)) = recorded(record).filter(|(url, _)| answers(url)) {
+            return Ok(url);
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    Err(format!(
+        "swarm ui: the server did not answer within 15 s; see {}",
+        log_path.display()
+    )
+    .into())
+}
+
+unsafe extern "C" {
+    fn kill(pid: i32, signal: i32) -> i32;
+}
+
+/// `swarm ui stop`: stop the recorded server only while it still answers with its token, so a pid
+/// that the system gave to another process since is never signalled.
+fn stop_ui(record: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    const SIGTERM: i32 = 15;
+    let Some((url, Some(pid))) = recorded(record).filter(|(url, _)| answers(url)) else {
+        let _ = std::fs::remove_file(record);
+        println!("swarm ui: no server of this home is running");
+        return Ok(());
+    };
+    // SAFETY: kill has no memory preconditions; a gone pid only returns an error.
+    if unsafe { kill(pid, SIGTERM) } != 0 {
+        return Err(format!(
+            "swarm ui: could not stop pid {pid}: {}",
+            std::io::Error::last_os_error()
+        )
+        .into());
+    }
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while answers(&url) {
+        if std::time::Instant::now() >= deadline {
+            return Err(format!("swarm ui: pid {pid} still answers after 5 s").into());
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    let _ = std::fs::remove_file(record);
+    println!("swarm ui: stopped the server at {}", page_base(&url));
+    Ok(())
+}
+
+/// Start the usage HUD when it is not running: its login item when one is installed, else the
+/// app beside this swarm. Without a HUD app it says so and goes on, because the page still works.
+fn start_hud() {
+    let running = std::process::Command::new("/usr/bin/pgrep")
+        .args(["-x", "SwarmHUD"])
+        .stdout(std::process::Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success());
+    if running {
+        return;
+    }
+    let Some(home) = std::env::var_os("HOME") else {
+        return;
+    };
+    if swarm::hud::plist_path(Path::new(&home)).exists() {
+        let _ = swarm::hud::kickstart();
+        return;
+    }
+    let Some(app) = swarm::hud::app() else {
+        eprintln!("swarm ui: no SwarmHUD.app beside this swarm, so the usage HUD stays off");
+        return;
+    };
+    use std::os::unix::process::CommandExt;
+    let mut command = std::process::Command::new(app.join("Contents/MacOS/SwarmHUD"));
+    if let Ok(swarm) = std::env::current_exe() {
+        command.env("SWARM_BIN", swarm);
+    }
+    if let Err(error) = command
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .process_group(0)
+        .spawn()
+    {
+        eprintln!("swarm ui: the usage HUD did not start: {error}");
+    }
+}
+
+/// The token in `<root>/ui-token`, made once with mode 0600, so the page's saved token still works
+/// after `swarm ui` starts a new server.
+fn ui_token(root: &Path) -> Result<String, Box<dyn std::error::Error>> {
+    use std::os::unix::fs::OpenOptionsExt;
+    let path = root.join("ui-token");
+    if let Ok(token) = std::fs::read_to_string(&path) {
+        let token = token.trim();
+        if token.len() == 64 && token.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+            return Ok(token.to_string());
+        }
+    }
+    let token = new_token()?;
+    let _ = std::fs::remove_file(&path);
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(&path)?
+        .write_all(format!("{token}\n").as_bytes())?;
+    Ok(token)
+}
+
+fn new_token() -> Result<String, Box<dyn std::error::Error>> {
+    let mut bytes = [0; 32];
+    std::fs::File::open("/dev/urandom")?.read_exact(&mut bytes)?;
+    Ok(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
 }
 
 /// True when the server at `http://127.0.0.1:<port>/#token=<token>` takes that token.
@@ -268,24 +454,24 @@ fn open_page(url: &str) {
     }
 }
 
-type Options = (u16, Option<PathBuf>, Option<String>);
+type Options = (Option<u16>, Option<PathBuf>, Option<String>);
 
 fn options(args: &[String]) -> Result<Options, Box<dyn std::error::Error>> {
-    let mut port = 0;
+    let mut port = None;
     let mut assets = None;
     let mut dev_origin = None;
     let mut args = args.iter();
     while let Some(flag) = args.next() {
         let value = args
             .next()
-            .ok_or("usage: swarm serve|ui [--port N] [--assets DIR] [--dev-origin ORIGIN]")?;
+            .ok_or("usage: swarm serve|ui [stop | --foreground] [--port N] [--assets DIR] [--dev-origin ORIGIN]")?;
         match flag.as_str() {
-            "--port" => port = value.parse::<u16>()?,
+            "--port" => port = Some(value.parse::<u16>()?),
             "--assets" => assets = Some(std::fs::canonicalize(value)?),
             "--dev-origin" => dev_origin = Some(value.clone()),
             _ => {
                 return Err(
-                    "usage: swarm serve|ui [--port N] [--assets DIR] [--dev-origin ORIGIN]".into(),
+                    "usage: swarm serve|ui [stop | --foreground] [--port N] [--assets DIR] [--dev-origin ORIGIN]".into(),
                 );
             }
         }
@@ -293,7 +479,8 @@ fn options(args: &[String]) -> Result<Options, Box<dyn std::error::Error>> {
     Ok((port, assets, dev_origin))
 }
 
-/// Serves until killed. With `record`, writes the URL there and opens it (`swarm ui`).
+/// Serves until killed. With `record` (`swarm ui`), uses the home's lasting token and writes the URL
+/// and this pid there.
 fn start(
     port: u16,
     assets: Option<PathBuf>,
@@ -302,13 +489,19 @@ fn start(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let root = swarm::paths::root_dir()?;
     drop(swarm::store::open(&root.join("swarm.db"))?);
-    let mut bytes = [0; 32];
-    std::fs::File::open("/dev/urandom")?.read_exact(&mut bytes)?;
-    let token = bytes
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect::<String>();
-    let listener = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port))?;
+    let token = match record {
+        Some(_) => ui_token(&root)?,
+        None => new_token()?,
+    };
+    let listener = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port)).map_err(
+        |error| -> Box<dyn std::error::Error> {
+            if error.kind() == std::io::ErrorKind::AddrInUse {
+                format!("swarm: port {port} is in use by another program; pass --port N").into()
+            } else {
+                error.into()
+            }
+        },
+    )?;
     listener.set_nonblocking(true)?;
     let port = listener.local_addr()?.port();
     let tool = std::env::var_os("SWARM_TRANSCRIPT_TOOL")
@@ -355,8 +548,7 @@ fn start(
             .create_new(true)
             .mode(0o600)
             .open(&record)?
-            .write_all(format!("{url}\n").as_bytes())?;
-        open_page(&url);
+            .write_all(format!("{url}\n{}\n", std::process::id()).as_bytes())?;
     }
     let runtime = tokio::runtime::Runtime::new()?;
     runtime.block_on(async {
@@ -4640,7 +4832,8 @@ async fn static_file(State(app): State<App>, request: Request) -> Response {
         return StatusCode::METHOD_NOT_ALLOWED.into_response();
     }
     let path = request.uri().path();
-    let relative = if path == "/" {
+    // `/chat/<id>` is a page route (ADR 0088); the page reads the id from its URL.
+    let relative = if path == "/" || path.starts_with("/chat/") {
         "index.html"
     } else {
         path.trim_start_matches('/')
@@ -4727,6 +4920,34 @@ mod tests {
         );
         assert_eq!(setup_text(&mut pending, &[], true), "�");
         assert!(pending.is_empty());
+    }
+
+    #[test]
+    fn the_ui_record_names_the_url_then_the_pid_and_the_token_lasts() {
+        let root = std::env::temp_dir().join(format!("swarm-ui-record-{}", uuid::Uuid::now_v7()));
+        std::fs::create_dir_all(&root).unwrap();
+        let record = root.join("ui-url");
+        std::fs::write(&record, "http://127.0.0.1:4747/#token=ab\n42\n").unwrap();
+        assert_eq!(
+            recorded(&record),
+            Some(("http://127.0.0.1:4747/#token=ab".into(), Some(42)))
+        );
+        // A record from an older swarm has no pid line.
+        std::fs::write(&record, "http://127.0.0.1:4747/#token=ab\n").unwrap();
+        assert_eq!(recorded(&record).unwrap().1, None);
+        assert_eq!(
+            page_base("http://127.0.0.1:4747/#token=ab"),
+            "http://127.0.0.1:4747/"
+        );
+        let token = ui_token(&root).unwrap();
+        assert_eq!(ui_token(&root).unwrap(), token);
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(root.join("ui-token"))
+            .unwrap()
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o777, 0o600);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[tokio::test]

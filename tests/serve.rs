@@ -706,6 +706,9 @@ fn snapshot_transcript_paging_and_static_paths_run_on_the_real_server() {
     assert_eq!(status, 200);
     assert_eq!(body, "<h1>pilot</h1>");
     assert_eq!(server.request("GET", "/app.js", "", "", false).0, 200);
+    // A chat route is the page itself, so a reload of `/chat/<id>` works.
+    let (status, _, body) = server.request("GET", "/chat/01a13ee5", "", "", false);
+    assert_eq!((status, body.as_str()), (200, "<h1>pilot</h1>"));
     assert_eq!(server.request("GET", "/escape.jsonl", "", "", false).0, 404);
     assert_eq!(
         server.request("GET", "/../chair.jsonl", "", "", false).0,

@@ -117,6 +117,11 @@ fn launchctl(args: &[&str]) -> std::io::Result<std::process::Output> {
         .output()
 }
 
+/// Start the installed login item now, as a login would.
+pub fn kickstart() -> std::io::Result<std::process::Output> {
+    launchctl(&["kickstart", &format!("{}/{LABEL}", domain())])
+}
+
 pub fn status(home: &Path) -> Status {
     let print = launchctl(&["print", &format!("{}/{LABEL}", domain())])
         .map(|output| String::from_utf8_lossy(&output.stdout).into_owned())

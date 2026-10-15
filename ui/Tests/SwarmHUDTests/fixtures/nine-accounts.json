@@ -49,7 +49,7 @@
       "label": "side",
       "window": "codex:primary",
       "window_minutes": 10080,
-      "used_pct": 2,
+      "used_pct": 100,
       "reset_time_seconds": 1792651719,
       "state": "fresh",
       "source": "codex_app_server",

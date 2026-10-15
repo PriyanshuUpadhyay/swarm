@@ -1,4 +1,4 @@
-// HTTP client for `swarm serve`. The token lives only in memory.
+// HTTP client for `swarm serve`. The page saves the token in local storage (ADR 0088).
 
 import type { ChoiceOp, TreeName, TreeView, TabsView } from "./nav";
 
@@ -120,11 +120,35 @@ export type SubscribeKey = { key: string; from: number; view: "rows" };
 type Loc = Pick<Location, "hash" | "pathname" | "search">;
 type Hist = Pick<History, "replaceState" | "state">;
 
-/** Reads `#token=...`, then removes the hash so the token does not stay in the URL or history. */
-export function takeToken(loc: Loc, hist: Hist): string | null {
+type Saved = Pick<Storage, "getItem" | "setItem" | "removeItem">;
+
+export const TOKEN_KEY = "swarm.token";
+
+/** Runs a storage call; a blocked or full store only loses the saved token. */
+function quietly<T>(call: () => T): T | undefined {
+  try {
+    return call();
+  } catch {
+    return undefined;
+  }
+}
+
+/** Reads `#token=...`, saves it in `saved`, then removes the hash so the token does not stay in the
+ *  URL or history. Without a hash it returns the saved token, so a reload or a new tab needs no
+ *  link (ADR 0088). */
+export function takeToken(loc: Loc, hist: Hist, saved?: Saved): string | null {
   const token = new URLSearchParams(loc.hash.slice(1)).get("token");
-  if (token !== null) hist.replaceState(hist.state, "", loc.pathname + loc.search);
-  return token || null;
+  if (token !== null) {
+    hist.replaceState(hist.state, "", loc.pathname + loc.search);
+    if (token) quietly(() => saved?.setItem(TOKEN_KEY, token));
+    return token || null;
+  }
+  return quietly(() => saved?.getItem(TOKEN_KEY)) ?? null;
+}
+
+/** Drops the saved token, after the server refused it. */
+export function forgetToken(saved?: Saved) {
+  quietly(() => saved?.removeItem(TOKEN_KEY));
 }
 
 /** The server's `error` text, else the body, else the status. */

@@ -36,6 +36,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Closed by the keyboard with the cursor on the notch: hover may not reopen it until the cursor leaves.
     private var hoverHeld = false
     private var readTimer: Timer?
+    private var workingTimer: Timer?
     private var phaseTimer: Timer?
     private var clickThrough: Bool?
 
@@ -48,6 +49,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             MainActor.assumeIsolated { self.model.read() }
         }
         readTimer?.tolerance = 10
+        model.readWorking()
+        workingTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { _ in
+            MainActor.assumeIsolated { self.model.readWorking() }
+        }
+        workingTimer?.tolerance = 1
         schedulePhaseChange()
         NotificationCenter.default.addObserver(
             self, selector: #selector(screensChanged), name: NSApplication.didChangeScreenParametersNotification, object: nil

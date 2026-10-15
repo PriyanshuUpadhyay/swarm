@@ -1,0 +1,8 @@
+{"schema":"swarm.usage.v1","meters":[
+ {"provider":"claude","account":"pro2","label":"pro2","window":"5h","window_minutes":300,"used_pct":46,
+  "reset_time_seconds":1792060200,"state":"fresh","source":"claude_api","reason":null,"reason_code":null,"as_of_seconds":1792050000},
+ {"provider":"claude","account":"pro2","label":"pro2","window":"7d","window_minutes":10080,"used_pct":31,
+  "reset_time_seconds":1792400000,"state":"fresh","source":"claude_api","reason":null,"reason_code":null,"as_of_seconds":1792050000},
+ {"provider":"codex","account":"work","label":"work","window":"codex:primary","window_minutes":10080,"used_pct":71,
+  "reset_time_seconds":1792650000,"state":"fresh","source":"codex_app_server","reason":null,"reason_code":null,"as_of_seconds":1792050000}
+]}
