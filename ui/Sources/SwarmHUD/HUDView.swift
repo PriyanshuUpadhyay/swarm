@@ -58,8 +58,16 @@ enum Layout {
     static let row: CGFloat = 56
     static let fold: CGFloat = 32
     static let bottom: CGFloat = 14
-    static let columns = 3
+    static let markColumn: CGFloat = 20
+    static let nameColumn: CGFloat = 256
     static let windowColumn: CGFloat = 84
+    static let gap: CGFloat = 8
+    static let signedOutRow: CGFloat = 40
+    /// The least notch height the HUD assumes, also the closed height on a Mac with no notch reading.
+    static let minNotch: CGFloat = 37
+
+    /// Where the open content starts: below the camera, with room before the status line.
+    static func contentTop(notch: CGSize) -> CGFloat { max(notch.height, minNotch) + 16 }
 }
 
 extension UsageModel {
@@ -71,9 +79,9 @@ extension UsageModel {
     }
 
     var openSize: CGSize {
-        let rows = CGFloat(liveAccounts.count + (foldOpen ? signedOut.count : 0)) * Layout.row
+        let rows = CGFloat(liveAccounts.count) * Layout.row + (foldOpen ? CGFloat(signedOut.count) * Layout.signedOutRow : 0)
         let fold = signedOut.isEmpty ? 0 : Layout.fold
-        let height = max(notch.height, 37) + 16 + Layout.status + Layout.headings + rows + fold + Layout.bottom
+        let height = Layout.contentTop(notch: notch) + Layout.status + Layout.headings + rows + fold + Layout.bottom
         return CGSize(width: Layout.openWidth, height: min(height, Layout.maxOpenHeight))
     }
 }
@@ -109,6 +117,8 @@ struct HUDView: View {
     /// False in `--snapshot`, where the clock is fixed and nothing animates.
     let live: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorSchemeContrast) private var contrast
 
     private var open: Bool { model.isOpen }
     private var size: CGSize { open ? model.openSize : model.closedSize }
@@ -129,7 +139,7 @@ struct HUDView: View {
                 if open {
                     field
                     OpenContent(model: model, theme: theme, now: now, live: live)
-                        .padding(.top, max(model.notch.height, 37) + 16)
+                        .padding(.top, Layout.contentTop(notch: model.notch))
                         .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.97, anchor: .top)))
                 } else {
                     ClosedWings(model: model, theme: theme)
@@ -153,12 +163,15 @@ struct HUDView: View {
                 .init(color: .clear, location: Layout.cap / size.height),
                 .init(color: theme.field, location: min(1, (Layout.cap + 80) / size.height)),
             ], startPoint: .top, endPoint: .bottom)
-            Ellipse()
-                .fill(theme.bloom)
-                .frame(width: 160, height: 72)
-                .blur(radius: 24)
-                .opacity(0.28)
-                .offset(y: 36)
+            // A blur behind text is what Reduce Transparency and Increase Contrast ask to drop.
+            if !reduceTransparency && contrast != .increased {
+                Ellipse()
+                    .fill(theme.bloom)
+                    .frame(width: 160, height: 72)
+                    .blur(radius: 24)
+                    .opacity(0.28)
+                    .offset(y: 36)
+            }
         }
     }
 }
@@ -252,18 +265,14 @@ struct OpenContent: View {
     let now: Date
     let live: Bool
 
-    private var kinds: [WindowKind] {
-        let present = Set(model.liveAccounts.flatMap { $0.windows.map(\.kind) })
-        let fixed: [WindowKind] = [.session, .week, .fable]
-        let extra = present.subtracting(fixed).sorted { $0.title < $1.title }
-        return Array((fixed + extra).prefix(Layout.columns))
-    }
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    private let kinds = WindowKind.allCases
 
     var body: some View {
         VStack(spacing: 0) {
             status.frame(height: Layout.status)
-            HStack(spacing: 8) {
-                Spacer().frame(width: 20 + 8 + 256)
+            HStack(spacing: Layout.gap) {
+                Spacer().frame(width: Layout.markColumn + Layout.gap + Layout.nameColumn)
                 ForEach(kinds, id: \.self) { kind in
                     Text(kind.title).frame(width: Layout.windowColumn)
                 }
@@ -278,7 +287,9 @@ struct OpenContent: View {
                         // Opening the fold adds rows below the live accounts; bring the first into view.
                         .onChange(of: model.foldOpen) { _, open in
                             guard open, let first = model.signedOut.first else { return }
-                            withAnimation(.easeOut(duration: 0.25)) { scroller.scrollTo(first.id, anchor: .top) }
+                            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.25)) {
+                                scroller.scrollTo(first.id, anchor: .top)
+                            }
                         }
                 }
             } else {
@@ -318,7 +329,11 @@ struct OpenContent: View {
                     .foregroundStyle(Palette.secondary)
             }
             Spacer(minLength: 12)
-            Text(age).foregroundStyle(Palette.tertiary).monospacedDigit()
+            if let refreshError = model.refreshError {
+                Text(refreshError).foregroundStyle(Palette.warn).lineLimit(1).truncationMode(.tail)
+            } else {
+                Text(age).foregroundStyle(Palette.tertiary).monospacedDigit()
+            }
             Button { model.refresh() } label: {
                 Image(systemName: "arrow.clockwise")
                     .font(.system(size: 11, weight: .semibold))
@@ -357,6 +372,7 @@ struct OpenContent: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityValue(model.foldOpen ? "expanded" : "collapsed")
         .overlay(alignment: .top) { Palette.rule.frame(height: 1) }
     }
 }
@@ -368,14 +384,14 @@ struct AccountRow: View {
     let now: Date
 
     var body: some View {
-        HStack(spacing: 8) {
-            ProviderMark(provider: account.provider, size: 16).frame(width: 20)
+        HStack(spacing: Layout.gap) {
+            ProviderMark(provider: account.provider, size: 16).frame(width: Layout.markColumn)
             VStack(alignment: .leading, spacing: 2) {
                 Text(account.name).font(.system(size: 13, weight: .medium)).foregroundStyle(Palette.primary)
                     .lineLimit(1).truncationMode(.middle).help(account.name)
                 Text(subtitle).font(.system(size: 11)).foregroundStyle(Palette.secondary).lineLimit(1)
             }
-            .frame(width: 256, alignment: .leading)
+            .frame(width: Layout.nameColumn, alignment: .leading)
             ForEach(kinds, id: \.self) { kind in
                 if let window = account.windows.first(where: { $0.kind == kind }) {
                     WindowCell(window: window, theme: theme, now: now)
@@ -454,14 +470,15 @@ struct SignedOutRow: View {
     let account: UsageAccount
 
     var body: some View {
-        HStack(spacing: 8) {
-            ProviderMark(provider: account.provider, size: 16).frame(width: 20)
+        HStack(spacing: Layout.gap) {
+            ProviderMark(provider: account.provider, size: 16).frame(width: Layout.markColumn)
             Text(account.name).font(.system(size: 13, weight: .medium)).foregroundStyle(Palette.secondary)
-                .frame(width: 256, alignment: .leading).lineLimit(1)
+                .lineLimit(1).truncationMode(.middle).help(account.name)
+                .frame(width: Layout.nameColumn, alignment: .leading)
             Text(account.problem ?? "No reading").font(.system(size: 11)).foregroundStyle(Palette.tertiary)
             Spacer()
         }
-        .frame(height: 40)
+        .frame(height: Layout.signedOutRow)
         .overlay(alignment: .top) { Palette.rule.frame(height: 1) }
     }
 }

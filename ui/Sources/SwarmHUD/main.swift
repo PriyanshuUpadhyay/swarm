@@ -27,13 +27,22 @@ func snapshot(to directory: URL, arguments: [String]) {
         exit(2)
     }
     let now = Date(timeIntervalSince1970: value("--now").flatMap(Double.init) ?? Date().timeIntervalSince1970)
-    try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    func fail(_ text: String) -> Never {
+        FileHandle.standardError.write(Data("SwarmHUD: \(text)\n".utf8))
+        exit(1)
+    }
+    do {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    } catch {
+        fail("cannot create \(directory.path): \(error.localizedDescription)")
+    }
     let model = UsageModel()
     model.accounts = accounts(from: usage.meters)
     model.readAt = now.addingTimeInterval(-120)
     model.now = now
     for phase in DayPhase.allCases {
-        model.pinnedPhase = phase
+        // Set the phase itself: `pinnedPhase` would overwrite the owner's saved theme pin.
+        model.phase = phase
         for (name, open, fold) in [("closed", false, false), ("open", true, false), ("open-fold", true, true)] {
             model.isOpen = open
             model.foldOpen = fold
@@ -42,12 +51,13 @@ func snapshot(to directory: URL, arguments: [String]) {
                 .background(Color(hex: 0x6F8FB8))
             let renderer = ImageRenderer(content: view)
             renderer.scale = 2
-            guard let image = renderer.cgImage else { continue }
             let url = directory.appending(path: "\(phase.rawValue)-\(name).png")
-            let rep = NSBitmapImageRep(cgImage: image)
-            try? rep.representation(using: .png, properties: [:])?.write(to: url)
+            guard let image = renderer.cgImage,
+                  let png = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) else {
+                fail("cannot render \(url.lastPathComponent)")
+            }
+            do { try png.write(to: url) } catch { fail("cannot write \(url.path): \(error.localizedDescription)") }
             print(url.path)
         }
     }
-    model.pinnedPhase = nil
 }

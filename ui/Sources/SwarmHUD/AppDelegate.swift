@@ -28,7 +28,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var pendingClose: DispatchWorkItem?
     private var pendingVisibilityCheck: DispatchWorkItem?
     private var wedgeRecoveries = 0
-    private var wedgeGeneration = 0
     private var hoverTimer: Timer?
     private var readTimer: Timer?
     private var phaseTimer: Timer?
@@ -42,6 +41,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         readTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in
             MainActor.assumeIsolated { self.model.read() }
         }
+        readTimer?.tolerance = 10
         schedulePhaseChange()
         NotificationCenter.default.addObserver(
             self, selector: #selector(screensChanged), name: NSApplication.didChangeScreenParametersNotification, object: nil
@@ -94,15 +94,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// The built-in notched display is home; with no notch, the screen under the cursor.
-    private func notchScreen() -> NSScreen {
+    private func notchScreen() -> NSScreen? {
         NSScreen.screens.first {
             guard let id = $0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else { return false }
             return CGDisplayIsBuiltin(id) != 0 && $0.safeAreaInsets.top > 0
-        } ?? NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.screens[0]
+        } ?? NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.screens.first
     }
 
     private func reposition() {
-        let screen = notchScreen()
+        // No screen at all (lid closed, no display): keep the old frame until one returns.
+        guard let screen = notchScreen() else { return }
         let menuBar = screen.frame.maxY - screen.visibleFrame.maxY
         if screen.safeAreaInsets.top > 0 {
             let left = screen.auxiliaryTopLeftArea?.width ?? 0
@@ -138,6 +139,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func unlocked() {
         reassertCollectionBehavior()
+        scheduleVisibilityCheck()
     }
 
     // MARK: Hover
@@ -146,6 +148,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let timer = Timer(timeInterval: 0.08, repeats: true) { _ in
             MainActor.assumeIsolated { self.mouseMoved() }
         }
+        timer.tolerance = 0.02
         RunLoop.main.add(timer, forMode: .common)
         hoverTimer = timer
     }
@@ -283,9 +286,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             reassertCollectionBehavior()
         }
         panel.orderFrontRegardless()
-        let generation = wedgeGeneration
         DispatchQueue.main.asyncAfter(deadline: .now() + visibilityCheckDelay) { [weak self] in
-            guard let self, self.wedgeGeneration == generation, self.panel.isVisible else { return }
+            guard let self, self.panel.isVisible else { return }
             if self.panelIsOnScreen() { self.wedgeRecoveries = 0 } else { self.recover(rebuild: !rebuild) }
         }
     }

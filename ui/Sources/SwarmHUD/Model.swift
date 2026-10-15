@@ -2,11 +2,10 @@ import Foundation
 import Observation
 import SwarmHUDCore
 
-/// The HUD's data: the last good `swarm usage --json` read, its trend history, and refresh state.
+/// The HUD's data: the last good `swarm usage --json` read and the refresh state.
 @MainActor @Observable
 final class UsageModel {
     var accounts: [UsageAccount] = []
-    var history: [HistorySample] = []
     /// When the last read succeeded; nil before the first one.
     var readAt: Date?
     /// The last read failed. The last good accounts stay on screen.
@@ -21,7 +20,7 @@ final class UsageModel {
     var foldOpen = false
     /// A fixed clock for `--snapshot`; nil uses the real one.
     var now: Date?
-    var notch = CGSize(width: 200, height: 37)
+    var notch = CGSize(width: 200, height: Layout.minNotch)
     var phase: DayPhase = .at(Date())
     /// A theme the owner pinned from the menu; nil follows the clock.
     var pinnedPhase: DayPhase? {
@@ -29,16 +28,12 @@ final class UsageModel {
     }
 
     private let swarm: String?
-    private let historyURL: URL
     private var reading = false
     private var readQueued = false
 
     init(environment: [String: String] = ProcessInfo.processInfo.environment) {
         swarm = swarmPath(environment: environment)
-        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        historyURL = support.appending(path: "SwarmHUD/history.json")
         pinnedPhase = UserDefaults.standard.string(forKey: "pinnedPhase").flatMap(DayPhase.init(rawValue:))
-        history = (try? JSONDecoder().decode([HistorySample].self, from: Data(contentsOf: historyURL))) ?? []
     }
 
     func updatePhase(now: Date = Date()) {
@@ -63,20 +58,9 @@ final class UsageModel {
             readFailed = true
             return
         }
-        let now = Date()
         accounts = SwarmHUDCore.accounts(from: snapshot.meters)
-        readAt = now
+        readAt = Date()
         readFailed = false
-        let updated = appendHistory(history, samples(from: accounts), now: now)
-        if updated != history {
-            history = updated
-            saveHistory()
-        }
-    }
-
-    private func saveHistory() {
-        try? FileManager.default.createDirectory(at: historyURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try? JSONEncoder().encode(history).write(to: historyURL, options: .atomic)
     }
 
     /// A provider call per provider with a meter, never automatic, at most once in 300 s each.
@@ -132,9 +116,16 @@ nonisolated func run(_ executable: String?, _ arguments: [String], timeout: Time
     do { try process.run() } catch { return .failure(RunError(text: "could not start swarm")) }
     let deadline = DispatchWorkItem { if process.isRunning { process.terminate() } }
     DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: deadline)
-    // Drain while the child runs, so a long meter list cannot fill the pipe.
+    // Drain both pipes while the child runs, so neither a long meter list nor a long error fills one.
+    nonisolated(unsafe) var errorData = Data()
+    let errorDone = DispatchSemaphore(value: 0)
+    DispatchQueue.global().async {
+        errorData = err.fileHandleForReading.readDataToEndOfFile()
+        errorDone.signal()
+    }
     let data = out.fileHandleForReading.readDataToEndOfFile()
-    let errorText = String(decoding: err.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+    errorDone.wait()
+    let errorText = String(decoding: errorData, as: UTF8.self)
     process.waitUntilExit()
     deadline.cancel()
     guard process.terminationReason == .exit, process.terminationStatus == 0 else {

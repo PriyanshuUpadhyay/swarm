@@ -38,7 +38,7 @@ private let fixture = """
 @Test func codexSlotsTakeTheirKindFromTheWindowLength() {
     #expect(WindowKind(window: "codex:primary", minutes: 300) == .session)
     #expect(WindowKind(window: "codex:secondary", minutes: 10080) == .week)
-    #expect(WindowKind(window: "spark:primary", minutes: 60) == .other("spark:primary"))
+    #expect(WindowKind(window: "spark:primary", minutes: 60) == nil)
 }
 
 @Test func severityBandsAreFixed() {
@@ -70,39 +70,6 @@ private let fixture = """
             == calendar.date(from: DateComponents(year: 2026, month: 10, day: 16, hour: 5))!)
 }
 
-@Test func historyDropsRepeatsAndOldSamples() {
-    let now = Date(timeIntervalSince1970: 10 * 86400)
-    let old = HistorySample(account: "a", window: "week", pct: 1, asOf: now.timeIntervalSince1970 - 8 * 86400)
-    let one = HistorySample(account: "a", window: "week", pct: 5, asOf: now.timeIntervalSince1970 - 60)
-    #expect(appendHistory([old, one], [one], now: now) == [one])
-}
-
-@Test func sessionBurnFlagsAFullWindowBeforeItsReset() {
-    let account = UsageAccount(provider: "claude", name: "a", windows: [], problem: nil)
-    let now = Date(timeIntervalSince1970: 100_000)
-    let history = [
-        HistorySample(account: "claude/a", window: "session", pct: 40, asOf: 100_000 - 3600),
-        HistorySample(account: "claude/a", window: "session", pct: 70, asOf: 100_000),
-    ]
-    let window = UsageWindow(kind: .session, usedPct: 70, resetAt: now.addingTimeInterval(3 * 3600), asOf: now, isFresh: true)
-    let result = trend(account: account, window: window, history: history, now: now)
-    #expect(result.burn == 30)
-    #expect(result.hoursToFull == 1)
-    #expect(result.pressure == .hot)
-}
-
-@Test func aResetStartsANewSegment() {
-    let samples = [90, 95, 10, 20].enumerated().map {
-        HistorySample(account: "a", window: "session", pct: $1, asOf: Double($0) * 600)
-    }
-    #expect(currentSegment(samples).map(\.pct) == [10, 20])
-}
-
-@Test func weeklyPaceWaitsForADay() {
-    #expect(weeklyPace(pct: 50, hoursToReset: 150) == nil)
-    #expect(weeklyPace(pct: 48, hoursToReset: 120) == 1)
-}
-
 @Test func worstWindowKeepsTheFirstOnATie() {
     let window = { (kind: WindowKind, pct: Int) in UsageWindow(kind: kind, usedPct: pct, resetAt: nil, asOf: nil, isFresh: true) }
     let a = UsageAccount(provider: "claude", name: "a", windows: [window(.session, 40), window(.week, 81)], problem: nil)
@@ -110,4 +77,14 @@ private let fixture = """
     let c = UsageAccount(provider: "claude", name: "c", windows: [], problem: "Token expired")
     #expect(worstWindow([a, b, c]).map { "\($0.account.name) \($0.window.kind.title)" } == "a Week")
     #expect(worstWindow([c]) == nil)
+}
+
+@Test func twoLimitsOfOneLengthKeepTheFullerInOneColumn() {
+    let meter = { (window: String, pct: Int) in
+        UsageMeter(provider: "codex", account: "a", label: "a", window: window, windowMinutes: 10080,
+                   usedPct: pct, resetTimeSeconds: nil, state: "fresh")
+    }
+    let list = accounts(from: [meter("codex:primary", 20), meter("spark:primary", 70), meter("other:primary", 40)])
+    #expect(list[0].windows.map(\.kind) == [.week])
+    #expect(list[0].windows[0].usedPct == 70)
 }

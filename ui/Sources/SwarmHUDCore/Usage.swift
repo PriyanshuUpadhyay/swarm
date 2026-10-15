@@ -47,19 +47,19 @@ public struct UsageSnapshot: Decodable, Sendable {
     }
 }
 
-public enum WindowKind: Equatable, Hashable, Sendable {
+public enum WindowKind: Int, CaseIterable, Hashable, Sendable {
     case session, week, fable
-    case other(String)
 
     /// Claude names its windows; Codex names a slot (`primary`), so its length decides the kind.
-    init(window: String, minutes: Int?) {
+    /// A window of another length has no column in the HUD, so it is left out.
+    init?(window: String, minutes: Int?) {
         switch (window, minutes) {
         case ("5h", _): self = .session
         case ("7d", _): self = .week
         case ("fb", _): self = .fable
         case (_, 300?): self = .session
         case (_, 10080?): self = .week
-        default: self = .other(window)
+        default: return nil
         }
     }
 
@@ -68,19 +68,11 @@ public enum WindowKind: Equatable, Hashable, Sendable {
         case .session: return "Session"
         case .week: return "Week"
         case .fable: return "Fable"
-        case .other(let id): return id
         }
     }
 
     /// Columns in the open HUD, so the same window lines up across accounts.
-    public var order: Int {
-        switch self {
-        case .session: return 0
-        case .week: return 1
-        case .fable: return 2
-        case .other: return 3
-        }
-    }
+    public var order: Int { rawValue }
 }
 
 public enum Severity: Int, Comparable, Sendable {
@@ -122,23 +114,29 @@ public struct UsageAccount: Equatable, Identifiable, Sendable {
 public func accounts(from meters: [UsageMeter]) -> [UsageAccount] {
     var order: [String] = []
     var grouped: [String: [UsageMeter]] = [:]
-    for meter in meters where meter.state != "no_source" {
+    // Only the providers the HUD can draw; a new provider shows once it has a mark.
+    for meter in meters where meter.state != "no_source" && ["claude", "codex"].contains(meter.provider) {
         let key = "\(meter.provider)/\(meter.account ?? meter.label)"
         if grouped[key] == nil { order.append(key) }
         grouped[key, default: []].append(meter)
     }
     return order.map { key in
         let group = grouped[key]!
-        let windows = group.compactMap { meter -> UsageWindow? in
-            guard let window = meter.window, let pct = meter.usedPct else { return nil }
-            return UsageWindow(
-                kind: WindowKind(window: window, minutes: meter.windowMinutes),
+        var byKind: [WindowKind: UsageWindow] = [:]
+        for meter in group {
+            guard let window = meter.window, let pct = meter.usedPct,
+                  let kind = WindowKind(window: window, minutes: meter.windowMinutes) else { continue }
+            let reading = UsageWindow(
+                kind: kind,
                 usedPct: min(max(pct, 0), 100),
                 resetAt: meter.resetTimeSeconds.map(Date.init(timeIntervalSince1970:)),
                 asOf: meter.asOfSeconds.map(Date.init(timeIntervalSince1970:)),
                 isFresh: meter.state == "fresh"
             )
-        }.sorted { $0.kind.order < $1.kind.order }
+            // Two Codex limits of one length share a column; the fuller one is the one to watch.
+            if reading.usedPct > byKind[kind]?.usedPct ?? -1 { byKind[kind] = reading }
+        }
+        let windows = byKind.values.sorted { $0.kind.order < $1.kind.order }
         let first = group[0]
         return UsageAccount(
             provider: first.provider,
