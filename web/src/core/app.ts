@@ -309,6 +309,8 @@ export class App {
   /** Points the URL at the open chat once the first tree has restored one. */
   private followUrl() {
     if (typeof location === "undefined" || !this.restored) return;
+    // `/setup` names the Setup & doctor page while it is open.
+    if (location.pathname === "/setup" && this.settings.state.open && this.settings.state.page === "setup") return;
     const path = chatPath(this.openId);
     if (location.pathname !== path) {
       if (this.urlFollowed) history.pushState(null, "", path + location.search);
@@ -437,6 +439,9 @@ export class App {
       },
       { signal: abort.signal },
     );
+    if (location.pathname === "/setup") this.settings.show("setup");
+    // Closing Setup & doctor gives the URL back to the open chat.
+    abort.signal.addEventListener("abort", this.settings.subscribe(() => this.followUrl()));
     void this.refreshSnapshot().then(() => {
       whenPainted(
         () => document.querySelector('[data-testid="sidebar"][data-loaded="true"]') !== null,

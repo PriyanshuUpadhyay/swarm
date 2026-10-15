@@ -1,11 +1,11 @@
-// Settings (⌘,) with four pages, and the compact usage meters in the sidebar footer (S5). Rows are
+// Settings (⌘,) with five pages, and the compact usage meters in the sidebar footer (S5). Rows are
 // plain elements with inline buttons; no row has its own menu, tooltip or hover card.
 
 import { ArrowDownIcon, ArrowUpIcon, ChevronRightIcon, RefreshCwIcon, TriangleAlertIcon, XIcon } from "lucide-react";
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import type { App } from "../core/app";
 import type { Prefs } from "../core/nav";
-import { meterGroups, PAGES, untilText, USAGE_PROVIDERS, waitText, type AccountList, type Meter, type Page, type Profile, type ProviderInfo, type Runner, type SettingsState } from "../core/settings";
+import { meterGroups, PAGES, setUpAll, untilText, USAGE_PROVIDERS, waitText, type AccountList, type Meter, type Page, type Profile, type ProviderInfo, type Runner, type SettingsState } from "../core/settings";
 import { Button } from "../components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "../components/ui/dialog";
 import { store } from "./store";
@@ -187,6 +187,7 @@ function PageBody({ app, page }: { app: App; page: Page }) {
   if (page === "appearance") return <AppearancePage app={app} />;
   if (page === "notifications") return <NotificationsPage app={app} />;
   if (page === "profiles") return <ProfilesPage app={app} />;
+  if (page === "setup") return <SetupPage app={app} />;
   return <AccountsPage app={app} />;
 }
 
@@ -540,6 +541,75 @@ function ProfileEditor({ app, profile, done }: { app: App; profile: Profile; don
 // ---- accounts ----
 
 const AUTH: Record<string, string> = { signed_in: "Signed in", signed_out: "Signed out", unavailable: "Sign-in unknown" };
+
+// ---- setup & doctor ----
+
+const STATE_TEXT = { ok: "OK", setup: "Needs setup", broken: "Needs you" } as const;
+
+/** `swarm doctor`'s rows, each with its own Set up, and what Set up all runs. A group with a
+ *  conflict needs the owner's own edit, so neither button runs it. */
+function SetupPage({ app }: { app: App }) {
+  const doctor = useSettings(app, "doctor");
+  const plan = useSettings(app, "plan");
+  const busy = useSettings(app, "busy");
+  if (doctor.state === "error") return <p className="text-sm text-failed">Could not run swarm doctor: {doctor.error}</p>;
+  if (doctor.state !== "ready") return <p className="text-sm text-muted-foreground">Checking…</p>;
+  const p = plan.state === "ready" ? plan.data : null;
+  const all = p ? setUpAll(doctor.data, p) : null;
+  const conflicted = new Set(p?.conflicts.map((c) => c.group));
+  return (
+    <div className="grid gap-4" data-testid="setup-page">
+      <div className="flex items-center gap-2">
+        <p className="flex-1 text-sm text-muted-foreground">What swarm sets up on this Mac.</p>
+        <Button size="sm" variant="ghost" disabled={busy} onClick={() => void app.settings.loadSetup()}>
+          <RefreshCwIcon />
+          Check again
+        </Button>
+        <Button size="sm" data-testid="setup-all" disabled={busy || !all || all.plan.length + all.own.length === 0} onClick={() => all && void app.settings.setUp(all.plan, all.own)}>
+          Set up all
+        </Button>
+      </div>
+      {doctor.data.items.map((item) => (
+        <div key={item.id} data-testid="doctor-item" data-id={item.id} data-state={item.state}>
+          <Row title={item.title} detail={item.reason}>
+            <span className={`text-xs ${item.state === "ok" ? "text-muted-foreground" : item.state === "broken" ? "text-failed" : ""}`}>{STATE_TEXT[item.state]}</span>
+            {item.state === "setup" && item.group && (
+              <Button size="sm" variant="outline" data-testid="setup-item" disabled={busy || conflicted.has(item.group)} title={conflicted.has(item.group) ? "A conflict below needs your edit first" : undefined} onClick={() => void app.settings.setUpItem(item)}>
+                Set up
+              </Button>
+            )}
+          </Row>
+        </div>
+      ))}
+      {plan.state === "error" && <p className="text-sm text-failed">Could not plan setup: {plan.error}</p>}
+      {p && p.conflicts.length > 0 && (
+        <section className="grid gap-2" data-testid="setup-conflicts">
+          <h3 className="text-sm font-semibold">Conflicts</h3>
+          {p.conflicts.map((c, i) => (
+            <div key={i} className="text-sm">
+              <div className="font-mono text-xs break-all">{c.file}</div>
+              <div className="text-xs text-muted-foreground">
+                {c.entry}: {c.fix}
+              </div>
+            </div>
+          ))}
+        </section>
+      )}
+      {p && p.skipped.length > 0 && (
+        <details data-testid="setup-skipped">
+          <summary className="cursor-pointer text-sm">Skipped · {p.skipped.length}</summary>
+          <ul className="mt-2 grid gap-1 text-xs break-words text-muted-foreground select-text">
+            {p.skipped.map((s, i) => (
+              <li key={i}>
+                {s.group}: {s.reason}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </div>
+  );
+}
 
 function AccountsPage({ app }: { app: App }) {
   const busy = useSettings(app, "busy");

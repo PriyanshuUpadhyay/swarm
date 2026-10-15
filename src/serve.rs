@@ -5067,8 +5067,8 @@ async fn static_file(State(app): State<App>, request: Request) -> Response {
         return StatusCode::METHOD_NOT_ALLOWED.into_response();
     }
     let path = request.uri().path();
-    // `/chat/<id>` is a page route (ADR 0088); the page reads the id from its URL.
-    let relative = if path == "/" || path.starts_with("/chat/") {
+    // `/chat/<id>` (ADR 0088) and `/setup` are page routes; the page reads its URL.
+    let relative = if path == "/" || path == "/setup" || path.starts_with("/chat/") {
         "index.html"
     } else {
         path.trim_start_matches('/')

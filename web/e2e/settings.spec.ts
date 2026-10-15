@@ -239,3 +239,26 @@ test("accounts list each provider, and Open login starts the provider login in a
   await expect(row).toBeVisible();
   expect(errors).toEqual([]);
 });
+
+test("/setup opens Setup & doctor; a row's Set up applies its group and the row reads ok", async ({ page: tab }) => {
+  const errors: string[] = [];
+  tab.on("pageerror", (e) => errors.push(e.message));
+  await tab.goto(`${server().origin}/setup${server().hash}`);
+  const dialog = tab.getByTestId("settings");
+  const page = dialog.getByTestId("setup-page");
+  await expect(page).toBeVisible();
+  await expect(dialog.getByTestId("settings-page-setup")).toHaveAttribute("aria-current", "page");
+  const ids = await page.getByTestId("doctor-item").evaluateAll((rows) => rows.map((r) => (r as HTMLElement).dataset.id));
+  expect(ids.slice(0, 5)).toEqual(["hooks", "guard", "trust", "herdr", "skills"]);
+  // The server home's hooks start unset; the other browser's run may have set them up already.
+  const hooks = page.locator('[data-testid="doctor-item"][data-id="hooks"]');
+  if ((await hooks.getAttribute("data-state")) === "setup") await hooks.getByTestId("setup-item").click();
+  await expect(hooks).toHaveAttribute("data-state", "ok");
+  expect(new URL(tab.url()).pathname).toBe("/setup");
+  expect(JSON.parse(swarm(["setup", "status", "--json"])).hooks).toBe(true);
+  await tab.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  // The URL goes back to the open chat, or `/` with none.
+  await expect.poll(() => new URL(tab.url()).pathname).not.toBe("/setup");
+  expect(errors).toEqual([]);
+});
