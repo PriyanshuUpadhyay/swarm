@@ -231,7 +231,8 @@ struct ClosedWings: View {
             Spacer(minLength: 0)
             Group {
                 if let worst {
-                    Text("\(worst.window.isFresh ? "" : "~")\(worst.window.usedPct)%")
+                    // A failed read keeps the last numbers, so they are marked old like a stale meter.
+                    Text("\(worst.window.isFresh && model.readError == nil ? "" : "~")\(worst.window.usedPct)%")
                         .foregroundStyle(theme.color(worst.window.severity))
                 } else {
                     Text("—").foregroundStyle(Palette.secondary)
@@ -246,6 +247,9 @@ struct ClosedWings: View {
         .background(alignment: .bottom) { wash }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(worst.map { "\($0.account.name) \($0.window.kind.title) \($0.window.usedPct) percent used" } ?? "No usage reading")
+        .accessibilityAddTraits(.isButton)
+        .accessibilityHint("Opens the usage card. Control Option Command U also opens it.")
+        .accessibilityAction { model.toggleFromKeyboard?() }
     }
 
     /// The phase cue inside each wing's bottom 8 pt; the camera's width stays black.
@@ -411,7 +415,9 @@ struct AccountRow: View {
         let provider = account.provider == "claude" ? "Claude" : "Codex"
         let stale = account.windows.filter { !$0.isFresh }.compactMap(\.asOf).min()
         guard let stale else { return provider }
-        return "\(provider) · \(shortDuration(until: now, now: stale)) old"
+        // shortDuration says "now" under a minute, which reads wrong for an age.
+        let age = now.timeIntervalSince(stale) < 60 ? "<1m" : shortDuration(until: now, now: stale)
+        return "\(provider) · \(age) old"
     }
 }
 
@@ -479,6 +485,7 @@ struct SignedOutRow: View {
                 .lineLimit(1).truncationMode(.middle).help(account.name)
                 .frame(width: Layout.nameColumn, alignment: .leading)
             Text(account.problem ?? "No reading").font(.system(size: 11)).foregroundStyle(Palette.tertiary)
+                .lineLimit(2).truncationMode(.tail).help(account.problem ?? "")
             Spacer()
         }
         .frame(height: Layout.signedOutRow)

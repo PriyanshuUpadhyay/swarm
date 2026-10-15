@@ -22,6 +22,8 @@ final class UsageModel {
     var now: Date?
     var notch = CGSize(width: 200, height: Layout.minNotch)
     var phase: DayPhase = .at(Date())
+    /// Set by the app delegate: opens the card for the keyboard or a VoiceOver action.
+    @ObservationIgnored var toggleFromKeyboard: (() -> Void)?
     /// A theme the owner pinned from the menu; nil follows the clock.
     var pinnedPhase: DayPhase? {
         didSet { UserDefaults.standard.set(pinnedPhase?.rawValue, forKey: "pinnedPhase"); updatePhase() }
@@ -46,7 +48,7 @@ final class UsageModel {
         reading = true
         let swarm = swarm
         Task {
-            let result = await Task.detached { run(swarm, ["usage", "--json"], timeout: 8) }.value
+            let result = await offPool { run(swarm, ["usage", "--json"], timeout: 8) }
             apply(result)
             reading = false
             if readQueued { readQueued = false; read() }
@@ -82,9 +84,9 @@ final class UsageModel {
             refreshing.insert(provider)
             nextRefresh[provider] = now.addingTimeInterval(300)
             Task {
-                let result = await Task.detached {
+                let result = await offPool {
                     run(swarm, ["usage", "--refresh", "--provider", provider, "--json"], timeout: 30)
-                }.value
+                }
                 if case .failure(let error) = result { refreshError = "\(provider.capitalized): \(error.text)" }
                 refreshing.remove(provider)
                 read()
@@ -111,6 +113,11 @@ struct RunError: Error {
     let text: String
 }
 
+/// `run` blocks up to its deadline, so it waits on a GCD thread, not on the Swift concurrency pool.
+nonisolated func offPool<T: Sendable>(_ work: @escaping @Sendable () -> T) async -> T {
+    await withCheckedContinuation { done in DispatchQueue.global().async { done.resume(returning: work()) } }
+}
+
 /// Runs `swarm` with a deadline and returns its stdout. stderr names the failure.
 nonisolated func run(_ executable: String?, _ arguments: [String], timeout: TimeInterval) -> Result<Data, RunError> {
     guard let executable else { return .failure(RunError(text: "swarm not found; set SWARM_BIN")) }
@@ -122,23 +129,22 @@ nonisolated func run(_ executable: String?, _ arguments: [String], timeout: Time
     process.standardError = err
     process.standardInput = FileHandle.nullDevice
     do { try process.run() } catch { return .failure(RunError(text: "could not start swarm")) }
-    let deadline = DispatchWorkItem { if process.isRunning { process.terminate() } }
-    DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: deadline)
     // Drain both pipes while the child runs, so neither a long meter list nor a long error fills one.
-    nonisolated(unsafe) var errorData = Data()
-    let errorDone = DispatchSemaphore(value: 0)
-    DispatchQueue.global().async {
-        errorData = err.fileHandleForReading.readDataToEndOfFile()
-        errorDone.signal()
+    nonisolated(unsafe) var data = Data(), errorData = Data()
+    let reads = DispatchGroup()
+    DispatchQueue.global().async(group: reads) { data = out.fileHandleForReading.readDataToEndOfFile() }
+    DispatchQueue.global().async(group: reads) { errorData = err.fileHandleForReading.readDataToEndOfFile() }
+    if reads.wait(timeout: .now() + timeout) == .timedOut {
+        process.terminate()
+        // A provider helper that swarm started can keep a pipe open after swarm exits, so the reads
+        // may never end; give up on them (two parked threads) rather than on every later read.
+        _ = reads.wait(timeout: .now() + 2)
+        return .failure(RunError(text: "timed out"))
     }
-    let data = out.fileHandleForReading.readDataToEndOfFile()
-    errorDone.wait()
-    let errorText = String(decoding: errorData, as: UTF8.self)
     process.waitUntilExit()
-    deadline.cancel()
-    guard process.terminationReason == .exit, process.terminationStatus == 0 else {
-        let line = errorText.split(separator: "\n").last.map(String.init) ?? "swarm failed"
-        return .failure(RunError(text: process.terminationReason == .exit ? line : "timed out"))
+    guard process.terminationStatus == 0 else {
+        let line = String(decoding: errorData, as: UTF8.self).split(separator: "\n").last.map(String.init)
+        return .failure(RunError(text: line ?? "swarm failed"))
     }
     return .success(data)
 }

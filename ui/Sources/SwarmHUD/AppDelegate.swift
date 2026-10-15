@@ -1,10 +1,12 @@
 import AppKit
+import Carbon.HIToolbox
 import SwarmHUDCore
 import SwiftUI
 
 // Window code ported from yelo apps/UsageHUD (AppDelegate.swift, DragHostingView.swift): a fixed,
-// transparent panel at the top of the notch screen; the visible shape grows inside it. Hover is a
-// cursor-position test, so it needs no input-monitoring permission.
+// transparent panel at the top of the notch screen; the visible shape grows inside it. Hover comes
+// from mouse-move monitors; a global monitor of mouse events needs no input-monitoring permission.
+// ⌃⌥⌘U (a Carbon hot key, also with no permission) opens it for the keyboard and VoiceOver.
 
 /// The panel never resizes; it is the most room the open HUD may take.
 let panelSize = NSSize(width: 800, height: 640)
@@ -12,7 +14,7 @@ let panelSize = NSSize(width: 800, height: 640)
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let model = UsageModel()
-    private var panel: NSPanel!
+    private var panel: HUDPanel!
     private var hostingView: HitTestHostingView<HUDView>!
 
     // The exact set is re-asserted after unlock and during wedge recovery (below).
@@ -28,7 +30,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var pendingClose: DispatchWorkItem?
     private var pendingVisibilityCheck: DispatchWorkItem?
     private var wedgeRecoveries = 0
-    private var hoverTimer: Timer?
+    private var mouseMonitors: [Any] = []
+    private var hotKey: EventHotKeyRef?
+    /// Opened by the hot key: it stays open when the cursor leaves, until Esc, the key again, or a click elsewhere.
+    private var keyOpen = false
     private var readTimer: Timer?
     private var phaseTimer: Timer?
     private var clickThrough: Bool?
@@ -50,12 +55,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         DistributedNotificationCenter.default().addObserver(
             self, selector: #selector(unlocked), name: NSNotification.Name("com.apple.screenIsUnlocked"), object: nil
         )
+        // A new time zone or a clock change moves the next theme boundary.
+        for name in [Notification.Name.NSSystemTimeZoneDidChange, .NSSystemClockDidChange] {
+            NotificationCenter.default.addObserver(self, selector: #selector(clockChanged), name: name, object: nil)
+        }
         panel.orderFrontRegardless()
-        startHoverTimer()
+        startMouseMonitors()
+        registerHotKey()
         scheduleVisibilityCheck()
     }
 
     // MARK: Theme by the clock
+
+    @objc private func clockChanged() { schedulePhaseChange() }
 
     private func schedulePhaseChange() {
         model.updatePhase()
@@ -84,11 +96,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = false
+        panel.acceptsMouseMovedEvents = true
+        panel.onCancel = { [weak self] in self?.closeFromKeyboard() }
+        panel.onResignKey = { [weak self] in self?.closeFromKeyboard() }
         clickThrough = nil
 
         let view = HitTestHostingView(rootView: HUDView(model: model, live: true))
         view.activeRect = { [weak self] in self?.visibleRectInScreen() ?? .zero }
         view.makeMenu = { [weak self] in self?.contextMenu() }
+        model.toggleFromKeyboard = { [weak self] in self?.toggleFromKeyboard() }
         hostingView = view
         panel.contentView = view
     }
@@ -138,19 +154,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func unlocked() {
+        // A new unlock earns new tries, so a slow wake that used them all does not hide the HUD for good.
+        wedgeRecoveries = 0
         reassertCollectionBehavior()
         scheduleVisibilityCheck()
     }
 
     // MARK: Hover
 
-    private func startHoverTimer() {
-        let timer = Timer(timeInterval: 0.08, repeats: true) { _ in
+    /// The global monitor sees moves over other apps (the panel is click-through there); the local
+    /// one sees moves over the panel itself. Both run on the main thread.
+    private func startMouseMonitors() {
+        let events: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseDragged]
+        if let global = NSEvent.addGlobalMonitorForEvents(matching: events, handler: { _ in
             MainActor.assumeIsolated { self.mouseMoved() }
-        }
-        timer.tolerance = 0.02
-        RunLoop.main.add(timer, forMode: .common)
-        hoverTimer = timer
+        }) { mouseMonitors.append(global) }
+        if let local = NSEvent.addLocalMonitorForEvents(matching: events, handler: { event in
+            MainActor.assumeIsolated { self.mouseMoved() }
+            return event
+        }) { mouseMonitors.append(local) }
     }
 
     /// The one place hover and click-through are decided, from the cursor position.
@@ -158,6 +180,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard panel.isVisible else { return }
         let inside = hoverRectInScreen().contains(NSEvent.mouseLocation)
         setClickThrough(!inside)
+        if keyOpen { return }
         if !model.isOpen {
             if inside { scheduleOpen() } else { pendingOpen?.cancel(); pendingOpen = nil }
         } else if inside {
@@ -183,7 +206,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let item = DispatchWorkItem { [weak self] in
             guard let self else { return }
             self.pendingClose = nil
-            guard !self.hoverRectInScreen().contains(NSEvent.mouseLocation) else { return }
+            guard !self.keyOpen, !self.hoverRectInScreen().contains(NSEvent.mouseLocation) else { return }
             self.setOpen(false)
         }
         pendingClose = item
@@ -196,9 +219,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.isOpen = open
         if open {
             NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
-            model.read()
+            // The minute timer keeps it current; this only catches up after a long closed spell.
+            if model.readAt.map({ Date().timeIntervalSince($0) > 5 }) ?? true { model.read() }
+        } else {
+            keyOpen = false
         }
         mouseMoved()
+    }
+
+    // MARK: Keyboard
+
+    private func registerHotKey() {
+        var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
+        InstallEventHandler(GetApplicationEventTarget(), { _, _, context in
+            guard let context else { return noErr }
+            let delegate = Unmanaged<AppDelegate>.fromOpaque(context).takeUnretainedValue()
+            MainActor.assumeIsolated { delegate.toggleFromKeyboard() }
+            return noErr
+        }, 1, &spec, Unmanaged.passUnretained(self).toOpaque(), nil)
+        RegisterEventHotKey(UInt32(kVK_ANSI_U), UInt32(controlKey | optionKey | cmdKey),
+                            EventHotKeyID(signature: OSType(0x5357_4855), id: 1), // "SWHU"
+                            GetApplicationEventTarget(), 0, &hotKey)
+    }
+
+    func toggleFromKeyboard() {
+        if keyOpen { closeFromKeyboard(); return }
+        pendingClose?.cancel(); pendingClose = nil
+        keyOpen = true
+        setOpen(true)
+        // Key focus lets Esc close it and moves VoiceOver into the card.
+        panel.makeKey()
+    }
+
+    private func closeFromKeyboard() {
+        guard keyOpen else { return }
+        keyOpen = false
+        setOpen(false)
     }
 
     private func setClickThrough(_ ignore: Bool) {
@@ -211,6 +267,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func contextMenu() -> NSMenu {
         let menu = NSMenu()
+        // Else the menu enables every item whose target answers, and the refresh state is lost.
+        menu.autoenablesItems = false
         let refresh = NSMenuItem(title: "Refresh usage", action: #selector(refreshUsage), keyEquivalent: "r")
         refresh.target = self
         refresh.isEnabled = model.canRefresh
@@ -294,7 +352,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 private final class HUDPanel: NSPanel {
+    var onCancel: (() -> Void)?
+    var onResignKey: (() -> Void)?
     override var canBecomeKey: Bool { true }
+    override func cancelOperation(_ sender: Any?) { onCancel?() }
+    override func resignKey() {
+        super.resignKey()
+        onResignKey?()
+    }
 }
 
 /// Hosts the SwiftUI content and limits hit-testing to the visible shape, so the rest of the

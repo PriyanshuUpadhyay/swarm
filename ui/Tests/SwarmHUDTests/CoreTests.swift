@@ -88,3 +88,10 @@ private let fixture = """
     #expect(list[0].windows.map(\.kind) == [.week])
     #expect(list[0].windows[0].usedPct == 70)
 }
+
+@Test func shortDurationSurvivesAnOutOfRangeResetTime() {
+    let now = Date(timeIntervalSince1970: 0)
+    #expect(shortDuration(until: Date(timeIntervalSince1970: 1e300), now: now) == "99d")
+    #expect(shortDuration(until: Date(timeIntervalSince1970: -1e300), now: now) == "now")
+    #expect(shortDuration(until: Date(timeIntervalSince1970: 9_000), now: now) == "2h 30m")
+}

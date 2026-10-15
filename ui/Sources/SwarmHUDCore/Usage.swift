@@ -161,8 +161,10 @@ public func worstWindow(_ accounts: [UsageAccount]) -> (account: UsageAccount, w
 
 /// "2h 44m", "3d 20h", "12m", "now": the two largest units, for a reset time.
 public func shortDuration(until date: Date, now: Date) -> String {
-    let seconds = Int(date.timeIntervalSince(now))
-    guard seconds > 59 else { return "now" }
+    let interval = date.timeIntervalSince(now)
+    // The reset time comes from a provider reply; Int(Double) traps on a value it cannot hold.
+    guard interval.isFinite, interval > 59 else { return "now" }
+    let seconds = Int(min(interval, 99 * 86400))
     let days = seconds / 86400, hours = seconds % 86400 / 3600, minutes = seconds % 3600 / 60
     if days > 0 { return hours > 0 ? "\(days)d \(hours)h" : "\(days)d" }
     if hours > 0 { return minutes > 0 ? "\(hours)h \(minutes)m" : "\(hours)h" }
