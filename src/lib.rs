@@ -9,6 +9,7 @@ pub mod host;
 pub mod hud;
 pub mod managed;
 pub mod paths;
+pub mod plugin;
 pub mod profiles;
 pub mod providers;
 pub mod screen;
