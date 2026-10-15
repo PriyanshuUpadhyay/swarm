@@ -325,8 +325,11 @@ struct OpenContent: View {
                 }
                 .foregroundStyle(Palette.primary)
             } else {
-                Text(model.readFailed ? "Could not read usage" : "No usage reading")
+                // The cause names the fix (for example "swarm not found; set SWARM_BIN").
+                Text(model.readError.map { "\($0) · retries each minute" } ?? "No usage reading")
                     .foregroundStyle(Palette.secondary)
+                    .lineLimit(1).truncationMode(.tail)
+                    .help(model.readError ?? "")
             }
             Spacer(minLength: 12)
             if let refreshError = model.refreshError {
@@ -351,7 +354,7 @@ struct OpenContent: View {
     }
 
     private var age: String {
-        if model.readFailed { return "read failed" }
+        if model.readError != nil { return "read failed" }
         guard let readAt = model.readAt else { return "reading…" }
         let minutes = Int(now.timeIntervalSince(readAt) / 60)
         return minutes < 1 ? "updated now" : "updated \(minutes)m ago"
@@ -424,7 +427,7 @@ struct WindowCell: View {
                 Ring(fraction: Double(window.usedPct) / 100, color: color)
                 Text("\(window.usedPct)")
                     .font(.system(size: 11.5, weight: .semibold).monospacedDigit())
-                    .foregroundStyle(window.isFresh ? color : color.opacity(0.7))
+                    .foregroundStyle(color)
             }
             .frame(width: 32, height: 32)
             .overlay(alignment: .topTrailing) {

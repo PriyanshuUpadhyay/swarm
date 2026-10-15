@@ -72,11 +72,11 @@ private let fixture = """
 
 @Test func worstWindowKeepsTheFirstOnATie() {
     let window = { (kind: WindowKind, pct: Int) in UsageWindow(kind: kind, usedPct: pct, resetAt: nil, asOf: nil, isFresh: true) }
-    let a = UsageAccount(provider: "claude", name: "a", windows: [window(.session, 40), window(.week, 81)], problem: nil)
-    let b = UsageAccount(provider: "codex", name: "b", windows: [window(.week, 81)], problem: nil)
-    let c = UsageAccount(provider: "claude", name: "c", windows: [], problem: "Token expired")
-    #expect(worstWindow([a, b, c]).map { "\($0.account.name) \($0.window.kind.title)" } == "a Week")
-    #expect(worstWindow([c]) == nil)
+    let firstTied = UsageAccount(provider: "claude", name: "first", windows: [window(.session, 40), window(.week, 81)], problem: nil)
+    let secondTied = UsageAccount(provider: "codex", name: "second", windows: [window(.week, 81)], problem: nil)
+    let signedOut = UsageAccount(provider: "claude", name: "signed-out", windows: [], problem: "Token expired")
+    #expect(worstWindow([firstTied, secondTied, signedOut]).map { "\($0.account.name) \($0.window.kind.title)" } == "first Week")
+    #expect(worstWindow([signedOut]) == nil)
 }
 
 @Test func twoLimitsOfOneLengthKeepTheFullerInOneColumn() {

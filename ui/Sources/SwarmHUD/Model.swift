@@ -8,8 +8,8 @@ final class UsageModel {
     var accounts: [UsageAccount] = []
     /// When the last read succeeded; nil before the first one.
     var readAt: Date?
-    /// The last read failed. The last good accounts stay on screen.
-    var readFailed = false
+    /// Why the last read failed; nil after a good one. The last good accounts stay on screen.
+    var readError: String?
     var refreshing: Set<String> = []
     /// Per provider, when the next manual refresh is allowed (ADR 0087: once in 300 s).
     var nextRefresh: [String: Date] = [:]
@@ -54,13 +54,21 @@ final class UsageModel {
     }
 
     private func apply(_ result: Result<Data, RunError>) {
-        guard case .success(let data) = result, let snapshot = try? UsageSnapshot.decode(data) else {
-            readFailed = true
+        let snapshot: UsageSnapshot
+        switch result {
+        case .failure(let error):
+            readError = error.text
             return
+        case .success(let data):
+            guard let decoded = try? UsageSnapshot.decode(data) else {
+                readError = "swarm usage --json gave no swarm.usage.v1 reply"
+                return
+            }
+            snapshot = decoded
         }
         accounts = SwarmHUDCore.accounts(from: snapshot.meters)
         readAt = Date()
-        readFailed = false
+        readError = nil
     }
 
     /// A provider call per provider with a meter, never automatic, at most once in 300 s each.
