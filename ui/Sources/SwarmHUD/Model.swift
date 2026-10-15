@@ -130,20 +130,23 @@ nonisolated func run(_ executable: String?, _ arguments: [String], timeout: Time
     process.standardOutput = out
     process.standardError = err
     process.standardInput = FileHandle.nullDevice
+    let exited = DispatchSemaphore(value: 0)
+    process.terminationHandler = { _ in exited.signal() }
     do { try process.run() } catch { return .failure(RunError(text: "could not start swarm")) }
     // Drain both pipes while the child runs, so neither a long meter list nor a long error fills one.
     nonisolated(unsafe) var data = Data(), errorData = Data()
     let reads = DispatchGroup()
     DispatchQueue.global().async(group: reads) { data = out.fileHandleForReading.readDataToEndOfFile() }
     DispatchQueue.global().async(group: reads) { errorData = err.fileHandleForReading.readDataToEndOfFile() }
-    if reads.wait(timeout: .now() + timeout) == .timedOut {
+    // One deadline for both waits: a child can close its pipes and still run.
+    let deadline = DispatchTime.now() + timeout
+    if reads.wait(timeout: deadline) == .timedOut || exited.wait(timeout: deadline) == .timedOut {
         process.terminate()
         // A provider helper that swarm started can keep a pipe open after swarm exits, so the reads
         // may never end; give up on them (two parked threads) rather than on every later read.
         _ = reads.wait(timeout: .now() + 2)
         return .failure(RunError(text: "timed out"))
     }
-    process.waitUntilExit()
     guard process.terminationStatus == 0 else {
         let line = String(decoding: errorData, as: UTF8.self).split(separator: "\n").last.map(String.init)
         return .failure(RunError(text: line ?? "swarm failed"))

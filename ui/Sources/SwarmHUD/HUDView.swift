@@ -278,7 +278,8 @@ struct OpenContent: View {
             HStack(spacing: Layout.gap) {
                 Spacer().frame(width: Layout.markColumn + Layout.gap + Layout.nameColumn)
                 ForEach(kinds, id: \.self) { kind in
-                    Text(kind.title).frame(width: Layout.windowColumn)
+                    // Each row's label names its windows, so VoiceOver skips these titles.
+                    Text(kind.title).frame(width: Layout.windowColumn).accessibilityHidden(true)
                 }
             }
             .font(.system(size: 11, weight: .medium))
