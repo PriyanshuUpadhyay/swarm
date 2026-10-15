@@ -16,8 +16,6 @@ final class UsageModel {
     var refreshError: String?
 
     var isOpen = false
-    /// The signed-out accounts are listed, not folded into one line.
-    var foldOpen = false
     /// A fixed clock for `--snapshot`; nil uses the real one.
     var now: Date?
     var notch = CGSize(width: 200, height: Layout.minNotch)

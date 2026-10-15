@@ -8,8 +8,8 @@ import SwiftUI
 // from mouse-move monitors; a global monitor of mouse events needs no input-monitoring permission.
 // ⌃⌥⌘U (a Carbon hot key, also with no permission) opens it for the keyboard and VoiceOver.
 
-/// The panel never resizes; it is the most room the open HUD may take.
-let panelSize = NSSize(width: 800, height: 640)
+/// The panel never resizes; it is the most room the open HUD may take, plus room for its shadow.
+let panelSize = NSSize(width: Layout.openWidth + 40, height: Layout.maxOpenHeight + 24)
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {

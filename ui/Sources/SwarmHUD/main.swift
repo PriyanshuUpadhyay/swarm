@@ -43,11 +43,10 @@ func snapshot(to directory: URL, arguments: [String]) {
     for phase in DayPhase.allCases {
         // Set the phase itself: `pinnedPhase` would overwrite the owner's saved theme pin.
         model.phase = phase
-        for (name, open, fold) in [("closed", false, false), ("open", true, false), ("open-fold", true, true)] {
+        for (name, open) in [("closed", false), ("open", true)] {
             model.isOpen = open
-            model.foldOpen = fold
             let view = HUDView(model: model, live: false)
-                .frame(width: 720, height: open ? model.openSize.height + 40 : 80, alignment: .top)
+                .frame(width: Layout.openWidth + 40, height: open ? model.openSize.height + 40 : 80, alignment: .top)
                 .background(Color(hex: 0x6F8FB8))
             let renderer = ImageRenderer(content: view)
             renderer.scale = 2
