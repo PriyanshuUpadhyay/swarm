@@ -102,7 +102,7 @@ pub fn running(launchctl_print: &str) -> bool {
 }
 
 unsafe extern "C" {
-    fn getuid() -> u32;
+    pub(crate) fn getuid() -> u32;
 }
 
 fn domain() -> String {
