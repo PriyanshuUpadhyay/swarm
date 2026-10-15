@@ -296,12 +296,15 @@ fn emails(accounts: &[Account]) -> Vec<(String, String)> {
 }
 
 /// Two accounts of one provider that sign in with one email are one account, so the meters show it
-/// once: the account with a reading wins, else the one not named `default`, else the first.
+/// once: the account with a fresh reading wins, then one with any reading, then the one not named
+/// `default`, then the first.
 fn fold_twins(emails: &[(String, String)], meters: Vec<UsageMeter>) -> Vec<UsageMeter> {
-    let has_reading = |name: &str| {
-        meters
-            .iter()
-            .any(|meter| meter.account.as_deref() == Some(name) && meter.used_pct.is_some())
+    let reads = |name: &str, fresh: bool| {
+        meters.iter().any(|meter| {
+            meter.account.as_deref() == Some(name)
+                && meter.used_pct.is_some()
+                && (!fresh || meter.state == "fresh")
+        })
     };
     let mut dropped = Vec::new();
     for (name, email) in emails {
@@ -312,7 +315,8 @@ fn fold_twins(emails: &[(String, String)], meters: Vec<UsageMeter>) -> Vec<Usage
             .collect();
         let keep = twins
             .iter()
-            .find(|twin| has_reading(twin))
+            .find(|twin| reads(twin, true))
+            .or_else(|| twins.iter().find(|twin| reads(twin, false)))
             .or_else(|| twins.iter().find(|twin| **twin != "default"))
             .unwrap_or(&twins[0]);
         if name != keep {
@@ -499,7 +503,12 @@ fn refresh(provider: Provider, deadline: Instant) -> Result<Usage, String> {
     // The path check comes before the account read, which creates the swarm home.
     cache_path(provider.id())?;
     let accounts = crate::profiles::native::identities(provider, deadline)?.accounts;
-    refresh_accounts(provider, accounts, deadline)
+    // Folded for display only; an automatic pick (refresh_if_old) needs every account's meters.
+    let twins = emails(&accounts);
+    let usage = refresh_accounts(provider, accounts, deadline)?;
+    Ok(Usage {
+        meters: fold_twins(&twins, usage.meters),
+    })
 }
 
 fn refresh_accounts(
@@ -508,7 +517,6 @@ fn refresh_accounts(
     deadline: Instant,
 ) -> Result<Usage, String> {
     let path = cache_path(provider.id())?;
-    let twins = emails(&accounts);
     let previous = cached_accounts(provider.id(), &accounts, now_seconds())?;
     let resolved_cache = resolved_parent(&path);
     if accounts.iter().any(|account| {
@@ -601,9 +609,7 @@ fn refresh_accounts(
         let _ = std::fs::remove_file(temporary);
     }
     written?;
-    Ok(Usage {
-        meters: fold_twins(&twins, meters),
-    })
+    Ok(Usage { meters })
 }
 
 fn fresh_claude(account: &Account, deadline: Instant) -> Result<Vec<UsageMeter>, String> {
@@ -1088,6 +1094,11 @@ mod tests {
             meter("team", Some(9)),
         ];
         assert_eq!(names(fold_twins(&same, read)), ["default", "team"]);
+        let mut stale = meter("default", Some(40));
+        stale.state = "stale".into();
+        let mut fresh = meter("me", Some(5));
+        fresh.state = "fresh".into();
+        assert_eq!(names(fold_twins(&same, vec![stale, fresh])), ["me"]);
         let unread = vec![meter("default", None), meter("me", None)];
         assert_eq!(names(fold_twins(&same, unread)), ["me"]);
         let distinct = emails(&[("default", "login-a"), ("me", "login-b")]);
