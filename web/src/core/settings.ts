@@ -156,6 +156,7 @@ export class Settings {
     if (page === "accounts") {
       for (const p of USAGE_PROVIDERS) void this.loadAccounts(p);
       void this.loadUsage();
+      // loadHud keeps its own error in state.hud, so nothing waits for it.
       void this.loadHud();
     }
   }
@@ -218,6 +219,8 @@ export class Settings {
       this.app.notice(`Usage HUD failed: ${message(err)}`, true);
       await this.loadHud();
     } finally {
+      // A read that started during the write may carry the state before it, so drop its reply too.
+      this.hudWrites++;
       this.set({ hudPending: false });
     }
   }

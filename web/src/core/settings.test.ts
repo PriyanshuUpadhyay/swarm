@@ -168,6 +168,21 @@ describe("owner writes", () => {
     expect(settings.state.hud).toEqual({ state: "ready", data: hud });
   });
 
+  it("a loadHud that starts while setHud is pending does not overwrite its reply", async () => {
+    const hud = { installed: true, running: true, app: "/a/SwarmHUD.app" };
+    let answer: (v: unknown) => void = () => {};
+    const { settings } = fakeApp(() => new Promise((r) => (answer = r)));
+    let release: (v: unknown) => void = () => {};
+    (settings as unknown as { app: { api: { get: unknown } } }).app.api.get = () => new Promise((r) => (release = r));
+    const write = settings.setHud(true);
+    const read = settings.loadHud();
+    answer(hud);
+    await write;
+    release({ installed: false, running: false, app: "/a/SwarmHUD.app" });
+    await read;
+    expect(settings.state.hud).toEqual({ state: "ready", data: hud });
+  });
+
   it("a failed setHud reads the real state again and clears pending", async () => {
     const { settings, calls } = fakeApp(async () => {
       throw new ApiError(500, "launchctl failed");
