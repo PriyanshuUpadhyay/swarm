@@ -2041,21 +2041,18 @@ fn notices_state() -> (&'static str, String) {
         ])
         .output();
     // A failed read must not read as no mute.
-    let Ok(out) = read.as_ref().map_err(ToString::to_string).and_then(|out| {
-        if out.status.success() {
-            Ok(out)
-        } else {
-            Err(String::from_utf8_lossy(&out.stderr).trim().to_string())
+    let out = match read {
+        Ok(out) if out.status.success() => out,
+        failed => {
+            let why = match failed {
+                Ok(out) => String::from_utf8_lossy(&out.stderr).trim().to_string(),
+                Err(error) => error.to_string(),
+            };
+            return (
+                "broken",
+                format!("Could not read the notice log, so a Focus mute is unknown: {why}"),
+            );
         }
-    }) else {
-        return (
-            "broken",
-            format!(
-                "Could not read the notice log, so a Focus mute is unknown: {}",
-                read.err()
-                    .map_or("log show failed".into(), |e| e.to_string())
-            ),
-        );
     };
     if String::from_utf8_lossy(&out.stdout).contains("muted by DND") {
         (

@@ -192,7 +192,7 @@ export class Settings {
   }
 
   show(page: Page = this.state.page) {
-    this.set({ open: true, page, error: null, confirm: null });
+    this.set({ open: true, page, error: null, confirm: null, pending: null });
     if (page === "profiles") void this.loadRoles();
     // loadSetup keeps its errors in state.doctor and state.plan, so nothing waits for it.
     if (page === "setup") void this.loadSetup();
@@ -373,13 +373,16 @@ export class Settings {
   /** Shows what a Set up of `plan` groups, then each of `own`, writes. Nothing is written until
    *  applySetUp. */
   async setUp(plan: string[], own: string[] = []) {
+    // busy also blocks a second press, so an older plan reply cannot replace a newer preview.
     if (this.state.busy) return;
-    this.set({ error: null, pending: null });
+    this.set({ busy: true, error: null, pending: null });
     try {
       const p = plan.length ? await this.api.get<SetupPlan>("/api/setup/plan", { only: plan.join(",") }) : null;
       this.set({ pending: { plan, own, files: p?.files ?? [], digest: p?.digest ?? null } });
     } catch (err) {
       this.set({ error: message(err) });
+    } finally {
+      this.set({ busy: false });
     }
   }
 

@@ -1441,9 +1441,6 @@ async fn hud_cli(app: &App, verb: &str) -> Result<Value, ApiError> {
         .filter(|value| value["schema"] == swarm::hud::HUD_SCHEMA)
         .ok_or_else(|| error(StatusCode::BAD_GATEWAY, "swarm returned invalid HUD status"))
 }
-/// The `swarm setup` groups that apply from a plan's digest. `plugin` and `hud` have their own
-/// commands and no plan.
-const SETUP_GROUPS: [&str; 4] = ["hooks", "trust", "herdr", "skills"];
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -1459,7 +1456,8 @@ struct SetupPlanQuery {
 }
 
 fn setup_groups(only: &str) -> bool {
-    only.split(',').all(|group| SETUP_GROUPS.contains(&group))
+    only.split(',')
+        .all(|group| crate::SETUP_GROUPS.contains(&group))
 }
 /// A call from the swarm home, so a plan and its apply see the same folder.
 fn home_call(app: &App, args: &[&str]) -> CliCall {

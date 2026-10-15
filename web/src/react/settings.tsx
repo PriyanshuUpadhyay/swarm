@@ -547,7 +547,8 @@ const AUTH: Record<string, string> = { signed_in: "Signed in", signed_out: "Sign
 const STATE_TEXT = { ok: "OK", setup: "Needs setup", broken: "Needs you" } as const;
 
 /** `swarm doctor`'s rows, each with its own Set up, and what Set up all runs. A group with a
- *  conflict needs the owner's own edit, so neither button runs it. */
+ *  conflict needs the owner's own edit, so neither button runs it. The settings methods keep their
+ *  errors in state, which the page shows, so a click does not wait for them. */
 function SetupPage({ app }: { app: App }) {
   const doctor = useSettings(app, "doctor");
   const plan = useSettings(app, "plan");
@@ -556,7 +557,9 @@ function SetupPage({ app }: { app: App }) {
   if (doctor.state === "error")
     return (
       <div className="grid gap-2">
-        <p className="text-sm text-failed">Could not run swarm doctor: {doctor.error}</p>
+        <p role="alert" className="text-sm break-words text-failed">
+          Could not run swarm doctor: {doctor.error}
+        </p>
         <div>
           <Button size="sm" variant="outline" data-testid="doctor-retry" onClick={() => void app.settings.loadSetup()}>
             Try again
@@ -564,7 +567,12 @@ function SetupPage({ app }: { app: App }) {
         </div>
       </div>
     );
-  if (doctor.state !== "ready") return <p className="text-sm text-muted-foreground">Checking…</p>;
+  if (doctor.state !== "ready")
+    return (
+      <p role="status" className="text-sm text-muted-foreground">
+        Checking…
+      </p>
+    );
   const p = plan.state === "ready" ? plan.data : null;
   const all = p ? setUpAll(doctor.data, p) : null;
   const conflicted = new Set(p?.conflicts.map((c) => c.group));
@@ -580,6 +588,11 @@ function SetupPage({ app }: { app: App }) {
           Set up all
         </Button>
       </div>
+      {busy && !pending && (
+        <p role="status" className="text-sm text-muted-foreground">
+          Working…
+        </p>
+      )}
       {pending && (
         <section className="grid gap-2 rounded-md border p-3" data-testid="setup-preview">
           <h3 className="text-sm font-semibold">Set up {[...pending.plan, ...pending.own].join(", ")}</h3>
@@ -593,7 +606,7 @@ function SetupPage({ app }: { app: App }) {
           {pending.own.includes("plugin") && <p className="text-xs text-muted-foreground">Installs the swarm plugin in each agent CLI on PATH.</p>}
           {pending.own.includes("hud") && <p className="text-xs text-muted-foreground">Installs the usage HUD app.</p>}
           <div className="flex gap-2">
-            <Button size="sm" data-testid="setup-apply" disabled={busy} onClick={() => void app.settings.applySetUp()}>
+            <Button size="sm" data-testid="setup-apply" disabled={busy} autoFocus onClick={() => void app.settings.applySetUp()}>
               Apply
             </Button>
             <Button size="sm" variant="ghost" disabled={busy} onClick={() => app.settings.cancelSetUp()}>
@@ -614,7 +627,11 @@ function SetupPage({ app }: { app: App }) {
           </Row>
         </div>
       ))}
-      {plan.state === "error" && <p className="text-sm text-failed">Could not plan setup: {plan.error}</p>}
+      {plan.state === "error" && (
+        <p role="alert" className="text-sm break-words text-failed">
+          Could not plan setup: {plan.error}
+        </p>
+      )}
       {p && p.conflicts.length > 0 && (
         <section className="grid gap-2" data-testid="setup-conflicts">
           <h3 className="text-sm font-semibold">Conflicts</h3>

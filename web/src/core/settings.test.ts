@@ -58,6 +58,16 @@ describe("setup & doctor", () => {
     expect(settings.state.doctor).toEqual({ state: "ready", data: DOCTOR });
   });
 
+  it("a second Set up while the first plan loads does nothing, so the newer preview cannot be replaced", async () => {
+    const { settings, calls } = fakeApp(async () => ({ ok: true }));
+    const first = settings.setUp(["hooks"]);
+    await settings.setUp(["skills"]);
+    await first;
+    expect(calls).toEqual(["GET /api/setup/plan?hooks"]);
+    expect(settings.state.pending?.plan).toEqual(["hooks"]);
+    expect(settings.state.busy).toBe(false);
+  });
+
   it("a failed apply shows the CLI's own text, since every failed swarm setup is a 409, and reloads", async () => {
     const { settings } = fakeApp(async () => {
       throw new ApiError(409, "swarm: none of claude, codex, agy or pi is on PATH");
