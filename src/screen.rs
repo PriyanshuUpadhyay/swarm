@@ -392,6 +392,20 @@ pub fn screen_state(provider: &str, rows: &str) -> Option<ScreenState> {
             // an approval counts as idle, as Herdr decides; add a prompt pattern from a real capture.
             (!lower.trim().is_empty()).then_some(ScreenState::Idle)
         }
+        "pi" => {
+            // While a turn runs, the top rule of pi's input box carries a spinner:
+            // `── ⠋ Working ──`.
+            pi_composer(rows)?;
+            let spinner = lines.iter().any(|line| {
+                line.trim_start().starts_with('─')
+                    && line.chars().any(|c| ('\u{2800}'..='\u{28FF}').contains(&c))
+            });
+            Some(if spinner {
+                ScreenState::Working
+            } else {
+                ScreenState::Idle
+            })
+        }
         _ => None,
     }
 }
@@ -655,6 +669,10 @@ mod tests {
             ("agy", fixture!("agy-idle"), Some(Idle)),
             ("agy", fixture!("agy-waiting"), Some(Waiting)),
             ("agy", fixture!("agy-working"), Some(Working)),
+            ("pi", fixture!("pi-idle"), Some(Idle)),
+            ("pi", fixture!("pi-ring-unsent"), Some(Idle)),
+            ("pi", fixture!("pi-working"), Some(Working)),
+            ("pi", "$ pi --model x\n", None),
             ("claude", "", None),
             ("claude", "$ ls\nsrc\n", None),
             ("gemini", fixture!("claude-idle"), None),

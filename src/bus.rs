@@ -98,6 +98,15 @@ pub struct SessionList {
     pub sessions: Vec<Session>,
 }
 
+/// The folder that holds tmux's sockets, as tmux names it: `$TMUX_TMPDIR` or `/tmp`, resolved,
+/// then `tmux-<uid>`.
+fn tmux_socket_dir(tmpdir: Option<&str>, uid: u32) -> String {
+    let base = tmpdir.filter(|dir| !dir.is_empty()).unwrap_or("/tmp");
+    let base = std::fs::canonicalize(base)
+        .map_or(base.to_string(), |path| path.to_string_lossy().into_owned());
+    format!("{base}/tmux-{uid}")
+}
+
 pub fn valid_agent_id(id: &str) -> bool {
     let bytes = id.as_bytes();
     (1..=40).contains(&bytes.len())
@@ -202,12 +211,18 @@ pub fn argv(
                             );
                         }
                     }
+                    // A seat's reply rings its chair with `tmux -L swarm` on a tmux host, and the
+                    // sandbox refuses every AF_UNIX socket that it does not name.
+                    // SAFETY: getuid has no preconditions and cannot fail.
+                    let uid = unsafe { crate::hud::getuid() };
+                    let tmux = tmux_socket_dir(std::env::var("TMUX_TMPDIR").ok().as_deref(), uid);
                     args.extend([
                         "-c".into(),
                         r#"default_permissions="swarm-code""#.into(),
                         "-c".into(),
                         format!(
-                            r#"permissions.swarm-code={{extends=":workspace",filesystem={{{filesystem}}},network={{enabled=true}}}}"#
+                            r#"permissions.swarm-code={{extends=":workspace",filesystem={{{filesystem}}},network={{enabled=true,unix_sockets={{{}="allow"}}}}}}"#,
+                            quote(&tmux)
                         ),
                     ]);
                 }
@@ -1282,7 +1297,14 @@ mod tests {
                 "-c",
                 "default_permissions=\"swarm-code\"",
                 "-c",
-                r#"permissions.swarm-code={extends=":workspace",filesystem={":workspace_roots"={".git"="write",".git/hooks"="read",".git/config"="read",".git/modules"="read",".codex"="read",".agents"="read"},"/home x/.swarm"="write"},network={enabled=true}}"#,
+                &format!(
+                    r#"permissions.swarm-code={{extends=":workspace",filesystem={{":workspace_roots"={{".git"="write",".git/hooks"="read",".git/config"="read",".git/modules"="read",".codex"="read",".agents"="read"}},"/home x/.swarm"="write"}},network={{enabled=true,unix_sockets={{{}="allow"}}}}}}"#,
+                    serde_json::to_string(&tmux_socket_dir(
+                        std::env::var("TMUX_TMPDIR").ok().as_deref(),
+                        unsafe { crate::hud::getuid() }
+                    ))
+                    .unwrap()
+                ),
                 "--ask-for-approval",
                 "never"
             ]
@@ -1444,6 +1466,18 @@ mod tests {
         // The main checkout's git dir is inside the workspace, which `.git` already covers.
         assert!(!profile(&repo).contains(&common));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_codex_seat_may_reach_the_tmux_socket_folder_tmux_names() {
+        assert_eq!(
+            tmux_socket_dir(Some("/no/such/dir"), 7),
+            "/no/such/dir/tmux-7"
+        );
+        let tmp = std::fs::canonicalize("/tmp").unwrap();
+        let tmp = format!("{}/tmux-7", tmp.to_string_lossy());
+        assert_eq!(tmux_socket_dir(None, 7), tmp);
+        assert_eq!(tmux_socket_dir(Some(""), 7), tmp);
     }
 
     #[test]
