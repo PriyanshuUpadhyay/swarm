@@ -1,0 +1,474 @@
+import SwarmHUDCore
+import SwiftUI
+
+// Look 2, "Table", as reviewed in tmp/flow/2026-10-15-notch-hud/design/r3/review.md: a pure black
+// shape that grows out of the camera notch into one table with a row per account, no scroll and no
+// fold. The time of day changes only the row stripe, the calm bar fill and a small glyph; warning
+// colours never change.
+
+extension Color {
+    init(hex: UInt32) {
+        self.init(red: Double(hex >> 16 & 0xFF) / 255, green: Double(hex >> 8 & 0xFF) / 255, blue: Double(hex & 0xFF) / 255)
+    }
+}
+
+enum Palette {
+    static let primary = Color(hex: 0xF2F2F7)
+    static let secondary = Color(hex: 0xA8A8B0)
+    static let tertiary = Color(hex: 0x8F8F94)
+    static let warn = Color(hex: 0xFFA049)
+    static let critical = Color(hex: 0xFF5A4F)
+    static let track = Color.white.opacity(0.10)
+    static let rule = Color.white.opacity(0.08)
+
+    /// Text colour for a reading. Calm text stays white, so the phase never changes text contrast.
+    static func ink(_ severity: Severity) -> Color {
+        switch severity {
+        case .calm: return primary
+        case .warn: return warn
+        case .critical: return critical
+        }
+    }
+}
+
+struct Theme {
+    /// Every other row.
+    let stripe: Color
+    /// Calm bars and the status dot; never text.
+    let calm: Color
+    let symbol: String
+
+    init(_ phase: DayPhase) {
+        switch phase {
+        case .dawn: (stripe, calm, symbol) = (Color(hex: 0x16161A), Color(hex: 0xB8B0C8), "sunrise")
+        case .day: (stripe, calm, symbol) = (Color(hex: 0x1C1C1E), Color(hex: 0xD9D6CE), "sun.max")
+        case .dusk: (stripe, calm, symbol) = (Color(hex: 0x16161A), Color(hex: 0xC2AFA6), "sunset")
+        case .night: (stripe, calm, symbol) = (Color(hex: 0x0F1012), Color(hex: 0x8C9AC0), "moon")
+        }
+    }
+
+    func fill(_ severity: Severity) -> Color { severity == .calm ? calm : Palette.ink(severity) }
+}
+
+enum Layout {
+    /// Room for `~100%` at 12 pt (43.4 pt) plus 10 pt outer padding.
+    static let wing: CGFloat = 56
+    static let openWidth: CGFloat = 1088
+    /// 13 accounts fit; the panel adds room for the shadow.
+    static let maxOpenHeight: CGFloat = 600
+    /// The open shape's concave top corners, which the content must clear.
+    static let ear: CGFloat = 14
+    static let inset: CGFloat = ear + 12
+    static let rowPadding: CGFloat = 8
+    static let belowStatus: CGFloat = 12
+    static let headings: CGFloat = 24
+    static let row: CGFloat = 36
+    static let legend: CGFloat = 26
+    static let bottom: CGFloat = 10
+    static let markColumn: CGFloat = 20
+    static let nameColumn: CGFloat = 190
+    static let readingColumn: CGFloat = 104
+    static let valueColumn: CGFloat = 40
+    static let resetColumn: CGFloat = 64
+    static let gap: CGFloat = 12
+    /// The least notch height the HUD assumes, also the closed height on a Mac with no notch reading.
+    static let minNotch: CGFloat = 37
+
+    /// The status line sits in the band beside the camera, as tall as the notch.
+    static func band(notch: CGSize) -> CGFloat { max(notch.height, minNotch) }
+}
+
+extension UsageModel {
+    var closedSize: CGSize {
+        CGSize(width: max(notch.width, 32) + 2 * Layout.wing, height: notch.height)
+    }
+
+    var openSize: CGSize {
+        let height = Layout.band(notch: notch) + Layout.belowStatus + Layout.headings
+            + CGFloat(accounts.count) * Layout.row + Layout.legend + Layout.bottom
+        return CGSize(width: Layout.openWidth, height: min(height, Layout.maxOpenHeight))
+    }
+}
+
+/// The notch outline: concave ears at the top corners, rounded bottom corners.
+struct NotchShape: Shape {
+    var ear: CGFloat
+    var radius: CGFloat
+
+    var animatableData: AnimatablePair<CGFloat, CGFloat> {
+        get { AnimatablePair(ear, radius) }
+        set { (ear, radius) = (newValue.first, newValue.second) }
+    }
+
+    func path(in rect: CGRect) -> Path {
+        let ear = min(ear, rect.height / 3), radius = min(radius, rect.height / 2)
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: rect.minY))
+        path.addQuadCurve(to: CGPoint(x: rect.minX + ear, y: rect.minY + ear), control: CGPoint(x: rect.minX + ear, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.minX + ear, y: rect.maxY - radius))
+        path.addQuadCurve(to: CGPoint(x: rect.minX + ear + radius, y: rect.maxY), control: CGPoint(x: rect.minX + ear, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.maxX - ear - radius, y: rect.maxY))
+        path.addQuadCurve(to: CGPoint(x: rect.maxX - ear, y: rect.maxY - radius), control: CGPoint(x: rect.maxX - ear, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.maxX - ear, y: rect.minY + ear))
+        path.addQuadCurve(to: CGPoint(x: rect.maxX, y: rect.minY), control: CGPoint(x: rect.maxX - ear, y: rect.minY))
+        path.closeSubpath()
+        return path
+    }
+}
+
+struct HUDView: View {
+    let model: UsageModel
+    /// False in `--snapshot`, where the clock is fixed and nothing animates.
+    let live: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var open: Bool { model.isOpen }
+    private var size: CGSize { open ? model.openSize : model.closedSize }
+    private var shape: NotchShape { NotchShape(ear: open ? Layout.ear : 6, radius: open ? 28 : 13) }
+    private var theme: Theme { Theme(model.phase) }
+
+    private var geometryAnimation: Animation? {
+        guard live, !reduceMotion else { return nil }
+        // Opening may overshoot a little; closing must look like the panel simply left.
+        return open ? .spring(response: 0.42, dampingFraction: 0.82) : .spring(response: 0.45, dampingFraction: 1)
+    }
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: live ? 30 : 3600)) { context in
+            let now = model.now ?? context.date
+            ZStack(alignment: .top) {
+                Color.black
+                if open {
+                    OpenContent(model: model, theme: theme, now: now)
+                        .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.97, anchor: .top)))
+                } else {
+                    ClosedWings(model: model)
+                }
+            }
+            .frame(width: size.width, height: size.height, alignment: .top)
+            .clipShape(shape)
+            .shadow(color: .black.opacity(open ? 0.46 : 0), radius: open ? 13 : 0, y: open ? 10 : 0)
+            .animation(geometryAnimation, value: open)
+            .animation(live && !reduceMotion ? .easeInOut(duration: 2) : nil, value: model.phase)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        }
+        .environment(\.colorScheme, .dark)
+    }
+}
+
+func providerTitle(_ provider: String) -> String { provider == "claude" ? "Claude" : "Codex" }
+
+/// Gray, so only warnings carry colour; the two shapes still tell the providers apart.
+struct ProviderMark: View {
+    let provider: String
+    var size: CGFloat = 14
+
+    var body: some View {
+        Canvas { context, canvas in
+            let s = canvas.width / 14
+            if provider == "claude" {
+                for angle in stride(from: 0.0, to: 180, by: 45) {
+                    var line = Path()
+                    line.move(to: CGPoint(x: 7 * s, y: 1.5 * s))
+                    line.addLine(to: CGPoint(x: 7 * s, y: 12.5 * s))
+                    let turn = CGAffineTransform(translationX: 7 * s, y: 7 * s).rotated(by: angle * .pi / 180).translatedBy(x: -7 * s, y: -7 * s)
+                    context.stroke(line.applying(turn), with: .color(Palette.secondary), style: .init(lineWidth: 1.7 * s, lineCap: .round))
+                }
+            } else {
+                context.stroke(Path(roundedRect: CGRect(x: s, y: s, width: 12 * s, height: 12 * s), cornerRadius: 3.5 * s),
+                               with: .color(Palette.secondary), lineWidth: 1.6 * s)
+                var prompt = Path()
+                prompt.move(to: CGPoint(x: 4.3 * s, y: 5.2 * s))
+                prompt.addLine(to: CGPoint(x: 6.3 * s, y: 7 * s))
+                prompt.addLine(to: CGPoint(x: 4.3 * s, y: 8.8 * s))
+                prompt.move(to: CGPoint(x: 7.6 * s, y: 9 * s))
+                prompt.addLine(to: CGPoint(x: 10 * s, y: 9 * s))
+                context.stroke(prompt, with: .color(Palette.secondary), style: .init(lineWidth: 1.4 * s, lineCap: .round))
+            }
+        }
+        .frame(width: size, height: size)
+        .accessibilityLabel(providerTitle(provider))
+    }
+}
+
+/// Closed: the worst window's provider on the left and its use on the right, nothing over the camera.
+struct ClosedWings: View {
+    let model: UsageModel
+
+    var body: some View {
+        let worst = worstWindow(model.accounts)
+        HStack(spacing: 0) {
+            ZStack(alignment: .topTrailing) {
+                if let worst {
+                    ProviderMark(provider: worst.account.provider)
+                    if worst.window.severity == .critical {
+                        Text("!").font(.system(size: 8, weight: .heavy)).foregroundStyle(Palette.critical).offset(x: 6, y: -4)
+                    }
+                } else {
+                    Text("!").font(.system(size: 12, weight: .bold)).foregroundStyle(Palette.secondary)
+                }
+            }
+            .frame(width: Layout.wing - 10, alignment: .leading)
+            .padding(.leading, 10)
+            Spacer(minLength: 0)
+            Group {
+                if let worst {
+                    // A failed read keeps the last numbers, so they are marked old like a stale meter.
+                    Text("\(worst.window.isFresh && model.readError == nil ? "" : "~")\(worst.window.usedPct)%")
+                        .foregroundStyle(Palette.ink(worst.window.severity))
+                } else {
+                    Text("—").foregroundStyle(Palette.secondary)
+                }
+            }
+            .font(.system(size: 12, weight: .semibold).monospacedDigit())
+            .lineLimit(1)
+            .frame(width: Layout.wing - 10, alignment: .trailing)
+            .padding(.trailing, 10)
+        }
+        .frame(maxHeight: .infinity)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(worst.map { "\($0.account.name) \($0.window.kind.title) \($0.window.usedPct) percent used" } ?? "No usage reading")
+        .accessibilityAddTraits(.isButton)
+        .accessibilityHint(model.hotKeyReady ? "Opens the usage card. Control Option Command U also opens it." : "Opens the usage card.")
+        .accessibilityAction { model.toggleFromKeyboard?() }
+    }
+}
+
+struct OpenContent: View {
+    let model: UsageModel
+    let theme: Theme
+    let now: Date
+
+    private let kinds = WindowKind.allCases
+
+    var body: some View {
+        VStack(spacing: 0) {
+            status.frame(height: Layout.band(notch: model.notch))
+            Spacer().frame(height: Layout.belowStatus)
+            HStack(spacing: Layout.gap) {
+                Spacer().frame(width: Layout.markColumn)
+                Text("Account").frame(width: Layout.nameColumn, alignment: .leading)
+                Text("Reading").frame(width: Layout.readingColumn, alignment: .leading)
+                ForEach(kinds, id: \.self) { kind in
+                    Text(kind.title).frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(Palette.tertiary)
+            .padding(.horizontal, Layout.rowPadding)
+            .frame(height: Layout.headings)
+            // Each row's label names its windows, so VoiceOver skips these titles.
+            .accessibilityHidden(true)
+            // Account order is the reader's, so a sign-in never moves a row.
+            ForEach(Array(model.accounts.enumerated()), id: \.element.id) { index, account in
+                Group {
+                    if account.windows.isEmpty {
+                        SignedOutRow(account: account)
+                    } else {
+                        AccountRow(account: account, kinds: kinds, theme: theme, now: now,
+                                   readFailed: model.readError != nil, readAt: model.readAt)
+                    }
+                }
+                .padding(.horizontal, Layout.rowPadding)
+                .background(index.isMultiple(of: 2) ? Color.clear : theme.stripe)
+                .overlay(alignment: .top) { Palette.rule.frame(height: 1) }
+            }
+            Text("Each limit shows used % · resets in. A dash means no reading for that limit.")
+                .font(.system(size: 11))
+                .foregroundStyle(Palette.tertiary)
+                .frame(maxWidth: .infinity, minHeight: Layout.legend, alignment: .leading)
+                .padding(.horizontal, Layout.rowPadding)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, Layout.inset)
+    }
+
+    /// The worst window left of the camera, the phase and read age right of it.
+    private var status: some View {
+        let wing = max((Layout.openWidth - 2 * Layout.inset - model.notch.width) / 2 - 12, 0)
+        return HStack(spacing: 0) {
+            HStack(spacing: 8) {
+                if let worst = worstWindow(model.accounts) {
+                    Circle().fill(theme.fill(worst.window.severity)).frame(width: 7, height: 7)
+                    // A long name gives way; the window and its value always show.
+                    HStack(spacing: 0) {
+                        Text(worst.account.name).lineLimit(1).truncationMode(.middle)
+                        Text(" · \(worst.window.kind.title) · ").fixedSize()
+                        Text("\(worst.window.usedPct)% used").foregroundStyle(Palette.ink(worst.window.severity)).fixedSize()
+                    }
+                    .foregroundStyle(Palette.primary)
+                } else {
+                    // The cause names the fix (for example "swarm not found; set SWARM_BIN").
+                    Text(model.readError.map { "\($0) · retries each minute" } ?? "No usage reading")
+                        .foregroundStyle(Palette.secondary)
+                        .lineLimit(1).truncationMode(.tail)
+                        .help(model.readError ?? "")
+                }
+            }
+            .frame(width: wing, alignment: .leading)
+            Spacer(minLength: 0)
+            HStack(spacing: 6) {
+                Image(systemName: theme.symbol).font(.system(size: 11)).accessibilityHidden(true)
+                Text(model.phase.title)
+                Text("·").accessibilityHidden(true)
+                if let refreshError = model.refreshError {
+                    Text(refreshError).foregroundStyle(Palette.warn).lineLimit(1).truncationMode(.tail)
+                } else {
+                    Text(age).monospacedDigit()
+                }
+                Button { model.refresh() } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 11, weight: .semibold))
+                        .rotationEffect(.degrees(model.refreshing.isEmpty ? 0 : 180))
+                        .frame(width: 24, height: 24)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(model.canRefresh ? Palette.secondary : Palette.tertiary.opacity(0.6))
+                .disabled(!model.canRefresh)
+                .help(model.refreshError ?? (model.canRefresh ? "Refresh usage" : "Next refresh in a few minutes"))
+                .accessibilityLabel("Refresh usage")
+            }
+            .foregroundStyle(Palette.tertiary)
+            .frame(width: wing, alignment: .trailing)
+        }
+        .font(.system(size: 12, weight: .medium))
+    }
+
+    private var age: String {
+        if model.readError != nil { return "read failed" }
+        guard let readAt = model.readAt else { return "reading…" }
+        let minutes = Int(now.timeIntervalSince(readAt) / 60)
+        return minutes < 1 ? "updated now" : "updated \(minutes)m ago"
+    }
+}
+
+/// The account name with its provider in small gray text after it.
+struct AccountName: View {
+    let account: UsageAccount
+    let color: Color
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text(account.name).font(.system(size: 13, weight: .medium)).foregroundStyle(color)
+                .lineLimit(1).truncationMode(.middle).help(account.name)
+            Text(providerTitle(account.provider)).font(.system(size: 11)).foregroundStyle(Palette.tertiary).fixedSize()
+        }
+        .frame(width: Layout.nameColumn, alignment: .leading)
+    }
+}
+
+struct AccountRow: View {
+    let account: UsageAccount
+    let kinds: [WindowKind]
+    let theme: Theme
+    let now: Date
+    /// The last read failed, so every number on screen is at least as old as `readAt`.
+    let readFailed: Bool
+    let readAt: Date?
+
+    var body: some View {
+        HStack(spacing: Layout.gap) {
+            // The name line already names the provider, so the mark is not read twice.
+            ProviderMark(provider: account.provider, size: 16).frame(width: Layout.markColumn).accessibilityHidden(true)
+            AccountName(account: account, color: Palette.primary)
+            reading.font(.system(size: 11)).lineLimit(1).frame(width: Layout.readingColumn, alignment: .leading)
+            ForEach(kinds, id: \.self) { kind in
+                if let window = account.windows.first(where: { $0.kind == kind }) {
+                    WindowCell(window: window, theme: theme, now: now)
+                } else {
+                    Text("—").font(.system(size: 12)).foregroundStyle(Palette.tertiary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .accessibilityLabel("\(kind.title) no reading")
+                }
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .frame(height: Layout.row)
+    }
+
+    @ViewBuilder private var reading: some View {
+        // Like the closed wings' `~`, a failed read marks even fresh windows as old.
+        if readFailed || account.windows.contains(where: { !$0.isFresh }) {
+            Text(staleText).foregroundStyle(Palette.warn)
+        } else {
+            Text("fresh").foregroundStyle(Palette.tertiary)
+        }
+    }
+
+    private var staleText: String {
+        let ages = account.windows.filter { readFailed || !$0.isFresh }.compactMap(\.asOf) + (readFailed ? [readAt].compactMap { $0 } : [])
+        guard let oldest = ages.min() else { return "Stale" }
+        // shortDuration says "now" under a minute, which reads wrong for an age.
+        let age = now.timeIntervalSince(oldest) < 60 ? "<1m" : shortDuration(until: now, now: oldest)
+        return "Stale · \(age)"
+    }
+}
+
+struct WindowCell: View {
+    let window: UsageWindow
+    let theme: Theme
+    let now: Date
+
+    var body: some View {
+        HStack(spacing: 8) {
+            UsageBar(fraction: Double(window.usedPct) / 100, color: theme.fill(window.severity))
+            Text("\(window.usedPct)%")
+                .font(.system(size: 12, weight: .semibold).monospacedDigit())
+                .foregroundStyle(Palette.ink(window.severity))
+                .overlay(alignment: .topTrailing) {
+                    if window.severity == .critical {
+                        Text("!").font(.system(size: 8, weight: .heavy)).foregroundStyle(Palette.critical).offset(x: 6, y: -3)
+                    }
+                }
+                .frame(width: Layout.valueColumn, alignment: .trailing)
+            Text(window.resetAt.map { shortDuration(until: $0, now: now) } ?? "—")
+                .font(.system(size: 12).monospacedDigit())
+                .foregroundStyle(Palette.tertiary)
+                .lineLimit(1)
+                .frame(width: Layout.resetColumn, alignment: .trailing)
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(window.kind.title) \(window.usedPct) percent used"
+            + (window.severity == .critical ? ", critical" : "")
+            + (window.resetAt.map { ", resets in \(shortDuration(until: $0, now: now))" } ?? ""))
+    }
+}
+
+/// A 6 pt bar with a tick at 80%, where the warning colour starts. Zero draws no fill.
+struct UsageBar: View {
+    let fraction: Double
+    let color: Color
+
+    var body: some View {
+        GeometryReader { bar in
+            ZStack(alignment: .leading) {
+                Capsule().fill(Palette.track)
+                if fraction > 0 {
+                    Capsule().fill(color).frame(width: max(bar.size.width * min(fraction, 1), 6))
+                }
+                // Black on the fill, light gray on the bare track, so the mark shows either way.
+                Rectangle().fill(fraction >= 0.8 ? Color.black.opacity(0.9) : Color.white.opacity(0.45))
+                    .frame(width: 1).offset(x: bar.size.width * 0.8)
+            }
+        }
+        .frame(height: 6)
+    }
+}
+
+struct SignedOutRow: View {
+    let account: UsageAccount
+
+    var body: some View {
+        HStack(spacing: Layout.gap) {
+            ProviderMark(provider: account.provider, size: 16).frame(width: Layout.markColumn).accessibilityHidden(true)
+            AccountName(account: account, color: Palette.secondary)
+            Text(account.problem ?? "No reading").font(.system(size: 12)).foregroundStyle(Palette.secondary)
+                .lineLimit(2).truncationMode(.tail).help(account.problem ?? "")
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .accessibilityElement(children: .combine)
+        .frame(height: Layout.row)
+    }
+}

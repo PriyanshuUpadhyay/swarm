@@ -225,12 +225,22 @@ function Banner({ app }: { app: App }) {
   );
 }
 
-function Row({ title, detail, children }: { title: string; detail?: string; children: ReactNode }) {
+function Row({ title, detail, htmlFor, live, children }: { title: string; detail?: string; htmlFor?: string; live?: boolean; children: ReactNode }) {
   return (
     <div className="flex items-center gap-4">
       <div className="min-w-0 flex-1">
-        <div className="text-sm">{title}</div>
-        {detail && <div className="text-xs text-muted-foreground">{detail}</div>}
+        {htmlFor ? (
+          <label htmlFor={htmlFor} className="text-sm">
+            {title}
+          </label>
+        ) : (
+          <div className="text-sm">{title}</div>
+        )}
+        {detail && (
+          <div className="text-xs break-words text-muted-foreground" role={live ? "status" : undefined}>
+            {detail}
+          </div>
+        )}
       </div>
       {children}
     </div>
@@ -249,8 +259,9 @@ function Segmented<T extends string>({ label: name, value, options, onChange, te
   );
 }
 
-function Toggle({ label: name, checked, onChange, testid }: { label: string; checked: boolean; onChange: (on: boolean) => void; testid: string }) {
-  return <input type="checkbox" role="switch" className="toggle" aria-label={name} data-testid={testid} checked={checked} onChange={(e) => onChange(e.target.checked)} />;
+/** `busy` ignores input but keeps focus, which `disabled` would drop to the page body. */
+function Toggle({ label: name, checked, onChange, testid, id, disabled, busy }: { label: string; checked: boolean; onChange: (on: boolean) => void; testid: string; id?: string; disabled?: boolean; busy?: boolean }) {
+  return <input type="checkbox" role="switch" className="toggle" id={id} disabled={disabled} aria-label={name} aria-busy={busy || undefined} aria-disabled={busy || undefined} data-testid={testid} checked={checked} onChange={(e) => !busy && onChange(e.target.checked)} />;
 }
 
 /** The owner's prefs from the last tree; a write shows once the tree after it arrives. */
@@ -534,6 +545,7 @@ function AccountsPage({ app }: { app: App }) {
   const busy = useSettings(app, "busy");
   return (
     <div className="grid gap-6">
+      <HudRow app={app} />
       {USAGE_PROVIDERS.map((p) => (
         <ProviderAccounts key={p} app={app} provider={p} />
       ))}
@@ -543,6 +555,26 @@ function AccountsPage({ app }: { app: App }) {
         </Button>
       </div>
     </div>
+  );
+}
+
+function HudRow({ app }: { app: App }) {
+  const hud = useSettings(app, "hud");
+  const pending = useSettings(app, "hudPending");
+  const data = hud.state === "ready" ? hud.data : null;
+  const title = "Usage HUD in the notch";
+  const detail = pending
+    ? "Working…"
+    : hud.state === "error"
+      ? `Usage HUD unavailable: ${hud.error}. Reopen Settings › Accounts to try again.`
+      : data && data.app === null && !data.installed
+        ? "SwarmHUD.app is not installed with this swarm."
+        : "Shows usage at the top of the screen and starts at login.";
+  return (
+    <Row title={title} detail={detail} htmlFor="hud-switch" live>
+      {/* Fire-and-forget is safe: setHud catches its own errors and posts a notice. */}
+      <Toggle id="hud-switch" label={title} testid="hud-switch" checked={data?.installed ?? false} disabled={!data || (!data.installed && data.app === null)} busy={pending} onChange={(on) => void app.settings.setHud(on)} />
+    </Row>
   );
 }
 

@@ -1333,6 +1333,21 @@ fn notify_records_the_chair_identity_and_refuses_a_worker() {
     std::fs::remove_dir_all(home).unwrap();
 }
 
+#[test]
+fn hud_install_and_uninstall_refuse_a_worker() {
+    let home = scratch("hud-worker");
+    for verb in ["install", "uninstall"] {
+        let refused = swarm(&home, &[("SWARM_AGENT_ID", "coder")], &["hud", verb], "");
+        assert!(!refused.status.success());
+        assert_eq!(
+            String::from_utf8_lossy(&refused.stderr),
+            "swarm: only the owner turns the usage HUD on or off\n"
+        );
+    }
+    assert!(!home.join("Library/LaunchAgents").exists());
+    std::fs::remove_dir_all(home).unwrap();
+}
+
 /// Waits up to 1 s for the stand-in `open` to record its arguments.
 fn opened(home: &Path) -> Option<String> {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);

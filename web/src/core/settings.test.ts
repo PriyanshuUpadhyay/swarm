@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ApiError } from "./api";
 import type { App } from "./app";
-import { meterGroups, Settings, untilText, waitText, type Meter } from "./settings";
+import { hudCard, meterGroups, Settings, untilText, waitText, type Meter } from "./settings";
 
 const ROLES = { revision: "rev-1", min_usage_left_pct: 5, profiles: [{ name: "chat", runners: [] }] };
 
@@ -132,6 +132,71 @@ describe("owner writes", () => {
     expect(calls.some((c) => c.startsWith("POST"))).toBe(false);
     await settings.answer(true);
     expect(calls).toContain('POST /api/accounts/reset {"revision":"acc-1"}');
+  });
+
+  it("shows the HUD card only when the tree is loaded, the app exists, is not installed, and was not asked", () => {
+    const ready = (app: string | null, installed: boolean) => ({ state: "ready" as const, data: { installed, running: false, app } });
+    expect(hudCard(ready("/a/SwarmHUD.app", false), true, undefined)).toBe("show");
+    expect(hudCard(ready("/a/SwarmHUD.app", false), false, undefined)).toBe("none");
+    expect(hudCard(ready(null, false), true, undefined)).toBe("none");
+    expect(hudCard(ready("/a/SwarmHUD.app", true), true, undefined)).toBe("none");
+    expect(hudCard(ready("/a/SwarmHUD.app", false), true, true)).toBe("none");
+    expect(hudCard({ state: "error", error: "launchctl failed" }, true, undefined)).toBe("none");
+  });
+
+  it("holds the HUD card space while the HUD state is unknown, only for an owner who was never asked", () => {
+    expect(hudCard({ state: "idle" }, true, undefined)).toBe("hold");
+    expect(hudCard({ state: "loading" }, true, undefined)).toBe("hold");
+    expect(hudCard({ state: "idle" }, true, true)).toBe("none");
+    expect(hudCard({ state: "idle" }, false, undefined)).toBe("none");
+  });
+
+  it("setHud posts the switch, is pending meanwhile, and stores the reply", async () => {
+    const hud = { installed: true, running: true, app: "/a/SwarmHUD.app" };
+    let release: () => void = () => {};
+    const { settings, calls } = fakeApp(() => new Promise((r) => (release = () => r(hud))));
+    const p = settings.setHud(true);
+    expect(settings.state.hudPending).toBe(true);
+    release();
+    await p;
+    expect(calls).toEqual(['POST /api/hud {"on":true}']);
+    expect(settings.state).toMatchObject({ hudPending: false, hud: { state: "ready", data: hud } });
+  });
+
+  it("a late loadHud reply does not overwrite a newer setHud reply", async () => {
+    const hud = { installed: true, running: true, app: "/a/SwarmHUD.app" };
+    const { settings } = fakeApp(async () => hud);
+    let release: (v: unknown) => void = () => {};
+    (settings as unknown as { app: { api: { get: unknown } } }).app.api.get = () => new Promise((r) => (release = r));
+    const read = settings.loadHud();
+    await settings.setHud(true);
+    release({ installed: false, running: false, app: "/a/SwarmHUD.app" });
+    await read;
+    expect(settings.state.hud).toEqual({ state: "ready", data: hud });
+  });
+
+  it("a loadHud that starts while setHud is pending does not overwrite its reply", async () => {
+    const hud = { installed: true, running: true, app: "/a/SwarmHUD.app" };
+    let answer: (v: unknown) => void = () => {};
+    const { settings } = fakeApp(() => new Promise((r) => (answer = r)));
+    let release: (v: unknown) => void = () => {};
+    (settings as unknown as { app: { api: { get: unknown } } }).app.api.get = () => new Promise((r) => (release = r));
+    const write = settings.setHud(true);
+    const read = settings.loadHud();
+    answer(hud);
+    await write;
+    release({ installed: false, running: false, app: "/a/SwarmHUD.app" });
+    await read;
+    expect(settings.state.hud).toEqual({ state: "ready", data: hud });
+  });
+
+  it("a failed setHud reads the real state again and clears pending", async () => {
+    const { settings, calls } = fakeApp(async () => {
+      throw new ApiError(500, "launchctl failed");
+    });
+    await settings.setHud(true);
+    expect(calls).toEqual(['POST /api/hud {"on":true}', "notice Usage HUD failed: launchctl failed. Try again in Settings › Accounts.", "GET /api/hud"]);
+    expect(settings.state.hudPending).toBe(false);
   });
 
   it("notice switches and mutes are owner choices", async () => {

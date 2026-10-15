@@ -31,6 +31,8 @@ export type Meter = {
   as_of_seconds: number | null;
 };
 export type Usage = { meters: Meter[] };
+/** `swarm.hud.v1` from `/api/hud`. `app` is null when this swarm has no HUD app. */
+export type Hud = { installed: boolean; running: boolean; app: string | null };
 export type Runner = { provider: string; model: string; effort: string; sandbox?: string; approval?: string; permission?: string };
 export type Profile = { name: string; runners: Runner[] };
 export type Roles = { revision: string; min_usage_left_pct: number; profiles: Profile[] };
@@ -56,6 +58,9 @@ export type SettingsState = {
   open: boolean;
   page: Page;
   usage: Load<Usage>;
+  hud: Load<Hud>;
+  /** A HUD install or removal in flight. */
+  hudPending: boolean;
   /** When each provider may refresh again, in ms since 1970, from the server's `next_in_seconds`. */
   nextRefresh: Record<string, number>;
   refreshing: string | null;
@@ -92,6 +97,16 @@ export const waitText = (ms: number) => {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 };
 
+/**
+ * The first-run card shows once the tree is loaded: the HUD app exists, is not installed, and the owner never answered.
+ * While the HUD state is still unknown its space is held, so the sections below do not jump when it appears.
+ */
+export function hudCard(hud: Load<Hud>, treeLoaded: boolean, asked: boolean | undefined): "show" | "hold" | "none" {
+  if (!treeLoaded || asked === true) return "none";
+  if (hud.state === "idle" || hud.state === "loading") return "hold";
+  return hud.state === "ready" && hud.data.app !== null && !hud.data.installed ? "show" : "none";
+}
+
 /** The meters to show, one group per account. AGY and accounts with no usage source are left out. */
 export function meterGroups(usage: Usage | null): { key: string; provider: string; label: string; meters: Meter[] }[] {
   const groups = new Map<string, { key: string; provider: string; label: string; meters: Meter[] }>();
@@ -110,6 +125,8 @@ export class Settings {
     open: false,
     page: "appearance",
     usage: { state: "idle" },
+    hud: { state: "idle" },
+    hudPending: false,
     nextRefresh: {},
     refreshing: null,
     roles: { state: "idle" },
@@ -121,6 +138,8 @@ export class Settings {
     confirm: null,
   };
   private listeners = new Set<() => void>();
+  /** Counts HUD writes, so a read that began before a write cannot overwrite its reply. */
+  private hudWrites = 0;
 
   constructor(private readonly app: App) {}
 
@@ -144,6 +163,8 @@ export class Settings {
     if (page === "accounts") {
       for (const p of USAGE_PROVIDERS) void this.loadAccounts(p);
       void this.loadUsage();
+      // loadHud keeps its own error in state.hud, so nothing waits for it.
+      void this.loadHud();
     }
   }
 
@@ -183,9 +204,38 @@ export class Settings {
     }
   }
 
+  // ---- usage HUD ----
+
+  async loadHud() {
+    const writes = this.hudWrites;
+    try {
+      const data = await this.api.get<Hud>("/api/hud");
+      if (writes === this.hudWrites) this.set({ hud: { state: "ready", data } });
+    } catch (err) {
+      if (writes === this.hudWrites) this.set({ hud: { state: "error", error: message(err) } });
+    }
+  }
+
+  /** Installs or removes the login item; the switch shows what the server reports. */
+  async setHud(on: boolean) {
+    this.hudWrites++;
+    this.set({ hudPending: true });
+    try {
+      this.set({ hud: { state: "ready", data: await this.api.post<Hud>("/api/hud", { on }) } });
+    } catch (err) {
+      // The Home card asks once, so the notice names where to try again.
+      this.app.notice(`Usage HUD failed: ${message(err)}. Try again in Settings › Accounts.`, true);
+      await this.loadHud();
+    } finally {
+      // A read that started during the write may carry the state before it, so drop its reply too.
+      this.hudWrites++;
+      this.set({ hudPending: false });
+    }
+  }
+
   // ---- preferences ----
 
-  /** One `prefs` key: `theme`, `sendKey` or `notices.post|sound|done|badge`. */
+  /** One `prefs` key: `theme`, `sendKey`, `usageHUDAsked` or `notices.post|sound|done|badge`. */
   setPref(key: string, value: string | boolean): Promise<boolean> {
     return this.app.choose({ op: "pref", key, value });
   }

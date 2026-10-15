@@ -135,8 +135,11 @@ pub fn read(deadline: Instant) -> Result<Usage, String> {
     let now = now_seconds();
     let codex = crate::profiles::native::identities(Provider::Codex, deadline)?;
     let claude = crate::profiles::native::identities(Provider::Claude, deadline)?;
-    let mut meters = for_accounts(&codex, now)?;
-    meters.extend(for_accounts(&claude, now)?);
+    let mut meters = fold_twins(&emails(&codex.accounts), for_accounts(&codex, now)?);
+    meters.extend(fold_twins(
+        &emails(&claude.accounts),
+        for_accounts(&claude, now)?,
+    ));
     meters.push(status_meter(
         "agy",
         None,
@@ -279,6 +282,56 @@ fn iso_time(seconds: i64) -> String {
         second % 3600 / 60,
         second % 60
     )
+}
+
+/// Each account's sign-in email, lowercased, for the accounts that have one.
+fn emails(accounts: &[Account]) -> Vec<(String, String)> {
+    accounts
+        .iter()
+        .filter_map(|account| {
+            let email = account.email.as_deref()?.trim().to_lowercase();
+            (!email.is_empty()).then(|| (account.name.clone(), email))
+        })
+        .collect()
+}
+
+/// Two accounts of one provider that sign in with one email are one account, so the meters show it
+/// once: the account with a fresh reading wins, then one with any reading, then the one not named
+/// `default`, then the first.
+fn fold_twins(emails: &[(String, String)], meters: Vec<UsageMeter>) -> Vec<UsageMeter> {
+    let reads = |name: &str, fresh: bool| {
+        meters.iter().any(|meter| {
+            meter.account.as_deref() == Some(name)
+                && meter.used_pct.is_some()
+                && (!fresh || meter.state == "fresh")
+        })
+    };
+    let mut dropped = Vec::new();
+    for (name, email) in emails {
+        let twins: Vec<&str> = emails
+            .iter()
+            .filter(|(_, other)| other == email)
+            .map(|(name, _)| name.as_str())
+            .collect();
+        let keep = twins
+            .iter()
+            .find(|twin| reads(twin, true))
+            .or_else(|| twins.iter().find(|twin| reads(twin, false)))
+            .or_else(|| twins.iter().find(|twin| **twin != "default"))
+            .unwrap_or(&twins[0]);
+        if name != keep {
+            dropped.push(name.clone());
+        }
+    }
+    meters
+        .into_iter()
+        .filter(|meter| {
+            meter
+                .account
+                .as_ref()
+                .is_none_or(|name| !dropped.contains(name))
+        })
+        .collect()
 }
 
 pub(crate) fn for_accounts(list: &AccountList, now: i64) -> Result<Vec<UsageMeter>, String> {
@@ -450,7 +503,12 @@ fn refresh(provider: Provider, deadline: Instant) -> Result<Usage, String> {
     // The path check comes before the account read, which creates the swarm home.
     cache_path(provider.id())?;
     let accounts = crate::profiles::native::identities(provider, deadline)?.accounts;
-    refresh_accounts(provider, accounts, deadline)
+    // Folded for display only; an automatic pick (refresh_if_old) needs every account's meters.
+    let twins = emails(&accounts);
+    let usage = refresh_accounts(provider, accounts, deadline)?;
+    Ok(Usage {
+        meters: fold_twins(&twins, usage.meters),
+    })
 }
 
 fn refresh_accounts(
@@ -1004,6 +1062,48 @@ mod tests {
             fable_spent: false,
             renewable: false,
         }
+    }
+
+    #[test]
+    fn accounts_with_one_email_show_once_and_the_one_with_a_reading_wins() {
+        let meter = |account: &str, used: Option<i64>| UsageMeter {
+            account: Some(account.into()),
+            used_pct: used,
+            ..status_meter("claude", None, "missing", ReasonCode::NoCachedUsage, None)
+        };
+        let emails = |pairs: &[(&str, &str)]| -> Vec<(String, String)> {
+            pairs
+                .iter()
+                .map(|(n, e)| (n.to_string(), e.to_string()))
+                .collect()
+        };
+        let names = |meters: Vec<UsageMeter>| -> Vec<String> {
+            meters
+                .into_iter()
+                .filter_map(|meter| meter.account)
+                .collect()
+        };
+        let same = emails(&[
+            ("default", "login-one"),
+            ("me", "login-one"),
+            ("team", "login-team"),
+        ]);
+        let read = vec![
+            meter("default", Some(3)),
+            meter("me", None),
+            meter("team", Some(9)),
+        ];
+        assert_eq!(names(fold_twins(&same, read)), ["default", "team"]);
+        let mut stale = meter("default", Some(40));
+        stale.state = "stale".into();
+        let mut fresh = meter("me", Some(5));
+        fresh.state = "fresh".into();
+        assert_eq!(names(fold_twins(&same, vec![stale, fresh])), ["me"]);
+        let unread = vec![meter("default", None), meter("me", None)];
+        assert_eq!(names(fold_twins(&same, unread)), ["me"]);
+        let distinct = emails(&[("default", "login-a"), ("me", "login-b")]);
+        let both = vec![meter("default", None), meter("me", None)];
+        assert_eq!(names(fold_twins(&distinct, both)), ["default", "me"]);
     }
 
     #[test]

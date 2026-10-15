@@ -133,8 +133,8 @@ It needs no other tool.
   the launch falls through to the next runner.
 - Swarm reads Claude usage with the account's own Keychain token (ADR 0072). The token stays in
   memory and is written to no file.
-- Compact usage meters in the web UI show each account's limits. The notch usage HUD panel left with
-  the SwiftUI app (ADR 0076).
+- Compact usage meters in the web UI show each account's limits. `swarm hud install` starts the
+  notch usage HUD at login, a small helper app that shows the same meters (ADR 0087).
 
 AGY has no account source yet.
 
@@ -297,6 +297,7 @@ id. A chair gets both from its pane, which `swarm session new` registers. A chil
 | `usage --format openusage` | any | Print the cached meters in the OpenUsage `openusage.limits.v1` shape, with no provider call. The rules are in [docs/usage-format.md](docs/usage-format.md). |
 | `usage --refresh --provider <claude\|codex> --json` | any | Read that provider's usage again from its source, save it, and list its meters as JSON. A failed read keeps an older reading with state `stale` and a `reason`. With no older reading, or after HTTP 401 or 403, the meter has state `failed`. A Claude token that has expired gets no request and one `failed` meter (`token_expired`) with no older reading kept. A failed read never gives zero usage. |
 | `accounts login --provider <claude\|codex> --name <name> --revision <revision> --json [--cwd <dir>]` | any | Open the provider's own login for the account `name` in a pane. A child caller is refused. |
+| `hud <install\|uninstall\|status> [--json]` | owner | Start the notch usage HUD (`libexec/SwarmHUD.app`) at login with a LaunchAgent, remove it, or report it as `swarm.hud.v1` (`installed`, `running`, `app`). The web UI asks once and has a switch in Settings (ADR 0087). |
 | `run <claude\|codex> [--account <auto\|name>] [-- <args>...]` | any | Start the provider CLI in this terminal on the picked account, `auto` by default. It needs no session. |
 | `drain` | any | Run queued summarize jobs, print `done`, `retry`, or `parked` per job. |
 | `agent add <id> <role>` | session | Register an agent. The `orchestrator` role also records the caller pane and session adapter. |

@@ -6,6 +6,7 @@ pub mod diff;
 pub mod guard;
 pub mod herdr;
 pub mod host;
+pub mod hud;
 pub mod managed;
 pub mod paths;
 pub mod profiles;
