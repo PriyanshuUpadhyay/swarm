@@ -26,6 +26,8 @@ final class UsageModel {
     var isOpen = false
     /// A fixed clock for `--snapshot`; nil uses the real one.
     var now: Date?
+    /// A fixed mascot turn for `--snapshot`; nil takes turns every 10 minutes.
+    var fixedMascot: Int?
     var notch = CGSize(width: 200, height: Layout.minNotch)
     var phase: DayPhase = .at(Date())
     /// Set by the app delegate: opens the card for the keyboard or a VoiceOver action.

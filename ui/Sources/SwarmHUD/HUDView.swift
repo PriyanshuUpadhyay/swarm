@@ -53,14 +53,16 @@ struct Theme {
 }
 
 enum Layout {
-    /// Each closed wing beside the camera: the closed ear, then room for the 18 pt mascot or the
-    /// 15 pt ring with about 5 pt on each side.
-    static let wing: CGFloat = 34
+    /// Each closed wing beside the camera: the closed ear, then 40 pt for the 24 pt tall mascot or
+    /// the 15 pt ring. Wide guests such as the crab shrink to the 40 pt.
+    static let wing: CGFloat = 46
+    static let closedMascot: CGFloat = 24
+    static let openMascot: CGFloat = 72
     /// The closed shape's concave top corners.
     static let closedEar: CGFloat = 6
     static let openWidth: CGFloat = 1088
     /// 11 accounts in two provider groups fit; the panel adds room for the shadow.
-    static let maxOpenHeight: CGFloat = 600
+    static let maxOpenHeight: CGFloat = 660
     /// The open shape's concave top corners, which the content must clear.
     static let ear: CGFloat = 14
     static let inset: CGFloat = ear + 12
@@ -69,7 +71,8 @@ enum Layout {
     static let headings: CGFloat = 24
     /// Two lines: use and reset, then the pace.
     static let row: CGFloat = 42
-    static let legend: CGFloat = 26
+    /// The legend line, with the open mascot and its credit on the right.
+    static let legend: CGFloat = Layout.openMascot + 12
     static let bottom: CGFloat = 10
     static let markColumn: CGFloat = 20
     static let nameColumn: CGFloat = 190
@@ -146,7 +149,7 @@ struct HUDView: View {
             ZStack(alignment: .top) {
                 Color.black
                 if open {
-                    OpenContent(model: model, theme: theme, now: now)
+                    OpenContent(model: model, theme: theme, live: live, now: now)
                         .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.97, anchor: .top)))
                 } else {
                     ClosedWings(model: model, theme: theme, live: live, now: now)
@@ -238,6 +241,18 @@ func agentsSpoken(_ agents: WorkingSnapshot) -> String {
     return parts.isEmpty ? "No agent working" : parts.joined(separator: ", ")
 }
 
+extension UsageModel {
+    func mascotTurn(now: Date) -> Int { fixedMascot ?? SwarmHUDCore.mascotTurn(at: now, count: MascotCast.count) }
+
+    /// The mascot that shows now, doing what the agents do; the closed wing and the open card both show it.
+    func mascot(now: Date, height: CGFloat, live: Bool) -> Mascot {
+        let best = bestAccount(accounts, history: history, now: now)
+        return Mascot(family: mascotFamily(agents, lastWorking: lastWorking, best: best),
+                      state: mascotState(agents, lastActive: lastActive, now: now),
+                      turn: mascotTurn(now: now), height: height, live: live)
+    }
+}
+
 /// Closed: a pixel mascot that shows what the agents do on the left, the best account's fullest
 /// limit as a ring on the right, nothing over the camera and no text.
 struct ClosedWings: View {
@@ -248,9 +263,8 @@ struct ClosedWings: View {
 
     var body: some View {
         let best = bestAccount(model.accounts, history: model.history, now: now)
-        let state = mascotState(model.agents, lastActive: model.lastActive, now: now)
         HStack(spacing: 0) {
-            Mascot(family: mascotFamily(model.agents, lastWorking: model.lastWorking, best: best), state: state, live: live)
+            model.mascot(now: now, height: Layout.closedMascot, live: live)
                 .frame(width: Layout.wing - Layout.closedEar)
                 .padding(.leading, Layout.closedEar)
             Spacer(minLength: 0)
@@ -300,6 +314,7 @@ struct UsageRingView: View {
 struct OpenContent: View {
     let model: UsageModel
     let theme: Theme
+    let live: Bool
     let now: Date
 
     var body: some View {
@@ -342,14 +357,31 @@ struct OpenContent: View {
                     .overlay(alignment: .top) { Palette.rule.frame(height: 1) }
                 }
             }
-            Text("Each limit shows used % · resets in; the line below says when it fills at this pace. A dash means no reading.")
-                .font(.system(size: 11))
-                .foregroundStyle(Palette.tertiary)
-                .frame(maxWidth: .infinity, minHeight: Layout.legend, alignment: .leading)
-                .padding(.horizontal, Layout.rowPadding)
+            HStack(spacing: 12) {
+                Text("Each limit shows used % · resets in; the line below says when it fills at this pace. A dash means no reading.")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                credit
+                model.mascot(now: now, height: Layout.openMascot, live: live)
+                    .frame(width: 2 * Layout.openMascot, height: Layout.openMascot)
+            }
+            .font(.system(size: 11))
+            .foregroundStyle(Palette.tertiary)
+            .frame(height: Layout.legend)
+            .padding(.horizontal, Layout.rowPadding)
             Spacer(minLength: 0)
         }
         .padding(.horizontal, Layout.inset)
+    }
+
+    /// Who the mascot is and who drew it; the credit is also what the guests' licences ask for.
+    private var credit: some View {
+        let guest = MascotCast.guest(model.mascotTurn(now: now))
+        return VStack(alignment: .trailing, spacing: 2) {
+            Text(guest?.name ?? "Swarm").foregroundStyle(Palette.secondary)
+            Text(guest?.credit ?? "swarm's own art")
+        }
+        .multilineTextAlignment(.trailing)
+        .frame(maxWidth: 260, alignment: .trailing)
     }
 
     /// The best account and its pace left of the camera, the phase and read age right of it.

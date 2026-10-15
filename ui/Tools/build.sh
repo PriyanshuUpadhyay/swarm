@@ -5,7 +5,7 @@
 #   swarm-<version>/libexec/SwarmNotify.app      the notice helper (ADR 0077)
 #   swarm-<version>/libexec/SwarmHUD.app         the notch usage HUD (ADR 0087)
 #   swarm-<version>/libexec/skills               the plugin swarm (kit/) and the swarm skills
-#   swarm-<version>/libexec/NOTICE               the web UI's third-party notices
+#   swarm-<version>/libexec/NOTICE               third-party notices: the web UI's, then the HUD mascots'
 set -euo pipefail
 
 root="${0:A:h:h}"
@@ -33,7 +33,7 @@ rm -rf "$stage"
 mkdir -p "$stage/bin" "$stage/libexec"
 cp "$repo/target/release/swarm" "$stage/bin/swarm"
 cp "$repo/packages/transcript/zig-out/bin/transcript" "$stage/libexec/transcript"
-cp "$repo/web/NOTICE" "$stage/libexec/NOTICE"
+cat "$repo/web/NOTICE" "$root/MASCOT-NOTICE" > "$stage/libexec/NOTICE"
 skills="$stage/libexec/skills"
 mkdir -p "$skills"
 # The whole kit, because it is the plugin swarm: its skills read blocks/ two folders up, and

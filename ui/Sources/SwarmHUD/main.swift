@@ -5,7 +5,8 @@ import SwiftUI
 // `SwarmHUD --snapshot <dir> --fixture <usage.json> [--closed <usage.json>] [--history <history.json>]
 // [--working <working.json>] [--now <seconds>]` renders the HUD to PNG files with no window, for
 // design review and tests: open and closed for every phase, the closed wings for each mascot family
-// and state, the ring's edge cases, and a sheet of every mascot frame. `--closed` is the reading
+// and state, the ring's edge cases, a sheet of every own mascot frame, and a sheet of every guest
+// mascot in each state at the closed and the open size. `--closed` is the reading
 // for the closed renders (default: `--fixture`). Without `--snapshot` the HUD runs.
 let arguments = CommandLine.arguments
 if let at = arguments.firstIndex(of: "--snapshot"), arguments.count > at + 1 {
@@ -49,6 +50,8 @@ func snapshot(to directory: URL, arguments: [String]) {
     let fileAgents = readFile("--working").map(WorkingSnapshot.read) ?? WorkingSnapshot()
     model.readAt = now.addingTimeInterval(-120)
     model.now = now
+    // Swarm's own art, so a render does not depend on whose turn the fixed clock picks.
+    model.fixedMascot = 0
 
     func write(_ view: some View, _ name: String) {
         let renderer = ImageRenderer(content: view)
@@ -113,14 +116,15 @@ func snapshot(to directory: URL, arguments: [String]) {
     }
     model.readError = nil
 
-    // Every frame at real size, a row per family, for judging the art.
+    // Every own frame at the closed size, a row per family, for judging the art.
     let ticks: [MascotState: [Int]] = [.working: [0, 1], .waiting: [0, 1], .idle: [0, 13], .sleeping: [0, 1, 2]]
     write(VStack(spacing: 4) {
         ForEach(["claude", "codex"], id: \.self) { family in
             HStack(spacing: 4) {
                 ForEach(MascotState.allCases, id: \.self) { state in
                     ForEach(ticks[state]!, id: \.self) { tick in
-                        MascotCanvas(pose: mascotPose(family: family, state: state, tick: tick))
+                        MascotCanvas(family: family, state: state, turn: 0, height: Layout.closedMascot,
+                                     tick: tick, seconds: Double(tick))
                             .frame(width: Layout.wing - Layout.closedEar, height: Layout.minNotch)
                             .background(Color.black)
                     }
@@ -130,4 +134,26 @@ func snapshot(to directory: URL, arguments: [String]) {
     }
     .padding(4)
     .background(Color(hex: 0x6F8FB8)), "mascot-frames")
+
+    // Every turn in each state, still, at the closed size and then the open size.
+    write(VStack(alignment: .leading, spacing: 4) {
+        ForEach(0..<MascotCast.count, id: \.self) { turn in
+            HStack(spacing: 4) {
+                Text(MascotCast.guest(turn)?.name ?? "Swarm").font(.system(size: 11)).foregroundStyle(.white)
+                    .frame(width: 90, alignment: .leading)
+                ForEach(MascotState.allCases, id: \.self) { state in
+                    MascotCanvas(family: "claude", state: state, turn: turn, height: Layout.closedMascot, tick: nil, seconds: nil)
+                        .frame(width: Layout.wing - Layout.closedEar, height: Layout.minNotch)
+                        .background(Color.black)
+                }
+                ForEach(MascotState.allCases, id: \.self) { state in
+                    MascotCanvas(family: "claude", state: state, turn: turn, height: Layout.openMascot, tick: nil, seconds: nil)
+                        .frame(width: 2 * Layout.openMascot, height: Layout.openMascot + 12)
+                        .background(Color.black)
+                }
+            }
+        }
+    }
+    .padding(4)
+    .background(Color(hex: 0x6F8FB8)), "mascot-cast")
 }
