@@ -3892,6 +3892,10 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             [flag] if flag == "--json" => true,
             _ => return Err(USAGE.into()),
         };
+        // ADR 0087: the HUD starts at login only after the owner opts in, never from a worker.
+        if verb != "status" && swarm::host::is_worker(|name| env::var(name).ok()) {
+            return Err("swarm: only the owner turns the usage HUD on or off".into());
+        }
         let home = std::path::PathBuf::from(env::var("HOME")?);
         let status = match verb.as_str() {
             "install" => swarm::hud::install(&home)?,
