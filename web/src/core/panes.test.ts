@@ -71,6 +71,12 @@ describe("strip layout", () => {
     expect(movePane(1, 4, "right")).toBe(3);
   });
 
+  it("gives the columns the right side and the chat the rest, at least 400, until a drag", () => {
+    expect(chatWidth(1180, null, 440)).toBe(740);
+    expect(chatWidth(2000, null, 667)).toBe(1333);
+    expect(chatWidth(1180, null, 880)).toBe(400);
+  });
+
   it("keeps the chat at 90% until a drag, which leaves room for one column", () => {
     expect(chatWidth(1000)).toBe(900);
     expect(chatWidth(1000, 800)).toBe(560);

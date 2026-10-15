@@ -279,8 +279,13 @@ test("a chat with two children shows their panes; keys move focus and zoom; a pa
     await expect(tester.locator('[data-testid="pane-transcript"][data-state="ready"]').getByTestId("row").first()).toBeVisible();
     await expect(tab.locator('[data-testid="transcript"][data-state="ready"]').getByTestId("row").first()).toBeVisible();
 
+    // The chat page leaves the right side to the column, so it shows with no scroll.
+    await expect(reviewer).toBeInViewport({ ratio: 0.99 });
+    const main = (await tab.getByTestId("strip").boundingBox())!;
+    const column = (await tab.locator(".strip-col").boundingBox())!;
+    expect(column.x + column.width + 7).toBeCloseTo(main.x + main.width, 0);
+
     // ⌥⌘→ focuses the first pane, scrolls the strip to it, and puts the keyboard in its composer.
-    await expect(reviewer).not.toBeInViewport({ ratio: 0.9 });
     await tab.keyboard.press("Alt+Meta+ArrowRight");
     await expect(reviewer).toHaveAttribute("data-focused", "true");
     await expect(reviewer).toBeInViewport({ ratio: 0.99 });
@@ -330,8 +335,8 @@ test("a chat with two children shows their panes; keys move focus and zoom; a pa
       await tab.mouse.up();
     };
     const chatWidth = await width(".strip-chat");
-    await drag("Chat page width", -500, 0);
-    expect(await width(".strip-chat")).toBeCloseTo(chatWidth - 500, 0);
+    await drag("Chat page width", -300, 0);
+    expect(await width(".strip-chat")).toBeCloseTo(chatWidth - 300, 0);
     const columnWidth = await width(".strip-col");
     await drag("Agent column width", 100, 0);
     expect(await width(".strip-col")).toBeCloseTo(columnWidth + 100, 0);
@@ -339,7 +344,7 @@ test("a chat with two children shows their panes; keys move focus and zoom; a pa
     await drag("Split of reviewer", 0, 80);
     expect((await reviewer.boundingBox())!.height).toBeGreaterThan(topHeight + 70);
     const saved = await tab.evaluate(() => JSON.parse(localStorage.getItem("swarm.panes.widths")!));
-    expect(saved.chat).toBeCloseTo(chatWidth + 7 - 500, 0);
+    expect(saved.chat).toBeCloseTo(chatWidth + 7 - 300, 0);
     expect(saved.column).toBeCloseTo(columnWidth + 7 + 100, 0);
     expect(saved.splits[process.env[`SWARM_E2E_PANES_${project}`]!].reviewer).toBeGreaterThan(0.55);
     await grip("Split of reviewer").dblclick();

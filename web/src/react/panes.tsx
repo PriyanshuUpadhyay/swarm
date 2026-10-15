@@ -50,21 +50,36 @@ export function PaneStrip({ app }: { app: App }) {
 
   const save = () => store.setItem(WIDTHS_KEY, JSON.stringify(widths.current));
   const main = () => scroller.current?.clientWidth ?? 0;
-  /** Sets the chat page and column widths from the main area and the saved drags. */
+  /** The chat page's width with the columns there are now, for a drag that starts from it. */
+  const chatNow = () => chatWidth(main(), widths.current.chat, cols.length * columnWidth(main(), widths.current.column));
+  /** Sets the chat page and column widths from the main area, the column count and the saved drags. */
   const layout = () => {
     const el = scroller.current;
     if (!el) return;
     if (!hasPanes) return el.style.removeProperty("--chat-w");
-    el.style.setProperty("--chat-w", `${chatWidth(main(), widths.current.chat) - GRIP}px`);
+    el.style.setProperty("--chat-w", `${chatNow() - GRIP}px`);
     el.style.setProperty("--col-w", `${columnWidth(main(), widths.current.column) - GRIP}px`);
   };
 
+  // A column that comes or goes moves the chat page's edge. The new widths apply at once and the
+  // chat's text and the columns slide from where they were, on transform only (FLIP).
   useLayoutEffect(() => {
+    const el = scroller.current;
+    if (!el) return;
+    const chat = el.querySelector<HTMLElement>(".strip-chat")!;
+    const before = chat.offsetWidth;
     layout();
+    const shift = before - chat.offsetWidth;
+    if (shift && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      const slide = (target: Element | null, from: number) =>
+        target?.animate([{ transform: `translateX(${from}px)` }, { transform: "none" }], { duration: 240, easing: "cubic-bezier(0.23, 1, 0.32, 1)" });
+      for (const child of chat.children) slide(child, shift / 2);
+      slide(aside.current, shift);
+    }
     const observer = new ResizeObserver(layout);
-    observer.observe(scroller.current!);
+    observer.observe(el);
     return () => observer.disconnect();
-  }, [hasPanes]);
+  }, [cols.length]);
 
   // Another chat starts at its chat page.
   useLayoutEffect(() => {
@@ -169,7 +184,7 @@ export function PaneStrip({ app }: { app: App }) {
             <Grip
               axis="x"
               label="Chat page width"
-              onStart={() => (dragStart.current = chatWidth(main(), widths.current.chat))}
+              onStart={() => (dragStart.current = chatNow())}
               onDrag={(dx) => {
                 widths.current = { ...widths.current, chat: chatWidth(main(), dragStart.current + dx) };
                 layout();
