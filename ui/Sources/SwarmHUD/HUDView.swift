@@ -222,13 +222,16 @@ func fillDuration(_ seconds: TimeInterval, now: Date) -> String {
 }
 
 extension BestAccount {
-    /// "3h left", "lasts", "resets 2h 10m" in the wing; "full in 3h 10m", "lasts to reset" in the card.
+    /// "2%", "82% · 3h left", "resets 2h 10m" in the wing; "2% used", "82% used · full in 3h 10m" in the card.
+    /// The used percent of the fullest limit, then a time only when one fills before its reset, so
+    /// a HUD with no pace yet never claims that the account lasts.
     func paceText(short: Bool, now: Date) -> String {
+        let used = "\(fullest)%"
         switch outlook {
         case .left(let seconds):
-            return short ? leftText(seconds) : "full in \(fillDuration(seconds, now: now))"
+            return short ? "\(used) · \(leftText(seconds))" : "\(used) used · full in \(fillDuration(seconds, now: now))"
         case .lasts:
-            return short ? "lasts" : "lasts to reset"
+            return short ? used : "\(used) used"
         case .allFull(let resetAt):
             let reset = resetAt.map { shortDuration(until: $0, now: now) }
             return short ? reset.map { "resets \($0)" } ?? "full" : "all full" + (reset.map { " · resets in \($0)" } ?? "")
@@ -246,10 +249,13 @@ extension BestAccount {
     /// A failed read keeps the last numbers, so they are marked old like a stale meter.
     func isOld(readFailed: Bool) -> Bool { readFailed || account.windows.contains { !$0.isFresh } }
 
+    private var fullest: Int { account.windows.map(\.usedPct).max() ?? 0 }
+
     func spoken(now: Date) -> String {
         switch outlook {
-        case .left(let seconds): return "Best account \(account.name), a limit fills in \(fillDuration(seconds, now: now))"
-        case .lasts: return "Best account \(account.name), lasts to reset"
+        case .left(let seconds):
+            return "Best account \(account.name), \(fullest) percent used, a limit fills in \(fillDuration(seconds, now: now))"
+        case .lasts: return "Best account \(account.name), \(fullest) percent used"
         case .allFull(let resetAt):
             return "All accounts full" + (resetAt.map { ", \(account.name) resets in \(shortDuration(until: $0, now: now))" } ?? "")
         }

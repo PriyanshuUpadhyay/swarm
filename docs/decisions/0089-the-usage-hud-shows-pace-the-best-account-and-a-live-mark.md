@@ -21,8 +21,9 @@ rows had a Fable column that Codex has no limit for.
 
 - The left wing shows the Claude or Codex mark. It turns while an agent of that provider reports
   `working` (`swarm working --json`, polled every 3 s), and pulses instead with Reduce Motion on.
-- The right wing shows the account with the most room and its pace, such as `pro2 · 3h left` or
-  `pro2 · lasts`. When every account has a full window, it shows the earliest time one is usable
+- The right wing shows the account with the most room and its pace, with the used percent of its fullest
+  limit, such as `pro2 · 2%`, and a time only when a limit fills before its reset, such as
+  `pro2 · 82% · 3h left`. When every account has a full window, it shows the earliest time one is usable
   again, such as `resets 1h 20m`. Only the right wing grows, so the left side of the menu bar keeps
   the space it had.
 - Each limit in the open card adds a pace line: `full in 2h 10m`, `lasts to reset` or `full now`.
