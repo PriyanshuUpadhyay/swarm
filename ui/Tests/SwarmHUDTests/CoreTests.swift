@@ -94,4 +94,6 @@ private let fixture = """
     #expect(shortDuration(until: Date(timeIntervalSince1970: 1e300), now: now) == "99d")
     #expect(shortDuration(until: Date(timeIntervalSince1970: -1e300), now: now) == "now")
     #expect(shortDuration(until: Date(timeIntervalSince1970: 9_000), now: now) == "2h 30m")
+    #expect(shortDuration(until: Date(timeIntervalSince1970: 59.5), now: now) == "now")
+    #expect(shortDuration(until: Date(timeIntervalSince1970: 60), now: now) == "1m")
 }
