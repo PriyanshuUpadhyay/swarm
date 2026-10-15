@@ -255,8 +255,9 @@ function Segmented<T extends string>({ label: name, value, options, onChange, te
   );
 }
 
-function Toggle({ label: name, checked, onChange, testid, id, disabled }: { label: string; checked: boolean; onChange: (on: boolean) => void; testid: string; id?: string; disabled?: boolean }) {
-  return <input type="checkbox" role="switch" className="toggle" id={id} disabled={disabled} aria-label={name} data-testid={testid} checked={checked} onChange={(e) => onChange(e.target.checked)} />;
+/** `busy` ignores input but keeps focus, which `disabled` would drop to the page body. */
+function Toggle({ label: name, checked, onChange, testid, id, disabled, busy }: { label: string; checked: boolean; onChange: (on: boolean) => void; testid: string; id?: string; disabled?: boolean; busy?: boolean }) {
+  return <input type="checkbox" role="switch" className="toggle" id={id} disabled={disabled} aria-label={name} aria-busy={busy || undefined} aria-disabled={busy || undefined} data-testid={testid} checked={checked} onChange={(e) => !busy && onChange(e.target.checked)} />;
 }
 
 /** The owner's prefs from the last tree; a write shows once the tree after it arrives. */
@@ -568,7 +569,7 @@ function HudRow({ app }: { app: App }) {
   return (
     <Row title={title} detail={detail} htmlFor="hud-switch">
       {/* Fire-and-forget is safe: setHud catches its own errors and posts a notice. */}
-      <Toggle id="hud-switch" label={title} testid="hud-switch" checked={data?.installed ?? false} disabled={pending || !data || (!data.installed && data.app === null)} onChange={(on) => void app.settings.setHud(on)} />
+      <Toggle id="hud-switch" label={title} testid="hud-switch" checked={data?.installed ?? false} disabled={!data || (!data.installed && data.app === null)} busy={pending} onChange={(on) => void app.settings.setHud(on)} />
     </Row>
   );
 }
