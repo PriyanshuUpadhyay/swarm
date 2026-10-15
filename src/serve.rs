@@ -1195,7 +1195,7 @@ async fn hud_cli(app: &App, verb: &str) -> Result<Value, ApiError> {
     .await?;
     serde_json::from_str::<Value>(&output)
         .ok()
-        .filter(|value| value["schema"] == "swarm.hud.v1")
+        .filter(|value| value["schema"] == swarm::hud::HUD_SCHEMA)
         .ok_or_else(|| error(StatusCode::BAD_GATEWAY, "swarm returned invalid HUD status"))
 }
 async fn usage_read(State(app): State<App>) -> Result<Json<Value>, ApiError> {

@@ -47,7 +47,8 @@ fn xml_escape(text: &str) -> String {
         .replace('"', "&quot;")
 }
 
-/// The LaunchAgent. `SuccessfulExit = false` restarts a crash but keeps a Quit from the HUD menu.
+/// The LaunchAgent. `SuccessfulExit = false` restarts a crash but keeps a Quit from the HUD menu;
+/// `ThrottleInterval` keeps a HUD app removed by `brew uninstall` from respawning every 10 s.
 pub fn plist(app: &Path, swarm_bin: &Path) -> String {
     let program = xml_escape(&app.join("Contents/MacOS/SwarmHUD").to_string_lossy());
     let swarm_bin = xml_escape(&swarm_bin.to_string_lossy());
@@ -74,6 +75,8 @@ pub fn plist(app: &Path, swarm_bin: &Path) -> String {
 		<key>SuccessfulExit</key>
 		<false/>
 	</dict>
+	<key>ThrottleInterval</key>
+	<integer>60</integer>
 	<key>ProcessType</key>
 	<string>Interactive</string>
 </dict>
@@ -140,6 +143,8 @@ pub fn install(home: &Path) -> Result<Status, Box<dyn std::error::Error>> {
     }
     let output = launchctl(&["bootstrap", &domain(), &path.to_string_lossy()])?;
     if !output.status.success() {
+        // A plist left behind would start the HUD at the next login while the switch reads off.
+        let _ = std::fs::remove_file(&path);
         return Err(format!(
             "swarm: launchctl bootstrap failed: {}",
             String::from_utf8_lossy(&output.stderr).trim()
@@ -162,6 +167,14 @@ pub fn uninstall(home: &Path) -> Result<Status, Box<dyn std::error::Error>> {
     match std::fs::remove_file(plist_path(home)) {
         Err(error) if error.kind() != std::io::ErrorKind::NotFound => return Err(error.into()),
         _ => {}
+    }
+    // bootout returns before the HUD has quit; wait up to 1 s so the reply shows it stopped.
+    for _ in 0..10 {
+        let now = status(home);
+        if !now.running {
+            return Ok(now);
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
     }
     Ok(status(home))
 }
@@ -203,6 +216,7 @@ mod tests {
         ));
         assert!(text.contains(&format!("<string>{LABEL}</string>")));
         assert!(text.contains("<key>SuccessfulExit</key>\n\t\t<false/>"));
+        assert!(text.contains("<key>ThrottleInterval</key>\n\t<integer>60</integer>"));
         assert!(!text.contains("/a&b"));
     }
 
