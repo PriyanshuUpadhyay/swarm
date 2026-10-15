@@ -476,6 +476,26 @@ pub fn build(snapshot: &Value, owner: &OwnerChoices) -> Tree {
 /// The snapshot's archived sessions in `workspace`, newest first. A chat with no name or title
 /// shows its provider and short id, as a live one does.
 fn archived_chats(snapshot: &Value, workspace: &str, owner: &OwnerChoices) -> Vec<ArchivedChat> {
+    let all: Vec<&Value> = ["sessions", "archived"]
+        .iter()
+        .flat_map(|k| snapshot[*k].as_array().into_iter().flatten())
+        .collect();
+    // A rename is kept under the chat's first session, as for a live chat (`key`).
+    let key = |id: &str| {
+        let mut key = id.to_owned();
+        let mut seen = BTreeSet::new();
+        while seen.insert(key.clone()) {
+            match all
+                .iter()
+                .find(|s| s["id"] == key.as_str())
+                .and_then(|s| s["continuation_of"].as_str())
+            {
+                Some(parent) if all.iter().any(|s| s["id"] == parent) => key = parent.to_owned(),
+                _ => break,
+            }
+        }
+        key
+    };
     let mut chats: Vec<_> = snapshot["archived"]
         .as_array()
         .into_iter()
@@ -483,7 +503,7 @@ fn archived_chats(snapshot: &Value, workspace: &str, owner: &OwnerChoices) -> Ve
         .filter(|s| s["workspace"] == workspace)
         .filter_map(|s| {
             let id = s["id"].as_str()?.to_owned();
-            let title = nonblank(owner.chat_names.get(&id).map(String::as_str))
+            let title = nonblank(owner.chat_names.get(&key(&id)).map(String::as_str))
                 .or_else(|| nonblank(s["title"].as_str()))
                 .unwrap_or_else(|| {
                     format!(

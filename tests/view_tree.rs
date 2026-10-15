@@ -850,3 +850,28 @@ fn archived_chats_of_the_project_folder_fold_under_its_hub_row() {
     assert_eq!(fold.title, "Archived · 1");
     assert_eq!(fold.parent_id.as_deref(), Some("/repo"));
 }
+#[test]
+fn an_archived_continuation_shows_the_name_given_to_its_first_session() {
+    let mut snap = snapshot(vec![session("hub", "/repo", 5)], json!({}));
+    snap["archived"] = json!([
+        {"id":"next","continuation_of":"first","workspace":"/repo","chair_provider":"pi","archivedAt":9},
+        {"id":"first","workspace":"/repo","chair_provider":"pi","archivedAt":8}
+    ]);
+    let mut owner = owner();
+    owner.chat_names.insert("first".into(), "Named".into());
+    let tree = tree::build(&snap, &owner);
+    let archived = &tree
+        .projects
+        .iter()
+        .flat_map(|p| &p.workspaces)
+        .find(|w| w.path == "/repo")
+        .unwrap()
+        .archived;
+    assert_eq!(
+        archived
+            .iter()
+            .map(|c| (c.id.as_str(), c.title.as_str()))
+            .collect::<Vec<_>>(),
+        [("next", "Named"), ("first", "Named")]
+    );
+}

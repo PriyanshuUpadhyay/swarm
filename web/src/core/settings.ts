@@ -102,6 +102,8 @@ export type SettingsState = {
   confirm: { text: string; action: string; run: () => Promise<unknown> } | null;
   doctor: Load<Doctor>;
   plan: Load<SetupPlan>;
+  /** A Set up the owner pressed: the files its plan writes, shown until Apply or Cancel. */
+  pending: { plan: string[]; own: string[]; files: SetupPlan["files"]; digest: string | null } | null;
 };
 
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
@@ -165,10 +167,13 @@ export class Settings {
     confirm: null,
     doctor: { state: "idle" },
     plan: { state: "idle" },
+    pending: null,
   };
   private listeners = new Set<() => void>();
   /** Counts HUD writes, so a read that began before a write cannot overwrite its reply. */
   private hudWrites = 0;
+  /** Counts setup reads, so an older doctor reply cannot overwrite a newer one. */
+  private setupReads = 0;
 
   constructor(private readonly app: App) {}
 
@@ -360,23 +365,39 @@ export class Settings {
         return { state: "error", error: message(err) };
       }
     };
+    const read = ++this.setupReads;
     const [doctor, plan] = await Promise.all([load<Doctor>("/api/doctor"), load<SetupPlan>("/api/setup/plan")]);
-    this.set({ doctor, plan });
+    if (read === this.setupReads) this.set({ doctor, plan });
   }
 
-  /** Sets up `plan` groups from a plan made just now, so the digest is the one the owner sees
-   *  applied, then each of `own`. A changed file between the two reads is a 409. */
-  setUp(plan: string[], own: string[] = []): Promise<boolean> {
-    if (this.state.busy) return Promise.resolve(false);
+  /** Shows what a Set up of `plan` groups, then each of `own`, writes. Nothing is written until
+   *  applySetUp. */
+  async setUp(plan: string[], own: string[] = []) {
+    if (this.state.busy) return;
+    this.set({ error: null, pending: null });
+    try {
+      const p = plan.length ? await this.api.get<SetupPlan>("/api/setup/plan", { only: plan.join(",") }) : null;
+      this.set({ pending: { plan, own, files: p?.files ?? [], digest: p?.digest ?? null } });
+    } catch (err) {
+      this.set({ error: message(err) });
+    }
+  }
+
+  cancelSetUp() {
+    this.set({ pending: null });
+  }
+
+  /** Applies the shown plan with its digest, so a file that changed since the owner saw it is a
+   *  409, then each `own` group. */
+  applySetUp(): Promise<boolean> {
+    const pending = this.state.pending;
+    if (this.state.busy || !pending) return Promise.resolve(false);
+    this.set({ pending: null });
     return this.write(
       async () => {
         try {
-          if (plan.length) {
-            const only = plan.join(",");
-            const { digest } = await this.api.get<SetupPlan>("/api/setup/plan", { only });
-            await this.api.post("/api/setup/apply", { only, digest });
-          }
-          for (const only of own) await this.api.post("/api/setup/apply", { only });
+          if (pending.plan.length) await this.api.post("/api/setup/apply", { only: pending.plan.join(","), digest: pending.digest });
+          for (const only of pending.own) await this.api.post("/api/setup/apply", { only });
         } catch (err) {
           // Any failed swarm setup is a 409, so the CLI's own text names the cause, not "changed elsewhere".
           throw err instanceof ApiError ? new Error(err.message) : err;
@@ -388,7 +409,7 @@ export class Settings {
   }
 
   setUpItem(item: DoctorItem) {
-    if (!item.group) return Promise.resolve(false);
+    if (!item.group) return Promise.resolve();
     return PLAN_GROUPS.includes(item.group) ? this.setUp([item.group]) : this.setUp([], [item.group]);
   }
 

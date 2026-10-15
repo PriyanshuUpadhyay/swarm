@@ -552,6 +552,7 @@ function SetupPage({ app }: { app: App }) {
   const doctor = useSettings(app, "doctor");
   const plan = useSettings(app, "plan");
   const busy = useSettings(app, "busy");
+  const pending = useSettings(app, "pending");
   if (doctor.state === "error")
     return (
       <div className="grid gap-2">
@@ -579,6 +580,28 @@ function SetupPage({ app }: { app: App }) {
           Set up all
         </Button>
       </div>
+      {pending && (
+        <section className="grid gap-2 rounded-md border p-3" data-testid="setup-preview">
+          <h3 className="text-sm font-semibold">Set up {[...pending.plan, ...pending.own].join(", ")}</h3>
+          {pending.files.length > 0 && (
+            <ul className="grid gap-1 font-mono text-xs break-all select-text" data-testid="setup-files">
+              {pending.files.map((f, i) => (
+                <li key={i}>{f.path}</li>
+              ))}
+            </ul>
+          )}
+          {pending.own.includes("plugin") && <p className="text-xs text-muted-foreground">Installs the swarm plugin in each agent CLI on PATH.</p>}
+          {pending.own.includes("hud") && <p className="text-xs text-muted-foreground">Installs the usage HUD app.</p>}
+          <div className="flex gap-2">
+            <Button size="sm" data-testid="setup-apply" disabled={busy} onClick={() => void app.settings.applySetUp()}>
+              Apply
+            </Button>
+            <Button size="sm" variant="ghost" disabled={busy} onClick={() => app.settings.cancelSetUp()}>
+              Cancel
+            </Button>
+          </div>
+        </section>
+      )}
       {doctor.data.items.map((item) => (
         <div key={item.id} data-testid="doctor-item" data-id={item.id} data-state={item.state}>
           <Row title={item.title} detail={item.reason} live>
@@ -598,7 +621,7 @@ function SetupPage({ app }: { app: App }) {
           {p.conflicts.map((c, i) => (
             <div key={i} className="text-sm">
               <div className="font-mono text-xs break-all">{c.file}</div>
-              <div className="text-xs text-muted-foreground">
+              <div className="text-xs break-words text-muted-foreground">
                 {c.entry}: {c.fix}
               </div>
             </div>

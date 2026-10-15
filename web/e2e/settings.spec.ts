@@ -252,7 +252,13 @@ test("/setup opens Setup & doctor; a row's Set up applies its group and the row 
   expect(ids.slice(0, 5)).toEqual(["hooks", "guard", "trust", "herdr", "skills"]);
   // The server home's hooks start unset; the other browser's run may have set them up already.
   const hooks = page.locator('[data-testid="doctor-item"][data-id="hooks"]');
-  if ((await hooks.getAttribute("data-state")) === "setup") await hooks.getByTestId("setup-item").click();
+  if ((await hooks.getAttribute("data-state")) === "setup") {
+    await hooks.getByTestId("setup-item").click();
+    // Nothing is written before Apply; the preview names the files.
+    await expect(page.getByTestId("setup-files")).toContainText("hooks.json");
+    expect(JSON.parse(swarm(["setup", "status", "--json"])).hooks).toBe(false);
+    await page.getByTestId("setup-apply").click();
+  }
   await expect(hooks).toHaveAttribute("data-state", "ok");
   expect(new URL(tab.url()).pathname).toBe("/setup");
   expect(JSON.parse(swarm(["setup", "status", "--json"])).hooks).toBe(true);

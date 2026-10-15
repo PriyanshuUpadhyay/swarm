@@ -62,7 +62,9 @@ export function PaneStrip({ app }: { app: App }) {
   };
 
   // A column that comes or goes moves the chat page's edge. The new widths apply at once and the
-  // chat's text and the columns slide from where they were, on transform only (FLIP).
+  // chat's text and the columns slide from where they were, on transform only (FLIP). Opening or
+  // reloading a chat that has columns lays them out with no slide.
+  const slidFor = useRef<string | null | undefined>(undefined);
   useLayoutEffect(() => {
     const el = scroller.current;
     const chat = el?.querySelector<HTMLElement>(".strip-chat");
@@ -70,7 +72,9 @@ export function PaneStrip({ app }: { app: App }) {
     const before = chat.offsetWidth;
     layout();
     const shift = before - chat.offsetWidth;
-    if (shift && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    const same = slidFor.current === openId;
+    slidFor.current = openId;
+    if (same && shift && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
       const slide = (target: Element | null, from: number) =>
         target?.animate([{ transform: `translateX(${from}px)` }, { transform: "none" }], { duration: 240, easing: "cubic-bezier(0.23, 1, 0.32, 1)" });
       for (const child of chat.children) slide(child, shift / 2);
@@ -79,7 +83,7 @@ export function PaneStrip({ app }: { app: App }) {
     const observer = new ResizeObserver(layout);
     observer.observe(el);
     return () => observer.disconnect();
-  }, [cols.length]);
+  }, [cols.length, openId]);
 
   // Another chat starts at its chat page.
   useLayoutEffect(() => {

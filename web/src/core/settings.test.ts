@@ -41,9 +41,13 @@ describe("setup & doctor", () => {
     expect(setUpAll(DOCTOR, PLAN)).toEqual({ plan: ["hooks", "skills"], own: ["plugin"] });
   });
 
-  it("applies with the digest of a plan made for the same groups, then the plugin, then reloads", async () => {
+  it("shows the plan's files first, then applies with that plan's digest, then the plugin, then reloads", async () => {
     const { settings, calls } = fakeApp(async () => ({ ok: true }));
-    expect(await settings.setUp(["hooks", "skills"], ["plugin"])).toBe(true);
+    await settings.setUp(["hooks", "skills"], ["plugin"]);
+    expect(calls).toEqual(["GET /api/setup/plan?hooks,skills"]);
+    expect(settings.state.pending?.digest).toBe("d-hooks,skills");
+    expect(await settings.applySetUp()).toBe(true);
+    expect(settings.state.pending).toBeNull();
     expect(calls).toEqual([
       "GET /api/setup/plan?hooks,skills",
       'POST /api/setup/apply {"only":"hooks,skills","digest":"d-hooks,skills"}',
@@ -58,7 +62,8 @@ describe("setup & doctor", () => {
     const { settings } = fakeApp(async () => {
       throw new ApiError(409, "swarm: none of claude, codex, agy or pi is on PATH");
     });
-    expect(await settings.setUp([], ["plugin"])).toBe(false);
+    await settings.setUp([], ["plugin"]);
+    expect(await settings.applySetUp()).toBe(false);
     expect(settings.state.error).toBe("swarm: none of claude, codex, agy or pi is on PATH");
     expect(settings.state.plan.state).toBe("ready");
   });

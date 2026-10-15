@@ -273,6 +273,8 @@ test("a chat with two children shows their panes; keys move focus and zoom; a pa
     const panes = tab.getByTestId("pane");
     await expect(panes).toHaveCount(2);
     await expect(tab.locator(".strip-col")).toHaveCount(1);
+    // Opening a chat that has columns lays them out with no slide.
+    expect(await tab.getByTestId("pane-strip").evaluate((el) => el.getAnimations().length)).toBe(0);
     const reviewer = tab.locator('[data-testid="pane"][data-pane="reviewer"]');
     const tester = tab.locator('[data-testid="pane"][data-pane="tester"]');
     await expect(reviewer.locator('[data-testid="pane-transcript"][data-state="ready"]').getByTestId("row").first()).toBeVisible();
