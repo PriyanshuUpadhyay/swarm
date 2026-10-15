@@ -1544,8 +1544,19 @@ async fn run_setup_write(app: &App, body: SetupWrite) -> Result<Value, ApiError>
         ],
     };
     // The plugin step runs each agent CLI's own plugin install, which can take a while.
-    let output =
-        run_cli_with_timeout(app, home_call(app, &args), None, Duration::from_secs(180)).await?;
+    let output = run_cli_with_timeout(app, home_call(app, &args), None, Duration::from_secs(180))
+        .await
+        .map_err(|(status, body)| {
+            let stale = body.0["error"]
+                .as_str()
+                .is_some_and(|text| text.contains("changed after the plan"));
+            // run_cli reports every failure as 409. Only a stale plan keeps it, as in owner_cli.
+            if status == StatusCode::CONFLICT && !stale {
+                (StatusCode::BAD_REQUEST, body)
+            } else {
+                (status, body)
+            }
+        })?;
     Ok(json!({"ok": true, "output": output}))
 }
 async fn usage_read(State(app): State<App>) -> Result<Json<Value>, ApiError> {
@@ -5672,6 +5683,10 @@ case "$1 $2" in
   'sessions --json') printf '%s\n' '{{"sessions":[{{"id":"archived","archivedAt":42}},{{"id":"active"}}]}}' ;;
   'doctor --json') printf '%s\n' '{{"schema":"swarm.doctor.v1","items":[]}}' ;;
   'setup --plan') printf '%s\n' '{{"digest":"ab12","files":[],"conflicts":[],"skipped":[]}}' ;;
+  'setup --digest') case "$3" in
+    dead) echo 'swarm: a file changed after the plan; check the plan again' >&2; exit 1 ;;
+    beef) echo 'swarm: cannot write ~/.codex/config.toml' >&2; exit 1 ;;
+  esac ;;
   *) if [ "$1" = type ]; then cat > "$SWARM_HOME/text"; fi ;;
 esac
 "#)).unwrap();
@@ -5908,6 +5923,21 @@ esac
                 format!("|||{root}|setup --digest ab12 --only hooks,skills"),
                 format!("|||{root}|setup plugin --yes"),
             ]
+        );
+        // Only a stale plan is a conflict; any other failed setup is the request's own failure.
+        let stale = write(json!({"only": "hooks", "digest": "dead"}))
+            .await
+            .unwrap_err();
+        assert_eq!(stale.0, StatusCode::CONFLICT);
+        let failed = write(json!({"only": "hooks", "digest": "beef"}))
+            .await
+            .unwrap_err();
+        assert_eq!(failed.0, StatusCode::BAD_REQUEST);
+        assert!(
+            failed.1.0["error"]
+                .as_str()
+                .unwrap()
+                .contains("cannot write")
         );
     }
 

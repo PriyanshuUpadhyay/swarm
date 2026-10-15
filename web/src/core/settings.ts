@@ -398,13 +398,8 @@ export class Settings {
     this.set({ pending: null });
     return this.write(
       async () => {
-        try {
-          if (pending.plan.length) await this.api.post("/api/setup/apply", { only: pending.plan.join(","), digest: pending.digest });
-          for (const only of pending.own) await this.api.post("/api/setup/apply", { only });
-        } catch (err) {
-          // Any failed swarm setup is a 409, so the CLI's own text names the cause, not "changed elsewhere".
-          throw err instanceof ApiError ? new Error(err.message, { cause: err }) : err;
-        }
+        if (pending.plan.length) await this.api.post("/api/setup/apply", { only: pending.plan.join(","), digest: pending.digest });
+        for (const only of pending.own) await this.api.post("/api/setup/apply", { only });
       },
       "Setup",
       // The Home card reads the HUD from its own state, so a HUD setup reloads that too.

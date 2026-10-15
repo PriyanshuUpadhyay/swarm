@@ -1896,12 +1896,12 @@ fn skills_setup_plans() -> Result<
     Ok((plans, Some(manifest.content_id), skipped))
 }
 
-/// `swarm doctor [--json]`: one row for each thing swarm sets up or ships. A row is `ok`, `setup`
-/// when `swarm setup` (its `group`) can fix it, or `broken` when the owner must act, with the
-/// reason. It always exits 0, so the page can show every row.
 /// The schema tag of `swarm doctor --json`, which `/api/doctor` checks.
 const DOCTOR_SCHEMA: &str = "swarm.doctor.v1";
 
+/// `swarm doctor [--json]`: one row for each thing swarm sets up or ships. A row is `ok`, `setup`
+/// when `swarm setup` (its `group`) can fix it, or `broken` when the owner must act, with the
+/// reason. Once it can read HOME and the swarm home it exits 0, so the page can show every row.
 fn doctor(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let json = match args {
         [] => false,

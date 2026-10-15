@@ -147,21 +147,19 @@ export function PaneStrip({ app }: { app: App }) {
   };
 
   const dragStart = useRef(0);
-  const dragColumn = useRef({ width: 0, offset: 0 });
+  const dragColumn = useRef({ width: 0, offset: 0, chat: 0 });
   /** Every column changes width, so the strip scrolls by the change of the columns before this
    *  one. Its leading edge stays put, and the dragged edge follows the pointer. */
-  const resizeColumns = (preferred: number | null, index: number, start: { width: number; offset: number }) => {
+  const resizeColumns = (preferred: number | null, index: number, start: { width: number; offset: number; chat: number }) => {
     const width = columnWidth(main(), preferred);
-    widths.current = { ...widths.current, column: preferred === null ? undefined : width };
+    // A drag keeps the chat page at its width, as a drag of the chat's edge does, so the dragged
+    // edge follows the pointer. A reset or a press with no move leaves the chat as it is.
+    const chat = preferred !== null && preferred !== start.width ? (widths.current.chat ?? start.chat) : widths.current.chat;
+    widths.current = { ...widths.current, chat, column: preferred === null ? undefined : width };
     layout();
     scroller.current!.scrollLeft = start.offset + index * (width - start.width);
   };
-  /** A column drag keeps the chat page at its width, as a drag of the chat's edge does, so the
-   *  dragged edge follows the pointer and the chat does not shrink under it. */
-  const columnStart = () => {
-    widths.current = { ...widths.current, chat: widths.current.chat ?? chatNow() };
-    return { width: columnWidth(main(), widths.current.column), offset: scroller.current!.scrollLeft };
-  };
+  const columnStart = () => ({ width: columnWidth(main(), widths.current.column), offset: scroller.current!.scrollLeft, chat: chatNow() });
   const setSplit = (el: HTMLElement, column: string, share: number | null) => {
     el.style.setProperty("--split", String(splitShare(share)));
     widths.current = saveSplit(widths.current, openId!, cols.map((c) => c[0].id), column, share === null ? null : splitShare(share));

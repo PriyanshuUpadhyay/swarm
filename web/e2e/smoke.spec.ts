@@ -341,6 +341,9 @@ test("a chat with two children shows their panes; keys move focus and zoom; a pa
       await tab.mouse.move(x + dx, y + dy);
       await tab.mouse.up();
     };
+    // A column reset leaves the chat's width free.
+    await grip("Agent column width").dblclick();
+    expect(await tab.evaluate(() => JSON.parse(localStorage.getItem("swarm.panes.widths") ?? "{}").chat)).toBeUndefined();
     // A column drag before any chat drag keeps the chat's width, so the grip follows the pointer.
     const chatBefore = await width(".strip-chat");
     const gripX = (await grip("Agent column width").boundingBox())!.x;

@@ -75,9 +75,9 @@ describe("setup & doctor", () => {
     expect(calls).toContain("GET /api/hud");
   });
 
-  it("a failed apply shows the CLI's own text, since every failed swarm setup is a 409, and reloads", async () => {
+  it("a failed apply that is not a stale plan shows the CLI's own text, and reloads", async () => {
     const { settings } = fakeApp(async () => {
-      throw new ApiError(409, "swarm: none of claude, codex, agy or pi is on PATH");
+      throw new ApiError(400, "swarm: none of claude, codex, agy or pi is on PATH");
     });
     await settings.setUp([], ["plugin"]);
     expect(await settings.applySetUp()).toBe(false);
