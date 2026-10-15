@@ -49,9 +49,11 @@ fn xml_escape(text: &str) -> String {
 
 /// The LaunchAgent. `SuccessfulExit = false` restarts a crash but keeps a Quit from the HUD menu;
 /// `ThrottleInterval` keeps a HUD app removed by `brew uninstall` from respawning every 10 s.
-pub fn plist(app: &Path, swarm_bin: &Path) -> String {
+/// `PATH` is the installer's, because launchd's bare one has no `codex` for a usage refresh.
+pub fn plist(app: &Path, swarm_bin: &Path, path: &str) -> String {
     let program = xml_escape(&app.join("Contents/MacOS/SwarmHUD").to_string_lossy());
     let swarm_bin = xml_escape(&swarm_bin.to_string_lossy());
+    let path = xml_escape(path);
     format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -67,6 +69,8 @@ pub fn plist(app: &Path, swarm_bin: &Path) -> String {
 	<dict>
 		<key>SWARM_BIN</key>
 		<string>{swarm_bin}</string>
+		<key>PATH</key>
+		<string>{path}</string>
 	</dict>
 	<key>RunAtLoad</key>
 	<true/>
@@ -130,7 +134,11 @@ pub fn install(home: &Path) -> Result<Status, Box<dyn std::error::Error>> {
     let swarm_bin = std::env::current_exe()?.canonicalize()?;
     let path = plist_path(home);
     std::fs::create_dir_all(path.parent().ok_or("swarm: bad LaunchAgents path")?)?;
-    std::fs::write(&path, plist(&stable_path(&app), &stable_path(&swarm_bin)))?;
+    let search = std::env::var("PATH").unwrap_or_else(|_| "/usr/bin:/bin:/usr/sbin:/sbin".into());
+    std::fs::write(
+        &path,
+        plist(&stable_path(&app), &stable_path(&swarm_bin), &search),
+    )?;
     // A loaded job keeps its old plist until it is booted out, and bootout returns before the job
     // is gone; a bootstrap before then fails with error 5. Not loaded at all is fine.
     let target = format!("{}/{LABEL}", domain());
@@ -209,11 +217,13 @@ mod tests {
         let text = plist(
             Path::new("/a&b/SwarmHUD.app"),
             Path::new("/opt/homebrew/opt/swarm/bin/swarm"),
+            "/opt/homebrew/bin:/usr/bin",
         );
         assert!(text.contains("<string>/a&amp;b/SwarmHUD.app/Contents/MacOS/SwarmHUD</string>"));
         assert!(text.contains(
             "<key>SWARM_BIN</key>\n\t\t<string>/opt/homebrew/opt/swarm/bin/swarm</string>"
         ));
+        assert!(text.contains("<key>PATH</key>\n\t\t<string>/opt/homebrew/bin:/usr/bin</string>"));
         assert!(text.contains(&format!("<string>{LABEL}</string>")));
         assert!(text.contains("<key>SuccessfulExit</key>\n\t\t<false/>"));
         assert!(text.contains("<key>ThrottleInterval</key>\n\t<integer>60</integer>"));
