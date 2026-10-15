@@ -396,6 +396,7 @@ fn router(app: App) -> Router {
         .route("/api/issues", get(panel_read))
         .route("/api/usage", get(usage_read))
         .route("/api/usage/refresh", post(usage_refresh))
+        .route("/api/hud", get(hud_read).post(hud_write))
         .route("/api/roles", get(menu_read).post(owner_write))
         .route("/api/providers", get(menu_read))
         .route("/api/models", get(menu_read))
@@ -1164,6 +1165,39 @@ async fn panel_read(
 struct UsageRefresh {
     provider: String,
 }
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct HudWrite {
+    on: bool,
+}
+/// ADR 0087: the switch shows the LaunchAgent's state, which only `swarm hud` reads and writes.
+async fn hud_read(State(app): State<App>) -> Result<Json<Value>, ApiError> {
+    hud_cli(&app, "status").await.map(Json)
+}
+async fn hud_write(
+    State(app): State<App>,
+    body: Result<Json<HudWrite>, JsonRejection>,
+) -> Result<Json<Value>, ApiError> {
+    let Json(body) = body.map_err(|e| error(e.status(), &e.body_text()))?;
+    enqueue_action(&app, Action::Hud(body)).await.map(Json)
+}
+async fn hud_cli(app: &App, verb: &str) -> Result<Value, ApiError> {
+    let output = run_cli(
+        app,
+        CliCall {
+            args: vec!["hud".into(), verb.into(), "--json".into()],
+            cwd: app.root.clone(),
+            session: None,
+            adapter: String::new(),
+        },
+        None,
+    )
+    .await?;
+    serde_json::from_str::<Value>(&output)
+        .ok()
+        .filter(|value| value["schema"] == "swarm.hud.v1")
+        .ok_or_else(|| error(StatusCode::BAD_GATEWAY, "swarm returned invalid HUD status"))
+}
 async fn usage_read(State(app): State<App>) -> Result<Json<Value>, ApiError> {
     read_usage(&app, None).await.map(Json)
 }
@@ -1907,6 +1941,7 @@ enum Action {
     RefreshView,
     Lifecycle(LifecycleAction),
     UsageRefresh(UsageRefresh),
+    Hud(HudWrite),
     Owner(OwnerWrite),
 }
 
@@ -2004,6 +2039,7 @@ impl Action {
             | Self::Choices(_)
             | Self::Lifecycle(_)
             | Self::UsageRefresh(_)
+            | Self::Hud(_)
             | Self::Owner(_)
             | Self::RefreshView => None,
         }
@@ -2036,6 +2072,7 @@ fn start_action_queue(app: &App, mut queue: mpsc::Receiver<ActionJob>) {
                             | Action::Choices(_)
                             | Action::Lifecycle(_)
                             | Action::UsageRefresh(_)
+                            | Action::Hud(_)
                             | Action::Owner(_)
                     );
                     let result = execute_action(&app, job.action).await;
@@ -2190,6 +2227,9 @@ async fn execute_action(app: &App, action: Action) -> Result<Value, ApiError> {
         }
         Action::Lifecycle(action) => return execute_lifecycle(app, action).await,
         Action::UsageRefresh(body) => return refresh_usage(app, &body.provider).await,
+        Action::Hud(body) => {
+            return hud_cli(app, if body.on { "install" } else { "uninstall" }).await;
+        }
         Action::Owner(write) => return run_owner_write(app, write).await,
         Action::RefreshView => {
             let app = app.clone();
@@ -4752,6 +4792,39 @@ printf '{"schema":"swarm.usage.v1","meters":[]}\n'
             })
             .lane()
             .is_none()
+        );
+    }
+
+    #[tokio::test]
+    async fn hud_routes_run_swarm_hud_and_refuse_a_bad_reply() {
+        let fixture = action_fixture();
+        std::fs::write(
+            &fixture.app.cli,
+            r#"#!/bin/sh
+printf '%s\n' "$*" >> "$SWARM_HOME/actions"
+if [ -f "$SWARM_HOME/bad" ]; then printf '{}\n'; exit 0; fi
+printf '{"schema":"swarm.hud.v1","installed":true,"running":true,"app":"/a/SwarmHUD.app"}\n'
+"#,
+        )
+        .unwrap();
+        assert_eq!(
+            hud_read(State(fixture.app.clone())).await.unwrap().0["installed"],
+            true
+        );
+        for on in [true, false] {
+            let reply = hud_write(State(fixture.app.clone()), Ok(Json(HudWrite { on })))
+                .await
+                .unwrap();
+            assert_eq!(reply.0["schema"], "swarm.hud.v1");
+        }
+        let calls = action_calls(&fixture);
+        for verb in ["status", "install", "uninstall"] {
+            assert!(calls.contains(&format!("hud {verb} --json")), "{calls}");
+        }
+        std::fs::write(fixture.app.root.parent().unwrap().join("bad"), "").unwrap();
+        assert_eq!(
+            hud_read(State(fixture.app.clone())).await.unwrap_err().0,
+            StatusCode::BAD_GATEWAY
         );
     }
 
