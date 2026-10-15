@@ -265,7 +265,8 @@ struct OpenContent: View {
                     if account.windows.isEmpty {
                         SignedOutRow(account: account)
                     } else {
-                        AccountRow(account: account, kinds: kinds, theme: theme, now: now)
+                        AccountRow(account: account, kinds: kinds, theme: theme, now: now,
+                                   readFailed: model.readError != nil, readAt: model.readAt)
                     }
                 }
                 .padding(.horizontal, Layout.rowPadding)
@@ -362,6 +363,9 @@ struct AccountRow: View {
     let kinds: [WindowKind]
     let theme: Theme
     let now: Date
+    /// The last read failed, so every number on screen is at least as old as `readAt`.
+    let readFailed: Bool
+    let readAt: Date?
 
     var body: some View {
         HStack(spacing: Layout.gap) {
@@ -384,7 +388,8 @@ struct AccountRow: View {
     }
 
     @ViewBuilder private var reading: some View {
-        if account.windows.contains(where: { !$0.isFresh }) {
+        // Like the closed wings' `~`, a failed read marks even fresh windows as old.
+        if readFailed || account.windows.contains(where: { !$0.isFresh }) {
             Text(staleText).foregroundStyle(Palette.warn)
         } else {
             Text("fresh").foregroundStyle(Palette.tertiary)
@@ -392,7 +397,8 @@ struct AccountRow: View {
     }
 
     private var staleText: String {
-        guard let oldest = account.windows.filter({ !$0.isFresh }).compactMap(\.asOf).min() else { return "Stale" }
+        let ages = account.windows.filter { readFailed || !$0.isFresh }.compactMap(\.asOf) + (readFailed ? [readAt].compactMap { $0 } : [])
+        guard let oldest = ages.min() else { return "Stale" }
         // shortDuration says "now" under a minute, which reads wrong for an age.
         let age = now.timeIntervalSince(oldest) < 60 ? "<1m" : shortDuration(until: now, now: oldest)
         return "Stale · \(age)"
@@ -442,7 +448,9 @@ struct UsageBar: View {
                 if fraction > 0 {
                     Capsule().fill(color).frame(width: max(bar.size.width * min(fraction, 1), 6))
                 }
-                Rectangle().fill(Color.black.opacity(0.9)).frame(width: 1).offset(x: bar.size.width * 0.8)
+                // Black on the fill, light gray on the bare track, so the mark shows either way.
+                Rectangle().fill(fraction >= 0.8 ? Color.black.opacity(0.9) : Color.white.opacity(0.45))
+                    .frame(width: 1).offset(x: bar.size.width * 0.8)
             }
         }
         .frame(height: 6)
@@ -457,7 +465,7 @@ struct SignedOutRow: View {
             ProviderMark(provider: account.provider, size: 16).frame(width: Layout.markColumn).accessibilityHidden(true)
             AccountName(account: account, color: Palette.secondary)
             Text(account.problem ?? "No reading").font(.system(size: 12)).foregroundStyle(Palette.secondary)
-                .lineLimit(1).truncationMode(.tail).help(account.problem ?? "")
+                .lineLimit(2).truncationMode(.tail).help(account.problem ?? "")
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .accessibilityElement(children: .combine)
