@@ -4098,7 +4098,8 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         let connection = swarm::store::open(&swarm::paths::sqlite_db()?)?;
         return print_json(&serde_json::json!({
             "schema": "swarm.working.v1",
-            "working": swarm::store::working_by_provider(&connection)?,
+            "working": swarm::store::agents_by_provider(&connection, "working")?,
+            "waiting": swarm::store::agents_by_provider(&connection, "waiting")?,
         }));
     }
     if let [cmd, json] = args

@@ -636,14 +636,15 @@ pub fn pane_of(
 
 /// The CLI that runs in an agent's pane. A chair's row names none, so it is the session's
 /// `chair_provider`.
-/// How long a `working` report counts without a newer one. A turn reports at each tool call, and
-/// an agent that died mid-turn keeps its last report, so the usage HUD stops showing it after this.
+/// How long a `working` or `waiting` report counts without a newer one. A turn reports at each tool
+/// call, and an agent that died keeps its last report, so the usage HUD stops showing it after this.
 const WORKING_FOR_S: i64 = 600;
 
-/// The number of agents with a pane that report `working`, by provider; a chair with no provider
-/// of its own counts under its session's chair provider.
-pub fn working_by_provider(
+/// The number of agents with a pane that report `state` (`working` or `waiting`), by provider; a
+/// chair with no provider of its own counts under its session's chair provider.
+pub fn agents_by_provider(
     connection: &Connection,
+    state: &str,
 ) -> Result<std::collections::BTreeMap<String, i64>, Box<dyn std::error::Error>> {
     let mut statement = connection.prepare(
         "SELECT provider, COUNT(*) FROM (
@@ -651,11 +652,11 @@ pub fn working_by_provider(
                              CASE WHEN agent.role = 'orchestrator' OR agent.id = 'orchestrator'
                                   THEN session.chair_provider END) AS provider
              FROM agent JOIN session ON session.id = agent.session_id
-             WHERE agent.pane_id IS NOT NULL AND agent.state = 'working'
+             WHERE agent.pane_id IS NOT NULL AND agent.state = ?2
                AND agent.state_at >= unixepoch() - ?1)
          WHERE provider IS NOT NULL GROUP BY provider",
     )?;
-    let rows = statement.query_map([WORKING_FOR_S], |r| Ok((r.get(0)?, r.get(1)?)))?;
+    let rows = statement.query_map((WORKING_FOR_S, state), |r| Ok((r.get(0)?, r.get(1)?)))?;
     Ok(rows.collect::<Result<_, _>>()?)
 }
 
@@ -1494,7 +1495,7 @@ mod tests {
     }
 
     #[test]
-    fn working_counts_live_fresh_agents_by_provider_and_a_chair_by_its_session() {
+    fn working_and_waiting_count_live_fresh_agents_by_provider_and_a_chair_by_its_session() {
         let connection = open(Path::new(":memory:")).unwrap();
         let session = create_session(
             &connection,
@@ -1545,7 +1546,36 @@ mod tests {
             now - 601,
         )
         .unwrap();
-        let working = working_by_provider(&connection).unwrap();
+        set_state(
+            &connection,
+            &session,
+            "c",
+            "waiting",
+            "hook",
+            None,
+            Some("question"),
+            now,
+        )
+        .unwrap();
+        assert_eq!(
+            agents_by_provider(&connection, "waiting")
+                .unwrap()
+                .into_iter()
+                .collect::<Vec<_>>(),
+            [("codex".to_string(), 1)]
+        );
+        set_state(
+            &connection,
+            &session,
+            "c",
+            "working",
+            "hook",
+            None,
+            None,
+            now - 601,
+        )
+        .unwrap();
+        let working = agents_by_provider(&connection, "working").unwrap();
         assert_eq!(
             working.into_iter().collect::<Vec<_>>(),
             [("claude".to_string(), 2), ("pi".to_string(), 1)]
