@@ -34,6 +34,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var hotKey: EventHotKeyRef?
     /// Opened by the hot key: it stays open when the cursor leaves, until Esc, the key again, or a click elsewhere.
     private var keyOpen = false
+    /// Closed by the keyboard with the cursor on the notch: hover may not reopen it until the cursor leaves.
+    private var hoverHeld = false
     private var readTimer: Timer?
     private var phaseTimer: Timer?
     private var clickThrough: Bool?
@@ -55,9 +57,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         DistributedNotificationCenter.default().addObserver(
             self, selector: #selector(unlocked), name: NSNotification.Name("com.apple.screenIsUnlocked"), object: nil
         )
-        // A new time zone or a clock change moves the next theme boundary.
+        // A new time zone or a clock change moves the next theme boundary. Foundation may post these
+        // off the main thread, so they are delivered on the main queue.
         for name in [Notification.Name.NSSystemTimeZoneDidChange, .NSSystemClockDidChange] {
-            NotificationCenter.default.addObserver(self, selector: #selector(clockChanged), name: name, object: nil)
+            NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { _ in
+                MainActor.assumeIsolated { self.schedulePhaseChange() }
+            }
         }
         panel.orderFrontRegardless()
         startMouseMonitors()
@@ -66,8 +71,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     // MARK: Theme by the clock
-
-    @objc private func clockChanged() { schedulePhaseChange() }
 
     private func schedulePhaseChange() {
         model.updatePhase()
@@ -181,6 +184,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let inside = hoverRectInScreen().contains(NSEvent.mouseLocation)
         setClickThrough(!inside)
         if keyOpen { return }
+        if hoverHeld {
+            if inside { return }
+            hoverHeld = false
+        }
         if !model.isOpen {
             if inside { scheduleOpen() } else { pendingOpen?.cancel(); pendingOpen = nil }
         } else if inside {
@@ -223,6 +230,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if model.readAt.map({ Date().timeIntervalSince($0) > 5 }) ?? true { model.read() }
         } else {
             keyOpen = false
+            // A nonactivating panel keeps key status until it leaves the screen, and the owner's
+            // next keys would come here, not to their app; ordering it out and in hands it back.
+            if panel.isKeyWindow {
+                panel.orderOut(nil)
+                panel.orderFrontRegardless()
+            }
         }
         mouseMoved()
     }
@@ -231,15 +244,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func registerHotKey() {
         var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
-        InstallEventHandler(GetApplicationEventTarget(), { _, _, context in
+        let handler = InstallEventHandler(GetApplicationEventTarget(), { _, _, context in
             guard let context else { return noErr }
             let delegate = Unmanaged<AppDelegate>.fromOpaque(context).takeUnretainedValue()
             MainActor.assumeIsolated { delegate.toggleFromKeyboard() }
             return noErr
         }, 1, &spec, Unmanaged.passUnretained(self).toOpaque(), nil)
-        RegisterEventHotKey(UInt32(kVK_ANSI_U), UInt32(controlKey | optionKey | cmdKey),
-                            EventHotKeyID(signature: OSType(0x5357_4855), id: 1), // "SWHU"
-                            GetApplicationEventTarget(), 0, &hotKey)
+        let key = RegisterEventHotKey(UInt32(kVK_ANSI_U), UInt32(controlKey | optionKey | cmdKey),
+                                      EventHotKeyID(signature: OSType(0x5357_4855), id: 1), // "SWHU"
+                                      GetApplicationEventTarget(), 0, &hotKey)
+        // Another app may hold the key already; then the VoiceOver hint stops naming it.
+        model.hotKeyReady = handler == noErr && key == noErr
+        if !model.hotKeyReady { NSLog("SwarmHUD: ⌃⌥⌘U is not available (handler %d, key %d)", handler, key) }
     }
 
     func toggleFromKeyboard() {
@@ -254,6 +270,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func closeFromKeyboard() {
         guard keyOpen else { return }
         keyOpen = false
+        hoverHeld = hoverRectInScreen().contains(NSEvent.mouseLocation)
         setOpen(false)
     }
 

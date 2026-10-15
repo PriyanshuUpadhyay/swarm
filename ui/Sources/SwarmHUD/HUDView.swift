@@ -248,7 +248,7 @@ struct ClosedWings: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel(worst.map { "\($0.account.name) \($0.window.kind.title) \($0.window.usedPct) percent used" } ?? "No usage reading")
         .accessibilityAddTraits(.isButton)
-        .accessibilityHint("Opens the usage card. Control Option Command U also opens it.")
+        .accessibilityHint(model.hotKeyReady ? "Opens the usage card. Control Option Command U also opens it." : "Opens the usage card.")
         .accessibilityAction { model.toggleFromKeyboard?() }
     }
 

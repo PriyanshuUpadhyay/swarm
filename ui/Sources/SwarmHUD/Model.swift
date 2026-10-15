@@ -24,6 +24,8 @@ final class UsageModel {
     var phase: DayPhase = .at(Date())
     /// Set by the app delegate: opens the card for the keyboard or a VoiceOver action.
     @ObservationIgnored var toggleFromKeyboard: (() -> Void)?
+    /// ⌃⌥⌘U was registered; another app may hold it.
+    var hotKeyReady = false
     /// A theme the owner pinned from the menu; nil follows the clock.
     var pinnedPhase: DayPhase? {
         didSet { UserDefaults.standard.set(pinnedPhase?.rawValue, forKey: "pinnedPhase"); updatePhase() }
