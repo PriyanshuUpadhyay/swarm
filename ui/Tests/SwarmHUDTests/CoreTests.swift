@@ -81,7 +81,7 @@ private let fixture = """
 
 @Test func twoLimitsOfOneLengthKeepTheFullerInOneColumn() {
     let meter = { (window: String, pct: Int) in
-        UsageMeter(provider: "codex", account: "a", label: "a", window: window, windowMinutes: 10080,
+        UsageMeter(provider: "codex", account: "two-limits", label: "two-limits", window: window, windowMinutes: 10080,
                    usedPct: pct, resetTimeSeconds: nil, state: "fresh")
     }
     let list = accounts(from: [meter("codex:primary", 20), meter("spark:primary", 70), meter("other:primary", 40)])

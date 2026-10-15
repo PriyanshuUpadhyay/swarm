@@ -15,7 +15,6 @@ let panelSize = NSSize(width: 800, height: 640)
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let model = UsageModel()
     private var panel: HUDPanel!
-    private var hostingView: HitTestHostingView<HUDView>!
 
     // The exact set is re-asserted after unlock and during wedge recovery (below).
     private let collectionBehavior: NSWindow.CollectionBehavior = [
@@ -108,7 +107,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         view.activeRect = { [weak self] in self?.visibleRectInScreen() ?? .zero }
         view.makeMenu = { [weak self] in self?.contextMenu() }
         model.toggleFromKeyboard = { [weak self] in self?.toggleFromKeyboard() }
-        hostingView = view
         panel.contentView = view
     }
 

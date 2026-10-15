@@ -566,7 +566,7 @@ function HudRow({ app }: { app: App }) {
   const detail = pending
     ? "Working…"
     : hud.state === "error"
-      ? `Usage HUD unavailable: ${hud.error}`
+      ? `Usage HUD unavailable: ${hud.error}. Reopen Settings › Accounts to try again.`
       : data && data.app === null && !data.installed
         ? "SwarmHUD.app is not installed with this swarm."
         : "Shows usage at the top of the screen and starts at login.";
