@@ -47,7 +47,8 @@ struct Theme {
 }
 
 enum Layout {
-    static let wing: CGFloat = 44
+    /// Room for `~100%` at 12 pt (43.4 pt) plus 10 pt outer padding.
+    static let wing: CGFloat = 56
     static let openWidth: CGFloat = 600
     static let maxOpenHeight: CGFloat = 460
     /// Black below the camera before any content or tint starts.
@@ -224,6 +225,7 @@ struct ClosedWings: View {
                 }
             }
             .font(.system(size: 12, weight: .semibold).monospacedDigit())
+            .lineLimit(1)
             .frame(width: Layout.wing - 10, alignment: .trailing)
             .padding(.trailing, 10)
         }
@@ -271,7 +273,14 @@ struct OpenContent: View {
             .frame(height: Layout.headings, alignment: .top)
             // ImageRenderer draws no ScrollView content, so a snapshot shows the rows that fit.
             if live {
-                ScrollView(.vertical) { rows }.scrollIndicators(.never)
+                ScrollViewReader { scroller in
+                    ScrollView(.vertical) { rows }
+                        // Opening the fold adds rows below the live accounts; bring the first into view.
+                        .onChange(of: model.foldOpen) { _, open in
+                            guard open, let first = model.signedOut.first else { return }
+                            withAnimation(.easeOut(duration: 0.25)) { scroller.scrollTo(first.id, anchor: .top) }
+                        }
+                }
             } else {
                 Color.clear.overlay(alignment: .top) { rows }.clipped()
             }
@@ -288,7 +297,7 @@ struct OpenContent: View {
             }
             if model.foldOpen {
                 ForEach(model.signedOut) { account in
-                    SignedOutRow(account: account)
+                    SignedOutRow(account: account).id(account.id)
                 }
             }
         }
@@ -298,9 +307,12 @@ struct OpenContent: View {
         HStack(spacing: 8) {
             if let worst = worstWindow(model.accounts) {
                 Circle().fill(theme.color(worst.window.severity)).frame(width: 7, height: 7)
-                Text("\(worst.account.name) · \(worst.window.kind.title) · \(worst.window.usedPct)% used")
-                    .foregroundStyle(Palette.primary)
-                    .lineLimit(1)
+                // A long name gives way; the window and its value always show.
+                HStack(spacing: 0) {
+                    Text(worst.account.name).lineLimit(1).truncationMode(.middle)
+                    Text(" · \(worst.window.kind.title) · \(worst.window.usedPct)% used").fixedSize()
+                }
+                .foregroundStyle(Palette.primary)
             } else {
                 Text(model.readFailed ? "Could not read usage" : "No usage reading")
                     .foregroundStyle(Palette.secondary)
@@ -394,11 +406,16 @@ struct WindowCell: View {
         VStack(spacing: 3) {
             ZStack {
                 Ring(fraction: Double(window.usedPct) / 100, color: color)
-                Text("\(window.usedPct)\(window.severity == .critical ? "!" : "")")
+                Text("\(window.usedPct)")
                     .font(.system(size: 11.5, weight: .semibold).monospacedDigit())
                     .foregroundStyle(window.isFresh ? color : color.opacity(0.7))
             }
             .frame(width: 32, height: 32)
+            .overlay(alignment: .topTrailing) {
+                if window.severity == .critical {
+                    Text("!").font(.system(size: 8, weight: .heavy)).foregroundStyle(Palette.critical).offset(x: 6, y: -1)
+                }
+            }
             Text(window.resetAt.map { shortDuration(until: $0, now: now) } ?? "—")
                 .font(.system(size: 11).monospacedDigit())
                 .foregroundStyle(Palette.tertiary)
@@ -407,6 +424,7 @@ struct WindowCell: View {
         .frame(width: Layout.windowColumn)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(window.kind.title) \(window.usedPct) percent used"
+            + (window.severity == .critical ? ", critical" : "")
             + (window.resetAt.map { ", resets in \(shortDuration(until: $0, now: now))" } ?? ""))
     }
 }
