@@ -7,8 +7,13 @@ import SwarmHUDCore
 final class UsageModel {
     var accounts: [UsageAccount] = []
     var history: [HistorySample] = []
-    /// Running swarm agents per provider, from `swarm working --json`; empty when none or unknown.
-    var working: [String: Int] = [:]
+    /// Working and waiting swarm agents per provider, from `swarm working --json`; empty when none or unknown.
+    var agents = WorkingSnapshot()
+    /// When an agent last worked or waited; the mascot sleeps 5 minutes later. Launch counts, so a
+    /// new HUD starts awake. Unobserved: the 30 s clock re-reads it, and polls would redraw every 3 s.
+    @ObservationIgnored var lastActive = Date()
+    /// The provider whose agents worked last, so an idle mascot keeps its family.
+    var lastWorking: String?
     /// When the last read succeeded; nil before the first one.
     var readAt: Date?
     /// Why the last read failed; nil after a good one. The last good accounts stay on screen.
@@ -100,8 +105,10 @@ final class UsageModel {
         let swarm = swarm
         Task {
             let result = await offPool { run(swarm, ["working", "--json"], timeout: 2) }
-            let counts = (try? result.get()).map(WorkingSnapshot.counts) ?? [:]
-            if counts != working { working = counts }
+            let agents = (try? result.get()).map(WorkingSnapshot.read) ?? WorkingSnapshot()
+            if agents.isActive { lastActive = Date() }
+            if let busy = busiest(agents.working), busy != lastWorking { lastWorking = busy }
+            if agents != self.agents { self.agents = agents }
             readingWorking = false
         }
     }

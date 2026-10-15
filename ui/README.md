@@ -9,9 +9,12 @@ swarm ships as one Homebrew formula (ADR 0079). The web UI is inside the `swarm`
 `SwarmHUD` is the notch usage HUD (ADR 0087). It ships at `libexec/SwarmHUD.app`, reads
 `swarm usage --json` each minute and `swarm working --json` every 3 s, and keeps 7 days of samples
 for the pace in `~/Library/Application Support/SwarmHUD/history.json`. `swarm hud install` starts it
-at login. `SwarmHUD --snapshot <dir> --fixture Tests/SwarmHUDTests/fixtures/nine-accounts.json
+at login. Closed, it shows a pixel mascot that works, waits or sleeps with the swarm agents, and a
+ring for the best account's fullest limit. `SwarmHUD --snapshot <dir> --fixture
+Tests/SwarmHUDTests/fixtures/nine-accounts.json --closed Tests/SwarmHUDTests/fixtures/closed.json
 --history Tests/SwarmHUDTests/fixtures/history.json --working Tests/SwarmHUDTests/fixtures/working.json
---now 1792050120` renders each theme to PNG files with no window.
+--now 1792050120` renders each theme, each mascot family and state, the ring's edge cases and a
+sheet of mascot frames to PNG files with no window.
 
 Run `make build` to compile the helpers.
 Run `make package` to build `.build/release/swarm-<version>-macos-arm64.tar.gz`. It builds the Zig

@@ -2,9 +2,11 @@ import AppKit
 import SwarmHUDCore
 import SwiftUI
 
-// `SwarmHUD --snapshot <dir> --fixture <usage.json> [--history <history.json>] [--working <working.json>]
-// [--now <seconds>]` renders the closed and open HUD for every phase to PNG files, for design review
-// and tests. Without it the HUD runs.
+// `SwarmHUD --snapshot <dir> --fixture <usage.json> [--closed <usage.json>] [--history <history.json>]
+// [--working <working.json>] [--now <seconds>]` renders the HUD to PNG files with no window, for
+// design review and tests: open and closed for every phase, the closed wings for each mascot family
+// and state, the ring's edge cases, and a sheet of every mascot frame. `--closed` is the reading
+// for the closed renders (default: `--fixture`). Without `--snapshot` the HUD runs.
 let arguments = CommandLine.arguments
 if let at = arguments.firstIndex(of: "--snapshot"), arguments.count > at + 1 {
     MainActor.assumeIsolated { snapshot(to: URL(fileURLWithPath: arguments[at + 1]), arguments: arguments) }
@@ -38,30 +40,94 @@ func snapshot(to directory: URL, arguments: [String]) {
         fail("cannot create \(directory.path): \(error.localizedDescription)")
     }
     let model = UsageModel()
-    model.accounts = accounts(from: usage.meters)
+    func readFile(_ flag: String) -> Data? { value(flag).flatMap { FileManager.default.contents(atPath: $0) } }
+    let openAccounts = accounts(from: usage.meters)
+    let closedMeters = readFile("--closed").flatMap { try? UsageSnapshot.decode($0) }?.meters ?? usage.meters
+    let closedAccounts = accounts(from: closedMeters)
     // Fixture history only: the owner's saved history would make the pictures change from run to run.
-    model.history = value("--history").flatMap { FileManager.default.contents(atPath: $0) }
-        .flatMap { try? JSONDecoder().decode([HistorySample].self, from: $0) } ?? []
-    model.working = value("--working").flatMap { FileManager.default.contents(atPath: $0) }.map(WorkingSnapshot.counts) ?? [:]
+    model.history = readFile("--history").flatMap { try? JSONDecoder().decode([HistorySample].self, from: $0) } ?? []
+    let fileAgents = readFile("--working").map(WorkingSnapshot.read) ?? WorkingSnapshot()
     model.readAt = now.addingTimeInterval(-120)
     model.now = now
+
+    func write(_ view: some View, _ name: String) {
+        let renderer = ImageRenderer(content: view)
+        renderer.scale = 2
+        let url = directory.appending(path: "\(name).png")
+        guard let image = renderer.cgImage,
+              let png = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) else {
+            fail("cannot render \(url.lastPathComponent)")
+        }
+        do { try png.write(to: url) } catch { fail("cannot write \(url.path): \(error.localizedDescription)") }
+        print(url.path)
+    }
+    func render(_ name: String, open: Bool) {
+        model.isOpen = open
+        write(HUDView(model: model, live: false)
+            .frame(width: Layout.openWidth + 40, height: open ? model.openSize.height + 40 : 80, alignment: .top)
+            .background(Color(hex: 0x6F8FB8)), name)
+    }
+
     for phase in DayPhase.allCases {
         // Set the phase itself: `pinnedPhase` would overwrite the owner's saved theme pin.
         model.phase = phase
-        for (name, open) in [("closed", false), ("open", true)] {
-            model.isOpen = open
-            let view = HUDView(model: model, live: false)
-                .frame(width: Layout.openWidth + 40, height: open ? model.openSize.height + 40 : 80, alignment: .top)
-                .background(Color(hex: 0x6F8FB8))
-            let renderer = ImageRenderer(content: view)
-            renderer.scale = 2
-            let url = directory.appending(path: "\(phase.rawValue)-\(name).png")
-            guard let image = renderer.cgImage,
-                  let png = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) else {
-                fail("cannot render \(url.lastPathComponent)")
+        model.agents = fileAgents
+        model.lastActive = now
+        model.accounts = closedAccounts
+        render("\(phase.rawValue)-closed", open: false)
+        model.accounts = openAccounts
+        render("\(phase.rawValue)-open", open: true)
+    }
+
+    model.phase = .day
+    model.accounts = closedAccounts
+    for family in ["claude", "codex"] {
+        for state in MascotState.allCases {
+            model.lastWorking = family
+            model.agents = switch state {
+            case .working: WorkingSnapshot(working: [family: 2])
+            case .waiting: WorkingSnapshot(waiting: [family: 1])
+            case .idle, .sleeping: WorkingSnapshot()
             }
-            do { try png.write(to: url) } catch { fail("cannot write \(url.path): \(error.localizedDescription)") }
-            print(url.path)
+            model.lastActive = now.addingTimeInterval(state == .sleeping ? -301 : -60)
+            render("closed-\(family)-\(state.rawValue)", open: false)
         }
     }
+
+    // The ring's edge cases, beside an idle Claude mascot.
+    model.lastWorking = "claude"
+    model.agents = WorkingSnapshot()
+    model.lastActive = now
+    let at = { (pct: Int) in
+        accounts(from: closedMeters.map {
+            UsageMeter(provider: $0.provider, account: $0.account, label: $0.label, window: $0.window,
+                       windowMinutes: $0.windowMinutes, usedPct: $0.usedPct.map { _ in pct },
+                       resetTimeSeconds: $0.resetTimeSeconds, state: $0.state, asOfSeconds: $0.asOfSeconds)
+        })
+    }
+    for (name, list, readError) in [("warn", at(88), nil), ("full", at(100), nil), ("stale", closedAccounts, "timed out"),
+                                    ("none", [], nil)] as [(String, [UsageAccount], String?)] {
+        model.accounts = list
+        model.readError = readError
+        render("closed-ring-\(name)", open: false)
+    }
+    model.readError = nil
+
+    // Every frame at real size, a row per family, for judging the art.
+    let ticks: [MascotState: [Int]] = [.working: [0, 1], .waiting: [0, 1], .idle: [0, 13], .sleeping: [0, 1, 2]]
+    write(VStack(spacing: 4) {
+        ForEach(["claude", "codex"], id: \.self) { family in
+            HStack(spacing: 4) {
+                ForEach(MascotState.allCases, id: \.self) { state in
+                    ForEach(ticks[state]!, id: \.self) { tick in
+                        MascotCanvas(pose: mascotPose(family: family, state: state, tick: tick))
+                            .frame(width: Layout.wing - Layout.closedEar, height: Layout.minNotch)
+                            .background(Color.black)
+                    }
+                }
+            }
+        }
+    }
+    .padding(4)
+    .background(Color(hex: 0x6F8FB8)), "mascot-frames")
 }

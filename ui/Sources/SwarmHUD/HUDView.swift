@@ -19,6 +19,8 @@ enum Palette {
     static let warn = Color(hex: 0xFFA049)
     static let critical = Color(hex: 0xFF5A4F)
     static let track = Color.white.opacity(0.10)
+    /// Brighter than `track`: a 3 pt ring needs more contrast than a 6 pt bar.
+    static let ringTrack = Color.white.opacity(0.18)
     static let rule = Color.white.opacity(0.08)
 
     /// Text colour for a reading. Calm text stays white, so the phase never changes text contrast.
@@ -51,13 +53,11 @@ struct Theme {
 }
 
 enum Layout {
-    /// The left wing: room for the provider mark plus 10 pt outer padding.
-    static let wing: CGFloat = 56
-    /// The right wing: room for `~name · 12h left` at 12 pt with a short name, plus 10 pt outer
-    /// padding. Only this side grows, so the closed shape covers no more of the menu bar on the left.
-    static let infoWing: CGFloat = 132
-    /// How far right of the camera the closed shape's centre sits.
-    static let closedShift: CGFloat = (infoWing - wing) / 2
+    /// Each closed wing beside the camera: the closed ear, then room for the 18 pt mascot or the
+    /// 15 pt ring with about 5 pt on each side.
+    static let wing: CGFloat = 34
+    /// The closed shape's concave top corners.
+    static let closedEar: CGFloat = 6
     static let openWidth: CGFloat = 1088
     /// 11 accounts in two provider groups fit; the panel adds room for the shadow.
     static let maxOpenHeight: CGFloat = 600
@@ -86,7 +86,7 @@ enum Layout {
 
 extension UsageModel {
     var closedSize: CGSize {
-        CGSize(width: max(notch.width, 32) + Layout.wing + Layout.infoWing, height: notch.height)
+        CGSize(width: max(notch.width, 32) + 2 * Layout.wing, height: notch.height)
     }
 
     var openSize: CGSize {
@@ -131,7 +131,7 @@ struct HUDView: View {
 
     private var open: Bool { model.isOpen }
     private var size: CGSize { open ? model.openSize : model.closedSize }
-    private var shape: NotchShape { NotchShape(ear: open ? Layout.ear : 6, radius: open ? 28 : 13) }
+    private var shape: NotchShape { NotchShape(ear: open ? Layout.ear : Layout.closedEar, radius: open ? 28 : 13) }
     private var theme: Theme { Theme(model.phase) }
 
     private var geometryAnimation: Animation? {
@@ -149,13 +149,12 @@ struct HUDView: View {
                     OpenContent(model: model, theme: theme, now: now)
                         .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.97, anchor: .top)))
                 } else {
-                    ClosedWings(model: model, live: live, now: now)
+                    ClosedWings(model: model, theme: theme, live: live, now: now)
                 }
             }
             .frame(width: size.width, height: size.height, alignment: .top)
             .clipShape(shape)
             .shadow(color: .black.opacity(open ? 0.46 : 0), radius: open ? 13 : 0, y: open ? 10 : 0)
-            .offset(x: open ? 0 : Layout.closedShift)
             .animation(geometryAnimation, value: open)
             .animation(live && !reduceMotion ? .easeInOut(duration: 2) : nil, value: model.phase)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -199,57 +198,23 @@ struct ProviderMark: View {
     }
 }
 
-/// Turns slowly while an agent of its provider works; with Reduce Motion it pulses instead.
-struct WorkingMark: View {
-    let provider: String
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var moving = false
-
-    var body: some View {
-        ProviderMark(provider: provider)
-            .rotationEffect(.degrees(!reduceMotion && moving ? 360 : 0))
-            .opacity(reduceMotion && moving ? 0.4 : 1)
-            .onAppear {
-                withAnimation(reduceMotion ? .easeInOut(duration: 1.2).repeatForever(autoreverses: true)
-                                           : .linear(duration: 2.4).repeatForever(autoreverses: false)) { moving = true }
-            }
-    }
-}
-
 /// "2h 10m" until 100%; under a minute still reads "1m", because shortDuration says "now" there.
 func fillDuration(_ seconds: TimeInterval, now: Date) -> String {
     shortDuration(until: now.addingTimeInterval(max(seconds, 60)), now: now)
 }
 
 extension BestAccount {
-    /// "2%", "82% · 3h left", "resets 2h 10m" in the wing; "2% used", "82% used · full in 3h 10m" in the card.
-    /// The used percent of the fullest limit, then a time only when one fills before its reset, so
-    /// a HUD with no pace yet never claims that the account lasts.
-    func paceText(short: Bool, now: Date) -> String {
-        let used = "\(fullest)%"
+    /// "2% used", "82% used · full in 3h 10m", "all full · resets in 2h": the used percent of the
+    /// fullest limit, then a time only when one fills before its reset, so a HUD with no pace yet
+    /// never claims that the account lasts.
+    func paceText(now: Date) -> String {
+        let used = "\(fullest)% used"
         switch outlook {
-        case .left(let seconds):
-            return short ? "\(used) · \(leftText(seconds))" : "\(used) used · full in \(fillDuration(seconds, now: now))"
-        case .lasts:
-            return short ? used : "\(used) used"
-        case .allFull(let resetAt):
-            let reset = resetAt.map { shortDuration(until: $0, now: now) }
-            return short ? reset.map { "resets \($0)" } ?? "full" : "all full" + (reset.map { " · resets in \($0)" } ?? "")
+        case .left(let seconds): return "\(used) · full in \(fillDuration(seconds, now: now))"
+        case .lasts: return used
+        case .allFull(let resetAt): return "all full" + (resetAt.map { " · resets in \(shortDuration(until: $0, now: now))" } ?? "")
         }
     }
-
-    var severity: Severity {
-        switch outlook {
-        case .left(let seconds): return seconds < 3600 ? .critical : .warn
-        case .lasts: return .calm
-        case .allFull: return .critical
-        }
-    }
-
-    /// A failed read keeps the last numbers, so they are marked old like a stale meter.
-    func isOld(readFailed: Bool) -> Bool { readFailed || account.windows.contains { !$0.isFresh } }
-
-    private var fullest: Int { account.windows.map(\.usedPct).max() ?? 0 }
 
     func spoken(now: Date) -> String {
         switch outlook {
@@ -262,60 +227,73 @@ extension BestAccount {
     }
 }
 
-/// Closed: a provider mark on the left, moving while its agents work, and the best account with its
-/// pace on the right; nothing over the camera.
+/// "2 Claude agents working, Codex agent waiting for you", "No agent working".
+func agentsSpoken(_ agents: WorkingSnapshot) -> String {
+    func phrase(_ counts: [String: Int], _ verb: String) -> [String] {
+        ["claude", "codex"].compactMap { provider in
+            counts[provider].map { $0 == 1 ? "\(providerTitle(provider)) agent \(verb)" : "\($0) \(providerTitle(provider)) agents \(verb)" }
+        }
+    }
+    let parts = phrase(agents.working, "working") + phrase(agents.waiting, "waiting for you")
+    return parts.isEmpty ? "No agent working" : parts.joined(separator: ", ")
+}
+
+/// Closed: a pixel mascot that shows what the agents do on the left, the best account's fullest
+/// limit as a ring on the right, nothing over the camera and no text.
 struct ClosedWings: View {
     let model: UsageModel
+    let theme: Theme
     let live: Bool
     let now: Date
 
     var body: some View {
         let best = bestAccount(model.accounts, history: model.history, now: now)
-        let provider = markProvider(working: model.working, best: best)
-        let working = provider.map { model.working[$0, default: 0] } ?? 0
+        let state = mascotState(model.agents, lastActive: model.lastActive, now: now)
         HStack(spacing: 0) {
-            Group {
-                if let provider {
-                    if working > 0 && live {
-                        WorkingMark(provider: provider).id(provider)
-                    } else {
-                        ProviderMark(provider: provider)
-                    }
-                } else {
-                    Text("!").font(.system(size: 12, weight: .bold)).foregroundStyle(Palette.secondary)
-                }
-            }
-            .frame(width: Layout.wing - 10, alignment: .leading)
-            .padding(.leading, 10)
+            Mascot(family: mascotFamily(model.agents, lastWorking: model.lastWorking, best: best), state: state, live: live)
+                .frame(width: Layout.wing - Layout.closedEar)
+                .padding(.leading, Layout.closedEar)
             Spacer(minLength: 0)
-            Group {
-                if let best {
-                    // The name gives way in the middle; the pace always shows.
-                    HStack(spacing: 0) {
-                        if best.isOld(readFailed: model.readError != nil) { Text("~").fixedSize() }
-                        if case .allFull = best.outlook {} else {
-                            Text(best.account.name).lineLimit(1).truncationMode(.middle)
-                            Text(" · ").fixedSize()
-                        }
-                        Text(best.paceText(short: true, now: now)).fixedSize()
-                            .foregroundStyle(best.severity == .calm ? Palette.primary : Palette.ink(best.severity))
-                    }
-                    .foregroundStyle(Palette.primary)
-                } else {
-                    Text("—").foregroundStyle(Palette.secondary)
-                }
-            }
-            .font(.system(size: 12, weight: .semibold).monospacedDigit())
-            .frame(width: Layout.infoWing - 10, alignment: .trailing)
-            .padding(.trailing, 10)
+            UsageRingView(ring: usageRing(best, readFailed: model.readError != nil), theme: theme)
+                .frame(width: Layout.wing - Layout.closedEar)
+                .padding(.trailing, Layout.closedEar)
         }
         .frame(maxHeight: .infinity)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel((best?.spoken(now: now) ?? "No usage reading")
-            + (working > 0 ? ", \(working) \(providerTitle(provider!)) agent\(working == 1 ? "" : "s") working" : ""))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(agentsSpoken(model.agents) + ", " + (best.map { lowercasedFirst($0.spoken(now: now)) } ?? "no usage reading"))
         .accessibilityAddTraits(.isButton)
         .accessibilityHint(model.hotKeyReady ? "Opens the usage card. Control Option Command U also opens it." : "Opens the usage card.")
         .accessibilityAction { model.toggleFromKeyboard?() }
+    }
+
+    private func lowercasedFirst(_ text: String) -> String { text.prefix(1).lowercased() + text.dropFirst() }
+}
+
+/// 15 pt across with a 3 pt line. Old numbers draw at half strength; no reading draws a dim empty ring.
+struct UsageRingView: View {
+    let ring: UsageRing
+    let theme: Theme
+
+    var body: some View {
+        ZStack {
+            Circle().stroke(Palette.ringTrack, lineWidth: 3)
+            if case .reading(let used, let severity, _) = ring, used > 0 {
+                Circle().trim(from: 0, to: Double(min(used, 100)) / 100)
+                    .stroke(theme.fill(severity), style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+            }
+        }
+        // The stroke straddles the path, so a 12 pt circle has a 15 pt outer edge.
+        .frame(width: 12, height: 12)
+        .padding(1.5)
+        .opacity(opacity)
+    }
+
+    private var opacity: Double {
+        switch ring {
+        case .none: return 0.6
+        case .reading(_, _, let old): return old ? 0.5 : 1
+        }
     }
 }
 
@@ -387,7 +365,7 @@ struct OpenContent: View {
                         if best.isOld(readFailed: model.readError != nil) { Text("~").fixedSize() }
                         Text(best.account.name).lineLimit(1).truncationMode(.middle)
                         Text(" · \(providerTitle(best.account.provider)) · ").fixedSize()
-                        Text(best.paceText(short: false, now: now)).fixedSize()
+                        Text(best.paceText(now: now)).fixedSize()
                             .foregroundStyle(best.severity == .calm ? Palette.primary : Palette.ink(best.severity))
                     }
                     .foregroundStyle(Palette.primary)

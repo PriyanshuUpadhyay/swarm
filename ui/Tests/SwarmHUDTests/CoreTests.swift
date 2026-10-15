@@ -163,9 +163,6 @@ private func account(_ provider: String, _ name: String, _ windows: [UsageWindow
     // Its shortest fill time before a reset: the fable window (1%/h, 52 h) beats a week that lasts.
     let filling = account("claude", "filling", [window(.week, 24, resetIn: 72), window(.fable, 48, resetIn: 120)])
     #expect(bestAccount([filling], history: [], now: now)?.outlook == .left(52 * 3600))
-    #expect(leftText(52 * 3600) == "52h left")
-    #expect(leftText(59 * 60 + 59) == "59m left")
-    #expect(leftText(10) == "1m left")
 }
 
 @Test func allFullShowsTheEarliestTimeAnAccountIsUsableAgain() {
@@ -199,19 +196,55 @@ private func account(_ provider: String, _ name: String, _ windows: [UsageWindow
     #expect(providerGroups([account("agy", "x", []), codexA]).map(\.provider) == ["codex", "agy"])
 }
 
-@Test func workingCountsReadV1AndFailQuiet() {
-    #expect(WorkingSnapshot.counts(Data(#"{"schema":"swarm.working.v1","working":{"claude":2,"codex":1}}"#.utf8))
-            == ["claude": 2, "codex": 1])
-    #expect(WorkingSnapshot.counts(Data(#"{"schema":"swarm.working.v1","working":{}}"#.utf8)) == [:])
-    #expect(WorkingSnapshot.counts(Data(#"{"schema":"swarm.working.v2","working":{"claude":2}}"#.utf8)) == [:])
-    #expect(WorkingSnapshot.counts(Data("swarm: unknown command".utf8)) == [:])
+@Test func workingReadsV1WithAndWithoutWaitingAndFailsQuiet() {
+    let read = { (json: String) in WorkingSnapshot.read(Data(json.utf8)) }
+    #expect(read(#"{"schema":"swarm.working.v1","working":{"claude":2,"codex":1}}"#)
+            == WorkingSnapshot(working: ["claude": 2, "codex": 1]))
+    #expect(read(#"{"schema":"swarm.working.v1","working":{"claude":2},"waiting":{"codex":1,"claude":0}}"#)
+            == WorkingSnapshot(working: ["claude": 2], waiting: ["codex": 1]))
+    #expect(read(#"{"schema":"swarm.working.v1","working":{},"waiting":{"codex":1}}"#).isActive)
+    #expect(!read(#"{"schema":"swarm.working.v1","working":{}}"#).isActive)
+    #expect(read(#"{"schema":"swarm.working.v2","working":{"claude":2}}"#) == WorkingSnapshot())
+    #expect(read("swarm: unknown command") == WorkingSnapshot())
 }
 
-@Test func markFollowsTheBusiestProviderElseTheBestAccount() {
+@Test func mascotFamilyGoesWorkingThenWaitingThenLastThenBestThenClaude() {
     let best = BestAccount(account: account("codex", "x", [window(.week, 1)]), outlook: .lasts)
-    #expect(markProvider(working: ["claude": 1, "codex": 3], best: nil) == "codex")
-    #expect(markProvider(working: ["claude": 2, "codex": 2], best: nil) == "claude")
-    #expect(markProvider(working: ["agy": 5], best: best) == "codex")
-    #expect(markProvider(working: [:], best: best) == "codex")
-    #expect(markProvider(working: [:], best: nil) == nil)
+    let both = WorkingSnapshot(working: ["claude": 1, "codex": 3], waiting: ["claude": 5])
+    #expect(mascotFamily(both, lastWorking: "claude", best: nil) == "codex")
+    #expect(mascotFamily(WorkingSnapshot(working: ["claude": 2, "codex": 2]), lastWorking: nil, best: nil) == "claude")
+    #expect(mascotFamily(WorkingSnapshot(working: ["agy": 4], waiting: ["codex": 1]), lastWorking: "claude", best: nil) == "codex")
+    #expect(mascotFamily(WorkingSnapshot(), lastWorking: "claude", best: best) == "claude")
+    #expect(mascotFamily(WorkingSnapshot(), lastWorking: nil, best: best) == "codex")
+    #expect(mascotFamily(WorkingSnapshot(), lastWorking: nil, best: nil) == "claude")
+}
+
+@Test func mascotSleepsFiveMinutesAfterTheLastActiveAgent() {
+    let last = Date(timeIntervalSince1970: 100_000)
+    let idle = WorkingSnapshot()
+    #expect(mascotState(idle, lastActive: last, now: last.addingTimeInterval(4 * 60 + 59)) == .idle)
+    #expect(mascotState(idle, lastActive: last, now: last.addingTimeInterval(5 * 60 + 1)) == .sleeping)
+    let late = last.addingTimeInterval(3600)
+    #expect(mascotState(WorkingSnapshot(waiting: ["codex": 1]), lastActive: last, now: late) == .waiting)
+    #expect(mascotState(WorkingSnapshot(working: ["claude": 1], waiting: ["codex": 1]), lastActive: last, now: late) == .working)
+}
+
+@Test func ringShowsTheFullestLimitAllFullAndOldReadings() {
+    let now = Date(timeIntervalSince1970: 100_000)
+    let calm = account("claude", "pro2", [window(.session, 82, resetIn: 0.5), window(.week, 30, resetIn: 100)])
+    #expect(usageRing(bestAccount([calm], history: [], now: now), readFailed: false)
+            == .reading(usedPct: 82, severity: .warn, old: false))
+    #expect(usageRing(bestAccount([calm], history: [], now: now), readFailed: true)
+            == .reading(usedPct: 82, severity: .warn, old: true))
+    let stale = account("codex", "x", [window(.week, 10, resetIn: 100, fresh: false)])
+    #expect(usageRing(bestAccount([stale], history: [], now: now), readFailed: false)
+            == .reading(usedPct: 10, severity: .calm, old: true))
+    // 48% that fills in 52 h, before its reset, warns although the percent is calm.
+    let filling = account("claude", "f", [window(.fable, 48, resetIn: 120)])
+    #expect(usageRing(bestAccount([filling], history: [], now: now), readFailed: false)
+            == .reading(usedPct: 48, severity: .warn, old: false))
+    let full = account("claude", "full", [window(.week, 100, resetIn: 5)])
+    #expect(usageRing(bestAccount([full], history: [], now: now), readFailed: false)
+            == .reading(usedPct: 100, severity: .critical, old: false))
+    #expect(usageRing(nil, readFailed: true) == .none)
 }

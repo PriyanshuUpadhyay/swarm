@@ -158,29 +158,88 @@ public func bestAccount(_ accounts: [UsageAccount], history: [HistorySample], no
     return BestAccount(account: best, outlook: left.map { .left($0) } ?? .lasts)
 }
 
-/// "3h left", "40m left": whole units, rounded down, so it never promises more time than there is.
-public func leftText(_ seconds: TimeInterval) -> String {
-    let seconds = seconds.isFinite ? min(max(seconds, 0), 999 * 3600) : 0
-    return seconds >= 3600 ? "\(Int(seconds / 3600))h left" : "\(max(Int(seconds / 60), 1))m left"
-}
+/// `swarm working --json`: per provider, the agents that work and the agents that wait for the
+/// owner's answer. A provider with none is absent, and so is `waiting` from an older swarm.
+public struct WorkingSnapshot: Decodable, Equatable, Sendable {
+    public var working: [String: Int]
+    public var waiting: [String: Int]
 
-/// `swarm working --json`: running agents per provider. A provider with none is absent.
-public struct WorkingSnapshot: Decodable, Sendable {
-    public let schema: String
-    public let working: [String: Int]
-
-    /// Any failure or another schema reads as nothing working; the wing only loses its motion.
-    public static func counts(_ data: Data) -> [String: Int] {
-        guard let snapshot = try? JSONDecoder().decode(WorkingSnapshot.self, from: data),
-              snapshot.schema == "swarm.working.v1" else { return [:] }
-        return snapshot.working.filter { $0.value > 0 }
+    public init(working: [String: Int] = [:], waiting: [String: Int] = [:]) {
+        self.working = working
+        self.waiting = waiting
     }
+
+    private enum CodingKeys: String, CodingKey { case schema, working, waiting }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let schema = try container.decode(String.self, forKey: .schema)
+        guard schema == "swarm.working.v1" else {
+            throw DecodingError.dataCorruptedError(forKey: .schema, in: container, debugDescription: "unknown schema \(schema)")
+        }
+        working = try container.decode([String: Int].self, forKey: .working).filter { $0.value > 0 }
+        waiting = try container.decodeIfPresent([String: Int].self, forKey: .waiting)?.filter { $0.value > 0 } ?? [:]
+    }
+
+    /// Any failure or another schema reads as no agents; the mascot only falls idle.
+    public static func read(_ data: Data) -> WorkingSnapshot {
+        (try? JSONDecoder().decode(WorkingSnapshot.self, from: data)) ?? WorkingSnapshot()
+    }
+
+    public var isActive: Bool { !working.isEmpty || !waiting.isEmpty }
 }
 
-/// The provider the closed wing shows: the one with the most working agents (claude first on a tie),
-/// else the best account's. Only providers with a mark count.
-public func markProvider(working: [String: Int], best: BestAccount?) -> String? {
-    let busiest = ["claude", "codex"].filter { working[$0, default: 0] > 0 }
-        .max { working[$0]! < working[$1]! }
-    return busiest ?? best?.account.provider
+/// The provider with the most agents in `counts`, Claude first on a tie. Only providers with a
+/// mascot count.
+public func busiest(_ counts: [String: Int]) -> String? {
+    ["claude", "codex"].filter { counts[$0, default: 0] > 0 }.max { counts[$0]! < counts[$1]! }
+}
+
+/// What the closed wing's mascot does.
+public enum MascotState: String, CaseIterable, Sendable {
+    case working, waiting, idle, sleeping
+}
+
+/// The mascot sleeps once no agent has worked or waited for 5 minutes.
+public func mascotState(_ agents: WorkingSnapshot, lastActive: Date, now: Date) -> MascotState {
+    if !agents.working.isEmpty { return .working }
+    if !agents.waiting.isEmpty { return .waiting }
+    return now.timeIntervalSince(lastActive) >= 300 ? .sleeping : .idle
+}
+
+/// Whose mascot shows: the most working agents, else the most waiting, else whose agents worked
+/// last, else the best account's provider, else Claude.
+public func mascotFamily(_ agents: WorkingSnapshot, lastWorking: String?, best: BestAccount?) -> String {
+    busiest(agents.working) ?? busiest(agents.waiting) ?? lastWorking ?? best?.account.provider ?? "claude"
+}
+
+extension BestAccount {
+    /// The used percent of its fullest limit.
+    public var fullest: Int { account.windows.map(\.usedPct).max() ?? 0 }
+
+    /// Red when every account is full or a limit fills within the hour, orange when one fills
+    /// before its reset.
+    public var severity: Severity {
+        switch outlook {
+        case .left(let seconds): return seconds < 3600 ? .critical : .warn
+        case .lasts: return .calm
+        case .allFull: return .critical
+        }
+    }
+
+    /// A failed read keeps the last numbers, so they are marked old like a stale meter.
+    public func isOld(readFailed: Bool) -> Bool { readFailed || account.windows.contains { !$0.isFresh } }
+}
+
+/// The closed wing's ring: the best account's fullest limit.
+public enum UsageRing: Equatable, Sendable {
+    case none
+    case reading(usedPct: Int, severity: Severity, old: Bool)
+}
+
+/// Coloured by the worse of the used percent and the pace, so a ring that will fill soon warns early.
+public func usageRing(_ best: BestAccount?, readFailed: Bool) -> UsageRing {
+    guard let best else { return .none }
+    return .reading(usedPct: best.fullest, severity: max(Severity(pct: best.fullest), best.severity),
+                    old: best.isOld(readFailed: readFailed))
 }

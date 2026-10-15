@@ -144,8 +144,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func visibleRectInScreen() -> NSRect {
         let size = model.isOpen ? model.openSize : model.closedSize
         let frame = panel.frame
-        let shift = model.isOpen ? 0 : Layout.closedShift
-        return NSRect(x: frame.midX - size.width / 2 + shift, y: frame.maxY - size.height, width: size.width, height: size.height)
+        return NSRect(x: frame.midX - size.width / 2, y: frame.maxY - size.height, width: size.width, height: size.height)
     }
 
     /// A few points of slack around the closed shape and the top edge, so a cursor pushed against
