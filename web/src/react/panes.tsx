@@ -156,7 +156,12 @@ export function PaneStrip({ app }: { app: App }) {
     layout();
     scroller.current!.scrollLeft = start.offset + index * (width - start.width);
   };
-  const columnStart = () => ({ width: columnWidth(main(), widths.current.column), offset: scroller.current!.scrollLeft });
+  /** A column drag keeps the chat page at its width, as a drag of the chat's edge does, so the
+   *  dragged edge follows the pointer and the chat does not shrink under it. */
+  const columnStart = () => {
+    widths.current = { ...widths.current, chat: widths.current.chat ?? chatNow() };
+    return { width: columnWidth(main(), widths.current.column), offset: scroller.current!.scrollLeft };
+  };
   const setSplit = (el: HTMLElement, column: string, share: number | null) => {
     el.style.setProperty("--split", String(splitShare(share)));
     widths.current = saveSplit(widths.current, openId!, cols.map((c) => c[0].id), column, share === null ? null : splitShare(share));

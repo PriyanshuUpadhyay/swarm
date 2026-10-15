@@ -250,18 +250,22 @@ test("/setup opens Setup & doctor; a row's Set up applies its group and the row 
   await expect(dialog.getByTestId("settings-page-setup")).toHaveAttribute("aria-current", "page");
   const ids = await page.getByTestId("doctor-item").evaluateAll((rows) => rows.map((r) => (r as HTMLElement).dataset.id));
   expect(ids.slice(0, 5)).toEqual(["hooks", "guard", "trust", "herdr", "skills"]);
-  // The server home's hooks start unset; the other browser's run may have set them up already.
+  // The server home's hooks start unset, and the case removes them again at the end.
   const hooks = page.locator('[data-testid="doctor-item"][data-id="hooks"]');
-  if ((await hooks.getAttribute("data-state")) === "setup") {
+  await expect(hooks).toHaveAttribute("data-state", "setup");
+  try {
     await hooks.getByTestId("setup-item").click();
     // Nothing is written before Apply; the preview names the files.
     await expect(page.getByTestId("setup-files")).toContainText("hooks.json");
     expect(JSON.parse(swarm(["setup", "status", "--json"])).hooks).toBe(false);
     await page.getByTestId("setup-apply").click();
+    await expect(hooks).toHaveAttribute("data-state", "ok");
+    expect(new URL(tab.url()).pathname).toBe("/setup");
+    expect(JSON.parse(swarm(["setup", "status", "--json"])).hooks).toBe(true);
+  } finally {
+    swarm(["managed", "revert", "--all"]);
   }
-  await expect(hooks).toHaveAttribute("data-state", "ok");
-  expect(new URL(tab.url()).pathname).toBe("/setup");
-  expect(JSON.parse(swarm(["setup", "status", "--json"])).hooks).toBe(true);
+  expect(JSON.parse(swarm(["setup", "status", "--json"])).hooks).toBe(false);
   await tab.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
   // The URL goes back to the open chat, or `/` with none.

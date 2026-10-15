@@ -341,6 +341,14 @@ test("a chat with two children shows their panes; keys move focus and zoom; a pa
       await tab.mouse.move(x + dx, y + dy);
       await tab.mouse.up();
     };
+    // A column drag before any chat drag keeps the chat's width, so the grip follows the pointer.
+    const chatBefore = await width(".strip-chat");
+    const gripX = (await grip("Agent column width").boundingBox())!.x;
+    await drag("Agent column width", 100, 0);
+    expect((await grip("Agent column width").boundingBox())!.x).toBeCloseTo(gripX + 100, 0);
+    expect(await width(".strip-chat")).toBeCloseTo(chatBefore, 0);
+    await grip("Agent column width").dblclick();
+    await grip("Chat page width").dblclick();
     const chatWidth = await width(".strip-chat");
     await drag("Chat page width", -300, 0);
     expect(await width(".strip-chat")).toBeCloseTo(chatWidth - 300, 0);

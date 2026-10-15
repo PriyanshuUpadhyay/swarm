@@ -59,3 +59,32 @@ fn doctor_json_has_one_row_per_item_and_an_empty_home_needs_setup() {
     assert_eq!(item("trust")["state"], "setup");
     assert_eq!(item("trust")["group"], "trust");
 }
+
+#[test]
+fn doctor_reports_a_consent_file_it_cannot_read_as_broken() {
+    let root = std::env::temp_dir().join(format!("swarm-doctor-consent-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let home = root.join("owner");
+    std::fs::create_dir_all(home.join(".swarm")).unwrap();
+    std::fs::write(home.join(".swarm/swarm-home"), "swarm\n").unwrap();
+    std::fs::write(home.join(".swarm/consent.json"), "{").unwrap();
+    let out = Command::new(env!("CARGO_BIN_EXE_swarm"))
+        .env_clear()
+        .env("HOME", &home)
+        .env("SWARM_HOME", &home)
+        .env("PATH", "/usr/bin:/bin")
+        .current_dir(&home)
+        .args(["doctor", "--json"])
+        .output()
+        .unwrap();
+    std::fs::remove_dir_all(&root).unwrap();
+    assert!(out.status.success(), "{out:?}");
+    let doctor: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let trust = doctor["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|i| i["id"] == "trust")
+        .unwrap();
+    assert_eq!(trust["state"], "broken", "{trust}");
+}

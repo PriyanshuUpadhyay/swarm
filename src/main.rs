@@ -1937,9 +1937,15 @@ fn doctor(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         row(
             "trust",
             "Launch consent",
-            match trust_answer() {
-                Some(answer) => ("ok", format!("Answered: {answer}")),
-                None => setup("Not answered, so a launch asks for each folder"),
+            // Read here, not through trust_answer, so a file that cannot be read shows as broken.
+            match read_consent(&swarm::paths::consent_file()?) {
+                Err(error) => ("broken", error),
+                Ok((_, value)) => {
+                    match [STANDING, ASK].into_iter().find(|a| value[TRUST_KEY] == *a) {
+                        Some(answer) => ("ok", format!("Answered: {answer}")),
+                        None => setup("Not answered, so a launch asks for each folder"),
+                    }
+                }
             },
             Some("trust"),
         ),

@@ -407,7 +407,8 @@ export class Settings {
         }
       },
       "Setup",
-      () => this.loadSetup(),
+      // The Home card reads the HUD from its own state, so a HUD setup reloads that too.
+      () => Promise.all([this.loadSetup(), pending.own.includes("hud") && this.loadHud()]),
     );
   }
 

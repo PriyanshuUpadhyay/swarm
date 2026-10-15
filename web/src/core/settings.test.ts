@@ -68,6 +68,13 @@ describe("setup & doctor", () => {
     expect(settings.state.busy).toBe(false);
   });
 
+  it("a Set up of the HUD also reloads the HUD state the Home card reads", async () => {
+    const { settings, calls } = fakeApp(async () => ({ ok: true }));
+    await settings.setUp([], ["hud"]);
+    expect(await settings.applySetUp()).toBe(true);
+    expect(calls).toContain("GET /api/hud");
+  });
+
   it("a failed apply shows the CLI's own text, since every failed swarm setup is a 409, and reloads", async () => {
     const { settings } = fakeApp(async () => {
       throw new ApiError(409, "swarm: none of claude, codex, agy or pi is on PATH");
