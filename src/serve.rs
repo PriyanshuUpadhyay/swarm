@@ -1532,32 +1532,39 @@ async fn setup_write(
     enqueue_action(&app, Action::Setup(body)).await.map(Json)
 }
 async fn run_setup_write(app: &App, body: SetupWrite) -> Result<Value, ApiError> {
-    let args = match (body.only.as_str(), body.digest.as_deref()) {
-        ("hud", _) => return hud_cli(app, "install").await,
-        ("plugin", _) => vec!["setup", "plugin", "--yes"],
-        (only, digest) => vec![
-            "setup",
-            "--digest",
-            digest.unwrap_or_default(),
-            "--only",
-            only,
-        ],
-    };
-    // The plugin step runs each agent CLI's own plugin install, which can take a while.
-    let output = run_cli_with_timeout(app, home_call(app, &args), None, Duration::from_secs(180))
-        .await
-        .map_err(|(status, body)| {
-            let stale = body.0["error"]
-                .as_str()
-                .is_some_and(|text| text.contains("changed after the plan"));
-            // run_cli reports every failure as 409. Only a stale plan keeps it, as in owner_cli.
-            if status == StatusCode::CONFLICT && !stale {
-                (StatusCode::BAD_REQUEST, body)
+    let done = match (body.only.as_str(), body.digest.as_deref()) {
+        ("hud", _) => hud_cli(app, "install").await,
+        (only, digest) => {
+            let args = if only == "plugin" {
+                vec!["setup", "plugin", "--yes"]
             } else {
-                (status, body)
-            }
-        })?;
-    Ok(json!({"ok": true, "output": output}))
+                vec![
+                    "setup",
+                    "--digest",
+                    digest.unwrap_or_default(),
+                    "--only",
+                    only,
+                ]
+            };
+            // The plugin step runs each agent CLI's own plugin install, which can take a while.
+            run_cli_with_timeout(app, home_call(app, &args), None, Duration::from_secs(180))
+                .await
+                .map(|output| json!({"ok": true, "output": output}))
+        }
+    };
+    done.map_err(|(status, error)| {
+        let stale = error.0["error"].as_str().is_some_and(|text| {
+            text.contains("changed after the plan")
+                || text.contains("changed while swarm edited it")
+        });
+        // run_cli reports every failure as 409. Only a file that changed under the plan keeps
+        // it, as in owner_cli.
+        if status == StatusCode::CONFLICT && !stale {
+            (StatusCode::BAD_REQUEST, error)
+        } else {
+            (status, error)
+        }
+    })
 }
 async fn usage_read(State(app): State<App>) -> Result<Json<Value>, ApiError> {
     read_usage(&app, None).await.map(Json)
@@ -5686,7 +5693,9 @@ case "$1 $2" in
   'setup --digest') case "$3" in
     dead) echo 'swarm: a file changed after the plan; check the plan again' >&2; exit 1 ;;
     beef) echo 'swarm: cannot write ~/.codex/config.toml' >&2; exit 1 ;;
+    cafe) echo 'swarm: ~/.codex/config.toml changed while swarm edited it; run the command again' >&2; exit 1 ;;
   esac ;;
+  'hud install') echo 'swarm: SwarmHUD.app is not in this build' >&2; exit 1 ;;
   *) if [ "$1" = type ]; then cat > "$SWARM_HOME/text"; fi ;;
 esac
 "#)).unwrap();
@@ -5939,6 +5948,12 @@ esac
                 .unwrap()
                 .contains("cannot write")
         );
+        let raced = write(json!({"only": "hooks", "digest": "cafe"}))
+            .await
+            .unwrap_err();
+        assert_eq!(raced.0, StatusCode::CONFLICT);
+        let hud = write(json!({"only": "hud"})).await.unwrap_err();
+        assert_eq!(hud.0, StatusCode::BAD_REQUEST);
     }
 
     #[tokio::test]
