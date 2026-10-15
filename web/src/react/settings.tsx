@@ -236,7 +236,7 @@ function Row({ title, detail, htmlFor, children }: { title: string; detail?: str
         ) : (
           <div className="text-sm">{title}</div>
         )}
-        {detail && <div className="text-xs text-muted-foreground">{detail}</div>}
+        {detail && <div className="text-xs break-words text-muted-foreground">{detail}</div>}
       </div>
       {children}
     </div>

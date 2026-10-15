@@ -97,8 +97,15 @@ export const waitText = (ms: number) => {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 };
 
-/** The first-run card shows once the tree is loaded: the HUD app exists, is not installed, and the owner never answered. */
-export const hudCardVisible = (hud: Load<Hud>, treeLoaded: boolean, asked: boolean | undefined) => treeLoaded && hud.state === "ready" && hud.data.app !== null && !hud.data.installed && asked !== true;
+/**
+ * The first-run card shows once the tree is loaded: the HUD app exists, is not installed, and the owner never answered.
+ * While the HUD state is still unknown its space is held, so the sections below do not jump when it appears.
+ */
+export function hudCard(hud: Load<Hud>, treeLoaded: boolean, asked: boolean | undefined): "show" | "hold" | "none" {
+  if (!treeLoaded || asked === true) return "none";
+  if (hud.state === "idle" || hud.state === "loading") return "hold";
+  return hud.state === "ready" && hud.data.app !== null && !hud.data.installed ? "show" : "none";
+}
 
 /** The meters to show, one group per account. AGY and accounts with no usage source are left out. */
 export function meterGroups(usage: Usage | null): { key: string; provider: string; label: string; meters: Meter[] }[] {

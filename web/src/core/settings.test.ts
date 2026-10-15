@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ApiError } from "./api";
 import type { App } from "./app";
-import { hudCardVisible, meterGroups, Settings, untilText, waitText, type Meter } from "./settings";
+import { hudCard, meterGroups, Settings, untilText, waitText, type Meter } from "./settings";
 
 const ROLES = { revision: "rev-1", min_usage_left_pct: 5, profiles: [{ name: "chat", runners: [] }] };
 
@@ -136,12 +136,19 @@ describe("owner writes", () => {
 
   it("shows the HUD card only when the tree is loaded, the app exists, is not installed, and was not asked", () => {
     const ready = (app: string | null, installed: boolean) => ({ state: "ready" as const, data: { installed, running: false, app } });
-    expect(hudCardVisible(ready("/a/SwarmHUD.app", false), true, undefined)).toBe(true);
-    expect(hudCardVisible(ready("/a/SwarmHUD.app", false), false, undefined)).toBe(false);
-    expect(hudCardVisible({ state: "idle" }, true, undefined)).toBe(false);
-    expect(hudCardVisible(ready(null, false), true, undefined)).toBe(false);
-    expect(hudCardVisible(ready("/a/SwarmHUD.app", true), true, undefined)).toBe(false);
-    expect(hudCardVisible(ready("/a/SwarmHUD.app", false), true, true)).toBe(false);
+    expect(hudCard(ready("/a/SwarmHUD.app", false), true, undefined)).toBe("show");
+    expect(hudCard(ready("/a/SwarmHUD.app", false), false, undefined)).toBe("none");
+    expect(hudCard(ready(null, false), true, undefined)).toBe("none");
+    expect(hudCard(ready("/a/SwarmHUD.app", true), true, undefined)).toBe("none");
+    expect(hudCard(ready("/a/SwarmHUD.app", false), true, true)).toBe("none");
+    expect(hudCard({ state: "error", error: "launchctl failed" }, true, undefined)).toBe("none");
+  });
+
+  it("holds the HUD card space while the HUD state is unknown, only for an owner who was never asked", () => {
+    expect(hudCard({ state: "idle" }, true, undefined)).toBe("hold");
+    expect(hudCard({ state: "loading" }, true, undefined)).toBe("hold");
+    expect(hudCard({ state: "idle" }, true, true)).toBe("none");
+    expect(hudCard({ state: "idle" }, false, undefined)).toBe("none");
   });
 
   it("setHud posts the switch, is pending meanwhile, and stores the reply", async () => {

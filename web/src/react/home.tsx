@@ -5,7 +5,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import type { App } from "../core/app";
 import type { Load } from "../core/changes";
 import { workspaceRow } from "../core/nav";
-import { hudCardVisible, USAGE_PROVIDERS, type Usage } from "../core/settings";
+import { hudCard, USAGE_PROVIDERS, type Usage } from "../core/settings";
 import { Button } from "../components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "../components/ui/dialog";
 import { StatusGlyph } from "./status";
@@ -20,6 +20,7 @@ export function Home({ app }: { app: App }) {
   const hudPending = useSyncExternalStore(app.settings.subscribe, () => app.settings.state.hudPending);
   // Fire-and-forget is safe: loadHud catches its own errors into the hud state.
   useEffect(() => void app.settings.loadHud(), [app]);
+  const card = hudCard(hud, view.loaded, view.tree?.prefs.usageHUDAsked);
   const answer = (add: boolean) => {
     // Fire-and-forget is safe: choose shows a refused write as a notice, and setHud posts its own.
     void app.settings.setPref("usageHUDAsked", true);
@@ -36,8 +37,13 @@ export function Home({ app }: { app: App }) {
             Create Project…
           </Button>
         </div>
-        {hudCardVisible(hud, view.loaded, view.tree?.prefs.usageHUDAsked) && (
-          <section className="grid gap-2 rounded-md border border-border px-4 py-3" aria-label="Usage HUD" data-testid="hud-card">
+        {card !== "none" && (
+          <section
+            className={`grid gap-2 rounded-md border border-border px-4 py-3${card === "hold" ? " invisible" : ""}`}
+            aria-label="Usage HUD"
+            aria-hidden={card === "hold" || undefined}
+            data-testid={card === "show" ? "hud-card" : undefined}
+          >
             <h2 className="font-semibold">Add the usage HUD?</h2>
             <p className="text-sm text-muted-foreground">See Claude and Codex limits at the notch. It starts at login; you can turn it off in Settings › Accounts.</p>
             <div className="flex gap-2">
