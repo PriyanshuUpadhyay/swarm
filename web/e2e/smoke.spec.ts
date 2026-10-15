@@ -281,9 +281,14 @@ test("a chat with two children shows their panes; keys move focus and zoom; a pa
 
     // The chat page leaves the right side to the column, so it shows with no scroll.
     await expect(reviewer).toBeInViewport({ ratio: 0.99 });
-    const main = (await tab.getByTestId("strip").boundingBox())!;
-    const column = (await tab.locator(".strip-col").boundingBox())!;
-    expect(column.x + column.width + 7).toBeCloseTo(main.x + main.width, 0);
+    // Polled, since the column slides in for 240 ms.
+    await expect
+      .poll(async () => {
+        const main = (await tab.getByTestId("strip").boundingBox())!;
+        const column = (await tab.locator(".strip-col").boundingBox())!;
+        return Math.round(main.x + main.width - (column.x + column.width));
+      })
+      .toBe(7);
 
     // ⌥⌘→ focuses the first pane, scrolls the strip to it, and puts the keyboard in its composer.
     await tab.keyboard.press("Alt+Meta+ArrowRight");
