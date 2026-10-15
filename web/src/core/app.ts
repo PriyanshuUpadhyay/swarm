@@ -673,14 +673,15 @@ export class App {
     const row = nav.row;
     if (!row) return this.toggle(nav.id);
     const sel = row.selection ?? { workspace: null, chat: null, agentSession: null, agent: null };
+    // An archived chat folds and unarchives in both views, as its button and menu do.
+    if (row.kind === "archived") return this.toggle(nav.id);
+    if (row.kind === "archived-chat") return this.unarchive(archivedSession(nav.id));
     // The archive view only shows; Restore is in the menu, and an archived workspace takes no selection.
     if (this.treeName === "archived") {
       if (row.kind === "chat" && sel.chat) this.openChat(sel.chat, e, { write: false });
       return;
     }
-    if (row.kind === "archived") this.toggle(nav.id);
-    else if (row.kind === "archived-chat") this.unarchive(archivedSession(nav.id));
-    else if (row.kind === "more") {
+    if (row.kind === "more") {
       const workspace = sel.workspace ?? row.parentId;
       if (workspace) void this.choose({ op: "expand_list", workspace });
     } else if (row.kind === "workspace") void this.selectWorkspace(row.id, e);

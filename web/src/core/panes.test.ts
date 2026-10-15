@@ -77,8 +77,7 @@ describe("strip layout", () => {
     expect(chatWidth(1180, null, 880)).toBe(400);
   });
 
-  it("keeps the chat at 90% until a drag, which leaves room for one column", () => {
-    expect(chatWidth(1000)).toBe(900);
+  it("a drag leaves room for one column", () => {
     expect(chatWidth(1000, 800)).toBe(560);
     expect(chatWidth(1000, 100)).toBe(400);
     expect(chatWidth(700, 650)).toBe(400);

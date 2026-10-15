@@ -579,7 +579,9 @@ function SetupPage({ app }: { app: App }) {
   return (
     <div className="grid gap-4" data-testid="setup-page">
       <div className="flex items-center gap-2">
-        <p className="flex-1 text-sm text-muted-foreground">What swarm sets up on this Mac.</p>
+        <p role="status" className="flex-1 text-sm text-muted-foreground">
+          {busy ? "Working…" : "What swarm sets up on this Mac."}
+        </p>
         <Button size="sm" variant="ghost" disabled={busy} onClick={() => void app.settings.loadSetup()}>
           <RefreshCwIcon />
           Check again
@@ -588,11 +590,6 @@ function SetupPage({ app }: { app: App }) {
           Set up all
         </Button>
       </div>
-      {busy && !pending && (
-        <p role="status" className="text-sm text-muted-foreground">
-          Working…
-        </p>
-      )}
       {pending && (
         <section className="grid gap-2 rounded-md border p-3" data-testid="setup-preview">
           <h3 className="text-sm font-semibold">Set up {[...pending.plan, ...pending.own].join(", ")}</h3>

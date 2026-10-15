@@ -403,7 +403,7 @@ export class Settings {
           for (const only of pending.own) await this.api.post("/api/setup/apply", { only });
         } catch (err) {
           // Any failed swarm setup is a 409, so the CLI's own text names the cause, not "changed elsewhere".
-          throw err instanceof ApiError ? new Error(err.message) : err;
+          throw err instanceof ApiError ? new Error(err.message, { cause: err }) : err;
         }
       },
       "Setup",

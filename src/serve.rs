@@ -292,7 +292,10 @@ pub fn ui_state() -> (&'static str, String) {
         return ("broken", "No swarm home".into());
     };
     match recorded(&root.join("ui-url")).filter(|(url, ..)| answers(url)) {
-        None => ("ok", "Not running; `swarm ui` starts it".into()),
+        None => (
+            "ok",
+            "No `swarm ui` server is recorded; `swarm ui` starts one".into(),
+        ),
         Some((_, _, build)) if build.as_deref() == Some(BUILD) => ("ok", format!("Runs {BUILD}")),
         Some((_, _, build)) => (
             "broken",
