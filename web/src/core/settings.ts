@@ -31,6 +31,8 @@ export type Meter = {
   as_of_seconds: number | null;
 };
 export type Usage = { meters: Meter[] };
+/** `swarm.hud.v1` from `/api/hud`. `app` is null when this swarm has no HUD app. */
+export type Hud = { installed: boolean; running: boolean; app: string | null };
 export type Runner = { provider: string; model: string; effort: string; sandbox?: string; approval?: string; permission?: string };
 export type Profile = { name: string; runners: Runner[] };
 export type Roles = { revision: string; min_usage_left_pct: number; profiles: Profile[] };
@@ -56,6 +58,7 @@ export type SettingsState = {
   open: boolean;
   page: Page;
   usage: Load<Usage>;
+  hud: Load<Hud>;
   /** When each provider may refresh again, in ms since 1970, from the server's `next_in_seconds`. */
   nextRefresh: Record<string, number>;
   refreshing: string | null;
@@ -92,6 +95,9 @@ export const waitText = (ms: number) => {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 };
 
+/** The first-run card shows once: the HUD app exists, is not installed, and the owner never answered. */
+export const hudCardVisible = (hud: Load<Hud>, asked: boolean | undefined) => hud.state === "ready" && hud.data.app !== null && !hud.data.installed && asked !== true;
+
 /** The meters to show, one group per account. AGY and accounts with no usage source are left out. */
 export function meterGroups(usage: Usage | null): { key: string; provider: string; label: string; meters: Meter[] }[] {
   const groups = new Map<string, { key: string; provider: string; label: string; meters: Meter[] }>();
@@ -110,6 +116,7 @@ export class Settings {
     open: false,
     page: "appearance",
     usage: { state: "idle" },
+    hud: { state: "idle" },
     nextRefresh: {},
     refreshing: null,
     roles: { state: "idle" },
@@ -144,6 +151,7 @@ export class Settings {
     if (page === "accounts") {
       for (const p of USAGE_PROVIDERS) void this.loadAccounts(p);
       void this.loadUsage();
+      void this.loadHud();
     }
   }
 
@@ -183,9 +191,28 @@ export class Settings {
     }
   }
 
+  // ---- usage HUD ----
+
+  async loadHud() {
+    try {
+      this.set({ hud: { state: "ready", data: await this.api.get<Hud>("/api/hud") } });
+    } catch (err) {
+      this.set({ hud: { state: "error", error: message(err) } });
+    }
+  }
+
+  /** Installs or removes the login item; the switch shows what the server reports. */
+  async setHud(on: boolean) {
+    try {
+      this.set({ hud: { state: "ready", data: await this.api.post<Hud>("/api/hud", { on }) } });
+    } catch (err) {
+      this.app.notice(`Usage HUD failed: ${message(err)}`, true);
+    }
+  }
+
   // ---- preferences ----
 
-  /** One `prefs` key: `theme`, `sendKey` or `notices.post|sound|done|badge`. */
+  /** One `prefs` key: `theme`, `sendKey`, `usageHUDAsked` or `notices.post|sound|done|badge`. */
   setPref(key: string, value: string | boolean): Promise<boolean> {
     return this.app.choose({ op: "pref", key, value });
   }

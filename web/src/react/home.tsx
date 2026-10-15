@@ -1,11 +1,11 @@
 // Home (HomeView), the workspace landing (SessionsWindow.workspaceLanding), and the one name dialog.
 
 import { CircleCheckIcon, CircleIcon } from "lucide-react";
-import { useState, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import type { App } from "../core/app";
 import type { Load } from "../core/changes";
 import { workspaceRow } from "../core/nav";
-import { USAGE_PROVIDERS, type Usage } from "../core/settings";
+import { hudCardVisible, USAGE_PROVIDERS, type Usage } from "../core/settings";
 import { Button } from "../components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "../components/ui/dialog";
 import { StatusGlyph } from "./status";
@@ -16,6 +16,12 @@ export function Home({ app }: { app: App }) {
   const hasProject = (view.tree?.sections.length ?? 0) > 0;
   const hasChat = recent.length > 0;
   const hasAccount = useSyncExternalStore(app.settings.subscribe, () => signedIn(app.settings.state.usage));
+  const hud = useSyncExternalStore(app.settings.subscribe, () => app.settings.state.hud);
+  useEffect(() => void app.settings.loadHud(), [app]);
+  const answer = (add: boolean) => {
+    void app.settings.setPref("usageHUDAsked", true);
+    if (add) void app.settings.setHud(true);
+  };
   return (
     <div className="min-h-0 flex-1 overflow-y-auto" data-testid="home">
       <div className="mx-auto grid max-w-[760px] gap-8 px-8 py-8">
@@ -27,6 +33,20 @@ export function Home({ app }: { app: App }) {
             Create Project…
           </Button>
         </div>
+        {hudCardVisible(hud, view.tree?.prefs?.usageHUDAsked) && (
+          <section className="grid gap-2 rounded-md border border-border px-4 py-3" aria-label="Usage HUD" data-testid="hud-card">
+            <h2 className="font-semibold">Add the usage HUD?</h2>
+            <p className="text-sm text-muted-foreground">See Claude and Codex limits at the notch. It starts at login; you can turn it off in Settings › Accounts.</p>
+            <div className="flex gap-2">
+              <Button size="sm" data-testid="hud-add" onClick={() => answer(true)}>
+                Add
+              </Button>
+              <Button size="sm" variant="ghost" data-testid="hud-skip" onClick={() => answer(false)}>
+                Not now
+              </Button>
+            </div>
+          </section>
+        )}
         {view.error && <p className="text-sm text-failed select-text">Chats unavailable: {view.error}</p>}
         {(!hasProject || !hasChat) && (
           <section className="grid gap-3" aria-label="Get started">

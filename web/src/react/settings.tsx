@@ -534,6 +534,7 @@ function AccountsPage({ app }: { app: App }) {
   const busy = useSettings(app, "busy");
   return (
     <div className="grid gap-6">
+      <HudRow app={app} />
       {USAGE_PROVIDERS.map((p) => (
         <ProviderAccounts key={p} app={app} provider={p} />
       ))}
@@ -543,6 +544,17 @@ function AccountsPage({ app }: { app: App }) {
         </Button>
       </div>
     </div>
+  );
+}
+
+function HudRow({ app }: { app: App }) {
+  const hud = useSettings(app, "hud");
+  const data = hud.state === "ready" ? hud.data : null;
+  const title = "Usage HUD in the notch";
+  return (
+    <Row title={title} detail={data && data.app === null ? "SwarmHUD.app is not installed with this swarm." : "Shows usage at the top of the screen and starts at login."}>
+      <input type="checkbox" role="switch" className="toggle" aria-label={title} data-testid="hud-switch" disabled={!data || data.app === null} checked={data?.installed ?? false} onChange={(e) => void app.settings.setHud(e.target.checked)} />
+    </Row>
   );
 }
 

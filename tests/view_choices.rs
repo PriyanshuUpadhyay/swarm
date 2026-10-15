@@ -222,6 +222,7 @@ fn preference_ops_set_swift_keys_mute_listed_projects_and_refuse_bad_values() {
     for op in [
         json!({"op":"pref","key":"theme","value":"light"}),
         json!({"op":"pref","key":"sendKey","value":"commandReturn"}),
+        json!({"op":"pref","key":"usageHUDAsked","value":true}),
         json!({"op":"pref","key":"notices.post","value":false}),
         json!({"op":"pref","key":"notices.sound","value":false}),
         json!({"op":"pref","key":"notices.done","value":false}),
@@ -233,7 +234,7 @@ fn preference_ops_set_swift_keys_mute_listed_projects_and_refuse_bad_values() {
     }
     assert_eq!(
         o.prefs,
-        json!({"usageHUD": true, "theme": "light", "sendKey": "commandReturn", "notices": {
+        json!({"usageHUD": true, "theme": "light", "sendKey": "commandReturn", "usageHUDAsked": true, "notices": {
             "startAtLogin": false, "post": false, "sound": false, "done": false, "badge": false,
             "mutedProjects": [project]}})
     );
@@ -250,6 +251,7 @@ fn preference_ops_set_swift_keys_mute_listed_projects_and_refuse_bad_values() {
         json!({"op":"pref","key":"notices.post","value":"no"}),
         json!({"op":"pref","key":"notices.startAtLogin","value":true}),
         json!({"op":"pref","key":"usageHUD","value":true}),
+        json!({"op":"pref","key":"usageHUDAsked","value":"yes"}),
         json!({"op":"mute_project","project":"/not/listed","muted":true}),
     ] {
         assert!(apply(&mut o, op).is_err());

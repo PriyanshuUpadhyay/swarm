@@ -309,7 +309,7 @@ pub enum ChoiceOp {
         list: String,
         fields: Vec<String>,
     },
-    /// One owner preference under `prefs`, in the Swift `Prefs` keys: `theme`, `sendKey`, or a
+    /// One owner preference under `prefs`, in the Swift `Prefs` keys: `theme`, `sendKey`, `usageHUDAsked`, or a
     /// notice switch `notices.post|sound|done|badge` that `swarm notices --due` reads (ADR 0077).
     Pref {
         key: String,
@@ -500,9 +500,8 @@ pub fn apply(
             let valid = match key.as_str() {
                 "theme" => matches!(value.as_str(), Some("system" | "light" | "dark")),
                 "sendKey" => matches!(value.as_str(), Some("return" | "commandReturn")),
-                "notices.post" | "notices.sound" | "notices.done" | "notices.badge" => {
-                    value.is_boolean()
-                }
+                "usageHUDAsked" | "notices.post" | "notices.sound" | "notices.done"
+                | "notices.badge" => value.is_boolean(),
                 _ => return Err("unknown preference".into()),
             };
             if !valid {

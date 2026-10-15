@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ApiError } from "./api";
 import type { App } from "./app";
-import { meterGroups, Settings, untilText, waitText, type Meter } from "./settings";
+import { hudCardVisible, meterGroups, Settings, untilText, waitText, type Meter } from "./settings";
 
 const ROLES = { revision: "rev-1", min_usage_left_pct: 5, profiles: [{ name: "chat", runners: [] }] };
 
@@ -132,6 +132,23 @@ describe("owner writes", () => {
     expect(calls.some((c) => c.startsWith("POST"))).toBe(false);
     await settings.answer(true);
     expect(calls).toContain('POST /api/accounts/reset {"revision":"acc-1"}');
+  });
+
+  it("shows the HUD card only when the app exists, is not installed, and was not asked", () => {
+    const ready = (app: string | null, installed: boolean) => ({ state: "ready" as const, data: { installed, running: false, app } });
+    expect(hudCardVisible(ready("/a/SwarmHUD.app", false), undefined)).toBe(true);
+    expect(hudCardVisible({ state: "idle" }, undefined)).toBe(false);
+    expect(hudCardVisible(ready(null, false), undefined)).toBe(false);
+    expect(hudCardVisible(ready("/a/SwarmHUD.app", true), undefined)).toBe(false);
+    expect(hudCardVisible(ready("/a/SwarmHUD.app", false), true)).toBe(false);
+  });
+
+  it("setHud posts the switch and stores the reply", async () => {
+    const hud = { installed: true, running: true, app: "/a/SwarmHUD.app" };
+    const { settings, calls } = fakeApp(async () => hud);
+    await settings.setHud(true);
+    expect(calls).toEqual(['POST /api/hud {"on":true}']);
+    expect(settings.state.hud).toEqual({ state: "ready", data: hud });
   });
 
   it("notice switches and mutes are owner choices", async () => {
