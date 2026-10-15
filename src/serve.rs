@@ -1554,8 +1554,8 @@ async fn run_setup_write(app: &App, body: SetupWrite) -> Result<Value, ApiError>
     };
     done.map_err(|(status, error)| {
         let stale = error.0["error"].as_str().is_some_and(|text| {
-            text.contains("changed after the plan")
-                || text.contains("changed while swarm edited it")
+            // "after the plan", "after the link plan", and the parent's "after the plan".
+            text.contains("changed after the") || text.contains(swarm::managed::CHANGED)
         });
         // run_cli reports every failure as 409. Only a file that changed under the plan keeps
         // it, as in owner_cli.
@@ -5693,6 +5693,7 @@ case "$1 $2" in
   'setup --digest') case "$3" in
     dead) echo 'swarm: a file changed after the plan; check the plan again' >&2; exit 1 ;;
     beef) echo 'swarm: cannot write ~/.codex/config.toml' >&2; exit 1 ;;
+    f00d) echo 'swarm: ~/.claude/skills/x changed after the link plan; swarm leaves it' >&2; exit 1 ;;
     cafe) echo 'swarm: ~/.codex/config.toml changed while swarm edited it; run the command again' >&2; exit 1 ;;
   esac ;;
   'hud install') echo 'swarm: SwarmHUD.app is not in this build' >&2; exit 1 ;;
@@ -5933,7 +5934,7 @@ esac
                 format!("|||{root}|setup plugin --yes"),
             ]
         );
-        // Only a stale plan is a conflict; any other failed setup is the request's own failure.
+        // Only a file that changed under the plan is a conflict; any other failed setup is the request's own failure.
         let stale = write(json!({"only": "hooks", "digest": "dead"}))
             .await
             .unwrap_err();
@@ -5952,6 +5953,10 @@ esac
             .await
             .unwrap_err();
         assert_eq!(raced.0, StatusCode::CONFLICT);
+        let link = write(json!({"only": "skills", "digest": "f00d"}))
+            .await
+            .unwrap_err();
+        assert_eq!(link.0, StatusCode::CONFLICT);
         let hud = write(json!({"only": "hud"})).await.unwrap_err();
         assert_eq!(hud.0, StatusCode::BAD_REQUEST);
     }
