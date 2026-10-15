@@ -149,15 +149,15 @@ pub fn install(home: &Path) -> Result<Status, Box<dyn std::error::Error>> {
         }
         std::thread::sleep(std::time::Duration::from_millis(100));
     }
-    let output = launchctl(&["bootstrap", &domain(), &path.to_string_lossy()])?;
-    if !output.status.success() {
+    let failure = match launchctl(&["bootstrap", &domain(), &path.to_string_lossy()]) {
+        Ok(output) if output.status.success() => None,
+        Ok(output) => Some(String::from_utf8_lossy(&output.stderr).trim().to_string()),
+        Err(error) => Some(error.to_string()),
+    };
+    if let Some(reason) = failure {
         // A plist left behind would start the HUD at the next login while the switch reads off.
         let _ = std::fs::remove_file(&path);
-        return Err(format!(
-            "swarm: launchctl bootstrap failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        )
-        .into());
+        return Err(format!("swarm: launchctl bootstrap failed: {reason}").into());
     }
     // RunAtLoad starts the HUD a moment after bootstrap; wait up to 1 s so the reply shows it.
     for _ in 0..10 {
