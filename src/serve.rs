@@ -736,7 +736,10 @@ async fn snapshot(State(app): State<App>) -> Result<Json<Value>, ApiError> {
 fn snapshot_value(app: &Server) -> Result<Value, Box<dyn std::error::Error>> {
     let connection = read_connection(&app.root)?;
     let mut sessions = Vec::new();
-    for row in swarm::store::sessions(&connection)? {
+    // The newest archived sessions too, apart, so the sidebar can list them under their workspace.
+    let mut archived = Vec::new();
+    for row in swarm::store::sessions_with_archived(&connection, true)? {
+        let is_archived = row.archived_at.is_some();
         let cwd = row.cwd.clone();
         let session = swarm::bus::Session {
             id: row.id,
@@ -775,10 +778,18 @@ fn snapshot_value(app: &Server) -> Result<Value, Box<dyn std::error::Error>> {
         });
         session["project"] = json!(project);
         session["workspace"] = json!(workspace);
-        sessions.push(session);
+        if is_archived {
+            archived.push(session);
+        } else {
+            sessions.push(session);
+        }
     }
+    archived.sort_by_key(|s| std::cmp::Reverse(s["archivedAt"].as_i64()));
+    archived.truncate(50);
     let hub = app.hub.lock().unwrap();
-    Ok(json!({"version": hub.version, "sessions": sessions, "agents": hub.agents}))
+    Ok(
+        json!({"version": hub.version, "sessions": sessions, "archived": archived, "agents": hub.agents}),
+    )
 }
 
 #[derive(Deserialize)]
@@ -7498,6 +7509,35 @@ if [ "$3" = Up ]; then cat "$SWARM_HOME/after" >> '{}'; fi
             modified
         );
         assert_eq!(fixture.app.hub.lock().unwrap().version, version);
+    }
+    #[tokio::test]
+    async fn an_archived_chat_folds_under_its_workspace_in_the_tree() {
+        let fixture = Fixture::new();
+        let mut connection = swarm::store::open(&fixture.app.root.join("swarm.db")).unwrap();
+        swarm::store::archive_sessions(&mut connection, std::slice::from_ref(&fixture.session))
+            .unwrap();
+        // A workspace with no live chat shows only when the owner opened its project.
+        choices_store::update(&fixture.app.root, None, |owner, _| {
+            owner.project_paths.push(env!("CARGO_MANIFEST_DIR").into());
+            Ok(())
+        })
+        .unwrap();
+        refresh_tree(&fixture.app).unwrap();
+        let Json(tree) = tree_view(State(fixture.app.clone()), Query(TreeQuery { view: None }))
+            .await
+            .unwrap();
+        let rows: Vec<_> = tree["sections"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|s| s["rows"].as_array().unwrap())
+            .collect();
+        let fold = rows
+            .iter()
+            .find(|r| r["kind"] == "archived")
+            .unwrap_or_else(|| panic!("no archived row in {tree}"));
+        assert_eq!(fold["title"], "Archived · 1");
+        assert!(!rows.iter().any(|r| r["kind"] == "chat"));
     }
     #[tokio::test]
     async fn tree_handler_keeps_last_good_choices_on_busy_or_invalid_state() {

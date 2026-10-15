@@ -205,7 +205,8 @@ fn rows(
         depth: 0,
         parent_id: None,
         expanded: !state.is_collapsed(&workspace.path),
-        has_children: workspace.listed_chats(owner).next().is_some(),
+        has_children: workspace.listed_chats(owner).next().is_some()
+            || !workspace.archived.is_empty(),
         children_summary: None,
         title,
         detail,
@@ -381,6 +382,67 @@ fn rows(
             }],
             selection: None,
         });
+    }
+    if !workspace.archived.is_empty() {
+        let id = format!("archived:{}", workspace.path);
+        let expanded = !state.is_collapsed(&id);
+        let title = format!("Archived · {}", workspace.archived.len());
+        result.push(SidebarRow {
+            id: id.clone(),
+            kind: "archived",
+            depth: 1,
+            parent_id: Some(workspace.path.clone()),
+            expanded,
+            has_children: true,
+            children_summary: None,
+            title: title.clone(),
+            detail: String::new(),
+            status: None,
+            counts: Vec::new(),
+            age: None,
+            help: "Archived chats in this workspace".into(),
+            pinned,
+            archived,
+            missing: false,
+            new_chat_enabled: false,
+            dimmed: true,
+            fields: vec![FieldValue {
+                field: "title".into(),
+                text: title,
+                status: None,
+            }],
+            selection: None,
+        });
+        if expanded {
+            for chat in &workspace.archived {
+                result.push(SidebarRow {
+                    id: format!("archived-chat:{}", chat.id),
+                    kind: "archived-chat",
+                    depth: 2,
+                    parent_id: Some(id.clone()),
+                    expanded: false,
+                    has_children: false,
+                    children_summary: None,
+                    title: chat.title.clone(),
+                    detail: String::new(),
+                    status: None,
+                    counts: Vec::new(),
+                    age: Some(age(chat.archived_at, now)),
+                    help: format!("{}\nArchived. Unarchive to open it.", chat.title),
+                    pinned,
+                    archived,
+                    missing: false,
+                    new_chat_enabled: false,
+                    dimmed: true,
+                    fields: vec![FieldValue {
+                        field: "title".into(),
+                        text: chat.title.clone(),
+                        status: None,
+                    }],
+                    selection: None,
+                });
+            }
+        }
     }
     result
 }

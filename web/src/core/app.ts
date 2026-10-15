@@ -27,6 +27,7 @@ import {
   chatRows,
   foldId,
   moveTarget,
+  archivedSession,
   navRows,
   paletteSources,
   recency,
@@ -645,6 +646,8 @@ export class App {
     const row = this.rows.find((r) => r.id === id);
     if (!row) return;
     this.selected = id;
+    // A click only selects an archived chat, so a stray click does not unarchive it. Enter does.
+    if (row.kind === "archived-chat") return this.notify();
     this.runRow(row);
   }
 
@@ -657,7 +660,9 @@ export class App {
       if (row.kind === "chat" && sel.chat) this.openChat(sel.chat, e, { write: false });
       return;
     }
-    if (row.kind === "more") {
+    if (row.kind === "archived") this.toggle(nav.id);
+    else if (row.kind === "archived-chat") void this.life.reopen(archivedSession(nav.id));
+    else if (row.kind === "more") {
       const workspace = sel.workspace ?? row.parentId;
       if (workspace) void this.choose({ op: "expand_list", workspace });
     } else if (row.kind === "workspace") void this.selectWorkspace(row.id, e);

@@ -235,6 +235,37 @@ test("Archive chat moves a chat to Recently closed, and ⇧⌘T reopens it", asy
   expect(errors).toEqual([]);
 });
 
+test("an archived chat folds under its workspace, and Unarchive opens it again", async ({ page: tab }) => {
+  const errors = await open(tab);
+  const session = (await workspace(tab, "ws-edit").locator("xpath=following-sibling::*[@data-kind='chat']").first().getAttribute("data-session"))!;
+  const row = tab.locator(`[data-testid="tree-row"][data-session="${session}"]`);
+  const archived = tab.locator(`[data-testid="tree-row"][data-id="archived-chat:${session}"]`);
+  try {
+    await row.click({ button: "right" });
+    await tab.getByRole("menuitem", { name: "Archive chat" }).click();
+    await expect(row).toBeHidden();
+    const fold = workspace(tab, "ws-edit").locator("xpath=following-sibling::*[@data-kind='archived']").first();
+    await expect(fold).toHaveText(/Archived · \d+/);
+    // The other browser's run can leave the fold open in the shared choices.
+    if ((await fold.getAttribute("aria-expanded")) === "true") await fold.click();
+    await expect(fold).toHaveAttribute("aria-expanded", "false");
+    await expect(archived).toHaveCount(0);
+    await fold.click();
+    await expect(archived).toBeVisible();
+    // A click on the row only selects it; the button unarchives.
+    await archived.click();
+    await expect(archived).toBeVisible();
+    await archived.locator('[data-action="unarchive"]').click();
+    await expect(row).toBeVisible();
+    await expect(archived).toHaveCount(0);
+    await expect(tab.locator(`[data-testid="transcript"][data-chat="${session}"][data-state="ready"]`)).toBeVisible();
+  } finally {
+    const { sessions } = await api<{ sessions: { id: string }[] }>("/api/sessions/archived");
+    if (sessions.some((s) => s.id === session)) await api("/api/sessions/unarchive", { ids: [session] });
+  }
+  expect(errors).toEqual([]);
+});
+
 test("A chat whose chair has no pane shows only its log, and Continue chat opens Switch model", async ({ page: tab }) => {
   const errors = await open(tab);
   const session = (await workspace(tab, "ws-edit").locator("xpath=following-sibling::*[@data-kind='chat']").first().getAttribute("data-session"))!;
