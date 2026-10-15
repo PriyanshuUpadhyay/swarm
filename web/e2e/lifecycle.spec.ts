@@ -255,6 +255,9 @@ test("an archived chat folds under its workspace, and Unarchive opens it again",
     // A click on the row only selects it; the button unarchives.
     await archived.click();
     await expect(archived).toBeVisible();
+    await archived.click({ button: "right" });
+    await expect(tab.getByRole("menuitem", { name: "Unarchive chat" })).toBeVisible();
+    await tab.keyboard.press("Escape");
     await archived.locator('[data-action="unarchive"]').click();
     await expect(row).toBeVisible();
     await expect(archived).toHaveCount(0);

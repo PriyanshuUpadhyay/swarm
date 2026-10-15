@@ -6,7 +6,7 @@ import { ArchiveIcon, ArchiveRestoreIcon, ChevronsDownUpIcon, ChevronsUpDownIcon
 import { useEffect, useState, type RefObject } from "react";
 import type { App } from "../core/app";
 import type { Profile } from "../core/lifecycle";
-import type { NavRow, SidebarRow } from "../core/nav";
+import { archivedSession, type NavRow, type SidebarRow } from "../core/nav";
 import { ContextMenuContent, ContextMenuItem, ContextMenuLabel, ContextMenuSeparator } from "../components/ui/context-menu";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "../components/ui/dropdown-menu";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "../components/ui/hover-card";
@@ -35,7 +35,7 @@ export function RowMenu({ app, listRef }: { app: App; listRef: RefObject<HTMLDiv
     // A native listener runs before React's root listener, so Radix opens with the row already set.
     const onContextMenu = (e: MouseEvent) => {
       const target = rowOf(app, e.target as Element);
-      if (!target || ["more", "child", "archived", "archived-chat"].includes(target.kind)) {
+      if (!target || ["more", "child", "archived"].includes(target.kind)) {
         // Off a row: no menu at all, not an empty one.
         e.preventDefault();
         e.stopPropagation();
@@ -101,6 +101,11 @@ export function RowMenu({ app, listRef }: { app: App; listRef: RefObject<HTMLDiv
         </>
       )}
       {!r && row.kind === "pinned" && fold}
+      {r?.kind === "archived-chat" && (
+        <ContextMenuItem onSelect={() => app.unarchive(archivedSession(r.id))}>
+          <ArchiveRestoreIcon /> Unarchive chat
+        </ContextMenuItem>
+      )}
       {r?.kind === "chat" && <ChatItems app={app} row={r} fold={fold} />}
       {r?.kind === "workspace" && <WorkspaceItems app={app} row={r} fold={fold} archive={archive} project={row.section.title} />}
     </ContextMenuContent>
