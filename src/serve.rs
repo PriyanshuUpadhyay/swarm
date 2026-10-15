@@ -247,9 +247,9 @@ pub fn ui(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     if assets.is_none() && WEB_ASSETS.is_empty() {
         return Err("swarm ui: this build has no web UI; run `pnpm --dir web build` and rebuild, or pass --assets DIR".into());
     }
-    let running = recorded(&record).filter(|(url, _)| answers(url));
+    let running = recorded(&record).filter(|(url, ..)| answers(url));
     if foreground {
-        if let Some((url, _)) = running {
+        if let Some((url, ..)) = running {
             return Err(format!(
                 "swarm ui: a server of this home already runs at {}; run `swarm ui stop` first",
                 page_base(&url)
@@ -259,7 +259,12 @@ pub fn ui(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         return start(port.unwrap_or(UI_PORT), assets, dev_origin, Some(record));
     }
     let url = match running {
-        Some((url, _)) => url,
+        Some((url, _, build)) if build.as_deref() == Some(BUILD) => url,
+        // A server of another build, such as one whose files an upgrade removed, gives way.
+        Some(_) => {
+            stop_ui(&record)?;
+            spawn_ui(&root, &record, rest)?
+        }
         None => spawn_ui(&root, &record, rest)?,
     };
     println!("{url}");
@@ -268,13 +273,17 @@ pub fn ui(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-/// The URL and server pid in `record`: the first line and the second.
-fn recorded(record: &Path) -> Option<(String, Option<i32>)> {
+/// The version and commit of this binary, which `swarm ui` records so it can tell its own server.
+const BUILD: &str = concat!(env!("CARGO_PKG_VERSION"), " ", env!("SWARM_BUILD_COMMIT"));
+
+/// The URL, server pid, and server build in `record`: the first line, the second, and the third.
+fn recorded(record: &Path) -> Option<(String, Option<i32>, Option<String>)> {
     let text = std::fs::read_to_string(record).ok()?;
     let mut lines = text.lines();
     let url = lines.next()?.trim().to_string();
     let pid = lines.next().and_then(|line| line.trim().parse().ok());
-    Some((url, pid))
+    let build = lines.next().map(|line| line.trim().to_string());
+    Some((url, pid, build))
 }
 
 /// The URL without its `#token=` fragment, for a message that may be shown or logged.
@@ -317,7 +326,7 @@ fn spawn_ui(
             let last = log.lines().last().unwrap_or("no output");
             return Err(format!("{last} (log: {})", log_path.display()).into());
         }
-        if let Some((url, _)) = recorded(record).filter(|(url, _)| answers(url)) {
+        if let Some((url, ..)) = recorded(record).filter(|(url, ..)| answers(url)) {
             return Ok(url);
         }
         std::thread::sleep(Duration::from_millis(100));
@@ -337,7 +346,7 @@ unsafe extern "C" {
 /// that the system gave to another process since is never signalled.
 fn stop_ui(record: &Path) -> Result<(), Box<dyn std::error::Error>> {
     const SIGTERM: i32 = 15;
-    let Some((url, Some(pid))) = recorded(record).filter(|(url, _)| answers(url)) else {
+    let Some((url, Some(pid), _)) = recorded(record).filter(|(url, ..)| answers(url)) else {
         let _ = std::fs::remove_file(record);
         println!("swarm ui: no server of this home is running");
         return Ok(());
@@ -558,7 +567,7 @@ fn start(
             .create_new(true)
             .mode(0o600)
             .open(&record)?
-            .write_all(format!("{url}\n{}\n", std::process::id()).as_bytes())?;
+            .write_all(format!("{url}\n{}\n{BUILD}\n", std::process::id()).as_bytes())?;
     }
     let runtime = tokio::runtime::Runtime::new()?;
     runtime.block_on(async {
@@ -5012,12 +5021,23 @@ mod tests {
         let root = std::env::temp_dir().join(format!("swarm-ui-record-{}", uuid::Uuid::now_v7()));
         std::fs::create_dir_all(&root).unwrap();
         let record = root.join("ui-url");
-        std::fs::write(&record, "http://127.0.0.1:4747/#token=ab\n42\n").unwrap();
+        std::fs::write(
+            &record,
+            format!("http://127.0.0.1:4747/#token=ab\n42\n{BUILD}\n"),
+        )
+        .unwrap();
         assert_eq!(
             recorded(&record),
-            Some(("http://127.0.0.1:4747/#token=ab".into(), Some(42)))
+            Some((
+                "http://127.0.0.1:4747/#token=ab".into(),
+                Some(42),
+                Some(BUILD.into())
+            ))
         );
-        // A record from an older swarm has no pid line.
+        // A record from an older swarm has no build line, so `swarm ui` replaces its server.
+        std::fs::write(&record, "http://127.0.0.1:4747/#token=ab\n42\n").unwrap();
+        assert_eq!(recorded(&record).unwrap().2, None);
+        // An even older record has no pid line either.
         std::fs::write(&record, "http://127.0.0.1:4747/#token=ab\n").unwrap();
         assert_eq!(recorded(&record).unwrap().1, None);
         assert_eq!(
