@@ -3,6 +3,7 @@
 #   swarm-<version>/bin/swarm                    the CLI, with web/dist inside for `swarm ui`
 #   swarm-<version>/libexec/transcript           the row tool that `swarm serve` runs
 #   swarm-<version>/libexec/SwarmNotify.app      the notice helper (ADR 0077)
+#   swarm-<version>/libexec/SwarmHUD.app         the notch usage HUD (ADR 0087)
 #   swarm-<version>/libexec/skills               the plugin swarm (kit/) and the swarm skills
 #   swarm-<version>/libexec/NOTICE               the web UI's third-party notices
 set -euo pipefail
@@ -22,6 +23,7 @@ pnpm --dir "$repo/web" install --frozen-lockfile
 pnpm --dir "$repo/web" build
 cargo build --manifest-path "$repo/Cargo.toml" --release --locked --features serve
 swift build --package-path "$root" --disable-sandbox -c release --product SwarmNotify
+swift build --package-path "$root" --disable-sandbox -c release --product SwarmHUD
 bin_dir="$(swift build --package-path "$root" --disable-sandbox -c release --show-bin-path)"
 version="$(cargo metadata --manifest-path "$repo/Cargo.toml" --no-deps --format-version 1 | jq -r '.packages[0].version')"
 
@@ -47,6 +49,12 @@ cp "$root/Resources/SwarmNotify-Info.plist" "$notify/Contents/Info.plist"
 plutil -insert CFBundleShortVersionString -string "$version" "$notify/Contents/Info.plist"
 # An ad hoc signature seals the plist to the binary, which the notification center needs.
 codesign --force -s - "$notify"
+hud="$stage/libexec/SwarmHUD.app"
+mkdir -p "$hud/Contents/MacOS"
+cp "$bin_dir/SwarmHUD" "$hud/Contents/MacOS/SwarmHUD"
+cp "$root/Resources/SwarmHUD-Info.plist" "$hud/Contents/Info.plist"
+plutil -insert CFBundleShortVersionString -string "$version" "$hud/Contents/Info.plist"
+codesign --force -s - "$hud"
 
 tarball="$out/swarm-$version-macos-arm64.tar.gz"
 tar -czf "$tarball" -C "$out" "swarm-$version"
