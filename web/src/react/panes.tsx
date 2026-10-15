@@ -65,8 +65,8 @@ export function PaneStrip({ app }: { app: App }) {
   // chat's text and the columns slide from where they were, on transform only (FLIP).
   useLayoutEffect(() => {
     const el = scroller.current;
-    if (!el) return;
-    const chat = el.querySelector<HTMLElement>(".strip-chat")!;
+    const chat = el?.querySelector<HTMLElement>(".strip-chat");
+    if (!el || !chat) return;
     const before = chat.offsetWidth;
     layout();
     const shift = before - chat.offsetWidth;

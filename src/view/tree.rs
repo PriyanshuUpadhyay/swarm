@@ -386,6 +386,7 @@ pub fn build(snapshot: &Value, owner: &OwnerChoices) -> Tree {
         let (removed, hub): (Vec<_>, Vec<_>) = unmatched.into_iter().partition(|s| {
             s["folder_missing"] == true && s["cwd"] != fact.path && s["cwd"] != json!(fact.common)
         });
+        let hub_is_workspace = workspaces.iter().any(|w| w.path == fact.path);
         for (removed, sessions) in [(false, hub), (true, removed)] {
             if !sessions.is_empty() {
                 let (listed, unlisted) = chats(sessions, snapshot, owner);
@@ -406,7 +407,12 @@ pub fn build(snapshot: &Value, owner: &OwnerChoices) -> Tree {
                     removed,
                     chats: listed,
                     unlisted,
-                    archived: Vec::new(),
+                    // A removed worktree's chats keep their own gone folder, so none matches.
+                    archived: if removed || hub_is_workspace {
+                        Vec::new()
+                    } else {
+                        archived_chats(snapshot, &fact.path, owner)
+                    },
                 });
             }
         }

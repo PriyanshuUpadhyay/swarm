@@ -1899,6 +1899,9 @@ fn skills_setup_plans() -> Result<
 /// `swarm doctor [--json]`: one row for each thing swarm sets up or ships. A row is `ok`, `setup`
 /// when `swarm setup` (its `group`) can fix it, or `broken` when the owner must act, with the
 /// reason. It always exits 0, so the page can show every row.
+/// The schema tag of `swarm doctor --json`, which `/api/doctor` checks.
+const DOCTOR_SCHEMA: &str = "swarm.doctor.v1";
+
 fn doctor(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let json = match args {
         [] => false,
@@ -2003,7 +2006,7 @@ fn doctor(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     items.push(row("notices", "Notices", notices_state(), None));
     #[cfg(feature = "serve")]
     items.push(row("ui", "UI server", serve::ui_state(), None));
-    let doctor = serde_json::json!({"schema": "swarm.doctor.v1", "items": items});
+    let doctor = serde_json::json!({"schema": DOCTOR_SCHEMA, "items": items});
     if json {
         return print_json(&doctor);
     }
@@ -2026,7 +2029,7 @@ fn notices_state() -> (&'static str, String) {
         return ("broken", "This build ships no notice helper".into());
     }
     // The bundle id is in ui/Resources/SwarmNotify-Info.plist.
-    let held = std::process::Command::new("/usr/bin/log")
+    let read = std::process::Command::new("/usr/bin/log")
         .args([
             "show",
             "--last",
@@ -2036,9 +2039,25 @@ fn notices_state() -> (&'static str, String) {
             "--predicate",
             r#"process == "NotificationCenter" AND eventMessage CONTAINS "(io.github.priyanshuupadhyay.swarm.notify) muted by DND""#,
         ])
-        .output()
-        .is_ok_and(|out| String::from_utf8_lossy(&out.stdout).contains("muted by DND"));
-    if held {
+        .output();
+    // A failed read must not read as no mute.
+    let Ok(out) = read.as_ref().map_err(ToString::to_string).and_then(|out| {
+        if out.status.success() {
+            Ok(out)
+        } else {
+            Err(String::from_utf8_lossy(&out.stderr).trim().to_string())
+        }
+    }) else {
+        return (
+            "broken",
+            format!(
+                "Could not read the notice log, so a Focus mute is unknown: {}",
+                read.err()
+                    .map_or("log show failed".into(), |e| e.to_string())
+            ),
+        );
+    };
+    if String::from_utf8_lossy(&out.stdout).contains("muted by DND") {
         (
             "broken",
             "A Focus held swarm's notices in the last hour. Allow SwarmNotify in System Settings › Focus".into(),

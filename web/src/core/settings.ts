@@ -33,7 +33,7 @@ export const PLAN_GROUPS = ["hooks", "trust", "herdr", "skills"];
 /** What Set up all runs: the plan groups that need setup and have no conflict, then `plugin` and
  *  `hud` when they need it. A conflict needs the owner, so its group is left out. */
 export function setUpAll(doctor: Doctor, plan: SetupPlan): { plan: string[]; own: string[] } {
-  const needed = new Set(doctor.items.filter((i) => i.state === "setup" && i.group).map((i) => i.group!));
+  const needed = new Set(doctor.items.flatMap((i) => (i.state === "setup" && i.group ? [i.group] : [])));
   const conflicted = new Set(plan.conflicts.map((c) => c.group));
   return {
     plan: PLAN_GROUPS.filter((g) => needed.has(g) && !conflicted.has(g)),
@@ -189,6 +189,7 @@ export class Settings {
   show(page: Page = this.state.page) {
     this.set({ open: true, page, error: null, confirm: null });
     if (page === "profiles") void this.loadRoles();
+    // loadSetup keeps its errors in state.doctor and state.plan, so nothing waits for it.
     if (page === "setup") void this.loadSetup();
     if (page === "accounts") {
       for (const p of USAGE_PROVIDERS) void this.loadAccounts(p);
@@ -369,12 +370,17 @@ export class Settings {
     if (this.state.busy) return Promise.resolve(false);
     return this.write(
       async () => {
-        if (plan.length) {
-          const only = plan.join(",");
-          const { digest } = await this.api.get<SetupPlan>("/api/setup/plan", { only });
-          await this.api.post("/api/setup/apply", { only, digest });
+        try {
+          if (plan.length) {
+            const only = plan.join(",");
+            const { digest } = await this.api.get<SetupPlan>("/api/setup/plan", { only });
+            await this.api.post("/api/setup/apply", { only, digest });
+          }
+          for (const only of own) await this.api.post("/api/setup/apply", { only });
+        } catch (err) {
+          // Any failed swarm setup is a 409, so the CLI's own text names the cause, not "changed elsewhere".
+          throw err instanceof ApiError ? new Error(err.message) : err;
         }
-        for (const only of own) await this.api.post("/api/setup/apply", { only });
       },
       "Setup",
       () => this.loadSetup(),

@@ -839,3 +839,14 @@ fn archived_chats_fold_under_their_workspace() {
             .all(|r| r.depth == 2 && r.dimmed && r.parent_id.as_deref() == Some("archived:/repo"))
     );
 }
+#[test]
+fn archived_chats_of_the_project_folder_fold_under_its_hub_row() {
+    let mut snap = snapshot(vec![session("hub", "/repo", 5)], json!({}));
+    snap["archived"] = json!([{"id":"old","cwd":"/repo","workspace":"/repo","chair_provider":"pi","archivedAt":9,"title":"Old"}]);
+    let rows = sections(&snap, &owner(), &ViewState::default(), false)
+        .remove(0)
+        .rows;
+    let fold = rows.iter().find(|r| r.id == "archived:/repo").unwrap();
+    assert_eq!(fold.title, "Archived · 1");
+    assert_eq!(fold.parent_id.as_deref(), Some("/repo"));
+}

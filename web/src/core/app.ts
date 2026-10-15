@@ -647,6 +647,19 @@ export class App {
     if (row) this.runRow(row, e);
   }
 
+  private unarchiving = new Set<string>();
+
+  /** Unarchives an archived chat and opens it. A second press while one runs does nothing, and a
+   *  failure shows as a notice. */
+  unarchive(session: string) {
+    if (this.unarchiving.has(session)) return;
+    this.unarchiving.add(session);
+    this.life
+      .reopen(session)
+      .catch((err) => this.notice(`Unarchive failed: ${message(err)}`, true))
+      .finally(() => this.unarchiving.delete(session));
+  }
+
   clickRow(id: string) {
     const row = this.rows.find((r) => r.id === id);
     if (!row) return;
@@ -666,7 +679,7 @@ export class App {
       return;
     }
     if (row.kind === "archived") this.toggle(nav.id);
-    else if (row.kind === "archived-chat") void this.life.reopen(archivedSession(nav.id));
+    else if (row.kind === "archived-chat") this.unarchive(archivedSession(nav.id));
     else if (row.kind === "more") {
       const workspace = sel.workspace ?? row.parentId;
       if (workspace) void this.choose({ op: "expand_list", workspace });

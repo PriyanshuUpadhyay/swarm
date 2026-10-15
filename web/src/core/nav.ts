@@ -172,10 +172,10 @@ export function navRows(tree: TreeView | null, folds: ReadonlyMap<string, boolea
   return out;
 }
 
-/** The id a fold op takes: a header's collapse id, else the row id. */
 /** The session of an `archived-chat:<session>` row. */
 export const archivedSession = (id: string) => id.slice("archived-chat:".length);
 
+/** The id a fold op takes: a header's collapse id, else the row id. */
 export const foldId = (r: NavRow) => (r.row ? r.id : r.section.collapseId);
 
 /** Every tree row with a chat, across both sections. */

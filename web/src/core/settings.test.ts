@@ -54,12 +54,12 @@ describe("setup & doctor", () => {
     expect(settings.state.doctor).toEqual({ state: "ready", data: DOCTOR });
   });
 
-  it("a stale digest shows the conflict text and reloads", async () => {
+  it("a failed apply shows the CLI's own text, since every failed swarm setup is a 409, and reloads", async () => {
     const { settings } = fakeApp(async () => {
-      throw new ApiError(409, "swarm: the plan changed");
+      throw new ApiError(409, "swarm: none of claude, codex, agy or pi is on PATH");
     });
-    expect(await settings.setUp(["skills"])).toBe(false);
-    expect(settings.state.error).toMatch(/^Setup changed elsewhere/);
+    expect(await settings.setUp([], ["plugin"])).toBe(false);
+    expect(settings.state.error).toBe("swarm: none of claude, codex, agy or pi is on PATH");
     expect(settings.state.plan.state).toBe("ready");
   });
 });

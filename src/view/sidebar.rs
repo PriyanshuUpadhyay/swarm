@@ -400,7 +400,7 @@ fn rows(
             status: None,
             counts: Vec::new(),
             age: None,
-            help: "Archived chats in this workspace".into(),
+            help: "Archived chats in this workspace, from the 50 newest of all workspaces".into(),
             pinned,
             archived,
             missing: false,

@@ -72,7 +72,7 @@ function WorkspaceList({ app }: { app: App }) {
     if (!row) return;
     const action = (e.target as Element).closest("[data-action]")?.getAttribute("data-action");
     if (action === "toggle") app.toggle(row.id);
-    else if (action === "unarchive") void app.life.reopen(archivedSession(row.id));
+    else if (action === "unarchive") app.unarchive(archivedSession(row.id));
     else if (action === "new-chat" && row.row) newChat.current?.({ rect: (e.target as Element).closest("[data-action]")!.getBoundingClientRect(), workspace: row.row });
     else if (action === "new-workspace") app.life.newWorkspace(row.section.path ?? undefined);
     else app.clickRow(row.id);

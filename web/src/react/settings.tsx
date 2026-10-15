@@ -552,7 +552,17 @@ function SetupPage({ app }: { app: App }) {
   const doctor = useSettings(app, "doctor");
   const plan = useSettings(app, "plan");
   const busy = useSettings(app, "busy");
-  if (doctor.state === "error") return <p className="text-sm text-failed">Could not run swarm doctor: {doctor.error}</p>;
+  if (doctor.state === "error")
+    return (
+      <div className="grid gap-2">
+        <p className="text-sm text-failed">Could not run swarm doctor: {doctor.error}</p>
+        <div>
+          <Button size="sm" variant="outline" data-testid="doctor-retry" onClick={() => void app.settings.loadSetup()}>
+            Try again
+          </Button>
+        </div>
+      </div>
+    );
   if (doctor.state !== "ready") return <p className="text-sm text-muted-foreground">Checking…</p>;
   const p = plan.state === "ready" ? plan.data : null;
   const all = p ? setUpAll(doctor.data, p) : null;
@@ -571,7 +581,7 @@ function SetupPage({ app }: { app: App }) {
       </div>
       {doctor.data.items.map((item) => (
         <div key={item.id} data-testid="doctor-item" data-id={item.id} data-state={item.state}>
-          <Row title={item.title} detail={item.reason}>
+          <Row title={item.title} detail={item.reason} live>
             <span className={`text-xs ${item.state === "ok" ? "text-muted-foreground" : item.state === "broken" ? "text-failed" : ""}`}>{STATE_TEXT[item.state]}</span>
             {item.state === "setup" && item.group && (
               <Button size="sm" variant="outline" data-testid="setup-item" disabled={busy || conflicted.has(item.group)} title={conflicted.has(item.group) ? "A conflict below needs your edit first" : undefined} onClick={() => void app.settings.setUpItem(item)}>

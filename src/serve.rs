@@ -757,7 +757,8 @@ async fn snapshot(State(app): State<App>) -> Result<Json<Value>, ApiError> {
 fn snapshot_value(app: &Server) -> Result<Value, Box<dyn std::error::Error>> {
     let connection = read_connection(&app.root)?;
     let mut sessions = Vec::new();
-    // The newest archived sessions too, apart, so the sidebar can list them under their workspace.
+    // The newest archived sessions too (the store's limit, newest first), apart, so the sidebar can
+    // list them under their workspace.
     let mut archived = Vec::new();
     for row in swarm::store::sessions_with_archived(&connection, true)? {
         let is_archived = row.archived_at.is_some();
@@ -805,8 +806,6 @@ fn snapshot_value(app: &Server) -> Result<Value, Box<dyn std::error::Error>> {
             sessions.push(session);
         }
     }
-    archived.sort_by_key(|s| std::cmp::Reverse(s["archivedAt"].as_i64()));
-    archived.truncate(50);
     let hub = app.hub.lock().unwrap();
     Ok(
         json!({"version": hub.version, "sessions": sessions, "archived": archived, "agents": hub.agents}),
@@ -1454,6 +1453,7 @@ struct SetupWrite {
     digest: Option<String>,
 }
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct SetupPlanQuery {
     only: Option<String>,
 }
@@ -1474,7 +1474,7 @@ async fn doctor_read(State(app): State<App>) -> Result<Json<Value>, ApiError> {
     let output = run_cli(&app, home_call(&app, &["doctor", "--json"]), None).await?;
     serde_json::from_str::<Value>(&output)
         .ok()
-        .filter(|value| value["schema"] == "swarm.doctor.v1")
+        .filter(|value| value["schema"] == crate::DOCTOR_SCHEMA)
         .map(Json)
         .ok_or_else(|| {
             error(
@@ -2390,9 +2390,11 @@ impl Action {
             | Self::Lifecycle(_)
             | Self::UsageRefresh(_)
             | Self::Hud(_)
-            | Self::Setup(_)
             | Self::Owner(_)
             | Self::RefreshView => None,
+            // A plugin install can take minutes, so it waits in its own lane, not in the one that
+            // folds and archives share.
+            Self::Setup(_) => Some("setup"),
         }
     }
 }
