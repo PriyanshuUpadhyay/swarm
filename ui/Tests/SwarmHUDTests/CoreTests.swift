@@ -229,6 +229,15 @@ private func account(_ provider: String, _ name: String, _ windows: [UsageWindow
     #expect(mascotState(WorkingSnapshot(working: ["claude": 1], waiting: ["codex": 1]), lastActive: last, now: late) == .working)
 }
 
+@Test func mascotTurnMovesOnEveryTenMinutesAndWrapsAround() {
+    let start = Date(timeIntervalSinceReferenceDate: 600 * 17 * 1000)
+    #expect(mascotTurn(at: start, count: 17) == 0)
+    #expect(mascotTurn(at: start.addingTimeInterval(599), count: 17) == 0)
+    #expect(mascotTurn(at: start.addingTimeInterval(600), count: 17) == 1)
+    #expect(mascotTurn(at: start.addingTimeInterval(600 * 17), count: 17) == 0)
+    #expect(mascotTurn(at: start, count: 0) == 0)
+}
+
 @Test func ringShowsTheFullestLimitAllFullAndOldReadings() {
     let now = Date(timeIntervalSince1970: 100_000)
     let calm = account("claude", "pro2", [window(.session, 82, resetIn: 0.5), window(.week, 30, resetIn: 100)])

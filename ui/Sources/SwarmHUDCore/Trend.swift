@@ -213,6 +213,12 @@ public func mascotFamily(_ agents: WorkingSnapshot, lastWorking: String?, best: 
     busiest(agents.working) ?? busiest(agents.waiting) ?? lastWorking ?? best?.account.provider ?? "claude"
 }
 
+/// Which of `count` mascots shows: the next one every 10 minutes of the clock, so every HUD on the
+/// Mac agrees and a restart keeps the turn.
+public func mascotTurn(at date: Date, count: Int) -> Int {
+    Int((date.timeIntervalSinceReferenceDate / 600).rounded(.down)) % max(count, 1)
+}
+
 extension BestAccount {
     /// The used percent of its fullest limit.
     public var fullest: Int { account.windows.map(\.usedPct).max() ?? 0 }
