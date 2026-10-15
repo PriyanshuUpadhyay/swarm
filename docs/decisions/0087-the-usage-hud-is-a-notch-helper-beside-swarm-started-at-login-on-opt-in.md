@@ -34,7 +34,9 @@ notch, hover, click-through and the lock-screen wedge, and only its look and dat
 
 - The HUD reads `swarm usage --json` (ADR 0074) and refreshes with
   `swarm usage --refresh --provider <p> --json`, by hand only, at most once per provider in 300 s.
-  It finds `swarm` through `SWARM_BIN`, which the LaunchAgent sets.
+  It finds `swarm` through `SWARM_BIN`, which the LaunchAgent sets with the installer's `PATH`.
+- It opens on hover, and ⌃⌥⌘U or a VoiceOver action opens it for the keyboard. Both use APIs
+  that need no input-monitoring permission.
 - `swarm hud install` writes a LaunchAgent, so the HUD starts at login. `swarm hud uninstall`
   removes it, and `swarm hud status --json` prints `swarm.hud.v1`. This amends ADR 0077 ("nothing
   starts at login"): the HUD starts at login only after the owner opts in.
