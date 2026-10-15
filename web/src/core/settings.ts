@@ -59,6 +59,8 @@ export type SettingsState = {
   page: Page;
   usage: Load<Usage>;
   hud: Load<Hud>;
+  /** A HUD install or removal in flight. */
+  hudPending: boolean;
   /** When each provider may refresh again, in ms since 1970, from the server's `next_in_seconds`. */
   nextRefresh: Record<string, number>;
   refreshing: string | null;
@@ -95,8 +97,8 @@ export const waitText = (ms: number) => {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 };
 
-/** The first-run card shows once: the HUD app exists, is not installed, and the owner never answered. */
-export const hudCardVisible = (hud: Load<Hud>, asked: boolean | undefined) => hud.state === "ready" && hud.data.app !== null && !hud.data.installed && asked !== true;
+/** The first-run card shows once the tree is loaded: the HUD app exists, is not installed, and the owner never answered. */
+export const hudCardVisible = (hud: Load<Hud>, treeLoaded: boolean, asked: boolean | undefined) => treeLoaded && hud.state === "ready" && hud.data.app !== null && !hud.data.installed && asked !== true;
 
 /** The meters to show, one group per account. AGY and accounts with no usage source are left out. */
 export function meterGroups(usage: Usage | null): { key: string; provider: string; label: string; meters: Meter[] }[] {
@@ -117,6 +119,7 @@ export class Settings {
     page: "appearance",
     usage: { state: "idle" },
     hud: { state: "idle" },
+    hudPending: false,
     nextRefresh: {},
     refreshing: null,
     roles: { state: "idle" },
@@ -128,6 +131,8 @@ export class Settings {
     confirm: null,
   };
   private listeners = new Set<() => void>();
+  /** Counts HUD writes, so a read that began before a write cannot overwrite its reply. */
+  private hudWrites = 0;
 
   constructor(private readonly app: App) {}
 
@@ -194,19 +199,26 @@ export class Settings {
   // ---- usage HUD ----
 
   async loadHud() {
+    const writes = this.hudWrites;
     try {
-      this.set({ hud: { state: "ready", data: await this.api.get<Hud>("/api/hud") } });
+      const data = await this.api.get<Hud>("/api/hud");
+      if (writes === this.hudWrites) this.set({ hud: { state: "ready", data } });
     } catch (err) {
-      this.set({ hud: { state: "error", error: message(err) } });
+      if (writes === this.hudWrites) this.set({ hud: { state: "error", error: message(err) } });
     }
   }
 
   /** Installs or removes the login item; the switch shows what the server reports. */
   async setHud(on: boolean) {
+    this.hudWrites++;
+    this.set({ hudPending: true });
     try {
       this.set({ hud: { state: "ready", data: await this.api.post<Hud>("/api/hud", { on }) } });
     } catch (err) {
       this.app.notice(`Usage HUD failed: ${message(err)}`, true);
+      await this.loadHud();
+    } finally {
+      this.set({ hudPending: false });
     }
   }
 
