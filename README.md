@@ -173,9 +173,12 @@ The chair follows `swarm-orchestrator`, and the worker pane opens beside it.
 
 ### From the web UI
 
-Run `swarm ui`. It starts the server, prints the URL, opens it in your browser, and runs until
-Ctrl-C. A second `swarm ui` for the same home opens the running server's page and exits: it keeps
-the URL in `~/.swarm/ui-url` and checks that the server still answers with that URL's token.
+Run `swarm ui`. It starts the server in the background on port 4747, opens the page in your
+browser, starts the usage HUD when it is not running, and gives your terminal back. A second
+`swarm ui` opens the same server's page. `swarm ui stop` stops the server, and `swarm ui
+--foreground` serves in the terminal until Ctrl-C. The page keeps its token in local storage, so a
+reload or a new tab needs no link. The URL names the open chat as `/chat/<id>`, and the short id
+beside the tab strip copies the full id.
 
 1. Click **Import Project…** and type the folder's full path. Swarm adds and selects the project without
    starting an agent. Click **New chat** to start the `chat` profile. A folder that is not a Git repository gets an offer to run `git init`.
@@ -261,7 +264,7 @@ id. A chair gets both from its pane, which `swarm session new` registers. A chil
 |---|---|---|
 | `--version` | any | Print the package version and build commit. |
 | `init` | any | Claim `.swarm/` (ADR 0036), then create `runs/`, `adapters/`, and the database. Shipped adapters stay in the binary; matching old disk copies are removed. |
-| `ui [--port N] [--assets DIR]` | any | Serve the web UI that is inside the binary on 127.0.0.1, print the URL with its token, open it in the browser, and run until Ctrl-C. When `.swarm/ui-url` names a server of this home that still takes its token, open that one and exit. `--assets DIR` serves a `web/dist` folder instead. Needs a build with `--features serve`. |
+| `ui [stop \| --foreground] [--port N] [--assets DIR]` | any | Start the web UI server that is inside the binary on 127.0.0.1:4747 in the background (log in `.swarm/ui.log`), print the URL with its token, open it in the browser, start the usage HUD when it is not running, and exit. When `.swarm/ui-url` names a server of this home that still takes its token, open that one. The token lasts in `.swarm/ui-token` (mode 0600). `stop` stops the server; `--foreground` serves in this process until Ctrl-C. `--assets DIR` serves a `web/dist` folder instead. Needs a build with `--features serve` (ADR 0088). |
 | `serve [--port N] [--assets DIR] [--dev-origin ORIGIN]` | any | The same server with no browser and no `ui-url` record; it prints the URL and runs until stopped. |
 | `skills refresh` | any | Validate and refresh the complete bundled skills copy in this build's swarm home. It reads the skills that ship beside `swarm` in `libexec/skills`. Setup uses this copy for link targets. |
 | `setup status --json` | any | Print whether each setup group has nothing pending: `hooks` (swarm's Codex and AGY state hooks), `guard` (as for `hooks status`), `trust` (the owner's answer, `standing` or `ask`, for launch folder trust in `~/.swarm/consent.json`), `herdr` (always true until a Herdr writer ships), and `skills` (all catalog links recorded and present, with a complete default copy). More groups may come (ADR 0043). |
