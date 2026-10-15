@@ -223,7 +223,8 @@ export class Settings {
     try {
       this.set({ hud: { state: "ready", data: await this.api.post<Hud>("/api/hud", { on }) } });
     } catch (err) {
-      this.app.notice(`Usage HUD failed: ${message(err)}`, true);
+      // The Home card asks once, so the notice names where to try again.
+      this.app.notice(`Usage HUD failed: ${message(err)}. Try again in Settings › Accounts.`, true);
       await this.loadHud();
     } finally {
       // A read that started during the write may carry the state before it, so drop its reply too.

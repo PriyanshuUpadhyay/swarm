@@ -225,7 +225,7 @@ function Banner({ app }: { app: App }) {
   );
 }
 
-function Row({ title, detail, htmlFor, children }: { title: string; detail?: string; htmlFor?: string; children: ReactNode }) {
+function Row({ title, detail, htmlFor, live, children }: { title: string; detail?: string; htmlFor?: string; live?: boolean; children: ReactNode }) {
   return (
     <div className="flex items-center gap-4">
       <div className="min-w-0 flex-1">
@@ -236,7 +236,11 @@ function Row({ title, detail, htmlFor, children }: { title: string; detail?: str
         ) : (
           <div className="text-sm">{title}</div>
         )}
-        {detail && <div className="text-xs break-words text-muted-foreground">{detail}</div>}
+        {detail && (
+          <div className="text-xs break-words text-muted-foreground" role={live ? "status" : undefined}>
+            {detail}
+          </div>
+        )}
       </div>
       {children}
     </div>
@@ -567,7 +571,7 @@ function HudRow({ app }: { app: App }) {
         ? "SwarmHUD.app is not installed with this swarm."
         : "Shows usage at the top of the screen and starts at login.";
   return (
-    <Row title={title} detail={detail} htmlFor="hud-switch">
+    <Row title={title} detail={detail} htmlFor="hud-switch" live>
       {/* Fire-and-forget is safe: setHud catches its own errors and posts a notice. */}
       <Toggle id="hud-switch" label={title} testid="hud-switch" checked={data?.installed ?? false} disabled={!data || (!data.installed && data.app === null)} busy={pending} onChange={(on) => void app.settings.setHud(on)} />
     </Row>

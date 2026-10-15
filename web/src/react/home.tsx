@@ -22,6 +22,7 @@ export function Home({ app }: { app: App }) {
   useEffect(() => void app.settings.loadHud(), [app]);
   const card = hudCard(hud, view.loaded, view.tree?.prefs.usageHUDAsked);
   const answer = (add: boolean) => {
+    if (hudPending) return;
     // Fire-and-forget is safe: choose shows a refused write as a notice, and setHud posts its own.
     void app.settings.setPref("usageHUDAsked", true);
     if (add) void app.settings.setHud(true);
@@ -47,13 +48,17 @@ export function Home({ app }: { app: App }) {
             <h2 className="font-semibold">Add the usage HUD?</h2>
             <p className="text-sm text-muted-foreground">See Claude and Codex limits at the notch. It starts at login; you can turn it off in Settings › Accounts.</p>
             <div className="flex gap-2">
-              <Button size="sm" data-testid="hud-add" disabled={hudPending} onClick={() => answer(true)}>
+              {/* aria-disabled, not disabled: a disabled button drops keyboard focus to the page body. */}
+              <Button size="sm" data-testid="hud-add" aria-disabled={hudPending || undefined} onClick={() => answer(true)}>
                 {hudPending ? "Adding…" : "Add"}
               </Button>
-              <Button size="sm" variant="ghost" data-testid="hud-skip" disabled={hudPending} onClick={() => answer(false)}>
+              <Button size="sm" variant="ghost" data-testid="hud-skip" aria-disabled={hudPending || undefined} onClick={() => answer(false)}>
                 Not now
               </Button>
             </div>
+            <p role="status" className="sr-only">
+              {hudPending ? "Adding the usage HUD…" : ""}
+            </p>
           </section>
         )}
         {view.error && <p className="text-sm text-failed select-text">Chats unavailable: {view.error}</p>}

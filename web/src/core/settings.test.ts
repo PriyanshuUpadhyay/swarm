@@ -195,7 +195,7 @@ describe("owner writes", () => {
       throw new ApiError(500, "launchctl failed");
     });
     await settings.setHud(true);
-    expect(calls).toEqual(['POST /api/hud {"on":true}', "notice Usage HUD failed: launchctl failed", "GET /api/hud"]);
+    expect(calls).toEqual(['POST /api/hud {"on":true}', "notice Usage HUD failed: launchctl failed. Try again in Settings › Accounts.", "GET /api/hud"]);
     expect(settings.state.hudPending).toBe(false);
   });
 
