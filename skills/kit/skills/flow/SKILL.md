@@ -93,7 +93,9 @@ that the user asks for.
 
 ## Owners
 
-The flow owns the step list, the order, the status, the profiles, and the domain catalog.
+The flow owns the step list, the order, the profiles, and the domain catalog.
+Its script uses `references/step_run.py` for the shared status commands in
+`references/step-run.md`.
 `pair` or `deliver` owns the plan, the chunks, and the commits; the flow never starts `deliver`
 by itself.
 `review-check` owns the review and its verdict; the flow never fixes a finding itself. An `INCOMPLETE` verdict is no review.

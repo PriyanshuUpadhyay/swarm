@@ -84,15 +84,16 @@ Example. `~/work/seed-city/ink/` holds one file per step. Steps 1-4 are done, so
 ## Roles
 
 - Steps 1 to 3 run in the main session, because they need the user's answers.
-- Steps 4 to 7 go to the role `ink.build`. The builder scores its own rounds. When it sets a step
-  done, the main session sends the final compare images to the role `review.visual`, and a `miss`
+- Steps 4 to 7 go to the role `ink.build`. The builder scores its own rounds. When it closes a step
+  by `references/step-run.md`, the main session sends the final compare images to the role `review.visual`, and a `miss`
   from that critic reopens the step.
   [orchestration.json](orchestration.json) declares both roles, and the runtime adapter resolves
   each one with its fallbacks.
 - Before two builder seats run at once, each owns its files in a named subfolder; `05-animatic`
   may run beside `04-style-frames` by the pick-up rule in the kit's `references/step-run.md`.
-- A builder writes only the piece folder and its own step file, and it ends by setting line 1. The
-  main session inspects the frames itself before it accepts the step.
+- A builder writes only the piece folder and its own step file, and it closes the step with the
+  `done` command in `references/step-run.md`. The main session inspects the frames itself before
+  it accepts the step.
 - A new skill-specific role is one route in the roles registry and one line in
   `orchestration.json`.
 
