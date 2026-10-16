@@ -25,7 +25,7 @@ pacing, crop, and continuity before you add any detail.
 
 Render each frame at the delivery size, such as 1080,1920 for a vertical reel, at `?t=0.25`
 (or `?shot=<id>&u=`). Use the capture commands and backend choice in
-`blocks/headless-shot/SKILL.md`, which also owns page and frame sizes.
+`blocks/headless-shot/SKILL.md`, which owns page sizes; a frame uses the delivery size above.
 The GPU readiness contract stays in `blocks/build-canvas/SKILL.md`. Run independent captures at
 once, then encode with ffmpeg (`-c:v libx264 -pix_fmt yuv420p`).
 
