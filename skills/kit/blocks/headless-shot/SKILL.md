@@ -14,13 +14,13 @@ metadata:
 ---
 
 ## Rules
-- Command: `mkdir -p {{shots}} && <chrome-headless-shell> --headless --screenshot="$PWD/{{shots}}/<name>-<W>.png" --window-size=W,H "file://$PWD/{{site}}/index.html"`, run from the repo root; the shell does not make the folder. For page shots, sizes are 1440,900 and 390,844 and 375,812. For drawn stills and reel frames, use the delivery size that the build step names. `<name>` is the page, such as `home`, or `diagram-<diagram>` for a shot of one diagram.
+- Command: `mkdir -p {{shots}} && <chrome-headless-shell> --headless --screenshot="$PWD/{{shots}}/<name>-<W>.png" --window-size=W,H "file://$PWD/{{site}}/index.html"`, run from the repo root; the shell does not make the folder. For page shots, use each width from `blocks/web-ui-basics/SKILL.md`, with heights of 900, 844, and 812 px in the listed order. For drawn stills and reel frames, use the delivery size that the build step names. `<name>` is the page, such as `home`, or `diagram-<diagram>` for a shot of one diagram.
 - For a reduced-motion shot, add `--force-prefers-reduced-motion` to the command and name it `{{shots}}/<name>-<W>-reduced.png`. The page then matches `@media (prefers-reduced-motion: reduce)`.
 - For a drawn still or reel frame, replace the screenshot path with `{{shots}}/<name>-frame.png`, where `<name>` is the beat name that `skills/build/references/qa.md` uses (such as `beat-01-fanout`), so its name separates it from page shots.
 - Find `<chrome-headless-shell>` with `npx playwright install --dry-run chromium-headless-shell`, which prints the shell's `Install location:` folder (the first one; the second is FFmpeg) whether or not it is installed. If that folder does not exist, run the same command without `--dry-run`. The binary is `chrome-headless-shell` in the folder's `chrome-headless-shell-*` subfolder.
 - Put a frame beside the reference at the same scale with `magick ref.png frame.png -resize x900 +append {{shots}}/compare-NN.png`.
-- Limit: the screenshot is one viewport tall. For a part lower on a long page, shoot with a taller window (for example 375,4000), then cut the part out at 100 % with `magick tall.png -crop 375x812+0+Y +repage {{shots}}/<name>-375.png`, where Y is the part's top in the tall shot. Do not use an anchor URL (`index.html#id`): this binary gives an all-white shot for it.
-- Limit: an image viewer may show a 375 px shot downscaled. Crop the part you judge at 100 % (`magick out.png -crop 375x400+0+0 crop.png`) before you judge small text.
+- Limit: the screenshot is one viewport tall. For a part lower on a long page, shoot with a taller window (for example W,4000), then cut the part out at 100 % with `magick tall.png -crop WxH+0+Y +repage {{shots}}/<name>-<W>.png`, where Y is the part's top in the tall shot. Do not use an anchor URL (`index.html#id`): this binary gives an all-white shot for it.
+- Limit: an image viewer may show a page shot downscaled. Crop the part you judge at 100 % (`magick out.png -crop Wx400+0+0 crop.png`) before you judge small text.
 - Limit: it runs no real clicks or clipboard. Say "not tested in a real browser" for those.
 - Use `chrome-headless-shell` for DOM, CSS, Canvas 2D, and WebGL captures. For WebGPU, use full Chrome for Testing from Playwright's `chromium-*` folder with `--headless=new --enable-unsafe-webgpu --use-mock-keychain` and a fresh `--user-data-dir`. Check one frame before a long export.
 - For WebGPU, drive Chrome for Testing over the DevTools protocol. Call `window.seek(t)` with `Runtime.evaluate` and `awaitPromise: true`, then call `Page.captureScreenshot`. The artifact's `seek(t)` must meet the readiness contract in `blocks/build-canvas/SKILL.md`; `--screenshot` cannot wait for it.
@@ -28,10 +28,10 @@ metadata:
 - On macOS, the fresh capture profile uses the mock keychain. If a keychain prompt still appears, Deny is safe because the profile is empty.
 
 ## Example
-Initial state: `{{site}}/index.html` exists. Action: shoot 1440,900 and 375,812 to `{{shots}}/home-1440.png` and `{{shots}}/home-375.png`, then crop the 375 shot's diagram at 100 %. Result: the crop shows label size truly, and the report names the clipboard as not tested.
+Initial state: `{{site}}/index.html` exists. Action: shoot each width from `blocks/web-ui-basics/SKILL.md` to `{{shots}}/home-<W>.png`, then crop the narrowest shot's diagram at 100 %. Result: the crop shows label size truly, and the report names the clipboard as not tested.
 
 ## Check (script)
-- `file {{shots}}/*.png` prints `PNG image data, W x H` for each shot. Page shots named `<name>-<W>.png` or `<name>-<W>-reduced.png` have W of 1440, 390, or 375. Exclude compare images, crops, and `*-frame.png` from the width check.
+- `file {{shots}}/*.png` prints `PNG image data, W x H` for each shot. Page shots named `<name>-<W>.png` or `<name>-<W>-reduced.png` have W from `blocks/web-ui-basics/SKILL.md`. Exclude compare images, crops, and `*-frame.png` from the width check.
 - `magick {{shots}}/*.png -format '%f %[fx:standard_deviation]\n' info:` prints a value above 0 for each shot: no shot is one flat color, as a blank shot is.
 
 ## Check (judge)

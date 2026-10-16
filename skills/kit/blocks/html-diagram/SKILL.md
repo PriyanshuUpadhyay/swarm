@@ -23,12 +23,12 @@ metadata:
 - Limit: curved or crossing arrows are hard in CSS. If the shape needs them, the shape is too complex; split the diagram in two.
 
 ## Example
-Initial state: the concept block chose a 4-step flow, chair → swarm → worker → inbox, so the 2-to-3-column limit for a parts diagram does not apply. Action: one `<ol class="flow">` with 4 `<li>` boxes in a CSS grid of 4 columns, arrows as `::after` with "→", and one column with "↓" under 600 px, because each target now sits below its source. Result: at 375 px the 4 boxes stack, each arrow still points from source to target, and no label clips.
+Initial state: the concept block chose a 4-step flow, chair → swarm → worker → inbox, so the 2-to-3-column limit for a parts diagram does not apply. Action: one `<ol class="flow">` with 4 `<li>` boxes in a CSS grid of 4 columns, arrows as `::after` with "→", and one column with "↓" under 600 px, because each target now sits below its source. Result: at the narrowest width from `blocks/web-ui-basics/SKILL.md`, the 4 boxes stack, each arrow still points from source to target, and no label clips.
 
 ## Check (script)
 - `rg -c -g '*.html' '<figure(\s|>|$)' {{site}}` prints a count of 1 or more, and `rg -U --pcre2 -n -g '*.html' '<figure[\s>](?:(?!</figure>|<figcaption)[\s\S])*</figure>|<figure[\s>](?:(?!</figure>)[\s\S])*?<figcaption(?:(?!</figure>)[\s\S])*?<figcaption' {{site}}` prints nothing and exits 1: the page has a figure, and each figure has exactly one caption.
 
 ## Check (judge)
 - Does any diagram draw with SVG, canvas, or absolute pixel positions? Quote each diagram's markup and the CSS that places its arrows.
-- In each 375 px shot, is any diagram wider than its column, cut off or scrolled sideways? Quote the shot path.
-- At 375 px, does each arrow still point from its source to its target? Quote the screenshot path and, for each arrow, its source box, its target box, and its direction.
+- In the shots at each width that `blocks/web-ui-basics/SKILL.md` names, is any diagram wider than its column, cut off or scrolled sideways? Quote the shot path.
+- At each width that `blocks/web-ui-basics/SKILL.md` names, does each arrow still point from its source to its target? Quote the screenshot path and, for each arrow, its source box, its target box, and its direction.

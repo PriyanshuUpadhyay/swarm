@@ -1376,7 +1376,7 @@ def test_block_checks(tmp):
               "and each figure has exactly one caption.: ")
     assert script + "\n" in todo, todo
     assert "script: none:" not in todo, "a `- none:` line says why a block has no script check; it is no todo"
-    judge ="At 375 px, does each arrow still point from its source to its target?"
+    judge = "At each width that `blocks/web-ui-basics/SKILL.md` names, does each arrow still point from its source to its target?"
     assert judge not in build, "a judge check must not be a build todo"
     # The judge section sits after the rules and before the todo head, so done still finds the todo list.
     rules_at, judge_at, todo_at = (review.index(h) for h in (implement_run.RULES_HEAD, implement_run.JUDGE_HEAD, implement_run.TODO_HEAD))
@@ -1467,23 +1467,27 @@ def test_design_tokens_colors(tmp):
 
 
 def test_diagram_shot_check(tmp):
-    """The diagram-check script check prints a 375 px PNG line for each diagram shot, and another line
-    for a missing, empty, or wrong-width shot; it reads no page markup, which another block may own."""
+    """Diagram images have each width from the owner and match their named width."""
     root = Path(tmp, "shot-check")
     text = (implement_run.BLOCKS / "diagram-check" / "SKILL.md").read_text(encoding="utf-8")
     command = re.search(r"`([^`]+)`", text.split("## Check (script)\n", 1)[1])[1].replace("{{shots}}", "shots")
+    owner = (implement_run.BLOCKS / "web-ui-basics" / "SKILL.md").read_text(encoding="utf-8")
+    widths = [int(w) for w in re.findall(r"\d+", re.search(r"Check widths are ([^.]+)", owner)[1])]
     png = lambda width: (b"\x89PNG\r\n\x1a\n" + (13).to_bytes(4, "big") + b"IHDR" + width.to_bytes(4, "big")
                          + (812).to_bytes(4, "big") + bytes([8, 6, 0, 0, 0]) + bytes(4))
     def ok():
         lines = subprocess.run(command, shell=True, cwd=root, capture_output=True, text=True).stdout.splitlines()
-        return bool(lines) and all("PNG image data, 375 x" in line for line in lines)
+        return bool(lines) and all(
+            (match := re.search(r"-(\d+)\.png:.*PNG image data, (\d+) x", line))
+            and int(match[1]) in widths and match[1] == match[2] for line in lines)
     (root / "shots").mkdir(parents=True)
     assert not ok(), "no shot must fail"
-    (root / "shots" / "diagram-one-375.png").write_bytes(png(375))
-    (root / "shots" / "diagram-two-375.png").write_bytes(png(375))
-    assert ok(), "two 375 px shots must pass"
-    for bad in (b"", png(390)):
-        (root / "shots" / "diagram-two-375.png").write_bytes(bad)
+    for width in widths:
+        for diagram in ("one", "two"):
+            (root / "shots" / f"diagram-{diagram}-{width}.png").write_bytes(png(width))
+    assert ok(), "diagram shots at all owner widths must pass"
+    for bad in (b"", png(widths[-1] + 1)):
+        (root / "shots" / f"diagram-two-{widths[-1]}.png").write_bytes(bad)
         assert not ok(), bad
 
 
