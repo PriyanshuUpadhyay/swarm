@@ -779,13 +779,13 @@ def test_start_without_tomllib(tmp):
     assert out.returncode == 0 and "01-frame" in out.stdout, out
     shutil.rmtree(folder)  # so start must read the block catalog again
     out = run("start")
-    assert out.returncode == 1 and out.stderr == f"{implement_run.BLOCKS / 'blocks.toml'}: reading TOML needs Python 3.11 or later (tomllib)\n", out
+    assert out.returncode == 1 and out.stderr == f"{implement_run.BLOCKS / 'blocks.toml'}: reading TOML needs Python 3.11 or later (tomllib); run start with a newer python3, for example from Homebrew\n", out
     (repo.parent / "home/.flow/domains.md").write_text("## any\n", encoding="utf-8")
     out = run("start")
-    assert out.returncode == 1 and out.stderr == f"{implement_run.BLOCKS / 'blocks.toml'}: reading TOML needs Python 3.11 or later (tomllib)\n", out
+    assert out.returncode == 1 and out.stderr == f"{implement_run.BLOCKS / 'blocks.toml'}: reading TOML needs Python 3.11 or later (tomllib); run start with a newer python3, for example from Homebrew\n", out
 
 
-def test_start_no_block_reads_no_toml(tmp):
+def test_start_kit_without_blocks(tmp):
     """A kit copy without blocks still starts without tomllib, with empty choice tables."""
     kit = Path(tmp, "kit-no-blocks")
     for part in ("skills/implement/scripts/implement_run.py", "skills/implement/SKILL.md", "references/step_run.py",
@@ -1599,7 +1599,7 @@ with tempfile.TemporaryDirectory() as tmp:
     test_block_headings(tmp)
     test_skill_fenced_headings(tmp)
     test_start_without_tomllib(tmp)
-    test_start_no_block_reads_no_toml(tmp)
+    test_start_kit_without_blocks(tmp)
     test_toml_no_block_adds_no_base(tmp)
     test_no_toml_runs_blocks_without_base(tmp)
     test_param_quoted_in_script_checks(tmp)

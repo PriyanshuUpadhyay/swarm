@@ -148,7 +148,7 @@ def start(profile="default"):
     print(folder)
     print(f"Each step file holds its rules, a todo list, and a result section. Close a step with: python3 {Path(__file__).resolve()} done <folder> <step>")
     # Read the saved choice on repeat starts; changed domain lines apply only to a new run.
-    frame = read_utf8(folder / "01-frame.md")
+    frame = read_utf8(folder / "01-frame.md") if (folder / "01-frame.md").exists() else ""
     if f"\n{LEDGER_HEAD}\n" in frame:
         print(frame.split(f"\n{LEDGER_HEAD}\n", 1)[1].split("\n## ", 1)[0].strip())
 
@@ -386,7 +386,7 @@ def read_toml(path):
     try:  # only start reads TOML, so the other commands still run on a Python before 3.11
         import tomllib
     except ImportError:
-        raise SystemExit(f"{path}: reading TOML needs Python 3.11 or later (tomllib)") from None
+        raise SystemExit(f"{path}: reading TOML needs Python 3.11 or later (tomllib); run start with a newer python3, for example from Homebrew") from None
     try:
         return tomllib.loads(read_utf8(path))
     except (tomllib.TOMLDecodeError, RecursionError, ValueError) as error:  # a deep array, a huge integer

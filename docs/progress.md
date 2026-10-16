@@ -74,8 +74,8 @@ copy of the `implement` skill stops with "unknown block id" until `skill-blocks`
 and A4 installs the plugin. The `any` lines keep the `prove-it-works` skill path until A4, because a
 `block:` item there would stop every live run of the `implement` skill. A repo with no `.blocks.toml`
 runs the blocks without the base block; the creative-coding blocks also need `site` and `shots`
-there. Once a catalog line in every repo names a block, `implement_run.py start` reads TOML, so it
-needs Python 3.11 or later (`/usr/bin/python3` is 3.9).
+there. `implement_run.py start` always reads the shipped `blocks.toml` to list chosen and rejected
+blocks, so it needs Python 3.11 or later (`/usr/bin/python3` is 3.9).
 
 Note. `~/.claude/skills/deliver` differs from agent-kit only by `scripts/__pycache__`, so no local
 skill edit is at risk in A4.
