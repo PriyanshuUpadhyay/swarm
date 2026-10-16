@@ -1526,7 +1526,6 @@ def test_web_ui_basics_checks(tmp):
     assert "DESIGN.md" not in images.stdout, images
 
 
-
 def test_catalog_uses_running_kit(tmp):
     local = implement_run.BLOCKS.parent / "skills" / "engineering-standards" / "SKILL.md"
     installed = "~/.swarm/kit/skills/engineering-standards/SKILL.md"
@@ -1540,6 +1539,32 @@ def test_catalog_uses_running_kit(tmp):
     assert skills.count(str(local)) == 1 and installed not in skills and absolute not in skills, skills
     assert missing in skills and outside in skills, skills
     assert f"===== {local} =====" in text
+
+
+def test_close_archives_run(tmp):
+    out, folder, repo, run = blocks_start(tmp, "archive-close", "", None)
+    assert out.returncode == 0, out.stderr
+    close = folder / "07-close.md"
+    archived = repo.resolve() / "tmp" / "flow" / "_closed" / folder.name
+    before = close.read_text(encoding="utf-8")
+    out = run("done", folder, "07-close")
+    assert out.returncode == 1 and close.read_text(encoding="utf-8") == before
+    assert not archived.exists()
+    fill(close)
+    archived.mkdir(parents=True)
+    (archived / "keep.md").write_text("older run", encoding="utf-8")
+    out = run("done", folder, "07-close")
+    assert out.returncode == 1 and "already exists" in out.stderr, out
+    assert close.read_text(encoding="utf-8").startswith("Status: open\n")
+    assert (archived / "keep.md").read_text(encoding="utf-8") == "older run"
+    (archived / "keep.md").unlink()
+    archived.rmdir()
+    out = run("done", folder, "07-close")
+    assert out.returncode == 0 and out.stdout.splitlines()[-1] == str(archived), out
+    assert not folder.exists() and (archived / "07-close.md").read_text(encoding="utf-8").startswith("Status: done ")
+    assert "\t07-close\tdone " in (archived / "events.log").read_text(encoding="utf-8")
+    assert "no implement run folder" in run("status").stderr
+    assert run("status", archived).returncode == 0
 
 
 with tempfile.TemporaryDirectory() as tmp:
@@ -1578,6 +1603,7 @@ with tempfile.TemporaryDirectory() as tmp:
                and "profile " not in next(l for l in text.splitlines() if l.startswith("Skills read:"))
                for text in (p.read_text(encoding="utf-8") for p in folder.glob("0*.md")))
 
+    test_close_archives_run(tmp)
     test_catalog_uses_running_kit(tmp)
     test_skip_text_encoding()
     test_kit_pointers()

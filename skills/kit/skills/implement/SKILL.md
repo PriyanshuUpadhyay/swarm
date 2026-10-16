@@ -95,7 +95,7 @@ range. Answer each `ask` in the run's `answers.md` per review-check's Asks secti
 and ask the user after three review rounds on this step. `deliver` takes `06-review` again for each
 review round, so the warning counts real runs; the cap is a warning, not enforced.
 
-At close, move the folder to `<repo-root>/tmp/flow/_closed/<folder>/`. Release is a separate action
+`implement_run.py done <folder> 07-close` closes and archives the run, then prints its new path. Release is a separate action
 that the user asks for.
 
 ## Owners

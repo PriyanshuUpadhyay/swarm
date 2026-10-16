@@ -4,7 +4,7 @@
   start [--profile <name>]     make tmp/flow/<date>-<branch>/ with the seven step files; the profile packs blocks
   status [<folder>]            print each step's status, whether it is ready, and whether it is stale
   take <folder> <step> <who> [--force] mark the step active and print its file with the skills the catalog gives it
-  done <folder> <step>         set the step done, only when every todo is checked with evidence
+  done <folder> <step>         set done with evidence; 07-close moves the run to tmp/flow/_closed/
   skip <folder> <step> <why>    skip design, contracts, or impact, with the reason
 
 `start` writes the full text of each step's skills into that step's file, because an agent that gets
@@ -498,9 +498,17 @@ def take(folder, step, who, force=False):
 
 
 def done(folder, step):
+    if step == "07-close":
+        destination = Path(git("rev-parse", "--show-toplevel")) / "tmp" / "flow" / "_closed" / Path(folder).name
+        if destination.exists() or destination.is_symlink():
+            raise SystemExit(f"close destination already exists: {destination}")
     # Only 04-impact gets a Callers section; elsewhere that line is pasted text and must not end the list.
     ends = (RESULT_HEAD, CALLERS_HEAD) if step == "04-impact" else (RESULT_HEAD,)
     step_run.done(folder, step, rev(folder, step) if step == "05-build" else None, ends=ends)
+    if step == "07-close":
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        Path(folder).rename(destination)
+        print(destination)
 
 
 def skip(folder, step, *why):
