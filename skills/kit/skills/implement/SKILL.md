@@ -5,14 +5,14 @@ description: Run one change through seven steps (frame, design, contracts, impac
 
 # Implement
 
-Use an implement run for any change that `pair` or `deliver` builds. A one-line change takes the fast lane.
-Stored runs stay in `tmp/flow/`, and settings stay in `~/.flow/`, so existing runs and profiles still work.
+Use the `implement` skill for any change that `pair` or `deliver` builds. A one-line change takes the fast lane.
+The kit's `references/run-folder.md` owns the run and settings paths.
 
 ## Entry and lanes
 
 `/pair`, `/deliver`, and "implement start" all use this route. When `pair` or `deliver` starts with no
-implement run folder named, make the folder and do `01-frame.md` first. Then pick the lane from the change
-and the repo's contracts, never from the missing folder. The fast lane skips `02-design.md`,
+run folder for the `implement` skill named, make the folder and do `01-frame.md` first. Then pick
+the lane from the change and the repo's contracts, never from the missing folder. The fast lane skips `02-design.md`,
 `03-contracts.md`, and `04-impact.md` with `skip <folder> <step> fast lane: <reason>` only when none
 of them needs a new decision. Otherwise do them before build. The command keeps its own mode.
 After "implement start", ask the user to choose `pair` or `deliver` in the reply that shows `01-frame.md`.
@@ -60,8 +60,8 @@ the git common dir (`git rev-parse --git-common-dir`), not the worktree folder n
 
 ## Status line
 
-The implement workflow is a step run, so the kit's `references/step-run.md` owns the status line, the `Uses:`
-line, pick-up, close, and when a step waits for the user. The step table below is the step graph that
+A run of the `implement` skill is a step run, so the kit's `references/step-run.md` owns the status
+line, the `Uses:` line, pick-up, close, and when a step waits for the user. The step table below is the step graph that
 the script reads. The revision of `05-build` is `HEAD`, so a new commit makes `06-review` stale.
 `start` marks `05-build.md` with the `Revision: HEAD` line that step-run.md describes.
 
@@ -94,13 +94,13 @@ that the user asks for.
 
 ## Owners
 
-The implement workflow owns the step list, the order, the status, the profiles, and the domain catalog.
-`pair` or `deliver` owns the plan, the chunks, and the commits; the implement workflow never starts `deliver`
+The `implement` skill owns the step list, the order, the status, the profiles, and the domain catalog.
+`pair` or `deliver` owns the plan, the chunks, and the commits; the `implement` skill never starts `deliver`
 by itself.
-`review-check` owns the review and its verdict; the implement workflow never fixes a finding itself. An `INCOMPLETE` verdict is no review.
+`review-check` owns the review and its verdict; the `implement` skill never fixes a finding itself. An `INCOMPLETE` verdict is no review.
 The kit root, with its `blocks/` and `references/` folders, is two folders up from this skill's folder. The kit block
 `blocks/prove-it-works/SKILL.md` owns the choice of check and the evidence.
-The kit block `blocks/checked-units/SKILL.md` owns the unit order. `decisions` owns the ADRs. The implement workflow never pushes.
+The kit block `blocks/checked-units/SKILL.md` owns the unit order. `decisions` owns the ADRs. The `implement` skill never pushes.
 
 ## Trial log
 

@@ -1,6 +1,6 @@
 ---
 name: explain
-description: Explain how something works with one running example and one new idea at a time. Use when the user asks to understand a subject or says "explain this".
+description: Explain how something works. Use when the user asks to understand a subject or says "explain this".
 ---
 
 # Explain

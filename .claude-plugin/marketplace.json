@@ -1,5 +1,5 @@
 {
   "name": "swarm",
   "owner": {"name": "swarm"},
-  "plugins": [{"name": "swarm", "source": "./skills/kit", "description": "Swarm's skill kit: workflow skills and the blocks they point to."}]
+  "plugins": [{"name": "swarm", "source": "./skills/kit", "description": "Build, implement, explain, and deliver with Swarm's workflow skills and their shared blocks."}]
 }

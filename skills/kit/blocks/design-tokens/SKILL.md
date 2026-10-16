@@ -10,7 +10,7 @@ metadata:
   gives: "DESIGN.md tokens"
   conflicts: ""
   users: "implement, build, build-site"
-  source: "skills/build/references/references.md (style grammar template); skills/build/references/site.md (DESIGN.md; the file moved to blocks/build-site 2026-10-13); impeccable pack: plugin/skills/impeccable/SKILL.md:35-40 (modes); taste-skill pack: skills/taste-skill/SKILL.md:25-26, :38-39, :186, :217, :236, :531-535, :601, :687"
+  source: "skills/ink/references/references.md (style grammar template); skills/ink/references/site.md (DESIGN.md; the file moved to blocks/build-site 2026-10-13); impeccable pack: plugin/skills/impeccable/SKILL.md:35-40 (modes); taste-skill pack: skills/taste-skill/SKILL.md:25-26, :38-39, :186, :217, :236, :531-535, :601, :687"
 ---
 
 ## Rules

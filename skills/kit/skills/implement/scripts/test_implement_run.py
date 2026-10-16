@@ -1399,6 +1399,7 @@ with tempfile.TemporaryDirectory() as tmp:
 
     folder = Path(run("start").stdout.splitlines()[0])
     assert "RULE TEXT 42" in (folder / "05-build.md").read_text()
+    assert "## Rules for this step (written by implement_run.py start; apply them, keep this section)" in (folder / "05-build.md").read_text()
     assert "RULE TEXT 42" not in (folder / "02-design.md").read_text()
     assert sorted(p.name for p in folder.glob("0*.md"))[0] == "01-frame.md"
     assert "Branch: main" in (folder / "01-frame.md").read_text()
@@ -1470,6 +1471,7 @@ with tempfile.TemporaryDirectory() as tmp:
     impact = (folder / "04-impact.md").read_text()
     assert "### parse_phone (2 places)" in impact and "app.py:1:" in impact and "### init" not in impact
     assert impact.index("## Callers") < impact.index("## Result")
+    # Keep the old literal so a later heading rename still checks that existing runs resume.
     legacy_heading = "## Callers (written by flow_run.py take from the code names in 03-contracts.md; a search, not a judgment)"
     (folder / "04-impact.md").write_text(impact.replace(implement_run.CALLERS_HEAD, legacy_heading), encoding="utf-8")
     assert run("take", folder, "04-impact", "a").returncode == 0

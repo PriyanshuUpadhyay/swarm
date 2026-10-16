@@ -184,7 +184,7 @@ workflow calls them as one unit.
 | step-run | status line, pick-up, close and wait are one machine |
 | glitch-walk start | its script refuses, stops and gives exact words; it runs as one step |
 | engineering-standards tables | each row already has an ID |
-| build seam law | one idea across three build files; it moves with `story` |
+| `build` skill seam law | one idea across three files in the `build` skill; it moves with `story` |
 | cleanup-gate pass | the six emissions in order are one gate; a step that emitted nothing did not run |
 | review-walk steps | each step needs the reviewer, and the map, comments and walk share one run |
 | implement step graph | the step list, status and catalog are one machine that `implement_run.py` runs |
@@ -217,13 +217,13 @@ path that names the skill still works.
 
 Plans that stay open: research writes the ledger for questions, with `web needs local` only when
 local findings set the query (the owner's local-then-web example); the emil pack owns UI motion and
-build owns story motion (B8).
+the `build` skill owns story motion (B8).
 
-## build, split
+## The `build` skill, split
 
-build becomes templates plus its contract. Its routes become the templates.
+The `build` skill becomes templates plus its contract. Its routes become the templates.
 
-| build step today | Blocks |
+| Step in the `build` skill today | Blocks |
 |---|---|
 | 1 Intake | frame, web-research (when no references are given) |
 | 2 Analyse the references | reference-analysis, design-tokens |
@@ -241,11 +241,11 @@ build becomes templates plus its contract. Its routes become the templates.
 | `analysis-only` | intake, analyse |
 | `site` | as `prototype`, with build-site and web-ui-basics |
 
-build's contract stays in its `SKILL.md`: keep story, look and motion apart, prove the look and the
-story before production, and render from time and one seed. Reference rules point to
+The `build` skill's contract stays in its `SKILL.md`: keep story, look and motion apart, prove the
+look and the story before production, and render from time and one seed. Reference rules point to
 `reference-analysis`.
 
-### Where each old build section went (2026-10-13)
+### Where each old section of the `build` skill went (2026-10-13)
 
 | Old section | Now |
 |---|---|
@@ -256,11 +256,11 @@ story before production, and render from time and one seed. Reference rules poin
 | `story-and-motion.md` Story sheet, Structures, Shot list, Pacing | `blocks/story` |
 | `story-and-motion.md` Drivers (its settled-state line points to `blocks/web-ui-basics`), Transition catalogue, Seam law, Scene graph, Timeline, Motion feel, Web-native media ideas, Seam design | stay |
 | `qa.md` Required evidence | stays; the contact-sheet rule moved to `blocks/visual-qa` |
-| `qa.md` Reference match | scoring to `blocks/look-check`, compare command to `blocks/headless-shot`; build's example stays |
+| `qa.md` Reference match | scoring to `blocks/look-check`, compare command to `blocks/headless-shot`; the `build` skill's example stays |
 | `qa.md` Story checks | stay; key frame and pacing checks moved to `blocks/story`; the scroll-story check points to the settled-state rule of `blocks/web-ui-basics` |
 | `qa.md` Frame checks, Motion checks | `blocks/visual-qa`; mass, paper, seam law, boil and loop seam checks stay |
 | `qa.md` Automated checks | stay; hidden content points to `blocks/web-ui-basics` |
-| `qa.md` QA log | `blocks/visual-qa`; build's step names stay |
+| `qa.md` QA log | `blocks/visual-qa`; the `build` skill's step names stay |
 | `site.md` (whole file, removed) | `blocks/build-site`; DESIGN.md rules to `blocks/design-tokens`, page frames to `blocks/look-check`, page floor to `blocks/web-ui-basics` |
 | `build.md` Architecture, Determinism, Debug modes, Performance, Toolbox, Delivery, Technical references | `blocks/build-canvas` |
 | `build.md` Style frames, Animatic, Frame export, Handoff | stay; the shot command points to `blocks/headless-shot` |

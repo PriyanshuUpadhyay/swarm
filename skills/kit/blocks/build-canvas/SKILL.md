@@ -10,7 +10,7 @@ metadata:
   gives: "a piece that renders any frame from ?t= and its seed"
   conflicts: ""
   users: "build"
-  source: "skills/build/references/build.md (architecture, determinism, debug modes, performance, toolbox, delivery, technical references) and skills/build/references/mark-making.md, moved 2026-10-13"
+  source: "skills/ink/references/build.md (architecture, determinism, debug modes, performance, toolbox, delivery, technical references) and skills/ink/references/mark-making.md, moved 2026-10-13"
 ---
 
 ## Rules

@@ -6,6 +6,8 @@ description: Where a skill keeps the files of a run that must outlive one chat (
 
 A skill that keeps a run's files across chats keeps them in `<repo-root>/tmp/<skill>/`.
 `<repo-root>` is `git rev-parse --show-toplevel`, so each worktree has its own runs.
+The `implement` skill keeps `tmp/flow/` and `~/.flow/`, and the `build` skill keeps each piece's
+`ink/` folder, so existing runs and profiles still work.
 
 Example. A `pair` task in `~/work/app/wt/feat-login` writes
 `~/work/app/wt/feat-login/tmp/pair/2026-09-30-login-rate-limit.md`. `git status` does not show it,

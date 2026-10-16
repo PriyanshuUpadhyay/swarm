@@ -68,13 +68,14 @@ Setup reports Skills ready, because it skips owner entries (ADR 0062 amendment,
 | A7 | Make Setup install the plugin `swarm` from the bundled kit in each CLI, in place of kit skill links, because a link to one kit skill folder cannot reach `blocks/`; Setup keeps the links for swarm-orchestrator, swarm-voice and the three vendor skills, and the root README's Setup step says so | 🔄 `swarm setup plugin` (ADR 0090); ships in the next release | on a Setup-only Mac, each CLI lists the plugin and a session reads a block |
 
 Note. On 2026-10-13 the creative-coding lines of `~/.flow/domains.md` gained `block:` items
-(reference-analysis, design-tokens, story, build-canvas, style-frames, visual-qa). Only implement on
-branch `skill-blocks` knows these blocks, so a creative-coding run on the live agent-kit implement stops
-with "unknown block id" until `skill-blocks` is merged to main and A4 installs the plugin. The `any`
-lines keep the `prove-it-works` skill path until A4, because a `block:` item there would stop every
-live implement run. A repo with no `.blocks.toml` runs the blocks without the base block; the
-creative-coding blocks also need `site` and `shots` there. Once a catalog line in every repo names a
-block, `implement_run.py start` reads TOML, so it needs Python 3.11 or later (`/usr/bin/python3` is 3.9).
+(reference-analysis, design-tokens, story, build-canvas, style-frames, visual-qa). Only the `implement`
+skill on branch `skill-blocks` knows these blocks, so a creative-coding run with the live agent-kit
+copy of the `implement` skill stops with "unknown block id" until `skill-blocks` is merged to main
+and A4 installs the plugin. The `any` lines keep the `prove-it-works` skill path until A4, because a
+`block:` item there would stop every live run of the `implement` skill. A repo with no `.blocks.toml`
+runs the blocks without the base block; the creative-coding blocks also need `site` and `shots`
+there. Once a catalog line in every repo names a block, `implement_run.py start` reads TOML, so it
+needs Python 3.11 or later (`/usr/bin/python3` is 3.9).
 
 Note. `~/.claude/skills/deliver` differs from agent-kit only by `scripts/__pycache__`, so no local
 skill edit is at risk in A4.

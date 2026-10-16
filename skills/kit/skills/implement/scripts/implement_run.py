@@ -47,11 +47,11 @@ LINE_CHUNK = 4096
 MAX_HITS = 10
 HIT_CHARS = 160
 CAP = 15000  # characters per skill, cut to it, and per block, refused over it; engineering-standards is about 10k
-# These headings are stored in existing runs; write_callers uses the exact heading to avoid duplicates.
-RULES_HEAD = "## Rules for this step (written by flow_run.py start; apply them, keep this section)"
+RULES_HEAD = "## Rules for this step (written by implement_run.py start; apply them, keep this section)"
 JUDGE_HEAD = "## Judge checks of blocks that ran"
 PARAM = re.compile(r"\{\{(\w+)\}\}")
 CHECKS = ("Check (script)", "Check (judge)")
+# write_callers uses this stored heading to avoid duplicate sections in existing runs.
 CALLERS_HEAD = "## Callers (written by flow_run.py take from the code names in 03-contracts.md; a search, not a judgment)"
 TODOS = {  # each item names the file that owns the rule
     "01-frame": ["Goal, user, and out of scope (implement)", "Done-when, each one checkable (implement)",

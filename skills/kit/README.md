@@ -67,11 +67,9 @@ Codex reads `~/.agents/skills` and Antigravity reads `~/.gemini/config/skills`.
 
 - Skills that start workers (`council`, `web-search`, `research`) run them as visible panes through
   [swarm](https://github.com/PriyanshuUpadhyay/swarm).
-- `pair`, `deliver`, `review-check`, and `review-walk` keep their runs in
-  `<repo-root>/tmp/<skill>/`, which `references/run-folder.md` describes. The `implement` skill
-  keeps `tmp/flow/` and `~/.flow/`, and `build` keeps each piece's `ink/` folder for existing runs.
-  Other skills write under
-  `~/.claude/` (`reports/`, `council-log/`) and create those folders on first use.
+- `references/run-folder.md` owns the run paths, including the older folder names kept by the
+  `implement` and `build` skills. Other skills write under `~/.claude/` (`reports/`, `council-log/`)
+  and create those folders on first use.
 - `council` calls `~/.claude/scripts/ensure-council-access.py`, which is not part of this kit yet.
 
 ## Borrowed skills

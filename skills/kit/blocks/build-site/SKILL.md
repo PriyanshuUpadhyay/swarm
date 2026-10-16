@@ -10,7 +10,7 @@ metadata:
   gives: "a page in the site folder"
   conflicts: ""
   users: "build"
-  source: "skills/build/references/site.md (scope, intake, look, story and motion, animatic, QA; moved 2026-10-13)"
+  source: "skills/ink/references/site.md (scope, intake, look, story and motion, animatic, QA; moved 2026-10-13)"
 ---
 
 ## Rules
