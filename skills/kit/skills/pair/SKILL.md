@@ -22,10 +22,8 @@ Keep the task file as the kit block `blocks/task-file/SKILL.md` says, at
 - a chunk log with the chunk number, its intent, its `file:line`, and its outcome
   (`approved`, `changed`, or `denied`).
 
-The status block after a resume also names the current chunk. Everything the user has to read,
-which is the behavior list, every chunk, and every example, appears inline in the chat as text and
-fenced code. Never point the user at the task file, and never answer with its path in place of the
-code.
+The status block after a resume also names the current chunk. Apply the loaded agent instructions
+to user-facing output. The chunk loop below owns the diff shown for approval.
 
 ## Plan first, short
 

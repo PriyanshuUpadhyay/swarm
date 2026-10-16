@@ -147,7 +147,7 @@ Status: ✅ exists, ✂️ cut from a skill next, ⬜ later, 🆕 new, 🔒 stay
 | web-ui-basics | rule | the floor for one static page | page → pass or fail | `blocks/web-ui-basics` | any static page | ✅ HTML only |
 | serve-local | step | a local view of the checked build | built folder → URL, commit, stop command | `blocks/serve-local` | page-comments, ink sites, any page | ✅ basic |
 | review | step | the review verdict | range → verdict | `skills/review-check` (stays whole; `blocks/change-review` calls it) | flow, deliver, plans | 🔒 |
-| report | step | the written answer | findings → report with checked links | `blocks/report` (the reply holds the whole report; the agent instructions own the rest) | research | ✅ |
+| report | step | the written answer | findings → report with checked links | `blocks/report` (report sections; the agent instructions own the reply) | research | ✅ |
 | done-when-evidence | rule | close maps claims to evidence | frame, results → evidence rows | `blocks/done-when-evidence` | every template | ✅ |
 
 ### Rule cards
@@ -208,7 +208,7 @@ path that names the skill still works.
 | council | worker-brief, run-workers | the protocol, the convergence check, the output, the decision log |
 | orchestrate-claude, -codex, -agy | run-workers, worker-brief | the lines that differ by runtime |
 | review-check | when-to-extract | the whole review gate |
-| review-walk | none | the five steps (stays whole) |
+| review-walk | voice-review | the five steps and GitHub write gates (stays whole) |
 | cleanup-gate | when-to-extract (by its rules file) | the six-step pass (stays whole) |
 | decisions | none | the whole capture contract (stays whole) |
 | flow | prove-it-works, checked-units, and every block its catalog lines name | the step graph and the loader |

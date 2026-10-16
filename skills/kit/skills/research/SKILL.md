@@ -5,8 +5,8 @@ description: Research one question and write a short evidence-backed report, sho
 
 # Research
 
-Answer one question from evidence. Keep the report as a file, and put the whole report in the
-reply. The kit root, with its `blocks/` and `references/` folders, is two folders up from this skill's folder.
+Answer one question from evidence. Keep the report as a file. Apply the loaded agent instructions
+to the reply. The kit root, with its `blocks/` and `references/` folders, is two folders up from this skill's folder.
 
 ## Start or continue
 
@@ -82,7 +82,8 @@ check every link as `blocks/link-check/SKILL.md` says before you finish.
 
 ## 06-close
 
-Send the reply as `blocks/report/SKILL.md` says: the first screen, the whole report, and its path.
+Send the reply by the loaded agent instructions. The kit's `references/plan-layout.md` owns the
+first screen, and `blocks/report/SKILL.md` owns the report sections and file path.
 
 ## Guards
 

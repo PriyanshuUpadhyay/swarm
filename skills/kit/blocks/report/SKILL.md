@@ -4,7 +4,7 @@ description: "Write a research answer as a short plain report: the answer first,
 license: MIT
 metadata:
   kind: step
-  owns: "the shape of a saved research report, and that its reply holds all of it"
+  owns: "the shape of a saved research report"
   serves: "report, close"
   needs: "findings with sources"
   gives: "a report file and a reply that holds it"
@@ -21,7 +21,7 @@ metadata:
   3. **What is contested**: where the sources disagree.
   4. **Off the usual path**: each off-path idea with its source, why it might work, and why it might fail. If none held up, name the searches you tried.
   5. **Sources**: newest first, with dates.
-- The reply holds the whole report, from its `#` title down, and gives the file path in one line. The session's agent instructions own the rest of the reply's shape, so this block does not restate it.
+- Apply the session's agent instructions to the reply. Give the report's file path in one line.
 
 ## Example
 Initial state: a question has five checked sources and one off-path idea.
@@ -33,4 +33,4 @@ Result: a 700-word report. The reply shows the whole report, then its path.
 
 ## Check (judge)
 - Does the report open with the answer in two or three sentences, and keep the five sections in order? Quote the section headings.
-- Does the reply hold the whole report, not only its path? Quote its first and last lines.
+- Does the reply follow the loaded agent instructions? Quote the applicable instruction and the reply lines that meet it.
