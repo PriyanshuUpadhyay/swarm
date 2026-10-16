@@ -128,6 +128,14 @@ describe("chats", () => {
       '/api/agent/close {"session":"chat-1","agent":"reviewer"}',
       '/api/agent/close {"session":"chat-1","agent":"chair"}',
     ]);
+
+    // A group of chats asks once, and archives them in one call.
+    const group = fakeApp(async () => ({}), [{ id: "orchestrator", alive: true, state: "done" }]);
+    group.life.endChats(["chat-1", "chat-2"], true);
+    expect(group.life.state.confirm).toMatchObject({ title: "Archive 2 chats?", body: "Archiving closes their agents. The chats move to Archived.", action: "Archive 2 Chats" });
+    expect(await group.life.confirmed()).toBeNull();
+    expect(group.calls).toContain('/api/sessions/archive {"ids":["chat-1","chat-2"]}');
+    expect(group.calls.filter((c) => c.startsWith("leave"))).toEqual(["leave chat-1", "leave chat-2"]);
   });
 
   it("marks a refused switch as cancelled only for the server's cancel text", async () => {
