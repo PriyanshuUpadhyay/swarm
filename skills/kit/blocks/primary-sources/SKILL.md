@@ -1,6 +1,6 @@
 ---
 name: primary-sources
-description: "Go to the origin of a claim, the original paper, RFC, spec, design doc, or the author's code at the commit that introduced it, read it, and ground the answer in it. Use when a question is about how or why a technique, protocol, or implementation works."
+description: "Read the origin of a claim (paper, RFC, spec, design doc, or the author's first commit) and ground the answer in it. Use when a question asks how or why a technique or protocol works."
 license: MIT
 metadata:
   kind: step
