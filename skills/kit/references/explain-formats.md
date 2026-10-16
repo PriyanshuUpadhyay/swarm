@@ -44,14 +44,14 @@ more than three items with the same attributes gets a table.
 
 Pick the type from the table above. `blocks/diagram/SKILL.md` owns the shared diagram rules.
 
-The format follows where the owner reads it first. A chat answer uses a text diagram, and a saved copy keeps that form.
-
 The format depends on where it is read:
 
 - In a reply or a terminal, draw a text diagram with boxes and arrows in a fenced block, because a
   terminal does not render Mermaid.
 - In a file that is read on GitHub or in a browser, use Mermaid (`sequenceDiagram`, `flowchart`,
   `stateDiagram-v2`, `erDiagram`, `timeline`).
+- For an answer sent to chat and saved to a file, follow where the owner reads it first.
+  A chat answer uses a text diagram, and a saved copy keeps that form.
 
 ## Local HTML page
 
