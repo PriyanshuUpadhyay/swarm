@@ -77,22 +77,27 @@ enum Layout {
     static let besideHeight: CGFloat = 150
     static let bottom: CGFloat = 10
     static let markColumn: CGFloat = 20
-    static let nameColumn: CGFloat = 190
+    static let nameColumn: CGFloat = 150
     static let readingColumn: CGFloat = 104
     static let valueColumn: CGFloat = 40
     static let resetColumn: CGFloat = 64
     static let gap: CGFloat = 12
 
+    /// The mark, name and, when rows differ, Reading columns with the gap after each.
+    static func lead(reading: Bool) -> CGFloat {
+        markColumn + nameColumn + gap * 2 + (reading ? readingColumn + gap : 0)
+    }
+
     /// One window column's width when `columns` share the row, so a narrower group lines up.
-    static func cell(columns: Int) -> CGFloat {
-        let fixed = markColumn + nameColumn + readingColumn + CGFloat(2 + columns) * gap
+    static func cell(columns: Int, reading: Bool) -> CGFloat {
+        let fixed = lead(reading: reading) + CGFloat(columns - 1) * gap
         return (openWidth - 2 * inset - 2 * rowPadding - fixed) / CGFloat(max(columns, 1))
     }
 
     /// The width of a group with `kinds` columns, its padding included, in a table of `columns`.
-    static func groupWidth(kinds: Int, columns: Int) -> CGFloat {
-        2 * rowPadding + markColumn + nameColumn + readingColumn + CGFloat(2 + kinds) * gap
-            + CGFloat(kinds) * cell(columns: columns)
+    static func groupWidth(kinds: Int, columns: Int, reading: Bool) -> CGFloat {
+        2 * rowPadding + lead(reading: reading) + CGFloat(kinds) * cell(columns: columns, reading: reading)
+            + CGFloat(kinds - 1) * gap
     }
     /// The least notch height the HUD assumes, also the closed height on a Mac with no notch reading.
     static let minNotch: CGFloat = 37
@@ -113,6 +118,14 @@ extension UsageModel {
         guard let last = groups.last, let widest = groups.map(\.kinds.count).max() else { return false }
         return last.kinds.count < widest
             && Layout.headings + CGFloat(last.accounts.count) * Layout.row >= Layout.besideHeight
+    }
+
+    /// The reading of every account with windows when all of them read the same, such as
+    /// "Stale · 48m", "" when all are fresh, or nil when rows differ and need the Reading column.
+    func sharedReading(now: Date) -> String? {
+        let readings = Set(accounts.filter { !$0.windows.isEmpty }
+            .map { readingText($0, readFailed: readError != nil, readAt: readAt, now: now) ?? "" })
+        return readings.count <= 1 ? readings.first ?? "" : nil
     }
 
     var openSize: CGSize {
@@ -351,7 +364,8 @@ struct OpenContent: View {
                 if model.footerBeside && group.id == groups.last?.id {
                     HStack(alignment: .top, spacing: 0) {
                         table(group, columns: group.kinds.count)
-                            .frame(width: Layout.groupWidth(kinds: group.kinds.count, columns: columns))
+                            .frame(width: Layout.groupWidth(kinds: group.kinds.count, columns: columns,
+                                                            reading: model.sharedReading(now: now) == nil))
                         VStack(alignment: .trailing, spacing: 6) {
                             Spacer(minLength: 0)
                             HStack(alignment: .bottom, spacing: 12) { credit; mascot }
@@ -391,7 +405,9 @@ struct OpenContent: View {
             HStack(spacing: Layout.gap) {
                 Spacer().frame(width: Layout.markColumn)
                 Text(providerTitle(group.provider)).frame(width: Layout.nameColumn, alignment: .leading)
-                Text("Reading").frame(width: Layout.readingColumn, alignment: .leading)
+                if model.sharedReading(now: now) == nil {
+                    Text("Reading").frame(width: Layout.readingColumn, alignment: .leading)
+                }
                 ForEach(group.kinds, id: \.self) { kind in
                     Text(kind.title).frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -412,6 +428,7 @@ struct OpenContent: View {
                         SignedOutRow(account: account)
                     } else {
                         AccountRow(account: account, kinds: group.kinds, columns: columns, theme: theme, now: now,
+                                   showsReading: model.sharedReading(now: now) == nil,
                                    history: model.history, readFailed: model.readError != nil, readAt: model.readAt)
                     }
                 }
@@ -480,6 +497,11 @@ struct OpenContent: View {
                 } else {
                     Text(age).monospacedDigit()
                 }
+                // Every row read the same, so the table drops its Reading column and says it here.
+                if let shared = model.sharedReading(now: now), !shared.isEmpty {
+                    Text("·").accessibilityHidden(true)
+                    Text("all \(shared.prefix(1).lowercased() + shared.dropFirst())").foregroundStyle(Palette.warn).monospacedDigit()
+                }
                 Button { model.refresh() } label: {
                     Image(systemName: "arrow.clockwise")
                         .font(.system(size: 11, weight: .semibold))
@@ -507,18 +529,16 @@ struct OpenContent: View {
     }
 }
 
-/// The account name with its provider in small gray text after it.
+/// The account name.
 struct AccountName: View {
     let account: UsageAccount
     let color: Color
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Text(account.name).font(.system(size: 13, weight: .medium)).foregroundStyle(color)
-                .lineLimit(1).truncationMode(.middle).help(account.name)
-            Text(providerTitle(account.provider)).font(.system(size: 11)).foregroundStyle(Palette.tertiary).fixedSize()
-        }
-        .frame(width: Layout.nameColumn, alignment: .leading)
+        // The group heading and the mark name the provider, so the name stands alone.
+        Text(account.name).font(.system(size: 13, weight: .medium)).foregroundStyle(color)
+            .lineLimit(1).truncationMode(.middle).help(account.name)
+            .frame(width: Layout.nameColumn, alignment: .leading)
     }
 }
 
@@ -529,6 +549,8 @@ struct AccountRow: View {
     let columns: Int
     let theme: Theme
     let now: Date
+    /// False when every row reads the same; the status line then says it once.
+    let showsReading: Bool
     let history: [HistorySample]
     /// The last read failed, so every number on screen is at least as old as `readAt`.
     let readFailed: Bool
@@ -536,10 +558,12 @@ struct AccountRow: View {
 
     var body: some View {
         HStack(spacing: Layout.gap) {
-            // The name line already names the provider, so the mark is not read twice.
-            ProviderMark(provider: account.provider, size: 16).frame(width: Layout.markColumn).accessibilityHidden(true)
+            // The mark's label is the only place the row names its provider.
+            ProviderMark(provider: account.provider, size: 16).frame(width: Layout.markColumn)
             AccountName(account: account, color: Palette.primary)
-            reading.font(.system(size: 11)).lineLimit(1).frame(width: Layout.readingColumn, alignment: .leading)
+            if showsReading {
+                reading.font(.system(size: 11)).lineLimit(1).frame(width: Layout.readingColumn, alignment: .leading)
+            }
             ForEach(kinds, id: \.self) { kind in
                 if let window = account.windows.first(where: { $0.kind == kind }) {
                     WindowCell(window: window, pace: pace(account: account, window: window, history: history, now: now),
@@ -557,21 +581,23 @@ struct AccountRow: View {
     }
 
     @ViewBuilder private var reading: some View {
-        // Like the closed wings' `~`, a failed read marks even fresh windows as old.
-        if readFailed || account.windows.contains(where: { !$0.isFresh }) {
-            Text(staleText).foregroundStyle(Palette.warn)
+        if let stale = readingText(account, readFailed: readFailed, readAt: readAt, now: now) {
+            Text(stale).foregroundStyle(Palette.warn)
         } else {
             Text("fresh").foregroundStyle(Palette.tertiary)
         }
     }
+}
 
-    private var staleText: String {
-        let ages = account.windows.filter { readFailed || !$0.isFresh }.compactMap(\.asOf) + (readFailed ? [readAt].compactMap { $0 } : [])
-        guard let oldest = ages.min() else { return "Stale" }
-        // shortDuration says "now" under a minute, which reads wrong for an age.
-        let age = now.timeIntervalSince(oldest) < 60 ? "<1m" : shortDuration(until: now, now: oldest)
-        return "Stale · \(age)"
-    }
+/// "Stale · 45m" for an account with an old window, nil when every window is fresh. Like the closed
+/// wings' `~`, a failed read marks even fresh windows as old.
+func readingText(_ account: UsageAccount, readFailed: Bool, readAt: Date?, now: Date) -> String? {
+    guard readFailed || account.windows.contains(where: { !$0.isFresh }) else { return nil }
+    let ages = account.windows.filter { readFailed || !$0.isFresh }.compactMap(\.asOf) + (readFailed ? [readAt].compactMap { $0 } : [])
+    guard let oldest = ages.min() else { return "Stale" }
+    // shortDuration says "now" under a minute, which reads wrong for an age.
+    let age = now.timeIntervalSince(oldest) < 60 ? "<1m" : shortDuration(until: now, now: oldest)
+    return "Stale · \(age)"
 }
 
 struct WindowCell: View {
@@ -654,7 +680,7 @@ struct SignedOutRow: View {
 
     var body: some View {
         HStack(spacing: Layout.gap) {
-            ProviderMark(provider: account.provider, size: 16).frame(width: Layout.markColumn).accessibilityHidden(true)
+            ProviderMark(provider: account.provider, size: 16).frame(width: Layout.markColumn)
             AccountName(account: account, color: Palette.secondary)
             Text(account.problem ?? "No reading").font(.system(size: 12)).foregroundStyle(Palette.secondary)
                 .lineLimit(2).truncationMode(.tail).help(account.problem ?? "")
