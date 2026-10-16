@@ -31,7 +31,7 @@ What moves the story forward decides how time works in the build.
 - Give every key fact a settled state as `blocks/web-ui-basics/SKILL.md` says. For a
   scroll story this matters more, because wheel notches and the keyboard scroll in steps and jump over
   frames.
-- Apply `blocks/ui-motion/SKILL.md` to the reduced-motion form of a scroll interface.
+- Under reduced motion, show each beat's key frame as a still. Apply `blocks/ui-motion/SKILL.md` to any UI controls around the story.
 
 Source: [NRK case study](https://developer.chrome.com/blog/nrk-casestudy), 2025.
 

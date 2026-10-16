@@ -39,7 +39,7 @@ Action: write and run `checks/basics.mjs` at 1440, 390, and 375 px. It reports `
 Result: the evidence line shows the FAIL and then the PASS for each width.
 
 ## Check (script)
-- `rg -n -g '*.html' -g '*.css' -g '*.js' 'outline:\s*none|transition:\s*all|user-scalable=no|maximum-scale=1(\.0+)?([^.0-9]|$)|ease-in([^-]|$)' {{site}}` reports candidate declarations. Judge focus and zoom by this block, and motion by `blocks/ui-motion/SKILL.md`; a hit alone is no policy verdict.
+- `rg -n -g '*.html' -g '*.css' -g '*.js' 'outline:\s*none|transition:\s*all|user-scalable=no|maximum-scale=1(\.0+)?([^.0-9]|$)|ease-in([^-]|$)' {{site}}` reports declarations to check. A zoom hit fails. An `outline: none` hit fails unless a `:focus-visible` replacement is present. Send motion hits to the judge in `blocks/ui-motion/SKILL.md`; they do not fail this check by themselves.
 - `rg -n -g '*.html' -g '*.css' -g '*.js' 'prefers-reduced-motion' {{site}}` reports the declaration locations for the `ui-motion` judge. This scan alone gives no policy verdict.
 - `rg -o '<h[1-6]' {{site}}/index.html` lists the headings with no skipped level: heading order holds.
 - `rg -U -n -g '*.html' '<img\b[^>]*>' {{site}}` prints each whole image tag, also one split over lines, and shows `alt`, `width`, and `height` on each image: images are described and sized.
