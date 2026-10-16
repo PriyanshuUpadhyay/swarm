@@ -1130,7 +1130,7 @@ def test_diagram_membership():
 
 
 def shared_rule_copies(blocks):
-    """The first seven words of each parent's Rules line are its key phrase."""
+    """The first seven words of each sentence in a parent's Rules are its key phrase."""
     copies = []
     for path in sorted(blocks.glob("*/SKILL.md")):
         text = path.read_text(encoding="utf-8")
@@ -1138,11 +1138,12 @@ def shared_rule_copies(blocks):
             continue
         rules = next(lines for head, lines in flow_run.sections(text) if head == "Rules")
         for rule in (line[2:] for line in rules if line.startswith("- ")):
-            phrase = " ".join(re.findall(r"[a-z0-9]+", rule.lower())[:7])
-            for part in members[1].split(","):
-                body = (blocks / part.strip() / "SKILL.md").read_text(encoding="utf-8").split("---\n", 2)[-1]
-                if phrase in " ".join(re.findall(r"[a-z0-9]+", body.lower())):
-                    copies.append((part.strip(), phrase))
+            for sentence in re.split(r"(?<=[.!?])\s+", rule):
+                phrase = " ".join(re.findall(r"[a-z0-9]+", sentence.lower())[:7])
+                for part in members[1].split(","):
+                    body = (blocks / part.strip() / "SKILL.md").read_text(encoding="utf-8").split("---\n", 2)[-1]
+                    if phrase in " ".join(re.findall(r"[a-z0-9]+", body.lower())):
+                        copies.append((part.strip(), phrase))
     return copies
 
 
@@ -1155,8 +1156,9 @@ def test_shared_rules_not_copied(tmp):
     original = part.read_text(encoding="utf-8")
     for rule in next(lines for head, lines in flow_run.sections(parent) if head == "Rules"):
         if rule.startswith("- "):
-            part.write_text(original + "\n" + rule + "\n", encoding="utf-8")
-            assert shared_rule_copies(blocks), f"the check accepted a copied parent rule: {rule}"
+            for sentence in re.split(r"(?<=[.!?])\s+", rule[2:]):
+                part.write_text(original + "\n- " + sentence + "\n", encoding="utf-8")
+                assert shared_rule_copies(blocks), f"the check accepted a copied parent sentence: {sentence}"
 
 
 def test_kit_blocks_load(tmp):

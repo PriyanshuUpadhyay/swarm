@@ -10,7 +10,7 @@ metadata:
   gives: "a diagram choice, or no diagram"
   conflicts: ""
   users: "flow"
-  source: "references/explain-formats.md (picker table, Diagram section); html-plan pack: skills/html-plan/references/blocks.md:79-83 (doc-machine), :188, :192-193 (doc-flow), skills/html-plan/SKILL.md:119 (caption)"
+  source: "references/explain-formats.md (picker table and triggers); html-plan pack: skills/html-plan/references/blocks.md:79-83 (doc-machine), :188, :192-193 (doc-flow)"
 ---
 
 ## Rules

@@ -4,7 +4,7 @@
 # Agent Skills frontmatter: `name` (the id), `description` (the concept; start writes it to the step as
 # `Concept:`), `license`, and `metadata` with string values kind, owns, serves, needs, gives, conflicts,
 # users, and source. `kind` is rule, pack, step, or parent. Only a `kind: parent` has `metadata.parts`,
-# a nonempty comma-separated string of block ids. It is the sole membership list. Folders stay flat,
+# a nonempty comma-separated string of block ids. It is the only membership list. Folders stay flat,
 # and a part has one parent. A parent cannot be a part, and every listed part must exist.
 # A parent's Rules hold only shared rules moved from two or more parts, with no verdict or gate.
 # A repo block from `[add]` may leave the frontmatter out. Then come `## Rules`,
