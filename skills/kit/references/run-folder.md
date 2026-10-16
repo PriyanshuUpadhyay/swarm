@@ -10,8 +10,8 @@ For repository task state, use `<repo-root>/tmp/<skill>/`. `<repo-root>` is
 
 For research and web-search, `<reports>` is the folder the active runtime adapter names.
 When it names none, use `<repo-root>/tmp/reports/` in a repo, or `<working-folder>/tmp/reports/`
-outside a repo. This file owns that default for every runtime. Read older reports where they
-already exist; this rule moves no saved history.
+outside a repo. This file owns the rule and default for every runtime. Read older reports where
+they already exist; this rule moves no saved history.
 
 The following scopes use these paths, including when invoked from a repository.
 
