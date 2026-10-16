@@ -475,6 +475,24 @@ pub fn build(snapshot: &Value, owner: &OwnerChoices) -> Tree {
 
 /// The snapshot's archived sessions in `workspace`, newest first. A chat with no name or title
 /// shows its provider and short id, as a live one does.
+/// The chat id that the page header shows (`shortId` in `web/src/core/route.ts`): the shortest
+/// start of `id`, at least 8 characters, that no other live or archived session shares. A UUID v7
+/// starts with the time, so chats made in the same minute share their first 8 characters.
+pub fn short_id(id: &str, snapshot: &Value) -> String {
+    let others: Vec<&str> = ["sessions", "archived"]
+        .iter()
+        .filter_map(|list| snapshot[*list].as_array())
+        .flatten()
+        .filter_map(|s| s["id"].as_str())
+        .filter(|other| *other != id)
+        .collect();
+    let mut length = 8.min(id.len());
+    while length < id.len() && others.iter().any(|o| o.starts_with(&id[..length])) {
+        length += 1;
+    }
+    id[..length].to_owned()
+}
+
 fn archived_chats(snapshot: &Value, workspace: &str, owner: &OwnerChoices) -> Vec<ArchivedChat> {
     let all: Vec<&Value> = ["sessions", "archived"]
         .iter()
@@ -509,7 +527,7 @@ fn archived_chats(snapshot: &Value, workspace: &str, owner: &OwnerChoices) -> Ve
                     format!(
                         "{} {}",
                         s["chair_provider"].as_str().unwrap_or("Chat"),
-                        id.chars().take(8).collect::<String>()
+                        short_id(&id, snapshot)
                     )
                 });
             Some(ArchivedChat {
@@ -634,7 +652,7 @@ fn chats(sessions: Vec<Value>, snapshot: &Value, owner: &OwnerChoices) -> (Vec<C
                 format!(
                     "{} {}",
                     provider.as_deref().unwrap_or("Chat"),
-                    id.chars().take(8).collect::<String>()
+                    short_id(&id, snapshot)
                 )
             });
         let last_activity = sessions

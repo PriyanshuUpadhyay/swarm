@@ -829,7 +829,7 @@ fn archived_chats_fold_in_the_last_row_of_their_project() {
             .map(|r| (r.id.as_str(), r.title.as_str()))
             .collect::<Vec<_>>(),
         [
-            ("archived-chat:old-chat-2", "pi old-chat"),
+            ("archived-chat:old-chat-2", "pi old-chat-2"),
             ("archived-chat:old-chat-1", "Skills work")
         ]
     );
@@ -907,5 +907,21 @@ fn an_archived_continuation_shows_the_name_given_to_its_first_session() {
             .map(|c| (c.id.as_str(), c.title.as_str()))
             .collect::<Vec<_>>(),
         [("next", "Named"), ("first", "Named")]
+    );
+}
+
+#[test]
+fn two_chats_from_the_same_minute_get_ids_long_enough_to_differ() {
+    let snapshot = json!({
+        "sessions": [{"id": "01a14392-4044-7c82"}, {"id": "01a14392-5055-7ea2"}],
+        "archived": [{"id": "01a14393-0000-7000"}],
+    });
+    assert_eq!(
+        swarm::view::tree::short_id("01a14392-4044-7c82", &snapshot),
+        "01a14392-4"
+    );
+    assert_eq!(
+        swarm::view::tree::short_id("01a14393-0000-7000", &snapshot),
+        "01a14393"
     );
 }

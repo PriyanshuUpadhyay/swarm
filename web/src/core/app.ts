@@ -16,7 +16,7 @@ import {
 } from "./composer";
 import { MarkdownCache } from "./markdown";
 import { measure, whenPainted, type PerfKind } from "./perf";
-import { chatFromPath, chatPath, resolveChat } from "./route";
+import { chatFromPath, chatPath, resolveChat, shortId } from "./route";
 import { readSse, type SseEvent } from "./sse";
 import { isChair, movePane, paneCells, paneStatus, type Direction, type PaneCell } from "./panes";
 import { FoldChoices, findMatches, lines, mergeRows, type Line, type Match } from "./transcript";
@@ -830,7 +830,7 @@ export class App {
   /** A chat's title as the tree lists it. */
   chatTitle(session: string): string {
     // A chat started in a tab has no sidebar row, so its tab names it.
-    return chatRows(this.tree).find((r) => r.selection?.chat === session)?.title ?? this.tabs?.tabs.find((t) => t.session === session)?.title ?? session.slice(0, 8);
+    return chatRows(this.tree).find((r) => r.selection?.chat === session)?.title ?? this.tabs?.tabs.find((t) => t.session === session)?.title ?? shortId(session, this.chatIds());
   }
 
   // ---- tabs ----
