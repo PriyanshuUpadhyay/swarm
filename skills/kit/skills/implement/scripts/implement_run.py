@@ -499,9 +499,10 @@ def take(folder, step, who, force=False):
 
 def done(folder, step):
     if step == "07-close":
-        destination = Path(git("rev-parse", "--show-toplevel")) / "tmp" / "flow" / "_closed" / Path(folder).name
+        destination = Path(folder).resolve().parent / "_closed" / Path(folder).name
         if destination.exists() or destination.is_symlink():
-            raise SystemExit(f"close destination already exists: {destination}")
+            raise SystemExit(f"close destination already exists: {destination}; "
+                             "rename the run folder to a distinct name, then run done <renamed-folder> 07-close")
     # Only 04-impact gets a Callers section; elsewhere that line is pasted text and must not end the list.
     ends = (RESULT_HEAD, CALLERS_HEAD) if step == "04-impact" else (RESULT_HEAD,)
     step_run.done(folder, step, rev(folder, step) if step == "05-build" else None, ends=ends)

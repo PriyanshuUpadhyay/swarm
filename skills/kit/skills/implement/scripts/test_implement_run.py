@@ -1541,6 +1541,44 @@ def test_catalog_uses_running_kit(tmp):
     assert f"===== {local} =====" in text
 
 
+def test_close_from_other_cwd(tmp):
+    out, folder, repo, run = blocks_start(tmp, "archive-other-cwd", "", None)
+    assert out.returncode == 0, out.stderr
+    fill(folder / "07-close.md")
+    archived = folder.resolve().parent / "_closed" / folder.name
+    outside = Path(tmp) / "outside-repo"
+    outside.mkdir()
+    env = {**git_env(), "GIT_CEILING_DIRECTORIES": str(outside.parent)}
+    out = subprocess.run([sys.executable, SCRIPT, "done", str(folder), "07-close"], cwd=outside,
+                         env=env, capture_output=True, text=True)
+    assert out.returncode == 0 and out.stdout.splitlines()[-1] == str(archived), out
+    assert not folder.exists() and (archived / "07-close.md").read_text(encoding="utf-8").startswith("Status: done ")
+    assert not (outside / "tmp").exists()
+    assert run("status", archived).returncode == 0
+
+
+def test_second_same_day_close(tmp):
+    out, folder, repo, run = blocks_start(tmp, "archive-second-run", "", None)
+    assert out.returncode == 0, out.stderr
+    fill(folder / "07-close.md")
+    assert run("done", folder, "07-close").returncode == 0
+    archived = folder.parent / "_closed" / folder.name
+    first = (archived / "07-close.md").read_text(encoding="utf-8")
+    out = run("start")
+    assert out.returncode == 0 and Path(out.stdout.splitlines()[0]) == folder, out
+    fill(folder / "07-close.md")
+    out = run("done", folder, "07-close")
+    assert out.returncode == 1 and "rename the run folder" in out.stderr, out
+    assert (folder / "07-close.md").read_text(encoding="utf-8").startswith("Status: open\n")
+    renamed = folder.with_name(folder.name + "-second")
+    folder.rename(renamed)
+    out = run("done", renamed, "07-close")
+    second = archived.with_name(renamed.name)
+    assert out.returncode == 0 and out.stdout.splitlines()[-1] == str(second), out
+    assert (second / "07-close.md").read_text(encoding="utf-8").startswith("Status: done ")
+    assert (archived / "07-close.md").read_text(encoding="utf-8") == first
+
+
 def test_close_archives_run(tmp):
     out, folder, repo, run = blocks_start(tmp, "archive-close", "", None)
     assert out.returncode == 0, out.stderr
@@ -1603,6 +1641,8 @@ with tempfile.TemporaryDirectory() as tmp:
                and "profile " not in next(l for l in text.splitlines() if l.startswith("Skills read:"))
                for text in (p.read_text(encoding="utf-8") for p in folder.glob("0*.md")))
 
+    test_close_from_other_cwd(tmp)
+    test_second_same_day_close(tmp)
     test_close_archives_run(tmp)
     test_catalog_uses_running_kit(tmp)
     test_skip_text_encoding()
