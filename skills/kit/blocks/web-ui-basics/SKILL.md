@@ -17,7 +17,7 @@ metadata:
 Structure
 - Semantic HTML before ARIA. `<button>` for actions, `<a>` for navigation, never a `<div>` with a click handler.
 - Headings go in order, `<h1>` to `<h6>`. Add a skip link to the main content. Heading anchors get `scroll-margin-top`.
-- Images need `alt` (`alt=""` if decorative) and explicit `width` and `height`. Decorative icons get `aria-hidden="true"`. Icon-only buttons get `aria-label`. Meaningful media, such as a diagram, needs a text description.
+- Images need `alt` (`alt=""` if decorative) and explicit `width` and `height`. Decorative icons get `aria-hidden="true"`. Icon-only buttons get `aria-label`. For diagrams, apply `blocks/diagram/SKILL.md`.
 Focus
 - Every link and control takes focus with Tab and shows a ring. Use `:focus-visible`. Never `outline: none` without a replacement. A sticky header must not cover the focused element.
 Contrast
@@ -48,4 +48,4 @@ Result: the evidence line shows the FAIL and then the PASS for each width.
 - In the shots at 1440, 390, and 375 px, is any content cut off at the right edge or scrolled sideways? Quote each shot path.
 - Does the reduced-motion shot (`{{shots}}/<name>-<W>-reduced.png`, from blocks/headless-shot/SKILL.md:18) show every key fact? Quote the path and the facts.
 - Does a Tab walk show a visible ring on each link and button, with the skip link first? Quote the screenshot paths.
-- Does each diagram have a text description? Quote it.
+- For diagrams, apply the judge checks in `blocks/diagram/SKILL.md`.

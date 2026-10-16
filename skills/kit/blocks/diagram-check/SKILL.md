@@ -10,7 +10,7 @@ metadata:
   gives: "pass or miss per diagram"
   conflicts: ""
   users: "implement"
-  source: "references/explain-formats.md:25-27, :36-37; html-plan pack: skills/html-plan/SKILL.md:82 (rule 8, real over drawn), :130 (no clipping, arrows do not cross labels); blocks/visual-qa/SKILL.md (lettering, from build's qa.md); blocks/story/SKILL.md (each key frame reads on its own, from build's qa.md); web-interface-guidelines pack: command.md:168-170 (finding format)"
+  source: "references/explain-formats.md (Local HTML page section); html-plan pack: skills/html-plan/SKILL.md:82 (rule 8, real over drawn), :130 (no clipping, arrows do not cross labels); blocks/visual-qa/SKILL.md (lettering, from build's qa.md); blocks/story/SKILL.md (each key frame reads on its own, from build's qa.md); web-interface-guidelines pack: command.md:168-170 (finding format)"
 ---
 
 ## Rules
@@ -18,7 +18,6 @@ metadata:
 - Map each node and each arrow to one source line. Write one row per item: item, source `path:line`, `match` or `miss`.
 - A node or an arrow with no source line is an invented component. It is a `miss`.
 - Real over drawn: names on the diagram use the same words as the source.
-- Every branch in the source leads somewhere in the diagram, including the edge cases.
 - Shoot each diagram at 375 px wide to `{{shots}}/diagram-<diagram>-375.png`, so a page shot at 375 px cannot stand in for it. Read each label in it at 100 % zoom. No label is clipped, and no arrow crosses a label. A moving part never hides a letter.
 - The diagram reads on its own: a reader gets the caption's point from the picture without the body text.
 - Write each finding as `path:line - issue`, grouped by file.

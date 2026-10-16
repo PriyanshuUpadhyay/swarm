@@ -613,7 +613,7 @@ def test_block_profile(tmp):
     merged, merged_folder, _, _ = blocks_start(tmp, "d3-merged", catalog, PARAMS, "--profile", "merged")
     assert split.returncode == 0 and merged.returncode == 0, (split.stderr, merged.stderr)
     a, b = step_text(split_folder, "02-design"), step_text(merged_folder, "02-design")
-    assert a.count("===== block:") == 6 and b.count("===== block:") == 3, b
+    assert a.count("===== block:") == 7 and b.count("===== block:") == 4, b
     assert "===== block:tech-diagram =====" in b and "===== block:style-frames =====" in b, b
     assert "\n### Example\n" in a and "Example\n" not in b
     assert "profile merged" in b.splitlines()[3], b.splitlines()[3]
@@ -1055,12 +1055,110 @@ def test_kit_block_frontmatter():
         lines = text.split("---\n")[1].splitlines()
         top = [line.split(":", 1)[0] for line in lines if line[:1] != " "]
         meta = [line.strip().split(":", 1)[0] for line in lines if line[:1] == " "]
-        assert top == ["name", "description", "license", "metadata"] and meta == keys, (path, top, meta)
+        parent = "  kind: parent" in lines
+        assert top == ["name", "description", "license", "metadata"] and meta == keys + (["parts"] if parent else []), (path, top, meta)
         assert lines[0] == f"name: {path.parent.name}" and all(": " in line for line in lines if line != "metadata:"), path
         assert all(line.split(": ", 1)[1].strip() not in ("", '""', "''") for line in lines
                    if ": " in line and line.strip().split(":")[0] != "conflicts"), path
         description = lines[1].split(": ", 1)[1].strip('"')
         assert "Use when" in description and len(description.split()) <= 40, (path.parent.name, description)
+
+
+def test_parent_selection(tmp):
+    all_parts = ["when-to-diagram", "html-diagram", "call-tree", "diagram-check"]
+    for index, (selected, expected) in enumerate((("diagram", all_parts), ("html-diagram", ["html-diagram"]),
+                                                ("when-to-diagram, block:html-diagram", all_parts[:2]),
+                                                ("html-diagram, block:diagram", all_parts),
+                                                ("diagram, block:html-diagram", all_parts))):
+        out, folder, _, _ = blocks_start(tmp, f"parent-{index}",
+                                         f"- design: block:{selected}\n")
+        assert out.returncode == 0, out.stderr
+        text = step_text(folder, "02-design")
+        assert text.count("===== block:diagram =====") == 1, text
+        assert text.count("block:diagram@") == 1, text
+        assert text.index("===== block:diagram =====") < min(text.index(f"===== block:{p} =====") for p in expected)
+        for part in ("when-to-diagram", "html-diagram", "call-tree", "diagram-check"):
+            assert text.count(f"===== block:{part} =====") == int(part in expected), text
+        assert "block diagram judge:" in step_text(folder, "06-review")
+
+
+def test_parent_refusals(tmp):
+    root = Path(tmp, "parent-refusals")
+    root.mkdir()
+    (root / ".blocks.toml").write_text(PARAMS, encoding="utf-8")
+    source = implement_run.BLOCKS
+    cases = [
+        ("unknown", {"diagram": ("parent", "missing")}, "unknown part missing"),
+        ("two-parents", {"diagram": ("parent", "html-diagram"), "other": ("parent", "html-diagram")}, "two parents"),
+        ("nested", {"diagram": ("parent", "other"), "other": ("parent", "html-diagram")}, "parent other is a part"),
+        ("self", {"diagram": ("parent", "diagram")}, "parent diagram is a part"),
+        ("not-parent", {"diagram": ("rule", "html-diagram")}, "parts is only allowed on kind: parent"),
+        ("empty", {"diagram": ("parent", "")}, "parent diagram has no parts"),
+    ]
+    for name, changes, error in cases:
+        blocks = root / name
+        shutil.copytree(source, blocks)
+        for block, (kind, parts) in changes.items():
+            path = blocks / block / "SKILL.md"
+            path.parent.mkdir(exist_ok=True)
+            text = (source / "html-diagram" / "SKILL.md").read_text(encoding="utf-8")
+            text = text.replace("name: html-diagram", f"name: {block}").replace("  kind: rule", f'  kind: {kind}\n  parts: "{parts}"')
+            path.write_text(text, encoding="utf-8")
+        with patch.object(implement_run, "BLOCKS", blocks):
+            try:
+                implement_run.resolve_blocks(root, {"design": ["html-diagram"]}, "default")
+            except SystemExit as caught:
+                assert error in str(caught), (name, caught)
+            else:
+                raise AssertionError(f"{name} was accepted")
+
+
+def test_diagram_membership():
+    members, parents = {}, set()
+    for path in sorted(implement_run.BLOCKS.glob("*/SKILL.md")):
+        text = path.read_text(encoding="utf-8").split("---\n")[1]
+        if line := re.search(r'^  parts: "(.*)"$', text, re.M):
+            assert "  kind: parent" in text, path
+            parents.add(path.parent.name)
+            for part in line[1].split(","):
+                members.setdefault(part.strip(), []).append(path.parent.name)
+    for part, owners in members.items():
+        assert len(owners) == 1 and part not in parents, (part, owners)
+        assert (implement_run.BLOCKS / part / "SKILL.md").is_file(), part
+    for part in ("when-to-diagram", "html-diagram", "call-tree", "diagram-check"):
+        assert members.get(part) == ["diagram"], (part, members)
+
+
+def shared_rule_copies(blocks):
+    """The first seven words of each sentence in a parent's Rules are its key phrase."""
+    copies = []
+    for path in sorted(blocks.glob("*/SKILL.md")):
+        text = path.read_text(encoding="utf-8")
+        if not (members := re.search(r'^  parts: "(.*)"$', text, re.M)):
+            continue
+        rules = next(lines for head, lines in implement_run.sections(text) if head == "Rules")
+        for rule in (line[2:] for line in rules if line.startswith("- ")):
+            for sentence in re.split(r"(?<=[.!?])\s+", rule):
+                phrase = " ".join(re.findall(r"[a-z0-9]+", sentence.lower())[:7])
+                for part in members[1].split(","):
+                    body = (blocks / part.strip() / "SKILL.md").read_text(encoding="utf-8").split("---\n", 2)[-1]
+                    if phrase in " ".join(re.findall(r"[a-z0-9]+", body.lower())):
+                        copies.append((part.strip(), phrase))
+    return copies
+
+
+def test_shared_rules_not_copied(tmp):
+    assert not shared_rule_copies(implement_run.BLOCKS), shared_rule_copies(implement_run.BLOCKS)
+    blocks = Path(tmp, "copied-rule")
+    shutil.copytree(implement_run.BLOCKS, blocks)
+    parent = (blocks / "diagram" / "SKILL.md").read_text(encoding="utf-8")
+    part = blocks / "html-diagram" / "SKILL.md"
+    original = part.read_text(encoding="utf-8")
+    for rule in next(lines for head, lines in implement_run.sections(parent) if head == "Rules"):
+        if rule.startswith("- "):
+            for sentence in re.split(r"(?<=[.!?])\s+", rule[2:]):
+                part.write_text(original + "\n- " + sentence + "\n", encoding="utf-8")
+                assert shared_rule_copies(blocks), f"the check accepted a copied parent sentence: {sentence}"
 
 
 def test_kit_blocks_load(tmp):
@@ -1472,7 +1570,7 @@ with tempfile.TemporaryDirectory() as tmp:
     assert "### parse_phone (2 places)" in impact and "app.py:1:" in impact and "### init" not in impact
     assert impact.index("## Callers") < impact.index("## Result")
     # Keep the old literal so a later heading rename still checks that existing runs resume.
-    legacy_heading = "## Callers (written by flow_run.py take from the code names in 03-contracts.md; a search, not a judgment)"
+    legacy_heading = "## Callers (written by implement_run.py take from the code names in 03-contracts.md; a search, not a judgment)"
     (folder / "04-impact.md").write_text(impact.replace(implement_run.CALLERS_HEAD, legacy_heading), encoding="utf-8")
     assert run("take", folder, "04-impact", "a").returncode == 0
     assert (folder / "04-impact.md").read_text(encoding="utf-8").count("## Callers (") == 1, "resume must keep the stored callers section"
@@ -1559,6 +1657,10 @@ with tempfile.TemporaryDirectory() as tmp:
     test_block_fail_closed(tmp)
     test_block_frontmatter(tmp)
     test_kit_blocks_load(tmp)
+    test_parent_selection(tmp)
+    test_parent_refusals(tmp)
+    test_diagram_membership()
+    test_shared_rules_not_copied(tmp)
     test_block_repo_file(tmp)
     test_add_folder_block(tmp)
     test_block_cap(tmp)
