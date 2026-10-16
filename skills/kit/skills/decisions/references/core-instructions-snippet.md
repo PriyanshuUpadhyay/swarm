@@ -6,11 +6,9 @@ procedure lives in the on-demand `decisions` skill.
 
 ```markdown
 ## Decisions
-Architecture/design decisions live in `docs/decisions/` (ADR format). Read the README
-index there before proposing or making changes that touch a prior decision. Use the
-`decisions` skill to record significant decisions and reversals — it batch-asks for the
-"why" before commits. Records are immutable: reverse a decision by superseding it, never
-by editing or deleting the original.
+Use the `decisions` skill for project decision records. Read its `SKILL.md` and
+`references/capture-loop.md` for prior-decision lookup, capture, confirmation, flush timing,
+and reversal rules. Its Storage rules own which record fields may change.
 ```
 
 When bootstrapping an existing repo, offer to add this and confirm the target instruction file
