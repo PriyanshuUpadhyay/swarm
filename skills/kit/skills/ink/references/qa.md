@@ -41,8 +41,7 @@ The key frame and pacing checks are in `blocks/story/SKILL.md`.
 
 - Each transition has a story reason and the reason shows (a match cut really matches).
 - Entities stay consistent across shots: same proportions, colours from the same tokens.
-- Each gate shows a hint for its action, answers a failed try, and has an escape. Play it once as a
-  reader who fails.
+- Check each gate against the Gates section of [story-and-motion.md](story-and-motion.md). Play it once as a reader who fails.
 - For a scroll story, check the settled-state rule of `blocks/web-ui-basics/SKILL.md`, and
   test step scrolling with the keyboard.
 
@@ -50,17 +49,14 @@ The key frame and pacing checks are in `blocks/story/SKILL.md`.
 
 In addition to the frame checks of the visual-qa block, inspect each decisive frame for:
 
-- no flat mass near the camera, no contour of one even width, and no pure black unless the
-  reference has it;
-- paper and grain visible at 100 % zoom.
+- the mass, contour, colour, paper, and grain rules in `blocks/build-canvas/references/mark-making.md`, at 100 % zoom.
 
 ## Motion checks
 
 In addition to the motion checks of the visual-qa block, inspect playback for:
 
-- each continuity cut against the seam law: same axis, same direction, similar speed, cut
-  mid-motion;
-- boil at 6-12 changes per second, and no boil on text, halftone, or interface layers;
+- each continuity cut against Seam law in [story-and-motion.md](story-and-motion.md);
+- boil against Motion feel in [story-and-motion.md](story-and-motion.md);
 - a visible loop seam.
 
 ## Automated checks
@@ -75,7 +71,7 @@ Run these when frames can be rendered by `?t=`; they catch what a few stills mis
   Run it with boil off (the `?boil=0` debug toggle). With boil on, it flagged every boil frame in a
   2026-09-30 trial.
 - **Boil rate:** in a separate run with boil on, the large steps must come once per boil period, at
-  the rate in the motion checks above.
+  the rate in Motion feel of [story-and-motion.md](story-and-motion.md).
 - **Seam vectors:** for each continuity cut, read the carrier's screen velocity from `stateAt` on
   the last frame of shot A and the first frame of shot B. Flag a flipped sign on any axis, or a
   speed ratio outside about 0.5-2 (a starting threshold to tune). Skip cuts marked "jump".

@@ -31,8 +31,7 @@ What moves the story forward decides how time works in the build.
 - Give every key fact a settled state as `blocks/web-ui-basics/SKILL.md` says. For a
   scroll story this matters more, because wheel notches and the keyboard scroll in steps and jump over
   frames.
-- Treat motion as a progressive enhancement. Under `prefers-reduced-motion: reduce`, show each
-  beat's key frame as a still.
+- Apply `blocks/ui-motion/SKILL.md` to the reduced-motion form of a scroll interface.
 
 Source: [NRK case study](https://developer.chrome.com/blog/nrk-casestudy), 2025.
 
@@ -115,8 +114,8 @@ animation, and whether it uses world, camera, or screen coordinates.
 
 ## Timeline
 
-Drive a playback story from one master time. A scroll or gate story gives each section or segment
-its own time instead. Either way, derive shot-local time from the shot list, never inside scene code:
+Apply the time and code-boundary rules in `blocks/build-canvas/SKILL.md`. A scroll or gate story
+gives each section or segment its own time. For example, this is the shot data for a playback story:
 
 ```js
 const shots = [

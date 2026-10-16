@@ -22,9 +22,8 @@ sunrise. A neon restyle changes only the look tokens.
 
 - Find, inspect, measure, and label every reference, and take only what may be taken, as `blocks/reference-analysis/SKILL.md` says. The kit root, with its `blocks/` and `references/` folders, is two folders up from this skill's folder.
 - Prove the look with style frames and the story with an animatic, both before production.
-- Keep the layers apart. Scene code has no colour literals and no story timing.
-- Render every frame from time and one seed (`?t=`). A stateful simulation steps at a fixed rate
-  and keeps checkpoints.
+- Apply the architecture and deterministic-rendering rules in `blocks/build-canvas/SKILL.md`.
+  The look tokens follow `blocks/design-tokens/SKILL.md`.
 - Choose tools for the look and the story. Dependencies, load time, 3D, and WebGPU are fine.
 - Inspect rendered frames at each milestone. Code that runs does not prove the picture works.
 
@@ -48,7 +47,7 @@ one-prompt task, so do not suggest it is.
 3. **Story sheet, shot list, transitions, scene graph.** See `blocks/story/SKILL.md`
    and [story-and-motion.md](references/story-and-motion.md).
 4. **Style frames** with the real drawing code, one of them the signature shot, scored beside the
-   reference for at least two rounds, as `blocks/look-check/SKILL.md` says. See
+   reference as `blocks/look-check/SKILL.md` says, including its round rule. See
    `blocks/build-canvas/references/mark-making.md` and [qa.md](references/qa.md).
 5. **Animatic.** Flat shapes, final timing, real transitions. See [build.md](references/build.md).
 6. **Detail passes** up to the style frames, with scenes in batches of about eight. Build with `blocks/build-canvas/SKILL.md` and its `references/mark-making.md`.

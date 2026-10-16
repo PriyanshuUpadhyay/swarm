@@ -23,27 +23,11 @@ pacing, crop, and continuity before you add any detail.
 
 ## Frame export
 
-Render each frame at the delivery size, such as 1080,1920 for a vertical reel:
-`<chrome-headless-shell> --headless --window-size=W,H --screenshot=f.png "file://.../index.html?t=0.25"`
-(or `?shot=<id>&u=`). Find `<chrome-headless-shell>` as `blocks/headless-shot/SKILL.md`
-says; its page widths and shot names are for page shots, not reel frames. Run several at
-once, then encode with ffmpeg
-(`-c:v libx264 -pix_fmt yuv420p`). Lightpanda has no paint engine, and Obscura 0.2.2 drew canvas
-transforms, arcs, clips, and text wrong in a 2026-09 test, so neither can render canvas frames.
-
-For WebGPU, use the full Chrome for Testing binary from Playwright's `chromium-*` folder with
-`--headless=new --enable-unsafe-webgpu --use-mock-keychain`. In a 2026-09 test on macOS arm64,
-`chrome-headless-shell` drew a blank WebGPU canvas and Chrome for Testing drew it correctly. Check
-one frame before a long export.
-
-On macOS, headless Chrome for Testing reads its "Safe Storage" key from the login keychain at start,
-so macOS shows a keychain prompt during frame capture. Always launch it with `--use-mock-keychain`
-and a fresh `--user-data-dir`. If a prompt still appears, Deny is safe, because the capture profile
-is empty and the frames still render.
-
-The `--screenshot` flag cannot wait for an async GPU render. For WebGPU, drive Chrome for Testing
-over the DevTools protocol. Call `window.seek(t)` with `Runtime.evaluate` and `awaitPromise: true`,
-then call `Page.captureScreenshot`. The 2026-09-30 WebGPU trial exported its frames this way.
+Render each frame at the delivery size, such as 1080,1920 for a vertical reel, at `?t=0.25`
+(or `?shot=<id>&u=`). Use the capture commands and backend choice in
+`blocks/headless-shot/SKILL.md`; its page widths and page names do not apply to reel frames.
+The GPU readiness contract stays in `blocks/build-canvas/SKILL.md`. Run independent captures at
+once, then encode with ffmpeg (`-c:v libx264 -pix_fmt yuv420p`).
 
 For a DOM, CSS, or GSAP composition instead of a canvas,
 [HyperFrames](https://github.com/heygen-com/hyperframes) renders HTML to video in headless Chrome

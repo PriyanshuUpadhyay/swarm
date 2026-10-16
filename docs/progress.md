@@ -142,8 +142,8 @@ Each block owns its rule text; the skill that held it points to the block.
 - `references/step_run.py:67-70` drops a `Needs` word that matches no step, with no error.
 - `blocks/web-ui-basics/SKILL.md:44-47` checks only `*.html`, `*.css`, `*.js` and `index.html`, so a TSX
   slice gets no script check.
-- `blocks/web-ui-basics/SKILL.md:32` says UI motion stays under 300 ms, and transitions.dev tokens use
-  400-500 ms. Each motion task names one timing owner.
+- `blocks/ui-motion/SKILL.md` delegates timing to one owner. The emil pack still has a
+  200-500 ms modal row and an under-300 ms line; that vendor conflict needs a scoped choice when used.
 - A repo with no `.blocks.toml` gets the base `Off:` line in all seven step files, also in steps
   that name no block.
 

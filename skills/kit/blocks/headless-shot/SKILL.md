@@ -1,6 +1,6 @@
 ---
 name: headless-shot
-description: "Take page screenshots and compare images with chrome-headless-shell, and know what it cannot render. Use when a step needs screenshots of a page."
+description: "Take screenshots and compare images with the backend the artifact needs. Use when a step needs screenshots of a page or a drawn frame."
 license: MIT
 metadata:
   kind: step
@@ -21,7 +21,10 @@ metadata:
 - Limit: the screenshot is one viewport tall. For a part lower on a long page, shoot with a taller window (for example 375,4000), then cut the part out at 100 % with `magick tall.png -crop 375x812+0+Y +repage {{shots}}/<name>-375.png`, where Y is the part's top in the tall shot. Do not use an anchor URL (`index.html#id`): this binary gives an all-white shot for it.
 - Limit: an image viewer may show a 375 px shot downscaled. Crop the part you judge at 100 % (`magick out.png -crop 375x400+0+0 crop.png`) before you judge small text.
 - Limit: it runs no real clicks or clipboard. Say "not tested in a real browser" for those.
-- Use this binary, not a desktop Chrome app.
+- Use `chrome-headless-shell` for DOM, CSS, Canvas 2D, and WebGL captures. For WebGPU, use full Chrome for Testing from Playwright's `chromium-*` folder with `--headless=new --enable-unsafe-webgpu --use-mock-keychain` and a fresh `--user-data-dir`. A 2026-09 macOS arm64 trial gave a blank WebGPU canvas in the shell and a correct frame in full Chrome. Check one frame before a long export.
+- For WebGPU, drive Chrome for Testing over the DevTools protocol. Call `window.seek(t)` with `Runtime.evaluate` and `awaitPromise: true`, then call `Page.captureScreenshot`. The artifact's `seek(t)` must meet the readiness contract in `blocks/build-canvas/SKILL.md`; `--screenshot` cannot wait for it.
+- Lightpanda has no paint engine. In a 2026-09 trial, Obscura 0.2.2 drew canvas transforms, arcs, clips, and text wrong. Neither is a canvas-frame backend.
+- On macOS, the fresh capture profile uses the mock keychain. If a keychain prompt still appears, Deny is safe because the profile is empty.
 
 ## Example
 Initial state: `{{site}}/index.html` exists. Action: shoot 1440,900 and 375,812 to `{{shots}}/home-1440.png` and `{{shots}}/home-375.png`, then crop the 375 shot's diagram at 100 %. Result: the crop shows label size truly, and the report names the clipboard as not tested.

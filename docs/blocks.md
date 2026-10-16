@@ -105,8 +105,8 @@ metadata:
    texts became the one block `prove-it-works`, and the skill points to it.
 3. When two blocks are real alternatives, each names the other in `conflicts`. Code refuses a
    ledger that holds both, and the plan block picks one with a reason line. Examples:
-   `html-diagram` and an SVG diagram block; the 300 ms rule in `web-ui-basics` and the 400-500 ms
-   transitions.dev timings.
+   `html-diagram` and an SVG diagram block. `ui-motion` selects its timing owner; it does not
+   impose a second duration scale.
 4. A block that names a step file is a defect, because a second workflow cannot use it. Example:
    `call-tree/SKILL.md` names flow's `04-impact.md`.
 

@@ -25,11 +25,11 @@ Contrast
 Layout
 - Check widths are 1440 px, 390 px, and 375 px.
 - No sideways scroll at any check width: `document.documentElement.scrollWidth <= innerWidth`.
-- Each multi-column layout declares its below-768 px fallback. Use CSS Grid, not flex percentage math. A full-height hero uses `min-height: 100dvh`, not `100vh`.
+- Each multi-column layout declares its below-768 px fallback. Use CSS Grid, not flex percentage math. A stable full-height hero uses `min-height: 100svh`. UI that tracks the visible area uses `100dvh`.
 - Never disable zoom (`user-scalable=no`, `maximum-scale=1`). Set `color-scheme` and a `<meta name="theme-color">` that matches the background.
 Motion
-- UI timing, easing, and reduced motion follow the kit block `blocks/ui-motion/SKILL.md`. The script checks below catch its banned forms.
-- Every key fact shows in a settled state and under reduced motion. Content that waits at opacity 0 is blank in full-page screenshots and skipped by checkers, so check with reduced motion on: take the reduced-motion shot in blocks/headless-shot/SKILL.md:18.
+- UI timing, easing, and reduced motion follow the kit block `blocks/ui-motion/SKILL.md`, including its checks.
+- Every key fact shows in a settled state. Content that waits at opacity 0 is blank in full-page screenshots and skipped by checkers. Capture that state by `blocks/headless-shot/SKILL.md`.
 Copy
 - `…` not `...`. Active voice. Specific button labels: "Copy install command", not "Continue".
 
@@ -39,13 +39,13 @@ Action: write and run `checks/basics.mjs` at 1440, 390, and 375 px. It reports `
 Result: the evidence line shows the FAIL and then the PASS for each width.
 
 ## Check (script)
-- `rg -n -g '*.html' -g '*.css' -g '*.js' 'outline:\s*none|transition:\s*all|user-scalable=no|maximum-scale=1(\.0+)?([^.0-9]|$)|ease-in([^-]|$)' {{site}}` prints nothing, or each `outline: none` has a `:focus-visible` rule beside it: no banned pattern.
-- `rg -n -g '*.html' -g '*.css' -g '*.js' 'prefers-reduced-motion' {{site}}` finds a block: reduced motion is handled.
+- `rg -n -g '*.html' -g '*.css' -g '*.js' 'outline:\s*none|transition:\s*all|user-scalable=no|maximum-scale=1(\.0+)?([^.0-9]|$)|ease-in([^-]|$)' {{site}}` reports candidate declarations. Judge focus and zoom by this block, and motion by `blocks/ui-motion/SKILL.md`; a hit alone is no policy verdict.
+- `rg -n -g '*.html' -g '*.css' -g '*.js' 'prefers-reduced-motion' {{site}}` reports the declaration locations for the `ui-motion` judge. This scan alone gives no policy verdict.
 - `rg -o '<h[1-6]' {{site}}/index.html` lists the headings with no skipped level: heading order holds.
 - `rg -U -n -g '*.html' '<img\b[^>]*>' {{site}}` prints each whole image tag, also one split over lines, and shows `alt`, `width`, and `height` on each image: images are described and sized.
 
 ## Check (judge)
 - In the shots at 1440, 390, and 375 px, is any content cut off at the right edge or scrolled sideways? Quote each shot path.
-- Does the reduced-motion shot (`{{shots}}/<name>-<W>-reduced.png`, from blocks/headless-shot/SKILL.md:18) show every key fact? Quote the path and the facts.
+- Does the settled-state shot show every key fact? Quote the path and the facts. Apply `blocks/ui-motion/SKILL.md` for reduced motion.
 - Does a Tab walk show a visible ring on each link and button, with the skip link first? Quote the screenshot paths.
 - Does each diagram have a text description? Quote it.

@@ -32,6 +32,7 @@ Inspect
 - Match density, not only palette. A number measured from a reference becomes a rule in the look, and the build meets it.
 Evidence
 - Label each fact `visible` (directly observed in pixels or frames), `stated` (claimed by the creator or supplied text), `inferred` (best explanation of observed behavior), or `unknown` (not shown or not recoverable).
+- A `DESIGN.md` pulled from a live site or a collection is `stated` evidence. Measure the rendered pages before trusting its values.
 - Do not upgrade `stated` or `inferred` to `visible`. A creator's claim about their process is evidence of the claim, not of the hidden workflow.
 What may be taken
 - Borrow techniques and high-level traits. Never copy characters, logos, signatures, exact compositions, or a living artist's exact personal style.

@@ -61,6 +61,5 @@ Do not drift into:
 Originality changes:
 ```
 
-Write the grammar to `ink/02-look.md`, and turn it into one `look` token object. A scene that
-needs a different look (a flashback, a dream) gets a named variant of the same token keys, not new
-literals.
+Write the grammar to `ink/02-look.md`. Apply `blocks/design-tokens/SKILL.md` to its tokens and
+variants, with the code boundaries in `blocks/build-canvas/SKILL.md`.
