@@ -48,9 +48,8 @@ messages as kind `relay:<recipient>` and forward them yourself.
 
 ## Reports to the owner
 
-Each report, plan, review, or status that you write holds the whole result in the reply, and a
-result of more than three facts carries a table or a text diagram. `references/explain-formats.md`
-in the kit owns which form to pick.
+Give each report, plan, review, or status the form that the kit's `references/explain-formats.md`
+sets. The kit root is two folders up from this skill's folder.
 
 ## Owner
 
