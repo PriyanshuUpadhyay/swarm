@@ -177,7 +177,7 @@ fn every_build_locks_one_trust_lock_and_main_still_claims_the_folder() {
         .env_clear()
         .env("HOME", &home)
         .env("SWARM_HOME", &branch_home)
-        .args(["hooks", "setup"])
+        .args(["setup", "hooks", "--yes"])
         .output()
         .unwrap();
     assert!(output.status.success(), "{output:?}");

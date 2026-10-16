@@ -103,10 +103,6 @@ pub fn codex_accounts_dir() -> Result<std::path::PathBuf, Box<dyn std::error::Er
     ))
 }
 
-pub fn skills_dir() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
-    Ok(root_dir()?.join("skills"))
-}
-
 /// Prove that swarm owns `root` before anything writes there (ADR 0036). A missing or empty
 /// folder is claimed with the marker before any other write. A folder with no marker is adopted
 /// only when it holds a db that an older swarm made. Any other folder is refused with no write.

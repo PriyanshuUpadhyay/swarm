@@ -232,7 +232,7 @@ pub fn argv(
             if let Some(approval) = &resolved.approval {
                 args.extend(["--ask-for-approval".into(), approval.clone()]);
             }
-            // `swarm hooks setup` trusts these for the owner (`codex_hook_trust`); the trust holds
+            // `swarm setup hooks` trusts these for the owner (`codex_hook_trust`); the trust holds
             // only while each value stays byte-identical, so nothing per launch goes in it. The
             // pane env names the agent. The empty first group puts swarm's hook in group 1, so
             // its trust key differs from another tool's `-c` hook in group 0.
@@ -1599,7 +1599,7 @@ mod tests {
     #[test]
     fn the_shared_codex_hook_has_the_hashes_a_real_codex_reports() {
         // `codex app-server` 0.159.0 `hooks/list`, empty CODEX_HOME, 2026-10-01, for the `-c`
-        // hooks that `argv` gives a Codex agent; each was `trusted` after `swarm hooks setup`.
+        // hooks that `argv` gives a Codex agent; each was `trusted` after `swarm setup hooks`.
         let reported = [
             (
                 "user_prompt_submit",
@@ -1637,7 +1637,7 @@ mod tests {
         );
     }
 
-    /// Setup for one file as `swarm hooks setup` does it: no write while the file has a conflict.
+    /// Setup for one file as `swarm setup hooks` does it: no write while the file has a conflict.
     /// Apply `plan` through the module with a store of its own; whether the file changed.
     fn set_up(plan: Result<FilePlan, String>) -> Result<bool, String> {
         apply(&[plan?]).map(|changed| !changed.is_empty())

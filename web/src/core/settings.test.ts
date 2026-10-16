@@ -33,25 +33,24 @@ function fakeApp(post: (path: string, body: Record<string, unknown>) => Promise<
 }
 
 const item = (id: string, state: "ok" | "setup" | "broken", group: string | null = id) => ({ id, title: id, state, reason: "", group });
-const DOCTOR: Doctor = { items: [item("hooks", "setup"), item("trust", "setup"), item("skills", "setup"), item("herdr", "ok"), item("plugin", "setup"), item("hud", "ok"), item("notices", "broken", null)] };
+const DOCTOR: Doctor = { items: [item("hooks", "setup"), item("guard", "setup", "hooks"), item("trust", "setup"), item("plugin", "setup"), item("hud", "ok"), item("notices", "broken", null)] };
 const PLAN: SetupPlan = { digest: "d", files: [], conflicts: [{ group: "trust", file: "~/.claude.json", entry: "projects", fix: "remove it" }], skipped: [] };
 
 describe("setup & doctor", () => {
   it("Set up all leaves out a conflicted group, ok rows and rows with no group", () => {
-    expect(setUpAll(DOCTOR, PLAN)).toEqual({ plan: ["hooks", "skills"], own: ["plugin"] });
+    expect(setUpAll(DOCTOR, PLAN)).toEqual(["hooks", "plugin"]);
   });
 
-  it("shows the plan's files first, then applies with that plan's digest, then the plugin, then reloads", async () => {
+  it("shows the plan's files first, then applies every item with that plan's digest, then reloads", async () => {
     const { settings, calls } = fakeApp(async () => ({ ok: true }));
-    await settings.setUp(["hooks", "skills"], ["plugin"]);
-    expect(calls).toEqual(["GET /api/setup/plan?hooks,skills"]);
-    expect(settings.state.pending?.digest).toBe("d-hooks,skills");
+    await settings.setUp(["hooks", "plugin"]);
+    expect(calls).toEqual(["GET /api/setup/plan?hooks,plugin"]);
+    expect(settings.state.pending?.digest).toBe("d-hooks,plugin");
     expect(await settings.applySetUp()).toBe(true);
     expect(settings.state.pending).toBeNull();
     expect(calls).toEqual([
-      "GET /api/setup/plan?hooks,skills",
-      'POST /api/setup/apply {"only":"hooks,skills","digest":"d-hooks,skills"}',
-      'POST /api/setup/apply {"only":"plugin"}',
+      "GET /api/setup/plan?hooks,plugin",
+      'POST /api/setup/apply {"only":"hooks,plugin","digest":"d-hooks,plugin"}',
       "GET /api/doctor",
       "GET /api/setup/plan",
     ]);
@@ -61,16 +60,16 @@ describe("setup & doctor", () => {
   it("a second Set up while the first plan loads does nothing, so the newer preview cannot be replaced", async () => {
     const { settings, calls } = fakeApp(async () => ({ ok: true }));
     const first = settings.setUp(["hooks"]);
-    await settings.setUp(["skills"]);
+    await settings.setUp(["trust"]);
     await first;
     expect(calls).toEqual(["GET /api/setup/plan?hooks"]);
-    expect(settings.state.pending?.plan).toEqual(["hooks"]);
+    expect(settings.state.pending?.items).toEqual(["hooks"]);
     expect(settings.state.busy).toBe(false);
   });
 
   it("a Set up of the HUD also reloads the HUD state the Home card reads", async () => {
     const { settings, calls } = fakeApp(async () => ({ ok: true }));
-    await settings.setUp([], ["hud"]);
+    await settings.setUp(["hud"]);
     expect(await settings.applySetUp()).toBe(true);
     expect(calls).toContain("GET /api/hud");
   });
@@ -79,7 +78,7 @@ describe("setup & doctor", () => {
     const { settings } = fakeApp(async () => {
       throw new ApiError(400, "swarm: none of claude, codex, agy or pi is on PATH");
     });
-    await settings.setUp([], ["plugin"]);
+    await settings.setUp(["plugin"]);
     expect(await settings.applySetUp()).toBe(false);
     expect(settings.state.error).toBe("swarm: none of claude, codex, agy or pi is on PATH");
     expect(settings.state.plan.state).toBe("ready");

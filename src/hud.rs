@@ -133,17 +133,20 @@ pub fn status(home: &Path) -> Status {
     }
 }
 
-pub fn install(home: &Path) -> Result<Status, Box<dyn std::error::Error>> {
+/// The LaunchAgent text that `install` writes, so `swarm setup hud` shows and digests it first.
+pub fn planned() -> Result<String, Box<dyn std::error::Error>> {
     let app = app()
         .ok_or("swarm: no SwarmHUD.app beside this swarm; set SWARM_HUD_APP to the app's path")?;
     let swarm_bin = std::env::current_exe()?.canonicalize()?;
+    let search = std::env::var("PATH").unwrap_or_else(|_| "/usr/bin:/bin:/usr/sbin:/sbin".into());
+    Ok(plist(&stable_path(&app), &stable_path(&swarm_bin), &search))
+}
+
+pub fn install(home: &Path) -> Result<Status, Box<dyn std::error::Error>> {
+    let text = planned()?;
     let path = plist_path(home);
     std::fs::create_dir_all(path.parent().ok_or("swarm: bad LaunchAgents path")?)?;
-    let search = std::env::var("PATH").unwrap_or_else(|_| "/usr/bin:/bin:/usr/sbin:/sbin".into());
-    std::fs::write(
-        &path,
-        plist(&stable_path(&app), &stable_path(&swarm_bin), &search),
-    )?;
+    std::fs::write(&path, text)?;
     // A loaded job keeps its old plist until it is booted out, and bootout returns before the job
     // is gone; a bootstrap before then fails with error 5. Not loaded at all is fine.
     let target = format!("{}/{LABEL}", domain());

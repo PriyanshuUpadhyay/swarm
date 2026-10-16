@@ -4,7 +4,7 @@
 #   swarm-<version>/libexec/transcript           the row tool that `swarm serve` runs
 #   swarm-<version>/libexec/SwarmNotify.app      the notice helper (ADR 0077)
 #   swarm-<version>/libexec/SwarmHUD.app         the notch usage HUD (ADR 0087)
-#   swarm-<version>/libexec/skills               the plugin swarm (kit/) and the swarm skills
+#   swarm-<version>/libexec/skills               the plugin swarm (kit/)
 #   swarm-<version>/libexec/NOTICE               third-party notices: the web UI's, then the HUD mascots'
 set -euo pipefail
 
@@ -39,9 +39,8 @@ mkdir -p "$skills"
 # The whole kit, because it is the plugin swarm: its skills read blocks/ two folders up, and
 # .claude-plugin/ holds the manifest that the CLIs install from.
 tar -c -C "$repo/skills" --exclude='.git*' --exclude='__pycache__' --exclude='node_modules' \
-  swarm-orchestrator swarm-voice kit | tar -xp -C "$skills"
+  kit | tar -xp -C "$skills"
 python3 -I "$skills/kit/scripts/test_block_refs.py"
-"$stage/bin/swarm" skills manifest "$skills" "$skills/manifest.json"
 notify="$stage/libexec/SwarmNotify.app"
 mkdir -p "$notify/Contents/MacOS"
 cp "$bin_dir/SwarmNotify" "$notify/Contents/MacOS/SwarmNotify"

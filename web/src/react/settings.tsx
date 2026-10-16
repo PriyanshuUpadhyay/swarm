@@ -586,13 +586,13 @@ function SetupPage({ app }: { app: App }) {
           <RefreshCwIcon />
           Check again
         </Button>
-        <Button size="sm" data-testid="setup-all" disabled={busy || !all || all.plan.length + all.own.length === 0} onClick={() => all && void app.settings.setUp(all.plan, all.own)}>
+        <Button size="sm" data-testid="setup-all" disabled={busy || !all || all.length === 0} onClick={() => all && void app.settings.setUp(all)}>
           Set up all
         </Button>
       </div>
       {pending && (
         <section className="grid gap-2 rounded-md border p-3" data-testid="setup-preview">
-          <h3 className="text-sm font-semibold">Set up {[...pending.plan, ...pending.own].join(", ")}</h3>
+          <h3 className="text-sm font-semibold">Set up {pending.items.join(", ")}</h3>
           {pending.files.length > 0 && (
             <ul className="grid gap-1 font-mono text-xs break-all select-text" data-testid="setup-files">
               {pending.files.map((f, i) => (
@@ -600,8 +600,13 @@ function SetupPage({ app }: { app: App }) {
               ))}
             </ul>
           )}
-          {pending.own.includes("plugin") && <p className="text-xs text-muted-foreground">Installs the swarm plugin in each agent CLI on PATH.</p>}
-          {pending.own.includes("hud") && <p className="text-xs text-muted-foreground">Installs the usage HUD app.</p>}
+          {pending.commands.length > 0 && (
+            <ul className="grid gap-1 font-mono text-xs break-all text-muted-foreground select-text" data-testid="setup-commands">
+              {pending.commands.map((c, i) => (
+                <li key={i}>{c.line}</li>
+              ))}
+            </ul>
+          )}
           <div className="flex gap-2">
             <Button size="sm" data-testid="setup-apply" disabled={busy} autoFocus onClick={() => void app.settings.applySetUp()}>
               Apply

@@ -1,1 +1,0 @@
-# Fixture taste-skill

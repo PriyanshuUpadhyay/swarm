@@ -17,28 +17,24 @@ export const PAGES: [Page, string][] = [
   ["setup", "Setup & doctor"],
 ];
 
-/** One `swarm.doctor.v1` row. `group` names what sets it up: a `swarm setup` group, `plugin` or `hud`. */
+/** One `swarm.doctor.v1` row. `group` is the `swarm setup` item that sets it up. */
 export type DoctorItem = { id: string; title: string; state: "ok" | "setup" | "broken"; reason: string; group: string | null };
 export type Doctor = { items: DoctorItem[] };
-/** `swarm setup --plan --json`, cut to what the page shows. */
+/** `swarm setup <items> --plan --json`, cut to what the page shows. */
 export type SetupPlan = {
   digest: string;
   files: { group: string; path: string }[];
+  commands?: { group: string; line: string }[];
   conflicts: { group: string; file: string; entry: string; fix: string }[];
   skipped: { group: string; reason: string }[];
 };
-/** The groups `swarm setup` applies from a plan's digest. */
-export const PLAN_GROUPS = ["hooks", "trust", "herdr", "skills"];
 
-/** What Set up all runs: the plan groups that need setup and have no conflict, then `plugin` and
- *  `hud` when they need it. A conflict needs the owner, so its group is left out. */
-export function setUpAll(doctor: Doctor, plan: SetupPlan): { plan: string[]; own: string[] } {
-  const needed = new Set(doctor.items.flatMap((i) => (i.state === "setup" && i.group ? [i.group] : [])));
+/** What Set up all runs: each item that needs setup and has no conflict, in row order. A conflict
+ *  needs the owner, so its item is left out. */
+export function setUpAll(doctor: Doctor, plan: SetupPlan): string[] {
   const conflicted = new Set(plan.conflicts.map((c) => c.group));
-  return {
-    plan: PLAN_GROUPS.filter((g) => needed.has(g) && !conflicted.has(g)),
-    own: ["plugin", "hud"].filter((g) => needed.has(g)),
-  };
+  const needed = doctor.items.flatMap((i) => (i.state === "setup" && i.group && !conflicted.has(i.group) ? [i.group] : []));
+  return [...new Set(needed)];
 }
 
 /** One usage window of one account (`docs/usage-format.md`). */
@@ -103,7 +99,7 @@ export type SettingsState = {
   doctor: Load<Doctor>;
   plan: Load<SetupPlan>;
   /** A Set up the owner pressed: the files its plan writes, shown until Apply or Cancel. */
-  pending: { plan: string[]; own: string[]; files: SetupPlan["files"]; digest: string | null } | null;
+  pending: { items: string[]; files: SetupPlan["files"]; commands: NonNullable<SetupPlan["commands"]>; digest: string } | null;
 };
 
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
@@ -370,15 +366,14 @@ export class Settings {
     if (read === this.setupReads) this.set({ doctor, plan });
   }
 
-  /** Shows what a Set up of `plan` groups, then each of `own`, writes. Nothing is written until
-   *  applySetUp. */
-  async setUp(plan: string[], own: string[] = []) {
+  /** Shows what a Set up of `items` writes and runs. Nothing is written until applySetUp. */
+  async setUp(items: string[]) {
     // busy also blocks a second press, so an older plan reply cannot replace a newer preview.
-    if (this.state.busy) return;
+    if (this.state.busy || items.length === 0) return;
     this.set({ busy: true, error: null, pending: null });
     try {
-      const p = plan.length ? await this.api.get<SetupPlan>("/api/setup/plan", { only: plan.join(",") }) : null;
-      this.set({ pending: { plan, own, files: p?.files ?? [], digest: p?.digest ?? null } });
+      const p = await this.api.get<SetupPlan>("/api/setup/plan", { only: items.join(",") });
+      this.set({ pending: { items, files: p.files, commands: p.commands ?? [], digest: p.digest } });
     } catch (err) {
       this.set({ error: message(err) });
     } finally {
@@ -391,25 +386,23 @@ export class Settings {
   }
 
   /** Applies the shown plan with its digest, so a file that changed since the owner saw it is a
-   *  409, then each `own` group. */
+   *  409. */
   applySetUp(): Promise<boolean> {
     const pending = this.state.pending;
     if (this.state.busy || !pending) return Promise.resolve(false);
     this.set({ pending: null });
     return this.write(
       async () => {
-        if (pending.plan.length) await this.api.post("/api/setup/apply", { only: pending.plan.join(","), digest: pending.digest });
-        for (const only of pending.own) await this.api.post("/api/setup/apply", { only });
+        await this.api.post("/api/setup/apply", { only: pending.items.join(","), digest: pending.digest });
       },
       "Setup",
       // The Home card reads the HUD from its own state, so a HUD setup reloads that too.
-      () => Promise.all([this.loadSetup(), pending.own.includes("hud") && this.loadHud()]),
+      () => Promise.all([this.loadSetup(), pending.items.includes("hud") && this.loadHud()]),
     );
   }
 
   setUpItem(item: DoctorItem) {
-    if (!item.group) return Promise.resolve();
-    return PLAN_GROUPS.includes(item.group) ? this.setUp([item.group]) : this.setUp([], [item.group]);
+    return item.group ? this.setUp([item.group]) : Promise.resolve();
   }
 
   // ---- shared ----

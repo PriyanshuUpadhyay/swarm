@@ -129,9 +129,21 @@ fn build_at(home: &Path, name: &str) -> PathBuf {
     exe
 }
 
+/// `swarm hooks <args>`, where `setup <rest>` runs `swarm setup hooks <rest>`, with `--yes` for an
+/// apply with no digest.
 fn hooks(exe: &Path, home: &Path, args: &[&str]) -> Output {
     let mut command = clean(exe, home);
-    command.arg("hooks").args(args);
+    match args {
+        ["setup", rest @ ..] => {
+            command.args(["setup", "hooks"]).args(rest);
+            if rest.is_empty() {
+                command.arg("--yes");
+            }
+        }
+        _ => {
+            command.arg("hooks").args(args);
+        }
+    }
     piped(command, "")
 }
 
@@ -164,7 +176,7 @@ fn two_swarm_builds_share_one_hook_setup_and_keep_the_owners_hooks() {
     );
     let again = hooks(&app, &home, &["setup"]);
     assert!(
-        again.status.success() && again.stdout.is_empty(),
+        again.status.success() && stdout(&again) == "Swarm is already set up. Nothing to do.\n",
         "{again:?}"
     );
     assert_eq!(std::fs::read_to_string(&codex_config).unwrap(), codex_after);
@@ -284,7 +296,10 @@ fn the_setup_plan_shows_each_change_and_writes_nothing() {
     ] {
         assert!(text.contains(&added), "{added}\n{text}");
     }
-    assert!(text.ends_with("Plan only. No file written. Run `swarm hooks setup` to apply.\n"));
+    assert!(
+        text.contains("Plan only. Nothing changed. Run `swarm setup hooks --digest "),
+        "{text}"
+    );
     assert_eq!(hook_files(&home), before);
 
     let json = hooks(exe, &home, &["setup", "--plan", "--json"]);
@@ -317,10 +332,7 @@ fn the_setup_plan_shows_each_change_and_writes_nothing() {
         serde_json::json!({"codex": true, "agy": true, "guard": true})
     );
     let done = hooks(exe, &home, &["setup", "--plan"]);
-    assert_eq!(
-        stdout(&done),
-        "swarm's hooks are already set up. No file changes.\n"
-    );
+    assert_eq!(stdout(&done), "Swarm is already set up. Nothing to do.\n");
     std::fs::remove_dir_all(&home).unwrap();
 }
 
@@ -526,10 +538,7 @@ fn a_rule_list_registers_the_guard_on_every_cli_and_each_registration_answers() 
     let status: serde_json::Value = serde_json::from_slice(&status.stdout).unwrap();
     assert_eq!(status["guard"], true, "{status}");
     let again = hooks(exe, &home, &["setup", "--plan"]);
-    assert_eq!(
-        stdout(&again),
-        "swarm's hooks are already set up. No file changes.\n"
-    );
+    assert_eq!(stdout(&again), "Swarm is already set up. Nothing to do.\n");
     // A guard handler with too short a timeout is a conflict, and status says it is not set up.
     let settings = std::fs::read_to_string(home.join(".claude/settings.json")).unwrap();
     std::fs::write(
@@ -635,10 +644,16 @@ fn swarm_guards_names_the_rule_list() {
 
 fn setup(home: &Path, args: &[&str]) -> Output {
     let mut command = clean(Path::new(env!("CARGO_BIN_EXE_swarm")), home);
-    command.current_dir(home).arg("setup").args(args);
-    // These fixtures cover the original groups without requiring a bundled skills copy.
-    if args.first() != Some(&"status") && !args.contains(&"--only") {
-        command.args(["--only", "hooks,trust,herdr"]);
+    command.current_dir(home).arg("setup");
+    // These fixtures cover the file items, which need no bundled kit or HUD app.
+    if args.first().is_none_or(|arg| arg.starts_with('-')) {
+        command.arg("hooks,trust");
+    }
+    command.args(args);
+    if args.first() != Some(&"status")
+        && !args.iter().any(|arg| matches!(*arg, "--plan" | "--digest"))
+    {
+        command.arg("--yes");
     }
     piped(command, "")
 }
@@ -674,7 +689,7 @@ fn one_setup_plan_holds_every_pending_write_with_a_diff_per_file() {
     };
     assert_eq!(
         status(),
-        serde_json::json!({"hooks": false, "guard": true, "trust": false, "herdr": true, "skills": false})
+        serde_json::json!({"hooks": false, "guard": true, "trust": false})
     );
 
     let plan = setup(&home, &["--plan", "--json", "--cwd", &cwd]);
@@ -733,7 +748,7 @@ fn one_setup_plan_holds_every_pending_write_with_a_diff_per_file() {
     let digest = plan["digest"].as_str().unwrap();
     assert!(
         text.ends_with(&format!(
-            "Plan only. No file written. Run `swarm setup --digest {digest} --cwd '{cwd}' --only hooks,trust,herdr` to apply.\n"
+            "Plan only. Nothing changed. Run `swarm setup hooks,trust --digest {digest} --cwd '{cwd}'` to apply.\n"
         )),
         "{text}"
     );
@@ -742,7 +757,7 @@ fn one_setup_plan_holds_every_pending_write_with_a_diff_per_file() {
     assert!(applied.status.success(), "{applied:?}");
     assert_eq!(
         status(),
-        serde_json::json!({"hooks": true, "guard": true, "trust": true, "herdr": true, "skills": false})
+        serde_json::json!({"hooks": true, "guard": true, "trust": true})
     );
     let config = std::fs::read_to_string(home.join(".codex/config.toml")).unwrap();
     assert!(config.contains("[hooks.state.") && config.contains(&format!("[projects.\"{cwd}\"]")));
@@ -761,14 +776,13 @@ fn one_setup_plan_holds_every_pending_write_with_a_diff_per_file() {
     assert!(again.status.success(), "{again:?}");
     assert!(stdout(&again).contains("already set up"), "{again:?}");
 
-    // `--only` plans one group; a folder that fails the trust check is skipped with its reason.
+    // One named item plans only that item; a folder that fails the trust check is skipped with its reason.
     let only = setup(
         &home,
         &[
+            "trust",
             "--plan",
             "--json",
-            "--only",
-            "trust",
             "--cwd",
             &*home.to_string_lossy(),
         ],
@@ -783,7 +797,7 @@ fn one_setup_plan_holds_every_pending_write_with_a_diff_per_file() {
             .contains("not in a git repository"),
         "{only}"
     );
-    let unknown = setup(&home, &["--plan", "--only", "sound"]);
+    let unknown = setup(&home, &["sound", "--plan"]);
     assert!(!unknown.status.success());
     std::fs::remove_dir_all(&home).unwrap();
 }
@@ -822,27 +836,17 @@ fn herdrs_state_hooks_and_an_owner_hook_give_no_conflict_for_swarms_groups() {
     assert_eq!(plan["conflicts"], serde_json::json!([]), "{plan}");
     let applied = setup(
         &home,
-        &[
-            "--digest",
-            plan["digest"].as_str().unwrap(),
-            "--only",
-            "hooks",
-        ],
+        &["hooks", "--digest", plan["digest"].as_str().unwrap()],
     );
     assert!(
         !applied.status.success(),
         "the digest covers every group: {applied:?}"
     );
-    let plan = setup(&home, &["--plan", "--json", "--only", "hooks"]);
+    let plan = setup(&home, &["hooks", "--plan", "--json"]);
     let plan: serde_json::Value = serde_json::from_slice(&plan.stdout).unwrap();
     let applied = setup(
         &home,
-        &[
-            "--digest",
-            plan["digest"].as_str().unwrap(),
-            "--only",
-            "hooks",
-        ],
+        &["hooks", "--digest", plan["digest"].as_str().unwrap()],
     );
     assert!(applied.status.success(), "{applied:?}");
     let agy: serde_json::Value = serde_json::from_str(
@@ -867,10 +871,7 @@ fn a_codex_folder_the_owner_left_untrusted_is_skipped_with_its_reason() {
     let config = format!("[projects.\"{cwd}\"]\ntrust_level = \"untrusted\"\n");
     std::fs::write(home.join(".codex/config.toml"), &config).unwrap();
 
-    let plan = setup(
-        &home,
-        &["--plan", "--json", "--only", "trust", "--cwd", &cwd],
-    );
+    let plan = setup(&home, &["trust", "--plan", "--json", "--cwd", &cwd]);
     assert!(plan.status.success(), "{plan:?}");
     let plan: serde_json::Value = serde_json::from_slice(&plan.stdout).unwrap();
     let codex = home.join(".codex/config.toml");
@@ -965,12 +966,12 @@ fn an_apply_checks_the_folder_with_git_once() {
         piped(command, "")
     };
 
-    let plan = run(&["--plan", "--json", "--only", "trust", "--cwd", &cwd]);
+    let plan = run(&["trust", "--plan", "--json", "--cwd", &cwd]);
     let plan: serde_json::Value = serde_json::from_slice(&plan.stdout).unwrap();
     assert!(plan["files"].as_array().unwrap().len() > 1, "{plan}");
     std::fs::remove_file(&log).unwrap();
     let digest = plan["digest"].as_str().unwrap();
-    let applied = run(&["--digest", digest, "--only", "trust", "--cwd", &cwd]);
+    let applied = run(&["trust", "--digest", digest, "--cwd", &cwd]);
     assert!(applied.status.success(), "{applied:?}");
     let calls = std::fs::read_to_string(&log).unwrap();
     assert_eq!(calls.lines().count(), 1, "{calls}");
@@ -1023,10 +1024,7 @@ fn a_trust_digest_covers_only_the_entries_the_plan_writes() {
     let claude = home.join(".claude.json");
     std::fs::write(&claude, "{\"numStartups\": 1}\n").unwrap();
     let digest = |home: &Path| -> String {
-        let plan = setup(
-            home,
-            &["--plan", "--json", "--only", "trust", "--cwd", &cwd],
-        );
+        let plan = setup(home, &["trust", "--plan", "--json", "--cwd", &cwd]);
         let plan: serde_json::Value = serde_json::from_slice(&plan.stdout).unwrap();
         plan["digest"].as_str().unwrap().to_string()
     };
@@ -1036,10 +1034,7 @@ fn a_trust_digest_covers_only_the_entries_the_plan_writes() {
     let mut value = serde_json::json!({"numStartups": 2});
     value["projects"][&pool] = serde_json::json!({"hasTrustDialogAccepted": false});
     std::fs::write(&claude, value.to_string()).unwrap();
-    let refused = setup(
-        &home,
-        &["--digest", &planned, "--only", "trust", "--cwd", &cwd],
-    );
+    let refused = setup(&home, &["trust", "--digest", &planned, "--cwd", &cwd]);
     assert!(!refused.status.success(), "{refused:?}");
     assert!(
         String::from_utf8_lossy(&refused.stderr).contains("a file changed after the plan"),
@@ -1050,10 +1045,7 @@ fn a_trust_digest_covers_only_the_entries_the_plan_writes() {
     value["numStartups"] = 3.into();
     value["tipsHistory"] = serde_json::json!({"x": 1});
     std::fs::write(&claude, value.to_string()).unwrap();
-    let applied = setup(
-        &home,
-        &["--digest", &planned, "--only", "trust", "--cwd", &cwd],
-    );
+    let applied = setup(&home, &["trust", "--digest", &planned, "--cwd", &cwd]);
     assert!(applied.status.success(), "{applied:?}");
     let written: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&claude).unwrap()).unwrap();
@@ -1073,15 +1065,10 @@ fn launch_consent_is_a_managed_edit_that_reverts_to_ask() {
         serde_json::from_slice(&setup(&home, &["status", "--json"]).stdout).unwrap()
     };
     let apply = |extra: &[&str]| {
-        let mut args = vec!["--plan", "--json", "--only", "trust"];
+        let mut args = vec!["trust", "--plan", "--json"];
         args.extend(extra);
         let plan: serde_json::Value = serde_json::from_slice(&setup(&home, &args).stdout).unwrap();
-        let mut args = vec![
-            "--digest",
-            plan["digest"].as_str().unwrap(),
-            "--only",
-            "trust",
-        ];
+        let mut args = vec!["trust", "--digest", plan["digest"].as_str().unwrap()];
         args.extend(extra);
         let applied = setup(&home, &args);
         assert!(applied.status.success(), "{applied:?}");
@@ -1140,8 +1127,7 @@ fn launch_consent_is_a_managed_edit_that_reverts_to_ask() {
     );
     assert_eq!(status()["trust"], true);
     let plan: serde_json::Value =
-        serde_json::from_slice(&setup(&home, &["--plan", "--json", "--only", "trust"]).stdout)
-            .unwrap();
+        serde_json::from_slice(&setup(&home, &["trust", "--plan", "--json"]).stdout).unwrap();
     assert_eq!(plan["consent"], "ask");
     let bad = setup(&home, &["--plan", "--consent", "always"]);
     assert!(!bad.status.success());
@@ -1161,15 +1147,23 @@ fn a_child_agent_may_plan_setup_but_not_apply_it() {
     let plan = swarm(
         &home,
         &child,
-        &["setup", "--plan", "--json", "--cwd", &cwd],
+        &["setup", "hooks,trust", "--plan", "--json", "--cwd", &cwd],
         "",
     );
     assert!(plan.status.success(), "{plan:?}");
     let plan: serde_json::Value = serde_json::from_slice(&plan.stdout).unwrap();
     let digest = plan["digest"].as_str().unwrap();
     for args in [
-        vec!["setup", "--consent", "standing", "--cwd", &cwd],
-        vec!["setup", "--digest", digest, "--cwd", &cwd],
+        vec![
+            "setup",
+            "hooks,trust",
+            "--yes",
+            "--consent",
+            "standing",
+            "--cwd",
+            &cwd,
+        ],
+        vec!["setup", "hooks,trust", "--digest", digest, "--cwd", &cwd],
     ] {
         let applied = swarm(&home, &child, &args, "");
         assert!(!applied.status.success(), "{applied:?}");
@@ -1193,10 +1187,7 @@ fn setup_with_no_consent_flag_keeps_the_recorded_answer() {
     let cwd = repo.to_string_lossy().into_owned();
     let consent = home.join(".swarm/consent.json");
     std::fs::write(&consent, "{\"trust\": \"ask\"}\n").unwrap();
-    let plan = setup(
-        &home,
-        &["--plan", "--json", "--only", "trust", "--cwd", &cwd],
-    );
+    let plan = setup(&home, &["trust", "--plan", "--json", "--cwd", &cwd]);
     let plan: serde_json::Value = serde_json::from_slice(&plan.stdout).unwrap();
     assert_eq!(plan["consent"], "ask");
     let paths: Vec<&str> = plan["files"]
@@ -1214,10 +1205,7 @@ fn setup_with_no_consent_flag_keeps_the_recorded_answer() {
         "{paths:?}"
     );
     let digest = plan["digest"].as_str().unwrap();
-    let applied = setup(
-        &home,
-        &["--digest", digest, "--only", "trust", "--cwd", &cwd],
-    );
+    let applied = setup(&home, &["trust", "--digest", digest, "--cwd", &cwd]);
     assert!(applied.status.success(), "{applied:?}");
     assert_eq!(
         std::fs::read_to_string(&consent).unwrap(),
@@ -1238,7 +1226,7 @@ fn a_setup_waiting_on_the_trust_lock_keeps_an_answer_recorded_meanwhile() {
     holder.lock().unwrap();
     let waiting = clean(Path::new(env!("CARGO_BIN_EXE_swarm")), &home)
         .current_dir(&home)
-        .args(["setup", "--only", "trust", "--cwd"])
+        .args(["setup", "trust", "--yes", "--cwd"])
         .arg(&repo)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

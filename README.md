@@ -81,34 +81,39 @@ notice helper and no bundled skills.
 
 1. **Install an agent CLI and sign in.** Swarm starts [Claude Code](https://docs.claude.com/en/docs/claude-code),
    [Codex](https://github.com/openai/codex), and AGY. A runner whose CLI is not on `PATH` is skipped.
-2. **Install the skill kit.** The formula ships the kit beside `swarm` as the plugin `swarm`. In a
-   terminal, run:
+2. **See what swarm sets up.** In a terminal, run:
 
    ```sh
-   swarm setup plugin
+   swarm setup
    ```
 
-   It prints the install command of each of Claude Code, Codex (once for each Codex home), AGY and
-   pi that is on `PATH`, and runs them after you answer `y`. Each CLI installs from the link
-   `~/.swarm/kit`, which names the kit through Homebrew's `opt/swarm` path, so it still holds
-   after `brew upgrade`. `--yes` skips the question. Run it again after an upgrade, because Codex
-   and AGY keep a copy. A skill of the same name in your own skills folders stays, and the command
-   names it, because the CLI then lists both (ADR 0090).
+   It lists each item with its state and writes nothing. `swarm setup all` sets up each item that
+   needs it, and `swarm setup <item>,...` sets up only those. Each run shows its plan first, the
+   diff of each file and each command, and asks `Apply this plan? [y/N]`. `--yes` skips the
+   question, and `--plan` only prints the plan with the `--digest` command that applies it (ADR 0092).
+   The items are:
 
+   - `hooks`: the Codex and AGY hooks, so worker columns show their chat and state, and the
+     command guard when `~/.swarm/guards.json` exists.
+   - `trust`: launch folder trust, so a seat in a git repo or a swarm scratch folder starts with no
+     trust dialog. `--consent standing|ask` picks whether swarm trusts each folder that passes the
+     safety check or asks in the agent's column. Until you approve it, a seat in a new folder stops
+     at its CLI's own trust question, and the chair's launch prints `trust-pending` with the diff. A
+     chat's own folder counts as approved, because you picked it.
+   - `plugin`: the skill kit, which the formula ships beside `swarm`, as the plugin `swarm` in each
+     of Claude Code, Codex (once for each Codex home), AGY and pi on `PATH`. Each CLI installs from
+     the link `~/.swarm/kit`, which names the kit through Homebrew's `opt/swarm` path, so it still
+     holds after `brew upgrade`. Run it again after an upgrade, because Codex and AGY keep a copy. It
+     also removes the skill links an older swarm made, and a skill of the same name in your own
+     skills folders stays, because the CLI then lists both (ADR 0090).
+   - `hud`: the notch usage HUD, which starts at login (ADR 0087).
+
+   `swarm managed list` lists each file entry swarm added, and `swarm managed revert` removes one
+   after you see the diff.
 3. **Check your profiles.** A profile maps a role, such as `code.small` or `review.deep`, to an
    ordered list of runners (provider, model, effort). Swarm ships defaults in
    `default-profiles.json`. Edit them in the web UI's **Settings › Profiles**, or read them with
    `swarm roles check --json`. [Profiles](#profiles-and-runners) has the details.
-4. **Approve the setup plan.** In a terminal, `swarm setup --plan` shows each file it would change,
-   under its group: the Codex and AGY hooks, so worker columns show their chat and state, Skills for
-   the bundled workflows, and folder trust, so a seat in a git repo or a swarm scratch folder starts
-   with no trust dialog. `--only <group>,...` leaves the other groups as they are, and
-   `--consent standing|ask` picks whether swarm trusts each folder that passes the safety check or
-   asks in the agent's column. Apply with the `swarm setup --digest …` it prints. Until you approve
-   folder trust, a seat in a new folder stops at its CLI's own trust question, and the chair's
-   launch prints `trust-pending` with the diff. A chat's own folder counts as approved, because you
-   picked it. `swarm managed list` lists each entry swarm added, and `swarm managed revert` removes
-   one after you see the diff.
 
 ### Accounts and usage
 
@@ -134,7 +139,7 @@ It needs no other tool.
   the launch falls through to the next runner.
 - Swarm reads Claude usage with the account's own Keychain token (ADR 0072). The token stays in
   memory and is written to no file.
-- Compact usage meters in the web UI show each account's limits. `swarm hud install` starts the
+- Compact usage meters in the web UI show each account's limits. `swarm setup hud` starts the
   notch usage HUD at login, a small helper app that shows the same meters (ADR 0087).
 
 AGY has no account source yet.
@@ -274,14 +279,12 @@ id. A chair gets both from its pane, which `swarm session new` registers. A chil
 | `init` | any | Claim `.swarm/` (ADR 0036), then create `runs/`, `adapters/`, and the database. Shipped adapters stay in the binary; matching old disk copies are removed. |
 | `ui [stop \| --foreground] [--port N] [--assets DIR]` | any | Start the web UI server that is inside the binary on 127.0.0.1:4747 in the background (log in `.swarm/ui.log`), print the URL with its token, open it in the browser, start the usage HUD when it is not running, and exit. When `.swarm/ui-url` names a server of this home that still takes its token, open that one. The token lasts in `.swarm/ui-token` (mode 0600). `stop` stops the server; `--foreground` serves in this process until Ctrl-C. `--assets DIR` serves a `web/dist` folder instead. Needs a build with `--features serve` (ADR 0088). |
 | `serve [--port N] [--assets DIR] [--dev-origin ORIGIN]` | any | The same server with no browser and no `ui-url` record; it prints the URL and runs until stopped. |
-| `skills refresh` | any | Validate and refresh the complete bundled skills copy in this build's swarm home. It reads the skills that ship beside `swarm` in `libexec/skills`. Setup uses this copy for link targets. |
-| `setup plugin [--yes]` | any | Install the kit in `libexec/skills/kit` as the plugin `swarm` in each of Claude Code, Codex (each Codex home), AGY and pi on `PATH`. Point `~/.swarm/kit` at the kit, through `<prefix>/opt/swarm` for a Homebrew install, print each command, and run them after a `y` on the terminal or with `--yes`; with no terminal and no `--yes` it changes nothing and exits 1. A Codex home whose `swarm` marketplace holds another folder removes it first. A child caller is refused (ADR 0090). |
-| `setup status --json` | any | Print whether each setup group has nothing pending: `hooks` (swarm's Codex and AGY state hooks), `guard` (as for `hooks status`), `trust` (the owner's answer, `standing` or `ask`, for launch folder trust in `~/.swarm/consent.json`), `herdr` (always true until a Herdr writer ships), and `skills` (all catalog links recorded and present, with a complete default copy). More groups may come (ADR 0043). |
-| `setup [--plan [--json] \| --digest <digest>] [--cwd <dir>] [--only <group>,...] [--consent <standing\|ask>] [--resume]` | any | One plan of every write swarm makes outside its home, with one digest: the `hooks` group as `hooks setup` writes it, then the `trust` group, the consent file (set to `--consent`, by default the recorded answer, else `standing`, as a managed edit whose undo means `ask`) and each trust entry a seat launched in `--cwd` (default the current folder) would need, or with `--resume` a resuming seat, whose Claude runs in that folder itself. The `skills` group follows `herdr` and plans links into the current build home. `--plan` prints a unified diff per file, each conflict, and each skipped part with its reason, and with `--json` gives each file and conflict its `group`. Apply writes each file in plan order and records each trust entry and the consent (ADR 0042); with nothing pending it prints `already set up` and exits 0 (ADR 0043). |
+| `setup [--json]` | any | List what `swarm setup` sets up, as `swarm doctor` does, then the `swarm setup <items>` command for each item that needs it. It writes nothing (ADR 0092). |
+| `setup status --json` | any | Print whether `hooks` (swarm's Codex and AGY state hooks), `guard` (as for `hooks status`), and `trust` (the owner's answer, `standing` or `ask`, for launch folder trust in `~/.swarm/consent.json`) have nothing pending. |
+| `setup <all\|hooks,trust,plugin,hud> [--plan [--json] \| --digest <digest> \| --yes] [--cwd <dir>] [--consent <standing\|ask>] [--resume]` | any; a child may only plan | One plan of each named item, or with `all` each item that needs setup, with one digest (ADR 0043, ADR 0092). `hooks` trusts swarm's Codex hooks in `~/.codex`, each `~/.codex-<name>`, and each `~/.swarm/accounts/codex/<name>`, adds the `swarm` group to AGY's `hooks.json`, and with a rule list at `~/.swarm/guards.json` registers `swarm guard` in each Claude `settings.json`, each Codex `hooks.json` with its trust, and AGY's `swarm-guard` group (ADR 0040). `trust` sets the consent file (to `--consent`, by default the recorded answer, else `standing`, as a managed edit whose undo means `ask`) and each trust entry a seat launched in `--cwd` (default the current folder) would need, or with `--resume` a resuming seat, whose Claude runs in that folder itself. `plugin` points `~/.swarm/kit` at the kit in `libexec/skills/kit`, through `<prefix>/opt/swarm` for a Homebrew install, removes the skill links an older swarm recorded, and runs each CLI's plugin install; a Codex home whose `swarm` marketplace holds another folder removes it first (ADR 0090). `hud` writes the LaunchAgent and loads it. The run prints a unified diff per file, each command, each conflict, and each skipped part with its reason, then asks on a terminal; with no terminal it needs `--yes` or `--digest`. An entry that swarm needs where the owner already has another one, or a file that swarm cannot read or edit, is a conflict: setup names it with its fix, writes no file, and exits 1. `--plan` only prints, and with `--json` gives each file, command and conflict its `group`. `--digest` refuses a plan that changed after it was shown. Apply writes each file in plan order and records each entry (ADR 0042); with nothing pending it prints `already set up` and exits 0. |
 | `hooks status --json` | any | Print whether swarm's own Codex and AGY state hooks are set up, and as `guard` whether the guard registrations match the rule list: all in place while `~/.swarm/guards.json` exists, none left once it is gone (ADR 0040). |
-| `hooks setup [--plan [--json] \| --digest <digest>]` | any | Trust swarm's Codex hooks in `~/.codex`, each `~/.codex-<name>`, and each `~/.swarm/accounts/codex/<name>`, and add the `swarm` group to AGY's `hooks.json`. With a rule list at `~/.swarm/guards.json`, also register `swarm guard` in each Claude `settings.json`, each Codex `hooks.json` with its trust, and AGY's `swarm-guard` group (ADR 0040). An entry that swarm needs where the owner already has another one, or a file that swarm cannot read or edit, is a conflict: setup names it with its fix, writes no file, and exits 1. `--plan` prints a unified diff per file and each conflict, writes nothing, and exits 0. With `--json` it also prints the `digest` that `--digest` checks, so apply refuses a file that changed after the plan (ADR 0036). Each item it adds is recorded, so `managed list` shows it and `managed revert` removes it (ADR 0042). |
 | `managed list [--json]` | any | Print each item swarm wrote outside its home (a TOML key, a JSON key, a JSON array item, or a skill link) with its live state: `present` (equals what swarm wrote), `changed` (with the value `found` now), `unreadable` (swarm cannot read the file or the path in it, with the reason as `error`; revert refuses it), `gone`, or `off` (swarm removed it). An item with no record that equals swarm's current hook text is listed with `recorded: false` (ADR 0042). |
-| `managed revert (<id>... \| --all) [--plan [--json] \| --digest <digest>]` | any but a child | Remove each named item, or each `present` one with `--all`, and only while it equals what swarm wrote; a value swarm replaced is set back. A Codex guard trust key goes with its `hooks.json` group. An item with another value is a conflict with its fix, and no file is written. `--plan` and `--digest` work as for `hooks setup`. A child caller is refused, because a revert can remove the guard that blocks its own calls; its `--plan` still prints (ADR 0042). |
+| `managed revert (<id>... \| --all) [--plan [--json] \| --digest <digest>]` | any but a child | Remove each named item, or each `present` one with `--all`, and only while it equals what swarm wrote; a value swarm replaced is set back. A Codex guard trust key goes with its `hooks.json` group. An item with another value is a conflict with its fix, and no file is written. `--plan` and `--digest` work as for `setup`. A child caller is refused, because a revert can remove the guard that blocks its own calls; its `--plan` still prints (ADR 0042). |
 | `guard <claude\|codex\|agy> PreToolUse` | a CLI hook | Read the CLI's hook payload on stdin, run each matching rule of `~/.swarm/guards.json` (`SWARM_GUARDS` overrides the path), and print that CLI's allow or deny. A guard rule that crashes, times out, or does not start, a bad list, or a missing list blocks the call (ADR 0040). |
 | `adapter check <name>` | any | Load the shipped adapter plus any disk overrides. Print the verbs that the disk file overrides. |
 | `session new <lane\|relay\|open> [--chair <claude\|codex\|pi>:<id>]` | any | Create a session for the physical current directory (`pwd -P`) and print its UUID v7 id. Without `--chair`, use a chair id from the current CLI environment when present. |
@@ -295,7 +298,7 @@ id. A chair gets both from its pane, which `swarm session new` registers. A chil
 | `hook <claude\|codex\|agy> [event]` | any | Read a provider hook's JSON on stdin and record the agent's state (`working`, `waiting`, `done`, `failed`) for `SWARM_AGENT_ID`. A Claude or Codex `Stop` also stores the model and token total. Claude reads at most 8 MiB per Stop and adds new message usage; Codex copies its cumulative total. A cost is stored only from a complete provider record. Does nothing outside a swarm agent. Always prints `{}` and exits 0. AGY sends no event name, so its hook passes it, as in `swarm hook agy Stop`. |
 | `status-feed` | pane | Read a pane's raw output on stdin until it closes, and record each OSC 7501 Program Status report (`working`, `blocked`, `done`, `error`) as the state of `SWARM_AGENT_ID`. The `tmux-swarm` adapter pipes each pane here, so pi and any other agent that speaks the protocol need no swarm hook. An `idle` before any `working` is the start-up report and is ignored; an `idle` after one is stored as `done`, because pi reports `idle` when a run is cancelled. A `blocked` report with `kind=permission` or `kind=question` is stored as `waiting` with that kind. |
 | `notify <title> [--body <text>]` | orchestrator or owner | Store one owner notice, with chair ids when known. Start the small SwarmNotify helper if needed, never the full app. Needs no session and refuses a worker. The helper posts it with the notice settings (ADR 0077). |
-| `doctor [--json]` | any | Print one row per setup item (hooks, guard, trust, herdr, skills, plugin, hud, transcript, notices, and the `swarm ui` server) as `ok`, `setup` (swarm can set it up), or `broken` (needs the owner), each with a reason. `--json` prints `swarm.doctor.v1`. It exits 0 when it can read the swarm home. Settings › Setup & doctor, also at `/setup`, shows the same rows. |
+| `doctor [--json]` | any | Print one row per setup item (hooks, guard, trust, plugin, hud, transcript, notices, and the `swarm ui` server) as `ok`, `setup` (swarm can set it up), or `broken` (needs the owner), each with a reason. `--json` prints `swarm.doctor.v1`. It exits 0 when it can read the swarm home. Settings › Setup & doctor, also at `/setup`, shows the same rows. |
 | `notices --json` | owner | Read unposted owner notices and mark them posted in one store transaction. Each row carries `id`, `session_id`, `agent_id`, `title`, and `body`. |
 | `notices --due` | SwarmNotify helper | Like `notices --json`, but apply the notice preferences in `choices.json` (`prefs.notices`) first, so muted or switched-off rows are marked and not returned (ADR 0077). |
 | `herdr-split` | any | Split a child pane right of `HERDR_PANE_ID`, stack it under earlier children at equal height, and print its id. The herdr adapter's spawn verb. |
@@ -311,7 +314,7 @@ id. A chair gets both from its pane, which `swarm session new` registers. A chil
 | `usage --format openusage` | any | Print the cached meters in the OpenUsage `openusage.limits.v1` shape, with no provider call. The rules are in [docs/usage-format.md](docs/usage-format.md). |
 | `usage --refresh --provider <claude\|codex> --json` | any | Read that provider's usage again from its source, save it, and list its meters as JSON. A failed read keeps an older reading with state `stale` and a `reason`. With no older reading, or after HTTP 401 or 403, the meter has state `failed`. A Claude token that has expired gets no request and one `failed` meter (`token_expired`) with no older reading kept. A failed read never gives zero usage. |
 | `accounts login --provider <claude\|codex> --name <name> --revision <revision> --json [--cwd <dir>]` | any | Open the provider's own login for the account `name` in a pane. A child caller is refused. |
-| `hud <install\|uninstall\|status> [--json]` | owner | Start the notch usage HUD (`libexec/SwarmHUD.app`) at login with a LaunchAgent, remove it, or report it as `swarm.hud.v1` (`installed`, `running`, `app`). The web UI asks once and has a switch in Settings (ADR 0087). |
+| `hud <uninstall\|status> [--json]` | owner | Remove the LaunchAgent that starts the notch usage HUD (`libexec/SwarmHUD.app`) at login, or report it as `swarm.hud.v1` (`installed`, `running`, `app`). `swarm setup hud` installs it. The web UI asks once and has a switch in Settings (ADR 0087). |
 | `run <claude\|codex> [--account [auto\|menu\|name]] [-- <args>...]` | any | Start the provider CLI in this terminal on the picked account, `auto` by default. `--account` with no name, or `menu`, lists the accounts with their usage left on the terminal and reads a number or a name; Enter picks `auto`. `accounts pick --account menu` shows the same menu. It needs no session. |
 | `drain` | any | Run queued summarize jobs, print `done`, `retry`, or `parked` per job. |
 | `agent add <id> <role>` | session | Register an agent. The `orchestrator` role also records the caller pane and session adapter. |
@@ -340,11 +343,10 @@ pane's own swarm through them (ADR 0034). Claude, Codex, and AGY run
 
 ## Skills and demos
 
-`skills/swarm-voice` is for a child that `swarm launch` or `swarm spawn` started, and
-`skills/swarm-orchestrator` is for the parent. Inside the repo, Claude Code finds them through
-`.claude/skills` and AGY through `.agents/skills`, both links to `skills/`; Codex reads `AGENTS.md`.
-`swarm skills refresh` prepares the bundled copy. `swarm setup --plan --only skills` shows
-the managed links for each CLI. Review and apply the displayed digest. `demo/herdr.sh` and
+`skills/kit/skills/swarm-voice` is for a child that `swarm launch` or `swarm spawn` started, and
+`skills/kit/skills/swarm-orchestrator` is for the parent. Both ship in the plugin `swarm`, so
+`swarm setup plugin` installs them in each agent CLI. Inside the repo, Claude Code finds them
+through `.claude/skills` and AGY through `.agents/skills`; Codex reads `AGENTS.md`. `demo/herdr.sh` and
 `demo/tmux.sh` each run one live voice on that host: `cargo install --path .` then
 `VOICE=claude|codex|agy sh demo/herdr.sh` from a Herdr pane, or `sh demo/tmux.sh` from inside tmux.
 

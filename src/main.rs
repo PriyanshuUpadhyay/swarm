@@ -313,13 +313,13 @@ fn init() -> Result<(), Box<dyn std::error::Error>> {
     swarm::store::open(&swarm::paths::sqlite_db()?)?;
     // Setting up the hooks changes the owner's Codex and AGY config, so it waits for consent.
     println!(
-        "swarm: to see Codex and AGY agents' chats and questions, run `swarm hooks setup`; it trusts swarm's own Codex hooks and adds swarm's AGY hooks"
+        "swarm: to see Codex and AGY agents' chats and questions, run `swarm setup hooks`; it trusts swarm's own Codex hooks and adds swarm's AGY hooks"
     );
 
     Ok(())
 }
 
-const USAGE: &str = "usage: swarm --version | init | skills refresh | skills manifest <source> <out> | doctor [--json] | setup status --json | setup plugin [--yes] | setup [--plan [--json] | --digest <digest>] [--cwd <dir>] [--only <hooks|trust|herdr|skills>,...] [--consent <standing|ask>] [--resume] | hooks status --json | hooks setup [--plan [--json] | --digest <digest>] | managed list [--json] | managed revert (<id>... | --all) [--plan [--json] | --digest <digest>] | adapter check <name> | session new <talk_mode> [--chair <claude|codex|pi>:<id>] (cwd: pwd -P) | session chair <claude|codex|pi>:<id> | session continue <new_id> <old_id> | session archive <id>... | session unarchive <id>... | sessions --json [--archived] | agent add <agent_id> <role> | serve [--port N] [--assets DIR] | ui [stop | --foreground] [--port N] [--assets DIR] | herdr-split | notify <title> [--body <text>] | hud <install|uninstall|status> [--json] | notices --json | notices --due | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | status-feed | guard <claude|codex|agy> PreToolUse | roles --json | roles get <role> [--provider <claude|codex|agy|pi>] | roles check --json | roles save --revision <revision> <profile-json> | roles new <name> --revision <revision> | roles rename <old> <new> --revision <revision> | roles copy <from> <to> --revision <revision> | roles delete <name> --revision <revision> | roles reset --revision <revision> | roles set-min-usage <pct> --revision <revision> | providers --json | models --provider <claude|codex|agy|pi> --json | accounts --provider <claude|codex|agy|pi> --json | accounts login --provider <claude|codex> --name <name> --revision <revision> --json [--cwd <dir>] | accounts reset --revision <revision> --json | accounts pick --provider <claude|codex> [--account <auto|menu|NAME> | --session <id> | --last [--all]] [--model <model>] --json | usage --json | usage --format openusage | working --json | usage --refresh --provider <claude|codex> --json | agents --json [--all] | messages --json [--after <seq>] | run <claude|codex> [--account [auto|menu|NAME]] [-- <args>...] | launch <agent_id> <role> [--provider <claude|codex|agy|pi>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | answer <agent_id> <prompt_id> <choice> | interrupt <agent_id> | key <agent_id> <Up|C-u> | attach <agent_id> | focus <session_id> <agent_id> | close <agent_id> | send <recipient> <kind> | commands <agent_id> --json | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
+const USAGE: &str = "usage: swarm --version | init | doctor [--json] | setup [--json] | setup status --json | setup <all|hooks,trust,plugin,hud> [--plan [--json] | --digest <digest> | --yes] [--cwd <dir>] [--consent <standing|ask>] [--resume] | hooks status --json | managed list [--json] | managed revert (<id>... | --all) [--plan [--json] | --digest <digest>] | adapter check <name> | session new <talk_mode> [--chair <claude|codex|pi>:<id>] (cwd: pwd -P) | session chair <claude|codex|pi>:<id> | session continue <new_id> <old_id> | session archive <id>... | session unarchive <id>... | sessions --json [--archived] | agent add <agent_id> <role> | serve [--port N] [--assets DIR] | ui [stop | --foreground] [--port N] [--assets DIR] | herdr-split | notify <title> [--body <text>] | hud <uninstall|status> [--json] | notices --json | notices --due | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | status-feed | guard <claude|codex|agy> PreToolUse | roles --json | roles get <role> [--provider <claude|codex|agy|pi>] | roles check --json | roles save --revision <revision> <profile-json> | roles new <name> --revision <revision> | roles rename <old> <new> --revision <revision> | roles copy <from> <to> --revision <revision> | roles delete <name> --revision <revision> | roles reset --revision <revision> | roles set-min-usage <pct> --revision <revision> | providers --json | models --provider <claude|codex|agy|pi> --json | accounts --provider <claude|codex|agy|pi> --json | accounts login --provider <claude|codex> --name <name> --revision <revision> --json [--cwd <dir>] | accounts reset --revision <revision> --json | accounts pick --provider <claude|codex> [--account <auto|menu|NAME> | --session <id> | --last [--all]] [--model <model>] --json | usage --json | usage --format openusage | working --json | usage --refresh --provider <claude|codex> --json | agents --json [--all] | messages --json [--after <seq>] | run <claude|codex> [--account [auto|menu|NAME]] [-- <args>...] | launch <agent_id> <role> [--provider <claude|codex|agy|pi>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | answer <agent_id> <prompt_id> <choice> | interrupt <agent_id> | key <agent_id> <Up|C-u> | attach <agent_id> | focus <session_id> <agent_id> | close <agent_id> | send <recipient> <kind> | commands <agent_id> --json | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
 
 fn env_var(name: &str) -> Result<String, String> {
     env::var(name).map_err(|_| format!("swarm: {name} not set"))
@@ -1407,26 +1407,13 @@ fn codex_homes(
     Ok(homes)
 }
 
-/// `swarm hooks status --json | setup [--plan [--json] | --digest <digest>]`: whether swarm's own
-/// Codex and AGY state hooks are set up, the plan of each change and conflict, and setting them up.
-/// The owner consents first, in the app or by running `setup` (ADR 0029). Setup writes no file
-/// while any entry conflicts with one the owner has, and `--digest` refuses a file that changed
-/// after the plan (ADR 0036). Claude's state hooks need no step, because `swarm launch` passes
-/// them with `--settings`. With a rule list, setup also registers `swarm guard` in every Claude
-/// settings file, Codex `hooks.json` and its trust, and AGY's `hooks.json` (ADR 0040). It is
-/// `swarm setup --only hooks` with its own text and JSON, kept for the brew CLI (ADR 0043).
+/// `swarm hooks status --json`: whether swarm's own Codex and AGY state hooks and the guard are
+/// set up. `swarm setup hooks` sets them up (ADR 0092). Claude's state hooks need no step, because
+/// `swarm launch` passes them with `--settings`.
 fn hooks(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let codex = swarm::bus::codex_hook_trust(&swarm::bus::shared_hook_command("codex"));
-    // The guard registrations go in only when the owner keeps a rule list (ADR 0040), so a Mac
-    // with no list never gets a hook that would block every call.
     let has_list = swarm::paths::guards_file()?.exists();
     let files = HookFiles::of(&std::path::PathBuf::from(env_var("HOME")?))?;
-    let plan = || {
-        hook_plans(&files, has_list)
-            .into_iter()
-            .map(Into::into)
-            .collect::<Vec<swarm::managed::Plan>>()
-    };
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
     match args.as_slice() {
         ["status", "--json"] => print_json(&serde_json::json!({
@@ -1434,43 +1421,12 @@ fn hooks(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             "agy": swarm::bus::agy_hooks_set(&files.agy_hooks),
             "guard": files.guard_status(has_list),
         })),
-        ["setup", "--plan"] => {
-            print!(
-                "{}",
-                swarm::managed::plan_text(
-                    &plan(),
-                    "swarm hooks setup",
-                    "swarm's hooks are already set up. No file changes."
-                )
-            );
-            Ok(())
-        }
-        ["setup", "--plan", "--json"] => print_json(&swarm::managed::plan_json(&plan())),
-        ["setup", rest @ ..] if matches!(rest, [] | ["--digest", _]) => {
-            // Swarm makes no write that it cannot record (ADR 0042), so the store opens first.
-            let store = swarm::store::open(&swarm::paths::sqlite_db()?)?;
-            let lock = swarm::paths::trust_lock()?;
-            swarm::managed::with_lock(&lock, || {
-                let plans = plan();
-                if let ["--digest", digest] = rest
-                    && swarm::managed::digest(&plans) != *digest
-                {
-                    return Err(
-                        "swarm: a hook file changed after the plan; check the plan again".into(),
-                    );
-                }
-                for path in swarm::managed::apply(&store, &plans)? {
-                    println!("swarm: set up swarm's hooks in {}", path.display());
-                }
-                Ok(())
-            })?;
-            Ok(())
-        }
+        ["setup", ..] => Err("swarm: `swarm hooks setup` is now `swarm setup hooks`".into()),
         _ => Err(USAGE.into()),
     }
 }
 
-/// The files that `hooks setup` writes: each Codex home, AGY's `hooks.json`, and, for the guard,
+/// The files that `setup hooks` writes: each Codex home, AGY's `hooks.json`, and, for the guard,
 /// each Claude `settings.json` and Codex `hooks.json`, one name per file.
 struct HookFiles {
     homes: Vec<std::path::PathBuf>,
@@ -1501,7 +1457,7 @@ impl HookFiles {
         })
     }
 
-    /// Every item that `hooks setup` adds, with swarm's current text, so `managed` finds one that
+    /// Every item that `setup hooks` adds, with swarm's current text, so `managed` finds one that
     /// a build wrote before swarm kept a record (ADR 0042). The text names no build (ADR 0034), so
     /// an item equal to it is swarm's. A Codex key's table is swarm's own key, so it is created.
     fn items(&self) -> Vec<swarm::managed::Edit> {
@@ -1539,7 +1495,7 @@ impl HookFiles {
 /// `swarm managed list [--json] | revert (<id>... | --all) [--plan [--json] | --digest <digest>]`:
 /// each item swarm wrote outside its home, recorded or found, with its live state, and removing
 /// items that still equal what swarm wrote (ADR 0042). Running `revert` is the consent, as running
-/// `hooks setup` is; `--plan` shows the diff first and `--digest` applies only that plan.
+/// `setup` is; `--plan` shows the diff first and `--digest` applies only that plan.
 fn managed(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let store = swarm::store::open(&swarm::paths::sqlite_db()?)?;
     let found = HookFiles::of(&std::path::PathBuf::from(env_var("HOME")?))?.items();
@@ -1653,7 +1609,7 @@ impl HookFiles {
     }
 }
 
-/// The plan of every file `hooks setup` writes. A file that swarm cannot read or edit is a
+/// The plan of every file `setup hooks` writes. A file that swarm cannot read or edit is a
 /// conflict in the plan, not an error.
 fn hook_plans(files: &HookFiles, has_list: bool) -> Vec<swarm::managed::FilePlan> {
     let codex = swarm::bus::codex_hook_trust(&swarm::bus::shared_hook_command("codex"));
@@ -1703,21 +1659,25 @@ fn hook_plans(files: &HookFiles, has_list: bool) -> Vec<swarm::managed::FilePlan
     plans
 }
 
-/// The groups of `swarm setup`, in plan order (ADR 0043). The list may grow, so the app shows a
-/// group it does not know by its name.
-const SETUP_GROUPS: [&str; 4] = ["hooks", "trust", "herdr", "skills"];
+/// The items of `swarm setup`, in apply order (ADR 0092). The list may grow, so the app shows an
+/// item it does not know by its name.
+const SETUP_ITEMS: [&str; 4] = ["hooks", "trust", "plugin", "hud"];
 
-/// One `swarm setup` plan: each file's plan in apply order, the group of each, and each group
-/// part that was left out with its reason.
+/// One `swarm setup` plan: each file's plan in apply order, the item (`group`) of each, each item
+/// part that was left out with its reason, and the commands the plugin and HUD items run.
 struct SetupPlan {
     plans: Vec<swarm::managed::Plan>,
     selected: Vec<String>,
-    skills_content: Option<String>,
     groups: Vec<&'static str>,
     /// For each trust plan, how to plan that one file again when it is written (L-4), so a write
     /// under the trust lock reads no other file and runs no `git` (L-1).
     replans: Vec<Option<Replan>>,
+    /// For each plan, whether it removes swarm's own items (`managed::revert`) instead of adding.
+    removes: Vec<bool>,
     skipped: Vec<(&'static str, String)>,
+    plugin: Option<PluginPlan>,
+    /// The LaunchAgent text the HUD item writes, or None when the HUD already runs from it.
+    hud: Option<String>,
 }
 
 type Replan = Box<dyn Fn() -> Result<swarm::managed::FilePlan, String>>;
@@ -1739,10 +1699,12 @@ impl SetupPlan {
         let mut setup = Self {
             plans: Vec::new(),
             selected: groups.iter().map(|group| group.to_string()).collect(),
-            skills_content: None,
             groups: Vec::new(),
             replans: Vec::new(),
+            removes: Vec::new(),
             skipped: Vec::new(),
+            plugin: None,
+            hud: None,
         };
         if groups.contains(&"hooks") {
             let has_list = swarm::paths::guards_file()?.exists();
@@ -1831,47 +1793,39 @@ impl SetupPlan {
                 }
             }
         }
-        // Hook point for the `herdr` group: swarm-notify's Herdr toast and sound writer (its ADR,
-        // PR #30) adds its plans here; this build has none, so the group is always set up.
-        if groups.contains(&"skills") {
-            match skills_setup_plans() {
-                Ok((plans, content_id, skipped)) => {
-                    setup.skills_content = content_id;
-                    setup.skipped.extend(skipped);
-                    for plan in plans {
-                        setup.push("skills", plan);
-                    }
+        if groups.contains(&"plugin") {
+            // The skill links an older swarm made would list each kit skill twice (ADR 0092).
+            let old_links = old_skill_links(&files)?;
+            let leaving: Vec<_> = old_links
+                .iter()
+                .map(|plan| plan.path().to_path_buf())
+                .collect();
+            let plugin = plugin_plan(&user_home, &leaving)?;
+            setup
+                .skipped
+                .extend(plugin.notes.iter().map(|note| ("plugin", note.clone())));
+            for plan in old_links {
+                if plan.conflicts().is_empty() {
+                    setup.push("plugin", plan);
+                    *setup.removes.last_mut().unwrap() = true;
+                } else {
+                    setup.skipped.push((
+                        "plugin",
+                        format!(
+                            "{} is no longer swarm's link; swarm leaves it",
+                            plan.path().display()
+                        ),
+                    ));
                 }
-                Err(error) => {
-                    let home = swarm::paths::home().map(std::path::PathBuf::from);
-                    let plan = match home {
-                        Ok(home) if home.is_absolute() => {
-                            let store = home.join(".swarm/swarm.db");
-                            let mut plan = FilePlan::unreadable(store.clone(), error.to_string());
-                            plan.conflicts[0].entry = "the managed skills records".into();
-                            plan.conflicts[0].wanted =
-                                "a readable swarm store with valid managed skills records".into();
-                            plan.conflicts[0].fix = format!(
-                                "repair the swarm store {}, then check the Skills plan again",
-                                store.display()
-                            );
-                            plan
-                        }
-                        home => {
-                            let path = home.unwrap_or_else(|_| {
-                                std::env::var_os("SWARM_HOME")
-                                    .map(std::path::PathBuf::from)
-                                    .unwrap_or_else(|| "SWARM_HOME".into())
-                            });
-                            let mut plan = FilePlan::unreadable(path, error.to_string());
-                            plan.conflicts[0].entry = "the swarm home".into();
-                            plan.conflicts[0].wanted = "an absolute swarm home path".into();
-                            plan.conflicts[0].fix = "set SWARM_HOME to an absolute path, then check the Skills plan again".into();
-                            plan
-                        }
-                    };
-                    setup.push("skills", plan);
-                }
+            }
+            setup.plugin = Some(plugin);
+        }
+        if groups.contains(&"hud") {
+            let text = swarm::hud::planned()?;
+            let now = swarm::hud::status(&user_home);
+            let written = std::fs::read_to_string(swarm::hud::plist_path(&user_home)).ok();
+            if !(now.running && written.as_ref() == Some(&text)) {
+                setup.hud = Some(text);
             }
         }
         Ok(setup)
@@ -1881,6 +1835,7 @@ impl SetupPlan {
         self.groups.push(group);
         self.plans.push(plan.into());
         self.replans.push(None);
+        self.removes.push(false);
     }
 
     fn push_trust(&mut self, plan: swarm::managed::FilePlan, replan: Replan) {
@@ -1902,8 +1857,15 @@ impl SetupPlan {
         let mut digest = sha2::Sha256::new();
         digest.update(serde_json::to_vec(&self.selected).unwrap());
         digest.update([0]);
-        digest.update(serde_json::to_vec(&self.skills_content).unwrap());
-        digest.update([0]);
+        for line in self
+            .commands()
+            .into_iter()
+            .map(|(_, line)| line)
+            .chain(self.hud.clone())
+        {
+            digest.update(line.as_bytes());
+            digest.update([0]);
+        }
         for (group, plan) in self.grouped() {
             let mut parts = vec![
                 group.to_string(),
@@ -1928,96 +1890,149 @@ impl SetupPlan {
             .map(|byte| format!("{byte:02x}"))
             .collect()
     }
+
+    /// Each command line the plugin and HUD items run after the files, with its item.
+    fn commands(&self) -> Vec<(&'static str, String)> {
+        let mut lines: Vec<_> = self
+            .plugin
+            .iter()
+            .flat_map(PluginPlan::lines)
+            .map(|line| ("plugin", line))
+            .collect();
+        if self.hud.is_some() {
+            lines.push((
+                "hud",
+                "run  launchctl bootstrap, so the usage HUD starts at login".into(),
+            ));
+        }
+        lines
+    }
+
+    /// The HUD's LaunchAgent diff, or "" without one.
+    fn hud_diff(&self) -> String {
+        let Some(text) = &self.hud else {
+            return String::new();
+        };
+        let path = std::path::PathBuf::from(env_var("HOME").unwrap_or_default());
+        let path = swarm::hud::plist_path(&path);
+        let before = std::fs::read_to_string(&path).unwrap_or_default();
+        swarm::diff::unified(&path.to_string_lossy(), &before, text)
+    }
+
+    fn is_empty(&self) -> bool {
+        self.plans
+            .iter()
+            .all(|plan| !plan.changes() && plan.conflicts().is_empty())
+            && self.plugin.is_none()
+            && self.hud.is_none()
+    }
+
+    /// Each skipped part, each diff and command, then the conflicts, or else `apply`, the command
+    /// that applies the plan, when this is only the plan.
+    fn text(&self, apply: Option<&str>) -> String {
+        let mut text: String = self
+            .skipped
+            .iter()
+            .map(|(group, reason)| format!("skipped ({group}): {reason}\n"))
+            .collect();
+        if self.is_empty() {
+            return text + "Swarm is already set up. Nothing to do.\n";
+        }
+        text.extend(self.plans.iter().map(swarm::managed::diff));
+        text += &self.hud_diff();
+        for (_, line) in self.commands() {
+            text += &format!("{line}\n");
+        }
+        match (swarm::managed::conflicts_text(&self.plans), apply) {
+            (Some(conflicts), _) => text + &format!("\n{conflicts}\n"),
+            (None, Some(apply)) => {
+                text + &format!("\nPlan only. Nothing changed. Run `{apply}` to apply.\n")
+            }
+            (None, None) => text,
+        }
+    }
 }
 
-/// Read managed ownership without creating a database or changing its schema.
-#[expect(
-    clippy::type_complexity,
-    reason = "Keep the existing setup skipped shape without a new plan type."
-)]
-fn skills_setup_plans() -> Result<
-    (
-        Vec<swarm::managed::Plan>,
-        Option<String>,
-        Vec<(&'static str, String)>,
-    ),
-    Box<dyn std::error::Error>,
-> {
-    use swarm::managed::{ConflictKind, FilePlan, LinkPlan};
-    let home = std::path::PathBuf::from(env_var("HOME")?);
-    let swarm_home = std::path::PathBuf::from(swarm::paths::home()?);
-    if !swarm_home.is_absolute() {
-        return Err("swarm: SWARM_HOME must be an absolute path".into());
+/// The plugin item: the link `~/.swarm/kit` to this build's kit, and each CLI's install command.
+struct PluginPlan {
+    link: std::path::PathBuf,
+    target: std::path::PathBuf,
+    relink: bool,
+    steps: Vec<swarm::plugin::Step>,
+    notes: Vec<String>,
+}
+
+impl PluginPlan {
+    fn lines(&self) -> Vec<String> {
+        let link = self
+            .relink
+            .then(|| format!("link {} -> {}", self.link.display(), self.target.display()));
+        link.into_iter()
+            .chain(
+                self.steps
+                    .iter()
+                    .map(|step| format!("run  {}", step.line())),
+            )
+            .collect()
     }
-    let root = swarm_home.join(".swarm");
-    let copy = root.join("skills");
-    let manifest = match swarm::skills::Manifest::read(&copy) {
-        Ok(manifest) => manifest,
-        Err(error) => {
-            let mut plan = FilePlan::unreadable(copy, error.to_string());
-            plan.conflicts[0].entry = "the default skills copy".into();
-            plan.conflicts[0].wanted = "a complete default skills copy".into();
-            plan.conflicts[0].fix =
-                "run `swarm skills refresh`, then check the Skills plan again".into();
-            return Ok((vec![plan.into()], None, Vec::new()));
+
+    fn run(&self) -> Result<(), Box<dyn std::error::Error>> {
+        if self.relink {
+            // Only a link of swarm's own is replaced; a real folder there is the owner's.
+            if self
+                .link
+                .symlink_metadata()
+                .is_ok_and(|meta| meta.is_symlink())
+            {
+                std::fs::remove_file(&self.link)?;
+            }
+            std::os::unix::fs::symlink(&self.target, &self.link)
+                .map_err(|error| format!("swarm: cannot link {}: {error}", self.link.display()))?;
         }
-    };
-    let database = root.join("swarm.db");
-    let store = if database.try_exists()? {
-        rusqlite::Connection::open_with_flags(database, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?
-    } else {
-        swarm::store::open(std::path::Path::new(":memory:"))?
-    };
-    let mut plans = Vec::new();
-    let mut skipped = Vec::new();
-    let mut seen = std::collections::HashSet::new();
-    for cli_root in [".claude/skills", ".agents/skills", ".gemini/config/skills"] {
-        for link in &manifest.catalog {
-            let plan = LinkPlan::create(
-                &store,
-                home.join(cli_root).join(&link.name),
-                copy.join(&link.path),
-            )?;
-            if seen.insert(plan.edits[0].file.clone()) {
-                if let [conflict] = plan.conflicts.as_slice()
-                    && conflict.kind == ConflictKind::Taken
-                {
-                    skipped.push((
-                        "skills",
-                        format!(
-                            "{} is yours ({}); swarm leaves it",
-                            plan.path.display(),
-                            conflict.found
-                        ),
-                    ));
-                } else {
-                    plans.push(plan.into());
-                }
+        for step in &self.steps {
+            let mut command = std::process::Command::new(&step.argv[0]);
+            command.args(&step.argv[1..]);
+            if let Some(home) = &step.codex_home {
+                command.env("CODEX_HOME", home);
+            }
+            let status = command.status()?;
+            if !status.success() {
+                return Err(format!(
+                    "swarm: `{}` failed ({status}); the commands before it ran",
+                    step.line()
+                )
+                .into());
             }
         }
+        Ok(())
     }
-    Ok((plans, Some(manifest.content_id), skipped))
 }
 
 /// The schema tag of `swarm doctor --json`, which `/api/doctor` checks.
 const DOCTOR_SCHEMA: &str = "swarm.doctor.v1";
 
-/// `swarm doctor [--json]`: one row for each thing swarm sets up or ships. A row is `ok`, `setup`
-/// when `swarm setup` (its `group`) can fix it, or `broken` when the owner must act, with the
-/// reason. Once it can read HOME and the swarm home it exits 0, so the page can show every row.
-fn doctor(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
-    let json = match args {
-        [] => false,
-        [flag] if flag == "--json" => true,
-        _ => return Err("usage: swarm doctor [--json]".into()),
-    };
-    let row = |id: &str, title: &str, (state, reason): (&str, String), group: Option<&str>| serde_json::json!({"id": id, "title": title, "state": state, "reason": reason, "group": group});
+/// One `swarm.doctor.v1` row. `group` is the `swarm setup` item that fixes it, or None.
+fn doctor_row(
+    id: &str,
+    title: &str,
+    (state, reason): (&str, String),
+    group: Option<&str>,
+) -> serde_json::Value {
+    serde_json::json!({"id": id, "title": title, "state": state, "reason": reason, "group": group})
+}
+
+/// The rows of what `swarm setup` sets up. A row is `ok`, `setup` when `swarm setup <group>` can
+/// fix it, or `broken` when the owner must act, with the reason.
+fn setup_rows(
+    home: &std::path::Path,
+    files: &HookFiles,
+) -> Result<Vec<serde_json::Value>, Box<dyn std::error::Error>> {
     let ok = |reason: &str| ("ok", reason.to_string());
     let setup = |reason: &str| ("setup", reason.to_string());
-    let home = std::path::PathBuf::from(env_var("HOME")?);
-    let files = HookFiles::of(&home)?;
-    let mut items = vec![
-        row(
+    let kit = swarm::paths::bundled("skills/kit").and_then(|kit| std::fs::canonicalize(kit).ok());
+    let hud = swarm::hud::status(home);
+    Ok(vec![
+        doctor_row(
             "hooks",
             "Agent hooks",
             if files.hooks_status() {
@@ -2027,7 +2042,7 @@ fn doctor(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             },
             Some("hooks"),
         ),
-        row(
+        doctor_row(
             "guard",
             "Command guard",
             if files.guard_status(swarm::paths::guards_file()?.exists()) {
@@ -2037,7 +2052,7 @@ fn doctor(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             },
             Some("hooks"),
         ),
-        row(
+        doctor_row(
             "trust",
             "Launch consent",
             // Read here, not through trust_answer, so a file that cannot be read shows as broken.
@@ -2052,58 +2067,53 @@ fn doctor(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             },
             Some("trust"),
         ),
-        row(
-            "herdr",
-            "herdr panes",
-            ok("Nothing to set up"),
-            Some("herdr"),
-        ),
-        row(
-            "skills",
-            "Swarm skills",
-            match skills_setup_status() {
-                Ok(true) => ok("Every agent CLI lists the swarm skills"),
-                Ok(false) => setup("Some skill links are missing or old"),
-                Err(error) => ("broken", error.to_string()),
+        doctor_row(
+            "plugin",
+            "Plugin swarm",
+            match kit {
+                None => ("broken", "This build ships no kit".into()),
+                Some(kit)
+                    if std::fs::read_link(swarm::paths::root_dir()?.join("kit")).ok()
+                        == Some(swarm::plugin::stable_kit(&kit)) =>
+                {
+                    ok("Installed from this build's kit")
+                }
+                Some(_) => setup("Not installed from this build's kit"),
             },
-            Some("skills"),
+            Some("plugin"),
         ),
-    ];
-    let kit = swarm::paths::bundled("skills/kit").and_then(|kit| std::fs::canonicalize(kit).ok());
-    items.push(row(
-        "plugin",
-        "Plugin swarm",
-        match kit {
-            None => ("broken", "This build ships no kit".into()),
-            Some(kit)
-                if std::fs::read_link(swarm::paths::root_dir()?.join("kit")).ok()
-                    == Some(swarm::plugin::stable_kit(&kit)) =>
-            {
-                ok("Installed from this build's kit")
-            }
-            Some(_) => setup("Not installed from this build's kit"),
-        },
-        Some("plugin"),
-    ));
-    let hud = swarm::hud::status(&home);
-    items.push(row(
-        "hud",
-        "Usage HUD",
-        match (hud.app.is_some(), hud.installed, hud.running) {
-            (false, ..) => ("broken", "This build ships no HUD app".into()),
-            (_, true, true) => ok("Starts at login and runs"),
-            (_, true, false) => ("broken", "Starts at login but does not run".into()),
-            (_, false, _) => setup("Off"),
-        },
-        Some("hud"),
-    ));
-    items.push(row(
+        doctor_row(
+            "hud",
+            "Usage HUD",
+            match (hud.app.is_some(), hud.installed, hud.running) {
+                (false, ..) => ("broken", "This build ships no HUD app".into()),
+                (_, true, true) => ok("Starts at login and runs"),
+                (_, true, false) => ("broken", "Starts at login but does not run".into()),
+                (_, false, _) => setup("Off"),
+            },
+            Some("hud"),
+        ),
+    ])
+}
+
+/// `swarm doctor [--json]`, also `swarm setup [--json]`: the rows of `setup_rows`, then each thing
+/// swarm ships or runs. Once it can read HOME and the swarm home it exits 0, so the page can show
+/// every row.
+fn doctor(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    let json = match args {
+        [] => false,
+        [flag] if flag == "--json" => true,
+        _ => return Err("usage: swarm doctor [--json]".into()),
+    };
+    let home = std::path::PathBuf::from(env_var("HOME")?);
+    let mut items = setup_rows(&home, &HookFiles::of(&home)?)?;
+    items.push(doctor_row(
         "transcript",
         "Transcript tool",
         if env::var_os("SWARM_TRANSCRIPT_TOOL").is_some()
             || swarm::paths::bundled("transcript").is_some()
         {
-            ok("Chats can show their rows")
+            ("ok", "Chats can show their rows".into())
         } else {
             (
                 "broken",
@@ -2112,12 +2122,11 @@ fn doctor(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         },
         None,
     ));
-    items.push(row("notices", "Notices", notices_state(), None));
+    items.push(doctor_row("notices", "Notices", notices_state(), None));
     #[cfg(feature = "serve")]
-    items.push(row("ui", "UI server", serve::ui_state(), None));
-    let doctor = serde_json::json!({"schema": DOCTOR_SCHEMA, "items": items});
+    items.push(doctor_row("ui", "UI server", serve::ui_state(), None));
     if json {
-        return print_json(&doctor);
+        return print_json(&serde_json::json!({"schema": DOCTOR_SCHEMA, "items": items}));
     }
     for item in &items {
         println!(
@@ -2128,6 +2137,19 @@ fn doctor(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         );
     }
     Ok(())
+}
+
+/// The items whose row reads `setup`, in apply order: what `swarm setup all` sets up.
+fn needed_items() -> Result<Vec<&'static str>, Box<dyn std::error::Error>> {
+    let home = std::path::PathBuf::from(env_var("HOME")?);
+    let rows = setup_rows(&home, &HookFiles::of(&home)?)?;
+    Ok(SETUP_ITEMS
+        .into_iter()
+        .filter(|item| {
+            rows.iter()
+                .any(|row| row["group"] == *item && row["state"] == "setup")
+        })
+        .collect())
 }
 
 /// Whether the notice helper ships, and whether a Focus held one of its notices in the last hour.
@@ -2173,25 +2195,14 @@ fn notices_state() -> (&'static str, String) {
     }
 }
 
-fn skills_setup_status() -> Result<bool, Box<dyn std::error::Error>> {
-    skills_setup_plans().map(|(plans, content, _)| {
-        content.is_some()
-            && plans
-                .iter()
-                .all(|plan| !plan.changes() && plan.conflicts().is_empty())
-    })
-}
-
-/// `swarm setup plugin [--yes]`: install the kit that ships beside `swarm` as the plugin `swarm` in each of Claude, Codex, AGY and pi that is on PATH (ADR 0090). It prints
-/// the commands and runs them only after the owner answers yes, or with `--yes`. The commands go
-/// through each CLI's own plugin command, so swarm records no managed edit for them.
-fn setup_plugin(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
-    use std::io::{BufRead, IsTerminal, Write};
-    let yes = match args {
-        [] => false,
-        [flag] if flag == "--yes" => true,
-        _ => return Err(USAGE.into()),
-    };
+/// The plugin item: install the kit that ships beside `swarm` as the plugin `swarm` in each of
+/// Claude, Codex, AGY and pi on PATH (ADR 0090). The commands go through each CLI's own plugin
+/// command, so swarm records no managed edit for them.
+/// A skill in `leaving` is a link this plan removes, so it is not named as the owner's own.
+fn plugin_plan(
+    user_home: &std::path::Path,
+    leaving: &[std::path::PathBuf],
+) -> Result<PluginPlan, Box<dyn std::error::Error>> {
     let kit = swarm::paths::bundled("skills/kit")
         .and_then(|kit| std::fs::canonicalize(kit).ok())
         .ok_or("swarm: this build ships no kit in libexec/skills/kit")?;
@@ -2202,7 +2213,6 @@ fn setup_plugin(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         )
         .into());
     }
-    let user_home = std::path::PathBuf::from(env_var("HOME")?);
     let link = swarm::paths::root_dir()?.join("kit");
     let found: Vec<&str> = swarm::plugin::CLIS
         .into_iter()
@@ -2210,7 +2220,7 @@ fn setup_plugin(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         .collect();
     let mut codex = Vec::new();
     if found.contains(&"codex") {
-        for home in codex_homes(&user_home)? {
+        for home in codex_homes(user_home)? {
             if !home.is_dir() {
                 continue;
             }
@@ -2230,72 +2240,61 @@ fn setup_plugin(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             "swarm: none of claude, codex, agy or pi is on PATH; nothing to install".into(),
         );
     }
-
     let target = swarm::plugin::stable_kit(&kit);
-    println!("Install the plugin swarm from {}", target.display());
-    for cli in swarm::plugin::CLIS
+    let mut notes: Vec<String> = swarm::plugin::CLIS
         .iter()
         .filter(|cli| !found.contains(cli))
-    {
-        println!("skipped: {cli} is not on PATH");
+        .map(|cli| format!("{cli} is not on PATH"))
+        .collect();
+    let clashes = swarm::plugin::clashes(&kit, user_home);
+    notes.extend(
+        clashes
+            .iter()
+            .filter(|clash| !leaving.contains(clash))
+            .map(|clash| {
+                format!(
+                    "{} is your own skill; it stays, and the CLI lists it beside the plugin's",
+                    clash.display()
+                )
+            }),
+    );
+    Ok(PluginPlan {
+        relink: std::fs::read_link(&link).ok().as_ref() != Some(&target),
+        link,
+        target,
+        steps,
+        notes,
+    })
+}
+
+/// The plans that remove each skill link an older swarm's `skills` setup made and recorded.
+fn old_skill_links(
+    files: &HookFiles,
+) -> Result<Vec<swarm::managed::Plan>, Box<dyn std::error::Error>> {
+    use swarm::managed::{State, Target, Writer};
+    let database = swarm::paths::sqlite_db()?;
+    if !database.try_exists()? {
+        return Ok(Vec::new());
     }
-    let relink = std::fs::read_link(&link).ok().as_ref() != Some(&target);
-    if relink {
-        println!("link {} -> {}", link.display(), target.display());
+    // Read only, so a plan creates no database and changes no schema.
+    let store = rusqlite::Connection::open_with_flags(
+        database,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )?;
+    let found = files.items();
+    let ids: Vec<String> = swarm::managed::list(&store, &found)?
+        .into_iter()
+        .filter(|entry| entry.edit.writer == Writer::Skills && entry.state == State::Present)
+        .map(|entry| entry.edit.id())
+        .collect();
+    if ids.is_empty() {
+        return Ok(Vec::new());
     }
-    for step in &steps {
-        println!("run  {}", step.line());
-    }
-    for clash in swarm::plugin::clashes(&kit, &user_home) {
-        println!(
-            "note: {} is your own skill; it stays, and the CLI lists it beside the plugin's",
-            clash.display()
-        );
-    }
-    if let Some(reason) = swarm::bus::setup_refusal(
-        env::var("SWARM_AGENT_ID").ok().as_deref(),
-        env::var("HERDR_AGENT_PANE").ok().as_deref(),
-    ) {
-        return Err(reason.into());
-    }
-    if !yes {
-        if !std::io::stdin().is_terminal() {
-            return Err("swarm: nothing changed; run `swarm setup plugin --yes` to install".into());
-        }
-        print!("Run these commands? [y/N] ");
-        std::io::stdout().flush()?;
-        let mut answer = String::new();
-        std::io::stdin().lock().read_line(&mut answer)?;
-        if !matches!(answer.trim(), "y" | "Y" | "yes") {
-            println!("swarm: nothing changed");
-            return Ok(());
-        }
-    }
-    if relink {
-        // Only a link of swarm's own is replaced; a real folder there is the owner's.
-        if link.symlink_metadata().is_ok_and(|meta| meta.is_symlink()) {
-            std::fs::remove_file(&link)?;
-        }
-        std::os::unix::fs::symlink(&target, &link)
-            .map_err(|error| format!("swarm: cannot link {}: {error}", link.display()))?;
-    }
-    for step in &steps {
-        let mut command = std::process::Command::new(&step.argv[0]);
-        command.args(&step.argv[1..]);
-        if let Some(home) = &step.codex_home {
-            command.env("CODEX_HOME", home);
-        }
-        let status = command.status()?;
-        if !status.success() {
-            return Err(format!(
-                "swarm: `{}` failed ({status}); the commands before it ran",
-                step.line()
-            )
-            .into());
-        }
-    }
-    println!("swarm: the plugin swarm is installed; a new session loads it");
-    Ok(())
+    Ok(swarm::managed::revert_plan(
+        &store,
+        &found,
+        &Target::Ids(ids),
+    )?)
 }
 
 /// The key of `~/.swarm/consent.json` that holds the owner's answer for launch folder trust, and
@@ -2358,82 +2357,120 @@ fn consent_plan(answer: &str) -> Result<swarm::managed::FilePlan, Box<dyn std::e
     Ok(plan)
 }
 
-/// `swarm setup status --json | setup [--plan [--json] | --digest <digest>] [--cwd <dir>]
-/// [--only <group>,...] [--consent <standing|ask>] [--resume]`: every write swarm makes outside
-/// its home, in one plan with one digest (ADR 0043). The groups are `hooks`, as `hooks setup`
-/// writes them, `trust`, the launch consent (`--consent`, by default the recorded answer, else
-/// standing) and the trust entries a launch in `--cwd` would write, for a resuming seat with
-/// `--resume`, and `herdr`, followed by `skills`. Running it, or applying the plan's digest, is the owner's consent, as
-/// for `hooks setup`, so a child pane may plan but not apply.
+/// `swarm setup [--json] | status --json | <items> [--plan [--json] | --digest <digest> | --yes]
+/// [--cwd <dir>] [--consent <standing|ask>] [--resume]` (ADR 0092). With no item it lists each
+/// row and writes nothing. `<items>` is a comma list of `SETUP_ITEMS` or `all`, the items that
+/// need setup. Every write is one plan with one digest (ADR 0043): `hooks`, as the hook files;
+/// `trust`, the launch consent (`--consent`, by default the recorded answer, else standing) and the
+/// trust entries a launch in `--cwd` would write, for a resuming seat with `--resume`; `plugin`,
+/// the old skill links and each CLI's install command; `hud`, the LaunchAgent. A terminal run shows
+/// the plan and asks; `--yes` or the plan's digest is the owner's consent, so a child pane may plan
+/// but not apply.
 fn setup(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
-    if args.first().map(String::as_str) == Some("plugin") {
-        return setup_plugin(&args[1..]);
-    }
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
-    if args == ["status", "--json"] {
-        let files = HookFiles::of(&std::path::PathBuf::from(env_var("HOME")?))?;
-        let has_list = swarm::paths::guards_file()?.exists();
-        let skills = skills_setup_status();
-        let mut status = serde_json::json!({
-            "hooks": files.hooks_status(),
-            "guard": files.guard_status(has_list),
-            // The owner answered, standing or ask, so the app does not ask again.
-            "trust": trust_answer().is_some(),
-            "herdr": true,
-            "skills": skills.as_ref().is_ok_and(|ready| *ready),
-        });
-        if let Err(error) = skills {
-            status["skills_error"] = error.to_string().into();
+    match args.as_slice() {
+        [] => {
+            doctor(&[])?;
+            let needed = needed_items()?;
+            if needed.is_empty() {
+                println!("\nNothing to set up.");
+            } else {
+                println!(
+                    "\nSet up:    swarm setup {}   (or swarm setup all)",
+                    needed.join(",")
+                );
+            }
+            println!(
+                "Items:     {}\nPlan only: swarm setup <item> --plan",
+                SETUP_ITEMS.join(", ")
+            );
+            return Ok(());
         }
-        return print_json(&status);
+        ["--json"] => return doctor(&["--json".into()]),
+        ["status", "--json"] => {
+            let files = HookFiles::of(&std::path::PathBuf::from(env_var("HOME")?))?;
+            let has_list = swarm::paths::guards_file()?.exists();
+            return print_json(&serde_json::json!({
+                "hooks": files.hooks_status(),
+                "guard": files.guard_status(has_list),
+                // The owner answered, standing or ask, so the app does not ask again.
+                "trust": trust_answer().is_some(),
+            }));
+        }
+        _ => {}
     }
-    let (mut plan, mut json, mut digest, mut cwd, mut only) = (false, false, None, None, None);
+    if args.contains(&"--only") {
+        return Err(
+            "swarm: `--only` is gone; name the items, as in `swarm setup hooks,trust`".into(),
+        );
+    }
+    let [list, flags @ ..] = args.as_slice() else {
+        return Err(USAGE.into());
+    };
+    let (mut plan, mut json, mut yes, mut digest, mut cwd) = (false, false, false, None, None);
     let (mut consent, mut resume) = (None, false);
-    let mut rest = args.iter().copied();
+    let mut rest = flags.iter().copied();
     while let Some(arg) = rest.next() {
         match arg {
             "--plan" => plan = true,
             "--json" => json = true,
+            "--yes" => yes = true,
             "--resume" => resume = true,
-            "--digest" | "--cwd" | "--only" | "--consent" => {
+            "--digest" | "--cwd" | "--consent" => {
                 let value = Some(rest.next().ok_or(USAGE)?);
                 match arg {
                     "--digest" => digest = value,
                     "--cwd" => cwd = value,
-                    "--consent" => consent = value,
-                    _ => only = value,
+                    _ => consent = value,
                 }
             }
             _ => return Err(USAGE.into()),
         }
     }
-    if (json && !plan)
-        || (plan && digest.is_some())
+    if list.starts_with('-')
+        || (json && !plan)
+        || [plan, yes, digest.is_some()]
+            .iter()
+            .filter(|set| **set)
+            .count()
+            > 1
         || consent.is_some_and(|answer| ![STANDING, ASK].contains(&answer))
     {
         return Err(USAGE.into());
+    }
+    let groups: Vec<&str> = if *list == "all" {
+        needed_items()?
+    } else {
+        let named: Vec<&str> = list.split(',').collect();
+        if let Some(unknown) = named.iter().find(|item| !SETUP_ITEMS.contains(item)) {
+            return Err(format!(
+                "swarm: unknown setup item {unknown}; items: {}, or all",
+                SETUP_ITEMS.join(", ")
+            )
+            .into());
+        }
+        SETUP_ITEMS
+            .into_iter()
+            .filter(|item| named.contains(item))
+            .collect()
+    };
+    if groups.is_empty() && !plan {
+        println!("swarm: everything is set up. Nothing to do.");
+        return Ok(());
     }
     // No --consent keeps the owner's answer, so the approve command a seat prints under `ask`
     // approves the folder and not standing consent; with no answer yet, setup offers standing.
     // An apply reads it under the trust lock, so an answer recorded while it waits is kept (L-4).
     let answer = || consent.unwrap_or_else(|| trust_answer().unwrap_or(STANDING));
-    let groups: Vec<&str> = match only {
-        None => SETUP_GROUPS.to_vec(),
-        Some(list) => list.split(',').collect(),
-    };
-    if let Some(unknown) = groups.iter().find(|group| !SETUP_GROUPS.contains(group)) {
-        return Err(format!(
-            "swarm: unknown setup group {unknown}; groups: {}",
-            SETUP_GROUPS.join(", ")
-        )
-        .into());
-    }
     let dir = cwd.map_or_else(env::current_dir, |dir| Ok(dir.into()))?;
     let dir = std::fs::canonicalize(&dir)
         .map_err(|error| format!("swarm: bad --cwd {}: {error}", dir.display()))?;
-    if plan {
-        let answer = answer();
-        let setup = SetupPlan::of(&dir, &groups, answer, resume)?;
+    let refusal = swarm::bus::setup_refusal(
+        env::var("SWARM_AGENT_ID").ok().as_deref(),
+        env::var("HERDR_AGENT_PANE").ok().as_deref(),
+    );
+    if digest.is_none() {
+        let setup = SetupPlan::of(&dir, &groups, answer(), resume)?;
         let plan_digest = setup.digest();
         if json {
             let group_of = |value: serde_json::Value, group: &str| {
@@ -2441,16 +2478,32 @@ fn setup(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 value["group"] = group.into();
                 value
             };
-            return print_json(&serde_json::json!({
-                "digest": plan_digest,
-                "consent": answer,
-                "files": setup.grouped()
-                    .filter(|(_, plan)| plan.changes())
-                    .map(|(group, plan)| serde_json::json!({
+            let mut files: Vec<_> = setup
+                .grouped()
+                .filter(|(_, plan)| plan.changes())
+                .map(|(group, plan)| {
+                    serde_json::json!({
                         "group": group,
                         "path": plan.path().to_string_lossy(),
                         "diff": swarm::managed::diff(plan),
-                    }))
+                    })
+                })
+                .collect();
+            if let Some(diff) = Some(setup.hud_diff()).filter(|diff| !diff.is_empty()) {
+                let home = std::path::PathBuf::from(env_var("HOME")?);
+                files.push(serde_json::json!({
+                    "group": "hud",
+                    "path": swarm::hud::plist_path(&home).to_string_lossy(),
+                    "diff": diff,
+                }));
+            }
+            return print_json(&serde_json::json!({
+                "digest": plan_digest,
+                "consent": answer(),
+                "items": groups,
+                "files": files,
+                "commands": setup.commands().iter()
+                    .map(|(group, line)| serde_json::json!({"group": group, "line": line}))
                     .collect::<Vec<_>>(),
                 "conflicts": setup.grouped()
                     .flat_map(|(group, plan)| plan.conflicts().iter().map(move |conflict| (group, conflict)))
@@ -2461,12 +2514,10 @@ fn setup(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                     .collect::<Vec<_>>(),
             }));
         }
-        let mut apply = format!("swarm setup --digest {plan_digest}");
+        // The resolved items, not `all`, so the digest still names the plan shown.
+        let mut apply = format!("swarm setup {} --digest {plan_digest}", groups.join(","));
         if let Some(cwd) = cwd {
             apply += &format!(" --cwd {}", swarm::adapter::shell_line(&[cwd.into()]));
-        }
-        if let Some(only) = only {
-            apply += &format!(" --only {only}");
         }
         if let Some(consent) = consent {
             apply += &format!(" --consent {consent}");
@@ -2474,60 +2525,86 @@ fn setup(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         if resume {
             apply += " --resume";
         }
-        for (group, reason) in &setup.skipped {
-            println!("skipped ({group}): {reason}");
+        if !plan && let Some(conflicts) = swarm::managed::conflicts_text(&setup.plans) {
+            return Err(conflicts.into());
         }
-        print!(
-            "{}",
-            swarm::managed::plan_text(
-                &setup.plans,
-                &apply,
-                "Swarm is already set up. No file changes."
-            )
-        );
-        return Ok(());
-    }
-    if let Some(reason) = swarm::bus::setup_refusal(
-        env::var("SWARM_AGENT_ID").ok().as_deref(),
-        env::var("HERDR_AGENT_PANE").ok().as_deref(),
-    ) {
-        return Err(reason.into());
-    }
-    // Swarm makes no write that it cannot record (ADR 0042), so the store opens first.
-    let store = swarm::store::open(&swarm::paths::sqlite_db()?)?;
-    swarm::managed::with_lock(&swarm::paths::trust_lock()?, || {
-        let setup =
-            SetupPlan::of(&dir, &groups, answer(), resume).map_err(|error| error.to_string())?;
-        let plans = &setup.plans;
-        // A retry after a timeout finds nothing to do, and that is not a failure.
-        if plans
-            .iter()
-            .all(|plan| !plan.changes() && plan.conflicts().is_empty())
-        {
-            println!("swarm: already set up. No file changes.");
+        print!("{}", setup.text(plan.then_some(&*apply)));
+        if plan || setup.is_empty() {
             return Ok(());
         }
-        if let Some(digest) = digest
-            && setup.digest() != digest
-        {
+        if let Some(reason) = refusal {
+            return Err(reason.into());
+        }
+        if !yes {
+            use std::io::{BufRead, IsTerminal, Write};
+            if !std::io::stdin().is_terminal() {
+                return Err(format!(
+                    "swarm: nothing changed; run `swarm setup {list} --yes` to apply"
+                )
+                .into());
+            }
+            print!("Apply this plan? [y/N] ");
+            std::io::stdout().flush()?;
+            let mut reply = String::new();
+            std::io::stdin().lock().read_line(&mut reply)?;
+            if !matches!(reply.trim(), "y" | "Y" | "yes") {
+                println!("swarm: nothing changed");
+                return Ok(());
+            }
+        }
+        // `--yes` applies what is pending when the lock is free, as the plan was only shown; an
+        // answer to the question applies only the plan it answered.
+        let shown = (!yes).then_some(&*plan_digest);
+        return apply_setup(&dir, &groups, answer, resume, shown);
+    }
+    if let Some(reason) = refusal {
+        return Err(reason.into());
+    }
+    apply_setup(&dir, &groups, answer, resume, digest)
+}
+
+/// Plan `groups` again under the trust lock and apply it, only while it still has `digest` when
+/// one is given: the files first, then the plugin's commands and the HUD's LaunchAgent once the
+/// lock is free.
+fn apply_setup<'a>(
+    dir: &std::path::Path,
+    groups: &[&str],
+    answer: impl Fn() -> &'a str,
+    resume: bool,
+    digest: Option<&str>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // Swarm makes no write that it cannot record (ADR 0042), so the store opens first.
+    let store = swarm::store::open(&swarm::paths::sqlite_db()?)?;
+    let setup = swarm::managed::with_lock(&swarm::paths::trust_lock()?, || {
+        let setup =
+            SetupPlan::of(dir, groups, answer(), resume).map_err(|error| error.to_string())?;
+        // A retry after a timeout finds nothing to do, and that is not a failure.
+        if setup.is_empty() {
+            return Ok(None);
+        }
+        if digest.is_some_and(|digest| setup.digest() != digest) {
             return Err("swarm: a file changed after the plan; check the plan again".into());
         }
-        if let Some(conflicts) = swarm::managed::conflicts_text(plans) {
+        if let Some(conflicts) = swarm::managed::conflicts_text(&setup.plans) {
             return Err(conflicts);
         }
         // A running CLI may rewrite its trust file at any moment, such as `~/.claude.json`, and
         // the digest covers only the trust entries, so each trust file is planned again and
         // written as launch's `write_trust` does (L-4).
-        for ((group, plan), replan) in setup.grouped().zip(&setup.replans) {
+        for (((group, plan), replan), removes) in
+            setup.grouped().zip(&setup.replans).zip(&setup.removes)
+        {
             let written = match replan {
                 Some(replan) => swarm::bus::write_trust(&store, replan)
                     .map(|written| written.into_iter().map(|plan| plan.path).collect()),
+                None if *removes => swarm::managed::revert(&store, std::slice::from_ref(plan)),
                 None => swarm::managed::apply(&store, std::slice::from_ref(plan)),
             };
             match written {
                 Ok(changed) => {
                     for path in changed {
-                        println!("swarm: {group}: wrote {}", path.display());
+                        let verb = if *removes { "removed" } else { "wrote" };
+                        println!("swarm: {group}: {verb} {}", path.display());
                     }
                 }
                 Err(error) => {
@@ -2537,8 +2614,25 @@ fn setup(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
         }
-        Ok(())
+        Ok(Some(setup))
     })?;
+    let Some(setup) = setup else {
+        println!("swarm: already set up. Nothing to do.");
+        return Ok(());
+    };
+    if let Some(plugin) = &setup.plugin {
+        plugin.run()?;
+        println!("swarm: plugin: the plugin swarm is installed; a new session loads it");
+    }
+    if setup.hud.is_some() {
+        let status = swarm::hud::install(&std::path::PathBuf::from(env_var("HOME")?))?;
+        let running = if status.running {
+            "runs"
+        } else {
+            "does not run yet"
+        };
+        println!("swarm: hud: the usage HUD starts at login and {running}");
+    }
     Ok(())
 }
 
@@ -2649,7 +2743,7 @@ impl LaunchTrust<'_> {
                     ""
                 };
                 eprintln!(
-                    "swarm: approve with `swarm setup --plan --cwd {}{resume}`, then the `swarm setup --digest …` it prints.",
+                    "swarm: approve with `swarm setup trust --plan --cwd {}{resume}`, then the `swarm setup trust --digest …` it prints.",
                     swarm::adapter::shell_line(&[self.cwd.to_string_lossy().into_owned()])
                 );
             }
@@ -4227,17 +4321,6 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     if args.first().map(String::as_str) == Some("init") {
         return init();
     }
-    if args.first().map(String::as_str) == Some("skills") {
-        let rest: Vec<_> = args[1..].iter().map(String::as_str).collect();
-        return match rest.as_slice() {
-            ["refresh"] => swarm::skills::refresh().map(|_| ()),
-            ["manifest", source, out] => swarm::skills::write_manifest(
-                std::path::Path::new(source),
-                std::path::Path::new(out),
-            ),
-            _ => Err("usage: swarm skills refresh | manifest <source> <out>".into()),
-        };
-    }
     if args.first().map(String::as_str) == Some("setup") {
         return setup(&args[1..]);
     }
@@ -4302,7 +4385,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         }
         let home = std::path::PathBuf::from(env::var("HOME")?);
         let status = match verb.as_str() {
-            "install" => swarm::hud::install(&home)?,
+            "install" => return Err("swarm: `swarm hud install` is now `swarm setup hud`".into()),
             "uninstall" => swarm::hud::uninstall(&home)?,
             "status" => swarm::hud::status(&home),
             _ => return Err(USAGE.into()),

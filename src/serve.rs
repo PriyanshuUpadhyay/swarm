@@ -1458,9 +1458,9 @@ async fn hud_cli(app: &App, verb: &str) -> Result<Value, ApiError> {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct SetupWrite {
-    /// A comma list of `SETUP_GROUPS` with the plan's digest, or `plugin` or `hud` alone.
+    /// A comma list of `SETUP_ITEMS`, with the digest of its plan.
     only: String,
-    digest: Option<String>,
+    digest: String,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -1470,7 +1470,7 @@ struct SetupPlanQuery {
 
 fn setup_groups(only: &str) -> bool {
     only.split(',')
-        .all(|group| crate::SETUP_GROUPS.contains(&group))
+        .all(|group| crate::SETUP_ITEMS.contains(&group))
 }
 /// A call from the swarm home, so a plan and its apply see the same folder.
 fn home_call(app: &App, args: &[&str]) -> CliCall {
@@ -1498,13 +1498,11 @@ async fn setup_plan(
     State(app): State<App>,
     Query(query): Query<SetupPlanQuery>,
 ) -> Result<Json<Value>, ApiError> {
-    let mut args = vec!["setup", "--plan", "--json"];
-    if let Some(only) = query.only.as_deref() {
-        if !setup_groups(only) {
-            return Err(error(StatusCode::BAD_REQUEST, "unknown setup group"));
-        }
-        args.extend(["--only", only]);
+    let only = query.only.as_deref().unwrap_or("all");
+    if only != "all" && !setup_groups(only) {
+        return Err(error(StatusCode::BAD_REQUEST, "unknown setup item"));
     }
+    let args = ["setup", only, "--plan", "--json"];
     let output = run_cli(&app, home_call(&app, &args), None).await?;
     serde_json::from_str::<Value>(&output)
         .ok()
@@ -1524,44 +1522,28 @@ async fn setup_write(
     body: Result<Json<SetupWrite>, JsonRejection>,
 ) -> Result<Json<Value>, ApiError> {
     let Json(body) = body.map_err(|e| error(e.status(), &e.body_text()))?;
-    let valid = match (body.only.as_str(), body.digest.as_deref()) {
-        ("plugin" | "hud", None) => true,
-        (only, Some(digest)) => {
-            setup_groups(only)
-                && !digest.is_empty()
-                && digest.chars().all(|c| c.is_ascii_hexdigit())
-        }
-        _ => false,
-    };
+    let valid = setup_groups(&body.only)
+        && !body.digest.is_empty()
+        && body.digest.chars().all(|c| c.is_ascii_hexdigit());
     if !valid {
         return Err(error(
             StatusCode::BAD_REQUEST,
-            "setup takes setup groups with a digest, or plugin or hud alone",
+            "setup takes setup items with the digest of their plan",
         ));
     }
     enqueue_action(&app, Action::Setup(body)).await.map(Json)
 }
 async fn run_setup_write(app: &App, body: SetupWrite) -> Result<Value, ApiError> {
-    let done = match (body.only.as_str(), body.digest.as_deref()) {
-        ("hud", _) => hud_cli(app, "install").await,
-        (only, digest) => {
-            let args = if only == "plugin" {
-                vec!["setup", "plugin", "--yes"]
-            } else {
-                vec![
-                    "setup",
-                    "--digest",
-                    digest.unwrap_or_default(),
-                    "--only",
-                    only,
-                ]
-            };
-            // The plugin step runs each agent CLI's own plugin install, which can take a while.
-            run_cli_with_timeout(app, home_call(app, &args), None, Duration::from_secs(180))
-                .await
-                .map(|output| json!({"ok": true, "output": output}))
-        }
-    };
+    let args = [
+        "setup",
+        body.only.as_str(),
+        "--digest",
+        body.digest.as_str(),
+    ];
+    // The plugin item runs each agent CLI's own plugin install, which can take a while.
+    let done = run_cli_with_timeout(app, home_call(app, &args), None, Duration::from_secs(180))
+        .await
+        .map(|output| json!({"ok": true, "output": output}));
     done.map_err(|(status, error)| {
         let stale = error.0["error"].as_str().is_some_and(|text| {
             // "after the plan", "after the link plan", and the parent's "after the plan".
@@ -2790,9 +2772,12 @@ async fn execute_action(app: &App, action: Action) -> Result<Value, ApiError> {
         }
         Action::Lifecycle(action) => return execute_lifecycle(app, action).await,
         Action::UsageRefresh(body) => return refresh_usage(app, &body.provider).await,
-        Action::Hud(body) => {
-            return hud_cli(app, if body.on { "install" } else { "uninstall" }).await;
+        Action::Hud(body) if body.on => {
+            let call = home_call(app, &["setup", "hud", "--yes"]);
+            run_cli(app, call, None).await?;
+            return hud_cli(app, "status").await;
         }
+        Action::Hud(_) => return hud_cli(app, "uninstall").await,
         Action::Setup(body) => return run_setup_write(app, body).await,
         Action::Owner(write) => return run_owner_write(app, write).await,
         Action::RefreshView => {
@@ -5547,8 +5532,12 @@ printf '{"schema":"swarm.hud.v1","installed":true,"running":true,"app":"/a/Swarm
             assert_eq!(reply.0["schema"], "swarm.hud.v1");
         }
         let calls = action_calls(&fixture);
-        for verb in ["status", "install", "uninstall"] {
-            assert!(calls.contains(&format!("hud {verb} --json")), "{calls}");
+        for call in [
+            "hud status --json",
+            "setup hud --yes",
+            "hud uninstall --json",
+        ] {
+            assert!(calls.contains(call), "{calls}");
         }
         std::fs::write(fixture.app.root.parent().unwrap().join("bad"), "").unwrap();
         assert_eq!(
@@ -5854,14 +5843,13 @@ case "$1 $2" in
   'launch orchestrator') printf 'fixture-pane\n' ;;
   'sessions --json') printf '%s\n' '{{"sessions":[{{"id":"archived","archivedAt":42}},{{"id":"active"}}]}}' ;;
   'doctor --json') printf '%s\n' '{{"schema":"swarm.doctor.v1","items":[]}}' ;;
-  'setup --plan') printf '%s\n' '{{"digest":"ab12","files":[],"conflicts":[],"skipped":[]}}' ;;
-  'setup --digest') case "$3" in
-    dead) echo 'swarm: a file changed after the plan; check the plan again' >&2; exit 1 ;;
-    beef) echo 'swarm: cannot write ~/.codex/config.toml' >&2; exit 1 ;;
-    f00d) echo 'swarm: ~/.claude/skills/x changed after the link plan; swarm leaves it' >&2; exit 1 ;;
-    cafe) echo 'swarm: ~/.codex/config.toml changed while swarm edited it; run the command again' >&2; exit 1 ;;
+  'setup '*) case "$3 $4" in
+    '--plan --json') printf '%s\n' '{{"digest":"ab12","files":[],"conflicts":[],"skipped":[]}}' ;;
+    '--digest dead') echo 'swarm: a file changed after the plan; check the plan again' >&2; exit 1 ;;
+    '--digest beef') echo 'swarm: cannot write ~/.codex/config.toml' >&2; exit 1 ;;
+    '--digest f00d') echo 'swarm: ~/.claude/skills/x changed after the link plan; swarm leaves it' >&2; exit 1 ;;
+    '--digest cafe') echo 'swarm: ~/.codex/config.toml changed while swarm edited it; run the command again' >&2; exit 1 ;;
   esac ;;
-  'hud install') echo 'swarm: SwarmHUD.app is not in this build' >&2; exit 1 ;;
   *) if [ "$1" = type ]; then cat > "$SWARM_HOME/text"; fi ;;
 esac
 "#)).unwrap();
@@ -6061,13 +6049,16 @@ esac
             )
         };
         assert_eq!(
-            plan(Some("hooks,skills")).await.unwrap().0["digest"],
+            plan(Some("hooks,plugin")).await.unwrap().0["digest"],
             "ab12"
         );
-        assert_eq!(
-            plan(Some("hooks;rm")).await.unwrap_err().0,
-            StatusCode::BAD_REQUEST
-        );
+        assert_eq!(plan(None).await.unwrap().0["digest"], "ab12");
+        for bad in ["hooks;rm", "skills"] {
+            assert_eq!(
+                plan(Some(bad)).await.unwrap_err().0,
+                StatusCode::BAD_REQUEST
+            );
+        }
         let write = |body: Value| {
             setup_write(
                 State(fixture.app.clone()),
@@ -6075,16 +6066,16 @@ esac
             )
         };
         for body in [
-            json!({"only": "hooks"}),
+            json!({"only": "hooks", "digest": ""}),
             json!({"only": "hooks", "digest": "ab 12"}),
-            json!({"only": "plugin", "digest": "ab12"}),
-            json!({"only": "hooks,plugin", "digest": "ab12"}),
+            json!({"only": "skills", "digest": "ab12"}),
+            json!({"only": "all", "digest": "ab12"}),
         ] {
             assert_eq!(write(body).await.unwrap_err().0, StatusCode::BAD_REQUEST);
         }
         for body in [
-            json!({"only": "hooks,skills", "digest": "ab12"}),
-            json!({"only": "plugin"}),
+            json!({"only": "hooks,plugin", "digest": "ab12"}),
+            json!({"only": "hud", "digest": "ab12"}),
         ] {
             assert_eq!(write(body).await.unwrap().0["ok"], true);
         }
@@ -6094,9 +6085,10 @@ esac
             calls.lines().collect::<Vec<_>>(),
             [
                 format!("|||{root}|doctor --json"),
-                format!("|||{root}|setup --plan --json --only hooks,skills"),
-                format!("|||{root}|setup --digest ab12 --only hooks,skills"),
-                format!("|||{root}|setup plugin --yes"),
+                format!("|||{root}|setup hooks,plugin --plan --json"),
+                format!("|||{root}|setup all --plan --json"),
+                format!("|||{root}|setup hooks,plugin --digest ab12"),
+                format!("|||{root}|setup hud --digest ab12"),
             ]
         );
         // Only a file that changed under the plan is a conflict; any other failed setup is the request's own failure.
@@ -6118,12 +6110,10 @@ esac
             .await
             .unwrap_err();
         assert_eq!(raced.0, StatusCode::CONFLICT);
-        let link = write(json!({"only": "skills", "digest": "f00d"}))
+        let link = write(json!({"only": "plugin", "digest": "f00d"}))
             .await
             .unwrap_err();
         assert_eq!(link.0, StatusCode::CONFLICT);
-        let hud = write(json!({"only": "hud"})).await.unwrap_err();
-        assert_eq!(hud.0, StatusCode::BAD_REQUEST);
     }
 
     #[tokio::test]

@@ -249,7 +249,7 @@ test("/setup opens Setup & doctor; a row's Set up applies its group and the row 
   await expect(page).toBeVisible();
   await expect(dialog.getByTestId("settings-page-setup")).toHaveAttribute("aria-current", "page");
   const ids = await page.getByTestId("doctor-item").evaluateAll((rows) => rows.map((r) => (r as HTMLElement).dataset.id));
-  expect(ids.slice(0, 5)).toEqual(["hooks", "guard", "trust", "herdr", "skills"]);
+  expect(ids.slice(0, 5)).toEqual(["hooks", "guard", "trust", "plugin", "hud"]);
   // The server home's hooks start unset, and the case removes them again at the end.
   const hooks = page.locator('[data-testid="doctor-item"][data-id="hooks"]');
   await expect(hooks).toHaveAttribute("data-state", "setup");

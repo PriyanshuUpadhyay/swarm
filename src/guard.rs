@@ -6,7 +6,7 @@ use crate::providers::Provider;
 use std::io::{Read, Write};
 use std::time::{Duration, Instant};
 
-/// The hook events a rule may name. `swarm hooks setup` registers the runner for each of them.
+/// The hook events a rule may name. `swarm setup hooks` registers the runner for each of them.
 pub const EVENTS: [&str; 1] = ["PreToolUse"];
 /// The hook timeout each registration gives the runner, in seconds.
 pub const REGISTRATION_TIMEOUT: u64 = 10;

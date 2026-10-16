@@ -12,7 +12,7 @@ This session is running inside Herdr. The top-level session is the orchestrator.
 - Send work with `swarm send <name> ask`; a reply arrives as the prompt `swarm: new message`, then `swarm inbox`, read, `swarm ack`. Close with `swarm close <name>`.
 - Native background subagents are allowed. Prefer a visible pane when the user must watch or answer the worker, when it runs on another provider, or when a skill asks for visible seats.
 - Do not use headless CLIs or detached processes.
-- For pane lifecycle detail, load `~/.claude/skills/swarm-orchestrator/SKILL.md`.
+- For pane lifecycle detail, load `~/.swarm/kit/skills/swarm-orchestrator/SKILL.md`.
 - When the run is done, notify the owner with `swarm notify "swarm: <project> done" --body "<one line>"`; swarm itself notifies when an agent waits on a permission or a question.
 - Workers are leaves: answer only, do not orchestrate, spawn descendants, or notify the user."#;
 
@@ -31,7 +31,7 @@ This session is running inside a Superset terminal. The top-level session is the
 - `swarm answer` and `swarm interrupt` are not available on this host; answer a worker's prompt in the Superset app.
 - Native background subagents are allowed. Prefer a visible pane when the user must watch or answer the worker, when it runs on another provider, or when a skill asks for visible seats.
 - Do not use headless CLIs or detached processes.
-- For pane lifecycle detail, load `~/.claude/skills/swarm-orchestrator/SKILL.md`.
+- For pane lifecycle detail, load `~/.swarm/kit/skills/swarm-orchestrator/SKILL.md`.
 - When the run is done, notify the owner with `swarm notify "swarm: <project> done" --body "<one line>"`; swarm itself notifies when an agent waits on a permission or a question.
 - Workers are leaves: answer only, do not orchestrate, spawn descendants, or notify the user."#;
 
@@ -51,7 +51,7 @@ This session is a chair that the Swarm app started. The top-level session is the
 - Send work with `swarm send <name> ask`; a reply arrives as the prompt `swarm: new message`, then `swarm inbox`, read, `swarm ack`. Close with `swarm close <name>`.
 - Native background subagents are allowed. Prefer a visible pane when the user must watch or answer the worker, when it runs on another provider, or when a skill asks for visible seats.
 - Do not use headless CLIs or detached processes.
-- For pane lifecycle detail, load `~/.claude/skills/swarm-orchestrator/SKILL.md` and skip its Session section.
+- For pane lifecycle detail, load `~/.swarm/kit/skills/swarm-orchestrator/SKILL.md` and skip its Session section.
 - When the run is done, notify the owner with `swarm notify "swarm: <project> done" --body "<one line>"`; swarm itself notifies when an agent waits on a permission or a question.
 - Workers are leaves: answer only, do not orchestrate, spawn descendants, or notify the user."#;
 
@@ -111,9 +111,9 @@ pub fn context(provider: &str, env: impl Fn(&str) -> Option<String>) -> Option<S
     };
     // pi has no runtime adapter skill, so it gets only the host contract.
     let adapter = match provider {
-        "claude" => "~/.claude/skills/orchestrate-claude/SKILL.md",
-        "codex" => "~/.agents/skills/orchestrate-codex/SKILL.md",
-        "agy" => "~/.gemini/config/skills/orchestrate-agy/SKILL.md",
+        "claude" => "~/.swarm/kit/skills/orchestrate-claude/SKILL.md",
+        "codex" => "~/.swarm/kit/skills/orchestrate-codex/SKILL.md",
+        "agy" => "~/.swarm/kit/skills/orchestrate-agy/SKILL.md",
         _ => return Some(context),
     };
     context.push_str(&format!("\n\n[agent-runtime: {provider}]\nBefore executing any portable skill that requests workers, load `{adapter}`.\nThe runtime adapter translates workflow requirements; the active agent-host contract owns worker lifecycle and visibility."));

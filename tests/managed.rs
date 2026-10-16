@@ -22,7 +22,7 @@ fn swarm(home: &Path, args: &[&str]) -> Output {
         .unwrap()
 }
 
-/// The six Codex state-hook trust keys that `hooks setup` adds, as paths in `config.toml`.
+/// The six Codex state-hook trust keys that `setup hooks` adds, as paths in `config.toml`.
 fn codex_state_paths() -> Vec<serde_json::Value> {
     [
         "user_prompt_submit",
@@ -43,12 +43,12 @@ fn codex_state_paths() -> Vec<serde_json::Value> {
     .to_vec()
 }
 
-/// On a fresh HOME, `hooks setup` records each item it adds: six Codex trust keys and AGY's
+/// On a fresh HOME, `setup hooks` records each item it adds: six Codex trust keys and AGY's
 /// `swarm` group (ADR 0042).
 #[test]
 fn hooks_setup_records_each_item_it_adds() {
     let home = scratch("record");
-    let setup = swarm(&home, &["hooks", "setup"]);
+    let setup = swarm(&home, &["setup", "hooks", "--yes"]);
     assert!(setup.status.success(), "{setup:?}");
 
     let db = rusqlite::Connection::open(home.join(".swarm/swarm.db")).unwrap();
@@ -97,7 +97,7 @@ fn listing(home: &Path) -> Vec<serde_json::Value> {
     list["entries"].as_array().unwrap().clone()
 }
 
-/// The guard rule list that makes `hooks setup` register the guard too (ADR 0040).
+/// The guard rule list that makes `setup hooks` register the guard too (ADR 0040).
 const RULES: &str =
     r#"{"rules": [{"name": "no", "event": "PreToolUse", "command": ["/bin/true"]}]}"#;
 
@@ -108,7 +108,7 @@ const RULES: &str =
 fn managed_list_shows_each_hooks_setup_write_and_its_live_state() {
     let home = scratch("list");
     write(&home, ".swarm/guards.json", RULES);
-    assert!(swarm(&home, &["hooks", "setup"]).status.success());
+    assert!(swarm(&home, &["setup", "hooks", "--yes"]).status.success());
 
     let entries = listing(&home);
     let codex = home.join(".codex/config.toml").display().to_string();
@@ -250,9 +250,9 @@ fn managed_list_shows_each_hooks_setup_write_and_its_live_state() {
     assert!(config.contains("sha256:edited"), "{config}");
 
     // On runs the owning writer's plan again: once the owner sets the edited key back,
-    // `hooks setup` writes each off item and its row shows it present.
+    // `setup hooks` writes each off item and its row shows it present.
     std::fs::write(&codex, config.replace("sha256:edited", hash)).unwrap();
-    let setup = swarm(&home, &["hooks", "setup"]);
+    let setup = swarm(&home, &["setup", "hooks", "--yes"]);
     assert!(setup.status.success(), "{setup:?}");
     let on = listing(&home);
     assert!(
@@ -288,7 +288,7 @@ fn a_revert_removes_only_swarms_key_and_keeps_the_owners_key_in_the_same_table()
     let home = scratch("revert-one");
     let owners = "model = \"o3\"\n\n[hooks.state.\"/owner/config.toml:stop:0:0\"]\ntrusted_hash = \"sha256:owner\"\n";
     write(&home, ".codex/config.toml", owners);
-    assert!(swarm(&home, &["hooks", "setup"]).status.success());
+    assert!(swarm(&home, &["setup", "hooks", "--yes"]).status.success());
     let codex = home.join(".codex/config.toml");
     let stop = stop_entry(&listing(&home));
     let id = stop["id"].as_str().unwrap();
@@ -349,7 +349,7 @@ fn a_revert_removes_only_swarms_key_and_keeps_the_owners_key_in_the_same_table()
 #[test]
 fn a_revert_refuses_an_item_the_owner_changed_and_names_it() {
     let home = scratch("revert-changed");
-    assert!(swarm(&home, &["hooks", "setup"]).status.success());
+    assert!(swarm(&home, &["setup", "hooks", "--yes"]).status.success());
     let codex = home.join(".codex/config.toml");
     let stop = stop_entry(&listing(&home));
     let id = stop["id"].as_str().unwrap();
@@ -415,7 +415,7 @@ fn a_guard_revert_takes_its_trust_key_and_keeps_the_owners_groups() {
     let owner_group = r#"{"matcher": "Bash", "hooks": [{"type": "command", "command": "owner-guard", "timeout": 3}]}"#;
     let owner_settings = format!(r#"{{"hooks": {{"PreToolUse": [{owner_group}]}}}}"#);
     write(&home, ".claude/settings.json", &owner_settings);
-    assert!(swarm(&home, &["hooks", "setup"]).status.success());
+    assert!(swarm(&home, &["setup", "hooks", "--yes"]).status.success());
     let entries = listing(&home);
     let codex_hooks = home.join(".codex/hooks.json");
     let group = entries
@@ -475,7 +475,7 @@ fn an_item_under_a_linked_folder_made_by_the_write_has_one_id() {
     let home = scratch("linked-parent");
     std::fs::create_dir_all(home.join("dot/gemini")).unwrap();
     std::os::unix::fs::symlink(home.join("dot/gemini"), home.join(".gemini")).unwrap();
-    assert!(swarm(&home, &["hooks", "setup"]).status.success());
+    assert!(swarm(&home, &["setup", "hooks", "--yes"]).status.success());
 
     let entries = listing(&home);
     let agy: Vec<_> = entries
@@ -501,7 +501,7 @@ fn an_item_under_a_linked_folder_made_by_the_write_has_one_id() {
 #[test]
 fn a_child_agent_cannot_revert_managed_changes() {
     let home = scratch("revert-child");
-    assert!(swarm(&home, &["hooks", "setup"]).status.success());
+    assert!(swarm(&home, &["setup", "hooks", "--yes"]).status.success());
     let codex = home.join(".codex/config.toml");
     let set_up = std::fs::read_to_string(&codex).unwrap();
 
@@ -534,15 +534,17 @@ fn a_partial_hooks_setup_names_the_files_it_already_wrote() {
     std::fs::create_dir_all(&agy_dir).unwrap();
     std::fs::set_permissions(&agy_dir, std::fs::Permissions::from_mode(0o555)).unwrap();
 
-    let setup = swarm(&home, &["hooks", "setup"]);
+    let setup = swarm(&home, &["setup", "hooks", "--yes"]);
     std::fs::set_permissions(&agy_dir, std::fs::Permissions::from_mode(0o755)).unwrap();
     assert!(!setup.status.success(), "{setup:?}");
     let error = stderr(&setup);
     assert!(error.contains("cannot write"), "{error}");
     let codex = home.join(".codex/config.toml");
+    let out = String::from_utf8_lossy(&setup.stdout);
     assert!(
-        error.contains(&format!("already wrote {}", codex.display())),
-        "{error}"
+        out.contains(&format!("swarm: hooks: wrote {}", codex.display()))
+            && error.contains("each file named above is written and recorded"),
+        "{out}\n{error}"
     );
     std::fs::remove_dir_all(&home).unwrap();
 }

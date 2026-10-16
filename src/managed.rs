@@ -1644,13 +1644,9 @@ mod tests {
         let fixture = LinkFixture::new("owner-recreated-after-undo");
         let other_links: Vec<_> = [".claude/skills", ".agents/skills", ".gemini/config/skills"]
             .into_iter()
-            .flat_map(|root| {
-                crate::skills::link_catalog()
-                    .into_iter()
-                    .map(move |skill| (root, skill))
-            })
+            .flat_map(|root| ["council", "flow", "pair"].map(move |skill| (root, skill)))
             .skip(1)
-            .map(|(root, skill)| fixture.root.join("home").join(root).join(skill.name))
+            .map(|(root, skill)| fixture.root.join("home").join(root).join(skill))
             .collect();
         let mut plans = vec![fixture.plan()];
         plans.extend(other_links.iter().map(|path| {
@@ -1686,9 +1682,9 @@ mod tests {
             .unwrap();
         assert_eq!(entry.state, State::Changed(fixture.edit().wrote));
         let plans = revert_plan(&fixture.store, &[], &Target::All).unwrap();
-        assert_eq!(plans.len(), 68);
+        assert_eq!(plans.len(), other_links.len());
         let removed = revert(&fixture.store, &plans).unwrap();
-        assert_eq!(removed.len(), 68);
+        assert_eq!(removed.len(), other_links.len());
         assert!(
             other_links
                 .iter()

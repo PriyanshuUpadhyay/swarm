@@ -1304,7 +1304,10 @@ fn a_seat_launch_with_no_consent_writes_no_trust_and_prints_the_plan() {
     );
     assert!(err.contains("+trust_level = \"trusted\""), "{err}");
     assert!(
-        err.contains(&format!("swarm setup --plan --cwd '{}'", repo.display())),
+        err.contains(&format!(
+            "swarm setup trust --plan --cwd '{}'",
+            repo.display()
+        )),
         "{err}"
     );
     assert!(recorded_trust(&home).is_empty());
@@ -1498,14 +1501,14 @@ fn a_resumed_claude_seats_approve_command_plans_the_folder_it_reports() {
             .any(|line| line == format!("trust-pending claude {cwd}")),
         "{err}"
     );
-    let approve = format!("swarm setup --plan --cwd '{cwd}' --resume");
+    let approve = format!("swarm setup trust --plan --cwd '{cwd}' --resume");
     assert!(err.contains(&approve), "{err}");
 
     let plan = swarm(
         &home,
         &[],
         &[
-            "setup", "--plan", "--json", "--only", "trust", "--cwd", &cwd, "--resume",
+            "setup", "trust", "--plan", "--json", "--cwd", &cwd, "--resume",
         ],
     );
     assert!(plan.status.success(), "{}", stderr(&plan));
@@ -1515,7 +1518,7 @@ fn a_resumed_claude_seats_approve_command_plans_the_folder_it_reports() {
         &home,
         &[],
         &[
-            "setup", "--digest", digest, "--only", "trust", "--cwd", &cwd, "--resume",
+            "setup", "trust", "--digest", digest, "--cwd", &cwd, "--resume",
         ],
     );
     assert!(applied.status.success(), "{}", stderr(&applied));
