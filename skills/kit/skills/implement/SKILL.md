@@ -36,7 +36,7 @@ the git common dir (`git rev-parse --git-common-dir`), not the worktree folder n
 2. Run the script from the repo root. `F=<skill-dir>/scripts/implement_run.py`.
 
    ```sh
-   python3 $F start [--profile <name>]       # makes the folder and step files, writes each step's skills and blocks into its file in full
+   python3 $F start [--profile <name>] [--domains <a,b>] # makes the folder and step files, writes each step's skills and blocks into its file in full
    python3 $F status [<folder>]              # each step's status, which open step is ready, and which is stale
    python3 $F take <folder> <step> <agent>   # marks the step active and prints its file with its skills in full
    python3 $F done <folder> <step>           # sets the step done, only when every todo has its evidence
@@ -48,8 +48,10 @@ the git common dir (`git rev-parse --git-common-dir`), not the worktree folder n
    `blocks/blocks.toml` owns the block format, what each check line becomes, and the
    `.blocks.toml` tables.
 
-   The chair shows the tables that `start` prints, the same way `blocks/planner/SKILL.md` shows them
-   for a plan. `01-frame.md` keeps this choice. To add or drop a block, edit its domain line in
+   The chair passes `--domains <a,b>` for the domains touched by the files the request names.
+   Each domain must be in the repo profile; `any` is always kept. With no flag, all profile domains
+   load. Show the chosen domains with the tables that `start` prints, the same way `blocks/planner/SKILL.md` shows them
+   for a plan. `01-frame.md` keeps the domains and block choice. To add or drop a block, edit its domain line in
    `~/.flow/domains.md` or its `[off]` entry in `.blocks.toml`, then start a new run. A second `start`
    on the same day and branch reuses the folder and prints the saved choice, so first rename the
    run folder (for example to `<folder>-old`), then run `start` again.
@@ -57,7 +59,7 @@ the git common dir (`git rev-parse --git-common-dir`), not the worktree folder n
 3. Read `01-frame.md`. If `Worktree:` or `Branch:` is not the current worktree and branch, stop and
    tell the user. If two open folders exist for one branch, stop and tell the user.
 4. Pick up a step as `references/step-run.md` says, and take it with `take`. The step file holds the
-   full text of the skills that the catalog gives the step (the `any` section, each profile domain,
+   full text of the skills that the catalog gives the step (the `any` section, each chosen domain,
    and the repo rules) under `## Rules for this step`, and a todo list. Apply the rules, check each
    todo with its evidence after the last colon, write the result under `## Result`, and close the step
    with `done`. Never set a step done or skipped by hand. When a tool

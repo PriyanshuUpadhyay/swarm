@@ -101,6 +101,9 @@ metadata:
 
 ## Ownership and conflicts
 
+On 2026-10-17, the owner approved domain selection by `implement_run.py start --domains`;
+`skills/kit/skills/implement/SKILL.md` names the command and its saved choice.
+
 1. A block owns one concern. Its `owns` line names that concern, and no other block's `owns` line
    names it.
 2. When two files state the same rule, that is a defect. The fix is one owner and a pointer, never a

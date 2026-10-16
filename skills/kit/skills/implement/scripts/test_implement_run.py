@@ -524,6 +524,35 @@ def step_text(folder, step):
     return (folder / f"{step}.md").read_text(encoding="utf-8")
 
 
+def test_start_domains(tmp):
+    """A run selects profile domains once, always keeps any, and rejects unknown domains."""
+    for name, selected in (("selected", True), ("all", False)):
+        _, _, repo, run = blocks_start(tmp, "domains-" + name, "", None, "--domains", "rust")
+        home = repo.parent / "home/.flow"
+        (home / "app/profile.md").write_text("Domains: rust, zig\nRepo rules: none\n", encoding="utf-8")
+        catalog = []
+        for domain in ("any", "rust", "zig"):
+            rule = repo / f"{domain}.md"
+            rule.write_text(f"RULE {domain}\n", encoding="utf-8")
+            catalog.append(f"## {domain}\n- build: {rule}\n")
+        (home / "domains.md").write_text("".join(catalog), encoding="utf-8")
+        unknown = run("start", "--domains", "swift")
+        assert unknown.returncode == 1 and "swift" in unknown.stderr, unknown
+        assert "any, rust, zig" in unknown.stderr, unknown.stderr
+        out = run("start", *( ["--domains", "rust", "--profile", "default"] if selected else []))
+        assert out.returncode == 0, out.stderr
+        folder = Path(out.stdout.splitlines()[0])
+        build = step_text(folder, "05-build")
+        assert "RULE any" in build and "RULE rust" in build, build
+        assert ("RULE zig" in build) == (not selected), build
+        choice = "Domains: any, rust" + ("" if selected else ", zig")
+        assert choice + "\n" in step_text(folder, "01-frame") and choice in out.stdout
+        before = {p.name: p.read_bytes() for p in folder.iterdir()}
+        again = run("start", "--domains", "zig")
+        assert again.returncode == 0 and choice + "\n" in again.stdout, again
+        assert {p.name: p.read_bytes() for p in folder.iterdir()} == before
+
+
 def has_control(text, keep="\t\n"):
     """True if text holds a C0 or C1 control character or DEL, other than those in keep."""
     return any(ord(c) < 32 and c not in keep or 127 <= ord(c) <= 159 for c in text)
@@ -1771,6 +1800,7 @@ with tempfile.TemporaryDirectory() as tmp:
     assert "02-design\tskip no UI" in events and "07-close\ttake a" in events
     test_git_env_ignores_caller_git_dir(tmp)
     test_start_block_ledger(tmp)
+    test_start_domains(tmp)
     test_start_ledger_without_chosen_blocks(tmp)
     test_block_in_step(tmp)
     test_block_hash_bytes(tmp)

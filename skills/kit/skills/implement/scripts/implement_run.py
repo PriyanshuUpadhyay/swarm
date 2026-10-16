@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Make and take implement steps. Run from inside the repo.
 
-  start [--profile <name>]     make tmp/flow/<date>-<branch>/ with the seven step files; the profile packs blocks
+  start [--profile <name>] [--domains <a,b>] make tmp/flow/<date>-<branch>/ with selected profile domains
   status [<folder>]            print each step's status, whether it is ready, and whether it is stale
   take <folder> <step> <who> [--force] mark the step active and print its file with the skills the catalog gives it
   done <folder> <step>         set done with evidence; 07-close moves the run to tmp/flow/_closed/
@@ -98,7 +98,7 @@ def rev(folder, step):
     return git("rev-parse", "HEAD")[:12] if step == "05-build" else step_run.revision(folder, step)
 
 
-def start(profile="default"):
+def start(profile="default", domains=None):
     root = git("rev-parse", "--show-toplevel")
     if not root:
         raise SystemExit("not in a git repository")
@@ -119,18 +119,24 @@ def start(profile="default"):
         raise SystemExit(one_line(str(error.code))) from None
     if folder.exists() and profile != "default":
         print(f"note: {folder} exists, so --profile {profile} was not applied", file=sys.stderr)
+    allowed, _ = repo_profile()
+    chosen = allowed if domains is None else {d.strip() for d in domains.split(",") if d.strip()} | {"any"}
+    if unknown := chosen - allowed:
+        raise SystemExit(f"unknown domains: {', '.join(sorted(unknown))}; allowed domains: {', '.join(sorted(allowed))}")
+    if folder.exists() and domains is not None:
+        print(f"note: {folder} exists, so --domains {domains} was not applied", file=sys.stderr)
     if not folder.exists():
         steps = graph()
         # Read every step's text before the folder exists, so a config or read error leaves no half-made run.
         try:
-            catalog = {step: skill_paths(step) for step in steps}
+            catalog = {step: skill_paths(step, chosen) for step in steps}
             blocks, judge, ledger = resolve_blocks(Path(root), {s.split("-", 1)[1]: ids for s, (_, ids) in catalog.items()}, profile)
             skills = {step: skills_text(catalog[step][0]) for step in steps}
         except SystemExit as error:  # its reasons quote table names, keys, and paths from the repo's .blocks.toml
             raise SystemExit(one_line(str(error.code))) from None
         folder.mkdir(parents=True)
         for step, need in steps.items():
-            extra = f"Worktree: {root}\nBranch: {branch}\n" if step == "01-frame" else ""
+            extra = f"Worktree: {root}\nBranch: {branch}\nDomains: {', '.join(sorted(chosen))}\n" if step == "01-frame" else ""
             extra += "Revision: HEAD\n" if step == "05-build" else ""  # the rule in rev(), for readers without this script
             uses = f"Uses: {', '.join(need)}".rstrip()
             paths = catalog[step][0]
@@ -149,6 +155,8 @@ def start(profile="default"):
     print(f"Each step file holds its rules, a todo list, and a result section. Close a step with: python3 {Path(__file__).resolve()} done <folder> <step>")
     # Read the saved choice on repeat starts; changed domain lines apply only to a new run.
     frame = read_utf8(folder / "01-frame.md") if (folder / "01-frame.md").exists() else ""
+    if saved := re.search(r"^Domains: .+$", frame, re.M):
+        print(saved.group())
     if f"\n{LEDGER_HEAD}\n" in frame:
         print(frame.split(f"\n{LEDGER_HEAD}\n", 1)[1].split("\n## ", 1)[0].strip())
 
@@ -163,10 +171,8 @@ def status(folder=None):
     step_run.status(folder, graph(), rev)
 
 
-def skill_paths(step):
-    """The catalog items for this step, from the `any` section, each profile domain, and the repo rules:
-    the paths, and apart from them the `block:<id>` items."""
-    key = step.split("-", 1)[1]
+def repo_profile():
+    """The allowed domains and repo rules share one profile source."""
     profile = implement_home() / repo_name() / "profile.md"
     domains, repo_rules = {"any"}, []
     if profile.exists():
@@ -177,6 +183,14 @@ def skill_paths(step):
             repo_rules = [r.strip() for r in m.group(1).split(",") if r.strip() and r.strip() != "none"]
     else:
         print(f"note: no profile at {profile}; the implement skill's start rule says what to do", file=sys.stderr)
+    return domains, repo_rules
+
+
+def skill_paths(step, domains=None):
+    """The paths and block ids for the selected domains and repo rules."""
+    key = step.split("-", 1)[1]
+    allowed, repo_rules = repo_profile()
+    domains = allowed if domains is None else domains
     items, section = [], None
     for line in read_utf8(implement_home() / "domains.md").splitlines():
         if line.startswith("## "):
@@ -663,8 +677,10 @@ if __name__ == "__main__":
         if command in ("done", "skip") and "--force" in args:
             raise SystemExit("done <folder> <step> accepts no --force" if command == "done" else "skip accepts no --force")
         options = {"force": force} if command == "take" else {}
-        if command == "start" and len(args) == 2 and args[0] == "--profile":
-            options, args = {"profile": args[1]}, []
+        if command == "start":
+            while len(args) >= 2 and args[0] in ("--profile", "--domains") and args[0][2:] not in options:
+                options[args[0][2:]] = args[1]
+                args = args[2:]
         minimum, maximum = arity[command]
         if len(args) < minimum or maximum is not None and len(args) > maximum:
             raise SystemExit(next(line.strip() for line in __doc__.splitlines()

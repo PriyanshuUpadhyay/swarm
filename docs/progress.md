@@ -141,6 +141,9 @@ Each block owns its rule text; the skill that held it points to the block.
 
 ### Known defects
 
+On 2026-10-17, the owner approved domain selection by `implement_run.py start --domains`;
+`skills/kit/skills/implement/SKILL.md` names the command and its saved choice.
+
 - `references/step_run.py:67-70` drops a `Needs` word that matches no step, with no error.
 - `blocks/web-ui-basics/SKILL.md:44-47` checks only `*.html`, `*.css`, `*.js` and `index.html`, so a TSX
   slice gets no script check.
