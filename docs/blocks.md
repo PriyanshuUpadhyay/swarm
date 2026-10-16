@@ -101,6 +101,9 @@ metadata:
 
 ## Ownership and conflicts
 
+On 2026-10-17, the owner settled the voice-file part of #70 in `blocks/voice-review/SKILL.md`;
+`voice-pr` points to that owner.
+
 On 2026-10-17, the owner chose `blocks/worker-brief/SKILL.md` as the owner of gates with no user present.
 
 On 2026-10-17, the owner approved domain selection by `implement_run.py start --domains`;
@@ -137,7 +140,7 @@ Status: ✅ exists, ✂️ cut from a skill next, ⬜ later, 🆕 new, 🔒 stay
 | voice-reply | rule | the final reply to the owner, by the session's reply rules | step results → reply | `blocks/voice-reply` (points to the agent instructions) | the last step of a plan | ✅ basic |
 | voice-teach | rule | the order of ideas in an explanation to learn from | subject, known terms → explanation | `blocks/voice-teach` | explain, the last step of an explain plan | ✅ basic |
 | voice-pr | rule | how PR titles and bodies read | change, tests → PR draft | `blocks/voice-pr` | the last step of a PR plan | ✅ basic |
-| voice-review | rule | how review comments sound | findings → comments in the reviewer's voice | `blocks/voice-review`, which reads `~/.review-walk/voice.md` | the last step of a review plan | ✅ basic |
+| voice-review | rule | how review comments sound | findings → comments in the reviewer's voice | `blocks/voice-review`, which owns the voice file path and privacy rule | the last step of a review plan | ✅ basic |
 | frame | step | goal, done-when claims, out of scope | request → frame | implement 01-frame, research 01-question, build intake | implement, research, build | ⬜ |
 | local-research | step | what local sources say | question → findings with paths | `blocks/local-research` | research (planned: glitch-walk, implement contracts) | ✅ |
 | web-research | step | web evidence | query brief → findings with links | `skills/web-search` (stays whole) with `blocks/deep-search` and `blocks/cite-sources` | research, reference-analysis, motion | ✅ by the skill |
