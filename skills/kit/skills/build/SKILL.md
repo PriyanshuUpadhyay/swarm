@@ -85,7 +85,7 @@ Example. `~/work/seed-city/ink/` holds one file per step. Steps 1-4 are done, so
 ## Roles
 
 - Steps 1 to 3 run in the main session, because they need the user's answers.
-- Steps 4 to 7 go to the role `ink.build`. The builder scores its own rounds. When it sets a step
+- Steps 4 to 7 go to the role `build`. The builder scores its own rounds. When it sets a step
   done, the main session sends the final compare images to the role `review.visual`, and a `miss`
   from that critic reopens the step.
   [orchestration.json](orchestration.json) declares both roles, and the runtime adapter resolves
@@ -99,7 +99,7 @@ Example. `~/work/seed-city/ink/` holds one file per step. Steps 1-4 are done, so
 
 ## Effort and cost
 
-The `ink.build` route sets the model and the reasoning effort. A production reel takes hours of
+The `build` route sets the model and the reasoning effort. A production reel takes hours of
 render, look, and fix loops. One public 26-scene rebuild took about 5 h 40 min and 716,000
 output tokens. Tell the user the likely cost before production.
 
