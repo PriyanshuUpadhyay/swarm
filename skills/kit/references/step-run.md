@@ -13,9 +13,7 @@ sees `02-local.md` done and `03-web.md` open, does the web step, and goes on to 
 
 ## Folder
 
-- The skill names the folder. A run tied to a repository uses `references/run-folder.md`. A run
-  whose result is a report keeps its folder next to the report, in the reports folder that the
-  active runtime adapter names.
+- Choose the folder by run kind in `references/run-folder.md`. The skill names its artifacts.
 - The skill's step table lists the step files `NN-<name>.md`, what each one needs, and what it holds.
   On start, make every step file with `Status: open`.
 

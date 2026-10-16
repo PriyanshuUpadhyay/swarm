@@ -4,8 +4,20 @@ description: Where a skill keeps the files of a run that must outlive one chat (
 
 # Run folder
 
-A skill that keeps a run's files across chats keeps them in `<repo-root>/tmp/<skill>/`.
-`<repo-root>` is `git rev-parse --show-toplevel`, so each worktree has its own runs.
+For repository task state, use `<repo-root>/tmp/<skill>/`. `<repo-root>` is
+`git rev-parse --show-toplevel`, so each worktree has its own runs.
+
+The following scopes keep their existing paths, including when invoked from a repository.
+
+| Run kind | Run state | Durable result |
+|---|---|---|
+| research | `~/.claude/reports/<YYYY-MM-DD>-<slug>/` | `~/.claude/reports/<YYYY-MM-DD>-<slug>.md` |
+| web-search | `~/.claude/reports/<YYYY-MM-DD>-<slug>-seats/`; launch scratch at `~/.swarm/ws/<run>` | `~/.claude/reports/<YYYY-MM-DD>-<slug>-web.md`, with seat reports in the run folder |
+| council | `<log>/<YYYY-MM-DD>-<slug>/` beside the log file; temporary input at `/tmp/councils/<run-id>/` | caller-pinned external log path, or `~/dotfiles/docs/council/<YYYY-MM-DD>-<slug>.md` |
+| ink piece | `<piece>/ink/` | source and artifacts stay in the piece folder |
+
+For council, `<log>` is the chosen log file's parent folder. The caller keeps its artifact names
+and passes the run kind here. This table changes no saved history or piece assets.
 
 Example. A `pair` task in `~/work/app/wt/feat-login` writes
 `~/work/app/wt/feat-login/tmp/pair/2026-09-30-login-rate-limit.md`. `git status` does not show it,
@@ -23,5 +35,5 @@ because `/tmp/` is in the clone's `.git/info/exclude`.
   guide, stay in `~/.<skill>/`, which the user keeps in a private dotfiles repo.
 - Removing a worktree removes its runs. Keep a result that must last longer in the PR, a commit,
   or an ADR.
-- Outside a git repository, ask the user where the run goes.
+- For a run outside these named scopes and outside a git repository, ask the user where it goes.
 - Short-lived scratch for one session goes in the session's scratch folder, not here.

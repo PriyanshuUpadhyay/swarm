@@ -1,7 +1,7 @@
 # Fan out
 
-A research run starts its web seat and reads local sources while the seat works.
-When the seat rings the chair, both sources are ready for the report.
+Example. Two ready source steps need only the question. Start both in one turn, then merge
+after their results pass their checks. The calling workflow owns which inputs each step needs.
 
 ## When to fan out
 

@@ -11,9 +11,13 @@ to the reply. The kit root, with its `blocks/` and `references/` folders, is two
 ## Start or continue
 
 Research is a step run, so the kit's `references/step-run.md` owns the status line, pick-up,
-close, and when a step waits for the user. "research <question>" starts a run in
-`~/.claude/reports/<YYYY-MM-DD>-<slug>/`. "research continue <folder>" picks it up. Make the folder with
-`python3 <kit root>/references/step_run.py start <folder> <this SKILL.md>`, and close each step with `done`.
+close, and when a step waits for the user. `references/run-folder.md` owns the research run and
+report paths. "research continue <folder>" picks up that run.
+
+Before start, write `<folder>/steps.md` with the table below. When local facts set the web query,
+set `03-web.md`'s Needs cell to `local`; otherwise keep `question`. Start with
+`python3 <kit root>/references/step_run.py start <folder> <folder>/steps.md`, and close each step
+with `done`. The saved table keeps this run's chosen inputs.
 
 | File | Needs | Holds |
 |---|---|---|
@@ -36,9 +40,10 @@ question, evidence, contrary evidence, and gap into the report.
 
 ## 03-web
 
-Start the web seat as soon as `01-question.md` is written, then do `02-local` while it runs.
-Brief seeds come from prior reports and the chair's knowledge. A seed found in `02-local` goes
-to the seat as one follow-up ask only when it changes the search.
+Start this step when its Needs in `<folder>/steps.md` are done. With `question` as its input,
+start the web seat after `01-question.md`, then do `02-local` while it runs. With `local` as its
+input, use the local findings in the first brief. Brief seeds also come from prior reports and
+the chair's knowledge. A later local seed goes as one follow-up ask only when it changes the search.
 
 On continue, skip only URLs on the `Fetched:` list with saved evidence. Refresh a source when the
 question or final link check needs current content.
@@ -55,8 +60,8 @@ Invoke the `web-search` skill when any of these is true:
 - this session's own fetches are blocked;
 - the local step or a first web pass returned only the answers the user already knew.
 
-Start it as its own step run with this run's slug, so its folder
-`~/.claude/reports/<YYYY-MM-DD>-<slug>-seats/` sits next to this one. Close `03-web.md` when its
+Start it as its own step run with this run's slug, at the web-search path in
+`references/run-folder.md`. Close `03-web.md` when its
 merged report is written. Its report is one source among the others, not the answer. If a trigger
 holds but this session cannot open visible seats, do the web part yourself and write in the gaps
 that `web-search` did not run and why.
@@ -77,7 +82,8 @@ block `blocks/tool-trial/SKILL.md` says.
 
 ## 05-report
 
-Write `~/.claude/reports/<YYYY-MM-DD>-<slug>.md` as the kit block `blocks/report/SKILL.md` says, and
+Write the report at the research path in `references/run-folder.md` as the kit block
+`blocks/report/SKILL.md` says, and
 check every link as `blocks/link-check/SKILL.md` says before you finish.
 
 ## 06-close

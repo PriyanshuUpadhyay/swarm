@@ -15,8 +15,8 @@ The kit root, with its `blocks/` and `references/` folders, is two folders up fr
 ## Start or continue
 
 A web search is a step run, so the kit's `references/step-run.md` owns the status line, pick-up,
-close, and when a step waits for the user. The run folder is
-`~/.claude/reports/<YYYY-MM-DD>-<slug>-seats/`, which also keeps the seat reports at the end.
+close, and when a step waits for the user. Choose the web-search run and report paths by
+`references/run-folder.md`; the run folder also keeps the seat reports at the end.
 "web-search continue <folder>" picks it up. Make the folder with
 `python3 <kit root>/references/step_run.py start <folder> <this SKILL.md>`, and close each step with `done`.
 
@@ -37,7 +37,7 @@ seat's ring and its report file.
 These four details differ from a council run.
 
 - Agent names are `ws-<voice>-<run>`, so a search and a council can run at the same time.
-- The run directory is `~/.swarm/ws/<run>`, and every seat gets it as `--cwd`. The launcher
+- Use the web-search launch scratch in `references/run-folder.md` as every seat's `--cwd`. The launcher
   pre-trusts only folders under its trust roots, so a seat started anywhere else stops on the Codex
   or AGY trust dialog. Never use `~/.swarm/runs`, because that is swarm's own message store.
 - The seats resolve `search.web`, not `council.*`; the council keeps `council.gpt`,
@@ -95,10 +95,9 @@ from prior reports and its own knowledge at brief time. For later seeds from loc
 the `03-web` section of `research`.
 
 1. **Yield** — at least five findings that are not on the known list, each with evidence, one
-   honest weakness, a confidence tag (high: two independent primary sources agree; medium: mixed
-   or secondary; low: one source or inference), and one line on why it is under-discussed (new,
-   niche, no marketing, non-English community). Sources count as `blocks/cite-sources/SKILL.md`
-   says. Fewer is a Coverage note that names the searches tried, never "nothing found".
+   honest weakness, a source-agreement tag by `blocks/cite-sources/SKILL.md`, and one line on why
+   it is under-discussed (new, niche, no marketing, non-English community). Attribute and count
+   sources by that same block. Fewer is a Coverage note that names the searches tried, never "nothing found".
 2. **Floor** — read at least ten threads or pages from the seat's own site set before the seat may
    stop, and say the count in Coverage. A seat that finishes in five minutes has not searched.
 
@@ -139,21 +138,19 @@ has handled all three reports.
    Send that seat back at once, once only, with the depth rules quoted. Accept what it returns,
    and say so in the coverage table. Record `sent back: <seat> 1`
    in `03-gate.md` and read that line before any resend, so a seat is never sent back twice.
-   Mark "(unverified)" and drop
-   from the answer any finding whose only evidence is a homepage or that repeats the brief's seed
-   words without a page that says them.
+   Apply `blocks/cite-sources/SKILL.md` to each claim's evidence. Drop a finding that repeats the
+   brief's seed words without a page that says them.
 2. Check every link as `blocks/link-check/SKILL.md` says.
-3. Merge the three reports into `~/.claude/reports/<YYYY-MM-DD>-<slug>-web.md`, in the same output
+3. Merge the three reports at the web-search report path in `references/run-folder.md`, in the same output
    shape, plus a coverage table with one row per seat: seat, model, sites, threads read, blocked,
    and a matrix with one row per sub-question: independent sources per seat, gap or covered.
-4. Copy the three seat reports next to it, under
-   `~/.claude/reports/<YYYY-MM-DD>-<slug>-seats/`.
+4. Copy the three seat reports into the web-search run folder named by `references/run-folder.md`.
 5. Close the seats and verify their removal.
 6. Remove the scratch run directory last.
 
 Example. GPT reads 19 Reddit threads, GEMINI is blocked by Reddit with a 403 and reads 18 GitHub
-issues, CLAUDE reads 12 Hacker News and Lobsters threads. The chair cannot open Reddit either, so
-every Reddit claim is marked "(seat-read only)" and the merged report says so in its coverage table.
+issues, and CLAUDE reads 12 Hacker News and Lobsters threads. The chair applies
+`blocks/link-check/SKILL.md` to those links and puts the counts in the coverage table.
 
 ## Second round
 

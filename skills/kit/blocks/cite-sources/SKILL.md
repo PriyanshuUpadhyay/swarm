@@ -19,6 +19,7 @@ metadata:
 - Never invent a quote. Quote only text you read.
 - Mark "(snippet only)" when a page could not be opened and only its search snippet was there. Never present a snippet as a read page.
 - When you turn a page, a PDF, or a table into text, compare its headers, units, and values with the source, and keep the page or cell location in the citation. If the conversion lost structure, cite the original.
+- For a search finding, label source agreement `high` when two independent primary sources agree, `medium` when evidence is mixed or secondary, and `low` when it has one source or inference. This scale does not replace visual provenance labels or the proof ladder.
 - Prefer sources from the last two years. Say so when the best source is older.
 
 ## Example
