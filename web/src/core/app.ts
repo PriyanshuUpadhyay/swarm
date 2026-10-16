@@ -827,7 +827,8 @@ export class App {
 
   /** A chat's title as the tree lists it. */
   chatTitle(session: string): string {
-    return chatRows(this.tree).find((r) => r.selection?.chat === session)?.title ?? session.slice(0, 8);
+    // A chat started in a tab has no sidebar row, so its tab names it.
+    return chatRows(this.tree).find((r) => r.selection?.chat === session)?.title ?? this.tabs?.tabs.find((t) => t.session === session)?.title ?? session.slice(0, 8);
   }
 
   // ---- tabs ----

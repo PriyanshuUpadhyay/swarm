@@ -298,9 +298,11 @@ export class Lifecycle {
     const title = this.app.chatTitle(session);
     if (!live.length && !archive) return this.app.notice("This chat has already ended.");
     if (!live.length) return void this.runAction(run, session);
+    // An agent whose turn is over still has an open pane; only a working or waiting one is "running".
+    const busy = this.app.agentsOf(session).agents.filter((a) => a.alive && (a.state === "working" || a.state === "waiting")).length;
     this.ask({
       title: `${archive ? "Archive" : "End"} “${title}”?`,
-      body: `${plural(live.length, "agent")} still running. ${archive ? "Archiving" : "Ending"} stops them.${archive ? " The chat moves to Recently closed." : ""}`,
+      body: `${busy ? `${plural(busy, "agent")} still working. ${archive ? "Archiving" : "Ending"} stops them.` : `${archive ? "Archiving" : "Ending"} closes its agent${live.length > 1 ? "s" : ""}.`}${archive ? " The chat moves to Recently closed." : ""}`,
       action: archive ? "Archive Chat" : "End Chat",
       run: async () => {
         await run();
