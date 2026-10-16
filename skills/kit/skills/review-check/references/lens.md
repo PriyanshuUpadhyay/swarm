@@ -15,15 +15,15 @@ and the comment asks if the helper is needed, because our own code sets the valu
 
 The goal is a change that the next reader can follow without holding extra state in their head.
 
-- `C-1` A helper, wrapper, or file with one caller and no domain name → inline it. The kit block `blocks/when-to-extract/SKILL.md` owns the conditions.
+- `C-1` A new or kept helper, wrapper, or file → check every permitted reason in the kit block `blocks/when-to-extract/SKILL.md`; quote the reason that holds, or the unit that meets none.
 - `C-2` A shallow module whose interface is as big as its body → merge it into the caller (Ousterhout, deep modules).
-- `C-3` Validation, `unknown`, or a zod schema on data that our own code produced → type it and drop the check. Keep checks only at a trust boundary: user input, LLM output, a third-party API.
-- `C-4` A second type for a shape that already has one (a hand-written RPC interface next to the real class, a type that repeats a schema) → derive it from the owner.
+- `C-3` Validation, `unknown`, or a schema on locally produced data → apply `skills/cleanup-gate/references/rules.md` and the global rules it names; quote the check and its boundary before asking to remove it.
+- `C-4` A second type for a shape that already has one → apply the state and derivation rules in `blocks/when-to-extract/SKILL.md`; quote both shapes and their owner.
 - `C-5` The same logic shape in two hunks → one shared piece, or say which one stays (Fowler, duplicated code).
 - `C-6` A boolean flag that adds a mode next to an older flag → one enum.
-- `C-7` A magic number or repeated literal → a named const next to its use.
+- `C-7` A new constant or repeated literal → apply section 3 of `skills/cleanup-gate/references/rules.md`; quote its consumers and location.
 - `C-8` A name that does not say what the value holds → rename. A name that needs a comment to make sense → rename first, comment second.
-- `C-9` A non-obvious rule, invariant, or workaround with no comment → a one-line comment. A comment that restates the code → remove it.
+- `C-9` A new comment or a constraint that code cannot express → apply the global comment rule named by `skills/cleanup-gate/references/rules.md`; quote the code and comment.
 - `C-10` Debug routes, repair scripts, or feature flags that the change no longer needs → remove them.
 - `C-11` Speculative parameters, hooks, or config with no current caller → remove them (Fowler, speculative generality).
 - `C-12` One change that forces edits in many unrelated files → ask where the concept should live (Fowler, shotgun surgery).
@@ -34,7 +34,7 @@ The goal is a change that stays correct under real load, real failures, and real
 
 - `L-1` A storage, RPC, or network call inside a loop → one batched call. Name the loop bound.
 - `L-2` A list or query with no limit, or a limit with no signal to the caller → a bounded page and a cursor, or a truncation flag the consumer can act on.
-- `L-3` Two writes that must both happen, or neither → one transaction. A check, then a write, on a shared counter → one conditional statement (`engineering-standards` J1).
+- `L-3` Two writes that must both happen, or neither → one transaction. For a shared counter compared with a limit, apply `engineering-standards` J1 and quote its check result.
 - `L-4` A read-modify-write that two requests can interleave → name the race and the serializing owner.
 - `L-5` An error path that swallows the error, or turns "failed to read" into "empty" → fail loudly, or say why empty is safe (`engineering-standards` R4 for authorization reads).
 - `L-6` An outbound call with no timeout, or a retry with no budget → cite `engineering-standards` R1 and R3.

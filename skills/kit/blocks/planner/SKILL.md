@@ -17,7 +17,7 @@ metadata:
 - The kit root holds `blocks/` and `references/`. It is two folders up from this file.
 - Make the run folder `<repo-root>/tmp/plan/<YYYY-MM-DD>-<slug>/` by the kit's `references/run-folder.md`, and write `plan.md` in it.
 - List the blocks with `rg -N '^(name|description|  needs|  gives|  conflicts):' <kit root>/blocks/*/SKILL.md`. Pick from that list only. Read a block's full file only when its line does not settle the choice.
-- `plan.md` opens with `# Plan: <the task in one line>`, then `Done when: <the result, and the evidence that proves it>`. The evidence is a command, a screenshot, or a `file:line`, never "the agent thinks it is done".
+- `plan.md` opens with `# Plan: <the task in one line>`, then `Done when: <the result, and the evidence that proves it>`. Choose that evidence by `blocks/requirements/SKILL.md`, and map results by `blocks/done-when-evidence/SKILL.md`.
 - Then one table with the header `| File | Needs | Holds | Block | Why |`.
   - File: `NN-<word>`, numbered in the order a reader follows. The word is what other steps write in Needs.
   - Needs: the words of the steps whose output this step uses, or `none`. Steps with all needs done run in parallel, so add a need only for a real input.

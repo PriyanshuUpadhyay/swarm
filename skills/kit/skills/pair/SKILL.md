@@ -61,8 +61,8 @@ edit types only the changed lines. For a new file, write it in the scratchpad an
 what comes in. Keep the diff to the hunks of the chunk.
 
 A chunk touches only what its behavior sentence names. No new helper, field, export, flag, or
-todo goes in unless the sentence names it. A new symbol lands with its first caller, as the
-kit block `blocks/checked-units/SKILL.md` says. An edited function stays where it is, so the diff
+todo goes in unless the sentence names it. Apply the kit block `blocks/checked-units/SKILL.md`
+for a new symbol and its caller. An edited function stays where it is, so the diff
 shows an edit, not a delete plus an add; a move is its own chunk.
 
 Code stays inline by default. Before a chunk adds or splits out a function, file, or module, apply
@@ -77,7 +77,7 @@ Then wait for one of three replies:
 
 | Reply | Result |
 |---|---|
-| `approve` | apply the chunk and run the smallest check for the touched unit (compile, lint, or one test). During the check, prepare the next chunk's diff in scratch from the patched file. After the check passes, show its result in one line and the next chunk's diff in the same reply. When the chunk is the last one of its behavior, also commit the behavior and add the short hash to that line. If the check fails, show the failure, drop the prepared chunk, skip any commit, and wait for `change` or `deny` |
+| `approve` | apply the chunk and run the smallest check for the touched unit by `blocks/prove-it-works/SKILL.md`. During the check, prepare the next chunk's diff in scratch from the patched file. After the check passes, show its result in one line and the next chunk's diff in the same reply. When the chunk is the last one of its behavior, also commit the behavior and add the short hash to that line. If the check fails, show the failure, drop the prepared chunk, skip any commit, and wait for `change` or `deny` |
 | `change: <text>` | revise the same chunk and show it again |
 | `deny` | drop the chunk without argument, ask at most one question, then propose the next chunk |
 
@@ -122,7 +122,7 @@ no cleanup gate, no readability review, no extra tooling to set up or tear down.
 - No edit before `approve`.
 - One chunk is one behavior as one diff, about 40 changed lines, several hunks allowed. A bigger
   behavior is split in the list, never walked up in stages.
-- A chunk touches only what its behavior names. A new symbol lands with its first caller. An
+- A chunk touches only what its behavior names. Apply `blocks/checked-units/SKILL.md` to new symbols. An
   edited function stays in place.
 - Code stays inline unless the kit block `blocks/when-to-extract/SKILL.md` allows the
   extraction.

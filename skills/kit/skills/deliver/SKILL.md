@@ -59,7 +59,7 @@ The worker's `unit N ready` message carries the changed paths, its check output,
 `git diff HEAD | shasum`. The chair hashes the same diff. A matching hash lets the chair stage
 the reported paths, commit, and send `committed` in one call. The chair then runs the unit's check
 on that commit in the background, in a persistent detached git worktree under `tmp/deliver/verify`.
-The worker edits N+1 at once, but its commit waits for N green. A red check stops landings; keep
+Apply the pipeline exception in `blocks/checked-units/SKILL.md`. A red check stops landings; keep
 the work, diagnose, then fix or revert in a checked unit. Never revert automatically. A hash
 that does not match keeps the current gate; the chair runs the check before commit.
 

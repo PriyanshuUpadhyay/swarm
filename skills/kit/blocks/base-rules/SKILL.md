@@ -27,4 +27,4 @@ Initial state: a step wants to write "the agent retries three times". Action: fi
 
 ## Check (judge)
 - Does every fact in the result trace to a line in {{source_of_truth}}? Quote each doubtful fact and its source line, or write "no source line".
-- Does each claim of done name its evidence? Quote the claim and its evidence.
+- Apply the checks in `blocks/done-when-evidence/SKILL.md` to claims of done.
