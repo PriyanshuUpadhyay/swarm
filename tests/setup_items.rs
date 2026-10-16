@@ -225,6 +225,8 @@ fn the_hud_plan_shows_its_launch_agent_and_old_commands_name_the_new_one() {
     );
 }
 
+// BSD `script` takes the command after the log file; the Linux one needs `-c`.
+#[cfg(target_os = "macos")]
 #[test]
 fn a_terminal_run_asks_and_only_a_yes_applies() {
     use std::io::Read;
