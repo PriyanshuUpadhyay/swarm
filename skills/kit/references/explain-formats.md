@@ -18,8 +18,8 @@ so the page is extra and never the only copy. Prose alone is for a result of thr
 | a schema or a data model | entity diagram |
 | more than one screen of linked diagrams, or a table that needs sorting | local HTML page |
 
-Before this rule, a status reply says "Task 1 is done and checked. Task 2 is blocked on a question about the
-retry limit. Task 3 is running and has 2 commits. Task 4 has not started."
+Before this rule, a status reply says "Task 1 is done and checked. Task 2 is blocked on a question
+about the retry limit. Task 3 is running and has 2 commits. Task 4 has not started."
 
 With a table, the reader sees the state of all four at once.
 
