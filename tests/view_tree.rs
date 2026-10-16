@@ -778,7 +778,7 @@ fn a_chat_from_another_adapter_with_a_log_can_be_imported() {
     assert!(owner.imported.is_empty() && owner.tab_chats.is_empty());
 }
 #[test]
-fn archived_chats_fold_under_their_workspace() {
+fn archived_chats_fold_in_the_last_row_of_their_project() {
     let mut snap = folder_snapshot(vec![session("live", "/repo", 5)], json!({}));
     snap["archived"] = json!([
         {"id":"old-chat-1","cwd":"/repo","workspace":"/repo","chair_provider":"claude","archivedAt":40,"title":"Skills work"},
@@ -792,7 +792,7 @@ fn archived_chats_fold_under_their_workspace() {
     // Folded by default: one row that counts them, after the live chats.
     assert_eq!(
         rows.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(),
-        ["/repo", "chat:live", "archived:/repo"]
+        ["/repo", "chat:live", "archived:project:/repo"]
     );
     let fold = rows.last().unwrap();
     assert_eq!(
@@ -816,7 +816,7 @@ fn archived_chats_fold_under_their_workspace() {
         &mut owner.clone(),
         &mut state,
         &tree,
-        expand("archived:/repo"),
+        expand("archived:project:/repo"),
         0,
     )
     .unwrap();
@@ -833,22 +833,56 @@ fn archived_chats_fold_under_their_workspace() {
             ("archived-chat:old-chat-1", "Skills work")
         ]
     );
-    assert!(
-        archived
-            .iter()
-            .all(|r| r.depth == 2 && r.dimmed && r.parent_id.as_deref() == Some("archived:/repo"))
-    );
+    assert!(archived.iter().all(|r| r.depth == 1
+        && r.dimmed
+        && r.parent_id.as_deref() == Some("archived:project:/repo")));
 }
 #[test]
-fn archived_chats_of_the_project_folder_fold_under_its_hub_row() {
-    let mut snap = snapshot(vec![session("hub", "/repo", 5)], json!({}));
-    snap["archived"] = json!([{"id":"old","cwd":"/repo","workspace":"/repo","chair_provider":"pi","archivedAt":9,"title":"Old"}]);
-    let rows = sections(&snap, &owner(), &ViewState::default(), false)
+fn the_archived_fold_comes_after_every_workspace_and_names_each_chat_workspace() {
+    let mut snap = snapshot(
+        vec![
+            session("hub", "/repo", 5),
+            session("main", "/repo/wt/main", 6),
+        ],
+        json!({}),
+    );
+    snap["archived"] = json!([
+        {"id":"old","workspace":"/repo","chair_provider":"pi","archivedAt":9,"title":"Old"},
+        {"id":"newer","workspace":"/repo/wt/main","chair_provider":"pi","archivedAt":12,"title":"Newer"}
+    ]);
+    let owner = owner();
+    let rows = sections(&snap, &owner, &ViewState::default(), false)
         .remove(0)
         .rows;
-    let fold = rows.iter().find(|r| r.id == "archived:/repo").unwrap();
-    assert_eq!(fold.title, "Archived · 1");
-    assert_eq!(fold.parent_id.as_deref(), Some("/repo"));
+    let fold = rows.last().unwrap();
+    assert_eq!(
+        (
+            fold.id.as_str(),
+            fold.title.as_str(),
+            fold.depth,
+            fold.parent_id.as_deref()
+        ),
+        ("archived:project:/repo", "Archived · 2", 0, None)
+    );
+    assert!(rows.iter().filter(|r| r.kind == "archived").count() == 1);
+    let mut state = ViewState::default();
+    choices::apply(
+        &mut owner.clone(),
+        &mut state,
+        &tree::build(&snap, &owner),
+        ChoiceOp::Expand {
+            id: "archived:project:/repo".into(),
+        },
+        0,
+    )
+    .unwrap();
+    let rows = sections(&snap, &owner, &state, false).remove(0).rows;
+    let titles: Vec<_> = rows
+        .iter()
+        .filter(|r| r.kind == "archived-chat")
+        .map(|r| (r.title.as_str(), r.detail.is_empty()))
+        .collect();
+    assert_eq!(titles, [("Newer", false), ("Old", false)]);
 }
 #[test]
 fn an_archived_continuation_shows_the_name_given_to_its_first_session() {

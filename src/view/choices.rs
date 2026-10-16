@@ -697,6 +697,11 @@ fn validate_fold(tree: &Tree, id: &str) -> Result<(), String> {
             .strip_prefix("archived:")
             .and_then(|path| tree.workspace(path))
             .is_some_and(|(_, w)| !w.archived.is_empty())
+        || id.strip_prefix("archived:project:").is_some_and(|path| {
+            tree.projects
+                .iter()
+                .any(|p| p.path == path && p.workspaces.iter().any(|w| !w.archived.is_empty()))
+        })
     {
         Ok(())
     } else {
