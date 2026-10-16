@@ -345,10 +345,13 @@ function ProjectDialog({ app }: { app: App }) {
 
 function ProjectBody({ app, mode }: { app: App; mode: "create" | "import" }) {
   const choice = useLife(app, "importChoice");
-  const [path, setPath] = useState("");
+  const existing = useLife(app, "existing");
+  const [path, setPath] = useState(() => app.life.state.projectPath);
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Create on a folder that exists offers Import until the path changes.
+  const offer = existing !== null && existing === path.trim();
   const absolute = path.trim().startsWith("/") || path.trim().startsWith("~/");
   const picker = window.webkit?.messageHandlers?.swarm;
   const save = async (as?: "git" | "folder") => {
@@ -391,8 +394,22 @@ function ProjectBody({ app, mode }: { app: App; mode: "create" | "import" }) {
           <input className={FIELD} data-testid="project-name" value={name} disabled={busy} onChange={(e) => setName(e.target.value)} placeholder={path.split("/").filter(Boolean).pop() ?? ""} />
         </Label>
       )}
-      <ErrorLine text={error} />
-      {choice !== null ? (
+      {offer ? (
+        <div className="grid gap-2" data-testid="project-exists">
+          <p className="text-sm">This folder already exists. To add it to swarm, import it. To make a new project, type a path that does not exist yet.</p>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="ghost" size="sm" onClick={() => app.life.close("project")}>
+              Cancel
+            </Button>
+            <Button type="button" size="sm" onClick={() => app.life.openProject("import", existing)}>
+              Import this folder
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <ErrorLine text={error} />
+      )}
+      {offer ? null : choice !== null ? (
         <div className="grid gap-2" data-testid="import-choice">
           <p className="text-sm">This folder is not a Git repository. Each workspace in a project is a Git worktree, so a project needs Git.</p>
           <div className="flex justify-end gap-2">

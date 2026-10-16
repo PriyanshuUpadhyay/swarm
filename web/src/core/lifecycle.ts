@@ -63,6 +63,10 @@ export type LifeState = {
   project: "create" | "import" | null;
   /** The plain folder that Import asks about: Git or a plain folder. */
   importChoice: string | null;
+  /** The path that the Project dialog opens with. */
+  projectPath: string;
+  /** The folder that Create found already on disk, so the dialog offers Import. */
+  existing: string | null;
   setupScript: { project: string; title: string } | null;
   /** The chat that Switch model continues. */
   switchModel: string | null;
@@ -102,7 +106,7 @@ export function setupFailure(run: SetupRun): string {
 }
 
 export class Lifecycle {
-  state: LifeState = { newWorkspace: null, create: null, project: null, importChoice: null, setupScript: null, switchModel: null, handoff: null, confirm: null, closed: false, imports: false };
+  state: LifeState = { newWorkspace: null, create: null, project: null, importChoice: null, projectPath: "", existing: null, setupScript: null, switchModel: null, handoff: null, confirm: null, closed: false, imports: false };
   private listeners = new Set<() => void>();
   private roles: Promise<Profile[]> | null = null;
 
@@ -151,12 +155,13 @@ export class Lifecycle {
     return s?.path ?? null;
   }
 
-  openProject(mode: "create" | "import") {
-    this.set({ project: mode, importChoice: null });
+  openProject(mode: "create" | "import", path = "") {
+    this.set({ project: mode, importChoice: null, projectPath: path, existing: null });
   }
 
   /** Create (a full destination path and a name) or Import (a path, and later Git or plain folder). */
   async saveProject(mode: "create" | "import", path: string, name: string, as?: "git" | "folder"): Promise<string | null> {
+    this.set({ existing: null });
     try {
       if (mode === "create") {
         const made = await this.api.post<{ notice?: string | null }>("/api/project/create", { path, name });
@@ -172,6 +177,7 @@ export class Lifecycle {
       await this.app.refresh();
       return null;
     } catch (err) {
+      if (mode === "create" && err instanceof ApiError && err.status === 409) this.set({ existing: path });
       return message(err);
     }
   }

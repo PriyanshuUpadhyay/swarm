@@ -2130,13 +2130,20 @@ fn apply_lifecycle(
             }
             let path = lifecycle::checked_path(&app.root, &request.path, false)
                 .map_err(lifecycle_error)?;
-            if std::fs::symlink_metadata(&path).is_ok() {
-                return Err(error(
-                    StatusCode::BAD_REQUEST,
+            // 409 only for a path that exists, so the page can offer Import in its place.
+            let exists = || {
+                error(
+                    StatusCode::CONFLICT,
                     "A file or folder already exists at this path",
-                ));
+                )
+            };
+            if std::fs::symlink_metadata(&path).is_ok() {
+                return Err(exists());
             }
-            std::fs::create_dir(&path).map_err(|e| error(StatusCode::CONFLICT, &e.to_string()))?;
+            std::fs::create_dir(&path).map_err(|e| match e.kind() {
+                std::io::ErrorKind::AlreadyExists => exists(),
+                _ => error(StatusCode::BAD_REQUEST, &e.to_string()),
+            })?;
             let path = path.to_string_lossy().into_owned();
             let existed = saved.owner.project_paths.contains(&path);
             let created = (|| {
@@ -8106,15 +8113,14 @@ esac
                 .project_names[&source],
             "Project title"
         );
-        assert!(
-            life_post(
-                &fixture,
-                "/api/project/create",
-                json!({"path":source,"name":"Exists"})
-            )
-            .await
-            .is_err()
-        );
+        let exists = life_post(
+            &fixture,
+            "/api/project/create",
+            json!({"path":source,"name":"Exists"}),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(exists.0, StatusCode::CONFLICT);
         let options = lifecycle_read(
             State(fixture.app.clone()),
             "/api/workspace/new-options".parse().unwrap(),

@@ -308,14 +308,20 @@ test("Switch model shows its progress, and Cancel stops it while the chair write
   expect(errors).toEqual([]);
 });
 
-test("Import Project asks about a plain folder, and Remove Project hides it again", async ({ page: tab }, info) => {
+test("Create Project on an existing folder offers Import, Import asks about a plain folder, and Remove Project hides it again", async ({ page: tab }, info) => {
   const errors = await open(tab);
   const folder = join(process.env.SWARM_E2E_DIR!, `plain-${info.project.name}`);
   mkdirSync(folder, { recursive: true });
   await tab.getByRole("button", { name: "Add project" }).click();
-  await tab.getByRole("menuitem", { name: "Import Project…" }).click();
+  await tab.getByRole("menuitem", { name: "Create Project…" }).click();
   const dialog = tab.getByTestId("project-dialog");
   await dialog.getByTestId("project-path").fill(folder);
+  await dialog.getByTestId("project-save").click();
+  await expect(dialog.getByTestId("project-exists")).toContainText("This folder already exists");
+  await shoot(tab, "create-exists", info.project.name);
+  await dialog.getByRole("button", { name: "Import this folder" }).click();
+  await expect(dialog).toContainText("Import project");
+  await expect(dialog.getByTestId("project-path")).toHaveValue(folder);
   await dialog.getByTestId("project-save").click();
   await expect(dialog.getByTestId("import-choice")).toContainText("not a Git repository");
   await dialog.getByRole("button", { name: "Use as a plain folder" }).click();
