@@ -9,9 +9,6 @@ from pathlib import Path
 import review_walk as rw
 
 
-GIT_ENV = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR", "GIT_PREFIX")
-
-
 def state(path):
     """HEAD, branches and status of the repo at `path`, for the before/after guard."""
     return [subprocess.run(["git", "-C", path, *a], capture_output=True, text=True).stdout
@@ -21,7 +18,7 @@ def state(path):
 @contextlib.contextmanager
 def throwaway_repo():
     """chdir into a fresh repo with one commit and no inherited GIT_* variables; restore both on exit."""
-    saved_cwd, saved_env = os.getcwd(), {k: os.environ.pop(k) for k in GIT_ENV if k in os.environ}
+    saved_cwd, saved_env = os.getcwd(), {k: os.environ.pop(k) for k in list(os.environ) if k.startswith("GIT_")}
     try:
         with tempfile.TemporaryDirectory() as d:
             os.chdir(d)
@@ -37,12 +34,16 @@ def throwaway_repo():
 
 
 def isolated(test):
-    """Run `test` in a throwaway repo, and fail it if the repo it was started from changed."""
+    """Run `test` in a throwaway repo, and fail it if the repo it was started from changed. A test may
+    replace `rw.resolve`; it is put back after."""
     @functools.wraps(test)
     def run():
-        before = state(os.getcwd())
-        with throwaway_repo():
-            test()
+        before, resolve = state(os.getcwd()), rw.resolve
+        try:
+            with throwaway_repo():
+                test()
+        finally:
+            rw.resolve = resolve
         assert state(os.getcwd()) == before, "the test changed the repo it was started from"
     return run
 
