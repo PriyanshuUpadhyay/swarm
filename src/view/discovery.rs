@@ -193,7 +193,8 @@ pub struct Discovery {
     catalog_at: Option<i64>,
     catalog_paths: BTreeSet<String>,
     catalog: Vec<ProjectFact>,
-    titles: BTreeMap<String, (String, Option<String>, i64)>,
+    /// Per session: the log, its title, when it was read, and the log's mtime then.
+    titles: BTreeMap<String, (String, Option<String>, i64, Option<u128>)>,
     pub fields: BTreeMap<String, WorkspaceFields>,
     dirty_at: BTreeMap<String, i64>,
     github_at: BTreeMap<String, i64>,
@@ -309,20 +310,29 @@ impl Discovery {
                     session["folder_missing"] = Value::Bool(!Path::new(&cwd).exists());
                 }
                 if let Some(log) = session["chair_log"].as_str().map(str::to_owned) {
-                    if let Ok(at) = std::fs::metadata(&log)
+                    let modified = std::fs::metadata(&log)
                         .and_then(|m| m.modified())
                         .and_then(|t| t.duration_since(UNIX_EPOCH).map_err(std::io::Error::other))
-                    {
-                        session["chair_log_activity"] = Value::from(at.as_secs());
+                        .ok();
+                    if let Some(modified) = modified {
+                        session["chair_log_activity"] = Value::from(modified.as_secs());
                     }
+                    let modified = modified.map(|m| m.as_nanos());
                     let id = session["id"].as_str().unwrap_or_default().to_owned();
-                    if !self.titles.get(&id).is_some_and(|(path, title, last)| {
-                        *path == log && (title.is_some() || at - last < 30)
-                    }) {
+                    // A chat with no title yet reads its log on each change; the agent can retitle a
+                    // titled one, so that is read again at most every 30 s while the log grows.
+                    if !self
+                        .titles
+                        .get(&id)
+                        .is_some_and(|(path, title, last, seen)| {
+                            *path == log
+                                && (*seen == modified || (title.is_some() && at - last < 30))
+                        })
+                    {
                         self.titles
-                            .insert(id.clone(), (log.clone(), read_title(&log), at));
+                            .insert(id.clone(), (log.clone(), read_title(&log), at, modified));
                     }
-                    if let Some((_, Some(title), _)) = self.titles.get(&id) {
+                    if let Some((_, Some(title), _, _)) = self.titles.get(&id) {
                         session["title"] = Value::String(title.clone());
                     }
                 }
@@ -404,7 +414,80 @@ pub fn dirty_count(bytes: &[u8]) -> usize {
     }
     paths.len()
 }
+/// A chat's title: the agent's own (a Claude rename or AI title, a pi `/name`, a Codex thread
+/// name), else the owner's first message.
 fn read_title(path: &str) -> Option<String> {
+    agent_title(path)
+        .or_else(|| codex_thread_name(path))
+        .or_else(|| first_message(path))
+        .map(|title| short(&title))
+}
+
+fn short(title: &str) -> String {
+    if title.chars().count() > 80 {
+        title
+            .chars()
+            .take(79)
+            .collect::<String>()
+            .trim_end()
+            .to_owned()
+            + "…"
+    } else {
+        title.into()
+    }
+}
+
+/// The newest title in the last 256 KiB of the log. Claude's `-n` gives a chair the custom title
+/// "orchestrator", which is no name for the owner.
+fn agent_title(path: &str) -> Option<String> {
+    use std::io::{Seek, SeekFrom};
+    let mut file = std::fs::File::open(path).ok()?;
+    let len = file.metadata().ok()?.len();
+    file.seek(SeekFrom::Start(len.saturating_sub(256 * 1024)))
+        .ok()?;
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes).ok()?;
+    let (mut custom, mut ai, mut pi) = (None, None, None);
+    for line in bytes.split(|b| *b == b'\n') {
+        let Ok(value) = serde_json::from_slice::<Value>(line) else {
+            continue;
+        };
+        let text = |key: &str| value[key].as_str().map(str::trim).map(str::to_owned);
+        match value["type"].as_str() {
+            Some("custom-title") => {
+                custom = text("customTitle").filter(|t| !t.is_empty() && t != "orchestrator")
+            }
+            Some("ai-title") => ai = text("aiTitle").filter(|t| !t.is_empty()),
+            // An empty name clears pi's title.
+            Some("session_info") if value.get("name").is_some() => {
+                pi = text("name").filter(|t| !t.is_empty())
+            }
+            _ => {}
+        }
+    }
+    custom.or(ai).or(pi)
+}
+
+/// Codex keeps thread names in `<codex home>/session_index.jsonl`; a rollout log sits at
+/// `<codex home>/sessions/YYYY/MM/DD/rollout-…-<id>.jsonl`.
+fn codex_thread_name(path: &str) -> Option<String> {
+    let path = Path::new(path);
+    let stem = path.file_stem()?.to_str()?;
+    if !stem.starts_with("rollout-") || stem.len() < 36 {
+        return None;
+    }
+    let id = &stem[stem.len() - 36..];
+    let index = path.ancestors().nth(5)?.join("session_index.jsonl");
+    let text = std::fs::read_to_string(index).ok()?;
+    text.lines()
+        .rev()
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        .filter(|v| v["id"] == id)
+        .filter_map(|v| tree::nonblank(v["thread_name"].as_str()))
+        .next()
+}
+
+fn first_message(path: &str) -> Option<String> {
     let file = std::fs::File::open(path).ok()?;
     let mut bytes = Vec::new();
     file.take(256 * 1024).read_to_end(&mut bytes).ok()?;
@@ -412,7 +495,9 @@ fn read_title(path: &str) -> Option<String> {
         let Ok(value) = serde_json::from_slice::<Value>(line) else {
             continue;
         };
-        let text = if value["type"] == "user" {
+        let text = if value["type"] == "user"
+            || (value["type"] == "message" && value["message"]["role"] == "user")
+        {
             content_text(&value["message"]["content"])
         } else if value["type"] == "response_item" && value["payload"]["role"] == "user" {
             content_text(&value["payload"]["content"])
@@ -426,17 +511,7 @@ fn read_title(path: &str) -> Option<String> {
             if title.starts_with('<') || title.starts_with("# AGENTS.md") {
                 continue;
             }
-            return Some(if title.chars().count() > 80 {
-                title
-                    .chars()
-                    .take(79)
-                    .collect::<String>()
-                    .trim_end()
-                    .to_owned()
-                    + "…"
-            } else {
-                title.into()
-            });
+            return Some(title.into());
         }
     }
     None
@@ -451,4 +526,81 @@ fn content_text(content: &Value) -> Option<String> {
                 .join("\n")
         })
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::read_title;
+
+    fn log(name: &str, lines: &[&str]) -> String {
+        let dir = std::env::temp_dir().join(format!("swarm-title-{}-{name}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(name);
+        std::fs::write(&path, lines.join("\n") + "\n").unwrap();
+        path.to_string_lossy().into_owned()
+    }
+
+    #[test]
+    fn a_title_is_the_agents_own_else_the_first_message() {
+        let pi_user = r#"{"type":"message","message":{"role":"user","content":[{"type":"text","text":"Explain the talk\nmore"}]}}"#;
+        assert_eq!(
+            read_title(&log("pi.jsonl", &[pi_user])).as_deref(),
+            Some("Explain the talk")
+        );
+        let named = log(
+            "pi-named.jsonl",
+            &[pi_user, r#"{"type":"session_info","name":"Talk notes"}"#],
+        );
+        assert_eq!(read_title(&named).as_deref(), Some("Talk notes"));
+        let cleared = log(
+            "pi-cleared.jsonl",
+            &[
+                pi_user,
+                r#"{"type":"session_info","name":"Talk notes"}"#,
+                r#"{"type":"session_info","name":""}"#,
+            ],
+        );
+        assert_eq!(read_title(&cleared).as_deref(), Some("Explain the talk"));
+        let claude = log(
+            "claude.jsonl",
+            &[
+                r#"{"type":"custom-title","customTitle":"orchestrator"}"#,
+                r#"{"type":"user","message":{"content":"fix it"}}"#,
+                r#"{"type":"ai-title","aiTitle":"Fix the build"}"#,
+            ],
+        );
+        assert_eq!(read_title(&claude).as_deref(), Some("Fix the build"));
+        let renamed = log(
+            "claude-renamed.jsonl",
+            &[
+                r#"{"type":"ai-title","aiTitle":"Fix the build"}"#,
+                r#"{"type":"custom-title","customTitle":"Build"}"#,
+            ],
+        );
+        assert_eq!(read_title(&renamed).as_deref(), Some("Build"));
+    }
+
+    #[test]
+    fn a_codex_chat_takes_its_thread_name_from_the_session_index() {
+        let home = std::env::temp_dir().join(format!("swarm-title-codex-{}", std::process::id()));
+        let day = home.join("sessions/2026/10/16");
+        std::fs::create_dir_all(&day).unwrap();
+        let id = "01a13e6c-b745-7752-bdb0-0a04931eb858";
+        let rollout = day.join(format!("rollout-2026-10-16T10-00-00-{id}.jsonl"));
+        std::fs::write(
+            &rollout,
+            r#"{"type":"event_msg","payload":{"type":"user_message","message":"hi there"}}"#
+                .to_owned()
+                + "\n",
+        )
+        .unwrap();
+        let rollout = rollout.to_string_lossy().into_owned();
+        assert_eq!(read_title(&rollout).as_deref(), Some("hi there"));
+        std::fs::write(
+            home.join("session_index.jsonl"),
+            format!("{{\"id\":\"{id}\",\"thread_name\":\"Old\"}}\n{{\"id\":\"{id}\",\"thread_name\":\"Greet\"}}\n"),
+        )
+        .unwrap();
+        assert_eq!(read_title(&rollout).as_deref(), Some("Greet"));
+    }
 }

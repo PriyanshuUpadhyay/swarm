@@ -110,10 +110,20 @@ fn discovery_standin_child() {
         "{\"type\":\"user\",\"message\":{\"content\":\"Fix the sidebar\\nwith tests\"}}\n",
     )
     .unwrap();
+    // A chat with no title reads its changed log at once.
     d.augment(&mut snapshot, &owner, 129);
-    assert!(snapshot["sessions"][0]["title"].is_null());
+    assert_eq!(snapshot["sessions"][0]["title"], "Fix the sidebar");
+    let mut file = fs::OpenOptions::new().append(true).open(&log).unwrap();
+    std::io::Write::write_all(
+        &mut file,
+        b"{\"type\":\"ai-title\",\"aiTitle\":\"Sidebar fix\"}\n",
+    )
+    .unwrap();
+    // A titled chat reads it again only 30 s later.
     d.augment(&mut snapshot, &owner, 130);
     assert_eq!(snapshot["sessions"][0]["title"], "Fix the sidebar");
+    d.augment(&mut snapshot, &owner, 159);
+    assert_eq!(snapshot["sessions"][0]["title"], "Sidebar fix");
     let t = tree::build(&snapshot, &owner);
     assert!(!d.refresh_fields(&t, &owner, 130));
     assert!(!std::path::Path::new(&format!("{home}/gh-calls")).exists());
