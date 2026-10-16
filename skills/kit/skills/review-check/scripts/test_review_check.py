@@ -255,6 +255,13 @@ def test_seat_gaps():
             with redirect_stdout(StringIO()):
                 assert rc.verdict(run.name) == 0
             assert "Verdict: APPROVE" in (run / "03-verdict.md").read_text()
+            (run / "02-review-lens-1.md").write_text(row.replace("PY-3", "C-1, L-13"), encoding="utf-8")
+            with redirect_stdout(StringIO()) as out:
+                assert rc.verdict(run.name) == 1, "an unknown ID must keep the verdict incomplete"
+            text = out.getvalue()
+            assert "L-13 is not in this unit's checklist" in text, text
+            assert "checks owned by another seat" not in text, text
+            assert "no result for C-1" not in text and "no result for PY-3" not in text, text
         finally:
             os.chdir(previous)
 

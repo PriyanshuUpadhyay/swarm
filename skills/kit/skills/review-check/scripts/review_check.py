@@ -616,6 +616,10 @@ def verdict(name):
         if kind in ("fix", "ask", "note") and len(ids) > 1:
             problems.append(f"{uid}: a {kind} row names one rule, or `-` for a finding that no rule owns")
             continue
+        unknown = ids - set(checklist[uid]["rules"]) - set(checklist[uid].get("tool", []))
+        for rule_id in sorted(unknown):
+            problems.append(f"{uid}: {rule_id} is not in this unit's checklist")
+        ids -= unknown
         if ids & set(checklist[uid].get("tool", [])):
             problems.append(f"{uid}: {', '.join(sorted(ids & set(checklist[uid]['tool'])))} belongs to the build gate, not a seat")
             continue
