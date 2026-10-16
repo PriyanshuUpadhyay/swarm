@@ -121,13 +121,13 @@ section per seat, with these search-specific fields:
    each step it tried and the error each step gave, for example
    `reddit: browser_read → no extension; r.jina.ai → 403; old.reddit.com → 403; archive.ph → no copy`;
 7. **output shape** — `Coverage` with a matrix row per sub-question (sources found, gap or not),
-   `Findings` with a quote or paraphrase plus its link and confidence tag, `What is contested`,
+   `Findings` with a quote or paraphrase plus its link and source-agreement tag, `What is contested`,
    `Sources` newest first, under 800 words, and a final `RESEARCH_DONE` line;
 8. **layout** — the seat's report follows the section order in
    the kit's `references/plan-layout.md` where that file applies; quote the rule lines the seat
    needs, because Codex and AGY seats do not load it.
 
-Use the literal result path required by `blocks/worker-brief/SKILL.md`.
+Use a literal result path under the run directory, as required by `blocks/worker-brief/SKILL.md`.
 
 ## Chair synthesis
 
