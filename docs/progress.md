@@ -44,7 +44,7 @@ run beside A and B, because they touch other files.
 8. Review loops stop in code. `review_check.py start` owns a 3-round cap keyed by an explicit
    parent-loop key that fixes and re-plans inherit (K1). The no-progress stop compares open issues,
    not the fix count (P2). Both are owner choices of 2026-10-13.
-9. Skills are cut into blocks now, one skill at a time, starting with ink; each cut block gets a
+9. Skills are cut into blocks now, one skill at a time, starting with build; each cut block gets a
    second user in one live run (owner choice of 2026-10-13). Later the same day the owner asked to
    split every other skill too, with names and descriptions a small model can use, before the merge
    and one trial run. `docs/blocks.md` holds the split map,
@@ -68,13 +68,13 @@ Setup reports Skills ready, because it skips owner entries (ADR 0062 amendment,
 | A7 | Make Setup install the plugin `swarm` from the bundled kit in each CLI, in place of kit skill links, because a link to one kit skill folder cannot reach `blocks/`; Setup keeps the links for swarm-orchestrator, swarm-voice and the three vendor skills, and the root README's Setup step says so | 🔄 `swarm setup plugin` (ADR 0090); ships in the next release | on a Setup-only Mac, each CLI lists the plugin and a session reads a block |
 
 Note. On 2026-10-13 the creative-coding lines of `~/.flow/domains.md` gained `block:` items
-(reference-analysis, design-tokens, story, build-canvas, style-frames, visual-qa). Only the flow of
-branch `skill-blocks` knows these blocks, so a creative-coding run on the live agent-kit flow stops
+(reference-analysis, design-tokens, story, build-canvas, style-frames, visual-qa). Only implement on
+branch `skill-blocks` knows these blocks, so a creative-coding run on the live agent-kit implement stops
 with "unknown block id" until `skill-blocks` is merged to main and A4 installs the plugin. The `any`
 lines keep the `prove-it-works` skill path until A4, because a `block:` item there would stop every
-live flow run. A repo with no `.blocks.toml` runs the blocks without the base block; the
+live implement run. A repo with no `.blocks.toml` runs the blocks without the base block; the
 creative-coding blocks also need `site` and `shots` there. Once a catalog line in every repo names a
-block, `flow_run.py start` reads TOML, so it needs Python 3.11 or later (`/usr/bin/python3` is 3.9).
+block, `implement_run.py start` reads TOML, so it needs Python 3.11 or later (`/usr/bin/python3` is 3.9).
 
 Note. `~/.claude/skills/deliver` differs from agent-kit only by `scripts/__pycache__`, so no local
 skill edit is at risk in A4.
@@ -82,7 +82,7 @@ skill edit is at risk in A4.
 ## B. Skills from blocks
 
 A block is a folder `skills/kit/blocks/<id>/` whose `SKILL.md` has Agent Skills frontmatter, then
-`Rules`, `Example`, `Check (script)` and `Check (judge)`. `skills/kit/blocks/blocks.toml` owns the format. `flow_run.py start` copies the
+`Rules`, `Example`, `Check (script)` and `Check (judge)`. `skills/kit/blocks/blocks.toml` owns the format. `implement_run.py start` copies the
 blocks a step names into its step file, adds the script checks as todos, and records each block's
 hash. The loader is complete and tested. `~/.flow/domains.md` names blocks since 2026-10-13 (see
 the note in track A). No real run has used a block yet. `docs/blocks.md` maps every kit skill to its
@@ -108,11 +108,11 @@ Each block owns its rule text; the skill that held it points to the block.
 | design-tokens | the look as tokens in `DESIGN.md` | design |
 | look-check | frames from real code, scored beside the reference | design |
 | headless-shot | screenshots with chrome-headless-shell | design, build, review |
-| story | story sheet, structures, shot list, pacing (cut from ink) | design, story |
-| reference-analysis | find, inspect, measure and label references (cut from ink) | design |
-| visual-qa | frame and motion checks, the QA log (cut from ink) | review |
-| build-site | what changes when the piece is a website (cut from ink) | design, build |
-| build-canvas | the story engine, rendered from time and one seed (pack, cut from ink) | build |
+| story | story sheet, structures, shot list, pacing (cut from build) | design, story |
+| reference-analysis | find, inspect, measure and label references (cut from build) | design |
+| visual-qa | frame and motion checks, the QA log (cut from build) | review |
+| build-site | what changes when the piece is a website (cut from build) | design, build |
+| build-canvas | the story engine, rendered from time and one seed (pack, cut from build) | build |
 | web-ui-basics | the floor for a one-page site | build |
 | worker-brief | what a worker brief holds and how a worker acts (B12) | every step that sends work |
 | run-workers | how a root session runs seats on its host (was the adapters' shared text) | every step that uses seats |
@@ -159,23 +159,23 @@ the pilot, then packs.
 
 | # | Step | State | Check |
 |---|---|---|---|
-| B1 | Add the 3-round cap to `review_check.py start`, keyed by a parent-loop key in run metadata (K1); fixes and re-plans inherit it; one user `continue:` line allows one more round, once; a refusal keeps the verdict; flow and deliver pass the key and point to the guard | ⬜ | tests: round 4 refused through flow and standalone deliver, also after a fix or re-plan with a new base; two tasks on one base have separate budgets; `continue:` works once; answer-only `verdict` costs no round; APPROVE on the last allowed run closes |
+| B1 | Add the 3-round cap to `review_check.py start`, keyed by a parent-loop key in run metadata (K1); fixes and re-plans inherit it; one user `continue:` line allows one more round, once; a refusal keeps the verdict; implement and deliver pass the key and point to the guard | ⬜ | tests: round 4 refused through implement and standalone deliver, also after a fix or re-plan with a new base; two tasks on one base have separate budgets; `continue:` works once; answer-only `verdict` costs no round; APPROVE on the last allowed run closes |
 | B2 | Add the no-progress stop by issue identity (P2): `verdict` writes a snapshot of open findings and check results, `start` compares them by file, symbol, rule and source evidence; an uncertain match falls back to the cap | ⬜ | fix A then new B does not stop; the same open issues and results stop; moved lines still match |
 | B3 | Make `step_run.py` refuse an unknown or ambiguous `Needs` word, a cycle, or a missing required gate | ⬜ | tests for each refusal |
-| B4 | Fix the owner of each block the pilot loads, and the defects above | 🔄 red-first-check merged into prove-it-works, the decision-with-default defect fixed (branch `skill-blocks`) | `rg` finds one text per rule; the flow tests pass |
+| B4 | Fix the owner of each block the pilot loads, and the defects above | 🔄 red-first-check merged into prove-it-works, the decision-with-default defect fixed (branch `skill-blocks`) | `rg` finds one text per rule; the implement tests pass |
 | B5 | Pilot `web-ui-basics` and `headless-shot` on a static HTML slice (not `web-port`): one `block:` line in the `web-ui` build step of `~/.flow/domains.md` and a `.blocks.toml` | ⬜ | block text in the step file, each block todo closed with evidence, a fresh agent resumes from the files, pair still waits for approval |
 | B6 | Judge the pilot against the same slice without blocks; keep or drop | ⬜ | written result with both runs: defects, review rounds, time, loaded text |
 | B7 | Add `Keywords:` beside `Signals:` in `domains.md`, matched against the filled frame at `take`; the model confirms, drops or adds a match once, with a reason line | ⬜ | a "transition" task in a non-web-ui repo gets the motion pack; a non-motion task gets none |
-| B8 | Motion pack: an index in the emil pack owner, item files, a check, `Keywords:`; ink keeps story motion; web-ui-basics points to it | 🔄 basic `ui-motion` names one timing owner, and web-ui-basics and build-site point to it (branch `plan-blocks`); no item files or `Keywords:` yet | the step file names one timing owner and an "item files used" todo |
+| B8 | Motion pack: an index in the emil pack owner, item files, a check, `Keywords:`; build keeps story motion; web-ui-basics points to it | 🔄 basic `ui-motion` names one timing owner, and web-ui-basics and build-site point to it (branch `plan-blocks`); no item files or `Keywords:` yet | the step file names one timing owner and an "item files used" todo |
 | B9 | Plan block and template format: predefined templates fix required stages and the end; the plan block may add any block, and may build a ledger with no template when none fits (frame, end condition and close still required); one reason line per block | 🔄 basic blocks `planner`, `plan-chart`, `plan-review`, `voice-reply`, `voice-review` and the skill `plan`, branch `plan-blocks` (2026-10-13); the 2026-10-13 block-rules council added 8 blocks, renamed behavior-claims to requirements, and bound plan approval to file hashes; no templates yet, because the owner wants blocks picked per task | two tasks run by hand, one with a template and one without |
 | B10 | Merged into B17 | — | — |
 | B11 | Small judge (Jev or Laya) for pack choice: 2+ missed or wrong packs in 10 trial lines starts a benchmark; adopt only on a held-out win with no missed gate | ⬜ | benchmark result |
 | B12 | One provider-neutral worker-brief section; the five other texts point to it | ✅ `blocks/worker-brief`, branch `skill-blocks` | `rg` for the report-only rule finds one owner |
 | B13 | List block candidates by reuse count; extract only rules with two or more real users | ⬜ | each new block names its two users |
-| B14 | Move `resolve_blocks` from `flow_run.py` into one shared kit script when a second skill has a run script that needs it | ⬜ | two run scripts import one resolver |
+| B14 | Move `resolve_blocks` from `implement_run.py` into one shared kit script when a second skill has a run script that needs it | ⬜ | two run scripts import one resolver |
 | B15 | Write the split map: every skill's parts as blocks, rule cards, or units that stay whole | ✅ every skill split, branch `skill-blocks` | `docs/blocks.md` |
-| B16 | Block format v2: one folder per block with Agent Skills frontmatter (`name`, `description`, `license`, `metadata` with kind, owns, serves, needs, gives, conflicts, users); move the 13 blocks; update `blocks.toml` and the `flow_run.py` resolver in the same step | ✅ branch `skill-blocks`, eb7f603f..3553867d | the flow tests pass; each block validates as an Agent Skills `SKILL.md` |
-| B17 | Cut ink: reference-analysis, story, visual-qa, build-site, build-canvas; one owner for design-tokens, style-frames, headless-shot; ink keeps its contract and its routes as templates | ✅ cut done, branch `skill-blocks`, da3b8566..5213c714; the live run is B18 | ink's references hold no rule that a block holds; an ink `prototype` run still passes |
+| B16 | Block format v2: one folder per block with Agent Skills frontmatter (`name`, `description`, `license`, `metadata` with kind, owns, serves, needs, gives, conflicts, users); move the 13 blocks; update `blocks.toml` and the `implement_run.py` resolver in the same step | ✅ branch `skill-blocks`, eb7f603f..3553867d | the implement tests pass; each block validates as an Agent Skills `SKILL.md` |
+| B17 | Cut build: reference-analysis, story, visual-qa, build-site, build-canvas; one owner for design-tokens, style-frames, headless-shot; build keeps its contract and its routes as templates | ✅ cut done, branch `skill-blocks`, da3b8566..5213c714; the live run is B18 | build's references hold no rule that a block holds; a build `prototype` run still passes |
 | B18 | Second user: a glitch-walk page uses story, design-tokens, headless-shot and visual-qa | ⬜ | one live run, each block todo closed with evidence |
 | B19 | serve-local and annotate-loop (Plannotator, strict): view-and-talk is required in the `walk` template; a missing `plannotator` sets `unavailable plannotator` and stops; each round writes `annotate/<round>.json`; the loop uses the B1 and B2 stop | 🔄 basic `serve-local`, `comment-round` (exit 2 with `unavailable plannotator`; round 4 refused in `comment_round.py` until B1 and B2 exist) and `page-comments`, branch `plan-blocks`; no live round yet | one glitch-walk run where an owner comment reaches the agent and the page is rebuilt; a run without the binary stops with the status |
 | B20 | Package the kit as a skills-only Agent Plugins 1.0 package (`plugin.json` at `skills/kit/`); Codex reads it as specified, Claude Code and AGY load its skills (`docs/blocks.md`, Packaging) | ✅ manifests and marketplace on branch `skill-blocks`; install is A4 and A7 | a probe package installed in each CLI, and a model in each read a block by `../../blocks/` |

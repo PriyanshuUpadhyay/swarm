@@ -9,7 +9,7 @@ metadata:
   needs: "a task with more than one step"
   gives: "an ordered list of units, each with its check"
   conflicts: ""
-  users: "pair, deliver, flow"
+  users: "pair, deliver, implement"
   source: "skills/sequence-verifiable-units/SKILL.md (whole text, moved here 2026-10-13); mined row s4#15 (one record first)"
 ---
 

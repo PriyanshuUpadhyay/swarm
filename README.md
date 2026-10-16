@@ -147,7 +147,7 @@ AGY has no account source yet.
 ### Bundled workflow skills
 
 The plugin `swarm` holds the skills in `skills/kit/skills/` and the blocks they read in
-`skills/kit/blocks/`. A block is never called by itself: a skill reads it, and `plan` and `flow`
+`skills/kit/blocks/`. A block is never called by itself: a skill reads it, and `plan` and `implement`
 put blocks into the steps of a run. Claude Code shows a skill as `/swarm:<name>`, pi as
 `/skill:<name>`.
 
@@ -159,9 +159,10 @@ put blocks into the steps of a run. Claude Code shows a skill as `/swarm:<name>`
 | `council` | Claude, GPT, and Gemini voices debate in panes and end in one verdict |
 | `pair` | Write code with you, one approved diff of about 40 lines at a time |
 | `deliver` | Drive one named task to a checkable end, and stop before a push or merge |
-| `flow` | Run one change through frame, design, contracts, impact, build, review, and close |
+| `implement` | Run one change through frame, design, contracts, impact, build, review, and close |
 | `review-check`, `review-walk` | Judge a diff with a script verdict; walk a PR into a pending review |
-| `ink` | Pictures, films, and sites drawn by code |
+| `build` | Pictures, films, and sites drawn by code |
+| `explain` | Explain a subject with one running example |
 | `decisions`, `cleanup-gate`, `engineering-standards` | ADRs, a cleanup pass on request, and engineering rules |
 | `prove-it-works`, `sequence-verifiable-units`, `minimize-reader-load` | Rules that point to one block each |
 | `orchestrate-claude`, `-codex`, `-agy` | Bind a skill's worker needs to each agent CLI |

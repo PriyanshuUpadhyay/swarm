@@ -41,6 +41,7 @@ mkdir -p "$skills"
 tar -c -C "$repo/skills" --exclude='.git*' --exclude='__pycache__' --exclude='node_modules' \
   kit | tar -xp -C "$skills"
 python3 -I "$skills/kit/scripts/test_block_refs.py"
+python3 -I "$skills/kit/scripts/test_plugin_skills.py"
 notify="$stage/libexec/SwarmNotify.app"
 mkdir -p "$notify/Contents/MacOS"
 cp "$bin_dir/SwarmNotify" "$notify/Contents/MacOS/SwarmNotify"

@@ -9,7 +9,7 @@ metadata:
   needs: "a diagram choice"
   gives: "an HTML diagram"
   conflicts: ""
-  users: "flow"
+  users: "implement"
   source: "impeccable pack: plugin/skills/impeccable/reference/adapt.md:140 (grid and flexbox reflow), reference/layout.md:52 (structural reflow); blocks/web-ui-basics/SKILL.md, Rules (a diagram needs a text description)"
 ---
 

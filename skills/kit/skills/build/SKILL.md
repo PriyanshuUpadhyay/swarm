@@ -1,9 +1,9 @@
 ---
-name: ink
+name: build
 description: Draw pictures, generative plates, short films, and websites where every frame is made by code (Canvas 2D, p5.js, three.js, WebGL or WebGPU shaders, 3D models), from a story, a visual reference, or both. Use for a story reel, animated short, explainer, title sequence, loop, generative still or plate, dense comic or print-style illustration, or infinite zoom; for a landing page, portfolio, or product site with a 3D hero, a loader, or scroll motion; for "make a website like this", "make this in p5.js", "animate this story", "storyboard and code this", "draw every frame in JavaScript", "creative coding from this reference", "recreate this style in code", or "animate this like the reel"; and for extracting style, story, and motion rules from references without building. Keeps story, look, and motion apart, proves the look with style frames beside the reference, and proves the story with an animatic.
 ---
 
-# ink
+# build
 
 Every frame is drawn by code, from a story, a reference, or both. Three layers change for their own
 reasons, so each one lives in its own place:
@@ -65,10 +65,11 @@ pattern file when a build solves a new one.
 ## Progress
 
 A piece keeps its progress in its own folder, so a new chat continues where the last one stopped.
+The stored folder stays `ink/`, so existing pieces keep their step files.
 
 Example. `~/work/seed-city/ink/` holds one file per step. Steps 1-4 are done, so line 1 of
 `04-style-frames.md` reads `Status: done 3f9a1c2b7e10`. A new chat gets
-`ink continue ~/work/seed-city`, reads line 1 of every file, and starts `05-animatic.md`.
+`build continue ~/work/seed-city`, reads line 1 of every file, and starts `05-animatic.md`.
 
 - Step N writes `ink/0N-<name>.md`: `01-intake`, `02-look`, `03-story`, `04-style-frames`,
   `05-animatic`, `06-detail`, `07-export`. The file is the step's output (notes, grammar, story

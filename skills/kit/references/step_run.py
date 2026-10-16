@@ -7,7 +7,7 @@
   done <folder> <step>          set the step done, only when every todo is checked with evidence
 
 take and done add one line to <folder>/events.log, so the path of a run stays readable after it ends.
-A skill script with its own step graph or revision (flow) imports these functions and passes `need`
+A skill script with its own step graph or revision (implement) imports these functions and passes `need`
 and `rev`.
 """
 

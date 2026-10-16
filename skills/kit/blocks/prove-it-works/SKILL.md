@@ -9,7 +9,7 @@ metadata:
   needs: "a behavior or a claim"
   gives: "a failing then passing check with its output, and each claim's ladder step"
   conflicts: ""
-  users: "flow, pair, deliver, review-check, checked-units"
+  users: "implement, pair, deliver, review-check, checked-units"
   source: "skills/prove-it-works/SKILL.md (whole text, moved here 2026-10-13); blocks/red-first-check (merged here 2026-10-13)"
 ---
 

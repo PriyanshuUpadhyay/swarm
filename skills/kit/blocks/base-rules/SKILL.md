@@ -9,7 +9,7 @@ metadata:
   needs: "source_of_truth"
   gives: "steps that keep the base rules"
   conflicts: ""
-  users: "flow"
+  users: "implement"
   source: "html-plan pack: skills/html-plan/SKILL.md:82 (real over drawn); docs/council 2026-10-13 block rules (N4: no copy of the rules that agent instructions own)"
 ---
 

@@ -56,4 +56,4 @@ is drawn.
 
 ## Not yet
 
-An explainer video is an open item. It waits for a test of the tools against the `ink` skill.
+An explainer video is an open item. It waits for a test of the tools against the `build` skill.

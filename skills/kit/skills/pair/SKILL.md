@@ -33,11 +33,11 @@ Read the code the task touches. Write 3-7 behaviors, each one testable sentence 
 order. Show the list inline in the chat and wait for the user's approval or edits; the copy in the
 task file is a record, not the reply. No design essay, no option survey.
 
-When no `flow` folder is named, first run `python3 <flow-skill-dir>/scripts/flow_run.py start`
-and follow the `flow` skill's entry rule before the plan. With a
-`flow` folder, take the behaviors from the done-when of its `01-frame.md`
+When no `implement` run folder is named, first run `python3 <implement-skill-dir>/scripts/implement_run.py start`
+and follow the `implement` skill's entry rule before the plan. With an
+`implement` run folder, take the behaviors from the done-when of its `01-frame.md`
 and the contracts in its `03-contracts.md`, and hold its build step. Before the first chunk, apply
-the rules and the todo list in its `05-build.md`. The flow's review step follows the
+the rules and the todo list in its `05-build.md`. The implement workflow's review step follows the
 last behavior, so pair itself still has no closing pass.
 
 Every behavior ends with `Standards: <row ids>` or `Standards: none`. Select them using
@@ -115,7 +115,7 @@ When every chunk of the current behavior is applied and its check passes, show, 
 3. the test command and its result.
 
 Then propose the first chunk of the next behavior. No commit question; the behavior commits
-are the record. After the last behavior, set `Status: done` in the task file, print the flow's `Next:` line for
+are the record. After the last behavior, set `Status: done` in the task file, print the implement workflow's `Next:` line for
 the review step, and stop. There is no closing pass:
 no cleanup gate, no readability review, no extra tooling to set up or tear down.
 

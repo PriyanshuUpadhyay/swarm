@@ -1,4 +1,4 @@
-# Block catalog for the flow skill. This file owns the format; skills/flow/SKILL.md points here.
+# Block catalog for the implement skill. This file owns the format; skills/implement/SKILL.md points here.
 #
 # A block is a folder here with one `SKILL.md`, and the folder name is its id. The file opens with
 # Agent Skills frontmatter: `name` (the id), `description` (the concept; start writes it to the step as
@@ -19,7 +19,7 @@
 # `shots` (the one folder for screenshots and compare images), each a repo-relative path.
 #
 # A step line in ~/.flow/domains.md names a block or an alias as `block:<id>` next to its paths.
-# `flow_run.py start --profile <name>` expands aliases, adds `base` once to each step of a run that
+# `implement_run.py start --profile <name>` expands aliases, adds `base` once to each step of a run that
 # names a block, drops duplicates, and applies the profile. A profile changes packaging only, never
 # which rule or check lines appear: `Check (script)` lines become step todos, and `Check (judge)`
 # lines go to 06-review.md.

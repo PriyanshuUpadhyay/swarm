@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Make and take flow steps. Run from inside the repo.
+"""Make and take implement steps. Run from inside the repo.
 
   start [--profile <name>]     make tmp/flow/<date>-<branch>/ with the seven step files; the profile packs blocks
   status [<folder>]            print each step's status, whether it is ready, and whether it is stale
@@ -15,7 +15,7 @@ the block, alias, and profile format, and the repo's .blocks.toml adds params, r
 
 The step graph is the step table in ../SKILL.md. `start` writes the need names and marks 05-build.md
 with `Revision: HEAD`, as references/step-run.md describes. The kit's references/step_run.py
-owns status, ready, stale, take, done, and events.log. This script adds the flow rules: the revision
+owns status, ready, stale, take, done, and events.log. This script adds the implement rules: the revision
 of 05-build is HEAD, take 04-impact lists the places that name the contracts' code names, and take
 07-close needs the review-check run's own APPROVE verdict on HEAD.
 """
@@ -47,18 +47,19 @@ LINE_CHUNK = 4096
 MAX_HITS = 10
 HIT_CHARS = 160
 CAP = 15000  # characters per skill, cut to it, and per block, refused over it; engineering-standards is about 10k
+# These headings are stored in existing runs; write_callers uses the exact heading to avoid duplicates.
 RULES_HEAD = "## Rules for this step (written by flow_run.py start; apply them, keep this section)"
 JUDGE_HEAD = "## Judge checks of blocks that ran"
 PARAM = re.compile(r"\{\{(\w+)\}\}")
 CHECKS = ("Check (script)", "Check (judge)")
 CALLERS_HEAD = "## Callers (written by flow_run.py take from the code names in 03-contracts.md; a search, not a judgment)"
 TODOS = {  # each item names the file that owns the rule
-    "01-frame": ["Goal, user, and out of scope (flow)", "Done-when, each one checkable (flow)",
-                 "Lane, fast or full, and why (flow)"],
-    "02-design": ["UX flow and screens, or the reason no UI changes (flow)"],
-    "03-contracts": ["APIs, data model, and integrations that change (flow)",
+    "01-frame": ["Goal, user, and out of scope (implement)", "Done-when, each one checkable (implement)",
+                 "Lane, fast or full, and why (implement)"],
+    "02-design": ["UX flow and screens, or the reason no UI changes (implement)"],
+    "03-contracts": ["APIs, data model, and integrations that change (implement)",
                      "Standards rows that apply (engineering-standards)", "Decision check for the topic (decisions)"],
-    "04-impact": ["Existing features that change, judged from the Callers section and the contracts, or independent (flow)"],
+    "04-impact": ["Existing features that change, judged from the Callers section and the contracts, or independent (implement)"],
     "05-build": ["Task file path and Base commit (pair or deliver)",
                  "Failing check first: command and its failing output (prove-it-works)",
                  "Standards rows for each behavior, or none and why (engineering-standards)",
@@ -66,7 +67,7 @@ TODOS = {  # each item names the file that owns the rule
                  "Dead code: what this change made unused, removed; older dead code, named (AGENTS.md)",
                  "Check passes: command and its passing output (prove-it-works)"],
     "06-review": ["review-check range, verdict, and each fix row with its fix or reason (review-check)",
-                  "A `Run: tmp/review-check/<run>` line under Result for the last run (flow)"],
+                  "A `Run: tmp/review-check/<run>` line under Result for the last run (implement)"],
     "07-close": ["Each done-when of 01-frame with its evidence (prove-it-works)"],
 }
 
@@ -75,7 +76,7 @@ def git(*args):
     return subprocess.run(["git", *args], capture_output=True, text=True).stdout.strip()
 
 
-def flow_home():
+def implement_home():
     return Path.home() / ".flow"
 
 
@@ -149,7 +150,7 @@ def status(folder=None):
     if folder is None:
         folders = sorted(p for p in Path(git("rev-parse", "--show-toplevel"), "tmp", "flow").glob("2*/"))
         if not folders:
-            raise SystemExit("no flow folder")
+            raise SystemExit("no implement run folder")
         folder = folders[-1]
     print(folder)
     step_run.status(folder, graph(), rev)
@@ -159,7 +160,7 @@ def skill_paths(step):
     """The catalog items for this step, from the `any` section, each profile domain, and the repo rules:
     the paths, and apart from them the `block:<id>` items."""
     key = step.split("-", 1)[1]
-    profile = flow_home() / repo_name() / "profile.md"
+    profile = implement_home() / repo_name() / "profile.md"
     domains, repo_rules = {"any"}, []
     if profile.exists():
         text = read_utf8(profile)
@@ -168,9 +169,9 @@ def skill_paths(step):
         if m := re.search(r"^Repo rules:\s*(.+)$", text, re.M):
             repo_rules = [r.strip() for r in m.group(1).split(",") if r.strip() and r.strip() != "none"]
     else:
-        print(f"note: no profile at {profile}; the flow skill's start rule says what to do", file=sys.stderr)
+        print(f"note: no profile at {profile}; the implement skill's start rule says what to do", file=sys.stderr)
     items, section = [], None
-    for line in read_utf8(flow_home() / "domains.md").splitlines():
+    for line in read_utf8(implement_home() / "domains.md").splitlines():
         if line.startswith("## "):
             section = line[3:].strip()
         elif section in domains and line.startswith(f"- {key}:"):

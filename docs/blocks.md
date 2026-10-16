@@ -33,7 +33,7 @@ The parts and their owners:
 - **Block.** One concern, its rules, its example and its checks. It names what it needs and what it
   gives by content, never by a step file or a skill.
 - **Template.** The stage shape for one kind of task, such as `walk`, `site`, `question` or `change`.
-  It fixes the required stages and the end. A skill such as `ink` or `research` becomes one or more
+  It fixes the required stages and the end. A skill such as `build` or `research` becomes one or more
   templates plus its contract.
 - **Plan block.** It reads the task and the block catalog, then writes the ledger, with one reason
   line for each block it adds or leaves out. When a template fits, it starts from that template and
@@ -73,7 +73,7 @@ metadata:
   needs: brief, facts
   gives: story sheet
   conflicts: ""
-  users: ink, glitch-walk
+  users: build, glitch-walk
 ---
 ```
 
@@ -86,13 +86,13 @@ metadata:
   falls as the list grows. A skill points to the blocks it uses by a path from the kit root (`blocks/<id>/SKILL.md`), and
   says once that the kit root is two folders up from the skill's folder. This holds in the plugin copy
   that each CLI installs, but not through a link to one skill folder, because a Read tool resolves
-  `..` on the link path (see Packaging). The flow loader copies the blocks that a catalog line names into the
+  `..` on the link path (see Packaging). The implement loader copies the blocks that a catalog line names into the
   step files. No CLI lists a block as a skill.
 - The kit is one Agent Plugins 1.0 package: a `plugin.json` at `skills/kit/`, skills under
   `skills/`, and `blocks/` beside them. Clients discover only `skills/` and `mcp.json`. A package path
   must resolve inside the package root, so no block may link outside the kit. See Packaging below
   for what each CLI loads.
-- Every kit block is a folder with this frontmatter (progress.md B16, done 2026-10-13). The flow
+- Every kit block is a folder with this frontmatter (progress.md B16, done 2026-10-13). The implement
   loader finds blocks by folder, writes `description` to the step as `Concept:`, and refuses a
   `name` that is not the folder. A test checks every block's frontmatter.
 
@@ -108,7 +108,7 @@ metadata:
    `html-diagram` and an SVG diagram block; the 300 ms rule in `web-ui-basics` and the 400-500 ms
    transitions.dev timings.
 4. A block that names a step file is a defect, because a second workflow cannot use it. Example:
-   `call-tree/SKILL.md` names flow's `04-impact.md`.
+   `call-tree/SKILL.md` names implement's `04-impact.md`.
 
 ## Catalog
 
@@ -125,28 +125,28 @@ Status: ✅ exists, ✂️ cut from a skill next, ⬜ later, 🆕 new, 🔒 stay
 | page-comments | step | the comment, fix and check loop for a built page | page, its checks, its build block → approved page | `blocks/page-comments` | glitch-walk, any page | ✅ basic |
 | change-review | step | that a plan's commits get the full review-check verdict | range → verdict | `blocks/change-review`, which runs `skills/review-check` whole | plans that make commits | ✅ basic |
 | voice-reply | rule | the final reply to the owner, by the session's reply rules | step results → reply | `blocks/voice-reply` (points to the agent instructions) | the last step of a plan | ✅ basic |
-| voice-teach | rule | the order of ideas in an explanation to learn from | subject, known terms → explanation | `blocks/voice-teach` | the last step of an explain plan | ✅ basic |
+| voice-teach | rule | the order of ideas in an explanation to learn from | subject, known terms → explanation | `blocks/voice-teach` | explain, the last step of an explain plan | ✅ basic |
 | voice-pr | rule | how PR titles and bodies read | change, tests → PR draft | `blocks/voice-pr` | the last step of a PR plan | ✅ basic |
 | voice-review | rule | how review comments sound | findings → comments in the reviewer's voice | `blocks/voice-review`, which reads `~/.review-walk/voice.md` | the last step of a review plan | ✅ basic |
-| frame | step | goal, done-when claims, out of scope | request → frame | flow 01-frame, research 01-question, ink intake | flow, research, ink | ⬜ |
-| local-research | step | what local sources say | question → findings with paths | `blocks/local-research` | research (planned: glitch-walk, flow contracts) | ✅ |
+| frame | step | goal, done-when claims, out of scope | request → frame | implement 01-frame, research 01-question, build intake | implement, research, build | ⬜ |
+| local-research | step | what local sources say | question → findings with paths | `blocks/local-research` | research (planned: glitch-walk, implement contracts) | ✅ |
 | web-research | step | web evidence | query brief → findings with links | `skills/web-search` (stays whole) with `blocks/deep-search` and `blocks/cite-sources` | research, reference-analysis, motion | ✅ by the skill |
 | deep-search | rule | how a search goes past the known answers | question, known answers → sub-questions, seeds, off-path ideas | `blocks/deep-search` | research, web-search | ✅ |
-| tool-trial | step | the hands-on test of tool candidates | tool question → candidate table | `blocks/tool-trial` | research (planned: flow contracts) | ✅ |
-| reference-analysis | step | measured facts of a reference | references → measured notes with evidence levels | `blocks/reference-analysis` | ink, design-tokens | ✅ |
-| design-tokens | step | the look as tokens | measured notes → `DESIGN.md` tokens | `blocks/design-tokens` (owner of the token rules) | ink, glitch-walk, any page | ✅ owner fix |
-| story | step | order, beats, key frames, pacing | brief, facts → story sheet, shot list | `blocks/story` | ink | ✅ |
-| motion | pack | how things move | story sheet or UI states → timings, eases, one timing owner | `blocks/ui-motion` (UI, one timing owner, emil pack tables); ink `story-and-motion.md` transition catalogue and motion feel (story) | ink, any UI, sites | ✅ basic UI, B8 |
-| diagram | rule set | when and how to draw | subject → diagram | `blocks/when-to-diagram`, `html-diagram`, `diagram-check`, `call-tree` | flow, research, glitch-walk, plans | ✅ |
-| style-frames | step | "does it match the look" before the full build | tokens, page code → scored frames | `blocks/look-check` (owner of reference scoring) | flow, ink | ✅ |
-| build-site | step | what changes when the piece is a website | look, story → page | `blocks/build-site` | ink | ✅ |
-| build-canvas | pack | a drawn piece rendered from time and one seed | look, story, shot list → piece | `blocks/build-canvas` with `references/mark-making.md` | ink | ✅ |
-| build-3d | pack | a 3D scene or hero | tokens, story → scene | ink `build.md` toolbox | ink, 3D sites | ⬜ after a second 3D task |
-| headless-shot | step | how shots are taken | URL or file → shots | `blocks/headless-shot` (owner of the shot and compare commands) | flow, ink | ✅ |
-| visual-qa | step | the visual verdict and the QA log | frames, playback → QA log | `blocks/visual-qa` | ink | ✅ |
+| tool-trial | step | the hands-on test of tool candidates | tool question → candidate table | `blocks/tool-trial` | research (planned: implement contracts) | ✅ |
+| reference-analysis | step | measured facts of a reference | references → measured notes with evidence levels | `blocks/reference-analysis` | build, design-tokens | ✅ |
+| design-tokens | step | the look as tokens | measured notes → `DESIGN.md` tokens | `blocks/design-tokens` (owner of the token rules) | build, glitch-walk, any page | ✅ owner fix |
+| story | step | order, beats, key frames, pacing | brief, facts → story sheet, shot list | `blocks/story` | build | ✅ |
+| motion | pack | how things move | story sheet or UI states → timings, eases, one timing owner | `blocks/ui-motion` (UI, one timing owner, emil pack tables); build `story-and-motion.md` transition catalogue and motion feel (story) | build, any UI, sites | ✅ basic UI, B8 |
+| diagram | rule set | when and how to draw | subject → diagram | `blocks/when-to-diagram`, `html-diagram`, `diagram-check`, `call-tree` | implement, research, glitch-walk, plans | ✅ |
+| style-frames | step | "does it match the look" before the full build | tokens, page code → scored frames | `blocks/look-check` (owner of reference scoring) | implement, build | ✅ |
+| build-site | step | what changes when the piece is a website | look, story → page | `blocks/build-site` | build | ✅ |
+| build-canvas | pack | a drawn piece rendered from time and one seed | look, story, shot list → piece | `blocks/build-canvas` with `references/mark-making.md` | build | ✅ |
+| build-3d | pack | a 3D scene or hero | tokens, story → scene | build `build.md` toolbox | build, 3D sites | ⬜ after a second 3D task |
+| headless-shot | step | how shots are taken | URL or file → shots | `blocks/headless-shot` (owner of the shot and compare commands) | implement, build | ✅ |
+| visual-qa | step | the visual verdict and the QA log | frames, playback → QA log | `blocks/visual-qa` | build | ✅ |
 | web-ui-basics | rule | the floor for one static page | page → pass or fail | `blocks/web-ui-basics` | any static page | ✅ HTML only |
-| serve-local | step | a local view of the checked build | built folder → URL, commit, stop command | `blocks/serve-local` | page-comments, ink sites, any page | ✅ basic |
-| review | step | the review verdict | range → verdict | `skills/review-check` (stays whole; `blocks/change-review` calls it) | flow, deliver, plans | 🔒 |
+| serve-local | step | a local view of the checked build | built folder → URL, commit, stop command | `blocks/serve-local` | page-comments, build sites, any page | ✅ basic |
+| review | step | the review verdict | range → verdict | `skills/review-check` (stays whole; `blocks/change-review` calls it) | implement, deliver, plans | 🔒 |
 | report | step | the written answer | findings → report with checked links | `blocks/report` (the reply holds the whole report; the agent instructions own the rest) | research | ✅ |
 | done-when-evidence | rule | close maps claims to evidence | frame, results → evidence rows | `blocks/done-when-evidence` | every template | ✅ |
 
@@ -164,7 +164,7 @@ Status: ✅ exists, ✂️ cut from a skill next, ⬜ later, 🆕 new, 🔒 stay
 | worker-brief | what a worker brief holds and how a worker acts | `blocks/worker-brief` | ✅ |
 | run-workers | how a root session runs seats on its host | `blocks/run-workers` (the three adapters point here) | ✅ |
 | task-file | the task file and the resume | `blocks/task-file` | ✅ |
-| evidence-label | one vocabulary for how sure a claim is | six vocabularies today: ink, web-search, research, prove-it-works, engineering-standards | 🆕 after one owner is picked |
+| evidence-label | one vocabulary for how sure a claim is | six vocabularies today: build, web-search, research, prove-it-works, engineering-standards | 🆕 after one owner is picked |
 | cite-sources | each claim cites its owning source; quote only text read; mark snippets | `blocks/cite-sources` | ✅ |
 | link-check | a cited page says the claim | `blocks/link-check` | ✅ |
 
@@ -184,10 +184,10 @@ workflow calls them as one unit.
 | step-run | status line, pick-up, close and wait are one machine |
 | glitch-walk start | its script refuses, stops and gives exact words; it runs as one step |
 | engineering-standards tables | each row already has an ID |
-| ink seam law | one idea across three ink files; it moves with `story` |
+| build seam law | one idea across three build files; it moves with `story` |
 | cleanup-gate pass | the six emissions in order are one gate; a step that emitted nothing did not run |
 | review-walk steps | each step needs the reviewer, and the map, comments and walk share one run |
-| flow step graph | the step list, status and catalog are one machine that `flow_run.py` runs |
+| implement step graph | the step list, status and catalog are one machine that `implement_run.py` runs |
 
 ## Every skill, split (2026-10-13)
 
@@ -211,18 +211,19 @@ path that names the skill still works.
 | review-walk | none | the five steps (stays whole) |
 | cleanup-gate | when-to-extract (by its rules file) | the six-step pass (stays whole) |
 | decisions | none | the whole capture contract (stays whole) |
-| flow | prove-it-works, checked-units, and every block its catalog lines name | the step graph and the loader |
-| ink | reference-analysis, story, look-check, headless-shot, visual-qa, build-site (which points to design-tokens), build-canvas, web-ui-basics | the contract, the routes, the seam law, the reel rules |
+| implement | prove-it-works, checked-units, and every block its catalog lines name | the step graph and the loader |
+| build | reference-analysis, story, look-check, headless-shot, visual-qa, build-site (which points to design-tokens), build-canvas, web-ui-basics | the contract, the routes, the seam law, the reel rules |
+| explain | voice-teach | the pointer to the block and `references/explain-formats.md` |
 
 Plans that stay open: research writes the ledger for questions, with `web needs local` only when
 local findings set the query (the owner's local-then-web example); the emil pack owns UI motion and
-ink owns story motion (B8).
+build owns story motion (B8).
 
-## ink, split
+## build, split
 
-ink becomes templates plus its contract. Its routes become the templates.
+build becomes templates plus its contract. Its routes become the templates.
 
-| ink step today | Blocks |
+| build step today | Blocks |
 |---|---|
 | 1 Intake | frame, web-research (when no references are given) |
 | 2 Analyse the references | reference-analysis, design-tokens |
@@ -240,11 +241,11 @@ ink becomes templates plus its contract. Its routes become the templates.
 | `analysis-only` | intake, analyse |
 | `site` | as `prototype`, with build-site and web-ui-basics |
 
-ink's contract stays in its `SKILL.md`: keep story, look and motion apart, prove the look and the
+build's contract stays in its `SKILL.md`: keep story, look and motion apart, prove the look and the
 story before production, and render from time and one seed. Reference rules point to
 `reference-analysis`.
 
-### Where each old ink section went (2026-10-13)
+### Where each old build section went (2026-10-13)
 
 | Old section | Now |
 |---|---|
@@ -255,11 +256,11 @@ story before production, and render from time and one seed. Reference rules poin
 | `story-and-motion.md` Story sheet, Structures, Shot list, Pacing | `blocks/story` |
 | `story-and-motion.md` Drivers (its settled-state line points to `blocks/web-ui-basics`), Transition catalogue, Seam law, Scene graph, Timeline, Motion feel, Web-native media ideas, Seam design | stay |
 | `qa.md` Required evidence | stays; the contact-sheet rule moved to `blocks/visual-qa` |
-| `qa.md` Reference match | scoring to `blocks/look-check`, compare command to `blocks/headless-shot`; ink's example stays |
+| `qa.md` Reference match | scoring to `blocks/look-check`, compare command to `blocks/headless-shot`; build's example stays |
 | `qa.md` Story checks | stay; key frame and pacing checks moved to `blocks/story`; the scroll-story check points to the settled-state rule of `blocks/web-ui-basics` |
 | `qa.md` Frame checks, Motion checks | `blocks/visual-qa`; mass, paper, seam law, boil and loop seam checks stay |
 | `qa.md` Automated checks | stay; hidden content points to `blocks/web-ui-basics` |
-| `qa.md` QA log | `blocks/visual-qa`; ink's step names stay |
+| `qa.md` QA log | `blocks/visual-qa`; build's step names stay |
 | `site.md` (whole file, removed) | `blocks/build-site`; DESIGN.md rules to `blocks/design-tokens`, page frames to `blocks/look-check`, page floor to `blocks/web-ui-basics` |
 | `build.md` Architecture, Determinism, Debug modes, Performance, Toolbox, Delivery, Technical references | `blocks/build-canvas` |
 | `build.md` Style frames, Animatic, Frame export, Handoff | stay; the shot command points to `blocks/headless-shot` |
@@ -269,8 +270,8 @@ story before production, and render from time and one seed. Reference rules poin
 
 The review stops and the ledger checks come first (progress.md B1-B3). Then:
 
-1. Cut ink: reference-analysis, story, visual-qa, build-site and build-canvas get folders, and ink
-   points to them. The three ink copies (design-tokens, style-frames, headless-shot) get one owner.
+1. Cut build: reference-analysis, story, visual-qa, build-site and build-canvas get folders, and build
+   points to them. The three build copies (design-tokens, style-frames, headless-shot) get one owner.
 2. Give each cut block a second user in one live run: a glitch-walk page uses story, design-tokens,
    headless-shot and visual-qa. This is the live run that the earlier councils asked for.
 3. Add serve-local and annotate-loop for the glitch-walk view-and-talk stage.

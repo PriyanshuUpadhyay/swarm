@@ -9,8 +9,8 @@ metadata:
   needs: "a brief and its facts"
   gives: "a story sheet and a shot list"
   conflicts: ""
-  users: "ink, reference-analysis"
-  source: "skills/ink/references/story-and-motion.md (story sheet, structures, shot list, pacing; moved 2026-10-13); skills/ink/references/qa.md (story checks: key frame, pacing)"
+  users: "build, reference-analysis"
+  source: "skills/build/references/story-and-motion.md (story sheet, structures, shot list, pacing; moved 2026-10-13); skills/build/references/qa.md (story checks: key frame, pacing)"
 ---
 
 ## Rules
