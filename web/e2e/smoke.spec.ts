@@ -421,3 +421,18 @@ test("a pasted image is saved by the server and its path goes in the draft", asy
   expect(readFileSync(path)).toEqual(Buffer.from([0x89, 0x50, 0x4e, 0x47]));
   await composer.fill("");
 });
+
+test("the tab strip's + asks for a profile before it starts a chat", async ({ page: tab }) => {
+  const url = new URL(process.env.SWARM_SERVE_URL!);
+  await tab.goto(`${url.origin}/${url.hash}`);
+  await tab.waitForFunction(() => window.__swarmReady === true);
+  await tab.locator(`[data-testid="tree-row"][data-session="${process.env.SWARM_E2E_LIVE}"]`).click();
+  const started: string[] = [];
+  tab.on("request", (r) => r.url().endsWith("/api/chat/new") && started.push(r.url()));
+  await tab.getByRole("button", { name: "New chat in this workspace" }).click();
+  const menu = tab.getByTestId("new-chat-menu");
+  await expect(menu.getByRole("menuitem", { name: "Default profile" })).toBeVisible();
+  await tab.keyboard.press("Escape");
+  await expect(menu).toBeHidden();
+  expect(started).toEqual([]);
+});

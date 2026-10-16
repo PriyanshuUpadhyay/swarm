@@ -9,6 +9,7 @@ import { workspaceRow, type Tab, type Tabs } from "../core/nav";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuShortcut, ContextMenuTrigger } from "../components/ui/context-menu";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../components/ui/dropdown-menu";
 import { copyText as copy } from "./copy";
+import { NewChatMenu, type NewChatAnchor } from "./row-overlays";
 import { StatusGlyph } from "./status";
 
 const cap = (s: string) => s[0].toUpperCase() + s.slice(1);
@@ -21,6 +22,7 @@ export function TabStrip({ app }: { app: App }) {
   const tree = useSyncExternalStore(app.subscribe, () => app.view.tree);
   const scroller = useRef<HTMLDivElement>(null);
   const dragged = useRef<string | null>(null);
+  const newChat = useRef<((anchor: NewChatAnchor) => void) | null>(null);
   const [overflow, setOverflow] = useState<Tab[]>([]);
   const ws = workspaceRow(tree, workspace);
   const list = tabs?.tabs ?? [];
@@ -123,9 +125,16 @@ export function TabStrip({ app }: { app: App }) {
           ))}
         </DropdownMenuContent>
       </DropdownMenu>
-      <button className="icon-btn" aria-label="New chat in this workspace" title="New chat in this workspace" disabled={ws ? !ws.newChatEnabled : true} onClick={() => void app.startChat(undefined, {}, "", true)}>
+      <button
+        className="icon-btn"
+        aria-label="New chat in this workspace"
+        title="New chat in this workspace"
+        disabled={ws ? !ws.newChatEnabled : true}
+        onClick={(e) => ws && newChat.current?.({ rect: e.currentTarget.getBoundingClientRect(), workspace: ws, inTab: true })}
+      >
         <PlusIcon />
       </button>
+      <NewChatMenu app={app} open={newChat} />
     </div>
   );
 }
