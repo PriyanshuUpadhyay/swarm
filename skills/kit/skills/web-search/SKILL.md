@@ -117,13 +117,15 @@ One brief, one section per seat. It holds:
    browser row, the Jina reader, the search snippet, `old.reddit.com`, `<url>.json`, a public mirror,
    `web.archive.org`, and `archive.ph`; cite as `blocks/cite-sources/SKILL.md` says, with that
    block's Rules quoted; when the question is about how or why something works, follow each lead to
-   its origin, with that block's Rules quoted; stop after about 20 minutes;
+   its origin as `blocks/primary-sources/SKILL.md` says, with that block's Rules quoted; stop after
+   about 20 minutes;
 6. **blocked log** — a seat may call a site blocked only when its Coverage lists, for that site,
    each step it tried and the error each step gave, for example
    `reddit: browser_read → no extension; r.jina.ai → 403; old.reddit.com → 403; archive.ph → no copy`;
 7. **output shape** — `Coverage` with a matrix row per sub-question (sources found, gap or not),
-   `Findings` with a quote or paraphrase plus its link and confidence tag, and `Origins` with one row per origin read (source, exact location, quote) as `blocks/primary-sources/SKILL.md` says, `What is contested`,
-   `Sources` newest first, under 800 words, and a final `RESEARCH_DONE` line;
+   `Findings` with a quote or paraphrase plus its link and confidence tag, `Origins` with one row
+   per origin read (source, exact location, quote) as `blocks/primary-sources/SKILL.md` says,
+   `What is contested`, `Sources` newest first, under 800 words, and a final `RESEARCH_DONE` line;
 8. **layout** — the seat's report follows the section order in
    the kit's `references/plan-layout.md` where that file applies; quote the rule lines the seat
    needs, because Codex and AGY seats do not load it;
