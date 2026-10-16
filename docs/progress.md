@@ -141,6 +141,9 @@ Each block owns its rule text; the skill that held it points to the block.
 
 ### Owner decisions (2026-10-17)
 
+On 2026-10-17, the vendor modal-duration conflict closed under `blocks/ui-motion/SKILL.md`;
+the vendor pack remains unchanged.
+
 On 2026-10-17, the owner settled the source-of-truth part of #70 in `blocks/base-rules/SKILL.md`;
 research and web-search retain their evidence owners.
 
@@ -167,8 +170,6 @@ On 2026-10-17, the owner approved domain selection by `implement_run.py start --
 - `references/step_run.py:67-70` drops a `Needs` word that matches no step, with no error.
 - `blocks/web-ui-basics/SKILL.md:44-47` checks only `*.html`, `*.css`, `*.js` and `index.html`, so a TSX
   slice gets no script check.
-- `blocks/ui-motion/SKILL.md` delegates timing to one owner. The emil pack still has a
-  200-500 ms modal row and an under-300 ms line; that vendor conflict needs a scoped choice when used.
 - A repo with no `.blocks.toml` gets the base `Off:` line in all seven step files, also in steps
   that name no block.
 

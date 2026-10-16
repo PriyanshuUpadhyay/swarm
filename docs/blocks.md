@@ -101,6 +101,9 @@ metadata:
 
 ## Ownership and conflicts
 
+On 2026-10-17, the vendor modal-duration conflict closed under `blocks/ui-motion/SKILL.md`;
+the vendor pack remains unchanged.
+
 On 2026-10-17, the owner settled the source-of-truth part of #70 in `blocks/base-rules/SKILL.md`;
 research and web-search retain their evidence owners.
 
