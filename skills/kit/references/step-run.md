@@ -61,8 +61,9 @@ Line 1 of each step file is its status:
 
 ## Close and move on
 
-1. Write the step's result and its evidence below line 2, then run the `done <folder> <step>`
-   command from Script above. Use the skill's script when it names one.
+1. Write the step's result and its evidence below line 2, then run
+   `python3 <kit root>/references/step_run.py done <folder> <step>`.
+   Use the skill's script when it names one.
 2. Go on to every step now ready in the same turn, by `references/fan-out.md`.
 
 ## When a step waits for the user
