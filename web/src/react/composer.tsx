@@ -126,7 +126,8 @@ export function PromptCard({
 
 function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
   const { id: sessionId, agent: chair, state, sendKey } = composer;
-  const target = chair.who ?? "the chair";
+  // "the chair" means nothing to a new owner, so the chat's own agent is named.
+  const target = chair.who ?? (chair.provider ? `the ${chair.provider} agent` : "the agent");
   const [text, setText] = useState(() => app.draft(sessionId));
   const box = useRef<HTMLTextAreaElement>(null);
   const [caret, setCaret] = useState(0);
@@ -374,7 +375,7 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
               size="icon"
               data-testid="stop"
               aria-label={`Stop ${target}`}
-              title={chair.who ? `Stop ${target}` : "Stop the chair (⌘.)"}
+              title={chair.who ? `Stop ${target}` : `Stop ${target} (⌘.)`}
               className="rounded-full text-failed"
               disabled={state.stopping}
               onClick={() => void app.interrupt(sessionId)}

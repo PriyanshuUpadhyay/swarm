@@ -7,7 +7,7 @@ const NEW_WORKSPACE = "/work/proj-worktrees/fix";
 const OTHER_WORKSPACE = "/work/proj-worktrees/other";
 
 /** An App stand-in that records what Lifecycle asks of it. `post` answers by path. */
-function fakeApp(post: (path: string, body: Record<string, unknown>) => Promise<unknown>, agents: { id: string; alive: boolean }[] = [], importable: { id: string; workspace: string }[] = []) {
+function fakeApp(post: (path: string, body: Record<string, unknown>) => Promise<unknown>, agents: { id: string; alive: boolean; state?: string }[] = [], importable: { id: string; workspace: string }[] = []) {
   const calls: string[] = [];
   const app = {
     api: {
