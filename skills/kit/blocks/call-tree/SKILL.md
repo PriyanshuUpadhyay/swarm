@@ -18,7 +18,7 @@ metadata:
 - One call per line. Column 0 is the mark: `+` new, `-` removed, `~` changed entrypoint, `?` proposed (the reader can strike it), a space for context.
 - An entrypoint starts at column 2. Each level adds 2 spaces. A blank line starts a new entrypoint.
 - `**bold**` marks a new symbol. A `+` row without bold is a new call to something that exists.
-- Cite `@ path:line` on each line. Only an optional `-- one clause` may follow it. For a new function in a file that exists, cite the line it goes after.
+- Format the shared citation as `@ path:line` on each line. Only an optional `-- one clause` may follow it. For a new function in a file that exists, cite the line it goes after.
 - Keep one tree at 15 rows or fewer.
 - The step names the existing features that change, or says "independent".
 

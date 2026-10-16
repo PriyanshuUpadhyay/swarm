@@ -18,7 +18,6 @@ metadata:
 - Map each node and each arrow to one source line. Write one row per item: item, source `path:line`, `match` or `miss`.
 - A node or an arrow with no source line is an invented component. It is a `miss`.
 - Real over drawn: names on the diagram use the same words as the source.
-- Every branch in the source leads somewhere in the diagram, including the edge cases.
 - Shoot each diagram at 375 px wide to `{{shots}}/diagram-<diagram>-375.png`, so a page shot at 375 px cannot stand in for it. Read each label in it at 100 % zoom. No label is clipped, and no arrow crosses a label. A moving part never hides a letter.
 - The diagram reads on its own: a reader gets the caption's point from the picture without the body text.
 - Write each finding as `path:line - issue`, grouped by file.

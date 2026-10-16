@@ -67,7 +67,7 @@ name: story
 description: Turns a brief and its facts into a story sheet with beats, order and timing.
 license: MIT
 metadata:
-  kind: step            # rule | pack | step
+  kind: step            # rule | pack | step | parent
   owns: the order and the reveal of what the reader sees
   serves: plan the page, story
   needs: brief, facts
@@ -81,6 +81,13 @@ metadata:
 - `kind: rule` is a rule card that a step copies in full. `kind: pack` is a domain pack with an
   index, item files under `references/`, a check, and a `license` line that says copy, point or
   install. `kind: step` does work and writes its `gives` artifact.
+- `kind: parent` owns shared rules moved from two or more parts, with no verdict or gate. Its
+  `metadata.parts` is the only membership list, a nonempty comma-separated string such as
+  `parts: "when-to-diagram, html-diagram, call-tree, diagram-check"`. Only a parent has `parts`.
+  All folders stay flat. Each part has one parent, each listed part exists, and a parent cannot
+  be a part. In flow, a parent id selects itself and all parts. A part id pulls the parent's text
+  before itself, once per step. Aliases and profiles keep their current meaning. The plan chart
+  refuses a parent until B14 shares the resolver; it still accepts part ids without parent loading.
 - Blocks live under `blocks/`, not `skills/`. The Agent Skills spec loads the name and description
   of every discovered skill at startup, so 40 blocks there would crowd the skill list, and selection
   falls as the list grows. A skill points to the blocks it uses by a path from the kit root (`blocks/<id>/SKILL.md`), and
@@ -104,11 +111,10 @@ metadata:
    `conflicts` line. Example: `red-first-check` repeated `prove-it-works`, so on 2026-10-13 both
    texts became the one block `prove-it-works`, and the skill points to it.
 3. When two blocks are real alternatives, each names the other in `conflicts`. Code refuses a
-   ledger that holds both, and the plan block picks one with a reason line. Examples:
-   `html-diagram` and an SVG diagram block; the 300 ms rule in `web-ui-basics` and the 400-500 ms
-   transitions.dev timings.
-4. A block that names a step file is a defect, because a second workflow cannot use it. Example:
-   `call-tree/SKILL.md` names flow's `04-impact.md`.
+   ledger that holds both, and the plan block picks one with a reason line. For diagrams,
+   `references/explain-formats.md` chooses between HTML boxes and Mermaid.
+4. A block names a step by its role. A workflow's file name may follow as an example, as
+   `call-tree/SKILL.md` does for the impact step (`04-impact.md` in flow).
 
 ## Catalog
 
@@ -137,7 +143,7 @@ Status: ✅ exists, ✂️ cut from a skill next, ⬜ later, 🆕 new, 🔒 stay
 | design-tokens | step | the look as tokens | measured notes → `DESIGN.md` tokens | `blocks/design-tokens` (owner of the token rules) | ink, glitch-walk, any page | ✅ owner fix |
 | story | step | order, beats, key frames, pacing | brief, facts → story sheet, shot list | `blocks/story` | ink | ✅ |
 | motion | pack | how things move | story sheet or UI states → timings, eases, one timing owner | `blocks/ui-motion` (UI, one timing owner, emil pack tables); ink `story-and-motion.md` transition catalogue and motion feel (story) | ink, any UI, sites | ✅ basic UI, B8 |
-| diagram | rule set | when and how to draw | subject → diagram | `blocks/when-to-diagram`, `html-diagram`, `diagram-check`, `call-tree` | flow, research, glitch-walk, plans | ✅ |
+| diagram | parent | shared diagram rules | subject or diagram → rules for selected parts | `blocks/diagram` with parts `when-to-diagram`, `html-diagram`, `call-tree`, `diagram-check`; `references/explain-formats.md` owns when and which form | flow | ✅ slice 1 |
 | style-frames | step | "does it match the look" before the full build | tokens, page code → scored frames | `blocks/look-check` (owner of reference scoring) | flow, ink | ✅ |
 | build-site | step | what changes when the piece is a website | look, story → page | `blocks/build-site` | ink | ✅ |
 | build-canvas | pack | a drawn piece rendered from time and one seed | look, story, shot list → piece | `blocks/build-canvas` with `references/mark-making.md` | ink | ✅ |

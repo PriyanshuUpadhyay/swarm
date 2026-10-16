@@ -42,8 +42,7 @@ Draw one when the subject does at least one of these:
 Skip it for one file, a rename, a config value, or a list. The text already shows those. A list of
 more than three items with the same attributes gets a table.
 
-Pick the type from the table above. Every branch leads somewhere, so the diagram also shows the
-edge cases.
+Pick the type from the table above. `blocks/diagram/SKILL.md` owns the shared diagram rules.
 
 The format depends on where it is read:
 
@@ -51,9 +50,6 @@ The format depends on where it is read:
   terminal does not render Mermaid.
 - In a file that is read on GitHub or in a browser, use Mermaid (`sequenceDiagram`, `flowchart`,
   `stateDiagram-v2`, `erDiagram`, `timeline`).
-
-A node or an arrow that names code carries its `path:line`, and the caller's own check covers those
-citations.
 
 ## Local HTML page
 
