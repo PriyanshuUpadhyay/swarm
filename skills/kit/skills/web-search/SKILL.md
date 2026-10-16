@@ -103,7 +103,8 @@ the `03-web` section of `research`.
 
 ## The shared brief
 
-One brief, one section per seat. It holds:
+Apply `blocks/worker-brief/SKILL.md` for common fields and read/write limits. One brief has one
+section per seat, with these search-specific fields:
 
 1. the question, verbatim, and its sub-questions, split by the chair as `blocks/deep-search/SKILL.md`
    says;
@@ -124,8 +125,9 @@ One brief, one section per seat. It holds:
    `Sources` newest first, under 800 words, and a final `RESEARCH_DONE` line;
 8. **layout** — the seat's report follows the section order in
    the kit's `references/plan-layout.md` where that file applies; quote the rule lines the seat
-   needs, because Codex and AGY seats do not load it;
-9. the literal response path for that seat under the run directory, never a `$VAR`.
+   needs, because Codex and AGY seats do not load it.
+
+Use the literal result path required by `blocks/worker-brief/SKILL.md`.
 
 ## Chair synthesis
 
@@ -145,7 +147,7 @@ has handled all three reports.
    shape, plus a coverage table with one row per seat: seat, model, sites, threads read, blocked,
    and a matrix with one row per sub-question: independent sources per seat, gap or covered.
 4. Copy the three seat reports into the web-search run folder named by `references/run-folder.md`.
-5. Close the seats and verify their removal.
+5. Close out the seats by `blocks/run-workers/SKILL.md`.
 6. Remove the scratch run directory last.
 
 Example. GPT reads 19 Reddit threads, GEMINI is blocked by Reddit with a 403 and reads 18 GitHub
@@ -160,6 +162,5 @@ words.
 
 ## Guards
 
-- Seats are report-only, as the kit block `blocks/worker-brief/SKILL.md` says; each writes only its
-  report file.
+- Use the report-only seat contract in `blocks/worker-brief/SKILL.md`.
 - Every claim follows `blocks/cite-sources/SKILL.md`.

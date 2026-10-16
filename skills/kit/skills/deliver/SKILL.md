@@ -65,7 +65,7 @@ that does not match keeps the current gate; the chair runs the check before comm
 
 ## Parallel fix seats (opt-in)
 
-Only when the user opts in for this run, use at most two fix seats. Before launch, the chair
+Only when the user opts in for this run, use fix seats within the caps in `references/fan-out.md`. Before launch, the chair
 declares each seat's file set and the shared interfaces that stay frozen. Each seat uses its own
 worktree. Run `python3 <skill-dir>/scripts/land.py <decl.json> <worktree>...`, where the declaration
 maps each worktree to its file list and names the frozen files; it refuses overlapping files.

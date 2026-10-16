@@ -90,8 +90,8 @@ BIGGEST RISK
 WHAT WOULD CHANGE YOUR MIND
 ```
 
-Round 1 is one parallel round with artifact-authoritative completion: a seat is done when its
-artifact is accepted, never when its screen looks idle. Do not wait for a slow seat past the round
+Round 1 is one parallel round. Apply `blocks/run-workers/SKILL.md` for result acceptance,
+then check the returned artifact against this council's protocol. Do not wait for a slow seat past the round
 deadline plus the backend's one bounded resume. When two artifacts are accepted and the third seat
 is still degraded, continue with two positions and say so in the output; never re-prompt a seat
 by hand.
@@ -147,5 +147,5 @@ publish its private paths. Include the artifact pointer,
 Round-0 Q&A, models actually used, final verdict, required changes, dissent, per-model trail, the round
 at which the council converged, and each round's wall time.
 
-Run the selected backend's close-out, remove the scratch directory only after the durable log
-exists, and surface every provider failure or fallback.
+Close out the seats by `blocks/run-workers/SKILL.md`, remove the scratch directory only after
+the durable log exists, and surface every provider failure or fallback.

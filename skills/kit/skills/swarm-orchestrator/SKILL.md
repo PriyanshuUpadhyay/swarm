@@ -34,11 +34,16 @@ Launch every seat of a stage in one turn and send their asks in one turn, as the
 
 ## Work
 
+Seat identifiers carry the run id. Write long briefs to a file, and send a one-line pointer as the ask.
+
 ```sh
 printf '%s' '<question>' | swarm send <id> ask   # stores the message and rings the child's pane
 swarm inbox                                      # seq sender kind body_path, unread only
 swarm ack <seq>
 ```
+
+Apply `blocks/run-workers/SKILL.md` for result acceptance; this host's durable result channel is
+its inbox message from the named seat. The kit root is two folders up from this skill's folder.
 
 A child ends its turn after it answers. Ring it by sending; do not poll its pane.
 A child's `finish` or `send` rings your own pane with `swarm: new message`; on that prompt run `swarm inbox`, read the message, and `ack` it.
@@ -58,7 +63,7 @@ owner, and only the orchestrator may run it.
 ```sh
 swarm sweep --every 30                                  # a dead pane arrives as a summary from that child
 SWARM_SUMMARIZER='<command that reads a log on stdin>' swarm drain   # summarize children that died without finish
-swarm close <id>
+swarm close <id>                                      # close the seat named by run-workers
 ```
 
 Run the sweep as a background task of your agent harness, never with `&` in a detached shell, so it
