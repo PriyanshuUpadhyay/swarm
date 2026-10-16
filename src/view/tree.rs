@@ -473,8 +473,6 @@ pub fn build(snapshot: &Value, owner: &OwnerChoices) -> Tree {
     }
 }
 
-/// The snapshot's archived sessions in `workspace`, newest first. A chat with no name or title
-/// shows its provider and short id, as a live one does.
 /// The chat id that the page header shows (`shortId` in `web/src/core/route.ts`): the shortest
 /// start of `id`, at least 8 characters, that no other live or archived session shares. A UUID v7
 /// starts with the time, so chats made in the same minute share their first 8 characters.
@@ -493,6 +491,8 @@ pub fn short_id(id: &str, snapshot: &Value) -> String {
     id[..length].to_owned()
 }
 
+/// The snapshot's archived sessions in `workspace`, newest first. A chat with no name or title
+/// shows its provider and short id, as a live one does.
 fn archived_chats(snapshot: &Value, workspace: &str, owner: &OwnerChoices) -> Vec<ArchivedChat> {
     let all: Vec<&Value> = ["sessions", "archived"]
         .iter()

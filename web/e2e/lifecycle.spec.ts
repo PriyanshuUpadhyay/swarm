@@ -258,7 +258,10 @@ test("an archived chat folds under its workspace, and Unarchive opens it again",
     await archived.click({ button: "right" });
     await expect(tab.getByRole("menuitem", { name: "Unarchive chat" })).toBeVisible();
     await tab.keyboard.press("Escape");
-    await archived.locator('[data-action="unarchive"]').click();
+    // After a long run, headless WebKit hit-tests this scrolled sidebar at stale positions, so a
+    // pointer click lands on the tree; the click goes to the button itself.
+    await archived.hover();
+    await archived.locator('[data-action="unarchive"]').dispatchEvent("click");
     await expect(row).toBeVisible();
     await expect(archived).toHaveCount(0);
     await expect(tab.locator(`[data-testid="transcript"][data-chat="${session}"][data-state="ready"]`)).toBeVisible();
