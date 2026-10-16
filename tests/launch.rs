@@ -2365,3 +2365,77 @@ fn a_codex_chair_is_named_at_launch_and_its_log_gives_the_thread_id() {
     assert_eq!(chair()["chair_provider"], "codex");
     assert_eq!(chair()["chair_id"], thread);
 }
+
+/// The owner's send starts a turn, so the agent reads as working at once, not when its own first
+/// report comes a second or two later.
+#[test]
+fn a_typed_prompt_marks_the_agent_working_at_once() {
+    let home = scratch("type-working");
+    tool(&home, "codex", "true");
+    std::fs::create_dir_all(home.join(".swarm/adapters")).unwrap();
+    std::fs::write(
+        home.join(".swarm/adapters/tmux-swarm.conf"),
+        // An idle Codex input box, so the send does not wait for one to draw.
+        "self = printf chair\nspawn = printf pane\nring = true\nlist = printf pane\nclose = true\ncapture = printf '› Ask'\n",
+    )
+    .unwrap();
+    let app = [("SWARM_ADAPTER", "tmux-swarm")];
+    let session = swarm(&home, &app, &["session", "new", "lane"]);
+    let session = String::from_utf8(session.stdout)
+        .unwrap()
+        .trim()
+        .to_string();
+    let env = [
+        ("SWARM_ADAPTER", "tmux-swarm"),
+        ("SWARM_SESSION_ID", session.as_str()),
+        ("SWARM_AGENT_ID", "orchestrator"),
+    ];
+    let cwd = home.join("repo");
+    std::fs::create_dir_all(&cwd).unwrap();
+    let cwd = cwd.to_string_lossy().into_owned();
+    let launched = swarm(
+        &home,
+        &env,
+        &[
+            "launch",
+            "orchestrator",
+            "chat",
+            "--provider",
+            "codex",
+            "--model",
+            "m",
+            "--cwd",
+            &cwd,
+        ],
+    );
+    assert!(launched.status.success(), "{}", stderr(&launched));
+    let mut typed = Command::new(env!("CARGO_BIN_EXE_swarm"));
+    typed
+        .env_clear()
+        .env("HOME", &home)
+        .env("SWARM_HOME", &home)
+        .env(
+            "PATH",
+            format!("{}:/usr/bin:/bin", home.join("bin").display()),
+        )
+        .envs(app)
+        .env("SWARM_SESSION_ID", &session)
+        .current_dir(&home)
+        .args(["type", "orchestrator"])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    let mut child = typed.spawn().unwrap();
+    std::io::Write::write_all(&mut child.stdin.take().unwrap(), b"hello").unwrap();
+    let typed = child.wait_with_output().unwrap();
+    assert!(typed.status.success(), "{}", stderr(&typed));
+    let connection = swarm::store::open(&home.join(".swarm/swarm.db")).unwrap();
+    let (state, source): (String, String) = connection
+        .query_row(
+            "SELECT state, state_source FROM agent WHERE session_id = ?1 AND id = 'orchestrator'",
+            [&session],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!((state.as_str(), source.as_str()), ("working", "hook"));
+}

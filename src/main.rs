@@ -4993,7 +4993,24 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 "swarm: this chat's pane has closed; start a new chat or switch model".into(),
             );
         }
-        return type_text(&connection, &adapter, &session_id, agent_id, &pane, &text);
+        type_text(&connection, &adapter, &session_id, agent_id, &pane, &text)?;
+        // The agent's own report comes a second or two later, and the sidebar would say "done"
+        // until then. A sent prompt starts a turn, so it holds the hook's authority; the agent's
+        // next report or, after HOOK_AUTHORITY_S, its screen replaces it.
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)?
+            .as_secs() as i64;
+        swarm::store::set_state(
+            &connection,
+            &session_id,
+            agent_id,
+            "working",
+            "hook",
+            None,
+            None,
+            now,
+        )?;
+        return Ok(());
     }
     if let [cmd, agent_id, prompt_id, choice] = args
         && cmd == "answer"
