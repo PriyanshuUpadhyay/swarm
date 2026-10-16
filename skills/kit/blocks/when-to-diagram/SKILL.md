@@ -1,6 +1,6 @@
 ---
 name: when-to-diagram
-description: "Decide whether a doc, plan, or page needs a diagram, and pick its type and size from the subject's shape. Use when you decide whether a doc, plan, or page needs a diagram."
+description: "Size a diagram, label it, and record its trigger and type in the design step. Use when a doc, plan, or page gets a diagram."
 license: MIT
 metadata:
   kind: rule
@@ -16,7 +16,6 @@ metadata:
 ## Rules
 - `references/explain-formats.md` owns when to draw a diagram, when to skip it, and which type fits the shape. This block adds only the rules below.
 - For each diagram, write in the design step's file (`02-design.md` in flow) the trigger it meets and the type picked from the shape.
-- Every branch leads somewhere, so the diagram also shows the edge cases.
 - A parts diagram (the parts of a system and how they connect, not the steps of a flow or a sequence) has 12 nodes at most, in 2 to 3 columns. Place the nodes on a grid.
 - A state diagram has 8 states at most. Put the main path on the top row and the ways out below it. Without a grid, labels overlap once arrows cross. No state that cannot be reached. No dead end that is not final.
 - An arrow label is a key, a code, or two words.
