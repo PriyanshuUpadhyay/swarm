@@ -7,7 +7,7 @@
   done <folder> <step>          set the step done, only when every todo is checked with evidence
   skip <folder> <step> <reason> skip an open or active step, with the reason
 
-take and done add one line to <folder>/events.log, so the path of a run stays readable after it ends.
+take, done, and skip add one line to <folder>/events.log, so the path of a run stays readable after it ends.
 A skill script with its own step graph or revision (implement) imports these functions and passes `need`
 and `rev`.
 """
@@ -231,8 +231,8 @@ if __name__ == "__main__":
         force = command == "take" and "--force" in args
         if command == "take":
             args = [arg for arg in args if arg != "--force"]
-        if command == "done" and "--force" in args:
-            raise SystemExit("done <folder> <step> accepts no --force")
+        if command in ("done", "skip") and "--force" in args:
+            raise SystemExit("done <folder> <step> accepts no --force" if command == "done" else "skip accepts no --force")
         minimum, maximum = arity[command]
         if len(args) < minimum or maximum is not None and len(args) > maximum:
             raise SystemExit(next(line.strip() for line in __doc__.splitlines()

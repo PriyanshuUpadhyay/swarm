@@ -441,6 +441,14 @@ def test_build_start_and_skip():
         for reason in ("", "\n\t"):
             out = run("skip", folder, "03-story", reason)
             assert out.returncode == 1 and "needs a reason" in out.stderr, out
+        events = folder / "events.log"
+        before = events.read_text(encoding="utf-8") if events.exists() else None
+        for args in ((folder, "03-story", "--force"), ("--force", folder, "03-story", "study"),
+                     (folder, "03-story", "study", "--force")):
+            out = run("skip", *args)
+            assert out.returncode == 1 and "skip accepts no --force" in out.stderr, out
+            assert (folder / "03-story.md").read_text(encoding="utf-8") == "Status: open\n" + original
+            assert (events.read_text(encoding="utf-8") if events.exists() else None) == before
         out = run("skip", folder, "03-story", "study", "route")
         assert out.returncode == 0, out.stderr
         assert (folder / "03-story.md").read_text(encoding="utf-8") == "Status: skipped study route\n" + original
