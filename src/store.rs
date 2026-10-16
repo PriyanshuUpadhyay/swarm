@@ -1480,9 +1480,7 @@ pub fn ack(
             |row| row.get(0),
         )?
     {
-        return Err(
-            format!("message {seq} is not for agent {agent_id} in session {session_id}").into(),
-        );
+        return Err(format!("swarm: no message {seq} in your inbox").into());
     }
     Ok(())
 }
@@ -1879,6 +1877,13 @@ mod tests {
             .unwrap();
         assert_eq!(marks, 1);
         assert_eq!(inbox(&connection, SESSION, CODER).unwrap()[0].seq, 1);
+    }
+
+    #[test]
+    fn ack_of_a_seq_not_in_the_inbox_names_the_seq() {
+        let connection = seed(0);
+        let error = ack(&connection, SESSION, 999999, CODER).unwrap_err();
+        assert_eq!(error.to_string(), "swarm: no message 999999 in your inbox");
     }
 
     #[test]
