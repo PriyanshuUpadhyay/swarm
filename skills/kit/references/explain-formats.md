@@ -1,15 +1,34 @@
 ---
-description: Owner rule for when an explanation adds a diagram or a local HTML page to its text. Read when a skill or AGENTS.md points here, before you write a map, a report, a plan, or a reply that explains how something works.
+description: Owner rule for the visual form (table, text diagram, or local HTML page) of a report, plan, review, status, or explanation with more than three facts. Read when a skill or AGENTS.md points here, before you write a map, a report, a plan, a status, or a reply that explains how something works.
 ---
 
 # Explain formats
 
-Text in the reply is the default and always carries the whole result. A diagram or a page is added
-only when it makes the result easier to understand than text alone.
+A report, plan, review, status, or explanation with more than three facts carries a visual form,
+which is a table, a text diagram, or a local HTML page. The reply always carries the whole result,
+so the page is extra and never the only copy. Prose alone is for a result of three facts or fewer.
 
-Example. A change moves a login check from the API handler to a middleware that three routes share.
-In text, the reader must hold four names and their order. A five-line diagram shows the request
-passing the middleware before each route, and the reader sees the new order at once.
+| Content shape | Form |
+|---|---|
+| calls over time, across three or more parts | sequence diagram |
+| decisions, branches, or a retry flow | flowchart |
+| dates, order, or phases | timeline |
+| a lifecycle or a status | state diagram |
+| many items, each with the same attributes | table |
+| a schema or a data model | entity diagram |
+| more than one screen of linked diagrams, or a table that needs sorting | local HTML page |
+
+Before this rule, a status reply says "Task 1 is done and checked. Task 2 is blocked on a question
+about the retry limit. Task 3 is running and has 2 commits. Task 4 has not started."
+
+With a table, the reader sees the state of all four at once.
+
+| Task | State | Evidence or blocker |
+|---|---|---|
+| 1 | ✅ done | checks pass |
+| 2 | ❓ blocked | retry limit: owner decides |
+| 3 | ⚠️ running | 2 commits |
+| 4 | ➖ not started | waits for task 3 |
 
 ## Diagram
 
@@ -20,28 +39,25 @@ Draw one when the subject does at least one of these:
 - moves through a lifecycle, a status, or a retry flow;
 - changes a schema or a data model.
 
-Skip it for one file, a rename, a config value, or a list. The text already shows those.
+Skip it for one file, a rename, a config value, or a list. The text already shows those. A list of
+more than three items with the same attributes gets a table.
 
-Pick the type from the shape. Use a sequence for calls over time, a flowchart for decisions, a state
-diagram for a lifecycle, and an entity diagram for a schema. Every branch leads somewhere, so the
-diagram also shows the edge cases.
+Pick the type from the table above. `blocks/diagram/SKILL.md` owns the shared diagram rules.
 
 The format depends on where it is read:
 
 - In a reply or a terminal, draw a text diagram with boxes and arrows in a fenced block, because a
   terminal does not render Mermaid.
 - In a file that is read on GitHub or in a browser, use Mermaid (`sequenceDiagram`, `flowchart`,
-  `stateDiagram-v2`, `erDiagram`).
-
-A node or an arrow that names code carries its `path:line`, and the caller's own check covers those
-citations.
+  `stateDiagram-v2`, `erDiagram`, `timeline`).
 
 ## Local HTML page
 
 Write one self-contained HTML file next to the result when the reader must compare or explore more
-than text and one diagram can hold. Examples are a table that needs sorting or filters, more than
-one linked diagram, a timeline, or a before-and-after view. Put the page in the run folder, render
-its Mermaid with the library from `cdn.jsdelivr.net`, and give its path in one line of the reply.
+than a table and one text diagram can hold. Examples are a table that needs sorting or filters, more
+than one linked diagram, a long timeline, or a before-and-after view. Put the page in the run
+folder, render its Mermaid with the library from `cdn.jsdelivr.net`, and give its path in one line
+of the reply.
 
 The page is extra. The reply still carries the whole result, and the agent never publishes the page
 or opens it.
