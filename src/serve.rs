@@ -2703,6 +2703,9 @@ async fn execute_action(app: &App, action: Action) -> Result<Value, ApiError> {
             }
             (call.args(&["type", &agent]), Some(text))
         }
+        Action::Interrupt(body) if interrupt_clears_box(app, &body)? => {
+            return interrupt_claude(app, body).await;
+        }
         Action::Interrupt(body) | Action::Close(body) => {
             let verb = if interrupt { "interrupt" } else { "close" };
             let (call, agent) = action_target(app, &body.session, &body.agent)?;
@@ -2812,6 +2815,45 @@ fn action_provider(app: &Server, session: &str, agent: &str) -> Result<Option<St
         )
     };
     result.map_err(|err| error(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()))
+}
+
+fn interrupt_clears_box(app: &App, body: &ActionTarget) -> Result<bool, ApiError> {
+    let (call, agent) = action_target(app, &body.session, &body.agent)?;
+    let provider = action_provider(app, &body.session, &agent)?;
+    Ok(queue::can_pull_back(provider.as_deref(), &call.adapter))
+}
+
+/// Claude puts a stopped prompt back in its input box, and the next message the app types would
+/// join it. So the box is cleared after the stop, with the presses that clear that prompt.
+async fn interrupt_claude(app: &App, body: ActionTarget) -> Result<Value, ApiError> {
+    let (call, agent) = action_target(app, &body.session, &body.agent)?;
+    let log_agent = if agent == "orchestrator" {
+        "chair"
+    } else {
+        &agent
+    };
+    let log = resolve_log(&app.root, &body.session, log_agent)?;
+    let (start, end) = row_offsets(&log.path, 200, None)
+        .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "transcript read failed"))?;
+    let state = read_row_window(&app.tool, &log, start, end).await?;
+    let prompt = state
+        .records
+        .values()
+        .filter(|record| record.event["type"] == "user_message_chunk")
+        .filter_map(|record| record.event["text"].as_str())
+        .next_back()
+        .unwrap_or_default()
+        .to_owned();
+    run_cli(app, call.args(&["interrupt", &agent]), None).await?;
+    // Claude puts the prompt back a moment after the stop; a press on an empty box does nothing.
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    for index in 0..queue::clear_presses(&[prompt]) {
+        if index > 0 {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        run_cli(app, call.args(&["key", &agent, "C-u"]), None).await?;
+    }
+    Ok(json!({"ok": true}))
 }
 
 async fn pull_back(app: &App, body: ActionTarget) -> Result<Value, ApiError> {
@@ -7346,6 +7388,31 @@ if [ "$3" = Up ]; then cat "$SWARM_HOME/after" >> '{}'; fi
                 clears
             );
         }
+    }
+    #[tokio::test]
+    async fn a_claude_stop_clears_the_prompt_that_claude_puts_back_in_its_box() {
+        let user = |text: &str| {
+            json!({"type":"user","uuid":text,"message":{"role":"user","content":text}}).to_string()
+                + "\n"
+        };
+        let fixture = pull_back_fixture(&(user("first") + &user("two\nlines")), "");
+        let _ = call_action(
+            &fixture,
+            "/api/chat/interrupt",
+            json!({"session":fixture.session,"agent":"chair"}),
+        )
+        .await
+        .unwrap();
+        let calls = action_calls(&fixture);
+        let calls: Vec<_> = calls.lines().collect();
+        assert!(calls[0].ends_with("interrupt orchestrator"), "{calls:?}");
+        assert_eq!(
+            calls[1..]
+                .iter()
+                .filter(|line| line.ends_with(" C-u"))
+                .count(),
+            5
+        );
     }
     #[tokio::test]
     async fn pull_back_route_refuses_agent_queue_and_unsupported_targets_without_up() {
