@@ -17,7 +17,7 @@ metadata:
 - Capture and name frames and compare images by `blocks/headless-shot/SKILL.md`. For a page, render three: the hero at 1440 px and at 390 px and one middle section at 1440 px. For a reel, one of the frames is the signature shot.
 - Inspect the built frames by `blocks/visual-qa/SKILL.md`. Score every line of the look (the `DESIGN.md` tokens, or the list of look traits the work keeps) as `match`, `partial`, or `miss`, each with pixel evidence.
 - A `miss` on any trait blocks the build step.
-- Do at least two rounds of fix and re-render. Record the scores of each round in the step's own file.
+- Do at least two rounds of fix and re-render, even when round 1 has no miss. Record the scores of each round in the step's own file.
 - After round 3 with the same `miss`, stop and show the user the frame and the miss. Write `accepted miss: <trait>, user: <their words>` only after the user has seen the frame. Later rounds still score every trait and exempt only that accepted miss from the gate. A miss that changes asks again.
 
 ## Example

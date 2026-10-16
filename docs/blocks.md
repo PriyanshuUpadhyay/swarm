@@ -101,6 +101,8 @@ metadata:
 
 ## Ownership and conflicts
 
+On 2026-10-17, the owner settled the look-round part of #70 in `blocks/look-check/SKILL.md`.
+
 On 2026-10-17, the owner settled the evidence part of #70 with three separate owners:
 `blocks/prove-it-works/SKILL.md`, `blocks/cite-sources/SKILL.md`, and `blocks/done-when-evidence/SKILL.md`.
 
