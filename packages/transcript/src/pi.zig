@@ -161,12 +161,15 @@ fn parseAssistant(arena: std.mem.Allocator, events: *std.ArrayList(root.Event), 
     }
     if (has_unknown) try events.append(arena, try root.unknownEvent(arena, meta, line));
     const stop = root.str(message, "stopReason");
-    if (std.mem.eql(u8, stop, "error")) {
+    // An owner's stop can reach pi as Node's AbortError, which some providers write as an error.
+    const user_abort = std.mem.eql(u8, stop, "error") and
+        root.oneOf(root.str(message, "errorMessage"), &.{ "This operation was aborted", "Operation aborted" });
+    if (std.mem.eql(u8, stop, "error") and !user_abort) {
         // A failed reply that pi gives up on, such as a failed login, writes nothing after it, so
         // it ends the turn. A retry that works adds its reply after this turn end.
         try events.append(arena, .{ .@"error" = .{ .meta = meta, .message = root.str(message, "errorMessage") } });
         try events.append(arena, .{ .turn_ended = .{ .meta = meta, .duration_ms = null, .reason = .aborted } });
-    } else if (std.mem.eql(u8, stop, "aborted")) {
+    } else if (user_abort or std.mem.eql(u8, stop, "aborted")) {
         try events.append(arena, .{ .turn_ended = .{ .meta = meta, .duration_ms = null, .reason = .aborted } });
     } else if (!called_tool and root.oneOf(stop, &.{ "stop", "length" })) {
         try events.append(arena, .{ .turn_ended = .{ .meta = meta, .duration_ms = null, .reason = .completed } });
@@ -271,6 +274,16 @@ test "two text blocks of one pi reply stay apart" {
     // The view joins chunks of one row with no separator.
     try std.testing.expectEqualStrings("First.", events[0].agent_message_chunk.text);
     try std.testing.expectEqualStrings("\n\nSecond.", events[1].agent_message_chunk.text);
+}
+
+test "a stop that pi writes as an abort error ends the turn as interrupted, with no error row" {
+    var state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer state.deinit();
+    const events = try parseLine(state.allocator(),
+        \\{"type":"message","id":"a1","parentId":"u1","timestamp":"t","message":{"role":"assistant","content":[],"stopReason":"error","errorMessage":"This operation was aborted"}}
+    );
+    try std.testing.expectEqual(@as(usize, 1), events.len);
+    try std.testing.expectEqual(.aborted, events[0].turn_ended.reason);
 }
 
 test "a pi session id comes from its file name" {
