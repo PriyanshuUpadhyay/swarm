@@ -18,7 +18,7 @@ metadata:
 - A unit is the smallest change that leaves a checkable state. A helper lands in the same unit as its first caller, so the check passes at every commit. Keep the failing test and its fix inside one checked behavior. A removal lands before the reshape that needs it.
 - The `deliver` commit gate has one pipeline exception. After unit N passes its worker check, the chair checks its returned artifact and evidence. The worker may edit N+1 during that check, but N+1 cannot commit until the chair's check of N passes.
 - Each unit is one bracket: a known-good state, one change, the check, then the next unit. Start from a clean base, so every check measures against the real baseline. Never save the checks for one final batch.
-- Order the units so the stack proves itself. A reviewer reads the failing then passing evidence within each behavior, and each commit stands on its own.
+- Order the units so the stack proves itself. A reviewer reads the failing then passing evidence within each behavior, scaffold then feature, and each commit stands on its own.
 - Fix seats may build fix rows with declared, separate files at the same time, under the `deliver` skill's Parallel fix seats (opt-in) section. Each fix still ends in its own check at its place in the stack.
 - When a data change can touch many records and the task allows a sample, the first unit runs it on one record and checks that record before the rest run.
 - The check inside each unit follows the kit block `blocks/prove-it-works/SKILL.md`.

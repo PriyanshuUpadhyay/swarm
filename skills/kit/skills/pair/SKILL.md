@@ -77,7 +77,7 @@ Then wait for one of three replies:
 
 | Reply | Result |
 |---|---|
-| `approve` | apply the chunk and run the smallest check for the touched unit by `blocks/prove-it-works/SKILL.md`. During the check, prepare the next chunk's diff in scratch from the patched file. After the check passes, show its result in one line and the next chunk's diff in the same reply. When the chunk is the last one of its behavior, also commit the behavior and add the short hash to that line. If the check fails, show the failure, drop the prepared chunk, skip any commit, and wait for `change` or `deny` |
+| `approve` | apply the chunk and run the smallest check for the touched unit (compile, lint, or one test). It proves only that chunk. The behavior proof follows `blocks/prove-it-works/SKILL.md` at the last chunk. During the check, prepare the next chunk's diff in scratch from the patched file. After the check passes, show its result in one line and the next chunk's diff in the same reply. When the chunk is the last one of its behavior, also commit the behavior and add the short hash to that line. If the check fails, show the failure, drop the prepared chunk, skip any commit, and wait for `change` or `deny` |
 | `change: <text>` | revise the same chunk and show it again |
 | `deny` | drop the chunk without argument, ask at most one question, then propose the next chunk |
 

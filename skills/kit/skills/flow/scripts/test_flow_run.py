@@ -1209,7 +1209,7 @@ def test_block_checks(tmp):
     assert rules_at < judge_at < todo_at and judge in review[judge_at:todo_at], review
     assert flow_run.step_run.todo_scan(review)[0] == todo_at, review
     assert "block base-rules judge: Does every fact in the result trace to a line in docs/spec.md?" in review, review
-    assert review.count("block base-rules judge:") == 2, "base judge lines appear once per run"
+    assert review.count("block base-rules judge:") == 1, "base has one source check, once per run"
     f = folder / "05-build.md"
     fill(f)
     text = f.read_text(encoding="utf-8")

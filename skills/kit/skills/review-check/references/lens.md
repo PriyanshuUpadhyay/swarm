@@ -17,11 +17,11 @@ The goal is a change that the next reader can follow without holding extra state
 
 - `C-1` A new or kept helper, wrapper, or file → check every permitted reason in the kit block `blocks/when-to-extract/SKILL.md`; quote the reason that holds, or the unit that meets none.
 - `C-2` A shallow module whose interface is as big as its body → merge it into the caller (Ousterhout, deep modules).
-- `C-3` Validation, `unknown`, or a schema on locally produced data → apply `skills/cleanup-gate/references/rules.md` and the global rules it names; quote the check and its boundary before asking to remove it.
+- `C-3` Validation, `unknown`, or a schema on locally produced data → apply section 6 of `skills/cleanup-gate/references/rules.md`; quote the check and its boundary before asking to remove it.
 - `C-4` A second type for a shape that already has one → apply the state and derivation rules in `blocks/when-to-extract/SKILL.md`; quote both shapes and their owner.
 - `C-5` The same logic shape in two hunks → one shared piece, or say which one stays (Fowler, duplicated code).
 - `C-6` A boolean flag that adds a mode next to an older flag → one enum.
-- `C-7` A new constant or repeated literal → apply section 3 of `skills/cleanup-gate/references/rules.md`; quote its consumers and location.
+- `C-7` A magic number or repeated literal → a named const. For its location, apply section 3 of `skills/cleanup-gate/references/rules.md`; quote its consumers and location.
 - `C-8` A name that does not say what the value holds → rename. A name that needs a comment to make sense → rename first, comment second.
 - `C-9` A new comment or a constraint that code cannot express → apply the global comment rule named by `skills/cleanup-gate/references/rules.md`; quote the code and comment.
 - `C-10` Debug routes, repair scripts, or feature flags that the change no longer needs → remove them.
