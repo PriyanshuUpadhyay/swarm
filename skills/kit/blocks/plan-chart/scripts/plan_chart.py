@@ -66,16 +66,17 @@ def read_ledger(path):
     return ledger
 
 
-def toml_lists(section):
-    """{name: [ids]} for the one-line `name = [...]` entries under [section] ("" is the top) in blocks.toml."""
-    text = (KIT / "blocks" / "blocks.toml").read_text(encoding="utf-8")
-    body = text.split("\n[", 1)[0] if not section else text.split(f"\n[{section}]", 1)[1].split("\n[", 1)[0]
-    return {m[1]: re.findall(r'"([^"]+)"', m[2]) for m in re.finditer(r"^([\w-]+)\s*=\s*\[(.*?)\]", body, re.M)}
+def blocks_toml():
+    try:
+        import tomllib
+    except ModuleNotFoundError:
+        raise SystemExit(f"{KIT / 'blocks' / 'blocks.toml'}: reading TOML needs Python 3.11 or later (tomllib)") from None
+    return tomllib.loads((KIT / "blocks" / "blocks.toml").read_text(encoding="utf-8"))
 
 
 def check_ledger(rows, ledger):
     """The ledger names each catalog block once, and Chosen matches the blocks the steps use."""
-    base = set(toml_lists("").get("base", []))
+    base = set(blocks_toml().get("base", []))
     catalog = {p.parent.name for p in (KIT / "blocks").glob("*/SKILL.md")} - base
     if not ledger:
         raise SystemExit("no | Block | Status | Why | table; list every catalog block as Chosen or Rejected")
@@ -95,7 +96,7 @@ def check_ledger(rows, ledger):
 
 def ledger_groups(ledger):
     """[(status, [(label, [members])])]: sub-blocks (blocks.toml [aliases]) go under their alias. A lone block has no members."""
-    aliases = toml_lists("aliases")
+    aliases = blocks_toml().get("aliases", {})
     groups = []
     for status in ("Chosen", "Rejected"):
         names = [b for b, (s, _) in ledger.items() if s == status]
@@ -117,7 +118,7 @@ def ledger_markdown(ledger):
         for label, members in entries:
             if members:
                 out.append(f"| {label} (sub-blocks) | |")
-                out += [f"| &nbsp;&nbsp;{m} | {ledger[m][1]} |" for m in members]
+                out += [f"| ↳ {m} | {ledger[m][1]} |" for m in members]
             else:
                 out.append(f"| {label} | {ledger[label][1]} |")
         out.append("")

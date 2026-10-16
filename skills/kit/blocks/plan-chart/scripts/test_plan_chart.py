@@ -1,18 +1,19 @@
 """Run: python3 test_plan_chart.py"""
-import subprocess, sys, tempfile
+import re, subprocess, sys, tempfile
 from pathlib import Path
 
-KIT = Path(__file__).resolve().parents[3]
 
 SCRIPT = Path(__file__).with_name("plan_chart.py")
-STEP_RUN = Path(__file__).resolve().parents[3] / "references" / "step_run.py"
+KIT = Path(__file__).resolve().parents[3]
+STEP_RUN = KIT / "references" / "step_run.py"
 
 CHOSEN = ["requirements", "local-research", "design-tokens", "build-site", "web-ui-basics", "voice-reply"]
 
 
 def ledger(chosen=CHOSEN, drop=()):
     """The blocks table: every catalog block but the base one, Chosen when a step uses it."""
-    names = sorted(p.parent.name for p in (KIT / "blocks").glob("*/SKILL.md") if p.parent.name != "base-rules")
+    base = re.search(r"^base = \[(.*?)\]", (KIT / "blocks" / "blocks.toml").read_text(encoding="utf-8"), re.M)[1]
+    names = sorted(p.parent.name for p in (KIT / "blocks").glob("*/SKILL.md") if f'"{p.parent.name}"' not in base)
     rows = [f"| {n} | {'Chosen' if n in chosen else 'Rejected'} | {'the task needs it' if n in chosen else 'the task has no use for it'} |"
             for n in names if n not in drop]
     return "\n## Blocks considered\n\n| Block | Status | Why |\n|---|---|---|\n" + "\n".join(rows) + "\n"
@@ -48,7 +49,7 @@ def test_good_plan():
     assert '<li class="step end"><h2>05-reply' in page, page
     # Rejected sub-blocks sit under their alias, and the stdout carries the table for the plan reply.
     assert "<h3>Rejected (" in page and "<code>tech-diagram</code> (sub-blocks)<ul><li><code>when-to-diagram</code>" in page, page
-    assert "### Chosen" in out.stdout and "| &nbsp;&nbsp;html-diagram | the task has no use for it |" in out.stdout, out.stdout
+    assert "### Chosen" in out.stdout and "| ↳ html-diagram | the task has no use for it |" in out.stdout, out.stdout
     # The approved plan runs as a step run with no change.
     run = subprocess.run([sys.executable, "-I", STEP_RUN, "start", folder / "run", folder / "plan.md"], capture_output=True, text=True)
     assert run.returncode == 0, run.stderr

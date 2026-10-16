@@ -37,8 +37,8 @@ The parts and their owners:
   templates plus its contract.
 - **Plan block.** It reads the task and the block catalog, then writes the ledger, with one reason
   line for each block it adds or leaves out. The owner sees these as the Chosen and Rejected
-  tables before approval (`blocks/planner/SKILL.md` owns the rule; `plan_chart.py` checks and prints them). When a template fits, it starts from that template and
-  may add any block to a stage, but it cannot drop a stage that the template marks as required. When
+  tables before approval (`blocks/planner/SKILL.md` owns the rule; `plan_chart.py` checks and prints
+  them). When a template fits, it starts from that template and may add any block to a stage, but it cannot drop a stage that the template marks as required. When
   no template fits, it builds the ledger from the catalog alone, and that ledger must still hold a
   frame, an end condition that code can check, and a close stage (owner decision, 2026-10-13).
 - **Ledger.** The step-run folder. `references/step_run.py` runs it. A step whose needs are done runs

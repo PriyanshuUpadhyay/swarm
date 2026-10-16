@@ -15,7 +15,7 @@ metadata:
 
 ## Rules
 - Run `python3 -I <kit root>/blocks/plan-chart/scripts/plan_chart.py <run>/plan.md`. The kit root is two folders up from this file.
-- On exit 1, the script prints the first defect: an unknown block, a Needs word that names no step, a loop, two conflicting blocks, a step whose output no step uses, or an end with no `voice-` block, or a blocks table that misses a catalog block or disagrees with the steps. Fix `plan.md` and run it again. Never edit `plan.html` by hand.
+- On exit 1, the script prints the first defect: an unknown block, a Needs word that names no step, a loop, two conflicting blocks, a step whose output no step uses, an end with no `voice-` block, or a blocks table that misses a catalog block or disagrees with the steps. Fix `plan.md` and run it again. Never edit `plan.html` by hand.
 - On exit 0, it writes `plan.html` beside `plan.md`. Each stage is a column. The steps in one column run in parallel. Each step box shows its blocks, what it gets from which step, what it gives, and why. Below the chart, "Blocks considered" lists the Chosen and Rejected blocks with their reasons, and sub-blocks under their alias. The script also prints these as markdown tables after the path. `planner` owns the rule for the table and for the reply that shows it.
 - Run it again after every change to `plan.md`, so the chart never shows an old plan.
 
