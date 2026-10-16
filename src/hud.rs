@@ -11,6 +11,9 @@ pub struct Status {
     pub running: bool,
     /// The HUD app that `install` would start, or None when no HUD app is found.
     pub app: Option<String>,
+    /// Each running HUD that the login item did not start, such as one that `swarm ui` started
+    /// before the login item existed. `install` and `uninstall` stop them.
+    pub strays: Vec<u32>,
 }
 
 /// `SWARM_HUD_APP` alone when set, else the app that ships beside this swarm (ADR 0079).
@@ -101,8 +104,44 @@ pub fn running(launchctl_print: &str) -> bool {
         .any(|line| line.trim() == "state = running")
 }
 
+/// The `pid = N` line of a running job in `launchctl print`.
+pub fn job_pid(launchctl_print: &str) -> Option<u32> {
+    launchctl_print
+        .lines()
+        .find_map(|line| line.trim().strip_prefix("pid = ")?.parse().ok())
+}
+
+/// The pids in `pgrep` output, without the login item's own.
+pub fn others(pgrep: &str, job: Option<u32>) -> Vec<u32> {
+    pgrep
+        .lines()
+        .filter_map(|line| line.trim().parse().ok())
+        .filter(|pid| Some(*pid) != job)
+        .collect()
+}
+
 unsafe extern "C" {
     pub(crate) fn getuid() -> u32;
+    fn kill(pid: i32, signal: i32) -> i32;
+}
+
+fn strays(job: Option<u32>) -> Vec<u32> {
+    // SAFETY: getuid has no preconditions and cannot fail.
+    let uid = unsafe { getuid() }.to_string();
+    let pgrep = std::process::Command::new("/usr/bin/pgrep")
+        .args(["-x", "-U", &uid, "SwarmHUD"])
+        .stdin(std::process::Stdio::null())
+        .output()
+        .map(|output| String::from_utf8_lossy(&output.stdout).into_owned())
+        .unwrap_or_default();
+    others(&pgrep, job)
+}
+
+fn stop(pids: &[u32]) {
+    for &pid in pids {
+        // SAFETY: kill only sends a signal; a pid that is gone returns an error we ignore.
+        unsafe { kill(pid as i32, 15) };
+    }
 }
 
 fn domain() -> String {
@@ -126,10 +165,12 @@ pub fn status(home: &Path) -> Status {
     let print = launchctl(&["print", &format!("{}/{LABEL}", domain())])
         .map(|output| String::from_utf8_lossy(&output.stdout).into_owned())
         .unwrap_or_default();
+    let running = running(&print);
     Status {
         installed: plist_path(home).exists(),
-        running: running(&print),
+        running,
         app: app().map(|path| stable_path(&path).to_string_lossy().into_owned()),
+        strays: strays(job_pid(&print).filter(|_| running)),
     }
 }
 
@@ -157,6 +198,8 @@ pub fn install(home: &Path) -> Result<Status, Box<dyn std::error::Error>> {
         }
         std::thread::sleep(std::time::Duration::from_millis(100));
     }
+    // The job is gone now, so each HUD left is a stray; one HUD runs after the bootstrap.
+    stop(&strays(None));
     let failure = match launchctl(&["bootstrap", &domain(), &path.to_string_lossy()]) {
         Ok(output) if output.status.success() => None,
         Ok(output) => Some(String::from_utf8_lossy(&output.stderr).trim().to_string()),
@@ -180,6 +223,7 @@ pub fn install(home: &Path) -> Result<Status, Box<dyn std::error::Error>> {
 
 pub fn uninstall(home: &Path) -> Result<Status, Box<dyn std::error::Error>> {
     let _ = launchctl(&["bootout", &format!("{}/{LABEL}", domain())]);
+    stop(&strays(None));
     match std::fs::remove_file(plist_path(home)) {
         Err(error) if error.kind() != std::io::ErrorKind::NotFound => return Err(error.into()),
         _ => {}
@@ -236,6 +280,16 @@ mod tests {
         assert!(text.contains("<key>SuccessfulExit</key>\n\t\t<false/>"));
         assert!(text.contains("<key>ThrottleInterval</key>\n\t<integer>60</integer>"));
         assert!(!text.contains("/a&b"));
+    }
+
+    #[test]
+    fn a_stray_is_each_hud_pid_but_the_login_items() {
+        let print = "gui/501/io.github.priyanshuupadhyay.swarm.hud = {\n\tstate = running\n\tpid = 63253\n}";
+        assert_eq!(job_pid(print), Some(63253));
+        assert_eq!(job_pid("\tstate = not running\n"), None);
+        assert_eq!(others("63253\n88792\n", Some(63253)), vec![88792]);
+        assert_eq!(others("63253\n", None), vec![63253]);
+        assert!(others("", Some(1)).is_empty());
     }
 
     #[test]

@@ -1678,6 +1678,8 @@ struct SetupPlan {
     plugin: Option<PluginPlan>,
     /// The LaunchAgent text the HUD item writes, or None when the HUD already runs from it.
     hud: Option<String>,
+    /// The HUDs that the login item did not start, which the HUD install stops.
+    hud_strays: Vec<u32>,
 }
 
 type Replan = Box<dyn Fn() -> Result<swarm::managed::FilePlan, String>>;
@@ -1705,6 +1707,7 @@ impl SetupPlan {
             skipped: Vec::new(),
             plugin: None,
             hud: None,
+            hud_strays: Vec::new(),
         };
         if groups.contains(&"hooks") {
             let has_list = swarm::paths::guards_file()?.exists();
@@ -1824,8 +1827,9 @@ impl SetupPlan {
             let text = swarm::hud::planned()?;
             let now = swarm::hud::status(&user_home);
             let written = std::fs::read_to_string(swarm::hud::plist_path(&user_home)).ok();
-            if !(now.running && written.as_ref() == Some(&text)) {
+            if !(now.running && written.as_ref() == Some(&text) && now.strays.is_empty()) {
                 setup.hud = Some(text);
+                setup.hud_strays = now.strays;
             }
         }
         Ok(setup)
@@ -1900,6 +1904,16 @@ impl SetupPlan {
             .map(|line| ("plugin", line))
             .collect();
         if self.hud.is_some() {
+            if !self.hud_strays.is_empty() {
+                let pids: Vec<_> = self.hud_strays.iter().map(u32::to_string).collect();
+                lines.push((
+                    "hud",
+                    format!(
+                        "run  kill {}, the usage HUDs that the login item did not start",
+                        pids.join(" ")
+                    ),
+                ));
+            }
             lines.push((
                 "hud",
                 "run  launchctl bootstrap, so the usage HUD starts at login".into(),
@@ -2087,6 +2101,15 @@ fn setup_rows(
             "Usage HUD",
             match (hud.app.is_some(), hud.installed, hud.running) {
                 (false, ..) => ("broken", "This build ships no HUD app".into()),
+                (_, true, true) if !hud.strays.is_empty() => setup(&format!(
+                    "Runs, with {} more {} that the login item did not start",
+                    hud.strays.len(),
+                    if hud.strays.len() == 1 {
+                        "copy"
+                    } else {
+                        "copies"
+                    }
+                )),
                 (_, true, true) => ok("Starts at login and runs"),
                 (_, true, false) => ("broken", "Starts at login but does not run".into()),
                 (_, false, _) => setup("Off"),

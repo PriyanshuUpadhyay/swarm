@@ -73,6 +73,8 @@ enum Layout {
     static let row: CGFloat = 42
     /// The legend line, with the open mascot and its credit on the right.
     static let legend: CGFloat = Layout.openMascot + 12
+    /// The least height of the last group that holds the mascot, its credit and the legend beside it.
+    static let besideHeight: CGFloat = 150
     static let bottom: CGFloat = 10
     static let markColumn: CGFloat = 20
     static let nameColumn: CGFloat = 190
@@ -80,6 +82,18 @@ enum Layout {
     static let valueColumn: CGFloat = 40
     static let resetColumn: CGFloat = 64
     static let gap: CGFloat = 12
+
+    /// One window column's width when `columns` share the row, so a narrower group lines up.
+    static func cell(columns: Int) -> CGFloat {
+        let fixed = markColumn + nameColumn + readingColumn + CGFloat(2 + columns) * gap
+        return (openWidth - 2 * inset - 2 * rowPadding - fixed) / CGFloat(max(columns, 1))
+    }
+
+    /// The width of a group with `kinds` columns, its padding included, in a table of `columns`.
+    static func groupWidth(kinds: Int, columns: Int) -> CGFloat {
+        2 * rowPadding + markColumn + nameColumn + readingColumn + CGFloat(2 + kinds) * gap
+            + CGFloat(kinds) * cell(columns: columns)
+    }
     /// The least notch height the HUD assumes, also the closed height on a Mac with no notch reading.
     static let minNotch: CGFloat = 37
 
@@ -92,10 +106,19 @@ extension UsageModel {
         CGSize(width: max(notch.width, 32) + 2 * Layout.wing, height: notch.height)
     }
 
+    /// The legend, credit and mascot fill the empty columns beside the last group when it has
+    /// fewer columns and is tall enough, so the card needs no band of its own for them.
+    var footerBeside: Bool {
+        let groups = providerGroups(accounts)
+        guard let last = groups.last, let widest = groups.map(\.kinds.count).max() else { return false }
+        return last.kinds.count < widest
+            && Layout.headings + CGFloat(last.accounts.count) * Layout.row >= Layout.besideHeight
+    }
+
     var openSize: CGSize {
         let height = Layout.band(notch: notch) + Layout.belowStatus
             + CGFloat(providerGroups(accounts).count) * Layout.headings
-            + CGFloat(accounts.count) * Layout.row + Layout.legend + Layout.bottom
+            + CGFloat(accounts.count) * Layout.row + (footerBeside ? 0 : Layout.legend) + Layout.bottom
         return CGSize(width: Layout.openWidth, height: min(height, Layout.maxOpenHeight))
     }
 }
@@ -325,52 +348,87 @@ struct OpenContent: View {
             status.frame(height: Layout.band(notch: model.notch))
             Spacer().frame(height: Layout.belowStatus)
             ForEach(groups) { group in
-                HStack(spacing: Layout.gap) {
-                    Spacer().frame(width: Layout.markColumn)
-                    Text(providerTitle(group.provider)).frame(width: Layout.nameColumn, alignment: .leading)
-                    Text("Reading").frame(width: Layout.readingColumn, alignment: .leading)
-                    ForEach(group.kinds, id: \.self) { kind in
-                        Text(kind.title).frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    ForEach(group.kinds.count..<columns, id: \.self) { _ in Color.clear.frame(maxWidth: .infinity) }
-                }
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(Palette.tertiary)
-                .padding(.horizontal, Layout.rowPadding)
-                .frame(height: Layout.headings)
-                // Each row's label names its windows, so VoiceOver reads only the group name here.
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(providerTitle(group.provider))
-                .accessibilityAddTraits(.isHeader)
-                // Account order is the reader's, so a sign-in never moves a row.
-                ForEach(Array(group.accounts.enumerated()), id: \.element.id) { index, account in
-                    Group {
-                        if account.windows.isEmpty {
-                            SignedOutRow(account: account)
-                        } else {
-                            AccountRow(account: account, kinds: group.kinds, columns: columns, theme: theme, now: now,
-                                       history: model.history, readFailed: model.readError != nil, readAt: model.readAt)
+                if model.footerBeside && group.id == groups.last?.id {
+                    HStack(alignment: .top, spacing: 0) {
+                        table(group, columns: group.kinds.count)
+                            .frame(width: Layout.groupWidth(kinds: group.kinds.count, columns: columns))
+                        VStack(alignment: .trailing, spacing: 6) {
+                            Spacer(minLength: 0)
+                            HStack(alignment: .bottom, spacing: 12) { credit; mascot }
+                            legend.multilineTextAlignment(.trailing)
                         }
+                        .font(.system(size: 11))
+                        .foregroundStyle(Palette.tertiary)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+                        .padding(.leading, Layout.gap)
+                        .padding(.horizontal, Layout.rowPadding)
+                        .padding(.bottom, 6)
                     }
-                    .padding(.horizontal, Layout.rowPadding)
-                    .background(index.isMultiple(of: 2) ? Color.clear : theme.stripe)
-                    .overlay(alignment: .top) { Palette.rule.frame(height: 1) }
+                    .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    table(group, columns: columns)
                 }
             }
-            HStack(spacing: 12) {
-                Text("Each limit shows used % · resets in; the line below says when it fills at this pace. A dash means no reading.")
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                credit
-                model.mascot(now: now, height: Layout.openMascot, live: live)
-                    .frame(width: 2 * Layout.openMascot, height: Layout.openMascot)
+            if !model.footerBeside {
+                HStack(spacing: 12) {
+                    legend.frame(maxWidth: .infinity, alignment: .leading)
+                    credit
+                    mascot
+                }
+                .font(.system(size: 11))
+                .foregroundStyle(Palette.tertiary)
+                .frame(height: Layout.legend)
+                .padding(.horizontal, Layout.rowPadding)
             }
-            .font(.system(size: 11))
-            .foregroundStyle(Palette.tertiary)
-            .frame(height: Layout.legend)
-            .padding(.horizontal, Layout.rowPadding)
             Spacer(minLength: 0)
         }
         .padding(.horizontal, Layout.inset)
+    }
+
+    /// One provider's heading and rows, drawn `columns` wide so each column lines up across groups.
+    private func table(_ group: ProviderGroup, columns: Int) -> some View {
+        VStack(spacing: 0) {
+            HStack(spacing: Layout.gap) {
+                Spacer().frame(width: Layout.markColumn)
+                Text(providerTitle(group.provider)).frame(width: Layout.nameColumn, alignment: .leading)
+                Text("Reading").frame(width: Layout.readingColumn, alignment: .leading)
+                ForEach(group.kinds, id: \.self) { kind in
+                    Text(kind.title).frame(maxWidth: .infinity, alignment: .leading)
+                }
+                ForEach(group.kinds.count..<columns, id: \.self) { _ in Color.clear.frame(maxWidth: .infinity) }
+            }
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(Palette.tertiary)
+            .padding(.horizontal, Layout.rowPadding)
+            .frame(height: Layout.headings)
+            // Each row's label names its windows, so VoiceOver reads only the group name here.
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(providerTitle(group.provider))
+            .accessibilityAddTraits(.isHeader)
+            // Account order is the reader's, so a sign-in never moves a row.
+            ForEach(Array(group.accounts.enumerated()), id: \.element.id) { index, account in
+                Group {
+                    if account.windows.isEmpty {
+                        SignedOutRow(account: account)
+                    } else {
+                        AccountRow(account: account, kinds: group.kinds, columns: columns, theme: theme, now: now,
+                                   history: model.history, readFailed: model.readError != nil, readAt: model.readAt)
+                    }
+                }
+                .padding(.horizontal, Layout.rowPadding)
+                .background(index.isMultiple(of: 2) ? Color.clear : theme.stripe)
+                .overlay(alignment: .top) { Palette.rule.frame(height: 1) }
+            }
+        }
+    }
+
+    private var legend: some View {
+        Text("Each limit shows used % · resets in; the line below says when it fills at this pace. A dash means no reading.")
+    }
+
+    private var mascot: some View {
+        model.mascot(now: now, height: Layout.openMascot, live: live)
+            .frame(width: 2 * Layout.openMascot, height: Layout.openMascot)
     }
 
     /// Who the mascot is and who drew it; the credit is also what the guests' licences ask for.
