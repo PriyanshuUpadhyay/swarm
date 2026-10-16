@@ -274,8 +274,7 @@ fn rows(
         let id = chat.row_id();
         let expanded = !state.is_collapsed(&id);
         let children = chat.children();
-        let status =
-            AgentStatus::aggregate(chat.agents.iter().map(AgentStatus::agent)).or(chat.status);
+        let status = chat.status;
         let waiting = children
             .iter()
             .filter(|a| AgentStatus::agent(a) == AgentStatus::Waiting)
