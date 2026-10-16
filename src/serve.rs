@@ -2832,18 +2832,11 @@ async fn interrupt_claude(app: &App, body: ActionTarget) -> Result<Value, ApiErr
     } else {
         &agent
     };
-    let log = resolve_log(&app.root, &body.session, log_agent)?;
-    let (start, end) = row_offsets(&log.path, 200, None)
-        .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "transcript read failed"))?;
-    let state = read_row_window(&app.tool, &log, start, end).await?;
-    let prompt = state
-        .records
-        .values()
-        .filter(|record| record.event["type"] == "user_message_chunk")
-        .filter_map(|record| record.event["text"].as_str())
-        .next_back()
-        .unwrap_or_default()
-        .to_owned();
+    // A first turn can be stopped before its log is stored, and the stop must still run.
+    let prompt = match resolve_log(&app.root, &body.session, log_agent) {
+        Ok(log) => last_prompt(app, &log).await.unwrap_or_default(),
+        Err(_) => String::new(),
+    };
     run_cli(app, call.args(&["interrupt", &agent]), None).await?;
     // Claude puts the prompt back a moment after the stop; a press on an empty box does nothing.
     tokio::time::sleep(Duration::from_millis(300)).await;
@@ -2854,6 +2847,20 @@ async fn interrupt_claude(app: &App, body: ActionTarget) -> Result<Value, ApiErr
         run_cli(app, call.args(&["key", &agent, "C-u"]), None).await?;
     }
     Ok(json!({"ok": true}))
+}
+
+async fn last_prompt(app: &App, log: &Log) -> Result<String, ApiError> {
+    let (start, end) = row_offsets(&log.path, 200, None)
+        .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "transcript read failed"))?;
+    let state = read_row_window(&app.tool, log, start, end).await?;
+    Ok(state
+        .records
+        .values()
+        .filter(|record| record.event["type"] == "user_message_chunk")
+        .filter_map(|record| record.event["text"].as_str())
+        .next_back()
+        .unwrap_or_default()
+        .to_owned())
 }
 
 async fn pull_back(app: &App, body: ActionTarget) -> Result<Value, ApiError> {
@@ -7413,6 +7420,18 @@ if [ "$3" = Up ]; then cat "$SWARM_HOME/after" >> '{}'; fi
                 .count(),
             5
         );
+
+        // A first turn stopped before its log is stored still stops.
+        std::fs::remove_file(&fixture.log).unwrap();
+        std::fs::remove_file(fixture.app.root.parent().unwrap().join("actions")).unwrap();
+        let _ = call_action(
+            &fixture,
+            "/api/chat/interrupt",
+            json!({"session":fixture.session,"agent":"chair"}),
+        )
+        .await
+        .unwrap();
+        assert!(action_calls(&fixture).starts_with("interrupt orchestrator"));
     }
     #[tokio::test]
     async fn pull_back_route_refuses_agent_queue_and_unsupported_targets_without_up() {
