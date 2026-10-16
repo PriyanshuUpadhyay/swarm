@@ -1,11 +1,50 @@
-"""Run: python3 test_review_walk.py. Builds a throwaway repo and checks the parts that can go wrong
+"""Run: python3 test_review_walk.py, or pytest. Every test runs in its own throwaway repo, and the repo the
+test started in is checked before and after, so a stray git call fails the run. It checks the parts that can go wrong
 quietly: the diff since view must hide base-branch merges but keep files new to the reviewer, status
 must catch a bad map or a copied verdict that does not match, and anchors must land on new-side lines."""
-import io, json, os, subprocess, tempfile
+import contextlib, functools, io, json, os, subprocess, tempfile
 from contextlib import redirect_stdout
 from pathlib import Path
 
 import review_walk as rw
+
+
+GIT_ENV = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR", "GIT_PREFIX")
+
+
+def state(path):
+    """HEAD, branches and status of the repo at `path`, for the before/after guard."""
+    return [subprocess.run(["git", "-C", path, *a], capture_output=True, text=True).stdout
+            for a in (["rev-parse", "HEAD"], ["branch", "--list"], ["status", "--porcelain"])]
+
+
+@contextlib.contextmanager
+def throwaway_repo():
+    """chdir into a fresh repo with one commit and no inherited GIT_* variables; restore both on exit."""
+    saved_cwd, saved_env = os.getcwd(), {k: os.environ.pop(k) for k in GIT_ENV if k in os.environ}
+    try:
+        with tempfile.TemporaryDirectory() as d:
+            os.chdir(d)
+            sh("git", "init", "-qb", "main")
+            sh("git", "config", "user.email", "t@t")
+            sh("git", "config", "user.name", "t")
+            sh("git", "config", "commit.gpgsign", "false")
+            sh("git", "commit", "-q", "--allow-empty", "-m", "init")
+            yield
+    finally:
+        os.chdir(saved_cwd)
+        os.environ.update(saved_env)
+
+
+def isolated(test):
+    """Run `test` in a throwaway repo, and fail it if the repo it was started from changed."""
+    @functools.wraps(test)
+    def run():
+        before = state(os.getcwd())
+        with throwaway_repo():
+            test()
+        assert state(os.getcwd()) == before, "the test changed the repo it was started from"
+    return run
 
 
 def sh(*cmd):
@@ -20,6 +59,7 @@ def commit(files, msg):
     return sh("git", "rev-parse", "HEAD")
 
 
+@isolated
 def test_since_view_hides_base_merges():
     base1 = commit({"a.ts": "one\ntwo\nthree\nfour\nfive\n", "b.ts": "x\n"}, "base")
     sh("git", "switch", "-qc", "feature")
@@ -37,6 +77,7 @@ def test_since_view_hides_base_merges():
     assert "+z" in b and "+y" not in b, b
 
 
+@isolated
 def test_new_round_patch_and_status():
     """A file the reviewer never viewed must reach review-check in the next round, and `status` must
     catch a map that skips a file and a verdict line that review-check did not print."""
@@ -72,10 +113,12 @@ def test_new_round_patch_and_status():
     assert not any(p.startswith("02-map") for p in rw.checks(d, state)), "a diagram and citations do not hide a mapped file"
 
 
+@isolated
 def test_secret_pattern():
     assert rw.SECRET.search("token ghp_" + "a" * 36) and not rw.SECRET.search("a GitHub token in plain text")
 
 
+@isolated
 def test_anchor_uses_new_side_lines():
     patch = ("diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -1,3 +1,4 @@\n one\n-two\n+TWO\n+extra\n three\n")
     assert rw.anchor(patch, "a.ts", "TWO") == (None, 2)
@@ -83,13 +126,7 @@ def test_anchor_uses_new_side_lines():
 
 
 if __name__ == "__main__":
-    with tempfile.TemporaryDirectory() as d:
-        os.chdir(d)
-        sh("git", "init", "-qb", "main")
-        sh("git", "config", "user.email", "t@t")
-        sh("git", "config", "user.name", "t")
-        test_since_view_hides_base_merges()
-        test_new_round_patch_and_status()
-        test_secret_pattern()
-        test_anchor_uses_new_side_lines()
+    for t in (test_since_view_hides_base_merges, test_new_round_patch_and_status, test_secret_pattern,
+              test_anchor_uses_new_side_lines):
+        t()
     print("ok")
