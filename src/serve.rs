@@ -3390,20 +3390,6 @@ fn start_coordinator(app: &App, action_queue: mpsc::Receiver<ActionJob>) {
             if app.stopped.load(Ordering::Relaxed) {
                 break;
             }
-            let at = discovery::now();
-            if last_tree.is_none_or(|last| at - last >= 2) {
-                let (reply, _) = oneshot::channel();
-                if app
-                    .actions
-                    .try_send(ActionJob {
-                        action: Action::RefreshView,
-                        reply,
-                    })
-                    .is_ok()
-                {
-                    last_tree = Some(at);
-                }
-            }
             let started = std::time::Instant::now();
             match super::all_agent_listings(&mut connection, &app.root, Duration::from_millis(900))
             {
@@ -3429,9 +3415,26 @@ fn start_coordinator(app: &App, action_queue: mpsc::Receiver<ActionJob>) {
                     if hub.agents != value {
                         hub.agents = value;
                         hub.bump();
+                        // The sidebar reads agent states from the tree's own copy, so a changed
+                        // state rebuilds the tree in this pass, not at the next 2 s refresh.
+                        last_tree = None;
                     }
                 }
                 Err(err) => eprintln!("swarm serve: coordinator: {err}"),
+            }
+            let at = discovery::now();
+            if last_tree.is_none_or(|last| at - last >= 2) {
+                let (reply, _) = oneshot::channel();
+                if app
+                    .actions
+                    .try_send(ActionJob {
+                        action: Action::RefreshView,
+                        reply,
+                    })
+                    .is_ok()
+                {
+                    last_tree = Some(at);
+                }
             }
             // Notices stay unposted: `take_notices` marks rows posted, and only the native shell
             // that shows them may take them.
