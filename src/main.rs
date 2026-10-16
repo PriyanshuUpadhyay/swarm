@@ -520,14 +520,33 @@ fn status_feed() -> Result<(), Box<dyn std::error::Error>> {
     let mut scanner = swarm::host::StatusScanner::default();
     let mut seen_work = false;
     // pi has no hook to name its log, but `launch` gave it the id `<session>-<agent>` (ADR 0086).
-    // pi may write the file only after its first turn, so each report looks until it is found.
+    // pi writes the file just after it reports working and then reports nothing until the turn
+    // ends, so after a working report the pane's output looks too, at most once a second.
     let mut logged = false;
+    let mut looked: Option<std::time::Instant> = None;
     let mut stdin = std::io::stdin().lock();
     let mut chunk = [0; 8192];
     loop {
         let read = stdin.read(&mut chunk)?;
         if read == 0 {
             return Ok(());
+        }
+        if seen_work
+            && !logged
+            && looked.is_none_or(|at| at.elapsed() >= std::time::Duration::from_secs(1))
+        {
+            looked = Some(std::time::Instant::now());
+            if let Some(path) = pi_chair_log(&format!("{session}-{agent}")) {
+                match swarm::paths::sqlite_db()
+                    .and_then(|db| swarm::store::open(&db))
+                    .and_then(|connection| {
+                        connection.busy_timeout(std::time::Duration::from_secs(1))?;
+                        store_log(&connection, &session, &agent, &path)
+                    }) {
+                    Ok(()) => logged = true,
+                    Err(error) => eprintln!("swarm status-feed: {error}"),
+                }
+            }
         }
         for body in scanner.push(&chunk[..read]) {
             let Some(report) = swarm::host::program_status(&body, seen_work) else {

@@ -1948,6 +1948,61 @@ fn a_pane_status_feed_stores_the_pi_log_named_by_its_session_id() {
 }
 
 #[test]
+fn a_pi_log_written_after_the_working_report_is_stored_from_later_output() {
+    use std::io::Write;
+    let home = scratch("status-feed-pi-late-log");
+    let session = stdout(&swarm(&home, &[], &["session", "new", "lane"], ""))
+        .trim()
+        .to_string();
+    let connection = swarm::store::open(&home.join(".swarm/swarm.db")).unwrap();
+    swarm::store::add_agent(&connection, &session, "orchestrator", "chair").unwrap();
+    let pi = home.join("pi");
+    let folder = pi.join("sessions/--tmp-proj--");
+    std::fs::create_dir_all(&folder).unwrap();
+    let mut command = clean(Path::new(env!("CARGO_BIN_EXE_swarm")), &home);
+    let mut feed = command
+        .env("SWARM_SESSION_ID", &session)
+        .env("SWARM_AGENT_ID", "orchestrator")
+        .env("PI_CODING_AGENT_DIR", &pi)
+        .current_dir(&home)
+        .arg("status-feed")
+        .stdin(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut input = feed.stdin.take().unwrap();
+    input
+        .write_all(b"\x1b]7501;state=working:app=pi\x07")
+        .unwrap();
+    input.flush().unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    // pi makes its file after the report, and the turn then prints output with no report.
+    let log = folder.join(format!(
+        "2026-10-16T00-00-00-000Z_{session}-orchestrator.jsonl"
+    ));
+    std::fs::write(&log, "{}\n").unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(1100));
+    input.write_all(b"thinking...").unwrap();
+    input.flush().unwrap();
+    let chair = || -> Option<String> {
+        connection
+            .query_row(
+                "SELECT chair_log FROM session WHERE id = ?1",
+                [&session],
+                |r| r.get(0),
+            )
+            .unwrap()
+    };
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while chair().is_none() && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    // The turn is still running: the feed has not closed.
+    assert_eq!(chair().as_deref(), log.to_str());
+    drop(input);
+    assert!(feed.wait().unwrap().success());
+}
+
+#[test]
 fn host_context_refuses_pi_which_gets_its_context_at_launch() {
     let home = scratch("host-context-pi");
     let refused = swarm(&home, &[], &["host-context", "--provider", "pi"], "");
