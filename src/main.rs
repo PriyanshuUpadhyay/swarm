@@ -3958,14 +3958,19 @@ fn list_agents_from(
             Some((screen, detail, prompt)) => (Some(screen), detail, prompt),
             None => (None, None, None),
         };
-        let (state, write) = swarm::screen::resolve(
-            provider.as_deref(),
-            row.state.as_deref(),
-            row.state_at,
-            row.state_source.as_deref(),
-            screen,
-            now,
-        );
+        let (state, write) = if swarm::screen::held_by_send(row.sent_at, row.state_at, screen, now)
+        {
+            (Some("working".to_string()), None)
+        } else {
+            swarm::screen::resolve(
+                provider.as_deref(),
+                row.state.as_deref(),
+                row.state_at,
+                row.state_source.as_deref(),
+                screen,
+                now,
+            )
+        };
         // The app runs no `swarm sweep`, and a ring typed while the CLI still starts is lost,
         // so the listing it polls rings a due message again once the pane shows it idle. A
         // fresh hook outranks the screen, so a turn it reports gets no ring typed into it.
@@ -5077,7 +5082,16 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 "swarm: this chat's pane has closed; start a new chat or switch model".into(),
             );
         }
-        return type_text(&connection, &adapter, &session_id, agent_id, &pane, &text);
+        // Marked before typing, which takes a second or more, so the row turns at once.
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)?
+            .as_secs() as i64;
+        swarm::store::mark_sent(&connection, &session_id, agent_id, Some(now))?;
+        let typed = type_text(&connection, &adapter, &session_id, agent_id, &pane, &text);
+        if typed.is_err() {
+            swarm::store::mark_sent(&connection, &session_id, agent_id, None)?;
+        }
+        return typed;
     }
     if let [cmd, agent_id, prompt_id, choice] = args
         && cmd == "answer"

@@ -26,6 +26,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0009.sql"),
     include_str!("../migrations/0010.sql"),
     include_str!("../migrations/0011.sql"),
+    include_str!("../migrations/0012.sql"),
 ];
 
 #[derive(serde::Serialize)]
@@ -178,6 +179,11 @@ fn migrate(connection: &mut Connection) -> Result<(), Box<dyn std::error::Error>
     if version < 11 {
         tx.execute_batch(MIGRATIONS[10])?;
         tx.pragma_update(None, "user_version", 11)?;
+    }
+
+    if version < 12 {
+        tx.execute_batch(MIGRATIONS[11])?;
+        tx.pragma_update(None, "user_version", 12)?;
     }
 
     tx.commit()?;
@@ -713,6 +719,8 @@ pub struct AgentRow {
     pub state_source: Option<String>,
     pub state_detail: Option<String>,
     pub state_kind: Option<String>,
+    /// When the owner last sent it a prompt (`mark_sent`).
+    pub sent_at: Option<i64>,
     /// The chat log its provider's hooks reported; kept after the agent ends.
     pub log: Option<String>,
     pub profile: Option<String>,
@@ -959,13 +967,28 @@ pub fn set_screen_state(
     Ok(changed == 1)
 }
 
+/// Records that the owner sent `agent_id` a prompt at `at`, or None when the send failed; see
+/// `screen::held_by_send`.
+pub fn mark_sent(
+    connection: &Connection,
+    session_id: &str,
+    agent_id: &str,
+    at: Option<i64>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    connection.execute(
+        "UPDATE agent SET sent_at = ?3 WHERE session_id = ?1 AND id = ?2",
+        (session_id, agent_id, at),
+    )?;
+    Ok(())
+}
+
 pub fn agents(
     connection: &Connection,
     session_id: &str,
 ) -> Result<Vec<AgentRow>, Box<dyn std::error::Error>> {
     let mut statement = connection.prepare(
         "SELECT id, role, pane_id, provider, created_at, state, state_at, state_source, state_detail, state_kind,
-                log, profile, runner, model, effort, account, cost_usd, tokens
+                log, profile, runner, model, effort, account, cost_usd, tokens, sent_at
          FROM agent WHERE session_id = ?1 ORDER BY id",
     )?;
     let rows = statement.query_map([session_id], |row| {
@@ -988,6 +1011,7 @@ pub fn agents(
             account: row.get(15)?,
             cost_usd: row.get(16)?,
             tokens: row.get(17)?,
+            sent_at: row.get(18)?,
         })
     })?;
     Ok(rows.collect::<Result<_, _>>()?)
@@ -2490,7 +2514,7 @@ mod tests {
         let version: i64 = connection
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 11);
+        assert_eq!(version, 12);
         let old = create_session(&connection, "lane", Path::new("/work"), None, None).unwrap();
         let new = create_session(&connection, "lane", Path::new("/work"), None, None).unwrap();
         continue_session(&connection, &new, &old).unwrap();
@@ -2517,7 +2541,7 @@ mod tests {
         let version: i64 = connection
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 11);
+        assert_eq!(version, 12);
         let coder = &agents(&connection, SESSION).unwrap()[0];
         assert_eq!(coder.state, None);
         set_state(
@@ -2559,7 +2583,7 @@ mod tests {
         let version: i64 = connection
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 11);
+        assert_eq!(version, 12);
     }
 
     #[test]
@@ -2587,7 +2611,7 @@ mod tests {
         let version: i64 = connection
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 11);
+        assert_eq!(version, 12);
     }
 
     #[test]
@@ -3052,7 +3076,7 @@ mod tests {
         let db = root.join("swarm.db");
         let connection = Connection::open(&db).unwrap();
         connection
-            .execute_batch("PRAGMA user_version = 12")
+            .execute_batch("PRAGMA user_version = 13")
             .unwrap();
         drop(connection);
 

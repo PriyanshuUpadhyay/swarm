@@ -3,6 +3,9 @@
 
 /// How long a hook report is the authority over the screen, in seconds.
 pub const HOOK_AUTHORITY_S: i64 = 10;
+/// How long an owner's send reads as working with no newer report: the CLI picks the prompt up
+/// and sends its first report a second or two later, and its screen still shows the idle prompt.
+pub const SEND_HOLD_S: i64 = 5;
 /// A `working` or `waiting` report older than this, in seconds, that nothing confirms is shown
 /// as no report.
 pub const STALE_S: i64 = 45;
@@ -489,6 +492,22 @@ pub fn screen_gap(provider: Option<&str>, screen: ScreenState) -> bool {
             | (Some("agy"), ScreenState::Waiting)
             | (_, ScreenState::Idle)
     )
+}
+
+/// Whether a send at `sent_at` shows the agent as working now: no report came after it, it is
+/// younger than `SEND_HOLD_S`, and the screen shows the idle prompt or nothing. A question or a
+/// failure on the screen still shows at once.
+pub fn held_by_send(
+    sent_at: Option<i64>,
+    state_at: Option<i64>,
+    screen: Option<ScreenState>,
+    now: i64,
+) -> bool {
+    sent_at.is_some_and(|sent| {
+        now - sent < SEND_HOLD_S
+            && state_at.is_none_or(|at| at < sent)
+            && screen.is_none_or(|screen| screen == ScreenState::Idle)
+    })
 }
 
 /// What the listing shows for one agent, and the state to write, if any.
@@ -1076,6 +1095,22 @@ mod tests {
         assert_eq!(status("blocked"), Some(ScreenState::Waiting));
         assert_eq!(status("unknown"), None);
         assert_eq!(herdr_state("not json"), None);
+    }
+
+    #[test]
+    fn a_send_reads_as_working_until_a_report_a_busy_screen_or_the_hold_ends() {
+        let idle = Some(ScreenState::Idle);
+        assert!(held_by_send(Some(100), Some(90), idle, 104));
+        assert!(held_by_send(Some(100), None, None, 100));
+        assert!(!held_by_send(Some(100), Some(90), idle, 105));
+        assert!(!held_by_send(Some(100), Some(101), idle, 102));
+        assert!(!held_by_send(
+            Some(100),
+            Some(90),
+            Some(ScreenState::Waiting),
+            101
+        ));
+        assert!(!held_by_send(None, Some(90), idle, 101));
     }
 
     #[test]
