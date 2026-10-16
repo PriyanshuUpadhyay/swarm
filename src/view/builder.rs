@@ -341,9 +341,14 @@ pub(super) fn rows_with_context(
 pub fn is_hidden(row: &Row) -> bool {
     (row.kind == RowKind::Notice
         && !row.starts_turn
-        && ["hook_success", "title:", "model:"]
+        && ["hook_success", "title:", "model:", "cwd:"]
             .iter()
             .any(|prefix| row.text.starts_with(prefix)))
         || (row.kind == RowKind::System
-            && (row.text.trim().is_empty() || row.system_kind.as_deref() == Some("injected")))
+            && (row.text.trim().is_empty()
+                // Codex writes its setup prompt and AGENTS.md as developer and context messages.
+                || matches!(
+                    row.system_kind.as_deref(),
+                    Some("injected" | "developer" | "context")
+                )))
 }

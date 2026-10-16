@@ -195,10 +195,14 @@ fn hidden_rows() {
         json!({"type":"hook_result","kind":"hook_success","hook_name":"check"}),
         system("system", "  ", "", ""),
         system("system", "Ready", "", ""),
+        // Codex's setup prompt, AGENTS.md, and the cwd it repeats each turn.
+        system("developer", "<permissions instructions>", "", ""),
+        system("context", "<environment_context>", "", ""),
+        json!({"type":"session_info","kind":"cwd","value":"/work"}),
     ]);
     assert_eq!(
         rows.iter().map(|row| row.hidden).collect::<Vec<_>>(),
-        [true, true, true, false]
+        [true, true, true, false, true, true, true]
     );
 }
 #[test]
