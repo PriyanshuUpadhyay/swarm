@@ -184,7 +184,18 @@ def skill_paths(step):
         elif section in domains and line.startswith(f"- {key}:"):
             items += [p.strip() for p in line.split(":", 1)[1].split(",") if p.strip()]
     root = Path(git("rev-parse", "--show-toplevel"))
-    paths = [p for p in dict.fromkeys(items) if not p.startswith("block:")]
+    paths = []
+    installed = Path.home() / ".swarm" / "kit"
+    for item in items:
+        if item.startswith("block:"):
+            continue
+        path = Path(item).expanduser()
+        if path.is_relative_to(installed):
+            local = BLOCKS.parent / path.relative_to(installed)
+            if local.is_file():
+                item = str(local)
+        if item not in paths:
+            paths.append(item)
     return paths + [str(root / r) for r in repo_rules], [p.removeprefix("block:") for p in items if p.startswith("block:")]
 
 

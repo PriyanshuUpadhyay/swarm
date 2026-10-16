@@ -1526,6 +1526,22 @@ def test_web_ui_basics_checks(tmp):
     assert "DESIGN.md" not in images.stdout, images
 
 
+
+def test_catalog_uses_running_kit(tmp):
+    local = implement_run.BLOCKS.parent / "skills" / "engineering-standards" / "SKILL.md"
+    installed = "~/.swarm/kit/skills/engineering-standards/SKILL.md"
+    absolute = str(Path(tmp, "running-kit", "home", ".swarm", "kit", "skills", "engineering-standards", "SKILL.md"))
+    missing = "~/.swarm/kit/skills/not-shipped/SKILL.md"
+    outside = "~/.swarm/kit-other/skills/example/SKILL.md"
+    out, folder, _, _ = blocks_start(tmp, "running-kit", f"- build: {installed}, {absolute}, {missing}, {outside}\n")
+    assert out.returncode == 0, out.stderr
+    text = step_text(folder, "05-build")
+    skills = next(line for line in text.splitlines() if line.startswith("Skills read:"))
+    assert skills.count(str(local)) == 1 and installed not in skills and absolute not in skills, skills
+    assert missing in skills and outside in skills, skills
+    assert f"===== {local} =====" in text
+
+
 with tempfile.TemporaryDirectory() as tmp:
     home, repo = Path(tmp, "home"), Path(tmp, "app")
     (home / ".flow" / "app").mkdir(parents=True)
@@ -1562,6 +1578,7 @@ with tempfile.TemporaryDirectory() as tmp:
                and "profile " not in next(l for l in text.splitlines() if l.startswith("Skills read:"))
                for text in (p.read_text(encoding="utf-8") for p in folder.glob("0*.md")))
 
+    test_catalog_uses_running_kit(tmp)
     test_skip_text_encoding()
     test_kit_pointers()
     test_kit_block_frontmatter()
