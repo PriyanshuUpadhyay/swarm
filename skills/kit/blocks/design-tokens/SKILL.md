@@ -9,7 +9,7 @@ metadata:
   needs: "measured notes from reference-analysis"
   gives: "DESIGN.md tokens"
   conflicts: ""
-  users: "flow, ink, build-site"
+  users: "implement, build, build-site"
   source: "skills/ink/references/references.md (style grammar template); skills/ink/references/site.md (DESIGN.md; the file moved to blocks/build-site 2026-10-13); impeccable pack: plugin/skills/impeccable/SKILL.md:35-40 (modes); taste-skill pack: skills/taste-skill/SKILL.md:25-26, :38-39, :186, :217, :236, :531-535, :601, :687"
 ---
 

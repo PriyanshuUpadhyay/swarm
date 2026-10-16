@@ -1,6 +1,6 @@
 # Visual QA
 
-The frame checks, the motion checks, the QA log, and the "visually verified" rule are in `blocks/visual-qa/SKILL.md`. This file holds ink's own evidence and checks.
+The frame checks, the motion checks, the QA log, and the "visually verified" rule are in `blocks/visual-qa/SKILL.md`. This file holds build's own evidence and checks.
 
 ## Contents
 
@@ -29,7 +29,7 @@ contact-sheet.png
 ## Reference match
 
 Score each style frame or key frame against its reference crop as `blocks/look-check/SKILL.md` says, with the compare image that
-`blocks/headless-shot/SKILL.md` makes. In ink, a `miss` blocks production scenes.
+`blocks/headless-shot/SKILL.md` makes. In build, a `miss` blocks production scenes.
 
 Example. Round 1 of a cloud frame scores the palette `match`, the tone `miss` (flat fills, no dots),
 and the contour `partial` (right colour, even width). Round 2 adds the mass stack and line swell, and

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "workflow_kind": "ink",
+  "workflow_kind": "build",
   "required_operations": [
     "resolve_roles",
     "validate_host_capabilities",

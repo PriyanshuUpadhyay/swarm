@@ -9,7 +9,7 @@ Workflow skills for coding agents (Claude Code, Codex, Antigravity). Each skill 
 |---|---|
 | `pair` | Write code with the user, one approved diff at a time |
 | `deliver` | Drive one named task to a checkable exit condition, stop before a push or merge |
-| `flow` | Run one feature through frame, design, contracts, impact, build and close, one status file per step (on trial) |
+| `implement` | Run one feature through frame, design, contracts, impact, build and close, one status file per step (on trial) |
 | `research` | Answer one question from evidence in a short report |
 | `web-search` | Three visible seats search different parts of the web, the chair merges |
 | `council` | A visible debate between Claude, GPT and Gemini voices that ends in a verdict |
@@ -21,7 +21,8 @@ Workflow skills for coding agents (Claude Code, Codex, Antigravity). Each skill 
 | `prove-it-works` | What counts as proof that a change works (points to `blocks/prove-it-works`) |
 | `sequence-verifiable-units` | Order multi-step work so each step can be checked (points to `blocks/checked-units`) |
 | `minimize-reader-load` | When code gets its own function, file or module (points to `blocks/when-to-extract`) |
-| `ink` | Pictures, generative plates, films, and websites drawn by code, from a story or a visual reference |
+| `build` | Pictures, generative plates, films, and websites drawn by code, from a story or a visual reference |
+| `explain` | Explain a subject with one running example, using the `voice-teach` block |
 | `orchestrate-claude`, `orchestrate-codex`, `orchestrate-agy` | Runtime adapters that bind the skills' worker needs to each agent CLI |
 
 `references/plan-layout.md` is the plan shape and the first screen of a long result that several
@@ -42,8 +43,8 @@ agy plugin install <repo>/skills/kit
 pi install <repo>/skills/kit
 ```
 
-Claude Code shows each skill with the plugin name in front, for example `/swarm:flow`; pi shows
-`/skill:flow`. Claude Code and pi read a local folder in place, so an edit in the clone reaches
+Claude Code shows each skill with the plugin name in front, for example `/swarm:implement`; pi shows
+`/skill:implement`. Claude Code and pi read a local folder in place, so an edit in the clone reaches
 their next session.
 Codex and Antigravity read an installed copy, so run their install again after an edit; the same
 version is copied again.
@@ -67,13 +68,14 @@ Codex reads `~/.agents/skills` and Antigravity reads `~/.gemini/config/skills`.
 - Skills that start workers (`council`, `web-search`, `research`) run them as visible panes through
   [swarm](https://github.com/PriyanshuUpadhyay/swarm).
 - `references/run-folder.md` owns run placement by kind, including repository state, reports,
-  council input and logs, and piece artifacts. Each skill keeps its artifact names.
+  council input and logs, and piece artifacts. It also keeps the older paths used by `implement`
+  and `build`. Each skill keeps its artifact names.
 - `council` calls `~/.claude/scripts/ensure-council-access.py`, which is not part of this kit yet.
 
 ## Borrowed skills
 
 These are the expert packs used next to this kit. Two of them are in `vendor/` as git submodules,
-because `ink` reads their `taste-skill` and `animate` skills on every site build: Leonxlnx/taste-skill
+because `build` reads their `taste-skill` and `animate` skills on every site build: Leonxlnx/taste-skill
 and emilkowalski/skills. The others are not in this repo. To copy the setup,
 take each pack at the commit shown, keep its license, and read its skills by path from the step
 that needs them, instead of linking them all into every session.

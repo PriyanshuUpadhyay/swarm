@@ -5,7 +5,8 @@ description: Where a skill keeps the files of a run that must outlive one chat (
 # Run folder
 
 For repository task state, use `<repo-root>/tmp/<skill>/`. `<repo-root>` is
-`git rev-parse --show-toplevel`, so each worktree has its own runs.
+`git rev-parse --show-toplevel`, so each worktree has its own runs. The `implement` skill keeps
+`tmp/flow/` and `~/.flow/`, so existing runs and profiles still work.
 
 The following scopes keep their existing paths, including when invoked from a repository.
 
@@ -14,7 +15,7 @@ The following scopes keep their existing paths, including when invoked from a re
 | research | `~/.claude/reports/<YYYY-MM-DD>-<slug>/` | `~/.claude/reports/<YYYY-MM-DD>-<slug>.md` |
 | web-search | `~/.claude/reports/<YYYY-MM-DD>-<slug>-seats/`; launch scratch at `~/.swarm/ws/<run>` | `~/.claude/reports/<YYYY-MM-DD>-<slug>-web.md`, with seat reports in the run folder |
 | council | `<log>/<YYYY-MM-DD>-<slug>/` beside the log file; temporary input at `/tmp/councils/<run-id>/` | caller-pinned external log path, or `~/dotfiles/docs/council/<YYYY-MM-DD>-<slug>.md` |
-| ink piece | `<piece>/ink/` | source and artifacts stay in the piece folder |
+| build piece | `<piece>/ink/` | source and artifacts stay in the piece folder |
 
 For council, `<log>` is the chosen log file's parent folder. The caller keeps its artifact names
 and passes the run kind here. This table changes no saved history or piece assets.

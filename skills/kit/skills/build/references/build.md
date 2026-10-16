@@ -1,6 +1,6 @@
 # Build
 
-The story engine, determinism, debug modes, performance, the toolbox, and delivery are in `blocks/build-canvas/SKILL.md`. This file holds ink's own build steps.
+The story engine, determinism, debug modes, performance, the toolbox, and delivery are in `blocks/build-canvas/SKILL.md`. This file holds build's own build steps.
 
 ## Contents
 

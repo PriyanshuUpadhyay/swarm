@@ -9,7 +9,7 @@ metadata:
   needs: "the subject and the terms the owner already used"
   gives: "an explanation in learning order"
   conflicts: ""
-  users: "planner"
+  users: "planner, explain"
   source: "mined rows s2#37, s4#28; docs/council 2026-10-13 block rules (V3: one exit voice per kind of output, and 'understand' is one)"
 ---
 

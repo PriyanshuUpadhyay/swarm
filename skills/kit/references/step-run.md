@@ -29,7 +29,7 @@ Never set a step done by hand.
 A dead run holds no lock; `--force` only overrides a stale `Status: active <agent>` line.
 `take` and `done` add one line to `<folder>/events.log` with the time, the step, and the event, so the
 path of a run, and not only its last state, stays readable. A skill script with its own step graph
-or revision, such as flow's `flow_run.py`, imports these functions and passes its own.
+or revision, such as the implement skill's `implement_run.py`, imports these functions and passes its own.
 
 ## Status line
 

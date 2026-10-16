@@ -9,8 +9,8 @@ metadata:
   needs: "a URL or a file"
   gives: "screenshots at set widths"
   conflicts: ""
-  users: "flow, ink, build-site"
-  source: "skills/ink/references/build.md (frame export with chrome-headless-shell); skills/ink/references/qa.md (compare image at the same scale, 100 % crop; moved 2026-10-13); 2026-09 macOS arm64 trial (WebGPU blank in the shell, correct in full Chrome); 2026-09 Obscura 0.2.2 trial (canvas transforms, arcs, clips, and text drawn wrong)"
+  users: "implement, build, build-site"
+  source: "skills/build/references/build.md (frame export with chrome-headless-shell); skills/build/references/qa.md (compare image at the same scale, 100 % crop; moved 2026-10-13); 2026-09 macOS arm64 trial (WebGPU blank in the shell, correct in full Chrome); 2026-09 Obscura 0.2.2 trial (canvas transforms, arcs, clips, and text drawn wrong)"
 ---
 
 ## Rules

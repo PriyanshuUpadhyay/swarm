@@ -22,8 +22,8 @@ metadata:
 - Each finding cites its `path:line` or its report path.
 
 ## Example
-Initial state: the question is "why does flow start stop in a repo with no profile?".
-Action: read `flow_run.py` first and find the profile check at its `path:line`; then the flow skill's start rule; then a prior report that names the same stop.
+Initial state: the question is "why does implement start stop in a repo with no profile?".
+Action: read `implement_run.py` first and find the profile check at its `path:line`; then the implement skill's start rule; then a prior report that names the same stop.
 Result: three findings, each with a path; the report's claim that "start makes the profile" is contrary evidence, because the code only prints a note; the gap is "no test covers the note".
 
 ## Check (script)

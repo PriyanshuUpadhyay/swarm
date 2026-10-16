@@ -9,8 +9,8 @@ metadata:
   needs: "the request"
   gives: "done-when claims"
   conflicts: ""
-  users: "flow, planner"
-  source: "html-plan pack: skills/html-plan/SKILL.md:20-30 (tree levels), :75-78 (rules 1, 2, 4), :87 (no visible behavior); skills/flow/SKILL.md (step table, 01-frame row); pm-skills pack: pm-execution/skills/pre-mortem/SKILL.md:21-25, :27-42, :44-46, :55-57, :84"
+  users: "implement, planner"
+  source: "html-plan pack: skills/html-plan/SKILL.md:20-30 (tree levels), :75-78 (rules 1, 2, 4), :87 (no visible behavior); skills/implement/SKILL.md (step table, 01-frame row); pm-skills pack: pm-execution/skills/pre-mortem/SKILL.md:21-25, :27-42, :44-46, :55-57, :84"
 ---
 
 ## Rules
