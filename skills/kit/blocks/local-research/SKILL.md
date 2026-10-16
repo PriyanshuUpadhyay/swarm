@@ -14,7 +14,7 @@ metadata:
 ---
 
 ## Rules
-- Read the local sources as the kit's `references/fan-out.md` says. When they disagree, trust them in this order: the repository at hand, its docs, prior reports under `~/.claude/reports/` and `<repo-root>/tmp/reports/` (placement follows `references/run-folder.md`), then council logs under `~/dotfiles/docs/council/`.
+- Read the local sources as the kit's `references/fan-out.md` says. When they disagree, trust them in this order: the repository at hand, its docs, prior reports in the reports folders that `references/run-folder.md` names, then council logs under `~/dotfiles/docs/council/`.
 - For each decision, track the open question, the primary evidence, the contrary evidence, and the gap that remains.
 - Read the source's actual method or code before you accept its headline.
 - Count sources as the kit block `blocks/cite-sources/SKILL.md` says. A page count or agents that agree do not make a claim correct.

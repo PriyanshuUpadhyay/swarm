@@ -499,6 +499,8 @@ def take(folder, step, who, force=False):
 
 def done(folder, step):
     if step == "07-close":
+        if Path(folder).resolve().parent.name == "_closed":
+            raise SystemExit(f"{folder} is already closed")
         destination = Path(folder).resolve().parent / "_closed" / Path(folder).name
         if destination.exists() or destination.is_symlink():
             raise SystemExit(f"close destination already exists: {destination}; "

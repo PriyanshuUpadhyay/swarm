@@ -8,7 +8,8 @@ For repository task state, use `<repo-root>/tmp/<skill>/`. `<repo-root>` is
 `git rev-parse --show-toplevel`, so each worktree has its own runs. The `implement` skill keeps
 `tmp/flow/` and `~/.flow/`, so existing runs and profiles still work.
 
-For research and web-search, `<reports>` is the folder the active runtime adapter names.
+For research and web-search, `<reports>` is the folder that the active runtime adapter,
+`skills/orchestrate-<runtime>/SKILL.md`, names; read that line even when the run starts no worker.
 When it names none, use `<repo-root>/tmp/reports/` in a repo, or `<working-folder>/tmp/reports/`
 outside a repo. This file owns the rule and default for every runtime. Read older reports where
 they already exist; this rule moves no saved history.
@@ -22,8 +23,8 @@ The following scopes use these paths, including when invoked from a repository.
 | council | `<log>/<YYYY-MM-DD>-<slug>/` beside the log file; temporary input at `/tmp/councils/<run-id>/` | caller-pinned external log path, or `~/dotfiles/docs/council/<YYYY-MM-DD>-<slug>.md` |
 | build piece | `<piece>/ink/` | source and export stay in `<piece>/` |
 
-For build, `<piece>` is the folder the owner names, or the current project root when none is
-named. Keep its source and export there, with the `ink/` progress folder inside it.
+For build, `<piece>` is the folder the owner names. When none is named, ask the owner at intake,
+and do not default to a product repo's root. Keep its source and export there, with the `ink/` progress folder inside it.
 
 For council, `<log>` is the chosen log file's parent folder. The caller keeps its artifact names
 and passes the run kind here. This table changes no saved history or piece assets.

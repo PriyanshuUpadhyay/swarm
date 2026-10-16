@@ -1555,6 +1555,9 @@ def test_close_from_other_cwd(tmp):
     assert not folder.exists() and (archived / "07-close.md").read_text(encoding="utf-8").startswith("Status: done ")
     assert not (outside / "tmp").exists()
     assert run("status", archived).returncode == 0
+    again = run("done", archived, "07-close")
+    assert again.returncode == 1 and "already closed" in again.stderr, again
+    assert not (archived.parent / "_closed").exists()
 
 
 def test_second_same_day_close(tmp):
