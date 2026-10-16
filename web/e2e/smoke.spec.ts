@@ -402,3 +402,22 @@ test("a chat with two children shows their panes; keys move focus and zoom; a pa
   }
   expect(errors).toEqual([]);
 });
+
+test("a pasted image is saved by the server and its path goes in the draft", async ({ page: tab }) => {
+  const url = new URL(process.env.SWARM_SERVE_URL!);
+  await tab.goto(`${url.origin}/${url.hash}`);
+  await tab.waitForFunction(() => window.__swarmReady === true);
+  await tab.locator(`[data-testid="tree-row"][data-session="${process.env.SWARM_E2E_LIVE}"]`).click();
+  const composer = tab.getByTestId("composer");
+  await expect(composer).toBeEnabled();
+  await composer.fill("look at");
+  await composer.evaluate((el) => {
+    const data = new DataTransfer();
+    data.items.add(new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], "shot.png", { type: "image/png" }));
+    el.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
+  });
+  await expect(composer).toHaveValue(/^look at \/.+\/uploads\/[0-9a-f-]+\.png $/);
+  const path = (await composer.inputValue()).split(" ")[2];
+  expect(readFileSync(path)).toEqual(Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+  await composer.fill("");
+});

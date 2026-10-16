@@ -189,6 +189,25 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
   const canPullBack = chair.pullBack && !chair.disabled && composer.queued > 0;
   const submit = () => canSend && void app.send(sessionId, text);
 
+  /** A pasted image goes to the server, and its path goes in the draft at the caret. */
+  const paste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const image = [...e.clipboardData.files].find((f) => f.type.startsWith("image/"));
+    if (!image) return;
+    e.preventDefault();
+    const el = e.currentTarget;
+    const [start, end] = [el.selectionStart, el.selectionEnd];
+    app.api.image(image).then(
+      (path) => {
+        const draft = app.draft(sessionId);
+        const before = draft.slice(0, start);
+        const insert = `${before && !before.endsWith(" ") ? " " : ""}${path} `;
+        change(before + insert + draft.slice(end));
+        pickedCaret.current = start + insert.length;
+      },
+      (err: unknown) => app.notice(`Could not attach the image: ${err instanceof Error ? err.message : String(err)}`, true),
+    );
+  };
+
   /** Puts the row in the draft; `send` also sends that new draft at once. */
   const choose = (row: MenuRow, send: boolean) => {
     if (!menu) return;
@@ -329,6 +348,7 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
           onKeyDown={onKeyDown}
+          onPaste={paste}
         />
         <div className="flex items-center gap-2 px-2 pb-2 text-xs text-muted-foreground">
           {/* A child's model does not switch. */}

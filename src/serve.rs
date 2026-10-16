@@ -661,6 +661,10 @@ fn router(app: App) -> Router {
         .route("/api/chat/key", post(chat_action))
         .route("/api/chat/answer", post(chat_action))
         .route("/api/chat/commands", get(chat_commands))
+        .route(
+            "/api/chat/image",
+            post(chat_image).layer(DefaultBodyLimit::max(IMAGE_LIMIT)),
+        )
         .route("/api/agent/close", post(chat_action))
         .route("/api/sessions/archive", post(chat_action))
         .route("/api/sessions/unarchive", post(chat_action))
@@ -722,10 +726,14 @@ async fn guard(State(app): State<App>, request: Request, next: Next) -> Response
             .get(header::CONTENT_TYPE)
             .and_then(|value| value.to_str().ok())
             .is_some_and(|value| {
-                value
-                    .split(';')
-                    .next()
-                    .is_some_and(|mime| mime.trim().eq_ignore_ascii_case("application/json"))
+                value.split(';').next().is_some_and(|mime| {
+                    let mime = mime.trim();
+                    mime.eq_ignore_ascii_case("application/json")
+                        // An image type is not a CORS simple type either, so a page on another
+                        // site still cannot send one without a preflight.
+                        || (request.uri().path() == "/api/chat/image"
+                            && mime.to_ascii_lowercase().starts_with("image/"))
+                })
             })
     {
         return error(
@@ -2375,6 +2383,65 @@ async fn chat_action(
     let action = serde_json::from_value(json!({kind: body}))
         .map_err(|err| error(StatusCode::BAD_REQUEST, &err.to_string()))?;
     enqueue_action(&app, action).await.map(Json)
+}
+
+const IMAGE_LIMIT: usize = 10 * 1024 * 1024;
+
+/// A pasted image, saved under `<swarm home>/uploads` with mode 0600. The composer puts the
+/// returned path in the message; Claude, Codex and pi each open an image by its path.
+// ponytail: uploads are never removed; prune by age if the folder grows.
+async fn chat_image(
+    State(app): State<App>,
+    headers: axum::http::HeaderMap,
+    body: axum::body::Bytes,
+) -> Result<Json<Value>, ApiError> {
+    let kind = headers
+        .get(header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or_default();
+    let ext = match kind {
+        "image/png" => "png",
+        "image/jpeg" => "jpg",
+        "image/gif" => "gif",
+        "image/webp" => "webp",
+        _ => {
+            return Err(error(
+                StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                "Paste a PNG, JPEG, GIF or WebP image",
+            ));
+        }
+    };
+    if body.is_empty() {
+        return Err(error(StatusCode::BAD_REQUEST, "The image is empty"));
+    }
+    let dir = app.root.join("uploads");
+    let path = dir.join(format!("{}.{ext}", uuid::Uuid::now_v7()));
+    let saved = path.clone();
+    tokio::task::spawn_blocking(move || {
+        use std::{
+            io::Write,
+            os::unix::fs::{DirBuilderExt, OpenOptionsExt},
+        };
+        std::fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(&dir)?;
+        std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&saved)?
+            .write_all(&body)
+    })
+    .await
+    .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "image task failed"))?
+    .map_err(|e| {
+        error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            &format!("Could not save the image: {e}"),
+        )
+    })?;
+    Ok(Json(json!({"path": path.to_string_lossy()})))
 }
 
 async fn archived_sessions(State(app): State<App>) -> Result<Json<Value>, ApiError> {
@@ -5966,6 +6033,49 @@ esac
         assert_eq!(link.0, StatusCode::CONFLICT);
         let hud = write(json!({"only": "hud"})).await.unwrap_err();
         assert_eq!(hud.0, StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn a_pasted_image_is_saved_private_and_only_an_image_type_is_taken() {
+        use std::os::unix::fs::PermissionsExt;
+        let fixture = Fixture::new();
+        let typed = |kind: &str| {
+            let mut headers = axum::http::HeaderMap::new();
+            headers.insert(header::CONTENT_TYPE, kind.parse().unwrap());
+            headers
+        };
+        let saved = chat_image(
+            State(fixture.app.clone()),
+            typed("image/png"),
+            axum::body::Bytes::from_static(b"\x89PNG"),
+        )
+        .await
+        .unwrap()
+        .0;
+        let path = Path::new(saved["path"].as_str().unwrap());
+        assert!(path.starts_with(fixture.app.root.join("uploads")));
+        assert_eq!(path.extension().unwrap(), "png");
+        assert_eq!(std::fs::read(path).unwrap(), b"\x89PNG");
+        assert_eq!(
+            std::fs::metadata(path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        let refused = chat_image(
+            State(fixture.app.clone()),
+            typed("text/html"),
+            axum::body::Bytes::from_static(b"<script>"),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(refused.0, StatusCode::UNSUPPORTED_MEDIA_TYPE);
+        let empty = chat_image(
+            State(fixture.app.clone()),
+            typed("image/png"),
+            axum::body::Bytes::new(),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(empty.0, StatusCode::BAD_REQUEST);
     }
 
     #[tokio::test]

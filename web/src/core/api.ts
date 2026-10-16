@@ -238,6 +238,14 @@ export class Api {
     throw new ApiError(res.status, errorText(text, res));
   }
 
+  /** A pasted image. The server saves it and returns its path, which the agent opens. */
+  async image(file: Blob): Promise<string> {
+    const res = await this.fetch("/api/chat/image", { method: "POST", headers: this.headers({ "Content-Type": file.type }), body: file });
+    const text = await res.text();
+    if (res.ok) return (JSON.parse(text) as { path: string }).path;
+    throw new ApiError(res.status, errorText(text, res));
+  }
+
   subscribe(stream: string, keys: SubscribeKey[]): Promise<unknown> {
     return this.json("/api/subscribe", {
       method: "POST",

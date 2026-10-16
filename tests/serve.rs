@@ -898,10 +898,29 @@ fn chat_posts_are_guarded_before_any_action_runs() {
             403,
         ),
         ("Content-Type: text/plain\r\n", true, 415),
+        // Only the image route takes an image body.
+        ("Content-Type: image/png\r\n", true, 415),
     ] {
         assert_eq!(
             server
                 .request("POST", "/api/chat/send", headers, &body, auth)
+                .0,
+            expected
+        );
+    }
+    for (headers, auth, expected) in [
+        ("Content-Type: image/png\r\n", false, 401),
+        (
+            "Content-Type: image/png\r\nOrigin: https://evil.test\r\n",
+            true,
+            403,
+        ),
+        ("Content-Type: text/plain\r\n", true, 415),
+        ("Content-Type: image/png\r\n", true, 200),
+    ] {
+        assert_eq!(
+            server
+                .request("POST", "/api/chat/image", headers, "PNG", auth)
                 .0,
             expected
         );
