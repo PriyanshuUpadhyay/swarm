@@ -127,7 +127,7 @@ section per seat, with these search-specific fields:
    the kit's `references/plan-layout.md` where that file applies; quote the rule lines the seat
    needs, because Codex and AGY seats do not load it.
 
-Use a literal result path under the run directory, as required by `blocks/worker-brief/SKILL.md`.
+Use a literal result path (`blocks/worker-brief/SKILL.md`) under the run directory.
 
 ## Chair synthesis
 

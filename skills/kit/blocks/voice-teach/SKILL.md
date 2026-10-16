@@ -17,7 +17,6 @@ metadata:
 - Find the terms that the owner already used about the subject, in this chat or task. Start from one of them.
 - Add one new idea per step. Tie each new idea to an idea already explained, and say how they connect.
 - Keep one running example from start to end. Each new idea changes or extends that example.
-- For teaching, gloss each new term in two or three words at first use, even when the session's plain-word default is off.
 - Stop when the question is answered. Name the next idea in one line, and do not explain it.
 - The session's reply rules still decide how the reply opens and how long it is. This block owns only the order of ideas.
 

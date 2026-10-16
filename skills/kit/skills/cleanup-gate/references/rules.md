@@ -48,6 +48,8 @@ documented surface other code depends on.
 
 ## 6 — Type local data and remove repeated validation
 
+Source: review-check lens C-3; block-consolidation council 2026-10-16 (D11).
+
 For data our own code made, use its type and remove repeated validation, `unknown`, or a schema
 that adds no check at a separate boundary. Keep checks at trust boundaries, such as user input,
 LLM output, and third-party APIs. Keep a check that guards a separate trust or resource boundary,

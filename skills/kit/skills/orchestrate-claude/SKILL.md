@@ -13,6 +13,6 @@ kit block `blocks/worker-brief/SKILL.md` says. The kit root, with its `blocks/` 
 - For Herdr, the host reference is `references/host-swarm.md` in this skill's folder.
 - A worker session follows the worker rules of `blocks/worker-brief/SKILL.md`.
 - Claude native background subagents are allowed unless the host contract or the workflow requires
-  a visible pane. Each Workflow `agent()` call resolves the workflow's named seat role with
-  `swarm roles get <role>` and pins the returned model and effort. Workflow fan-out allows only
-  Sonnet or Haiku; refuse an Opus or Fable route.
+  a visible pane. Each Workflow `agent()` call pins the model of the workflow's named seat role,
+  resolved as `blocks/run-workers/SKILL.md` says, or Sonnet when the workflow names no role.
+  Workflow fan-out allows only Sonnet or Haiku; refuse an Opus or Fable route.

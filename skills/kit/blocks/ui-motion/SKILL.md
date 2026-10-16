@@ -17,7 +17,7 @@ metadata:
 - The kit root is two folders up from this file.
 - One timing owner per interface. When the code has a duration scale or easing tokens, they are the owner, and you extend them. Otherwise the owner is the tables of `<kit root>/vendor/emil-skills/skills/animate/SKILL.md`. Name the owner in the step's file.
 - Take every duration and curve from the owner. Never invent a value.
-- Animate only `transform` and `opacity`. Never `transition: all`. Static content needs no animation.
+- Animate `transform` and `opacity`. Animate another property only where the timing owner allows it for that case; the emil pack allows `clip-path` and accordion height. Never `transition: all`. Static content needs no animation.
 - Honor `prefers-reduced-motion: reduce`. Keep opacity fades that help the reader, and remove movement. Loops and parallax become static.
 - Keep every key fact visible under reduced motion. The settled-state check belongs to `blocks/web-ui-basics/SKILL.md`.
 - If the selected owner's rows disagree for this state, use `blocks/decision-with-default/SKILL.md` to name the conflict before building it.
