@@ -435,13 +435,9 @@ fn codex_failure(lines: &[&str]) -> Option<String> {
     let later = lines[error + 1..composer]
         .iter()
         .any(|line| line.trim_start().starts_with(['•', '›']));
-    (!later).then(|| {
-        lines[error]
-            .trim_start()
-            .trim_start_matches("■ ")
-            .trim()
-            .to_string()
-    })
+    let message = lines[error].trim_start().trim_start_matches("■ ").trim();
+    // The owner's own stop draws the same red row, and it is no failure.
+    (!later && !message.starts_with("Conversation interrupted")).then(|| message.to_string())
 }
 
 /// What one screen read shows, with a failure's message. `screen` is the adapter's screen verb
@@ -942,6 +938,10 @@ mod tests {
             failure_detail("codex", "› prompt\n■ error after the composer\n"),
             None
         );
+        let stopped =
+            "■ Conversation interrupted - tell the model what to do differently.\n\n› Ask\n";
+        assert_eq!(screen_state("codex", stopped), Some(ScreenState::Idle));
+        assert_eq!(failure_detail("codex", stopped), None);
         assert_eq!(
             resolve(
                 Some("codex"),
