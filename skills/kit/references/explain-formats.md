@@ -4,8 +4,8 @@ description: Owner rule for when an explanation adds a diagram or a local HTML p
 
 # Explain formats
 
-Text in the reply is the default and always carries the whole result. A diagram or a page is added
-only when it makes the result easier to understand than text alone.
+The session's agent instructions own the reply. Add a diagram or a page only when it makes the
+result easier to understand than text alone.
 
 Example. A change moves a login check from the API handler to a middleware that three routes share.
 In text, the reader must hold four names and their order. A five-line diagram shows the request
@@ -43,8 +43,8 @@ than text and one diagram can hold. Examples are a table that needs sorting or f
 one linked diagram, a timeline, or a before-and-after view. Put the page in the run folder, render
 its Mermaid with the library from `cdn.jsdelivr.net`, and give its path in one line of the reply.
 
-The page is extra. The reply still carries the whole result, and the agent never publishes the page
-or opens it.
+The page is extra. Apply the session's agent instructions to the reply. The agent never publishes
+the page or opens it.
 
 A walk is the one exception. A walk from the borrowed `glitch-walk` skill
 (https://github.com/Glitch-Cat-Club/glitch-skills) shows one action as real screens, each with the

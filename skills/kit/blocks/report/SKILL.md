@@ -33,4 +33,4 @@ Result: a 700-word report. The reply shows the whole report, then its path.
 
 ## Check (judge)
 - Does the report open with the answer in two or three sentences, and keep the five sections in order? Quote the section headings.
-- Does the reply follow the loaded agent instructions? Quote the applicable instruction and the reply lines that meet it.
+- Does the reply hold the whole report, not only its path (rule owned by the agent instructions)? Quote its first and last lines.
