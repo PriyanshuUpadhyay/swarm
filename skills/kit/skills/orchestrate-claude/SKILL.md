@@ -12,5 +12,7 @@ kit block `blocks/worker-brief/SKILL.md` says. The kit root, with its `blocks/` 
 
 - For Herdr, the host reference is `references/host-swarm.md` in this skill's folder.
 - A worker session follows the worker rules of `blocks/worker-brief/SKILL.md`.
-- Native background subagents are allowed only under the host and workflow rules in
-  `blocks/run-workers/SKILL.md`. A Workflow `agent()` call uses that role's routed model and effort.
+- Claude native background subagents are allowed unless the host contract or the workflow requires
+  a visible pane. Each Workflow `agent()` call resolves the workflow's named seat role with
+  `swarm roles get <role>` and pins the returned model and effort. Workflow fan-out allows only
+  Sonnet or Haiku; refuse an Opus or Fable route.
