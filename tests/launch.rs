@@ -2305,3 +2305,63 @@ fn a_pi_chair_is_named_at_launch_and_gets_the_host_contract() {
     assert_eq!(row["chair_provider"], "pi");
     assert_eq!(row["chair_id"], id.as_str());
 }
+
+/// Codex has no per-launch chair hook, so a Codex chair is named at launch, and its first log
+/// gives its thread id. A chat with no chair provider gets no sidebar row and no transcript.
+#[test]
+fn a_codex_chair_is_named_at_launch_and_its_log_gives_the_thread_id() {
+    let home = scratch("codex-chair");
+    tool(&home, "codex", "true");
+    std::fs::create_dir_all(home.join(".swarm/adapters")).unwrap();
+    std::fs::write(
+        home.join(".swarm/adapters/tmux-swarm.conf"),
+        "self = printf chair\nspawn = printf pane\nring = true\nlist = true\nclose = true\ncapture = true\n",
+    )
+    .unwrap();
+    let app = [("SWARM_ADAPTER", "tmux-swarm")];
+    let session = swarm(&home, &app, &["session", "new", "lane"]);
+    assert!(session.status.success(), "{}", stderr(&session));
+    let session = String::from_utf8(session.stdout)
+        .unwrap()
+        .trim()
+        .to_string();
+    let env = [
+        ("SWARM_ADAPTER", "tmux-swarm"),
+        ("SWARM_SESSION_ID", session.as_str()),
+        ("SWARM_AGENT_ID", "orchestrator"),
+    ];
+    let cwd = home.join("repo");
+    std::fs::create_dir_all(&cwd).unwrap();
+    let cwd = cwd.to_string_lossy().into_owned();
+    let output = swarm(
+        &home,
+        &env,
+        &[
+            "launch",
+            "orchestrator",
+            "chat",
+            "--provider",
+            "codex",
+            "--model",
+            "gpt-6-luna",
+            "--cwd",
+            &cwd,
+        ],
+    );
+    assert!(output.status.success(), "{}", stderr(&output));
+    let chair = || {
+        let sessions = swarm(&home, &[], &["sessions", "--json"]);
+        let sessions: serde_json::Value = serde_json::from_slice(&sessions.stdout).unwrap();
+        sessions["sessions"][0].clone()
+    };
+    assert_eq!(chair()["chair_provider"], "codex");
+    assert!(chair()["chair_id"].is_null());
+
+    let thread = "01a14385-ff51-7000-8000-000000000001";
+    let log = home.join(format!("rollout-2026-10-16T12-33-37-{thread}.jsonl"));
+    std::fs::write(&log, "").unwrap();
+    let connection = swarm::store::open(&home.join(".swarm/swarm.db")).unwrap();
+    swarm::store::set_chair_log(&connection, &session, &log).unwrap();
+    assert_eq!(chair()["chair_provider"], "codex");
+    assert_eq!(chair()["chair_id"], thread);
+}

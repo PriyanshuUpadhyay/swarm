@@ -4789,6 +4789,11 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             required: picked.is_some() && account.is_some_and(|name| name != "auto"),
             cwd: &cwd,
         };
+        // Codex has no per-launch hook to name its chair, and the app lists and reads a chat only
+        // by its chair provider. Its thread id comes later with its log.
+        if kind == Provider::Codex && agent_id == "orchestrator" {
+            swarm::store::set_chair_provider(&connection, &session_id()?, "codex")?;
+        }
         match kind {
             Provider::Codex | Provider::Agy => match trust_target(&cwd, &user_home) {
                 Ok(target) if kind == Provider::Codex => {

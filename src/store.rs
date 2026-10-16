@@ -392,6 +392,19 @@ pub fn set_chair(
     Ok(())
 }
 
+/// Names the chair's CLI before its own id is known. A chair already named keeps its name.
+pub fn set_chair_provider(
+    connection: &Connection,
+    session_id: &str,
+    provider: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    connection.execute(
+        "UPDATE session SET chair_provider = ?2 WHERE id = ?1 AND chair_provider IS NULL",
+        (session_id, provider),
+    )?;
+    Ok(())
+}
+
 pub fn set_chair_log(
     connection: &Connection,
     session_id: &str,
@@ -401,6 +414,17 @@ pub fn set_chair_log(
         "UPDATE session SET chair_log = ?2 WHERE id = ?1",
         (session_id, path.to_string_lossy()),
     )?;
+    // A Codex rollout file ends in its thread id, which is the chair id that Codex never reports.
+    let stem = path.file_stem().unwrap_or_default().to_string_lossy();
+    if let Some(thread) = stem.get(stem.len().saturating_sub(36)..)
+        && uuid::Uuid::try_parse(thread).is_ok()
+    {
+        connection.execute(
+            "UPDATE session SET chair_id = ?2
+             WHERE id = ?1 AND chair_provider = 'codex' AND chair_id IS NULL",
+            (session_id, thread),
+        )?;
+    }
     Ok(())
 }
 
