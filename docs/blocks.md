@@ -101,6 +101,9 @@ metadata:
 
 ## Ownership and conflicts
 
+On 2026-10-17, the owner settled the evidence part of #70 with three separate owners:
+`blocks/prove-it-works/SKILL.md`, `blocks/cite-sources/SKILL.md`, and `blocks/done-when-evidence/SKILL.md`.
+
 On 2026-10-17, C6 closed with `blocks/web-ui-basics/SKILL.md` as the check-width owner;
 diagram and page-shot blocks point to it.
 
@@ -181,7 +184,6 @@ Status: ✅ exists, ✂️ cut from a skill next, ⬜ later, 🆕 new, 🔒 stay
 | worker-brief | what a worker brief holds and how a worker acts | `blocks/worker-brief` | ✅ |
 | run-workers | how a root session runs seats on its host | `blocks/run-workers` (the three adapters point here) | ✅ |
 | task-file | the task file and the resume | `blocks/task-file` | ✅ |
-| evidence-label | one vocabulary for how sure a claim is | six vocabularies today: build, web-search, research, prove-it-works, engineering-standards | 🆕 after one owner is picked |
 | cite-sources | each claim cites its owning source; quote only text read; mark snippets | `blocks/cite-sources` | ✅ |
 | link-check | a cited page says the claim | `blocks/link-check` | ✅ |
 

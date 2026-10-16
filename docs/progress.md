@@ -141,6 +141,9 @@ Each block owns its rule text; the skill that held it points to the block.
 
 ### Owner decisions (2026-10-17)
 
+On 2026-10-17, the owner settled the evidence part of #70 with three separate owners:
+`blocks/prove-it-works/SKILL.md`, `blocks/cite-sources/SKILL.md`, and `blocks/done-when-evidence/SKILL.md`.
+
 On 2026-10-17, C6 closed with `blocks/web-ui-basics/SKILL.md` as the check-width owner;
 diagram and page-shot blocks point to it.
 

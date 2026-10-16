@@ -14,6 +14,7 @@ metadata:
 ---
 
 ## Rules
+- This block answers how a claim was proven. For source agreement, see `blocks/cite-sources/SKILL.md`; for the claim-to-proof map, see `blocks/done-when-evidence/SKILL.md`.
 - Check the real thing. A build, a green lint, a file timestamp, a cached screenshot, or a worker's summary is a proxy, and a proxy does not prove the change.
 - Choose the expected result from the requested behavior, the repository's contracts, and the standards that apply, before you use the code as evidence. Include failure and boundary cases.
 - Control clocks, randomness, and outside responses where they would make a test unstable. Use the real local boundary when a mock would hide the behavior you claim.
