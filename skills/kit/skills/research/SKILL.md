@@ -93,7 +93,8 @@ check every link as `blocks/link-check/SKILL.md` says before you finish.
 ## 06-close
 
 Send the reply by the loaded agent instructions. The kit's `references/plan-layout.md` owns the
-first screen, and `blocks/report/SKILL.md` owns the report sections and file path.
+first screen, `blocks/report/SKILL.md` owns the report sections, and
+`references/run-folder.md` owns its file path.
 
 ## Guards
 

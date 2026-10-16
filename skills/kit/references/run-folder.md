@@ -8,12 +8,17 @@ For repository task state, use `<repo-root>/tmp/<skill>/`. `<repo-root>` is
 `git rev-parse --show-toplevel`, so each worktree has its own runs. The `implement` skill keeps
 `tmp/flow/` and `~/.flow/`, so existing runs and profiles still work.
 
-The following scopes keep their existing paths, including when invoked from a repository.
+For research and web-search, `<reports>` is the folder the active runtime adapter names.
+When it names none, use `<repo-root>/tmp/reports/` in a repo, or `<working-folder>/tmp/reports/`
+outside a repo. This file owns that default for every runtime. Read older reports where they
+already exist; this rule moves no saved history.
+
+The following scopes use these paths, including when invoked from a repository.
 
 | Run kind | Run state | Durable result |
 |---|---|---|
-| research | `~/.claude/reports/<YYYY-MM-DD>-<slug>/` | `~/.claude/reports/<YYYY-MM-DD>-<slug>.md` |
-| web-search | `~/.claude/reports/<YYYY-MM-DD>-<slug>-seats/`; launch scratch at `~/.swarm/ws/<run>` | `~/.claude/reports/<YYYY-MM-DD>-<slug>-web.md`, with seat reports in the run folder |
+| research | `<reports>/<YYYY-MM-DD>-<slug>/` | `<reports>/<YYYY-MM-DD>-<slug>.md` |
+| web-search | `<reports>/<YYYY-MM-DD>-<slug>-seats/`; launch scratch at `~/.swarm/ws/<run>` | `<reports>/<YYYY-MM-DD>-<slug>-web.md`, with seat reports in the run folder |
 | council | `<log>/<YYYY-MM-DD>-<slug>/` beside the log file; temporary input at `/tmp/councils/<run-id>/` | caller-pinned external log path, or `~/dotfiles/docs/council/<YYYY-MM-DD>-<slug>.md` |
 | build piece | `<repo-root>/tmp/build/<piece>/ink/` in a repo; `<piece>/ink/` outside a repo | source and artifacts stay in the piece folder |
 
