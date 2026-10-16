@@ -66,10 +66,9 @@ merged report is written. Its report is one source among the others, not the ans
 holds but this session cannot open visible seats, do the web part yourself and write in the gaps
 that `web-search` did not run and why.
 
-When the question is about how or why a technique, protocol, or implementation works, also go to its
-origin as the kit block `blocks/primary-sources/SKILL.md` says, which means the original paper,
-spec, or the author's code at the commit that introduced it. Example. The question is about SQL
-databases. A blog is the lead, and the answer rests on the paper it names.
+When the question is about how or why a technique, protocol, or implementation works, also apply
+the kit block `blocks/primary-sources/SKILL.md`. Example. The question is about SQL databases.
+A blog is the lead, and the answer rests on the paper it names.
 
 Every run also searches off the usual path, as `blocks/deep-search/SKILL.md` says. Example. The
 question is "which state library should this React app use". The usual answers are libraries. An

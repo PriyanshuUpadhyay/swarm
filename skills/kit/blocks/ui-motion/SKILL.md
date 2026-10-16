@@ -21,7 +21,7 @@ metadata:
 - Honor `prefers-reduced-motion: reduce`. Keep opacity fades that help the reader, and remove movement. Loops and parallax become static.
 - Keep every key fact visible under reduced motion. The settled-state check belongs to `blocks/web-ui-basics/SKILL.md`.
 - If the selected owner's rows disagree for this state, use `blocks/decision-with-default/SKILL.md` to name the conflict before building it.
-- Story motion follows ink's `skills/ink/references/story-and-motion.md`.
+- Story motion follows build's `skills/build/references/story-and-motion.md`.
 
 ## Example
 Initial state: a settings page opens a dropdown, and the code has no motion tokens.
