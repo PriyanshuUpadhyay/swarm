@@ -58,6 +58,7 @@ def test_good_plan():
 
 def test_defects_stop():
     cases = [
+        (PLAN.replace("| build-site, web-ui-basics |", "| diagram |"), "diagram is a parent; name its parts until the shared resolver lands"),
         (PLAN.replace("| build-site, web-ui-basics |", "| build-site, no-such |"), "block no-such, which is not in the kit"),
         (PLAN.replace("| read, tokens |", "| read, lookz |"), "needs 'lookz', which no step gives"),
         (PLAN.replace("| none | done-when", "| reply | done-when"), "loop among steps"),

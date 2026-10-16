@@ -46,6 +46,11 @@ When running rounds, put `round: N` on the first line of every ask and discard a
 In lane mode children cannot message each other. In relay mode you receive their child-to-child
 messages as kind `relay:<recipient>` and forward them yourself.
 
+## Reports to the owner
+
+Give each report, plan, review, or status the form that the kit's `references/explain-formats.md`
+sets. The kit root is two folders up from this skill's folder.
+
 ## Owner
 
 Swarm notifies the owner when any agent waits on a permission or a question. When the run's work

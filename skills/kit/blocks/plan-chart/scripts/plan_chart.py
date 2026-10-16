@@ -119,6 +119,9 @@ def check(title, done, rows):
         for block in blocks:
             if not (KIT / "blocks" / block / "SKILL.md").is_file():
                 raise SystemExit(f"step {name} names block {block}, which is not in the kit")
+            text = (KIT / "blocks" / block / "SKILL.md").read_text(encoding="utf-8")
+            if re.search(r"^  kind: [\"']?parent[\"']?\s*$", text.partition("---\n")[2].partition("---\n")[0], re.M):
+                raise SystemExit(f"{block} is a parent; name its parts until the shared resolver lands")
         # step_run drops a Needs word that matches no step in silence, so each word must match here.
         uses[name] = []
         for word in [w.strip() for w in re.split(r",|\band\b", need) if w.strip() and w.strip() != "none"]:

@@ -54,7 +54,7 @@ LEDGER_HEAD = "## Blocks considered"
 PARAM = re.compile(r"\{\{(\w+)\}\}")
 CHECKS = ("Check (script)", "Check (judge)")
 # write_callers uses this stored heading to avoid duplicate sections in existing runs.
-CALLERS_HEAD = "## Callers (written by flow_run.py take from the code names in 03-contracts.md; a search, not a judgment)"
+CALLERS_HEAD = "## Callers (written by implement_run.py take from the code names in 03-contracts.md; a search, not a judgment)"
 TODOS = {  # each item names the file that owns the rule
     "01-frame": ["Goal, user, and out of scope (implement)", "Done-when, each one checkable (implement)",
                  "Lane, fast or full, and why (implement)"],
@@ -275,6 +275,30 @@ def resolve_blocks(root, wanted, profile_name):
         if not isinstance(reason, str) or not one_line(reason).strip():  # the text that the Off line prints
             raise SystemExit(f"[off] {block} needs a reason in {repo_file}")
 
+    # Membership has one owner: a parent's metadata.parts, never a field on its parts.
+    parents, parent_of = {}, {}
+    for block, path in files.items():
+        text = read_utf8(path)
+        head = text[3:].partition("\n---\n")[0] if text.startswith("---\n") else ""
+        meta = dict(re.findall(r"^  (kind|parts): (.*)$", head, re.M))
+        meta = {k: v.strip().strip("\"'") for k, v in meta.items()}
+        if "parts" in meta and meta.get("kind") != "parent":
+            raise SystemExit(f"block {block}: parts is only allowed on kind: parent")
+        if meta.get("kind") == "parent":
+            parts = [p.strip() for p in meta.get("parts", "").split(",") if p.strip()]
+            if not parts:
+                raise SystemExit(f"parent {block} has no parts")
+            parents[block] = parts
+    for parent, parts in parents.items():
+        for part in parts:
+            if part not in files:
+                raise SystemExit(f"unknown part {part} in parent {parent}")
+            if part in parents:
+                raise SystemExit(f"parent {part} is a part of parent {parent}; parents have one level")
+            if part in parent_of:
+                raise SystemExit(f"part {part} has two parents: {parent_of[part]} and {parent}")
+            parent_of[part] = parent
+
     named = {}
     for key, ids in wanted.items():
         if unknown := [i for i in ids if i not in files and i not in aliases]:
@@ -348,7 +372,13 @@ def resolve_blocks(root, wanted, profile_name):
 
     out, judge = {}, {}
     for key, ids in named.items():
-        joined = list(dict.fromkeys(base + ids))
+        expanded = []
+        for block in base + ids:
+            if block in parent_of:
+                expanded.append(parent_of[block])
+            expanded.append(block)
+            expanded.extend(parents.get(block, []))
+        joined = list(dict.fromkeys(expanded))
         blocks = [b for b in joined if b not in off]
         groups = {}  # a merged alias sits where its first member stood
         for b in blocks:
