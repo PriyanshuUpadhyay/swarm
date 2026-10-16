@@ -66,10 +66,11 @@ export function movePane(from: number | null, count: number, direction: Directio
 export const MIN_COLUMN = 440;
 export const MIN_CHAT = 400;
 
-/** With no drag the chat page is 90% of the main area. A drag leaves 440 px for the first column;
- *  in a narrow area the 400 px chat minimum wins and the strip scrolls. */
-export function chatWidth(main: number, preferred?: number | null): number {
-  if (preferred == null) return main * 0.9;
+/** With no drag the columns, `columnsPx` in all, take the right side and the chat page the rest, at
+ *  least 400 px. A drag leaves 440 px for the first column; in a narrow area the 400 px chat minimum
+ *  wins and the strip scrolls. */
+export function chatWidth(main: number, preferred: number | null | undefined, columnsPx = 0): number {
+  if (preferred == null) return Math.max(MIN_CHAT, main - columnsPx);
   return Math.min(Math.max(preferred, MIN_CHAT), Math.max(MIN_CHAT, main - MIN_COLUMN));
 }
 

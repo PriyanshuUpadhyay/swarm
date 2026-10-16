@@ -137,6 +137,16 @@ pub struct Workspace {
     /// Chats the app cannot open, so no view lists them (ADR 0083). A workspace delete still
     /// closes their live agents.
     pub unlisted: Vec<Chat>,
+    /// The archived chats whose folder is this workspace, newest first.
+    pub archived: Vec<ArchivedChat>,
+}
+
+/// An archived session, from the snapshot's `archived` list.
+#[derive(Clone, Debug)]
+pub struct ArchivedChat {
+    pub id: String,
+    pub title: String,
+    pub archived_at: i64,
 }
 impl Workspace {
     /// The chats the sidebar lists: a chat started in a tab shows only as a tab (ADR 0085).
@@ -366,6 +376,7 @@ pub fn build(snapshot: &Value, owner: &OwnerChoices) -> Tree {
                 removed: false,
                 chats: listed,
                 unlisted,
+                archived: archived_chats(snapshot, &ws.path, owner),
             });
         }
         let unmatched: Vec<_> = project_sessions
@@ -375,6 +386,7 @@ pub fn build(snapshot: &Value, owner: &OwnerChoices) -> Tree {
         let (removed, hub): (Vec<_>, Vec<_>) = unmatched.into_iter().partition(|s| {
             s["folder_missing"] == true && s["cwd"] != fact.path && s["cwd"] != json!(fact.common)
         });
+        let hub_is_workspace = workspaces.iter().any(|w| w.path == fact.path);
         for (removed, sessions) in [(false, hub), (true, removed)] {
             if !sessions.is_empty() {
                 let (listed, unlisted) = chats(sessions, snapshot, owner);
@@ -395,6 +407,12 @@ pub fn build(snapshot: &Value, owner: &OwnerChoices) -> Tree {
                     removed,
                     chats: listed,
                     unlisted,
+                    // A removed worktree's chats keep their own gone folder, so none matches.
+                    archived: if removed || hub_is_workspace {
+                        Vec::new()
+                    } else {
+                        archived_chats(snapshot, &fact.path, owner)
+                    },
                 });
             }
         }
@@ -453,6 +471,60 @@ pub fn build(snapshot: &Value, owner: &OwnerChoices) -> Tree {
         projects,
         importable,
     }
+}
+
+/// The snapshot's archived sessions in `workspace`, newest first. A chat with no name or title
+/// shows its provider and short id, as a live one does.
+fn archived_chats(snapshot: &Value, workspace: &str, owner: &OwnerChoices) -> Vec<ArchivedChat> {
+    let all: Vec<&Value> = ["sessions", "archived"]
+        .iter()
+        .flat_map(|k| snapshot[*k].as_array().into_iter().flatten())
+        .collect();
+    // A rename is kept under the chat's first session, as for a live chat (`key`).
+    let key = |id: &str| {
+        let mut key = id.to_owned();
+        let mut seen = BTreeSet::new();
+        while seen.insert(key.clone()) {
+            match all
+                .iter()
+                .find(|s| s["id"] == key.as_str())
+                .and_then(|s| s["continuation_of"].as_str())
+            {
+                Some(parent) if all.iter().any(|s| s["id"] == parent) => key = parent.to_owned(),
+                _ => break,
+            }
+        }
+        key
+    };
+    let mut chats: Vec<_> = snapshot["archived"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|s| s["workspace"] == workspace)
+        .filter_map(|s| {
+            let id = s["id"].as_str()?.to_owned();
+            let title = nonblank(owner.chat_names.get(&key(&id)).map(String::as_str))
+                .or_else(|| nonblank(s["title"].as_str()))
+                .unwrap_or_else(|| {
+                    format!(
+                        "{} {}",
+                        s["chair_provider"].as_str().unwrap_or("Chat"),
+                        id.chars().take(8).collect::<String>()
+                    )
+                });
+            Some(ArchivedChat {
+                title,
+                archived_at: s["archivedAt"].as_i64().unwrap_or_default(),
+                id,
+            })
+        })
+        .collect();
+    chats.sort_by(|a, b| {
+        b.archived_at
+            .cmp(&a.archived_at)
+            .then_with(|| a.id.cmp(&b.id))
+    });
+    chats
 }
 
 /// The chats the app can open, then the ones it cannot.

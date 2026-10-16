@@ -1385,7 +1385,7 @@ pub(crate) fn json_text(value: &serde_json::Value) -> String {
 }
 
 /// The end of the error of a write that found its file changed since the read.
-const CHANGED: &str = "changed while swarm edited it; run the command again";
+pub const CHANGED: &str = "changed while swarm edited it; run the command again";
 
 pub(crate) fn changed_error(path: &std::path::Path) -> String {
     format!("swarm: {} {CHANGED}", path.display())

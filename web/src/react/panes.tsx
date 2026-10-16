@@ -50,21 +50,40 @@ export function PaneStrip({ app }: { app: App }) {
 
   const save = () => store.setItem(WIDTHS_KEY, JSON.stringify(widths.current));
   const main = () => scroller.current?.clientWidth ?? 0;
-  /** Sets the chat page and column widths from the main area and the saved drags. */
+  /** The chat page's width with the columns there are now, for a drag that starts from it. */
+  const chatNow = () => chatWidth(main(), widths.current.chat, cols.length * columnWidth(main(), widths.current.column));
+  /** Sets the chat page and column widths from the main area, the column count and the saved drags. */
   const layout = () => {
     const el = scroller.current;
     if (!el) return;
     if (!hasPanes) return el.style.removeProperty("--chat-w");
-    el.style.setProperty("--chat-w", `${chatWidth(main(), widths.current.chat) - GRIP}px`);
+    el.style.setProperty("--chat-w", `${chatNow() - GRIP}px`);
     el.style.setProperty("--col-w", `${columnWidth(main(), widths.current.column) - GRIP}px`);
   };
 
+  // A column that comes or goes moves the chat page's edge. The new widths apply at once and the
+  // chat's text and the columns slide from where they were, on transform only (FLIP). Opening or
+  // reloading a chat that has columns lays them out with no slide.
+  const slidFor = useRef<string | null | undefined>(undefined);
   useLayoutEffect(() => {
+    const el = scroller.current;
+    const chat = el?.querySelector<HTMLElement>(".strip-chat");
+    if (!el || !chat) return;
+    const before = chat.offsetWidth;
     layout();
+    const shift = before - chat.offsetWidth;
+    const same = slidFor.current === openId;
+    slidFor.current = openId;
+    if (same && shift && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      const slide = (target: Element | null, from: number) =>
+        target?.animate([{ transform: `translateX(${from}px)` }, { transform: "none" }], { duration: 240, easing: "cubic-bezier(0.23, 1, 0.32, 1)" });
+      for (const child of chat.children) slide(child, shift / 2);
+      slide(aside.current, shift);
+    }
     const observer = new ResizeObserver(layout);
-    observer.observe(scroller.current!);
+    observer.observe(el);
     return () => observer.disconnect();
-  }, [hasPanes]);
+  }, [cols.length, openId]);
 
   // Another chat starts at its chat page.
   useLayoutEffect(() => {
@@ -128,16 +147,19 @@ export function PaneStrip({ app }: { app: App }) {
   };
 
   const dragStart = useRef(0);
-  const dragColumn = useRef({ width: 0, offset: 0 });
+  const dragColumn = useRef({ width: 0, offset: 0, chat: 0 });
   /** Every column changes width, so the strip scrolls by the change of the columns before this
    *  one. Its leading edge stays put, and the dragged edge follows the pointer. */
-  const resizeColumns = (preferred: number | null, index: number, start: { width: number; offset: number }) => {
+  const resizeColumns = (preferred: number | null, index: number, start: { width: number; offset: number; chat: number }) => {
     const width = columnWidth(main(), preferred);
-    widths.current = { ...widths.current, column: preferred === null ? undefined : width };
+    // A drag keeps the chat page at its width, as a drag of the chat's edge does, so the dragged
+    // edge follows the pointer. A reset or a press with no move leaves the chat as it is.
+    const chat = preferred !== null && preferred !== start.width ? (widths.current.chat ?? start.chat) : widths.current.chat;
+    widths.current = { ...widths.current, chat, column: preferred === null ? undefined : width };
     layout();
     scroller.current!.scrollLeft = start.offset + index * (width - start.width);
   };
-  const columnStart = () => ({ width: columnWidth(main(), widths.current.column), offset: scroller.current!.scrollLeft });
+  const columnStart = () => ({ width: columnWidth(main(), widths.current.column), offset: scroller.current!.scrollLeft, chat: chatNow() });
   const setSplit = (el: HTMLElement, column: string, share: number | null) => {
     el.style.setProperty("--split", String(splitShare(share)));
     widths.current = saveSplit(widths.current, openId!, cols.map((c) => c[0].id), column, share === null ? null : splitShare(share));
@@ -169,7 +191,7 @@ export function PaneStrip({ app }: { app: App }) {
             <Grip
               axis="x"
               label="Chat page width"
-              onStart={() => (dragStart.current = chatWidth(main(), widths.current.chat))}
+              onStart={() => (dragStart.current = chatNow())}
               onDrag={(dx) => {
                 widths.current = { ...widths.current, chat: chatWidth(main(), dragStart.current + dx) };
                 layout();

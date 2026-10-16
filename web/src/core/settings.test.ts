@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ApiError } from "./api";
 import type { App } from "./app";
-import { hudCard, meterGroups, Settings, untilText, waitText, type Meter } from "./settings";
+import { hudCard, meterGroups, Settings, setUpAll, untilText, waitText, type Doctor, type Meter, type SetupPlan } from "./settings";
 
 const ROLES = { revision: "rev-1", min_usage_left_pct: 5, profiles: [{ name: "chat", runners: [] }] };
 
@@ -11,8 +11,10 @@ function fakeApp(post: (path: string, body: Record<string, unknown>) => Promise<
   const app = {
     api: {
       get: async (path: string, query?: Record<string, string>) => {
-        calls.push(`GET ${path}${query?.provider ? `?${query.provider}` : ""}`);
+        calls.push(`GET ${path}${query?.provider ? `?${query.provider}` : ""}${query?.only ? `?${query.only}` : ""}`);
         if (path === "/api/roles") return ROLES;
+        if (path === "/api/doctor") return DOCTOR;
+        if (path === "/api/setup/plan") return { ...PLAN, digest: `d-${query?.only ?? "all"}` };
         if (path === "/api/providers") return { providers: [] };
         if (path === "/api/accounts") return { provider: query!.provider, state: "ready", revision: "acc-1", auto: null, accounts: [] };
         return { meters: [meter("codex", "default", "primary", 50), meter("claude", "default", "5h", 90)] };
@@ -29,6 +31,60 @@ function fakeApp(post: (path: string, body: Record<string, unknown>) => Promise<
   };
   return { settings: new Settings(app as unknown as App), calls };
 }
+
+const item = (id: string, state: "ok" | "setup" | "broken", group: string | null = id) => ({ id, title: id, state, reason: "", group });
+const DOCTOR: Doctor = { items: [item("hooks", "setup"), item("trust", "setup"), item("skills", "setup"), item("herdr", "ok"), item("plugin", "setup"), item("hud", "ok"), item("notices", "broken", null)] };
+const PLAN: SetupPlan = { digest: "d", files: [], conflicts: [{ group: "trust", file: "~/.claude.json", entry: "projects", fix: "remove it" }], skipped: [] };
+
+describe("setup & doctor", () => {
+  it("Set up all leaves out a conflicted group, ok rows and rows with no group", () => {
+    expect(setUpAll(DOCTOR, PLAN)).toEqual({ plan: ["hooks", "skills"], own: ["plugin"] });
+  });
+
+  it("shows the plan's files first, then applies with that plan's digest, then the plugin, then reloads", async () => {
+    const { settings, calls } = fakeApp(async () => ({ ok: true }));
+    await settings.setUp(["hooks", "skills"], ["plugin"]);
+    expect(calls).toEqual(["GET /api/setup/plan?hooks,skills"]);
+    expect(settings.state.pending?.digest).toBe("d-hooks,skills");
+    expect(await settings.applySetUp()).toBe(true);
+    expect(settings.state.pending).toBeNull();
+    expect(calls).toEqual([
+      "GET /api/setup/plan?hooks,skills",
+      'POST /api/setup/apply {"only":"hooks,skills","digest":"d-hooks,skills"}',
+      'POST /api/setup/apply {"only":"plugin"}',
+      "GET /api/doctor",
+      "GET /api/setup/plan",
+    ]);
+    expect(settings.state.doctor).toEqual({ state: "ready", data: DOCTOR });
+  });
+
+  it("a second Set up while the first plan loads does nothing, so the newer preview cannot be replaced", async () => {
+    const { settings, calls } = fakeApp(async () => ({ ok: true }));
+    const first = settings.setUp(["hooks"]);
+    await settings.setUp(["skills"]);
+    await first;
+    expect(calls).toEqual(["GET /api/setup/plan?hooks"]);
+    expect(settings.state.pending?.plan).toEqual(["hooks"]);
+    expect(settings.state.busy).toBe(false);
+  });
+
+  it("a Set up of the HUD also reloads the HUD state the Home card reads", async () => {
+    const { settings, calls } = fakeApp(async () => ({ ok: true }));
+    await settings.setUp([], ["hud"]);
+    expect(await settings.applySetUp()).toBe(true);
+    expect(calls).toContain("GET /api/hud");
+  });
+
+  it("a failed apply that is not a stale plan shows the CLI's own text, and reloads", async () => {
+    const { settings } = fakeApp(async () => {
+      throw new ApiError(400, "swarm: none of claude, codex, agy or pi is on PATH");
+    });
+    await settings.setUp([], ["plugin"]);
+    expect(await settings.applySetUp()).toBe(false);
+    expect(settings.state.error).toBe("swarm: none of claude, codex, agy or pi is on PATH");
+    expect(settings.state.plan.state).toBe("ready");
+  });
+});
 
 const meter = (provider: string, account: string | null, window: string, used: number | null, state = "fresh"): Meter => ({
   provider,

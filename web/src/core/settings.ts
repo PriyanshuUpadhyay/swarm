@@ -8,13 +8,38 @@ import type { App } from "./app";
 import type { Load } from "./changes";
 import type { Command } from "./commands";
 
-export type Page = "appearance" | "notifications" | "profiles" | "accounts";
+export type Page = "appearance" | "notifications" | "profiles" | "accounts" | "setup";
 export const PAGES: [Page, string][] = [
   ["appearance", "Appearance"],
   ["notifications", "Notifications"],
   ["profiles", "Agent profiles"],
   ["accounts", "Accounts"],
+  ["setup", "Setup & doctor"],
 ];
+
+/** One `swarm.doctor.v1` row. `group` names what sets it up: a `swarm setup` group, `plugin` or `hud`. */
+export type DoctorItem = { id: string; title: string; state: "ok" | "setup" | "broken"; reason: string; group: string | null };
+export type Doctor = { items: DoctorItem[] };
+/** `swarm setup --plan --json`, cut to what the page shows. */
+export type SetupPlan = {
+  digest: string;
+  files: { group: string; path: string }[];
+  conflicts: { group: string; file: string; entry: string; fix: string }[];
+  skipped: { group: string; reason: string }[];
+};
+/** The groups `swarm setup` applies from a plan's digest. */
+export const PLAN_GROUPS = ["hooks", "trust", "herdr", "skills"];
+
+/** What Set up all runs: the plan groups that need setup and have no conflict, then `plugin` and
+ *  `hud` when they need it. A conflict needs the owner, so its group is left out. */
+export function setUpAll(doctor: Doctor, plan: SetupPlan): { plan: string[]; own: string[] } {
+  const needed = new Set(doctor.items.flatMap((i) => (i.state === "setup" && i.group ? [i.group] : [])));
+  const conflicted = new Set(plan.conflicts.map((c) => c.group));
+  return {
+    plan: PLAN_GROUPS.filter((g) => needed.has(g) && !conflicted.has(g)),
+    own: ["plugin", "hud"].filter((g) => needed.has(g)),
+  };
+}
 
 /** One usage window of one account (`docs/usage-format.md`). */
 export type Meter = {
@@ -75,6 +100,10 @@ export type SettingsState = {
   login: { provider: string; account: string; pane: string } | null;
   /** A destructive action waiting for a second press. */
   confirm: { text: string; action: string; run: () => Promise<unknown> } | null;
+  doctor: Load<Doctor>;
+  plan: Load<SetupPlan>;
+  /** A Set up the owner pressed: the files its plan writes, shown until Apply or Cancel. */
+  pending: { plan: string[]; own: string[]; files: SetupPlan["files"]; digest: string | null } | null;
 };
 
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
@@ -136,10 +165,15 @@ export class Settings {
     error: null,
     login: null,
     confirm: null,
+    doctor: { state: "idle" },
+    plan: { state: "idle" },
+    pending: null,
   };
   private listeners = new Set<() => void>();
   /** Counts HUD writes, so a read that began before a write cannot overwrite its reply. */
   private hudWrites = 0;
+  /** Counts setup reads, so an older doctor reply cannot overwrite a newer one. */
+  private setupReads = 0;
 
   constructor(private readonly app: App) {}
 
@@ -158,8 +192,10 @@ export class Settings {
   }
 
   show(page: Page = this.state.page) {
-    this.set({ open: true, page, error: null, confirm: null });
+    this.set({ open: true, page, error: null, confirm: null, pending: null });
     if (page === "profiles") void this.loadRoles();
+    // loadSetup keeps its errors in state.doctor and state.plan, so nothing waits for it.
+    if (page === "setup") void this.loadSetup();
     if (page === "accounts") {
       for (const p of USAGE_PROVIDERS) void this.loadAccounts(p);
       void this.loadUsage();
@@ -315,6 +351,65 @@ export class Settings {
 
   private reloadAccounts() {
     return Promise.all([...USAGE_PROVIDERS.map((p) => this.loadAccounts(p)), this.loadUsage()]);
+  }
+
+  // ---- setup & doctor ----
+
+  async loadSetup() {
+    const loading = { state: "loading" } as const;
+    if (this.state.doctor.state !== "ready") this.set({ doctor: loading, plan: loading });
+    const load = async <T>(path: string): Promise<Load<T>> => {
+      try {
+        return { state: "ready", data: await this.api.get<T>(path) };
+      } catch (err) {
+        return { state: "error", error: message(err) };
+      }
+    };
+    const read = ++this.setupReads;
+    const [doctor, plan] = await Promise.all([load<Doctor>("/api/doctor"), load<SetupPlan>("/api/setup/plan")]);
+    if (read === this.setupReads) this.set({ doctor, plan });
+  }
+
+  /** Shows what a Set up of `plan` groups, then each of `own`, writes. Nothing is written until
+   *  applySetUp. */
+  async setUp(plan: string[], own: string[] = []) {
+    // busy also blocks a second press, so an older plan reply cannot replace a newer preview.
+    if (this.state.busy) return;
+    this.set({ busy: true, error: null, pending: null });
+    try {
+      const p = plan.length ? await this.api.get<SetupPlan>("/api/setup/plan", { only: plan.join(",") }) : null;
+      this.set({ pending: { plan, own, files: p?.files ?? [], digest: p?.digest ?? null } });
+    } catch (err) {
+      this.set({ error: message(err) });
+    } finally {
+      this.set({ busy: false });
+    }
+  }
+
+  cancelSetUp() {
+    this.set({ pending: null });
+  }
+
+  /** Applies the shown plan with its digest, so a file that changed since the owner saw it is a
+   *  409, then each `own` group. */
+  applySetUp(): Promise<boolean> {
+    const pending = this.state.pending;
+    if (this.state.busy || !pending) return Promise.resolve(false);
+    this.set({ pending: null });
+    return this.write(
+      async () => {
+        if (pending.plan.length) await this.api.post("/api/setup/apply", { only: pending.plan.join(","), digest: pending.digest });
+        for (const only of pending.own) await this.api.post("/api/setup/apply", { only });
+      },
+      "Setup",
+      // The Home card reads the HUD from its own state, so a HUD setup reloads that too.
+      () => Promise.all([this.loadSetup(), pending.own.includes("hud") && this.loadHud()]),
+    );
+  }
+
+  setUpItem(item: DoctorItem) {
+    if (!item.group) return Promise.resolve();
+    return PLAN_GROUPS.includes(item.group) ? this.setUp([item.group]) : this.setUp([], [item.group]);
   }
 
   // ---- shared ----

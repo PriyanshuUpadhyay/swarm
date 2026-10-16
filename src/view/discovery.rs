@@ -269,7 +269,11 @@ impl Discovery {
             self.catalog = projects.into_values().collect();
         }
         snapshot["projects"] = serde_json::to_value(&self.catalog).unwrap();
-        if let Some(sessions) = snapshot["sessions"].as_array_mut() {
+        // Archived sessions get the same facts, so the sidebar folds them under their workspace.
+        for key in ["sessions", "archived"] {
+            let Some(sessions) = snapshot[key].as_array_mut() else {
+                continue;
+            };
             for session in sessions {
                 let cwd = session["cwd"].as_str().unwrap_or_default().to_owned();
                 // A catalog workspace at the deepest path wins over a surrounding plain folder.

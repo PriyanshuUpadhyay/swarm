@@ -5,7 +5,7 @@
 import { ArchiveRestoreIcon, ChevronRightIcon, GitPullRequestIcon, GripVerticalIcon, HouseIcon, MonitorIcon, MoonIcon, PinIcon, PlusIcon, SearchIcon, SunIcon, TriangleAlertIcon } from "lucide-react";
 import { memo, useRef, useState, useSyncExternalStore, type DragEvent, type MouseEvent } from "react";
 import { SIDEBAR_VIEWS, type App } from "../core/app";
-import type { Field, NavRow, RecentChat, SidebarRow } from "../core/nav";
+import { archivedSession, type Field, type NavRow, type RecentChat, type SidebarRow } from "../core/nav";
 import { Button } from "../components/ui/button";
 import { ContextMenu, ContextMenuTrigger } from "../components/ui/context-menu";
 import {
@@ -72,6 +72,7 @@ function WorkspaceList({ app }: { app: App }) {
     if (!row) return;
     const action = (e.target as Element).closest("[data-action]")?.getAttribute("data-action");
     if (action === "toggle") app.toggle(row.id);
+    else if (action === "unarchive") app.unarchive(archivedSession(row.id));
     else if (action === "new-chat" && row.row) newChat.current?.({ rect: (e.target as Element).closest("[data-action]")!.getBoundingClientRect(), workspace: row.row });
     else if (action === "new-workspace") app.life.newWorkspace(row.section.path ?? undefined);
     else app.clickRow(row.id);
@@ -251,12 +252,17 @@ const RowView = memo(function RowView({ row, selected, current, archive }: { row
     >
       {lines.map((fields, i) => (
         <div key={i} className={i ? "tline sub" : "tline"}>
-          {i === 0 && (r.kind === "workspace" || r.kind === "chat") && r.hasChildren ? chev() : <span className="chev" />}
+          {i === 0 && (r.kind === "workspace" || r.kind === "chat" || r.kind === "archived") && r.hasChildren ? chev() : <span className="chev" />}
           {fields.map((f, j) => (
             <FieldView key={j} f={f} row={r} />
           ))}
           <span className="flex-1" />
           {i === 0 && r.kind === "workspace" && !r.archived && !archive && <GripVerticalIcon className="grip" aria-hidden data-tip="Drag to reorder or pin workspace" />}
+          {i === 0 && r.kind === "archived-chat" && (
+            <button className="row-btn" data-action="unarchive" aria-label={`Unarchive ${r.title}`} title="Unarchive and open">
+              <ArchiveRestoreIcon />
+            </button>
+          )}
           {i === 0 && canNew && (
             <button className="row-btn" data-action="new-chat" aria-label={`New chat in ${r.title}`}>
               <PlusIcon />

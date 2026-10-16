@@ -10,7 +10,7 @@ export type Selection = { workspace: string | null; chat: string | null; agentSe
 
 export type SidebarRow = {
   id: string;
-  kind: "workspace" | "chat" | "child" | "more";
+  kind: "workspace" | "chat" | "child" | "more" | "archived" | "archived-chat";
   depth: number;
   parentId: string | null;
   expanded: boolean;
@@ -28,7 +28,7 @@ export type SidebarRow = {
   newChatEnabled: boolean;
   dimmed: boolean;
   fields: Field[];
-  // Null on a "more" row (Option<Selection> in src/view/sidebar.rs).
+  // Null on a "more" or archived row (Option<Selection> in src/view/sidebar.rs).
   selection: Selection | null;
 };
 
@@ -138,7 +138,7 @@ export function shareTree(old: TreeView | null, next: TreeView): TreeView {
 /** One sidebar line: a section header, or a tree row under it. */
 export type NavRow = {
   id: string;
-  kind: "pinned" | "project" | "workspace" | "chat" | "child" | "more";
+  kind: "pinned" | "project" | SidebarRow["kind"];
   /** aria-level: 1 for a header, 2 for a workspace, and so on. */
   level: number;
   /** True or false for a row that folds; null for one that does not. */
@@ -171,6 +171,9 @@ export function navRows(tree: TreeView | null, folds: ReadonlyMap<string, boolea
   }
   return out;
 }
+
+/** The session of an `archived-chat:<session>` row. */
+export const archivedSession = (id: string) => id.slice("archived-chat:".length);
 
 /** The id a fold op takes: a header's collapse id, else the row id. */
 export const foldId = (r: NavRow) => (r.row ? r.id : r.section.collapseId);

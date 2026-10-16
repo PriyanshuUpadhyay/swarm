@@ -27,6 +27,7 @@ import {
   chatRows,
   foldId,
   moveTarget,
+  archivedSession,
   navRows,
   paletteSources,
   recency,
@@ -308,6 +309,8 @@ export class App {
   /** Points the URL at the open chat once the first tree has restored one. */
   private followUrl() {
     if (typeof location === "undefined" || !this.restored) return;
+    // `/setup` names the Setup & doctor page while it is open.
+    if (location.pathname === "/setup" && this.settings.state.open && this.settings.state.page === "setup") return;
     const path = chatPath(this.openId);
     if (location.pathname !== path) {
       if (this.urlFollowed) history.pushState(null, "", path + location.search);
@@ -436,6 +439,9 @@ export class App {
       },
       { signal: abort.signal },
     );
+    if (location.pathname === "/setup") this.settings.show("setup");
+    // Closing Setup & doctor gives the URL back to the open chat.
+    abort.signal.addEventListener("abort", this.settings.subscribe(() => this.followUrl()));
     void this.refreshSnapshot().then(() => {
       whenPainted(
         () => document.querySelector('[data-testid="sidebar"][data-loaded="true"]') !== null,
@@ -641,10 +647,25 @@ export class App {
     if (row) this.runRow(row, e);
   }
 
+  private unarchiving = new Set<string>();
+
+  /** Unarchives an archived chat and opens it. A second press while one runs does nothing, and a
+   *  failure shows as a notice. */
+  unarchive(session: string) {
+    if (this.unarchiving.has(session)) return;
+    this.unarchiving.add(session);
+    this.life
+      .reopen(session)
+      .catch((err) => this.notice(`Unarchive failed: ${message(err)}`, true))
+      .finally(() => this.unarchiving.delete(session));
+  }
+
   clickRow(id: string) {
     const row = this.rows.find((r) => r.id === id);
     if (!row) return;
     this.selected = id;
+    // A click only selects an archived chat, so a stray click does not unarchive it. Enter does.
+    if (row.kind === "archived-chat") return this.notify();
     this.runRow(row);
   }
 
@@ -652,6 +673,9 @@ export class App {
     const row = nav.row;
     if (!row) return this.toggle(nav.id);
     const sel = row.selection ?? { workspace: null, chat: null, agentSession: null, agent: null };
+    // An archived chat folds and unarchives in both views, as its button and menu do.
+    if (row.kind === "archived") return this.toggle(nav.id);
+    if (row.kind === "archived-chat") return this.unarchive(archivedSession(nav.id));
     // The archive view only shows; Restore is in the menu, and an archived workspace takes no selection.
     if (this.treeName === "archived") {
       if (row.kind === "chat" && sel.chat) this.openChat(sel.chat, e, { write: false });

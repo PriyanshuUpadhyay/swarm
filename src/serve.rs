@@ -286,6 +286,27 @@ fn recorded(record: &Path) -> Option<(String, Option<i32>, Option<String>)> {
     Some((url, pid, build))
 }
 
+/// The doctor's row for the `swarm ui` server of this home: whether it runs, and with this build.
+pub fn ui_state() -> (&'static str, String) {
+    let Ok(root) = swarm::paths::root_dir() else {
+        return ("broken", "No swarm home".into());
+    };
+    match recorded(&root.join("ui-url")).filter(|(url, ..)| answers(url)) {
+        None => (
+            "ok",
+            "No `swarm ui` server is recorded; `swarm ui` starts one".into(),
+        ),
+        Some((_, _, build)) if build.as_deref() == Some(BUILD) => ("ok", format!("Runs {BUILD}")),
+        Some((_, _, build)) => (
+            "broken",
+            format!(
+                "Runs {}, not {BUILD}; `swarm ui` replaces it",
+                build.as_deref().unwrap_or("an older build")
+            ),
+        ),
+    }
+}
+
 /// The URL without its `#token=` fragment, for a message that may be shown or logged.
 fn page_base(url: &str) -> &str {
     url.split_once('#').map_or(url, |(base, _)| base)
@@ -608,6 +629,9 @@ fn router(app: App) -> Router {
         .route("/api/usage", get(usage_read))
         .route("/api/usage/refresh", post(usage_refresh))
         .route("/api/hud", get(hud_read).post(hud_write))
+        .route("/api/doctor", get(doctor_read))
+        .route("/api/setup/plan", get(setup_plan))
+        .route("/api/setup/apply", post(setup_write))
         .route("/api/roles", get(menu_read).post(owner_write))
         .route("/api/providers", get(menu_read))
         .route("/api/models", get(menu_read))
@@ -736,7 +760,11 @@ async fn snapshot(State(app): State<App>) -> Result<Json<Value>, ApiError> {
 fn snapshot_value(app: &Server) -> Result<Value, Box<dyn std::error::Error>> {
     let connection = read_connection(&app.root)?;
     let mut sessions = Vec::new();
-    for row in swarm::store::sessions(&connection)? {
+    // The newest archived sessions too (the store's limit, newest first), apart, so the sidebar can
+    // list them under their workspace.
+    let mut archived = Vec::new();
+    for row in swarm::store::sessions_with_archived(&connection, true)? {
+        let is_archived = row.archived_at.is_some();
         let cwd = row.cwd.clone();
         let session = swarm::bus::Session {
             id: row.id,
@@ -775,10 +803,16 @@ fn snapshot_value(app: &Server) -> Result<Value, Box<dyn std::error::Error>> {
         });
         session["project"] = json!(project);
         session["workspace"] = json!(workspace);
-        sessions.push(session);
+        if is_archived {
+            archived.push(session);
+        } else {
+            sessions.push(session);
+        }
     }
     let hub = app.hub.lock().unwrap();
-    Ok(json!({"version": hub.version, "sessions": sessions, "agents": hub.agents}))
+    Ok(
+        json!({"version": hub.version, "sessions": sessions, "archived": archived, "agents": hub.agents}),
+    )
 }
 
 #[derive(Deserialize)]
@@ -1409,6 +1443,128 @@ async fn hud_cli(app: &App, verb: &str) -> Result<Value, ApiError> {
         .ok()
         .filter(|value| value["schema"] == swarm::hud::HUD_SCHEMA)
         .ok_or_else(|| error(StatusCode::BAD_GATEWAY, "swarm returned invalid HUD status"))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SetupWrite {
+    /// A comma list of `SETUP_GROUPS` with the plan's digest, or `plugin` or `hud` alone.
+    only: String,
+    digest: Option<String>,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SetupPlanQuery {
+    only: Option<String>,
+}
+
+fn setup_groups(only: &str) -> bool {
+    only.split(',')
+        .all(|group| crate::SETUP_GROUPS.contains(&group))
+}
+/// A call from the swarm home, so a plan and its apply see the same folder.
+fn home_call(app: &App, args: &[&str]) -> CliCall {
+    CliCall {
+        args: args.iter().map(|arg| arg.to_string()).collect(),
+        cwd: app.root.clone(),
+        session: None,
+        adapter: String::new(),
+    }
+}
+async fn doctor_read(State(app): State<App>) -> Result<Json<Value>, ApiError> {
+    let output = run_cli(&app, home_call(&app, &["doctor", "--json"]), None).await?;
+    serde_json::from_str::<Value>(&output)
+        .ok()
+        .filter(|value| value["schema"] == crate::DOCTOR_SCHEMA)
+        .map(Json)
+        .ok_or_else(|| {
+            error(
+                StatusCode::BAD_GATEWAY,
+                "swarm returned an invalid doctor report",
+            )
+        })
+}
+async fn setup_plan(
+    State(app): State<App>,
+    Query(query): Query<SetupPlanQuery>,
+) -> Result<Json<Value>, ApiError> {
+    let mut args = vec!["setup", "--plan", "--json"];
+    if let Some(only) = query.only.as_deref() {
+        if !setup_groups(only) {
+            return Err(error(StatusCode::BAD_REQUEST, "unknown setup group"));
+        }
+        args.extend(["--only", only]);
+    }
+    let output = run_cli(&app, home_call(&app, &args), None).await?;
+    serde_json::from_str::<Value>(&output)
+        .ok()
+        .filter(|value| value["digest"].is_string())
+        .map(Json)
+        .ok_or_else(|| {
+            error(
+                StatusCode::BAD_GATEWAY,
+                "swarm returned an invalid setup plan",
+            )
+        })
+}
+/// The owner's press on the `/setup` page is the consent that `swarm setup` asks for. A digest
+/// that no longer matches the plan fails in the CLI, which reads as 409.
+async fn setup_write(
+    State(app): State<App>,
+    body: Result<Json<SetupWrite>, JsonRejection>,
+) -> Result<Json<Value>, ApiError> {
+    let Json(body) = body.map_err(|e| error(e.status(), &e.body_text()))?;
+    let valid = match (body.only.as_str(), body.digest.as_deref()) {
+        ("plugin" | "hud", None) => true,
+        (only, Some(digest)) => {
+            setup_groups(only)
+                && !digest.is_empty()
+                && digest.chars().all(|c| c.is_ascii_hexdigit())
+        }
+        _ => false,
+    };
+    if !valid {
+        return Err(error(
+            StatusCode::BAD_REQUEST,
+            "setup takes setup groups with a digest, or plugin or hud alone",
+        ));
+    }
+    enqueue_action(&app, Action::Setup(body)).await.map(Json)
+}
+async fn run_setup_write(app: &App, body: SetupWrite) -> Result<Value, ApiError> {
+    let done = match (body.only.as_str(), body.digest.as_deref()) {
+        ("hud", _) => hud_cli(app, "install").await,
+        (only, digest) => {
+            let args = if only == "plugin" {
+                vec!["setup", "plugin", "--yes"]
+            } else {
+                vec![
+                    "setup",
+                    "--digest",
+                    digest.unwrap_or_default(),
+                    "--only",
+                    only,
+                ]
+            };
+            // The plugin step runs each agent CLI's own plugin install, which can take a while.
+            run_cli_with_timeout(app, home_call(app, &args), None, Duration::from_secs(180))
+                .await
+                .map(|output| json!({"ok": true, "output": output}))
+        }
+    };
+    done.map_err(|(status, error)| {
+        let stale = error.0["error"].as_str().is_some_and(|text| {
+            // "after the plan", "after the link plan", and the parent's "after the plan".
+            text.contains("changed after the") || text.contains(swarm::managed::CHANGED)
+        });
+        // run_cli reports every failure as 409. Only a file that changed under the plan keeps
+        // it, as in owner_cli.
+        if status == StatusCode::CONFLICT && !stale {
+            (StatusCode::BAD_REQUEST, error)
+        } else {
+            (status, error)
+        }
+    })
 }
 async fn usage_read(State(app): State<App>) -> Result<Json<Value>, ApiError> {
     read_usage(&app, None).await.map(Json)
@@ -2154,6 +2310,7 @@ enum Action {
     Lifecycle(LifecycleAction),
     UsageRefresh(UsageRefresh),
     Hud(HudWrite),
+    Setup(SetupWrite),
     Owner(OwnerWrite),
 }
 
@@ -2254,6 +2411,9 @@ impl Action {
             | Self::Hud(_)
             | Self::Owner(_)
             | Self::RefreshView => None,
+            // A plugin install can take minutes, so it waits in its own lane, not in the one that
+            // folds and archives share.
+            Self::Setup(_) => Some("setup"),
         }
     }
 }
@@ -2285,6 +2445,7 @@ fn start_action_queue(app: &App, mut queue: mpsc::Receiver<ActionJob>) {
                             | Action::Lifecycle(_)
                             | Action::UsageRefresh(_)
                             | Action::Hud(_)
+                            | Action::Setup(_)
                             | Action::Owner(_)
                     );
                     let result = execute_action(&app, job.action).await;
@@ -2516,6 +2677,7 @@ async fn execute_action(app: &App, action: Action) -> Result<Value, ApiError> {
         Action::Hud(body) => {
             return hud_cli(app, if body.on { "install" } else { "uninstall" }).await;
         }
+        Action::Setup(body) => return run_setup_write(app, body).await,
         Action::Owner(write) => return run_owner_write(app, write).await,
         Action::RefreshView => {
             let app = app.clone();
@@ -4926,8 +5088,8 @@ async fn static_file(State(app): State<App>, request: Request) -> Response {
         return StatusCode::METHOD_NOT_ALLOWED.into_response();
     }
     let path = request.uri().path();
-    // `/chat/<id>` is a page route (ADR 0088); the page reads the id from its URL.
-    let relative = if path == "/" || path.starts_with("/chat/") {
+    // `/chat/<id>` (ADR 0088) and `/setup` are page routes; the page reads its URL.
+    let relative = if path == "/" || path == "/setup" || path.starts_with("/chat/") {
         "index.html"
     } else {
         path.trim_start_matches('/')
@@ -5526,6 +5688,15 @@ case "$1 $2" in
   'session new') printf '%s\n' '{new_id}' ;;
   'launch orchestrator') printf 'fixture-pane\n' ;;
   'sessions --json') printf '%s\n' '{{"sessions":[{{"id":"archived","archivedAt":42}},{{"id":"active"}}]}}' ;;
+  'doctor --json') printf '%s\n' '{{"schema":"swarm.doctor.v1","items":[]}}' ;;
+  'setup --plan') printf '%s\n' '{{"digest":"ab12","files":[],"conflicts":[],"skipped":[]}}' ;;
+  'setup --digest') case "$3" in
+    dead) echo 'swarm: a file changed after the plan; check the plan again' >&2; exit 1 ;;
+    beef) echo 'swarm: cannot write ~/.codex/config.toml' >&2; exit 1 ;;
+    f00d) echo 'swarm: ~/.claude/skills/x changed after the link plan; swarm leaves it' >&2; exit 1 ;;
+    cafe) echo 'swarm: ~/.codex/config.toml changed while swarm edited it; run the command again' >&2; exit 1 ;;
+  esac ;;
+  'hud install') echo 'swarm: SwarmHUD.app is not in this build' >&2; exit 1 ;;
   *) if [ "$1" = type ]; then cat > "$SWARM_HOME/text"; fi ;;
 esac
 "#)).unwrap();
@@ -5709,6 +5880,85 @@ esac
         assert_eq!(chat["id"], fixture.session.as_str());
         assert_eq!(chat["workspace"], env!("CARGO_MANIFEST_DIR"));
         assert_eq!(chat["provider"], "claude");
+    }
+
+    #[tokio::test]
+    async fn setup_routes_run_the_cli_from_the_home_and_refuse_bad_input_first() {
+        let fixture = action_fixture();
+        let doctor = doctor_read(State(fixture.app.clone())).await.unwrap().0;
+        assert_eq!(doctor["schema"], "swarm.doctor.v1");
+        let plan = |only: Option<&str>| {
+            setup_plan(
+                State(fixture.app.clone()),
+                Query(SetupPlanQuery {
+                    only: only.map(str::to_owned),
+                }),
+            )
+        };
+        assert_eq!(
+            plan(Some("hooks,skills")).await.unwrap().0["digest"],
+            "ab12"
+        );
+        assert_eq!(
+            plan(Some("hooks;rm")).await.unwrap_err().0,
+            StatusCode::BAD_REQUEST
+        );
+        let write = |body: Value| {
+            setup_write(
+                State(fixture.app.clone()),
+                Ok(Json(serde_json::from_value(body).unwrap())),
+            )
+        };
+        for body in [
+            json!({"only": "hooks"}),
+            json!({"only": "hooks", "digest": "ab 12"}),
+            json!({"only": "plugin", "digest": "ab12"}),
+            json!({"only": "hooks,plugin", "digest": "ab12"}),
+        ] {
+            assert_eq!(write(body).await.unwrap_err().0, StatusCode::BAD_REQUEST);
+        }
+        for body in [
+            json!({"only": "hooks,skills", "digest": "ab12"}),
+            json!({"only": "plugin"}),
+        ] {
+            assert_eq!(write(body).await.unwrap().0["ok"], true);
+        }
+        let calls = action_calls(&fixture);
+        let root = fixture.app.root.to_string_lossy();
+        assert_eq!(
+            calls.lines().collect::<Vec<_>>(),
+            [
+                format!("|||{root}|doctor --json"),
+                format!("|||{root}|setup --plan --json --only hooks,skills"),
+                format!("|||{root}|setup --digest ab12 --only hooks,skills"),
+                format!("|||{root}|setup plugin --yes"),
+            ]
+        );
+        // Only a file that changed under the plan is a conflict; any other failed setup is the request's own failure.
+        let stale = write(json!({"only": "hooks", "digest": "dead"}))
+            .await
+            .unwrap_err();
+        assert_eq!(stale.0, StatusCode::CONFLICT);
+        let failed = write(json!({"only": "hooks", "digest": "beef"}))
+            .await
+            .unwrap_err();
+        assert_eq!(failed.0, StatusCode::BAD_REQUEST);
+        assert!(
+            failed.1.0["error"]
+                .as_str()
+                .unwrap()
+                .contains("cannot write")
+        );
+        let raced = write(json!({"only": "hooks", "digest": "cafe"}))
+            .await
+            .unwrap_err();
+        assert_eq!(raced.0, StatusCode::CONFLICT);
+        let link = write(json!({"only": "skills", "digest": "f00d"}))
+            .await
+            .unwrap_err();
+        assert_eq!(link.0, StatusCode::CONFLICT);
+        let hud = write(json!({"only": "hud"})).await.unwrap_err();
+        assert_eq!(hud.0, StatusCode::BAD_REQUEST);
     }
 
     #[tokio::test]
@@ -7498,6 +7748,35 @@ if [ "$3" = Up ]; then cat "$SWARM_HOME/after" >> '{}'; fi
             modified
         );
         assert_eq!(fixture.app.hub.lock().unwrap().version, version);
+    }
+    #[tokio::test]
+    async fn an_archived_chat_folds_under_its_workspace_in_the_tree() {
+        let fixture = Fixture::new();
+        let mut connection = swarm::store::open(&fixture.app.root.join("swarm.db")).unwrap();
+        swarm::store::archive_sessions(&mut connection, std::slice::from_ref(&fixture.session))
+            .unwrap();
+        // A workspace with no live chat shows only when the owner opened its project.
+        choices_store::update(&fixture.app.root, None, |owner, _| {
+            owner.project_paths.push(env!("CARGO_MANIFEST_DIR").into());
+            Ok(())
+        })
+        .unwrap();
+        refresh_tree(&fixture.app).unwrap();
+        let Json(tree) = tree_view(State(fixture.app.clone()), Query(TreeQuery { view: None }))
+            .await
+            .unwrap();
+        let rows: Vec<_> = tree["sections"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|s| s["rows"].as_array().unwrap())
+            .collect();
+        let fold = rows
+            .iter()
+            .find(|r| r["kind"] == "archived")
+            .unwrap_or_else(|| panic!("no archived row in {tree}"));
+        assert_eq!(fold["title"], "Archived · 1");
+        assert!(!rows.iter().any(|r| r["kind"] == "chat"));
     }
     #[tokio::test]
     async fn tree_handler_keeps_last_good_choices_on_busy_or_invalid_state() {

@@ -140,8 +140,13 @@ pub struct PendingTab {
 }
 
 impl ViewState {
+    /// A chat's children and a workspace's archived chats start folded, so their stored key
+    /// means expanded.
+    fn folded_first(id: &str) -> bool {
+        id.starts_with("chat:") || id.starts_with("archived:")
+    }
     fn collapse_key(id: &str) -> String {
-        if id.starts_with("chat:") {
+        if Self::folded_first(id) {
             format!("expanded:{id}")
         } else if id.starts_with('/') {
             format!("workspace:{id}")
@@ -151,7 +156,7 @@ impl ViewState {
     }
     pub fn is_collapsed(&self, id: &str) -> bool {
         let stored = self.collapsed.contains(&Self::collapse_key(id));
-        if id.starts_with("chat:") {
+        if Self::folded_first(id) {
             !stored
         } else {
             stored
@@ -159,7 +164,7 @@ impl ViewState {
     }
     pub fn fold(&mut self, id: &str, collapsed: bool) {
         let key = Self::collapse_key(id);
-        if collapsed != id.starts_with("chat:") {
+        if collapsed != Self::folded_first(id) {
             self.collapsed.insert(key);
         } else {
             self.collapsed.remove(&key);
@@ -688,6 +693,10 @@ fn validate_fold(tree: &Tree, id: &str) -> Result<(), String> {
             .iter()
             .any(|p| format!("project:{}", p.path) == id)
         || tree.chats().any(|c| c.row_id() == id)
+        || id
+            .strip_prefix("archived:")
+            .and_then(|path| tree.workspace(path))
+            .is_some_and(|(_, w)| !w.archived.is_empty())
     {
         Ok(())
     } else {

@@ -319,7 +319,7 @@ fn init() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-const USAGE: &str = "usage: swarm --version | init | skills refresh | skills manifest <source> <out> | setup status --json | setup plugin [--yes] | setup [--plan [--json] | --digest <digest>] [--cwd <dir>] [--only <hooks|trust|herdr|skills>,...] [--consent <standing|ask>] [--resume] | hooks status --json | hooks setup [--plan [--json] | --digest <digest>] | managed list [--json] | managed revert (<id>... | --all) [--plan [--json] | --digest <digest>] | adapter check <name> | session new <talk_mode> [--chair <claude|codex|pi>:<id>] (cwd: pwd -P) | session chair <claude|codex|pi>:<id> | session continue <new_id> <old_id> | session archive <id>... | session unarchive <id>... | sessions --json [--archived] | agent add <agent_id> <role> | serve [--port N] [--assets DIR] | ui [stop | --foreground] [--port N] [--assets DIR] | herdr-split | notify <title> [--body <text>] | hud <install|uninstall|status> [--json] | notices --json | notices --due | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | status-feed | guard <claude|codex|agy> PreToolUse | roles --json | roles get <role> [--provider <claude|codex|agy|pi>] | roles check --json | roles save --revision <revision> <profile-json> | roles new <name> --revision <revision> | roles rename <old> <new> --revision <revision> | roles copy <from> <to> --revision <revision> | roles delete <name> --revision <revision> | roles reset --revision <revision> | roles set-min-usage <pct> --revision <revision> | providers --json | models --provider <claude|codex|agy|pi> --json | accounts --provider <claude|codex|agy|pi> --json | accounts login --provider <claude|codex> --name <name> --revision <revision> --json [--cwd <dir>] | accounts reset --revision <revision> --json | accounts pick --provider <claude|codex> [--account <auto|NAME> | --session <id> | --last [--all]] [--model <model>] --json | usage --json | usage --format openusage | working --json | usage --refresh --provider <claude|codex> --json | agents --json [--all] | messages --json [--after <seq>] | run <claude|codex> [--account <auto|NAME>] [-- <args>...] | launch <agent_id> <role> [--provider <claude|codex|agy|pi>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | answer <agent_id> <prompt_id> <choice> | interrupt <agent_id> | key <agent_id> <Up|C-u> | attach <agent_id> | focus <session_id> <agent_id> | close <agent_id> | send <recipient> <kind> | commands <agent_id> --json | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
+const USAGE: &str = "usage: swarm --version | init | skills refresh | skills manifest <source> <out> | doctor [--json] | setup status --json | setup plugin [--yes] | setup [--plan [--json] | --digest <digest>] [--cwd <dir>] [--only <hooks|trust|herdr|skills>,...] [--consent <standing|ask>] [--resume] | hooks status --json | hooks setup [--plan [--json] | --digest <digest>] | managed list [--json] | managed revert (<id>... | --all) [--plan [--json] | --digest <digest>] | adapter check <name> | session new <talk_mode> [--chair <claude|codex|pi>:<id>] (cwd: pwd -P) | session chair <claude|codex|pi>:<id> | session continue <new_id> <old_id> | session archive <id>... | session unarchive <id>... | sessions --json [--archived] | agent add <agent_id> <role> | serve [--port N] [--assets DIR] | ui [stop | --foreground] [--port N] [--assets DIR] | herdr-split | notify <title> [--body <text>] | hud <install|uninstall|status> [--json] | notices --json | notices --due | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | status-feed | guard <claude|codex|agy> PreToolUse | roles --json | roles get <role> [--provider <claude|codex|agy|pi>] | roles check --json | roles save --revision <revision> <profile-json> | roles new <name> --revision <revision> | roles rename <old> <new> --revision <revision> | roles copy <from> <to> --revision <revision> | roles delete <name> --revision <revision> | roles reset --revision <revision> | roles set-min-usage <pct> --revision <revision> | providers --json | models --provider <claude|codex|agy|pi> --json | accounts --provider <claude|codex|agy|pi> --json | accounts login --provider <claude|codex> --name <name> --revision <revision> --json [--cwd <dir>] | accounts reset --revision <revision> --json | accounts pick --provider <claude|codex> [--account <auto|NAME> | --session <id> | --last [--all]] [--model <model>] --json | usage --json | usage --format openusage | working --json | usage --refresh --provider <claude|codex> --json | agents --json [--all] | messages --json [--after <seq>] | run <claude|codex> [--account <auto|NAME>] [-- <args>...] | launch <agent_id> <role> [--provider <claude|codex|agy|pi>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | answer <agent_id> <prompt_id> <choice> | interrupt <agent_id> | key <agent_id> <Up|C-u> | attach <agent_id> | focus <session_id> <agent_id> | close <agent_id> | send <recipient> <kind> | commands <agent_id> --json | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
 
 fn env_var(name: &str) -> Result<String, String> {
     env::var(name).map_err(|_| format!("swarm: {name} not set"))
@@ -1894,6 +1894,180 @@ fn skills_setup_plans() -> Result<
         }
     }
     Ok((plans, Some(manifest.content_id), skipped))
+}
+
+/// The schema tag of `swarm doctor --json`, which `/api/doctor` checks.
+const DOCTOR_SCHEMA: &str = "swarm.doctor.v1";
+
+/// `swarm doctor [--json]`: one row for each thing swarm sets up or ships. A row is `ok`, `setup`
+/// when `swarm setup` (its `group`) can fix it, or `broken` when the owner must act, with the
+/// reason. Once it can read HOME and the swarm home it exits 0, so the page can show every row.
+fn doctor(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    let json = match args {
+        [] => false,
+        [flag] if flag == "--json" => true,
+        _ => return Err("usage: swarm doctor [--json]".into()),
+    };
+    let row = |id: &str, title: &str, (state, reason): (&str, String), group: Option<&str>| serde_json::json!({"id": id, "title": title, "state": state, "reason": reason, "group": group});
+    let ok = |reason: &str| ("ok", reason.to_string());
+    let setup = |reason: &str| ("setup", reason.to_string());
+    let home = std::path::PathBuf::from(env_var("HOME")?);
+    let files = HookFiles::of(&home)?;
+    let mut items = vec![
+        row(
+            "hooks",
+            "Agent hooks",
+            if files.hooks_status() {
+                ok("Claude, Codex and AGY report to swarm")
+            } else {
+                setup("The agent CLIs do not report to swarm yet")
+            },
+            Some("hooks"),
+        ),
+        row(
+            "guard",
+            "Command guard",
+            if files.guard_status(swarm::paths::guards_file()?.exists()) {
+                ok("Agents ask before a guarded command")
+            } else {
+                setup("The guard hook is not in place")
+            },
+            Some("hooks"),
+        ),
+        row(
+            "trust",
+            "Launch consent",
+            // Read here, not through trust_answer, so a file that cannot be read shows as broken.
+            match read_consent(&swarm::paths::consent_file()?) {
+                Err(error) => ("broken", error),
+                Ok((_, value)) => {
+                    match [STANDING, ASK].into_iter().find(|a| value[TRUST_KEY] == *a) {
+                        Some(answer) => ("ok", format!("Answered: {answer}")),
+                        None => setup("Not answered, so a launch asks for each folder"),
+                    }
+                }
+            },
+            Some("trust"),
+        ),
+        row(
+            "herdr",
+            "herdr panes",
+            ok("Nothing to set up"),
+            Some("herdr"),
+        ),
+        row(
+            "skills",
+            "Swarm skills",
+            match skills_setup_status() {
+                Ok(true) => ok("Every agent CLI lists the swarm skills"),
+                Ok(false) => setup("Some skill links are missing or old"),
+                Err(error) => ("broken", error.to_string()),
+            },
+            Some("skills"),
+        ),
+    ];
+    let kit = swarm::paths::bundled("skills/kit").and_then(|kit| std::fs::canonicalize(kit).ok());
+    items.push(row(
+        "plugin",
+        "Plugin swarm",
+        match kit {
+            None => ("broken", "This build ships no kit".into()),
+            Some(kit)
+                if std::fs::read_link(swarm::paths::root_dir()?.join("kit")).ok()
+                    == Some(swarm::plugin::stable_kit(&kit)) =>
+            {
+                ok("Installed from this build's kit")
+            }
+            Some(_) => setup("Not installed from this build's kit"),
+        },
+        Some("plugin"),
+    ));
+    let hud = swarm::hud::status(&home);
+    items.push(row(
+        "hud",
+        "Usage HUD",
+        match (hud.app.is_some(), hud.installed, hud.running) {
+            (false, ..) => ("broken", "This build ships no HUD app".into()),
+            (_, true, true) => ok("Starts at login and runs"),
+            (_, true, false) => ("broken", "Starts at login but does not run".into()),
+            (_, false, _) => setup("Off"),
+        },
+        Some("hud"),
+    ));
+    items.push(row(
+        "transcript",
+        "Transcript tool",
+        if env::var_os("SWARM_TRANSCRIPT_TOOL").is_some()
+            || swarm::paths::bundled("transcript").is_some()
+        {
+            ok("Chats can show their rows")
+        } else {
+            (
+                "broken",
+                "This build ships no transcript tool, so chats show no rows".into(),
+            )
+        },
+        None,
+    ));
+    items.push(row("notices", "Notices", notices_state(), None));
+    #[cfg(feature = "serve")]
+    items.push(row("ui", "UI server", serve::ui_state(), None));
+    let doctor = serde_json::json!({"schema": DOCTOR_SCHEMA, "items": items});
+    if json {
+        return print_json(&doctor);
+    }
+    for item in &items {
+        println!(
+            "{:<6} {}: {}",
+            item["state"].as_str().unwrap_or_default(),
+            item["title"].as_str().unwrap_or_default(),
+            item["reason"].as_str().unwrap_or_default()
+        );
+    }
+    Ok(())
+}
+
+/// Whether the notice helper ships, and whether a Focus held one of its notices in the last hour.
+/// A Focus lets through only the apps the owner allows, and an ad hoc signed helper cannot mark a
+/// notice time-sensitive, so the owner must allow it in the Focus.
+fn notices_state() -> (&'static str, String) {
+    if notify_helper().is_none() {
+        return ("broken", "This build ships no notice helper".into());
+    }
+    // The bundle id is in ui/Resources/SwarmNotify-Info.plist.
+    let read = std::process::Command::new("/usr/bin/log")
+        .args([
+            "show",
+            "--last",
+            "1h",
+            "--style",
+            "compact",
+            "--predicate",
+            r#"process == "NotificationCenter" AND eventMessage CONTAINS "(io.github.priyanshuupadhyay.swarm.notify) muted by DND""#,
+        ])
+        .output();
+    // A failed read must not read as no mute.
+    let out = match read {
+        Ok(out) if out.status.success() => out,
+        failed => {
+            let why = match failed {
+                Ok(out) => String::from_utf8_lossy(&out.stderr).trim().to_string(),
+                Err(error) => error.to_string(),
+            };
+            return (
+                "broken",
+                format!("Could not read the notice log, so a Focus mute is unknown: {why}"),
+            );
+        }
+    };
+    if String::from_utf8_lossy(&out.stdout).contains("muted by DND") {
+        (
+            "broken",
+            "A Focus held swarm's notices in the last hour. Allow SwarmNotify in System Settings › Focus".into(),
+        )
+    } else {
+        ("ok", "No Focus held a notice in the last hour".into())
+    }
 }
 
 fn skills_setup_status() -> Result<bool, Box<dyn std::error::Error>> {
@@ -3958,6 +4132,9 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     }
     if args.first().map(String::as_str) == Some("setup") {
         return setup(&args[1..]);
+    }
+    if args.first().map(String::as_str) == Some("doctor") {
+        return doctor(&args[1..]);
     }
     if args.first().map(String::as_str) == Some("hooks") {
         return hooks(&args[1..]);

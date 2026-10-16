@@ -273,14 +273,26 @@ test("a chat with two children shows their panes; keys move focus and zoom; a pa
     const panes = tab.getByTestId("pane");
     await expect(panes).toHaveCount(2);
     await expect(tab.locator(".strip-col")).toHaveCount(1);
+    // Opening a chat that has columns lays them out with no slide.
+    expect(await tab.getByTestId("pane-strip").evaluate((el) => el.getAnimations().length)).toBe(0);
     const reviewer = tab.locator('[data-testid="pane"][data-pane="reviewer"]');
     const tester = tab.locator('[data-testid="pane"][data-pane="tester"]');
     await expect(reviewer.locator('[data-testid="pane-transcript"][data-state="ready"]').getByTestId("row").first()).toBeVisible();
     await expect(tester.locator('[data-testid="pane-transcript"][data-state="ready"]').getByTestId("row").first()).toBeVisible();
     await expect(tab.locator('[data-testid="transcript"][data-state="ready"]').getByTestId("row").first()).toBeVisible();
 
+    // The chat page leaves the right side to the column, so it shows with no scroll.
+    await expect(reviewer).toBeInViewport({ ratio: 0.99 });
+    // Polled, since the column slides in for 240 ms.
+    await expect
+      .poll(async () => {
+        const main = (await tab.getByTestId("strip").boundingBox())!;
+        const column = (await tab.locator(".strip-col").boundingBox())!;
+        return Math.round(main.x + main.width - (column.x + column.width));
+      })
+      .toBe(7);
+
     // ⌥⌘→ focuses the first pane, scrolls the strip to it, and puts the keyboard in its composer.
-    await expect(reviewer).not.toBeInViewport({ ratio: 0.9 });
     await tab.keyboard.press("Alt+Meta+ArrowRight");
     await expect(reviewer).toHaveAttribute("data-focused", "true");
     await expect(reviewer).toBeInViewport({ ratio: 0.99 });
@@ -329,9 +341,20 @@ test("a chat with two children shows their panes; keys move focus and zoom; a pa
       await tab.mouse.move(x + dx, y + dy);
       await tab.mouse.up();
     };
+    // A column reset leaves the chat's width free.
+    await grip("Agent column width").dblclick();
+    expect(await tab.evaluate(() => JSON.parse(localStorage.getItem("swarm.panes.widths") ?? "{}").chat)).toBeUndefined();
+    // A column drag before any chat drag keeps the chat's width, so the grip follows the pointer.
+    const chatBefore = await width(".strip-chat");
+    const gripX = (await grip("Agent column width").boundingBox())!.x;
+    await drag("Agent column width", 100, 0);
+    expect((await grip("Agent column width").boundingBox())!.x).toBeCloseTo(gripX + 100, 0);
+    expect(await width(".strip-chat")).toBeCloseTo(chatBefore, 0);
+    await grip("Agent column width").dblclick();
+    await grip("Chat page width").dblclick();
     const chatWidth = await width(".strip-chat");
-    await drag("Chat page width", -500, 0);
-    expect(await width(".strip-chat")).toBeCloseTo(chatWidth - 500, 0);
+    await drag("Chat page width", -300, 0);
+    expect(await width(".strip-chat")).toBeCloseTo(chatWidth - 300, 0);
     const columnWidth = await width(".strip-col");
     await drag("Agent column width", 100, 0);
     expect(await width(".strip-col")).toBeCloseTo(columnWidth + 100, 0);
@@ -339,7 +362,7 @@ test("a chat with two children shows their panes; keys move focus and zoom; a pa
     await drag("Split of reviewer", 0, 80);
     expect((await reviewer.boundingBox())!.height).toBeGreaterThan(topHeight + 70);
     const saved = await tab.evaluate(() => JSON.parse(localStorage.getItem("swarm.panes.widths")!));
-    expect(saved.chat).toBeCloseTo(chatWidth + 7 - 500, 0);
+    expect(saved.chat).toBeCloseTo(chatWidth + 7 - 300, 0);
     expect(saved.column).toBeCloseTo(columnWidth + 7 + 100, 0);
     expect(saved.splits[process.env[`SWARM_E2E_PANES_${project}`]!].reviewer).toBeGreaterThan(0.55);
     await grip("Split of reviewer").dblclick();
