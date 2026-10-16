@@ -626,7 +626,11 @@ def test_block_in_step(tmp):
     digest = hashlib.sha256((implement_run.BLOCKS / "prove-it-works" / "SKILL.md").read_bytes()).hexdigest()[:8]
     assert f"block:prove-it-works@{digest}" in [item.strip() for item in skills.removeprefix("Skills read:").split(",")], skills
     assert "Rank each claim on the ladder" not in step_text(folder, "02-design")
-    assert "(the kit root)" not in build, "a block that names no kit path gets no kit-root line"
+    assert f"are under {implement_run.BLOCKS.parent} (the kit root)." in build
+    # The base and proof blocks point to evidence owners; use a path-free block to check the other case.
+    no_path, no_path_folder, _, _ = blocks_start(tmp, "no-kit-path", "- build: block:voice-reply\n", None)
+    assert no_path.returncode == 0, no_path.stderr
+    assert "(the kit root)" not in step_text(no_path_folder, "05-build"), "no kit path needs no kit-root line"
     # A block that names a kit path gets the kit root, because the step file is read outside the kit.
     kit_out, kit_folder, _, _ = blocks_start(tmp, "kit-root", "- build: block:task-file\n")
     assert kit_out.returncode == 0, kit_out.stderr
@@ -1382,7 +1386,7 @@ def test_block_checks(tmp):
     rules_at, judge_at, todo_at = (review.index(h) for h in (implement_run.RULES_HEAD, implement_run.JUDGE_HEAD, implement_run.TODO_HEAD))
     assert rules_at < judge_at < todo_at and judge in review[judge_at:todo_at], review
     assert implement_run.step_run.todo_scan(review)[0] == todo_at, review
-    assert "block base-rules judge: Does every fact in the result trace to a line in docs/spec.md?" in review, review
+    assert "block base-rules judge: For a page or doc built from a repo, does every fact trace to a line in docs/spec.md?" in review, review
     assert review.count("block base-rules judge:") == 1, "base has one source check, once per run"
     f = folder / "05-build.md"
     fill(f)

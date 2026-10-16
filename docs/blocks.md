@@ -101,6 +101,9 @@ metadata:
 
 ## Ownership and conflicts
 
+On 2026-10-17, the owner settled the source-of-truth part of #70 in `blocks/base-rules/SKILL.md`;
+research and web-search retain their evidence owners.
+
 On 2026-10-17, the owner settled the look-round part of #70 in `blocks/look-check/SKILL.md`.
 
 On 2026-10-17, the owner settled the evidence part of #70 with three separate owners:
