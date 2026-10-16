@@ -20,7 +20,10 @@ The following scopes use these paths, including when invoked from a repository.
 | research | `<reports>/<YYYY-MM-DD>-<slug>/` | `<reports>/<YYYY-MM-DD>-<slug>.md` |
 | web-search | `<reports>/<YYYY-MM-DD>-<slug>-seats/`; launch scratch at `~/.swarm/ws/<run>` | `<reports>/<YYYY-MM-DD>-<slug>-web.md`, with seat reports in the run folder |
 | council | `<log>/<YYYY-MM-DD>-<slug>/` beside the log file; temporary input at `/tmp/councils/<run-id>/` | caller-pinned external log path, or `~/dotfiles/docs/council/<YYYY-MM-DD>-<slug>.md` |
-| build piece | `<repo-root>/tmp/build/<piece>/ink/` in a repo; `<piece>/ink/` outside a repo | source and artifacts stay in the piece folder |
+| build piece | `<piece>/ink/` | source and export stay in `<piece>/` |
+
+For build, `<piece>` is the folder the owner names, or the current project root when none is
+named. Keep its source and export there, with the `ink/` progress folder inside it.
 
 For council, `<log>` is the chosen log file's parent folder. The caller keeps its artifact names
 and passes the run kind here. This table changes no saved history or piece assets.

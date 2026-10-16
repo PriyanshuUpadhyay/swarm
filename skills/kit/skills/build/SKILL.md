@@ -63,15 +63,15 @@ pattern file when a build solves a new one.
 
 ## Progress
 
-Choose the piece progress folder by `references/run-folder.md`, so a new chat continues where
+Choose `<piece>`, the piece folder, by `references/run-folder.md`, so a new chat continues where
 the last one stopped.
 
 Bind `{{site}}` to the piece folder and `{{shots}}` to `<piece>/shots/`, as repo-relative paths
 when the piece is in a repo. `blocks/blocks.toml` owns these names.
 
-Example. `<repo-root>/tmp/build/seed-city/ink/` holds one file per step. Steps 1-4 are done, so line 1 of
+Example. `~/work/seed-city/ink/` holds one file per step. Steps 1-4 are done, so line 1 of
 `04-style-frames.md` reads `Status: done 3f9a1c2b7e10`. A new chat gets
-`build continue <repo-root>/tmp/build/seed-city`, reads line 1 of every file, and starts `05-animatic.md`.
+`build continue ~/work/seed-city`, reads line 1 of every file, and starts `05-animatic.md`.
 
 A piece is a step run, so `references/step-run.md` owns the status line, ready and stale steps,
 pick-up, close, and when a step waits for the user. Run `start <piece>/ink/ <this SKILL.md>`
