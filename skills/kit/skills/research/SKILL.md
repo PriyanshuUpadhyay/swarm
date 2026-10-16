@@ -42,9 +42,9 @@ question, evidence, contrary evidence, and gap into the report.
 
 Start this step when its Needs in `<folder>/steps.md` are done. With `question` as its input,
 start the web work after `01-question.md` by the host split below, then do `02-local`
-while it runs. With `local` as its
-input, use the local findings in the first brief. Brief seeds also come from prior reports and
-the chair's knowledge. A later local seed goes as one follow-up ask only when it changes the search.
+while it runs. With `local` as its input, use the local findings in the first brief. Brief seeds
+also come from prior reports and the chair's knowledge. A later local seed goes as one follow-up
+ask only when it changes the search.
 
 On continue, skip only URLs on the `Fetched:` list with saved evidence. Refresh a source when the
 question or final link check needs current content.
