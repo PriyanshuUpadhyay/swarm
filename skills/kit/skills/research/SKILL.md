@@ -40,7 +40,6 @@ question, evidence, contrary evidence, and gap into the report.
 
 ## 03-web
 
-
 Start this step when its Needs in `<folder>/steps.md` are done. With `question` as its input,
 start the web work after `01-question.md` by the host split below, then do `02-local`
 while it runs. With `local` as its input, use the local findings in the first brief. Brief seeds
