@@ -15,6 +15,7 @@ metadata:
 
 ## Rules
 - The kit root is two folders up from this file.
+- Before the first round, show the owner the plan reply that `planner` describes, with the Chosen and Rejected tables, so the owner can drop or add a block or sub-block.
 - Run each round with the `comment-round` block on `<run>/plan.html <run>/plan.md`, with `<run>/plan-review` as its folder.
 - After each round, act on the decision:
   - `approved` with no notes: the plan is approved.

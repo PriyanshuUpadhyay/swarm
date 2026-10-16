@@ -5,6 +5,8 @@
 
 The table is the step-run table (| File | Needs | Holds |) with two more columns, Block and Why, so
 `references/step_run.py start <run> <plan.md>` runs the same file once the owner approves it.
+A second table, | Block | Status | Why |, lists every catalog block once as Chosen or Rejected. The script checks it
+against the step table, draws it under the chart, and prints it grouped for the plan reply.
 """
 
 import html
@@ -39,6 +41,87 @@ def read_plan(path):
         elif inside:
             break
     return title, done, rows
+
+
+LEDGER_HEAD = re.compile(r"\|\s*Block\s*\|\s*Status\s*\|\s*Why\s*\|")
+
+
+def read_ledger(path):
+    """{block: (status, why)} from the | Block | Status | Why | table."""
+    ledger, inside = {}, False
+    for line in Path(path).read_text(encoding="utf-8").splitlines():
+        if LEDGER_HEAD.match(line):
+            inside = True
+        elif inside and line.startswith("|---"):
+            continue
+        elif inside and line.startswith("|"):
+            cells = [c.strip().strip("`") for c in line.strip().strip("|").split("|")]
+            if len(cells) != 3:
+                raise SystemExit(f"blocks row has {len(cells)} cells, not 3: {line}")
+            if cells[0] in ledger:
+                raise SystemExit(f"block {cells[0]} is listed twice in the blocks table")
+            ledger[cells[0]] = (cells[1], cells[2])
+        elif inside:
+            break
+    return ledger
+
+
+def toml_lists(section):
+    """{name: [ids]} for the one-line `name = [...]` entries under [section] ("" is the top) in blocks.toml."""
+    text = (KIT / "blocks" / "blocks.toml").read_text(encoding="utf-8")
+    body = text.split("\n[", 1)[0] if not section else text.split(f"\n[{section}]", 1)[1].split("\n[", 1)[0]
+    return {m[1]: re.findall(r'"([^"]+)"', m[2]) for m in re.finditer(r"^([\w-]+)\s*=\s*\[(.*?)\]", body, re.M)}
+
+
+def check_ledger(rows, ledger):
+    """The ledger names each catalog block once, and Chosen matches the blocks the steps use."""
+    base = set(toml_lists("").get("base", []))
+    catalog = {p.parent.name for p in (KIT / "blocks").glob("*/SKILL.md")} - base
+    if not ledger:
+        raise SystemExit("no | Block | Status | Why | table; list every catalog block as Chosen or Rejected")
+    if unknown := sorted(set(ledger) - catalog):
+        raise SystemExit(f"blocks table names {unknown[0]}, which is not in the kit catalog")
+    if missing := sorted(catalog - set(ledger)):
+        raise SystemExit(f"blocks table leaves out {missing[0]}; list it as Chosen or Rejected with a reason")
+    for block, (status, why) in ledger.items():
+        if status not in ("Chosen", "Rejected") or not why:
+            raise SystemExit(f"block {block} needs Status Chosen or Rejected, and a Why")
+    chosen = {b for b, (status, _) in ledger.items() if status == "Chosen"}
+    used = {b for r in rows for b in r[3]} - base
+    if chosen != used:
+        odd = sorted(chosen ^ used)[0]
+        raise SystemExit(f"block {odd} is {'Chosen but no step uses it' if odd in chosen else 'used by a step but not Chosen'}")
+
+
+def ledger_groups(ledger):
+    """[(status, [(label, [members])])]: sub-blocks (blocks.toml [aliases]) go under their alias. A lone block has no members."""
+    aliases = toml_lists("aliases")
+    groups = []
+    for status in ("Chosen", "Rejected"):
+        names = [b for b, (s, _) in ledger.items() if s == status]
+        entries = []
+        for alias, members in aliases.items():
+            here = [m for m in members if m in names]
+            if here:
+                entries.append((alias, here))
+        grouped = {m for _, ms in entries for m in ms}
+        entries += [(b, []) for b in names if b not in grouped]
+        groups.append((status, entries))
+    return groups
+
+
+def ledger_markdown(ledger):
+    out = []
+    for status, entries in ledger_groups(ledger):
+        out += [f"### {status}", "", "| Block | Why |", "|---|---|"]
+        for label, members in entries:
+            if members:
+                out.append(f"| {label} (sub-blocks) | |")
+                out += [f"| &nbsp;&nbsp;{m} | {ledger[m][1]} |" for m in members]
+            else:
+                out.append(f"| {label} | {ledger[label][1]} |")
+        out.append("")
+    return "\n".join(out)
 
 
 def conflicts(block):
@@ -119,7 +202,21 @@ ol.stages>li:not(:last-child)::after{content:"\\2193";position:static;display:bl
 """
 
 
-def render(title, done, rows, uses):
+def render_ledger(ledger):
+    out = ['<section><h2>Blocks considered</h2><p>Say "drop X", "add Y", or "add sub-block Z" and the plan is made again.</p>']
+    for status, entries in ledger_groups(ledger):
+        items = []
+        for label, members in entries:
+            if members:
+                subs = "".join(f"<li><code>{html.escape(m)}</code>: {html.escape(ledger[m][1])}</li>" for m in members)
+                items.append(f"<li><code>{html.escape(label)}</code> (sub-blocks)<ul>{subs}</ul></li>")
+            else:
+                items.append(f"<li><code>{html.escape(label)}</code>: {html.escape(ledger[label][1])}</li>")
+        out.append(f"<h3>{status} ({sum(len(m) or 1 for _, m in entries)})</h3><ul>{''.join(items)}</ul>")
+    return "".join(out) + "</section>"
+
+
+def render(title, done, rows, uses, ledger):
     holds = {r[0]: r[2] for r in rows}
     by_name = {r[0]: r for r in rows}
     out = []
@@ -141,7 +238,7 @@ def render(title, done, rows, uses):
             f'<p class="done">Done when: {html.escape(done)}</p>'
             f'<figure><ol class="stages">{"".join(out)}</ol>'
             f"<figcaption>Stages run left to right. Steps in one stage run in parallel. "
-            f"Each step gets the outputs that its Gets line names.</figcaption></figure></html>\n")
+            f"Each step gets the outputs that its Gets line names.</figcaption></figure>{render_ledger(ledger)}</html>\n")
 
 
 def main(argv):
@@ -150,9 +247,12 @@ def main(argv):
     plan = Path(argv[0])
     title, done, rows = read_plan(plan)
     uses = check(title, done, rows)
+    ledger = read_ledger(plan)
+    check_ledger(rows, ledger)
     page = plan.with_suffix(".html")
-    page.write_text(render(title, done, rows, uses), encoding="utf-8")
+    page.write_text(render(title, done, rows, uses, ledger), encoding="utf-8")
     print(page)
+    print(ledger_markdown(ledger))
 
 
 if __name__ == "__main__":
