@@ -529,6 +529,48 @@ def has_control(text, keep="\t\n"):
     return any(ord(c) < 32 and c not in keep or 127 <= ord(c) <= 159 for c in text)
 
 
+def test_start_block_ledger(tmp):
+    """Start shows every non-base block, actual loading steps, and off reasons, once in frame."""
+    import tomllib
+    catalog = "- design: block:tech-diagram\n- build: block:html-diagram, block:prove-it-works\n"
+    config = PARAMS + '[off]\nwhen-to-diagram = "no diagram choice\\nneeded | here"\nstory = "no story"\n'
+    out, folder, repo, run = blocks_start(tmp, "ledger", catalog, config)
+    assert out.returncode == 0, out.stderr
+    assert "### Chosen\n" in out.stdout and "### Rejected\n" in out.stdout, out.stdout
+    tables = out.stdout[out.stdout.index("### Chosen\n"):].strip()
+    frame = step_text(folder, "01-frame")
+    assert tables in frame and frame.count("## Blocks considered\n") == 1, frame
+    assert all("## Blocks considered\n" not in step_text(folder, step) for step in implement_run.graph() if step != "01-frame")
+    kit = tomllib.loads((implement_run.BLOCKS / "blocks.toml").read_text(encoding="utf-8"))
+    expected = {p.parent.name for p in implement_run.BLOCKS.glob("*/SKILL.md")} - set(kit["base"])
+    rows = [line.split("|")[1].strip().removeprefix("↳ ") for line in tables.splitlines() if line.startswith("| ")]
+    names = [name for name in rows if name != "Block" and not name.endswith("(sub-blocks)")]
+    assert len(names) == len(set(names)) and set(names) == expected, names
+    chosen, rejected = tables.split("### Rejected\n")
+    assert {name for name in expected if f"| {name} |" in chosen or f"| ↳ {name} |" in chosen} == {"html-diagram", "prove-it-works"}
+    assert "| tech-diagram (sub-blocks) | |\n| ↳ html-diagram | Loaded by design, build |" in chosen, chosen
+    assert "| prove-it-works | Loaded by build |" in chosen, chosen
+    assert "| ↳ when-to-diagram | [off] no diagram choice needed &#124; here |" in rejected, rejected
+    assert "| story | [off] no story |" in rejected, rejected
+    assert "not named by a domain line" in rejected, rejected
+    assert not has_control(out.stdout), out.stdout
+    before = {p.name: p.read_bytes() for p in folder.iterdir()}
+    (repo.parent / "home/.flow/domains.md").write_text("## any\n- build: block:nope\n", encoding="utf-8")
+    (repo / ".blocks.toml").write_text("not valid TOML", encoding="utf-8")
+    again = run("start")
+    assert again.returncode == 0 and tables in again.stdout, again
+    assert {p.name: p.read_bytes() for p in folder.iterdir()} == before
+
+
+def test_start_ledger_without_chosen_blocks(tmp):
+    out, folder, _, _ = blocks_start(tmp, "ledger-empty", "", None)
+    assert out.returncode == 0, out.stderr
+    chosen, rejected = out.stdout.split("### Chosen\n")[1].split("### Rejected\n")
+    assert chosen.strip() == "| Block | Why |\n|---|---|", chosen
+    assert "| ↳ html-diagram | not named by a domain line |" in rejected, rejected
+    assert "base-rules" not in out.stdout and "base-rules" not in step_text(folder, "01-frame")
+
+
 def test_git_env_ignores_caller_git_dir(tmp):
     """A run from a git hook inherits GIT_DIR, GIT_WORK_TREE, and GIT_INDEX_FILE; the tests' git calls and implement
     runs still use their own repo, so the caller's repo gets no commit and no tmp/flow folder."""
@@ -619,6 +661,7 @@ def test_block_profile(tmp):
     assert "profile merged" in b.splitlines()[3], b.splitlines()[3]
     assert rule_lines(a) == rule_lines(b), set(rule_lines(a)) ^ set(rule_lines(b))
     assert rule_lines(step_text(split_folder, "06-review")) == rule_lines(step_text(merged_folder, "06-review"))
+    assert split.stdout.split("### Chosen\n")[1] == merged.stdout.split("### Chosen\n")[1], "packaging keeps the same choices"
 
 
 def test_profile_on_second_start(tmp):
@@ -725,8 +768,7 @@ def test_skill_fenced_headings(tmp):
 
 
 def test_start_without_tomllib(tmp):
-    """On a Python before 3.11, which has no tomllib, status still runs, and start of a run that names a block
-    stops with one line."""
+    """Without tomllib, status still runs; a fresh start needs it to list the shipped catalog."""
     out, folder, repo, _ = blocks_start(tmp, "no-tomllib", PROVE_BUILD)
     assert out.returncode == 0, out.stderr
     code = "import runpy, sys; sys.modules['tomllib'] = None; sys.argv = sys.argv[1:]; runpy.run_path(sys.argv[0], run_name='__main__')"
@@ -738,13 +780,16 @@ def test_start_without_tomllib(tmp):
     shutil.rmtree(folder)  # so start must read the block catalog again
     out = run("start")
     assert out.returncode == 1 and out.stderr == f"{implement_run.BLOCKS / 'blocks.toml'}: reading TOML needs Python 3.11 or later (tomllib)\n", out
+    (repo.parent / "home/.flow/domains.md").write_text("## any\n", encoding="utf-8")
+    out = run("start")
+    assert out.returncode == 1 and out.stderr == f"{implement_run.BLOCKS / 'blocks.toml'}: reading TOML needs Python 3.11 or later (tomllib)\n", out
 
 
 def test_start_no_block_reads_no_toml(tmp):
-    """A catalog with no block item, no .blocks.toml, and the default profile read no TOML, so start writes
-    the same files on a Python with no tomllib and from a kit copy with no blocks/ folder."""
+    """A kit copy without blocks still starts without tomllib, with empty choice tables."""
     kit = Path(tmp, "kit-no-blocks")
-    for part in ("skills/implement/scripts/implement_run.py", "skills/implement/SKILL.md", "references/step_run.py"):
+    for part in ("skills/implement/scripts/implement_run.py", "skills/implement/SKILL.md", "references/step_run.py",
+                 "references/block_ledger.py"):
         (kit / part).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(SCRIPT.parents[3] / part, kit / part)
     _, before, _, _ = blocks_start(tmp, "no-block-a", "", None)
@@ -754,10 +799,12 @@ def test_start_no_block_reads_no_toml(tmp):
     out = subprocess.run([sys.executable, "-I", "-c", code, str(kit / "skills/implement/scripts/implement_run.py"), "start"], cwd=repo,
                          env={**git_env(), "HOME": str(Path(tmp, "no-block-b", "home"))}, capture_output=True, text=True)
     assert out.returncode == 0 and out.stderr == "", out
+    assert "### Chosen\n\n| Block | Why |\n|---|---|\n\n### Rejected\n\n| Block | Why |\n|---|---|" in out.stdout
     mask = lambda text, *paths: [text := text.replace(str(p), "<p>") for p in paths][-1]
     for file in sorted(before.iterdir()):
         a = mask(file.read_text(encoding="utf-8"), before.parents[2], SCRIPT.parents[3])
         b = mask((made / file.name).read_text(encoding="utf-8"), kit.resolve(), made.parents[2], kit)
+        a, b = [re.sub(r"## Blocks considered\n.*?(?=## Rules for this step)", "", text, flags=re.S) for text in (a, b)]
         assert a == b, (file.name, a, b)
         assert "profile " not in next(l for l in b.splitlines() if l.startswith("Skills read:")), b
 
@@ -1069,7 +1116,7 @@ def test_kit_blocks_load(tmp):
     root.mkdir()
     (root / ".blocks.toml").write_text(PARAMS, encoding="utf-8")
     ids = [path.parent.name for path in sorted(implement_run.BLOCKS.glob("*/SKILL.md"))]
-    out, _ = implement_run.resolve_blocks(root, {"build": ids}, "default")
+    out, _, _ = implement_run.resolve_blocks(root, {"build": ids}, "default")
     # A block folder that lost its SKILL.md would be skipped by the glob in silence, so every folder counts.
     folders = [path.name for path in implement_run.BLOCKS.iterdir() if path.is_dir() and path.name != "__pycache__"]
     assert len(ids) == len(folders) and all(f"===== block:{b} =====" in out["build"][1] for b in ids), (ids, out["build"][0])
@@ -1539,6 +1586,8 @@ with tempfile.TemporaryDirectory() as tmp:
     events = (folder / "events.log").read_text()
     assert "02-design\tskip no UI" in events and "07-close\ttake a" in events
     test_git_env_ignores_caller_git_dir(tmp)
+    test_start_block_ledger(tmp)
+    test_start_ledger_without_chosen_blocks(tmp)
     test_block_in_step(tmp)
     test_block_hash_bytes(tmp)
     test_block_alias_and_base(tmp)

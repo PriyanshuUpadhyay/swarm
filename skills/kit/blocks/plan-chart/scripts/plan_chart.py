@@ -17,6 +17,7 @@ from pathlib import Path
 KIT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(KIT / "references"))  # python3 -I does not add it
 import step_run  # noqa: E402
+from block_ledger import ledger_groups, ledger_markdown  # noqa: E402
 
 HEAD = re.compile(r"\|\s*File\s*\|\s*Needs\s*\|\s*Holds\s*\|\s*Block\s*\|\s*Why\s*\|")
 
@@ -92,37 +93,6 @@ def check_ledger(rows, ledger):
     if chosen != used:
         odd = sorted(chosen ^ used)[0]
         raise SystemExit(f"block {odd} is {'Chosen but no step uses it' if odd in chosen else 'used by a step but not Chosen'}")
-
-
-def ledger_groups(ledger):
-    """[(status, [(label, [members])])]: sub-blocks (blocks.toml [aliases]) go under their alias. A lone block has no members."""
-    aliases = blocks_toml().get("aliases", {})
-    groups = []
-    for status in ("Chosen", "Rejected"):
-        names = [b for b, (s, _) in ledger.items() if s == status]
-        entries = []
-        for alias, members in aliases.items():
-            here = [m for m in members if m in names]
-            if here:
-                entries.append((alias, here))
-        grouped = {m for _, ms in entries for m in ms}
-        entries += [(b, []) for b in names if b not in grouped]
-        groups.append((status, entries))
-    return groups
-
-
-def ledger_markdown(ledger):
-    out = []
-    for status, entries in ledger_groups(ledger):
-        out += [f"### {status}", "", "| Block | Why |", "|---|---|"]
-        for label, members in entries:
-            if members:
-                out.append(f"| {label} (sub-blocks) | |")
-                out += [f"| ↳ {m} | {ledger[m][1]} |" for m in members]
-            else:
-                out.append(f"| {label} | {ledger[label][1]} |")
-        out.append("")
-    return "\n".join(out)
 
 
 def conflicts(block):
@@ -205,7 +175,7 @@ ol.stages>li:not(:last-child)::after{content:"\\2193";position:static;display:bl
 
 def render_ledger(ledger):
     out = ['<section><h2>Blocks considered</h2><p>Say "drop X", "add Y", or "add sub-block Z" and the plan is made again.</p>']
-    for status, entries in ledger_groups(ledger):
+    for status, entries in ledger_groups(ledger, blocks_toml().get("aliases", {})):
         items = []
         for label, members in entries:
             if members:
@@ -253,7 +223,7 @@ def main(argv):
     page = plan.with_suffix(".html")
     page.write_text(render(title, done, rows, uses, ledger), encoding="utf-8")
     print(page)
-    print(ledger_markdown(ledger))
+    print(ledger_markdown(ledger, blocks_toml().get("aliases", {})))
 
 
 if __name__ == "__main__":

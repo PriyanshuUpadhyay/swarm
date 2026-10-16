@@ -48,6 +48,11 @@ the git common dir (`git rev-parse --git-common-dir`), not the worktree folder n
    `blocks/blocks.toml` owns the block format, what each check line becomes, and the
    `.blocks.toml` tables.
 
+   The chair shows the tables that `start` prints, as `blocks/planner/SKILL.md` requires.
+   `01-frame.md` keeps this choice. To add or drop a block, edit its domain line in
+   `~/.flow/domains.md` or its `[off]` entry in `.blocks.toml`, then start a new run.
+   An existing run keeps its saved choice.
+
 3. Read `01-frame.md`. If `Worktree:` or `Branch:` is not the current worktree and branch, stop and
    tell the user. If two open folders exist for one branch, stop and tell the user.
 4. Pick up a step as `references/step-run.md` says, and take it with `take`. The step file holds the

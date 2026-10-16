@@ -36,6 +36,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "references"))
 import step_run  # noqa: E402
 from step_run import RESULT_HEAD, TODO_HEAD, plain, status_of  # noqa: E402
+from block_ledger import ledger_markdown  # noqa: E402
 
 SKILL_MD = Path(__file__).resolve().parents[1] / "SKILL.md"
 BLOCKS = Path(__file__).resolve().parents[3] / "blocks"
@@ -49,6 +50,7 @@ HIT_CHARS = 160
 CAP = 15000  # characters per skill, cut to it, and per block, refused over it; engineering-standards is about 10k
 RULES_HEAD = "## Rules for this step (written by implement_run.py start; apply them, keep this section)"
 JUDGE_HEAD = "## Judge checks of blocks that ran"
+LEDGER_HEAD = "## Blocks considered"
 PARAM = re.compile(r"\{\{(\w+)\}\}")
 CHECKS = ("Check (script)", "Check (judge)")
 # write_callers uses this stored heading to avoid duplicate sections in existing runs.
@@ -122,7 +124,7 @@ def start(profile="default"):
         # Read every step's text before the folder exists, so a config or read error leaves no half-made run.
         try:
             catalog = {step: skill_paths(step) for step in steps}
-            blocks, judge = resolve_blocks(Path(root), {s.split("-", 1)[1]: ids for s, (_, ids) in catalog.items()}, profile)
+            blocks, judge, ledger = resolve_blocks(Path(root), {s.split("-", 1)[1]: ids for s, (_, ids) in catalog.items()}, profile)
             skills = {step: skills_text(catalog[step][0]) for step in steps}
         except SystemExit as error:  # its reasons quote table names, keys, and paths from the repo's .blocks.toml
             raise SystemExit(one_line(str(error.code))) from None
@@ -135,15 +137,20 @@ def start(profile="default"):
             read, text, todos = blocks[step.split("-", 1)[1]]
             rules = "\n".join(part for part in (skills[step], text) if part)
             judged = f"{JUDGE_HEAD}\n{judge}\n\n" if step == "06-review" and judge else ""
+            considered = f"{LEDGER_HEAD}\n\n{ledger}\n" if step == "01-frame" else ""
             # The step file lives in the repo, so a kit-root path in the copied text needs the kit's place.
             if any(token in rules + judged for token in ("blocks/", "the kit's `references/", "<kit root>")):
                 rules = f"Kit blocks (`blocks/<id>/`) and the kit's `references/` are under {BLOCKS.parent} (the kit root).\n{rules}"
             (folder / f"{step}.md").write_text(
                 f"Status: open\n{uses}\n{extra}Take with: python3 {Path(__file__).resolve()} take {folder} {step} <agent>\n"
-                f"Skills read: {', '.join(paths + read) or 'none'}\n\n{RULES_HEAD}\n{rules}\n{judged}"
+                f"Skills read: {', '.join(paths + read) or 'none'}\n\n{considered}{RULES_HEAD}\n{rules}\n{judged}"
                 f"{TODO_HEAD}\n" + "".join(f"- [ ] {item}: \n" for item in TODOS[step] + todos) + f"\n{RESULT_HEAD}\n", encoding="utf-8")
     print(folder)
     print(f"Each step file holds its rules, a todo list, and a result section. Close a step with: python3 {Path(__file__).resolve()} done <folder> <step>")
+    # Read the saved choice on repeat starts; changed domain lines apply only to a new run.
+    frame = read_utf8(folder / "01-frame.md")
+    if f"\n{LEDGER_HEAD}\n" in frame:
+        print(frame.split(f"\n{LEDGER_HEAD}\n", 1)[1].split("\n## ", 1)[0].strip())
 
 
 def status(folder=None):
@@ -190,11 +197,11 @@ def kit_profile(kit, kit_file, name):
 def resolve_blocks(root, wanted, profile_name):
     """For each step key in `wanted` (key -> catalog block ids), the blocks it gets from the catalog and
     the repo's .blocks.toml, packed by the profile: (Skills read items, rules text, script todos). Also
-    the judge lines of every block that ran, once each. blocks/blocks.toml owns the format."""
+    the judge lines of every block that ran, once each, and the blocks table. blocks/blocks.toml owns the format."""
     kit_file, repo_file = BLOCKS / "blocks.toml", root / ".blocks.toml"
-    # A run with no block reads no TOML, so it starts as before on a Python before 3.11 or with no blocks/.
-    if profile_name == "default" and not repo_file.exists() and not any(wanted.values()):
-        return {key: ([], "", []) for key in wanted}, ""
+    # A kit copy without blocks can still run; a shipped catalog is read even when all blocks are rejected.
+    if not kit_file.exists() and profile_name == "default" and not repo_file.exists() and not any(wanted.values()):
+        return {key: ([], "", []) for key in wanted}, "", ledger_markdown({}, {})
     kit = read_toml(kit_file)
     files = {path.parent.name: path for path in sorted(BLOCKS.glob("*/SKILL.md"))}
     aliases = kit.get("aliases", {})
@@ -358,7 +365,17 @@ def resolve_blocks(root, wanted, profile_name):
         for b in blocks:
             judge.setdefault(b, check_lines(load(b)[1], "Check (judge)"))
         out[key] = (read, text, todos)
-    return out, "\n".join(f"- block {b} judge: {line}" for b, lines in judge.items() for line in lines)
+    ledger = {}
+    for block in files:
+        if block in kit.get("base", []):
+            continue
+        steps = [key for key, ids in named.items() if block in ids and block not in off]
+        if steps:
+            ledger[block] = ("Chosen", f"Loaded by {', '.join(steps)}")
+        else:
+            reason = f"[off] {one_line(off[block])}" if block in off else "not named by a domain line"
+            ledger[block] = ("Rejected", reason)
+    return out, "\n".join(f"- block {b} judge: {line}" for b, lines in judge.items() for line in lines), ledger_markdown(ledger, aliases)
 
 
 def one_line(text):
