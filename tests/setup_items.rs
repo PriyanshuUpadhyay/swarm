@@ -1,9 +1,8 @@
 //! `swarm setup plugin` and `swarm setup hud` as plan items with a digest (ADR 0092).
 
 use std::{
-    io::Write,
     os::unix::fs::PermissionsExt,
-    path::{Path, PathBuf},
+    path::PathBuf,
     process::{Command, Output, Stdio},
 };
 
@@ -229,7 +228,10 @@ fn the_hud_plan_shows_its_launch_agent_and_old_commands_name_the_new_one() {
 #[cfg(target_os = "macos")]
 #[test]
 fn a_terminal_run_asks_and_only_a_yes_applies() {
-    use std::io::Read;
+    use std::{
+        io::{Read, Write},
+        path::Path,
+    };
     let f = Fixture::new("tty");
     // `script` gives the run a terminal. The answer is typed once the question shows, because an
     // end of input that reaches the terminal first reads as no answer.
