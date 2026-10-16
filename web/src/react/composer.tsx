@@ -4,6 +4,7 @@ import type { App, Banner, Composer, Input } from "../core/app";
 import { modelLabel, outgoing, sends, usageLabel, type Prompt } from "../core/composer";
 import { matches, menuAt, moved, offered, pick, picksAndSends, showsEmpty, type CommandList, type MenuRow } from "../core/slash";
 import { Button } from "../components/ui/button";
+import { ImageThumbs } from "./images";
 import { cn } from "../lib/utils";
 
 /** Below the transcript: the error banner, the agent's question, and the composer. */
@@ -330,6 +331,7 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
             {list?.note && <div className="px-2 py-1 text-xs text-failed">{list.note}</div>}
           </div>
         )}
+        <ImageThumbs text={text} load={app.imageUrl} remove={(path) => change(text.split(path).join("").replace(/  +/g, " "))} />
         <textarea
           ref={box}
           rows={2}

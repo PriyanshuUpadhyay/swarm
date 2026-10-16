@@ -1,5 +1,5 @@
 // Workspace and chat lifecycle (S3): new workspace in four modes with its setup script, projects,
-// new chat with a profile, switch model, archive, delete, prune and Recently closed, on the P3a, P3b
+// new chat with a profile, switch model, archive, delete, prune and Archived chats, on the P3a, P3b
 // and S2 routes. Framework-free; the dialogs read `state`, which is a new object after each change.
 
 import { ApiError, sleep } from "./api";
@@ -288,7 +288,7 @@ export class Lifecycle {
   }
 
   /** End chat… and Archive chat. Live agents ask first (SwarmSessionCloser); Archive then moves the
-   *  chat to Recently closed. */
+   *  chat to Archived chats. */
   endChat(session: string, archive: boolean) {
     const live = this.liveAgents(session);
     const run = async () => {
@@ -302,7 +302,7 @@ export class Lifecycle {
     const busy = this.app.agentsOf(session).agents.filter((a) => a.alive && (a.state === "working" || a.state === "waiting")).length;
     this.ask({
       title: `${archive ? "Archive" : "End"} “${title}”?`,
-      body: `${busy ? `${plural(busy, "agent")} still working. ${archive ? "Archiving" : "Ending"} stops them.` : `${archive ? "Archiving" : "Ending"} closes its agent${live.length > 1 ? "s" : ""}.`}${archive ? " The chat moves to Recently closed." : ""}`,
+      body: `${busy ? `${plural(busy, "agent")} still working. ${archive ? "Archiving" : "Ending"} stops them.` : `${archive ? "Archiving" : "Ending"} closes its agent${live.length > 1 ? "s" : ""}.`}${archive ? " The chat moves to Archived." : ""}`,
       action: archive ? "Archive Chat" : "End Chat",
       run: async () => {
         await run();
@@ -435,7 +435,7 @@ export class Lifecycle {
     });
   }
 
-  // ---- Recently closed ----
+  // ---- Archived chats ----
 
   openClosed() {
     this.set({ closed: true });

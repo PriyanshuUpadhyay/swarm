@@ -211,7 +211,7 @@ test("archive asks while agents run and restores; delete asks and removes the fo
   expect(errors).toEqual([]);
 });
 
-test("Archive chat moves a chat to Recently closed, and ⇧⌘T reopens it", async ({ page: tab }) => {
+test("Archive chat moves a chat to Archived, and ⇧⌘T with no closed tab opens the archived list", async ({ page: tab }) => {
   const errors = await open(tab);
   const session = (await workspace(tab, "ws-edit").locator("xpath=following-sibling::*[@data-kind='chat']").first().getAttribute("data-session"))!;
   const row = tab.locator(`[data-testid="tree-row"][data-session="${session}"]`);

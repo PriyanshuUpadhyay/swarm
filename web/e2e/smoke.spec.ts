@@ -411,14 +411,29 @@ test("a pasted image is saved by the server and its path goes in the draft", asy
   const composer = tab.getByTestId("composer");
   await expect(composer).toBeEnabled();
   await composer.fill("look at");
-  await composer.evaluate((el) => {
+  // A real 1x1 PNG, so the preview must decode it.
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==", "base64");
+  await composer.evaluate((el, bytes) => {
     const data = new DataTransfer();
-    data.items.add(new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], "shot.png", { type: "image/png" }));
+    data.items.add(new File([new Uint8Array(bytes)], "shot.png", { type: "image/png" }));
     el.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
-  });
+  }, [...png]);
   await expect(composer).toHaveValue(/^look at \/.+\/uploads\/[0-9a-f-]+\.png $/);
   const path = (await composer.inputValue()).split(" ")[2];
-  expect(readFileSync(path)).toEqual(Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+  expect(readFileSync(path)).toEqual(png);
+  // A preview shows above the box, and a click shows the image full size.
+  const thumb = tab.getByTestId("image-thumb");
+  // The page's content policy must let a blob image draw.
+  await expect.poll(() => thumb.locator("img").evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(1);
+  await thumb.getByRole("button", { name: "Show full size" }).click();
+  await expect.poll(() => tab.getByTestId("image-full").locator("img").evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(1);
+  await tab.keyboard.press("Escape");
+  await expect(tab.getByTestId("image-full")).toBeHidden();
+  // Its × takes the path out of the draft.
+  await thumb.hover();
+  await thumb.getByRole("button", { name: "Remove image" }).click();
+  await expect(composer).toHaveValue("look at ");
+  await expect(thumb).toHaveCount(0);
   await composer.fill("");
 });
 

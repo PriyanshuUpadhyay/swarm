@@ -118,7 +118,7 @@ describe("chats", () => {
     // A chair whose turn is over has an open pane but is not working.
     const idle = fakeApp(async () => ({}), [{ id: "orchestrator", alive: true, state: "done" }]);
     idle.life.endChat("chat-1", true);
-    expect(idle.life.state.confirm).toMatchObject({ body: "Archiving closes its agent. The chat moves to Recently closed." });
+    expect(idle.life.state.confirm).toMatchObject({ body: "Archiving closes its agent. The chat moves to Archived." });
 
     const busy = fakeApp(async () => ({}), [{ id: "orchestrator", alive: true, state: "working" }, { id: "reviewer", alive: true, state: "waiting" }]);
     busy.life.endChat("chat-1", false);

@@ -24,6 +24,7 @@ import { ContextMenu, ContextMenuTrigger } from "../components/ui/context-menu";
 import { Kbd } from "../components/ui/kbd";
 import { ChatInput } from "./composer";
 import { copyText } from "./copy";
+import { ImageThumbs } from "./images";
 import { SourcePopover, TranscriptMenu, type Source } from "./transcript-overlays";
 import { store } from "./store";
 
@@ -314,6 +315,7 @@ function RowBody(ctx: Ctx) {
     return (
       <Bubble row={row} queued={row.kind === "queued" || row.system_kind === "queued_prompt"}>
         <div className="md" dangerouslySetInnerHTML={{ __html: md.html(row.id, row.text) }} />
+        <ImageThumbs text={row.text} load={app.imageUrl} />
       </Bubble>
     );
   if (row.ends_turn) {

@@ -171,6 +171,8 @@ export type Reader = {
   toggleHidden(): void;
   loadFull(previewId: string): Promise<void>;
   fullText(previewId: string): Promise<string>;
+  /** A pasted image's preview URL. */
+  imageUrl(path: string): Promise<string>;
   loadOlder(): Promise<void>;
   setFindQuery(query: string): void;
   stepFind(dir: number): void;
@@ -224,7 +226,7 @@ const writeStore = (key: string, value: string) => {
 
 export class App {
   readonly registry = new Registry();
-  /** New workspace, switch model, archive, delete and Recently closed (S3). */
+  /** New workspace, switch model, archive, delete and Archived chats (S3). */
   readonly life = new Lifecycle(this);
   /** Usage meters and Settings (S5). */
   readonly settings = new Settings(this);
@@ -853,6 +855,18 @@ export class App {
     if (tabs[next].session !== this.openId) this.openChat(tabs[next].session, e);
   }
 
+  /** Sessions of closed tabs, the last closed at the end, for ⇧⌘T. */
+  private closedTabs: string[] = [];
+
+  /** ⇧⌘T reopens the last closed tab, as a browser does. A tab-only chat was archived when its tab
+   *  closed, so it is unarchived. With no closed tab, the archived chats list opens. */
+  reopenTab() {
+    const session = this.closedTabs.pop();
+    if (!session) return this.life.openClosed();
+    if (this.listsChat(session)) return this.openChat(session);
+    this.unarchive(session);
+  }
+
   /** ⌃Tab / ⌃⇧Tab go back and forth in the workspace's tab history. Cycling keeps the history
    *  order, or repeated presses would only toggle two chats. */
   stepRecent(delta: number, e?: KeyboardEvent) {
@@ -863,11 +877,12 @@ export class App {
   }
 
   /** ⌘W and a tab's ×. Closing the open tab shows the chat the server picks, else the landing. A
-   *  chat started in a tab is in no sidebar, so closing its tab archives it to Recently closed. */
+   *  chat started in a tab is in no sidebar, so closing its tab archives it to Archived chats. */
   async closeTab(key?: string) {
     const workspace = this.workspace;
     const tab = this.stripTabs().find((t) => (key ? t.id === key : t.session === this.openId));
     if (!workspace || !tab?.canHide) return;
+    this.closedTabs = [...this.closedTabs.filter((s) => s !== tab.session), tab.session];
     if (tab.tabOnly) return this.life.endChat(tab.session, true);
     const wasOpen = tab.session === this.openId;
     const seq = ++this.navSeq;
@@ -1025,6 +1040,7 @@ export class App {
         toggleHidden: () => this.toggleHidden(id),
         loadFull: (previewId) => this.loadFull(previewId, id),
         fullText: (previewId) => this.fullText(previewId, id),
+        imageUrl: this.imageUrl,
         loadOlder: () => this.loadOlder(id),
         setFindQuery: (query) => this.setFindQuery(query),
         stepFind: (dir) => this.stepFind(dir),
@@ -1074,6 +1090,20 @@ export class App {
     chat.full = new Map(chat.full).set(previewId, next);
     this.changed(chat);
   }
+
+  private images = new Map<string, Promise<string>>();
+
+  /** One blob URL per pasted image for the page's life; a failed read is tried again next time.
+   *  An arrow, so a row can pass it on unbound. */
+  imageUrl = (path: string): Promise<string> => {
+    let url = this.images.get(path);
+    if (!url) {
+      url = this.api.imageUrl(path);
+      url.catch(() => this.images.delete(path));
+      this.images.set(path, url);
+    }
+    return url;
+  };
 
   /** The full text for Copy, without showing it. */
   async fullText(previewId: string, id?: string): Promise<string> {
@@ -1487,7 +1517,7 @@ export class App {
         chatAction("archiveChat", "Archive chat", () => this.life.endChat(open, true)),
         chatAction("renameChat", "Rename chat", () => this.renameChat(open)),
       );
-    items.push(chatAction("reopenChat", "Reopen closed chat", () => this.life.openClosed()));
+    items.push(chatAction("reopenChat", "Archived chats", () => this.life.openClosed()));
     if (open) items.push(chatAction("switchModel", "Switch model", () => this.life.openSwitchModel(open)));
     const sources = paletteSources(this.tree, this.snapshot);
     const chats: PaletteItem[] = [];
@@ -1706,7 +1736,7 @@ export class App {
       { id: "find.prev", title: "Find Previous", chord: "Shift+Meta+G", palette: false, when: chat, run: () => this.stepFind(-1) },
       { id: "tab.close", title: "Close Tab", chord: "Meta+W", palette: false, run: () => void this.closeTab() },
       later("window.close", "Close Window", "Shift+Meta+W", "S6", false),
-      { id: "recent.closed", title: "Recently closed…", chord: "Shift+Meta+T", palette: false, run: () => this.life.openClosed() },
+      { id: "recent.closed", title: "Reopen Closed Tab", chord: "Shift+Meta+T", palette: false, run: () => this.reopenTab() },
       { id: "recent.prev", title: "Previous Recent Chat", chord: "Ctrl+Tab", palette: false, run: (e) => this.stepRecent(-1, e) },
       { id: "recent.next", title: "Next Recent Chat", chord: "Ctrl+Shift+Tab", palette: false, run: (e) => this.stepRecent(1, e) },
       tree("tree.down", "Select next row", "j", (e) => this.moveSelection(1, e)),

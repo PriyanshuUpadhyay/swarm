@@ -246,6 +246,14 @@ export class Api {
     throw new ApiError(res.status, errorText(text, res));
   }
 
+  /** A pasted image as a blob URL, for its preview; an <img> cannot send the bearer token. */
+  async imageUrl(path: string): Promise<string> {
+    const name = path.slice(path.lastIndexOf("/") + 1);
+    const res = await this.fetch(`/api/chat/image?name=${encodeURIComponent(name)}`, { headers: this.headers() });
+    if (!res.ok) throw new ApiError(res.status, errorText(await res.text(), res));
+    return URL.createObjectURL(await res.blob());
+  }
+
   subscribe(stream: string, keys: SubscribeKey[]): Promise<unknown> {
     return this.json("/api/subscribe", {
       method: "POST",

@@ -1,5 +1,5 @@
 // The lifecycle dialogs (S3): New Workspace with its setup output, Create and Import Project, the
-// project setup script, Switch model with its progress, one confirm dialog, and Recently closed.
+// project setup script, Switch model with its progress, one confirm dialog, and Archived chats.
 // Each reads only its own field of `app.life.state`.
 
 import { CheckIcon, CircleIcon, LoaderCircleIcon, TriangleAlertIcon, XIcon } from "lucide-react";
@@ -690,7 +690,7 @@ function ConfirmDialog({ app }: { app: App }) {
   );
 }
 
-// ---- Recently closed ----
+// ---- Archived chats ----
 
 /** "5m", "3h", "2d" since a Unix time in seconds. */
 function ageText(seconds: number, now = Date.now() / 1000): string {
@@ -703,7 +703,7 @@ function ageText(seconds: number, now = Date.now() / 1000): string {
 function ClosedDialog({ app }: { app: App }) {
   const open = useLife(app, "closed");
   return (
-    <Frame open={open} onClose={() => app.life.close("closed")} title="Recently closed" description="Archived chats. Open one to bring it back." testid="recently-closed">
+    <Frame open={open} onClose={() => app.life.close("closed")} title="Archived chats" description="Open one to bring it back." testid="recently-closed">
       {open && <ClosedBody app={app} />}
     </Frame>
   );

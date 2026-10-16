@@ -245,7 +245,7 @@ describe("a new chat", () => {
 });
 
 describe("a chat started in a tab", () => {
-  it("opens as a tab only, and closing its tab archives it to Recently closed", async () => {
+  it("opens as a tab only, and closing its tab archives it to Archived chats", async () => {
     const writes: Record<string, unknown>[] = [];
     const actions: { path: string; body: unknown }[] = [];
     const withNew = tree([section("/r/app", "project", [appMain, chat("new", "/r/app")])]);
@@ -271,6 +271,15 @@ describe("a chat started in a tab", () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(actions).toEqual([{ path: "/api/sessions/archive", body: { ids: ["new"] } }]);
     expect(writes.some((w) => w.op === "close_tab")).toBe(false);
+
+    // ⇧⌘T brings the closed tab back. The chat is still listed here, so it only opens.
+    writes.length = 0;
+    app.reopenTab();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(writes.find((w) => w.op === "open_tab")).toMatchObject({ chat: "new" });
+    // With no closed tab left, the archived list opens.
+    app.reopenTab();
+    expect(app.life.state.closed).toBe(true);
   });
 });
 

@@ -663,7 +663,9 @@ fn router(app: App) -> Router {
         .route("/api/chat/commands", get(chat_commands))
         .route(
             "/api/chat/image",
-            post(chat_image).layer(DefaultBodyLimit::max(IMAGE_LIMIT)),
+            get(chat_image_read)
+                .post(chat_image)
+                .layer(DefaultBodyLimit::max(IMAGE_LIMIT)),
         )
         .route("/api/agent/close", post(chat_action))
         .route("/api/sessions/archive", post(chat_action))
@@ -2399,18 +2401,15 @@ async fn chat_image(
         .get(header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
         .unwrap_or_default();
-    let ext = match kind {
-        "image/png" => "png",
-        "image/jpeg" => "jpg",
-        "image/gif" => "gif",
-        "image/webp" => "webp",
-        _ => {
-            return Err(error(
+    let (ext, _) = IMAGE_TYPES
+        .iter()
+        .find(|(_, mime)| *mime == kind)
+        .ok_or_else(|| {
+            error(
                 StatusCode::UNSUPPORTED_MEDIA_TYPE,
                 "Paste a PNG, JPEG, GIF or WebP image",
-            ));
-        }
-    };
+            )
+        })?;
     if body.is_empty() {
         return Err(error(StatusCode::BAD_REQUEST, "The image is empty"));
     }
@@ -2442,6 +2441,46 @@ async fn chat_image(
         )
     })?;
     Ok(Json(json!({"path": path.to_string_lossy()})))
+}
+
+const IMAGE_TYPES: [(&str, &str); 4] = [
+    ("png", "image/png"),
+    ("jpg", "image/jpeg"),
+    ("gif", "image/gif"),
+    ("webp", "image/webp"),
+];
+
+#[derive(Deserialize)]
+struct ImageName {
+    name: String,
+}
+
+/// A pasted image for its preview. Only a file name that the paste route made is read, so no
+/// other file under the swarm home can be named.
+async fn chat_image_read(
+    State(app): State<App>,
+    Query(query): Query<ImageName>,
+) -> Result<Response, ApiError> {
+    let (stem, ext) = query.name.rsplit_once('.').unwrap_or_default();
+    let mime = IMAGE_TYPES
+        .iter()
+        .find(|(known, _)| *known == ext)
+        .map(|(_, mime)| *mime)
+        .filter(|_| uuid::Uuid::try_parse(stem).is_ok() && stem.len() == 36)
+        .ok_or_else(|| error(StatusCode::BAD_REQUEST, "not a pasted image name"))?;
+    let path = app.root.join("uploads").join(&query.name);
+    let bytes = tokio::fs::read(&path)
+        .await
+        .map_err(|_| error(StatusCode::NOT_FOUND, "The image is gone"))?;
+    Ok((
+        [
+            (header::CONTENT_TYPE, mime),
+            (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
+            (header::CACHE_CONTROL, "private, max-age=86400"),
+        ],
+        bytes,
+    )
+        .into_response())
 }
 
 async fn archived_sessions(State(app): State<App>) -> Result<Json<Value>, ApiError> {
@@ -6128,6 +6167,26 @@ esac
         .await
         .unwrap_err();
         assert_eq!(empty.0, StatusCode::BAD_REQUEST);
+
+        let name = path.file_name().unwrap().to_string_lossy().into_owned();
+        let read = |name: &str| {
+            chat_image_read(
+                State(fixture.app.clone()),
+                Query(ImageName { name: name.into() }),
+            )
+        };
+        let shown = read(&name).await.unwrap();
+        assert_eq!(shown.headers()[header::CONTENT_TYPE], "image/png");
+        // Any other name, such as a path out of uploads, is refused before a read.
+        for name in ["../swarm.db", "choices.json", "x.png", "../uploads/a.png"] {
+            assert_eq!(
+                read(name).await.unwrap_err().0,
+                StatusCode::BAD_REQUEST,
+                "{name}"
+            );
+        }
+        let gone = format!("{}.png", uuid::Uuid::now_v7());
+        assert_eq!(read(&gone).await.unwrap_err().0, StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]
