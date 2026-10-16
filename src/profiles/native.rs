@@ -277,12 +277,21 @@ fn load_inner(
                         })
                         .and_then(|result| {
                             let api_key = result["account"]["type"] == "apiKey";
+                            // account/read names no workspace, so the login's workspace id comes
+                            // from the home's auth.json. A login kept in the keychain has none
+                            // and is never taken as a copy.
+                            let login = std::fs::read(Path::new(path).join("auth.json"))
+                                .ok()
+                                .and_then(|auth| serde_json::from_slice::<Value>(&auth).ok())
+                                .and_then(|auth| {
+                                    auth["tokens"]["account_id"].as_str().map(str::to_string)
+                                });
                             codex_identity(result)
-                                .map(|(state, email)| (state, email, api_key))
+                                .map(|(state, email)| (state, email, api_key, login))
                                 .map_err(NativeReadError::from)
                         }),
                     _ => claude_identity(&identity_env, deadline)
-                        .map(|(state, email)| (state, email, false)),
+                        .map(|(state, email, org)| (state, email, false, org)),
                 })
             })
             .collect();
@@ -291,13 +300,38 @@ fn load_inner(
             .map(|read| read.join().expect("an account read panicked"))
             .collect()
     });
-    for ((name, path), identity) in homes.into_iter().zip(identities) {
+    // One login signed in from two homes is one account. The CLI's own home, `default`, gives way to
+    // a named home, so `--profile NAME` keeps working; else the first name stays.
+    type Identity = (AuthState, Option<String>, bool, Option<String>);
+    let login = |identity: &Result<Identity, NativeReadError>| match identity {
+        Ok((AuthState::SignedIn, Some(email), _, Some(login))) => {
+            Some((email.clone(), login.clone()))
+        }
+        _ => None,
+    };
+    let alias = |name: &str| matches!(name, "default" | "current");
+    let keep: Vec<bool> = (0..homes.len())
+        .map(|i| {
+            let Some(own) = login(&identities[i]) else {
+                return true;
+            };
+            !(0..homes.len()).any(|j| {
+                j != i
+                    && login(&identities[j]).as_ref() == Some(&own)
+                    && (alias(&homes[j].0), j) < (alias(&homes[i].0), i)
+            })
+        })
+        .collect();
+    for (((name, path), identity), keep) in homes.into_iter().zip(identities).zip(keep) {
+        if !keep {
+            continue;
+        }
         let env = provider.launch_env(&name, &path);
         if matches!(identity, Err(NativeReadError::CliUnavailable)) {
             list.state = "unavailable".into();
         }
-        let (auth_state, email, api_key) =
-            identity.unwrap_or((AuthState::Unavailable, None, false));
+        let (auth_state, email, api_key, _) =
+            identity.unwrap_or((AuthState::Unavailable, None, false, None));
         list.accounts.push(Account {
             name,
             email,
@@ -400,7 +434,7 @@ pub fn codex_identity(result: Value) -> Result<(AuthState, Option<String>), Stri
 fn claude_identity(
     env: &BTreeMap<String, String>,
     deadline: Instant,
-) -> Result<(AuthState, Option<String>), NativeReadError> {
+) -> Result<(AuthState, Option<String>, Option<String>), NativeReadError> {
     let executable = std::env::var("SWARM_CLAUDE_CMD").unwrap_or_else(|_| "claude".into());
     let value = read_json(&executable, &["auth", "status"], env, deadline)?;
     match value["loggedIn"].as_bool() {
@@ -411,6 +445,7 @@ fn claude_identity(
                 AuthState::SignedOut
             },
             value["email"].as_str().map(str::to_string),
+            value["orgId"].as_str().map(str::to_string),
         )),
         None => Err("Claude identity is unavailable".into()),
     }
