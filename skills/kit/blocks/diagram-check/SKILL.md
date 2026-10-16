@@ -10,7 +10,7 @@ metadata:
   gives: "pass or miss per diagram"
   conflicts: ""
   users: "flow"
-  source: "references/explain-formats.md:25-27, :36-37; html-plan pack: skills/html-plan/SKILL.md:82 (rule 8, real over drawn), :130 (no clipping, arrows do not cross labels); blocks/visual-qa/SKILL.md (lettering, from ink's qa.md); blocks/story/SKILL.md (each key frame reads on its own, from ink's qa.md); web-interface-guidelines pack: command.md:168-170 (finding format)"
+  source: "references/explain-formats.md (Diagram and Local HTML page sections); html-plan pack: skills/html-plan/SKILL.md:82 (rule 8, real over drawn), :130 (no clipping, arrows do not cross labels); blocks/visual-qa/SKILL.md (lettering, from ink's qa.md); blocks/story/SKILL.md (each key frame reads on its own, from ink's qa.md); web-interface-guidelines pack: command.md:168-170 (finding format)"
 ---
 
 ## Rules

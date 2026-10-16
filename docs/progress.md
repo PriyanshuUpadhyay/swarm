@@ -102,7 +102,7 @@ Each block owns its rule text; the skill that held it points to the block.
 | checked-units | small units that each end in a check (was sequence-verifiable-units) | build |
 | when-to-extract | code stays inline without a reason (was minimize-reader-load) | build, review |
 | done-when-evidence | close maps each done-when to evidence | close |
-| when-to-diagram | draw only when text cannot hold the shape | design, build |
+| when-to-diagram | pick a diagram type from the subject shape | design, build |
 | html-diagram | diagrams as HTML boxes that reflow | design, build |
 | diagram-check | each diagram tells the truth and reads on a phone | review |
 | design-tokens | the look as tokens in `DESIGN.md` | design |

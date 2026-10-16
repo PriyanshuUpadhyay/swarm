@@ -43,7 +43,7 @@ as accepted. Nothing comes before the opening. Do not repeat it as a Goal sectio
   essay before the steps.
 - A worker brief keeps its own owner (the kit block `blocks/worker-brief/SKILL.md`, from the kit root
   one folder up from this file) and is not a plan.
-- A diagram or a local HTML page follows `explain-formats.md` in this folder.
+- A table, a diagram, or a local HTML page follows `explain-formats.md` in this folder. A plan or a report of more than three facts carries one.
 
 ## First screen of a long result
 
