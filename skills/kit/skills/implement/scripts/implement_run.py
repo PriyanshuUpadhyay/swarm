@@ -495,16 +495,7 @@ def done(folder, step):
 def skip(folder, step, *why):
     if step not in SKIPPABLE:
         raise SystemExit(f"{step} cannot be skipped; only {', '.join(SKIPPABLE)} can")
-    reason = one_line(" ".join(why)).strip()
-    if not reason:
-        raise SystemExit("skip needs a reason, for example: skip <folder> 02-design no UI")
-    file = Path(folder) / f"{step}.md"
-    with step_run.step_lock(folder, step, command="skip"):
-        if status_of(folder, step).split()[0] not in ("open", "active"):
-            raise SystemExit(f"{step} is {status_of(folder, step)}; only an open or active step can be skipped")
-        step_run.write_step(file, f"Status: skipped {reason}\n" + file.read_text(encoding="utf-8").split("\n", 1)[1])
-    step_run.log(folder, step, f"skip {reason}")
-    print(f"{step}: skipped {reason}")
+    step_run.skip(folder, step, *why)
 
 
 def approved(folder):

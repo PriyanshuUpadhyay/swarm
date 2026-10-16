@@ -66,19 +66,31 @@ pattern file when a build solves a new one.
 Choose the piece progress folder by `references/run-folder.md`, so a new chat continues where
 the last one stopped.
 
-Example. `~/work/seed-city/ink/` holds one file per step. Steps 1-4 are done, so line 1 of
-`04-style-frames.md` reads `Status: done 3f9a1c2b7e10`. A new chat gets
-`build continue ~/work/seed-city`, reads line 1 of every file, and starts `05-animatic.md`.
+Bind `{{site}}` to the piece folder and `{{shots}}` to `<piece>/shots/`, as repo-relative paths
+when the piece is in a repo. `blocks/blocks.toml` owns these names.
 
-- Step N writes `ink/0N-<name>.md`: `01-intake`, `02-look`, `03-story`, `04-style-frames`,
-  `05-animatic`, `06-detail`, `07-export`. The file is the step's output (notes, grammar, story
-  sheet, scores, QA log), not a copy of it.
-- A piece is a step run, so the kit's `references/step-run.md` owns the status line, ready and
-  stale steps, pick-up, close, and when a step waits for the user.
-- Step 2 uses 1, 3 uses 1, 4 uses 2 and 3, 5 uses 3, 6 uses 4 and 5, and 7 uses 4 and 6.
+Example. `<repo-root>/tmp/build/seed-city/ink/` holds one file per step. Steps 1-4 are done, so line 1 of
+`04-style-frames.md` reads `Status: done 3f9a1c2b7e10`. A new chat gets
+`build continue <repo-root>/tmp/build/seed-city`, reads line 1 of every file, and starts `05-animatic.md`.
+
+A piece is a step run, so `references/step-run.md` owns the status line, ready and stale steps,
+pick-up, close, and when a step waits for the user. Run `start <piece>/ink/ <this SKILL.md>`
+with its script. Each file holds the step's output, not a copy of it.
+
+| File | Needs | Holds |
+|---|---|---|
+| `01-intake.md` | none | story, references, benchmark, form, size, limits, and delivery |
+| `02-look.md` | intake | reference analysis and style grammar |
+| `03-story.md` | intake | story sheet, shot list, transitions, and scene graph |
+| `04-style-frames.md` | look, story | style frames, compare images, and scores |
+| `05-animatic.md` | story | animatic and timing |
+| `06-detail.md` | style-frames, animatic | detail passes and frame paths |
+| `07-export.md` | style-frames, detail | QA log, export, and handoff |
+
 - A build step lists its frame paths and a hash of its source files in its body, so a code change
   changes its revision.
-- Intake sets the skipped steps from the route. `study` skips 3, 5, and 6. `prototype` skips 6.
+- Intake runs `skip <piece>/ink/ <step> <route reason>` with the script in `references/step-run.md`
+  for each skipped step from the route. `study` skips 3, 5, and 6. `prototype` skips 6.
   `analysis-only` skips 4 to 7. `production` skips none.
 
 ## Roles

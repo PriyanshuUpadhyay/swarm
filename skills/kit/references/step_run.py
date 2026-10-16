@@ -5,6 +5,7 @@
   status <folder>              print each step's status, whether it is ready, and whether it is stale
   take <folder> <step> <who> [--force]   claim the step and print its file; force takes a stale claim
   done <folder> <step>          set the step done, only when every todo is checked with evidence
+  skip <folder> <step> <reason> skip an open or active step, with the reason
 
 take and done add one line to <folder>/events.log, so the path of a run stays readable after it ends.
 A skill script with its own step graph or revision (implement) imports these functions and passes `need`
@@ -202,12 +203,26 @@ def done(folder, step, rev=None, ends=(RESULT_HEAD,)):
     print(f"{step}: done {rev}")
 
 
+def skip(folder, step, *why):
+    reason = plain(" ".join(why), keep_newlines=True).replace("\n", " ").replace("\t", " ").strip()
+    if not reason:
+        raise SystemExit("skip needs a reason")
+    file = Path(folder) / f"{step}.md"
+    with step_lock(folder, step, command="skip"):
+        state = status_of(folder, step)
+        if state.split()[0] not in ("open", "active"):
+            raise SystemExit(f"{step} is {state}; only an open or active step can be skipped")
+        write_step(file, f"Status: skipped {reason}\n" + file.read_text(encoding="utf-8").split("\n", 1)[1])
+    log(folder, step, f"skip {reason}")
+    print(f"{step}: skipped {reason}")
+
+
 if __name__ == "__main__":
     if hasattr(sys.stdout, "reconfigure"):
         # Escape non-ASCII output when the console uses an ASCII encoding.
         sys.stdout.reconfigure(errors="backslashreplace")
-    commands = {"start": start, "status": status, "take": take, "done": done}
-    arity = {"start": (2, 2), "status": (1, 1), "take": (3, 3), "done": (2, 2)}
+    commands = {"start": start, "status": status, "take": take, "done": done, "skip": skip}
+    arity = {"start": (2, 2), "status": (1, 1), "take": (3, 3), "done": (2, 2), "skip": (3, None)}
     if len(sys.argv) < 2 or sys.argv[1] not in commands:
         raise SystemExit(__doc__)
     try:
@@ -219,7 +234,7 @@ if __name__ == "__main__":
         if command == "done" and "--force" in args:
             raise SystemExit("done <folder> <step> accepts no --force")
         minimum, maximum = arity[command]
-        if len(args) < minimum or len(args) > maximum:
+        if len(args) < minimum or maximum is not None and len(args) > maximum:
             raise SystemExit(next(line.strip() for line in __doc__.splitlines()
                                   if line.strip().split()[:1] == [command]))
         commands[command](*args, **({"force": force} if command == "take" else {}))
