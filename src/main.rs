@@ -319,7 +319,7 @@ fn init() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-const USAGE: &str = "usage: swarm --version | init | skills refresh | skills manifest <source> <out> | doctor [--json] | setup status --json | setup plugin [--yes] | setup [--plan [--json] | --digest <digest>] [--cwd <dir>] [--only <hooks|trust|herdr|skills>,...] [--consent <standing|ask>] [--resume] | hooks status --json | hooks setup [--plan [--json] | --digest <digest>] | managed list [--json] | managed revert (<id>... | --all) [--plan [--json] | --digest <digest>] | adapter check <name> | session new <talk_mode> [--chair <claude|codex|pi>:<id>] (cwd: pwd -P) | session chair <claude|codex|pi>:<id> | session continue <new_id> <old_id> | session archive <id>... | session unarchive <id>... | sessions --json [--archived] | agent add <agent_id> <role> | serve [--port N] [--assets DIR] | ui [stop | --foreground] [--port N] [--assets DIR] | herdr-split | notify <title> [--body <text>] | hud <install|uninstall|status> [--json] | notices --json | notices --due | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | status-feed | guard <claude|codex|agy> PreToolUse | roles --json | roles get <role> [--provider <claude|codex|agy|pi>] | roles check --json | roles save --revision <revision> <profile-json> | roles new <name> --revision <revision> | roles rename <old> <new> --revision <revision> | roles copy <from> <to> --revision <revision> | roles delete <name> --revision <revision> | roles reset --revision <revision> | roles set-min-usage <pct> --revision <revision> | providers --json | models --provider <claude|codex|agy|pi> --json | accounts --provider <claude|codex|agy|pi> --json | accounts login --provider <claude|codex> --name <name> --revision <revision> --json [--cwd <dir>] | accounts reset --revision <revision> --json | accounts pick --provider <claude|codex> [--account <auto|NAME> | --session <id> | --last [--all]] [--model <model>] --json | usage --json | usage --format openusage | working --json | usage --refresh --provider <claude|codex> --json | agents --json [--all] | messages --json [--after <seq>] | run <claude|codex> [--account <auto|NAME>] [-- <args>...] | launch <agent_id> <role> [--provider <claude|codex|agy|pi>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | answer <agent_id> <prompt_id> <choice> | interrupt <agent_id> | key <agent_id> <Up|C-u> | attach <agent_id> | focus <session_id> <agent_id> | close <agent_id> | send <recipient> <kind> | commands <agent_id> --json | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
+const USAGE: &str = "usage: swarm --version | init | skills refresh | skills manifest <source> <out> | doctor [--json] | setup status --json | setup plugin [--yes] | setup [--plan [--json] | --digest <digest>] [--cwd <dir>] [--only <hooks|trust|herdr|skills>,...] [--consent <standing|ask>] [--resume] | hooks status --json | hooks setup [--plan [--json] | --digest <digest>] | managed list [--json] | managed revert (<id>... | --all) [--plan [--json] | --digest <digest>] | adapter check <name> | session new <talk_mode> [--chair <claude|codex|pi>:<id>] (cwd: pwd -P) | session chair <claude|codex|pi>:<id> | session continue <new_id> <old_id> | session archive <id>... | session unarchive <id>... | sessions --json [--archived] | agent add <agent_id> <role> | serve [--port N] [--assets DIR] | ui [stop | --foreground] [--port N] [--assets DIR] | herdr-split | notify <title> [--body <text>] | hud <install|uninstall|status> [--json] | notices --json | notices --due | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | status-feed | guard <claude|codex|agy> PreToolUse | roles --json | roles get <role> [--provider <claude|codex|agy|pi>] | roles check --json | roles save --revision <revision> <profile-json> | roles new <name> --revision <revision> | roles rename <old> <new> --revision <revision> | roles copy <from> <to> --revision <revision> | roles delete <name> --revision <revision> | roles reset --revision <revision> | roles set-min-usage <pct> --revision <revision> | providers --json | models --provider <claude|codex|agy|pi> --json | accounts --provider <claude|codex|agy|pi> --json | accounts login --provider <claude|codex> --name <name> --revision <revision> --json [--cwd <dir>] | accounts reset --revision <revision> --json | accounts pick --provider <claude|codex> [--account <auto|menu|NAME> | --session <id> | --last [--all]] [--model <model>] --json | usage --json | usage --format openusage | working --json | usage --refresh --provider <claude|codex> --json | agents --json [--all] | messages --json [--after <seq>] | run <claude|codex> [--account [auto|menu|NAME]] [-- <args>...] | launch <agent_id> <role> [--provider <claude|codex|agy|pi>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | answer <agent_id> <prompt_id> <choice> | interrupt <agent_id> | key <agent_id> <Up|C-u> | attach <agent_id> | focus <session_id> <agent_id> | close <agent_id> | send <recipient> <kind> | commands <agent_id> --json | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
 
 fn env_var(name: &str) -> Result<String, String> {
     env::var(name).map_err(|_| format!("swarm: {name} not set"))
@@ -967,6 +967,72 @@ fn pick_accounts(
     Ok(accounts)
 }
 
+/// `--account menu`: the accounts as a numbered list on `out`, then the choice read from `input`.
+/// Enter alone is `auto`; a number or a name picks that account.
+fn menu_choice(
+    accounts: &swarm::profiles::AccountList,
+    input: &mut impl std::io::BufRead,
+    out: &mut impl std::io::Write,
+) -> Result<String, String> {
+    let names: Vec<&str> = accounts.accounts.iter().map(|a| a.name.as_str()).collect();
+    if names.is_empty() {
+        return Err(format!(
+            "swarm: no {} accounts; add one with swarm accounts login --provider {} --name NAME",
+            accounts.provider, accounts.provider
+        ));
+    }
+    let width = names.iter().map(|n| n.len()).max().unwrap_or(0);
+    let write = |out: &mut dyn std::io::Write, text: String| {
+        out.write_all(text.as_bytes()).map_err(|e| e.to_string())
+    };
+    for (index, account) in accounts.accounts.iter().enumerate() {
+        let left = match (&account.auth_state, account.remaining_pct) {
+            (swarm::profiles::AuthState::SignedIn, Some(pct)) => format!("{pct}% left"),
+            (swarm::profiles::AuthState::SignedIn, None) => "usage unknown".into(),
+            _ => "signed out".into(),
+        };
+        write(
+            out,
+            format!(
+                "{:>2}) {:width$}  {:28}  {left}\n",
+                index + 1,
+                account.name,
+                account.email.as_deref().unwrap_or("")
+            ),
+        )?;
+    }
+    write(out, format!("Account [1-{}, Enter = auto]: ", names.len()))?;
+    out.flush().map_err(|e| e.to_string())?;
+    let mut line = String::new();
+    input.read_line(&mut line).map_err(|e| e.to_string())?;
+    let line = line.trim();
+    if line.is_empty() {
+        return Ok("auto".into());
+    }
+    match line.parse::<usize>() {
+        Ok(n) if (1..=names.len()).contains(&n) => Ok(names[n - 1].into()),
+        _ if names.contains(&line) => Ok(line.into()),
+        _ => Err(format!("swarm: no account {line:?} in the list")),
+    }
+}
+
+/// Shows the menu on the terminal, not on stdout, so `accounts pick --json` output stays JSON.
+fn ask_account(
+    accounts: Result<&swarm::profiles::AccountList, String>,
+    model: Option<&str>,
+) -> Result<String, String> {
+    let accounts = accounts
+        .map_err(|error| format!("swarm: {error}"))?
+        .for_model(model);
+    let tty = std::fs::File::open("/dev/tty")
+        .map_err(|_| "swarm: --account menu needs a terminal; name the account instead")?;
+    menu_choice(
+        &accounts,
+        &mut std::io::BufReader::new(tty),
+        &mut std::io::stderr(),
+    )
+}
+
 fn select_account(
     provider: Provider,
     requested: &str,
@@ -1006,6 +1072,8 @@ fn run_cli(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     };
     let (provider, requested) = match options {
         [provider] => (provider, "auto"),
+        // `--account` with no name opens the menu.
+        [provider, flag] if flag == "--account" => (provider, "menu"),
         [provider, flag, account] if flag == "--account" => (provider, account.as_str()),
         _ => return Err(USAGE.into()),
     };
@@ -1015,8 +1083,18 @@ fn run_cli(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let accounts = pick_accounts(
         provider,
         swarm::profiles::native::deadline(ACCOUNT_PICK_TIMEOUT_SECONDS),
-        requested == "auto",
+        matches!(requested, "auto" | "menu"),
     );
+    let chosen;
+    let requested = if requested == "menu" {
+        chosen = ask_account(
+            accounts.as_ref().map_err(Clone::clone),
+            swarm::bus::command_model(extra),
+        )?;
+        chosen.as_str()
+    } else {
+        requested
+    };
     let account = select_account(
         provider,
         requested,
@@ -1088,8 +1166,14 @@ fn account_pick(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let accounts = pick_accounts(
         provider,
         swarm::profiles::native::deadline(ACCOUNT_PICK_TIMEOUT_SECONDS),
-        requested == "auto" && session.is_none(),
+        matches!(requested.as_str(), "auto" | "menu") && session.is_none(),
     );
+    if requested == "menu" {
+        requested = ask_account(
+            accounts.as_ref().map_err(Clone::clone),
+            options.get("--model").copied(),
+        )?;
+    }
     if let Some(session) = &session {
         let list = accounts
             .as_ref()
@@ -5308,6 +5392,47 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_account_menu_lists_each_account_and_reads_a_number_a_name_or_enter() {
+        let mut list = swarm::profiles::empty_accounts("claude");
+        for (name, pct, auth) in [
+            ("work", Some(87), swarm::profiles::AuthState::SignedIn),
+            ("personal", None, swarm::profiles::AuthState::SignedOut),
+        ] {
+            list.accounts.push(swarm::profiles::Account {
+                name: name.into(),
+                email: Some(format!("{name}@example.com")),
+                home: String::new(),
+                env: Default::default(),
+                auth_state: auth,
+                usage_state: String::new(),
+                usage_source: None,
+                remaining_pct: pct,
+                summary: None,
+                invalid_home: false,
+                fable_spent: false,
+                renewable: false,
+            });
+        }
+        let pick = |list: &swarm::profiles::AccountList, typed: &str| {
+            let mut out = Vec::new();
+            let choice = menu_choice(list, &mut typed.as_bytes(), &mut out);
+            (choice, String::from_utf8(out).unwrap())
+        };
+        let (choice, shown) = pick(&list, "2\n");
+        assert_eq!(choice.unwrap(), "personal");
+        assert!(shown.contains(" 1) work      work@example.com"), "{shown}");
+        assert!(
+            shown.contains("87% left") && shown.contains("signed out"),
+            "{shown}"
+        );
+        assert_eq!(pick(&list, "work\n").0.unwrap(), "work");
+        assert_eq!(pick(&list, "\n").0.unwrap(), "auto");
+        assert!(pick(&list, "3\n").0.is_err());
+        list.accounts.clear();
+        assert!(pick(&list, "1\n").0.unwrap_err().contains("accounts login"));
+    }
 
     #[test]
     fn login_adapter_returns_before_the_swift_process_limit() {

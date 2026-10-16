@@ -499,7 +499,6 @@ fn invalid_run_syntax_stops_before_exec_and_a_missing_cli_has_an_error() {
         &["run"][..],
         &["run", "agy"],
         &["run", "unknown"],
-        &["run", "claude", "--account"],
         &["run", "claude", "--account", "auto", "--account", "work"],
         &["run", "claude", "--model", "opus"],
     ] {
@@ -508,7 +507,7 @@ fn invalid_run_syntax_stops_before_exec_and_a_missing_cli_has_an_error() {
         if args == ["run"] {
             assert!(
                 String::from_utf8_lossy(&output.stderr)
-                    .contains("run <claude|codex> [--account <auto|NAME>] [-- <args>...]")
+                    .contains("run <claude|codex> [--account [auto|menu|NAME]] [-- <args>...]")
             );
         }
 
