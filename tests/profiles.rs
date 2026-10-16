@@ -438,7 +438,7 @@ fn the_owners_config_imports_with_no_route_lost() {
     assert!(
         profiles
             .iter()
-            .any(|profile| profile["name"] == "ink.build")
+            .any(|profile| profile["name"] == "build")
     );
 }
 

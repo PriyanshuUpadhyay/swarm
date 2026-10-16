@@ -141,6 +141,30 @@
       ]
     },
     {
+      "name": "build",
+      "runners": [
+        {
+          "provider": "claude",
+          "model": "opus",
+          "effort": "medium",
+          "permission": "auto"
+        },
+        {
+          "provider": "claude",
+          "model": "opus",
+          "effort": "high",
+          "permission": "auto"
+        },
+        {
+          "provider": "codex",
+          "model": "gpt-6.1-sol",
+          "effort": "high",
+          "sandbox": "workspace-write",
+          "approval": "never"
+        }
+      ]
+    },
+    {
       "name": "review.surface",
       "runners": [
         {

@@ -18,7 +18,7 @@
     "design.ui": [
       "claude-sonnet-high-agent"
     ],
-    "ink.build": [
+    "build": [
       "claude-sonnet-high-agent",
       "claude-opus-high-agent"
     ],
