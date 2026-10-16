@@ -23,7 +23,7 @@ with `done`. The saved table keeps this run's chosen inputs.
 |---|---|---|
 | `01-question.md` | none | the question in one line and the decision it serves in one line |
 | `02-local.md` | question | what the local sources say, with paths |
-| `03-web.md` | question | the `web-search` run folder, or the reason no trigger below held; a `Fetched:` list of URLs whose page content was read; what the web says, with links to the sources that own the claims; the off-path ideas and the searches that found them |
+| `03-web.md` | question | the `web-search` run folder, or the reason no trigger below held; a `Fetched:` list of URLs whose page content was read; the origin rows from `blocks/primary-sources/SKILL.md`, or `skipped: <reason>`; what the web says, with links to the sources that own the claims; the off-path ideas and the searches that found them |
 | `04-test.md` | local, web | for a tool pick, each candidate's install, task, time, and result; else `skipped: not a tool pick` |
 | `05-report.md` | local, web, test | the report path and the result of the link check |
 | `06-close.md` | report | the reply as sent |
@@ -65,6 +65,11 @@ Start it as its own step run with this run's slug, at the web-search path in
 merged report is written. Its report is one source among the others, not the answer. If a trigger
 holds but this session cannot open visible seats, do the web part yourself and write in the gaps
 that `web-search` did not run and why.
+
+When the question is about how or why a technique, protocol, or implementation works, also go to its
+origin as the kit block `blocks/primary-sources/SKILL.md` says, which means the original paper,
+spec, or the author's code at the commit that introduced it. Example. The question is about SQL
+databases. A blog is the lead, and the answer rests on the paper it names.
 
 Every run also searches off the usual path, as `blocks/deep-search/SKILL.md` says. Example. The
 question is "which state library should this React app use". The usual answers are libraries. An
