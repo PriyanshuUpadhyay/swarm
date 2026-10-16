@@ -14,11 +14,12 @@ metadata:
 ---
 
 ## Rules
+- For diagram form, apply `references/explain-formats.md` from the kit root. This block applies to pages the kit builds.
 - Build each node as an HTML element with real text, laid out with CSS grid or flexbox. Draw arrows with CSS borders, pseudo-elements, or text arrows (→ ↓), never with absolute pixel positions.
 - At 600 px and below, switch the diagram to one column in reading order. Each arrow keeps its meaning, source to target: it points at the same box as on a wide screen, so a stacked arrow never points away from its target. Turn it to match the new layout (↓ when the target is now below, ↑ when it is above).
 - Wrap the diagram and its caption in `<figure>` and `<figcaption>`. Give the diagram a text description with `role="img"` and an `aria-label` that says what it shows, or use an `<ol>` when order is the point.
 - Use the page fonts and design tokens. Label text is 13 px or larger at every width.
-- Use no SVG coordinates, no canvas, and no diagram library.
+- On pages the kit builds, use no SVG coordinates, no canvas, and no diagram library.
 - Limit: curved or crossing arrows are hard in CSS. If the shape needs them, the shape is too complex; split the diagram in two.
 
 ## Example

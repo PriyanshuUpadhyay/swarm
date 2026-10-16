@@ -141,6 +141,8 @@ Each block owns its rule text; the skill that held it points to the block.
 
 ### Owner decisions (2026-10-17)
 
+On 2026-10-17, C4/D1 closed under `references/explain-formats.md`, the owner of diagram form.
+
 On 2026-10-17, the owner chose `blocks/worker-brief/SKILL.md` as the owner of gates with no user present.
 
 On 2026-10-17, the owner approved domain selection by `implement_run.py start --domains`;

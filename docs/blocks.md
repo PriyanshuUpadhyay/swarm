@@ -116,10 +116,8 @@ On 2026-10-17, the owner approved domain selection by `implement_run.py start --
 4. A block names a step by its role. A workflow's file name may follow as an example, as
    `call-tree/SKILL.md` does for the impact step (`04-impact.md` in implement).
 
-The diagram form choice C4/D1 remains open for B22. `references/explain-formats.md` requires
-Mermaid in browser-read files and HTML/CSS for a walk's step map. `html-diagram` allows no diagram
-library, so a step that selects the whole parent or `html-diagram` for a browser-read file gets
-both instructions. The owner must settle which form applies before such a step runs. The plan chart refuses parent ids until B14 shares
+On 2026-10-17, the owner closed C4/D1 with the diagram form rule in
+`references/explain-formats.md`. The plan chart still refuses parent ids until B14 shares
 the resolver; it still accepts part ids without loading the parent.
 
 ## Catalog
