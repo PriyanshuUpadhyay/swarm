@@ -40,8 +40,6 @@ question, evidence, contrary evidence, and gap into the report.
 
 ## 03-web
 
-For a gate to a web seat, apply `blocks/worker-brief/SKILL.md`. The default is to search with this session's tools and name the missing seat coverage in the report.
-
 
 Start this step when its Needs in `<folder>/steps.md` are done. With `question` as its input,
 start the web work after `01-question.md` by the host split below, then do `02-local`
@@ -68,7 +66,8 @@ Start it as its own step run with this run's slug, at the web-search path in
 `references/run-folder.md`. Close `03-web.md` when its
 merged report is written. Its report is one source among the others, not the answer. If a trigger
 holds but this session cannot open visible seats, do the web part yourself and write in the gaps
-that `web-search` did not run and why.
+that `web-search` did not run and why. When no user can answer a web-seat gate,
+`blocks/worker-brief/SKILL.md` applies, and this is its default.
 
 When the question is about how or why a technique, protocol, or implementation works, also apply
 the kit block `blocks/primary-sources/SKILL.md`. Example. The question is about SQL databases.

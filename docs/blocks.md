@@ -189,7 +189,7 @@ Status: ✅ exists, ✂️ cut from a skill next, ⬜ later, 🆕 new, 🔒 stay
 | prove-it-works | what proves a change works | `blocks/prove-it-works` (red-first-check merged in; the skill points here) | ✅ |
 | checked-units | small units that each end in a check | `blocks/checked-units` (the skill sequence-verifiable-units points here) | ✅ |
 | when-to-extract | code stays inline without a reason | `blocks/when-to-extract` (the skill minimize-reader-load points here) | ✅ |
-| worker-brief | what a worker brief holds and how a worker acts | `blocks/worker-brief` | ✅ |
+| worker-brief | what a worker brief holds, how a worker acts, and what a skill does at an owner gate with no user | `blocks/worker-brief` | ✅ |
 | run-workers | how a root session runs seats on its host | `blocks/run-workers` (the three adapters point here) | ✅ |
 | task-file | the task file and the resume | `blocks/task-file` | ✅ |
 | cite-sources | each claim cites its owning source; quote only text read; mark snippets | `blocks/cite-sources` | ✅ |
@@ -230,17 +230,17 @@ path that names the skill still works.
 | engineering-standards | decision-with-default (trade-off form) | the rule tables and the procedure |
 | pair | task-file, checked-units, when-to-extract | the chunk loop, its guards, commit per behavior |
 | deliver | task-file, checked-units, prove-it-works | the predicate loop, the commit gate, the review stop |
-| research | local-research, deep-search, primary-sources, cite-sources, tool-trial, report, link-check | the step table, the web seat triggers and timing |
+| research | local-research, deep-search, primary-sources, cite-sources, tool-trial, report, link-check, worker-brief (no-user gate) | the step table, the web seat triggers and timing |
 | web-search | deep-search, primary-sources, cite-sources, link-check, worker-brief, run-workers | seats, site sets, reach tools, Yield and Floor, the depth gate, the merge |
 | council | worker-brief, run-workers | the protocol, the convergence check, the output, the decision log |
 | orchestrate-claude, -codex, -agy | run-workers, worker-brief | the lines that differ by runtime |
-| review-check | when-to-extract | the whole review gate |
+| review-check | when-to-extract, worker-brief (no-user gate) | the whole review gate |
 | review-walk | voice-review | the five steps and GitHub write gates (stays whole) |
 | cleanup-gate | when-to-extract (by its rules file) | the six-step pass (stays whole) |
 | decisions | none | the whole capture contract (stays whole) |
-| implement | prove-it-works, checked-units, and every block its catalog lines name | the step graph and the loader |
+| implement | prove-it-works, checked-units, worker-brief (no-user gate), and every block its catalog lines name | the step graph and the loader |
 | build | reference-analysis, story, look-check, headless-shot, visual-qa, build-site (which points to design-tokens), build-canvas, web-ui-basics | the contract, the routes, the seam law, the reel rules |
-| explain | voice-teach | the pointer to the block and `references/explain-formats.md` |
+| explain | voice-teach, worker-brief (no-user gate) | the pointer to the block and `references/explain-formats.md` |
 
 Plans that stay open: research writes the ledger for questions, with `web needs local` only when
 local findings set the query (the owner's local-then-web example); the emil pack owns UI motion and

@@ -4,7 +4,7 @@ description: "Write a worker's brief so it knows what it may change, what to che
 license: MIT
 metadata:
   kind: rule
-  owns: "what a worker brief holds and how a worker behaves"
+  owns: "what a worker brief holds, how a worker behaves, and what a skill does at an owner gate when no user can answer"
   serves: "every step that sends work to a seat"
   needs: "a task for one seat"
   gives: "a brief that a seat can follow alone"

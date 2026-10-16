@@ -48,9 +48,8 @@ the git common dir (`git rev-parse --git-common-dir`), not the worktree folder n
    `blocks/blocks.toml` owns the block format, what each check line becomes, and the
    `.blocks.toml` tables.
 
-   The chair passes `--domains <a,b>` for the domains touched by the files the request names.
-   Each domain must be in the repo profile; `any` is always kept. With no flag, all profile domains
-   load. Show the chosen domains with the tables that `start` prints, the same way `blocks/planner/SKILL.md` shows them
+   The chair passes `--domains <a,b>` for the domains touched by the files the request names;
+   `start` checks them against the repo profile. Show the chosen domains with the tables that `start` prints, the same way `blocks/planner/SKILL.md` shows them
    for a plan. `01-frame.md` keeps the domains and block choice. To add or drop a block, edit its domain line in
    `~/.flow/domains.md` or its `[off]` entry in `.blocks.toml`, then start a new run. A second `start`
    on the same day and branch reuses the folder and prints the saved choice, so first rename the
