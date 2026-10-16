@@ -16,6 +16,9 @@ helper that already does that math.
 
 ## Contract
 
+For a gate to new seats, apply `blocks/worker-brief/SKILL.md`; this skill names no default that replaces fresh seats.
+
+
 - The review is report-only. Never edit, commit, stash, switch, or reset the user's checkout.
 - Only `verdict` writes the verdict. A reviewer never writes `03-verdict.md` or states a verdict that
   the script did not print.

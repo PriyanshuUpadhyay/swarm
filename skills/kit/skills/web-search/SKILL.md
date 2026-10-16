@@ -9,7 +9,7 @@ Three visible seats search three different parts of the web at the same time, ea
 tools, and each writes its findings to a file. The chair merges them into one report. One session's
 blocked fetch is another seat's open page, so the coverage is wider than any single session.
 
-The runtime adapter (`orchestrate-claude`) selects the host and its reference; web search names no host. Without a visible host, stop and say so; a hidden or headless seat is not a substitute.
+The runtime adapter (`orchestrate-claude`) selects the host and its reference; web search names no host. For a missing visible host or another owner gate, apply `blocks/worker-brief/SKILL.md`. The default is to search with this session's tools and report the missing seat coverage.
 The kit root, with its `blocks/` and `references/` folders, is two folders up from this skill's folder.
 
 ## Start or continue

@@ -101,6 +101,8 @@ metadata:
 
 ## Ownership and conflicts
 
+On 2026-10-17, the owner chose `blocks/worker-brief/SKILL.md` as the owner of gates with no user present.
+
 On 2026-10-17, the owner approved domain selection by `implement_run.py start --domains`;
 `skills/kit/skills/implement/SKILL.md` names the command and its saved choice.
 

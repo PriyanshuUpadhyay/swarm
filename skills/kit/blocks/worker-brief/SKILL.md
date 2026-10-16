@@ -14,6 +14,7 @@ metadata:
 ---
 
 ## Rules
+- An owner gate is a question, approval, or new seats the session cannot start. When no user can answer it, a skill that changes code, commits, or writes outside its run folder stops and reports `blocked: needs owner: <the question>`. A read-only skill (`explain`, `research`, `plan` up to approval, or `web-search`) takes only the default its skill names and records `default taken: <what>` in its result. With no named default, it reports the same blocked form.
 - Every brief says five things: what the worker may change, what it must check and how, what it leaves to another seat, where its result goes as a literal path (never a `$VAR`), and when it stops. Do not send a brief that misses one.
 - A brief that asks for a judgment, such as a council, a search, or a review, also pins the question or the artifact word for word, the constraints the user settled, the exact files, URLs, or commits the seat may read, a line "do not look outside these", and the shape of the answer.
 - Name the instruction and standards files the worker reads first, with the expected behavior and the checks. A worker does not inherit the chair's loaded rules. Point to a rule at its owner; do not copy its text into the brief. A seat of another provider gets this block's text in the brief, or as a copy pinned by its digest in the run folder.

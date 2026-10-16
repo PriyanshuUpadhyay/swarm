@@ -139,10 +139,14 @@ Each block owns its rule text; the skill that held it points to the block.
 | voice-review | review comments in the reviewer's voice | review, close |
 | voice-pr | a PR title and body draft | close |
 
-### Known defects
+### Owner decisions (2026-10-17)
+
+On 2026-10-17, the owner chose `blocks/worker-brief/SKILL.md` as the owner of gates with no user present.
 
 On 2026-10-17, the owner approved domain selection by `implement_run.py start --domains`;
 `skills/kit/skills/implement/SKILL.md` names the command and its saved choice.
+
+### Known defects
 
 - `references/step_run.py:67-70` drops a `Needs` word that matches no step, with no error.
 - `blocks/web-ui-basics/SKILL.md:44-47` checks only `*.html`, `*.css`, `*.js` and `index.html`, so a TSX

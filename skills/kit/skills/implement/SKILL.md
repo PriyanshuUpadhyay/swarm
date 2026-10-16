@@ -104,6 +104,9 @@ Release is a separate action that the user asks for.
 
 ## Owners
 
+For owner gates in `pair` or `deliver`, apply `blocks/worker-brief/SKILL.md`.
+
+
 The `implement` skill owns the step list, the order, the profiles, and the domain catalog.
 Its script uses `references/step_run.py` for the shared status commands in
 `references/step-run.md`.
