@@ -116,7 +116,8 @@ One brief, one section per seat. It holds:
    site blocks you, try in order the Reach tool for that site, the
    browser row, the Jina reader, the search snippet, `old.reddit.com`, `<url>.json`, a public mirror,
    `web.archive.org`, and `archive.ph`; cite as `blocks/cite-sources/SKILL.md` says, with that
-   block's Rules quoted; stop after about 20 minutes;
+   block's Rules quoted; when the question is about how or why something works, follow each lead to
+   its origin, with `blocks/primary-sources/SKILL.md` quoted in full; stop after about 20 minutes;
 6. **blocked log** — a seat may call a site blocked only when its Coverage lists, for that site,
    each step it tried and the error each step gave, for example
    `reddit: browser_read → no extension; r.jina.ai → 403; old.reddit.com → 403; archive.ph → no copy`;

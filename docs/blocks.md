@@ -131,6 +131,7 @@ Status: ✅ exists, ✂️ cut from a skill next, ⬜ later, 🆕 new, 🔒 stay
 | frame | step | goal, done-when claims, out of scope | request → frame | flow 01-frame, research 01-question, ink intake | flow, research, ink | ⬜ |
 | local-research | step | what local sources say | question → findings with paths | `blocks/local-research` | research (planned: glitch-walk, flow contracts) | ✅ |
 | web-research | step | web evidence | query brief → findings with links | `skills/web-search` (stays whole) with `blocks/deep-search` and `blocks/cite-sources` | research, reference-analysis, motion | ✅ by the skill |
+| primary-sources | step | the origin of a claim: paper, spec, or the author's code at the commit | question → origin rows (source, exact location, quote) | `blocks/primary-sources` | research, web-search | ✅ |
 | deep-search | rule | how a search goes past the known answers | question, known answers → sub-questions, seeds, off-path ideas | `blocks/deep-search` | research, web-search | ✅ |
 | tool-trial | step | the hands-on test of tool candidates | tool question → candidate table | `blocks/tool-trial` | research (planned: flow contracts) | ✅ |
 | reference-analysis | step | measured facts of a reference | references → measured notes with evidence levels | `blocks/reference-analysis` | ink, design-tokens | ✅ |
@@ -203,8 +204,8 @@ path that names the skill still works.
 | engineering-standards | decision-with-default (trade-off form) | the rule tables and the procedure |
 | pair | task-file, checked-units, when-to-extract | the chunk loop, its guards, commit per behavior |
 | deliver | task-file, checked-units, prove-it-works | the predicate loop, the commit gate, the review stop |
-| research | local-research, deep-search, cite-sources, tool-trial, report, link-check | the step table, the web seat triggers and timing |
-| web-search | deep-search, cite-sources, link-check, worker-brief, run-workers | seats, site sets, reach tools, Yield and Floor, the depth gate, the merge |
+| research | local-research, deep-search, primary-sources, cite-sources, tool-trial, report, link-check | the step table, the web seat triggers and timing |
+| web-search | deep-search, primary-sources, cite-sources, link-check, worker-brief, run-workers | seats, site sets, reach tools, Yield and Floor, the depth gate, the merge |
 | council | worker-brief, run-workers | the protocol, the convergence check, the output, the decision log |
 | orchestrate-claude, -codex, -agy | run-workers, worker-brief | the lines that differ by runtime |
 | review-check | when-to-extract | the whole review gate |

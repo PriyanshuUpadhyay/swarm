@@ -119,6 +119,7 @@ Each block owns its rule text; the skill that held it points to the block.
 | task-file | the task file and the resume (was in pair and deliver) | build |
 | local-research | what local sources say (was research 02-local) | research, contracts |
 | deep-search | search past the known answers (was research and web-search depth text) | research, web search |
+| primary-sources | go to the origin of a claim (paper, spec, author's code at the commit) and ground the answer in it | research, web search |
 | cite-sources | each claim cites its owning source | research, web search |
 | link-check | every cited link opens and says the claim | report, merge |
 | report | the shape of a research report and its reply | report, close |
