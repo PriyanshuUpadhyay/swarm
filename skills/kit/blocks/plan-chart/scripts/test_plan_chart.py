@@ -78,6 +78,14 @@ def test_defects_stop():
         assert out.returncode == 1 and error in out.stderr and "Traceback" not in out.stderr, (error, out.stderr)
 
 
+def test_cli_help_and_options():
+    for args, code in ((["-h"], 0), (["--help"], 0), (["--other"], 1), (["--help", "extra"], 1), ([], 1)):
+        out = subprocess.run([sys.executable, "-I", SCRIPT, *args], capture_output=True, text=True)
+        assert out.returncode == code, (args, out)
+        assert "plan_chart.py <plan.md>" in out.stdout + out.stderr, out
+        assert "Traceback" not in out.stderr, out.stderr
+
+
 if __name__ == "__main__":
     for name, test in list(globals().items()):
         if name.startswith("test_"):

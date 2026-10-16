@@ -216,8 +216,12 @@ def render(title, done, rows, uses, ledger):
 
 
 def main(argv):
-    if len(argv) != 1:
-        raise SystemExit(__doc__.strip().splitlines()[2].strip())
+    usage = __doc__.strip().splitlines()[2].strip()
+    if argv in (["-h"], ["--help"]):
+        print(usage)
+        return
+    if len(argv) != 1 or argv[0].startswith("-"):
+        raise SystemExit(usage)
     plan = Path(argv[0])
     title, done, rows = read_plan(plan)
     uses = check(title, done, rows)
