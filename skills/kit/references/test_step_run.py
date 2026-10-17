@@ -480,6 +480,8 @@ def test_build_block_todos():
             assert expected in text, f"missing build check {expected}"
         assert "{{site}}" not in text and "{{shots}}" not in text
         assert "### Rules" in text and "Skills read:" in text
+        assert ("Kit blocks (`blocks/<id>/`) and the kit's `references/` are under "
+                f"{step_run.kit_path(SCRIPT.parents[1])} (the kit root).") in text
         head, end, _ = step_run.todo_scan(text)
         lines = text[head:end].splitlines()
         # The old single handoff todo cannot close a step whose block checks are still open.

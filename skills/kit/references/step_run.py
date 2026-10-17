@@ -165,6 +165,8 @@ def start(folder, skill_md):
         if file.exists():
             continue
         read, rules, todos = blocks.get(name, ([], "", []))
+        if any(token in rules + "\n".join(todos) for token in ("blocks/", "the kit's `references/", "<kit root>")):
+            rules = f"Kit blocks (`blocks/<id>/`) and the kit's `references/` are under {kit_path(Path(__file__).resolve().parents[1])} (the kit root).\n{rules}"
         extra = (f"Skills read: {', '.join(read)}\n\n## Rules for this step\n{rules}\n" if read else "")
         file.write_text(f"Status: open\nUses: {', '.join(need_files(need, names))}\n\n{extra}"
                         f"{TODO_HEAD}\n" + "".join(f"- [ ] {item}: \n" for item in [holds] + todos)
