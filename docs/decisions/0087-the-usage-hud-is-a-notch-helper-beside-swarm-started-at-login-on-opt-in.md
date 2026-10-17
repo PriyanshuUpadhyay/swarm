@@ -64,6 +64,10 @@ web-only meters, because the owner asked for the notch.
 
 ## Amendment 2026-10-17: Renew refreshes once
 
-A Claude row with an expired token has a Renew link. It runs `swarm run claude --account <name> -- -p /usage` in the background,
-with a 60 s limit, and then refreshes that provider one time, even inside the 300 s limit. That refresh is the point of Renew,
-because only a new reading shows that the token works again. The same flow was in the yelo HUD. Other refreshes keep the limit.
+Deciders: [user]. Informed by the owner request "It used to give me an option to renew ... give me
+that option again", and by the yelo HUD, which had the same Renew flow.
+
+A Claude row with an expired token has a Renew link. It runs
+`swarm run claude --account <name> -- -p /usage` in the background, with a 60 s limit, and then
+refreshes that provider one time, even inside the 300 s limit. That refresh is the point of Renew,
+because only a new reading shows that the token works again. Other refreshes keep the limit.
