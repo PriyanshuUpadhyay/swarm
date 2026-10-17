@@ -115,6 +115,9 @@ On 2026-10-17, the owner settled the evidence part of #70 with three separate ow
 On 2026-10-17, C6 closed with `blocks/web-ui-basics/SKILL.md` as the check-width owner;
 diagram and page-shot blocks point to it.
 
+On 2026-10-17, C7 closed: `blocks/base-rules/SKILL.md` owns "Real over drawn" (cite the file and line for a fact
+or a code claim). `blocks/diagram-check/SKILL.md` keeps "Labels use source words" and points to it.
+
 On 2026-10-17, the owner settled the voice-file part of #70 in `blocks/voice-review/SKILL.md`;
 `voice-pr` points to that owner.
 
