@@ -153,7 +153,7 @@ Action: the user asks for the storm to last two seconds longer. Edit only the `s
 Result: the scene modules, the entities, and the tokens are unchanged, and each frame renders alone with the same pixels on a second run.
 
 ## Check (script)
-- `rg -n -g '*.js' -g '*.mjs' -g '*.ts' -g '!**/vendor/**' -g '!**/node_modules/**' -g '!*.min.js' 'Math\.random\(|Date\.now\(' {{site}}` prints nothing: no render state in the piece's own code comes from an unseeded random or the wall clock.
+- `rg -n -g '*.html' -g '*.js' -g '*.mjs' -g '*.ts' -g '!**/vendor/**' -g '!**/node_modules/**' -g '!*.min.js' 'Math\.random\(|Date\.now\(' {{site}}` prints nothing: no render state in the piece's own code comes from an unseeded random or the wall clock.
 
 ## Check (judge)
 - Does one change of each kind (a retime, a new place, a new character, a restyle, a new transition) touch only its one home? Quote the files each touched.
