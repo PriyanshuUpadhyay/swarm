@@ -571,6 +571,7 @@ def test_build_repo_additions():
         assert out.returncode == 0, out.stderr
         text = (folder / "04-style-frames.md").read_text(encoding="utf-8")
         assert "BUILD ONLY" in text and "IMPLEMENT ONLY" not in text, text
+        assert "[add] build in" in out.stderr and "names no step of this skill; skipped" in out.stderr, out.stderr
 
 
 def test_block_command():

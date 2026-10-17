@@ -2,6 +2,7 @@
 import hashlib
 import re
 import shlex
+import sys
 from pathlib import Path
 
 from step_run import plain
@@ -62,6 +63,8 @@ def resolve_blocks(root, wanted, profile_name="default", *, blocks, params_overr
         raise SystemExit(f"[params] {bad} holds a backtick in {repo_file}; a value is a path or a name")
     for key, paths in repo.get("add", {}).items():
         if key not in wanted:
+            # Another skill's step key is valid here, but a misspelled key must leave a trace.
+            print(f"[add] {key} in {repo_file} names no step of this skill; skipped", file=sys.stderr)
             continue
         if not isinstance(paths, list) or not all(isinstance(p, str) for p in paths):
             raise SystemExit(f"[add] {key} in {repo_file} must be a list of paths, such as {key} = [\"docs/x.md\"]")
