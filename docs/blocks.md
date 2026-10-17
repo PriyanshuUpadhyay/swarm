@@ -137,8 +137,9 @@ On 2026-10-17, the owner approved domain selection by `implement_run.py start --
    `call-tree/SKILL.md` does for the impact step (`04-impact.md` in implement).
 
 On 2026-10-17, the owner closed C4/D1 with the diagram form rule in
-`references/explain-formats.md`. The plan chart still refuses parent ids until B14 shares
-the resolver; it still accepts part ids without loading the parent.
+`references/explain-formats.md`. Implement and the plan chart select blocks with
+`references/block_resolver.py`, so the plan chart accepts a parent id as implement does.
+`skills/plan/SKILL.md` directs the step agent to load the resolved list shown in `plan.html`.
 
 ## Catalog
 
