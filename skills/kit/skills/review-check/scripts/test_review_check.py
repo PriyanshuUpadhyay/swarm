@@ -276,7 +276,7 @@ def test_loop_readonly_common_dir():
                     assert json.loads((run / "target.json").read_text())["round"] == n + 1
                 with redirect_stdout(StringIO()) as out:
                     rc.start(f"{base}..{head}", "--parent-loop", "readonly-note")
-                expected = "parent loop: readonly-note (local budget; the git dir is not writable)"
+                expected = "parent loop: readonly-note (local writes; the git dir is not writable)"
                 assert out.getvalue().splitlines().count(expected) == 1, out.getvalue()
                 loop_refused(base, head, "readonly", "cap")
                 assert rc.verdict(run.name) == 0
@@ -300,6 +300,70 @@ def test_loop_start_waits_for_sibling():
         stdout, stderr = contender.communicate(timeout=15)
         assert contender.returncode == 0, (stdout, stderr)
         assert "parent loop: sibling" in stdout, stdout
+
+
+def test_loop_readonly_shared_budget():
+    with loop_repo() as (base, head):
+        for _ in range(3):
+            loop_round(base, head, "readonly-shared", "pass")
+        shared = Path(rc.git("rev-parse", "--path-format=absolute", "--git-common-dir").strip()) / "review-check"
+        ledger = next(shared.glob("*.json"))
+        original = Path.cwd()
+        linked = original / "tmp" / "readonly-sibling"
+        sh("git", "worktree", "add", "--detach", str(linked), head)
+        shared_mode, ledger_mode = shared.stat().st_mode & 0o777, ledger.stat().st_mode & 0o777
+        before = ledger.read_bytes()
+        try:
+            os.chdir(linked)
+            shared.chmod(0o555)
+            loop_refused(base, head, "readonly-shared", "cap")
+            assert ledger.read_bytes() == before
+            for broken in (None, "{"):
+                if broken is None:
+                    ledger.chmod(0)
+                else:
+                    ledger.chmod(ledger_mode)
+                    ledger.write_text(broken)
+                try:
+                    rc.start(f"{base}..{head}", "--parent-loop", "readonly-shared")
+                except SystemExit as error:
+                    assert "cannot read loop ledger" in str(error) and str(ledger) in str(error), error
+                else:
+                    raise AssertionError("accepted an unreadable or damaged shared ledger")
+            assert not list(Path("tmp/review-check").glob("*/target.json"))
+        finally:
+            ledger.chmod(ledger_mode)
+            shared.chmod(shared_mode)
+            os.chdir(original)
+
+
+def test_loop_writable_after_readonly_rounds():
+    with loop_repo() as (base, head):
+        first = loop_round(base, head, "mixed-mode", "pass")
+        shared = Path(rc.git("rev-parse", "--path-format=absolute", "--git-common-dir").strip()) / "review-check"
+        ledger = next(shared.glob("*.json"))
+        mode = shared.stat().st_mode & 0o777
+        runs = [str(first.resolve())]
+        try:
+            shared.chmod(0o555)
+            for n in (2, 3):
+                run = loop_round(base, head, "mixed-mode", "pass")
+                assert json.loads((run / "target.json").read_text())["round"] == n
+                runs.append(str(run.resolve()))
+            assert json.loads(ledger.read_text())["used"] == 1
+        finally:
+            shared.chmod(mode)
+        loop_refused(base, head, "mixed-mode", "cap")
+        assert json.loads(ledger.read_text()) == {"used": 3, "continued": False, "runs": runs}
+        Path("owner.md").write_text("continue: mixed-mode\n")
+        try:
+            shared.chmod(0o555)
+            fourth = loop_round(base, head, "mixed-mode", "pass", "return 1", "--continue", "owner.md")
+            runs.append(str(fourth.resolve()))
+        finally:
+            shared.chmod(mode)
+        loop_refused(base, head, "mixed-mode", "cap", "--continue", "owner.md")
+        assert json.loads(ledger.read_text()) == {"used": 4, "continued": True, "runs": runs}
 
 
 def test_loop_broken_ledger():
@@ -1935,6 +1999,8 @@ if __name__ == "__main__":
     test_loop_snapshot_atomic_without_lock()
     test_loop_readonly_common_dir()
     test_loop_start_waits_for_sibling()
+    test_loop_readonly_shared_budget()
+    test_loop_writable_after_readonly_rounds()
     test_loop_broken_ledger()
     test_loop_shared_worktree_budget()
     test_loop_deleted_run_budget()

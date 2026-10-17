@@ -320,6 +320,7 @@ def seat_map(checklist, catalog):
 def start_lock():
     root = Path(git("rev-parse", "--path-format=absolute", "--git-common-dir").strip()) / "review-check"
     shared = root
+    writable = True
     try:
         root.mkdir(parents=True, exist_ok=True)
         # An existing lock may still open when the folder denies atomic ledger writes.
@@ -327,7 +328,7 @@ def start_lock():
             pass
         fd = os.open(root / "review-check.lock", os.O_CREAT | os.O_WRONLY, 0o600)
     except OSError:
-        shared, root = None, home()
+        writable, root = False, home()
         root.mkdir(parents=True, exist_ok=True)
         fd = os.open(root / "review-check.lock", os.O_CREAT | os.O_WRONLY, 0o600)
     try:
@@ -342,14 +343,14 @@ def start_lock():
                     raise SystemExit(f"start refused: {root / 'review-check.lock'} is locked by a running start; "
                                      f"waited {START_LOCK_WAIT:g} s; try again when it finishes") from None
                 time.sleep(min(0.1, remaining))
-        yield shared
+        yield shared, writable
     finally:
         os.close(fd)
 
 
 def start(target, *opts):
-    with start_lock() as ledger_home:
-        return start_locked(target, *opts, ledger_home=ledger_home)
+    with start_lock() as (ledger_home, writable):
+        return start_locked(target, *opts, ledger_home=ledger_home, ledger_writable=writable)
 
 
 def stale_verdict(folder, lines):
@@ -360,7 +361,7 @@ def stale_verdict(folder, lines):
     return None
 
 
-def start_locked(target, *opts, ledger_home):
+def start_locked(target, *opts, ledger_home, ledger_writable):
     options = {}
     while opts:
         if opts == ("--patch",):
@@ -425,24 +426,30 @@ def start_locked(target, *opts, ledger_home):
                 raise SystemExit(f"start refused by {previous}: answer its asks in {previous / 'answers.md'} and run "
                                  f"`verdict {previous.name}` again, or delete the run folder if it was abandoned")
     loop_runs.sort(key=lambda item: item[1]["round"])
-    ledger_file = ledger_home / f"{hashlib.sha256(parent_loop.encode()).hexdigest()}.json" if ledger_home and not is_patch else None
+    ledger_file = ledger_home / f"{hashlib.sha256(parent_loop.encode()).hexdigest()}.json" if not is_patch else None
     ledger = {
         "used": max((metadata["round"] for _, metadata in loop_runs), default=0),
         "continued": any(metadata.get("continued") for _, metadata in loop_runs),
         "runs": [str(folder) for folder, _ in loop_runs],
     }
-    if ledger_file and ledger_file.exists():
+    if ledger_file:
         try:
-            ledger = json.loads(ledger_file.read_text(encoding="utf-8"))
-            valid = (isinstance(ledger, dict) and type(ledger.get("used")) is int and ledger["used"] >= 0
-                     and isinstance(ledger.get("continued"), bool) and isinstance(ledger.get("runs"), list)
-                     and all(isinstance(run, str) for run in ledger["runs"]))
+            shared = json.loads(ledger_file.read_text(encoding="utf-8"))
+            valid = (isinstance(shared, dict) and type(shared.get("used")) is int and shared["used"] >= 0
+                     and isinstance(shared.get("continued"), bool) and isinstance(shared.get("runs"), list)
+                     and all(isinstance(run, str) for run in shared["runs"]))
+        except FileNotFoundError:
+            shared, valid = None, True
         except (OSError, ValueError, UnicodeError):
             valid = False
         if not valid:
             raise SystemExit(f"cannot read loop ledger {ledger_file}; delete it to import the worktree's run history") from None
-    elif ledger_file and loop_runs:
-        step_run.write_step(ledger_file, json.dumps(ledger, indent=2) + "\n")
+        if shared is not None:
+            ledger = {"used": max(shared["used"], ledger["used"]),
+                      "continued": shared["continued"] or ledger["continued"],
+                      "runs": list(dict.fromkeys([*shared["runs"], *ledger["runs"]]))}
+        if ledger_writable and loop_runs:
+            step_run.write_step(ledger_file, json.dumps(ledger, indent=2) + "\n")
     used, continued = ledger["used"], ledger["continued"]
     snapshots = []
     for folder in map(Path, ledger["runs"][-2:]):
@@ -507,7 +514,7 @@ def start_locked(target, *opts, ledger_home):
     (d / "target.json").write_text(json.dumps({"target": target, "base": base, "head": head, "ci": ci,
                                              "patch": is_patch, "parent_loop": parent_loop,
                                              "round": used + 1, "continued": extension}, indent=2) + "\n", encoding="utf-8")
-    if ledger_file:
+    if ledger_file and ledger_writable:
         ledger.update(used=used + 1, continued=continued or extension, runs=[*ledger["runs"], str(d)])
         step_run.write_step(ledger_file, json.dumps(ledger, indent=2) + "\n")
     diff = parse_diff(patch)
@@ -550,7 +557,7 @@ def start_locked(target, *opts, ledger_home):
         f"Status: open\nUses: 01-units@{revision(d / '01-units.md')}\n\n"
         "| Unit | Rule | file:line | Quote | Kind | Problem | Proof |\n|---|---|---|---|---|---|---|\n", encoding="utf-8")
     print(d)
-    note = " (local budget; the git dir is not writable)" if ledger_home is None else ""
+    note = " (local writes; the git dir is not writable)" if not ledger_writable else ""
     print(f"parent loop: {parent_loop}{note}")
     for seat, plan in seats.items():
         print(f"{seat}: {len(plan['units'])} units, {plan['checks']} checks")
