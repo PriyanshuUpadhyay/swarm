@@ -103,7 +103,7 @@ Release is a separate action that the user asks for.
 
 ## Owners
 
-For owner gates in `pair` or `deliver`, apply `blocks/worker-brief/SKILL.md`.
+For owner gates in `pair` or `deliver`, and the build-to-review handoff when this session cannot start seats, apply `blocks/worker-brief/SKILL.md`.
 
 
 The `implement` skill owns the step list, the order, the profiles, and the domain catalog.

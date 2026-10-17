@@ -16,7 +16,7 @@ helper that already does that math.
 
 ## Contract
 
-For a gate to new seats, apply `blocks/worker-brief/SKILL.md`; this skill names no default that replaces fresh seats.
+For a gate to new seats and the `implement` handoff from a leaf, apply `blocks/worker-brief/SKILL.md`; this skill names no default that replaces fresh seats.
 
 
 - The review is report-only. Never edit, commit, stash, switch, or reset the user's checkout.

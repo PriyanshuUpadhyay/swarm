@@ -95,6 +95,7 @@ with its script. Each file holds the step's output, not a copy of it.
 
 ## Roles
 
+- For a missing builder or visual critic seat, apply the seat routes in `blocks/worker-brief/SKILL.md`.
 - Steps 1 to 3 run in the main session, because they need the user's answers.
 - Steps 4 to 7 go to the role `build`. The builder scores its own rounds. When it closes a step
   by `references/step-run.md`, the main session sends the final compare images to the role `review.visual`, and a `miss`
