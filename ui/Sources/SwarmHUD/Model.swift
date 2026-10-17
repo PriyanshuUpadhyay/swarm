@@ -47,13 +47,13 @@ final class UsageModel {
     private var readingWorking = false
     private var refreshQueued: Set<String> = []
 
-    init(environment: [String: String] = ProcessInfo.processInfo.environment) {
+    init(environment: [String: String] = ProcessInfo.processInfo.environment, historyURL: URL? = nil) {
         swarm = swarmPath(environment: environment)
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        historyURL = support.appending(path: "SwarmHUD/history.json")
+        self.historyURL = historyURL ?? support.appending(path: "SwarmHUD/history.json")
         pinnedPhase = UserDefaults.standard.string(forKey: "pinnedPhase").flatMap(DayPhase.init(rawValue:))
         // A missing or broken file only costs the pace until new samples come in.
-        history = (try? JSONDecoder().decode([HistorySample].self, from: Data(contentsOf: historyURL))) ?? []
+        history = (try? JSONDecoder().decode([HistorySample].self, from: Data(contentsOf: self.historyURL))) ?? []
     }
 
     func updatePhase(now: Date = Date()) {
@@ -193,7 +193,10 @@ nonisolated func runRenewal(_ executable: String?, _ arguments: [String], timeou
     let exited = DispatchSemaphore(value: 0)
     process.terminationHandler = { _ in exited.signal() }
     do { try process.run() } catch { return }
-    if exited.wait(timeout: .now() + timeout) == .timedOut, process.isRunning { process.terminate() }
+    guard exited.wait(timeout: .now() + timeout) == .timedOut, process.isRunning else { return }
+    process.terminate()
+    // A child that ignores SIGTERM must not outlive the spinner, or a second Renew starts a second run.
+    if exited.wait(timeout: .now() + 5) == .timedOut, process.isRunning { kill(process.processIdentifier, SIGKILL) }
 }
 
 /// Runs `swarm` with a deadline and returns its stdout. stderr names the failure.

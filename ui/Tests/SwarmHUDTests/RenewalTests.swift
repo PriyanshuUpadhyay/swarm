@@ -67,7 +67,8 @@ func renewalRunsOncePerAccountAndRefreshesDuringCooldown(renewed: Bool) async th
     esac
     """.utf8).write(to: script)
     try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: script.path)
-    let model = UsageModel(environment: ["SWARM_BIN": script.path])
+    let model = UsageModel(environment: ["SWARM_BIN": script.path],
+                           historyURL: script.deletingLastPathComponent().appending(path: "history.json"))
     model.history = []
     model.accounts = accounts(from: try UsageSnapshot.decode(Data(expired.utf8)).meters)
     model.nextRefresh["claude"] = Date().addingTimeInterval(300)

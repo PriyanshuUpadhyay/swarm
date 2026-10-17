@@ -61,3 +61,9 @@ web-only meters, because the owner asked for the notch.
 ## Links
 
 - Supersedes: 0073. Amends: 0076, 0077. Related: 0057, 0069, 0074, 0079.
+
+## Amendment 2026-10-17: Renew refreshes once
+
+A Claude row with an expired token has a Renew link. It runs `swarm run claude --account <name> -- -p /usage` in the background,
+with a 60 s limit, and then refreshes that provider one time, even inside the 300 s limit. That refresh is the point of Renew,
+because only a new reading shows that the token works again. The same flow was in the yelo HUD. Other refreshes keep the limit.
