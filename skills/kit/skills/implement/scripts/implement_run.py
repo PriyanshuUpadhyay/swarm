@@ -34,7 +34,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "references"))
 import step_run  # noqa: E402
-from step_run import RESULT_HEAD, TODO_HEAD, block, kit_path, plain, status_of  # noqa: E402
+from step_run import RESULT_HEAD, TODO_HEAD, kit_path, plain, status_of  # noqa: E402
 import block_resolver  # noqa: E402
 from block_resolver import CAP, PARAM, kit_profile, read_toml, read_utf8, one_line, sections  # noqa: E402
 
@@ -279,6 +279,12 @@ def approved(folder):
     if not head.startswith(rev(folder, "05-build")):
         raise SystemExit(f"{runs[-1]} covers {head[:12] or 'no head'}, but the build is now {rev(folder, '05-build')}; "
                          "run review-check on the new range")
+
+
+def block(folder, step, *why):
+    if step not in graph():
+        raise SystemExit(f"unknown step {step}; steps are {', '.join(graph())}")
+    step_run.block(folder, step, *why)
 
 
 def code_names(text):

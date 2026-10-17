@@ -267,6 +267,8 @@ def block(folder, step, *why):
     if not reason:
         raise SystemExit("block needs a reason")
     file = Path(folder) / f"{step}.md"
+    if not file.is_file():
+        raise SystemExit(f"step file does not exist: {file}")
     with step_lock(folder, step, command="block"):
         state = status_of(folder, step)
         if state.split()[0] not in ("open", "active"):

@@ -564,34 +564,43 @@ def test_block_command():
     for script in (SCRIPT, SCRIPT.parents[1] / "skills/implement/scripts/implement_run.py"):
         with tempfile.TemporaryDirectory() as tmp:
             folder = Path(tmp)
-            file = folder / "01-ask.md"
+            step = "01-ask" if script == SCRIPT else "01-frame"
+            file = folder / f"{step}.md"
             body = "Uses: upstream@123\n\n## Result\nkept\n"
             original = "Status: active builder\n" + body
             file.write_text(original, encoding="utf-8")
             call = lambda *args: subprocess.run([sys.executable, script, "block", *map(str, args)],
                                                 capture_output=True, text=True)
-            for args in ((), (folder,), (folder, "01-ask"), (folder, "01-ask", " "),
-                         (folder, "01-ask", "--force", "no seats"), ("--force", folder, "01-ask", "no seats")):
+            for args in ((), (folder,), (folder, step), (folder, step, " "),
+                         (folder, step, "--force", "no seats"), ("--force", folder, step, "no seats")):
                 out = call(*args)
                 assert out.returncode == 1 and "Traceback" not in out.stderr, out
                 assert file.read_text(encoding="utf-8") == original
                 assert not (folder / "events.log").exists()
-            with step_run.step_lock(folder, "01-ask"):
-                out = call(folder, "01-ask", "missing seat")
+            for missing in ("06-reviw", "06-review"):
+                out = call(folder, missing, "needs review seats")
+                assert out.returncode == 1 and "Traceback" not in out.stderr, out
+                assert missing in out.stderr
+                assert not (folder / f"{missing}.lock").exists()
+                assert not (folder / f"{missing}.md").exists()
+                assert not (folder / "events.log").exists()
+                assert file.read_text(encoding="utf-8") == original
+            with step_run.step_lock(folder, step):
+                out = call(folder, step, "missing seat")
                 assert out.returncode == 1 and "locked by a running block" in out.stderr, out
-            out = call(folder, "01-ask", "\x1bneeds\nreview\tseats\x7f")
+            out = call(folder, step, "\x1bneeds\nreview\tseats\x7f")
             assert out.returncode == 0, out.stderr
             assert file.read_text(encoding="utf-8") == "Status: blocked needs review seats\n" + body
             events = (folder / "events.log").read_text(encoding="utf-8")
-            assert len(events.splitlines()) == 1 and events.endswith("\t01-ask\tblock needs review seats\n"), events
+            assert len(events.splitlines()) == 1 and events.endswith(f"\t{step}\tblock needs review seats\n"), events
             for state in ("done 123", "skipped route"):
                 file.write_text(f"Status: {state}\n" + body, encoding="utf-8")
-                out = call(folder, "01-ask", "no seats")
+                out = call(folder, step, "no seats")
                 assert out.returncode == 1 and "only an open or active step" in out.stderr, out
                 assert file.read_text(encoding="utf-8") == f"Status: {state}\n" + body
                 assert (folder / "events.log").read_text(encoding="utf-8") == events
             file.write_text("Status: open\n" + body, encoding="utf-8")
-            assert call(folder, "01-ask", "missing input").returncode == 0
+            assert call(folder, step, "missing input").returncode == 0
             assert file.read_text(encoding="utf-8") == "Status: blocked missing input\n" + body
 
 
