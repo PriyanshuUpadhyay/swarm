@@ -66,8 +66,7 @@ pattern file when a build solves a new one.
 Choose `<piece>`, the piece folder, by `references/run-folder.md`, so a new chat continues where
 the last one stopped.
 
-Bind `{{site}}` to the piece folder and `{{shots}}` to `<piece>/shots/`, as repo-relative paths
-when the piece is in a repo. `blocks/blocks.toml` owns these names.
+`start` binds `{{site}}` and `{{shots}}` as `blocks/blocks.toml` says.
 
 Example. `~/work/seed-city/ink/` holds one file per step. Steps 1-4 are done, so line 1 of
 `04-style-frames.md` reads `Status: done 3f9a1c2b7e10`. A new chat gets
