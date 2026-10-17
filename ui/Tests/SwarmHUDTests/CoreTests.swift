@@ -35,6 +35,24 @@ private let fixture = """
     }
 }
 
+@Test func expiredClaudeTokenOffersRenewWithTheExactAccountArgument() throws {
+    let json = #"{"schema":"swarm.usage.v1","meters":[{"provider":"claude","account":"work space; $(echo no)","label":"Work","state":"failed","reason":"New warning text","reason_code":"token_expired"}]}"#
+    let list = accounts(from: try UsageSnapshot.decode(Data(json.utf8)).meters)
+    #expect(list[0].problem == "New warning text")
+    #expect(list[0].renewalArguments == ["run", "claude", "--account", "work space; $(echo no)", "--", "-p", "/usage"])
+}
+
+@Test func renewRequiresClaudeAndTheExpiredReasonCode() {
+    for provider in ["claude", "codex"] {
+        for code in [nil, "relogin_required", "refresh_failed", "no_credentials", "future_code", "token_expired"] {
+            let meter = UsageMeter(provider: provider, account: "a", label: "a", window: nil, windowMinutes: nil,
+                                   usedPct: nil, resetTimeSeconds: nil, state: "failed", reason: "Token expired", reasonCode: code)
+            let row = accounts(from: [meter])[0]
+            #expect((row.renewalArguments != nil) == (provider == "claude" && code == "token_expired"))
+        }
+    }
+}
+
 @Test func codexSlotsTakeTheirKindFromTheWindowLength() {
     #expect(WindowKind(window: "codex:primary", minutes: 300) == .session)
     #expect(WindowKind(window: "codex:secondary", minutes: 10080) == .week)
@@ -95,7 +113,8 @@ private func window(_ kind: WindowKind, _ pct: Int, resetIn hours: Double? = nil
 }
 
 private func account(_ provider: String, _ name: String, _ windows: [UsageWindow]) -> UsageAccount {
-    UsageAccount(provider: provider, name: name, windows: windows, problem: windows.isEmpty ? "Token expired" : nil)
+    UsageAccount(provider: provider, name: name, windows: windows, problem: windows.isEmpty ? "Token expired" : nil,
+                 renewalArguments: nil)
 }
 
 @Test func historyDropsRepeatsAndOldSamples() {
