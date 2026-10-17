@@ -41,6 +41,7 @@ the git common dir (`git rev-parse --git-common-dir`), not the worktree folder n
    python3 $F take <folder> <step> <agent>   # marks the step active and prints its file with its skills in full
    python3 $F done <folder> <step>           # sets the step done, only when every todo has its evidence
    python3 $F skip <folder> <step> <reason>  # skips 02-design, 03-contracts, or 04-impact, never another step
+   python3 $F block <folder> <step> <reason> # records a blocked step
    ```
 
    A catalog step line may also name `block:<id>`, a block or an alias in the kit's `blocks/`

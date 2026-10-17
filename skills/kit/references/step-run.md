@@ -26,10 +26,11 @@ owns how those blocks become rules and evidence todos. `take <folder> <step> <ag
 its `Uses:` line. `done <folder> <step>` sets the step done only when every todo is checked with its
 evidence after the last colon. `done` accepts no `--force`. `status <folder>` also names each stale step.
 `skip <folder> <step> <reason>` records a route skip.
+`block <folder> <step> <reason>` records a blocked step.
 Never set a step done by hand.
 `take` refuses a step active for another agent; use `--force` after confirming that run is gone.
 A dead run holds no lock; `--force` only overrides a stale `Status: active <agent>` line.
-`take`, `done`, and `skip` add one line to `<folder>/events.log` with the time, the step, and the
+`take`, `done`, `skip`, and `block` add one line to `<folder>/events.log` with the time, the step, and the
 event, so the path of a run, and not only its last state, stays readable. A skill script with its
 own step graph or revision, such as the implement skill's `implement_run.py`, imports these
 functions and passes its own.

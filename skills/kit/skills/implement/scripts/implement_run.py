@@ -6,6 +6,7 @@
   take <folder> <step> <who> [--force] mark the step active and print its file with the skills the catalog gives it
   done <folder> <step>         set done with evidence; 07-close moves the run to tmp/flow/_closed/
   skip <folder> <step> <why>    skip design, contracts, or impact, with the reason
+  block <folder> <step> <why>   block an open or active step, with the reason
 
 `start` writes the full text of each step's skills into that step's file, because an agent that gets
 only a path often does not open it (Sonnet workers opened 0 of 4 pointer skills, 2026-10-04 and
@@ -33,7 +34,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "references"))
 import step_run  # noqa: E402
-from step_run import RESULT_HEAD, TODO_HEAD, kit_path, plain, status_of  # noqa: E402
+from step_run import RESULT_HEAD, TODO_HEAD, block, kit_path, plain, status_of  # noqa: E402
 import block_resolver  # noqa: E402
 from block_resolver import CAP, PARAM, kit_profile, read_toml, read_utf8, one_line, sections  # noqa: E402
 
@@ -385,8 +386,8 @@ if __name__ == "__main__":
     if hasattr(sys.stdout, "reconfigure"):
         # Escape non-ASCII output when the console uses an ASCII encoding.
         sys.stdout.reconfigure(errors="backslashreplace")
-    commands = {"start": start, "status": status, "take": take, "done": done, "skip": skip}
-    arity = {"start": (0, 0), "status": (0, 1), "take": (3, 3), "done": (2, 2), "skip": (3, None)}
+    commands = {"start": start, "status": status, "take": take, "done": done, "skip": skip, "block": block}
+    arity = {"start": (0, 0), "status": (0, 1), "take": (3, 3), "done": (2, 2), "skip": (3, None), "block": (3, None)}
     if len(sys.argv) < 2 or sys.argv[1] not in commands:
         raise SystemExit(__doc__)
     try:
@@ -395,8 +396,8 @@ if __name__ == "__main__":
         force = command == "take" and "--force" in args
         if command == "take":
             args = [arg for arg in args if arg != "--force"]
-        if command in ("done", "skip") and "--force" in args:
-            raise SystemExit("done <folder> <step> accepts no --force" if command == "done" else "skip accepts no --force")
+        if command in ("done", "skip", "block") and "--force" in args:
+            raise SystemExit("done <folder> <step> accepts no --force" if command == "done" else f"{command} accepts no --force")
         options = {"force": force} if command == "take" else {}
         if command == "start":
             while len(args) >= 2 and args[0] in ("--profile", "--domains") and args[0][2:] not in options:
