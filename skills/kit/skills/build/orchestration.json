@@ -32,7 +32,7 @@
       "condition": "host-capability-unavailable",
       "detectable": "pre-dispatch",
       "side_effects_may_have_occurred": false,
-      "disposition": "refuse"
+      "disposition": "degrade-and-report"
     },
     {
       "condition": "role-unresolved",
