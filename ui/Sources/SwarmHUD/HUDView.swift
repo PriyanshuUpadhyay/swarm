@@ -425,7 +425,7 @@ struct OpenContent: View {
             ForEach(Array(group.accounts.enumerated()), id: \.element.id) { index, account in
                 Group {
                     if account.windows.isEmpty {
-                        SignedOutRow(account: account)
+                        SignedOutRow(account: account, renewing: model.renewing.contains(account.id), onRenew: model.renew)
                     } else {
                         AccountRow(account: account, kinds: group.kinds, columns: columns, theme: theme, now: now,
                                    showsReading: model.sharedReading(now: now) == nil,
@@ -677,14 +677,33 @@ struct UsageBar: View {
 
 struct SignedOutRow: View {
     let account: UsageAccount
+    let renewing: Bool
+    let onRenew: (UsageAccount) -> Void
 
     var body: some View {
         HStack(spacing: Layout.gap) {
             ProviderMark(provider: account.provider, size: 16).frame(width: Layout.markColumn)
             AccountName(account: account, color: Palette.secondary)
-            Text(account.problem ?? "No reading").font(.system(size: 12)).foregroundStyle(Palette.secondary)
-                .lineLimit(2).truncationMode(.tail).help(account.problem ?? "")
-                .frame(maxWidth: .infinity, alignment: .leading)
+            HStack(spacing: 6) {
+                Text(account.problem ?? "No reading").font(.system(size: 12)).foregroundStyle(Palette.secondary)
+                    .lineLimit(2).truncationMode(.tail).help(account.problem ?? "")
+                if account.renewalArguments != nil {
+                    if renewing {
+                        ProgressView().controlSize(.mini)
+                            .accessibilityLabel("Renewing this account's token")
+                    } else {
+                        Button("Renew") { onRenew(account) }
+                            .buttonStyle(.plain)
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(Palette.warn)
+                            .underline()
+                            .help("Run Claude on \(account.name) in the background to renew its token, then refresh")
+                            .accessibilityLabel("Renew this account's token")
+                            .fixedSize()
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .accessibilityElement(children: .combine)
         .frame(height: Layout.row)

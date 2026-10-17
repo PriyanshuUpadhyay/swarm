@@ -19,6 +19,7 @@ final class UsageModel {
     /// Why the last read failed; nil after a good one. The last good accounts stay on screen.
     var readError: String?
     var refreshing: Set<String> = []
+    var renewing: Set<String> = []
     /// Per provider, when the next manual refresh is allowed (ADR 0087: once in 300 s).
     var nextRefresh: [String: Date] = [:]
     var refreshError: String?
@@ -44,6 +45,7 @@ final class UsageModel {
     private var reading = false
     private var readQueued = false
     private var readingWorking = false
+    private var refreshQueued: Set<String> = []
 
     init(environment: [String: String] = ProcessInfo.processInfo.environment) {
         swarm = swarmPath(environment: environment)
@@ -121,18 +123,36 @@ final class UsageModel {
             .filter { !refreshing.contains($0) && (nextRefresh[$0] ?? .distantPast) <= now }
         guard !providers.isEmpty else { return }
         refreshError = nil
-        let swarm = swarm
         for provider in providers {
-            refreshing.insert(provider)
-            nextRefresh[provider] = now.addingTimeInterval(300)
-            Task {
-                let result = await offPool {
-                    run(swarm, ["usage", "--refresh", "--provider", provider, "--json"], timeout: 30)
-                }
-                if case .failure(let error) = result { refreshError = "\(provider.capitalized): \(error.text)" }
-                refreshing.remove(provider)
-                read()
+            refresh(provider: provider, now: now)
+        }
+    }
+
+    private func refresh(provider: String, now: Date = Date()) {
+        guard refreshing.insert(provider).inserted else { refreshQueued.insert(provider); return }
+        nextRefresh[provider] = now.addingTimeInterval(300)
+        let swarm = swarm
+        Task {
+            let result = await offPool {
+                run(swarm, ["usage", "--refresh", "--provider", provider, "--json"], timeout: 30)
             }
+            if case .failure(let error) = result { refreshError = "\(provider.capitalized): \(error.text)" }
+            refreshing.remove(provider)
+            read()
+            if refreshQueued.remove(provider) != nil { refresh(provider: provider) }
+        }
+    }
+
+    func renew(_ account: UsageAccount) {
+        guard let arguments = account.renewalArguments, renewing.insert(account.id).inserted else { return }
+        let swarm = swarm
+        Task {
+            await offPool { runRenewal(swarm, arguments) }
+            renewing.remove(account.id)
+            // A renewal must fetch again even during the manual-refresh cooldown. If a fetch is
+            // already running, queue one after it so its pre-renewal result cannot hide success.
+            refreshError = nil
+            refresh(provider: account.provider)
         }
     }
 
@@ -158,6 +178,22 @@ struct RunError: Error {
 /// `run` blocks up to its deadline, so it waits on a GCD thread, not on the Swift concurrency pool.
 nonisolated func offPool<T: Sendable>(_ work: @escaping @Sendable () -> T) async -> T {
     await withCheckedContinuation { done in DispatchQueue.global().async { done.resume(returning: work()) } }
+}
+
+/// Runs only the token renewal; usage is fetched by the model after this returns.
+nonisolated func runRenewal(_ executable: String?, _ arguments: [String], timeout: TimeInterval = 60) {
+    guard let executable else { return }
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: executable)
+    process.arguments = arguments
+    process.currentDirectoryURL = FileManager.default.homeDirectoryForCurrentUser
+    process.standardInput = FileHandle.nullDevice
+    process.standardOutput = FileHandle.nullDevice
+    process.standardError = FileHandle.nullDevice
+    let exited = DispatchSemaphore(value: 0)
+    process.terminationHandler = { _ in exited.signal() }
+    do { try process.run() } catch { return }
+    if exited.wait(timeout: .now() + timeout) == .timedOut, process.isRunning { process.terminate() }
 }
 
 /// Runs `swarm` with a deadline and returns its stdout. stderr names the failure.
