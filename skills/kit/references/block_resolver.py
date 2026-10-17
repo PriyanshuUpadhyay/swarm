@@ -5,7 +5,7 @@ import shlex
 from pathlib import Path
 
 from step_run import plain
-from block_ledger import ledger_markdown
+from block_ledger import NOT_NAMED_REASON, ledger_markdown
 
 CAP = 15000
 PARAM = re.compile(r"\{\{(\w+)\}\}")
@@ -229,7 +229,7 @@ def resolve_blocks(root, wanted, profile_name="default", *, blocks, params_overr
         if steps:
             ledger[block] = ("Chosen", f"Loaded by {', '.join(steps)}")
         else:
-            reason = f"[off] {one_line(off[block])}" if block in off else "not named by a domain line"
+            reason = f"[off] {one_line(off[block])}" if block in off else NOT_NAMED_REASON
             ledger[block] = ("Rejected", reason)
     return out, "\n".join(f"- block {b} judge: {line}" for b, lines in judge.items() for line in lines), ledger_markdown(ledger, aliases)
 

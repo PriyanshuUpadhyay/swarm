@@ -1,6 +1,9 @@
 """Shared grouping and Markdown tables for the blocks a workflow chose or rejected."""
 
 
+NOT_NAMED_REASON = "not named by a domain line"
+
+
 def ledger_groups(ledger, aliases):
     """[(status, [(label, [members])])]; alias members appear under their alias."""
     groups = []
@@ -24,7 +27,7 @@ def ledger_markdown(ledger, aliases):
         reasons = {}
         if status == "Rejected":
             for block, (state, why) in ledger.items():
-                if state == status and why == "not named by a domain line":
+                if state == status and why == NOT_NAMED_REASON:
                     reasons.setdefault(why, []).append(block)
         repeated = {why: names for why, names in reasons.items() if len(names) > 1}
         grouped = {name for names in repeated.values() for name in names}
