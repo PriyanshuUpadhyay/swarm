@@ -13,4 +13,4 @@ The kit root, with its `blocks/` and `references/` folders, is two folders up fr
 1. Write the plan by `blocks/planner/SKILL.md`.
 2. Check it and draw it by `blocks/plan-chart/SKILL.md`.
 3. Get the user's approval by `blocks/plan-review/SKILL.md`. Nothing runs before that.
-4. Run the approved steps by the kit's `references/step-run.md`. The agent that takes a step reads each block that its Block cell names and follows it.
+4. Run the approved steps by the kit's `references/step-run.md`. The agent that takes a step reads and follows `blocks/<id>/SKILL.md` for each id on that step's `Blocks:` line in `plan.html`, in the shown order. The resolved list follows `blocks/blocks.toml`.

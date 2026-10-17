@@ -115,6 +115,9 @@ On 2026-10-17, the owner settled the evidence part of #70 with three separate ow
 On 2026-10-17, C6 closed with `blocks/web-ui-basics/SKILL.md` as the check-width owner;
 diagram and page-shot blocks point to it.
 
+On 2026-10-17, C7 closed: `blocks/base-rules/SKILL.md` owns "Real over drawn" (cite the file and line for a fact
+or a code claim). `blocks/diagram-check/SKILL.md` keeps "Labels use source words" and points to it.
+
 On 2026-10-17, the owner settled the voice-file part of #70 in `blocks/voice-review/SKILL.md`;
 `voice-pr` points to that owner.
 
@@ -134,8 +137,9 @@ On 2026-10-17, the owner approved domain selection by `implement_run.py start --
    `call-tree/SKILL.md` does for the impact step (`04-impact.md` in implement).
 
 On 2026-10-17, the owner closed C4/D1 with the diagram form rule in
-`references/explain-formats.md`. The plan chart still refuses parent ids until B14 shares
-the resolver; it still accepts part ids without loading the parent.
+`references/explain-formats.md`. Implement and the plan chart select blocks with
+`references/block_resolver.py`, so the plan chart accepts a parent id as implement does.
+`skills/plan/SKILL.md` directs the step agent to load the resolved list shown in `plan.html`.
 
 ## Catalog
 

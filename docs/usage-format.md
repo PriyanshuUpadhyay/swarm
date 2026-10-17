@@ -70,7 +70,7 @@ A meter read back from the cache file has the base text of its code, such as "Us
 
 | Code | Text | Meaning |
 |---|---|---|
-| `token_expired` | Token expired | The sign-in token expired. The CLI renews it when a chat starts, so Auto may pick the account |
+| `token_expired` | Token expired | The sign-in token expired. For Claude, click Renew in the HUD to run the CLI in the background and refresh usage, so Auto may pick the account. A chat also renews it |
 | `relogin_required` | Sign in again | The provider refused a token that has not expired |
 | `no_credentials` | Account is signed out | The account has no sign-in |
 | `refresh_failed` | Usage refresh failed; old reading | A refresh failed, and the meter keeps the old reading (`stale`) |

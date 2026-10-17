@@ -18,6 +18,7 @@ KIT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(KIT / "references"))  # python3 -I does not add it
 import step_run  # noqa: E402
 from block_ledger import ledger_groups, ledger_markdown  # noqa: E402
+from block_resolver import read_toml, resolve_blocks  # noqa: E402
 
 HEAD = re.compile(r"\|\s*File\s*\|\s*Needs\s*\|\s*Holds\s*\|\s*Block\s*\|\s*Why\s*\|")
 
@@ -68,11 +69,7 @@ def read_ledger(path):
 
 
 def blocks_toml():
-    try:
-        import tomllib
-    except ModuleNotFoundError:
-        raise SystemExit(f"{KIT / 'blocks' / 'blocks.toml'}: reading TOML needs Python 3.11 or later (tomllib)") from None
-    return tomllib.loads((KIT / "blocks" / "blocks.toml").read_text(encoding="utf-8"))
+    return read_toml(KIT / "blocks" / "blocks.toml")
 
 
 def check_ledger(rows, ledger):
@@ -89,7 +86,8 @@ def check_ledger(rows, ledger):
         if status not in ("Chosen", "Rejected") or not why:
             raise SystemExit(f"block {block} needs Status Chosen or Rejected, and a Why")
     chosen = {b for b, (status, _) in ledger.items() if status == "Chosen"}
-    used = {b for r in rows for b in r[3]} - base
+    selected = resolve_blocks(None, {r[0]: r[3] for r in rows}, "default", blocks_dir=KIT / "blocks", pack=False)
+    used = {b for blocks in selected.values() for b in blocks} - base
     if chosen != used:
         odd = sorted(chosen ^ used)[0]
         raise SystemExit(f"block {odd} is {'Chosen but no step uses it' if odd in chosen else 'used by a step but not Chosen'}")
@@ -110,7 +108,6 @@ def check(title, done, rows):
     names = [r[0] for r in rows]
     if dupes := sorted({n for n in names if names.count(n) > 1}):
         raise SystemExit(f"step {dupes[0]} appears twice")
-    uses = {}
     for name, need, holds, blocks, why in rows:
         if not re.fullmatch(r"\d\d-[a-z0-9-]+", name):
             raise SystemExit(f"step {name} is not NN-name")
@@ -119,18 +116,9 @@ def check(title, done, rows):
         for block in blocks:
             if not (KIT / "blocks" / block / "SKILL.md").is_file():
                 raise SystemExit(f"step {name} names block {block}, which is not in the kit")
-            text = (KIT / "blocks" / block / "SKILL.md").read_text(encoding="utf-8")
-            if re.search(r"^  kind: [\"']?parent[\"']?\s*$", text.partition("---\n")[2].partition("---\n")[0], re.M):
-                raise SystemExit(f"{block} is a parent; name its parts until the shared resolver lands")
-        # step_run drops a Needs word that matches no step in silence, so each word must match here.
-        uses[name] = []
-        for word in [w.strip() for w in re.split(r",|\band\b", need) if w.strip() and w.strip() != "none"]:
-            if not (found := step_run.need_files(word, names)):
-                raise SystemExit(f"step {name} needs {word!r}, which no step gives")
-            uses[name] += found
-        if name in uses[name]:
-            raise SystemExit(f"step {name} needs itself")
-    in_plan = {b for r in rows for b in r[3]}
+    uses = step_run.check_needs([r[:3] for r in rows])
+    selected = resolve_blocks(None, {r[0]: r[3] for r in rows}, "default", blocks_dir=KIT / "blocks", pack=False)
+    in_plan = {b for blocks in selected.values() for b in blocks}
     for block in sorted(in_plan):
         if clash := sorted(set(conflicts(block)) & in_plan):
             raise SystemExit(f"blocks {block} and {clash[0]} conflict; keep one")
@@ -193,12 +181,14 @@ def render_ledger(ledger):
 def render(title, done, rows, uses, ledger):
     holds = {r[0]: r[2] for r in rows}
     by_name = {r[0]: r for r in rows}
+    selected = resolve_blocks(None, {r[0]: r[3] for r in rows}, "default", blocks_dir=KIT / "blocks", pack=False)
     out = []
     for i, group in enumerate(stages(uses), 1):
         how = "runs alone" if len(group) == 1 else f"{len(group)} steps run in parallel"
         cards = []
         for name in group:
-            _, _, gives, blocks, why = by_name[name]
+            _, _, gives, _, why = by_name[name]
+            blocks = selected[name]
             gets = "; ".join(f"{html.escape(holds[u])} from <b>{html.escape(u)}</b>" for u in uses[name]) or "the task"
             end = "" if any(name in v for v in uses.values()) else " end"
             cards.append(
