@@ -466,6 +466,40 @@ def test_build_start_and_skip():
         assert step_run.ready(folder, "07-export", ["06-detail"])
 
 
+def test_build_block_todos():
+    with tempfile.TemporaryDirectory() as tmp:
+        folder = Path(tmp, "piece with spaces", "ink")
+        skill = SCRIPT.parents[1] / "skills/build/SKILL.md"
+        out = subprocess.run([sys.executable, "-I", SCRIPT, "start", folder, skill], capture_output=True, text=True)
+        assert out.returncode == 0, out.stderr
+        file = folder / "04-style-frames.md"
+        text = file.read_text(encoding="utf-8")
+        for expected in ("block look-check script:", "block headless-shot script:",
+                         "block look-check judge:", "two or more rounds", "last round have no `miss`",
+                         "block visual-qa judge:"):
+            assert expected in text, f"missing build check {expected}"
+        assert "{{site}}" not in text and "{{shots}}" not in text
+        assert "### Rules" in text and "Skills read:" in text
+        head, end, _ = step_run.todo_scan(text)
+        lines = text[head:end].splitlines()
+        # The old single handoff todo cannot close a step whose block checks are still open.
+        lines[1] = lines[1].replace("- [ ]", "- [x]") + " handoff evidence"
+        file.write_text(text[:head] + "\n".join(lines) + "\n" + text[end:], encoding="utf-8")
+        out = run("done", folder, "04-style-frames")
+        assert out.returncode == 1 and "look-check" in out.stderr, out
+        text = file.read_text(encoding="utf-8")
+        file.write_text("\n".join(line.replace("- [ ]", "- [x]") + " evidence" if line.startswith("- [ ]")
+                                  else line for line in text.splitlines()) + "\n", encoding="utf-8")
+        out = run("done", folder, "04-style-frames")
+        assert out.returncode == 0, out.stderr
+        before = file.read_bytes()
+        assert run("start", folder, skill).returncode == 0
+        assert file.read_bytes() == before, "repeat start must preserve completed steps"
+        export = (folder / "07-export.md").read_text(encoding="utf-8")
+        assert "block headless-shot script:" in export and "block visual-qa judge:" in export
+
+
+test_build_block_todos()
 test_build_start_and_skip()
 
 with tempfile.TemporaryDirectory() as tmp:

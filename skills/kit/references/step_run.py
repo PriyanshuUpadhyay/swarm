@@ -18,6 +18,7 @@ import hashlib
 import os
 import re
 import stat
+import subprocess
 import sys
 import tempfile
 from contextlib import contextmanager
@@ -123,13 +124,39 @@ def start(folder, skill_md):
     folder = Path(folder)
     rows = table(skill_md)
     names = [r[0] for r in rows]
+    selected = {}
+    inside = False
+    for line in Path(skill_md).read_text(encoding="utf-8").splitlines():
+        if re.match(r"\|\s*File\s*\|\s*Needs\s*\|\s*Holds\s*\|\s*Blocks\s*\|", line):
+            inside = True
+        elif inside and line.startswith("|") and not line.startswith("|---"):
+            cells = [c.strip().strip("`") for c in line.strip("|").split("|")]
+            selected[cells[0].removesuffix(".md")] = [b.strip() for b in cells[3].split(",") if b.strip()]
+        elif inside and not line.startswith("|"):
+            break
+    blocks = {}
+    if selected and not all((folder / f"{name}.md").exists() for name in names):
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import block_resolver
+        piece = folder.resolve().parent
+        git = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True)
+        root = Path(git.stdout.strip()) if git.returncode == 0 else piece
+        if not piece.is_relative_to(root):
+            root = piece
+        site = str(piece.relative_to(root))
+        blocks, _, _ = block_resolver.resolve_blocks(
+            root, selected, blocks=Path(__file__).resolve().parents[1] / "blocks",
+            params_override={"site": site, "shots": str(Path(site) / "shots")}, judge_todos=True)
     folder.mkdir(parents=True, exist_ok=True)
     for name, need, holds in rows:
         file = folder / f"{name}.md"
         if file.exists():
             continue
-        file.write_text(f"Status: open\nUses: {', '.join(need_files(need, names))}\n\n"
-                        f"{TODO_HEAD}\n- [ ] {holds}: \n\n{RESULT_HEAD}\n", encoding="utf-8")
+        read, rules, todos = blocks.get(name, ([], "", []))
+        extra = (f"Skills read: {', '.join(read)}\n\n## Rules for this step\n{rules}\n" if read else "")
+        file.write_text(f"Status: open\nUses: {', '.join(need_files(need, names))}\n\n{extra}"
+                        f"{TODO_HEAD}\n" + "".join(f"- [ ] {item}: \n" for item in [holds] + todos)
+                        + f"\n{RESULT_HEAD}\n", encoding="utf-8")
     print(folder)
 
 

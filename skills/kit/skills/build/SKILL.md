@@ -77,15 +77,15 @@ A piece is a step run, so `references/step-run.md` owns the status line, ready a
 pick-up, close, and when a step waits for the user. Run `start <piece>/ink/ <this SKILL.md>`
 with its script. Each file holds the step's output, not a copy of it.
 
-| File | Needs | Holds |
-|---|---|---|
-| `01-intake.md` | none | story, references, benchmark, form, size, limits, and delivery |
-| `02-look.md` | intake | reference analysis and style grammar |
-| `03-story.md` | intake | story sheet, shot list, transitions, and scene graph |
-| `04-style-frames.md` | look, story | style frames, compare images, and scores |
-| `05-animatic.md` | story | animatic and timing |
-| `06-detail.md` | style-frames, animatic | detail passes and frame paths |
-| `07-export.md` | style-frames, detail | QA log, export, and handoff |
+| File | Needs | Holds | Blocks |
+|---|---|---|---|
+| `01-intake.md` | none | story, references, benchmark, form, size, limits, and delivery | reference-analysis |
+| `02-look.md` | intake | reference analysis and style grammar | reference-analysis |
+| `03-story.md` | intake | story sheet, shot list, transitions, and scene graph | story |
+| `04-style-frames.md` | look, story | style frames, compare images, and scores | look-check, headless-shot, visual-qa |
+| `05-animatic.md` | story | animatic and timing | build-canvas |
+| `06-detail.md` | style-frames, animatic | detail passes and frame paths | build-canvas |
+| `07-export.md` | style-frames, detail | QA log, export, and handoff | build-canvas, headless-shot, visual-qa |
 
 - A build step lists its frame paths and a hash of its source files in its body, so a code change
   changes its revision.
