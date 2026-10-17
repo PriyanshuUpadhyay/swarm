@@ -62,7 +62,7 @@ def resolve_blocks(root, wanted, profile_name="default", *, blocks, params_overr
         raise SystemExit(f"[params] {bad} holds a backtick in {repo_file}; a value is a path or a name")
     for key, paths in repo.get("add", {}).items():
         if key not in wanted:
-            raise SystemExit(f"[add] {key} in {repo_file} is not a step; steps are {', '.join(wanted)}")
+            continue
         if not isinstance(paths, list) or not all(isinstance(p, str) for p in paths):
             raise SystemExit(f"[add] {key} in {repo_file} must be a list of paths, such as {key} = [\"docs/x.md\"]")
         for path in paths:

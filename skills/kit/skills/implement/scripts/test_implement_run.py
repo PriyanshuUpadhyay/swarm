@@ -980,7 +980,6 @@ def test_block_fail_closed(tmp):
         ("add-string", PARAMS + '[add]\nbuild = "docs/x.md"\n', "must be a list of paths"))]
     cases += [
         ("add-missing", PROVE_BUILD, PARAMS + '[add]\nbuild = ["docs/none.md"]\n', (), "[add] docs/none.md in"),
-        ("add-step", PROVE_BUILD, PARAMS + '[add]\nship = ["docs/x.md"]\n', (), "[add] ship in"),
         ("table", PROVE_BUILD, PARAMS + "[extra]\nx = 1\n", (), "unknown table [extra]"),
         ("param-dash", PROVE_BUILD, PARAMS.replace('site = "site"', 'site = "--version"'), (), "[params] site starts with '-'"),
         ("param-dash-space", PROVE_BUILD, PARAMS.replace('site = "site"', 'site = "\\n -x"'), (), "[params] site starts with '-'"),
@@ -1284,7 +1283,7 @@ def test_block_repo_file(tmp):
     Path(tmp, "repo-file", "app", "docs", "our-api.md").write_text(
         "# our-api\nConcept: x\n\n## Rules\n- OUR RULE 7\n\n## Check (script)\n- `true` runs: it proves nothing\n\n## Check (judge)\n", encoding="utf-8")
     out, folder, _, _ = blocks_start(tmp, "repo-file", "- design: block:tech-diagram\n",
-                                     PARAMS + '[add]\nbuild = ["docs/our-api.md"]\n[off]\nhtml-diagram = "this repo\\u001b draws\\nSVG"\n')
+                                     PARAMS + '[add]\nbuild = ["docs/our-api.md"]\n04-style-frames = ["docs/visual.md"]\n[off]\nhtml-diagram = "this repo\\u001b draws\\nSVG"\n')
     assert out.returncode == 0, out.stderr
     build = step_text(folder, "05-build")
     assert "===== block:our-api =====" in build and "OUR RULE 7" in build and "- [ ] block our-api script: `true` runs: it proves nothing: " in build, build

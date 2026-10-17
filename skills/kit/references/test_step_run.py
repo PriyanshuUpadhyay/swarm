@@ -499,6 +499,25 @@ def test_build_block_todos():
         assert "block headless-shot script:" in export and "block visual-qa judge:" in export
 
 
+def test_build_repo_additions():
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+        subprocess.run(["git", "init", "-q", str(repo)], env=env, check=True)
+        (repo / "docs").mkdir()
+        (repo / "docs/rule.md").write_text("## Rules\n- IMPLEMENT ONLY\n", encoding="utf-8")
+        (repo / "docs/visual.md").write_text("## Rules\n- BUILD ONLY\n## Check (script)\n- none: text only\n## Check (judge)\n- Is it visual?\n", encoding="utf-8")
+        (repo / ".blocks.toml").write_text(
+            '[params]\nsource_of_truth = "docs/rule.md"\n[add]\nbuild = ["docs/rule.md"]\n04-style-frames = ["docs/visual.md"]\n', encoding="utf-8")
+        folder = repo / "art-b/ink"
+        skill = SCRIPT.parents[1] / "skills/build/SKILL.md"
+        out = subprocess.run([sys.executable, SCRIPT, "start", folder, skill],
+                             cwd=repo, env=env, capture_output=True, text=True)
+        assert out.returncode == 0, out.stderr
+        text = (folder / "04-style-frames.md").read_text(encoding="utf-8")
+        assert "BUILD ONLY" in text and "IMPLEMENT ONLY" not in text, text
+
+
 def test_block_command():
     for script in (SCRIPT, SCRIPT.parents[1] / "skills/implement/scripts/implement_run.py"):
         with tempfile.TemporaryDirectory() as tmp:
@@ -534,6 +553,7 @@ def test_block_command():
             assert file.read_text(encoding="utf-8") == "Status: blocked missing input\n" + body
 
 
+test_build_repo_additions()
 test_block_command()
 test_build_block_todos()
 test_build_start_and_skip()

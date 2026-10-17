@@ -37,6 +37,7 @@
 #   [params]  name = "value"                fills {{name}}, e.g. shots = "tmp/shots"
 #   [add]     build = ["path/in/repo.md"]   adds repo blocks to a step; the id is the file stem, or the folder of a `SKILL.md`
 #   [off]     block-id = "reason"           drops a block and prints `Off: <id>: <reason>` where it would join
+# Only [add] keys named in the current skill's steps apply to that run.
 
 base = ["base-rules"]
 
