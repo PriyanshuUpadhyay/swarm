@@ -97,7 +97,7 @@ range. Answer each `ask` in the run's `answers.md` per review-check's Asks secti
 and ask the user after three review rounds on this step. `deliver` takes `06-review` again for each
 review round, so the warning counts real runs; the cap is a warning, not enforced.
 
-`implement_run.py done <folder> 07-close` closes and archives the run, then prints its new path.
+`implement_run.py done <folder> 07-close` closes the run, moves it to `tmp/flow/_closed/`, then prints its new path.
 For a second run on the same branch and day, use the command's recovery: rename its run folder
 to a distinct name, such as `<folder>-second`, then run `done <renamed-folder> 07-close`.
 Release is a separate action that the user asks for.
