@@ -14,6 +14,7 @@ metadata:
 ---
 
 ## Rules
+- Run from the repo root when you use this block's script checks.
 Structure
 - Semantic HTML before ARIA. `<button>` for actions, `<a>` for navigation, never a `<div>` with a click handler.
 - Headings go in order, `<h1>` to `<h6>`. Add a skip link to the main content. Heading anchors get `scroll-margin-top`.

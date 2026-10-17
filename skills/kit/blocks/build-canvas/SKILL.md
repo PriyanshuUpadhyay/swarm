@@ -14,6 +14,7 @@ metadata:
 ---
 
 ## Rules
+- Run from the repo root when you use this block's script checks.
 The item file `blocks/build-canvas/references/mark-making.md` in the kit holds the mark-making recipes: density, tone, texture, the mass stack, line, surface, depth, generative plates, and libraries. Read it before a detail pass.
 
 Architecture
