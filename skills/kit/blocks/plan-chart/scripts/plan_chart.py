@@ -90,7 +90,8 @@ def check_ledger(rows, ledger):
         if status not in ("Chosen", "Rejected") or not why:
             raise SystemExit(f"block {block} needs Status Chosen or Rejected, and a Why")
     chosen = {b for b, (status, _) in ledger.items() if status == "Chosen"}
-    used = {b for r in rows for b in r[3]} - base
+    selected = resolve_blocks(None, {r[0]: r[3] for r in rows}, "default", blocks_dir=KIT / "blocks", pack=False)
+    used = {b for blocks in selected.values() for b in blocks} - base
     if chosen != used:
         odd = sorted(chosen ^ used)[0]
         raise SystemExit(f"block {odd} is {'Chosen but no step uses it' if odd in chosen else 'used by a step but not Chosen'}")

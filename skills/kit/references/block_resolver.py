@@ -9,7 +9,7 @@ from block_ledger import ledger_markdown
 from step_run import plain
 
 BLOCKS = Path(__file__).resolve().parents[1] / "blocks"
-CAP = 15000  # a block is refused over this size; cutting could stop inside a check
+CAP = 15000  # skills are cut to this size; blocks over it are refused, since a cut could stop inside a check
 PARAM = re.compile(r"\{\{(\w+)\}\}")
 CHECKS = ("Check (script)", "Check (judge)")
 
@@ -31,6 +31,8 @@ def resolve_blocks(root, wanted, profile_name, *, blocks_dir=None, pack=True):
     repo_file = root / ".blocks.toml" if root is not None else None
     # A kit copy without blocks can still run; a shipped catalog is read even when all blocks are rejected.
     if not kit_file.exists() and profile_name == "default" and not (repo_file and repo_file.exists()) and not any(wanted.values()):
+        if not pack:
+            return {key: [] for key in wanted}
         return {key: ([], "", []) for key in wanted}, "", ledger_markdown({}, {})
     kit = read_toml(kit_file)
     files = {path.parent.name: path for path in sorted(blocks_dir.glob("*/SKILL.md"))}
@@ -132,7 +134,7 @@ def resolve_blocks(root, wanted, profile_name, *, blocks_dir=None, pack=True):
     named = {}
     for key, ids in wanted.items():
         if unknown := [i for i in ids if i not in files and i not in aliases]:
-            raise SystemExit(f"unknown block id {unknown[0]} in the {key} line of ~/.flow/domains.md")
+            raise SystemExit(f"unknown block id {unknown[0]} in step {key}")
         named[key] = [m for i in ids for m in aliases.get(i, [i])] + added.get(key, [])
     base = kit.get("base", []) if pack and any(named.values()) else []  # a run that names no block stays as before
     # The base block needs source_of_truth, which only the repo's .blocks.toml sets. A repo with no such file
@@ -248,10 +250,10 @@ def one_line(text):
 
 
 def read_toml(path):
-    try:  # only start reads TOML, so the other commands still run on a Python before 3.11
+    try:  # import when needed, so commands that do not read TOML still run on Python before 3.11
         import tomllib
     except ImportError:
-        raise SystemExit(f"{path}: reading TOML needs Python 3.11 or later (tomllib); run start with a newer python3, for example from Homebrew") from None
+        raise SystemExit(f"{path}: reading TOML needs Python 3.11 or later (tomllib); use a newer python3, for example from Homebrew") from None
     try:
         return tomllib.loads(read_utf8(path))
     except (tomllib.TOMLDecodeError, RecursionError, ValueError) as error:  # a deep array, a huge integer

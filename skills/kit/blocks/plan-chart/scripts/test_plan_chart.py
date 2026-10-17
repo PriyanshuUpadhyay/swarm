@@ -93,13 +93,29 @@ def test_parent_selection():
     parts = ["when-to-diagram", "html-diagram", "call-tree", "diagram-check"]
     for selected, expected in (("diagram, html-diagram, diagram", ["diagram", *parts]),
                                ("html-diagram, html-diagram", ["diagram", "html-diagram"])):
-        chosen = CHOSEN[:-3] + [*dict.fromkeys(selected.split(", ")), "voice-reply"]
+        chosen = CHOSEN[:-3] + expected + ["voice-reply"]
         text = PLAN.split("\n## Blocks considered")[0].replace("| build-site, web-ui-basics |", f"| {selected} |") + ledger(chosen)
         out, folder = chart(text)
         assert out.returncode == 0, out.stderr
         page = (folder / "plan.html").read_text(encoding="utf-8")
         card = page.split("<h2>04-build</h2>")[1].split("</li>", 1)[0]
         assert card.split("</p>", 1)[0] == '<p>Blocks: ' + ", ".join(f"<code>{b}</code>" for b in expected), card
+
+
+def test_rejected_parent_stops():
+    chosen = CHOSEN[:-3] + ["html-diagram", "voice-reply"]
+    text = PLAN.split("\n## Blocks considered")[0].replace("| build-site, web-ui-basics |", "| html-diagram |") + ledger(chosen)
+    out, folder = chart(text)
+    assert out.returncode == 1 and "block diagram is used by a step but not Chosen" in out.stderr, out
+    assert not (folder / "plan.html").exists()
+
+
+def test_empty_selection_without_catalog():
+    folder = Path(tempfile.mkdtemp())
+    wanted = {"build": [], "reply": []}
+    assert block_resolver.resolve_blocks(None, wanted, "default", blocks_dir=folder, pack=False) == wanted
+    packed, judge, _ = block_resolver.resolve_blocks(None, wanted, "default", blocks_dir=folder)
+    assert packed == {key: ([], "", []) for key in wanted} and judge == ""
 
 
 def test_bad_parent_stops_both():

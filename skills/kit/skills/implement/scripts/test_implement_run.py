@@ -813,10 +813,10 @@ def test_start_without_tomllib(tmp):
     assert out.returncode == 0 and "01-frame" in out.stdout, out
     shutil.rmtree(folder)  # so start must read the block catalog again
     out = run("start")
-    assert out.returncode == 1 and out.stderr == f"{implement_run.BLOCKS / 'blocks.toml'}: reading TOML needs Python 3.11 or later (tomllib); run start with a newer python3, for example from Homebrew\n", out
+    assert out.returncode == 1 and out.stderr == f"{implement_run.BLOCKS / 'blocks.toml'}: reading TOML needs Python 3.11 or later (tomllib); use a newer python3, for example from Homebrew\n", out
     (repo.parent / "home/.flow/domains.md").write_text("## any\n", encoding="utf-8")
     out = run("start")
-    assert out.returncode == 1 and out.stderr == f"{implement_run.BLOCKS / 'blocks.toml'}: reading TOML needs Python 3.11 or later (tomllib); run start with a newer python3, for example from Homebrew\n", out
+    assert out.returncode == 1 and out.stderr == f"{implement_run.BLOCKS / 'blocks.toml'}: reading TOML needs Python 3.11 or later (tomllib); use a newer python3, for example from Homebrew\n", out
 
 
 def test_start_kit_without_blocks(tmp):
