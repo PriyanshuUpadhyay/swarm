@@ -1,4 +1,4 @@
-# Block catalog for the implement skill. This file owns the format; skills/implement/SKILL.md points here.
+# Block catalog for kit workflows. This file owns the format; references/block_resolver.py reads it.
 #
 # A block is a folder here with one `SKILL.md`, and the folder name is its id. The file opens with
 # Agent Skills frontmatter: `name` (the id), `description` (the concept; start writes it to the step as

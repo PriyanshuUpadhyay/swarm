@@ -35,11 +35,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "references"))
 import step_run  # noqa: E402
 from step_run import RESULT_HEAD, TODO_HEAD, kit_path, plain, status_of  # noqa: E402
-import block_resolver  # noqa: E402
-from block_resolver import CAP, PARAM, kit_profile, read_toml, read_utf8, one_line, sections  # noqa: E402
+from block_resolver import BLOCKS, CAP, kit_profile, one_line, read_toml, read_utf8, resolve_blocks, sections  # noqa: E402
 
 SKILL_MD = Path(__file__).resolve().parents[1] / "SKILL.md"
-BLOCKS = Path(__file__).resolve().parents[3] / "blocks"
 SKIPPABLE = ("02-design", "03-contracts", "04-impact")
 SEARCH_SECONDS = 120
 SEARCH_EACH_SECONDS = 60
@@ -208,11 +206,6 @@ def skill_paths(step, domains=None):
         if item not in paths:
             paths.append(item)
     return [kit_path(p) for p in paths + [str(root / r) for r in repo_rules]], [p.removeprefix("block:") for p in items if p.startswith("block:")]
-
-
-def resolve_blocks(root, wanted, profile_name):
-    return block_resolver.resolve_blocks(root, wanted, profile_name, blocks=BLOCKS)
-
 
 
 def take(folder, step, who, force=False):

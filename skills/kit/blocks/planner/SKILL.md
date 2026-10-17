@@ -28,7 +28,7 @@ metadata:
 - The first step states the requirements (usually `requirements`) unless the task is one question.
 - A plan whose steps make commits has a `change-review` step after the last build step.
 - The last step is the only step whose output no step uses. It holds a `voice-` block that fits the output: `voice-reply` for a reply to the owner, `voice-teach` when the owner wants to understand a subject, `voice-review` for review comments, and `voice-pr` for PR text.
-- After the step table, add `## Blocks considered` with the header `| Block | Status | Why |`. It holds one row for every catalog block except the base block, once, with Status `Chosen` or `Rejected` and one reason. `Chosen` is exactly the set of blocks that the steps name. Sub-blocks are the members of an alias in `blocks/blocks.toml` `[aliases]`. They have their own rows, and `plan-chart` shows them under their alias.
+- After the step table, add `## Blocks considered` with the header `| Block | Status | Why |`. It holds one row for every catalog block except the base block, once, with Status `Chosen` or `Rejected` and one reason. `Chosen` is exactly the set of blocks that the steps load, after the parent and part expansion that `blocks/blocks.toml` sets. Sub-blocks are the members of an alias in `blocks/blocks.toml` `[aliases]`. They have their own rows, and `plan-chart` shows them under their alias.
 - Two blocks that name each other in `conflicts` are alternatives. Keep one and say why in Why.
 - When no block fits a step, write the step with the nearest block and say what is missing in Why. Do not invent a block id.
 - Then run the `plan-chart` block, then the `plan-review` block. Work starts only after the owner approves.

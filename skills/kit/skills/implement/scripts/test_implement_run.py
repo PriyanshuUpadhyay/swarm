@@ -20,6 +20,7 @@ if sys.version_info < (3, 11):
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # python3 -I does not add the script's folder
 import implement_run  # noqa: E402
+import block_resolver  # noqa: E402
 
 SCRIPT = Path(__file__).resolve().with_name("implement_run.py")  # the kit path, also when run through a linked skill folder
 CALLERS_MEMORY_LIMIT = 1_000_000
@@ -742,9 +743,9 @@ def test_block_example_params(tmp):
     one; a repo with only source_of_truth starts a close step that names done-when-evidence."""
     for path in sorted(implement_run.BLOCKS.glob("*/SKILL.md")):
         # The loader drops the frontmatter, so a {{param}} there is never filled and must not count.
-        parts = implement_run.sections(path.read_text(encoding="utf-8").partition("\n---\n")[2])
-        rest = {p for head, lines in parts if head != "Example" for p in implement_run.PARAM.findall("\n".join(lines))}
-        example = {p for head, lines in parts if head == "Example" for p in implement_run.PARAM.findall("\n".join(lines))}
+        parts = block_resolver.sections(path.read_text(encoding="utf-8").partition("\n---\n")[2])
+        rest = {p for head, lines in parts if head != "Example" for p in block_resolver.PARAM.findall("\n".join(lines))}
+        example = {p for head, lines in parts if head == "Example" for p in block_resolver.PARAM.findall("\n".join(lines))}
         assert example <= rest, (path.parent.name, example - rest)
     root = Path(tmp, "example-params")
     root.mkdir()
@@ -836,10 +837,10 @@ def test_start_without_tomllib(tmp):
     assert out.returncode == 0 and "01-frame" in out.stdout, out
     shutil.rmtree(folder)  # so start must read the block catalog again
     out = run("start")
-    assert out.returncode == 1 and out.stderr == f"{implement_run.BLOCKS / 'blocks.toml'}: reading TOML needs Python 3.11 or later (tomllib); run start with a newer python3, for example from Homebrew\n", out
+    assert out.returncode == 1 and out.stderr == f"{implement_run.BLOCKS / 'blocks.toml'}: reading TOML needs Python 3.11 or later (tomllib); use a newer python3, for example from Homebrew\n", out
     (repo.parent / "home/.flow/domains.md").write_text("## any\n", encoding="utf-8")
     out = run("start")
-    assert out.returncode == 1 and out.stderr == f"{implement_run.BLOCKS / 'blocks.toml'}: reading TOML needs Python 3.11 or later (tomllib); run start with a newer python3, for example from Homebrew\n", out
+    assert out.returncode == 1 and out.stderr == f"{implement_run.BLOCKS / 'blocks.toml'}: reading TOML needs Python 3.11 or later (tomllib); use a newer python3, for example from Homebrew\n", out
 
 
 def test_start_kit_without_blocks(tmp):
@@ -1068,7 +1069,7 @@ def test_block_fail_closed(tmp):
                          ('base = ["nope"]\n[profiles.default]\n', "unknown block id nope in base of"),
                          ('[profiles.default]\nmerge = ["a"]\n', "merges a, which is not an alias")):
         (kit / "blocks.toml").write_text(toml, encoding="utf-8")
-        with patch.object(implement_run, "BLOCKS", kit):
+        with patch.object(block_resolver, "BLOCKS", kit):
             try:
                 implement_run.resolve_blocks(Path(tmp), {"build": ["a"]}, "default")
                 raise AssertionError(f"start must stop: {reason}")
@@ -1084,7 +1085,7 @@ def test_block_frontmatter(tmp):
     (kit / "blocks.toml").write_text("[profiles.default]\n", encoding="utf-8")
     block = ('---\nname: %s\ndescription: "Says hello."\nmetadata:\n  kind: rule\n---\n\n## Rules\n- Say hello.\n\n'
              "## Check (script)\n- none: no output\n\n## Check (judge)\n- none: no output\n")
-    with patch.object(implement_run, "BLOCKS", kit):
+    with patch.object(block_resolver, "BLOCKS", kit):
         (kit / "a" / "SKILL.md").write_text(block % "a", encoding="utf-8")
         text = implement_run.resolve_blocks(Path(tmp), {"build": ["a"]}, "default")[0]["build"][1]
         assert "Concept: Says hello." in text and "---" not in text and "kind: rule" not in text, text
@@ -1207,7 +1208,7 @@ def test_parent_refusals(tmp):
             text = (source / "html-diagram" / "SKILL.md").read_text(encoding="utf-8")
             text = text.replace("name: html-diagram", f"name: {block}").replace("  kind: rule", f'  kind: {kind}\n  parts: "{parts}"')
             path.write_text(text, encoding="utf-8")
-        with patch.object(implement_run, "BLOCKS", blocks):
+        with patch.object(block_resolver, "BLOCKS", blocks):
             try:
                 implement_run.resolve_blocks(root, {"design": ["html-diagram"]}, "default")
             except SystemExit as caught:
@@ -1239,7 +1240,7 @@ def shared_rule_copies(blocks):
         text = path.read_text(encoding="utf-8")
         if not (members := re.search(r'^  parts: "(.*)"$', text, re.M)):
             continue
-        rules = next(lines for head, lines in implement_run.sections(text) if head == "Rules")
+        rules = next(lines for head, lines in block_resolver.sections(text) if head == "Rules")
         for rule in (line[2:] for line in rules if line.startswith("- ")):
             for sentence in re.split(r"(?<=[.!?])\s+", rule):
                 phrase = " ".join(re.findall(r"[a-z0-9]+", sentence.lower())[:7])
@@ -1257,7 +1258,7 @@ def test_shared_rules_not_copied(tmp):
     parent = (blocks / "diagram" / "SKILL.md").read_text(encoding="utf-8")
     part = blocks / "html-diagram" / "SKILL.md"
     original = part.read_text(encoding="utf-8")
-    for rule in next(lines for head, lines in implement_run.sections(parent) if head == "Rules"):
+    for rule in next(lines for head, lines in block_resolver.sections(parent) if head == "Rules"):
         if rule.startswith("- "):
             for sentence in re.split(r"(?<=[.!?])\s+", rule[2:]):
                 part.write_text(original + "\n- " + sentence + "\n", encoding="utf-8")

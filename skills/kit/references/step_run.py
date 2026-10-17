@@ -86,8 +86,49 @@ def table(skill_md):
 
 def need_files(need, names):
     """A Needs cell names steps by their word ("question", "local, web"); map each to its file."""
-    return list(dict.fromkeys(n for word in re.split(r",|\band\b", need) if word.strip() and word.strip() != "none"
-                              for n in names if n.split("-", 1)[1].startswith(word.strip().split()[0])))
+    found = []
+    for word in re.split(r",|\band\b", need):
+        word = word.strip()
+        if word and word != "none":
+            first = word.split()[0]
+            exact = [n for n in names if n.split("-", 1)[1] == first]  # an exact word wins over a prefix
+            found += exact or [n for n in names if n.split("-", 1)[1].startswith(first)]
+    return list(dict.fromkeys(found))
+
+
+def check_needs(rows):
+    """Each step's needed step files, or SystemExit naming the step and the word of the first defect."""
+    names = [r[0] for r in rows]
+    uses, word_of = {}, {}
+    for name, need, _ in rows:
+        uses[name] = []
+        for word in (w.strip() for w in re.split(r",|\band\b", need)):
+            if not word or word == "none":
+                continue
+            found = need_files(word, names)
+            if not found:
+                raise SystemExit(f"step {name} needs {word!r}, which no step gives")
+            if len(found) > 1:
+                raise SystemExit(f"step {name} needs {word!r}, which fits {', '.join(found)}; name one")
+            if found[0] not in uses[name]:
+                uses[name] += found
+            word_of[name, found[0]] = word
+    done, path = set(), []
+
+    def walk(name):
+        if name in path:
+            ring = path[path.index(name):] + [name]
+            raise SystemExit("cycle: " + " -> ".join(f"{a} needs {word_of[a, b]!r}" for a, b in zip(ring, ring[1:])) + f" -> {name}")
+        if name not in done:
+            path.append(name)
+            for n in uses[name]:
+                walk(n)
+            path.pop()
+            done.add(name)
+
+    for name in names:
+        walk(name)
+    return uses
 
 
 def needs(folder, step):
@@ -157,8 +198,9 @@ def start(folder, skill_md):
             root = piece
         site = str(piece.relative_to(root))
         blocks, _, _ = block_resolver.resolve_blocks(
-            root, selected, blocks=Path(__file__).resolve().parents[1] / "blocks",
+            root, selected, "default", blocks_dir=Path(__file__).resolve().parents[1] / "blocks",
             params_override={"site": site, "shots": str(Path(site) / "shots")}, judge_todos=True)
+    uses = check_needs([r[:3] for r in rows])
     folder.mkdir(parents=True, exist_ok=True)
     for name, need, holds, _ in rows:
         file = folder / f"{name}.md"
@@ -168,7 +210,7 @@ def start(folder, skill_md):
         if any(token in rules + "\n".join(todos) for token in ("blocks/", "the kit's `references/", "<kit root>")):
             rules = f"Kit blocks (`blocks/<id>/`) and the kit's `references/` are under {kit_path(Path(__file__).resolve().parents[1])} (the kit root).\n{rules}"
         extra = (f"Skills read: {', '.join(read)}\n\n## Rules for this step\n{rules}\n" if read else "")
-        file.write_text(f"Status: open\nUses: {', '.join(need_files(need, names))}\n\n{extra}"
+        file.write_text(f"Status: open\nUses: {', '.join(uses[name])}\n\n{extra}"
                         f"{TODO_HEAD}\n" + "".join(f"- [ ] {item}: \n" for item in [holds] + todos)
                         + f"\n{RESULT_HEAD}\n", encoding="utf-8")
     print(folder)

@@ -522,7 +522,7 @@ def test_build_start_without_tomllib():
         catalog = SCRIPT.parents[1] / "blocks/blocks.toml"
         assert out.returncode == 1 and out.stderr == (
             f"{catalog}: reading TOML needs Python 3.11 or later (tomllib); "
-            "run start with a newer python3, for example from Homebrew\n"), out
+            "use a newer python3, for example from Homebrew\n"), out
         assert not folder.exists()
         folder.mkdir(parents=True)
         (folder / "01-intake.md").write_text("Status: open\nUses: \n", encoding="utf-8")
@@ -625,6 +625,39 @@ test_build_repo_additions()
 test_block_command()
 test_build_block_todos()
 test_build_start_and_skip()
+
+
+def test_start_refuses_bad_needs():
+    head = "| File | Needs | Holds |\n|---|---|---|\n"
+    cases = {  # table rows -> text that the refusal must hold
+        "unknown": ("| `01-ask.md` | none | q |\n| `02-look.md` | nothing | x |\n", ["02-look", "'nothing'"]),
+        "ambiguous": ("| `01-ask.md` | none | q |\n| `02-look-local.md` | ask | x |\n"
+                      "| `03-look-web.md` | ask | y |\n| `04-report.md` | look | z |\n", ["04-report", "'look'"]),
+        "cycle": ("| `01-ask.md` | report | q |\n| `02-look.md` | ask | x |\n| `03-report.md` | look | y |\n",
+                  ["cycle", "01-ask needs 'report'"]),
+    }
+    for case, (rows, words) in cases.items():
+        with tempfile.TemporaryDirectory() as tmp:
+            skill = Path(tmp) / "SKILL.md"
+            skill.write_text(head + rows, encoding="utf-8")
+            out = run("start", Path(tmp) / "run", skill)
+            assert out.returncode == 1 and "Traceback" not in out.stderr, (case, out)
+            assert all(w in out.stderr for w in words), (case, out.stderr)
+            assert not (Path(tmp) / "run").exists() or not step_run.steps(Path(tmp) / "run"), case
+    with tempfile.TemporaryDirectory() as tmp:  # an exact word names its step even when another step starts with it
+        skill = Path(tmp) / "SKILL.md"
+        skill.write_text(head + "| `01-review.md` | none | a |\n| `02-review-fix.md` | review | b |\n"
+                         "| `03-reply.md` | review | c |\n", encoding="utf-8")
+        out = run("start", Path(tmp) / "run", skill)
+        assert out.returncode == 0, out.stderr
+        assert (Path(tmp) / "run" / "03-reply.md").read_text(encoding="utf-8").splitlines()[1] == "Uses: 01-review"
+    for skill in ("council", "build", "research", "web-search", "implement"):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = run("start", Path(tmp) / "run", SCRIPT.parents[1] / "skills" / skill / "SKILL.md")
+            assert out.returncode == 0, (skill, out.stderr)
+
+
+test_start_refuses_bad_needs()
 
 with tempfile.TemporaryDirectory() as tmp:
     skill = Path(tmp, "SKILL.md")

@@ -1,14 +1,16 @@
-"""Resolve kit blocks into rules, script todos, judge checks, and a choice ledger."""
+"""Shared block membership, selection, validation, and packing for kit workflows."""
+
 import hashlib
 import re
 import shlex
 import sys
 from pathlib import Path
 
-from step_run import plain
 from block_ledger import NOT_NAMED_REASON, ledger_markdown
+from step_run import plain
 
-CAP = 15000  # characters per skill, cut to it, and per block, refused over it; engineering-standards is about 10k
+BLOCKS = Path(__file__).resolve().parents[1] / "blocks"
+CAP = 15000  # skills are cut to this size; blocks over it are refused, since a cut could stop inside a check
 PARAM = re.compile(r"\{\{(\w+)\}\}")
 CHECKS = ("Check (script)", "Check (judge)")
 
@@ -19,16 +21,22 @@ def kit_profile(kit, kit_file, name):
     return profile
 
 
-def resolve_blocks(root, wanted, profile_name="default", *, blocks, params_override=None, judge_todos=False):
+def resolve_blocks(root, wanted, profile_name, *, blocks_dir=None, pack=True, params_override=None, judge_todos=False):
     """For each step key in `wanted` (key -> catalog block ids), the blocks it gets from the catalog and
     the repo's .blocks.toml, packed by the profile: (Skills read items, rules text, script todos). Also
-    the judge lines of every block that ran, once each, and the blocks table. blocks/blocks.toml owns the format."""
-    kit_file, repo_file = blocks / "blocks.toml", root / ".blocks.toml"
+    the judge lines of every block that ran, once each, and the blocks table. blocks/blocks.toml owns the format.
+    With pack=False, return only the selected ids, without base rules or filled content. A root of None
+    reads only the kit catalog, as a plan does before a repo run exists."""
+    blocks_dir = BLOCKS if blocks_dir is None else blocks_dir
+    kit_file = blocks_dir / "blocks.toml"
+    repo_file = root / ".blocks.toml" if root is not None else None
     # A kit copy without blocks can still run; a shipped catalog is read even when all blocks are rejected.
-    if not kit_file.exists() and profile_name == "default" and not repo_file.exists() and not any(wanted.values()):
+    if not kit_file.exists() and profile_name == "default" and not (repo_file and repo_file.exists()) and not any(wanted.values()):
+        if not pack:
+            return {key: [] for key in wanted}
         return {key: ([], "", []) for key in wanted}, "", ledger_markdown({}, {})
     kit = read_toml(kit_file)
-    files = {path.parent.name: path for path in sorted(blocks.glob("*/SKILL.md"))}
+    files = {path.parent.name: path for path in sorted(blocks_dir.glob("*/SKILL.md"))}
     aliases = kit.get("aliases", {})
     for alias, members in aliases.items():
         if alias in files:
@@ -42,7 +50,7 @@ def resolve_blocks(root, wanted, profile_name="default", *, blocks, params_overr
     if unknown := [name for name in merge if name not in aliases]:
         raise SystemExit(f"profile {profile_name} merges {unknown[0]}, which is not an alias in {kit_file}")
 
-    repo = read_toml(repo_file) if repo_file.exists() else {}
+    repo = read_toml(repo_file) if repo_file and repo_file.exists() else {}
     if unknown := sorted(set(repo) - {"params", "add", "off"}):
         raise SystemExit(f"unknown table [{unknown[0]}] in {repo_file}; it takes [params], [add], and [off]")
     if wrong := [t for t in ("params", "add", "off") if not isinstance(repo.get(t, {}), dict)]:
@@ -129,13 +137,25 @@ def resolve_blocks(root, wanted, profile_name="default", *, blocks, params_overr
     named = {}
     for key, ids in wanted.items():
         if unknown := [i for i in ids if i not in files and i not in aliases]:
-            raise SystemExit(f"unknown block id {unknown[0]} in the {key} line of ~/.flow/domains.md")
+            raise SystemExit(f"unknown block id {unknown[0]} in step {key}")
         named[key] = [m for i in ids for m in aliases.get(i, [i])] + added.get(key, [])
-    base = kit.get("base", []) if any(named.values()) else []  # a run that names no block stays as before
+    base = kit.get("base", []) if pack and any(named.values()) else []  # a run that names no block stays as before
     # The base block needs source_of_truth, which only the repo's .blocks.toml sets. A repo with no such file
     # still runs the blocks that its catalog lines name, such as an `any` line, and the step says the base is off.
-    if base and not repo_file.exists():
+    if base and not (repo_file and repo_file.exists()):
         off = {b: "the repo has no .blocks.toml, which sets source_of_truth" for b in base}  # no file, no [off]
+
+    selected = {}
+    for key, ids in named.items():
+        expanded = []
+        for block in base + ids:
+            if block in parent_of:
+                expanded.append(parent_of[block])
+            expanded.append(block)
+            expanded.extend(parents.get(block, []))
+        selected[key] = list(dict.fromkeys(expanded))
+    if not pack:
+        return {key: [b for b in ids if b not in off] for key, ids in selected.items()}
 
     loaded = {}
 
@@ -198,14 +218,7 @@ def resolve_blocks(root, wanted, profile_name="default", *, blocks, params_overr
         return loaded[block]
 
     out, judge = {}, {}
-    for key, ids in named.items():
-        expanded = []
-        for block in base + ids:
-            if block in parent_of:
-                expanded.append(parent_of[block])
-            expanded.append(block)
-            expanded.extend(parents.get(block, []))
-        joined = list(dict.fromkeys(expanded))
+    for key, joined in selected.items():
         blocks = [b for b in joined if b not in off]
         groups = {}  # a merged alias sits where its first member stood
         for b in blocks:
@@ -242,10 +255,10 @@ def one_line(text):
 
 
 def read_toml(path):
-    try:  # only start reads TOML, so the other commands still run on a Python before 3.11
+    try:  # import when needed, so commands that do not read TOML still run on Python before 3.11
         import tomllib
     except ImportError:
-        raise SystemExit(f"{path}: reading TOML needs Python 3.11 or later (tomllib); run start with a newer python3, for example from Homebrew") from None
+        raise SystemExit(f"{path}: reading TOML needs Python 3.11 or later (tomllib); use a newer python3, for example from Homebrew") from None
     try:
         return tomllib.loads(read_utf8(path))
     except (tomllib.TOMLDecodeError, RecursionError, ValueError) as error:  # a deep array, a huge integer
@@ -296,3 +309,5 @@ def render(name, members, examples):
     # `### ` nests each section under the block marker. sections() split on every `## ` line, so no block
     # line now starts with `## `, and repo text cannot stand in for the step's todo head or `## Result`.
     return "\n".join(lines + [line for head, section in body.items() for line in (f"### {head}", *section)]).rstrip() + "\n"
+
+
