@@ -28,6 +28,8 @@ close, and when a step waits for the user. Choose the web-search run and report 
 | `04-merge.md` | gate | the merged report path |
 | `05-close.md` | merge | the seats closed and verified, and the scratch run directory removed |
 
+For the default route, record `default taken` in `01-brief` and use `skip` on `02-seats` with that reason. Check this session's findings in `03-gate`, merge them in `04-merge`, and record that no seats or launch scratch were created in `05-close`.
+
 ## Seat mechanics
 
 The chair runs the seats as the kit block `blocks/run-workers/SKILL.md` says, on the cheap
