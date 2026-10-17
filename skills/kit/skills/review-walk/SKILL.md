@@ -81,7 +81,8 @@ status line.
    drop each citation that it rejects, because a wrong citation looks as sure as a right one. The
    map explains and never judges. Findings belong to step 03.
 3. **Check.** Run review-check on `<Base>..<Head>` from `01-scope.md`, or `local` for a local
-   target. In a new round, add `--patch <run>/since-view.patch`, which holds what changed since
+   target, with `--parent-loop review-walk:<run>`, where `<run>` is this review-walk folder's name.
+   In a new round, add `--patch <run>/since-view.patch`, which holds what changed since
    view and the whole diff of each file new to you. Follow review-check to its verdict. Line 3 of
    `03-check.md` is line 3 of its `03-verdict.md`, and line 4 is `Run: <its run folder>`, relative
    to the repo root. An `INCOMPLETE` verdict keeps this step open. `status` prints a problem when

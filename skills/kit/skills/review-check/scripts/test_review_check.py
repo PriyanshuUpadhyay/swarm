@@ -3,7 +3,7 @@ a unit with no row, a rule with no result, a made-up quote, a quote at the wrong
 proof blocks it; a language with no ctags support still gets units; a changed function that others
 call gets REF; the build gate owns the IDs the repo's lint config proves, and only for this head."""
 import json, os, runpy, shutil, signal, subprocess, sys, tempfile, time
-from contextlib import redirect_stdout
+from contextlib import contextmanager, redirect_stdout
 from io import BytesIO, StringIO, TextIOWrapper
 from pathlib import Path
 from unittest.mock import patch
@@ -51,6 +51,399 @@ def load_checklist(run):
     value = json.loads((run / "checklist.json").read_text(encoding="utf-8"))
     value.pop("seats", None)
     return value
+
+
+@contextmanager
+def loop_repo():
+    previous = Path.cwd()
+    with tempfile.TemporaryDirectory() as folder:
+        try:
+            os.chdir(folder)
+            sh("git", "init", "-qb", "main")
+            sh("git", "config", "user.email", "t@t")
+            sh("git", "config", "user.name", "t")
+            base = commit({"value.py": "def value():\n    return 0\n"}, "base")
+            head = commit({"value.py": "def value():\n    return 1\n"}, "change")
+            with patch.object(rc, "load_rules", return_value=[]):
+                yield base, head
+        finally:
+            os.chdir(previous)
+
+
+def loop_round(base, head, key=None, kind="fix", quote="return 1", *options):
+    opts = ("--parent-loop", key) if key else ()
+    with redirect_stdout(StringIO()) as out:
+        rc.start(f"{base}..{head}", *opts, *options)
+    run = max(Path("tmp/review-check").glob("*/target.json"), key=lambda p: p.stat().st_mtime_ns).parent
+    assert "parent loop:" in out.getvalue(), out.getvalue()
+    unit = json.loads((run / "units.json").read_text())[0]
+    rows(run, f"| {unit['id']} | - | value.py:{unit['range'][1]} | `{quote}` | {kind} | value issue | caller needs a different result |")
+    assert rc.verdict(run.name) == 0
+    return run
+
+
+def loop_refused(base, head, key, reason, *options):
+    before = {p: p.read_bytes() for p in Path("tmp/review-check").glob("*/03-verdict.md")}
+    try:
+        rc.start(f"{base}..{head}", "--parent-loop", key, *options)
+    except SystemExit as error:
+        assert reason in str(error) and "rounds used" in str(error) and f"continue: {key}" in str(error), str(error)
+    else:
+        raise AssertionError(f"start accepted {reason}")
+    assert before == {p: p.read_bytes() for p in before}, "refusal changed a verdict"
+
+
+def test_loop_cap():
+    with loop_repo() as (base, head):
+        for n in range(3):
+            run = loop_round(base, head, "task-a", quote="return 1", kind="fix")
+            # This case checks the cap when identity cannot be established.
+            (run / "snapshot.json").unlink(missing_ok=True)
+            assert json.loads((run / "target.json").read_text())["parent_loop"] == "task-a"
+        loop_refused(base, head, "task-a", "cap")
+        loop_round(base, head, "task-b")
+        changed = commit({"value.py": "def value():\n    return 2\n"}, "fix and re-plan")
+        loop_refused(head, changed, "task-a", "cap")
+        Path("owner.md").write_text("continue: task-a\n")
+        loop_round(head, changed, "task-a", "pass", "return 2", "--continue", "owner.md")
+        loop_refused(head, changed, "task-a", "cap", "--continue", "owner.md")
+
+
+def test_loop_default_key():
+    with loop_repo() as (base, head):
+        run = loop_round(base, head)
+        assert json.loads((run / "target.json").read_text())["parent_loop"] == "branch:main"
+        sh("git", "checkout", "--detach", "-q", head)
+        try:
+            rc.start(f"{base}..{head}")
+        except SystemExit as error:
+            assert "--parent-loop" in str(error) and "detached" in str(error), str(error)
+        else:
+            raise AssertionError("detached HEAD accepted without a parent key")
+
+
+def test_loop_patch_budget():
+    with loop_repo() as (base, head):
+        loop_round(base, head, "patch-budget")
+        patch_file = Path("partial.patch")
+        patch_file.write_text(rc.git("diff", *rc.PLAIN, base, head))
+        rc.start(f"{base}..{head}", "--parent-loop", "patch-budget", "--patch", str(patch_file))
+        final = loop_round(base, head, "patch-budget", "pass")
+        assert json.loads((final / "target.json").read_text())["round"] == 2
+
+
+def test_loop_uncertain_match():
+    with loop_repo() as (base, head), patch.object(rc, "functions", return_value=[]):
+        for _ in range(3):
+            run = loop_round(base, head, "uncertain")
+            assert not json.loads((run / "snapshot.json").read_text())["certain"]
+        loop_refused(base, head, "uncertain", "cap")
+
+
+def test_loop_answers():
+    with loop_repo() as (base, head):
+        run = loop_round(base, head, "answers", "ask")
+        (run / "answers.md").write_text("- value.py `return 1`: the user approved this value in the task contract\n")
+        assert rc.verdict(run.name) == 0
+        assert not json.loads((run / "snapshot.json").read_text())["open"]
+        assert json.loads((run / "target.json").read_text())["round"] == 1
+        assert len(list(Path("tmp/review-check").glob("*/target.json"))) == 1
+        loop_round(base, head, "answers", "pass")
+
+
+def test_loop_snapshots():
+    with loop_repo() as (base, head):
+        first = loop_round(base, head, "same-issues")
+        snapshot = json.loads((first / "snapshot.json").read_text())
+        assert snapshot["open"] and snapshot["checks"], snapshot
+        changed = commit({"value.py": "def value():\n    # moved\n    # evidence\n    return 1\n"}, "move lines")
+        loop_round(base, changed, "same-issues")
+        loop_refused(base, changed, "same-issues", "no progress")
+        Path("owner.md").write_text("continue: same-issues\n")
+        loop_round(base, changed, "same-issues", "pass", "return 1", "--continue", "owner.md")
+    with loop_repo() as (base, head):
+        loop_round(base, head, "new-issue")
+        changed = commit({"value.py": "def value():\n    return 2\n"}, "fix A and expose B")
+        loop_round(head, changed, "new-issue", quote="return 2")
+        final = loop_round(head, changed, "new-issue", "pass", "return 2")
+        assert "Verdict: APPROVE" in (final / "03-verdict.md").read_text()
+        folder = Path("tmp/flow/close-on-three")
+        folder.mkdir(parents=True)
+        (folder / "06-review.md").write_text(f"Status: done x\nUses:\n\nRun: tmp/review-check/{final.name}\n")
+        (folder / "07-close.md").write_text("Status: open\nUses: 06-review\n\n## Result\n")
+        script = HERE.parents[1] / "implement" / "scripts" / "implement_run.py"
+        out = subprocess.run([sys.executable, str(script), "take", str(folder), "07-close", "test"], capture_output=True, text=True)
+        assert out.returncode == 0, out.stderr
+        assert rc.verdict(final.name) == 0, "answer-only verdict must not spend another round"
+        assert len([p for p in Path("tmp/review-check").glob("*/target.json")
+                    if json.loads(p.read_text())["parent_loop"] == "new-issue"]) == 3
+
+
+def test_loop_callers():
+    script = HERE.parents[1] / "implement" / "scripts" / "implement_run.py"
+    for caller in ("implement", "standalone-deliver"):
+        with loop_repo() as (base, head):
+            folder = Path("tmp/flow") / caller
+            folder.mkdir(parents=True)
+            (folder / "loop.json").write_text(json.dumps({"parent_loop": caller}))
+            for n in range(1, 4):
+                if n > 1:
+                    base, head = head, commit({"value.py": f"def value():\n    return {n}\n"}, "fix")
+                out = subprocess.run([sys.executable, str(script), "review", str(folder), f"{base}..{head}"],
+                                     capture_output=True, text=True)
+                assert out.returncode == 0, out.stderr
+                run = Path(out.stdout.splitlines()[0])
+                checklist = load_checklist(run)
+                unit = json.loads((run / "units.json").read_text())[0]
+                rows(run, f"| {unit['id']} | {', '.join(checklist[unit['id']]['rules']) or '-'} | value.py:2 | `return {n}` | n/a | | the sample has no such rule case |",
+                     f"| {unit['id']} | - | value.py:2 | `return {n}` | fix | issue {n} | caller needs a different value |")
+                assert rc.verdict(run.name) == 0
+            replan = folder.with_name(caller + "-replan")
+            replan.mkdir()
+            (replan / "loop.json").write_bytes((folder / "loop.json").read_bytes())
+            out = subprocess.run([sys.executable, str(script), "review", str(replan), f"{base}..{head}"],
+                                 capture_output=True, text=True)
+            assert out.returncode == 1 and "3 rounds used" in out.stderr, out
+
+
+def test_loop_new_problem_same_evidence():
+    with loop_repo() as (base, head):
+        loop_round(base, head, "new-problem")
+        changed = commit({"value.py": "def value():\n    assert True\n    return 1\n"}, "fix A and expose B")
+        second = loop_round(base, changed, "new-problem")
+        review = second / "02-review.md"
+        review.write_text(review.read_text().replace("value issue", "new issue after the guard"))
+        assert rc.verdict(second.name) == 0
+        final = loop_round(base, changed, "new-problem", "pass")
+        assert "Verdict: APPROVE" in (final / "03-verdict.md").read_text()
+
+
+def test_loop_broken_snapshot():
+    for broken in ("{", "[]", "null", "{}", '{"certain": true}'):
+        with loop_repo() as (base, head):
+            loop_round(base, head, "broken-snapshot")
+            second = loop_round(base, head, "broken-snapshot")
+            (second / "snapshot.json").write_text(broken)
+            third = loop_round(base, head, "broken-snapshot", "pass")
+            assert json.loads((third / "target.json").read_text())["round"] == 3
+            loop_refused(base, head, "broken-snapshot", "cap")
+
+
+def test_loop_snapshot_atomic_without_lock():
+    with loop_repo() as (base, head):
+        run = loop_round(base, head, "snapshot-lock")
+        shared = Path(rc.git("rev-parse", "--path-format=absolute", "--git-common-dir").strip()) / "review-check"
+        written = []
+        original = rc.step_run.write_step
+
+        def write(file, text):
+            if file.name == "snapshot.json":
+                with rc.step_run.step_lock(shared, "review-check", command="test"):
+                    pass
+                written.append(file)
+            original(file, text)
+
+        with patch.object(rc.step_run, "write_step", side_effect=write):
+            assert rc.verdict(run.name) == 0
+        assert written == [run.resolve() / "snapshot.json"], "snapshot write bypassed the atomic writer"
+        with rc.step_run.step_lock(shared, "review-check", command="test"), \
+                patch.object(rc, "START_LOCK_WAIT", 0.05, create=True):
+            started = time.monotonic()
+            try:
+                rc.start(f"{base}..{head}", "--parent-loop", "snapshot-lock")
+            except SystemExit as error:
+                assert "locked" in str(error) and "waited" in str(error), error
+                assert 0.05 <= time.monotonic() - started < 2
+            else:
+                raise AssertionError("start bypassed the shared snapshot lock")
+            assert rc.verdict(run.name) == 0, "verdict must work while another start owns the lock"
+
+
+def test_loop_readonly_common_dir():
+    for existing in (False, True):
+        with loop_repo() as (base, head):
+            common = Path(rc.git("rev-parse", "--path-format=absolute", "--git-common-dir").strip())
+            if existing:
+                loop_round(base, head, "readonly", "pass")
+            paths = [common, common / "info", common / "info" / "exclude", common / "review-check"]
+            paths = [p for p in paths if p.exists()]
+            modes = {p: p.stat().st_mode & 0o777 for p in paths}
+            try:
+                for p in paths:
+                    p.chmod(0o555 if p.is_dir() else 0o444)
+                for n in range(int(existing), 3):
+                    run = loop_round(base, head, "readonly", "pass")
+                    assert json.loads((run / "target.json").read_text())["round"] == n + 1
+                with redirect_stdout(StringIO()) as out:
+                    rc.start(f"{base}..{head}", "--parent-loop", "readonly-note")
+                expected = "parent loop: readonly-note (local writes; the git dir is not writable)"
+                assert out.getvalue().splitlines().count(expected) == 1, out.getvalue()
+                loop_refused(base, head, "readonly", "cap")
+                assert rc.verdict(run.name) == 0
+            finally:
+                for p, mode in modes.items():
+                    p.chmod(mode)
+
+
+def test_loop_start_waits_for_sibling():
+    with loop_repo() as (base, head):
+        common = Path(rc.git("rev-parse", "--path-format=absolute", "--git-common-dir").strip()) / "review-check"
+        common.mkdir()
+        linked = Path.cwd() / "tmp" / "sibling"
+        sh("git", "worktree", "add", "--detach", str(linked), head)
+        with rc.step_run.step_lock(common, "review-check", command="start"):
+            contender = subprocess.Popen([sys.executable, str(HERE / "review_check.py"), "start",
+                                          f"{base}..{head}", "--parent-loop", "sibling"],
+                                         cwd=linked, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            time.sleep(0.2)
+            assert contender.poll() is None, contender.communicate()
+        stdout, stderr = contender.communicate(timeout=15)
+        assert contender.returncode == 0, (stdout, stderr)
+        assert "parent loop: sibling" in stdout, stdout
+
+
+def test_loop_readonly_shared_budget():
+    with loop_repo() as (base, head):
+        for _ in range(3):
+            loop_round(base, head, "readonly-shared", "pass")
+        shared = Path(rc.git("rev-parse", "--path-format=absolute", "--git-common-dir").strip()) / "review-check"
+        ledger = next(shared.glob("*.json"))
+        original = Path.cwd()
+        linked = original / "tmp" / "readonly-sibling"
+        sh("git", "worktree", "add", "--detach", str(linked), head)
+        shared_mode, ledger_mode = shared.stat().st_mode & 0o777, ledger.stat().st_mode & 0o777
+        before = ledger.read_bytes()
+        try:
+            os.chdir(linked)
+            shared.chmod(0o555)
+            loop_refused(base, head, "readonly-shared", "cap")
+            assert ledger.read_bytes() == before
+            for broken in (None, "{"):
+                if broken is None:
+                    ledger.chmod(0)
+                else:
+                    ledger.chmod(ledger_mode)
+                    ledger.write_text(broken)
+                try:
+                    rc.start(f"{base}..{head}", "--parent-loop", "readonly-shared")
+                except SystemExit as error:
+                    assert "cannot read loop ledger" in str(error) and str(ledger) in str(error), error
+                else:
+                    raise AssertionError("accepted an unreadable or damaged shared ledger")
+            assert not list(Path("tmp/review-check").glob("*/target.json"))
+        finally:
+            ledger.chmod(ledger_mode)
+            shared.chmod(shared_mode)
+            os.chdir(original)
+
+
+def test_loop_writable_after_readonly_rounds():
+    with loop_repo() as (base, head):
+        first = loop_round(base, head, "mixed-mode", "pass")
+        shared = Path(rc.git("rev-parse", "--path-format=absolute", "--git-common-dir").strip()) / "review-check"
+        ledger = next(shared.glob("*.json"))
+        mode = shared.stat().st_mode & 0o777
+        runs = [str(first.resolve())]
+        try:
+            shared.chmod(0o555)
+            for n in (2, 3):
+                run = loop_round(base, head, "mixed-mode", "pass")
+                assert json.loads((run / "target.json").read_text())["round"] == n
+                runs.append(str(run.resolve()))
+            assert json.loads(ledger.read_text())["used"] == 1
+        finally:
+            shared.chmod(mode)
+        loop_refused(base, head, "mixed-mode", "cap")
+        assert json.loads(ledger.read_text()) == {"used": 3, "continued": False, "runs": runs}
+        Path("owner.md").write_text("continue: mixed-mode\n")
+        try:
+            shared.chmod(0o555)
+            fourth = loop_round(base, head, "mixed-mode", "pass", "return 1", "--continue", "owner.md")
+            runs.append(str(fourth.resolve()))
+        finally:
+            shared.chmod(mode)
+        loop_refused(base, head, "mixed-mode", "cap", "--continue", "owner.md")
+        assert json.loads(ledger.read_text()) == {"used": 4, "continued": True, "runs": runs}
+
+
+def test_loop_broken_ledger():
+    for broken in ("{", "[]", "null", "{}", '{"used": 1}',
+                   '{"used": "1", "continued": false, "runs": []}',
+                   '{"used": 1, "continued": false, "runs": [7]}',
+                   '{"used": -1, "continued": false, "runs": []}'):
+        with loop_repo() as (base, head):
+            loop_round(base, head, "broken-ledger", "pass")
+            common = Path(rc.git("rev-parse", "--path-format=absolute", "--git-common-dir").strip()) / "review-check"
+            ledger = next(common.glob("*.json"))
+            ledger.write_text(broken)
+            try:
+                rc.start(f"{base}..{head}", "--parent-loop", "broken-ledger")
+            except SystemExit as error:
+                assert str(ledger) in str(error) and "delete" in str(error), error
+            else:
+                raise AssertionError(f"accepted damaged ledger: {broken}")
+            assert ledger.read_text() == broken
+
+
+def test_loop_shared_worktree_budget():
+    with loop_repo() as (base, head):
+        for _ in range(3):
+            loop_round(base, head, "shared-task", "pass")
+        original = Path.cwd()
+        linked = original / "tmp" / "replan"
+        sh("git", "worktree", "add", "--detach", str(linked), head)
+        try:
+            os.chdir(linked)
+            loop_refused(base, head, "shared-task", "cap")
+            Path("owner.md").write_text("continue: shared-task\n")
+            fourth = loop_round(base, head, "shared-task", "pass", "return 1", "--continue", "owner.md")
+            assert json.loads((fourth / "target.json").read_text())["round"] == 4
+        finally:
+            os.chdir(original)
+        Path("owner.md").write_text("continue: shared-task\n")
+        loop_refused(base, head, "shared-task", "cap", "--continue", "owner.md")
+
+
+def test_loop_deleted_run_budget():
+    with loop_repo() as (base, head):
+        for _ in range(3):
+            latest = loop_round(base, head, "deleted-run", "pass")
+        shutil.rmtree(latest)
+        loop_refused(base, head, "deleted-run", "cap")
+
+
+def test_loop_import_budget_on_refusal():
+    with loop_repo() as (base, head):
+        for _ in range(3):
+            loop_round(base, head, "imported-task", "pass")
+        shared = Path(rc.git("rev-parse", "--path-format=absolute", "--git-common-dir").strip()) / "review-check"
+        # An old checkout has target.json history, but no shared ledger yet.
+        for ledger in shared.glob("*.json"):
+            ledger.unlink()
+        loop_refused(base, head, "imported-task", "cap")
+        original = Path.cwd()
+        linked = original / "tmp" / "replan"
+        sh("git", "worktree", "add", "--detach", str(linked), head)
+        try:
+            os.chdir(linked)
+            loop_refused(base, head, "imported-task", "cap")
+        finally:
+            os.chdir(original)
+
+
+def test_loop_spent_extension_message():
+    with loop_repo() as (base, head):
+        for _ in range(3):
+            loop_round(base, head, "spent-extension", "pass")
+        Path("owner.md").write_text("continue: spent-extension\n")
+        loop_round(base, head, "spent-extension", "pass", "return 1", "--continue", "owner.md")
+        try:
+            rc.start(f"{base}..{head}", "--parent-loop", "spent-extension")
+        except SystemExit as error:
+            assert "extension is used" in str(error) and "open rows" in str(error), error
+            assert "the user can write" not in str(error), error
+        else:
+            raise AssertionError("accepted a fifth round")
 
 
 def main():
@@ -1594,13 +1987,34 @@ def test_fixtures():
 
 
 if __name__ == "__main__":
+    test_loop_cap()
+    test_loop_default_key()
+    test_loop_patch_budget()
+    test_loop_uncertain_match()
+    test_loop_answers()
+    test_loop_snapshots()
+    test_loop_callers()
+    test_loop_new_problem_same_evidence()
+    test_loop_broken_snapshot()
+    test_loop_snapshot_atomic_without_lock()
+    test_loop_readonly_common_dir()
+    test_loop_start_waits_for_sibling()
+    test_loop_readonly_shared_budget()
+    test_loop_writable_after_readonly_rounds()
+    test_loop_broken_ledger()
+    test_loop_shared_worktree_budget()
+    test_loop_deleted_run_budget()
+    test_loop_import_budget_on_refusal()
+    test_loop_spent_extension_message()
     test_pid_helpers()
     test_build_ignored_hangup()
     test_shards()
     test_rust_function_range()
     test_catalog()
     test_fixtures()
-    with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as home:
+    # Each legacy case is a separate task on the same default branch key, and some need many starts.
+    # Keep their cap override local to this process; the loop tests above use the real cap.
+    with patch.object(rc, "ROUND_CAP", 1000), tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as home:
         os.chdir(d)
         os.environ["HOME"] = home  # the repo rules file is read from ~/.review-check
         sh("git", "init", "-qb", "main")
