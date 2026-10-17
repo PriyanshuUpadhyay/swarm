@@ -664,6 +664,27 @@ pub fn pane_of(
     Ok(pane)
 }
 
+/// The pane of an agent a command acts on. Unlike `pane_of`, an agent the session does not hold is
+/// an error that names it, not the raw "Query returned no rows".
+pub fn require_pane(
+    connection: &Connection,
+    session_id: &str,
+    agent_id: &str,
+) -> Result<String, Box<dyn std::error::Error>> {
+    use rusqlite::OptionalExtension;
+    let row: Option<Option<String>> = connection
+        .query_row(
+            "SELECT pane_id FROM agent WHERE session_id = ?1 AND id = ?2",
+            (session_id, agent_id),
+            |r| r.get(0),
+        )
+        .optional()?;
+    match row {
+        None => Err(format!("swarm: no agent {agent_id} in this session").into()),
+        Some(pane) => pane.ok_or_else(|| "swarm: no pane recorded".into()),
+    }
+}
+
 /// The CLI that runs in an agent's pane. A chair's row names none, so it is the session's
 /// `chair_provider`.
 /// How long a `working` or `waiting` report counts without a newer one. A turn reports at each tool
@@ -2036,6 +2057,24 @@ mod tests {
                 .unwrap()
                 .as_deref(),
             Some("%1")
+        );
+    }
+
+    #[test]
+    fn a_command_on_an_unknown_agent_names_it() {
+        let connection = seed(0);
+        let unknown = require_pane(&connection, SESSION, "no-such-agent")
+            .unwrap_err()
+            .to_string();
+        assert_eq!(unknown, "swarm: no agent no-such-agent in this session");
+        let no_pane = require_pane(&connection, SESSION, ORCHESTRATOR)
+            .unwrap_err()
+            .to_string();
+        assert_eq!(no_pane, "swarm: no pane recorded");
+        set_pane(&connection, SESSION, ORCHESTRATOR, "%1").unwrap();
+        assert_eq!(
+            require_pane(&connection, SESSION, ORCHESTRATOR).unwrap(),
+            "%1"
         );
     }
 

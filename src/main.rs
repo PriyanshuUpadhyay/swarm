@@ -3428,8 +3428,7 @@ fn script_line(
 fn attach(agent_id: &str) -> Result<std::process::ExitStatus, Box<dyn std::error::Error>> {
     let root = swarm::paths::root_dir()?;
     let connection = swarm::store::open(&swarm::paths::sqlite_db()?)?;
-    let pane = swarm::store::pane_of(&connection, &session_id()?, agent_id)?
-        .ok_or("swarm: no pane recorded")?;
+    let pane = swarm::store::require_pane(&connection, &session_id()?, agent_id)?;
     swarm::adapter::load(&root, &adapter_name())?.attach(&[("pane", &pane)])
 }
 
@@ -5131,8 +5130,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         && cmd == "close"
     {
         let session_id = session_id()?;
-        let pane = swarm::store::pane_of(&connection, &session_id, child)?
-            .ok_or("swarm: no pane recorded")?;
+        let pane = swarm::store::require_pane(&connection, &session_id, child)?;
         swarm::adapter::load(&root, &adapter_name())?.run("close", &[("pane", &pane)])?;
         return swarm::store::clear_pane(&connection, &session_id, child);
     }
@@ -5180,8 +5178,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             return Err("swarm: empty text".into());
         }
         let session_id = session_id()?;
-        let pane = swarm::store::pane_of(&connection, &session_id, agent_id)?
-            .ok_or("swarm: no pane recorded")?;
+        let pane = swarm::store::require_pane(&connection, &session_id, agent_id)?;
         let adapter = swarm::adapter::load(&root, &adapter_name())?;
         if !adapter.has_pane(&pane)? {
             return Err(
@@ -5211,8 +5208,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         let choice: usize = choice
             .parse()
             .map_err(|_| format!("swarm: choice {choice:?} is not a number"))?;
-        let pane = swarm::store::pane_of(&connection, &session_id()?, agent_id)?
-            .ok_or("swarm: no pane recorded")?;
+        let pane = swarm::store::require_pane(&connection, &session_id()?, agent_id)?;
         let adapter = swarm::adapter::load(&root, &adapter_name())?;
         // One answer per pane at a time, so the chair's card and the column's card cannot mix
         // their keys. The lock ends with this process.
@@ -5269,8 +5265,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     if let [cmd, agent_id] = args
         && cmd == "interrupt"
     {
-        let pane = swarm::store::pane_of(&connection, &session_id()?, agent_id)?
-            .ok_or("swarm: no pane recorded")?;
+        let pane = swarm::store::require_pane(&connection, &session_id()?, agent_id)?;
         swarm::adapter::load(&root, &adapter_name())?.run("interrupt", &[("pane", &pane)])?;
         return Ok(());
     }
@@ -5287,8 +5282,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         if !["Up", "C-u"].contains(&key.as_str()) {
             return Err(format!("swarm: key {key:?} is not allowed; only Up and C-u").into());
         }
-        let pane = swarm::store::pane_of(&connection, &session_id()?, agent_id)?
-            .ok_or("swarm: no pane recorded")?;
+        let pane = swarm::store::require_pane(&connection, &session_id()?, agent_id)?;
         swarm::adapter::load(&root, &adapter_name())?
             .run("key", &[("pane", &pane), ("key", key)])?;
         return Ok(());
@@ -5327,8 +5321,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             Ok(())
         }
         [cmd] if cmd == "exited" => {
-            let pane = swarm::store::pane_of(&connection, &session_id, &agent_id)?
-                .ok_or("swarm: no pane recorded")?;
+            let pane = swarm::store::require_pane(&connection, &session_id, &agent_id)?;
             let text =
                 swarm::adapter::load(&root, &adapter_name())?.run("capture", &[("pane", &pane)])?;
             let run_dir = root.join(format!("runs/{session_id}"));
