@@ -1,23 +1,37 @@
 #!/bin/sh
-# Release from a checked, clean main branch. The owner runs this on purpose.
+# Release from a checked, clean main branch, or finish a pushed release.
 # Usage: scripts/release.sh patch|minor|major [--local] [--dry-run]
+#        scripts/release.sh resume v<version> [--dry-run]
 set -eu
 
 die() { printf '%s\n' "release: $*" >&2; exit 1; }
 dry=false
 local_install=false
-bump=
+mode=
+tag=
 for arg in "$@"; do
     case "$arg" in
         --dry-run) dry=true ;;
         --local) local_install=true ;;
-        patch|minor|major) [ -z "$bump" ] || die 'give one version bump'; bump=$arg ;;
+        patch|minor|major|resume) [ -z "$mode" ] || die 'give one release mode'; mode=$arg ;;
+        v*) [ "$mode" = resume ] && [ -z "$tag" ] || die "unexpected tag $arg"; tag=$arg ;;
         *) die "unknown argument $arg" ;;
     esac
 done
-[ -n "$bump" ] || die 'usage: scripts/release.sh patch|minor|major [--local] [--dry-run]'
+[ -n "$mode" ] || die 'usage: scripts/release.sh patch|minor|major [--local] [--dry-run], or resume v<version>'
 root=$(git -C "$(dirname "$0")/.." rev-parse --show-toplevel)
-version=$(python3 - "$root/Cargo.toml" "$bump" <<'PY'
+if [ "$mode" = resume ]; then
+    "$local_install" && die 'resume does not accept --local'
+    python3 - "$tag" <<'PYTAG'
+import re
+import sys
+if not re.fullmatch(r"v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", sys.argv[1]):
+    sys.exit("release: resume needs a stable version tag, such as v0.0.20")
+PYTAG
+    version=${tag#v}
+else
+    bump=$mode
+    version=$(python3 - "$root/Cargo.toml" "$bump" <<'PY'
 import re
 import sys
 import tomllib
@@ -34,48 +48,65 @@ else:
     patch += 1
 print(f"{major}.{minor}.{patch}")
 PY
-)
-tag=v$version
+    )
+    tag=v$version
+fi
 if "$dry"; then
+    if [ "$mode" = resume ]; then
+        printf '%s\n' "Resume $tag after the push; keep the version, commit, and tag."
+    else
+        printf '%s\n' \
+            "New version $version ($tag)." \
+            'Require main and no changes outside tmp/.' \
+            'Run git fetch origin; require HEAD = origin/main and no v* tag at HEAD.' \
+            'Require the latest ci run for HEAD to have completed with success (gh run list --commit).' \
+            "Require tag $tag to be absent locally and on origin." \
+            "Set Cargo.toml and the swarm Cargo.lock entry to $version." \
+            'Run cargo check --locked.' \
+            "Commit release $version; create annotated tag $tag with message $tag." \
+            "Run git push --atomic origin main refs/tags/$tag."
+        if "$local_install"; then printf '%s\n' "Run $root/scripts/install-local.sh $tag; warn and continue if it fails."; fi
+    fi
     printf '%s\n' \
-        "New version $version ($tag)." \
-        'Require main and no changes outside tmp/.' \
-        'Run git fetch origin; require HEAD = origin/main.' \
-        'Require the latest ci run for HEAD to have completed with success (gh run list --commit).' \
-        "Require tag $tag to be absent locally and on origin." \
-        "Set Cargo.toml and the swarm Cargo.lock entry to $version." \
-        'Run cargo check --locked.' \
-        "Commit release $version; create annotated tag $tag with message $tag." \
-        "Run git push --atomic origin main refs/tags/$tag."
-    if "$local_install"; then printf '%s\n' "Run $root/scripts/install-local.sh $tag."; fi
-    printf '%s\n' \
-        'Wait up to 30 minutes for the new Release run; stop unless it succeeds.' \
-        "Run gh release edit $tag --draft=false --latest." \
-        'Wait up to 30 minutes for the new Tap run; stop unless it succeeds.' \
-        'Run brew update, then brew upgrade swarm.' \
+        'Wait up to 30 minutes for Release; retry read errors within that window.' \
+        "If $tag is a draft, run gh release edit $tag --draft=false --latest." \
+        'Wait up to 30 minutes for Tap, using the saved publication time.' \
+        'Run brew update, then brew upgrade swarm; reinstall if a .local build remains.' \
         'Restart the HUD if its LaunchAgent plist exists.' \
-        'Print swarm --version and check the release commit.'
+        'Print swarm --version and check the printed commit as a prefix of the full release hash.'
     exit 0
 fi
 
-for tool in gh jq cargo brew python3; do
+for tool in gh jq brew python3; do
     command -v "$tool" >/dev/null || die "missing tool $tool"
 done
+if [ "$mode" != resume ]; then command -v cargo >/dev/null || die 'missing tool cargo'; fi
 export HOMEBREW_NO_ASK=1
-[ "$(git -C "$root" branch --show-current)" = main ] || die 'run this from main'
-changes=$(git -C "$root" status --porcelain --untracked-files=all -- . ':(exclude)tmp')
-[ -z "$changes" ] || die 'the tree has changes outside tmp/'
-git -C "$root" fetch origin
-head=$(git -C "$root" rev-parse HEAD)
-[ "$head" = "$(git -C "$root" rev-parse origin/main)" ] || die 'HEAD differs from origin/main'
 repo=$(gh repo view "$(git -C "$root" remote get-url origin)" --json nameWithOwner --jq .nameWithOwner)
-ci=$(gh run list -R "$repo" --workflow ci.yml --commit "$head" --limit 1 --json status,conclusion)
-[ "$(printf '%s' "$ci" | jq -r '.[0] | .status + "/" + .conclusion')" = completed/success ] || die 'the latest ci run for HEAD has not succeeded'
-if git -C "$root" show-ref --verify --quiet "refs/tags/$tag"; then die "tag $tag already exists"; fi
-remote_tag=$(git -C "$root" ls-remote --tags origin "refs/tags/$tag")
-[ -z "$remote_tag" ] || die "tag $tag already exists on origin"
+if [ "$mode" = resume ]; then
+    head=$(git -C "$root" rev-parse --verify --end-of-options "$tag^{commit}") || die "cannot resolve $tag"
+    started=$(TZ=UTC git -C "$root" show -s --date=format-local:%Y-%m-%dT%H:%M:%SZ --format=%cd "$head")
+else
+    [ "$(git -C "$root" branch --show-current)" = main ] || die 'run this from main'
+    changes=$(git -C "$root" status --porcelain --untracked-files=all -- . ':(exclude)tmp')
+    [ -z "$changes" ] || die 'the tree has changes outside tmp/'
+    git -C "$root" fetch origin
+    head=$(git -C "$root" rev-parse HEAD)
+    head_tags=$(git -C "$root" tag --points-at HEAD 'v*')
+    if [ -n "$head_tags" ]; then
+        for pushed_tag in $head_tags; do
+            printf '%s\n' "release: HEAD already has $pushed_tag; resume with $root/scripts/release.sh resume $pushed_tag" >&2
+        done
+        exit 1
+    fi
+    [ "$head" = "$(git -C "$root" rev-parse origin/main)" ] || die 'HEAD differs from origin/main'
+    ci=$(gh run list -R "$repo" --workflow ci.yml --commit "$head" --limit 1 --json status,conclusion)
+    [ "$(printf '%s' "$ci" | jq -r '.[0] | .status + "/" + .conclusion')" = completed/success ] || die 'the latest ci run for HEAD has not succeeded'
+    if git -C "$root" show-ref --verify --quiet "refs/tags/$tag"; then die "tag $tag already exists"; fi
+    remote_tag=$(git -C "$root" ls-remote --tags origin "refs/tags/$tag")
+    [ -z "$remote_tag" ] || die "tag $tag already exists on origin"
 
-python3 - "$root" "$version" <<'PY'
+    python3 - "$root" "$version" <<'PY'
 from pathlib import Path
 import re
 import sys
@@ -106,32 +137,69 @@ if count != 1:
 manifest.write_text(manifest_new)
 lock.write_text(lock_new)
 PY
-cargo check --manifest-path "$root/Cargo.toml" --locked
-# A failed check leaves the version edits for inspection; do not reset owner work.
-[ "$(git -C "$root" rev-parse HEAD)" = "$head" ] || die 'HEAD changed during the check'
-git -C "$root" add -- Cargo.toml Cargo.lock
-git -C "$root" commit -m "release $version" -- Cargo.toml Cargo.lock
-git -C "$root" tag -a "$tag" -m "$tag"
-head=$(git -C "$root" rev-parse HEAD)
-started=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-git -C "$root" push --atomic origin main "refs/tags/$tag"
-if "$local_install"; then "$root/scripts/install-local.sh" "$tag"; fi
+    cargo check --manifest-path "$root/Cargo.toml" --locked || die "cargo check failed; inspect the edits, then restore with git -C \"$root\" checkout -- Cargo.toml Cargo.lock"
+    # Leave failed checks for inspection; never reset owner work.
+    [ "$(git -C "$root" rev-parse HEAD)" = "$head" ] || die 'HEAD changed during the check'
+    git -C "$root" add -- Cargo.toml Cargo.lock
+    git -C "$root" commit -m "release $version" -- Cargo.toml Cargo.lock
+    git -C "$root" tag -a "$tag" -m "$tag"
+    head=$(git -C "$root" rev-parse HEAD)
+    started=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    git -C "$root" push --atomic origin main "refs/tags/$tag" || die "push failed; check origin before retrying. If nothing was pushed, use git -C \"$root\" tag -d $tag, then git -C \"$root\" reset --keep origin/main"
+fi
 
-# Poll reads only. Never retry a push or a release publication.
+# Every failure after the push names a command that can finish this tag.
+resume_command="$root/scripts/release.sh resume $tag"
+next_command=$resume_command
+release_exit() {
+    status=$?
+    trap - EXIT HUP INT TERM
+    if [ "$status" -ne 0 ]; then
+        printf '%s\n' "release: $tag is pushed. Next command: $next_command" >&2
+        if [ "$next_command" != "$resume_command" ]; then
+            printf '%s\n' "release: then run $resume_command" >&2
+        fi
+    fi
+    exit "$status"
+}
+trap release_exit EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+if "$local_install"; then
+    "$root/scripts/install-local.sh" "$tag" || printf '%s\n' 'release: local install failed; the release continues' >&2
+fi
+
+# Retry only reads, within one deadline. Failed reads back off with jitter.
 wait_run() {
     workflow=$1
     event=$2
     since=$3
     deadline=$(($(date +%s) + 1800))
+    delay=2
     while [ "$(date +%s)" -lt "$deadline" ]; do
-        runs=$(gh run list -R "$repo" --workflow "$workflow" --commit "$head" --event "$event" \
-            --limit 20 --json databaseId,status,conclusion,createdAt)
+        if ! runs=$(gh run list -R "$repo" --workflow "$workflow" --commit "$head" --event "$event" \
+            --limit 20 --json databaseId,status,conclusion,createdAt); then
+            now=$(date +%s)
+            [ "$now" -lt "$deadline" ] || break
+            pause=$((delay + now % 3))
+            remaining=$((deadline - now))
+            [ "$pause" -le "$remaining" ] || pause=$remaining
+            sleep "$pause"
+            [ "$delay" -ge 30 ] || delay=$((delay * 2))
+            [ "$delay" -le 30 ] || delay=30
+            continue
+        fi
+        delay=2
         run=$(printf '%s' "$runs" | jq -c --arg since "$since" '[.[] | select(.createdAt >= $since)] | .[0] // empty')
         if [ -n "$run" ]; then
             if [ "$(printf '%s' "$run" | jq -r .status)" = completed ]; then
                 conclusion=$(printf '%s' "$run" | jq -r .conclusion)
                 run_id=$(printf '%s' "$run" | jq -r .databaseId)
-                [ "$conclusion" = success ] || die "$workflow run $run_id ended with $conclusion"
+                if [ "$conclusion" != success ]; then
+                    next_command="gh run rerun $run_id -R $repo"
+                    die "$workflow run $run_id ended with $conclusion"
+                fi
                 printf '%s\n' "$workflow run $run_id succeeded"
                 return
             fi
@@ -141,14 +209,25 @@ wait_run() {
     die "timed out waiting for $workflow at $head"
 }
 wait_run release.yml push "$started"
-published=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-gh release edit "$tag" -R "$repo" --draft=false --latest
+release=$(gh release view "$tag" -R "$repo" --json isDraft,publishedAt)
+if [ "$(printf '%s' "$release" | jq -r .isDraft)" = true ]; then
+    gh release edit "$tag" -R "$repo" --draft=false --latest
+    release=$(gh release view "$tag" -R "$repo" --json isDraft,publishedAt)
+fi
+published=$(printf '%s' "$release" | jq -r '.publishedAt // empty')
+[ -n "$published" ] || die "release $tag has no publication time"
 wait_run tap.yml release "$published"
 brew update
 brew upgrade swarm
+# A local build sorts above the release of the same tag, so upgrade keeps it.
+installed_versions=$(brew list --formula --versions swarm)
+case "$installed_versions" in
+    *"$version.local."*) brew reinstall --formula priyanshuupadhyay/tap/swarm ;;
+esac
 plist=$HOME/Library/LaunchAgents/io.github.priyanshuupadhyay.swarm.hud.plist
 if [ -f "$plist" ]; then launchctl kickstart -k "gui/$(id -u)/io.github.priyanshuupadhyay.swarm.hud"; fi
 installed=$(swarm --version)
 printf '%s\n' "$installed"
-short=$(git -C "$root" rev-parse --short HEAD)
-case "$installed" in *"$short"*) ;; *) die "PATH does not run release commit $short" ;; esac
+printed=$(printf '%s\n' "$installed" | awk 'NR == 1 {print $3}')
+case "$printed" in ''|*[!0-9a-f]*) die 'swarm --version did not print a commit hash' ;; esac
+case "$head" in "$printed"*) ;; *) die "PATH does not run release commit $head" ;; esac

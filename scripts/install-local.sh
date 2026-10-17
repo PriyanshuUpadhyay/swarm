@@ -15,10 +15,10 @@ for arg in "$@"; do
 done
 [ -n "$ref" ] || die 'usage: scripts/install-local.sh <tag-or-commit> [--dry-run]'
 root=$(git -C "$(dirname "$0")/.." rev-parse --show-toplevel)
-commit=$(git -C "$root" rev-parse --verify --end-of-options "$ref^{commit}")
+commit=$(git -C "$root" rev-parse --verify --end-of-options "$ref^{commit}") || die "cannot resolve $ref"
 short=$(git -C "$root" rev-parse --short "$commit")
 version=$(git -C "$root" show "$commit:Cargo.toml" | python3 -c 'import sys,tomllib; print(tomllib.loads(sys.stdin.read())["package"]["version"])')
-local_version=$version-pre.local.$short
+local_version=$version.local.$short
 tap=priyanshuupadhyay/tap
 formula=$tap/swarm
 plist=$HOME/Library/LaunchAgents/io.github.priyanshuupadhyay.swarm.hud.plist
@@ -30,11 +30,11 @@ if "$dry"; then
         "Create a clean temporary detached worktree at $commit." \
         'Run SWARM_RELEASE_BUILD=1 make -C <worktree>/ui package.' \
         "Run brew tap $tap; refuse a changed tap formula or an active local install." \
-        "Save the tap formula; replace it with a file:// tarball formula at version $local_version." \
+        "Replace the tap formula with a file:// tarball formula at version $local_version." \
         "Run brew reinstall --formula $formula if installed, else brew install --formula $formula." \
         'Restore the tap formula, also on failure; the install receipt keeps the real tap.' \
         "If $plist exists, run launchctl kickstart -k gui/$(id -u)/io.github.priyanshuupadhyay.swarm.hud." \
-        "Print swarm --version and check that it contains commit $short." \
+        "Print swarm --version and check its commit prefix against $commit." \
         'Remove the temporary worktree and build files, also on failure.'
     exit 0
 fi
@@ -52,19 +52,20 @@ tap_root=$(brew --repository "$tap")
 formula_path=$tap_root/Formula/swarm.rb
 [ -f "$formula_path" ] || die "missing $formula_path"
 tap_changes=$(git -C "$tap_root" status --porcelain -- Formula/swarm.rb)
-[ -z "$tap_changes" ] || die 'the tap formula has local changes'
-lock=$tap_root/.swarm-install-local.lock
-mkdir "$lock" 2>/dev/null || die "local install lock exists at $lock"
+[ -z "$tap_changes" ] || die "the tap formula has local changes; inspect them, then restore with git -C \"$tap_root\" checkout -- Formula/swarm.rb"
+lock=$(brew --cache)/swarm-install-local.lock
+mkdir "$lock" 2>/dev/null || die "local install lock exists at $lock; after checking that no install runs, use rmdir \"$lock\" and git -C \"$root\" worktree prune"
 work=
-saved=false
+restore=false
 cleanup() {
     status=$?
     trap - EXIT HUP INT TERM
-    if "$saved"; then
-        if cp "$work/swarm.rb" "$formula_path"; then
-            saved=false
+    if "$restore"; then
+        if git -C "$tap_root" checkout -- Formula/swarm.rb &&
+            [ -z "$(git -C "$tap_root" status --porcelain -- Formula/swarm.rb)" ]; then
+            restore=false
         else
-            printf '%s\n' "install-local: restore failed; original formula is at $work/swarm.rb" >&2
+            printf '%s\n' "install-local: restore failed; run git -C \"$tap_root\" checkout -- Formula/swarm.rb" >&2
             status=1
         fi
     fi
@@ -73,9 +74,9 @@ cleanup() {
             # This path belongs to this run; builds leave untracked files in it.
             git -C "$root" worktree remove --force "$work/tree" || status=1
         fi
-        if [ ! -e "$work/tree/.git" ] && ! "$saved"; then rm -rf "$work"; fi
+        if [ ! -e "$work/tree/.git" ] && ! "$restore"; then rm -rf "$work"; fi
     fi
-    rmdir "$lock" || status=1
+    if [ -d "$lock" ]; then rmdir "$lock" || status=1; fi
     exit "$status"
 }
 trap cleanup EXIT
@@ -88,11 +89,10 @@ SWARM_RELEASE_BUILD=1 make -C "$work/tree/ui" package
 tarball=$work/tree/ui/.build/release/swarm-$version-macos-arm64.tar.gz
 [ -f "$tarball" ] || die "package is missing at $tarball"
 sha=$(shasum -a 256 "$tarball" | awk '{print $1}')
-cp "$formula_path" "$work/swarm.rb"
-saved=true
+restore=true
 # Keep the real tap in the receipt so an ordinary brew upgrade can replace this build.
-# Homebrew sorts a `pre` version below the matching stable release. Reinstall also
-# replaces an installed copy with the same package version or a newer local build.
+# A .local version sorts above this release and below the next release.
+# Reinstall can replace the same version or a newer local build.
 TARBALL=$tarball SHA=$sha LOCAL_VERSION=$local_version python3 - "$formula_path" <<'PY'
 import json
 import os
@@ -122,11 +122,14 @@ if [ -n "$(brew list --formula --versions swarm)" ]; then
 else
     brew install --formula "$formula"
 fi
-cp "$work/swarm.rb" "$formula_path"
-saved=false
+git -C "$tap_root" checkout -- Formula/swarm.rb
+[ -z "$(git -C "$tap_root" status --porcelain -- Formula/swarm.rb)" ] || die 'tap formula restore left changes'
+restore=false
 if [ -f "$plist" ]; then
     launchctl kickstart -k "gui/$(id -u)/io.github.priyanshuupadhyay.swarm.hud"
 fi
 installed=$(swarm --version)
 printf '%s\n' "$installed"
-case "$installed" in *"$short"*) ;; *) die "PATH does not run commit $short" ;; esac
+printed=$(printf '%s\n' "$installed" | awk 'NR == 1 {print $3}')
+case "$printed" in ''|*[!0-9a-f]*) die 'swarm --version did not print a commit hash' ;; esac
+case "$commit" in "$printed"*) ;; *) die "PATH does not run commit $commit" ;; esac

@@ -41,6 +41,8 @@ def keep_reason(tree):
         return "missing worktree; inspect it by hand"
     if not branch:
         return "detached HEAD"
+    if tree["HEAD"] in mainline:
+        return "no commits yet"
     if not merged(branch):
         return "unmerged commits"
     remote = "refs/remotes/origin/" + branch.removeprefix("refs/heads/")
@@ -56,6 +58,7 @@ def keep_reason(tree):
 
 try:
     git("rev-parse", "--verify", "origin/main")
+    mainline = set(git("rev-list", "--first-parent", "origin/main").stdout.splitlines())
     trees = []
     for record in git("worktree", "list", "--porcelain", "-z").stdout.strip("\0").split("\0\0"):
         tree = {}

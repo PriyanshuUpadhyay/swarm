@@ -229,12 +229,14 @@ The install and release scripts accept `--dry-run` and make no changes in that m
 | `scripts/kit-checks.sh [worktree]` | Run the nine kit checks and keep full logs in `tmp/kit-checks/`. |
 | `scripts/prune-worktrees.sh [--yes]` | List merged, clean worktrees after a fetch; use `--yes` to remove them and their branches. |
 
-A local build uses the Homebrew version `<version>-pre.local.<commit>`.
-For example, `0.0.19-pre.local.6a56182f` sorts below both `0.0.19` and `0.0.20`.
+A local build uses the Homebrew version `<version>.local.<commit>`.
+For example, `0.0.19.local.6a56182f` sorts above `0.0.19` and below `0.0.20`.
 The install uses `reinstall` when swarm is present, so it can replace the same package version.
-It saves and restores the formula in `priyanshuupadhyay/tap`, which keeps that tap in the install
+It changes and restores the formula in `priyanshuupadhyay/tap`, which keeps that tap in the install
 record and keeps `/opt/homebrew/opt/swarm` as the path for the kit and HUD.
-An ordinary `brew upgrade swarm` can then replace the local build with the release.
+A plain `brew upgrade` keeps this build until the next release.
+Use `scripts/release.sh resume v<version>` to finish a pushed release after a failure.
+The release script replaces a local build of that tag with the published build.
 See the Homebrew [formula guide](https://docs.brew.sh/Formula-Cookbook) and
 [command guide](https://docs.brew.sh/Manpage#reinstall-options-formulacask-).
 
