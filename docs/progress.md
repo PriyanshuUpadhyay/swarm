@@ -41,9 +41,8 @@ run beside A and B, because they touch other files.
 7. A task's workflow is a ledger written once at the start from a menu of blocks, and code runs it
    on the step-run files. A change is a visible re-plan folder that names its parent (council
    2026-10-13 composable-blocks).
-8. Review loops stop in code. `review_check.py start` owns a 3-round cap keyed by an explicit
-   parent-loop key that fixes and re-plans inherit (K1). The no-progress stop compares open issues,
-   not the fix count (P2). Both are owner choices of 2026-10-13.
+8. Review loops stop in code. Call `review_check.py start --parent-loop <key>`, which owns K1
+   and P2, the owner's loop-stop choices of 2026-10-13. `docs/blocks.md` names the callers.
 9. Skills are cut into blocks now, one skill at a time, starting with build; each cut block gets a
    second user in one live run (owner choice of 2026-10-13). Later the same day the owner asked to
    split every other skill too, with names and descriptions a small model can use, before the merge
@@ -185,8 +184,8 @@ the pilot, then packs.
 
 | # | Step | State | Check |
 |---|---|---|---|
-| B1 | Add the 3-round cap to `review_check.py start`, keyed by a parent-loop key in run metadata (K1); fixes and re-plans inherit it; one user `continue:` line allows one more round, once; a refusal keeps the verdict; implement and deliver pass the key and point to the guard | ⬜ | tests: round 4 refused through implement and standalone deliver, also after a fix or re-plan with a new base; two tasks on one base have separate budgets; `continue:` works once; answer-only `verdict` costs no round; APPROVE on the last allowed run closes |
-| B2 | Add the no-progress stop by issue identity (P2): `verdict` writes a snapshot of open findings and check results, `start` compares them by file, symbol, rule and source evidence; an uncertain match falls back to the cap | ⬜ | fix A then new B does not stop; the same open issues and results stop; moved lines still match |
+| B1 | Add the 3-round cap to `review_check.py start`, keyed by a parent-loop key in run metadata (K1); fixes and re-plans inherit it; one user `continue:` line allows one more round, once; a refusal keeps the verdict; implement and deliver pass the key and point to the guard | ✅ branch `loop-guards`, 2026-10-17 | tests: round 4 refused through implement and standalone deliver, also after a fix or re-plan with a new base; two tasks on one base have separate budgets; `continue:` works once; answer-only `verdict` costs no round; APPROVE on the last allowed run closes |
+| B2 | Add the no-progress stop by issue identity (P2): `verdict` writes a snapshot of open findings and check results, `start` compares them by file, symbol, rule and source evidence; an uncertain match falls back to the cap | ✅ branch `loop-guards`, 2026-10-17 | fix A then new B does not stop; the same open issues and results stop; moved lines still match |
 | B3 | Make `step_run.py` refuse an unknown or ambiguous `Needs` word, a cycle, or a missing required gate | ⬜ | tests for each refusal |
 | B4 | Fix the owner of each block the pilot loads, and the defects above | 🔄 red-first-check merged into prove-it-works, the decision-with-default defect fixed (branch `skill-blocks`) | `rg` finds one text per rule; the implement tests pass |
 | B5 | Pilot `web-ui-basics` and `headless-shot` on a static HTML slice (not `web-port`): one `block:` line in the `web-ui` build step of `~/.flow/domains.md` and a `.blocks.toml` | ⬜ | block text in the step file, each block todo closed with evidence, a fresh agent resumes from the files, pair still waits for approval |

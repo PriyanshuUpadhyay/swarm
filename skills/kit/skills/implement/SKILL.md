@@ -92,9 +92,12 @@ and the run's head is `HEAD`. A NEEDS DISCUSSION verdict closes only after the u
 the run's `answers.md` as answers or `limit:` lines per review-check's Asks section, and `verdict`
 runs again to APPROVE. A REQUEST CHANGES verdict goes to the user, who starts a `pair` or `deliver` run for the
 findings. That run moves the build revision, so the review is stale and runs again on the new
-range. Answer each `ask` in the run's `answers.md` per review-check's Asks section, and stop
-and ask the user after three review rounds on this step. `deliver` takes `06-review` again for each
-review round, so the warning counts real runs; the cap is a warning, not enforced.
+range. Answer each `ask` in the run's `answers.md` per review-check's Asks section.
+
+Start reviews with `python3 <skill-dir>/scripts/implement_run.py review <folder> <Base>..HEAD`.
+It passes the saved `loop.json` parent-loop key to `review_check.py start`, which owns the loop stop.
+For a re-plan, run `start --parent-loop <saved-key>` to keep the parent key.
+Pass an owner's saved line with `review <folder> <range> --continue <user-file>`.
 
 `implement_run.py done <folder> 07-close` closes and archives the run, then prints its new path.
 For a second run on the same branch and day, use the command's recovery: rename its run folder

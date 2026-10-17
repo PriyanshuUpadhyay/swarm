@@ -834,7 +834,7 @@ def test_start_kit_without_blocks(tmp):
     assert out.returncode == 0 and out.stderr == "", out
     assert "### Chosen\n\n| Block | Why |\n|---|---|\n\n### Rejected\n\n| Block | Why |\n|---|---|" in out.stdout
     mask = lambda text, *paths: [text := text.replace(str(p), "<p>") for p in paths][-1]
-    for file in sorted(before.iterdir()):
+    for file in sorted(before.glob("0*.md")):
         a = mask(file.read_text(encoding="utf-8"), before.parents[2], SCRIPT.parents[3])
         b = mask((made / file.name).read_text(encoding="utf-8"), kit.resolve(), made.parents[2], kit)
         a, b = [re.sub(r"## Blocks considered\n.*?(?=## Rules for this step)", "", text, flags=re.S) for text in (a, b)]
@@ -1662,6 +1662,16 @@ with tempfile.TemporaryDirectory() as tmp:
     git("commit", "-q", "-m", "one")
 
     folder = Path(run("start").stdout.splitlines()[0])
+    loop_key = json.loads((folder / "loop.json").read_text(encoding="utf-8"))["parent_loop"]
+    assert loop_key.startswith("implement:")
+    assert run("start").returncode == 0
+    assert json.loads((folder / "loop.json").read_text(encoding="utf-8"))["parent_loop"] == loop_key
+    assert run("start", "--parent-loop", "another-task").returncode == 1
+    git("checkout", "-qb", "re-plan")
+    replanned = Path(run("start", "--parent-loop", loop_key).stdout.splitlines()[0])
+    assert replanned != folder
+    assert json.loads((replanned / "loop.json").read_text(encoding="utf-8"))["parent_loop"] == loop_key
+    git("checkout", "-q", "main")
     assert "RULE TEXT 42" in (folder / "05-build.md").read_text()
     assert "## Rules for this step (written by implement_run.py start; apply them, keep this section)" in (folder / "05-build.md").read_text()
     assert "RULE TEXT 42" not in (folder / "02-design.md").read_text()
@@ -1771,10 +1781,7 @@ with tempfile.TemporaryDirectory() as tmp:
         r.write_text(review_text + "".join(f"Run: tmp/review-check/range-{i}\n" for i in range(count)))
         out = run("take", folder, "06-review", "a")
         assert out.returncode == 0, out.stderr
-        warning = f"06-review already lists {count} runs; bring the open rows to the user before a new range"
-        assert out.stdout.splitlines().count(warning) == (1 if count >= 2 else 0)
-        if count < 2:
-            assert "bring the open rows" not in out.stdout
+        assert "bring the open rows" not in out.stdout, "review-check start owns the guard"
         assert r.read_text().startswith("Status: active a\n")
         assert [line for line in r.read_text().splitlines() if line.startswith("Run:")] == [
             f"Run: tmp/review-check/range-{i}" for i in range(count)], "take must keep one Run: line per round, newest last"

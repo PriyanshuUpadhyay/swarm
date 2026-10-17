@@ -36,7 +36,8 @@ For a gate to new seats, apply `blocks/worker-brief/SKILL.md`; this skill names 
 
 ```sh
 C=<skill-dir>/scripts/review_check.py
-python3 $C start <base>..<head>     # or `local` for uncommitted changes; --patch FILE for a part
+python3 $C start <base>..<head> --parent-loop <task-key> # or `local`; --patch FILE for a part
+python3 $C start <base>..<head> --parent-loop <task-key> --continue <user-file>
 python3 $C build <run>              # when 01-units.md has a Build line: the CI check for the head
 python3 $C build <run> --run        # or run the CI command in the frozen verify worktree
 python3 $C verdict <run>            # exits 1 with the gaps, or writes 03-verdict.md
@@ -59,7 +60,8 @@ root is two folders up from this skill's folder; a bare `references/` path below
 |---|---|---|
 | `01-units.md` | script | target, rules file or `none`, and every unit with its file, symbol, range, and count of checks |
 | `checklist.json` | script | unit entries hold `rules`, build-gate IDs under `tool`, references under `refs`, and one owner seat for each rule under `owners`; `seats` maps each seat name to its unit IDs, check count, and route |
-| `target.json` | script | base, head, and the repo's `CI:` line |
+| `target.json` | script | base, head, the repo's `CI:` line, parent-loop key, round, and consumed continuation |
+| `snapshot.json` | script | open issue identities and check results from `verdict`, for the loop guard in `review_check.py start` |
 | `build.json` | script | the CI result for the head, or the `--run` result for the tree |
 | `02-review-<seat>.md` | seat | results for the unit-rule pairs it owns, checked by `verdict <run>` |
 | `answers.md` | chair or user | answers for this run, with a file and a whole trimmed source line |

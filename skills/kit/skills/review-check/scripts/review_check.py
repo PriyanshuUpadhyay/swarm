@@ -12,12 +12,21 @@ has a `CI:` line and the repo's lint config runs that rule at error level, with 
 the unit's file. `build` records the CI result for the run's head, and `verdict` counts those IDs
 only from it.
 
-  start <local|base..head> [--patch FILE]   make <repo>/tmp/review-check/<run>/ with 01-units.md
+  start <local|base..head> [--parent-loop KEY] [--continue FILE] [--patch FILE]
+                                            make <repo>/tmp/review-check/<run>/ with 01-units.md
   build <run> [--run]                        record CI for the head, or run its command in the verify worktree
   verdict <run>                              gate the rows of 02-review*.md and write 03-verdict.md
 
 `--patch` reviews that patch instead of the whole range, for example review-walk's diff since view.
 `verdict` exits 1 when the gate fails, so a caller cannot read an APPROVE that no one earned.
+
+`start` owns the loop stop. A parent-loop key has three rounds, across fixes and re-plans.
+Without --parent-loop, the key is branch:<current branch>; detached HEAD needs an explicit key.
+Two complete, certain snapshots with the same open issues and check results stop the next round.
+Identity uses file, symbol, rule, and whole source evidence, without line numbers; uncertain matches
+use the cap. One user line `continue: <key>` in --continue FILE permits one extra round, once.
+A refusal preserves the verdict. An answer-only verdict spends no round, and APPROVE can close
+on the last allowed round. --patch starts do not spend the parent-loop budget.
 """
 import fnmatch, hashlib, json, os, re, shutil, signal, subprocess, sys, urllib.parse
 from contextlib import contextmanager, nullcontext
@@ -29,6 +38,7 @@ import step_run  # noqa: E402
 KINDS = ("pass", "fix", "ask", "note", "n/a")
 RULE = re.compile(r"^- `([A-Z][A-Z0-9-]*-\d+)` (.*)$")
 REFS_CAP = 20  # a symbol with more references than this gets the first 20; the seat searches the rest
+ROUND_CAP = 3
 BUILD_TIMEOUT = 3600
 CLEANUP_SECONDS = 10
 FUNC_KINDS = {"function", "method", "subroutine", "func", "procedure"}
@@ -300,6 +310,36 @@ def seat_map(checklist, catalog):
 
 
 def start(target, *opts):
+    root = home().parent
+    root.mkdir(parents=True, exist_ok=True)
+    with step_run.step_lock(root, "review-check-start", command="start"):
+        return start_locked(target, *opts)
+
+
+def stale_verdict(folder, lines):
+    for name, stamp in re.findall(r"([\w.-]+)@([a-f0-9]+)", lines[1] if len(lines) > 1 else ""):
+        file = folder / f"{name}.{'json' if name == 'build' else 'md'}"
+        if not file.exists() or revision(file) != stamp:
+            return file.name
+    return None
+
+
+def start_locked(target, *opts):
+    options = {}
+    while opts:
+        if opts == ("--patch",):
+            raise SystemExit("--patch needs a file")
+        if len(opts) < 2 or opts[0] not in ("--patch", "--parent-loop", "--continue") or opts[0] in options:
+            raise SystemExit("start accepts --patch FILE, --parent-loop KEY, and --continue FILE once each")
+        options[opts[0]], opts = opts[1], opts[2:]
+    parent_loop = options.get("--parent-loop")
+    if parent_loop is None:
+        branch = git("branch", "--show-current").strip()
+        if not branch:
+            raise SystemExit("detached HEAD needs --parent-loop KEY")
+        parent_loop = f"branch:{branch}"
+    if not parent_loop.strip() or any(ord(c) < 32 or ord(c) == 127 for c in parent_loop):
+        raise SystemExit("--parent-loop needs a nonempty key with no control characters")
     if target == "local":
         prefix, base, head = "local", git("rev-parse", "HEAD").strip(), None
         patch = local_patch()
@@ -309,22 +349,23 @@ def start(target, *opts):
         patch = git("diff", *PLAIN, base, head)
     else:
         raise SystemExit("target is `local` or `<base>..<head>`")
-    is_patch = opts[:1] == ("--patch",)
+    is_patch = "--patch" in options
     if is_patch:
-        if len(opts) < 2:
-            raise SystemExit("--patch needs a file")
         try:
-            patch = Path(opts[1]).read_text(encoding="utf-8")
+            patch = Path(options['--patch']).read_text(encoding="utf-8")
         except OSError as error:
-            raise SystemExit(f"cannot read patch {opts[1]}: {error.strerror}") from None
+            raise SystemExit(f"cannot read patch {options['--patch']}: {error.strerror}") from None
 
     d = home()
     prior = []
+    loop_runs = []
     if not is_patch:
         for target_file in d.glob("*/target.json"):
             metadata = json.loads(target_file.read_text(encoding="utf-8"))
             if metadata.get("patch"):
                 continue
+            if metadata.get("parent_loop") == parent_loop:
+                loop_runs.append((target_file.parent, metadata))
             before = metadata["head"]
             if before and (before == (head or base) or subprocess.run(
                     ["git", "merge-base", "--is-ancestor", before, head or base], capture_output=True).returncode == 0):
@@ -340,15 +381,39 @@ def start(target, *opts):
                 continue
             result = previous / "03-verdict.md"
             lines = result.read_text(encoding="utf-8").splitlines() if result.exists() else []
-            for name, stamp in re.findall(r"([\w.-]+)@([a-f0-9]+)", lines[1] if len(lines) > 1 else ""):
-                file = previous / f"{name}.{'json' if name == 'build' else 'md'}"
-                if not file.exists() or revision(file) != stamp:
-                    raise SystemExit(f"start refused by {previous}: its verdict is stale ({file.name} changed); "
-                                     f"run `verdict {previous.name}` again")
+            if stale := stale_verdict(previous, lines):
+                raise SystemExit(f"start refused by {previous}: its verdict is stale ({stale} changed); "
+                                 f"run `verdict {previous.name}` again")
             counts = re.search(r"; (\d+) fix, (\d+) ask", lines[2]) if len(lines) > 2 else None
             if not lines or not lines[0].startswith("Status: done ") or (counts and counts[1] == "0" and int(counts[2])):
                 raise SystemExit(f"start refused by {previous}: answer its asks in {previous / 'answers.md'} and run "
                                  f"`verdict {previous.name}` again, or delete the run folder if it was abandoned")
+    loop_runs.sort(key=lambda item: item[1]["round"])
+    used = max((metadata["round"] for _, metadata in loop_runs), default=0)
+    continued = any(metadata.get("continued") for _, metadata in loop_runs)
+    snapshots = []
+    for folder, _ in loop_runs[-2:]:
+        snapshot = json.loads((folder / "snapshot.json").read_text(encoding="utf-8")) if (folder / "snapshot.json").exists() else None
+        if snapshot:
+            verdict_file = folder / "03-verdict.md"
+            if (not verdict_file.exists() or revision(verdict_file) != snapshot.pop("verdict")
+                    or stale_verdict(folder, verdict_file.read_text(encoding="utf-8").splitlines())):
+                snapshot = None
+        snapshots.append(snapshot)
+    plateau = (len(snapshots) == 2 and all(s and s["certain"] and s["complete"] and s["open"] for s in snapshots)
+               and snapshots[0] == snapshots[1])
+    reason = "cap" if used >= ROUND_CAP else "no progress" if plateau else None
+    extension = False
+    if reason:
+        if "--continue" in options and not continued:
+            try:
+                extension = f"continue: {parent_loop}" in Path(options["--continue"]).read_text(encoding="utf-8").splitlines()
+            except (OSError, UnicodeError) as error:
+                raise SystemExit(f"cannot read --continue file: {error}") from None
+        if not extension:
+            raise SystemExit(f"start refused by {reason}; {used} rounds used for {parent_loop}; "
+                             f"the user can write `continue: {parent_loop}` in a file and pass --continue FILE "
+                             f"for one more round, once{' (already used)' if continued else ''}")
     numbers = (p.name[len(prefix) + 1:] for p in d.glob(f"{prefix}-[0-9]*") if p.is_dir())
     n = max((int(number) for number in numbers if number.isdecimal()), default=0) + 1
     d = d / f"{prefix}-{n:02d}"
@@ -376,7 +441,8 @@ def start(target, *opts):
     ci = ci_of(rules)
     cfg = lint_config(ci, head)
     (d / "target.json").write_text(json.dumps({"target": target, "base": base, "head": head, "ci": ci,
-                                             "patch": is_patch}, indent=2) + "\n", encoding="utf-8")
+                                             "patch": is_patch, "parent_loop": parent_loop,
+                                             "round": used + 1, "continued": extension}, indent=2) + "\n", encoding="utf-8")
     diff = parse_diff(patch)
     checklist = {}
     for u in units:
@@ -417,6 +483,7 @@ def start(target, *opts):
         f"Status: open\nUses: 01-units@{revision(d / '01-units.md')}\n\n"
         "| Unit | Rule | file:line | Quote | Kind | Problem | Proof |\n|---|---|---|---|---|---|---|\n", encoding="utf-8")
     print(d)
+    print(f"parent loop: {parent_loop}")
     for seat, plan in seats.items():
         print(f"{seat}: {len(plan['units'])} units, {plan['checks']} checks")
 
@@ -584,6 +651,10 @@ def verdict(name):
     seats = checklist.pop("seats", {})
     t = json.loads((d / "target.json").read_text(encoding="utf-8")) if (d / "target.json").exists() else {"ci": None}
     problems, seen, kept, done = [], set(), [], {uid: set() for uid in units}
+    snapshot = {"open": [], "checks": [], "certain": True}
+    symbols = [(u["file"], u["symbol"]) for u in units.values()]
+    if len(set(symbols)) != len(symbols):
+        snapshot["certain"] = False
     replied = answers(d / "answers.md")
     past, history = answers(d / "answers-before.md"), []
     closed = [0] * len(replied)
@@ -685,6 +756,14 @@ def verdict(name):
                 else:
                     proof = answer
             kept.append((uid, loc, quote, kind, problem, proof))
+        evidence = sorted({line.strip() for line in scope if quote in line})
+        if len(evidence) != 1 or u["symbol"].startswith(("hunk ", "deleted ")):
+            snapshot["certain"] = False
+        for rule_id in sorted(ids or {"-"}):
+            identity = [u["file"], u["symbol"], rule_id, evidence]
+            snapshot["checks"].append([*identity, kind])
+            if kind in ("fix", "ask"):
+                snapshot["open"].append(identity)
     for alternatives, match, n in zip(replied, selected, closed):
         path, quote, answer = match if n else min(alternatives, key=lambda alt: len(alt[2]))
         text = answer.strip()
@@ -722,6 +801,11 @@ def verdict(name):
     rest = f"Uses: {uses}\n" + "\n".join(body) + "\n"
     rev = f" {hashlib.sha1(rest.encode()).hexdigest()[:12]}" if status == "done" else ""
     (d / "03-verdict.md").write_text(f"Status: {status}{rev}\n{rest}", encoding="utf-8")
+    snapshot["complete"] = not problems and built != "fail"
+    snapshot["checks"] = sorted(snapshot["checks"])
+    snapshot["open"] = sorted(snapshot["open"])
+    snapshot["verdict"] = revision(d / "03-verdict.md")
+    (d / "snapshot.json").write_text(json.dumps(snapshot, indent=2) + "\n", encoding="utf-8")
     print(*(re.sub(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]", "", line) for line in body if line), sep="\n")
     return 1 if problems else 0
 

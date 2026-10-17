@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Make and take implement steps. Run from inside the repo.
 
-  start [--profile <name>] [--domains <a,b>] make tmp/flow/<date>-<branch>/ with selected profile domains
+  start [--profile <name>] [--domains <a,b>] [--parent-loop KEY] make tmp/flow/<date>-<branch>/
+  review <folder> <local|base..head> [--continue FILE] start review-check with this run's saved key
   status [<folder>]            print each step's status, whether it is ready, and whether it is stale
   take <folder> <step> <who> [--force] mark the step active and print its file with the skills the catalog gives it
   done <folder> <step>         set done with evidence; 07-close moves the run to tmp/flow/_closed/
@@ -31,6 +32,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import uuid
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "references"))
@@ -98,7 +100,27 @@ def rev(folder, step):
     return git("rev-parse", "HEAD")[:12] if step == "05-build" else step_run.revision(folder, step)
 
 
-def start(profile="default", domains=None):
+def loop_key(folder, inherited=None):
+    file = Path(folder) / "loop.json"
+    with step_run.step_lock(folder, "loop", command="loop key"):
+        key = json.loads(read_utf8(file))["parent_loop"] if file.exists() else inherited or f"implement:{uuid.uuid4()}"
+        if inherited is not None and inherited != key:
+            raise SystemExit(f"{folder} already uses parent loop {key}")
+        if not isinstance(key, str) or not key.strip() or any(ord(c) < 32 or ord(c) == 127 for c in key):
+            raise SystemExit("parent loop needs a nonempty key with no control characters")
+        if not file.exists():
+            step_run.write_step(file, json.dumps({"parent_loop": key}, indent=2) + "\n")
+    return key
+
+
+def review(folder, target, *opts):
+    script = BLOCKS.parent / "skills" / "review-check" / "scripts" / "review_check.py"
+    result = subprocess.run([sys.executable, str(script), "start", target, "--parent-loop", loop_key(folder), *opts])
+    if result.returncode:
+        raise SystemExit(result.returncode)
+
+
+def start(profile="default", domains=None, parent_loop=None):
     root = git("rev-parse", "--show-toplevel")
     if not root:
         raise SystemExit("not in a git repository")
@@ -151,6 +173,7 @@ def start(profile="default", domains=None):
                 f"Status: open\n{uses}\n{extra}Take with: python3 {Path(__file__).resolve()} take {folder} {step} <agent>\n"
                 f"Skills read: {', '.join(paths + read) or 'none'}\n\n{considered}{RULES_HEAD}\n{rules}\n{judged}"
                 f"{TODO_HEAD}\n" + "".join(f"- [ ] {item}: \n" for item in TODOS[step] + todos) + f"\n{RESULT_HEAD}\n", encoding="utf-8")
+    loop_key(folder, parent_loop)
     print(folder)
     print(f"Each step file holds its rules, a todo list, and a result section. Close a step with: python3 {Path(__file__).resolve()} done <folder> <step>")
     # Read the saved choice on repeat starts; changed domain lines apply only to a new run.
@@ -501,10 +524,6 @@ def take(folder, step, who, force=False):
     if not step_run.ready(folder, step, need):
         waiting = [u for u in need if status_of(folder, u).split()[0] not in ("done", "skipped")]
         raise SystemExit(f"{step} is not ready; it needs {', '.join(waiting)}")
-    if step == "06-review":
-        runs = len(re.findall(r"^Run:", (Path(folder) / "06-review.md").read_text(encoding="utf-8"), re.M))
-        if runs >= 2:
-            print(f"06-review already lists {runs} runs; bring the open rows to the user before a new range")
     if step == "07-close":
         approved(folder)
     step_run.take(folder, step, who, need, rev, force=force,
@@ -664,8 +683,8 @@ if __name__ == "__main__":
     if hasattr(sys.stdout, "reconfigure"):
         # Escape non-ASCII output when the console uses an ASCII encoding.
         sys.stdout.reconfigure(errors="backslashreplace")
-    commands = {"start": start, "status": status, "take": take, "done": done, "skip": skip}
-    arity = {"start": (0, 0), "status": (0, 1), "take": (3, 3), "done": (2, 2), "skip": (3, None)}
+    commands = {"start": start, "review": review, "status": status, "take": take, "done": done, "skip": skip}
+    arity = {"start": (0, 0), "review": (2, None), "status": (0, 1), "take": (3, 3), "done": (2, 2), "skip": (3, None)}
     if len(sys.argv) < 2 or sys.argv[1] not in commands:
         raise SystemExit(__doc__)
     try:
@@ -678,8 +697,8 @@ if __name__ == "__main__":
             raise SystemExit("done <folder> <step> accepts no --force" if command == "done" else "skip accepts no --force")
         options = {"force": force} if command == "take" else {}
         if command == "start":
-            while len(args) >= 2 and args[0] in ("--profile", "--domains") and args[0][2:] not in options:
-                options[args[0][2:]] = args[1]
+            while len(args) >= 2 and args[0] in ("--profile", "--domains", "--parent-loop") and args[0][2:].replace("-", "_") not in options:
+                options[args[0][2:].replace("-", "_")] = args[1]
                 args = args[2:]
         minimum, maximum = arity[command]
         if len(args) < minimum or maximum is not None and len(args) > maximum:
