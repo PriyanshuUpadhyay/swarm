@@ -71,9 +71,12 @@ def table(skill_md):
     for line in Path(skill_md).read_text(encoding="utf-8").splitlines():
         if re.match(r"\|\s*File\s*\|\s*Needs\s*\|\s*Holds\s*\|", line):
             inside = True
+            columns = [c.strip() for c in line.strip("|").split("|")]
+            has_blocks = len(columns) > 3 and columns[3] == "Blocks"
         elif inside and line.startswith("|") and not line.startswith("|---"):
             cells = [c.strip().strip("`") for c in line.strip("|").split("|")]
-            rows.append((cells[0].removesuffix(".md"), cells[1], cells[2]))
+            blocks = [b.strip() for b in cells[3].split(",") if b.strip()] if has_blocks else None
+            rows.append((cells[0].removesuffix(".md"), cells[1], cells[2], blocks))
         elif inside and not line.startswith("|"):
             break
     if not rows:
@@ -139,16 +142,7 @@ def start(folder, skill_md):
     folder = Path(folder)
     rows = table(skill_md)
     names = [r[0] for r in rows]
-    selected = {}
-    inside = False
-    for line in Path(skill_md).read_text(encoding="utf-8").splitlines():
-        if re.match(r"\|\s*File\s*\|\s*Needs\s*\|\s*Holds\s*\|\s*Blocks\s*\|", line):
-            inside = True
-        elif inside and line.startswith("|") and not line.startswith("|---"):
-            cells = [c.strip().strip("`") for c in line.strip("|").split("|")]
-            selected[cells[0].removesuffix(".md")] = [b.strip() for b in cells[3].split(",") if b.strip()]
-        elif inside and not line.startswith("|"):
-            break
+    selected = {name: ids for name, _, _, ids in rows if ids is not None}
     blocks = {}
     if selected and not all((folder / f"{name}.md").exists() for name in names):
         sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -166,7 +160,7 @@ def start(folder, skill_md):
             root, selected, blocks=Path(__file__).resolve().parents[1] / "blocks",
             params_override={"site": site, "shots": str(Path(site) / "shots")}, judge_todos=True)
     folder.mkdir(parents=True, exist_ok=True)
-    for name, need, holds in rows:
+    for name, need, holds, _ in rows:
         file = folder / f"{name}.md"
         if file.exists():
             continue

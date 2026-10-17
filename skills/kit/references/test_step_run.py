@@ -499,6 +499,17 @@ def test_build_block_todos():
         assert "block headless-shot script:" in export and "block visual-qa judge:" in export
 
 
+def test_table_blocks():
+    with tempfile.TemporaryDirectory() as tmp:
+        skill = Path(tmp, "SKILL.md")
+        for extra, cell, expected in (("", "", None), (" Block | Why |", " story | reason |", None),
+                                      (" Blocks |", " story, look-check |", ["story", "look-check"]),
+                                      (" Blocks |", " |", [])):
+            skill.write_text(f"| File | Needs | Holds |{extra}\n|---|---|---|\n"
+                             f"| `01-ask.md` | none | the question |{cell}\n", encoding="utf-8")
+            assert step_run.table(skill) == [("01-ask", "none", "the question", expected)]
+
+
 def test_build_start_without_tomllib():
     with tempfile.TemporaryDirectory() as tmp:
         folder = Path(tmp, "piece/ink")
@@ -604,6 +615,7 @@ def test_block_command():
             assert file.read_text(encoding="utf-8") == "Status: blocked missing input\n" + body
 
 
+test_table_blocks()
 test_build_start_without_tomllib()
 test_build_piece_repo_paths()
 test_build_repo_additions()
