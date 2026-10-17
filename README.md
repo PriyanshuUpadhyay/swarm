@@ -217,6 +217,29 @@ Appearance, the send key, Notifications, Profiles, and Accounts.
 Notices come from the small SwarmNotify helper that ships beside `swarm`, so a notice needs no open
 page, and nothing starts at login (ADR 0077, ADR 0079). A click on a notice focuses the agent's pane.
 
+## Owner scripts
+
+Run `scripts/install-local.sh v0.0.19 --dry-run` to see how a local install will work.
+The install and release scripts accept `--dry-run` and make no changes in that mode.
+
+| Command | Use |
+|---|---|
+| `scripts/install-local.sh <tag-or-commit>` | Build a clean copy of the ref and install it through Homebrew. |
+| `scripts/release.sh patch\|minor\|major [--local]` | Check main, bump the version, push the release, and wait for Release and Tap. |
+| `scripts/kit-checks.sh [worktree]` | Run the nine kit checks and keep full logs in `tmp/kit-checks/`. |
+| `scripts/prune-worktrees.sh [--yes]` | List merged, clean worktrees after a fetch; use `--yes` to remove them and their branches. |
+
+A local build uses the Homebrew version `<version>.local.<commit>`.
+For example, `0.0.19.local.6a56182f` sorts above `0.0.19` and below `0.0.20`.
+The install uses `reinstall` when swarm is present, so it can replace the same package version.
+It changes and restores the formula in `priyanshuupadhyay/tap`, which keeps that tap in the install
+record and keeps `/opt/homebrew/opt/swarm` as the path for the kit and HUD.
+A plain `brew upgrade` keeps this build until the next release.
+Use `scripts/release.sh resume v<version>` to finish a pushed release after a failure.
+The release script replaces a local build of that tag with the published build.
+See the Homebrew [formula guide](https://docs.brew.sh/Formula-Cookbook) and
+[command guide](https://docs.brew.sh/Manpage#reinstall-options-formulacask-).
+
 ## Environment
 
 When `SWARM_HOME` is not set, only a release build uses `HOME`. release.yml marks it with
