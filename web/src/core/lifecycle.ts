@@ -290,24 +290,31 @@ export class Lifecycle {
   /** End chat… and Archive chat. Live agents ask first (SwarmSessionCloser); Archive then moves the
    *  chat to Archived chats. */
   endChat(session: string, archive: boolean) {
-    const live = this.liveAgents(session);
+    this.endChats([session], archive);
+  }
+
+  /** End or Archive for the sidebar's selected chats, with one confirm for all of them. */
+  endChats(sessions: string[], archive: boolean) {
+    const live = sessions.map((session) => ({ session, agents: this.liveAgents(session) }));
+    const agents = live.reduce((n, l) => n + l.agents.length, 0);
     const run = async () => {
-      for (const agent of live) await this.api.action("/api/agent/close", { session, agent });
-      if (archive) await this.api.action("/api/sessions/archive", { ids: [session] });
+      for (const { session, agents } of live) for (const agent of agents) await this.api.action("/api/agent/close", { session, agent });
+      if (archive) {
+        await this.api.action("/api/sessions/archive", { ids: sessions });
+        for (const session of sessions) this.app.leaveChat(session);
+      }
     };
-    const title = this.app.chatTitle(session);
-    if (!live.length && !archive) return this.app.notice("This chat has already ended.");
-    if (!live.length) return void this.runAction(run, session);
+    const many = sessions.length > 1;
+    if (!agents && !archive) return this.app.notice(many ? "These chats have already ended." : "This chat has already ended.");
+    if (!agents) return void this.runAction(run);
     // An agent whose turn is over still has an open pane; only a working or waiting one is "running".
-    const busy = this.app.agentsOf(session).agents.filter((a) => a.alive && (a.state === "working" || a.state === "waiting")).length;
+    const busy = sessions.flatMap((s) => this.app.agentsOf(s).agents).filter((a) => a.alive && (a.state === "working" || a.state === "waiting")).length;
+    const verb = archive ? "Archiving" : "Ending";
     this.ask({
-      title: `${archive ? "Archive" : "End"} “${title}”?`,
-      body: `${busy ? `${plural(busy, "agent")} still working. ${archive ? "Archiving" : "Ending"} stops them.` : `${archive ? "Archiving" : "Ending"} closes its agent${live.length > 1 ? "s" : ""}.`}${archive ? " The chat moves to Archived." : ""}`,
-      action: archive ? "Archive Chat" : "End Chat",
-      run: async () => {
-        await run();
-        if (archive) this.app.leaveChat(session);
-      },
+      title: `${archive ? "Archive" : "End"} ${many ? `${sessions.length} chats` : `“${this.app.chatTitle(sessions[0])}”`}?`,
+      body: `${busy ? `${plural(busy, "agent")} still working. ${verb} stops them.` : `${verb} closes ${many ? "their" : "its"} agent${agents > 1 ? "s" : ""}.`}${archive ? (many ? " The chats move to Archived." : " The chat moves to Archived.") : ""}`,
+      action: `${archive ? "Archive" : "End"} ${many ? `${sessions.length} Chats` : "Chat"}`,
+      run,
     });
   }
 

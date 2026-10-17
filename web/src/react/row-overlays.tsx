@@ -68,6 +68,24 @@ export function RowMenu({ app, listRef }: { app: App; listRef: RefObject<HTMLDiv
   if (!row) return null;
   const r = row.row;
   const archive = app.view.treeName === "archived";
+  const group = app.view.marked.has(row.id) ? app.markedChats() : [];
+  if (group.length > 1)
+    return (
+      <ContextMenuContent onCloseAutoFocus={onClose} onEscapeKeyDown={onClose} onPointerDownOutside={onClose} data-testid="row-menu">
+        <ContextMenuLabel className="normal-case">{group.length} chats selected</ContextMenuLabel>
+        <ContextMenuItem onSelect={() => app.life.endChats(group, false)}>
+          <SquareIcon /> End {group.length} chats…
+        </ContextMenuItem>
+        <ContextMenuItem onSelect={() => app.life.endChats(group, true)}>
+          <ArchiveIcon /> Archive {group.length} chats
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem onSelect={() => void copy(group.join("\n"), "session ids")}>
+          <CopyIcon /> Copy session ids
+        </ContextMenuItem>
+        <ContextMenuItem onSelect={() => app.clearMarked()}>Clear selection</ContextMenuItem>
+      </ContextMenuContent>
+    );
   const fold = row.expanded !== null && (
     <ContextMenuItem onSelect={() => app.toggle(row.id)}>
       {row.expanded ? <ChevronsDownUpIcon /> : <ChevronsUpDownIcon />} {row.expanded ? "Collapse" : "Expand"}

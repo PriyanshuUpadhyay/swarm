@@ -235,6 +235,30 @@ test("Archive chat moves a chat to Archived, and ⇧⌘T with no closed tab open
   expect(errors).toEqual([]);
 });
 
+test("⌘-click picks two chats, and the row menu archives both at once", async ({ page: tab }) => {
+  const errors = await open(tab);
+  // Two chats with ended chairs, so no other case loses a live agent.
+  const chatOf = (ws: string) => workspace(tab, ws).locator("xpath=following-sibling::*[@data-kind='chat']").first().getAttribute("data-session");
+  const sessions = [(await chatOf("ws-build"))!, (await chatOf("ws-edit"))!];
+  const rows = sessions.map((s) => tab.locator(`[data-testid="tree-row"][data-session="${s}"]`));
+  try {
+    await rows[0].click({ modifiers: ["Meta"] });
+    await rows[1].click({ modifiers: ["Meta"] });
+    for (const row of rows) await expect(row).toHaveAttribute("data-marked", "true");
+    await rows[1].click({ button: "right" });
+    await expect(tab.getByTestId("row-menu")).toContainText("2 chats selected");
+    await tab.getByRole("menuitem", { name: "Archive 2 chats" }).click();
+    const confirm = tab.getByTestId("confirm-action");
+    if (await confirm.isVisible()) await confirm.click();
+    for (const row of rows) await expect(row).toBeHidden();
+  } finally {
+    const { sessions: archived } = await api<{ sessions: { id: string }[] }>("/api/sessions/archived");
+    const back = sessions.filter((s) => archived.some((a) => a.id === s));
+    if (back.length) await api("/api/sessions/unarchive", { ids: back });
+  }
+  expect(errors).toEqual([]);
+});
+
 test("an archived chat folds under its workspace, and Unarchive opens it again", async ({ page: tab }) => {
   const errors = await open(tab);
   const session = (await workspace(tab, "ws-edit").locator("xpath=following-sibling::*[@data-kind='chat']").first().getAttribute("data-session"))!;

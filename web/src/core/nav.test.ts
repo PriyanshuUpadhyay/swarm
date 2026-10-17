@@ -283,6 +283,33 @@ describe("a chat started in a tab", () => {
   });
 });
 
+describe("picked chats", () => {
+  it("picks chat rows with ⌘-click and Shift-click, skips other rows, and archives them in one call", async () => {
+    const actions: { path: string; body: unknown }[] = [];
+    const api = {
+      snapshot: async (): Promise<Snapshot> => ({ version: 1, sessions: [], agents: {} }),
+      tree: async () => sample,
+      action: async (path: string, body: unknown) => void actions.push({ path, body }),
+    } as unknown as Api;
+    const app = new App(api);
+    await (app as unknown as { refreshSnapshot(): Promise<void> }).refreshSnapshot();
+
+    app.clickRow("chat:site", "toggle");
+    app.clickRow("chat:docs", "range");
+    expect(app.markedChats()).toEqual(["site", "fix", "docs"]);
+    app.clickRow("chat:fix", "toggle");
+    app.clickRow("/r/app", "toggle");
+    expect(app.markedChats()).toEqual(["site", "docs"]);
+    expect(app.view.openId).toBeNull();
+
+    app.life.endChats(app.markedChats(), true);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(actions).toEqual([{ path: "/api/sessions/archive", body: { ids: ["site", "docs"] } }]);
+    app.clearMarked();
+    expect(app.view.marked.size).toBe(0);
+  });
+});
+
 describe("tree refresh", () => {
   it("keeps the old object of each row and section that did not change", () => {
     const next = JSON.parse(JSON.stringify(sample)) as TreeView;
