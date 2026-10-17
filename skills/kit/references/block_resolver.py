@@ -7,7 +7,7 @@ from pathlib import Path
 from step_run import plain
 from block_ledger import NOT_NAMED_REASON, ledger_markdown
 
-CAP = 15000
+CAP = 15000  # characters per skill, cut to it, and per block, refused over it; engineering-standards is about 10k
 PARAM = re.compile(r"\{\{(\w+)\}\}")
 CHECKS = ("Check (script)", "Check (judge)")
 
