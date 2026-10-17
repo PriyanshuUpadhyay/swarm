@@ -9,7 +9,7 @@ metadata:
   needs: "a claim or step id"
   gives: "one answer line per decision"
   conflicts: ""
-  users: "flow, engineering-standards"
+  users: "implement, engineering-standards"
   source: "html-plan pack: skills/html-plan/SKILL.md:80 (rule 6), :162-165 (answer endings), skills/html-plan/references/blocks.md:163-166 (doc-ask); references/plan-layout.md:14-15 (unanswered choice); skills/engineering-standards/SKILL.md section 5 (trade-off form, moved here 2026-10-13)"
 ---
 

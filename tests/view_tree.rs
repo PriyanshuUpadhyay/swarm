@@ -324,13 +324,29 @@ fn child_folds_and_hides_ended_children() {
         opened.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(),
         ["/repo", "chat:chat", "child:chat/review"]
     );
-    assert_eq!(opened[1].status, Some(Status::Working));
+    assert_eq!(opened[1].status, Some(Status::Waiting));
     assert!(!opened[2].dimmed);
     assert_eq!(opened[2].detail, "· code");
     state.fold("/repo", true);
     let folded = sections(&snap, &owner, &state, false).remove(0).rows;
     assert_eq!(folded.len(), 1);
     assert_eq!(folded[0].status, Some(Status::Waiting));
+}
+#[test]
+fn an_open_chat_is_done_only_when_its_chair_and_every_child_are_done() {
+    let owner = OwnerChoices::default();
+    let mut state = ViewState::default();
+    state.fold("chat:chat", false);
+    for (child, expected) in [("working", Status::Working), ("done", Status::Done)] {
+        let snap = folder_snapshot(
+            vec![session("chat", "/repo", 1)],
+            json!({"chat":[agent("orchestrator","done"),agent("review",child)]}),
+        );
+        let rows = sections(&snap, &owner, &state, false).remove(0).rows;
+        assert_eq!(rows[1].id, "chat:chat");
+        assert!(rows[1].expanded);
+        assert_eq!(rows[1].status, Some(expected));
+    }
 }
 #[test]
 fn hides_a_closed_chat_with_no_log() {

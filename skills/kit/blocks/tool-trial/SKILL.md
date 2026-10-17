@@ -15,10 +15,9 @@ metadata:
 
 ## Rules
 - Make a shortlist of at least three candidates.
-- Install each one in a scratch place, run the same real task on each, and record the install, the time, and the result. Remove the ones you do not pick.
+- Isolate each trial by `blocks/scratch-home/SKILL.md`. Run the same real task on each candidate, and record the install, the time, and the result. Remove the candidates you do not pick.
 - A candidate that is not installed stays on the list, because install time is not a reason to drop it.
 - A slower, tested answer beats a fast pick from reading alone.
-- Ask before an install that changes state outside a scratch place, such as a GUI permission or a system service.
 
 ## Example
 Initial state: the question is "which tool turns this Markdown report into a PDF".
@@ -30,4 +29,4 @@ Result: a table with three rows, install, task, time, and result; the two tools 
 
 ## Check (judge)
 - Does the table hold three or more candidates, each run on the same task with its time and result? Quote the table.
-- Were the candidates not picked removed, and was any install outside a scratch place asked about first? Quote the lines.
+- Were the candidates not picked removed, and did isolation pass the checks in `blocks/scratch-home/SKILL.md`? Quote the removal and isolation evidence.

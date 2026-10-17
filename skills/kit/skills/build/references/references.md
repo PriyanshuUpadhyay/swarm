@@ -30,7 +30,7 @@ Fill low-risk gaps with defaults and record them. Use 1080x1920 for a vertical r
 for a loop, and 15-45 s for a short. Do not guess exact brand copy, logos, likenesses, or publishing
 destinations. Ask for them.
 
-Record each reference in `ink/01-intake.md`. Find, inspect, and measure the references as `blocks/reference-analysis/SKILL.md` says. In ink, the recipes in
+Record each reference in `ink/01-intake.md`. Find, inspect, and measure the references as `blocks/reference-analysis/SKILL.md` says. In build, the recipes in
 `blocks/build-canvas/references/mark-making.md` give starting numbers where a reference is too small to measure.
 
 ## Style grammar template
@@ -61,6 +61,5 @@ Do not drift into:
 Originality changes:
 ```
 
-Write the grammar to `ink/02-look.md`, and turn it into one `look` token object. A scene that
-needs a different look (a flashback, a dream) gets a named variant of the same token keys, not new
-literals.
+Write the grammar to `ink/02-look.md`. Apply `blocks/design-tokens/SKILL.md` to its tokens and
+variants, with the code boundaries in `blocks/build-canvas/SKILL.md`.

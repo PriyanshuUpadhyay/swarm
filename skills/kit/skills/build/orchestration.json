@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "workflow_kind": "ink",
+  "workflow_kind": "build",
   "required_operations": [
     "resolve_roles",
     "validate_host_capabilities",
@@ -11,13 +11,13 @@
     "close_owned_leaves"
   ],
   "roles": [
-    "ink.build",
+    "build",
     "review.visual"
   ],
   "seat_template": {
     "isolation": "one seat per step; the builder works only in the piece folder, and the critic only reads it",
     "visibility": "host-visible owned leaf",
-    "permission": "ink.build edits only the piece folder and the step file it was given, with no commits; review.visual reads the piece folder and writes only its score file",
+    "permission": "build edits only the piece folder and the step file it was given, with no commits; review.visual reads the piece folder and writes only its score file",
     "artifact": "the step file under <piece>/ink/, with line 1 set to done, skipped, or blocked",
     "deadline": "bounded by the chair"
   },
@@ -70,7 +70,7 @@
       "events": [
         "status-lines-read",
         "first-ready-step:04-style-frames",
-        "build-dispatched:ink.build",
+        "build-dispatched:build",
         "frames-rendered",
         "critic-dispatched:review.visual",
         "scores-returned",
@@ -83,7 +83,7 @@
         "status-lines-read",
         "stale-check",
         "first-ready-step:05-animatic",
-        "build-dispatched:ink.build"
+        "build-dispatched:build"
       ]
     }
   ]

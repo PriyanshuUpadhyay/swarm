@@ -9,12 +9,12 @@ metadata:
   needs: "the contracts and the callers"
   gives: "a call tree"
   conflicts: ""
-  users: "flow"
-  source: "html-plan pack: skills/html-plan/references/blocks.md:101-106 (doc-calls), :5 (+ - ~ convention); skills/flow/SKILL.md (step table, 04-impact row)"
+  users: "implement"
+  source: "html-plan pack: skills/html-plan/references/blocks.md:101-106 (doc-calls), :5 (+ - ~ convention); skills/implement/SKILL.md (step table, 04-impact row)"
 ---
 
 ## Rules
-- Write the tree as plain text in a fenced block in the impact step's file (`04-impact.md` in flow).
+- Write the tree as plain text in a fenced block in the impact step's file (`04-impact.md` in implement).
 - One call per line. Column 0 is the mark: `+` new, `-` removed, `~` changed entrypoint, `?` proposed (the reader can strike it), a space for context.
 - An entrypoint starts at column 2. Each level adds 2 spaces. A blank line starts a new entrypoint.
 - `**bold**` marks a new symbol. A `+` row without bold is a new call to something that exists.

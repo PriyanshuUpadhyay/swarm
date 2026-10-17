@@ -22,10 +22,8 @@ Keep the task file as the kit block `blocks/task-file/SKILL.md` says, at
 - a chunk log with the chunk number, its intent, its `file:line`, and its outcome
   (`approved`, `changed`, or `denied`).
 
-The status block after a resume also names the current chunk. Everything the user has to read,
-which is the behavior list, every chunk, and every example, appears inline in the chat as text and
-fenced code. Never point the user at the task file, and never answer with its path in place of the
-code.
+The status block after a resume also names the current chunk. Apply the loaded agent instructions
+to user-facing output. The chunk loop below owns the diff shown for approval.
 
 ## Plan first, short
 
@@ -33,11 +31,11 @@ Read the code the task touches. Write 3-7 behaviors, each one testable sentence 
 order. Show the list inline in the chat and wait for the user's approval or edits; the copy in the
 task file is a record, not the reply. No design essay, no option survey.
 
-When no `flow` folder is named, first run `python3 <flow-skill-dir>/scripts/flow_run.py start`
-and follow the `flow` skill's entry rule before the plan. With a
-`flow` folder, take the behaviors from the done-when of its `01-frame.md`
+When no `implement` run folder is named, first run `python3 <implement-skill-dir>/scripts/implement_run.py start`
+and follow the `implement` skill's entry rule before the plan. With an
+`implement` run folder, take the behaviors from the done-when of its `01-frame.md`
 and the contracts in its `03-contracts.md`, and hold its build step. Before the first chunk, apply
-the rules and the todo list in its `05-build.md`. The flow's review step follows the
+the rules and the todo list in its `05-build.md`. The implement workflow's review step follows the
 last behavior, so pair itself still has no closing pass.
 
 Every behavior ends with `Standards: <row ids>` or `Standards: none`. Select them using
@@ -63,8 +61,8 @@ edit types only the changed lines. For a new file, write it in the scratchpad an
 what comes in. Keep the diff to the hunks of the chunk.
 
 A chunk touches only what its behavior sentence names. No new helper, field, export, flag, or
-todo goes in unless the sentence names it. A new symbol lands with its first caller, as the
-kit block `blocks/checked-units/SKILL.md` says. An edited function stays where it is, so the diff
+todo goes in unless the sentence names it. Apply the kit block `blocks/checked-units/SKILL.md`
+for a new symbol and its caller. An edited function stays where it is, so the diff
 shows an edit, not a delete plus an add; a move is its own chunk.
 
 Code stays inline by default. Before a chunk adds or splits out a function, file, or module, apply
@@ -79,7 +77,7 @@ Then wait for one of three replies:
 
 | Reply | Result |
 |---|---|
-| `approve` | apply the chunk and run the smallest check for the touched unit (compile, lint, or one test). During the check, prepare the next chunk's diff in scratch from the patched file. After the check passes, show its result in one line and the next chunk's diff in the same reply. When the chunk is the last one of its behavior, also commit the behavior and add the short hash to that line. If the check fails, show the failure, drop the prepared chunk, skip any commit, and wait for `change` or `deny` |
+| `approve` | apply the chunk and run the smallest check for the touched unit (compile, lint, or one test). It proves only that chunk. The behavior proof follows `blocks/prove-it-works/SKILL.md` at the last chunk. During the check, prepare the next chunk's diff in scratch from the patched file. After the check passes, show its result in one line and the next chunk's diff in the same reply. When the chunk is the last one of its behavior, also commit the behavior and add the short hash to that line. If the check fails, show the failure, drop the prepared chunk, skip any commit, and wait for `change` or `deny` |
 | `change: <text>` | revise the same chunk and show it again |
 | `deny` | drop the chunk without argument, ask at most one question, then propose the next chunk |
 
@@ -115,7 +113,7 @@ When every chunk of the current behavior is applied and its check passes, show, 
 3. the test command and its result.
 
 Then propose the first chunk of the next behavior. No commit question; the behavior commits
-are the record. After the last behavior, set `Status: done` in the task file, print the flow's `Next:` line for
+are the record. After the last behavior, set `Status: done` in the task file, print the implement workflow's `Next:` line for
 the review step, and stop. There is no closing pass:
 no cleanup gate, no readability review, no extra tooling to set up or tear down.
 
@@ -124,7 +122,7 @@ no cleanup gate, no readability review, no extra tooling to set up or tear down.
 - No edit before `approve`.
 - One chunk is one behavior as one diff, about 40 changed lines, several hunks allowed. A bigger
   behavior is split in the list, never walked up in stages.
-- A chunk touches only what its behavior names. A new symbol lands with its first caller. An
+- A chunk touches only what its behavior names. Apply `blocks/checked-units/SKILL.md` to new symbols. An
   edited function stays in place.
 - Code stays inline unless the kit block `blocks/when-to-extract/SKILL.md` allows the
   extraction.

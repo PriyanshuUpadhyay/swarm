@@ -14,9 +14,9 @@ only the user can give.
 
 1. State the exit condition as a checkable predicate before the first change: tests green, the
    repro fixed, the feature exercised on the real surface. Show it in one line and start. Do not
-   wait for approval of the predicate. When no `flow` folder is named, first run
-   `python3 <flow-skill-dir>/scripts/flow_run.py start` and follow the `flow` skill's entry rule.
-   With a `flow` folder, the predicate is the done-when of its `01-frame.md`, and you hold its
+   wait for approval of the predicate. When no `implement` run folder is named, first run
+   `python3 <implement-skill-dir>/scripts/implement_run.py start` and follow the `implement` skill's entry rule.
+   With an `implement` run folder, the predicate is the done-when of its `01-frame.md`, and you hold its
    build step. Before the first change, apply the rules and the todo list in its `05-build.md`.
 2. Each iteration makes the smallest change the evidence justifies, verifies it against the
    predicate, commits when it advanced, and discards a change that did not help. A change that
@@ -35,9 +35,9 @@ only the user can give.
    Later rows go to the same fix seat as one more ask. The verdict word and the next review start
    wait for every review seat. Fix each `fix` row in one more iteration, then review the
    new range. Handle each `ask` as review-check's Asks section says: answer-only work keeps
-   HEAD and the range fixed, then run `verdict` again on the same run. In a flow, you also hold
+   HEAD and the range fixed, then run `verdict` again on the same run. In an implement run, you also hold
    the review step, and the last verdict goes in
-   `06-review.md`, because it covers the build range. Then print the flow's `Next:` line for the
+   `06-review.md`, because it covers the build range. Then print the implement workflow's `Next:` line for the
    close step.
 6. Stop only when the predicate is met and the review has no `fix` row, or when blocked on
    user input. After three review rounds that still return `fix` rows, stop and bring the rows
@@ -59,13 +59,13 @@ The worker's `unit N ready` message carries the changed paths, its check output,
 `git diff HEAD | shasum`. The chair hashes the same diff. A matching hash lets the chair stage
 the reported paths, commit, and send `committed` in one call. The chair then runs the unit's check
 on that commit in the background, in a persistent detached git worktree under `tmp/deliver/verify`.
-The worker edits N+1 at once, but its commit waits for N green. A red check stops landings; keep
+Apply the pipeline exception in `blocks/checked-units/SKILL.md`. A red check stops landings; keep
 the work, diagnose, then fix or revert in a checked unit. Never revert automatically. A hash
 that does not match keeps the current gate; the chair runs the check before commit.
 
 ## Parallel fix seats (opt-in)
 
-Only when the user opts in for this run, use at most two fix seats. Before launch, the chair
+Only when the user opts in for this run, use fix seats within the coding-seat cap in `references/fan-out.md`. Before launch, the chair
 declares each seat's file set and the shared interfaces that stay frozen. Each seat uses its own
 worktree. Run `python3 <skill-dir>/scripts/land.py <decl.json> <worktree>...`, where the declaration
 maps each worktree to its file list and names the frozen files; it refuses overlapping files.

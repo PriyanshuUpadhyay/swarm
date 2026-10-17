@@ -4,7 +4,7 @@ description: "Rewrite review findings as short PR comments in the reviewer's own
 license: MIT
 metadata:
   kind: rule
-  owns: "how review comments sound"
+  owns: "the private voice file path and how review comments sound"
   serves: "review, close"
   needs: "review findings with file and line"
   gives: "comments in the reviewer's voice"

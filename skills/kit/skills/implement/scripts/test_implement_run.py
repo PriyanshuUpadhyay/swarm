@@ -1,4 +1,4 @@
-"""Run: python3 test_flow_run.py  (uses a temporary repo and a temporary HOME). Needs Python 3.11 or later,
+"""Run: python3 test_implement_run.py  (uses a temporary repo and a temporary HOME). Needs Python 3.11 or later,
 because start reads TOML with tomllib."""
 import fcntl
 import hashlib
@@ -16,12 +16,12 @@ from pathlib import Path
 from unittest.mock import patch
 
 if sys.version_info < (3, 11):
-    raise SystemExit(f"test_flow_run.py needs Python 3.11 or later (tomllib); this is Python {sys.version.split()[0]}")
+    raise SystemExit(f"test_implement_run.py needs Python 3.11 or later (tomllib); this is Python {sys.version.split()[0]}")
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # python3 -I does not add the script's folder
-import flow_run  # noqa: E402
+import implement_run  # noqa: E402
 
-SCRIPT = Path(__file__).resolve().with_name("flow_run.py")  # the kit path, also when run through a linked skill folder
+SCRIPT = Path(__file__).resolve().with_name("implement_run.py")  # the kit path, also when run through a linked skill folder
 CALLERS_MEMORY_LIMIT = 1_000_000
 
 
@@ -42,7 +42,7 @@ def test_command_wrong_count(run, folder):
                           ("done", ()), ("skip", ()), ("skip", (folder,)),
                           ("skip", (folder, "02-design"))):
         out = run(command, *args)
-        usage = next(line.strip() for line in flow_run.__doc__.splitlines()
+        usage = next(line.strip() for line in implement_run.__doc__.splitlines()
                      if line.strip().split()[:1] == [command])
         assert out.returncode == 1 and usage in out.stderr, out.stderr
         assert "Traceback" not in out.stderr, out.stderr
@@ -146,8 +146,8 @@ def test_atomic_skip(folder):
         real_replace(source, destination)
         replaced.append(destination)
 
-    with redirect_stdout(StringIO()), patch.object(flow_run.step_run.os, "replace", check_replace):
-        flow_run.skip(folder, "02-design", "no", "UI")
+    with redirect_stdout(StringIO()), patch.object(implement_run.step_run.os, "replace", check_replace):
+        implement_run.skip(folder, "02-design", "no", "UI")
     assert replaced == [file], "skip must replace the file atomically"
     assert file.read_text().startswith("Status: skipped no UI\n")
     file.write_text(original)
@@ -157,7 +157,7 @@ def test_skip_lock(run, folder):
     file = folder / "02-design.md"
     original = file.read_text(encoding="utf-8")
     events = (folder / "events.log").read_text(encoding="utf-8")
-    with flow_run.step_run.step_lock(folder, "02-design"):
+    with implement_run.step_run.step_lock(folder, "02-design"):
         out = run("skip", folder, "02-design", "no", "UI")
         assert out.returncode == 1 and "02-design is locked by a running skip; wait for it" in out.stderr, out
         assert file.read_text(encoding="utf-8") == original
@@ -185,7 +185,7 @@ def test_skip_rejects_force(run, folder):
 def test_callers_after_claim(run, folder):
     file = folder / "04-impact.md"
     original = file.read_text()
-    with flow_run.step_run.step_lock(folder, "04-impact"):
+    with implement_run.step_run.step_lock(folder, "04-impact"):
         out = run("take", folder, "04-impact", "a")
         assert out.returncode == 1 and "is locked by a running take" in out.stderr, out
         assert file.read_text() == original, "a refused claim must not write callers"
@@ -194,14 +194,14 @@ def test_callers_after_claim(run, folder):
     def write_callers(path):
         assert file.read_text().startswith("Status: active a\n"), "the claim must finish before callers are written"
         try:
-            flow_run.skip(folder, "04-impact", "racing skip")
+            implement_run.skip(folder, "04-impact", "racing skip")
             raise AssertionError("skip must refuse during the callers write")
         except SystemExit as error:
             assert "is locked by a running skip" in str(error), error
         seen.append(path)
 
-    with redirect_stdout(StringIO()), patch.object(flow_run, "write_callers", write_callers):
-        flow_run.take(folder, "04-impact", "a")
+    with redirect_stdout(StringIO()), patch.object(implement_run, "write_callers", write_callers):
+        implement_run.take(folder, "04-impact", "a")
     assert seen == [folder]
     file.write_text(original)
 
@@ -217,17 +217,17 @@ def test_callers_timeout(folder):
         if args[:2] == ["git", "grep"]:
             calls.append((args, kwargs))
             if len(calls) == 1:
-                raise subprocess.TimeoutExpired(args, flow_run.SEARCH_EACH_SECONDS)
+                raise subprocess.TimeoutExpired(args, implement_run.SEARCH_EACH_SECONDS)
             kwargs["stdout"].write(b"app.py:1:other_name()\n")
             return subprocess.CompletedProcess(args, 0)
         return real_run(args, **kwargs)
 
     try:
         contracts.write_text(original_contracts + "`other_name()`\n", encoding="utf-8")
-        with patch.object(flow_run.subprocess, "run", slow_grep):
-            flow_run.write_callers(folder)
+        with patch.object(implement_run.subprocess, "run", slow_grep):
+            implement_run.write_callers(folder)
         assert len(calls) >= 2, "a timed out search must not stop later names"
-        assert all(options.get("timeout") == flow_run.SEARCH_EACH_SECONDS and not options.get("text") for _, options in calls)
+        assert all(options.get("timeout") == implement_run.SEARCH_EACH_SECONDS and not options.get("text") for _, options in calls)
         text = file.read_text(encoding="utf-8")
         assert "callers: git grep timed out" in text and "app.py:1:other_name()" in text
     finally:
@@ -245,11 +245,11 @@ def callers_stub_output(folder, name, stub_body):
             stub = Path(directory) / "git"
             stub.write_text(f"#!{sys.executable}\nimport sys\n{stub_body}", encoding="utf-8")
             stub.chmod(0o755)
-            with patch.object(flow_run, "git", return_value=str(folder)), \
+            with patch.object(implement_run, "git", return_value=str(folder)), \
                     patch.dict(os.environ, {"PATH": directory + os.pathsep + os.environ["PATH"]}):
                 tracemalloc.start()
                 try:
-                    flow_run.write_callers(folder)
+                    implement_run.write_callers(folder)
                     _, peak = tracemalloc.get_traced_memory()
                 finally:
                     tracemalloc.stop()
@@ -263,10 +263,10 @@ def test_callers_large_output(folder):
     peak, text = callers_stub_output(folder, "many_hits",
                                     "for index in range(10000):\n"
                                     "    print(f'app.py:{index + 1}:many_hits() ' + 'x' * 500)\n")
-    assert "### many_hits (10000 places)" in text and f"... and {10000 - flow_run.MAX_HITS} more" in text, text
+    assert "### many_hits (10000 places)" in text and f"... and {10000 - implement_run.MAX_HITS} more" in text, text
     hits = [line for line in text.splitlines() if line.startswith("app.py:")]
-    assert len(hits) == flow_run.MAX_HITS and hits[-1].startswith(f"app.py:{flow_run.MAX_HITS}:")
-    assert all(len(hit) <= flow_run.HIT_CHARS for hit in hits)
+    assert len(hits) == implement_run.MAX_HITS and hits[-1].startswith(f"app.py:{implement_run.MAX_HITS}:")
+    assert all(len(hit) <= implement_run.HIT_CHARS for hit in hits)
     assert peak < CALLERS_MEMORY_LIMIT, f"caller search held the full output in memory: peak {peak} bytes"
 
 
@@ -278,7 +278,7 @@ def test_callers_long_line(folder):
                                     "sys.stdout.buffer.write(b'\\n\\napp.py:2:long_hit()\\napp.py:3:long_hit()')\n")
     assert "### long_hit (3 places)" in text, text
     hits = [line for line in text.splitlines() if line.startswith(("bundle.js:", "app.py:"))]
-    assert len(hits) == 3 and len(hits[0]) == flow_run.HIT_CHARS, hits
+    assert len(hits) == 3 and len(hits[0]) == implement_run.HIT_CHARS, hits
     assert hits[1:] == ["app.py:2:long_hit()", "app.py:3:long_hit()"], hits
     assert peak < CALLERS_MEMORY_LIMIT, f"caller search held a whole line in memory: peak {peak} bytes"
 
@@ -290,7 +290,7 @@ def test_callers_long_stderr(folder):
                                     "sys.exit(128)\n")
     prefix = "callers: git grep failed: "
     errors = [line for line in text.splitlines() if line.startswith(prefix)]
-    assert len(errors) == 1 and len(errors[0]) <= len(prefix) + flow_run.LINE_CHUNK, "git grep error line exceeds its chunk limit"
+    assert len(errors) == 1 and len(errors[0]) <= len(prefix) + implement_run.LINE_CHUNK, "git grep error line exceeds its chunk limit"
     assert "0 places" not in text
     assert peak < CALLERS_MEMORY_LIMIT, f"caller search held a whole stderr line in memory: peak {peak} bytes"
 
@@ -304,7 +304,7 @@ def test_callers_stderr_utf8_cut(folder):
 
 
 def test_callers_stdout_utf8_cut(folder):
-    with patch.object(flow_run, "HIT_CHARS", flow_run.LINE_CHUNK):
+    with patch.object(implement_run, "HIT_CHARS", implement_run.LINE_CHUNK):
         _, text = callers_stub_output(folder, "long_hit",
                                       "sys.stdout.buffer.write(('€' * 2000 + '\\n').encode('utf-8'))\n")
     hits = [line for line in text.splitlines() if line.startswith("€")]
@@ -319,9 +319,9 @@ def test_callers_failure(folder):
         kwargs["stderr"].write(b"\x1b[31mcorrupt index\nextra detail")
         return subprocess.CompletedProcess(args, 128)
     try:
-        with patch.object(flow_run, "git", return_value=str(folder)), \
-                patch.object(flow_run.subprocess, "run", side_effect=failed_grep):
-            flow_run.write_callers(folder)
+        with patch.object(implement_run, "git", return_value=str(folder)), \
+                patch.object(implement_run.subprocess, "run", side_effect=failed_grep):
+            implement_run.write_callers(folder)
         text = file.read_text(encoding="utf-8")
         assert "callers: git grep failed: [31mcorrupt index" in text, text
         assert "0 places" not in text and "extra detail" not in text and "\x1b" not in text
@@ -334,10 +334,10 @@ def test_callers_deadline(folder):
     original, original_contracts = file.read_text(encoding="utf-8"), contracts.read_text(encoding="utf-8")
     try:
         contracts.write_text("`one_name()` `two_name()` `three_name()`", encoding="utf-8")
-        with patch.object(flow_run, "git", return_value=str(folder)), \
+        with patch.object(implement_run, "git", return_value=str(folder)), \
                 patch("time.monotonic", side_effect=[0, 119, 120]), \
-                patch.object(flow_run.subprocess, "run", return_value=subprocess.CompletedProcess([], 1, b"", b"")) as search:
-            flow_run.write_callers(folder)
+                patch.object(implement_run.subprocess, "run", return_value=subprocess.CompletedProcess([], 1, b"", b"")) as search:
+            implement_run.write_callers(folder)
         assert search.call_count == 1, "the total deadline must stop later searches"
         assert "callers: search stopped after 120 s, 2 names not searched" in file.read_text(encoding="utf-8")
         assert search.call_args.kwargs["timeout"] == 1, "each search must use the remaining total budget"
@@ -350,11 +350,11 @@ def test_callers_name_cap(folder):
     file, contracts = folder / "04-impact.md", folder / "03-contracts.md"
     original, original_contracts = file.read_text(encoding="utf-8"), contracts.read_text(encoding="utf-8")
     try:
-        contracts.write_text(" ".join(f"`name_{i}()`" for i in range(flow_run.NAME_CAP + 3)), encoding="utf-8")
-        with patch.object(flow_run, "git", return_value=str(folder)), \
-                patch.object(flow_run.subprocess, "run", return_value=subprocess.CompletedProcess([], 1, b"", b"")) as search:
-            flow_run.write_callers(folder)
-        assert search.call_count == flow_run.NAME_CAP
+        contracts.write_text(" ".join(f"`name_{i}()`" for i in range(implement_run.NAME_CAP + 3)), encoding="utf-8")
+        with patch.object(implement_run, "git", return_value=str(folder)), \
+                patch.object(implement_run.subprocess, "run", return_value=subprocess.CompletedProcess([], 1, b"", b"")) as search:
+            implement_run.write_callers(folder)
+        assert search.call_count == implement_run.NAME_CAP
         assert "... and 3 more names not searched" in file.read_text(encoding="utf-8")
     finally:
         file.write_text(original, encoding="utf-8")
@@ -366,17 +366,17 @@ def test_callers_end_only_in_impact(tmp):
     step a pasted Callers line inside the list must not hide the open items after it."""
     folder = Path(tmp, "callers-end")
     folder.mkdir()
-    body = f"Status: open\n\n{flow_run.TODO_HEAD}\n- [x] a: ok\n{flow_run.CALLERS_HEAD}\n%s\n{flow_run.RESULT_HEAD}\n"
+    body = f"Status: open\n\n{implement_run.TODO_HEAD}\n- [x] a: ok\n{implement_run.CALLERS_HEAD}\n%s\n{implement_run.RESULT_HEAD}\n"
     (folder / "03-contracts.md").write_text(body % "- [ ] b: ", encoding="utf-8")
     (folder / "04-impact.md").write_text(body % "- `name` 2 hits", encoding="utf-8")
     try:
         with redirect_stdout(StringIO()):
-            flow_run.done(folder, "03-contracts")
+            implement_run.done(folder, "03-contracts")
         raise AssertionError("03-contracts with an open item after a Callers line must not be done")
     except SystemExit as error:
-        assert f"no todo list: the line {flow_run.CALLERS_HEAD!r} inside the list ends it" in str(error.code), error.code
+        assert f"no todo list: the line {implement_run.CALLERS_HEAD!r} inside the list ends it" in str(error.code), error.code
     with redirect_stdout(StringIO()):
-        flow_run.done(folder, "04-impact")
+        implement_run.done(folder, "04-impact")
     assert (folder / "04-impact.md").read_text(encoding="utf-8").startswith("Status: done "), "04-impact ends at Callers"
 
 
@@ -385,11 +385,11 @@ def test_callers_cut_list(folder):
     file, contracts = folder / "04-impact.md", folder / "03-contracts.md"
     original, original_contracts = file.read_text(encoding="utf-8"), contracts.read_text(encoding="utf-8")
     try:
-        contracts.write_text(f"## Rules\n`rule_name()`\n{flow_run.TODO_HEAD}\n- [x] names: below\n## Open questions\n"
-                             f"`real_name()`\n\n{flow_run.RESULT_HEAD}\n`result_name()`\n", encoding="utf-8")
-        with patch.object(flow_run, "git", return_value=str(folder)), \
-                patch.object(flow_run.subprocess, "run", return_value=subprocess.CompletedProcess([], 1, b"", b"")) as search:
-            flow_run.write_callers(folder)
+        contracts.write_text(f"## Rules\n`rule_name()`\n{implement_run.TODO_HEAD}\n- [x] names: below\n## Open questions\n"
+                             f"`real_name()`\n\n{implement_run.RESULT_HEAD}\n`result_name()`\n", encoding="utf-8")
+        with patch.object(implement_run, "git", return_value=str(folder)), \
+                patch.object(implement_run.subprocess, "run", return_value=subprocess.CompletedProcess([], 1, b"", b"")) as search:
+            implement_run.write_callers(folder)
         assert sorted(call.args[0][6] for call in search.call_args_list) == ["real_name", "result_name"], search.call_args_list
     finally:
         file.write_text(original, encoding="utf-8")
@@ -401,11 +401,11 @@ def test_callers_below_rules(folder):
     file, contracts = folder / "04-impact.md", folder / "03-contracts.md"
     original, original_contracts = file.read_text(encoding="utf-8"), contracts.read_text(encoding="utf-8")
     try:
-        contracts.write_text(f"## Todo (later)\n`rule_name()`\n{flow_run.TODO_HEAD}\n- [x] names: below\n\n"
-                             f"{flow_run.RESULT_HEAD}\n`real_name()`\n", encoding="utf-8")
-        with patch.object(flow_run, "git", return_value=str(folder)), \
-                patch.object(flow_run.subprocess, "run", return_value=subprocess.CompletedProcess([], 1, b"", b"")) as search:
-            flow_run.write_callers(folder)
+        contracts.write_text(f"## Todo (later)\n`rule_name()`\n{implement_run.TODO_HEAD}\n- [x] names: below\n\n"
+                             f"{implement_run.RESULT_HEAD}\n`real_name()`\n", encoding="utf-8")
+        with patch.object(implement_run, "git", return_value=str(folder)), \
+                patch.object(implement_run.subprocess, "run", return_value=subprocess.CompletedProcess([], 1, b"", b"")) as search:
+            implement_run.write_callers(folder)
         assert [call.args[0][6] for call in search.call_args_list] == ["real_name"], search.call_args_list
     finally:
         file.write_text(original, encoding="utf-8")
@@ -416,7 +416,7 @@ def test_callers_controls(repo, run, folder):
     file, app = folder / "04-impact.md", repo / "app.py"
     original, source = file.read_text(encoding="utf-8"), app.read_bytes()
     try:
-        assert hasattr(flow_run.step_run, "plain") and flow_run.plain is flow_run.step_run.plain
+        assert hasattr(implement_run.step_run, "plain") and implement_run.plain is implement_run.step_run.plain
         app.write_bytes(b"\t# \x1b]0;title\x07 \x7f \xc2\x80 parse_phone()\n")
         out = run("take", folder, "04-impact", "a")
         assert out.returncode == 0, out.stderr
@@ -442,7 +442,7 @@ def test_impact_closed_stdout(repo, env, folder):
                 assert consumer.returncode == 0 and output == b"Status: active pipe\n"
             errors = child.stderr.read()
             assert child.wait() == 0 and not errors, errors
-        assert flow_run.CALLERS_HEAD in file.read_text(), "callers must be saved before printing to a closed pipe"
+        assert implement_run.CALLERS_HEAD in file.read_text(), "callers must be saved before printing to a closed pipe"
     finally:
         file.write_text(original)
 
@@ -464,9 +464,9 @@ def test_impact_utf8(repo, env, folder):
             out = subprocess.run([sys.executable, SCRIPT, "take", str(folder), "04-impact", "ascii-owner"],
                                  cwd=repo, env=ascii_env, capture_output=True, text=True)
             assert out.returncode == 0, out.stderr
-            assert "\\u5408\\u610f" in out.stdout and "\\xff" in out.stdout and flow_run.CALLERS_HEAD in out.stdout
+            assert "\\u5408\\u610f" in out.stdout and "\\xff" in out.stdout and implement_run.CALLERS_HEAD in out.stdout
             assert file.read_text(encoding="utf-8").startswith("Status: active ascii-owner\n")
-            assert flow_run.CALLERS_HEAD in file.read_text(encoding="utf-8")
+            assert implement_run.CALLERS_HEAD in file.read_text(encoding="utf-8")
     finally:
         file.write_text(original, encoding="utf-8")
         contracts.write_text(original_contracts, encoding="utf-8")
@@ -490,7 +490,7 @@ def test_closed_stdout(repo, env, folder):
         file.write_text(original)
 
 
-# Every git call and flow run in this file: no global or system git config (signing, hooks, aliases), a fixed author,
+# Every git call and implement run in this file: no global or system git config (signing, hooks, aliases), a fixed author,
 # and no GIT_* variable of the caller, such as the GIT_DIR a git hook sets. Build each env with git_env().
 GIT_ENV = {"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1", "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
            "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
@@ -504,7 +504,7 @@ PROVE_BUILD = "- build: block:prove-it-works\n"  # the catalog line most block t
 
 
 def blocks_start(tmp, name, catalog, repo_toml=PARAMS, *args, env=None, python=sys.executable):
-    """Start a flow in a new repo whose catalog `any` section has the given step lines, with the kit's blocks."""
+    """Start an implement run in a new repo whose catalog `any` section has the given step lines, with the kit's blocks."""
     home, repo = Path(tmp, name, "home"), Path(tmp, name, "app")
     (home / ".flow" / "app").mkdir(parents=True)
     (home / ".flow" / "domains.md").write_text("## any\n" + catalog, encoding="utf-8")
@@ -524,13 +524,84 @@ def step_text(folder, step):
     return (folder / f"{step}.md").read_text(encoding="utf-8")
 
 
+def test_start_domains(tmp):
+    """A run selects profile domains once, always keeps any, and rejects unknown domains."""
+    for name, selected in (("selected", True), ("all", False)):
+        _, _, repo, run = blocks_start(tmp, "domains-" + name, "", None, "--domains", "rust")
+        home = repo.parent / "home/.flow"
+        (home / "app/profile.md").write_text("Domains: rust, zig\nRepo rules: none\n", encoding="utf-8")
+        catalog = []
+        for domain in ("any", "rust", "zig"):
+            rule = repo / f"{domain}.md"
+            rule.write_text(f"RULE {domain}\n", encoding="utf-8")
+            catalog.append(f"## {domain}\n- build: {rule}\n")
+        (home / "domains.md").write_text("".join(catalog), encoding="utf-8")
+        unknown = run("start", "--domains", "swift")
+        assert unknown.returncode == 1 and "swift" in unknown.stderr, unknown
+        assert "any, rust, zig" in unknown.stderr, unknown.stderr
+        out = run("start", *( ["--domains", "rust", "--profile", "default"] if selected else []))
+        assert out.returncode == 0, out.stderr
+        folder = Path(out.stdout.splitlines()[0])
+        build = step_text(folder, "05-build")
+        assert "RULE any" in build and "RULE rust" in build, build
+        assert ("RULE zig" in build) == (not selected), build
+        choice = "Domains: any, rust" + ("" if selected else ", zig")
+        assert choice + "\n" in step_text(folder, "01-frame") and choice in out.stdout
+        before = {p.name: p.read_bytes() for p in folder.iterdir()}
+        again = run("start", "--domains", "zig")
+        assert again.returncode == 0 and choice + "\n" in again.stdout, again
+        assert {p.name: p.read_bytes() for p in folder.iterdir()} == before
+
+
 def has_control(text, keep="\t\n"):
     """True if text holds a C0 or C1 control character or DEL, other than those in keep."""
     return any(ord(c) < 32 and c not in keep or 127 <= ord(c) <= 159 for c in text)
 
 
+def test_start_block_ledger(tmp):
+    """Start shows every non-base block, actual loading steps, and off reasons, once in frame."""
+    import tomllib
+    catalog = "- design: block:tech-diagram\n- build: block:html-diagram, block:prove-it-works\n"
+    config = PARAMS + '[off]\nwhen-to-diagram = "no diagram choice\\nneeded | here"\nstory = "no story"\n'
+    out, folder, repo, run = blocks_start(tmp, "ledger", catalog, config)
+    assert out.returncode == 0, out.stderr
+    assert "### Chosen\n" in out.stdout and "### Rejected\n" in out.stdout, out.stdout
+    tables = out.stdout[out.stdout.index("### Chosen\n"):].strip()
+    frame = step_text(folder, "01-frame")
+    assert tables in frame and frame.count("## Blocks considered\n") == 1, frame
+    assert all("## Blocks considered\n" not in step_text(folder, step) for step in implement_run.graph() if step != "01-frame")
+    kit = tomllib.loads((implement_run.BLOCKS / "blocks.toml").read_text(encoding="utf-8"))
+    expected = {p.parent.name for p in implement_run.BLOCKS.glob("*/SKILL.md")} - set(kit["base"])
+    rows = [line.split("|")[1].strip().removeprefix("↳ ") for line in tables.splitlines() if line.startswith("| ")]
+    names = [name for name in rows if name != "Block" and not name.endswith("(sub-blocks)")]
+    assert len(names) == len(set(names)) and set(names) == expected, names
+    chosen, rejected = tables.split("### Rejected\n")
+    assert {name for name in expected if f"| {name} |" in chosen or f"| ↳ {name} |" in chosen} == {"html-diagram", "prove-it-works"}
+    assert "| tech-diagram (sub-blocks) | |\n| ↳ html-diagram | Loaded by design, build |" in chosen, chosen
+    assert "| prove-it-works | Loaded by build |" in chosen, chosen
+    assert "| ↳ when-to-diagram | [off] no diagram choice needed &#124; here |" in rejected, rejected
+    assert "| story | [off] no story |" in rejected, rejected
+    assert "not named by a domain line" in rejected, rejected
+    assert not has_control(out.stdout), out.stdout
+    before = {p.name: p.read_bytes() for p in folder.iterdir()}
+    (repo.parent / "home/.flow/domains.md").write_text("## any\n- build: block:nope\n", encoding="utf-8")
+    (repo / ".blocks.toml").write_text("not valid TOML", encoding="utf-8")
+    again = run("start")
+    assert again.returncode == 0 and tables in again.stdout, again
+    assert {p.name: p.read_bytes() for p in folder.iterdir()} == before
+
+
+def test_start_ledger_without_chosen_blocks(tmp):
+    out, folder, _, _ = blocks_start(tmp, "ledger-empty", "", None)
+    assert out.returncode == 0, out.stderr
+    chosen, rejected = out.stdout.split("### Chosen\n")[1].split("### Rejected\n")
+    assert chosen.strip() == "| Block | Why |\n|---|---|", chosen
+    assert "| ↳ html-diagram | not named by a domain line |" in rejected, rejected
+    assert "base-rules" not in out.stdout and "base-rules" not in step_text(folder, "01-frame")
+
+
 def test_git_env_ignores_caller_git_dir(tmp):
-    """A run from a git hook inherits GIT_DIR, GIT_WORK_TREE, and GIT_INDEX_FILE; the tests' git calls and flow
+    """A run from a git hook inherits GIT_DIR, GIT_WORK_TREE, and GIT_INDEX_FILE; the tests' git calls and implement
     runs still use their own repo, so the caller's repo gets no commit and no tmp/flow folder."""
     decoy = Path(tmp, "decoy")
     subprocess.run(["git", "init", "-q", "-b", "main", str(decoy)], env=git_env(), check=True)
@@ -552,14 +623,18 @@ def test_block_in_step(tmp):
     assert "===== block:prove-it-works =====" in build and "Rank each claim on the ladder" in build, build
     skills = next(line for line in build.splitlines() if line.startswith("Skills read:"))
     assert "profile default" in skills, skills
-    digest = hashlib.sha256((flow_run.BLOCKS / "prove-it-works" / "SKILL.md").read_bytes()).hexdigest()[:8]
+    digest = hashlib.sha256((implement_run.BLOCKS / "prove-it-works" / "SKILL.md").read_bytes()).hexdigest()[:8]
     assert f"block:prove-it-works@{digest}" in [item.strip() for item in skills.removeprefix("Skills read:").split(",")], skills
     assert "Rank each claim on the ladder" not in step_text(folder, "02-design")
-    assert "(the kit root)" not in build, "a block that names no kit path gets no kit-root line"
+    assert f"are under {implement_run.BLOCKS.parent} (the kit root)." in build
+    # The base and proof blocks point to evidence owners; use a path-free block to check the other case.
+    no_path, no_path_folder, _, _ = blocks_start(tmp, "no-kit-path", "- build: block:voice-reply\n", None)
+    assert no_path.returncode == 0, no_path.stderr
+    assert "(the kit root)" not in step_text(no_path_folder, "05-build"), "no kit path needs no kit-root line"
     # A block that names a kit path gets the kit root, because the step file is read outside the kit.
     kit_out, kit_folder, _, _ = blocks_start(tmp, "kit-root", "- build: block:task-file\n")
     assert kit_out.returncode == 0, kit_out.stderr
-    assert f"are under {flow_run.BLOCKS.parent} (the kit root)." in step_text(kit_folder, "05-build")
+    assert f"are under {implement_run.BLOCKS.parent} (the kit root)." in step_text(kit_folder, "05-build")
     # A second start on the folder writes nothing, even when the catalog now fails.
     (repo.parent / "home" / ".flow" / "domains.md").write_text("## any\n- build: block:nope\n", encoding="utf-8")
     again = run("start")
@@ -613,12 +688,13 @@ def test_block_profile(tmp):
     merged, merged_folder, _, _ = blocks_start(tmp, "d3-merged", catalog, PARAMS, "--profile", "merged")
     assert split.returncode == 0 and merged.returncode == 0, (split.stderr, merged.stderr)
     a, b = step_text(split_folder, "02-design"), step_text(merged_folder, "02-design")
-    assert a.count("===== block:") == 6 and b.count("===== block:") == 3, b
+    assert a.count("===== block:") == 7 and b.count("===== block:") == 4, b
     assert "===== block:tech-diagram =====" in b and "===== block:style-frames =====" in b, b
     assert "\n### Example\n" in a and "Example\n" not in b
     assert "profile merged" in b.splitlines()[3], b.splitlines()[3]
     assert rule_lines(a) == rule_lines(b), set(rule_lines(a)) ^ set(rule_lines(b))
     assert rule_lines(step_text(split_folder, "06-review")) == rule_lines(step_text(merged_folder, "06-review"))
+    assert split.stdout.split("### Chosen\n")[1] == merged.stdout.split("### Chosen\n")[1], "packaging keeps the same choices"
 
 
 def test_profile_on_second_start(tmp):
@@ -640,17 +716,17 @@ def test_profile_on_second_start(tmp):
 def test_block_example_params(tmp):
     """A {{param}} only in a block's Example would make every run set it for nothing, so no kit block has
     one; a repo with only source_of_truth starts a close step that names done-when-evidence."""
-    for path in sorted(flow_run.BLOCKS.glob("*/SKILL.md")):
+    for path in sorted(implement_run.BLOCKS.glob("*/SKILL.md")):
         # The loader drops the frontmatter, so a {{param}} there is never filled and must not count.
-        parts = flow_run.sections(path.read_text(encoding="utf-8").partition("\n---\n")[2])
-        rest = {p for head, lines in parts if head != "Example" for p in flow_run.PARAM.findall("\n".join(lines))}
-        example = {p for head, lines in parts if head == "Example" for p in flow_run.PARAM.findall("\n".join(lines))}
+        parts = implement_run.sections(path.read_text(encoding="utf-8").partition("\n---\n")[2])
+        rest = {p for head, lines in parts if head != "Example" for p in implement_run.PARAM.findall("\n".join(lines))}
+        example = {p for head, lines in parts if head == "Example" for p in implement_run.PARAM.findall("\n".join(lines))}
         assert example <= rest, (path.parent.name, example - rest)
     root = Path(tmp, "example-params")
     root.mkdir()
     (root / ".blocks.toml").write_text('[params]\nsource_of_truth = "README.md"\n', encoding="utf-8")
     for profile in ("default", "merged"):
-        flow_run.resolve_blocks(root, {"close": ["done-when-evidence"]}, profile)
+        implement_run.resolve_blocks(root, {"close": ["done-when-evidence"]}, profile)
 
 
 def test_block_params(tmp):
@@ -683,7 +759,7 @@ def test_block_controls(tmp):
     assert out.returncode == 1 and "block y needs {{nope}}" in out.stderr and "Traceback" not in out.stderr, out.stderr
     assert not (repo / "tmp" / "flow").exists()
     # Count the block's script checks with a plain read, not with the code that writes the todos.
-    section = (flow_run.BLOCKS / "web-ui-basics" / "SKILL.md").read_text(encoding="utf-8").split("\n## Check (script)\n", 1)[1].split("\n## ", 1)[0]
+    section = (implement_run.BLOCKS / "web-ui-basics" / "SKILL.md").read_text(encoding="utf-8").split("\n## Check (script)\n", 1)[1].split("\n## ", 1)[0]
     expected = [line for line in section.splitlines() if line.startswith("- ") and not line.startswith("- none:")]
     assert len(expected) >= 2 and build.count("block web-ui-basics script:") == len(expected), build
 
@@ -705,7 +781,7 @@ def test_block_headings(tmp):
         assert out.returncode == 0, out.stderr
         design = step_text(folder, "02-design")
         assert not has_control(design), design
-        rules = design.split(flow_run.RULES_HEAD, 1)[1].split(flow_run.TODO_HEAD, 1)[0]
+        rules = design.split(implement_run.RULES_HEAD, 1)[1].split(implement_run.TODO_HEAD, 1)[0]
         assert all(k in rules for k in kept) and not any(line.startswith("## ") for line in rules.splitlines()), rules
         done = run("done", folder, "02-design")
         assert done.returncode == 1 and "- [ ] " in done.stderr and "no todo list" not in done.stderr, (name, done.stderr)
@@ -717,16 +793,15 @@ def test_skill_fenced_headings(tmp):
     skill = Path(tmp, "fenced-skill.md")
     skill.write_text("# s\n## Report\n```text\n## src/Button.tsx\n## Todo (x)\n```\n~~~\n## also kept\n~~~\n## After\n",
                      encoding="utf-8")
-    lines = flow_run.skills_text([str(skill)]).splitlines()[1:]
+    lines = implement_run.skills_text([str(skill)]).splitlines()[1:]
     assert lines == ["# s", "### Report", "```text", "## src/Button.tsx", "### Todo (x)", "```", "~~~", "## also kept",
                      "~~~", "### After"], lines
     # As in CommonMark, only a bare fence line closes a fence; a line such as ```js inside one is content.
-    assert flow_run.demote("```text\n## kept\n```js\nx\n```\n## after") == "```text\n## kept\n```js\nx\n```\n### after"
+    assert implement_run.demote("```text\n## kept\n```js\nx\n```\n## after") == "```text\n## kept\n```js\nx\n```\n### after"
 
 
 def test_start_without_tomllib(tmp):
-    """On a Python before 3.11, which has no tomllib, status still runs, and start of a run that names a block
-    stops with one line."""
+    """Without tomllib, status still runs; a fresh start needs it to list the shipped catalog."""
     out, folder, repo, _ = blocks_start(tmp, "no-tomllib", PROVE_BUILD)
     assert out.returncode == 0, out.stderr
     code = "import runpy, sys; sys.modules['tomllib'] = None; sys.argv = sys.argv[1:]; runpy.run_path(sys.argv[0], run_name='__main__')"
@@ -737,27 +812,32 @@ def test_start_without_tomllib(tmp):
     assert out.returncode == 0 and "01-frame" in out.stdout, out
     shutil.rmtree(folder)  # so start must read the block catalog again
     out = run("start")
-    assert out.returncode == 1 and out.stderr == f"{flow_run.BLOCKS / 'blocks.toml'}: reading TOML needs Python 3.11 or later (tomllib)\n", out
+    assert out.returncode == 1 and out.stderr == f"{implement_run.BLOCKS / 'blocks.toml'}: reading TOML needs Python 3.11 or later (tomllib); run start with a newer python3, for example from Homebrew\n", out
+    (repo.parent / "home/.flow/domains.md").write_text("## any\n", encoding="utf-8")
+    out = run("start")
+    assert out.returncode == 1 and out.stderr == f"{implement_run.BLOCKS / 'blocks.toml'}: reading TOML needs Python 3.11 or later (tomllib); run start with a newer python3, for example from Homebrew\n", out
 
 
-def test_start_no_block_reads_no_toml(tmp):
-    """A catalog with no block item, no .blocks.toml, and the default profile read no TOML, so start writes
-    the same files on a Python with no tomllib and from a kit copy with no blocks/ folder."""
+def test_start_kit_without_blocks(tmp):
+    """A kit copy without blocks still starts without tomllib, with empty choice tables."""
     kit = Path(tmp, "kit-no-blocks")
-    for part in ("skills/flow/scripts/flow_run.py", "skills/flow/SKILL.md", "references/step_run.py"):
+    for part in ("skills/implement/scripts/implement_run.py", "skills/implement/SKILL.md", "references/step_run.py",
+                 "references/block_ledger.py"):
         (kit / part).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(SCRIPT.parents[3] / part, kit / part)
     _, before, _, _ = blocks_start(tmp, "no-block-a", "", None)
     _, made, repo, _ = blocks_start(tmp, "no-block-b", "", None)
     shutil.rmtree(made)
     code = "import runpy, sys; sys.modules['tomllib'] = None; sys.argv = sys.argv[1:]; runpy.run_path(sys.argv[0], run_name='__main__')"
-    out = subprocess.run([sys.executable, "-I", "-c", code, str(kit / "skills/flow/scripts/flow_run.py"), "start"], cwd=repo,
+    out = subprocess.run([sys.executable, "-I", "-c", code, str(kit / "skills/implement/scripts/implement_run.py"), "start"], cwd=repo,
                          env={**git_env(), "HOME": str(Path(tmp, "no-block-b", "home"))}, capture_output=True, text=True)
     assert out.returncode == 0 and out.stderr == "", out
+    assert "### Chosen\n\n| Block | Why |\n|---|---|\n\n### Rejected\n\n| Block | Why |\n|---|---|" in out.stdout
     mask = lambda text, *paths: [text := text.replace(str(p), "<p>") for p in paths][-1]
     for file in sorted(before.iterdir()):
         a = mask(file.read_text(encoding="utf-8"), before.parents[2], SCRIPT.parents[3])
         b = mask((made / file.name).read_text(encoding="utf-8"), kit.resolve(), made.parents[2], kit)
+        a, b = [re.sub(r"## Blocks considered\n.*?(?=## Rules for this step)", "", text, flags=re.S) for text in (a, b)]
         assert a == b, (file.name, a, b)
         assert "profile " not in next(l for l in b.splitlines() if l.startswith("Skills read:")), b
 
@@ -796,7 +876,7 @@ def test_param_quoted_in_script_checks(tmp):
     todo = next(l for l in build.splitlines() if "'prefers-reduced-motion'" in l)
     command = re.search(r"`([^`]+)`", todo)[1]
     assert command.endswith(" 'my site --files'"), todo
-    assert "`my site --files/DESIGN.md`" in step_text(folder, "02-design").split(flow_run.TODO_HEAD)[0], "rules stay plain"
+    assert "`my site --files/DESIGN.md`" in step_text(folder, "02-design").split(implement_run.TODO_HEAD)[0], "rules stay plain"
     (repo / "my site --files").mkdir()
     (repo / "my site --files" / "a.css").write_text("@media (prefers-reduced-motion: reduce) {}\n", encoding="utf-8")
     ran = subprocess.run(command, shell=True, cwd=repo, capture_output=True, text=True)
@@ -965,9 +1045,9 @@ def test_block_fail_closed(tmp):
                          ('base = ["nope"]\n[profiles.default]\n', "unknown block id nope in base of"),
                          ('[profiles.default]\nmerge = ["a"]\n', "merges a, which is not an alias")):
         (kit / "blocks.toml").write_text(toml, encoding="utf-8")
-        with patch.object(flow_run, "BLOCKS", kit):
+        with patch.object(implement_run, "BLOCKS", kit):
             try:
-                flow_run.resolve_blocks(Path(tmp), {"build": ["a"]}, "default")
+                implement_run.resolve_blocks(Path(tmp), {"build": ["a"]}, "default")
                 raise AssertionError(f"start must stop: {reason}")
             except SystemExit as error:
                 assert reason in str(error) and "\n" not in str(error), error
@@ -981,13 +1061,13 @@ def test_block_frontmatter(tmp):
     (kit / "blocks.toml").write_text("[profiles.default]\n", encoding="utf-8")
     block = ('---\nname: %s\ndescription: "Says hello."\nmetadata:\n  kind: rule\n---\n\n## Rules\n- Say hello.\n\n'
              "## Check (script)\n- none: no output\n\n## Check (judge)\n- none: no output\n")
-    with patch.object(flow_run, "BLOCKS", kit):
+    with patch.object(implement_run, "BLOCKS", kit):
         (kit / "a" / "SKILL.md").write_text(block % "a", encoding="utf-8")
-        text = flow_run.resolve_blocks(Path(tmp), {"build": ["a"]}, "default")[0]["build"][1]
+        text = implement_run.resolve_blocks(Path(tmp), {"build": ["a"]}, "default")[0]["build"][1]
         assert "Concept: Says hello." in text and "---" not in text and "kind: rule" not in text, text
         (kit / "a" / "SKILL.md").write_text(block % "b", encoding="utf-8")
         try:
-            flow_run.resolve_blocks(Path(tmp), {"build": ["a"]}, "default")
+            implement_run.resolve_blocks(Path(tmp), {"build": ["a"]}, "default")
             raise AssertionError("a name that is not the id must stop start")
         except SystemExit as error:
             assert str(error) == "block a has the name b; a block's name is its id", error
@@ -1002,7 +1082,7 @@ def test_block_frontmatter(tmp):
             (kit / "a" / "SKILL.md").write_text(broken + "- x\n\n## Check (script)\n- none: x\n\n## Check (judge)\n- none: x\n",
                                                  encoding="utf-8")
             try:
-                flow_run.resolve_blocks(Path(tmp), {"build": ["a"]}, "default")
+                implement_run.resolve_blocks(Path(tmp), {"build": ["a"]}, "default")
                 raise AssertionError(f"start must stop: {reason}")
             except SystemExit as error:
                 assert f"block a frontmatter has {reason}" in str(error), error
@@ -1029,7 +1109,7 @@ def test_kit_pointers():
     `blocks/<id>/...` path in the kit's Markdown names a real file, and each skill that uses a kit path says
     where the kit root is. The kit ships two equal manifests, the Agent Plugins root `plugin.json` and
     Claude Code's `.claude-plugin/plugin.json`, so a version bump must change both."""
-    kit = flow_run.BLOCKS.parent
+    kit = implement_run.BLOCKS.parent
     assert (kit / "plugin.json").read_bytes() == (kit / ".claude-plugin" / "plugin.json").read_bytes(), "the two manifests differ"
     for path in sorted(kit.glob("**/*.md")):
         if "vendor" in path.parts:
@@ -1049,13 +1129,14 @@ def test_kit_block_frontmatter():
     description says what the block does and when to use it ("Use when"), in 40 words or fewer, so a small
     model can pick it."""
     keys = ["kind", "owns", "serves", "needs", "gives", "conflicts", "users", "source"]
-    for path in sorted(flow_run.BLOCKS.glob("*/SKILL.md")):
+    for path in sorted(implement_run.BLOCKS.glob("*/SKILL.md")):
         text = path.read_text(encoding="utf-8")
         assert text.startswith("---\n"), f"{path} has no frontmatter"
         lines = text.split("---\n")[1].splitlines()
         top = [line.split(":", 1)[0] for line in lines if line[:1] != " "]
         meta = [line.strip().split(":", 1)[0] for line in lines if line[:1] == " "]
-        assert top == ["name", "description", "license", "metadata"] and meta == keys, (path, top, meta)
+        parent = "  kind: parent" in lines
+        assert top == ["name", "description", "license", "metadata"] and meta == keys + (["parts"] if parent else []), (path, top, meta)
         assert lines[0] == f"name: {path.parent.name}" and all(": " in line for line in lines if line != "metadata:"), path
         assert all(line.split(": ", 1)[1].strip() not in ("", '""', "''") for line in lines
                    if ": " in line and line.strip().split(":")[0] != "conflicts"), path
@@ -1063,15 +1144,112 @@ def test_kit_block_frontmatter():
         assert "Use when" in description and len(description.split()) <= 40, (path.parent.name, description)
 
 
+def test_parent_selection(tmp):
+    all_parts = ["when-to-diagram", "html-diagram", "call-tree", "diagram-check"]
+    for index, (selected, expected) in enumerate((("diagram", all_parts), ("html-diagram", ["html-diagram"]),
+                                                ("when-to-diagram, block:html-diagram", all_parts[:2]),
+                                                ("html-diagram, block:diagram", all_parts),
+                                                ("diagram, block:html-diagram", all_parts))):
+        out, folder, _, _ = blocks_start(tmp, f"parent-{index}",
+                                         f"- design: block:{selected}\n")
+        assert out.returncode == 0, out.stderr
+        text = step_text(folder, "02-design")
+        assert text.count("===== block:diagram =====") == 1, text
+        assert text.count("block:diagram@") == 1, text
+        assert text.index("===== block:diagram =====") < min(text.index(f"===== block:{p} =====") for p in expected)
+        for part in ("when-to-diagram", "html-diagram", "call-tree", "diagram-check"):
+            assert text.count(f"===== block:{part} =====") == int(part in expected), text
+        assert "block diagram judge:" in step_text(folder, "06-review")
+
+
+def test_parent_refusals(tmp):
+    root = Path(tmp, "parent-refusals")
+    root.mkdir()
+    (root / ".blocks.toml").write_text(PARAMS, encoding="utf-8")
+    source = implement_run.BLOCKS
+    cases = [
+        ("unknown", {"diagram": ("parent", "missing")}, "unknown part missing"),
+        ("two-parents", {"diagram": ("parent", "html-diagram"), "other": ("parent", "html-diagram")}, "two parents"),
+        ("nested", {"diagram": ("parent", "other"), "other": ("parent", "html-diagram")}, "parent other is a part"),
+        ("self", {"diagram": ("parent", "diagram")}, "parent diagram is a part"),
+        ("not-parent", {"diagram": ("rule", "html-diagram")}, "parts is only allowed on kind: parent"),
+        ("empty", {"diagram": ("parent", "")}, "parent diagram has no parts"),
+    ]
+    for name, changes, error in cases:
+        blocks = root / name
+        shutil.copytree(source, blocks)
+        for block, (kind, parts) in changes.items():
+            path = blocks / block / "SKILL.md"
+            path.parent.mkdir(exist_ok=True)
+            text = (source / "html-diagram" / "SKILL.md").read_text(encoding="utf-8")
+            text = text.replace("name: html-diagram", f"name: {block}").replace("  kind: rule", f'  kind: {kind}\n  parts: "{parts}"')
+            path.write_text(text, encoding="utf-8")
+        with patch.object(implement_run, "BLOCKS", blocks):
+            try:
+                implement_run.resolve_blocks(root, {"design": ["html-diagram"]}, "default")
+            except SystemExit as caught:
+                assert error in str(caught), (name, caught)
+            else:
+                raise AssertionError(f"{name} was accepted")
+
+
+def test_diagram_membership():
+    members, parents = {}, set()
+    for path in sorted(implement_run.BLOCKS.glob("*/SKILL.md")):
+        text = path.read_text(encoding="utf-8").split("---\n")[1]
+        if line := re.search(r'^  parts: "(.*)"$', text, re.M):
+            assert "  kind: parent" in text, path
+            parents.add(path.parent.name)
+            for part in line[1].split(","):
+                members.setdefault(part.strip(), []).append(path.parent.name)
+    for part, owners in members.items():
+        assert len(owners) == 1 and part not in parents, (part, owners)
+        assert (implement_run.BLOCKS / part / "SKILL.md").is_file(), part
+    for part in ("when-to-diagram", "html-diagram", "call-tree", "diagram-check"):
+        assert members.get(part) == ["diagram"], (part, members)
+
+
+def shared_rule_copies(blocks):
+    """The first seven words of each sentence in a parent's Rules are its key phrase."""
+    copies = []
+    for path in sorted(blocks.glob("*/SKILL.md")):
+        text = path.read_text(encoding="utf-8")
+        if not (members := re.search(r'^  parts: "(.*)"$', text, re.M)):
+            continue
+        rules = next(lines for head, lines in implement_run.sections(text) if head == "Rules")
+        for rule in (line[2:] for line in rules if line.startswith("- ")):
+            for sentence in re.split(r"(?<=[.!?])\s+", rule):
+                phrase = " ".join(re.findall(r"[a-z0-9]+", sentence.lower())[:7])
+                for part in members[1].split(","):
+                    body = (blocks / part.strip() / "SKILL.md").read_text(encoding="utf-8").split("---\n", 2)[-1]
+                    if phrase in " ".join(re.findall(r"[a-z0-9]+", body.lower())):
+                        copies.append((part.strip(), phrase))
+    return copies
+
+
+def test_shared_rules_not_copied(tmp):
+    assert not shared_rule_copies(implement_run.BLOCKS), shared_rule_copies(implement_run.BLOCKS)
+    blocks = Path(tmp, "copied-rule")
+    shutil.copytree(implement_run.BLOCKS, blocks)
+    parent = (blocks / "diagram" / "SKILL.md").read_text(encoding="utf-8")
+    part = blocks / "html-diagram" / "SKILL.md"
+    original = part.read_text(encoding="utf-8")
+    for rule in next(lines for head, lines in implement_run.sections(parent) if head == "Rules"):
+        if rule.startswith("- "):
+            for sentence in re.split(r"(?<=[.!?])\s+", rule[2:]):
+                part.write_text(original + "\n- " + sentence + "\n", encoding="utf-8")
+                assert shared_rule_copies(blocks), f"the check accepted a copied parent sentence: {sentence}"
+
+
 def test_kit_blocks_load(tmp):
     """Every kit block loads, so each has both check sections and its params are the documented ones."""
     root = Path(tmp, "kit-blocks")
     root.mkdir()
     (root / ".blocks.toml").write_text(PARAMS, encoding="utf-8")
-    ids = [path.parent.name for path in sorted(flow_run.BLOCKS.glob("*/SKILL.md"))]
-    out, _ = flow_run.resolve_blocks(root, {"build": ids}, "default")
+    ids = [path.parent.name for path in sorted(implement_run.BLOCKS.glob("*/SKILL.md"))]
+    out, _, _ = implement_run.resolve_blocks(root, {"build": ids}, "default")
     # A block folder that lost its SKILL.md would be skipped by the glob in silence, so every folder counts.
-    folders = [path.name for path in flow_run.BLOCKS.iterdir() if path.is_dir() and path.name != "__pycache__"]
+    folders = [path.name for path in implement_run.BLOCKS.iterdir() if path.is_dir() and path.name != "__pycache__"]
     assert len(ids) == len(folders) and all(f"===== block:{b} =====" in out["build"][1] for b in ids), (ids, out["build"][0])
 
 
@@ -1095,7 +1273,7 @@ def test_block_cap(tmp):
     """A block of CAP characters loads; a longer one stops start with one line, since a cut could end inside a
     check and drop the checks after it."""
     head, tail = "# big\n## Rules\n", "## Check (script)\n- `true` runs: BIG CHECK\n## Check (judge)\n- Is it big?\n"
-    for name, size in (("big-ok", flow_run.CAP), ("big", flow_run.CAP + 1)):
+    for name, size in (("big-ok", implement_run.CAP), ("big", implement_run.CAP + 1)):
         Path(tmp, name, "app", "docs").mkdir(parents=True)
         pad = "- " + "x" * (size - len(head) - len(tail) - 3) + "\n"
         Path(tmp, name, "app", "docs", "big.md").write_text(head + pad + tail, encoding="utf-8")
@@ -1103,7 +1281,7 @@ def test_block_cap(tmp):
         if name == "big-ok":
             assert out.returncode == 0 and "BIG CHECK" in step_text(folder, "05-build"), out.stderr
         else:
-            assert out.returncode == 1 and out.stderr == f"block big is {size} characters; a block holds at most {flow_run.CAP}\n", out.stderr
+            assert out.returncode == 1 and out.stderr == f"block big is {size} characters; a block holds at most {implement_run.CAP}\n", out.stderr
             assert not (repo / "tmp" / "flow").exists()
 
 
@@ -1170,7 +1348,7 @@ def test_review_read_encoding(tmp):
     (review / "03-verdict.md").write_text("Status: done x\nUses:\nVerdict: APPROVE (1 of 1 units; 0 fix)\n- note: …\n", encoding="utf-8")
     (review / "target.json").write_text(json.dumps({"head": head, "note": "…"}, ensure_ascii=False), encoding="utf-8")
     mark("06-review", "Run: tmp/review-check/range-1\n")
-    # A verdict file that is not UTF-8 stops take with one line, as the other flow files do.
+    # A verdict file that is not UTF-8 stops take with one line, as the other implement files do.
     good = (review / "03-verdict.md").read_bytes()
     (review / "03-verdict.md").write_bytes(b"Status: x\n\nVerdict: APPROVE \xff\xfe\n")
     out = run("take", folder, "07-close", "a")
@@ -1195,21 +1373,21 @@ def test_block_checks(tmp):
     out, folder, _, run = blocks_start(tmp, "d6", "- build: block:html-diagram\n")
     assert out.returncode == 0, out.stderr
     build, review = step_text(folder, "05-build"), step_text(folder, "06-review")
-    todo = build.split(flow_run.TODO_HEAD)[1]
+    todo = build.split(implement_run.TODO_HEAD)[1]
     script = (r"- [ ] block html-diagram script: `rg -c -g '*.html' '<figure(\s|>|$)' site` prints a count of 1 or more, and "
               r"`rg -U --pcre2 -n -g '*.html' '<figure[\s>](?:(?!</figure>|<figcaption)[\s\S])*</figure>|<figure[\s>](?:(?!</figure>)[\s\S])*?"
               r"<figcaption(?:(?!</figure>)[\s\S])*?<figcaption' site` prints nothing and exits 1: the page has a figure, "
               "and each figure has exactly one caption.: ")
     assert script + "\n" in todo, todo
     assert "script: none:" not in todo, "a `- none:` line says why a block has no script check; it is no todo"
-    judge ="At 375 px, does each arrow still point from its source to its target?"
+    judge = "At each width that `blocks/web-ui-basics/SKILL.md` names, does each arrow still point from its source to its target?"
     assert judge not in build, "a judge check must not be a build todo"
     # The judge section sits after the rules and before the todo head, so done still finds the todo list.
-    rules_at, judge_at, todo_at = (review.index(h) for h in (flow_run.RULES_HEAD, flow_run.JUDGE_HEAD, flow_run.TODO_HEAD))
+    rules_at, judge_at, todo_at = (review.index(h) for h in (implement_run.RULES_HEAD, implement_run.JUDGE_HEAD, implement_run.TODO_HEAD))
     assert rules_at < judge_at < todo_at and judge in review[judge_at:todo_at], review
-    assert flow_run.step_run.todo_scan(review)[0] == todo_at, review
-    assert "block base-rules judge: Does every fact in the result trace to a line in docs/spec.md?" in review, review
-    assert review.count("block base-rules judge:") == 2, "base judge lines appear once per run"
+    assert implement_run.step_run.todo_scan(review)[0] == todo_at, review
+    assert "block base-rules judge: For a page or doc built from a repo, does every fact trace to a line in docs/spec.md?" in review, review
+    assert review.count("block base-rules judge:") == 1, "base has one source check, once per run"
     f = folder / "05-build.md"
     fill(f)
     text = f.read_text(encoding="utf-8")
@@ -1245,7 +1423,7 @@ def test_html_diagram_check(tmp):
 def block_rg(name, site):
     """Run each `rg` command of a block's Check (script) section on `site`, as written. An rg error (exit 2)
     fails the test, so a row that must stay clean cannot pass on an error."""
-    text = (flow_run.BLOCKS / name / "SKILL.md").read_text(encoding="utf-8").split("## Check (script)\n", 1)[1].split("\n## ")[0]
+    text = (implement_run.BLOCKS / name / "SKILL.md").read_text(encoding="utf-8").split("## Check (script)\n", 1)[1].split("\n## ")[0]
     runs = [subprocess.run(c.replace("{{site}}", shlex.quote(str(site))), shell=True, capture_output=True, text=True)
             for c in re.findall(r"`([^`]+)`", text) if c.startswith("rg ")]
     for out in runs:
@@ -1293,23 +1471,27 @@ def test_design_tokens_colors(tmp):
 
 
 def test_diagram_shot_check(tmp):
-    """The diagram-check script check prints a 375 px PNG line for each diagram shot, and another line
-    for a missing, empty, or wrong-width shot; it reads no page markup, which another block may own."""
+    """Diagram images have each width from the owner and match their named width."""
     root = Path(tmp, "shot-check")
-    text = (flow_run.BLOCKS / "diagram-check" / "SKILL.md").read_text(encoding="utf-8")
+    text = (implement_run.BLOCKS / "diagram-check" / "SKILL.md").read_text(encoding="utf-8")
     command = re.search(r"`([^`]+)`", text.split("## Check (script)\n", 1)[1])[1].replace("{{shots}}", "shots")
+    owner = (implement_run.BLOCKS / "web-ui-basics" / "SKILL.md").read_text(encoding="utf-8")
+    widths = [int(w) for w in re.findall(r"\d+", re.search(r"Check widths are ([^.]+)", owner)[1])]
     png = lambda width: (b"\x89PNG\r\n\x1a\n" + (13).to_bytes(4, "big") + b"IHDR" + width.to_bytes(4, "big")
                          + (812).to_bytes(4, "big") + bytes([8, 6, 0, 0, 0]) + bytes(4))
     def ok():
         lines = subprocess.run(command, shell=True, cwd=root, capture_output=True, text=True).stdout.splitlines()
-        return bool(lines) and all("PNG image data, 375 x" in line for line in lines)
+        return bool(lines) and all(
+            (match := re.search(r"-(\d+)\.png:.*PNG image data, (\d+) x", line))
+            and int(match[1]) in widths and match[1] == match[2] for line in lines)
     (root / "shots").mkdir(parents=True)
     assert not ok(), "no shot must fail"
-    (root / "shots" / "diagram-one-375.png").write_bytes(png(375))
-    (root / "shots" / "diagram-two-375.png").write_bytes(png(375))
-    assert ok(), "two 375 px shots must pass"
-    for bad in (b"", png(390)):
-        (root / "shots" / "diagram-two-375.png").write_bytes(bad)
+    for width in widths:
+        for diagram in ("one", "two"):
+            (root / "shots" / f"diagram-{diagram}-{width}.png").write_bytes(png(width))
+    assert ok(), "diagram shots at all owner widths must pass"
+    for bad in (b"", png(widths[-1] + 1)):
+        (root / "shots" / f"diagram-two-{widths[-1]}.png").write_bytes(bad)
         assert not ok(), bad
 
 
@@ -1381,6 +1563,88 @@ def test_web_ui_basics_checks(tmp):
     assert "DESIGN.md" not in images.stdout, images
 
 
+def test_catalog_uses_running_kit(tmp):
+    local = implement_run.BLOCKS.parent / "skills" / "engineering-standards" / "SKILL.md"
+    installed = "~/.swarm/kit/skills/engineering-standards/SKILL.md"
+    absolute = str(Path(tmp, "running-kit", "home", ".swarm", "kit", "skills", "engineering-standards", "SKILL.md"))
+    missing = "~/.swarm/kit/skills/not-shipped/SKILL.md"
+    outside = "~/.swarm/kit-other/skills/example/SKILL.md"
+    out, folder, _, _ = blocks_start(tmp, "running-kit", f"- build: {installed}, {absolute}, {missing}, {outside}\n")
+    assert out.returncode == 0, out.stderr
+    text = step_text(folder, "05-build")
+    skills = next(line for line in text.splitlines() if line.startswith("Skills read:"))
+    assert skills.count(str(local)) == 1 and installed not in skills and absolute not in skills, skills
+    assert missing in skills and outside in skills, skills
+    assert f"===== {local} =====" in text
+
+
+def test_close_from_other_cwd(tmp):
+    out, folder, repo, run = blocks_start(tmp, "archive-other-cwd", "", None)
+    assert out.returncode == 0, out.stderr
+    fill(folder / "07-close.md")
+    archived = folder.resolve().parent / "_closed" / folder.name
+    outside = Path(tmp) / "outside-repo"
+    outside.mkdir()
+    env = {**git_env(), "GIT_CEILING_DIRECTORIES": str(outside.parent)}
+    out = subprocess.run([sys.executable, SCRIPT, "done", str(folder), "07-close"], cwd=outside,
+                         env=env, capture_output=True, text=True)
+    assert out.returncode == 0 and out.stdout.splitlines()[-1] == str(archived), out
+    assert not folder.exists() and (archived / "07-close.md").read_text(encoding="utf-8").startswith("Status: done ")
+    assert not (outside / "tmp").exists()
+    assert run("status", archived).returncode == 0
+    again = run("done", archived, "07-close")
+    assert again.returncode == 1 and "already closed" in again.stderr, again
+    assert not (archived.parent / "_closed").exists()
+
+
+def test_second_same_day_close(tmp):
+    out, folder, repo, run = blocks_start(tmp, "archive-second-run", "", None)
+    assert out.returncode == 0, out.stderr
+    fill(folder / "07-close.md")
+    assert run("done", folder, "07-close").returncode == 0
+    archived = folder.parent / "_closed" / folder.name
+    first = (archived / "07-close.md").read_text(encoding="utf-8")
+    out = run("start")
+    assert out.returncode == 0 and Path(out.stdout.splitlines()[0]) == folder, out
+    fill(folder / "07-close.md")
+    out = run("done", folder, "07-close")
+    assert out.returncode == 1 and "rename the run folder" in out.stderr, out
+    assert (folder / "07-close.md").read_text(encoding="utf-8").startswith("Status: open\n")
+    renamed = folder.with_name(folder.name + "-second")
+    folder.rename(renamed)
+    out = run("done", renamed, "07-close")
+    second = archived.with_name(renamed.name)
+    assert out.returncode == 0 and out.stdout.splitlines()[-1] == str(second), out
+    assert (second / "07-close.md").read_text(encoding="utf-8").startswith("Status: done ")
+    assert (archived / "07-close.md").read_text(encoding="utf-8") == first
+
+
+def test_close_archives_run(tmp):
+    out, folder, repo, run = blocks_start(tmp, "archive-close", "", None)
+    assert out.returncode == 0, out.stderr
+    close = folder / "07-close.md"
+    archived = repo.resolve() / "tmp" / "flow" / "_closed" / folder.name
+    before = close.read_text(encoding="utf-8")
+    out = run("done", folder, "07-close")
+    assert out.returncode == 1 and close.read_text(encoding="utf-8") == before
+    assert not archived.exists()
+    fill(close)
+    archived.mkdir(parents=True)
+    (archived / "keep.md").write_text("older run", encoding="utf-8")
+    out = run("done", folder, "07-close")
+    assert out.returncode == 1 and "already exists" in out.stderr, out
+    assert close.read_text(encoding="utf-8").startswith("Status: open\n")
+    assert (archived / "keep.md").read_text(encoding="utf-8") == "older run"
+    (archived / "keep.md").unlink()
+    archived.rmdir()
+    out = run("done", folder, "07-close")
+    assert out.returncode == 0 and out.stdout.splitlines()[-1] == str(archived), out
+    assert not folder.exists() and (archived / "07-close.md").read_text(encoding="utf-8").startswith("Status: done ")
+    assert "\t07-close\tdone " in (archived / "events.log").read_text(encoding="utf-8")
+    assert "no implement run folder" in run("status").stderr
+    assert run("status", archived).returncode == 0
+
+
 with tempfile.TemporaryDirectory() as tmp:
     home, repo = Path(tmp, "home"), Path(tmp, "app")
     (home / ".flow" / "app").mkdir(parents=True)
@@ -1399,6 +1663,7 @@ with tempfile.TemporaryDirectory() as tmp:
 
     folder = Path(run("start").stdout.splitlines()[0])
     assert "RULE TEXT 42" in (folder / "05-build.md").read_text()
+    assert "## Rules for this step (written by implement_run.py start; apply them, keep this section)" in (folder / "05-build.md").read_text()
     assert "RULE TEXT 42" not in (folder / "02-design.md").read_text()
     assert sorted(p.name for p in folder.glob("0*.md"))[0] == "01-frame.md"
     assert "Branch: main" in (folder / "01-frame.md").read_text()
@@ -1416,6 +1681,10 @@ with tempfile.TemporaryDirectory() as tmp:
                and "profile " not in next(l for l in text.splitlines() if l.startswith("Skills read:"))
                for text in (p.read_text(encoding="utf-8") for p in folder.glob("0*.md")))
 
+    test_close_from_other_cwd(tmp)
+    test_second_same_day_close(tmp)
+    test_close_archives_run(tmp)
+    test_catalog_uses_running_kit(tmp)
     test_skip_text_encoding()
     test_kit_pointers()
     test_kit_block_frontmatter()
@@ -1465,11 +1734,16 @@ with tempfile.TemporaryDirectory() as tmp:
     test_callers_controls(repo, run, folder)
     out = run("take", folder, "04-impact", "a")
     assert out.returncode == 0, out.stderr
-    assert flow_run.CALLERS_HEAD in out.stdout, "take must print the complete impact file"
+    assert implement_run.CALLERS_HEAD in out.stdout, "take must print the complete impact file"
     assert out.stdout == (folder / "04-impact.md").read_text() + "\n"
     impact = (folder / "04-impact.md").read_text()
     assert "### parse_phone (2 places)" in impact and "app.py:1:" in impact and "### init" not in impact
     assert impact.index("## Callers") < impact.index("## Result")
+    # Keep the old literal so a later heading rename still checks that existing runs resume.
+    legacy_heading = "## Callers (written by implement_run.py take from the code names in 03-contracts.md; a search, not a judgment)"
+    (folder / "04-impact.md").write_text(impact.replace(implement_run.CALLERS_HEAD, legacy_heading), encoding="utf-8")
+    assert run("take", folder, "04-impact", "a").returncode == 0
+    assert (folder / "04-impact.md").read_text(encoding="utf-8").count("## Callers (") == 1, "resume must keep the stored callers section"
     fill(folder / "04-impact.md")
     assert run("done", folder, "04-impact").returncode == 0
 
@@ -1533,6 +1807,9 @@ with tempfile.TemporaryDirectory() as tmp:
     events = (folder / "events.log").read_text()
     assert "02-design\tskip no UI" in events and "07-close\ttake a" in events
     test_git_env_ignores_caller_git_dir(tmp)
+    test_start_block_ledger(tmp)
+    test_start_domains(tmp)
+    test_start_ledger_without_chosen_blocks(tmp)
     test_block_in_step(tmp)
     test_block_hash_bytes(tmp)
     test_block_alias_and_base(tmp)
@@ -1544,7 +1821,7 @@ with tempfile.TemporaryDirectory() as tmp:
     test_block_headings(tmp)
     test_skill_fenced_headings(tmp)
     test_start_without_tomllib(tmp)
-    test_start_no_block_reads_no_toml(tmp)
+    test_start_kit_without_blocks(tmp)
     test_toml_no_block_adds_no_base(tmp)
     test_no_toml_runs_blocks_without_base(tmp)
     test_param_quoted_in_script_checks(tmp)
@@ -1553,6 +1830,10 @@ with tempfile.TemporaryDirectory() as tmp:
     test_block_fail_closed(tmp)
     test_block_frontmatter(tmp)
     test_kit_blocks_load(tmp)
+    test_parent_selection(tmp)
+    test_parent_refusals(tmp)
+    test_diagram_membership()
+    test_shared_rules_not_copied(tmp)
     test_block_repo_file(tmp)
     test_add_folder_block(tmp)
     test_block_cap(tmp)

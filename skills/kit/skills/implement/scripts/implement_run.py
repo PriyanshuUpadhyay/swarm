@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Make and take flow steps. Run from inside the repo.
+"""Make and take implement steps. Run from inside the repo.
 
-  start [--profile <name>]     make tmp/flow/<date>-<branch>/ with the seven step files; the profile packs blocks
+  start [--profile <name>] [--domains <a,b>] make tmp/flow/<date>-<branch>/ with selected profile domains
   status [<folder>]            print each step's status, whether it is ready, and whether it is stale
   take <folder> <step> <who> [--force] mark the step active and print its file with the skills the catalog gives it
-  done <folder> <step>         set the step done, only when every todo is checked with evidence
+  done <folder> <step>         set done with evidence; 07-close moves the run to tmp/flow/_closed/
   skip <folder> <step> <why>    skip design, contracts, or impact, with the reason
 
 `start` writes the full text of each step's skills into that step's file, because an agent that gets
@@ -15,7 +15,7 @@ the block, alias, and profile format, and the repo's .blocks.toml adds params, r
 
 The step graph is the step table in ../SKILL.md. `start` writes the need names and marks 05-build.md
 with `Revision: HEAD`, as references/step-run.md describes. The kit's references/step_run.py
-owns status, ready, stale, take, done, and events.log. This script adds the flow rules: the revision
+owns status, ready, stale, take, done, and events.log. This script adds the implement rules: the revision
 of 05-build is HEAD, take 04-impact lists the places that name the contracts' code names, and take
 07-close needs the review-check run's own APPROVE verdict on HEAD.
 """
@@ -36,6 +36,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "references"))
 import step_run  # noqa: E402
 from step_run import RESULT_HEAD, TODO_HEAD, plain, status_of  # noqa: E402
+from block_ledger import ledger_markdown  # noqa: E402
 
 SKILL_MD = Path(__file__).resolve().parents[1] / "SKILL.md"
 BLOCKS = Path(__file__).resolve().parents[3] / "blocks"
@@ -47,18 +48,20 @@ LINE_CHUNK = 4096
 MAX_HITS = 10
 HIT_CHARS = 160
 CAP = 15000  # characters per skill, cut to it, and per block, refused over it; engineering-standards is about 10k
-RULES_HEAD = "## Rules for this step (written by flow_run.py start; apply them, keep this section)"
+RULES_HEAD = "## Rules for this step (written by implement_run.py start; apply them, keep this section)"
 JUDGE_HEAD = "## Judge checks of blocks that ran"
+LEDGER_HEAD = "## Blocks considered"
 PARAM = re.compile(r"\{\{(\w+)\}\}")
 CHECKS = ("Check (script)", "Check (judge)")
-CALLERS_HEAD = "## Callers (written by flow_run.py take from the code names in 03-contracts.md; a search, not a judgment)"
+# write_callers uses this stored heading to avoid duplicate sections in existing runs.
+CALLERS_HEAD = "## Callers (written by implement_run.py take from the code names in 03-contracts.md; a search, not a judgment)"
 TODOS = {  # each item names the file that owns the rule
-    "01-frame": ["Goal, user, and out of scope (flow)", "Done-when, each one checkable (flow)",
-                 "Lane, fast or full, and why (flow)"],
-    "02-design": ["UX flow and screens, or the reason no UI changes (flow)"],
-    "03-contracts": ["APIs, data model, and integrations that change (flow)",
+    "01-frame": ["Goal, user, and out of scope (implement)", "Done-when, each one checkable (implement)",
+                 "Lane, fast or full, and why (implement)"],
+    "02-design": ["UX flow and screens, or the reason no UI changes (implement)"],
+    "03-contracts": ["APIs, data model, and integrations that change (implement)",
                      "Standards rows that apply (engineering-standards)", "Decision check for the topic (decisions)"],
-    "04-impact": ["Existing features that change, judged from the Callers section and the contracts, or independent (flow)"],
+    "04-impact": ["Existing features that change, judged from the Callers section and the contracts, or independent (implement)"],
     "05-build": ["Task file path and Base commit (pair or deliver)",
                  "Failing check first: command and its failing output (prove-it-works)",
                  "Standards rows for each behavior, or none and why (engineering-standards)",
@@ -66,7 +69,7 @@ TODOS = {  # each item names the file that owns the rule
                  "Dead code: what this change made unused, removed; older dead code, named (AGENTS.md)",
                  "Check passes: command and its passing output (prove-it-works)"],
     "06-review": ["review-check range, verdict, and each fix row with its fix or reason (review-check)",
-                  "A `Run: tmp/review-check/<run>` line under Result for the last run (flow)"],
+                  "A `Run: tmp/review-check/<run>` line under Result for the last run (implement)"],
     "07-close": ["Each done-when of 01-frame with its evidence (prove-it-works)"],
 }
 
@@ -75,7 +78,7 @@ def git(*args):
     return subprocess.run(["git", *args], capture_output=True, text=True).stdout.strip()
 
 
-def flow_home():
+def implement_home():
     return Path.home() / ".flow"
 
 
@@ -95,7 +98,7 @@ def rev(folder, step):
     return git("rev-parse", "HEAD")[:12] if step == "05-build" else step_run.revision(folder, step)
 
 
-def start(profile="default"):
+def start(profile="default", domains=None):
     root = git("rev-parse", "--show-toplevel")
     if not root:
         raise SystemExit("not in a git repository")
@@ -116,50 +119,61 @@ def start(profile="default"):
         raise SystemExit(one_line(str(error.code))) from None
     if folder.exists() and profile != "default":
         print(f"note: {folder} exists, so --profile {profile} was not applied", file=sys.stderr)
+    allowed, _ = repo_profile()
+    chosen = allowed if domains is None else {d.strip() for d in domains.split(",") if d.strip()} | {"any"}
+    if unknown := chosen - allowed:
+        raise SystemExit(f"unknown domains: {', '.join(sorted(unknown))}; allowed domains: {', '.join(sorted(allowed))}")
+    if folder.exists() and domains is not None:
+        print(f"note: {folder} exists, so --domains {domains} was not applied", file=sys.stderr)
     if not folder.exists():
         steps = graph()
         # Read every step's text before the folder exists, so a config or read error leaves no half-made run.
         try:
-            catalog = {step: skill_paths(step) for step in steps}
-            blocks, judge = resolve_blocks(Path(root), {s.split("-", 1)[1]: ids for s, (_, ids) in catalog.items()}, profile)
+            catalog = {step: skill_paths(step, chosen) for step in steps}
+            blocks, judge, ledger = resolve_blocks(Path(root), {s.split("-", 1)[1]: ids for s, (_, ids) in catalog.items()}, profile)
             skills = {step: skills_text(catalog[step][0]) for step in steps}
         except SystemExit as error:  # its reasons quote table names, keys, and paths from the repo's .blocks.toml
             raise SystemExit(one_line(str(error.code))) from None
         folder.mkdir(parents=True)
         for step, need in steps.items():
-            extra = f"Worktree: {root}\nBranch: {branch}\n" if step == "01-frame" else ""
+            extra = f"Worktree: {root}\nBranch: {branch}\nDomains: {', '.join(sorted(chosen))}\n" if step == "01-frame" else ""
             extra += "Revision: HEAD\n" if step == "05-build" else ""  # the rule in rev(), for readers without this script
             uses = f"Uses: {', '.join(need)}".rstrip()
             paths = catalog[step][0]
             read, text, todos = blocks[step.split("-", 1)[1]]
             rules = "\n".join(part for part in (skills[step], text) if part)
             judged = f"{JUDGE_HEAD}\n{judge}\n\n" if step == "06-review" and judge else ""
+            considered = f"{LEDGER_HEAD}\n\n{ledger}\n" if step == "01-frame" else ""
             # The step file lives in the repo, so a kit-root path in the copied text needs the kit's place.
             if any(token in rules + judged for token in ("blocks/", "the kit's `references/", "<kit root>")):
                 rules = f"Kit blocks (`blocks/<id>/`) and the kit's `references/` are under {BLOCKS.parent} (the kit root).\n{rules}"
             (folder / f"{step}.md").write_text(
                 f"Status: open\n{uses}\n{extra}Take with: python3 {Path(__file__).resolve()} take {folder} {step} <agent>\n"
-                f"Skills read: {', '.join(paths + read) or 'none'}\n\n{RULES_HEAD}\n{rules}\n{judged}"
+                f"Skills read: {', '.join(paths + read) or 'none'}\n\n{considered}{RULES_HEAD}\n{rules}\n{judged}"
                 f"{TODO_HEAD}\n" + "".join(f"- [ ] {item}: \n" for item in TODOS[step] + todos) + f"\n{RESULT_HEAD}\n", encoding="utf-8")
     print(folder)
     print(f"Each step file holds its rules, a todo list, and a result section. Close a step with: python3 {Path(__file__).resolve()} done <folder> <step>")
+    # Read the saved choice on repeat starts; changed domain lines apply only to a new run.
+    frame = read_utf8(folder / "01-frame.md") if (folder / "01-frame.md").exists() else ""
+    if saved := re.search(r"^Domains: .+$", frame, re.M):
+        print(saved.group())
+    if f"\n{LEDGER_HEAD}\n" in frame:
+        print(frame.split(f"\n{LEDGER_HEAD}\n", 1)[1].split("\n## ", 1)[0].strip())
 
 
 def status(folder=None):
     if folder is None:
         folders = sorted(p for p in Path(git("rev-parse", "--show-toplevel"), "tmp", "flow").glob("2*/"))
         if not folders:
-            raise SystemExit("no flow folder")
+            raise SystemExit("no implement run folder")
         folder = folders[-1]
     print(folder)
     step_run.status(folder, graph(), rev)
 
 
-def skill_paths(step):
-    """The catalog items for this step, from the `any` section, each profile domain, and the repo rules:
-    the paths, and apart from them the `block:<id>` items."""
-    key = step.split("-", 1)[1]
-    profile = flow_home() / repo_name() / "profile.md"
+def repo_profile():
+    """The allowed domains and repo rules share one profile source."""
+    profile = implement_home() / repo_name() / "profile.md"
     domains, repo_rules = {"any"}, []
     if profile.exists():
         text = read_utf8(profile)
@@ -168,15 +182,34 @@ def skill_paths(step):
         if m := re.search(r"^Repo rules:\s*(.+)$", text, re.M):
             repo_rules = [r.strip() for r in m.group(1).split(",") if r.strip() and r.strip() != "none"]
     else:
-        print(f"note: no profile at {profile}; the flow skill's start rule says what to do", file=sys.stderr)
+        print(f"note: no profile at {profile}; the implement skill's start rule says what to do", file=sys.stderr)
+    return domains, repo_rules
+
+
+def skill_paths(step, domains=None):
+    """The paths and block ids for the selected domains and repo rules."""
+    key = step.split("-", 1)[1]
+    allowed, repo_rules = repo_profile()
+    domains = allowed if domains is None else domains
     items, section = [], None
-    for line in read_utf8(flow_home() / "domains.md").splitlines():
+    for line in read_utf8(implement_home() / "domains.md").splitlines():
         if line.startswith("## "):
             section = line[3:].strip()
         elif section in domains and line.startswith(f"- {key}:"):
             items += [p.strip() for p in line.split(":", 1)[1].split(",") if p.strip()]
     root = Path(git("rev-parse", "--show-toplevel"))
-    paths = [p for p in dict.fromkeys(items) if not p.startswith("block:")]
+    paths = []
+    installed = Path.home() / ".swarm" / "kit"
+    for item in items:
+        if item.startswith("block:"):
+            continue
+        path = Path(item).expanduser()
+        if path.is_relative_to(installed):
+            local = BLOCKS.parent / path.relative_to(installed)
+            if local.is_file():
+                item = str(local)
+        if item not in paths:
+            paths.append(item)
     return paths + [str(root / r) for r in repo_rules], [p.removeprefix("block:") for p in items if p.startswith("block:")]
 
 
@@ -189,11 +222,11 @@ def kit_profile(kit, kit_file, name):
 def resolve_blocks(root, wanted, profile_name):
     """For each step key in `wanted` (key -> catalog block ids), the blocks it gets from the catalog and
     the repo's .blocks.toml, packed by the profile: (Skills read items, rules text, script todos). Also
-    the judge lines of every block that ran, once each. blocks/blocks.toml owns the format."""
+    the judge lines of every block that ran, once each, and the blocks table. blocks/blocks.toml owns the format."""
     kit_file, repo_file = BLOCKS / "blocks.toml", root / ".blocks.toml"
-    # A run with no block reads no TOML, so it starts as before on a Python before 3.11 or with no blocks/.
-    if profile_name == "default" and not repo_file.exists() and not any(wanted.values()):
-        return {key: ([], "", []) for key in wanted}, ""
+    # A kit copy without blocks can still run; a shipped catalog is read even when all blocks are rejected.
+    if not kit_file.exists() and profile_name == "default" and not repo_file.exists() and not any(wanted.values()):
+        return {key: ([], "", []) for key in wanted}, "", ledger_markdown({}, {})
     kit = read_toml(kit_file)
     files = {path.parent.name: path for path in sorted(BLOCKS.glob("*/SKILL.md"))}
     aliases = kit.get("aliases", {})
@@ -266,6 +299,30 @@ def resolve_blocks(root, wanted, profile_name):
             raise SystemExit(f"unknown block id {block} in [off] of {repo_file}")
         if not isinstance(reason, str) or not one_line(reason).strip():  # the text that the Off line prints
             raise SystemExit(f"[off] {block} needs a reason in {repo_file}")
+
+    # Membership has one owner: a parent's metadata.parts, never a field on its parts.
+    parents, parent_of = {}, {}
+    for block, path in files.items():
+        text = read_utf8(path)
+        head = text[3:].partition("\n---\n")[0] if text.startswith("---\n") else ""
+        meta = dict(re.findall(r"^  (kind|parts): (.*)$", head, re.M))
+        meta = {k: v.strip().strip("\"'") for k, v in meta.items()}
+        if "parts" in meta and meta.get("kind") != "parent":
+            raise SystemExit(f"block {block}: parts is only allowed on kind: parent")
+        if meta.get("kind") == "parent":
+            parts = [p.strip() for p in meta.get("parts", "").split(",") if p.strip()]
+            if not parts:
+                raise SystemExit(f"parent {block} has no parts")
+            parents[block] = parts
+    for parent, parts in parents.items():
+        for part in parts:
+            if part not in files:
+                raise SystemExit(f"unknown part {part} in parent {parent}")
+            if part in parents:
+                raise SystemExit(f"parent {part} is a part of parent {parent}; parents have one level")
+            if part in parent_of:
+                raise SystemExit(f"part {part} has two parents: {parent_of[part]} and {parent}")
+            parent_of[part] = parent
 
     named = {}
     for key, ids in wanted.items():
@@ -340,7 +397,13 @@ def resolve_blocks(root, wanted, profile_name):
 
     out, judge = {}, {}
     for key, ids in named.items():
-        joined = list(dict.fromkeys(base + ids))
+        expanded = []
+        for block in base + ids:
+            if block in parent_of:
+                expanded.append(parent_of[block])
+            expanded.append(block)
+            expanded.extend(parents.get(block, []))
+        joined = list(dict.fromkeys(expanded))
         blocks = [b for b in joined if b not in off]
         groups = {}  # a merged alias sits where its first member stood
         for b in blocks:
@@ -357,7 +420,17 @@ def resolve_blocks(root, wanted, profile_name):
         for b in blocks:
             judge.setdefault(b, check_lines(load(b)[1], "Check (judge)"))
         out[key] = (read, text, todos)
-    return out, "\n".join(f"- block {b} judge: {line}" for b, lines in judge.items() for line in lines)
+    ledger = {}
+    for block in files:
+        if block in kit.get("base", []):
+            continue
+        steps = [key for key, ids in named.items() if block in ids and block not in off]
+        if steps:
+            ledger[block] = ("Chosen", f"Loaded by {', '.join(steps)}")
+        else:
+            reason = f"[off] {one_line(off[block])}" if block in off else "not named by a domain line"
+            ledger[block] = ("Rejected", reason)
+    return out, "\n".join(f"- block {b} judge: {line}" for b, lines in judge.items() for line in lines), ledger_markdown(ledger, aliases)
 
 
 def one_line(text):
@@ -368,7 +441,7 @@ def read_toml(path):
     try:  # only start reads TOML, so the other commands still run on a Python before 3.11
         import tomllib
     except ImportError:
-        raise SystemExit(f"{path}: reading TOML needs Python 3.11 or later (tomllib)") from None
+        raise SystemExit(f"{path}: reading TOML needs Python 3.11 or later (tomllib); run start with a newer python3, for example from Homebrew") from None
     try:
         return tomllib.loads(read_utf8(path))
     except (tomllib.TOMLDecodeError, RecursionError, ValueError) as error:  # a deep array, a huge integer
@@ -439,24 +512,26 @@ def take(folder, step, who, force=False):
 
 
 def done(folder, step):
+    if step == "07-close":
+        if Path(folder).resolve().parent.name == "_closed":
+            raise SystemExit(f"{folder} is already closed")
+        destination = Path(folder).resolve().parent / "_closed" / Path(folder).name
+        if destination.exists() or destination.is_symlink():
+            raise SystemExit(f"close destination already exists: {destination}; "
+                             "rename the run folder to a distinct name, then run done <renamed-folder> 07-close")
     # Only 04-impact gets a Callers section; elsewhere that line is pasted text and must not end the list.
     ends = (RESULT_HEAD, CALLERS_HEAD) if step == "04-impact" else (RESULT_HEAD,)
     step_run.done(folder, step, rev(folder, step) if step == "05-build" else None, ends=ends)
+    if step == "07-close":
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        Path(folder).rename(destination)
+        print(destination)
 
 
 def skip(folder, step, *why):
     if step not in SKIPPABLE:
         raise SystemExit(f"{step} cannot be skipped; only {', '.join(SKIPPABLE)} can")
-    reason = one_line(" ".join(why)).strip()
-    if not reason:
-        raise SystemExit("skip needs a reason, for example: skip <folder> 02-design no UI")
-    file = Path(folder) / f"{step}.md"
-    with step_run.step_lock(folder, step, command="skip"):
-        if status_of(folder, step).split()[0] not in ("open", "active"):
-            raise SystemExit(f"{step} is {status_of(folder, step)}; only an open or active step can be skipped")
-        step_run.write_step(file, f"Status: skipped {reason}\n" + file.read_text(encoding="utf-8").split("\n", 1)[1])
-    step_run.log(folder, step, f"skip {reason}")
-    print(f"{step}: skipped {reason}")
+    step_run.skip(folder, step, *why)
 
 
 def approved(folder):
@@ -602,8 +677,10 @@ if __name__ == "__main__":
         if command in ("done", "skip") and "--force" in args:
             raise SystemExit("done <folder> <step> accepts no --force" if command == "done" else "skip accepts no --force")
         options = {"force": force} if command == "take" else {}
-        if command == "start" and len(args) == 2 and args[0] == "--profile":
-            options, args = {"profile": args[1]}, []
+        if command == "start":
+            while len(args) >= 2 and args[0] in ("--profile", "--domains") and args[0][2:] not in options:
+                options[args[0][2:]] = args[1]
+                args = args[2:]
         minimum, maximum = arity[command]
         if len(args) < minimum or maximum is not None and len(args) > maximum:
             raise SystemExit(next(line.strip() for line in __doc__.splitlines()

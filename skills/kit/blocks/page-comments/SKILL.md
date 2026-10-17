@@ -19,7 +19,7 @@ metadata:
 - When the page needs a URL, serve it by the `serve-local` block, and give the owner the URL in chat with the round.
 - For each note, change the page with the block that built it, run the page's checks again, and answer the note with the change and the check result. Then start the next round.
 - The step ends when `comment_round.py check` passes on the page's files, or at the loop stop of `comment-round`.
-- An approved page never allows other work to start. The `plan-review` block alone owns that gate.
+- Apply `blocks/plan-review/SKILL.md` for the gate that starts planned work.
 
 ## Example
 Initial state: `site/index.html` passes its checks, and the owner opens round 1.

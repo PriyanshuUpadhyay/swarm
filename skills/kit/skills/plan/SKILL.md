@@ -5,6 +5,9 @@ description: Plan any task from the kit's blocks, show the plan to the user as a
 
 # Plan
 
+For the approval gate, apply `blocks/worker-brief/SKILL.md`. The default is to return the checked draft and leave its steps unstarted.
+
+
 The kit root, with its `blocks/` and `references/` folders, is two folders up from this skill's folder.
 
 1. Write the plan by `blocks/planner/SKILL.md`.

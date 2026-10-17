@@ -435,11 +435,7 @@ fn the_owners_config_imports_with_no_route_lost() {
             assert_eq!(first.get(key), primary.get(key), "{route} {key}");
         }
     }
-    assert!(
-        profiles
-            .iter()
-            .any(|profile| profile["name"] == "ink.build")
-    );
+    assert!(profiles.iter().any(|profile| profile["name"] == "build"));
 }
 
 /// Native auth fixtures and the Claude usage cache.

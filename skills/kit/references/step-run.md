@@ -13,11 +13,9 @@ sees `02-local.md` done and `03-web.md` open, does the web step, and goes on to 
 
 ## Folder
 
-- The skill names the folder. A run tied to a repository uses `references/run-folder.md`. A run
-  whose result is a report keeps its folder next to the report, in the reports folder that the
-  active runtime adapter names.
+- Choose the folder by run kind in `references/run-folder.md`. The skill names its artifacts.
 - The skill's step table lists the step files `NN-<name>.md`, what each one needs, and what it holds.
-  On start, make every step file with `Status: open`.
+  Create the step files with the `start` command in Script below.
 
 ## Script
 
@@ -26,12 +24,14 @@ names its own script. `start <folder> <SKILL.md>` writes one file per table row,
 the row holds and a `## Result` section. `take <folder> <step> <agent>` marks a step active and fills
 its `Uses:` line. `done <folder> <step>` sets the step done only when every todo is checked with its
 evidence after the last colon. `done` accepts no `--force`. `status <folder>` also names each stale step.
+`skip <folder> <step> <reason>` records a route skip.
 Never set a step done by hand.
 `take` refuses a step active for another agent; use `--force` after confirming that run is gone.
 A dead run holds no lock; `--force` only overrides a stale `Status: active <agent>` line.
-`take` and `done` add one line to `<folder>/events.log` with the time, the step, and the event, so the
-path of a run, and not only its last state, stays readable. A skill script with its own step graph
-or revision, such as flow's `flow_run.py`, imports these functions and passes its own.
+`take`, `done`, and `skip` add one line to `<folder>/events.log` with the time, the step, and the
+event, so the path of a run, and not only its last state, stays readable. A skill script with its
+own step graph or revision, such as the implement skill's `implement_run.py`, imports these
+functions and passes its own.
 
 ## Status line
 
@@ -62,7 +62,9 @@ Line 1 of each step file is its status:
 
 ## Close and move on
 
-1. Write the step's result and its evidence below line 2, then set line 1 to `done <revision>`.
+1. Write the step's result and its evidence below line 2, then run
+   `python3 <kit root>/references/step_run.py done <folder> <step>`.
+   Use the skill's script when it names one.
 2. Go on to every step now ready in the same turn, by `references/fan-out.md`.
 
 ## When a step waits for the user

@@ -1,6 +1,6 @@
 ---
 name: review-walk
-description: Walk a GitHub PR with the user in five steps (scope, map, check, comments, walk), one status file per step under tmp/review-walk/ in the repo. The check is a review-check run; this skill adds comments in the reviewer's own voice in a pending GitHub review that the reviewer submits, and in a new round shows each file's diff since the reviewer last viewed it. Use for "review pr" with a PR number or "review-walk continue" with a run when the user reviews a PR themselves. flow, deliver, and pair call review-check instead.
+description: Walk a GitHub PR with the user in five steps (scope, map, check, comments, walk), one status file per step under tmp/review-walk/ in the repo. The check is a review-check run; this skill adds comments in the reviewer's own voice in a pending GitHub review that the reviewer submits, and in a new round shows each file's diff since the reviewer last viewed it. Use for "review pr" with a PR number or "review-walk continue" with a run when the user reviews a PR themselves. implement, deliver, and pair call review-check instead.
 ---
 
 # review-walk
@@ -87,11 +87,8 @@ status line.
    to the repo root. An `INCOMPLETE` verdict keeps this step open. `status` prints a problem when
    the map skips a file or names one twice, or when line 3 does not match a done review-check run
    of this head.
-4. **Comments.** Take the `fix`, `ask`, and `note` rows of the review-check run. Drop what the user
-   already said in an earlier round or in a pending comment. Write each comment in the voice of
-   `~/.review-walk/voice.md`, with the file-level or line-level choice it gives. With no voice file,
-   write short plain comments: one clause, a question when the fix is a guess, no praise, no
-   severity labels, and "potential issue, not confirmed:" before an unproved defect. Write
+4. **Comments.** Take the `fix`, `ask`, and `note` rows of the review-check run. Apply the kit block
+   `blocks/voice-review/SKILL.md` for wording, repeated findings, and comment placement. Write
    `comments.json` as a list of `{path, body, first, last}`, where `first` and `last` are exact
    quotes from the new side and a file-level comment has no `first`. A row that quotes a removed
    line becomes a file-level comment.
@@ -108,12 +105,12 @@ review-check's seats, as review-check's `orchestration.json` declares.
 
 ## Voice
 
-`~/.review-walk/voice.md` holds how the reviewer writes comments, from their own past reviews. It
-stays out of this public skill. The repo rules belong to review-check.
+The kit block `blocks/voice-review/SKILL.md` owns the review voice and its private preferences.
+The repo rules belong to review-check.
 
 ## Callers
 
-flow, deliver, and pair call review-check, not this skill.
+implement, deliver, and pair call review-check, not this skill.
 
 ## Output
 

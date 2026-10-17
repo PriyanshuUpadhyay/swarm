@@ -9,14 +9,14 @@ Three visible seats search three different parts of the web at the same time, ea
 tools, and each writes its findings to a file. The chair merges them into one report. One session's
 blocked fetch is another seat's open page, so the coverage is wider than any single session.
 
-The runtime adapter (`orchestrate-claude`) selects the host and its reference; web search names no host. Without a visible host, stop and say so; a hidden or headless seat is not a substitute.
+The runtime adapter (`orchestrate-claude`) selects the host and its reference; web search names no host. Without a visible host, stop and say so; a hidden or headless seat is not a substitute. When no user can answer that stop or another owner gate, apply `blocks/worker-brief/SKILL.md`. The default is to search with this session's tools and report the missing seat coverage.
 The kit root, with its `blocks/` and `references/` folders, is two folders up from this skill's folder.
 
 ## Start or continue
 
 A web search is a step run, so the kit's `references/step-run.md` owns the status line, pick-up,
-close, and when a step waits for the user. The run folder is
-`~/.claude/reports/<YYYY-MM-DD>-<slug>-seats/`, which also keeps the seat reports at the end.
+close, and when a step waits for the user. Choose the web-search run and report paths by
+`references/run-folder.md`; the run folder also keeps the seat reports at the end.
 "web-search continue <folder>" picks it up. Make the folder with
 `python3 <kit root>/references/step_run.py start <folder> <this SKILL.md>`, and close each step with `done`.
 
@@ -37,7 +37,7 @@ seat's ring and its report file.
 These four details differ from a council run.
 
 - Agent names are `ws-<voice>-<run>`, so a search and a council can run at the same time.
-- The run directory is `~/.swarm/ws/<run>`, and every seat gets it as `--cwd`. The launcher
+- Use the web-search launch scratch in `references/run-folder.md` as every seat's `--cwd`. The launcher
   pre-trusts only folders under its trust roots, so a seat started anywhere else stops on the Codex
   or AGY trust dialog. Never use `~/.swarm/runs`, because that is swarm's own message store.
 - The seats resolve `search.web`, not `council.*`; the council keeps `council.gpt`,
@@ -95,16 +95,16 @@ from prior reports and its own knowledge at brief time. For later seeds from loc
 the `03-web` section of `research`.
 
 1. **Yield** — at least five findings that are not on the known list, each with evidence, one
-   honest weakness, a confidence tag (high: two independent primary sources agree; medium: mixed
-   or secondary; low: one source or inference), and one line on why it is under-discussed (new,
-   niche, no marketing, non-English community). Sources count as `blocks/cite-sources/SKILL.md`
-   says. Fewer is a Coverage note that names the searches tried, never "nothing found".
+   honest weakness, a source-agreement tag by `blocks/cite-sources/SKILL.md`, and one line on why
+   it is under-discussed (new, niche, no marketing, non-English community). Attribute and count
+   sources by that same block. Fewer is a Coverage note that names the searches tried, never "nothing found".
 2. **Floor** — read at least ten threads or pages from the seat's own site set before the seat may
    stop, and say the count in Coverage. A seat that finishes in five minutes has not searched.
 
 ## The shared brief
 
-One brief, one section per seat. It holds:
+Apply `blocks/worker-brief/SKILL.md` for common fields and read/write limits. One brief has one
+section per seat, with these search-specific fields:
 
 1. the question, verbatim, and its sub-questions, split by the chair as `blocks/deep-search/SKILL.md`
    says;
@@ -116,17 +116,21 @@ One brief, one section per seat. It holds:
    site blocks you, try in order the Reach tool for that site, the
    browser row, the Jina reader, the search snippet, `old.reddit.com`, `<url>.json`, a public mirror,
    `web.archive.org`, and `archive.ph`; cite as `blocks/cite-sources/SKILL.md` says, with that
-   block's Rules quoted; stop after about 20 minutes;
+   block's Rules quoted; when the question is about how or why something works, follow each lead to
+   its origin as `blocks/primary-sources/SKILL.md` says, with that block's Rules quoted; stop after
+   about 20 minutes;
 6. **blocked log** — a seat may call a site blocked only when its Coverage lists, for that site,
    each step it tried and the error each step gave, for example
    `reddit: browser_read → no extension; r.jina.ai → 403; old.reddit.com → 403; archive.ph → no copy`;
 7. **output shape** — `Coverage` with a matrix row per sub-question (sources found, gap or not),
-   `Findings` with a quote or paraphrase plus its link and confidence tag, `What is contested`,
-   `Sources` newest first, under 800 words, and a final `RESEARCH_DONE` line;
+   `Findings` with a quote or paraphrase plus its link and source-agreement tag, `Origins` with rows
+   as `blocks/primary-sources/SKILL.md` says, `What is contested`, `Sources` newest first, under
+   800 words, and a final `RESEARCH_DONE` line;
 8. **layout** — the seat's report follows the section order in
    the kit's `references/plan-layout.md` where that file applies; quote the rule lines the seat
-   needs, because Codex and AGY seats do not load it;
-9. the literal response path for that seat under the run directory, never a `$VAR`.
+   needs, because Codex and AGY seats do not load it.
+
+Use a literal result path (`blocks/worker-brief/SKILL.md`) under the run directory.
 
 ## Chair synthesis
 
@@ -139,21 +143,19 @@ has handled all three reports.
    Send that seat back at once, once only, with the depth rules quoted. Accept what it returns,
    and say so in the coverage table. Record `sent back: <seat> 1`
    in `03-gate.md` and read that line before any resend, so a seat is never sent back twice.
-   Mark "(unverified)" and drop
-   from the answer any finding whose only evidence is a homepage or that repeats the brief's seed
-   words without a page that says them.
+   Apply `blocks/cite-sources/SKILL.md` to each claim's evidence. Drop a finding that repeats the
+   brief's seed words without a page that says them.
 2. Check every link as `blocks/link-check/SKILL.md` says.
-3. Merge the three reports into `~/.claude/reports/<YYYY-MM-DD>-<slug>-web.md`, in the same output
+3. Merge the three reports at the web-search report path in `references/run-folder.md`, in the same output
    shape, plus a coverage table with one row per seat: seat, model, sites, threads read, blocked,
    and a matrix with one row per sub-question: independent sources per seat, gap or covered.
-4. Copy the three seat reports next to it, under
-   `~/.claude/reports/<YYYY-MM-DD>-<slug>-seats/`.
-5. Close the seats and verify their removal.
+4. Copy the three seat reports into the web-search run folder named by `references/run-folder.md`.
+5. Close out the seats by `blocks/run-workers/SKILL.md`.
 6. Remove the scratch run directory last.
 
 Example. GPT reads 19 Reddit threads, GEMINI is blocked by Reddit with a 403 and reads 18 GitHub
-issues, CLAUDE reads 12 Hacker News and Lobsters threads. The chair cannot open Reddit either, so
-every Reddit claim is marked "(seat-read only)" and the merged report says so in its coverage table.
+issues, and CLAUDE reads 12 Hacker News and Lobsters threads. The chair applies
+`blocks/link-check/SKILL.md` to those links and puts the counts in the coverage table.
 
 ## Second round
 
@@ -163,6 +165,5 @@ words.
 
 ## Guards
 
-- Seats are report-only, as the kit block `blocks/worker-brief/SKILL.md` says; each writes only its
-  report file.
+- Use the report-only seat contract in `blocks/worker-brief/SKILL.md`.
 - Every claim follows `blocks/cite-sources/SKILL.md`.

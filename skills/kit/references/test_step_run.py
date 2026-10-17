@@ -428,6 +428,46 @@ def test_step_mode(folder):
         (folder / "events.log").write_text(events, encoding="utf-8")
 
 
+def test_build_start_and_skip():
+    with tempfile.TemporaryDirectory() as tmp:
+        folder = Path(tmp) / "piece" / "ink"
+        skill = SCRIPT.parents[1] / "skills" / "build" / "SKILL.md"
+        out = run("start", folder, skill)
+        assert out.returncode == 0, out.stderr
+        assert step_run.steps(folder) == ["01-intake", "02-look", "03-story", "04-style-frames",
+                                          "05-animatic", "06-detail", "07-export"]
+        assert step_run.needs(folder, "04-style-frames") == ["02-look", "03-story"]
+        original = (folder / "03-story.md").read_text(encoding="utf-8").split("\n", 1)[1]
+        for reason in ("", "\n\t"):
+            out = run("skip", folder, "03-story", reason)
+            assert out.returncode == 1 and "needs a reason" in out.stderr, out
+        events = folder / "events.log"
+        before = events.read_text(encoding="utf-8") if events.exists() else None
+        for args in ((folder, "03-story", "--force"), ("--force", folder, "03-story", "study"),
+                     (folder, "03-story", "study", "--force")):
+            out = run("skip", *args)
+            assert out.returncode == 1 and "skip accepts no --force" in out.stderr, out
+            assert (folder / "03-story.md").read_text(encoding="utf-8") == "Status: open\n" + original
+            assert (events.read_text(encoding="utf-8") if events.exists() else None) == before
+        out = run("skip", folder, "03-story", "study", "route")
+        assert out.returncode == 0, out.stderr
+        assert (folder / "03-story.md").read_text(encoding="utf-8") == "Status: skipped study route\n" + original
+        assert (folder / "events.log").read_text(encoding="utf-8").splitlines()[-1].endswith("\t03-story\tskip study route")
+        assert run("skip", folder, "03-story", "again").returncode == 1
+        child = lock_holder(folder, "05-animatic")
+        try:
+            out = run("skip", folder, "05-animatic", "study")
+            assert out.returncode == 1 and "locked by a running skip" in out.stderr, out
+        finally:
+            child.communicate(timeout=5)
+        for step in ("02-look", "05-animatic", "06-detail"):
+            assert run("skip", folder, step, "study route").returncode == 0
+        assert step_run.ready(folder, "04-style-frames")
+        assert step_run.ready(folder, "07-export", ["06-detail"])
+
+
+test_build_start_and_skip()
+
 with tempfile.TemporaryDirectory() as tmp:
     skill = Path(tmp, "SKILL.md")
     skill.write_text("| File | Needs | Holds |\n|---|---|---|\n| `01-ask.md` | none | the question |\n"

@@ -4,8 +4,30 @@ description: Where a skill keeps the files of a run that must outlive one chat (
 
 # Run folder
 
-A skill that keeps a run's files across chats keeps them in `<repo-root>/tmp/<skill>/`.
-`<repo-root>` is `git rev-parse --show-toplevel`, so each worktree has its own runs.
+For repository task state, use `<repo-root>/tmp/<skill>/`. `<repo-root>` is
+`git rev-parse --show-toplevel`, so each worktree has its own runs. The `implement` skill keeps
+`tmp/flow/` and `~/.flow/`, so existing runs and profiles still work.
+
+For research and web-search, `<reports>` is the folder that the active runtime adapter,
+`skills/orchestrate-<runtime>/SKILL.md`, names; read that line even when the run starts no worker.
+When it names none, use `<repo-root>/tmp/reports/` in a repo, or `<working-folder>/tmp/reports/`
+outside a repo. This file owns the rule and default for every runtime. Read older reports where
+they already exist; this rule moves no saved history.
+
+The following scopes use these paths, including when invoked from a repository.
+
+| Run kind | Run state | Durable result |
+|---|---|---|
+| research | `<reports>/<YYYY-MM-DD>-<slug>/` | `<reports>/<YYYY-MM-DD>-<slug>.md` |
+| web-search | `<reports>/<YYYY-MM-DD>-<slug>-seats/`; launch scratch at `~/.swarm/ws/<run>` | `<reports>/<YYYY-MM-DD>-<slug>-web.md`, with seat reports in the run folder |
+| council | `<log>/<YYYY-MM-DD>-<slug>/` beside the log file; temporary input at `/tmp/councils/<run-id>/` | caller-pinned external log path, or `~/dotfiles/docs/council/<YYYY-MM-DD>-<slug>.md` |
+| build piece | `<piece>/ink/` | source and export stay in `<piece>/` |
+
+For build, `<piece>` is the folder the owner names. When none is named, ask the owner at intake,
+and do not default to a product repo's root. Keep its source and export there, with the `ink/` progress folder inside it.
+
+For council, `<log>` is the chosen log file's parent folder. The caller keeps its artifact names
+and passes the run kind here. This table changes no saved history or piece assets.
 
 Example. A `pair` task in `~/work/app/wt/feat-login` writes
 `~/work/app/wt/feat-login/tmp/pair/2026-09-30-login-rate-limit.md`. `git status` does not show it,
@@ -23,5 +45,5 @@ because `/tmp/` is in the clone's `.git/info/exclude`.
   guide, stay in `~/.<skill>/`, which the user keeps in a private dotfiles repo.
 - Removing a worktree removes its runs. Keep a result that must last longer in the PR, a commit,
   or an ADR.
-- Outside a git repository, ask the user where the run goes.
+- For a run outside these named scopes and outside a git repository, ask the user where it goes.
 - Short-lived scratch for one session goes in the session's scratch folder, not here.

@@ -1,6 +1,6 @@
 ---
 name: review-check
-description: Judge a commit range or uncommitted changes with a script-enforced verdict. A script splits the diff into units (changed functions, hunks, removed code), a checklist gives each unit every rule whose file glob and regex match it plus a reference check, seats answer each rule with a quoted row, and the script gives APPROVE, REQUEST CHANGES, or NEEDS DISCUSSION only when every rule of every unit has a result. Use when flow, deliver, or review-walk needs a review verdict, or for "check this range". Not for a GitHub PR walk with comments in your voice, which review-walk owns.
+description: Judge a commit range or uncommitted changes with a script-enforced verdict. A script splits the diff into units (changed functions, hunks, removed code), a checklist gives each unit every rule whose file glob and regex match it plus a reference check, seats answer each rule with a quoted row, and the script gives APPROVE, REQUEST CHANGES, or NEEDS DISCUSSION only when every rule of every unit has a result. Use when implement, deliver, or review-walk needs a review verdict, or for "check this range". Not for a GitHub PR walk with comments in your voice, which review-walk owns.
 ---
 
 # review-check
@@ -16,12 +16,15 @@ helper that already does that math.
 
 ## Contract
 
+For a gate to new seats, apply `blocks/worker-brief/SKILL.md`; this skill names no default that replaces fresh seats.
+
+
 - The review is report-only. Never edit, commit, stash, switch, or reset the user's checkout.
 - Only `verdict` writes the verdict. A reviewer never writes `03-verdict.md` or states a verdict that
   the script did not print.
 - Every unit gets at least one row, and every rule ID in its checklist gets a result. A missing
   lens, rules file, or ctags language never skips a unit.
-- The session that wrote the change never fills the checklist. In `flow`, `deliver`, and `pair`,
+- The session that wrote the change never fills the checklist. In `implement`, `deliver`, and `pair`,
   the rows come from new seats.
 - Judge the change on its own merits. Messy code around it does not excuse a new defect.
 - No style nits that a linter or formatter owns.
@@ -198,7 +201,7 @@ must not write files, so check that its type checker sets `noEmit`.
 
 ## Callers
 
-`flow` step 06, `deliver`, and `review-walk` step 03 read line 3 of `03-verdict.md`. A caller treats
+`implement` step 06, `deliver`, and `review-walk` step 03 read line 3 of `03-verdict.md`. A caller treats
 `INCOMPLETE`, or a verdict file older than its range, as no review.
 
 ## Output

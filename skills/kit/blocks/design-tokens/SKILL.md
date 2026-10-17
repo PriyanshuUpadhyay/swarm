@@ -9,7 +9,7 @@ metadata:
   needs: "measured notes from reference-analysis"
   gives: "DESIGN.md tokens"
   conflicts: ""
-  users: "flow, ink, build-site"
+  users: "implement, build, build-site"
   source: "skills/ink/references/references.md (style grammar template); skills/ink/references/site.md (DESIGN.md; the file moved to blocks/build-site 2026-10-13); impeccable pack: plugin/skills/impeccable/SKILL.md:35-40 (modes); taste-skill pack: skills/taste-skill/SKILL.md:25-26, :38-39, :186, :217, :236, :531-535, :601, :687"
 ---
 
@@ -18,9 +18,11 @@ metadata:
 - A tool's landing page is Persuade mode: the visitor decides and acts. Choose the mode from the surface, not the product.
 - Start from the measured notes of the `reference-analysis` block. This block turns them into tokens.
 - Write `DESIGN.md` beside the page code: colors, typography, spacing, rounded, and components as YAML tokens, then prose. Lint it with `npx @google/design.md lint DESIGN.md`. It exits 0 and gives low contrast only as a warning, so read the findings. Any error or `contrast-ratio` finding is a `miss`.
-- `DESIGN.md` owns color, type, and spacing. The step's own file keeps only what `DESIGN.md` cannot hold, such as the motion grammar, and names `DESIGN.md` for the rest. Each value has one home.
-- Color literals live only in the `:root` token block, which starts a line, and in one dark-mode `:root` that is all of `@media (prefers-color-scheme: dark)`. All other CSS and page code read the tokens as custom properties.
-- One accent color, saturation below 80%, used the same on the whole page. One corner-radius scale for the page. No pure black `#000000`.
+- For page code, `DESIGN.md` owns color, type, and spacing. The step's own file keeps only what `DESIGN.md` cannot hold, such as the motion grammar, and names `DESIGN.md` for the rest. Each value has one home.
+- A drawn piece keeps its look in one `look` token object from the measured notes. A scene variant uses the same token keys with new values. Its code boundaries follow `blocks/build-canvas/SKILL.md`.
+- Export page tokens for a `look` object with `npx @google/design.md export --format dtcg DESIGN.md`, which keeps typography. The `css-vars` format drops it.
+- In page chrome, color literals live only in the `:root` token block, which starts a line, and in one dark-mode `:root` that is all of `@media (prefers-color-scheme: dark)`. All other CSS and page code read the tokens as custom properties.
+- In page chrome, use one accent color with saturation below 80%, one corner-radius scale, and no pure black `#000000`. Drawn art follows `blocks/build-canvas/references/mark-making.md`, including its reference-based black exception.
 - Do not default to AI-purple gradients, a centered hero over a dark mesh, three equal feature cards, or Inter + slate-900.
 - Design light and dark modes from the start. Respect `prefers-color-scheme`, and put the dark tokens in that second `:root`.
 - The hero fits the first viewport: headline 2 lines at most on desktop, subtext 20 words at most, the call to action visible with no scroll.
@@ -39,5 +41,5 @@ Result: lint shows one `contrast-ratio` warning on the muted text, so the gramma
 
 ## Check (judge)
 - Does the step file have the design-read line? Quote it.
-- Do the HTML's `<style>` blocks and `style=` attributes, the CSS outside the two `:root` token blocks, and the page code (JS and TS) use no named color (`black`, `white`, `red`), quoted hex color in page code (`"#ff0000"`, not an id selector such as `"#feed"`), or other color literal? Quote each color value found.
+- Does page chrome in the HTML's `<style>` blocks and `style=` attributes, the CSS outside the two `:root` token blocks, and the page code (JS and TS) use no named color (`black`, `white`, `red`), quoted hex color in page code (`"#ff0000"`, not an id selector such as `"#feed"`), or other color literal? Quote each color value found. Judge drawn art by `blocks/build-canvas/references/mark-making.md`.
 - Does the hero screenshot at 1440 px show the call to action with no scroll? Quote the screenshot path.
