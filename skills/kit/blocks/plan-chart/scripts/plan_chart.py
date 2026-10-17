@@ -108,7 +108,6 @@ def check(title, done, rows):
     names = [r[0] for r in rows]
     if dupes := sorted({n for n in names if names.count(n) > 1}):
         raise SystemExit(f"step {dupes[0]} appears twice")
-    uses = {}
     for name, need, holds, blocks, why in rows:
         if not re.fullmatch(r"\d\d-[a-z0-9-]+", name):
             raise SystemExit(f"step {name} is not NN-name")
@@ -117,14 +116,7 @@ def check(title, done, rows):
         for block in blocks:
             if not (KIT / "blocks" / block / "SKILL.md").is_file():
                 raise SystemExit(f"step {name} names block {block}, which is not in the kit")
-        # step_run drops a Needs word that matches no step in silence, so each word must match here.
-        uses[name] = []
-        for word in [w.strip() for w in re.split(r",|\band\b", need) if w.strip() and w.strip() != "none"]:
-            if not (found := step_run.need_files(word, names)):
-                raise SystemExit(f"step {name} needs {word!r}, which no step gives")
-            uses[name] += found
-        if name in uses[name]:
-            raise SystemExit(f"step {name} needs itself")
+    uses = step_run.check_needs([r[:3] for r in rows])
     selected = resolve_blocks(None, {r[0]: r[3] for r in rows}, "default", blocks_dir=KIT / "blocks", pack=False)
     in_plan = {b for blocks in selected.values() for b in blocks}
     for block in sorted(in_plan):

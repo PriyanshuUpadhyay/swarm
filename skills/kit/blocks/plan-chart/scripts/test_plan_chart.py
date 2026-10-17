@@ -66,7 +66,8 @@ def test_defects_stop():
     cases = [
         (PLAN.replace("| build-site, web-ui-basics |", "| build-site, no-such |"), "block no-such, which is not in the kit"),
         (PLAN.replace("| read, tokens |", "| read, lookz |"), "needs 'lookz', which no step gives"),
-        (PLAN.replace("| none | done-when", "| reply | done-when"), "loop among steps"),
+        (PLAN.replace("| none | done-when", "| reply | done-when"), "cycle: 01-frame needs 'reply'"),
+        (PLAN.replace("| read, tokens |", "| re, tokens |"), "step 04-build needs 're', which fits 02-read, 05-reply; name one"),
         (PLAN.replace("| voice-reply |", "| report |"), "the last step 05-reply has no voice- block"),
         (PLAN.replace("| read, tokens |", "| read |"), "steps 03-tokens, 05-reply give output that no step uses"),
         (PLAN.replace("| the owner reads the result |", "|  |"), "step 05-reply needs Holds, Block, and Why"),
