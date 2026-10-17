@@ -33,7 +33,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "references"))
 import step_run  # noqa: E402
-from step_run import RESULT_HEAD, TODO_HEAD, plain, status_of  # noqa: E402
+from step_run import RESULT_HEAD, TODO_HEAD, kit_path, plain, status_of  # noqa: E402
 import block_resolver  # noqa: E402
 from block_resolver import CAP, PARAM, kit_profile, read_toml, read_utf8, one_line, sections  # noqa: E402
 
@@ -142,13 +142,13 @@ def start(profile="default", domains=None):
             considered = f"{LEDGER_HEAD}\n\n{ledger}\n" if step == "01-frame" else ""
             # The step file lives in the repo, so a kit-root path in the copied text needs the kit's place.
             if any(token in rules + judged for token in ("blocks/", "the kit's `references/", "<kit root>")):
-                rules = f"Kit blocks (`blocks/<id>/`) and the kit's `references/` are under {BLOCKS.parent} (the kit root).\n{rules}"
+                rules = f"Kit blocks (`blocks/<id>/`) and the kit's `references/` are under {kit_path(BLOCKS.parent)} (the kit root).\n{rules}"
             (folder / f"{step}.md").write_text(
-                f"Status: open\n{uses}\n{extra}Take with: python3 {Path(__file__).resolve()} take {folder} {step} <agent>\n"
+                f"Status: open\n{uses}\n{extra}Take with: python3 {kit_path(Path(__file__).resolve())} take {folder} {step} <agent>\n"
                 f"Skills read: {', '.join(paths + read) or 'none'}\n\n{considered}{RULES_HEAD}\n{rules}\n{judged}"
                 f"{TODO_HEAD}\n" + "".join(f"- [ ] {item}: \n" for item in TODOS[step] + todos) + f"\n{RESULT_HEAD}\n", encoding="utf-8")
     print(folder)
-    print(f"Each step file holds its rules, a todo list, and a result section. Close a step with: python3 {Path(__file__).resolve()} done <folder> <step>")
+    print(f"Each step file holds its rules, a todo list, and a result section. Close a step with: python3 {kit_path(Path(__file__).resolve())} done <folder> <step>")
     # Read the saved choice on repeat starts; changed domain lines apply only to a new run.
     frame = read_utf8(folder / "01-frame.md") if (folder / "01-frame.md").exists() else ""
     if saved := re.search(r"^Domains: .+$", frame, re.M):
@@ -206,7 +206,7 @@ def skill_paths(step, domains=None):
                 item = str(local)
         if item not in paths:
             paths.append(item)
-    return paths + [str(root / r) for r in repo_rules], [p.removeprefix("block:") for p in items if p.startswith("block:")]
+    return [kit_path(p) for p in paths + [str(root / r) for r in repo_rules]], [p.removeprefix("block:") for p in items if p.startswith("block:")]
 
 
 def resolve_blocks(root, wanted, profile_name):
@@ -370,6 +370,7 @@ def demote(text):
 def skills_text(paths):
     parts = []
     for path in paths:
+        path = kit_path(path)
         p = Path(path).expanduser()
         if not p.exists():
             parts.append(f"===== {path} (missing) =====")

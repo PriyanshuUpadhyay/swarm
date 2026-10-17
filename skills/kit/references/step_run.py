@@ -30,6 +30,20 @@ TODO_MARK = "## Todo ("
 RESULT_HEAD = "## Result"
 
 
+def kit_path(path):
+    """Display paths in the installed kit through its stable link; keep source checkout paths."""
+    root = Path(__file__).resolve().parents[1]
+    installed = Path.home() / ".swarm/kit"
+    if installed.resolve() == root:
+        try:
+            relative = Path(path).expanduser().resolve().relative_to(root)
+        except ValueError:
+            pass
+        else:
+            return str(Path("~/.swarm/kit") / relative)
+    return str(path)
+
+
 def todo_scan(text, ends=(RESULT_HEAD,)):
     """(head, end, cut) of the step's own todo list. Walk the TODO_MARK lines in order, each up to its next
     `## ` line. The first one ended by a line in `ends` is the list. One with no `- [` item is rules text and

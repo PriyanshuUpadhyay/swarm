@@ -524,6 +524,29 @@ def step_text(folder, step):
     return (folder / f"{step}.md").read_text(encoding="utf-8")
 
 
+def test_installed_kit_paths(tmp):
+    out, folder, repo, run = blocks_start(tmp, "stable-paths", "", None)
+    assert out.returncode == 0, out.stderr
+    home = repo.parent / "home"
+    (home / ".swarm").mkdir()
+    (home / ".swarm/kit").symlink_to(SCRIPT.parents[3], target_is_directory=True)
+    (home / ".flow/domains.md").write_text(
+        "## any\n- build: ~/.swarm/kit/skills/prove-it-works/SKILL.md, block:prove-it-works\n", encoding="utf-8")
+    shutil.rmtree(folder)
+    out = run("start")
+    assert out.returncode == 0, out.stderr
+    text = step_text(folder, "05-build")
+    assert "Take with: python3 ~/.swarm/kit/skills/implement/scripts/implement_run.py take " in text, text
+    assert "Skills read: ~/.swarm/kit/skills/prove-it-works/SKILL.md" in text, text
+    assert "under ~/.swarm/kit (the kit root)" in text, text
+    assert str(SCRIPT.parents[3]) not in text and str(SCRIPT) not in out.stdout, out
+    # A source checkout without an installed link must keep its own paths.
+    local = repo.parent / "source-home"
+    local.mkdir()
+    with patch.object(implement_run.step_run.Path, "home", return_value=local):
+        assert implement_run.step_run.kit_path(SCRIPT) == str(SCRIPT)
+
+
 def test_start_domains(tmp):
     """A run selects profile domains once, always keeps any, and rejects unknown domains."""
     for name, selected in (("selected", True), ("all", False)):
@@ -1808,6 +1831,7 @@ with tempfile.TemporaryDirectory() as tmp:
     events = (folder / "events.log").read_text()
     assert "02-design\tskip no UI" in events and "07-close\ttake a" in events
     test_git_env_ignores_caller_git_dir(tmp)
+    test_installed_kit_paths(tmp)
     test_start_block_ledger(tmp)
     test_start_domains(tmp)
     test_start_ledger_without_chosen_blocks(tmp)
