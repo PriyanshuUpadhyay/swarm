@@ -167,7 +167,6 @@ On 2026-10-17, the owner approved domain selection by `implement_run.py start --
 
 ### Known defects
 
-- `references/step_run.py:67-70` drops a `Needs` word that matches no step, with no error.
 - `blocks/web-ui-basics/SKILL.md:44-47` checks only `*.html`, `*.css`, `*.js` and `index.html`, so a TSX
   slice gets no script check.
 - A repo with no `.blocks.toml` gets the base `Off:` line in all seven step files, also in steps
@@ -187,7 +186,7 @@ the pilot, then packs.
 |---|---|---|---|
 | B1 | Add the 3-round cap to `review_check.py start`, keyed by a parent-loop key in run metadata (K1); fixes and re-plans inherit it; one user `continue:` line allows one more round, once; a refusal keeps the verdict; implement and deliver pass the key and point to the guard | ⬜ | tests: round 4 refused through implement and standalone deliver, also after a fix or re-plan with a new base; two tasks on one base have separate budgets; `continue:` works once; answer-only `verdict` costs no round; APPROVE on the last allowed run closes |
 | B2 | Add the no-progress stop by issue identity (P2): `verdict` writes a snapshot of open findings and check results, `start` compares them by file, symbol, rule and source evidence; an uncertain match falls back to the cap | ⬜ | fix A then new B does not stop; the same open issues and results stop; moved lines still match |
-| B3 | Make `step_run.py` refuse an unknown or ambiguous `Needs` word, a cycle, or a missing required gate | 🔄 `start` refuses the first three, each with the step and the word (branch `step-needs`, 2026-10-17). No file defines "required gate", so that refusal is open until the owner says what it means. | tests for each refusal |
+| B3 | Make `step_run.py` refuse an unknown or ambiguous `Needs` word, a cycle, or a missing required gate | 🔄 `start` refuses the first three, each with the step and the word (branch `step-needs`, 2026-10-17). No file defines "required gate". The fourth refusal waits for B9, because a template marks required stages (`docs/blocks.md:35-43`) and no template format exists yet. `plan_chart.py` calls the same `check_needs`, so an ambiguous word fails before approval. | tests for each refusal |
 | B4 | Fix the owner of each block the pilot loads, and the defects above | 🔄 red-first-check merged into prove-it-works, the decision-with-default defect fixed (branch `skill-blocks`) | `rg` finds one text per rule; the implement tests pass |
 | B5 | Pilot `web-ui-basics` and `headless-shot` on a static HTML slice (not `web-port`): one `block:` line in the `web-ui` build step of `~/.flow/domains.md` and a `.blocks.toml` | ⬜ | block text in the step file, each block todo closed with evidence, a fresh agent resumes from the files, pair still waits for approval |
 | B6 | Judge the pilot against the same slice without blocks; keep or drop | ⬜ | written result with both runs: defects, review rounds, time, loaded text |

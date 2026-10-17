@@ -110,7 +110,6 @@ def check(title, done, rows):
     names = [r[0] for r in rows]
     if dupes := sorted({n for n in names if names.count(n) > 1}):
         raise SystemExit(f"step {dupes[0]} appears twice")
-    uses = {}
     for name, need, holds, blocks, why in rows:
         if not re.fullmatch(r"\d\d-[a-z0-9-]+", name):
             raise SystemExit(f"step {name} is not NN-name")
@@ -122,14 +121,7 @@ def check(title, done, rows):
             text = (KIT / "blocks" / block / "SKILL.md").read_text(encoding="utf-8")
             if re.search(r"^  kind: [\"']?parent[\"']?\s*$", text.partition("---\n")[2].partition("---\n")[0], re.M):
                 raise SystemExit(f"{block} is a parent; name its parts until the shared resolver lands")
-        # step_run drops a Needs word that matches no step in silence, so each word must match here.
-        uses[name] = []
-        for word in [w.strip() for w in re.split(r",|\band\b", need) if w.strip() and w.strip() != "none"]:
-            if not (found := step_run.need_files(word, names)):
-                raise SystemExit(f"step {name} needs {word!r}, which no step gives")
-            uses[name] += found
-        if name in uses[name]:
-            raise SystemExit(f"step {name} needs itself")
+    uses = step_run.check_needs([r[:3] for r in rows])
     in_plan = {b for r in rows for b in r[3]}
     for block in sorted(in_plan):
         if clash := sorted(set(conflicts(block)) & in_plan):
