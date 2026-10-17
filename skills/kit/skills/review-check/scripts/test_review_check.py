@@ -206,6 +206,119 @@ def test_loop_callers():
             assert out.returncode == 1 and "3 rounds used" in out.stderr, out
 
 
+def test_loop_new_problem_same_evidence():
+    with loop_repo() as (base, head):
+        loop_round(base, head, "new-problem")
+        changed = commit({"value.py": "def value():\n    assert True\n    return 1\n"}, "fix A and expose B")
+        second = loop_round(base, changed, "new-problem")
+        review = second / "02-review.md"
+        review.write_text(review.read_text().replace("value issue", "new issue after the guard"))
+        assert rc.verdict(second.name) == 0
+        final = loop_round(base, changed, "new-problem", "pass")
+        assert "Verdict: APPROVE" in (final / "03-verdict.md").read_text()
+
+
+def test_loop_broken_snapshot():
+    for broken in ("{", "[]", "null", "{}", '{"certain": true}'):
+        with loop_repo() as (base, head):
+            loop_round(base, head, "broken-snapshot")
+            second = loop_round(base, head, "broken-snapshot")
+            (second / "snapshot.json").write_text(broken)
+            third = loop_round(base, head, "broken-snapshot", "pass")
+            assert json.loads((third / "target.json").read_text())["round"] == 3
+            loop_refused(base, head, "broken-snapshot", "cap")
+
+
+def test_loop_snapshot_atomic_lock():
+    with loop_repo() as (base, head):
+        run = loop_round(base, head, "snapshot-lock")
+        shared = Path(rc.git("rev-parse", "--path-format=absolute", "--git-common-dir").strip()) / "review-check"
+        written = []
+        original = rc.step_run.write_step
+
+        def write(file, text):
+            if file.name == "snapshot.json":
+                try:
+                    with rc.step_run.step_lock(shared, "review-check", command="test"):
+                        raise AssertionError("snapshot written without the shared start lock")
+                except SystemExit as error:
+                    assert "locked" in str(error), error
+                written.append(file)
+            original(file, text)
+
+        with patch.object(rc.step_run, "write_step", side_effect=write):
+            assert rc.verdict(run.name) == 0
+        assert written == [run.resolve() / "snapshot.json"], "snapshot write bypassed the atomic writer"
+        with rc.step_run.step_lock(shared, "review-check", command="test"):
+            try:
+                rc.start(f"{base}..{head}", "--parent-loop", "snapshot-lock")
+            except SystemExit as error:
+                assert "locked" in str(error), error
+            else:
+                raise AssertionError("start bypassed the shared snapshot lock")
+
+
+def test_loop_shared_worktree_budget():
+    with loop_repo() as (base, head):
+        for _ in range(3):
+            loop_round(base, head, "shared-task", "pass")
+        original = Path.cwd()
+        linked = original / "tmp" / "replan"
+        sh("git", "worktree", "add", "--detach", str(linked), head)
+        try:
+            os.chdir(linked)
+            loop_refused(base, head, "shared-task", "cap")
+            Path("owner.md").write_text("continue: shared-task\n")
+            fourth = loop_round(base, head, "shared-task", "pass", "return 1", "--continue", "owner.md")
+            assert json.loads((fourth / "target.json").read_text())["round"] == 4
+        finally:
+            os.chdir(original)
+        Path("owner.md").write_text("continue: shared-task\n")
+        loop_refused(base, head, "shared-task", "cap", "--continue", "owner.md")
+
+
+def test_loop_deleted_run_budget():
+    with loop_repo() as (base, head):
+        for _ in range(3):
+            latest = loop_round(base, head, "deleted-run", "pass")
+        shutil.rmtree(latest)
+        loop_refused(base, head, "deleted-run", "cap")
+
+
+def test_loop_import_budget_on_refusal():
+    with loop_repo() as (base, head):
+        for _ in range(3):
+            loop_round(base, head, "imported-task", "pass")
+        shared = Path(rc.git("rev-parse", "--path-format=absolute", "--git-common-dir").strip()) / "review-check"
+        # An old checkout has target.json history, but no shared ledger yet.
+        for ledger in shared.glob("*.json"):
+            ledger.unlink()
+        loop_refused(base, head, "imported-task", "cap")
+        original = Path.cwd()
+        linked = original / "tmp" / "replan"
+        sh("git", "worktree", "add", "--detach", str(linked), head)
+        try:
+            os.chdir(linked)
+            loop_refused(base, head, "imported-task", "cap")
+        finally:
+            os.chdir(original)
+
+
+def test_loop_spent_extension_message():
+    with loop_repo() as (base, head):
+        for _ in range(3):
+            loop_round(base, head, "spent-extension", "pass")
+        Path("owner.md").write_text("continue: spent-extension\n")
+        loop_round(base, head, "spent-extension", "pass", "return 1", "--continue", "owner.md")
+        try:
+            rc.start(f"{base}..{head}", "--parent-loop", "spent-extension")
+        except SystemExit as error:
+            assert "extension is used" in str(error) and "open rows" in str(error), error
+            assert "the user can write" not in str(error), error
+        else:
+            raise AssertionError("accepted a fifth round")
+
+
 def main():
     base = commit({"pane.swift": "func resize() {\n  a()\n}\n", "gone.py": "def guard():\n    return 1\n",
                    "util.py": "def helper():\n    return 1\n", "app.py": "from util import helper\nhelper()\n"}, "base")
@@ -1754,13 +1867,21 @@ if __name__ == "__main__":
     test_loop_answers()
     test_loop_snapshots()
     test_loop_callers()
+    test_loop_new_problem_same_evidence()
+    test_loop_broken_snapshot()
+    test_loop_snapshot_atomic_lock()
+    test_loop_shared_worktree_budget()
+    test_loop_deleted_run_budget()
+    test_loop_import_budget_on_refusal()
+    test_loop_spent_extension_message()
     test_pid_helpers()
     test_build_ignored_hangup()
     test_shards()
     test_rust_function_range()
     test_catalog()
     test_fixtures()
-    # Legacy answer and numbering cases need many starts; the tests above check the real budget.
+    # Each legacy case is a separate task on the same default branch key, and some need many starts.
+    # Keep their cap override local to this process; the loop tests above use the real cap.
     with patch.object(rc, "ROUND_CAP", 1000), tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as home:
         os.chdir(d)
         os.environ["HOME"] = home  # the repo rules file is read from ~/.review-check

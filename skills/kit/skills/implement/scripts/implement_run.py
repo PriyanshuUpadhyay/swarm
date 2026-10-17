@@ -100,14 +100,18 @@ def rev(folder, step):
     return git("rev-parse", "HEAD")[:12] if step == "05-build" else step_run.revision(folder, step)
 
 
+def check_loop_key(key):
+    if not isinstance(key, str) or not key.strip() or any(ord(c) < 32 or ord(c) == 127 for c in key):
+        raise SystemExit("parent loop needs a nonempty key with no control characters")
+
+
 def loop_key(folder, inherited=None):
     file = Path(folder) / "loop.json"
     with step_run.step_lock(folder, "loop", command="loop key"):
         key = json.loads(read_utf8(file))["parent_loop"] if file.exists() else inherited or f"implement:{uuid.uuid4()}"
         if inherited is not None and inherited != key:
             raise SystemExit(f"{folder} already uses parent loop {key}")
-        if not isinstance(key, str) or not key.strip() or any(ord(c) < 32 or ord(c) == 127 for c in key):
-            raise SystemExit("parent loop needs a nonempty key with no control characters")
+        check_loop_key(key)
         if not file.exists():
             step_run.write_step(file, json.dumps({"parent_loop": key}, indent=2) + "\n")
     return key
@@ -121,6 +125,8 @@ def review(folder, target, *opts):
 
 
 def start(profile="default", domains=None, parent_loop=None):
+    if parent_loop is not None:
+        check_loop_key(parent_loop)
     root = git("rev-parse", "--show-toplevel")
     if not root:
         raise SystemExit("not in a git repository")

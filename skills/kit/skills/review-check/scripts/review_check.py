@@ -21,9 +21,11 @@ only from it.
 `verdict` exits 1 when the gate fails, so a caller cannot read an APPROVE that no one earned.
 
 `start` owns the loop stop. A parent-loop key has three rounds, across fixes and re-plans.
+Its ledger and lock live under git-common-dir/review-check, shared by linked worktrees.
 Without --parent-loop, the key is branch:<current branch>; detached HEAD needs an explicit key.
 Two complete, certain snapshots with the same open issues and check results stop the next round.
-Identity uses file, symbol, rule, and whole source evidence, without line numbers; uncertain matches
+Identity uses file, symbol, rule, and whole source evidence, without line numbers. A rule `-` adds
+the trimmed problem text to its identity. Uncertain matches and broken snapshots
 use the cap. One user line `continue: <key>` in --continue FILE permits one extra round, once.
 A refusal preserves the verdict. An answer-only verdict spends no round, and APPROVE can close
 on the last allowed round. --patch starts do not spend the parent-loop budget.
@@ -309,10 +311,14 @@ def seat_map(checklist, catalog):
     return seats
 
 
-def start(target, *opts):
-    root = home().parent
+def loop_home():
+    root = Path(git("rev-parse", "--path-format=absolute", "--git-common-dir").strip()) / "review-check"
     root.mkdir(parents=True, exist_ok=True)
-    with step_run.step_lock(root, "review-check-start", command="start"):
+    return root
+
+
+def start(target, *opts):
+    with step_run.step_lock(loop_home(), "review-check", command="start"):
         return start_locked(target, *opts)
 
 
@@ -389,12 +395,27 @@ def start_locked(target, *opts):
                 raise SystemExit(f"start refused by {previous}: answer its asks in {previous / 'answers.md'} and run "
                                  f"`verdict {previous.name}` again, or delete the run folder if it was abandoned")
     loop_runs.sort(key=lambda item: item[1]["round"])
-    used = max((metadata["round"] for _, metadata in loop_runs), default=0)
-    continued = any(metadata.get("continued") for _, metadata in loop_runs)
+    ledger_file = loop_home() / f"{hashlib.sha256(parent_loop.encode()).hexdigest()}.json"
+    ledger = json.loads(ledger_file.read_text(encoding="utf-8")) if not is_patch and ledger_file.exists() else {
+        "used": max((metadata["round"] for _, metadata in loop_runs), default=0),
+        "continued": any(metadata.get("continued") for _, metadata in loop_runs),
+        "runs": [str(folder) for folder, _ in loop_runs],
+    }
+    if not is_patch and loop_runs and not ledger_file.exists():
+        step_run.write_step(ledger_file, json.dumps(ledger, indent=2) + "\n")
+    used, continued = ledger["used"], ledger["continued"]
     snapshots = []
-    for folder, _ in loop_runs[-2:]:
-        snapshot = json.loads((folder / "snapshot.json").read_text(encoding="utf-8")) if (folder / "snapshot.json").exists() else None
-        if snapshot:
+    for folder in map(Path, ledger["runs"][-2:]):
+        try:
+            snapshot = json.loads((folder / "snapshot.json").read_text(encoding="utf-8"))
+            valid = (isinstance(snapshot, dict) and isinstance(snapshot.get("verdict"), str)
+                     and all(isinstance(snapshot.get(key), list) for key in ("open", "checks"))
+                     and all(isinstance(snapshot.get(key), bool) for key in ("certain", "complete")))
+            if not valid:
+                snapshot = None
+        except (OSError, ValueError, UnicodeError):
+            snapshot = None
+        if snapshot is not None:
             verdict_file = folder / "03-verdict.md"
             if (not verdict_file.exists() or revision(verdict_file) != snapshot.pop("verdict")
                     or stale_verdict(folder, verdict_file.read_text(encoding="utf-8").splitlines())):
@@ -411,9 +432,12 @@ def start_locked(target, *opts):
             except (OSError, UnicodeError) as error:
                 raise SystemExit(f"cannot read --continue file: {error}") from None
         if not extension:
+            if continued:
+                raise SystemExit(f"start refused by {reason}; {used} rounds used for {parent_loop}; "
+                                 f"the extension is used (`continue: {parent_loop}`); bring the open rows to the user")
             raise SystemExit(f"start refused by {reason}; {used} rounds used for {parent_loop}; "
                              f"the user can write `continue: {parent_loop}` in a file and pass --continue FILE "
-                             f"for one more round, once{' (already used)' if continued else ''}")
+                             "for one more round, once")
     numbers = (p.name[len(prefix) + 1:] for p in d.glob(f"{prefix}-[0-9]*") if p.is_dir())
     n = max((int(number) for number in numbers if number.isdecimal()), default=0) + 1
     d = d / f"{prefix}-{n:02d}"
@@ -443,6 +467,9 @@ def start_locked(target, *opts):
     (d / "target.json").write_text(json.dumps({"target": target, "base": base, "head": head, "ci": ci,
                                              "patch": is_patch, "parent_loop": parent_loop,
                                              "round": used + 1, "continued": extension}, indent=2) + "\n", encoding="utf-8")
+    if not is_patch:
+        ledger.update(used=used + 1, continued=continued or extension, runs=[*ledger["runs"], str(d)])
+        step_run.write_step(ledger_file, json.dumps(ledger, indent=2) + "\n")
     diff = parse_diff(patch)
     checklist = {}
     for u in units:
@@ -643,6 +670,11 @@ def answers(path):
 
 
 def verdict(name):
+    with step_run.step_lock(loop_home(), "review-check", command="verdict"):
+        return verdict_locked(name)
+
+
+def verdict_locked(name):
     d = home() / name
     units = {u["id"]: u for u in json.loads((d / "units.json").read_text(encoding="utf-8"))}
     diff = parse_diff((d / "diff.patch").read_text(encoding="utf-8"))
@@ -761,6 +793,8 @@ def verdict(name):
             snapshot["certain"] = False
         for rule_id in sorted(ids or {"-"}):
             identity = [u["file"], u["symbol"], rule_id, evidence]
+            if rule_id == "-":
+                identity.append(problem.strip())
             snapshot["checks"].append([*identity, kind])
             if kind in ("fix", "ask"):
                 snapshot["open"].append(identity)
@@ -805,7 +839,7 @@ def verdict(name):
     snapshot["checks"] = sorted(snapshot["checks"])
     snapshot["open"] = sorted(snapshot["open"])
     snapshot["verdict"] = revision(d / "03-verdict.md")
-    (d / "snapshot.json").write_text(json.dumps(snapshot, indent=2) + "\n", encoding="utf-8")
+    step_run.write_step(d / "snapshot.json", json.dumps(snapshot, indent=2) + "\n")
     print(*(re.sub(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]", "", line) for line in body if line), sep="\n")
     return 1 if problems else 0
 

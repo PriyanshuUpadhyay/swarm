@@ -62,6 +62,7 @@ root is two folders up from this skill's folder; a bare `references/` path below
 | `checklist.json` | script | unit entries hold `rules`, build-gate IDs under `tool`, references under `refs`, and one owner seat for each rule under `owners`; `seats` maps each seat name to its unit IDs, check count, and route |
 | `target.json` | script | base, head, the repo's `CI:` line, parent-loop key, round, and consumed continuation |
 | `snapshot.json` | script | open issue identities and check results from `verdict`, for the loop guard in `review_check.py start` |
+| `<git-common-dir>/review-check/<key-hash>.json` | script | shared round ledger for `review_check.py start` across linked worktrees |
 | `build.json` | script | the CI result for the head, or the `--run` result for the tree |
 | `02-review-<seat>.md` | seat | results for the unit-rule pairs it owns, checked by `verdict <run>` |
 | `answers.md` | chair or user | answers for this run, with a file and a whole trimmed source line |

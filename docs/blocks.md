@@ -48,6 +48,7 @@ The parts and their owners:
   "The model thinks it is done" is never an end condition.
 - **Loop stop.** Call `review_check.py start --parent-loop <key>`; the command owns the rule
   (progress.md B1, B2). `implement_run.py review` passes the saved key for implement and deliver.
+  View-and-talk loops move to this guard in B19; until then `blocks/comment-round/SKILL.md` owns their stop.
 
 ## Block format
 

@@ -1661,6 +1661,11 @@ with tempfile.TemporaryDirectory() as tmp:
     git("add", "app.py")
     git("commit", "-q", "-m", "one")
 
+    before = set((repo / "tmp" / "flow").glob("*"))
+    for invalid in ("", "bad\nkey"):
+        rejected = run("start", "--parent-loop", invalid)
+        assert rejected.returncode == 1 and "nonempty key" in rejected.stderr, rejected
+        assert set((repo / "tmp" / "flow").glob("*")) == before, "invalid parent key left a half-made run"
     folder = Path(run("start").stdout.splitlines()[0])
     loop_key = json.loads((folder / "loop.json").read_text(encoding="utf-8"))["parent_loop"]
     assert loop_key.startswith("implement:")
