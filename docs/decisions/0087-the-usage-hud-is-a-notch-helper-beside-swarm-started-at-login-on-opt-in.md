@@ -35,7 +35,7 @@ notch, hover, click-through and the lock-screen wedge, and only its look and dat
 - The HUD reads `swarm usage --json` (ADR 0074) and refreshes with
   `swarm usage --refresh --provider <p> --json`, by hand only, at most once per provider in 300 s.
   It finds `swarm` through `SWARM_BIN`, which the LaunchAgent sets with the installer's `PATH`.
-- It opens on hover, and ⌃⌥⌘U or a VoiceOver action opens it for the keyboard. Both use APIs
+- It opens on hover, and ⌃⌥⇧⌘U or a VoiceOver action opens it for the keyboard. Both use APIs
   that need no input-monitoring permission.
 - `swarm hud install` writes a LaunchAgent, so the HUD starts at login. `swarm hud uninstall`
   removes it, and `swarm hud status --json` prints `swarm.hud.v1`. This amends ADR 0077 ("nothing
@@ -71,3 +71,10 @@ A Claude row with an expired token has a Renew link. It runs
 `swarm run claude --account <name> -- -p /usage` in the background, with a 60 s limit, and then
 refreshes that provider one time, even inside the 300 s limit. That refresh is the point of Renew,
 because only a new reading shows that the token works again. Other refreshes keep the limit.
+
+## Amendment 2026-10-17: the shortcut adds Shift
+
+Deciders: [user]. Informed by the owner request "make the shortcut open by adding shift to the mix
+as well".
+
+The keyboard shortcut that opens the HUD is ⌃⌥⇧⌘U, and ⌃⌥⌘U no longer opens it.

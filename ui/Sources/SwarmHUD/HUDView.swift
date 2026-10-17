@@ -312,7 +312,7 @@ struct ClosedWings: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(agentsSpoken(model.agents) + ", " + (best.map { lowercasedFirst($0.spoken(now: now)) } ?? "no usage reading"))
         .accessibilityAddTraits(.isButton)
-        .accessibilityHint(model.hotKeyReady ? "Opens the usage card. Control Option Command U also opens it." : "Opens the usage card.")
+        .accessibilityHint(model.hotKeyReady ? "Opens the usage card. Control Option Shift Command U also opens it." : "Opens the usage card.")
         .accessibilityAction { model.toggleFromKeyboard?() }
     }
 
