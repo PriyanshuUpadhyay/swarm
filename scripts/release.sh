@@ -85,6 +85,8 @@ export HOMEBREW_NO_ASK=1
 repo=$(gh repo view "$(git -C "$root" remote get-url origin)" --json nameWithOwner --jq .nameWithOwner)
 if [ "$mode" = resume ]; then
     head=$(git -C "$root" rev-parse --verify --end-of-options "$tag^{commit}") || die "cannot resolve $tag"
+    git -C "$root" ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null ||
+        die "tag $tag is not on origin; push it with git -C \"$root\" push --atomic origin main refs/tags/$tag, then resume"
     started=$(TZ=UTC git -C "$root" show -s --date=format-local:%Y-%m-%dT%H:%M:%SZ --format=%cd "$head")
 else
     [ "$(git -C "$root" branch --show-current)" = main ] || die 'run this from main'

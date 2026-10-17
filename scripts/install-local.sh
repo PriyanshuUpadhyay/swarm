@@ -54,7 +54,7 @@ formula_path=$tap_root/Formula/swarm.rb
 tap_changes=$(git -C "$tap_root" status --porcelain -- Formula/swarm.rb)
 [ -z "$tap_changes" ] || die "the tap formula has local changes; inspect them, then restore with git -C \"$tap_root\" checkout -- Formula/swarm.rb"
 lock=$(brew --cache)/swarm-install-local.lock
-mkdir "$lock" 2>/dev/null || die "local install lock exists at $lock; after checking that no install runs, use rmdir \"$lock\" and git -C \"$root\" worktree prune"
+mkdir "$lock" 2>/dev/null || die "local install lock exists at $lock; after checking that no install runs, use rmdir \"$lock\", then git -C \"$root\" worktree remove --force on each stale swarm-install.* path that git -C \"$root\" worktree list shows"
 work=
 restore=false
 cleanup() {
