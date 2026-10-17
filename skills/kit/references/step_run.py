@@ -71,6 +71,37 @@ def need_files(need, names):
                               for n in names if n.split("-", 1)[1].startswith(word.strip().split()[0])))
 
 
+def check_needs(rows):
+    """Each step's needed step files, or SystemExit naming the step and the word of the first defect."""
+    names = [r[0] for r in rows]
+    uses = {}
+    for name, need, _ in rows:
+        uses[name] = []
+        for word in (w.strip() for w in re.split(r",|\band\b", need)):
+            if not word or word == "none":
+                continue
+            found = need_files(word, names)
+            if not found:
+                raise SystemExit(f"step {name} needs {word!r}, which no step gives")
+            if len(found) > 1:
+                raise SystemExit(f"step {name} needs {word!r}, which fits {', '.join(found)}; name one")
+            uses[name] += found
+    done, path = set(), []
+
+    def walk(name):
+        if name in path:
+            raise SystemExit(f"cycle: {' -> '.join(path[path.index(name):] + [name])}")
+        if name not in done:
+            path.append(name)
+            for n in uses[name]:
+                walk(n)
+            path.pop()
+            done.add(name)
+
+    for name in names:
+        walk(name)
+
+
 def needs(folder, step):
     line = (Path(folder) / f"{step}.md").read_text(encoding="utf-8").splitlines()[1]
     return [n.strip().split("@")[0] for n in line.removeprefix("Uses:").split(",") if n.strip()]
@@ -123,6 +154,7 @@ def start(folder, skill_md):
     folder = Path(folder)
     rows = table(skill_md)
     names = [r[0] for r in rows]
+    check_needs(rows)
     folder.mkdir(parents=True, exist_ok=True)
     for name, need, holds in rows:
         file = folder / f"{name}.md"
