@@ -1,11 +1,17 @@
 """Run: python3 test_plan_chart.py"""
-import re, subprocess, sys, tempfile
+import re, shutil, subprocess, sys, tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 
 SCRIPT = Path(__file__).with_name("plan_chart.py")
 KIT = Path(__file__).resolve().parents[3]
 STEP_RUN = KIT / "references" / "step_run.py"
+sys.path.insert(0, str(SCRIPT.parent))
+sys.path.insert(0, str(KIT / "skills" / "implement" / "scripts"))
+import implement_run
+import block_resolver
+import plan_chart
 
 CHOSEN = ["requirements", "local-research", "design-tokens", "build-site", "web-ui-basics", "voice-reply"]
 
@@ -58,7 +64,6 @@ def test_good_plan():
 
 def test_defects_stop():
     cases = [
-        (PLAN.replace("| build-site, web-ui-basics |", "| diagram |"), "diagram is a parent; name its parts until the shared resolver lands"),
         (PLAN.replace("| build-site, web-ui-basics |", "| build-site, no-such |"), "block no-such, which is not in the kit"),
         (PLAN.replace("| read, tokens |", "| read, lookz |"), "needs 'lookz', which no step gives"),
         (PLAN.replace("| none | done-when", "| reply | done-when"), "loop among steps"),
@@ -76,6 +81,44 @@ def test_defects_stop():
     for text, error in cases:
         out, _ = chart(text)
         assert out.returncode == 1 and error in out.stderr and "Traceback" not in out.stderr, (error, out.stderr)
+
+
+def test_shared_resolver_import():
+    assert hasattr(plan_chart, "resolve_blocks"), "plan_chart must import resolve_blocks"
+    assert plan_chart.resolve_blocks is implement_run.resolve_blocks
+    assert plan_chart.resolve_blocks.__module__ == "block_resolver"
+
+
+def test_parent_selection():
+    parts = ["when-to-diagram", "html-diagram", "call-tree", "diagram-check"]
+    for selected, expected in (("diagram, html-diagram, diagram", ["diagram", *parts]),
+                               ("html-diagram, html-diagram", ["diagram", "html-diagram"])):
+        chosen = CHOSEN[:-3] + [*dict.fromkeys(selected.split(", ")), "voice-reply"]
+        text = PLAN.split("\n## Blocks considered")[0].replace("| build-site, web-ui-basics |", f"| {selected} |") + ledger(chosen)
+        out, folder = chart(text)
+        assert out.returncode == 0, out.stderr
+        page = (folder / "plan.html").read_text(encoding="utf-8")
+        card = page.split("<h2>04-build</h2>")[1].split("</li>", 1)[0]
+        assert card.split("</p>", 1)[0] == '<p>Blocks: ' + ", ".join(f"<code>{b}</code>" for b in expected), card
+
+
+def test_bad_parent_stops_both():
+    folder = Path(tempfile.mkdtemp())
+    shutil.copytree(KIT / "blocks", folder / "blocks")
+    parent = folder / "blocks" / "diagram" / "SKILL.md"
+    text = parent.read_text(encoding="utf-8")
+    parent.write_text(re.sub(r'^  parts: .*$', '  parts: "missing"', text, flags=re.M), encoding="utf-8")
+    rows = [("01-build", "none", "page", ["diagram"], "draw it"),
+            ("02-reply", "build", "reply", ["voice-reply"], "show it")]
+    with patch.object(plan_chart, "KIT", folder), patch.object(block_resolver, "BLOCKS", folder / "blocks"):
+        for check in (lambda: plan_chart.check("Plan", "page", rows),
+                      lambda: implement_run.resolve_blocks(folder, {"build": ["diagram"]}, "default")):
+            try:
+                check()
+            except SystemExit as error:
+                assert "unknown part missing in parent diagram" in str(error), error
+            else:
+                raise AssertionError("a parent with a missing part must stop both scripts")
 
 
 def test_cli_help_and_options():
