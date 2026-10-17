@@ -22,7 +22,9 @@ only from it.
 
 `start` owns the loop stop. A parent-loop key has three rounds, across fixes and re-plans.
 Its ledger and start lock live under git-common-dir/review-check, shared by linked worktrees.
-When that folder is not writable, start uses the worktree's run history and a local lock.
+When that folder is not writable, start still reads the ledger, but it counts and locks in the
+worktree. Those read-only rounds stay in that worktree, so a later writable start elsewhere does not
+see them; only a writable start in the same worktree merges them.
 Without --parent-loop, the key is branch:<current branch>; detached HEAD needs an explicit key.
 Two complete, certain snapshots with the same open issues and check results stop the next round.
 Identity uses file, symbol, rule, and whole source evidence, without line numbers. A rule `-` adds
@@ -443,7 +445,8 @@ def start_locked(target, *opts, ledger_home, ledger_writable):
         except (OSError, ValueError, UnicodeError):
             valid = False
         if not valid:
-            raise SystemExit(f"cannot read loop ledger {ledger_file}; delete it to import the worktree's run history") from None
+            raise SystemExit(f"cannot read loop ledger {ledger_file}; fix or delete it from a session that can "
+                         "write the git dir, then start again") from None
         if shared is not None:
             ledger = {"used": max(shared["used"], ledger["used"]),
                       "continued": shared["continued"] or ledger["continued"],
