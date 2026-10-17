@@ -15,6 +15,7 @@ metadata:
 
 ## Rules
 - The kit root holds `blocks/` and `references/`. It is two folders up from this file.
+- The kit's `references/plan-layout.md` owns how this file's schema fits the reply layout.
 - Make the run folder `<repo-root>/tmp/plan/<YYYY-MM-DD>-<slug>/` by the kit's `references/run-folder.md`, and write `plan.md` in it.
 - List the blocks with `rg -N '^(name|description|  needs|  gives|  conflicts):' <kit root>/blocks/*/SKILL.md`. Pick from that list only. Read a block's full file only when its line does not settle the choice.
 - `plan.md` opens with `# Plan: <the task in one line>`, then `Done when: <the result, and the evidence that proves it>`. Choose that evidence by `blocks/requirements/SKILL.md`, and map results by `blocks/done-when-evidence/SKILL.md`.
