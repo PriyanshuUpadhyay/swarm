@@ -21,7 +21,8 @@ only from it.
 `verdict` exits 1 when the gate fails, so a caller cannot read an APPROVE that no one earned.
 
 `start` owns the loop stop. A parent-loop key has three rounds, across fixes and re-plans.
-Its ledger and lock live under git-common-dir/review-check, shared by linked worktrees.
+Its ledger and start lock live under git-common-dir/review-check, shared by linked worktrees.
+When that folder is not writable, start uses the worktree's run history and a local lock.
 Without --parent-loop, the key is branch:<current branch>; detached HEAD needs an explicit key.
 Two complete, certain snapshots with the same open issues and check results stop the next round.
 Identity uses file, symbol, rule, and whole source evidence, without line numbers. A rule `-` adds
@@ -30,7 +31,7 @@ use the cap. One user line `continue: <key>` in --continue FILE permits one extr
 A refusal preserves the verdict. An answer-only verdict spends no round, and APPROVE can close
 on the last allowed round. --patch starts do not spend the parent-loop budget.
 """
-import fnmatch, hashlib, json, os, re, shutil, signal, subprocess, sys, urllib.parse
+import fcntl, fnmatch, hashlib, json, os, re, shutil, signal, subprocess, sys, tempfile, time, urllib.parse
 from contextlib import contextmanager, nullcontext
 from pathlib import Path
 
@@ -41,6 +42,7 @@ KINDS = ("pass", "fix", "ask", "note", "n/a")
 RULE = re.compile(r"^- `([A-Z][A-Z0-9-]*-\d+)` (.*)$")
 REFS_CAP = 20  # a symbol with more references than this gets the first 20; the seat searches the rest
 ROUND_CAP = 3
+START_LOCK_WAIT = 10
 BUILD_TIMEOUT = 3600
 CLEANUP_SECONDS = 10
 FUNC_KINDS = {"function", "method", "subroutine", "func", "procedure"}
@@ -63,10 +65,13 @@ def repo_name():
 def home():
     root = Path(git("rev-parse", "--show-toplevel").strip())
     exclude = Path(git("rev-parse", "--git-common-dir").strip()).resolve() / "info" / "exclude"
-    lines = exclude.read_text(encoding="utf-8").splitlines() if exclude.exists() else []
-    if "/tmp/" not in lines:  # local to this clone, so the team never sees it
-        exclude.parent.mkdir(parents=True, exist_ok=True)
-        exclude.write_text("\n".join(lines + ["/tmp/"]) + "\n", encoding="utf-8")
+    try:  # a sandbox may deny writes to the git dir; excluding tmp is optional
+        lines = exclude.read_text(encoding="utf-8").splitlines() if exclude.exists() else []
+        if "/tmp/" not in lines:  # local to this clone, so the team never sees it
+            exclude.parent.mkdir(parents=True, exist_ok=True)
+            exclude.write_text("\n".join(lines + ["/tmp/"]) + "\n", encoding="utf-8")
+    except OSError:
+        pass
     return root / "tmp" / "review-check"
 
 
@@ -311,15 +316,40 @@ def seat_map(checklist, catalog):
     return seats
 
 
-def loop_home():
+@contextmanager
+def start_lock():
     root = Path(git("rev-parse", "--path-format=absolute", "--git-common-dir").strip()) / "review-check"
-    root.mkdir(parents=True, exist_ok=True)
-    return root
+    shared = root
+    try:
+        root.mkdir(parents=True, exist_ok=True)
+        # An existing lock may still open when the folder denies atomic ledger writes.
+        with tempfile.TemporaryFile(dir=root):
+            pass
+        fd = os.open(root / "review-check.lock", os.O_CREAT | os.O_WRONLY, 0o600)
+    except OSError:
+        shared, root = None, home()
+        root.mkdir(parents=True, exist_ok=True)
+        fd = os.open(root / "review-check.lock", os.O_CREAT | os.O_WRONLY, 0o600)
+    try:
+        deadline = time.monotonic() + START_LOCK_WAIT
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise SystemExit(f"start refused: {root / 'review-check.lock'} is locked by a running start; "
+                                     f"waited {START_LOCK_WAIT:g} s; try again when it finishes") from None
+                time.sleep(min(0.1, remaining))
+        yield shared
+    finally:
+        os.close(fd)
 
 
 def start(target, *opts):
-    with step_run.step_lock(loop_home(), "review-check", command="start"):
-        return start_locked(target, *opts)
+    with start_lock() as ledger_home:
+        return start_locked(target, *opts, ledger_home=ledger_home)
 
 
 def stale_verdict(folder, lines):
@@ -330,7 +360,7 @@ def stale_verdict(folder, lines):
     return None
 
 
-def start_locked(target, *opts):
+def start_locked(target, *opts, ledger_home):
     options = {}
     while opts:
         if opts == ("--patch",):
@@ -395,13 +425,23 @@ def start_locked(target, *opts):
                 raise SystemExit(f"start refused by {previous}: answer its asks in {previous / 'answers.md'} and run "
                                  f"`verdict {previous.name}` again, or delete the run folder if it was abandoned")
     loop_runs.sort(key=lambda item: item[1]["round"])
-    ledger_file = loop_home() / f"{hashlib.sha256(parent_loop.encode()).hexdigest()}.json"
-    ledger = json.loads(ledger_file.read_text(encoding="utf-8")) if not is_patch and ledger_file.exists() else {
+    ledger_file = ledger_home / f"{hashlib.sha256(parent_loop.encode()).hexdigest()}.json" if ledger_home and not is_patch else None
+    ledger = {
         "used": max((metadata["round"] for _, metadata in loop_runs), default=0),
         "continued": any(metadata.get("continued") for _, metadata in loop_runs),
         "runs": [str(folder) for folder, _ in loop_runs],
     }
-    if not is_patch and loop_runs and not ledger_file.exists():
+    if ledger_file and ledger_file.exists():
+        try:
+            ledger = json.loads(ledger_file.read_text(encoding="utf-8"))
+            valid = (isinstance(ledger, dict) and type(ledger.get("used")) is int and ledger["used"] >= 0
+                     and isinstance(ledger.get("continued"), bool) and isinstance(ledger.get("runs"), list)
+                     and all(isinstance(run, str) for run in ledger["runs"]))
+        except (OSError, ValueError, UnicodeError):
+            valid = False
+        if not valid:
+            raise SystemExit(f"cannot read loop ledger {ledger_file}; delete it to import the worktree's run history") from None
+    elif ledger_file and loop_runs:
         step_run.write_step(ledger_file, json.dumps(ledger, indent=2) + "\n")
     used, continued = ledger["used"], ledger["continued"]
     snapshots = []
@@ -467,7 +507,7 @@ def start_locked(target, *opts):
     (d / "target.json").write_text(json.dumps({"target": target, "base": base, "head": head, "ci": ci,
                                              "patch": is_patch, "parent_loop": parent_loop,
                                              "round": used + 1, "continued": extension}, indent=2) + "\n", encoding="utf-8")
-    if not is_patch:
+    if ledger_file:
         ledger.update(used=used + 1, continued=continued or extension, runs=[*ledger["runs"], str(d)])
         step_run.write_step(ledger_file, json.dumps(ledger, indent=2) + "\n")
     diff = parse_diff(patch)
@@ -510,7 +550,8 @@ def start_locked(target, *opts):
         f"Status: open\nUses: 01-units@{revision(d / '01-units.md')}\n\n"
         "| Unit | Rule | file:line | Quote | Kind | Problem | Proof |\n|---|---|---|---|---|---|---|\n", encoding="utf-8")
     print(d)
-    print(f"parent loop: {parent_loop}")
+    note = " (local budget; the git dir is not writable)" if ledger_home is None else ""
+    print(f"parent loop: {parent_loop}{note}")
     for seat, plan in seats.items():
         print(f"{seat}: {len(plan['units'])} units, {plan['checks']} checks")
 
@@ -670,11 +711,6 @@ def answers(path):
 
 
 def verdict(name):
-    with step_run.step_lock(loop_home(), "review-check", command="verdict"):
-        return verdict_locked(name)
-
-
-def verdict_locked(name):
     d = home() / name
     units = {u["id"]: u for u in json.loads((d / "units.json").read_text(encoding="utf-8"))}
     diff = parse_diff((d / "diff.patch").read_text(encoding="utf-8"))

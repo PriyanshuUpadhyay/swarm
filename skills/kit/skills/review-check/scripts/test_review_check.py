@@ -229,7 +229,7 @@ def test_loop_broken_snapshot():
             loop_refused(base, head, "broken-snapshot", "cap")
 
 
-def test_loop_snapshot_atomic_lock():
+def test_loop_snapshot_atomic_without_lock():
     with loop_repo() as (base, head):
         run = loop_round(base, head, "snapshot-lock")
         shared = Path(rc.git("rev-parse", "--path-format=absolute", "--git-common-dir").strip()) / "review-check"
@@ -238,24 +238,87 @@ def test_loop_snapshot_atomic_lock():
 
         def write(file, text):
             if file.name == "snapshot.json":
-                try:
-                    with rc.step_run.step_lock(shared, "review-check", command="test"):
-                        raise AssertionError("snapshot written without the shared start lock")
-                except SystemExit as error:
-                    assert "locked" in str(error), error
+                with rc.step_run.step_lock(shared, "review-check", command="test"):
+                    pass
                 written.append(file)
             original(file, text)
 
         with patch.object(rc.step_run, "write_step", side_effect=write):
             assert rc.verdict(run.name) == 0
         assert written == [run.resolve() / "snapshot.json"], "snapshot write bypassed the atomic writer"
-        with rc.step_run.step_lock(shared, "review-check", command="test"):
+        with rc.step_run.step_lock(shared, "review-check", command="test"), \
+                patch.object(rc, "START_LOCK_WAIT", 0.05, create=True):
+            started = time.monotonic()
             try:
                 rc.start(f"{base}..{head}", "--parent-loop", "snapshot-lock")
             except SystemExit as error:
-                assert "locked" in str(error), error
+                assert "locked" in str(error) and "waited" in str(error), error
+                assert 0.05 <= time.monotonic() - started < 2
             else:
                 raise AssertionError("start bypassed the shared snapshot lock")
+            assert rc.verdict(run.name) == 0, "verdict must work while another start owns the lock"
+
+
+def test_loop_readonly_common_dir():
+    for existing in (False, True):
+        with loop_repo() as (base, head):
+            common = Path(rc.git("rev-parse", "--path-format=absolute", "--git-common-dir").strip())
+            if existing:
+                loop_round(base, head, "readonly", "pass")
+            paths = [common, common / "info", common / "info" / "exclude", common / "review-check"]
+            paths = [p for p in paths if p.exists()]
+            modes = {p: p.stat().st_mode & 0o777 for p in paths}
+            try:
+                for p in paths:
+                    p.chmod(0o555 if p.is_dir() else 0o444)
+                for n in range(int(existing), 3):
+                    run = loop_round(base, head, "readonly", "pass")
+                    assert json.loads((run / "target.json").read_text())["round"] == n + 1
+                with redirect_stdout(StringIO()) as out:
+                    rc.start(f"{base}..{head}", "--parent-loop", "readonly-note")
+                expected = "parent loop: readonly-note (local budget; the git dir is not writable)"
+                assert out.getvalue().splitlines().count(expected) == 1, out.getvalue()
+                loop_refused(base, head, "readonly", "cap")
+                assert rc.verdict(run.name) == 0
+            finally:
+                for p, mode in modes.items():
+                    p.chmod(mode)
+
+
+def test_loop_start_waits_for_sibling():
+    with loop_repo() as (base, head):
+        common = Path(rc.git("rev-parse", "--path-format=absolute", "--git-common-dir").strip()) / "review-check"
+        common.mkdir()
+        linked = Path.cwd() / "tmp" / "sibling"
+        sh("git", "worktree", "add", "--detach", str(linked), head)
+        with rc.step_run.step_lock(common, "review-check", command="start"):
+            contender = subprocess.Popen([sys.executable, str(HERE / "review_check.py"), "start",
+                                          f"{base}..{head}", "--parent-loop", "sibling"],
+                                         cwd=linked, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            time.sleep(0.2)
+            assert contender.poll() is None, contender.communicate()
+        stdout, stderr = contender.communicate(timeout=15)
+        assert contender.returncode == 0, (stdout, stderr)
+        assert "parent loop: sibling" in stdout, stdout
+
+
+def test_loop_broken_ledger():
+    for broken in ("{", "[]", "null", "{}", '{"used": 1}',
+                   '{"used": "1", "continued": false, "runs": []}',
+                   '{"used": 1, "continued": false, "runs": [7]}',
+                   '{"used": -1, "continued": false, "runs": []}'):
+        with loop_repo() as (base, head):
+            loop_round(base, head, "broken-ledger", "pass")
+            common = Path(rc.git("rev-parse", "--path-format=absolute", "--git-common-dir").strip()) / "review-check"
+            ledger = next(common.glob("*.json"))
+            ledger.write_text(broken)
+            try:
+                rc.start(f"{base}..{head}", "--parent-loop", "broken-ledger")
+            except SystemExit as error:
+                assert str(ledger) in str(error) and "delete" in str(error), error
+            else:
+                raise AssertionError(f"accepted damaged ledger: {broken}")
+            assert ledger.read_text() == broken
 
 
 def test_loop_shared_worktree_budget():
@@ -1869,7 +1932,10 @@ if __name__ == "__main__":
     test_loop_callers()
     test_loop_new_problem_same_evidence()
     test_loop_broken_snapshot()
-    test_loop_snapshot_atomic_lock()
+    test_loop_snapshot_atomic_without_lock()
+    test_loop_readonly_common_dir()
+    test_loop_start_waits_for_sibling()
+    test_loop_broken_ledger()
     test_loop_shared_worktree_budget()
     test_loop_deleted_run_budget()
     test_loop_import_budget_on_refusal()
