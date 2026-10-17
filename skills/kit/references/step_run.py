@@ -154,8 +154,11 @@ def start(folder, skill_md):
         sys.path.insert(0, str(Path(__file__).resolve().parent))
         import block_resolver
         piece = folder.resolve().parent
-        git = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True)
-        root = Path(git.stdout.strip()) if git.returncode == 0 else piece
+        directory = next(path for path in (piece, *piece.parents) if path.is_dir())
+        env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+        git = subprocess.run(["git", "-C", str(directory), "rev-parse", "--show-toplevel"],
+                             env=env, capture_output=True, text=True)
+        root = Path(git.stdout.strip()).resolve() if git.returncode == 0 else piece
         if not piece.is_relative_to(root):
             root = piece
         site = str(piece.relative_to(root))

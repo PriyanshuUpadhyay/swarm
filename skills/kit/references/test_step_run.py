@@ -499,6 +499,30 @@ def test_build_block_todos():
         assert "block headless-shot script:" in export and "block visual-qa judge:" in export
 
 
+def test_build_piece_repo_paths():
+    with tempfile.TemporaryDirectory() as tmp:
+        outside = Path(tmp)
+        repo, decoy = outside / "repo", outside / "decoy"
+        env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+        for root in (repo, decoy):
+            subprocess.run(["git", "init", "-q", str(root)], env=env, check=True)
+        piece = repo / "art-b"
+        skill = SCRIPT.parents[1] / "skills/build/SKILL.md"
+        texts = []
+        hook = {"GIT_DIR": str(decoy / ".git"), "GIT_WORK_TREE": str(decoy),
+                "GIT_INDEX_FILE": str(decoy / ".git/index")}
+        for index, (cwd, extra) in enumerate(((repo, {}), (outside, {}), (outside, hook))):
+            folder = piece / f"ink-{index}"
+            out = subprocess.run([sys.executable, SCRIPT, "start", folder, skill], cwd=cwd,
+                                 env={**env, **extra}, capture_output=True, text=True)
+            assert out.returncode == 0, out.stderr
+            text = (folder / "04-style-frames.md").read_text(encoding="utf-8")
+            assert "file art-b/shots/*.png" in text, text
+            texts.append(text)
+        assert len(set(texts)) == 1, "piece bindings must not depend on cwd or caller Git variables"
+        assert not (decoy / "art-b").exists()
+
+
 def test_build_repo_additions():
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
@@ -553,6 +577,7 @@ def test_block_command():
             assert file.read_text(encoding="utf-8") == "Status: blocked missing input\n" + body
 
 
+test_build_piece_repo_paths()
 test_build_repo_additions()
 test_block_command()
 test_build_block_todos()
