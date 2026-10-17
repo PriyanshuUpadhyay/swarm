@@ -18,7 +18,7 @@ KIT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(KIT / "references"))  # python3 -I does not add it
 import step_run  # noqa: E402
 from block_ledger import ledger_groups, ledger_markdown  # noqa: E402
-from block_resolver import resolve_blocks  # noqa: E402
+from block_resolver import read_toml, resolve_blocks  # noqa: E402
 
 HEAD = re.compile(r"\|\s*File\s*\|\s*Needs\s*\|\s*Holds\s*\|\s*Block\s*\|\s*Why\s*\|")
 
@@ -69,11 +69,7 @@ def read_ledger(path):
 
 
 def blocks_toml():
-    try:
-        import tomllib
-    except ModuleNotFoundError:
-        raise SystemExit(f"{KIT / 'blocks' / 'blocks.toml'}: reading TOML needs Python 3.11 or later (tomllib)") from None
-    return tomllib.loads((KIT / "blocks" / "blocks.toml").read_text(encoding="utf-8"))
+    return read_toml(KIT / "blocks" / "blocks.toml")
 
 
 def check_ledger(rows, ledger):
