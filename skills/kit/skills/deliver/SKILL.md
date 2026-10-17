@@ -29,8 +29,11 @@ only the user can give.
 4. Keep the task file as the kit block `blocks/task-file/SKILL.md` says, at
    `<repo-root>/tmp/deliver/<YYYY-MM-DD>-<slug>.md`, with the predicate as its goal and one
    evidence line per iteration.
-5. When the predicate holds, run `review-check` on `<base>..HEAD`, where `<base>` is the commit
-   before this run's first commit. A fix seat may start on one review seat's validated `fix` rows
+5. When the predicate holds, run `python3 <implement-skill-dir>/scripts/implement_run.py review <folder> <base>..HEAD`,
+   where `<folder>` is the run from step 1 and `<base>` is the commit before this run's first commit.
+   The command passes its saved parent-loop key to `review_check.py start`, which owns the loop stop.
+   Fixes use the same folder; a re-plan starts with `start --parent-loop <saved-key>`.
+   A fix seat may start on one review seat's validated `fix` rows
    after a partial verdict finds no problem in those rows, in its own worktree from the reviewed head.
    Later rows go to the same fix seat as one more ask. The verdict word and the next review start
    wait for every review seat. Fix each `fix` row in one more iteration, then review the
@@ -39,13 +42,12 @@ only the user can give.
    the review step, and the last verdict goes in
    `06-review.md`, because it covers the build range. Then print the implement workflow's `Next:` line for the
    close step.
-6. Stop only when the predicate is met and the review has no `fix` row, or when blocked on
-   user input. After three review rounds that still return `fix` rows, stop and bring the rows
-   to the user with their weight (crash, wrong state, or hygiene), and let the user choose to
-   go on or to record them as known limits. Before stopping, write each limit the user accepts as
+6. Stop when the predicate is met and the review has no `fix` row, or when `review_check.py start`
+   refuses or needs user input. Bring the open rows to the user with their weight (crash, wrong state,
+   or hygiene). Pass an owner's saved line with `review <folder> <range> --continue <user-file>`.
+   Write each limit the user accepts as
    a `limit:` line in the run's `answers.md`, in review-check's answer shape with the user's words,
-   so it reaches the next run's `answers-before.md`. A plateau is not a stop,
-   so change the approach. A genuine dead end is reported with the evidence, not spun on. Never
+   so it reaches the next run's `answers-before.md`. A dead end is reported with its evidence. Never
    relax the predicate to declare victory.
 
 The active host contract decides who types. Under a Fable chair the edits go to a routed coding

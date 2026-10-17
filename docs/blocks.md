@@ -46,9 +46,9 @@ The parts and their owners:
   one" is the `Needs` column. A change is a re-plan folder that names its parent.
 - **End condition.** A check that code can run: a line the owner wrote, a script result, a cap.
   "The model thinks it is done" is never an end condition.
-- **Loop stop.** Every loop (review, view and talk) uses one rule. The cap is 3 rounds, keyed by a
-  parent-loop key that fixes and re-plans inherit. The early stop compares open issues, not counts.
-  `review_check.py start` owns this rule (progress.md B1, B2).
+- **Loop stop.** Call `review_check.py start --parent-loop <key>`; the command owns the rule
+  (progress.md B1, B2). `implement_run.py review` passes the saved key for implement and deliver.
+  View-and-talk loops move to this guard in B19; until then `blocks/comment-round/SKILL.md` owns their stop.
 
 ## Block format
 
