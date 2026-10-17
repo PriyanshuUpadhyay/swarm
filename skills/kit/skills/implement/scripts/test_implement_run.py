@@ -573,7 +573,7 @@ def test_start_block_ledger(tmp):
     kit = tomllib.loads((implement_run.BLOCKS / "blocks.toml").read_text(encoding="utf-8"))
     expected = {p.parent.name for p in implement_run.BLOCKS.glob("*/SKILL.md")} - set(kit["base"])
     rows = [line.split("|")[1].strip().removeprefix("↳ ") for line in tables.splitlines() if line.startswith("| ")]
-    names = [name for name in rows if name != "Block" and not name.endswith("(sub-blocks)")]
+    names = [block for name in rows if name != "Block" and not name.endswith("(sub-blocks)") for block in name.split(", ")]
     assert len(names) == len(set(names)) and set(names) == expected, names
     chosen, rejected = tables.split("### Rejected\n")
     assert {name for name in expected if f"| {name} |" in chosen or f"| ↳ {name} |" in chosen} == {"html-diagram", "prove-it-works"}
@@ -582,6 +582,7 @@ def test_start_block_ledger(tmp):
     assert "| ↳ when-to-diagram | [off] no diagram choice needed &#124; here |" in rejected, rejected
     assert "| story | [off] no story |" in rejected, rejected
     assert "not named by a domain line" in rejected, rejected
+    assert rejected.count("not named by a domain line") == 1, rejected
     assert not has_control(out.stdout), out.stdout
     before = {p.name: p.read_bytes() for p in folder.iterdir()}
     (repo.parent / "home/.flow/domains.md").write_text("## any\n- build: block:nope\n", encoding="utf-8")
@@ -596,7 +597,7 @@ def test_start_ledger_without_chosen_blocks(tmp):
     assert out.returncode == 0, out.stderr
     chosen, rejected = out.stdout.split("### Chosen\n")[1].split("### Rejected\n")
     assert chosen.strip() == "| Block | Why |\n|---|---|", chosen
-    assert "| ↳ html-diagram | not named by a domain line |" in rejected, rejected
+    assert "html-diagram" in rejected and rejected.count("not named by a domain line") == 1, rejected
     assert "base-rules" not in out.stdout and "base-rules" not in step_text(folder, "01-frame")
 
 

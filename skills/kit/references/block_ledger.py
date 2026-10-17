@@ -21,11 +21,23 @@ def ledger_markdown(ledger, aliases):
     out = []
     for status, entries in ledger_groups(ledger, aliases):
         out += [f"### {status}", "", "| Block | Why |", "|---|---|"]
+        reasons = {}
+        if status == "Rejected":
+            for block, (state, why) in ledger.items():
+                if state == status and why == "not named by a domain line":
+                    reasons.setdefault(why, []).append(block)
+        repeated = {why: names for why, names in reasons.items() if len(names) > 1}
+        grouped = {name for names in repeated.values() for name in names}
         for label, members in entries:
+            members = [block for block in members if block not in grouped]
+            if label in grouped or label not in ledger and not members:
+                continue
             if members:
                 out.append(f"| {label} (sub-blocks) | |")
             for block in members or [label]:
                 why = ledger[block][1].replace("|", "&#124;")
                 out.append(f"| {'↳ ' if members else ''}{block} | {why} |")
+        for why, names in repeated.items():
+            out.append(f"| {', '.join(names)} | {why.replace('|', '&#124;')} |")
         out.append("")
     return "\n".join(out)
