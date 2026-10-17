@@ -14,6 +14,7 @@ metadata:
 ---
 
 ## Rules
+- Run from the repo root when you use this block's script checks.
 - For diagram form, apply `references/explain-formats.md` from the kit root. This block applies to pages the kit builds.
 - Build each node as an HTML element with real text, laid out with CSS grid or flexbox. Draw arrows with CSS borders, pseudo-elements, or text arrows (→ ↓), never with absolute pixel positions.
 - At 600 px and below, switch the diagram to one column in reading order. Each arrow keeps its meaning, source to target: it points at the same box as on a wide screen, so a stacked arrow never points away from its target. Turn it to match the new layout (↓ when the target is now below, ↑ when it is above).

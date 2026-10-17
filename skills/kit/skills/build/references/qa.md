@@ -22,7 +22,7 @@ beat-01-<name>.png
 trans-01-02-mid.png
 seam-before.png
 seam-after.png
-contact-sheet.png
+contact-sheet.png (two or more frames)
 ```
 
 

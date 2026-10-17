@@ -14,6 +14,7 @@ metadata:
 ---
 
 ## Rules
+- Run from the repo root when you use this block's script checks.
 - The source of truth is {{source_of_truth}}. First name the part of it that each diagram draws, with its path.
 - Map each node and each arrow to one source line. Write one row per item: item, source `path:line`, `match` or `miss`.
 - A node or an arrow with no source line is an invented component. It is a `miss`.

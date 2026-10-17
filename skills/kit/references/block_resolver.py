@@ -3,9 +3,10 @@
 import hashlib
 import re
 import shlex
+import sys
 from pathlib import Path
 
-from block_ledger import ledger_markdown
+from block_ledger import NOT_NAMED_REASON, ledger_markdown
 from step_run import plain
 
 BLOCKS = Path(__file__).resolve().parents[1] / "blocks"
@@ -20,7 +21,7 @@ def kit_profile(kit, kit_file, name):
     return profile
 
 
-def resolve_blocks(root, wanted, profile_name, *, blocks_dir=None, pack=True):
+def resolve_blocks(root, wanted, profile_name, *, blocks_dir=None, pack=True, params_override=None, judge_todos=False):
     """For each step key in `wanted` (key -> catalog block ids), the blocks it gets from the catalog and
     the repo's .blocks.toml, packed by the profile: (Skills read items, rules text, script todos). Also
     the judge lines of every block that ran, once each, and the blocks table. blocks/blocks.toml owns the format.
@@ -54,7 +55,7 @@ def resolve_blocks(root, wanted, profile_name, *, blocks_dir=None, pack=True):
         raise SystemExit(f"unknown table [{unknown[0]}] in {repo_file}; it takes [params], [add], and [off]")
     if wrong := [t for t in ("params", "add", "off") if not isinstance(repo.get(t, {}), dict)]:
         raise SystemExit(f"{repo_file}: {wrong[0]} must be a table, written as [{wrong[0]}]")
-    params, off, added = repo.get("params", {}), repo.get("off", {}), {}
+    params, off, added = {**repo.get("params", {}), **(params_override or {})}, repo.get("off", {}), {}
     if bad := next((k for k, v in params.items() if not isinstance(v, str)), None):
         raise SystemExit(f"[params] {bad} must be a string in {repo_file}, such as {bad} = \"docs/x.md\"")
     # An empty value would reach a script check as '', which a command reads as a missing path.
@@ -70,7 +71,9 @@ def resolve_blocks(root, wanted, profile_name, *, blocks_dir=None, pack=True):
         raise SystemExit(f"[params] {bad} holds a backtick in {repo_file}; a value is a path or a name")
     for key, paths in repo.get("add", {}).items():
         if key not in wanted:
-            raise SystemExit(f"[add] {key} in {repo_file} is not a step; steps are {', '.join(wanted)}")
+            # Another skill's step key is valid here, but a misspelled key must leave a trace.
+            print(f"[add] {key} in {repo_file} names no step of this skill; skipped", file=sys.stderr)
+            continue
         if not isinstance(paths, list) or not all(isinstance(p, str) for p in paths):
             raise SystemExit(f"[add] {key} in {repo_file} must be a list of paths, such as {key} = [\"docs/x.md\"]")
         for path in paths:
@@ -229,6 +232,8 @@ def resolve_blocks(root, wanted, profile_name, *, blocks_dir=None, pack=True):
                             for name, members in groups.items()])
         read = [f"profile {profile_name}"] + [f"block:{b}@{load(b)[0]}" for b in blocks] if blocks else []
         todos = [f"block {b} script: {line}" for b in blocks for line in check_lines(load(b)[1], "Check (script)")]
+        if judge_todos:
+            todos += [f"block {b} judge: {line}" for b in blocks for line in check_lines(load(b)[1], "Check (judge)")]
         for b in blocks:
             judge.setdefault(b, check_lines(load(b)[1], "Check (judge)"))
         out[key] = (read, text, todos)
@@ -240,7 +245,7 @@ def resolve_blocks(root, wanted, profile_name, *, blocks_dir=None, pack=True):
         if steps:
             ledger[block] = ("Chosen", f"Loaded by {', '.join(steps)}")
         else:
-            reason = f"[off] {one_line(off[block])}" if block in off else "not named by a domain line"
+            reason = f"[off] {one_line(off[block])}" if block in off else NOT_NAMED_REASON
             ledger[block] = ("Rejected", reason)
     return out, "\n".join(f"- block {b} judge: {line}" for b, lines in judge.items() for line in lines), ledger_markdown(ledger, aliases)
 

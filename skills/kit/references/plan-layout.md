@@ -9,6 +9,10 @@ Short plans keep the `pair` skill's 3-7 behavior list. Research reports, reviews
 verdicts keep their own section order under the first screen below. Codex and AGY seats never load
 this file, so a brief that needs it quotes it.
 
+The checked `plan.md` file made by `blocks/planner/SKILL.md` uses that block's file schema, with
+its title, done-when line, and tables. This is the exception to the opening and section order
+below. The reply that presents the plan still follows this layout.
+
 ## Opening
 
 The first one to three sentences state the outcome and the next action. Any decision that blocks

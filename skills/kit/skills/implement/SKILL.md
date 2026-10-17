@@ -41,6 +41,7 @@ the git common dir (`git rev-parse --git-common-dir`), not the worktree folder n
    python3 $F take <folder> <step> <agent>   # marks the step active and prints its file with its skills in full
    python3 $F done <folder> <step>           # sets the step done, only when every todo has its evidence
    python3 $F skip <folder> <step> <reason>  # skips 02-design, 03-contracts, or 04-impact, never another step
+   python3 $F block <folder> <step> <reason> # records a blocked step
    ```
 
    A catalog step line may also name `block:<id>`, a block or an alias in the kit's `blocks/`
@@ -99,14 +100,14 @@ It passes the saved `loop.json` parent-loop key to `review_check.py start`, whic
 For a re-plan, run `start --parent-loop <saved-key>` to keep the parent key.
 Pass an owner's saved line with `review <folder> <range> --continue <user-file>`.
 
-`implement_run.py done <folder> 07-close` closes and archives the run, then prints its new path.
+`implement_run.py done <folder> 07-close` closes the run, moves it to `tmp/flow/_closed/`, then prints its new path.
 For a second run on the same branch and day, use the command's recovery: rename its run folder
 to a distinct name, such as `<folder>-second`, then run `done <renamed-folder> 07-close`.
 Release is a separate action that the user asks for.
 
 ## Owners
 
-For owner gates in `pair` or `deliver`, apply `blocks/worker-brief/SKILL.md`.
+For owner gates in `pair` or `deliver`, and the build-to-review handoff when this session cannot start seats, apply `blocks/worker-brief/SKILL.md`.
 
 
 The `implement` skill owns the step list, the order, the profiles, and the domain catalog.

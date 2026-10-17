@@ -6,8 +6,9 @@
   take <folder> <step> <who> [--force]   claim the step and print its file; force takes a stale claim
   done <folder> <step>          set the step done, only when every todo is checked with evidence
   skip <folder> <step> <reason> skip an open or active step, with the reason
+  block <folder> <step> <reason> block an open or active step, with the reason
 
-take, done, and skip add one line to <folder>/events.log, so the path of a run stays readable after it ends.
+take, done, skip, and block add one line to <folder>/events.log, so the path of a run stays readable after it ends.
 A skill script with its own step graph or revision (implement) imports these functions and passes `need`
 and `rev`.
 """
@@ -18,6 +19,7 @@ import hashlib
 import os
 import re
 import stat
+import subprocess
 import sys
 import tempfile
 from contextlib import contextmanager
@@ -27,6 +29,20 @@ TODO_HEAD = "## Todo (check a box only with its evidence after the colon; `done`
 # Parse by this prefix, so a step file written under an older head wording still has its todos checked.
 TODO_MARK = "## Todo ("
 RESULT_HEAD = "## Result"
+
+
+def kit_path(path):
+    """Display paths in the installed kit through its stable link; keep source checkout paths."""
+    root = Path(__file__).resolve().parents[1]
+    installed = Path.home() / ".swarm/kit"
+    if installed.resolve() == root:
+        try:
+            relative = Path(path).expanduser().resolve().relative_to(root)
+        except ValueError:
+            pass
+        else:
+            return str(Path("~/.swarm/kit") / relative)
+    return str(path)
 
 
 def todo_scan(text, ends=(RESULT_HEAD,)):
@@ -55,9 +71,12 @@ def table(skill_md):
     for line in Path(skill_md).read_text(encoding="utf-8").splitlines():
         if re.match(r"\|\s*File\s*\|\s*Needs\s*\|\s*Holds\s*\|", line):
             inside = True
+            columns = [c.strip() for c in line.strip("|").split("|")]
+            has_blocks = len(columns) > 3 and columns[3] == "Blocks"
         elif inside and line.startswith("|") and not line.startswith("|---"):
             cells = [c.strip().strip("`") for c in line.strip("|").split("|")]
-            rows.append((cells[0].removesuffix(".md"), cells[1], cells[2]))
+            blocks = [b.strip() for b in cells[3].split(",") if b.strip()] if has_blocks else None
+            rows.append((cells[0].removesuffix(".md"), cells[1], cells[2], blocks))
         elif inside and not line.startswith("|"):
             break
     if not rows:
@@ -164,14 +183,36 @@ def start(folder, skill_md):
     folder = Path(folder)
     rows = table(skill_md)
     names = [r[0] for r in rows]
-    uses = check_needs(rows)
+    selected = {name: ids for name, _, _, ids in rows if ids is not None}
+    blocks = {}
+    if selected and not all((folder / f"{name}.md").exists() for name in names):
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import block_resolver
+        piece = folder.resolve().parent
+        directory = next(path for path in (piece, *piece.parents) if path.is_dir())
+        env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+        git = subprocess.run(["git", "-C", str(directory), "rev-parse", "--show-toplevel"],
+                             env=env, capture_output=True, text=True)
+        root = Path(git.stdout.strip()).resolve() if git.returncode == 0 else piece
+        if not piece.is_relative_to(root):
+            root = piece
+        site = str(piece.relative_to(root))
+        blocks, _, _ = block_resolver.resolve_blocks(
+            root, selected, "default", blocks_dir=Path(__file__).resolve().parents[1] / "blocks",
+            params_override={"site": site, "shots": str(Path(site) / "shots")}, judge_todos=True)
+    uses = check_needs([r[:3] for r in rows])
     folder.mkdir(parents=True, exist_ok=True)
-    for name, need, holds in rows:
+    for name, need, holds, _ in rows:
         file = folder / f"{name}.md"
         if file.exists():
             continue
-        file.write_text(f"Status: open\nUses: {', '.join(uses[name])}\n\n"
-                        f"{TODO_HEAD}\n- [ ] {holds}: \n\n{RESULT_HEAD}\n", encoding="utf-8")
+        read, rules, todos = blocks.get(name, ([], "", []))
+        if any(token in rules + "\n".join(todos) for token in ("blocks/", "the kit's `references/", "<kit root>")):
+            rules = f"Kit blocks (`blocks/<id>/`) and the kit's `references/` are under {kit_path(Path(__file__).resolve().parents[1])} (the kit root).\n{rules}"
+        extra = (f"Skills read: {', '.join(read)}\n\n## Rules for this step\n{rules}\n" if read else "")
+        file.write_text(f"Status: open\nUses: {', '.join(uses[name])}\n\n{extra}"
+                        f"{TODO_HEAD}\n" + "".join(f"- [ ] {item}: \n" for item in [holds] + todos)
+                        + f"\n{RESULT_HEAD}\n", encoding="utf-8")
     print(folder)
 
 
@@ -259,12 +300,28 @@ def skip(folder, step, *why):
     print(f"{step}: skipped {reason}")
 
 
+def block(folder, step, *why):
+    reason = plain(" ".join(why), keep_newlines=True).replace("\n", " ").replace("\t", " ").strip()
+    if not reason:
+        raise SystemExit("block needs a reason")
+    file = Path(folder) / f"{step}.md"
+    if not file.is_file():
+        raise SystemExit(f"step file does not exist: {file}")
+    with step_lock(folder, step, command="block"):
+        state = status_of(folder, step)
+        if state.split()[0] not in ("open", "active"):
+            raise SystemExit(f"{step} is {state}; only an open or active step can be blocked")
+        write_step(file, f"Status: blocked {reason}\n" + file.read_text(encoding="utf-8").split("\n", 1)[1])
+    log(folder, step, f"block {reason}")
+    print(f"{step}: blocked {reason}")
+
+
 if __name__ == "__main__":
     if hasattr(sys.stdout, "reconfigure"):
         # Escape non-ASCII output when the console uses an ASCII encoding.
         sys.stdout.reconfigure(errors="backslashreplace")
-    commands = {"start": start, "status": status, "take": take, "done": done, "skip": skip}
-    arity = {"start": (2, 2), "status": (1, 1), "take": (3, 3), "done": (2, 2), "skip": (3, None)}
+    commands = {"start": start, "status": status, "take": take, "done": done, "skip": skip, "block": block}
+    arity = {"start": (2, 2), "status": (1, 1), "take": (3, 3), "done": (2, 2), "skip": (3, None), "block": (3, None)}
     if len(sys.argv) < 2 or sys.argv[1] not in commands:
         raise SystemExit(__doc__)
     try:
@@ -273,8 +330,8 @@ if __name__ == "__main__":
         force = command == "take" and "--force" in args
         if command == "take":
             args = [arg for arg in args if arg != "--force"]
-        if command in ("done", "skip") and "--force" in args:
-            raise SystemExit("done <folder> <step> accepts no --force" if command == "done" else "skip accepts no --force")
+        if command in ("done", "skip", "block") and "--force" in args:
+            raise SystemExit("done <folder> <step> accepts no --force" if command == "done" else f"{command} accepts no --force")
         minimum, maximum = arity[command]
         if len(args) < minimum or maximum is not None and len(args) > maximum:
             raise SystemExit(next(line.strip() for line in __doc__.splitlines()

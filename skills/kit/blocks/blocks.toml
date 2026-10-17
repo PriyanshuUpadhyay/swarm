@@ -28,11 +28,16 @@
 # names a block, drops duplicates, and applies the profile. A profile changes packaging only, never
 # which rule or check lines appear: `Check (script)` lines become step todos, and `Check (judge)`
 # lines go to 06-review.md.
+# A step_run.py table may add a fourth column, Blocks, with comma-separated block ids or aliases.
+# It uses the same resolver. Both script and judge checks become todos in that step, because a
+# generic run has no 06-review. For build's <piece>/ink/ folder, site is <piece> and shots is
+# <piece>/shots, relative to the repo root (or to <piece> for a standalone piece).
 #
 # The repo file `<repo>/.blocks.toml` has three tables:
 #   [params]  name = "value"                fills {{name}}, e.g. shots = "tmp/shots"
 #   [add]     build = ["path/in/repo.md"]   adds repo blocks to a step; the id is the file stem, or the folder of a `SKILL.md`
 #   [off]     block-id = "reason"           drops a block and prints `Off: <id>: <reason>` where it would join
+# Only [add] keys named in the current skill's steps apply to that run.
 
 base = ["base-rules"]
 

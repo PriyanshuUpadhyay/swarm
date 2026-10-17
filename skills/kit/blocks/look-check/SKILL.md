@@ -14,6 +14,7 @@ metadata:
 ---
 
 ## Rules
+- Run from the repo root when you use this block's script checks.
 - Capture and name frames and compare images by `blocks/headless-shot/SKILL.md`. For a page, render three: the hero at 1440 px and at 390 px and one middle section at 1440 px. For a reel, one of the frames is the signature shot.
 - Inspect the built frames by `blocks/visual-qa/SKILL.md`. Score every line of the look (the `DESIGN.md` tokens, or the list of look traits the work keeps) as `match`, `partial`, or `miss`, each with pixel evidence.
 - A `miss` on any trait blocks the build step.

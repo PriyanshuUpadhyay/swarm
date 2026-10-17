@@ -66,8 +66,7 @@ pattern file when a build solves a new one.
 Choose `<piece>`, the piece folder, by `references/run-folder.md`, so a new chat continues where
 the last one stopped.
 
-Bind `{{site}}` to the piece folder and `{{shots}}` to `<piece>/shots/`, as repo-relative paths
-when the piece is in a repo. `blocks/blocks.toml` owns these names.
+`start` binds `{{site}}` and `{{shots}}` as `blocks/blocks.toml` says.
 
 Example. `~/work/seed-city/ink/` holds one file per step. Steps 1-4 are done, so line 1 of
 `04-style-frames.md` reads `Status: done 3f9a1c2b7e10`. A new chat gets
@@ -75,17 +74,18 @@ Example. `~/work/seed-city/ink/` holds one file per step. Steps 1-4 are done, so
 
 A piece is a step run, so `references/step-run.md` owns the status line, ready and stale steps,
 pick-up, close, and when a step waits for the user. Run `start <piece>/ink/ <this SKILL.md>`
-with its script. Each file holds the step's output, not a copy of it.
+with its script.
+Each file holds the step's output, not a copy of it.
 
-| File | Needs | Holds |
-|---|---|---|
-| `01-intake.md` | none | story, references, benchmark, form, size, limits, and delivery |
-| `02-look.md` | intake | reference analysis and style grammar |
-| `03-story.md` | intake | story sheet, shot list, transitions, and scene graph |
-| `04-style-frames.md` | look, story | style frames, compare images, and scores |
-| `05-animatic.md` | story | animatic and timing |
-| `06-detail.md` | style-frames, animatic | detail passes and frame paths |
-| `07-export.md` | style-frames, detail | QA log, export, and handoff |
+| File | Needs | Holds | Blocks |
+|---|---|---|---|
+| `01-intake.md` | none | story, references, benchmark, form, size, limits, and delivery | reference-analysis |
+| `02-look.md` | intake | reference analysis and style grammar | reference-analysis |
+| `03-story.md` | intake | story sheet, shot list, transitions, and scene graph | story |
+| `04-style-frames.md` | look, story | style frames, compare images, and scores | look-check, headless-shot, visual-qa |
+| `05-animatic.md` | story | animatic and timing | build-canvas |
+| `06-detail.md` | style-frames, animatic | detail passes and frame paths | build-canvas |
+| `07-export.md` | style-frames, detail | QA log, export, and handoff | build-canvas, headless-shot, visual-qa |
 
 - A build step lists its frame paths and a hash of its source files in its body, so a code change
   changes its revision.
@@ -95,6 +95,7 @@ with its script. Each file holds the step's output, not a copy of it.
 
 ## Roles
 
+- For a missing builder or visual critic seat, apply the seat routes in `blocks/worker-brief/SKILL.md`.
 - Steps 1 to 3 run in the main session, because they need the user's answers.
 - Steps 4 to 7 go to the role `build`. The builder scores its own rounds. When it closes a step
   by `references/step-run.md`, the main session sends the final compare images to the role `review.visual`, and a `miss`

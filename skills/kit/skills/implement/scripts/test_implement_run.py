@@ -525,6 +525,29 @@ def step_text(folder, step):
     return (folder / f"{step}.md").read_text(encoding="utf-8")
 
 
+def test_installed_kit_paths(tmp):
+    out, folder, repo, run = blocks_start(tmp, "stable-paths", "", None)
+    assert out.returncode == 0, out.stderr
+    home = repo.parent / "home"
+    (home / ".swarm").mkdir()
+    (home / ".swarm/kit").symlink_to(SCRIPT.parents[3], target_is_directory=True)
+    (home / ".flow/domains.md").write_text(
+        "## any\n- build: ~/.swarm/kit/skills/prove-it-works/SKILL.md, block:prove-it-works\n", encoding="utf-8")
+    shutil.rmtree(folder)
+    out = run("start")
+    assert out.returncode == 0, out.stderr
+    text = step_text(folder, "05-build")
+    assert "Take with: python3 ~/.swarm/kit/skills/implement/scripts/implement_run.py take " in text, text
+    assert "Skills read: ~/.swarm/kit/skills/prove-it-works/SKILL.md" in text, text
+    assert "under ~/.swarm/kit (the kit root)" in text, text
+    assert str(SCRIPT.parents[3]) not in text and str(SCRIPT) not in out.stdout, out
+    # A source checkout without an installed link must keep its own paths.
+    local = repo.parent / "source-home"
+    local.mkdir()
+    with patch.object(implement_run.step_run.Path, "home", return_value=local):
+        assert implement_run.step_run.kit_path(SCRIPT) == str(SCRIPT)
+
+
 def test_start_domains(tmp):
     """A run selects profile domains once, always keeps any, and rejects unknown domains."""
     for name, selected in (("selected", True), ("all", False)):
@@ -574,7 +597,7 @@ def test_start_block_ledger(tmp):
     kit = tomllib.loads((implement_run.BLOCKS / "blocks.toml").read_text(encoding="utf-8"))
     expected = {p.parent.name for p in implement_run.BLOCKS.glob("*/SKILL.md")} - set(kit["base"])
     rows = [line.split("|")[1].strip().removeprefix("↳ ") for line in tables.splitlines() if line.startswith("| ")]
-    names = [name for name in rows if name != "Block" and not name.endswith("(sub-blocks)")]
+    names = [block for name in rows if name != "Block" and not name.endswith("(sub-blocks)") for block in name.split(", ")]
     assert len(names) == len(set(names)) and set(names) == expected, names
     chosen, rejected = tables.split("### Rejected\n")
     assert {name for name in expected if f"| {name} |" in chosen or f"| ↳ {name} |" in chosen} == {"html-diagram", "prove-it-works"}
@@ -583,6 +606,7 @@ def test_start_block_ledger(tmp):
     assert "| ↳ when-to-diagram | [off] no diagram choice needed &#124; here |" in rejected, rejected
     assert "| story | [off] no story |" in rejected, rejected
     assert "not named by a domain line" in rejected, rejected
+    assert rejected.count("not named by a domain line") == 1, rejected
     assert not has_control(out.stdout), out.stdout
     before = {p.name: p.read_bytes() for p in folder.iterdir()}
     (repo.parent / "home/.flow/domains.md").write_text("## any\n- build: block:nope\n", encoding="utf-8")
@@ -597,7 +621,7 @@ def test_start_ledger_without_chosen_blocks(tmp):
     assert out.returncode == 0, out.stderr
     chosen, rejected = out.stdout.split("### Chosen\n")[1].split("### Rejected\n")
     assert chosen.strip() == "| Block | Why |\n|---|---|", chosen
-    assert "| ↳ html-diagram | not named by a domain line |" in rejected, rejected
+    assert "html-diagram" in rejected and rejected.count("not named by a domain line") == 1, rejected
     assert "base-rules" not in out.stdout and "base-rules" not in step_text(folder, "01-frame")
 
 
@@ -957,7 +981,6 @@ def test_block_fail_closed(tmp):
         ("add-string", PARAMS + '[add]\nbuild = "docs/x.md"\n', "must be a list of paths"))]
     cases += [
         ("add-missing", PROVE_BUILD, PARAMS + '[add]\nbuild = ["docs/none.md"]\n', (), "[add] docs/none.md in"),
-        ("add-step", PROVE_BUILD, PARAMS + '[add]\nship = ["docs/x.md"]\n', (), "[add] ship in"),
         ("table", PROVE_BUILD, PARAMS + "[extra]\nx = 1\n", (), "unknown table [extra]"),
         ("param-dash", PROVE_BUILD, PARAMS.replace('site = "site"', 'site = "--version"'), (), "[params] site starts with '-'"),
         ("param-dash-space", PROVE_BUILD, PARAMS.replace('site = "site"', 'site = "\\n -x"'), (), "[params] site starts with '-'"),
@@ -1261,7 +1284,7 @@ def test_block_repo_file(tmp):
     Path(tmp, "repo-file", "app", "docs", "our-api.md").write_text(
         "# our-api\nConcept: x\n\n## Rules\n- OUR RULE 7\n\n## Check (script)\n- `true` runs: it proves nothing\n\n## Check (judge)\n", encoding="utf-8")
     out, folder, _, _ = blocks_start(tmp, "repo-file", "- design: block:tech-diagram\n",
-                                     PARAMS + '[add]\nbuild = ["docs/our-api.md"]\n[off]\nhtml-diagram = "this repo\\u001b draws\\nSVG"\n')
+                                     PARAMS + '[add]\nbuild = ["docs/our-api.md"]\n04-style-frames = ["docs/visual.md"]\n[off]\nhtml-diagram = "this repo\\u001b draws\\nSVG"\n')
     assert out.returncode == 0, out.stderr
     build = step_text(folder, "05-build")
     assert "===== block:our-api =====" in build and "OUR RULE 7" in build and "- [ ] block our-api script: `true` runs: it proves nothing: " in build, build
@@ -1820,6 +1843,7 @@ with tempfile.TemporaryDirectory() as tmp:
     events = (folder / "events.log").read_text()
     assert "02-design\tskip no UI" in events and "07-close\ttake a" in events
     test_git_env_ignores_caller_git_dir(tmp)
+    test_installed_kit_paths(tmp)
     test_start_block_ledger(tmp)
     test_start_domains(tmp)
     test_start_ledger_without_chosen_blocks(tmp)

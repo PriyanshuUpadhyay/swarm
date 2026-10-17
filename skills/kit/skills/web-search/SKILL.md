@@ -9,7 +9,7 @@ Three visible seats search three different parts of the web at the same time, ea
 tools, and each writes its findings to a file. The chair merges them into one report. One session's
 blocked fetch is another seat's open page, so the coverage is wider than any single session.
 
-The runtime adapter (`orchestrate-claude`) selects the host and its reference; web search names no host. Without a visible host, stop and say so; a hidden or headless seat is not a substitute. When no user can answer that stop or another owner gate, apply `blocks/worker-brief/SKILL.md`. The default is to search with this session's tools and report the missing seat coverage.
+The active runtime adapter selects the host and its reference; web search names no host. Without a visible host, stop and say so; a hidden or headless seat is not a substitute. When no user can answer that stop or another owner gate, apply `blocks/worker-brief/SKILL.md`. The default is to search with this session's tools and report the missing seat coverage.
 The kit root, with its `blocks/` and `references/` folders, is two folders up from this skill's folder.
 
 ## Start or continue
@@ -27,6 +27,8 @@ close, and when a step waits for the user. Choose the web-search run and report 
 | `03-gate.md` | seats | the depth-gate result per seat as each report arrives, any seat sent back, and the link check |
 | `04-merge.md` | gate | the merged report path |
 | `05-close.md` | merge | the seats closed and verified, and the scratch run directory removed |
+
+For the default route, record `default taken` in `01-brief` and use `skip` on `02-seats` with that reason. Check this session's findings in `03-gate`, merge them in `04-merge`, and record that no seats or launch scratch were created in `05-close`.
 
 ## Seat mechanics
 

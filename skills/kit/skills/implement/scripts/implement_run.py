@@ -7,6 +7,7 @@
   take <folder> <step> <who> [--force] mark the step active and print its file with the skills the catalog gives it
   done <folder> <step>         set done with evidence; 07-close moves the run to tmp/flow/_closed/
   skip <folder> <step> <why>    skip design, contracts, or impact, with the reason
+  block <folder> <step> <why>   block an open or active step, with the reason
 
 `start` writes the full text of each step's skills into that step's file, because an agent that gets
 only a path often does not open it (Sonnet workers opened 0 of 4 pointer skills, 2026-10-04 and
@@ -35,8 +36,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "references"))
 import step_run  # noqa: E402
-from step_run import RESULT_HEAD, TODO_HEAD, plain, status_of  # noqa: E402
-from block_resolver import BLOCKS, CAP, kit_profile, one_line, read_toml, read_utf8, resolve_blocks  # noqa: E402
+from step_run import RESULT_HEAD, TODO_HEAD, kit_path, plain, status_of  # noqa: E402
+from block_resolver import BLOCKS, CAP, kit_profile, one_line, read_toml, read_utf8, resolve_blocks, sections  # noqa: E402
 
 SKILL_MD = Path(__file__).resolve().parents[1] / "SKILL.md"
 SKIPPABLE = ("02-design", "03-contracts", "04-impact")
@@ -86,7 +87,7 @@ def graph():
     """Each step file and the steps it needs, from the step table in SKILL.md."""
     rows = step_run.table(SKILL_MD)
     names = [r[0] for r in rows]
-    return {name: step_run.need_files(need, names) for name, need, _ in rows}
+    return {name: step_run.need_files(need, names) for name, need, _, _ in rows}
 
 
 def rev(folder, step):
@@ -168,14 +169,14 @@ def start(profile="default", domains=None, parent_loop=None):
             considered = f"{LEDGER_HEAD}\n\n{ledger}\n" if step == "01-frame" else ""
             # The step file lives in the repo, so a kit-root path in the copied text needs the kit's place.
             if any(token in rules + judged for token in ("blocks/", "the kit's `references/", "<kit root>")):
-                rules = f"Kit blocks (`blocks/<id>/`) and the kit's `references/` are under {BLOCKS.parent} (the kit root).\n{rules}"
+                rules = f"Kit blocks (`blocks/<id>/`) and the kit's `references/` are under {kit_path(BLOCKS.parent)} (the kit root).\n{rules}"
             (folder / f"{step}.md").write_text(
-                f"Status: open\n{uses}\n{extra}Take with: python3 {Path(__file__).resolve()} take {folder} {step} <agent>\n"
+                f"Status: open\n{uses}\n{extra}Take with: python3 {kit_path(Path(__file__).resolve())} take {folder} {step} <agent>\n"
                 f"Skills read: {', '.join(paths + read) or 'none'}\n\n{considered}{RULES_HEAD}\n{rules}\n{judged}"
                 f"{TODO_HEAD}\n" + "".join(f"- [ ] {item}: \n" for item in TODOS[step] + todos) + f"\n{RESULT_HEAD}\n", encoding="utf-8")
     loop_key(folder, parent_loop)
     print(folder)
-    print(f"Each step file holds its rules, a todo list, and a result section. Close a step with: python3 {Path(__file__).resolve()} done <folder> <step>")
+    print(f"Each step file holds its rules, a todo list, and a result section. Close a step with: python3 {kit_path(Path(__file__).resolve())} done <folder> <step>")
     # Read the saved choice on repeat starts; changed domain lines apply only to a new run.
     frame = read_utf8(folder / "01-frame.md") if (folder / "01-frame.md").exists() else ""
     if saved := re.search(r"^Domains: .+$", frame, re.M):
@@ -233,7 +234,7 @@ def skill_paths(step, domains=None):
                 item = str(local)
         if item not in paths:
             paths.append(item)
-    return paths + [str(root / r) for r in repo_rules], [p.removeprefix("block:") for p in items if p.startswith("block:")]
+    return [kit_path(p) for p in paths + [str(root / r) for r in repo_rules]], [p.removeprefix("block:") for p in items if p.startswith("block:")]
 
 
 def take(folder, step, who, force=False):
@@ -296,6 +297,12 @@ def approved(folder):
     if not head.startswith(rev(folder, "05-build")):
         raise SystemExit(f"{runs[-1]} covers {head[:12] or 'no head'}, but the build is now {rev(folder, '05-build')}; "
                          "run review-check on the new range")
+
+
+def block(folder, step, *why):
+    if step not in graph():
+        raise SystemExit(f"unknown step {step}; steps are {', '.join(graph())}")
+    step_run.block(folder, step, *why)
 
 
 def code_names(text):
@@ -388,6 +395,7 @@ def demote(text):
 def skills_text(paths):
     parts = []
     for path in paths:
+        path = kit_path(path)
         p = Path(path).expanduser()
         if not p.exists():
             parts.append(f"===== {path} (missing) =====")
@@ -402,8 +410,8 @@ if __name__ == "__main__":
     if hasattr(sys.stdout, "reconfigure"):
         # Escape non-ASCII output when the console uses an ASCII encoding.
         sys.stdout.reconfigure(errors="backslashreplace")
-    commands = {"start": start, "review": review, "status": status, "take": take, "done": done, "skip": skip}
-    arity = {"start": (0, 0), "review": (2, None), "status": (0, 1), "take": (3, 3), "done": (2, 2), "skip": (3, None)}
+    commands = {"start": start, "review": review, "status": status, "take": take, "done": done, "skip": skip, "block": block}
+    arity = {"start": (0, 0), "review": (2, None), "status": (0, 1), "take": (3, 3), "done": (2, 2), "skip": (3, None), "block": (3, None)}
     if len(sys.argv) < 2 or sys.argv[1] not in commands:
         raise SystemExit(__doc__)
     try:
@@ -412,8 +420,8 @@ if __name__ == "__main__":
         force = command == "take" and "--force" in args
         if command == "take":
             args = [arg for arg in args if arg != "--force"]
-        if command in ("done", "skip") and "--force" in args:
-            raise SystemExit("done <folder> <step> accepts no --force" if command == "done" else "skip accepts no --force")
+        if command in ("done", "skip", "block") and "--force" in args:
+            raise SystemExit("done <folder> <step> accepts no --force" if command == "done" else f"{command} accepts no --force")
         options = {"force": force} if command == "take" else {}
         if command == "start":
             while len(args) >= 2 and args[0] in ("--profile", "--domains", "--parent-loop") and args[0][2:].replace("-", "_") not in options:
