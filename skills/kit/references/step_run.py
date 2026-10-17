@@ -91,7 +91,8 @@ def check_needs(rows):
                 raise SystemExit(f"step {name} needs {word!r}, which no step gives")
             if len(found) > 1:
                 raise SystemExit(f"step {name} needs {word!r}, which fits {', '.join(found)}; name one")
-            uses[name] += found
+            if found[0] not in uses[name]:
+                uses[name] += found
             word_of[name, found[0]] = word
     done, path = set(), []
 
