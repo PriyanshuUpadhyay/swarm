@@ -75,7 +75,8 @@ Example. `~/work/seed-city/ink/` holds one file per step. Steps 1-4 are done, so
 
 A piece is a step run, so `references/step-run.md` owns the status line, ready and stale steps,
 pick-up, close, and when a step waits for the user. Run `start <piece>/ink/ <this SKILL.md>`
-with its script. Each file holds the step's output, not a copy of it.
+with its script and Python 3.11 or later, because `start` reads TOML.
+Each file holds the step's output, not a copy of it.
 
 | File | Needs | Holds | Blocks |
 |---|---|---|---|

@@ -499,6 +499,24 @@ def test_build_block_todos():
         assert "block headless-shot script:" in export and "block visual-qa judge:" in export
 
 
+def test_build_start_without_tomllib():
+    with tempfile.TemporaryDirectory() as tmp:
+        folder = Path(tmp, "piece/ink")
+        skill = SCRIPT.parents[1] / "skills/build/SKILL.md"
+        code = "import runpy, sys; sys.modules['tomllib'] = None; sys.argv = sys.argv[1:]; runpy.run_path(sys.argv[0], run_name='__main__')"
+        args = [sys.executable, "-c", code, str(SCRIPT)]
+        out = subprocess.run([*args, "start", str(folder), str(skill)], capture_output=True, text=True)
+        catalog = SCRIPT.parents[1] / "blocks/blocks.toml"
+        assert out.returncode == 1 and out.stderr == (
+            f"{catalog}: reading TOML needs Python 3.11 or later (tomllib); "
+            "run start with a newer python3, for example from Homebrew\n"), out
+        assert not folder.exists()
+        folder.mkdir(parents=True)
+        (folder / "01-intake.md").write_text("Status: open\nUses: \n", encoding="utf-8")
+        out = subprocess.run([*args, "status", str(folder)], capture_output=True, text=True)
+        assert out.returncode == 0 and "01-intake: open" in out.stdout, out
+
+
 def test_build_piece_repo_paths():
     with tempfile.TemporaryDirectory() as tmp:
         outside = Path(tmp)
@@ -577,6 +595,7 @@ def test_block_command():
             assert file.read_text(encoding="utf-8") == "Status: blocked missing input\n" + body
 
 
+test_build_start_without_tomllib()
 test_build_piece_repo_paths()
 test_build_repo_additions()
 test_block_command()

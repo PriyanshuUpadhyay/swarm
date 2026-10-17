@@ -22,7 +22,8 @@ sees `02-local.md` done and `03-web.md` open, does the web step, and goes on to 
 A skill with a step table makes its folder with the kit's `references/step_run.py`, unless the skill
 names its own script. `start <folder> <SKILL.md>` writes one file per table row, with a todo for what
 the row holds and a `## Result` section. A table can add a `Blocks` column; `blocks/blocks.toml`
-owns how those blocks become rules and evidence todos. `take <folder> <step> <agent>` marks a step active and fills
+owns how those blocks become rules and evidence todos. A table with `Blocks` needs Python 3.11
+or later for `start`, because it reads TOML. `take <folder> <step> <agent>` marks a step active and fills
 its `Uses:` line. `done <folder> <step>` sets the step done only when every todo is checked with its
 evidence after the last colon. `done` accepts no `--force`. `status <folder>` also names each stale step.
 `skip <folder> <step> <reason>` records a route skip.
