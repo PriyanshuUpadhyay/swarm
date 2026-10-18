@@ -137,6 +137,7 @@ function WorkspaceList({ app }: { app: App }) {
             ref={listRef}
             className="min-h-0 flex-1 overflow-y-auto pt-1 pb-3 outline-none"
             role="tree"
+            aria-multiselectable
             aria-label={archive ? "Archived workspaces" : "Workspaces"}
             data-testid="sidebar"
             data-loaded={String(loaded)}
@@ -193,7 +194,7 @@ const RowView = memo(function RowView({ row, selected, marked, current, archive 
     "data-id": row.id,
     "aria-level": row.level,
     "aria-expanded": row.expanded ?? undefined,
-    "aria-selected": selected,
+    "aria-selected": selected || marked,
     "aria-current": current || undefined,
     tabIndex: selected ? 0 : -1,
   } as const;

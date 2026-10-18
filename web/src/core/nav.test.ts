@@ -308,6 +308,33 @@ describe("picked chats", () => {
     app.clearMarked();
     expect(app.view.marked.size).toBe(0);
   });
+
+  it("drops picks that left the tree, and a Shift-click from a header picks only the clicked chat", async () => {
+    let current = sample;
+    const api = {
+      snapshot: async (): Promise<Snapshot> => ({ version: 1, sessions: [], agents: {} }),
+      tree: async () => current,
+      action: async () => {},
+    } as unknown as Api;
+    const app = new App(api);
+    const refresh = () => (app as unknown as { refreshSnapshot(): Promise<void> }).refreshSnapshot();
+    await refresh();
+
+    app.clickRow("chat:fix", "toggle");
+    app.clickRow("chat:docs", "toggle");
+    // docs is archived: the next tree lists fix only, and the selected row resets to the header.
+    current = tree([section("pinned", "pinned", [web, webChat]), section("/r/app", "project", [appMain, fixRows, fixChild, appFeature])]);
+    await refresh();
+    expect([...app.view.marked]).toEqual(["chat:fix"]);
+    current = sample;
+    await refresh();
+    expect(app.markedChats()).toEqual(["fix"]);
+
+    app.clearMarked();
+    app.clickRow("pinned");
+    app.clickRow("chat:docs", "range");
+    expect(app.markedChats()).toEqual(["docs"]);
+  });
 });
 
 describe("tree refresh", () => {

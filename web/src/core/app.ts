@@ -536,6 +536,9 @@ export class App {
     const tree = this.tree;
     if (!tree) return;
     if (!this.selected || !this.rows.some((r) => r.id === this.selected)) this.selected = this.rows[0]?.id ?? null;
+    // A picked chat that left the tree (archived, ended elsewhere) must not come back picked.
+    const kept = new Set(this.rows.filter((r) => this.marked.has(r.id) && markable(r)).map((r) => r.id));
+    if (kept.size !== this.marked.size) this.marked = kept;
     if (!this.restored) {
       this.restored = true;
       const asked = this.urlChat && resolveChat(this.urlChat, this.chatIds());
@@ -682,7 +685,9 @@ export class App {
       if (pick === "toggle") {
         if (!marked.delete(id)) marked.add(id);
       } else {
-        const [a, b] = [this.rows.indexOf(from ?? row), this.rows.indexOf(row)].sort((x, y) => x - y);
+        // A header anchor, as after the selected chat left the tree, would pick from the top.
+        const anchor = from && markable(from) ? from : row;
+        const [a, b] = [this.rows.indexOf(anchor), this.rows.indexOf(row)].sort((x, y) => x - y);
         for (const r of this.rows.slice(a, b + 1)) if (markable(r)) marked.add(r.id);
       }
       this.marked = marked;
