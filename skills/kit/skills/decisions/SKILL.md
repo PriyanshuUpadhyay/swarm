@@ -1,7 +1,7 @@
 ---
 name: decisions
 user-invocable: false
-description: Record project decisions as committed in-repo ADRs. Use when a consequential choice or reversal is expressed, such as "let's go with X", "use X instead of Y", "scrap that", or "changed my mind", or "write an ADR". Also flush the decision buffer before an assistant-run git commit. Skips routine coding choices; writes are always user-confirmed.
+description: Record project decisions as committed in-repo ADRs. Use when a consequential choice or reversal is expressed, such as "let's go with X", "use X instead of Y", "scrap that", or "changed my mind", or "write an ADR", and when the user asks what was decided, asks for unwritten decisions, or asks to rebuild the decision index. Also flush the decision buffer before an assistant-run git commit. Skips routine coding choices; writes are always user-confirmed.
 ---
 
 # decisions — Lifecycle Decision Records
@@ -50,12 +50,12 @@ never invent a title, a record number, or a topic.
 
 | Request | Action |
 |---|---|
-| "record the decisions", or a flush before a commit | Flush the decision buffer: batch-ask, then write confirmed records |
-| "record a decision: <title>" | Manually scaffold one record (asks tier + why) |
-| "this replaces decision NNNN" | Record a reversal that supersedes NNNN (auto bidirectional link) |
-| "what did we decide about <topic>?" | Decision-aware retrieval: surface prior records relevant to a topic/change before deciding |
-| "rebuild the decision index" | Regenerate `docs/decisions/README.md` from the record files |
-| "which decisions are not written yet?" | Show buffered (unwritten) flags + recent records |
+| `flush`: "record the decisions", or before a commit | Flush the decision buffer: batch-ask, then write confirmed records |
+| `new`: "record a decision: <title>" | Manually scaffold one record (asks tier + why) |
+| `supersede`: "this replaces decision NNNN" | Record a reversal that supersedes NNNN (auto bidirectional link) |
+| `check`: "what did we decide about <topic>?" | Decision-aware retrieval: surface prior records relevant to a topic/change before deciding |
+| `index`: "rebuild the decision index" | Regenerate `docs/decisions/README.md` from the record files |
+| `status`: "which decisions are not written yet?" | Show buffered (unwritten) flags + recent records |
 
 ## Folder discovery
 1. Resolve the repo root (one bash call): `git rev-parse --show-toplevel` — if it fails
