@@ -102,7 +102,9 @@ fn finish(provider: Provider, mut rows: Vec<Row>) -> Vec<Row> {
 }
 
 /// Commands the CLI runs in its TUI but does not list in its machine mode, from the SwiftUI app's
-/// checked lists. Codex has no `/new`: it opens a worktree picker. pi gets none until each is checked.
+/// checked lists. Codex has no `/new`: it opens a worktree picker. pi's are its documented built-ins
+/// (docs/slash-commands.md), which `get_commands` leaves out; `/quit`, `/share`, and `/bug` stay out
+/// because they end the chair or upload the session.
 fn builtins(provider: Provider) -> &'static [(&'static str, &'static str)] {
     match provider {
         Provider::Claude => &[
@@ -178,7 +180,29 @@ fn builtins(provider: Provider) -> &'static [(&'static str, &'static str)] {
             ("tasks", "Show background tasks"),
             ("usage", "Show plan usage"),
         ],
-        Provider::Pi => &[],
+        Provider::Pi => &[
+            ("changelog", "Show changelog entries"),
+            ("clone", "Duplicate the session at its current position"),
+            ("compact", "Compact the current context"),
+            ("copy", "Copy the last answer"),
+            ("export", "Export the session as HTML or JSONL"),
+            ("fork", "Fork from an earlier message"),
+            ("hotkeys", "Show keyboard shortcuts"),
+            ("import", "Import and resume a JSONL session"),
+            ("login", "Add provider authentication"),
+            ("logout", "Remove provider authentication"),
+            ("model", "Choose the model"),
+            ("name", "Set the session name"),
+            ("new", "Start a new session"),
+            ("reload", "Reload extensions, skills, and context files"),
+            ("resume", "Resume an earlier session"),
+            ("scoped-models", "Choose the models to cycle"),
+            ("session", "Show session information"),
+            ("settings", "Open settings"),
+            ("thinking", "Choose the thinking level"),
+            ("tree", "Move within the session tree"),
+            ("trust", "Save a project trust decision"),
+        ],
     }
 }
 
@@ -234,7 +258,18 @@ fn dialogs(provider: Provider) -> &'static [&'static str] {
             "skills",
             "tasks",
         ],
-        Provider::Pi => &[],
+        Provider::Pi => &[
+            "fork",
+            "login",
+            "logout",
+            "model",
+            "resume",
+            "scoped-models",
+            "settings",
+            "thinking",
+            "tree",
+            "trust",
+        ],
     }
 }
 
@@ -647,7 +682,10 @@ mod tests {
             !codex.iter().any(|row| row.name == "new"),
             "Codex /new opens a worktree picker"
         );
-        assert!(finish(Provider::Pi, Vec::new()).is_empty());
+        let pi = finish(Provider::Pi, Vec::new());
+        assert!(pi.iter().any(|row| row.name == "compact" && !row.dialog));
+        assert!(pi.iter().any(|row| row.name == "model" && row.dialog));
+        assert!(!pi.iter().any(|row| row.name == "quit"));
     }
 
     #[test]
