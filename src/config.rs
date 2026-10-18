@@ -115,7 +115,7 @@ pub fn valid_account_name(name: &str) -> bool {
         && name.bytes().all(|byte| {
             byte.is_ascii_lowercase() || byte.is_ascii_digit() || b"._-".contains(&byte)
         })
-        && !matches!(name, "auto" | "default" | "current" | "." | "..")
+        && !matches!(name, "auto" | "default" | "current" | "menu" | "." | "..")
         && !name.contains("..")
 }
 

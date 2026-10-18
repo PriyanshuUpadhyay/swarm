@@ -104,6 +104,8 @@ public struct UsageAccount: Equatable, Identifiable, Sendable {
     public let windows: [UsageWindow]
     /// Why the account has no reading, such as "Token expired"; nil when it has one.
     public let problem: String?
+    /// A Claude token can be renewed with a print-mode usage call, without a model turn.
+    public let renewalArguments: [String]?
 
     public var id: String { "\(provider)/\(name)" }
     public var worst: UsageWindow? { windows.max { ($0.usedPct, -$0.kind.order) < ($1.usedPct, -$1.kind.order) } }
@@ -142,7 +144,9 @@ public func accounts(from meters: [UsageMeter]) -> [UsageAccount] {
             provider: first.provider,
             name: first.account ?? first.label,
             windows: windows,
-            problem: windows.isEmpty ? (group.compactMap(\.reason).first ?? "No reading") : nil
+            problem: windows.isEmpty ? (group.compactMap(\.reason).first ?? "No reading") : nil,
+            renewalArguments: first.provider == "claude" && group.contains(where: { $0.reasonCode == "token_expired" })
+                ? ["run", "claude", "--account", first.account ?? first.label, "--", "-p", "/usage"] : nil
         )
     }
 }

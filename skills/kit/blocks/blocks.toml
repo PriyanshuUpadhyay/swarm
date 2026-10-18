@@ -1,9 +1,13 @@
-# Block catalog for the flow skill. This file owns the format; skills/flow/SKILL.md points here.
+# Block catalog for kit workflows. This file owns the format; references/block_resolver.py reads it.
 #
 # A block is a folder here with one `SKILL.md`, and the folder name is its id. The file opens with
 # Agent Skills frontmatter: `name` (the id), `description` (the concept; start writes it to the step as
 # `Concept:`), `license`, and `metadata` with string values kind, owns, serves, needs, gives, conflicts,
-# users, and source. A repo block from `[add]` may leave the frontmatter out. Then come `## Rules`,
+# users, and source. `kind` is rule, pack, step, or parent. Only a `kind: parent` has `metadata.parts`,
+# a nonempty comma-separated string of block ids. It is the only membership list. Folders stay flat,
+# and a part has one parent. A parent cannot be a part, and every listed part must exist.
+# A parent's Rules hold only shared rules moved from two or more parts, with no verdict or gate.
+# A repo block from `[add]` may leave the frontmatter out. Then come `## Rules`,
 # `## Example`, `## Check (script)`, and `## Check (judge)`; every block has all four. `metadata.source`
 # cites kit-relative paths with lines or a pack name, never a machine path.
 # A script check is a command that runs as written, then what it proves. It reads only the work's own
@@ -19,15 +23,21 @@
 # `shots` (the one folder for screenshots and compare images), each a repo-relative path.
 #
 # A step line in ~/.flow/domains.md names a block or an alias as `block:<id>` next to its paths.
-# `flow_run.py start --profile <name>` expands aliases, adds `base` once to each step of a run that
+# A parent id selects the parent and all its parts. A part pulls its parent before itself, once per
+# step. `implement_run.py start --profile <name>` expands aliases, adds `base` once to each step of a run that
 # names a block, drops duplicates, and applies the profile. A profile changes packaging only, never
 # which rule or check lines appear: `Check (script)` lines become step todos, and `Check (judge)`
 # lines go to 06-review.md.
+# A step_run.py table may add a fourth column, Blocks, with comma-separated block ids or aliases.
+# It uses the same resolver. Both script and judge checks become todos in that step, because a
+# generic run has no 06-review. For build's <piece>/ink/ folder, site is <piece> and shots is
+# <piece>/shots, relative to the repo root (or to <piece> for a standalone piece).
 #
 # The repo file `<repo>/.blocks.toml` has three tables:
 #   [params]  name = "value"                fills {{name}}, e.g. shots = "tmp/shots"
 #   [add]     build = ["path/in/repo.md"]   adds repo blocks to a step; the id is the file stem, or the folder of a `SKILL.md`
 #   [off]     block-id = "reason"           drops a block and prints `Off: <id>: <reason>` where it would join
+# Only [add] keys named in the current skill's steps apply to that run.
 
 base = ["base-rules"]
 

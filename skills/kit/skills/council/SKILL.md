@@ -18,8 +18,8 @@ that remains with the user.
 ## Start or continue
 
 A council is a step run, so the kit's `references/step-run.md` owns the status line, pick-up,
-close, and when a step waits for the user. The run folder is the decision-log folder below,
-`<log>/<YYYY-MM-DD>-<slug>/`, next to the log file. "council continue <folder>" picks it up. Make the folder with
+close, and when a step waits for the user. Choose the council run and log paths by
+`references/run-folder.md`. "council continue <folder>" picks it up. Make the folder with
 `python3 <kit root>/references/step_run.py start <folder> <this SKILL.md>`, and close each step with `done`.
 
 | File | Needs | Holds |
@@ -47,7 +47,7 @@ The runtime adapter (`orchestrate-claude`) selects the host and its reference; t
 
 ## Run state
 
-Use a unique scratch directory:
+Use the temporary council-input path in `references/run-folder.md`:
 
 ```sh
 COUNCIL_RUN_ID="${CODEX_THREAD_ID:-${CLAUDE_CODE_SESSION_ID:-council-$(date +%s)}}"
@@ -90,8 +90,8 @@ BIGGEST RISK
 WHAT WOULD CHANGE YOUR MIND
 ```
 
-Round 1 is one parallel round with artifact-authoritative completion: a seat is done when its
-artifact is accepted, never when its screen looks idle. Do not wait for a slow seat past the round
+Round 1 is one parallel round. Apply `blocks/run-workers/SKILL.md` for result acceptance,
+then check the returned artifact against this council's protocol. Do not wait for a slow seat past the round
 deadline plus the backend's one bounded resume. When two artifacts are accepted and the third seat
 is still degraded, continue with two positions and say so in the output; never re-prompt a seat
 by hand.
@@ -141,12 +141,11 @@ Before Round 0, search `~/dotfiles/docs/council/` for a prior
 log for the topic and reuse still-valid resolved constraints.
 The caller may pin one exact decision-log path outside the inspected product repository. Use that
 path when it is present, include it in every seat's pinned brief, and do not also create a repository
-log. An internally triggered planning Council must receive such an external path. Otherwise, write
-runs invoked directly by the user to `~/dotfiles/docs/council/<YYYY-MM-DD>-<slug>.md`, from any repo
-or none. Never write the log into the inspected repository, because a public repository would
+log. An internally triggered planning Council must receive such an external path. Otherwise, use
+the council log path in `references/run-folder.md`. Never write the log into the inspected repository, because a public repository would
 publish its private paths. Include the artifact pointer,
 Round-0 Q&A, models actually used, final verdict, required changes, dissent, per-model trail, the round
 at which the council converged, and each round's wall time.
 
-Run the selected backend's close-out, remove the scratch directory only after the durable log
-exists, and surface every provider failure or fallback.
+Close out the seats by `blocks/run-workers/SKILL.md`, remove the scratch directory only after
+the durable log exists, and surface every provider failure or fallback.

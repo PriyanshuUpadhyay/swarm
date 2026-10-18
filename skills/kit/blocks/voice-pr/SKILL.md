@@ -15,7 +15,7 @@ metadata:
 
 ## Rules
 - Use the repo's PR template when one exists (`.github/pull_request_template.md`, or a file in `.github/PULL_REQUEST_TEMPLATE/`). Fill each of its sections, and drop none.
-- Write in the author's voice from `~/.review-walk/voice.md` when it exists. It stays private, so never copy it into a repo. With no voice file, write short plain sentences.
+- Write in the author's voice. Apply `blocks/voice-review/SKILL.md` for the voice file path and its privacy rule. With no voice file, write short plain sentences.
 - The title says the behavior that changed, not the files.
 - The body says how the change was tested, with each command and its result, and names what is not verified.
 - This is a draft. Opening or editing the PR is an outside write, so it waits for the owner's yes.

@@ -2601,7 +2601,7 @@ struct CommandsQuery {
     agent: String,
 }
 
-/// How long a listed menu stays fresh, and how long a failed probe waits before the next.
+/// How long a clean menu stays fresh, and how long a failed or partial read waits before the next.
 const COMMANDS_FRESH: Duration = Duration::from_secs(60);
 const COMMANDS_RETRY: Duration = Duration::from_secs(5);
 
@@ -2647,8 +2647,9 @@ async fn chat_commands(
     Ok(Json(probe_commands(&app, &slot, call, &agent).await))
 }
 
-/// Runs `swarm commands` and stores its answer. A failure is stored as a note with no rows, so
-/// the menu says why, and a burst of `/` keys starts no second probe before `COMMANDS_RETRY`.
+/// Runs `swarm commands` and stores its answer. A failure is stored as a note, so the menu says
+/// why, and a burst of `/` keys starts no second probe before `COMMANDS_RETRY`. A failed or partial
+/// read keeps the rows of the last fuller list, so a slow CLI start does not empty the menu.
 async fn probe_commands(app: &Server, slot: &CommandsSlot, call: CliCall, agent: &str) -> Value {
     let read = run_cli(app, call.args(&["commands", agent, "--json"]), None)
         .await
@@ -2656,15 +2657,38 @@ async fn probe_commands(app: &Server, slot: &CommandsSlot, call: CliCall, agent:
             serde_json::from_str::<Value>(&text)
                 .map_err(|_| error(StatusCode::BAD_GATEWAY, "invalid commands JSON from swarm"))
         });
-    let now = tokio::time::Instant::now();
-    let (stale_at, value) = match read {
-        Ok(value) => (now + COMMANDS_FRESH, value),
+    let (stale_at, mut value) = menu_entry(read, tokio::time::Instant::now());
+    let mut last = slot.last.lock().unwrap();
+    value = keep_fuller_rows(last.as_ref().map(|(_, value)| value), value);
+    *last = Some((stale_at, value.clone()));
+    value
+}
+
+/// A clean read stays fresh for `COMMANDS_FRESH`; a read with a note or an error is tried again
+/// after `COMMANDS_RETRY`.
+fn menu_entry(
+    read: Result<Value, ApiError>,
+    now: tokio::time::Instant,
+) -> (tokio::time::Instant, Value) {
+    match read {
+        Ok(value) if value["note"].is_null() => (now + COMMANDS_FRESH, value),
+        Ok(value) => (now + COMMANDS_RETRY, value),
         Err(err) => (
             now + COMMANDS_RETRY,
             json!({"commands": [], "note": err.1.0["error"]}),
         ),
-    };
-    *slot.last.lock().unwrap() = Some((stale_at, value.clone()));
+    }
+}
+
+/// A read with a note lists fewer rows than a full read; it keeps the earlier, longer rows.
+fn keep_fuller_rows(previous: Option<&Value>, mut value: Value) -> Value {
+    let count = |value: &Value| value["commands"].as_array().map_or(0, Vec::len);
+    if let Some(previous) = previous
+        && !value["note"].is_null()
+        && count(previous) > count(&value)
+    {
+        value["commands"] = previous["commands"].clone();
+    }
     value
 }
 
@@ -5304,6 +5328,26 @@ async fn disk_file(assets: &Path, relative: &str) -> Option<Vec<u8>> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn a_menu_read_with_a_note_keeps_the_last_fuller_rows() {
+        let full = json!({"commands": [{"name": "compact"}, {"name": "skill:plan"}], "note": null});
+        let partial = json!({"commands": [{"name": "compact"}], "note": "pi list unavailable"});
+        let kept = keep_fuller_rows(Some(&full), partial.clone());
+        assert_eq!(kept["commands"], full["commands"]);
+        assert_eq!(kept["note"], "pi list unavailable");
+        let now = tokio::time::Instant::now();
+        assert_eq!(menu_entry(Ok(partial.clone()), now).0, now + COMMANDS_RETRY);
+        assert_eq!(menu_entry(Ok(full.clone()), now).0, now + COMMANDS_FRESH);
+        let first = keep_fuller_rows(None, partial.clone());
+        assert_eq!(first, partial, "with no earlier list the partial rows stay");
+        let fresh = json!({"commands": [{"name": "compact"}], "note": null});
+        assert_eq!(
+            keep_fuller_rows(Some(&full), fresh.clone()),
+            fresh,
+            "a full read replaces the rows"
+        );
+    }
+
     fn client(keys: &[(&str, u64)]) -> Client {
         Client {
             queue: VecDeque::new(),
@@ -5428,7 +5472,11 @@ printf '{"commands":[{"insert":"/clear"}],"note":null}\n'
         assert_eq!(probes(), 2, "the stale read refreshed behind the reply");
         tokio::time::sleep(Duration::from_millis(50)).await;
         let failed = read("chair").await.unwrap().0;
-        assert_eq!(failed, json!({"commands": [], "note": "probe failed"}));
+        assert_eq!(
+            failed["commands"][0]["insert"], "/clear",
+            "a failed probe keeps the earlier rows"
+        );
+        assert_eq!(failed["note"], "probe failed");
         let _ = read("chair").await.unwrap();
         assert_eq!(probes(), 2, "a failure is not probed again at once");
 

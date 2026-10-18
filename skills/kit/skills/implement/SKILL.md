@@ -1,27 +1,28 @@
 ---
-name: flow
-description: Run one change through seven steps (frame, design, contracts, impact, build, review, close), with one status file per step under tmp/flow at the repo root and, for each step, the skills that the domain catalog gives the repo's domains. Use when the user says "flow continue" with a folder or "flow start", names a tmp/flow step file, or when pair or deliver starts with no flow folder.
+name: implement
+description: Run one change through seven steps (frame, design, contracts, impact, build, review, close), with one status file per step under tmp/flow at the repo root and, for each step, the skills that the domain catalog gives the repo's domains. Use when the user says "implement continue" with a folder or "implement start", names a tmp/flow step file, or when pair or deliver starts with no implement run folder.
 ---
 
-# Flow
+# Implement
 
-Use a flow for any change that `pair` or `deliver` builds. A one-line change takes the fast lane.
+Use the `implement` skill for any change that `pair` or `deliver` builds. A one-line change takes the fast lane.
+The kit's `references/run-folder.md` owns the run and settings paths.
 
 ## Entry and lanes
 
-`/pair`, `/deliver`, and "flow start" all use this route. When `pair` or `deliver` starts with no
-flow folder named, make the folder and do `01-frame.md` first. Then pick the lane from the change
-and the repo's contracts, never from the missing folder. The fast lane skips `02-design.md`,
+`/pair`, `/deliver`, and "implement start" all use this route. When `pair` or `deliver` starts with no
+run folder for the `implement` skill named, make the folder and do `01-frame.md` first. Then pick
+the lane from the change and the repo's contracts, never from the missing folder. The fast lane skips `02-design.md`,
 `03-contracts.md`, and `04-impact.md` with `skip <folder> <step> fast lane: <reason>` only when none
 of them needs a new decision. Otherwise do them before build. The command keeps its own mode.
-After "flow start", ask the user to choose `pair` or `deliver` in the reply that shows `01-frame.md`.
+After "implement start", ask the user to choose `pair` or `deliver` in the reply that shows `01-frame.md`.
 
 When a step ends and the next step is not yours, print `Next: <command>` as the last line of the
-reply, for example `Next: flow continue tmp/flow/2026-10-05-login 06-review`.
+reply, for example `Next: implement continue tmp/flow/2026-10-05-login 06-review`.
 
 ## Start or continue
 
-The user says "flow continue <folder>" in the repo. The folder is
+The user says "implement continue <folder>" in the repo. The folder is
 `<repo-root>/tmp/flow/<YYYY-MM-DD>-<branch>/`, as the kit's `references/run-folder.md` says.
 The profile stays private in `~/.flow/<repo>/profile.md`. `<repo>` is the name of the folder above
 the git common dir (`git rev-parse --git-common-dir`), not the worktree folder name.
@@ -32,14 +33,15 @@ the git common dir (`git rev-parse --git-common-dir`), not the worktree folder n
    that close runs), and `Needs:` (the tools that a step uses). Show the draft, and write
    `~/.flow/<repo>/profile.md` only after the user confirms it. Tell the user that the new profile
    is not in version control yet.
-2. Run the script from the repo root. `F=<skill-dir>/scripts/flow_run.py`.
+2. Run the script from the repo root. `F=<skill-dir>/scripts/implement_run.py`.
 
    ```sh
-   python3 $F start [--profile <name>]       # makes the folder and step files, writes each step's skills and blocks into its file in full
+   python3 $F start [--profile <name>] [--domains <a,b>] # makes the folder and step files, writes each step's skills and blocks into its file in full
    python3 $F status [<folder>]              # each step's status, which open step is ready, and which is stale
    python3 $F take <folder> <step> <agent>   # marks the step active and prints its file with its skills in full
    python3 $F done <folder> <step>           # sets the step done, only when every todo has its evidence
    python3 $F skip <folder> <step> <reason>  # skips 02-design, 03-contracts, or 04-impact, never another step
+   python3 $F block <folder> <step> <reason> # records a blocked step
    ```
 
    A catalog step line may also name `block:<id>`, a block or an alias in the kit's `blocks/`
@@ -47,10 +49,17 @@ the git common dir (`git rev-parse --git-common-dir`), not the worktree folder n
    `blocks/blocks.toml` owns the block format, what each check line becomes, and the
    `.blocks.toml` tables.
 
+   The chair passes `--domains <a,b>` for the domains touched by the files the request names;
+   `start` checks them against the repo profile. Show the chosen domains with the tables that `start` prints, the same way `blocks/planner/SKILL.md` shows them
+   for a plan. `01-frame.md` keeps the domains and block choice. To add or drop a block, edit its domain line in
+   `~/.flow/domains.md` or its `[off]` entry in `.blocks.toml`, then start a new run. A second `start`
+   on the same day and branch reuses the folder and prints the saved choice, so first rename the
+   run folder (for example to `<folder>-old`), then run `start` again.
+
 3. Read `01-frame.md`. If `Worktree:` or `Branch:` is not the current worktree and branch, stop and
    tell the user. If two open folders exist for one branch, stop and tell the user.
 4. Pick up a step as `references/step-run.md` says, and take it with `take`. The step file holds the
-   full text of the skills that the catalog gives the step (the `any` section, each profile domain,
+   full text of the skills that the catalog gives the step (the `any` section, each chosen domain,
    and the repo rules) under `## Rules for this step`, and a todo list. Apply the rules, check each
    todo with its evidence after the last colon, write the result under `## Result`, and close the step
    with `done`. Never set a step done or skipped by hand. When a tool
@@ -59,8 +68,8 @@ the git common dir (`git rev-parse --git-common-dir`), not the worktree folder n
 
 ## Status line
 
-The flow is a step run, so the kit's `references/step-run.md` owns the status line, the `Uses:`
-line, pick-up, close, and when a step waits for the user. The step table below is the step graph that
+A run of the `implement` skill is a step run, so the kit's `references/step-run.md` owns the status
+line, the `Uses:` line, pick-up, close, and when a step waits for the user. The step table below is the step graph that
 the script reads. The revision of `05-build` is `HEAD`, so a new commit makes `06-review` stale.
 `start` marks `05-build.md` with the `Revision: HEAD` line that step-run.md describes.
 
@@ -84,22 +93,32 @@ and the run's head is `HEAD`. A NEEDS DISCUSSION verdict closes only after the u
 the run's `answers.md` as answers or `limit:` lines per review-check's Asks section, and `verdict`
 runs again to APPROVE. A REQUEST CHANGES verdict goes to the user, who starts a `pair` or `deliver` run for the
 findings. That run moves the build revision, so the review is stale and runs again on the new
-range. Answer each `ask` in the run's `answers.md` per review-check's Asks section, and stop
-and ask the user after three review rounds on this step. `deliver` takes `06-review` again for each
-review round, so the warning counts real runs; the cap is a warning, not enforced.
+range. Answer each `ask` in the run's `answers.md` per review-check's Asks section.
 
-At close, move the folder to `<repo-root>/tmp/flow/_closed/<folder>/`. Release is a separate action
-that the user asks for.
+Start reviews with `python3 <skill-dir>/scripts/implement_run.py review <folder> <Base>..HEAD`.
+It passes the saved `loop.json` parent-loop key to `review_check.py start`, which owns the loop stop.
+For a re-plan, run `start --parent-loop <saved-key>` to keep the parent key.
+Pass an owner's saved line with `review <folder> <range> --continue <user-file>`.
+
+`implement_run.py done <folder> 07-close` closes the run, moves it to `tmp/flow/_closed/`, then prints its new path.
+For a second run on the same branch and day, use the command's recovery: rename its run folder
+to a distinct name, such as `<folder>-second`, then run `done <renamed-folder> 07-close`.
+Release is a separate action that the user asks for.
 
 ## Owners
 
-The flow owns the step list, the order, the status, the profiles, and the domain catalog.
-`pair` or `deliver` owns the plan, the chunks, and the commits; the flow never starts `deliver`
+For owner gates in `pair` or `deliver`, and the build-to-review handoff when this session cannot start seats, apply `blocks/worker-brief/SKILL.md`.
+
+
+The `implement` skill owns the step list, the order, the profiles, and the domain catalog.
+Its script uses `references/step_run.py` for the shared status commands in
+`references/step-run.md`.
+`pair` or `deliver` owns the plan, the chunks, and the commits; the `implement` skill never starts `deliver`
 by itself.
-`review-check` owns the review and its verdict; the flow never fixes a finding itself. An `INCOMPLETE` verdict is no review.
+`review-check` owns the review and its verdict; the `implement` skill never fixes a finding itself. An `INCOMPLETE` verdict is no review.
 The kit root, with its `blocks/` and `references/` folders, is two folders up from this skill's folder. The kit block
 `blocks/prove-it-works/SKILL.md` owns the choice of check and the evidence.
-The kit block `blocks/checked-units/SKILL.md` owns the unit order. `decisions` owns the ADRs. The flow never pushes.
+The kit block `blocks/checked-units/SKILL.md` owns the unit order. `decisions` owns the ADRs. The `implement` skill never pushes.
 
 ## Trial log
 

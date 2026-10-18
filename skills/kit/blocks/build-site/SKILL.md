@@ -9,7 +9,7 @@ metadata:
   needs: "a brief, the look tokens, and the story sheet"
   gives: "a page in the site folder"
   conflicts: ""
-  users: "ink"
+  users: "build"
   source: "skills/ink/references/site.md (scope, intake, look, story and motion, animatic, QA; moved 2026-10-13)"
 ---
 
@@ -20,15 +20,14 @@ Scope
 Intake
 - Sections replace shots. For each section, record its job (what the reader learns or does), its content, and its start, settled, and end state as the reader scrolls.
 - Screen widths replace duration and fps. Design at the check widths of the `web-ui-basics` block, plus any width the user names.
-- Record the page's drivers. Load and scroll follow the Drivers section of ink's `skills/ink/references/story-and-motion.md`, and a click that starts a page transition is a gate there. Hover, cursor, and any other click change a state, not a time, so list each state with the element it changes.
+- Record the page's drivers. Load and scroll follow the Drivers section of build's `skills/build/references/story-and-motion.md`, and a click that starts a page transition is a gate there. Hover, cursor, and any other click change a state, not a time, so list each state with the element it changes.
 - A screen recording is the best site reference. Record one full scroll at each width. Extract frames at each section's settled state, at each transition midpoint, and across the loader.
 - Research sources for sites: threeui.com (three.js site templates, some with their prompt), 21st.dev (components and page templates), and the GSAP showcase. A template's prompt is a `stated` source. Its rendered page is the `visible` one.
-- The look file is the step file that holds the look, such as ink's `02-look.md`. When the page borrows a component or effect from a repo, record its licence and its last release date there.
+- The caller names the step file that holds the look. When the page borrows a component or effect from a repo, record its licence and its last release date there.
 Look
-- Write `DESIGN.md` beside the page code as the `design-tokens` block says, never under a run folder, because the code and other design tools read it there.
+- Apply `blocks/design-tokens/SKILL.md` to the page look and its code tokens.
 - For a page with 3D or texture, the look file also keeps light, 3D, texture, and the mark budget.
-- A `look` token object in page code loads the tokens from `npx @google/design.md export --format dtcg DESIGN.md`, which keeps typography. The `css-vars` format drops it.
-- A `DESIGN.md` pulled from a live site (the design-md-chrome extension) or taken from a collection, such as VoltAgent's on GitHub, is `stated` evidence. Measure the rendered pages before you trust its values.
+- Label and verify a pulled `DESIGN.md` by `blocks/reference-analysis/SKILL.md`.
 - Read the `taste-skill` skill (Taste Skill, `design-taste-frontend`) for the layout and type rules that keep a page from looking like a template.
 Story and motion
 - The story sheet lists the sections in scroll order, each with the settled state that the scroll driver asks for.

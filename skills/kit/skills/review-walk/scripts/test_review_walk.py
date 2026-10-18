@@ -1,11 +1,55 @@
-"""Run: python3 test_review_walk.py. Builds a throwaway repo and checks the parts that can go wrong
+"""Run: python3 test_review_walk.py, or pytest. Every test runs in its own throwaway repo, and the repo the
+test started in is checked before and after, so a stray git call fails the run. It checks the parts that can go wrong
 quietly: the diff since view must hide base-branch merges but keep files new to the reviewer, status
 must catch a bad map or a copied verdict that does not match, and anchors must land on new-side lines."""
-import io, json, os, subprocess, tempfile
+import contextlib, functools, io, json, os, subprocess, sys, tempfile
 from contextlib import redirect_stdout
 from pathlib import Path
+from unittest.mock import patch
 
 import review_walk as rw
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "review-check" / "scripts"))
+import review_check as rc
+
+
+def state(path):
+    """HEAD, branches and status of the repo at `path`, for the before/after guard."""
+    return [subprocess.run(["git", "-C", path, *a], capture_output=True, text=True).stdout
+            for a in (["rev-parse", "HEAD"], ["branch", "--list"], ["status", "--porcelain"])]
+
+
+@contextlib.contextmanager
+def throwaway_repo():
+    """chdir into a fresh repo with one commit and no inherited GIT_* variables; restore both on exit."""
+    saved_cwd, saved_env = os.getcwd(), {k: os.environ.pop(k) for k in list(os.environ) if k.startswith("GIT_")}
+    try:
+        with tempfile.TemporaryDirectory() as d:
+            os.chdir(d)
+            sh("git", "init", "-qb", "main")
+            sh("git", "config", "user.email", "t@t")
+            sh("git", "config", "user.name", "t")
+            sh("git", "config", "commit.gpgsign", "false")
+            sh("git", "commit", "-q", "--allow-empty", "-m", "init")
+            yield
+    finally:
+        os.chdir(saved_cwd)
+        os.environ.update(saved_env)
+
+
+def isolated(test):
+    """Run `test` in a throwaway repo, and fail it if the repo it was started from changed. A test may
+    replace `rw.resolve`; it is put back after."""
+    @functools.wraps(test)
+    def run():
+        before, resolve = state(os.getcwd()), rw.resolve
+        try:
+            with throwaway_repo():
+                test()
+        finally:
+            rw.resolve = resolve
+        assert state(os.getcwd()) == before, "the test changed the repo it was started from"
+    return run
 
 
 def sh(*cmd):
@@ -20,6 +64,7 @@ def commit(files, msg):
     return sh("git", "rev-parse", "HEAD")
 
 
+@isolated
 def test_since_view_hides_base_merges():
     base1 = commit({"a.ts": "one\ntwo\nthree\nfour\nfive\n", "b.ts": "x\n"}, "base")
     sh("git", "switch", "-qc", "feature")
@@ -37,6 +82,7 @@ def test_since_view_hides_base_merges():
     assert "+z" in b and "+y" not in b, b
 
 
+@isolated
 def test_new_round_patch_and_status():
     """A file the reviewer never viewed must reach review-check in the next round, and `status` must
     catch a map that skips a file and a verdict line that review-check did not print."""
@@ -72,24 +118,44 @@ def test_new_round_patch_and_status():
     assert not any(p.startswith("02-map") for p in rw.checks(d, state)), "a diagram and citations do not hide a mapped file"
 
 
+@isolated
 def test_secret_pattern():
     assert rw.SECRET.search("token ghp_" + "a" * 36) and not rw.SECRET.search("a GitHub token in plain text")
 
 
+@isolated
 def test_anchor_uses_new_side_lines():
     patch = ("diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -1,3 +1,4 @@\n one\n-two\n+TWO\n+extra\n three\n")
     assert rw.anchor(patch, "a.ts", "TWO") == (None, 2)
     assert rw.anchor(patch, "a.ts", "TWO", "three") == (2, 4)
 
 
+@isolated
+def test_four_checks_on_main():
+    instruction = Path(__file__).resolve().parents[1] / "SKILL.md"
+    assert "--parent-loop review-walk:<run>" in instruction.read_text(), "Check step must pass the run's key"
+    with patch.object(rc, "load_rules", return_value=[]):
+        for n in range(4):
+            base = sh("git", "rev-parse", "HEAD")
+            head = commit({"value.py": f"def value():\n    return {n}\n"}, f"PR {n}")
+            with redirect_stdout(io.StringIO()) as out:
+                rw.start(f"{base}..{head}")
+            walk = Path(out.getvalue().strip())
+            with redirect_stdout(io.StringIO()) as out:
+                rc.start(f"{base}..{head}", "--parent-loop", f"review-walk:{walk.name}")
+            review = Path(out.getvalue().splitlines()[0])
+            metadata = json.loads((review / "target.json").read_text())
+            assert metadata["parent_loop"] == f"review-walk:{walk.name}" and metadata["round"] == 1, metadata
+            unit = json.loads((review / "units.json").read_text())[0]
+            (review / "02-review.md").write_text(
+                f"| {unit['id']} | - | value.py:2 | `return {n}` | pass | | the caller accepts this value |\n")
+            with redirect_stdout(io.StringIO()):
+                assert rc.verdict(review.name) == 0
+        assert sh("git", "branch", "--show-current") == "main"
+
+
 if __name__ == "__main__":
-    with tempfile.TemporaryDirectory() as d:
-        os.chdir(d)
-        sh("git", "init", "-qb", "main")
-        sh("git", "config", "user.email", "t@t")
-        sh("git", "config", "user.name", "t")
-        test_since_view_hides_base_merges()
-        test_new_round_patch_and_status()
-        test_secret_pattern()
-        test_anchor_uses_new_side_lines()
+    for t in (test_since_view_hides_base_merges, test_new_round_patch_and_status, test_secret_pattern,
+              test_anchor_uses_new_side_lines, test_four_checks_on_main):
+        t()
     print("ok")

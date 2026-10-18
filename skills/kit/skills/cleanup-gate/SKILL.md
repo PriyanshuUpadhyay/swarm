@@ -72,29 +72,20 @@ Emit: one line per edit, or `none`.
 
 ### 4 — Comments and documentation
 
-Apply the global comment rule and the public-contract rule in `references/rules.md` to the working
-set: delete a comment that restates what the code already says, keep or add one only where a
-constraint, trade-off, workaround, invariant, assumption, or edge case cannot be read off the code,
-and document a public contract only where the signature does not carry its semantics, side effects,
-or failure modes.
+Apply the global comment rule and section 5 of `references/rules.md` to the working set.
 
 Emit two lists — added (each with the reason it is not obvious) and deleted — or `none`.
 
 ### 5 — Constant locality
 
-Move every constant this task introduced into the single file that consumes it. A constant stays
-shared only when two or more files read it. A constant that means nothing when read in isolation is
-either misplaced or misnamed — fix which one it is.
+Apply section 3 of `references/rules.md` to every constant this task introduced.
 
 Emit: one line per constant moved, renamed, or kept shared with the consumer count, or `none`.
 
 ### 6 — Test and review triage
 
-Tests and fixtures: classify each test, fixture, or scratch file in the working set. Remove only the
-temporary or out-of-scope ones — a throwaway spec written to prove the change works, a scratch
-harness, a debugging snapshot, or a test for behavior no scope item covers. Keep every test the
-change requires, including the regression test for a defect this change fixes and coverage for new
-behavior.
+Classify each test, fixture, and scratch file in the working set by section 1 of
+`references/rules.md`.
 
 Review bots: implement or refute each open automated review comment on this change, in one line
 naming the `path:line` or the rule that settles it. Every comment gets a verdict here; do not

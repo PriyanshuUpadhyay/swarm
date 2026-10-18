@@ -36,7 +36,7 @@ log scale, and the zoom centre stays still on screen.
 - Before drawing, walk down from the root while a portal (at about 90% radius) holds all four screen
   corners, and start drawing there. This works only because of the rule above.
 - Stop recursing when a portal is under about 2 px and fill it with the child's main colour.
-- Seed decor per scene type, not per level, or the copies differ and the seam breaks.
+- Apply the seed rule in `blocks/build-canvas/SKILL.md` to the scene-type decor. Matching levels use that same decor for the seam.
 
 ## Animatic
 

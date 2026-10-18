@@ -9,11 +9,12 @@ metadata:
   needs: "the look tokens, the story sheet, and the shot list"
   gives: "a piece that renders any frame from ?t= and its seed"
   conflicts: ""
-  users: "ink"
+  users: "build"
   source: "skills/ink/references/build.md (architecture, determinism, debug modes, performance, toolbox, delivery, technical references) and skills/ink/references/mark-making.md, moved 2026-10-13"
 ---
 
 ## Rules
+- Run from the repo root when you use this block's script checks.
 The item file `blocks/build-canvas/references/mark-making.md` in the kit holds the mark-making recipes: density, tone, texture, the mass stack, line, surface, depth, generative plates, and libraries. Read it before a detail pass.
 
 Architecture
@@ -73,7 +74,7 @@ Determinism
 - Accept `?t=` (or a frame number) so any single frame renders alone. Frame export and QA need this.
   A scroll or gate story has no single clock, so accept `?shot=<id>&u=` instead.
 - Expose `stateAt(t)` (or `stateAt(shot, u)`): the camera and each carrier's screen position. The
-  seam-vector check in ink's `skills/ink/references/qa.md` compares these values on both sides of a cut.
+  seam-vector check in build's `skills/build/references/qa.md` compares these values on both sides of a cut.
 - A stateful simulation (particles with physics, reaction-diffusion, fluid) cannot jump to any `t`.
   Step it with a fixed time step from frame 0, export frames in order in one session, and keep
   checkpoints every N frames so `?t=` can resume from the nearest one.
@@ -117,7 +118,7 @@ dots only in the shadow band, and a paper pass multiplies over the frame. This i
 | Simulation at scale (millions of particles, reaction-diffusion, fluid, flocking) | WebGPU compute (three.js TSL compute or WGSL) | stateful, see Determinism |
 | Shader function library (noise, dither, filters, SDFs) | Lygia | Prosperity licence, free only for non-commercial work |
 | Timeline, easing, text choreography | GSAP (free no-charge licence, not open source) | drive a paused timeline with `tl.seek(t)` |
-| Scroll-driven story | GSAP ScrollTrigger or CSS scroll timelines | see the scroll driver in ink's `skills/ink/references/story-and-motion.md` |
+| Scroll-driven story | GSAP ScrollTrigger or CSS scroll timelines | see the scroll driver in build's `skills/build/references/story-and-motion.md` |
 | Sound | Web Audio | cues from the shot list |
 
 Procedural 3D can read as a game, not as an illustration. In a 2026-09-30 trial, a three.js scene
@@ -153,7 +154,7 @@ Action: the user asks for the storm to last two seconds longer. Edit only the `s
 Result: the scene modules, the entities, and the tokens are unchanged, and each frame renders alone with the same pixels on a second run.
 
 ## Check (script)
-- `rg -n -g '*.js' -g '*.mjs' -g '*.ts' -g '!**/vendor/**' -g '!**/node_modules/**' -g '!*.min.js' 'Math\.random\(|Date\.now\(' {{site}}` prints nothing: no render state in the piece's own code comes from an unseeded random or the wall clock.
+- `rg -n -g '*.html' -g '*.js' -g '*.mjs' -g '*.ts' -g '!**/vendor/**' -g '!**/node_modules/**' -g '!*.min.js' 'Math\.random\(|Date\.now\(' {{site}}` prints nothing: no render state in the piece's own code comes from an unseeded random or the wall clock.
 
 ## Check (judge)
 - Does one change of each kind (a retime, a new place, a new character, a restyle, a new transition) touch only its one home? Quote the files each touched.

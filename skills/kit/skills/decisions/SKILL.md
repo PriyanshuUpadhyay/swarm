@@ -30,13 +30,9 @@ procedure: `references/capture-loop.md`.
 - A consequential choice surfaces (framework/library/db, schema/API design, auth strategy,
   service boundaries, build/deploy tooling).
 
-## When to flush the buffer (batch-ask), in priority order
-1. Before a `git commit` this assistant is about to run, if the buffer is non-empty. Under
-   `deliver`, flush once at task end instead; a direction-changing choice still stops the run.
-2. Immediately after a **reversal** is confirmed (don't let it sit).
-3. When the buffer reaches **~3 items**.
-4. Before starting long-running work (so the "why" isn't lost to compaction).
-5. On `/decisions`, or at session end.
+## When to flush the buffer
+
+Apply the flush schedule in `references/capture-loop.md` section 3, including its `deliver` scope.
 
 ## When NOT to Trigger
 - Routine implementation detail, variable renames, local refactors — noise, not decisions.
@@ -73,35 +69,11 @@ never invent a title, a record number, or a topic.
   root, so records written from a linked worktree land in that worktree's tree — numbering
   can fragment across worktrees (accepted v1 tradeoff; resolve at merge).
 
-## The capture loop (summary — full detail in `references/capture-loop.md`)
-1. **Detect → persist** (silent, continuous): when a decision signal appears, append a
-   flag `{decision, options seen, rationale-as-expressed, is_reversal}` to the WAL
-   (`<root>/.git/decisions-buffer.json` — inside `.git`, so never tracked/committed).
-   Persisting (not just holding in context) is what survives compaction and session end.
-2. **Capture gate** (what reaches the buffer — *not* the record tier): capture a flag if
-   the choice had a **real alternative**, OR it is a **reversal** of a prior decision.
-   Skip routine coding choices. *Tier is decided later, at write time (step 6).*
-3. **Consult prior decisions** (decision-aware retrieval): when a decision is being *made
-   or changed* — not only at write time — search `docs/decisions/`
-   for relevant prior records (see `capture-loop.md` §2.5 for the term rubric) and surface
-   them. *Memory is only useful if consulted at decision time, not just written.*
-4. **Contradiction check**: if a new decision conflicts with an *accepted* record but
-   wasn't phrased as a reversal, flag it — "this contradicts ADR-0007: supersede it, or
-   am I misreading?" Resolve as a reversal (step 7) or, if genuinely different scope, keep
-   both and link via `related`.
-5. **Batch-ask** at a breakpoint (see flush triggers above): present buffered flags as one
-   numbered list — "I noticed these decisions — confirm which to record, and the one-line
-   why." If a rationale lacks a rejected alternative or a downside, ask "why X over Y, and
-   what does it cost?" Never write a record missing those — that's a "Fairy Tale" ADR.
-6. **Write** each confirmed record (see `references/templates.md`), selecting the tier
-   **now**: Tier-1 (cheap & local), Tier-2 (significant OR non-local), Tier-3 (costly AND
-   non-local). *Every tier is a numbered file* — Tier-1 is a tiny stub (frontmatter +
-   Y-statement). Set `related: [NNNN]` for records surfaced in step 3; run the
-   pre-finalize checklist. Then **clear the flushed flags from the WAL**.
-7. **Reversals**: a confirmed changed-our-mind item becomes a **new** record with
-   `supersedes: OLD`. Rewrite the old record's frontmatter — `status: superseded` and
-   `superseded-by: NEW` — leaving its body untouched. Never edit/delete the old body.
-8. **Regenerate** `docs/decisions/README.md` from the files (newest first).
+## The capture loop
+
+Read `references/capture-loop.md` in full. It owns the buffer entry shape, capture gate,
+prior-decision lookup, flush schedule, confirmation, writing, reversal procedure, and index rebuild.
+Apply the storage contract below to every write.
 
 ## Storage rules (load-bearing — from Nygard + MADR + adr-tools)
 - **One decision per file — every tier**, including Tier-1 stubs. Numbers are monotonic

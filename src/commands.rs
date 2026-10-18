@@ -102,7 +102,11 @@ fn finish(provider: Provider, mut rows: Vec<Row>) -> Vec<Row> {
 }
 
 /// Commands the CLI runs in its TUI but does not list in its machine mode, from the SwiftUI app's
-/// checked lists. Codex has no `/new`: it opens a worktree picker. pi gets none until each is checked.
+/// checked lists. Codex has no `/new`: it opens a worktree picker. pi's are its documented built-ins
+/// (docs/slash-commands.md), which `get_commands` leaves out. `/new`, `/clone`, `/fork`, `/resume`,
+/// and `/import` stay out because they move pi to a new session file, and swarm follows the chair's
+/// log by its fixed id (ADR 0086); `/quit`, `/share`, and `/bug` end the chair or upload the session;
+/// `/changelog`, `/hotkeys`, and `/session` write only to pi's own screen.
 fn builtins(provider: Provider) -> &'static [(&'static str, &'static str)] {
     match provider {
         Provider::Claude => &[
@@ -178,7 +182,21 @@ fn builtins(provider: Provider) -> &'static [(&'static str, &'static str)] {
             ("tasks", "Show background tasks"),
             ("usage", "Show plan usage"),
         ],
-        Provider::Pi => &[],
+        Provider::Pi => &[
+            ("compact", "Compact the current context"),
+            ("copy", "Copy the last answer"),
+            ("export", "Export the session as HTML or JSONL"),
+            ("login", "Add provider authentication"),
+            ("logout", "Remove provider authentication"),
+            ("model", "Choose the model"),
+            ("name", "Set the session name"),
+            ("reload", "Reload extensions, skills, and context files"),
+            ("scoped-models", "Choose the models to cycle"),
+            ("settings", "Open settings"),
+            ("thinking", "Choose the thinking level"),
+            ("tree", "Move within the session tree"),
+            ("trust", "Save a project trust decision"),
+        ],
     }
 }
 
@@ -234,7 +252,16 @@ fn dialogs(provider: Provider) -> &'static [&'static str] {
             "skills",
             "tasks",
         ],
-        Provider::Pi => &[],
+        Provider::Pi => &[
+            "login",
+            "logout",
+            "model",
+            "scoped-models",
+            "settings",
+            "thinking",
+            "tree",
+            "trust",
+        ],
     }
 }
 
@@ -280,10 +307,30 @@ fn ask(
                 }
             }
         });
+    // A SIGKILL can leave a lock behind, such as pi's `auth.json.lock`, which makes every later pi
+    // wait up to 30 s. So the CLI gets its stdin end, then SIGTERM, which runs its exit handlers,
+    // each with a second to exit, before the kill.
     drop(stdin);
+    exit_within(&mut child, 1);
+    if matches!(child.try_wait(), Ok(None)) {
+        // SAFETY: kill has no memory preconditions, and the unreaped child still owns the pid.
+        unsafe { kill(child.id() as i32, 15) };
+        exit_within(&mut child, 1);
+    }
     let _ = child.kill();
     let _ = child.wait();
     result
+}
+
+unsafe extern "C" {
+    fn kill(pid: i32, signal: i32) -> i32;
+}
+
+fn exit_within(child: &mut std::process::Child, seconds: u64) {
+    let deadline = Instant::now() + std::time::Duration::from_secs(seconds);
+    while Instant::now() < deadline && matches!(child.try_wait(), Ok(None)) {
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
 }
 
 /// Claude's `initialize` control request answers with the session's commands before any prompt,
@@ -647,7 +694,12 @@ mod tests {
             !codex.iter().any(|row| row.name == "new"),
             "Codex /new opens a worktree picker"
         );
-        assert!(finish(Provider::Pi, Vec::new()).is_empty());
+        let pi = finish(Provider::Pi, Vec::new());
+        assert!(pi.iter().any(|row| row.name == "compact" && !row.dialog));
+        assert!(pi.iter().any(|row| row.name == "model" && row.dialog));
+        for name in ["quit", "new", "resume"] {
+            assert!(!pi.iter().any(|row| row.name == name), "{name} is left out");
+        }
     }
 
     #[test]

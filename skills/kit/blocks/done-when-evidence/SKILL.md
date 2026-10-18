@@ -9,14 +9,15 @@ metadata:
   needs: "the frame's done-when"
   gives: "one evidence row per claim"
   conflicts: ""
-  users: "flow"
-  source: "skills/flow/SKILL.md (step table, 07-close row); references/plan-layout.md:31-33 (Verification); blocks/prove-it-works/SKILL.md (the ladder: below step 4 is unproven)"
+  users: "implement"
+  source: "skills/implement/SKILL.md (step table, 07-close row); references/plan-layout.md:31-33 (Verification); blocks/prove-it-works/SKILL.md (the ladder: below step 4 is unproven)"
 ---
 
 ## Rules
+- This block answers which proof meets each claim. For proof strength, see `blocks/prove-it-works/SKILL.md`; for source agreement, see `blocks/cite-sources/SKILL.md`.
 - The close step's file lists every done-when of the frame, and in a plan the `Done when:` line too, each with its evidence.
 - Use a table or a numbered list: requirement, check, evidence. Every requirement and every accepted constraint has a row.
-- Each row's check is the one that the build step's file names for it, in a todo's evidence or its `## Result`. In flow, review judges that each done-when has one there, before this table exists.
+- Each row's check is the one that the build step's file names for it, in a todo's evidence or its `## Result`. In implement, review judges that each done-when has one there, before this table exists.
 - Evidence reads "not run" until you get it. A row with no proof reads "unverified" and says why.
 - Keep a partial check apart from a completed proof.
 
@@ -31,7 +32,7 @@ Action: write in `07-close.md`:
 Result: two rows proved, one partial row named as partial.
 
 ## Check (script)
-- none: the close table lives only in the step file, which holds this block's own Rules; in flow, `take 07-close` already refuses a run without APPROVE on HEAD.
+- none: the close table lives only in the step file, which holds this block's own Rules; in implement, `take 07-close` already refuses a run without APPROVE on HEAD.
 
 ## Check (judge)
 - Does each done-when line of the frame and each accepted constraint have a check, planned or run, named in the build step's file (a todo's evidence or its `## Result`)? Quote each done-when and its check.

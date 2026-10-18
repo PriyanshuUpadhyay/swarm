@@ -86,9 +86,9 @@ Resolve one of two ways:
 The WAL guards against loss, but the sooner the user confirms the "why", the better.
 Flush, in priority order:
 1. **Before a `git commit` this assistant runs**, if the WAL is non-empty (highest-signal
-   moment). Behavioral, not an installed hook. *Known gap:* commits made outside this
-   assistant (manual terminal, GUI, another agent) won't trigger this — the WAL then
-   carries the flags to the next `/decisions` or next session.
+   moment). Under `deliver`, flush once at task end instead; a direction-changing choice still
+   stops the run. This is not an installed hook. Commits made outside this assistant leave the
+   flags for the next `/decisions` or session.
 2. **Right after a reversal is confirmed** — don't let it sit.
 3. **WAL reaches ~3 items.**
 4. **Before starting long-running work** (so the "why" isn't lost to compaction).
@@ -128,9 +128,8 @@ Per the gate in `templates.md`:
 When a confirmed item reverses a recorded decision OLD:
 1. Create the **new** record NNNN normally, with frontmatter `supersedes: OLD` and a
    `## Links` line "Supersedes ADR-OLD".
-2. **Rewrite the old record's frontmatter** (the only permitted edit to an accepted
-   record): `status: superseded` and `superseded-by: NNNN`. Add a Links line "Superseded
-   by ADR-NNNN". Leave its body untouched.
+2. Apply the Storage rules in `../SKILL.md` to the old record. Set its frontmatter to
+   `status: superseded` and `superseded-by: NNNN`.
 3. Both records now point at each other. The old rationale survives intact.
 
 `/decisions supersede NNNN` runs this flow directly.

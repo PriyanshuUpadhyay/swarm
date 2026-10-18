@@ -147,7 +147,7 @@ AGY has no account source yet.
 ### Bundled workflow skills
 
 The plugin `swarm` holds the skills in `skills/kit/skills/` and the blocks they read in
-`skills/kit/blocks/`. A block is never called by itself: a skill reads it, and `plan` and `flow`
+`skills/kit/blocks/`. A block is never called by itself: a skill reads it, and `plan` and `implement`
 put blocks into the steps of a run. Claude Code shows a skill as `/swarm:<name>`, pi as
 `/skill:<name>`.
 
@@ -159,9 +159,10 @@ put blocks into the steps of a run. Claude Code shows a skill as `/swarm:<name>`
 | `council` | Claude, GPT, and Gemini voices debate in panes and end in one verdict |
 | `pair` | Write code with you, one approved diff of about 40 lines at a time |
 | `deliver` | Drive one named task to a checkable end, and stop before a push or merge |
-| `flow` | Run one change through frame, design, contracts, impact, build, review, and close |
+| `implement` | Run one change through frame, design, contracts, impact, build, review, and close |
 | `review-check`, `review-walk` | Judge a diff with a script verdict; walk a PR into a pending review |
-| `ink` | Pictures, films, and sites drawn by code |
+| `build` | Pictures, films, and sites drawn by code |
+| `explain` | Explain a subject with one running example |
 | `decisions`, `cleanup-gate`, `engineering-standards` | ADRs, a cleanup pass on request, and engineering rules |
 | `prove-it-works`, `sequence-verifiable-units`, `minimize-reader-load` | Rules that point to one block each |
 | `orchestrate-claude`, `-codex`, `-agy` | Bind a skill's worker needs to each agent CLI |
@@ -215,6 +216,29 @@ Appearance, the send key, Notifications, Profiles, and Accounts.
 `swarm ui` runs with your terminal's PATH, so the agent CLIs it starts find the same tools.
 Notices come from the small SwarmNotify helper that ships beside `swarm`, so a notice needs no open
 page, and nothing starts at login (ADR 0077, ADR 0079). A click on a notice focuses the agent's pane.
+
+## Owner scripts
+
+Run `scripts/install-local.sh v0.0.19 --dry-run` to see how a local install will work.
+The install and release scripts accept `--dry-run` and make no changes in that mode.
+
+| Command | Use |
+|---|---|
+| `scripts/install-local.sh <tag-or-commit>` | Build a clean copy of the ref and install it through Homebrew. |
+| `scripts/release.sh patch\|minor\|major [--local]` | Check main, bump the version, push the release, and wait for Release and Tap. |
+| `scripts/kit-checks.sh [worktree]` | Run the nine kit checks and keep full logs in `tmp/kit-checks/`. |
+| `scripts/prune-worktrees.sh [--yes]` | List merged, clean worktrees after a fetch; use `--yes` to remove them and their branches. |
+
+A local build uses the Homebrew version `<version>.local.<commit>`.
+For example, `0.0.19.local.6a56182f` sorts above `0.0.19` and below `0.0.20`.
+The install uses `reinstall` when swarm is present, so it can replace the same package version.
+It changes and restores the formula in `priyanshuupadhyay/tap`, which keeps that tap in the install
+record and keeps `/opt/homebrew/opt/swarm` as the path for the kit and HUD.
+A plain `brew upgrade` keeps this build until the next release.
+Use `scripts/release.sh resume v<version>` to finish a pushed release after a failure.
+The release script replaces a local build of that tag with the published build.
+See the Homebrew [formula guide](https://docs.brew.sh/Formula-Cookbook) and
+[command guide](https://docs.brew.sh/Manpage#reinstall-options-formulacask-).
 
 ## Environment
 

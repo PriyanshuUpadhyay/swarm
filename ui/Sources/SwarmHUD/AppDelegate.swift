@@ -6,7 +6,7 @@ import SwiftUI
 // Window code ported from yelo apps/UsageHUD (AppDelegate.swift, DragHostingView.swift): a fixed,
 // transparent panel at the top of the notch screen; the visible shape grows inside it. Hover comes
 // from mouse-move monitors; a global monitor of mouse events needs no input-monitoring permission.
-// ⌃⌥⌘U (a Carbon hot key, also with no permission) opens it for the keyboard and VoiceOver.
+// ⌃⌥⇧⌘U (a Carbon hot key, also with no permission) opens it for the keyboard and VoiceOver.
 
 /// The panel never resizes; it is the most room the open HUD may take, plus room for its shadow.
 let panelSize = NSSize(width: Layout.openWidth + 40, height: Layout.maxOpenHeight + 24)
@@ -254,12 +254,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             MainActor.assumeIsolated { delegate.toggleFromKeyboard() }
             return noErr
         }, 1, &spec, Unmanaged.passUnretained(self).toOpaque(), nil)
-        let key = RegisterEventHotKey(UInt32(kVK_ANSI_U), UInt32(controlKey | optionKey | cmdKey),
+        let key = RegisterEventHotKey(UInt32(kVK_ANSI_U), UInt32(controlKey | optionKey | shiftKey | cmdKey),
                                       EventHotKeyID(signature: OSType(0x5357_4855), id: 1), // "SWHU"
                                       GetApplicationEventTarget(), 0, &hotKey)
         // Another app may hold the key already; then the VoiceOver hint stops naming it.
         model.hotKeyReady = handler == noErr && key == noErr
-        if !model.hotKeyReady { NSLog("SwarmHUD: ⌃⌥⌘U is not available (handler %d, key %d)", handler, key) }
+        if !model.hotKeyReady { NSLog("SwarmHUD: ⌃⌥⇧⌘U is not available (handler %d, key %d)", handler, key) }
     }
 
     func toggleFromKeyboard() {

@@ -7,7 +7,7 @@ diff is shown.
 The global file already owns the smallest clear change, the comment rule, direct control flow and
 plain data, dead-code removal, and the ban on unrelated cleanup. Do not restate those here; apply
 them from the global file. It says nothing about public contracts, tests, boilerplate, constants, or
-schema libraries — those are the rules below.
+schema libraries, or checks on local data — those are the rules below.
 
 ## 1 — Only temporary or out-of-scope tests and fixtures leave the diff
 
@@ -45,3 +45,12 @@ next to it.
 Document a public contract only when the signature does not convey its semantics, constraints, side
 effects, or failure modes. The global comment rule covers ordinary comments; this rule covers the
 documented surface other code depends on.
+
+## 6 — Type local data and remove repeated validation
+
+Source: review-check lens C-3; block-consolidation council 2026-10-16 (D11).
+
+For data our own code made, use its type and remove repeated validation, `unknown`, or a schema
+that adds no check at a separate boundary. Keep checks at trust boundaries, such as user input,
+LLM output, and third-party APIs. Keep a check that guards a separate trust or resource boundary,
+even when the data came from local code. Quote the boundary before removing a check.

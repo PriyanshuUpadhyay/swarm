@@ -9,7 +9,7 @@ metadata:
   needs: "the subject and the terms the owner already used"
   gives: "an explanation in learning order"
   conflicts: ""
-  users: "planner"
+  users: "planner, explain"
   source: "mined rows s2#37, s4#28; docs/council 2026-10-13 block rules (V3: one exit voice per kind of output, and 'understand' is one)"
 ---
 
@@ -17,7 +17,6 @@ metadata:
 - Find the terms that the owner already used about the subject, in this chat or task. Start from one of them.
 - Add one new idea per step. Tie each new idea to an idea already explained, and say how they connect.
 - Keep one running example from start to end. Each new idea changes or extends that example.
-- Gloss each new term in two or three words the first time it appears.
 - Stop when the question is answered. Name the next idea in one line, and do not explain it.
 - The session's reply rules still decide how the reply opens and how long it is. This block owns only the order of ideas.
 

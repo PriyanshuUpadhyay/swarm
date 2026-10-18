@@ -9,15 +9,15 @@ metadata:
   needs: "a brief and its references, or a brief alone"
   gives: "measured notes per reference with evidence labels"
   conflicts: ""
-  users: "ink, design-tokens"
-  source: "skills/ink/references/references.md (research references, inspection, passes 1-5, evidence language; moved 2026-10-13); skills/ink/SKILL.md (contract: inspected pixels, borrow not copy, density)"
+  users: "build, design-tokens"
+  source: "skills/build/references/references.md (research references, inspection, passes 1-5, evidence language; moved 2026-10-13); skills/build/SKILL.md (contract: inspected pixels, borrow not copy, density)"
 ---
 
 ## Rules
 Find the references
 - Match a look only from pixels you inspected yourself. When the brief gives no references, find them from the brief before any design. Each part of the story and each quality of the look is a search.
-- Use the `research` skill, and the `web-search` skill when one session cannot reach enough sites.
-- Prefer primary pages (the artist's site, the studio, the museum, the film's frames) over reposts. Keep 4-8 works whose images or frames you can open and inspect.
+- Search with this session's tools. Use `research` only when the brief needs a report, and `web-search` when one session cannot reach enough sites.
+- Apply `blocks/cite-sources/SKILL.md` to source choice and attribution. Keep 4-8 works whose images or frames you can open and inspect.
 - Record each work's source and what it informs (look, motion, structure, or more than one), and name one or two as the benchmark, each with what to learn from it and what not to take. A reference chosen for its story structure does not set the palette, and a still chosen for its palette does not set the pacing.
 - Show the chosen set to the user, with one line on why each fits the brief.
 Inspect
@@ -32,6 +32,7 @@ Inspect
 - Match density, not only palette. A number measured from a reference becomes a rule in the look, and the build meets it.
 Evidence
 - Label each fact `visible` (directly observed in pixels or frames), `stated` (claimed by the creator or supplied text), `inferred` (best explanation of observed behavior), or `unknown` (not shown or not recoverable).
+- A `DESIGN.md` pulled from a live site or a collection is `stated` evidence. Measure the rendered pages before trusting its values.
 - Do not upgrade `stated` or `inferred` to `visible`. A creator's claim about their process is evidence of the claim, not of the hidden workflow.
 What may be taken
 - Borrow techniques and high-level traits. Never copy characters, logos, signatures, exact compositions, or a living artist's exact personal style.
