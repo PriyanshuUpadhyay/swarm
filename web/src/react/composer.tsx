@@ -189,7 +189,14 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
   };
   const canSend = outgoing(text) !== null && !state.sending && !state.pulling && !chair.disabled;
   const canPullBack = chair.pullBack && !chair.disabled && composer.queued > 0;
-  const submit = () => canSend && void app.send(sessionId, text);
+  const skills = new Set(list?.commands.filter((r) => r.kind === "skill").map((r) => r.insert));
+  /** pi runs a skill only at the message's start, so the draft shows the moved text it sends. */
+  const submit = () => {
+    if (!canSend) return;
+    const out = chair.provider === "pi" ? skillFirst(text, skills).text : text;
+    if (out !== text) change(out);
+    void app.send(sessionId, out);
+  };
 
   /** A pasted image goes to the server, and its path goes in the draft at the caret. */
   const paste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
@@ -268,7 +275,7 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
   };
 
   const showStop = chair.running;
-  const extraSkills = chair.provider === "pi" ? skillFirst(text).extra : [];
+  const extraSkills = chair.provider === "pi" ? skillFirst(text, skills).extra : [];
   const caption = state.sending
     ? "Sending…"
     : state.stopping

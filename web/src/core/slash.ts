@@ -48,13 +48,21 @@ export function offered(rows: readonly MenuRow[], menu: Menu, provider: string |
   return rows.filter((r) => r.insert.startsWith(menu.opener) && (atStart(menu) || midDraft(r)));
 }
 
-// The token ends at a space so `/skill:x.md` stays a path; pi's skill names are lowercase words.
-const SKILL = /(^|[\s([])(\/skill:[a-z0-9][a-z0-9-]*)(?=\s|$)/g;
+// pi reads the name up to the first space (pi 1.2.0 `_expandSkillCommand`).
+const SKILL = /(^|[\s([])(\/skill:\S+)/g;
 
-/** pi expands `/skill:<name>` only at the message's start, so the first one moves there. pi runs one
- *  skill per message, so `extra` lists the later ones, which reach the model as text. */
-export function skillFirst(text: string): { text: string; extra: string[] } {
-  const [first, ...rest] = text.matchAll(SKILL);
+/** True on a `>` quote line or inside a ``` fence, where the owner shows a skill and does not run it. */
+function quoted(text: string, at: number): boolean {
+  const line = text.slice(text.lastIndexOf("\n", at - 1) + 1, at);
+  return /^\s*>/.test(line) || (text.slice(0, at).match(/^\s*```/gm)?.length ?? 0) % 2 === 1;
+}
+
+/** pi expands `/skill:<name>` only at the message's start, so the first one of `skills` (pi's own
+ *  list) moves there. pi runs one skill per message, so `extra` lists the later ones, which reach
+ *  the model as text. */
+export function skillFirst(text: string, skills: ReadonlySet<string>): { text: string; extra: string[] } {
+  const found = [...text.matchAll(SKILL)].filter((m) => skills.has(m[2]) && !quoted(text, m.index + m[1].length));
+  const [first, ...rest] = found;
   const extra = rest.map((m) => m[2]);
   if (!first || first.index + first[1].length === 0) return { text, extra };
   const at = first.index + first[1].length;

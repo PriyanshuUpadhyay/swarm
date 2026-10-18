@@ -160,6 +160,15 @@ describe("chat actions", () => {
     expect(app.draft("chat")).toBe("");
   });
 
+  it("sends a pi text as it is; only the composer moves a skill", async () => {
+    const { app, posts, snapshot } = harness();
+    snapshot({ provider: "pi" });
+    app.openChat("chat");
+    await settle();
+    await app.send("chat", "fix /skill:plan now");
+    expect(posts).toEqual([{ path: "/api/chat/send", body: { session: "chat", agent: "chair", text: "fix /skill:plan now" } }]);
+  });
+
   it("does not send while the chair asks a question", async () => {
     const { app, posts, snapshot } = harness();
     snapshot({ state: "waiting", prompt: waitingPrompt });

@@ -93,20 +93,32 @@ describe("pick", () => {
 });
 
 describe("skillFirst", () => {
+  const skills = new Set(["/skill:plan", "/skill:x", "/skill:y", "/skill:my_skill"]);
+
   it("moves the first pi skill token to the start, where pi expands it", () => {
-    expect(skillFirst("fix this /skill:plan now")).toEqual({ text: "/skill:plan fix this now", extra: [] });
-    expect(skillFirst("tail /skill:plan")).toEqual({ text: "/skill:plan tail", extra: [] });
-    expect(skillFirst("one\n/skill:plan two")).toEqual({ text: "/skill:plan one\ntwo", extra: [] });
+    expect(skillFirst("fix this /skill:plan now", skills)).toEqual({ text: "/skill:plan fix this now", extra: [] });
+    expect(skillFirst("tail /skill:plan", skills)).toEqual({ text: "/skill:plan tail", extra: [] });
+    expect(skillFirst("one\n/skill:plan two", skills)).toEqual({ text: "/skill:plan one\ntwo", extra: [] });
   });
 
   it("keeps a draft that starts with a skill, and lists a second skill that stays as text", () => {
-    expect(skillFirst("/skill:plan go")).toEqual({ text: "/skill:plan go", extra: [] });
-    expect(skillFirst("a /skill:x b /skill:y")).toEqual({ text: "/skill:x a b /skill:y", extra: ["/skill:y"] });
-    expect(skillFirst("/skill:x and /skill:y")).toEqual({ text: "/skill:x and /skill:y", extra: ["/skill:y"] });
+    expect(skillFirst("/skill:plan go", skills)).toEqual({ text: "/skill:plan go", extra: [] });
+    expect(skillFirst("a /skill:x b /skill:y", skills)).toEqual({ text: "/skill:x a b /skill:y", extra: ["/skill:y"] });
+    expect(skillFirst("/skill:x and /skill:y", skills)).toEqual({ text: "/skill:x and /skill:y", extra: ["/skill:y"] });
   });
 
-  it("leaves a path or a word that only looks like a skill", () => {
-    expect(skillFirst("see /skill:x.md")).toEqual({ text: "see /skill:x.md", extra: [] });
-    expect(skillFirst("a/skill:x b")).toEqual({ text: "a/skill:x b", extra: [] });
+  it("moves only a skill that pi listed, by the name up to the next space", () => {
+    expect(skillFirst("fix /skill:nosuch now", skills)).toEqual({ text: "fix /skill:nosuch now", extra: [] });
+    expect(skillFirst("use /skill:my_skill here", skills)).toEqual({ text: "/skill:my_skill use here", extra: [] });
+    expect(skillFirst("see /skill:x.md", skills)).toEqual({ text: "see /skill:x.md", extra: [] });
+    expect(skillFirst("a/skill:x b", skills)).toEqual({ text: "a/skill:x b", extra: [] });
+  });
+
+  it("leaves a skill inside a code fence or a quote", () => {
+    const fenced = "see the log\n```\n/skill:plan foo\n```";
+    expect(skillFirst(fenced, skills)).toEqual({ text: fenced, extra: [] });
+    const quoted = "about this:\n> + run /skill:plan now";
+    expect(skillFirst(quoted, skills)).toEqual({ text: quoted, extra: [] });
+    expect(skillFirst("```\nx\n```\nthen /skill:plan", skills)).toEqual({ text: "/skill:plan ```\nx\n```\nthen", extra: [] });
   });
 });

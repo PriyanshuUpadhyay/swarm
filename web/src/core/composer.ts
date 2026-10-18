@@ -50,7 +50,8 @@ export function sentRow(text: string, provider: string | null, rows: readonly Ro
   };
 }
 
-/** The text a row shows the owner typed. A pi skill message is a command row of name and words. */
+/** The text a row shows the owner typed. A pi skill message is a command row of name and words.
+ *  A pasted `<skill>` block does not match, so its Sent row waits for the turn's end. */
 const shown = (r: Row) => (r.kind === "user" ? r.text.trim() : r.command ? `${r.command.name} ${r.command.arguments}`.trim() : null);
 
 /** Drops each sent text that a new user row now shows; one row confirms one text. Returns the same
