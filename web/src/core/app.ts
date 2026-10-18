@@ -21,7 +21,7 @@ import { readSse, type SseEvent } from "./sse";
 import { isChair, movePane, paneCells, paneStatus, type Direction, type PaneCell } from "./panes";
 import { FoldChoices, findMatches, lines, mergeRows, type Line, type Match } from "./transcript";
 import { Lifecycle } from "./lifecycle";
-import type { CommandList } from "./slash";
+import { skillFirst, type CommandList } from "./slash";
 import { Settings } from "./settings";
 import {
   chatRows,
@@ -1266,7 +1266,7 @@ export class App {
   async send(sessionId: string, text: string): Promise<boolean> {
     const chair = this.chair(sessionId);
     const st = this.input(sessionId);
-    const out = outgoing(text);
+    const out = outgoing(chair.provider === "pi" ? skillFirst(text).text : text);
     // A send typed while Up and C-u presses run would be cut or garbled.
     if (!out || st.sending || st.pulling || chair.disabled) return false;
     const typed = submission(out);

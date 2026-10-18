@@ -22,10 +22,10 @@ export type CommandList = { commands: MenuRow[]; note: string | null };
 export type Menu = { opener: "/" | "$"; start: number; end: number; query: string };
 
 /** The menu for the caret, or null. A `/` at the draft's start offers every command. Mid-draft,
- *  Claude and AGY run only skills and commands, while Codex and pi run none. A `$` is a Codex skill. */
+ *  Claude and AGY run only skills and commands, pi only skills, and Codex none. A `$` is a Codex skill. */
 export function menuAt(draft: string, caret: number, provider: string | null): Menu | null {
   const slash = token(draft, caret, "/");
-  if (slash) return slash.start === 0 || (provider !== "codex" && provider !== "pi") ? slash : null;
+  if (slash) return slash.start === 0 || provider !== "codex" ? slash : null;
   return provider === "codex" ? token(draft, caret, "$") : null;
 }
 
@@ -41,9 +41,25 @@ function token(draft: string, caret: number, opener: "/" | "$"): Menu | null {
 
 const atStart = (menu: Menu) => menu.opener === "/" && menu.start === 0;
 
-/** The rows this menu can offer: built-ins only at the draft's start. */
-export function offered(rows: readonly MenuRow[], menu: Menu): MenuRow[] {
-  return rows.filter((r) => r.insert.startsWith(menu.opener) && (atStart(menu) || r.kind !== "builtin"));
+/** The rows this menu can offer: built-ins only at the draft's start. pi expands only skills
+ *  mid-draft, and only after `skillFirst` moves them to the start. */
+export function offered(rows: readonly MenuRow[], menu: Menu, provider: string | null = null): MenuRow[] {
+  const midDraft = (r: MenuRow) => (provider === "pi" ? r.kind === "skill" : r.kind !== "builtin");
+  return rows.filter((r) => r.insert.startsWith(menu.opener) && (atStart(menu) || midDraft(r)));
+}
+
+// The token ends at a space so `/skill:x.md` stays a path; pi's skill names are lowercase words.
+const SKILL = /(^|[\s([])(\/skill:[a-z0-9][a-z0-9-]*)(?=\s|$)/g;
+
+/** pi expands `/skill:<name>` only at the message's start, so the first one moves there. pi runs one
+ *  skill per message, so `extra` lists the later ones, which reach the model as text. */
+export function skillFirst(text: string): { text: string; extra: string[] } {
+  const [first, ...rest] = text.matchAll(SKILL);
+  const extra = rest.map((m) => m[2]);
+  if (!first || first.index + first[1].length === 0) return { text, extra };
+  const at = first.index + first[1].length;
+  const words = (text.slice(0, at) + text.slice(at + first[2].length).replace(/^[ \t]/, "")).trim();
+  return { text: words ? `${first[2]} ${words}` : first[2], extra };
 }
 
 /** Mid-draft a `/` or `$` can be a path or a price, so that menu shows only with matching rows. */

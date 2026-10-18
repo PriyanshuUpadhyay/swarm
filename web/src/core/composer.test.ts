@@ -58,6 +58,20 @@ describe("sent rows", () => {
     const none = [first];
     expect(confirmSent(none, [earlier])).toBe(none);
   });
+
+  it("leave when a pi skill row shows the same command and words", () => {
+    const sent = sentRow("/skill:plan fix this now ", "pi", []);
+    const skill: Row = {
+      id: "skill",
+      kind: "system",
+      system_kind: "command",
+      text: "",
+      order: [10, 0],
+      command: { name: "/skill:plan", arguments: "fix this now" },
+    };
+    expect(confirmSent([sent], [skill])).toEqual([]);
+    expect(confirmSent([sent], [{ ...skill, command: { name: "/skill:plan", arguments: "other" } }])).toEqual([sent]);
+  });
 });
 
 describe("chair input", () => {

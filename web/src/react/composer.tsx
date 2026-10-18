@@ -2,7 +2,7 @@ import { ArrowUpIcon, ChevronDownIcon, CircleHelpIcon, LoaderCircleIcon, SquareI
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import type { App, Banner, Composer, Input } from "../core/app";
 import { modelLabel, outgoing, sends, usageLabel, type Prompt } from "../core/composer";
-import { matches, menuAt, moved, offered, pick, picksAndSends, showsEmpty, type CommandList, type MenuRow } from "../core/slash";
+import { matches, menuAt, moved, offered, pick, picksAndSends, showsEmpty, skillFirst, type CommandList, type MenuRow } from "../core/slash";
 import { Button } from "../components/ui/button";
 import { ImageThumbs } from "./images";
 import { cn } from "../lib/utils";
@@ -156,7 +156,7 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
   }, [text]);
 
   const menu = focused && !chair.disabled ? menuAt(text, caret, chair.provider) : null;
-  const rows = menu && list ? matches(offered(list.commands, menu), menu.query) : [];
+  const rows = menu && list ? matches(offered(list.commands, menu, chair.provider), menu.query) : [];
   const open = menu !== null && dismissed !== menu.start && (rows.length > 0 || showsEmpty(menu));
   const current = Math.min(selected, Math.max(rows.length - 1, 0));
   const menuKey = menu ? `${menu.opener}${menu.start}` : null;
@@ -268,6 +268,7 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
   };
 
   const showStop = chair.running;
+  const extraSkills = chair.provider === "pi" ? skillFirst(text).extra : [];
   const caption = state.sending
     ? "Sending…"
     : state.stopping
@@ -278,7 +279,9 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
           ? "Already sent"
           : canPullBack && text === ""
             ? "↑ to edit queued messages"
-            : null;
+            : extraSkills.length
+              ? `pi runs one skill per message, so ${extraSkills.join(", ")} goes as text`
+              : null;
 
   return (
     <div>

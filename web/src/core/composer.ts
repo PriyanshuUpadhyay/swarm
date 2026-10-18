@@ -50,13 +50,16 @@ export function sentRow(text: string, provider: string | null, rows: readonly Ro
   };
 }
 
+/** The text a row shows the owner typed. A pi skill message is a command row of name and words. */
+const shown = (r: Row) => (r.kind === "user" ? r.text.trim() : r.command ? `${r.command.name} ${r.command.arguments}`.trim() : null);
+
 /** Drops each sent text that a new user row now shows; one row confirms one text. Returns the same
  *  array when nothing left. */
 export function confirmSent(sent: Sent[], rows: readonly Row[]): Sent[] {
   if (!sent.length) return sent;
   const used = new Set<string>();
   const left = sent.filter((s) => {
-    const match = rows.find((r) => r.kind === "user" && !s.before.has(r.id) && !used.has(r.id) && r.text.trim() === s.row.text);
+    const match = rows.find((r) => !s.before.has(r.id) && !used.has(r.id) && shown(r) === s.row.text);
     if (match) used.add(match.id);
     return !match;
   });
