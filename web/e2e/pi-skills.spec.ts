@@ -6,7 +6,9 @@ import type { Snapshot } from "../src/core/api";
 test("pi keeps menu picks as chips and runs the first after a reload without a list", async ({ page: tab }, info) => {
   const session = process.env.SWARM_E2E_LIVE!;
   const errors: string[] = [];
-  tab.on("pageerror", (e) => !e.message.startsWith("ResizeObserver loop") && errors.push(e.message));
+  // WebKit reports a fetch that a reload cancels as "... due to access control checks".
+  const expected = (m: string) => m.startsWith("ResizeObserver loop") || m.endsWith("due to access control checks.");
+  tab.on("pageerror", (e) => !expected(e.message) && errors.push(e.message));
   // Use the live composer fixture with pi's provider and skill-list responses.
   await tab.route("**/api/snapshot", async (route) => {
     const snapshot: Snapshot = await (await route.fetch()).json();
