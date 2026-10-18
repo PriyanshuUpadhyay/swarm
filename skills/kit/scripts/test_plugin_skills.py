@@ -17,6 +17,17 @@ def test_plugin_ships_the_workflow_verbs():
     skills = KIT / "skills"  # Each plugin uses its default skills/ folder.
     assert {"build", "implement", "explain", "deliver"} <= {p.parent.name for p in skills.glob("*/SKILL.md")}
     assert not any((skills / name).exists() for name in ("ink", "flow"))
+    assert not any((skills / name).exists() for name in (
+        "prove-it-works", "minimize-reader-load", "sequence-verifiable-units"))
+
+
+def test_background_skills_stay_available_to_the_model_and_out_of_the_menu():
+    for name in ("orchestrate-claude", "orchestrate-codex", "orchestrate-agy",
+                 "swarm-orchestrator", "swarm-voice", "engineering-standards", "decisions"):
+        path = KIT / "skills" / name / "SKILL.md"
+        frontmatter = path.read_text(encoding="utf-8").split("---", 2)[1]
+        assert re.search(r"^user-invocable: false$", frontmatter, re.M), path
+        assert not re.search(r"^disable-model-invocation: true$", frontmatter, re.M), path
 
 
 def test_each_skill_name_is_its_folder_name():
@@ -29,4 +40,5 @@ def test_each_skill_name_is_its_folder_name():
 if __name__ == "__main__":
     test_plugin_ships_the_workflow_verbs()
     test_each_skill_name_is_its_folder_name()
+    test_background_skills_stay_available_to_the_model_and_out_of_the_menu()
     print("ok")

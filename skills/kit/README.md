@@ -18,12 +18,21 @@ Workflow skills for coding agents (Claude Code, Codex, Antigravity). Each skill 
 | `decisions` | Record consequential choices as in-repo ADRs |
 | `cleanup-gate` | A full cleanup pass, only on request |
 | `engineering-standards` | Scoped engineering rules for design, code and review |
-| `prove-it-works` | What counts as proof that a change works (points to `blocks/prove-it-works`) |
-| `sequence-verifiable-units` | Order multi-step work so each step can be checked (points to `blocks/checked-units`) |
-| `minimize-reader-load` | When code gets its own function, file or module (points to `blocks/when-to-extract`) |
 | `build` | Pictures, generative plates, films, and websites drawn by code, from a story or a visual reference |
 | `explain` | Explain a subject with one running example, using the `voice-teach` block |
 | `orchestrate-claude`, `orchestrate-codex`, `orchestrate-agy` | Runtime adapters that bind the skills' worker needs to each agent CLI |
+
+The rules for proof, checked units, and code extraction live directly in
+`blocks/prove-it-works/SKILL.md`, `blocks/checked-units/SKILL.md`, and
+`blocks/when-to-extract/SKILL.md`.
+
+The runtime adapters, `swarm-orchestrator`, `swarm-voice`, `engineering-standards`, and `decisions`
+set `user-invocable: false`. They stay available to the model. Claude Code hides them from its
+slash menu, as [its skill controls](https://code.claude.com/docs/en/skills#control-who-invokes-a-skill)
+specify. Swarm checks this field for its web menu when a provider lists the skill's file path.
+pi lists `sourceInfo.path`, and Codex lists `path`. Claude's initialize command list has no file
+path, so its own visibility filter and plugin label apply. The web composer uses each command
+row's `source`; a file under the Swarm plugin's `skills/` folder gets `swarm` from its manifest.
 
 `references/plan-layout.md` is the plan shape and the first screen of a long result that several
 skills point to.
