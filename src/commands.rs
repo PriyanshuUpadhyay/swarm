@@ -103,8 +103,10 @@ fn finish(provider: Provider, mut rows: Vec<Row>) -> Vec<Row> {
 
 /// Commands the CLI runs in its TUI but does not list in its machine mode, from the SwiftUI app's
 /// checked lists. Codex has no `/new`: it opens a worktree picker. pi's are its documented built-ins
-/// (docs/slash-commands.md), which `get_commands` leaves out; `/quit`, `/share`, and `/bug` stay out
-/// because they end the chair or upload the session.
+/// (docs/slash-commands.md), which `get_commands` leaves out. `/new`, `/clone`, `/fork`, `/resume`,
+/// and `/import` stay out because they move pi to a new session file, and swarm follows the chair's
+/// log by its fixed id (ADR 0086); `/quit`, `/share`, and `/bug` end the chair or upload the session;
+/// `/changelog`, `/hotkeys`, and `/session` write only to pi's own screen.
 fn builtins(provider: Provider) -> &'static [(&'static str, &'static str)] {
     match provider {
         Provider::Claude => &[
@@ -181,23 +183,15 @@ fn builtins(provider: Provider) -> &'static [(&'static str, &'static str)] {
             ("usage", "Show plan usage"),
         ],
         Provider::Pi => &[
-            ("changelog", "Show changelog entries"),
-            ("clone", "Duplicate the session at its current position"),
             ("compact", "Compact the current context"),
             ("copy", "Copy the last answer"),
             ("export", "Export the session as HTML or JSONL"),
-            ("fork", "Fork from an earlier message"),
-            ("hotkeys", "Show keyboard shortcuts"),
-            ("import", "Import and resume a JSONL session"),
             ("login", "Add provider authentication"),
             ("logout", "Remove provider authentication"),
             ("model", "Choose the model"),
             ("name", "Set the session name"),
-            ("new", "Start a new session"),
             ("reload", "Reload extensions, skills, and context files"),
-            ("resume", "Resume an earlier session"),
             ("scoped-models", "Choose the models to cycle"),
-            ("session", "Show session information"),
             ("settings", "Open settings"),
             ("thinking", "Choose the thinking level"),
             ("tree", "Move within the session tree"),
@@ -259,11 +253,9 @@ fn dialogs(provider: Provider) -> &'static [&'static str] {
             "tasks",
         ],
         Provider::Pi => &[
-            "fork",
             "login",
             "logout",
             "model",
-            "resume",
             "scoped-models",
             "settings",
             "thinking",
@@ -685,7 +677,9 @@ mod tests {
         let pi = finish(Provider::Pi, Vec::new());
         assert!(pi.iter().any(|row| row.name == "compact" && !row.dialog));
         assert!(pi.iter().any(|row| row.name == "model" && row.dialog));
-        assert!(!pi.iter().any(|row| row.name == "quit"));
+        for name in ["quit", "new", "resume"] {
+            assert!(!pi.iter().any(|row| row.name == name), "{name} is left out");
+        }
     }
 
     #[test]
