@@ -9,7 +9,7 @@ metadata:
   needs: "a question or claims with sources"
   gives: "shared rules for the selected source parts"
   conflicts: ""
-  users: "research, web-search"
+  users: "research, web-search, reference-analysis"
   source: "blocks/cite-sources/SKILL.md (a blog post, a forum answer, or a summary points to the owning source; it is not the evidence); blocks/primary-sources/SKILL.md (secondary pages and an answer from memory are leads)"
   parts: "primary-sources, deep-search, cite-sources, link-check"
 ---
