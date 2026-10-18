@@ -532,13 +532,13 @@ def test_installed_kit_paths(tmp):
     (home / ".swarm").mkdir()
     (home / ".swarm/kit").symlink_to(SCRIPT.parents[3], target_is_directory=True)
     (home / ".flow/domains.md").write_text(
-        "## any\n- build: ~/.swarm/kit/skills/prove-it-works/SKILL.md, block:prove-it-works\n", encoding="utf-8")
+        "## any\n- build: ~/.swarm/kit/blocks/prove-it-works/SKILL.md, block:prove-it-works\n", encoding="utf-8")
     shutil.rmtree(folder)
     out = run("start")
     assert out.returncode == 0, out.stderr
     text = step_text(folder, "05-build")
     assert "Take with: python3 ~/.swarm/kit/skills/implement/scripts/implement_run.py take " in text, text
-    assert "Skills read: ~/.swarm/kit/skills/prove-it-works/SKILL.md" in text, text
+    assert "Skills read: ~/.swarm/kit/blocks/prove-it-works/SKILL.md" in text, text
     assert "under ~/.swarm/kit (the kit root)" in text, text
     assert str(SCRIPT.parents[3]) not in text and str(SCRIPT) not in out.stdout, out
     # A source checkout without an installed link must keep its own paths.

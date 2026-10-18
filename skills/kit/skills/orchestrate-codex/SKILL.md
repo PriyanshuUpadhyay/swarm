@@ -1,5 +1,6 @@
 ---
 name: orchestrate-codex
+user-invocable: false
 description: Bind provider-neutral multi-agent workflow requirements to Codex orchestration mechanics. Use when a Codex root session runs a portable skill that requests isolated workers, routed models, durable results, or parallel fan-out.
 ---
 

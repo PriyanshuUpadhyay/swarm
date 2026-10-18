@@ -1,5 +1,6 @@
 ---
 name: swarm-orchestrator
+user-invocable: false
 description: Run a swarm session as the parent agent, which creates the session, spawns child agent CLIs into visible panes, sends them work, collects their answers, and cleans up. Use when asked to fan work out to other agent CLIs with swarm.
 ---
 

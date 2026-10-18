@@ -1,5 +1,6 @@
 ---
 name: orchestrate-agy
+user-invocable: false
 description: Bind provider-neutral multi-agent workflow requirements to AGY orchestration mechanics. Use when an AGY root session runs a portable skill that requests isolated workers, routed models, durable results, or parallel fan-out.
 ---
 

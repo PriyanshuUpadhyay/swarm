@@ -130,7 +130,7 @@ On 2026-10-17, the owner approved domain selection by `implement_run.py start --
    names it.
 2. When two files state the same rule, that is a defect. The fix is one owner and a pointer, never a
    `conflicts` line. Example: `red-first-check` repeated `prove-it-works`, so on 2026-10-13 both
-   texts became the one block `prove-it-works`, and the skill points to it.
+   texts became `blocks/prove-it-works/SKILL.md`.
 3. When two blocks are real alternatives, each names the other in `conflicts`. Code refuses a
    ledger that holds both, and the plan block picks one with a reason line.
 4. A block names a step by its role. A workflow's file name may follow as an example, as
@@ -194,9 +194,9 @@ Status: ✅ exists, ✂️ cut from a skill next, ⬜ later, 🆕 new, 🔒 stay
 | requirements | a frame as true-or-false claims (was behavior-claims) | `blocks/requirements` | ✅ |
 | scratch-home | trial and test state in a temporary home, apart from live settings | `blocks/scratch-home` | ✅ basic |
 | decision-with-default | a real fork with a marked default, and the trade-off form | `blocks/decision-with-default` (engineering-standards section 5 points here) | ✅ defect fixed |
-| prove-it-works | what proves a change works | `blocks/prove-it-works` (red-first-check merged in; the skill points here) | ✅ |
-| checked-units | small units that each end in a check | `blocks/checked-units` (the skill sequence-verifiable-units points here) | ✅ |
-| when-to-extract | code stays inline without a reason | `blocks/when-to-extract` (the skill minimize-reader-load points here) | ✅ |
+| prove-it-works | what proves a change works | `blocks/prove-it-works/SKILL.md` (red-first-check merged in) | ✅ |
+| checked-units | small units that each end in a check | `blocks/checked-units/SKILL.md` | ✅ |
+| when-to-extract | code stays inline without a reason | `blocks/when-to-extract/SKILL.md` | ✅ |
 | worker-brief | what a worker brief holds, how a worker acts, and what a skill does at an owner gate with no user | `blocks/worker-brief` | ✅ |
 | run-workers | how a root session runs seats on its host | `blocks/run-workers` (the three adapters point here) | ✅ |
 | task-file | the task file and the resume | `blocks/task-file` | ✅ |
@@ -227,14 +227,12 @@ workflow calls them as one unit.
 ## Every skill, split (2026-10-13)
 
 Each skill keeps its contract, its step table and its stays-whole part, and points to the blocks
-below. A skill that was one rule is now a block, and its skill folder holds one pointer, so every
-path that names the skill still works.
+below. The proof, checked-unit, and extraction rules live directly in
+`blocks/prove-it-works/SKILL.md`, `blocks/checked-units/SKILL.md`, and
+`blocks/when-to-extract/SKILL.md`; their former pointer skills have been removed.
 
 | Skill | Blocks it points to | Stays in the skill |
 |---|---|---|
-| prove-it-works | prove-it-works | the pointer only |
-| sequence-verifiable-units | checked-units | the pointer only |
-| minimize-reader-load | when-to-extract | the pointer only |
 | engineering-standards | decision-with-default (trade-off form) | the rule tables and the procedure |
 | pair | task-file, checked-units, when-to-extract | the chunk loop, its guards, commit per behavior |
 | deliver | task-file, checked-units, prove-it-works | the predicate loop, the commit gate, the review stop |
@@ -355,8 +353,9 @@ A pane trial on the same day installed the real kit from this repo in each CLI a
 interactive pane per CLI. Each model loaded a kit skill from the plugin, followed its pointer, and
 quoted the block's first rule. Claude Code loaded the plugin from the marketplace folder itself (the
 checkout), not from its cache copy, so a kit edit reaches it at once; Codex and AGY read their copies.
-Claude Code refused `prove-it-works`, which has `disable-model-invocation: true`; Codex and AGY
-loaded it. The research report is in the owner's private reports folder.
+Claude Code refused the former proof pointer skill because it set `disable-model-invocation: true`;
+Codex and AGY loaded it. Its rule now lives directly in `blocks/prove-it-works/SKILL.md`.
+The research report is in the owner's private reports folder.
 
 ## Open questions
 
