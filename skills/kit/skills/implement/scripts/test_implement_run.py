@@ -713,7 +713,7 @@ def test_block_profile(tmp):
     merged, merged_folder, _, _ = blocks_start(tmp, "d3-merged", catalog, PARAMS, "--profile", "merged")
     assert split.returncode == 0 and merged.returncode == 0, (split.stderr, merged.stderr)
     a, b = step_text(split_folder, "02-design"), step_text(merged_folder, "02-design")
-    assert a.count("===== block:") == 7 and b.count("===== block:") == 4, b
+    assert a.count("===== block:") == 8 and b.count("===== block:") == 5, b
     assert "===== block:tech-diagram =====" in b and "===== block:style-frames =====" in b, b
     assert "\n### Example\n" in a and "Example\n" not in b
     assert "profile merged" in b.splitlines()[3], b.splitlines()[3]

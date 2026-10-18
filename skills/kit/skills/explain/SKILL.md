@@ -10,5 +10,5 @@ For owner gates, apply `blocks/worker-brief/SKILL.md`. The default is to explain
 
 The kit root, with its `blocks/` and `references/` folders, is two folders up from this skill's folder.
 
-Read `blocks/voice-teach/SKILL.md` for the order of ideas, and `references/explain-formats.md`
+Read `blocks/voice/SKILL.md`, then `blocks/voice-teach/SKILL.md` for the order of ideas, and `references/explain-formats.md`
 for the form of the answer. Apply both to the requested subject.

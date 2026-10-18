@@ -10,12 +10,12 @@ metadata:
   gives: "origin evidence rows, and a note for each claim whose origin could not be reached"
   conflicts: ""
   users: "research, web-search"
-  source: "owner request 2026-10-16 (a separate block for original papers and original code); skills/kit/blocks/cite-sources/SKILL.md (the rule that a secondary page is not the evidence, extended here from docs to origins)"
+  source: "owner request 2026-10-16 (a separate block for original papers and original code); blocks/sources/SKILL.md (the shared rule that a secondary page is a lead, not the evidence, extended here from docs to origins)"
 ---
 
 ## Rules
 Find the origin
-- Name the origin of each core claim before you answer: the paper that introduced the technique, the RFC or spec that defines the behavior, the design doc or proposal that made the decision, or the reference implementation. Secondary pages are leads, as `blocks/cite-sources/SKILL.md` says. An answer from memory is a lead too.
+- Name the origin of each core claim before you answer: the paper that introduced the technique, the RFC or spec that defines the behavior, the design doc or proposal that made the decision, or the reference implementation.
 - Walk back from a lead. Follow a paper's citations and a later paper's "related work" to the first paper. Open a spec's changelog or errata for the version that added the behavior. For code, take the reference repo and run `git log -S '<symbol>' --reverse` or `git blame` on the line, then read the commit and the pull request or issue it names. Read the author's own repo, not a fork.
 - When two origins exist, such as a paper and the code that later drifted from it, read both and say where they differ. The paper owns the idea; the code at the commit owns what runs.
 Read it

@@ -14,7 +14,6 @@ metadata:
 ---
 
 ## Rules
-- The kit root is two folders up from this file.
 - Run each round with the `comment-round` block on the page's files, with `<run>/page-comments` as its folder.
 - When the page needs a URL, serve it by the `serve-local` block, and give the owner the URL in chat with the round.
 - For each note, change the page with the block that built it, run the page's checks again, and answer the note with the change and the check result. Then start the next round.

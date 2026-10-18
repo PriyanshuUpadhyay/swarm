@@ -14,7 +14,6 @@ metadata:
 ---
 
 ## Rules
-- Run from the repo root when you use this block's script checks.
 - Before code, write one line: "Reading this as: <page kind> for <audience>, with a <vibe> language, leaning toward <aesthetic family>."
 - A tool's landing page is Persuade mode: the visitor decides and acts. Choose the mode from the surface, not the product.
 - Start from the measured notes of the `reference-analysis` block. This block turns them into tokens.

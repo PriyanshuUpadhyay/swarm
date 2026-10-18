@@ -101,4 +101,5 @@ first screen, `blocks/report/SKILL.md` owns the report sections, and
 ## Guards
 
 - Every claim follows `blocks/cite-sources/SKILL.md`.
+- The source blocks that this skill names share the rules in their parent `blocks/sources/SKILL.md`. Apply it with each of them.
 - Do not edit any repository. This skill writes only its own report and its run folder.

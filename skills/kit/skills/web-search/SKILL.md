@@ -118,7 +118,7 @@ section per seat, with these search-specific fields:
    site blocks you, try in order the Reach tool for that site, the
    browser row, the Jina reader, the search snippet, `old.reddit.com`, `<url>.json`, a public mirror,
    `web.archive.org`, and `archive.ph`; cite as `blocks/cite-sources/SKILL.md` says, with that
-   block's Rules quoted; when the question is about how or why something works, follow each lead to
+   block's Rules and the Rules of its parent `blocks/sources/SKILL.md` quoted; when the question is about how or why something works, follow each lead to
    its origin as `blocks/primary-sources/SKILL.md` says, with that block's Rules quoted; stop after
    about 20 minutes;
 6. **blocked log** — a seat may call a site blocked only when its Coverage lists, for that site,
@@ -168,4 +168,4 @@ words.
 ## Guards
 
 - Use the report-only seat contract in `blocks/worker-brief/SKILL.md`.
-- Every claim follows `blocks/cite-sources/SKILL.md`.
+- Every claim follows `blocks/cite-sources/SKILL.md` and its parent `blocks/sources/SKILL.md`.

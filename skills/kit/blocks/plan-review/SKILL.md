@@ -14,7 +14,6 @@ metadata:
 ---
 
 ## Rules
-- The kit root is two folders up from this file.
 - Run each round with the `comment-round` block on `<run>/plan.html <run>/plan.md`, with `<run>/plan-review` as its folder.
 - After each round, act on the decision:
   - `approved` with no notes: the plan is approved.

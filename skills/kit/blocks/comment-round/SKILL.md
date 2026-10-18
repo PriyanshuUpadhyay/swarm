@@ -14,7 +14,7 @@ metadata:
 ---
 
 ## Rules
-- The kit root is two folders up from this file. The script is `<kit root>/blocks/comment-round/scripts/comment_round.py`.
+- The script is `<kit root>/blocks/comment-round/scripts/comment_round.py`.
 - Round N: run `python3 -I <script> run <dir> <file>...`. It opens the files as one review, waits for the owner, and writes `<dir>/<N>.json` with the decision and a hash of each file. It waits for a person, so start it where a tool time limit cannot stop it.
 - Exit 2 with `unavailable plannotator`: tell the owner and stop. Never skip the review.
 - Pass files only, never a URL. Plannotator sends a URL to an outside reader and shows it as Markdown.
