@@ -47,7 +47,7 @@ still deserve a one-line Tier-1 stub.*
 context-graphs talk: "what did you do before in this situation?")
 
 Trigger this **whenever a decision is being made or changed** (not only at write time),
-and on `/decisions check "<topic>"`. Use a **deterministic term rubric** so it's
+and when the owner asks what was decided about a topic. Use a **deterministic term rubric** so it's
 repeatable, not vibes:
 1. Read `docs/decisions/README.md` first — for a small ADR set the index is the most
    reliable scan, and it's the entry point. Use the **Grep tool** (allowlisted; not bash
@@ -88,11 +88,11 @@ Flush, in priority order:
 1. **Before a `git commit` this assistant runs**, if the WAL is non-empty (highest-signal
    moment). Under `deliver`, flush once at task end instead; a direction-changing choice still
    stops the run. This is not an installed hook. Commits made outside this assistant leave the
-   flags for the next `/decisions` or session.
+   flags for the next flush request or session.
 2. **Right after a reversal is confirmed** — don't let it sit.
 3. **WAL reaches ~3 items.**
 4. **Before starting long-running work** (so the "why" isn't lost to compaction).
-5. **On `/decisions`, or at session end.**
+5. **On a flush request, or at session end.**
 
 Present the WAL as a single numbered list. Example:
 ```
@@ -132,7 +132,7 @@ When a confirmed item reverses a recorded decision OLD:
    `status: superseded` and `superseded-by: NNNN`.
 3. Both records now point at each other. The old rationale survives intact.
 
-`/decisions supersede NNNN` runs this flow directly.
+A request that a new decision replaces NNNN runs this flow directly.
 
 ## 7. Regenerate the index
 After any write, rebuild `docs/decisions/README.md` — **fully from the record files**

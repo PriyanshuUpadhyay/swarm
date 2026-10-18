@@ -1,5 +1,6 @@
 ---
 name: engineering-standards
+user-invocable: false
 description: Supply scoped engineering rules before design or coding and during review of API contracts, data models, queries, retries, deadlines, quotas, and entitlement failures. Distinguish protocol requirements, project rules, and advice. The calling workflow owns code changes and review verdicts.
 ---
 

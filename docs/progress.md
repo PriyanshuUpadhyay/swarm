@@ -70,9 +70,9 @@ Note. On 2026-10-13 the creative-coding lines of `~/.flow/domains.md` gained `bl
 (reference-analysis, design-tokens, story, build-canvas, style-frames, visual-qa). Only the `implement`
 skill on branch `skill-blocks` knows these blocks, so a creative-coding run with the live agent-kit
 copy of the `implement` skill stops with "unknown block id" until `skill-blocks` is merged to main
-and A4 installs the plugin. The `any` lines keep the `prove-it-works` skill path until A4, because a
-`block:` item there would stop every live run of the `implement` skill. A repo with no `.blocks.toml`
-runs the blocks without the base block; the creative-coding blocks also need `site` and `shots`
+and A4 installs the plugin. The proof rule now lives at `blocks/prove-it-works/SKILL.md`;
+the `any` lines must use that block path or `block:prove-it-works` with the current loader.
+A repo with no `.blocks.toml` runs the blocks without the base block; the creative-coding blocks also need `site` and `shots`
 there. `implement_run.py start` always reads the shipped `blocks.toml` to list chosen and rejected
 blocks, so it needs Python 3.11 or later (`/usr/bin/python3` is 3.9).
 
@@ -99,8 +99,8 @@ Each block owns its rule text; the skill that held it points to the block.
 | decision-with-default | a real fork asked with a default, and the trade-off form | contracts, design |
 | call-tree | impact as a marked call tree with real paths | impact |
 | prove-it-works | what proves a change works (was the skill's text and red-first-check) | build, review, close |
-| checked-units | small units that each end in a check (was sequence-verifiable-units) | build |
-| when-to-extract | code stays inline without a reason (was minimize-reader-load) | build, review |
+| checked-units | small units that each end in a check (`blocks/checked-units/SKILL.md`) | build |
+| when-to-extract | code stays inline without a reason (`blocks/when-to-extract/SKILL.md`) | build, review |
 | done-when-evidence | close maps each done-when to evidence | close |
 | when-to-diagram | diagram size, labels, and the design-step record | design, build |
 | html-diagram | diagrams as HTML boxes that reflow | design, build |

@@ -1,6 +1,7 @@
 ---
 name: decisions
-description: Record project decisions as committed in-repo ADRs. Use when a consequential choice or reversal is expressed, such as "let's go with X", "use X instead of Y", "scrap that", or "changed my mind", or on /decisions and "write an ADR". Also flush the decision buffer before an assistant-run git commit. Skips routine coding choices; writes are always user-confirmed.
+user-invocable: false
+description: Record project decisions as committed in-repo ADRs. Use when a consequential choice or reversal is expressed, such as "let's go with X", "use X instead of Y", "scrap that", or "changed my mind", or "write an ADR", and when the user asks what was decided, asks for unwritten decisions, or asks to rebuild the decision index. Also flush the decision buffer before an assistant-run git commit. Skips routine coding choices; writes are always user-confirmed.
 ---
 
 # decisions — Lifecycle Decision Records
@@ -17,14 +18,14 @@ is *always* user-confirmed — this skill never journals unprompted.
 WAL makes the buffer survive context compaction, session end, and model switches; flush
 early and often (see triggers below) to minimize loss. *Limitation:* commits made outside
 this assistant (manual terminal, GUI, another agent) won't trigger a flush — capture then
-relies on the next `/decisions` or the WAL being picked up next session.
+relies on the next flush request or the WAL being picked up next session.
 
 Templates + frontmatter + anti-pattern checklist: `references/templates.md`. Full capture
 procedure: `references/capture-loop.md`.
 
 ## When to Trigger
 - An explicit decision is expressed: "let's go with X", "we'll use X instead of Y",
-  "decided on X", "record/log this decision", `/decisions`.
+  "decided on X", "record/log this decision", "write an ADR".
 - A **reversal**: "actually, switch to…", "scrap that", "changed my mind", "revert to…"
   — reversals are first-class and always qualify.
 - A consequential choice surfaces (framework/library/db, schema/API design, auth strategy,
@@ -49,12 +50,12 @@ never invent a title, a record number, or a topic.
 
 | Request | Action |
 |---|---|
-| `/decisions` (no args) | Flush the decision buffer: batch-ask, then write confirmed records |
-| `/decisions new "title"` | Manually scaffold one record (asks tier + why) |
-| `/decisions supersede NNNN` | Record a reversal that supersedes NNNN (auto bidirectional link) |
-| `/decisions check "<topic>"` | Decision-aware retrieval: surface prior records relevant to a topic/change before deciding |
-| `/decisions index` | Regenerate `docs/decisions/README.md` from the record files |
-| `/decisions status` | Show buffered (unwritten) flags + recent records |
+| `flush`: "record the decisions", or before a commit | Flush the decision buffer: batch-ask, then write confirmed records |
+| `new`: "record a decision: <title>" | Manually scaffold one record (asks tier + why) |
+| `supersede`: "this replaces decision NNNN" | Record a reversal that supersedes NNNN (auto bidirectional link) |
+| `check`: "what did we decide about <topic>?" | Decision-aware retrieval: surface prior records relevant to a topic/change before deciding |
+| `index`: "rebuild the decision index" | Regenerate `docs/decisions/README.md` from the record files |
+| `status`: "which decisions are not written yet?" | Show buffered (unwritten) flags + recent records |
 
 ## Folder discovery
 1. Resolve the repo root (one bash call): `git rev-parse --show-toplevel` — if it fails

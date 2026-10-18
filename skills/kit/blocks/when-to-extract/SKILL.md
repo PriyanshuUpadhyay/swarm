@@ -10,7 +10,7 @@ metadata:
   gives: "the reason that holds for each extraction, or an inline"
   conflicts: ""
   users: "pair, review-check, cleanup-gate"
-  source: "skills/minimize-reader-load/SKILL.md (whole text, moved here 2026-10-13)"
+  source: "blocks/when-to-extract/SKILL.md (rule moved from its former skill on 2026-10-13)"
 ---
 
 ## Rules

@@ -10,7 +10,7 @@ metadata:
   gives: "an ordered list of units, each with its check"
   conflicts: ""
   users: "pair, deliver, implement"
-  source: "skills/sequence-verifiable-units/SKILL.md (whole text, moved here 2026-10-13); mined row s4#15 (one record first)"
+  source: "blocks/checked-units/SKILL.md (rule moved from its former skill on 2026-10-13); mined row s4#15 (one record first)"
 ---
 
 ## Rules

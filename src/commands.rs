@@ -414,6 +414,7 @@ fn claude_rows(commands: &Value) -> Vec<Row> {
             } else if let Some((plugin, _)) = name.split_once(':') {
                 source = plugin.into();
             }
+            // Claude's list gives no skill path, and it already leaves out `user-invocable: false`.
             Some(Row {
                 insert: format!("/{name}"),
                 name,
@@ -453,10 +454,11 @@ fn codex_rows(result: &Value) -> Vec<Row> {
         .filter(|skill| skill["enabled"].as_bool() != Some(false))
         .filter_map(|skill| {
             let name = skill["name"].as_str()?.to_owned();
-            let source = match name.split_once(':') {
+            let source: String = match name.split_once(':') {
                 Some((plugin, _)) => plugin.into(),
                 None => skill["scope"].as_str().unwrap_or("").into(),
             };
+            let source = skill_menu_source(skill["path"].as_str(), &source)?;
             Some(Row {
                 insert: format!("${name}"),
                 name,
@@ -498,6 +500,11 @@ fn pi_rows(commands: &Value) -> Vec<Row> {
         .filter_map(|command| {
             let name = command["name"].as_str()?.to_owned();
             let source = command["source"].as_str().unwrap_or("");
+            let label = if source == "skill" {
+                skill_menu_source(command["sourceInfo"]["path"].as_str(), source)?
+            } else {
+                source.into()
+            };
             Some(Row {
                 insert: format!("/{name}"),
                 name,
@@ -508,7 +515,7 @@ fn pi_rows(commands: &Value) -> Vec<Row> {
                 },
                 description: command["description"].as_str().unwrap_or("").into(),
                 hint: String::new(),
-                source: source.into(),
+                source: label,
                 dialog: false,
             })
         })
@@ -517,7 +524,7 @@ fn pi_rows(commands: &Value) -> Vec<Row> {
 
 /// AGY's skills: its config folder, each plugin's skills under the plugin's name, and the
 /// workspace folders from `cwd` up to the repository root. A skill with
-/// `disable-slash-command: true` is hidden.
+/// `disable-slash-command: true` or `user-invocable: false` is hidden.
 fn agy(home: &Path, cwd: &Path) -> Vec<Row> {
     let config = home.join(".gemini/config");
     let mut rows = skills(&config.join("skills"), None);
@@ -566,7 +573,8 @@ fn skills(dir: &Path, plugin: Option<&str>) -> Vec<Row> {
     names
         .into_iter()
         .filter_map(|folder| {
-            let text = std::fs::read_to_string(dir.join(&folder).join("SKILL.md")).ok()?;
+            let path = dir.join(&folder).join("SKILL.md");
+            let text = std::fs::read_to_string(&path).ok()?;
             let fields = frontmatter(&text);
             if fields.get("disable-slash-command").map(String::as_str) == Some("true") {
                 return None;
@@ -579,11 +587,46 @@ fn skills(dir: &Path, plugin: Option<&str>) -> Vec<Row> {
                 kind: Kind::Skill,
                 description: fields.get("description").cloned().unwrap_or_default(),
                 hint: String::new(),
-                source: plugin.unwrap_or("skill").into(),
+                source: skill_menu_source(path.to_str(), plugin.unwrap_or("skill"))?,
                 dialog: false,
             })
         })
         .collect()
+}
+
+/// The menu uses the skill's file for visibility and its owning plugin for the source label.
+/// Missing paths or unreadable files keep the CLI's label and visibility.
+fn skill_menu_source(path: Option<&str>, source: &str) -> Option<String> {
+    let Some(path) = path else {
+        return Some(source.into());
+    };
+    let path = Path::new(path);
+    let path = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    if let Ok(text) = std::fs::read_to_string(&path)
+        && frontmatter(&text)
+            .get("user-invocable")
+            .is_some_and(|value| {
+                let value = value.split(" #").next().unwrap_or("").trim();
+                value.eq_ignore_ascii_case("false")
+            })
+    {
+        return None;
+    }
+    for dir in path
+        .ancestors()
+        .filter(|dir| dir.file_name().is_some_and(|name| name == "skills"))
+    {
+        let Some(root) = dir.parent() else { continue };
+        for manifest in ["plugin.json", ".claude-plugin/plugin.json"] {
+            if let Ok(text) = std::fs::read_to_string(root.join(manifest))
+                && let Ok(plugin) = serde_json::from_str::<Value>(&text)
+                && plugin["name"] == "swarm"
+            {
+                return Some("swarm".into());
+            }
+        }
+    }
+    Some(source.into())
 }
 
 /// The top-level `key: value` fields of a `---` front matter block. A `|` or `>` block value is
@@ -607,6 +650,9 @@ fn frontmatter(text: &str) -> BTreeMap<String, String> {
         }
         if let Some((key, parts)) = block.take() {
             fields.insert(key, parts.join(" ").trim().to_owned());
+        }
+        if line.starts_with([' ', '\t']) {
+            continue; // a nested key such as `metadata:` children is not a top-level field
         }
         let Some((key, value)) = line.split_once(':') else {
             continue;
@@ -673,6 +719,102 @@ mod tests {
             ("/skill:research", Kind::Skill)
         );
         assert_eq!(rows[1].kind, Kind::Command);
+    }
+
+    #[test]
+    fn skill_paths_set_the_source_and_hide_model_only_skills_for_every_provider() {
+        let root = std::env::temp_dir().join(format!("swarm-menu-{}", uuid::Uuid::now_v7()));
+        let kit = root.join(".swarm/kit");
+        let visible = kit.join("skills/plan/SKILL.md");
+        let hidden = kit.join("skills/decisions/SKILL.md");
+        let other = root.join("other/SKILL.md");
+        for path in [&visible, &hidden, &other] {
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, "---\ndescription: Test\n---\n").unwrap();
+        }
+        std::fs::write(kit.join("plugin.json"), r#"{"name":"swarm"}"#).unwrap();
+        std::fs::write(&hidden, "---\nuser-invocable: false\n---\n").unwrap();
+        let codex = codex_rows(&json!({"data":[{"skills":[
+            {"name":"plain-name","path":visible,"scope":"user"},
+            {"name":"hidden","path":hidden,"scope":"repo"},
+            {"name":"swarm:unrelated","path":other,"scope":"user"}
+        ]}]}));
+        assert_eq!(
+            codex.iter().map(|r| r.name.as_str()).collect::<Vec<_>>(),
+            ["plain-name", "swarm:unrelated"]
+        );
+        assert_eq!(codex[0].source, "swarm");
+        let pi = pi_rows(&json!([
+            {"name":"skill:plan","source":"skill","sourceInfo":{"path":visible}},
+            {"name":"skill:decisions","source":"skill","sourceInfo":{"path":hidden}},
+            {"name":"skill:swarm","source":"skill","sourceInfo":{"path":other}},
+            {"name":"skill:no-path","source":"skill"},
+            {"name":"extension","source":"extension","sourceInfo":{"path":hidden}}
+        ]));
+        assert_eq!(
+            pi.iter().map(|r| r.source.as_str()).collect::<Vec<_>>(),
+            ["swarm", "skill", "skill", "extension"]
+        );
+        let claude = claude_rows(&json!([
+            {"name":"swarm:plan","description":"(swarm) Plan","argumentHint":""}
+        ]));
+        assert_eq!(claude[0].source, "swarm");
+        let agy = skills(&kit.join("skills"), None);
+        assert_eq!(agy.len(), 1);
+        assert_eq!(agy[0].source, "swarm");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn only_a_top_level_false_hides_a_skill() {
+        let root = std::env::temp_dir().join(format!("swarm-menu-flag-{}", uuid::Uuid::now_v7()));
+        let cases = [
+            ("---\nmetadata:\n  user-invocable: false\n---\n", true),
+            ("---\nuser-invocable: False\n---\n", false),
+            ("---\nuser-invocable: false # model only\n---\n", false),
+            ("---\nuser-invocable: true\n---\n", true),
+        ];
+        for (i, (text, shown)) in cases.into_iter().enumerate() {
+            let file = root.join(format!("{i}/SKILL.md"));
+            std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+            std::fs::write(&file, text).unwrap();
+            let rows =
+                pi_rows(&json!([{"name":"skill:x","source":"skill","sourceInfo":{"path":file}}]));
+            assert_eq!(rows.len() == 1, shown, "{text}");
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn plugin_skill_paths_follow_links_and_use_the_manifest_not_the_folder_name() {
+        let root = std::env::temp_dir().join(format!("swarm-menu-plugin-{}", uuid::Uuid::now_v7()));
+        let plugin = root.join("cache/some-market/swarm/1.0");
+        let file = plugin.join("skills/plan/SKILL.md");
+        let link = root.join("linked/SKILL.md");
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::create_dir_all(plugin.join(".claude-plugin")).unwrap();
+        std::fs::create_dir_all(link.parent().unwrap()).unwrap();
+        std::fs::write(&file, "---\ndescription: Plan\n---\n").unwrap();
+        std::fs::write(
+            plugin.join(".claude-plugin/plugin.json"),
+            r#"{"name":"swarm"}"#,
+        )
+        .unwrap();
+        std::os::unix::fs::symlink(&file, &link).unwrap();
+        let rows = pi_rows(&json!([
+            {"name":"skill:plan","source":"skill","sourceInfo":{"path":link}}
+        ]));
+        assert_eq!(rows[0].source, "swarm");
+        std::fs::write(
+            plugin.join(".claude-plugin/plugin.json"),
+            r#"{"name":"other"}"#,
+        )
+        .unwrap();
+        let rows = pi_rows(&json!([
+            {"name":"skill:plan","source":"skill","sourceInfo":{"path":file}}
+        ]));
+        assert_eq!(rows[0].source, "skill");
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

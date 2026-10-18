@@ -164,8 +164,12 @@ put blocks into the steps of a run. Claude Code shows a skill as `/swarm:<name>`
 | `build` | Pictures, films, and sites drawn by code |
 | `explain` | Explain a subject with one running example |
 | `decisions`, `cleanup-gate`, `engineering-standards` | ADRs, a cleanup pass on request, and engineering rules |
-| `prove-it-works`, `sequence-verifiable-units`, `minimize-reader-load` | Rules that point to one block each |
 | `orchestrate-claude`, `-codex`, `-agy` | Bind a skill's worker needs to each agent CLI |
+
+The proof, code extraction, and checked-unit rules live in `skills/kit/blocks/prove-it-works/SKILL.md`,
+`skills/kit/blocks/when-to-extract/SKILL.md`, and `skills/kit/blocks/checked-units/SKILL.md`.
+The web composer's `/` menu omits the runtime adapters, swarm pane skills, engineering standards,
+and decisions. These skills stay available to the model.
 
 The roles these skills ask for (`council.gpt`, `search.web`, `review.deep`, and others) are the
 profile names in `default-profiles.json`. Some workflows also need the dotfiles references,
