@@ -184,12 +184,25 @@ fn appendSkill(arena: std.mem.Allocator, events: *std.ArrayList(root.Event), met
     const start = std.mem.indexOf(u8, text, open) orelse return false;
     const head = text[start + open.len ..];
     const name_end = std.mem.indexOf(u8, head, "\" location=\"") orelse return false;
+    if (name_end == 0) return false;
     const tag_end = std.mem.indexOf(u8, head, "\">\n") orelse return false;
     const body_start = tag_end + "\">\n".len;
-    const body_len = std.mem.indexOf(u8, head[body_start..], "\n</skill>") orelse return false;
+    const close = "\n</skill>";
+    const rest = head[body_start..];
+    // pi's regex ends the body at the first close that ends the text or comes before `\n\n`, so a
+    // body may hold a `</skill>` line. A pasted block may end anywhere, so it falls back to the first.
+    var body_len = std.mem.indexOf(u8, rest, close) orelse return false;
+    var next: ?usize = body_len;
+    while (next) |at| : (next = std.mem.indexOfPos(u8, rest, at + 1, close)) {
+        const tail = rest[at + close.len ..];
+        if (tail.len == 0 or std.mem.startsWith(u8, tail, "\n\n")) {
+            body_len = at;
+            break;
+        }
+    }
     const name = head[0..name_end];
     const before = std.mem.trim(u8, text[0..start], " \t\r\n");
-    const after = std.mem.trim(u8, head[body_start + body_len + "\n</skill>".len ..], " \t\r\n");
+    const after = std.mem.trim(u8, rest[body_len + close.len ..], " \t\r\n");
     const words = if (before.len != 0 and after.len != 0)
         try std.fmt.allocPrint(arena, "{s}\n\n{s}", .{ before, after })
     else if (before.len != 0) before else after;
@@ -200,7 +213,7 @@ fn appendSkill(arena: std.mem.Allocator, events: *std.ArrayList(root.Event), met
     } });
     var body_meta = meta;
     body_meta.parent_uuid = meta.uuid;
-    try events.append(arena, .{ .system_message = .{ .meta = body_meta, .kind = "skill_body", .text = head[body_start..][0..body_len] } });
+    try events.append(arena, .{ .system_message = .{ .meta = body_meta, .kind = "skill_body", .text = rest[0..body_len] } });
     return true;
 }
 
@@ -355,4 +368,20 @@ test "a pasted skill block keeps the words around it, and a broken one stays a u
         \\{"type":"message","id":"u3","timestamp":"t","message":{"role":"user","content":"<skill name=\"x\" location=\"/x\">\nno end"}}
     );
     try std.testing.expectEqualStrings("<skill name=\"x\" location=\"/x\">\nno end", broken[0].user_message_chunk.text);
+}
+
+test "a pi skill block ends where pi's own regex ends it, and needs a name" {
+    var state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer state.deinit();
+    // A skill that documents this format holds a `</skill>` line in its body.
+    const nested = try parseLine(state.allocator(),
+        \\{"type":"message","id":"u4","timestamp":"t","message":{"role":"user","content":"<skill name=\"doc\" location=\"/d\">\nwrite\n</skill>\nlike this\n</skill>\n\ngo"}}
+    );
+    try std.testing.expectEqualStrings("write\n</skill>\nlike this", nested[1].system_message.text);
+    try std.testing.expect(std.mem.endsWith(u8, nested[0].system_message.text, "<command-args>go</command-args>"));
+    const unnamed = try parseLine(state.allocator(),
+        \\{"type":"message","id":"u5","timestamp":"t","message":{"role":"user","content":"<skill name=\"\" location=\"/x\">\nbody\n</skill>"}}
+    );
+    try std.testing.expectEqual(@as(usize, 1), unnamed.len);
+    try std.testing.expect(unnamed[0] == .user_message_chunk);
 }
