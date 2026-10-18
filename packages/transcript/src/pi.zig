@@ -54,7 +54,7 @@ fn parseMessage(arena: std.mem.Allocator, events: *std.ArrayList(root.Event), me
     const content = message.get("content") orelse .null;
     if (std.mem.eql(u8, role, "user")) {
         const text = try joinText(arena, content);
-        if (text.len != 0) {
+        if (text.len != 0 and !try appendSkill(arena, events, meta, text)) {
             try events.append(arena, if (root.isSwarmRing(text))
                 .{ .system_message = .{ .meta = meta, .kind = "swarm_ring", .text = text } }
             else
@@ -176,6 +176,34 @@ fn parseAssistant(arena: std.mem.Allocator, events: *std.ArrayList(root.Event), 
     }
 }
 
+/// A `<skill name="N" location="L">` block that pi expanded from `/skill:N` (pi 1.2.0
+/// `_expandSkillCommand`), or that the owner pasted, becomes the Claude-shaped `command` and
+/// `skill_body` events, so the view shows the owner's words and the skill behind a disclosure.
+fn appendSkill(arena: std.mem.Allocator, events: *std.ArrayList(root.Event), meta: root.Meta, text: []const u8) !bool {
+    const open = "<skill name=\"";
+    const start = std.mem.indexOf(u8, text, open) orelse return false;
+    const head = text[start + open.len ..];
+    const name_end = std.mem.indexOf(u8, head, "\" location=\"") orelse return false;
+    const tag_end = std.mem.indexOf(u8, head, "\">\n") orelse return false;
+    const body_start = tag_end + "\">\n".len;
+    const body_len = std.mem.indexOf(u8, head[body_start..], "\n</skill>") orelse return false;
+    const name = head[0..name_end];
+    const before = std.mem.trim(u8, text[0..start], " \t\r\n");
+    const after = std.mem.trim(u8, head[body_start + body_len + "\n</skill>".len ..], " \t\r\n");
+    const words = if (before.len != 0 and after.len != 0)
+        try std.fmt.allocPrint(arena, "{s}\n\n{s}", .{ before, after })
+    else if (before.len != 0) before else after;
+    try events.append(arena, .{ .system_message = .{
+        .meta = meta,
+        .kind = "command",
+        .text = try std.fmt.allocPrint(arena, "<command-message>{s}</command-message>\n<command-name>/skill:{s}</command-name>\n<command-args>{s}</command-args>", .{ name, name, words }),
+    } });
+    var body_meta = meta;
+    body_meta.parent_uuid = meta.uuid;
+    try events.append(arena, .{ .system_message = .{ .meta = body_meta, .kind = "skill_body", .text = head[body_start..][0..body_len] } });
+    return true;
+}
+
 /// The text blocks of a string or block-array content, joined.
 fn joinText(arena: std.mem.Allocator, content: std.json.Value) ![]const u8 {
     if (content == .string) return content.string;
@@ -289,4 +317,42 @@ test "a stop that pi writes as an abort error ends the turn as interrupted, with
 test "a pi session id comes from its file name" {
     try std.testing.expectEqualStrings("01a1-b2", sessionIdFromPath("/s/--w--/2026-10-14T10-00-00-000Z_01a1-b2.jsonl"));
     try std.testing.expectEqualStrings("", sessionIdFromPath("/s/x.json"));
+}
+
+test "a pi skill message becomes a command row and the skill body it opens" {
+    var state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer state.deinit();
+    // The shape pi 1.2.0 `_expandSkillCommand` writes for `/skill:plan fix this now`.
+    const events = try parseLine(state.allocator(),
+        \\{"type":"message","id":"u1","parentId":"a0","timestamp":"t","message":{"role":"user","content":[{"type":"text","text":"<skill name=\"plan\" location=\"/s/plan/SKILL.md\">\nReferences are relative to /s/plan.\n\n# Plan\nStep one.\n</skill>\n\nfix this now"}]}}
+    );
+    try std.testing.expectEqual(@as(usize, 2), events.len);
+    const command = events[0].system_message;
+    try std.testing.expectEqualStrings("command", command.kind);
+    try std.testing.expectEqualStrings("u1", command.meta.uuid);
+    try std.testing.expectEqualStrings(
+        "<command-message>plan</command-message>\n<command-name>/skill:plan</command-name>\n<command-args>fix this now</command-args>",
+        command.text,
+    );
+    const body = events[1].system_message;
+    try std.testing.expectEqualStrings("skill_body", body.kind);
+    try std.testing.expectEqualStrings("u1", body.meta.parent_uuid.?);
+    try std.testing.expectEqualStrings("References are relative to /s/plan.\n\n# Plan\nStep one.", body.text);
+}
+
+test "a pasted skill block keeps the words around it, and a broken one stays a user message" {
+    var state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer state.deinit();
+    const pasted = try parseLine(state.allocator(),
+        \\{"type":"message","id":"u2","timestamp":"t","message":{"role":"user","content":"look at this\n<skill name=\"x\" location=\"/x\">\nbody\n</skill>\nand fix it"}}
+    );
+    try std.testing.expectEqualStrings(
+        "<command-message>x</command-message>\n<command-name>/skill:x</command-name>\n<command-args>look at this\n\nand fix it</command-args>",
+        pasted[0].system_message.text,
+    );
+    try std.testing.expectEqualStrings("body", pasted[1].system_message.text);
+    const broken = try parseLine(state.allocator(),
+        \\{"type":"message","id":"u3","timestamp":"t","message":{"role":"user","content":"<skill name=\"x\" location=\"/x\">\nno end"}}
+    );
+    try std.testing.expectEqualStrings("<skill name=\"x\" location=\"/x\">\nno end", broken[0].user_message_chunk.text);
 }
