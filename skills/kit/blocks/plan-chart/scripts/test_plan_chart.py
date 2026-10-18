@@ -13,7 +13,7 @@ import implement_run
 import block_resolver
 import plan_chart
 
-CHOSEN = ["requirements", "local-research", "design-tokens", "build-site", "web-ui-basics", "voice-reply"]
+CHOSEN = ["requirements", "local-research", "web-ui", "design-tokens", "voice", "build-site", "web-ui-basics", "voice-reply"]
 
 
 def ledger(chosen=CHOSEN, drop=()):

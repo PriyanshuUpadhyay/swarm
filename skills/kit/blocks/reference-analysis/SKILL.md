@@ -17,7 +17,7 @@ metadata:
 Find the references
 - Match a look only from pixels you inspected yourself. When the brief gives no references, find them from the brief before any design. Each part of the story and each quality of the look is a search.
 - Search with this session's tools. Use `research` only when the brief needs a report, and `web-search` when one session cannot reach enough sites.
-- Apply `blocks/cite-sources/SKILL.md` to source choice and attribution. Keep 4-8 works whose images or frames you can open and inspect.
+- Apply `blocks/sources/SKILL.md` and `blocks/cite-sources/SKILL.md` to source choice and attribution. Keep 4-8 works whose images or frames you can open and inspect.
 - Record each work's source and what it informs (look, motion, structure, or more than one), and name one or two as the benchmark, each with what to learn from it and what not to take. A reference chosen for its story structure does not set the palette, and a still chosen for its palette does not set the pacing.
 - Show the chosen set to the user, with one line on why each fits the brief.
 Inspect

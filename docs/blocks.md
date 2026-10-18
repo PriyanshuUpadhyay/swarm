@@ -170,6 +170,10 @@ Status: ✅ exists, ✂️ cut from a skill next, ⬜ later, 🆕 new, 🔒 stay
 | story | step | order, beats, key frames, pacing | brief, facts → story sheet, shot list | `blocks/story` | build | ✅ |
 | motion | pack | how things move | story sheet or UI states → timings, eases, one timing owner | `blocks/ui-motion` (UI, one timing owner, emil pack tables); build `story-and-motion.md` transition catalogue and motion feel (story) | build, any UI, sites | ✅ basic UI, B8 |
 | diagram | parent | shared diagram rules | subject or diagram → rules for selected parts | `blocks/diagram` with parts `when-to-diagram`, `html-diagram`, `call-tree`, `diagram-check`; `references/explain-formats.md` owns when and which form | implement; glitch-walk and plans use the parts | ✅ slice 1 |
+| voice | parent | shared voice rules | kind of output → rules for selected parts | `blocks/voice` with parts `voice-pr`, `voice-reply`, `voice-review`, `voice-teach` | planner, explain | ✅ |
+| sources | parent | shared source rules | question or claims → rules for selected parts | `blocks/sources` with parts `primary-sources`, `deep-search`, `cite-sources`, `link-check` | research, web-search | ✅ |
+| web-ui | parent | shared web page rules | page or its code → rules for selected parts | `blocks/web-ui` with parts `web-ui-basics`, `ui-motion`, `design-tokens`, `headless-shot`, `look-check` | implement, build, planner | ✅ |
+| plan-flow | parent | shared plan and comment-round rules | plan or built page → rules for selected parts | `blocks/plan-flow` with parts `planner`, `plan-chart`, `plan-review`, `comment-round`, `page-comments` | planner | ✅ |
 | style-frames | step | "does it match the look" before the full build | tokens, page code → scored frames | `blocks/look-check` (owner of reference scoring) | implement, build | ✅ |
 | build-site | step | what changes when the piece is a website | look, story → page | `blocks/build-site` | build | ✅ |
 | build-canvas | pack | a drawn piece rendered from time and one seed | look, story, shot list → piece | `blocks/build-canvas` with `references/mark-making.md` | build | ✅ |
@@ -232,8 +236,8 @@ below. The proof, checked-unit, and extraction rules live directly in
 | engineering-standards | decision-with-default (trade-off form) | the rule tables and the procedure |
 | pair | task-file, checked-units, when-to-extract | the chunk loop, its guards, commit per behavior |
 | deliver | task-file, checked-units, prove-it-works | the predicate loop, the commit gate, the review stop |
-| research | local-research, deep-search, primary-sources, cite-sources, tool-trial, report, link-check, worker-brief (no-user gate) | the step table, the web seat triggers and timing |
-| web-search | deep-search, primary-sources, cite-sources, link-check, worker-brief, run-workers | seats, site sets, reach tools, Yield and Floor, the depth gate, the merge |
+| research | sources (parent of deep-search, primary-sources, cite-sources, link-check), local-research, deep-search, primary-sources, cite-sources, tool-trial, report, link-check, worker-brief (no-user gate) | the step table, the web seat triggers and timing |
+| web-search | sources (parent), deep-search, primary-sources, cite-sources, link-check, worker-brief, run-workers | seats, site sets, reach tools, Yield and Floor, the depth gate, the merge |
 | council | worker-brief, run-workers | the protocol, the convergence check, the output, the decision log |
 | orchestrate-claude, -codex, -agy | run-workers, worker-brief | the lines that differ by runtime |
 | review-check | when-to-extract, worker-brief (no-user gate) | the whole review gate |
@@ -241,8 +245,8 @@ below. The proof, checked-unit, and extraction rules live directly in
 | cleanup-gate | when-to-extract (by its rules file) | the six-step pass (stays whole) |
 | decisions | none | the whole capture contract (stays whole) |
 | implement | prove-it-works, checked-units, worker-brief (no-user gate), and every block its catalog lines name | the step graph and the loader |
-| build | reference-analysis, story, look-check, headless-shot, visual-qa, build-site (which points to design-tokens), build-canvas, web-ui-basics | the contract, the routes, the seam law, the reel rules |
-| explain | voice-teach, worker-brief (no-user gate) | the pointer to the block and `references/explain-formats.md` |
+| build | reference-analysis, story, look-check, headless-shot, visual-qa, build-site (which points to web-ui and design-tokens), build-canvas, web-ui-basics | the contract, the routes, the seam law, the reel rules |
+| explain | voice (parent), voice-teach, worker-brief (no-user gate) | the pointer to the block and `references/explain-formats.md` |
 
 Plans that stay open: research writes the ledger for questions, with `web needs local` only when
 local findings set the query (the owner's local-then-web example); the emil pack owns UI motion and

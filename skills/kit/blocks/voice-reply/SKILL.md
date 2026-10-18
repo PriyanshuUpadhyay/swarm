@@ -14,8 +14,8 @@ metadata:
 ---
 
 ## Rules
-- The owner's reply rules live in the agent instructions that the session loaded (`AGENTS.md`, `CLAUDE.md`). Apply them to the final answer. This block does not restate them.
-- When the session loaded no such file, say so in the reply, and write in plain words.
+- Apply the owner's reply rules to the final answer.
+- When the session loaded no reply rules, say so in the reply, and write in plain words.
 - Take each result from its step file. Name each step that failed or was skipped, with its output. Never round a partial result up to done.
 
 ## Example

@@ -25,6 +25,7 @@ Intake
 - Research sources for sites: threeui.com (three.js site templates, some with their prompt), 21st.dev (components and page templates), and the GSAP showcase. A template's prompt is a `stated` source. Its rendered page is the `visible` one.
 - The caller names the step file that holds the look. When the page borrows a component or effect from a repo, record its licence and its last release date there.
 Look
+- Apply `blocks/web-ui/SKILL.md`, the shared rules of the page blocks this file names.
 - Apply `blocks/design-tokens/SKILL.md` to the page look and its code tokens.
 - For a page with 3D or texture, the look file also keeps light, 3D, texture, and the mark budget.
 - Label and verify a pulled `DESIGN.md` by `blocks/reference-analysis/SKILL.md`.
