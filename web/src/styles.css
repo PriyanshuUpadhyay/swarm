@@ -206,6 +206,7 @@
    (SidebarRowView.lines). */
 .trow {
   position: relative;
+  user-select: none;
   padding-right: 6px;
   cursor: default;
   white-space: nowrap;
@@ -361,6 +362,8 @@
   width: 3px;
   background: var(--brand);
 }
+/* Chats picked with ⌘-click or Shift-click stay marked when the list loses focus. */
+.trow[data-marked],
 [data-testid="sidebar"]:focus-within .trow[aria-selected="true"]:not([aria-current="true"]) {
   background: var(--selected);
   color: var(--foreground);

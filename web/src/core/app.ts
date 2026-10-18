@@ -150,6 +150,8 @@ export type View = Pane & {
   /** The sidebar's lines; `selected` is the keyboard row among them. */
   rows: NavRow[];
   selected: string | null;
+  /** Chat rows picked with ⌘-click or Shift-click; the row menu acts on all of them. */
+  marked: ReadonlySet<string>;
   openId: string | null;
   /** The workspace whose tabs show; with no chat open, its landing shows. Null is Home. */
   workspace: string | null;
@@ -209,6 +211,8 @@ const NO_PANE: Pane = {
 };
 const NO_CELLS: PaneCell[] = [];
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
+/** A live chat row, the rows that End and Archive act on. */
+const markable = (r: NavRow) => r.kind === "chat" && !r.row?.archived && !!r.row?.selection?.chat;
 const readStore = (key: string): string | null => {
   try {
     return localStorage.getItem(key);
@@ -239,6 +243,7 @@ export class App {
   /** Fold presses the server has not confirmed yet, by fold id. */
   private folds = new Map<string, boolean>();
   private selected: string | null = null;
+  private marked: ReadonlySet<string> = new Set();
   private openId: string | null = null;
   private workspace: string | null = null;
   private tabs: Tabs | null = null;
@@ -342,6 +347,7 @@ export class App {
       error: this.error,
       rows: this.rows,
       selected: this.selected,
+      marked: this.marked,
       openId: this.openId,
       workspace: this.workspace,
       tabs: this.tabs?.workspace === this.workspace ? this.tabs : null,
@@ -532,6 +538,9 @@ export class App {
     const tree = this.tree;
     if (!tree) return;
     if (!this.selected || !this.rows.some((r) => r.id === this.selected)) this.selected = this.rows[0]?.id ?? null;
+    // A picked chat that left the tree (archived, ended elsewhere) must not come back picked.
+    const kept = new Set(this.rows.filter((r) => this.marked.has(r.id) && markable(r)).map((r) => r.id));
+    if (kept.size !== this.marked.size) this.marked = kept;
     if (!this.restored) {
       this.restored = true;
       const asked = this.urlChat && resolveChat(this.urlChat, this.chatIds());
@@ -664,9 +673,31 @@ export class App {
       .finally(() => this.unarchiving.delete(session));
   }
 
-  clickRow(id: string) {
+  /** A plain click clears the picked chats. ⌘-click picks or drops one chat row, and Shift-click
+   *  picks the chat rows from the selected chat to this one, or only this one when the selected row
+   *  is not a chat; neither opens the chat. While chats are picked, either click on another row does
+   *  nothing. */
+  clickRow(id: string, pick: "toggle" | "range" | null = null) {
     const row = this.rows.find((r) => r.id === id);
     if (!row) return;
+    if (pick && !markable(row) && this.marked.size) return;
+    if (pick && markable(row)) {
+      const marked = new Set(this.marked);
+      const from = this.rows.find((r) => r.id === this.selected);
+      if (!marked.size && from && markable(from)) marked.add(from.id);
+      if (pick === "toggle") {
+        if (!marked.delete(id)) marked.add(id);
+      } else {
+        // A header anchor, as after the selected chat left the tree, would pick from the top.
+        const anchor = from && markable(from) ? from : row;
+        const [a, b] = [this.rows.indexOf(anchor), this.rows.indexOf(row)].sort((x, y) => x - y);
+        for (const r of this.rows.slice(a, b + 1)) if (markable(r)) marked.add(r.id);
+      }
+      this.marked = marked;
+      this.selected = id;
+      return this.notify();
+    }
+    if (this.marked.size) this.marked = new Set();
     this.selected = id;
     // A click only selects an archived chat, so a stray click does not unarchive it. Enter does.
     if (row.kind === "archived-chat") return this.notify();
@@ -813,6 +844,17 @@ export class App {
     } finally {
       this.starting = false;
     }
+  }
+
+  /** The sessions of the picked chat rows that the tree still lists. */
+  markedChats(): string[] {
+    return this.rows.filter((r) => this.marked.has(r.id) && markable(r)).map((r) => r.row!.selection!.chat!);
+  }
+
+  clearMarked() {
+    if (!this.marked.size) return;
+    this.marked = new Set();
+    this.notify();
   }
 
   /** An archived chat leaves the page; its workspace's landing shows. */
@@ -1766,6 +1808,7 @@ export class App {
       tree("tree.collapse", "Collapse", "ArrowLeft", (e) => this.collapse(e)),
       tree("tree.expand", "Expand", "ArrowRight", (e) => this.expand(e)),
       tree("tree.open", "Open", "Enter", (e) => this.activate(e)),
+      { ...tree("tree.unmark", "Clear selected chats", "Escape", () => this.clearMarked()), when: () => !this.paletteOpen && inTree() && this.marked.size > 0 },
     );
     for (const d of ["left", "right", "up", "down"] as const)
       cmds.push({

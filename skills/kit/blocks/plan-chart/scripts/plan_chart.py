@@ -3,6 +3,7 @@
 
   plan_chart.py <plan.md>    write plan.html beside it, or stop with the first defect and exit 1
 
+`Done when:` is a result line, then a bullet per claim, then `Evidence:` and a bullet per proof.
 The table is the step-run table (| File | Needs | Holds |) with two more columns, Block and Why, so
 `references/step_run.py start <run> <plan.md>` runs the same file once the owner approves it.
 A second table, | Block | Status | Why |, lists every catalog block once as Chosen or Rejected. The script checks it
@@ -35,14 +36,35 @@ def read_plan(path):
         elif inside and line.startswith("|---"):
             continue
         elif inside and line.startswith("|"):
-            cells = [c.strip().strip("`") for c in line.strip().strip("|").split("|")]
+            cells = [c.strip() for c in line.strip().strip("|").split("|")]
             if len(cells) != 5:
                 raise SystemExit(f"row has {len(cells)} cells, not 5: {line}")
-            name, need, holds, blocks, why = cells
+            name, need, holds, blocks, why = cells  # Holds and Why keep their `code` spans
+            name, need, blocks = (c.strip("`") for c in (name, need, blocks))
             rows.append((name.removesuffix(".md"), need, holds, [b.strip() for b in blocks.split(",") if b.strip()], why))
         elif inside:
             break
     return title, done, rows
+
+
+def read_claims(path):
+    """([claim], [proof]) from the bullets under `Done when:` and `Evidence:`, up to the step table."""
+    claims, proofs, inside, target = [], [], False, None
+    for line in Path(path).read_text(encoding="utf-8").splitlines():
+        if line.startswith("Done when:"):
+            inside, target = True, claims
+        elif inside and line[:1] in ("|", "#"):
+            break
+        elif inside and line.strip().lower() == "evidence:":
+            target = proofs
+        elif inside and line.startswith("- "):
+            target.append(line[2:].strip())
+        elif inside and line.strip():
+            # A wrapped, nested, or prose line would be lost from plan.html, so the plan must not have one.
+            raise SystemExit(f"under `Done when:` each line is a `- ` bullet at the line start, `Evidence:`, or blank: {line}")
+    if not claims or not proofs:
+        raise SystemExit("`Done when:` needs a bullet per claim, then `Evidence:` and a bullet per proof")
+    return claims, proofs
 
 
 LEDGER_HEAD = re.compile(r"\|\s*Block\s*\|\s*Status\s*\|\s*Why\s*\|")
@@ -57,9 +79,10 @@ def read_ledger(path):
         elif inside and line.startswith("|---"):
             continue
         elif inside and line.startswith("|"):
-            cells = [c.strip().strip("`") for c in line.strip().strip("|").split("|")]
+            cells = [c.strip() for c in line.strip().strip("|").split("|")]
             if len(cells) != 3:
                 raise SystemExit(f"blocks row has {len(cells)} cells, not 3: {line}")
+            cells[0], cells[1] = cells[0].strip("`"), cells[1].strip("`")  # Why keeps its `code` spans
             if cells[0] in ledger:
                 raise SystemExit(f"block {cells[0]} is listed twice in the blocks table")
             ledger[cells[0]] = (cells[1], cells[2])
@@ -149,19 +172,27 @@ CSS = """
 body{font:16px/1.5 system-ui,sans-serif;margin:2rem;color:#1d1d1f;background:#fafafa}
 h1{font-size:1.4rem;margin:0 0 .25rem}
 .done{margin:0 0 1.5rem;color:#444}
-ol.stages{list-style:none;padding:0;margin:0;display:grid;grid-auto-flow:column;grid-auto-columns:minmax(14rem,1fr);gap:2.5rem}
-ol.stages>li{position:relative}
-ol.stages>li:not(:last-child)::after{content:"\\2192";position:absolute;right:-1.9rem;top:2.2rem;font-size:1.4rem;color:#888}
+.done ul{margin:.25rem 0 .75rem}
+ol.stages{list-style:none;padding:0;margin:0;display:grid;gap:1.5rem}
+ol.stages>li:not(:last-child)::after{content:"\\2193";display:block;text-align:center;font-size:1.4rem;color:#888;margin-top:.5rem}
 .stage{font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:#666;margin:0 0 .5rem}
-ul.steps{list-style:none;padding:0;margin:0;display:grid;gap:.75rem}
+ul.steps{list-style:none;padding:0;margin:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(16rem,1fr));gap:.75rem}
 .step{background:#fff;border:1px solid #d0d0d5;border-radius:8px;padding:.75rem}
 .step h2{font-size:1rem;margin:0 0 .25rem}
 .step p{margin:.25rem 0;font-size:14px}
 .step code{font-size:13px;background:#eef;padding:0 .25rem;border-radius:3px}
 .end{border-color:#6a5acd}
-@media (max-width:600px){ol.stages{grid-auto-flow:row}
-ol.stages>li:not(:last-child)::after{content:"\\2193";position:static;display:block;text-align:center;margin-top:.5rem}}
 """
+
+
+def inline(text):
+    """Escape text, then show each `code` span as <code>."""
+    return re.sub(r"`([^`]+)`", r"<code>\1</code>", html.escape(text))
+
+
+def render_done(done, claims, proofs):
+    items = lambda entries: "<ul>" + "".join(f"<li>{inline(e)}</li>" for e in entries) + "</ul>"
+    return f'<div class="done"><p>Done when: {inline(done)}</p>{items(claims)}<p>Evidence:</p>{items(proofs)}</div>'
 
 
 def render_ledger(ledger):
@@ -170,15 +201,15 @@ def render_ledger(ledger):
         items = []
         for label, members in entries:
             if members:
-                subs = "".join(f"<li><code>{html.escape(m)}</code>: {html.escape(ledger[m][1])}</li>" for m in members)
+                subs = "".join(f"<li><code>{html.escape(m)}</code>: {inline(ledger[m][1])}</li>" for m in members)
                 items.append(f"<li><code>{html.escape(label)}</code> (sub-blocks)<ul>{subs}</ul></li>")
             else:
-                items.append(f"<li><code>{html.escape(label)}</code>: {html.escape(ledger[label][1])}</li>")
+                items.append(f"<li><code>{html.escape(label)}</code>: {inline(ledger[label][1])}</li>")
         out.append(f"<h3>{status} ({sum(len(m) or 1 for _, m in entries)})</h3><ul>{''.join(items)}</ul>")
     return "".join(out) + "</section>"
 
 
-def render(title, done, rows, uses, ledger):
+def render(title, done, rows, uses, ledger, claims, proofs):
     holds = {r[0]: r[2] for r in rows}
     by_name = {r[0]: r for r in rows}
     selected = resolve_blocks(None, {r[0]: r[3] for r in rows}, "default", blocks_dir=KIT / "blocks", pack=False)
@@ -189,19 +220,19 @@ def render(title, done, rows, uses, ledger):
         for name in group:
             _, _, gives, _, why = by_name[name]
             blocks = selected[name]
-            gets = "; ".join(f"{html.escape(holds[u])} from <b>{html.escape(u)}</b>" for u in uses[name]) or "the task"
+            gets = "; ".join(f"{inline(holds[u])} from <b>{html.escape(u)}</b>" for u in uses[name]) or "the task"
             end = "" if any(name in v for v in uses.values()) else " end"
             cards.append(
                 f'<li class="step{end}"><h2>{html.escape(name)}</h2>'
                 f'<p>Blocks: {", ".join(f"<code>{html.escape(b)}</code>" for b in blocks)}</p>'
                 f"<p>Gets: {gets}</p>"
-                f"<p>Gives: {html.escape(gives)}</p><p>Why: {html.escape(why)}</p></li>")
+                f"<p>Gives: {inline(gives)}</p><p>Why: {inline(why)}</p></li>")
         out.append(f'<li><p class="stage">Stage {i}, {how}</p><ul class="steps">{"".join(cards)}</ul></li>')
     return (f'<!doctype html><html lang="en"><meta charset="utf-8"><title>{html.escape(title)}</title>'
             f"<style>{CSS}</style><h1>{html.escape(title)}</h1>"
-            f'<p class="done">Done when: {html.escape(done)}</p>'
+            f"{render_done(done, claims, proofs)}"
             f'<figure><ol class="stages">{"".join(out)}</ol>'
-            f"<figcaption>Stages run left to right. Steps in one stage run in parallel. "
+            f"<figcaption>Stages run top to bottom. Steps in one stage run in parallel. "
             f"Each step gets the outputs that its Gets line names.</figcaption></figure>{render_ledger(ledger)}</html>\n")
 
 
@@ -215,10 +246,11 @@ def main(argv):
     plan = Path(argv[0])
     title, done, rows = read_plan(plan)
     uses = check(title, done, rows)
+    claims, proofs = read_claims(plan)
     ledger = read_ledger(plan)
     check_ledger(rows, ledger)
     page = plan.with_suffix(".html")
-    page.write_text(render(title, done, rows, uses, ledger), encoding="utf-8")
+    page.write_text(render(title, done, rows, uses, ledger, claims, proofs), encoding="utf-8")
     print(page)
     print(ledger_markdown(ledger, blocks_toml().get("aliases", {})))
 
