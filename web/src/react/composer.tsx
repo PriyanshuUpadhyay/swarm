@@ -187,7 +187,9 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
     setText(next);
     app.setDraft(sessionId, next);
   };
-  const canSend = outgoing(text) !== null && !state.sending && !state.pulling && !chair.disabled;
+  // True while a pi send waits for pi's skill list, which can take the probe's 15 s deadline.
+  const [listing, setListing] = useState(false);
+  const canSend = outgoing(text) !== null && !state.sending && !listing && !state.pulling && !chair.disabled;
   const canPullBack = chair.pullBack && !chair.disabled && composer.queued > 0;
   const skills = skillNames(list);
   const loadingSkills = useRef(false);
@@ -195,10 +197,16 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
   const submit = async () => {
     if (!canSend || loadingSkills.current) return;
     loadingSkills.current = true;
-    const out = await toSend(text, chair.provider, list, () => app.menuCommands(sessionId)).finally(() => (loadingSkills.current = false));
-    if (out.list !== list) setList(out.list);
-    // The owner typed while pi listed its skills, so this send is stale.
-    if (app.draft(sessionId) !== text) return;
+    setListing(true);
+    const out = await toSend(text, chair.provider, list, () => app.menuCommands(sessionId)).finally(() => {
+      loadingSkills.current = false;
+      setListing(false);
+    });
+    if (out.list !== list) {
+      setList(out.list);
+      // The owner typed while pi listed its skills, so this send is stale.
+      if (app.draft(sessionId) !== text) return app.notice("Not sent, because the draft changed while pi listed its skills. Send again.");
+    }
     if (out.text !== text) change(out.text);
     void app.send(sessionId, out.text);
   };
@@ -281,7 +289,7 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
 
   const showStop = chair.running;
   const extraSkills = chair.provider === "pi" ? skillFirst(text, skills).extra : [];
-  const caption = state.sending
+  const caption = state.sending || listing
     ? "Sending…"
     : state.stopping
       ? "Stopping…"
