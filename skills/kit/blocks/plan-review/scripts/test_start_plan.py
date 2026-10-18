@@ -5,7 +5,10 @@ from pathlib import Path
 SCRIPT = Path(__file__).with_name("start_plan.py")
 PLAN = """# Plan: x
 
-Done when: y; evidence: z.
+Done when: y.
+- y
+Evidence:
+- z
 
 | File | Needs | Holds | Block | Why |
 |---|---|---|---|---|

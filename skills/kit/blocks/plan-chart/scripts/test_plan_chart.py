@@ -27,12 +27,19 @@ def ledger(chosen=CHOSEN, drop=()):
 
 PLAN = """# Plan: add dark mode to settings
 
-Done when: the settings page has a dark theme; evidence: a screenshot at 375 px and 1280 px.
+Done when: the settings page has a dark theme.
+
+- the page shows dark colors from `tokens.css`
+- the theme follows the system setting
+
+Evidence:
+- a screenshot at 375 px and 1280 px
+- a `vitest` case for the setting
 
 | File | Needs | Holds | Block | Why |
 |---|---|---|---|---|
 | 01-frame | none | done-when claims | requirements | the claims say when the work is done |
-| 02-read | frame | findings with paths | local-research | find where the theme is set |
+| 02-read | frame | findings with paths | local-research | find where `theme.ts` sets it |
 | 03-tokens | frame | DESIGN.md tokens | design-tokens | the dark colors need tokens |
 | 04-build | read, tokens | the page | build-site, web-ui-basics | make the change |
 | 05-reply | build | the reply | voice-reply | the owner reads the result |
@@ -62,6 +69,25 @@ def test_good_plan():
     assert (folder / "run" / "04-build.md").read_text(encoding="utf-8").splitlines()[1] == "Uses: 02-read, 03-tokens"
 
 
+def test_page_is_readable():
+    out, folder = chart(PLAN)
+    assert out.returncode == 0, out.stderr
+    page = (folder / "plan.html").read_text(encoding="utf-8")
+    # Backticks become <code> after escaping, and Done when claims are a list.
+    assert "<code>theme.ts</code>" in page and "`" not in page.split("</style>")[1], page
+    assert "<li>the page shows dark colors from <code>tokens.css</code></li>" in page, page
+    assert "<p>Evidence:</p><ul><li>a screenshot at 375 px and 1280 px</li>" in page, page
+    assert inline_escapes_html()
+    # Stages wrap or stack, never one fixed row that cuts stages off.
+    assert "grid-auto-flow:column" not in page and "auto-fit" in page, page
+    # The markdown table keeps a backtick in Why.
+    assert plan_chart.read_plan(folder / "plan.md")[2][1][4] == "find where `theme.ts` sets it"
+
+
+def inline_escapes_html():
+    return plan_chart.inline("a <b> & `c<d`") == "a &lt;b&gt; &amp; <code>c&lt;d</code>"
+
+
 def test_defects_stop():
     cases = [
         (PLAN.replace("| build-site, web-ui-basics |", "| build-site, no-such |"), "block no-such, which is not in the kit"),
@@ -72,6 +98,10 @@ def test_defects_stop():
         (PLAN.replace("| read, tokens |", "| read |"), "steps 03-tokens, 05-reply give output that no step uses"),
         (PLAN.replace("| the owner reads the result |", "|  |"), "step 05-reply needs Holds, Block, and Why"),
         (PLAN.replace("Done when:", "Done:"), "no `Done when:` line"),
+        (PLAN.replace("- the page shows dark colors from `tokens.css`\n", "").replace("- the theme follows the system setting\n", ""), "needs a bullet per claim"),
+        (PLAN.replace("- the theme follows", "  wrapped text\n- the theme follows"), "each line is a `- ` bullet"),
+        (PLAN.replace("- the theme follows", "  - nested\n- the theme follows"), "each line is a `- ` bullet"),
+        (PLAN.replace("Evidence:\n", ""), "needs a bullet per claim"),
         (PLAN.split("\n## Blocks considered")[0], "no | Block | Status | Why | table"),
         (PLAN.replace("| html-diagram | Rejected |", "| html-diagram | Maybe |"), "block html-diagram needs Status Chosen or Rejected"),
         (PLAN.replace("| html-diagram | Rejected |", "| html-diagram-x | Rejected |"), "names html-diagram-x, which is not in the kit catalog"),
