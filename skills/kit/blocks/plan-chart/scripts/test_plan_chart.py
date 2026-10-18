@@ -1,5 +1,5 @@
 """Run: python3 test_plan_chart.py"""
-import re, shutil, subprocess, sys, tempfile
+import hashlib, json, re, shutil, subprocess, sys, tempfile
 from pathlib import Path
 from unittest.mock import patch
 
@@ -7,6 +7,7 @@ from unittest.mock import patch
 SCRIPT = Path(__file__).with_name("plan_chart.py")
 KIT = Path(__file__).resolve().parents[3]
 STEP_RUN = KIT / "references" / "step_run.py"
+START_PLAN = KIT / "blocks" / "plan-review" / "scripts" / "start_plan.py"
 sys.path.insert(0, str(SCRIPT.parent))
 sys.path.insert(0, str(KIT / "skills" / "implement" / "scripts"))
 import implement_run
@@ -60,9 +61,11 @@ def test_good_plan():
     assert "Stage 2, 2 steps run in parallel" in page and page.count('<li class="step') == 5, page
     assert "findings with paths from <b>02-read</b>; DESIGN.md tokens from <b>03-tokens</b>" in page, page
     assert '<li class="step end"><h2>05-reply' in page, page
-    # Rejected sub-blocks sit under their alias, and the stdout carries the table for the plan reply.
-    assert "<h3>Rejected (" in page and "<code>tech-diagram</code> (sub-blocks)<ul><li><code>when-to-diagram</code>" in page, page
-    assert "### Chosen" in out.stdout and "| ↳ html-diagram | the task has no use for it |" in out.stdout, out.stdout
+    # One row per block, parts right under their parent, and the stdout carries the table for the plan reply.
+    rejected = page.split("<h3>Rejected (")[1]
+    assert rejected.index("<code>diagram</code>") < rejected.index("<code>↳ html-diagram</code>") < rejected.index("<code>done-when-evidence"), rejected[:400]
+    assert "### Chosen (8)" in out.stdout and "| ↳ html-diagram | the task has no use for it |" in out.stdout, out.stdout
+    assert "| voice ↳ voice-pr | the task has no use for it |" in out.stdout, out.stdout
     # The approved plan runs as a step run with no change.
     run = subprocess.run([sys.executable, "-I", STEP_RUN, "start", folder / "run", folder / "plan.md"], capture_output=True, text=True)
     assert run.returncode == 0, run.stderr
@@ -74,7 +77,7 @@ def test_page_is_readable():
     assert out.returncode == 0, out.stderr
     page = (folder / "plan.html").read_text(encoding="utf-8")
     # Backticks become <code> after escaping, and Done when claims are a list.
-    assert "<code>theme.ts</code>" in page and "`" not in page.split("</style>")[1], page
+    assert "<code>theme.ts</code>" in page and "`" not in re.sub(r"<script>.*?</script>", "", page.split("</style>")[1], flags=re.S), page[:400]
     assert "<li>the page shows dark colors from <code>tokens.css</code></li>" in page, page
     assert "<p>Evidence:</p><ul><li>a screenshot at 375 px and 1280 px</li>" in page, page
     assert inline_escapes_html()
@@ -82,6 +85,93 @@ def test_page_is_readable():
     assert "grid-auto-flow:column" not in page and "auto-fit" in page, page
     # The markdown table keeps a backtick in Why.
     assert plan_chart.read_plan(folder / "plan.md")[2][1][4] == "find where `theme.ts` sets it"
+
+
+def test_reasons_are_short():
+    long = "one two three four five six seven eight nine ten eleven `twelve thirteen` fourteen"
+    assert plan_chart.short(long) == "one two three four five six seven eight nine ten eleven `twelve…`"
+    assert plan_chart.short("the task needs it") == "the task needs it"
+
+
+def test_mermaid_chart():
+    out, folder = chart(PLAN)
+    assert out.returncode == 0, out.stderr
+    md = (folder / "plan.md").read_text(encoding="utf-8")
+    # The fence sits right under the title, between the markers.
+    assert md.startswith("# Plan: add dark mode to settings\n\n<!-- plan-chart:start -->\n```mermaid\nflowchart TD\n"), md[:200]
+    chart_text = md.split("```mermaid\n")[1].split("```")[0]
+    for line in ('  subgraph S1["1 · frame"]', '    s1["01-frame<br/>requirements"]',
+                 '  subgraph S2["2 · parallel"]', '    s4["04-build<br/>build-site · web-ui-basics"]',
+                 '    s5(["05-reply<br/>voice-reply"])', "  s2 --> s4", "  s3 --> s4",
+                 '  subgraph X["Dropped blocks"]', '    x6["↳ call-tree: the task has no use for it"]',
+                 "  s5 ~~~ X", "  classDef drop stroke-dasharray:4 3,color:#888"):
+        assert line + "\n" in chart_text, (line, chart_text)
+    # plan.html draws the same text with the pinned Pele build, offline.
+    page = (folder / "plan.html").read_text(encoding="utf-8")
+    assert plan_chart.html.escape(chart_text) in page and "/*! Pele 1.6.0 | MIT License" in page and "<script src" not in page
+    rendered = pele_render(chart_text)
+    assert rendered is None or rendered.startswith("<svg"), rendered
+
+
+def pele_render(text):
+    """The SVG that the pinned Pele makes from text, or None when node is not installed."""
+    if not shutil.which("node"):
+        return None
+    js = ("const fs=require('fs');new Function(fs.readFileSync(process.argv[1],'utf8')+';globalThis.pele=pele')();"
+          "process.stdout.write(pele.render(fs.readFileSync(0,'utf8')).svg)")
+    out = subprocess.run(["node", "-e", js, KIT / "blocks" / "plan-chart" / "assets" / "pele.global.js"],
+                         input=text, capture_output=True, text=True)
+    assert out.returncode == 0, out.stderr[-500:]
+    return out.stdout
+
+
+def test_hostile_label():
+    hostile = 'a"] --> evil[x | <b>#35; `c` (d) {e} %% f; & g\nh'
+    text = plan_chart.label(hostile, "two")
+    assert text == '"a#34;#93; --#62; evil#91;x #124; #60;b#62;#35;35#59; #96;c#96; #40;d#41; #123;e#125; #37;#37; f#59; #38; g h<br/>two"', text
+    # A table cell cannot hold `|`, so the plan carries the rest of the hostile text.
+    body = PLAN.replace("| the task has no use for it |", f"| {hostile.replace(chr(10), ' ').replace('| ', '')} |", 1)
+    out, folder = chart(body)
+    assert out.returncode == 0, out.stderr
+    chart_text = (folder / "plan.md").read_text(encoding="utf-8").split("```mermaid\n")[1].split("```")[0]
+    assert '"build-canvas: a#34;#93; --#62; evil#91;x #60;b#62;#35;35#59; #96;c#96; #40;d#41; #123;e#125; #37;#37;…"' in chart_text, chart_text
+    rendered = pele_render(chart_text)
+    assert rendered is None or "a&quot;] --&gt; evil[x" in rendered, rendered[-2000:]
+
+
+def test_chart_replace_is_idempotent():
+    out, folder = chart(PLAN)
+    assert out.returncode == 0, out.stderr
+    plan = folder / "plan.md"
+    first = plan.read_bytes()
+    assert subprocess.run([sys.executable, "-I", SCRIPT, plan], capture_output=True).returncode == 0
+    assert plan.read_bytes() == first
+    plan.write_text(first.decode().replace("| read, tokens |", "| read |").replace("| 05-reply | build |", "| 05-reply | build, tokens |"), encoding="utf-8")
+    assert subprocess.run([sys.executable, "-I", SCRIPT, plan], capture_output=True).returncode == 0
+    text = plan.read_text(encoding="utf-8")
+    assert text.count("plan-chart:start") == 1 and text.count("```mermaid") == 1 and "  s3 --> s5\n" in text and "  s3 --> s4" not in text, text[:900]
+
+
+def approve(run):
+    files = {f"../{name}": hashlib.sha256((run / name).read_bytes()).hexdigest() for name in ("plan.html", "plan.md")}
+    (run / "plan-review").mkdir(exist_ok=True)
+    result = {"decision": "approved", "message": "", "annotationCount": 0}
+    (run / "plan-review" / "1.json").write_text(json.dumps({"files": files, "result": result}))
+
+
+def test_start_refuses_after_chart_change():
+    out, run = chart(PLAN)
+    assert out.returncode == 0, out.stderr
+    approve(run)
+    plan = run / "plan.md"
+    approved = plan.read_text(encoding="utf-8")
+    plan.write_text(approved.replace("s2 --> s4", "s2 --> s5"), encoding="utf-8")  # only the chart changed
+    start = lambda: subprocess.run([sys.executable, "-I", START_PLAN, run], capture_output=True, text=True)
+    refused = start()
+    assert refused.returncode == 1 and "../plan.md changed after round 1" in refused.stderr, refused
+    assert subprocess.run([sys.executable, "-I", SCRIPT, plan], capture_output=True).returncode == 0
+    assert plan.read_text(encoding="utf-8") == approved
+    assert start().returncode == 0 and (run / "05-reply.md").is_file()
 
 
 def inline_escapes_html():
