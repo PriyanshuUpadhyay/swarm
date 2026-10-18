@@ -307,10 +307,30 @@ fn ask(
                 }
             }
         });
+    // A SIGKILL can leave a lock behind, such as pi's `auth.json.lock`, which makes every later pi
+    // wait up to 30 s. So the CLI gets its stdin end, then SIGTERM, which runs its exit handlers,
+    // each with a second to exit, before the kill.
     drop(stdin);
+    exit_within(&mut child, 1);
+    if matches!(child.try_wait(), Ok(None)) {
+        // SAFETY: kill has no memory preconditions, and the unreaped child still owns the pid.
+        unsafe { kill(child.id() as i32, 15) };
+        exit_within(&mut child, 1);
+    }
     let _ = child.kill();
     let _ = child.wait();
     result
+}
+
+unsafe extern "C" {
+    fn kill(pid: i32, signal: i32) -> i32;
+}
+
+fn exit_within(child: &mut std::process::Child, seconds: u64) {
+    let deadline = Instant::now() + std::time::Duration::from_secs(seconds);
+    while Instant::now() < deadline && matches!(child.try_wait(), Ok(None)) {
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
 }
 
 /// Claude's `initialize` control request answers with the session's commands before any prompt,
