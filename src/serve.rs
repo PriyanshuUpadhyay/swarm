@@ -2657,19 +2657,27 @@ async fn probe_commands(app: &Server, slot: &CommandsSlot, call: CliCall, agent:
             serde_json::from_str::<Value>(&text)
                 .map_err(|_| error(StatusCode::BAD_GATEWAY, "invalid commands JSON from swarm"))
         });
-    let now = tokio::time::Instant::now();
-    let (stale_at, mut value) = match read {
+    let (stale_at, mut value) = menu_entry(read, tokio::time::Instant::now());
+    let mut last = slot.last.lock().unwrap();
+    value = keep_fuller_rows(last.as_ref().map(|(_, value)| value), value);
+    *last = Some((stale_at, value.clone()));
+    value
+}
+
+/// A clean read stays fresh for `COMMANDS_FRESH`; a read with a note or an error is tried again
+/// after `COMMANDS_RETRY`.
+fn menu_entry(
+    read: Result<Value, ApiError>,
+    now: tokio::time::Instant,
+) -> (tokio::time::Instant, Value) {
+    match read {
         Ok(value) if value["note"].is_null() => (now + COMMANDS_FRESH, value),
         Ok(value) => (now + COMMANDS_RETRY, value),
         Err(err) => (
             now + COMMANDS_RETRY,
             json!({"commands": [], "note": err.1.0["error"]}),
         ),
-    };
-    let mut last = slot.last.lock().unwrap();
-    value = keep_fuller_rows(last.as_ref().map(|(_, value)| value), value);
-    *last = Some((stale_at, value.clone()));
-    value
+    }
 }
 
 /// A read with a note lists fewer rows than a full read; it keeps the earlier, longer rows.
@@ -5327,6 +5335,9 @@ mod tests {
         let kept = keep_fuller_rows(Some(&full), partial.clone());
         assert_eq!(kept["commands"], full["commands"]);
         assert_eq!(kept["note"], "pi list unavailable");
+        let now = tokio::time::Instant::now();
+        assert_eq!(menu_entry(Ok(partial.clone()), now).0, now + COMMANDS_RETRY);
+        assert_eq!(menu_entry(Ok(full.clone()), now).0, now + COMMANDS_FRESH);
         let first = keep_fuller_rows(None, partial.clone());
         assert_eq!(first, partial, "with no earlier list the partial rows stay");
         let fresh = json!({"commands": [{"name": "compact"}], "note": null});
@@ -5461,7 +5472,11 @@ printf '{"commands":[{"insert":"/clear"}],"note":null}\n'
         assert_eq!(probes(), 2, "the stale read refreshed behind the reply");
         tokio::time::sleep(Duration::from_millis(50)).await;
         let failed = read("chair").await.unwrap().0;
-        assert_eq!(failed, json!({"commands": [], "note": "probe failed"}));
+        assert_eq!(
+            failed["commands"][0]["insert"], "/clear",
+            "a failed probe keeps the earlier rows"
+        );
+        assert_eq!(failed["note"], "probe failed");
         let _ = read("chair").await.unwrap();
         assert_eq!(probes(), 2, "a failure is not probed again at once");
 
