@@ -304,6 +304,16 @@ function RowBody(ctx: Ctx) {
         <MailIcon className="size-3.5" /> New swarm message
       </div>
     );
+  // Every provider marks the cut as kind compaction; pi's row holds the whole summary, and Claude
+  // sends its summary as a separate compact_summary row.
+  if (row.system_kind === "compaction" || row.system_kind === "compact_summary")
+    return row.text.includes("\n") ? (
+      <Disclosure app={app} line={line} title={row.system_kind === "compaction" ? "Context compacted" : "Compaction summary"}>
+        <div className="md" dangerouslySetInnerHTML={{ __html: md.html(row.id, row.text) }} />
+      </Disclosure>
+    ) : (
+      <div className="quiet">Context compacted</div>
+    );
   if (row.shell) return <ShellRow {...ctx} />;
   if (row.command)
     return (
