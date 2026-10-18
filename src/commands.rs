@@ -307,7 +307,13 @@ fn ask(
                 }
             }
         });
+    // Closing stdin lets the CLI exit on its own; a kill at once can leave a lock behind, such as
+    // pi's `auth.json.lock`, which makes every later pi wait up to 30 s.
     drop(stdin);
+    let grace = Instant::now() + std::time::Duration::from_secs(1);
+    while Instant::now() < grace && matches!(child.try_wait(), Ok(None)) {
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
     let _ = child.kill();
     let _ = child.wait();
     result
