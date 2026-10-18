@@ -15,7 +15,7 @@ metadata:
 
 ## Rules
 - This block answers which proof meets each claim. For proof strength, see `blocks/prove-it-works/SKILL.md`; for source agreement, see `blocks/cite-sources/SKILL.md`.
-- The close step's file lists every done-when of the frame, and in a plan the `Done when:` line too, each with its evidence.
+- The close step's file lists every done-when of the frame, and in a plan each `Done when:` claim bullet too, each with its evidence.
 - Use a table or a numbered list: requirement, check, evidence. Every requirement and every accepted constraint has a row.
 - Each row's check is the one that the build step's file names for it, in a todo's evidence or its `## Result`. In implement, review judges that each done-when has one there, before this table exists.
 - Evidence reads "not run" until you get it. A row with no proof reads "unverified" and says why.

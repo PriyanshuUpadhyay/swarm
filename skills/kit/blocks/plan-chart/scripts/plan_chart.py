@@ -57,8 +57,11 @@ def read_claims(path):
             break
         elif inside and line.strip().lower() == "evidence:":
             target = proofs
-        elif inside and line.strip().startswith("- "):
-            target.append(line.strip()[2:].strip())
+        elif inside and line.startswith("- "):
+            target.append(line[2:].strip())
+        elif inside and line.strip():
+            # A wrapped, nested, or prose line would be lost from plan.html, so the plan must not have one.
+            raise SystemExit(f"under `Done when:` each line is a `- ` bullet at the line start, `Evidence:`, or blank: {line}")
     if not claims or not proofs:
         raise SystemExit("`Done when:` needs a bullet per claim, then `Evidence:` and a bullet per proof")
     return claims, proofs
@@ -76,9 +79,10 @@ def read_ledger(path):
         elif inside and line.startswith("|---"):
             continue
         elif inside and line.startswith("|"):
-            cells = [c.strip().strip("`") for c in line.strip().strip("|").split("|")]
+            cells = [c.strip() for c in line.strip().strip("|").split("|")]
             if len(cells) != 3:
                 raise SystemExit(f"blocks row has {len(cells)} cells, not 3: {line}")
+            cells[0], cells[1] = cells[0].strip("`"), cells[1].strip("`")  # Why keeps its `code` spans
             if cells[0] in ledger:
                 raise SystemExit(f"block {cells[0]} is listed twice in the blocks table")
             ledger[cells[0]] = (cells[1], cells[2])
