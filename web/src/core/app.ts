@@ -21,7 +21,7 @@ import { readSse, type SseEvent } from "./sse";
 import { isChair, movePane, paneCells, paneStatus, type Direction, type PaneCell } from "./panes";
 import { FoldChoices, findMatches, lines, mergeRows, type Line, type Match } from "./transcript";
 import { Lifecycle } from "./lifecycle";
-import type { CommandList } from "./slash";
+import { editPicks, validPicks, type CommandList, type SkillPick } from "./slash";
 import { Settings } from "./settings";
 import {
   chatRows,
@@ -192,6 +192,7 @@ const NO_FULL: ReadonlyMap<string, FullText> = new Map();
 /** The chat id of a child agent's column. It is also the agent's stream key. */
 export const paneId = (sessionId: string, agent: string) => `${sessionId}:${agent}`;
 const DRAFT_PREFIX = "composer.draft.";
+const PICKS_PREFIX = "composer.skills.";
 const NO_FIND: Find = { open: false, query: "", matches: [], index: -1, seq: 0 };
 const NO_PANE: Pane = {
   id: "",
@@ -281,6 +282,7 @@ export class App {
   private snapshotAgain = false;
   private inputs = new Map<string, Input>();
   private drafts = new Map<string, string>();
+  private picks = new Map<string, SkillPick[]>();
   private alreadySentSeq = 0;
   private inputRev = 0;
   private pane = { focused: null as string | null, zoomed: null as string | null, reveal: null as string | null, revealSeq: 0 };
@@ -1280,10 +1282,26 @@ export class App {
     return d;
   }
 
+  /** Pick ranges persist beside the draft text; old drafts need no migration. */
+  draftPicks(sessionId: string): SkillPick[] {
+    let picks = this.picks.get(sessionId);
+    if (!picks) {
+      try {
+        const stored = JSON.parse(readStore(PICKS_PREFIX + sessionId) ?? "[]");
+        picks = validPicks(this.draft(sessionId), Array.isArray(stored) ? stored : []);
+      } catch { picks = []; }
+      this.picks.set(sessionId, picks);
+    }
+    return picks;
+  }
+
   /** The box calls this on each edit; it does not render. */
-  setDraft(sessionId: string, text: string) {
+  setDraft(sessionId: string, text: string, picks?: readonly SkillPick[]) {
+    const next = picks ? validPicks(text, picks) : editPicks(this.draft(sessionId), text, this.draftPicks(sessionId));
     this.drafts.set(sessionId, text);
+    this.picks.set(sessionId, next);
     writeStore(DRAFT_PREFIX + sessionId, text);
+    writeStore(PICKS_PREFIX + sessionId, next.length ? JSON.stringify(next) : "");
   }
 
   private replaceDraft(sessionId: string, text: string) {
@@ -1304,8 +1322,8 @@ export class App {
     }
   }
 
-  /** Types `text` into the chair. The draft clears only if it still holds the sent text. True when it went. */
-  async send(sessionId: string, text: string): Promise<boolean> {
+  /** Types `text` into the chair. Clear only the source draft, which can differ after a skill moves. */
+  async send(sessionId: string, text: string, draftText = text): Promise<boolean> {
     const chair = this.chair(sessionId);
     const st = this.input(sessionId);
     const out = outgoing(text);
@@ -1317,7 +1335,7 @@ export class App {
       { sending: true },
       { sending: false },
       () => this.api.action("/api/chat/send", { ...this.target(sessionId), text: typed }),
-      () => void this.send(sessionId, text),
+      () => void this.send(sessionId, text, draftText),
     );
     if (!ok) return false;
     const chat = this.chats.get(sessionId);
@@ -1325,7 +1343,7 @@ export class App {
       chat.sent = [...chat.sent, sentRow(typed, chair.provider, chat.rows)];
       this.changed(chat);
     }
-    if (this.draft(sessionId) === text) this.replaceDraft(sessionId, "");
+    if (this.draft(sessionId) === draftText) this.replaceDraft(sessionId, "");
     return true;
   }
 

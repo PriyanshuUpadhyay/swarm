@@ -495,6 +495,21 @@ fn cut_command_has_no_chip() {
     );
 }
 #[test]
+fn pi_skill_message_to_command() {
+    // The shape pi 1.2.0 writes for `/skill:plan fix this now`.
+    let line = r#"{"type":"message","id":"u1","parentId":"a0","timestamp":"t","message":{"role":"user","content":[{"type":"text","text":"<skill name=\"plan\" location=\"/s/plan/SKILL.md\">\nReferences are relative to /s/plan.\n\n# Plan\n</skill>\n\nfix this now"}]}}"#;
+    let rows = build(inline_fixture("pi", &[line]));
+    assert_eq!(kinds(&rows), [RowKind::System]);
+    let chip = rows[0].command.as_ref().unwrap();
+    assert_eq!(chip.name, "/skill:plan");
+    assert_eq!(chip.arguments, "fix this now");
+    assert_eq!(
+        chip.skill_body.as_ref().unwrap().text,
+        "References are relative to /s/plan.\n\n# Plan"
+    );
+    assert!(rows[0].starts_turn);
+}
+#[test]
 fn skill_body_to_command() {
     let command = "<command-message>flow</command-message>\n<command-name>/flow</command-name>\n<command-args>start\nthe chat</command-args>";
     let rows = build(vec![
@@ -1790,14 +1805,14 @@ fn previews_bound_wire_bytes_and_keep_full_counts() {
     );
 }
 
-fn inline_fixture(lines: &[&str]) -> Vec<Value> {
+fn inline_fixture(format: &str, lines: &[&str]) -> Vec<Value> {
     let path =
         std::env::temp_dir().join(format!("swarm-rows-fixture-{}.jsonl", uuid::Uuid::now_v7()));
     std::fs::write(&path, lines.join("\n") + "\n").unwrap();
     let output = Command::new(
         Path::new(env!("CARGO_MANIFEST_DIR")).join("packages/transcript/zig-out/bin/transcript"),
     )
-    .args(["--format", "claude"])
+    .args(["--format", format])
     .arg(&path)
     .output();
     std::fs::remove_file(path).unwrap();
@@ -1821,7 +1836,7 @@ fn bookkeeping_records_have_no_rows() {
         r#"{"type":"queue-operation","operation":"enqueue","timestamp":"t1","sessionId":"s1","content":"add a test"}"#,
         r#"{"type":"queue-operation","operation":"dequeue","timestamp":"t2","sessionId":"s1"}"#,
     ];
-    let events = inline_fixture(&LINES);
+    let events = inline_fixture("claude", &LINES);
     assert_eq!(events.len(), 6);
     assert!(
         events
@@ -1843,7 +1858,7 @@ fn absorbed_queued_message() {
         r#"{"type":"assistant","uuid":"a2","sessionId":"s1","message":{"role":"assistant","model":"m","content":[{"type":"text","text":"Kept it"}]}}"#,
         r#"{"type":"system","subtype":"turn_duration","durationMs":1200,"uuid":"d1","sessionId":"s1"}"#,
     ];
-    let events = inline_fixture(&LINES);
+    let events = inline_fixture("claude", &LINES);
     let rows: Vec<_> = build(events)
         .into_iter()
         .filter(|row| !row.hidden)

@@ -2,7 +2,7 @@ import { ArrowUpIcon, ChevronDownIcon, CircleHelpIcon, LoaderCircleIcon, SquareI
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import type { App, Banner, Composer, Input } from "../core/app";
 import { modelLabel, outgoing, sends, usageLabel, type Prompt } from "../core/composer";
-import { matches, menuAt, moved, offered, pick, picksAndSends, showsEmpty, type CommandList, type MenuRow } from "../core/slash";
+import { editPicks, matches, menuAt, moved, offered, pick, picksAndSends, showsEmpty, skillFirst, skillNames, toSend, type CommandList, type MenuRow, type SkillPick } from "../core/slash";
 import { Button } from "../components/ui/button";
 import { ImageThumbs } from "./images";
 import { cn } from "../lib/utils";
@@ -130,7 +130,10 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
   // "the chair" means nothing to a new owner, so the chat's own agent is named.
   const target = chair.who ?? (chair.provider ? `the ${chair.provider} agent` : "the agent");
   const [text, setText] = useState(() => app.draft(sessionId));
+  const [picks, setPicks] = useState(() => app.draftPicks(sessionId));
   const box = useRef<HTMLTextAreaElement>(null);
+  const highlights = useRef<HTMLDivElement>(null);
+  const nativeEdit = useRef<{ start: number; end: number; inputType: string } | null>(null);
   const [caret, setCaret] = useState(0);
   const [focused, setFocused] = useState(false);
   const [list, setList] = useState<CommandList | null>(null);
@@ -140,8 +143,23 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
   const pickedCaret = useRef<number | null>(null);
   const listId = useId();
 
+  useEffect(() => {
+    const el = box.current;
+    if (!el || chair.provider !== "pi") return;
+    const before = (e: InputEvent) => {
+      // History and composition can replace a range other than the visible selection.
+      nativeEdit.current = e.isComposing || e.inputType.startsWith("history") ? null
+        : { start: el.selectionStart, end: el.selectionEnd, inputType: e.inputType };
+    };
+    el.addEventListener("beforeinput", before);
+    return () => el.removeEventListener("beforeinput", before);
+  }, [chair.provider]);
+
   // A send or a pull-back changed the draft in the app.
-  useEffect(() => setText(app.draft(sessionId)), [app, sessionId, state.draftRev]);
+  useEffect(() => {
+    setText(app.draft(sessionId));
+    setPicks(app.draftPicks(sessionId));
+  }, [app, sessionId, state.draftRev]);
 
   // Grows with the text up to about 8 lines. After a pick the caret goes after the inserted text.
   useLayoutEffect(() => {
@@ -149,14 +167,15 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
     if (!el) return;
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+    if (highlights.current) highlights.current.scrollTop = el.scrollTop;
     if (pickedCaret.current !== null) {
       el.setSelectionRange(pickedCaret.current, pickedCaret.current);
       pickedCaret.current = null;
     }
-  }, [text]);
+  }, [text, picks]);
 
   const menu = focused && !chair.disabled ? menuAt(text, caret, chair.provider) : null;
-  const rows = menu && list ? matches(offered(list.commands, menu), menu.query) : [];
+  const rows = menu && list ? matches(offered(list.commands, menu, chair.provider), menu.query) : [];
   const open = menu !== null && dismissed !== menu.start && (rows.length > 0 || showsEmpty(menu));
   const current = Math.min(selected, Math.max(rows.length - 1, 0));
   const menuKey = menu ? `${menu.opener}${menu.start}` : null;
@@ -183,13 +202,35 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
     document.getElementById(`${listId}-${current}`)?.scrollIntoView({ block: "nearest" });
   }, [listId, current]);
 
-  const change = (next: string) => {
+  const change = (next: string, recorded?: readonly SkillPick[]) => {
     setText(next);
-    app.setDraft(sessionId, next);
+    app.setDraft(sessionId, next, recorded);
+    setPicks(app.draftPicks(sessionId));
   };
-  const canSend = outgoing(text) !== null && !state.sending && !state.pulling && !chair.disabled;
+  // True while a pi send waits for pi's skill list, which can take the probe's 15 s deadline.
+  const [listing, setListing] = useState(false);
+  const canSend = outgoing(text) !== null && !state.sending && !listing && !state.pulling && !chair.disabled;
   const canPullBack = chair.pullBack && !chair.disabled && composer.queued > 0;
-  const submit = () => canSend && void app.send(sessionId, text);
+  const skills = skillNames(list);
+  const loadingSkills = useRef(false);
+  /** pi runs a skill only at the message's start, so the draft shows the moved text it sends. */
+  const submit = async () => {
+    if (!canSend || loadingSkills.current) return;
+    loadingSkills.current = true;
+    setListing(true);
+    const out = await toSend(text, chair.provider, list, () => app.menuCommands(sessionId), picks).finally(() => {
+      loadingSkills.current = false;
+      setListing(false);
+    });
+    if (out.list !== list) {
+      setList(out.list);
+      // The owner typed while pi listed its skills, so this send is stale.
+      if (app.draft(sessionId) !== text) return app.notice("Not sent, because the draft changed while pi listed its skills. Send again.");
+    }
+    // Keep the picked draft through a failed send. App.send clears it only after success.
+    if (out.text !== text && !picks.length) change(out.text);
+    void app.send(sessionId, out.text, picks.length ? text : out.text);
+  };
 
   /** A pasted image goes to the server, and its path goes in the draft at the caret. */
   const paste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
@@ -214,7 +255,9 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
   const choose = (row: MenuRow, send: boolean) => {
     if (!menu) return;
     const next = pick(text, menu, row);
-    change(next.text);
+    const recorded = editPicks(text, next.text, picks, menu);
+    if (chair.provider === "pi" && row.kind === "skill") recorded.push({ start: menu.start, insert: row.insert });
+    change(next.text, recorded);
     if (send) return void app.send(sessionId, next.text);
     setCaret(next.caret);
     pickedCaret.current = next.caret;
@@ -250,7 +293,7 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
     if (e.key === "Enter") {
       if (sends(e, sendKey)) {
         e.preventDefault();
-        submit();
+        void submit();
       } else if (e.metaKey || e.ctrlKey) {
         // The text area adds no line for these by itself.
         e.preventDefault();
@@ -268,7 +311,9 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
   };
 
   const showStop = chair.running;
-  const caption = state.sending
+  const chips = chair.provider === "pi" ? picks : [];
+  const extraSkills = chair.provider === "pi" ? skillFirst(text, skills, chips).extra : [];
+  const caption = state.sending || listing
     ? "Sending…"
     : state.stopping
       ? "Stopping…"
@@ -278,7 +323,9 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
           ? "Already sent"
           : canPullBack && text === ""
             ? "↑ to edit queued messages"
-            : null;
+            : extraSkills.length
+              ? `pi runs one skill per message, so ${extraSkills.join(", ")} goes as text`
+              : null;
 
   return (
     <div>
@@ -332,27 +379,50 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
           </div>
         )}
         <ImageThumbs text={text} load={app.imageUrl} remove={(path) => change(text.split(path).join("").replace(/  +/g, " "))} />
-        <textarea
-          ref={box}
-          rows={2}
-          className="block max-h-[200px] w-full resize-none bg-transparent px-3 pt-2.5 text-base outline-none placeholder:text-faint-foreground"
-          data-testid="composer"
-          aria-label={`Message ${target}`}
-          placeholder={chair.who ? `Message ${target}` : `Message ${target}. Press ⌘L to focus.`}
-          aria-expanded={open}
-          aria-controls={open ? listId : undefined}
-          aria-activedescendant={open && rows.length ? `${listId}-${current}` : undefined}
-          value={text}
-          onChange={(e) => {
-            change(e.target.value);
-            setCaret(e.target.selectionStart);
-          }}
-          onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
-          onFocus={() => setFocused(true)}
-          onBlur={() => setFocused(false)}
-          onKeyDown={onKeyDown}
-          onPaste={paste}
-        />
+        <div className="relative">
+          {chips.length > 0 && (
+            <div ref={highlights} aria-hidden="true" data-testid="composer-highlights" className="composer-text composer-highlights">
+              {chips.map((p, i) => <span key={p.start}>
+                {text.slice(i ? chips[i - 1].start + chips[i - 1].insert.length : 0, p.start)}
+                <span data-testid="composer-skill-chip" data-muted={i > 0} className="composer-skill-chip">{p.insert}</span>
+              </span>)}
+              {text.slice(chips.at(-1)!.start + chips.at(-1)!.insert.length)}{"\n"}
+            </div>
+          )}
+          <textarea
+            ref={box}
+            rows={2}
+            className={cn("block max-h-[200px] w-full resize-none bg-transparent px-3 pt-2.5 text-base outline-none placeholder:text-faint-foreground", chair.provider === "pi" && "composer-text relative")}
+            data-testid="composer"
+            aria-label={`Message ${target}`}
+            placeholder={chair.who ? `Message ${target}` : `Message ${target}. Press ⌘L to focus.`}
+            aria-expanded={open}
+            aria-controls={open ? listId : undefined}
+            aria-activedescendant={open && rows.length ? `${listId}-${current}` : undefined}
+            value={text}
+            onChange={(e) => {
+              const edit = nativeEdit.current;
+              nativeEdit.current = null;
+              if (edit && edit.start === edit.end && edit.inputType.startsWith("delete")) {
+                const removed = text.length - e.target.value.length;
+                if (edit.inputType.endsWith("Backward")) edit.start -= removed;
+                else edit.end += removed;
+              }
+              change(e.target.value, editPicks(text, e.target.value, picks, edit ?? undefined));
+              setCaret(e.target.selectionStart);
+            }}
+            onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
+            onFocus={() => setFocused(true)}
+            onBlur={() => setFocused(false)}
+            onKeyDown={onKeyDown}
+            onPaste={paste}
+            onScroll={(e) => {
+              if (!highlights.current) return;
+              highlights.current.scrollTop = e.currentTarget.scrollTop;
+              highlights.current.scrollLeft = e.currentTarget.scrollLeft;
+            }}
+          />
+        </div>
         <div className="flex items-center gap-2 px-2 pb-2 text-xs text-muted-foreground">
           {/* A child's model does not switch. */}
           <button

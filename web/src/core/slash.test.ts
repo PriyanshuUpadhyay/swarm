@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { matches, menuAt, moved, offered, pick, picksAndSends, showsEmpty, type MenuRow } from "./slash";
+import { editPicks, matches, menuAt, moved, offered, pick, picksAndSends, showsEmpty, skillFirst, toSend, validPicks, type CommandList, type MenuRow } from "./slash";
 
 const row = (insert: string, extra: Partial<MenuRow> = {}): MenuRow => ({
   name: insert.slice(1),
@@ -26,11 +26,11 @@ describe("menuAt", () => {
     }
   });
 
-  it("opens mid-draft only after a space or bracket, and never for Codex or pi", () => {
+  it("opens mid-draft only after a space or bracket, and never for Codex", () => {
     expect(menuAt("run /swa", 8, "claude")).toEqual({ opener: "/", start: 4, end: 8, query: "swa" });
     expect(menuAt("see (/swa", 9, "agy")?.start).toBe(5);
     expect(menuAt("run /swa", 8, "codex")).toBeNull();
-    expect(menuAt("run /swa", 8, "pi")).toBeNull();
+    expect(menuAt("run /ski", 8, "pi")).toEqual({ opener: "/", start: 4, end: 8, query: "ski" });
     expect(menuAt("src/main.rs", 11, "claude")).toBeNull();
   });
 
@@ -52,6 +52,9 @@ describe("offered and matches", () => {
     expect(offered(rows, start).map((r) => r.insert)).toEqual(["/clear", "/model", "/swarm:plan", "/plan"]);
     expect(offered(rows, menuAt("x /", 3, "claude")!).map((r) => r.insert)).toEqual(["/swarm:plan"]);
     expect(offered(rows, menuAt("$", 1, "codex")!).map((r) => r.insert)).toEqual(["$research"]);
+    const pi = [row("/compact", { kind: "builtin" }), row("/review", { kind: "command" }), row("/skill:plan", { kind: "skill" })];
+    expect(offered(pi, menuAt("/", 1, "pi")!, "pi").map((r) => r.insert)).toEqual(["/compact", "/review", "/skill:plan"]);
+    expect(offered(pi, menuAt("x /", 3, "pi")!, "pi").map((r) => r.insert)).toEqual(["/skill:plan"]);
     expect(showsEmpty(start)).toBe(true);
     expect(showsEmpty(menuAt("x /", 3, "claude")!)).toBe(false);
   });
@@ -86,5 +89,110 @@ describe("pick", () => {
     expect(moved(0, 3, -1)).toBe(2);
     expect(moved(2, 3, 1)).toBe(0);
     expect(moved(0, 0, 1)).toBe(0);
+  });
+});
+
+describe("skillFirst", () => {
+  const skills = new Set(["/skill:plan", "/skill:x", "/skill:y", "/skill:my_skill"]);
+
+  it("ends a skill token at a newline or the end, and joins its arguments with one space", () => {
+    expect(skillFirst("/skill:plan\nfix this", skills).text).toBe("/skill:plan fix this");
+    expect(skillFirst("fix /skill:plan\nnow", skills).text).toBe("/skill:plan fix now");
+    expect(skillFirst("/skill:plan", skills).text).toBe("/skill:plan");
+  });
+
+  it("moves the first pi skill token to the start, where pi expands it", () => {
+    expect(skillFirst("fix this /skill:plan now", skills)).toEqual({ text: "/skill:plan fix this now", extra: [] });
+    expect(skillFirst("tail /skill:plan", skills)).toEqual({ text: "/skill:plan tail", extra: [] });
+    expect(skillFirst("one\n/skill:plan two", skills)).toEqual({ text: "/skill:plan one\ntwo", extra: [] });
+  });
+
+  it("keeps a draft that starts with a skill, and lists a second skill that stays as text", () => {
+    expect(skillFirst("/skill:plan go", skills)).toEqual({ text: "/skill:plan go", extra: [] });
+    expect(skillFirst("a /skill:x b /skill:y", skills)).toEqual({ text: "/skill:x a b /skill:y", extra: ["/skill:y"] });
+    expect(skillFirst("/skill:x and /skill:y", skills)).toEqual({ text: "/skill:x and /skill:y", extra: ["/skill:y"] });
+  });
+
+  it("moves only a skill that pi listed, by the name up to the next space", () => {
+    expect(skillFirst("fix /skill:nosuch now", skills)).toEqual({ text: "fix /skill:nosuch now", extra: [] });
+    expect(skillFirst("use /skill:my_skill here", skills)).toEqual({ text: "/skill:my_skill use here", extra: [] });
+    expect(skillFirst("see /skill:x.md", skills)).toEqual({ text: "see /skill:x.md", extra: [] });
+    expect(skillFirst("a/skill:x b", skills)).toEqual({ text: "a/skill:x b", extra: [] });
+  });
+
+  it("leaves a skill inside a code fence or a quote", () => {
+    const fenced = "see the log\n```\n/skill:plan foo\n```";
+    expect(skillFirst(fenced, skills)).toEqual({ text: fenced, extra: [] });
+    const quoted = "about this:\n> + run /skill:plan now";
+    expect(skillFirst(quoted, skills)).toEqual({ text: quoted, extra: [] });
+    expect(skillFirst("```\nx\n```\nthen /skill:plan", skills)).toEqual({ text: "/skill:plan ```\nx\n```\nthen", extra: [] });
+  });
+});
+
+describe("recorded picks", () => {
+  const picked = [{ start: 4, insert: "/skill:plan" }];
+
+  it("keeps a pick through edits around it, but drops a changed token", () => {
+    expect(editPicks("fix /skill:plan now", "please fix /skill:plan now", picked)).toEqual([{ start: 11, insert: "/skill:plan" }]);
+    expect(editPicks("fix /skill:plan now", "fix /skill:plan later", picked)).toEqual(picked);
+    for (const next of ["fix /skill:plans now", "fix /skill:pla now", "fix x/skill:plan now", "fix now"])
+      expect(editPicks("fix /skill:plan now", next, picked)).toEqual([]);
+  });
+
+  it("tracks the picked occurrence, not a typed copy of the same token", () => {
+    const text = "/skill:plan typed; fix /skill:plan now";
+    const picks = [{ start: text.lastIndexOf("/skill:plan"), insert: "/skill:plan" }];
+    expect(skillFirst(text, new Set(), picks).text).toBe("/skill:plan /skill:plan typed; fix now");
+    expect(validPicks("fix /skill:plans now", picked)).toEqual([]);
+  });
+
+  it("drops the deleted occurrence when an identical typed token remains", () => {
+    const before = "/skill:plan /skill:plan";
+    expect(editPicks(before, "/skill:plan", [{ start: 0, insert: "/skill:plan" }], { start: 0, end: 12 })).toEqual([]);
+    expect(editPicks(before, "/skill:plan", [{ start: 12, insert: "/skill:plan" }], { start: 0, end: 12 })).toEqual([{ start: 0, insert: "/skill:plan" }]);
+  });
+
+  it("sends only the first recorded pick as a skill and lists the second as text", () => {
+    const text = "fix /skill:plan and /skill:x";
+    const picks = [...picked, { start: 20, insert: "/skill:x" }];
+    expect(skillFirst(text, new Set(), picks)).toEqual({ text: "/skill:plan fix and /skill:x", extra: ["/skill:x"] });
+  });
+});
+
+describe("toSend", () => {
+  const listed: CommandList = { commands: [row("/compact", { kind: "builtin" }), row("/skill:plan", { kind: "skill" })], note: null };
+  const loads = (list: CommandList | null) => {
+    const calls: number[] = [];
+    return { calls, load: async () => (calls.push(1), list ?? Promise.reject(new Error("probe failed"))) };
+  };
+
+  it("sends a recorded pick with no list or probe, even if listing failed", async () => {
+    const { calls, load } = loads(null);
+    const picks = [{ start: 4, insert: "/skill:plan" }];
+    for (const list of [null, { commands: [], note: "probe failed" }]) {
+      expect(await toSend("fix /skill:plan\nnow", "pi", list, load, picks)).toEqual({ text: "/skill:plan fix now", list });
+    }
+    expect(calls).toHaveLength(0);
+    for (const provider of ["claude", "agy", "codex"])
+      expect((await toSend("fix /skill:plan now", provider, null, load, picks)).text).toBe("fix /skill:plan now");
+  });
+
+  it("asks pi for its skills when the menu never loaded, then moves the skill", async () => {
+    const { calls, load } = loads(listed);
+    expect(await toSend("fix /skill:plan now", "pi", null, load)).toEqual({ text: "/skill:plan fix now", list: listed });
+    expect(calls).toHaveLength(1);
+  });
+
+  it("asks nothing when the list is there, the text has no skill, or the chat is not pi", async () => {
+    const { calls, load } = loads(listed);
+    expect((await toSend("fix /skill:plan now", "pi", listed, load)).text).toBe("/skill:plan fix now");
+    expect(await toSend("plain words", "pi", null, load)).toEqual({ text: "plain words", list: null });
+    expect(await toSend("fix /skill:plan now", "claude", null, load)).toEqual({ text: "fix /skill:plan now", list: null });
+    expect(calls).toHaveLength(0);
+  });
+
+  it("sends the text as it is when the probe fails", async () => {
+    const { load } = loads(null);
+    expect(await toSend("fix /skill:plan now", "pi", null, load)).toEqual({ text: "fix /skill:plan now", list: null });
   });
 });

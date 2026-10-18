@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { ApiError, type Agent, type Api, type Row, type RowFrame, type RowPage, type Session, type Snapshot } from "./api";
 import { App } from "./app";
 import { agentInput, confirmSent, MISSING_ADAPTER, sends, sentRow, submission, usageLabel } from "./composer";
@@ -58,6 +58,20 @@ describe("sent rows", () => {
     const none = [first];
     expect(confirmSent(none, [earlier])).toBe(none);
   });
+
+  it("leave when a pi skill row shows the same command and words", () => {
+    const sent = sentRow("/skill:plan fix this now ", "pi", []);
+    const skill: Row = {
+      id: "skill",
+      kind: "system",
+      system_kind: "command",
+      text: "",
+      order: [10, 0],
+      command: { name: "/skill:plan", arguments: "fix this now" },
+    };
+    expect(confirmSent([sent], [skill])).toEqual([]);
+    expect(confirmSent([sent], [{ ...skill, command: { name: "/skill:plan", arguments: "other" } }])).toEqual([sent]);
+  });
 });
 
 describe("chair input", () => {
@@ -107,7 +121,63 @@ function harness(fail?: (path: string) => string | null) {
 
 const settle = () => new Promise((r) => setTimeout(r, 0));
 
+describe("draft skill picks", () => {
+  it("keeps each chat's picks with its draft across a switch and a reload", () => {
+    const saved = new Map<string, string>();
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => saved.get(key) ?? null,
+      setItem: (key: string, value: string) => saved.set(key, value),
+      removeItem: (key: string) => saved.delete(key),
+    });
+    try {
+      const { app } = harness();
+      const picks = [{ start: 4, insert: "/skill:plan" }];
+      app.setDraft("pi", "fix /skill:plan now", picks);
+      app.setDraft("other", "plain words");
+      expect(app.draftPicks("other")).toEqual([]);
+      expect(app.draftPicks("pi")).toEqual(picks);
+      const reloaded = harness().app;
+      expect(reloaded.draft("pi")).toBe("fix /skill:plan now");
+      expect(reloaded.draftPicks("pi")).toEqual(picks);
+      reloaded.setDraft("pi", "fix /skill:plans now");
+      expect(reloaded.draftPicks("pi")).toEqual([]);
+      expect(harness().app.draftPicks("pi")).toEqual([]);
+      reloaded.setDraft("pi", "fix /skill:plan now", picks);
+      reloaded.setDraft("pi", "");
+      expect(harness().app.draftPicks("pi")).toEqual([]);
+      saved.set("composer.draft.legacy", "typed /skill:plan");
+      saved.set("composer.skills.legacy", "invalid json");
+      expect(harness().app.draft("legacy")).toBe("typed /skill:plan");
+      expect(harness().app.draftPicks("legacy")).toEqual([]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
 describe("chat actions", () => {
+  it("keeps picked text on failure, clears it after Retry, and protects a later edit", async () => {
+    let refuse = true;
+    const { app, posts, snapshot } = harness(() => refuse ? "send failed" : null);
+    snapshot();
+    app.openChat("chat");
+    await settle();
+    const text = "fix /skill:plan now";
+    const picks = [{ start: 4, insert: "/skill:plan" }];
+    app.setDraft("chat", text, picks);
+    expect(await app.send("chat", "/skill:plan fix now", text)).toBe(false);
+    expect(app.draftPicks("chat")).toEqual(picks);
+    refuse = false;
+    app.view.composer!.state.banner!.retry();
+    await settle();
+    expect(posts.at(-1)!.body.text).toBe("/skill:plan fix now");
+    expect(app.draft("chat")).toBe("");
+    expect(app.draftPicks("chat")).toEqual([]);
+    app.setDraft("chat", "a later draft");
+    await app.send("chat", "/skill:plan fix now", text);
+    expect(app.draft("chat")).toBe("a later draft");
+  });
+
   it("sends the cleaned text, then clears the draft only if it still holds that text", async () => {
     const { app, posts, snapshot } = harness();
     snapshot();
@@ -144,6 +214,15 @@ describe("chat actions", () => {
     expect(posts).toHaveLength(2);
     expect(app.view.composer!.state.banner).toBeNull();
     expect(app.draft("chat")).toBe("");
+  });
+
+  it("sends a pi text as it is; only the composer moves a skill", async () => {
+    const { app, posts, snapshot } = harness();
+    snapshot({ provider: "pi" });
+    app.openChat("chat");
+    await settle();
+    await app.send("chat", "fix /skill:plan now");
+    expect(posts).toEqual([{ path: "/api/chat/send", body: { session: "chat", agent: "chair", text: "fix /skill:plan now" } }]);
   });
 
   it("does not send while the chair asks a question", async () => {

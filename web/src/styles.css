@@ -1,5 +1,32 @@
 @import "tailwindcss";
 
+/* The mirror paints only backgrounds; the textarea keeps native text, caret, and editing. */
+.composer-text {
+  font: inherit;
+  font-size: 1rem;
+  line-height: 1.5;
+  padding: 10px 12px 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  scrollbar-gutter: stable;
+}
+.composer-highlights {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  color: transparent;
+  pointer-events: none;
+}
+.composer-skill-chip {
+  background: color-mix(in srgb, var(--brand) 24%, transparent);
+  border-radius: var(--radius-sm);
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+.composer-skill-chip[data-muted="true"] {
+  background: color-mix(in srgb, var(--muted-foreground) 12%, transparent);
+}
+
 /* Design tokens. Dark is the default; the system light scheme and `data-theme` on <html> override it.
    Status colours are their own tokens and never the accent, so a theme accent cannot hide a state. */
 

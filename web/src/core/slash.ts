@@ -17,15 +17,43 @@ export type MenuRow = {
 
 export type CommandList = { commands: MenuRow[]; note: string | null };
 
+/** A menu pick names one occurrence, so a typed copy is still plain text. */
+export type SkillPick = { start: number; insert: string };
+
+export function validPicks(text: string, picks: readonly SkillPick[]): SkillPick[] {
+  return picks.filter((p) => p && Number.isInteger(p.start) && p.start >= 0 && typeof p.insert === "string"
+    && /^\/skill:\S+$/.test(p.insert) && text.slice(p.start, p.start + p.insert.length) === p.insert
+    && (p.start === 0 || /[\s([]/.test(text[p.start - 1]))
+    && (p.start + p.insert.length === text.length || /\s/.test(text[p.start + p.insert.length])))
+    .sort((a, b) => a.start - b.start).filter((p, i, all) => !i || p.start !== all[i - 1].start);
+}
+
+/** Move the saved ranges with a native text edit; an edit inside a token removes its pick. */
+export function editPicks(before: string, after: string, picks: readonly SkillPick[], edit?: { start: number; end: number }): SkillPick[] {
+  if (!picks.length) return [];
+  let start = 0;
+  while (start < before.length && start < after.length && before[start] === after[start]) start++;
+  let end = before.length;
+  let nextEnd = after.length;
+  while (end > start && nextEnd > start && before[end - 1] === after[nextEnd - 1]) { end--; nextEnd--; }
+  // Native edit ranges distinguish two equal tokens when one occurrence is deleted.
+  if (edit) { start = edit.start; end = edit.end; nextEnd = end + after.length - before.length; }
+  return validPicks(after, picks.flatMap((p) => {
+    if (p.start + p.insert.length <= start) return [p];
+    if (p.start >= end) return [{ ...p, start: p.start + nextEnd - end }];
+    return [];
+  }));
+}
+
 /** The token at the caret that opened the menu. `end` reaches past the caret to the token's end,
  *  so a pick replaces the whole word. */
 export type Menu = { opener: "/" | "$"; start: number; end: number; query: string };
 
 /** The menu for the caret, or null. A `/` at the draft's start offers every command. Mid-draft,
- *  Claude and AGY run only skills and commands, while Codex and pi run none. A `$` is a Codex skill. */
+ *  Claude and AGY run only skills and commands, pi only skills, and Codex none. A `$` is a Codex skill. */
 export function menuAt(draft: string, caret: number, provider: string | null): Menu | null {
   const slash = token(draft, caret, "/");
-  if (slash) return slash.start === 0 || (provider !== "codex" && provider !== "pi") ? slash : null;
+  if (slash) return slash.start === 0 || provider !== "codex" ? slash : null;
   return provider === "codex" ? token(draft, caret, "$") : null;
 }
 
@@ -41,9 +69,45 @@ function token(draft: string, caret: number, opener: "/" | "$"): Menu | null {
 
 const atStart = (menu: Menu) => menu.opener === "/" && menu.start === 0;
 
-/** The rows this menu can offer: built-ins only at the draft's start. */
-export function offered(rows: readonly MenuRow[], menu: Menu): MenuRow[] {
-  return rows.filter((r) => r.insert.startsWith(menu.opener) && (atStart(menu) || r.kind !== "builtin"));
+/** The rows this menu can offer: built-ins only at the draft's start. pi expands only skills
+ *  mid-draft, and only after `skillFirst` moves them to the start. */
+export function offered(rows: readonly MenuRow[], menu: Menu, provider: string | null = null): MenuRow[] {
+  const midDraft = (r: MenuRow) => (provider === "pi" ? r.kind === "skill" : r.kind !== "builtin");
+  return rows.filter((r) => r.insert.startsWith(menu.opener) && (atStart(menu) || midDraft(r)));
+}
+
+// Normalize the token's separator to a space before pi reads its skill name.
+const SKILL = /(^|[\s([])(\/skill:\S+)/g;
+
+/** True on a `>` quote line or inside a ``` fence, where the owner shows a skill and does not run it. */
+function quoted(text: string, at: number): boolean {
+  const line = text.slice(text.lastIndexOf("\n", at - 1) + 1, at);
+  return /^\s*>/.test(line) || (text.slice(0, at).match(/^\s*```/gm)?.length ?? 0) % 2 === 1;
+}
+
+/** pi expands one skill at the message's start. The first recorded pick moves there; without
+ *  picks, use the first typed token in pi's list. `extra` holds the tokens sent as text. */
+export function skillFirst(text: string, skills: ReadonlySet<string>, picks: readonly SkillPick[] = []): { text: string; extra: string[] } {
+  const recorded = validPicks(text, picks);
+  const found = [...text.matchAll(SKILL)]
+    .filter((m) => skills.has(m[2]) && !quoted(text, m.index + m[1].length))
+    .map((m) => ({ start: m.index + m[1].length, insert: m[2] }));
+  const first = recorded[0] ?? found[0];
+  const extra = validPicks(text, [...recorded, ...found]).filter((p) => p.start !== first?.start).map((p) => p.insert);
+  if (!first) return { text, extra };
+  const words = (text.slice(0, first.start) + text.slice(first.start + first.insert.length).replace(/^\s+/, "")).trim();
+  return { text: words ? `${first.insert} ${words}` : first.insert, extra };
+}
+
+/** The `/skill:<name>` inserts of pi's skill rows. */
+export const skillNames = (list: CommandList | null) => new Set(list?.commands.filter((r) => r.kind === "skill").map((r) => r.insert));
+
+/** Recorded picks need no probe. Only typed tokens use pi's list, loading it when absent. */
+export async function toSend(text: string, provider: string | null, list: CommandList | null, load: () => Promise<CommandList>, picks: readonly SkillPick[] = []) {
+  if (provider !== "pi") return { text, list };
+  if (validPicks(text, picks).length) return { text: skillFirst(text, skillNames(list), picks).text, list };
+  const used = list ?? (text.includes("/skill:") ? await load().catch(() => null) : null);
+  return { text: skillFirst(text, skillNames(used)).text, list: used };
 }
 
 /** Mid-draft a `/` or `$` can be a path or a price, so that menu shows only with matching rows. */

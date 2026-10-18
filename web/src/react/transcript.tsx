@@ -427,7 +427,7 @@ function CommandChip({ row }: { row: Row }) {
       </div>
       {chip.skill_body && (
         <details className="text-xs">
-          <summary className="cursor-default text-muted-foreground">Skill · {chip.name.replace(/^\//, "")}</summary>
+          <summary className="cursor-default text-muted-foreground">Skill · {chip.name.replace(/^\/(skill:)?/, "")}</summary>
           <pre className="plain">{chip.skill_body.text}</pre>
         </details>
       )}
