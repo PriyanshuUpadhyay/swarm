@@ -23,7 +23,7 @@ sunrise. A neon restyle changes only the look tokens.
 - Find, inspect, measure, and label every reference, and take only what may be taken, as `blocks/reference-analysis/SKILL.md` says. The kit root, with its `blocks/` and `references/` folders, is two folders up from this skill's folder.
 - Prove the look with style frames and the story with an animatic, both before production.
 - Apply the architecture and deterministic-rendering rules in `blocks/build-canvas/SKILL.md`.
-  The look tokens follow `blocks/design-tokens/SKILL.md`.
+  The look tokens follow `blocks/design-tokens/SKILL.md`, with the shared rules in `blocks/web-ui/SKILL.md`.
 - Choose tools for the look and the story. Dependencies, load time, 3D, and WebGPU are fine.
 - Inspect rendered frames at each milestone. Code that runs does not prove the picture works.
 

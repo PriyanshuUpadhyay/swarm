@@ -9,7 +9,7 @@ metadata:
   needs: "a plan or a built page"
   gives: "shared rules for the selected plan parts"
   conflicts: ""
-  users: "plan, planner"
+  users: "planner"
   source: "blocks/planner/SKILL.md, blocks/plan-chart/SKILL.md, blocks/plan-review/SKILL.md, blocks/comment-round/SKILL.md, and blocks/page-comments/SKILL.md (each: the kit root is two folders up from this file)"
   parts: "planner, plan-chart, plan-review, comment-round, page-comments"
 ---

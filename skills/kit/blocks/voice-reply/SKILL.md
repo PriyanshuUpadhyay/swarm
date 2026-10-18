@@ -15,7 +15,7 @@ metadata:
 
 ## Rules
 - Apply the owner's reply rules to the final answer.
-- When the session loaded no such file, say so in the reply, and write in plain words.
+- When the session loaded no reply rules, say so in the reply, and write in plain words.
 - Take each result from its step file. Name each step that failed or was skipped, with its output. Never round a partial result up to done.
 
 ## Example
