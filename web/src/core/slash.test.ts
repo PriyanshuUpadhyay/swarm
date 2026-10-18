@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { matches, menuAt, moved, offered, pick, picksAndSends, showsEmpty, skillFirst, type MenuRow } from "./slash";
+import { matches, menuAt, moved, offered, pick, picksAndSends, showsEmpty, skillFirst, toSend, type CommandList, type MenuRow } from "./slash";
 
 const row = (insert: string, extra: Partial<MenuRow> = {}): MenuRow => ({
   name: insert.slice(1),
@@ -120,5 +120,32 @@ describe("skillFirst", () => {
     const quoted = "about this:\n> + run /skill:plan now";
     expect(skillFirst(quoted, skills)).toEqual({ text: quoted, extra: [] });
     expect(skillFirst("```\nx\n```\nthen /skill:plan", skills)).toEqual({ text: "/skill:plan ```\nx\n```\nthen", extra: [] });
+  });
+});
+
+describe("toSend", () => {
+  const listed: CommandList = { commands: [row("/compact", { kind: "builtin" }), row("/skill:plan", { kind: "skill" })], note: null };
+  const loads = (list: CommandList | null) => {
+    const calls: number[] = [];
+    return { calls, load: async () => (calls.push(1), list ?? Promise.reject(new Error("probe failed"))) };
+  };
+
+  it("asks pi for its skills when the menu never loaded, then moves the skill", async () => {
+    const { calls, load } = loads(listed);
+    expect(await toSend("fix /skill:plan now", "pi", null, load)).toEqual({ text: "/skill:plan fix now", list: listed });
+    expect(calls).toHaveLength(1);
+  });
+
+  it("asks nothing when the list is there, the text has no skill, or the chat is not pi", async () => {
+    const { calls, load } = loads(listed);
+    expect((await toSend("fix /skill:plan now", "pi", listed, load)).text).toBe("/skill:plan fix now");
+    expect(await toSend("plain words", "pi", null, load)).toEqual({ text: "plain words", list: null });
+    expect(await toSend("fix /skill:plan now", "claude", null, load)).toEqual({ text: "fix /skill:plan now", list: null });
+    expect(calls).toHaveLength(0);
+  });
+
+  it("sends the text as it is when the probe fails", async () => {
+    const { load } = loads(null);
+    expect(await toSend("fix /skill:plan now", "pi", null, load)).toEqual({ text: "fix /skill:plan now", list: null });
   });
 });

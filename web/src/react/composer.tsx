@@ -2,7 +2,7 @@ import { ArrowUpIcon, ChevronDownIcon, CircleHelpIcon, LoaderCircleIcon, SquareI
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import type { App, Banner, Composer, Input } from "../core/app";
 import { modelLabel, outgoing, sends, usageLabel, type Prompt } from "../core/composer";
-import { matches, menuAt, moved, offered, pick, picksAndSends, showsEmpty, skillFirst, type CommandList, type MenuRow } from "../core/slash";
+import { matches, menuAt, moved, offered, pick, picksAndSends, showsEmpty, skillFirst, skillNames, toSend, type CommandList, type MenuRow } from "../core/slash";
 import { Button } from "../components/ui/button";
 import { ImageThumbs } from "./images";
 import { cn } from "../lib/utils";
@@ -189,13 +189,18 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
   };
   const canSend = outgoing(text) !== null && !state.sending && !state.pulling && !chair.disabled;
   const canPullBack = chair.pullBack && !chair.disabled && composer.queued > 0;
-  const skills = new Set(list?.commands.filter((r) => r.kind === "skill").map((r) => r.insert));
+  const skills = skillNames(list);
+  const loadingSkills = useRef(false);
   /** pi runs a skill only at the message's start, so the draft shows the moved text it sends. */
-  const submit = () => {
-    if (!canSend) return;
-    const out = chair.provider === "pi" ? skillFirst(text, skills).text : text;
-    if (out !== text) change(out);
-    void app.send(sessionId, out);
+  const submit = async () => {
+    if (!canSend || loadingSkills.current) return;
+    loadingSkills.current = true;
+    const out = await toSend(text, chair.provider, list, () => app.menuCommands(sessionId)).finally(() => (loadingSkills.current = false));
+    if (out.list !== list) setList(out.list);
+    // The owner typed while pi listed its skills, so this send is stale.
+    if (app.draft(sessionId) !== text) return;
+    if (out.text !== text) change(out.text);
+    void app.send(sessionId, out.text);
   };
 
   /** A pasted image goes to the server, and its path goes in the draft at the caret. */
@@ -257,7 +262,7 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
     if (e.key === "Enter") {
       if (sends(e, sendKey)) {
         e.preventDefault();
-        submit();
+        void submit();
       } else if (e.metaKey || e.ctrlKey) {
         // The text area adds no line for these by itself.
         e.preventDefault();

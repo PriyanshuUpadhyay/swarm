@@ -70,6 +70,17 @@ export function skillFirst(text: string, skills: ReadonlySet<string>): { text: s
   return { text: words ? `${first[2]} ${words}` : first[2], extra };
 }
 
+/** The `/skill:<name>` inserts of pi's skill rows. */
+export const skillNames = (list: CommandList | null) => new Set(list?.commands.filter((r) => r.kind === "skill").map((r) => r.insert));
+
+/** The text the composer sends, and the list it used. A pi chat whose menu never loaded, after a
+ *  chat switch or a reload, asks for pi's skills first; a failed probe sends the text as it is. */
+export async function toSend(text: string, provider: string | null, list: CommandList | null, load: () => Promise<CommandList>) {
+  if (provider !== "pi") return { text, list };
+  const used = list ?? (text.includes("/skill:") ? await load().catch(() => null) : null);
+  return { text: skillFirst(text, skillNames(used)).text, list: used };
+}
+
 /** Mid-draft a `/` or `$` can be a path or a price, so that menu shows only with matching rows. */
 export const showsEmpty = atStart;
 
