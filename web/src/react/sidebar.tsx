@@ -53,6 +53,7 @@ function WorkspaceList({ app }: { app: App }) {
   // Only the tree's own fields: a rows frame in an open chat or pane must not render the list.
   const rows = useSyncExternalStore(app.subscribe, () => app.view.rows);
   const selected = useSyncExternalStore(app.subscribe, () => app.view.selected);
+  const marked = useSyncExternalStore(app.subscribe, () => app.view.marked);
   const loaded = useSyncExternalStore(app.subscribe, () => app.view.loaded);
   const error = useSyncExternalStore(app.subscribe, () => app.view.error);
   const tree = useSyncExternalStore(app.subscribe, () => app.view.tree);
@@ -75,7 +76,7 @@ function WorkspaceList({ app }: { app: App }) {
     else if (action === "unarchive") app.unarchive(archivedSession(row.id));
     else if (action === "new-chat" && row.row) newChat.current?.({ rect: (e.target as Element).closest("[data-action]")!.getBoundingClientRect(), workspace: row.row });
     else if (action === "new-workspace") app.life.newWorkspace(row.section.path ?? undefined);
-    else app.clickRow(row.id);
+    else app.clickRow(row.id, e.metaKey || e.ctrlKey ? "toggle" : e.shiftKey ? "range" : null);
   };
 
   // A drop target: the Pinned header or the pin zone, or another workspace of the same section.
@@ -136,6 +137,7 @@ function WorkspaceList({ app }: { app: App }) {
             ref={listRef}
             className="min-h-0 flex-1 overflow-y-auto pt-1 pb-3 outline-none"
             role="tree"
+            aria-multiselectable
             aria-label={archive ? "Archived workspaces" : "Workspaces"}
             data-testid="sidebar"
             data-loaded={String(loaded)}
@@ -148,7 +150,7 @@ function WorkspaceList({ app }: { app: App }) {
               </div>
             )}
             {rows.map((row) => (
-              <RowView key={row.id} row={row} selected={row.id === selected} current={isCurrent(row, openId, workspace)} archive={archive} />
+              <RowView key={row.id} row={row} selected={row.id === selected} marked={marked.size ? marked.has(row.id) : null} current={isCurrent(row, openId, workspace)} archive={archive} />
             ))}
             {!loaded && !error && <SidebarSkeleton />}
             {loaded && rows.length === 0 && <SidebarNote title={archive ? "No archived workspaces" : "No projects yet"} body={archive ? "" : "Import or create a project from the + menu above."} />}
@@ -183,7 +185,7 @@ const isCurrent = (row: NavRow, openId: string | null, workspace: string | null)
   openId ? row.kind === "chat" && row.row?.selection?.chat === openId : row.kind === "workspace" && row.id === workspace;
 
 /** One sidebar line. Memoized on its wire object, so a key move renders only two rows. */
-const RowView = memo(function RowView({ row, selected, current, archive }: { row: NavRow; selected: boolean; current: boolean; archive: boolean }) {
+const RowView = memo(function RowView({ row, selected, marked, current, archive }: { row: NavRow; selected: boolean; marked: boolean | null; current: boolean; archive: boolean }) {
   const r = row.row;
   const common = {
     role: "treeitem",
@@ -192,7 +194,8 @@ const RowView = memo(function RowView({ row, selected, current, archive }: { row
     "data-id": row.id,
     "aria-level": row.level,
     "aria-expanded": row.expanded ?? undefined,
-    "aria-selected": selected,
+    // While chats are picked, the picks are the selection; the keyboard row keeps only the focus.
+    "aria-selected": marked ?? selected,
     "aria-current": current || undefined,
     tabIndex: selected ? 0 : -1,
   } as const;
@@ -247,6 +250,7 @@ const RowView = memo(function RowView({ row, selected, current, archive }: { row
       className="trow"
       data-session={r.kind === "chat" ? (r.selection?.chat ?? undefined) : undefined}
       data-dimmed={r.dimmed || undefined}
+      data-marked={marked || undefined}
       draggable={r.kind === "workspace" && !r.archived && !archive ? true : undefined}
       style={{ paddingLeft: 12 + r.depth * 14 }}
     >
