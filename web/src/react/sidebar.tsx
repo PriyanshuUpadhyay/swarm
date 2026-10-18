@@ -150,7 +150,7 @@ function WorkspaceList({ app }: { app: App }) {
               </div>
             )}
             {rows.map((row) => (
-              <RowView key={row.id} row={row} selected={row.id === selected} marked={marked.has(row.id)} current={isCurrent(row, openId, workspace)} archive={archive} />
+              <RowView key={row.id} row={row} selected={row.id === selected} marked={marked.size ? marked.has(row.id) : null} current={isCurrent(row, openId, workspace)} archive={archive} />
             ))}
             {!loaded && !error && <SidebarSkeleton />}
             {loaded && rows.length === 0 && <SidebarNote title={archive ? "No archived workspaces" : "No projects yet"} body={archive ? "" : "Import or create a project from the + menu above."} />}
@@ -185,7 +185,7 @@ const isCurrent = (row: NavRow, openId: string | null, workspace: string | null)
   openId ? row.kind === "chat" && row.row?.selection?.chat === openId : row.kind === "workspace" && row.id === workspace;
 
 /** One sidebar line. Memoized on its wire object, so a key move renders only two rows. */
-const RowView = memo(function RowView({ row, selected, marked, current, archive }: { row: NavRow; selected: boolean; marked: boolean; current: boolean; archive: boolean }) {
+const RowView = memo(function RowView({ row, selected, marked, current, archive }: { row: NavRow; selected: boolean; marked: boolean | null; current: boolean; archive: boolean }) {
   const r = row.row;
   const common = {
     role: "treeitem",
@@ -194,7 +194,8 @@ const RowView = memo(function RowView({ row, selected, marked, current, archive 
     "data-id": row.id,
     "aria-level": row.level,
     "aria-expanded": row.expanded ?? undefined,
-    "aria-selected": selected || marked,
+    // While chats are picked, the picks are the selection; the keyboard row keeps only the focus.
+    "aria-selected": marked ?? selected,
     "aria-current": current || undefined,
     tabIndex: selected ? 0 : -1,
   } as const;

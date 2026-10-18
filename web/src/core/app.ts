@@ -672,8 +672,9 @@ export class App {
   }
 
   /** A plain click clears the picked chats. ⌘-click picks or drops one chat row, and Shift-click
-   *  picks the chat rows from the selected row to this one; neither opens the chat. While chats are
-   *  picked, either click on another row does nothing. */
+   *  picks the chat rows from the selected chat to this one, or only this one when the selected row
+   *  is not a chat; neither opens the chat. While chats are picked, either click on another row does
+   *  nothing. */
   clickRow(id: string, pick: "toggle" | "range" | null = null) {
     const row = this.rows.find((r) => r.id === id);
     if (!row) return;
