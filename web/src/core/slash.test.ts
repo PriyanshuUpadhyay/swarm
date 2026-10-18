@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { matches, menuAt, moved, offered, pick, picksAndSends, showsEmpty, skillFirst, toSend, type CommandList, type MenuRow } from "./slash";
+import { editPicks, matches, menuAt, moved, offered, pick, picksAndSends, showsEmpty, skillFirst, toSend, validPicks, type CommandList, type MenuRow } from "./slash";
 
 const row = (insert: string, extra: Partial<MenuRow> = {}): MenuRow => ({
   name: insert.slice(1),
@@ -95,6 +95,12 @@ describe("pick", () => {
 describe("skillFirst", () => {
   const skills = new Set(["/skill:plan", "/skill:x", "/skill:y", "/skill:my_skill"]);
 
+  it("ends a skill token at a newline or the end, and joins its arguments with one space", () => {
+    expect(skillFirst("/skill:plan\nfix this", skills).text).toBe("/skill:plan fix this");
+    expect(skillFirst("fix /skill:plan\nnow", skills).text).toBe("/skill:plan fix now");
+    expect(skillFirst("/skill:plan", skills).text).toBe("/skill:plan");
+  });
+
   it("moves the first pi skill token to the start, where pi expands it", () => {
     expect(skillFirst("fix this /skill:plan now", skills)).toEqual({ text: "/skill:plan fix this now", extra: [] });
     expect(skillFirst("tail /skill:plan", skills)).toEqual({ text: "/skill:plan tail", extra: [] });
@@ -123,12 +129,53 @@ describe("skillFirst", () => {
   });
 });
 
+describe("recorded picks", () => {
+  const picked = [{ start: 4, insert: "/skill:plan" }];
+
+  it("keeps a pick through edits around it, but drops a changed token", () => {
+    expect(editPicks("fix /skill:plan now", "please fix /skill:plan now", picked)).toEqual([{ start: 11, insert: "/skill:plan" }]);
+    expect(editPicks("fix /skill:plan now", "fix /skill:plan later", picked)).toEqual(picked);
+    for (const next of ["fix /skill:plans now", "fix /skill:pla now", "fix x/skill:plan now", "fix now"])
+      expect(editPicks("fix /skill:plan now", next, picked)).toEqual([]);
+  });
+
+  it("tracks the picked occurrence, not a typed copy of the same token", () => {
+    const text = "/skill:plan typed; fix /skill:plan now";
+    const picks = [{ start: text.lastIndexOf("/skill:plan"), insert: "/skill:plan" }];
+    expect(skillFirst(text, new Set(), picks).text).toBe("/skill:plan /skill:plan typed; fix now");
+    expect(validPicks("fix /skill:plans now", picked)).toEqual([]);
+  });
+
+  it("drops the deleted occurrence when an identical typed token remains", () => {
+    const before = "/skill:plan /skill:plan";
+    expect(editPicks(before, "/skill:plan", [{ start: 0, insert: "/skill:plan" }], { start: 0, end: 12 })).toEqual([]);
+    expect(editPicks(before, "/skill:plan", [{ start: 12, insert: "/skill:plan" }], { start: 0, end: 12 })).toEqual([{ start: 0, insert: "/skill:plan" }]);
+  });
+
+  it("sends only the first recorded pick as a skill and lists the second as text", () => {
+    const text = "fix /skill:plan and /skill:x";
+    const picks = [...picked, { start: 20, insert: "/skill:x" }];
+    expect(skillFirst(text, new Set(), picks)).toEqual({ text: "/skill:plan fix and /skill:x", extra: ["/skill:x"] });
+  });
+});
+
 describe("toSend", () => {
   const listed: CommandList = { commands: [row("/compact", { kind: "builtin" }), row("/skill:plan", { kind: "skill" })], note: null };
   const loads = (list: CommandList | null) => {
     const calls: number[] = [];
     return { calls, load: async () => (calls.push(1), list ?? Promise.reject(new Error("probe failed"))) };
   };
+
+  it("sends a recorded pick with no list or probe, even if listing failed", async () => {
+    const { calls, load } = loads(null);
+    const picks = [{ start: 4, insert: "/skill:plan" }];
+    for (const list of [null, { commands: [], note: "probe failed" }]) {
+      expect(await toSend("fix /skill:plan\nnow", "pi", list, load, picks)).toEqual({ text: "/skill:plan fix now", list });
+    }
+    expect(calls).toHaveLength(0);
+    for (const provider of ["claude", "agy", "codex"])
+      expect((await toSend("fix /skill:plan now", provider, null, load, picks)).text).toBe("fix /skill:plan now");
+  });
 
   it("asks pi for its skills when the menu never loaded, then moves the skill", async () => {
     const { calls, load } = loads(listed);
