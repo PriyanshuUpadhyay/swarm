@@ -2601,7 +2601,7 @@ struct CommandsQuery {
     agent: String,
 }
 
-/// How long a listed menu stays fresh, and how long a failed probe waits before the next.
+/// How long a clean menu stays fresh, and how long a failed or partial read waits before the next.
 const COMMANDS_FRESH: Duration = Duration::from_secs(60);
 const COMMANDS_RETRY: Duration = Duration::from_secs(5);
 
