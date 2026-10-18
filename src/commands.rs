@@ -414,10 +414,7 @@ fn claude_rows(commands: &Value) -> Vec<Row> {
             } else if let Some((plugin, _)) = name.split_once(':') {
                 source = plugin.into();
             }
-            if !builtin {
-                // Claude currently omits paths; its own list already hides model-only skills.
-                source = skill_menu_source(command["path"].as_str(), &source)?;
-            }
+            // Claude's list gives no skill path, and it already leaves out `user-invocable: false`.
             Some(Row {
                 insert: format!("/{name}"),
                 name,
@@ -606,7 +603,12 @@ fn skill_menu_source(path: Option<&str>, source: &str) -> Option<String> {
     let path = Path::new(path);
     let path = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
     if let Ok(text) = std::fs::read_to_string(&path)
-        && frontmatter(&text).get("user-invocable").map(String::as_str) == Some("false")
+        && frontmatter(&text)
+            .get("user-invocable")
+            .is_some_and(|value| {
+                let value = value.split(" #").next().unwrap_or("").trim();
+                value.eq_ignore_ascii_case("false")
+            })
     {
         return None;
     }
@@ -648,6 +650,9 @@ fn frontmatter(text: &str) -> BTreeMap<String, String> {
         }
         if let Some((key, parts)) = block.take() {
             fields.insert(key, parts.join(" ").trim().to_owned());
+        }
+        if line.starts_with([' ', '\t']) {
+            continue; // a nested key such as `metadata:` children is not a top-level field
         }
         let Some((key, value)) = line.split_once(':') else {
             continue;
@@ -751,17 +756,32 @@ mod tests {
             ["swarm", "skill", "skill", "extension"]
         );
         let claude = claude_rows(&json!([
-            {"name":"plain-name","path":visible},
-            {"name":"hidden","path":hidden},
-            {"name":"swarm:plan","description":"(swarm) Plan"}
+            {"name":"swarm:plan","description":"(swarm) Plan","argumentHint":""}
         ]));
-        assert_eq!(
-            claude.iter().map(|r| r.source.as_str()).collect::<Vec<_>>(),
-            ["swarm", "swarm"]
-        );
+        assert_eq!(claude[0].source, "swarm");
         let agy = skills(&kit.join("skills"), None);
         assert_eq!(agy.len(), 1);
         assert_eq!(agy[0].source, "swarm");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn only_a_top_level_false_hides_a_skill() {
+        let root = std::env::temp_dir().join(format!("swarm-menu-flag-{}", uuid::Uuid::now_v7()));
+        let cases = [
+            ("---\nmetadata:\n  user-invocable: false\n---\n", true),
+            ("---\nuser-invocable: False\n---\n", false),
+            ("---\nuser-invocable: false # model only\n---\n", false),
+            ("---\nuser-invocable: true\n---\n", true),
+        ];
+        for (i, (text, shown)) in cases.into_iter().enumerate() {
+            let file = root.join(format!("{i}/SKILL.md"));
+            std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+            std::fs::write(&file, text).unwrap();
+            let rows =
+                pi_rows(&json!([{"name":"skill:x","source":"skill","sourceInfo":{"path":file}}]));
+            assert_eq!(rows.len() == 1, shown, "{text}");
+        }
         std::fs::remove_dir_all(root).unwrap();
     }
 
