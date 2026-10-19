@@ -21,6 +21,9 @@ pub struct Adapter {
     pub key: Option<String>,
     /// Prints the pid of the host client, for window activation after focus.
     pub client: Option<String>,
+    /// Opens a pane whose program is `$SWARM_COMMAND`, the launch line `spawn` would ring, and
+    /// prints its id. With it, `launch` does not ring the line into a shell.
+    pub run_line: Option<String>,
 }
 
 /// The adapters this binary carries, which are the ones it is tested against.
@@ -102,6 +105,7 @@ fn build(name: &str, mut verbs: Verbs) -> Result<Adapter, Box<dyn std::error::Er
         screen: verbs.remove("screen"),
         key: verbs.remove("key"),
         client: verbs.remove("client"),
+        run_line: verbs.remove("run"),
     };
     if let Some(key) = verbs.keys().next() {
         return Err(format!("adapter {name}: unknown key {key}").into());
@@ -118,7 +122,19 @@ pub fn load(root: &std::path::Path, name: &str) -> Result<Adapter, Box<dyn std::
     match (shipped(name), deployed) {
         (Some(base), Ok(text)) => {
             let mut merged = verbs(name, base)?;
-            merged.extend(verbs(name, &text)?);
+            let deployed = verbs(name, &text)?;
+            // `run` stands in for the shipped `spawn` and needs the shipped `list`, which leaves an
+            // ended pane out. A machine's own `spawn` or `list` stays in force unless its file
+            // names `run` too.
+            let changed = |verb: &str| {
+                deployed
+                    .get(verb)
+                    .is_some_and(|line| merged.get(verb) != Some(line))
+            };
+            if (changed("spawn") || changed("list")) && !deployed.contains_key("run") {
+                merged.remove("run");
+            }
+            merged.extend(deployed);
             build(name, merged)
         }
         (Some(base), Err(_)) => parse(name, base),
@@ -199,6 +215,10 @@ impl Adapter {
                 .client
                 .as_ref()
                 .ok_or_else(|| format!("swarm: {} has no client", self.name))?,
+            "run" => self
+                .run_line
+                .as_ref()
+                .ok_or_else(|| format!("swarm: {} has no run", self.name))?,
             _ => return Err(format!("adapter: unknown verb {verb}").into()),
         };
         if let Some(deadline) = self.deadline {
@@ -576,6 +596,36 @@ mod tests {
                 .unwrap_err()
                 .to_string()
                 .contains("missing.conf")
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// `run` stands in for `spawn` and needs the shipped `list`, so a machine's own `spawn` or
+    /// `list` stays in force: the shipped `run` drops out unless the file names `run` too.
+    #[test]
+    fn a_deployed_spawn_turns_off_the_shipped_run() {
+        let root = std::env::temp_dir().join(format!("swarm-adapter-run-{}", std::process::id()));
+        let adapters = root.join("adapters");
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&adapters).unwrap();
+        assert!(load(&root, "rex").unwrap().run_line.is_some());
+        std::fs::write(adapters.join("rex.conf"), "spawn = own-split\n").unwrap();
+        let edited = load(&root, "rex").unwrap();
+        assert_eq!(edited.spawn, "own-split");
+        assert_eq!(edited.run_line, None);
+        std::fs::write(adapters.join("rex.conf"), "list = own-list\n").unwrap();
+        assert_eq!(load(&root, "rex").unwrap().run_line, None);
+        // A full copy of the shipped file changes nothing, so it keeps the shipped `run`.
+        std::fs::write(adapters.join("rex.conf"), shipped("rex").unwrap()).unwrap();
+        assert!(load(&root, "rex").unwrap().run_line.is_some());
+        std::fs::write(
+            adapters.join("rex.conf"),
+            "spawn = own-split\nrun = own-run\n",
+        )
+        .unwrap();
+        assert_eq!(
+            load(&root, "rex").unwrap().run_line.as_deref(),
+            Some("own-run")
         );
         let _ = std::fs::remove_dir_all(&root);
     }
