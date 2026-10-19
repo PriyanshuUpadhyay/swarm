@@ -1,4 +1,4 @@
-// The composer's `/` and `$` menu, ported from the SwiftUI app's ComposerMenu and its key router
+// The composer's `/`, `$` and `@` menu, ported from the SwiftUI app's ComposerMenu and its key router
 // (`58beca2a^:ui/Sources/SwarmCore/Composer/ComposerMenu.swift`). Pure, so vitest covers it.
 
 import { fuzzySearchItems } from "./fuzzy-search";
@@ -7,7 +7,7 @@ import { fuzzySearchItems } from "./fuzzy-search";
 export type MenuRow = {
   name: string;
   insert: string;
-  kind: "builtin" | "command" | "skill";
+  kind: "builtin" | "command" | "skill" | "file";
   description: string;
   hint: string;
   source: string;
@@ -47,17 +47,20 @@ export function editPicks(before: string, after: string, picks: readonly SkillPi
 
 /** The token at the caret that opened the menu. `end` reaches past the caret to the token's end,
  *  so a pick replaces the whole word. */
-export type Menu = { opener: "/" | "$"; start: number; end: number; query: string };
+export type Menu = { opener: "/" | "$" | "@"; start: number; end: number; query: string };
 
 /** The menu for the caret, or null. A `/` at the draft's start offers every command. Mid-draft,
- *  Claude and AGY run only skills and commands, pi only skills, and Codex none. A `$` is a Codex skill. */
+ *  Claude and AGY run only skills and commands, pi only skills, and Codex none. A `$` is a Codex skill.
+ *  An `@` names a file of the chat's folder for every CLI. */
 export function menuAt(draft: string, caret: number, provider: string | null): Menu | null {
+  const file = token(draft, caret, "@");
+  if (file) return file;
   const slash = token(draft, caret, "/");
   if (slash) return slash.start === 0 || provider !== "codex" ? slash : null;
   return provider === "codex" ? token(draft, caret, "$") : null;
 }
 
-function token(draft: string, caret: number, opener: "/" | "$"): Menu | null {
+function token(draft: string, caret: number, opener: Menu["opener"]): Menu | null {
   const at = draft.lastIndexOf(opener, caret - 1);
   if (at < 0) return null;
   const query = draft.slice(at + 1, caret);
@@ -72,6 +75,7 @@ const atStart = (menu: Menu) => menu.opener === "/" && menu.start === 0;
 /** The rows this menu can offer: built-ins only at the draft's start. pi expands only skills
  *  mid-draft, and only after `skillFirst` moves them to the start. */
 export function offered(rows: readonly MenuRow[], menu: Menu, provider: string | null = null): MenuRow[] {
+  if (menu.opener === "@") return rows.filter((r) => r.kind === "file");
   const midDraft = (r: MenuRow) => (provider === "pi" ? r.kind === "skill" : r.kind !== "builtin");
   return rows.filter((r) => r.insert.startsWith(menu.opener) && (atStart(menu) || midDraft(r)));
 }
@@ -114,7 +118,12 @@ export async function toSend(text: string, provider: string | null, list: Comman
 }
 
 /** Mid-draft a `/` or `$` can be a path or a price, so that menu shows only with matching rows. */
-export const showsEmpty = atStart;
+export const showsEmpty = (menu: Menu) => atStart(menu) || menu.opener === "@";
+
+/** `/api/chat/files` as menu rows. */
+export function fileRows(files: readonly string[], note: string | null): CommandList {
+  return { commands: files.map((f) => ({ name: f, insert: `@${f}`, kind: "file", description: "", hint: "", source: "", dialog: false })), note };
+}
 
 /** The rows that match the query, best first: the exact name, then names that start with it,
  *  then jean's fuzzy order. */

@@ -138,6 +138,7 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
   const [caret, setCaret] = useState(0);
   const [focused, setFocused] = useState(false);
   const [list, setList] = useState<CommandList | null>(null);
+  const [files, setFiles] = useState<CommandList | null>(null);
   const [selected, setSelected] = useState(0);
   // The start of the token whose menu Escape closed; the menu stays shut until the token changes.
   const [dismissed, setDismissed] = useState<number | null>(null);
@@ -179,7 +180,8 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
   }, [text, picks, expanded]);
 
   const menu = focused && !chair.disabled ? menuAt(text, caret, chair.provider) : null;
-  const rows = menu && list ? matches(offered(list.commands, menu, chair.provider), menu.query) : [];
+  const shownList = menu?.opener === "@" ? files : list;
+  const rows = menu && shownList ? matches(offered(shownList.commands, menu, chair.provider), menu.query) : [];
   const open = menu !== null && dismissed !== menu.start && (rows.length > 0 || showsEmpty(menu));
   const current = Math.min(selected, Math.max(rows.length - 1, 0));
   const menuKey = menu ? `${menu.opener}${menu.start}` : null;
@@ -191,9 +193,11 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
       return;
     }
     let live = true;
-    app.menuCommands(sessionId).then(
-      (next) => live && setList(next),
-      (err: unknown) => live && setList((old) => ({ commands: old?.commands ?? [], note: err instanceof Error ? err.message : String(err) })),
+    // The file list stays apart, so pi's skill list keeps its rows for the send.
+    const set = menuKey.startsWith("@") ? setFiles : setList;
+    (menuKey.startsWith("@") ? app.menuFiles(sessionId) : app.menuCommands(sessionId)).then(
+      (next) => live && set(next),
+      (err: unknown) => live && set((old) => ({ commands: old?.commands ?? [], note: err instanceof Error ? err.message : String(err) })),
     );
     return () => {
       live = false;
@@ -365,7 +369,7 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
           <div
             id={listId}
             role="listbox"
-            aria-label="Commands and skills"
+            aria-label={menu.opener === "@" ? "Files" : "Commands and skills"}
             data-testid="slash-menu"
             className="absolute right-0 bottom-full left-0 z-20 mb-1 max-h-72 overflow-y-auto rounded-lg border border-border-strong bg-surface p-1 text-sm shadow-lg"
           >
@@ -400,10 +404,10 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
             ))}
             {rows.length === 0 && (
               <div className="px-2 py-1 text-muted-foreground" data-testid="slash-status">
-                {list ? "No matches" : "Loading commands…"}
+                {shownList ? "No matches" : menu.opener === "@" ? "Loading files…" : "Loading commands…"}
               </div>
             )}
-            {list?.note && <div className="px-2 py-1 text-xs text-failed">{list.note}</div>}
+            {shownList?.note && <div className="px-2 py-1 text-xs text-failed">{shownList.note}</div>}
           </div>
         )}
         <ImageThumbs text={text} load={app.imageUrl} remove={(path) => change(text.split(path).join("").replace(/  +/g, " "))} />

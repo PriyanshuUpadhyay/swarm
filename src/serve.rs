@@ -719,6 +719,7 @@ fn router(app: App) -> Router {
         .route("/api/chat/key", post(chat_action))
         .route("/api/chat/answer", post(chat_action))
         .route("/api/chat/commands", get(chat_commands))
+        .route("/api/chat/files", get(chat_files))
         .route(
             "/api/chat/image",
             get(chat_image_read)
@@ -2781,6 +2782,54 @@ async fn chat_commands(
         return Ok(Json(value));
     }
     Ok(Json(probe_commands(&app, &slot, call, &agent).await))
+}
+
+/// Most paths the `@` menu gets, so a large checkout stays a small reply.
+const FILES_CAP: usize = 5000;
+
+/// The `@` menu's paths: the files git tracks or would add under the chat's folder. The folder is
+/// the session's own; the client names only the chat.
+async fn chat_files(
+    State(app): State<App>,
+    Query(query): Query<CommandsQuery>,
+) -> Result<Json<Value>, ApiError> {
+    let (call, _) = action_target(&app, &query.session, &query.agent)?;
+    tokio::task::spawn_blocking(move || {
+        let cwd = call.cwd.to_string_lossy().into_owned();
+        let listed = lifecycle::git(
+            &cwd,
+            &[
+                "ls-files",
+                "--cached",
+                "--others",
+                "--exclude-standard",
+                "-z",
+            ],
+        );
+        let (files, note) = match listed {
+            Ok(out) if out.status.success() => {
+                let mut files: Vec<String> = out
+                    .stdout
+                    .split(|b| *b == 0)
+                    .filter(|path| !path.is_empty())
+                    .map(|path| String::from_utf8_lossy(path).into_owned())
+                    .collect();
+                files.sort();
+                files.dedup();
+                let note = (files.len() > FILES_CAP)
+                    .then(|| format!("Showing the first {FILES_CAP} files of {}.", files.len()));
+                files.truncate(FILES_CAP);
+                (files, note)
+            }
+            _ => (
+                Vec::new(),
+                Some("Git cannot list the files of this chat's folder.".to_owned()),
+            ),
+        };
+        Json(json!({ "files": files, "note": note }))
+    })
+    .await
+    .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "file list task failed"))
 }
 
 /// Runs `swarm commands` and stores its answer. A failure is stored as a note, so the menu says

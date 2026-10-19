@@ -23,7 +23,7 @@ import { isChair, movePane, paneCells, paneStatus, type Direction, type PaneCell
 import { recallOrder, recordSent, type HistoryEntry } from "./history";
 import { FoldChoices, findMatches, lines, mergeRows, type Line, type Match } from "./transcript";
 import { Lifecycle } from "./lifecycle";
-import { editPicks, validPicks, type CommandList, type SkillPick } from "./slash";
+import { editPicks, fileRows, validPicks, type CommandList, type SkillPick } from "./slash";
 import { Settings } from "./settings";
 import {
   chatRows,
@@ -1404,6 +1404,12 @@ export class App {
   /** The `/` menu rows of the chat's agent, as its CLI lists them (`swarm commands`). */
   menuCommands(sessionId: string): Promise<CommandList> {
     return this.api.get<CommandList>("/api/chat/commands", this.target(sessionId));
+  }
+
+  /** The `@` menu rows: the files of the chat's folder (`/api/chat/files`). */
+  async menuFiles(sessionId: string): Promise<CommandList> {
+    const { files, note } = await this.api.get<{ files: string[]; note: string | null }>("/api/chat/files", this.target(sessionId));
+    return fileRows(files, note);
   }
 
   /** ⌘. and Stop: interrupt the chair's turn. */

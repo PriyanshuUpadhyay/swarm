@@ -1048,6 +1048,69 @@ fn chat_routes_run_the_real_cli_against_a_fake_provider_and_adapter() {
     post("/api/chat/new", json!({"cwd": env!("CARGO_MANIFEST_DIR")}));
 }
 
+#[test]
+fn chat_files_list_only_the_chat_folder_for_the_at_menu() {
+    let server = Server::with_actions(true);
+    let repo = server.dir.join("repo");
+    fs::create_dir_all(repo.join("sub")).unwrap();
+    for (path, text) in [
+        ("a.txt", "a"),
+        ("sub/b.rs", "b"),
+        ("ignored.log", "x"),
+        (".gitignore", "*.log\n"),
+    ] {
+        fs::write(repo.join(path), text).unwrap();
+    }
+    let git = |args: &[&str]| {
+        let status = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&repo)
+            .args(args)
+            .status()
+            .unwrap();
+        assert!(status.success());
+    };
+    git(&["init", "-q"]);
+    git(&["add", "a.txt", ".gitignore"]);
+    fs::write(repo.join("new.md"), "untracked").unwrap();
+    let connection = swarm::store::open(&server.dir.join("home/.swarm/swarm.db")).unwrap();
+    let set_cwd = |cwd: &std::path::Path| {
+        connection
+            .execute(
+                "UPDATE session SET cwd = ?1 WHERE id = ?2",
+                (cwd.to_string_lossy().as_ref(), &server.session),
+            )
+            .unwrap();
+    };
+    let files = |session: &str| {
+        let (status, _, body) = server.request(
+            "GET",
+            &format!("/api/chat/files?session={session}&agent=chair"),
+            "",
+            "",
+            true,
+        );
+        (
+            status,
+            serde_json::from_str::<Value>(&body).unwrap_or(Value::Null),
+        )
+    };
+    set_cwd(&repo);
+    let (status, listed) = files(&server.session);
+    assert_eq!(status, 200, "{listed}");
+    assert_eq!(
+        listed,
+        json!({"files": [".gitignore", "a.txt", "new.md", "sub/b.rs"], "note": null})
+    );
+    // A folder git cannot list gives an empty menu with the reason, not an error.
+    set_cwd(&server.dir.join("missing"));
+    let (status, listed) = files(&server.session);
+    assert_eq!(status, 200);
+    assert_eq!(listed["files"], json!([]));
+    assert!(listed["note"].as_str().unwrap().contains("Git cannot list"));
+    assert_eq!(files("no-such-session").0, 404);
+}
+
 fn tree_choices(server: &Server) -> Value {
     let (status, _, body) = server.request("GET", "/api/tree?view=workspaces", "", "", true);
     assert_eq!(status, 200, "{body}");

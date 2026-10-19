@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { editPicks, matches, menuAt, moved, offered, pick, picksAndSends, showsEmpty, skillFirst, toSend, validPicks, type CommandList, type MenuRow } from "./slash";
+import { editPicks, fileRows, matches, menuAt, moved, offered, pick, picksAndSends, showsEmpty, skillFirst, toSend, validPicks, type CommandList, type MenuRow } from "./slash";
 
 const row = (insert: string, extra: Partial<MenuRow> = {}): MenuRow => ({
   name: insert.slice(1),
@@ -39,6 +39,20 @@ describe("menuAt", () => {
     expect(menuAt("use $res", 8, "codex")).toEqual({ opener: "$", start: 4, end: 8, query: "res" });
     expect(menuAt("use $res", 8, "claude")).toBeNull();
     expect(menuAt("costs 5$", 8, "codex")).toBeNull();
+  });
+
+  it("opens @ on a word start for every CLI, with a path query, and offers only files", () => {
+    for (const provider of ["claude", "codex", "pi", "agy", null]) {
+      expect(menuAt("read @src/ma", 12, provider)).toEqual({ opener: "@", start: 5, end: 12, query: "src/ma" });
+    }
+    expect(menuAt("price 5@3", 9, "claude")).toBeNull();
+    const files = fileRows(["src/main.rs", "README.md"], null);
+    const menu = menuAt("read @ma", 8, "pi")!;
+    expect(showsEmpty(menu)).toBe(true);
+    expect(matches(offered([...rows, ...files.commands], menu, "pi"), menu.query).map((r) => r.insert)).toEqual(["@src/main.rs"]);
+    // A pick inserts the path with a space, and the send key only inserts it.
+    expect(pick("read @ma", menu, files.commands[0])).toEqual({ text: "read @src/main.rs ", caret: 18 });
+    expect(picksAndSends("@ma", menuAt("@ma", 3, "claude")!, files.commands[0])).toBe(false);
   });
 
   it("reaches to the end of the word when the caret is inside it", () => {
