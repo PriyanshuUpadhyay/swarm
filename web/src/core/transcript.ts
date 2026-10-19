@@ -207,3 +207,9 @@ export function splitPatch(lines: readonly PatchLine[]): SplitRow[] {
   }
   return out;
 }
+
+/** The line of the owner's prompt before or after line `from`, for ⌃⌥↑ and ⌃⌥↓; -1 when none. */
+export function promptIndex(lines: readonly Line[], from: number, dir: 1 | -1): number {
+  for (let i = from + dir; i >= 0 && i < lines.length; i += dir) if (lines[i].row.kind === "user" || lines[i].row.command) return i;
+  return -1;
+}

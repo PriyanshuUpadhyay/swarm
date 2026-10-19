@@ -13,10 +13,11 @@ public struct UsageMeter: Decodable, Equatable, Sendable {
     public let reason: String?
     public let reasonCode: String?
     public let asOfSeconds: Double?
+    public let resetCredits: ResetCredits?
 
     public init(provider: String, account: String?, label: String, window: String?, windowMinutes: Int?,
                 usedPct: Int?, resetTimeSeconds: Double?, state: String, reason: String? = nil,
-                reasonCode: String? = nil, asOfSeconds: Double? = nil) {
+                reasonCode: String? = nil, asOfSeconds: Double? = nil, resetCredits: ResetCredits? = nil) {
         self.provider = provider
         self.account = account
         self.label = label
@@ -28,6 +29,47 @@ public struct UsageMeter: Decodable, Equatable, Sendable {
         self.reason = reason
         self.reasonCode = reasonCode
         self.asOfSeconds = asOfSeconds
+        self.resetCredits = resetCredits
+    }
+}
+
+/// A Codex account's usage limit resets (`reset_credits`): swarm already dropped the expired ones
+/// and sorted the list with a credit that never expires (nil) last.
+public struct ResetCredits: Decodable, Equatable, Sendable {
+    public let available: Int
+    /// Nil when Codex gave only the count; it can be shorter than `available` (Codex caps it).
+    public let expiryTimeSeconds: [Double?]?
+
+    public init(available: Int, expiryTimeSeconds: [Double?]?) {
+        self.available = available
+        self.expiryTimeSeconds = expiryTimeSeconds
+    }
+
+    /// "3 resets · expire Oct 4, Oct 23, no expiry"; a list shorter than the count ends in "…".
+    /// Nil when there is no reset.
+    public func text(timeZone: TimeZone = .current) -> String? {
+        guard available > 0 else { return nil }
+        let head = "\(available) \(available == 1 ? "reset" : "resets")"
+        guard let list = expiryTimeSeconds, !list.isEmpty else { return head }
+        var dates = list.map { $0.map { Self.day($0, timeZone) } ?? "no expiry" }
+        if dates.count < available { dates.append("…") }
+        return "\(head) · \(available == 1 ? "expires" : "expire") \(dates.joined(separator: ", "))"
+    }
+
+    /// "3 resets · next Oct 4", for the line under an account name.
+    public func short(timeZone: TimeZone = .current) -> String? {
+        guard available > 0 else { return nil }
+        let head = "\(available) \(available == 1 ? "reset" : "resets")"
+        guard let next = expiryTimeSeconds?.compactMap({ $0 }).first else { return head }
+        return "\(head) · next \(Self.day(next, timeZone))"
+    }
+
+    private static func day(_ seconds: Double, _ timeZone: TimeZone) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = timeZone
+        formatter.dateFormat = "MMM d"
+        return formatter.string(from: Date(timeIntervalSince1970: seconds))
     }
 }
 
@@ -106,6 +148,8 @@ public struct UsageAccount: Equatable, Identifiable, Sendable {
     public let problem: String?
     /// A Claude token can be renewed with a print-mode usage call, without a model turn.
     public let renewalArguments: [String]?
+    /// Codex only; nil when the reader gave none.
+    public var resetCredits: ResetCredits? = nil
 
     public var id: String { "\(provider)/\(name)" }
     public var worst: UsageWindow? { windows.max { ($0.usedPct, -$0.kind.order) < ($1.usedPct, -$1.kind.order) } }
@@ -146,7 +190,8 @@ public func accounts(from meters: [UsageMeter]) -> [UsageAccount] {
             windows: windows,
             problem: windows.isEmpty ? (group.compactMap(\.reason).first ?? "No reading") : nil,
             renewalArguments: first.provider == "claude" && group.contains(where: { $0.reasonCode == "token_expired" })
-                ? ["run", "claude", "--account", first.account ?? first.label, "--", "-p", "/usage"] : nil
+                ? ["run", "claude", "--account", first.account ?? first.label, "--", "-p", "/usage"] : nil,
+            resetCredits: group.lazy.compactMap(\.resetCredits).first
         )
     }
 }

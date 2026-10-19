@@ -419,7 +419,8 @@ export class Changes {
     if (!ws || !chat || !comments?.length || this.sending || this.sendBlocked()) return;
     this.sending = true;
     this.notify();
-    const sent = await this.app.send(chat, commentMessage(comments));
+    const text = commentMessage(comments);
+    const sent = await this.app.send(chat, text, text, false);
     this.sending = false;
     if (sent) {
       const left = (this.drafts.get(ws) ?? []).filter((c) => !comments.includes(c));

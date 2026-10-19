@@ -20,12 +20,14 @@ import { measure, whenPainted, type PerfKind } from "./perf";
 import { chatFromPath, chatPath, resolveChat, shortId } from "./route";
 import { readSse, type SseEvent } from "./sse";
 import { isChair, movePane, paneCells, paneStatus, type Direction, type PaneCell } from "./panes";
+import { recallOrder, recordSent, type HistoryEntry } from "./history";
 import { FoldChoices, findMatches, lines, mergeRows, type Line, type Match } from "./transcript";
 import { Lifecycle } from "./lifecycle";
-import { editPicks, validPicks, type CommandList, type SkillPick } from "./slash";
+import { editPicks, fileRows, validPicks, type CommandList, type SkillPick } from "./slash";
 import { Settings } from "./settings";
 import {
   chatRows,
+  nextWaiting,
   foldId,
   moveTarget,
   archivedSession,
@@ -176,6 +178,8 @@ export type Reader = {
   setFindQuery(query: string): void;
   stepFind(dir: number): void;
   closeFind(): void;
+  /** Reuse on a sent prompt: puts its text in the composer `composerId`. */
+  reuse(composerId: string, text: string): void;
 };
 
 /** A name the owner types: a rename. */
@@ -189,7 +193,11 @@ const NO_FULL: ReadonlyMap<string, FullText> = new Map();
 /** The chat id of a child agent's column. It is also the agent's stream key. */
 export const paneId = (sessionId: string, agent: string) => `${sessionId}:${agent}`;
 const DRAFT_PREFIX = "composer.draft.";
+/** The window event that moves the chat's transcript to the owner's previous (-1) or next (1) prompt. */
+export const PROMPT_JUMP = "swarm:prompt-jump";
 const PICKS_PREFIX = "composer.skills.";
+const HISTORY_PREFIX = "composer.history.";
+const STASH_PREFIX = "composer.stash.";
 const NO_FIND: Find = { open: false, query: "", matches: [], index: -1, seq: 0 };
 /** The last line while the agent runs. A turn can log nothing for minutes, such as Claude's /compact. */
 const WORKING: Line = {
@@ -287,6 +295,8 @@ export class App {
   private inputs = new Map<string, Input>();
   private drafts = new Map<string, string>();
   private picks = new Map<string, SkillPick[]>();
+  private histories = new Map<string, HistoryEntry[]>();
+  private stashes = new Map<string, string>();
   private alreadySentSeq = 0;
   private inputRev = 0;
   private pane = { focused: null as string | null, zoomed: null as string | null, reveal: null as string | null, revealSeq: 0 };
@@ -900,6 +910,23 @@ export class App {
     if (tabs[next].session !== this.openId) this.openChat(tabs[next].session, e);
   }
 
+  /** ⌃⌘W opens the next chat whose chair or child waits for the owner. */
+  openWaiting(e?: KeyboardEvent) {
+    // Listed chats in sidebar order, then the chats that a collapsed workspace or "… more" hides.
+    // Chats of an archived workspace are skipped, as the Dock badge does. The Workspaces view
+    // leaves an archived workspace out; the Archived view and a tree not loaded yet mark nothing.
+    const listed = chatRows(this.tree).flatMap((r) => (r.selection?.chat ? [r.selection.chat] : []));
+    const archived = (s: string) => {
+      const row = workspaceRow(this.tree, workspaceOf(this.tree, this.snapshot, s));
+      return row ? row.archived : this.tree?.view === "workspaces" && !listed.includes(s);
+    };
+    const order = [...new Set([...listed, ...this.chatIds()])].filter((s) => !archived(s));
+    const waiting = (s: string) => (this.snapshot?.agents[s] ?? []).some((a) => paneStatus(a) === "waiting");
+    const next = nextWaiting(order, waiting, this.openId);
+    if (next) this.openChat(next, e);
+    else this.notice("No chat is waiting for you.");
+  }
+
   /** Sessions of closed tabs, the last closed at the end, for ⇧⌘T. */
   private closedTabs: string[] = [];
 
@@ -1088,6 +1115,7 @@ export class App {
         setFindQuery: (query) => this.setFindQuery(query),
         stepFind: (dir) => this.stepFind(dir),
         closeFind: () => this.closeFind(),
+        reuse: (composerId, text) => this.reuse(composerId, text),
       };
       this.readers.set(id, r);
     }
@@ -1296,6 +1324,58 @@ export class App {
     writeStore(PICKS_PREFIX + sessionId, next.length ? JSON.stringify(next) : "");
   }
 
+  /** History is per workspace, so a new chat recalls the prompts of the workspace's other chats. */
+  private historyKey(sessionId: string): string {
+    const session = this.target(sessionId).session;
+    const info = this.snapshot?.sessions.find((s) => s.id === session);
+    return HISTORY_PREFIX + (info?.workspace || info?.cwd || session);
+  }
+
+  private historyList(key: string): HistoryEntry[] {
+    let list = this.histories.get(key);
+    if (!list) {
+      try {
+        const stored = JSON.parse(readStore(key) ?? "[]");
+        list = Array.isArray(stored) ? stored.filter((e) => typeof e?.text === "string" && typeof e?.session === "string") : [];
+      } catch { list = []; }
+      this.histories.set(key, list);
+    }
+    return list;
+  }
+
+  /** Sent prompts for Up, ⌘K and Reuse, newest first: this chat's, then the workspace's. */
+  history(sessionId: string): string[] {
+    return recallOrder(this.historyList(this.historyKey(sessionId)), sessionId);
+  }
+
+  private recordHistory(sessionId: string, text: string) {
+    const key = this.historyKey(sessionId);
+    // Read the stored list again, so a send from another tab is kept.
+    this.histories.delete(key);
+    const list = recordSent(this.historyList(key), { text, session: sessionId, at: Date.now() });
+    this.histories.set(key, list);
+    writeStore(key, JSON.stringify(list));
+  }
+
+  /** The one draft that Esc or Reuse cleared, so the owner can take it back. */
+  stashed(sessionId: string): string {
+    let s = this.stashes.get(sessionId);
+    if (s === undefined) this.stashes.set(sessionId, (s = readStore(STASH_PREFIX + sessionId) ?? ""));
+    return s;
+  }
+
+  setStash(sessionId: string, text: string) {
+    this.stashes.set(sessionId, text);
+    writeStore(STASH_PREFIX + sessionId, text);
+  }
+
+  /** Puts a past prompt in the composer. A different draft goes to the stash, so nothing is lost. */
+  reuse(sessionId: string, text: string) {
+    const draft = this.draft(sessionId);
+    if (draft.trim() && draft !== text) this.setStash(sessionId, draft);
+    this.replaceDraft(sessionId, text);
+  }
+
   private replaceDraft(sessionId: string, text: string) {
     this.setDraft(sessionId, text);
     this.update(sessionId, { draftRev: this.input(sessionId).draftRev + 1 });
@@ -1314,8 +1394,9 @@ export class App {
     }
   }
 
-  /** Types `text` into the chair. Clear only the source draft, which can differ after a skill moves. */
-  async send(sessionId: string, text: string, draftText = text): Promise<boolean> {
+  /** Types `text` into the chair. Clear only the source draft, which can differ after a skill moves.
+   *  `owner` is false for text that code composes, which stays out of the prompt history. */
+  async send(sessionId: string, text: string, draftText = text, owner = true): Promise<boolean> {
     const chair = this.chair(sessionId);
     const st = this.input(sessionId);
     const out = outgoing(text);
@@ -1329,7 +1410,7 @@ export class App {
       { sending: true },
       { sending: false },
       () => this.api.action("/api/chat/send", { ...this.target(sessionId), text: typed }),
-      () => void this.send(sessionId, text, draftText),
+      () => void this.send(sessionId, text, draftText, owner),
     );
     if (!ok) return false;
     if (chat && sent) {
@@ -1337,6 +1418,8 @@ export class App {
       chat.sent = confirmSent([...chat.sent, sent], chat.rows);
       this.changed(chat);
     }
+    // The owner's words, before a pi skill moved to the front.
+    if (owner) this.recordHistory(sessionId, outgoing(draftText) ?? out);
     if (this.draft(sessionId) === draftText) this.replaceDraft(sessionId, "");
     return true;
   }
@@ -1344,6 +1427,12 @@ export class App {
   /** The `/` menu rows of the chat's agent, as its CLI lists them (`swarm commands`). */
   menuCommands(sessionId: string): Promise<CommandList> {
     return this.api.get<CommandList>("/api/chat/commands", this.target(sessionId));
+  }
+
+  /** The `@` menu rows: the files of the chat's folder (`/api/chat/files`). */
+  async menuFiles(sessionId: string): Promise<CommandList> {
+    const { files, note } = await this.api.get<{ files: string[]; note: string | null }>("/api/chat/files", this.target(sessionId));
+    return fileRows(files, note);
   }
 
   /** ⌘. and Stop: interrupt the chair's turn. */
@@ -1598,7 +1687,21 @@ export class App {
             });
       }
     }
-    return [...items, ...chats, ...agents];
+    // Shown only for a query, as the empty palette lists Recent and Actions.
+    const prompts: PaletteItem[] = open
+      ? this.history(open).map((text, i) => ({
+          id: `prompt:${i}`,
+          // By code point, so an emoji at the cut stays whole.
+          title: Array.from(text.split("\n")[0]).slice(0, 120).join(""),
+          group: "prompt",
+          run: () => {
+            this.reuse(open, text);
+            // The closing dialog gives the focus back to where it was, so focus after it is gone.
+            whenPainted(() => !document.querySelector('[role="dialog"]'), () => document.querySelector<HTMLElement>('[data-testid="composer"]')?.focus());
+          },
+        }))
+      : [];
+    return [...items, ...chats, ...agents, ...prompts];
   }
 
   // ---- stream ----
@@ -1783,6 +1886,9 @@ export class App {
       cmds.push({ id: `sidebar.view.${n}`, title: `Show ${SIDEBAR_VIEWS[n - 1]}`, chord: `Alt+Meta+${n}`, run: () => this.setSidebarView(n) });
     cmds.push(
       { id: "find.open", title: "Find", chord: "Meta+F", when: chat, run: () => this.openFind() },
+      { id: "prompt.prev", title: "Previous Prompt", chord: "Ctrl+Alt+ArrowUp", when: chat, run: () => void window.dispatchEvent(new CustomEvent(PROMPT_JUMP, { detail: -1 })) },
+      { id: "prompt.next", title: "Next Prompt", chord: "Ctrl+Alt+ArrowDown", when: chat, run: () => void window.dispatchEvent(new CustomEvent(PROMPT_JUMP, { detail: 1 })) },
+      { id: "chat.waiting", title: "Next Waiting Chat", chord: "Ctrl+Meta+W", run: (e) => this.openWaiting(e) },
       {
         id: "chat.stop",
         title: "Stop the Chair",

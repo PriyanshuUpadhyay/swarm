@@ -274,7 +274,7 @@ export type PaletteItem = {
   id: string;
   title: string;
   subtitle?: string;
-  group: "action" | "workspace" | "chat" | "agent";
+  group: "action" | "workspace" | "chat" | "agent" | "prompt";
   shortcut?: string;
   status?: Status | null;
   recency?: number | null;
@@ -287,6 +287,7 @@ export const PALETTE_GROUPS = [
   ["workspace", "Workspaces"],
   ["chat", "Chats"],
   ["agent", "Agents"],
+  ["prompt", "Prompts"],
 ] as const;
 
 /** An empty query lists recent items newest first, then the actions; ties keep the input order. A
@@ -309,7 +310,7 @@ export function rankPalette(items: PaletteItem[], query: string): PaletteItem[] 
   return found.map((f) => f.item);
 }
 
-/** The palette's sections: Recent then Actions with no query, else the four groups in order. */
+/** The palette's sections: Recent then Actions with no query, else the groups in order. */
 export function paletteSections(items: PaletteItem[], query: string): { title: string; items: PaletteItem[] }[] {
   const ranked = rankPalette(items, query);
   const sections = query.trim()
@@ -334,4 +335,14 @@ export function paletteSources(tree: TreeView | null, snapshot: Snapshot | null)
     }
   const byActivity = [...workspaces].sort((a, b) => (b.at ?? 0) - (a.at ?? 0) || (a.row.id < b.row.id ? -1 : 1));
   return [...byActivity.filter((w) => w.row.pinned), ...byActivity.filter((w) => !w.row.pinned)];
+}
+
+/** The first waiting chat after `current` in sidebar order, wrapping; null when none waits. */
+export function nextWaiting(order: readonly string[], waiting: (session: string) => boolean, current: string | null): string | null {
+  const from = current ? order.indexOf(current) : -1;
+  for (let k = 1; k <= order.length; k++) {
+    const s = order[(from + k + order.length) % order.length];
+    if (s !== current && waiting(s)) return s;
+  }
+  return null;
 }

@@ -103,6 +103,8 @@ function gitWorkspace(cwd: string, env: NodeJS.ProcessEnv) {
   git("init", "-q", "-b", "main");
   write("src/app.ts", app.join("\n") + "\n");
   write("README.md", "# Project\n\nA test repository.\n");
+  // A path wider than the @ menu.
+  write(`${"deeply/nested/".repeat(8)}module.ts`, "export {};\n");
   git("add", ".");
   git("commit", "-q", "-m", "base");
   git("remote", "add", "origin", "https://github.com/example/project.git");
@@ -198,6 +200,7 @@ export default async function setup() {
   execFileSync(swarm, ["agent", "add", "orchestrator", "orchestrator"], { env: { ...liveEnv, SWARM_SESSION_ID: gitSession, FIXTURE_PANE: GIT_PANE }, stdio: "pipe" });
   process.env.SWARM_E2E_GIT = gitSession;
   process.env.SWARM_E2E_GIT_DIR = gitDir;
+  process.env.SWARM_E2E_GIT_LOG = join(logs, `${gitLog}.jsonl`);
   // Each pane of the pane chats has its own screen, so the chair case's question does not reach them.
   for (const pane of PANES.slice(1)) copyFileSync(join(repo, "tests/fixtures/screens/claude-idle.txt"), join(home, `screen-${pane}`));
   // One chat per browser with a chair and two children, each on its own stand-in pane. `swarm

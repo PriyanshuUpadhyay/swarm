@@ -685,6 +685,8 @@ pub fn impact(project: &Project, workspace: &Workspace, live_agents: usize) -> R
             }
         }
         blocker = removal_blocker(&workspace.path)?;
+    } else if workspace.removed {
+        blocker = Some("These worktrees are already removed. Archive their chats instead.".into());
     }
     Ok(
         json!({"workspace":workspace.path,"liveAgents":live_agents,"confirmationRequired": live_agents > 0,

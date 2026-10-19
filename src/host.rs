@@ -139,6 +139,17 @@ pub fn context(provider: &str, env: impl Fn(&str) -> Option<String>) -> Option<S
         true => worker.to_string(),
         false => chair.to_string(),
     };
+    // A Herdr child pane can be a worker with no swarm id; only a swarm seat gets this block.
+    // `SWARM_ROLE` is no pane variable: the caller reads it from the store.
+    if let Some(agent) =
+        env("SWARM_AGENT_ID").filter(|agent| !agent.is_empty() && agent != "orchestrator")
+        && let Some(session) = env("SWARM_SESSION_ID").filter(|session| !session.is_empty())
+    {
+        let role = env("SWARM_ROLE")
+            .map(|role| format!(" with role `{role}`"))
+            .unwrap_or_default();
+        context.push_str(&format!("\n\n[swarm-seat]\nYou are seat `{agent}`{role} in swarm session `{session}`. Your chair is `orchestrator`.\nSend your final result to the chair with `swarm finish`, and a question with `swarm send orchestrator <kind>`, as the swarm-voice skill says."));
+    }
     // pi has no runtime adapter skill, so it gets only the host contract.
     let adapter = match provider {
         "claude" => "~/.swarm/kit/skills/orchestrate-claude/SKILL.md",
@@ -857,6 +868,50 @@ mod tests {
         );
         let named = context("claude", env(&[REX[0], REX[1], ("SWARM_ADAPTER", "rex")]));
         assert!(named.unwrap().starts_with("[agent-host: rex]\n"));
+    }
+
+    /// A seat learns its own id, role, session, chair, and result rule at start, on every host.
+    #[test]
+    fn a_worker_contract_names_the_seat_and_where_its_result_goes() {
+        let seat = [
+            ("SWARM_AGENT_ID", "cl-seat-1"),
+            ("SWARM_ROLE", "review.check"),
+            ("SWARM_SESSION_ID", "01a15391-109c-75b2-b09c-5eac0d553e25"),
+        ];
+        for host in [&REX[..], &HERDR[..]] {
+            let worker = context("codex", env(&[host, &seat].concat())).unwrap();
+            assert!(worker.contains(
+                "\n\n[swarm-seat]\nYou are seat `cl-seat-1` with role `review.check` in swarm session `01a15391-109c-75b2-b09c-5eac0d553e25`. Your chair is `orchestrator`.\nSend your final result to the chair with `swarm finish`, and a question with `swarm send orchestrator <kind>`, as the swarm-voice skill says."
+            ), "{worker}");
+            assert!(worker.find("[swarm-seat]") < worker.find("[agent-runtime: codex]"));
+        }
+        let no_role = context("claude", env(&[REX[0], REX[1], seat[0], seat[2]])).unwrap();
+        assert!(
+            no_role.contains("You are seat `cl-seat-1` in swarm session"),
+            "{no_role}"
+        );
+        let chair = context(
+            "claude",
+            env(&[
+                REX[0],
+                REX[1],
+                ("SWARM_AGENT_ID", "orchestrator"),
+                seat[1],
+                seat[2],
+            ]),
+        )
+        .unwrap();
+        assert!(!chair.contains("[swarm-seat]"));
+        let empty = context(
+            "claude",
+            env(&[REX[0], REX[1], ("SWARM_AGENT_ID", ""), seat[2]]),
+        );
+        assert!(!empty.unwrap().contains("[swarm-seat]"));
+        let herdr_child = context(
+            "claude",
+            env(&[HERDR[0], HERDR[1], ("HERDR_AGENT_PANE", "1")]),
+        );
+        assert!(!herdr_child.unwrap().contains("[swarm-seat]"));
     }
 
     #[test]

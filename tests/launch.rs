@@ -2652,6 +2652,50 @@ fn a_typed_prompt_marks_the_agent_working_at_once() {
     assert_eq!(state, None);
 }
 
+/// A pi seat has no SessionStart hook, so its system prompt carries the same seat block, with
+/// the role it was launched for.
+#[test]
+fn a_pi_seat_gets_its_seat_block_in_the_system_prompt() {
+    let home = scratch("pi-seat");
+    tool(&home, "pi", "true");
+    std::fs::create_dir_all(home.join(".config/agent-routing")).unwrap();
+    std::fs::write(
+        home.join(".config/agent-routing/roles.json"),
+        r#"{"routes": {"pi.seat": ["pi-haiku"]},
+            "runners": {"pi-haiku": {"provider": "pi", "model": "anthropic/claude-haiku-5-5", "effort": "low"}}}"#,
+    )
+    .unwrap();
+    std::fs::create_dir_all(home.join(".swarm/adapters")).unwrap();
+    std::fs::write(
+        home.join(".swarm/adapters/tmux-swarm.conf"),
+        "self = printf chair\nspawn = printf pane\nring = true\nlist = true\nclose = true\ncapture = true\n",
+    )
+    .unwrap();
+    let app = [("SWARM_ADAPTER", "tmux-swarm")];
+    let session = swarm(&home, &app, &["session", "new", "lane"]);
+    assert!(session.status.success(), "{}", stderr(&session));
+    let session = String::from_utf8(session.stdout)
+        .unwrap()
+        .trim()
+        .to_string();
+    let env = [
+        ("SWARM_ADAPTER", "tmux-swarm"),
+        ("SWARM_SESSION_ID", session.as_str()),
+        ("SWARM_AGENT_ID", "orchestrator"),
+    ];
+    let cwd = home.to_string_lossy().into_owned();
+    let output = swarm(&home, &env, &["launch", "pi-1", "pi.seat", "--cwd", &cwd]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    let script =
+        std::fs::read_to_string(home.join(format!(".swarm/runs/{session}/pi-1.sh"))).unwrap();
+    assert!(
+        script.contains(&format!(
+            "You are seat `pi-1` with role `pi.seat` in swarm session `{session}`."
+        )),
+        "{script}"
+    );
+}
+
 /// `spawn` gets this session's own seat panes as `SWARM_PANES`, so a host that stacks seats
 /// anchors only on its own session's panes, never on another chair's seats.
 #[test]

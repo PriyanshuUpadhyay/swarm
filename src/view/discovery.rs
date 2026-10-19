@@ -506,12 +506,22 @@ fn first_message(path: &str) -> Option<String> {
         } else {
             None
         };
-        if let Some(text) = text.and_then(|s| tree::nonblank(Some(&s))) {
-            let title = text.lines().next().unwrap_or_default();
-            if title.starts_with('<') || title.starts_with("# AGENTS.md") {
-                continue;
-            }
-            return Some(title.into());
+        let Some(text) = text.and_then(|s| tree::nonblank(Some(&s))) else {
+            continue;
+        };
+        if text.starts_with('<') || text.starts_with("# AGENTS.md") {
+            continue;
+        }
+        // A pasted image is a path to a file in uploads (images.ts), which says nothing as a title.
+        let title = text.lines().find_map(|line| {
+            let words: Vec<_> = line
+                .split_whitespace()
+                .filter(|w| !(w.starts_with('/') && w.contains("/uploads/")))
+                .collect();
+            (!words.is_empty()).then(|| words.join(" "))
+        });
+        if let Some(title) = title {
+            return Some(title);
         }
     }
     None
@@ -552,6 +562,14 @@ mod tests {
             &[pi_user, r#"{"type":"session_info","name":"Talk notes"}"#],
         );
         assert_eq!(read_title(&named).as_deref(), Some("Talk notes"));
+        let pasted = log(
+            "pi-image.jsonl",
+            &[
+                r#"{"type":"message","message":{"role":"user","content":[{"type":"text","text":"/h/.swarm/uploads/01a1.png"}]}}"#,
+                r#"{"type":"message","message":{"role":"user","content":[{"type":"text","text":"/h/.swarm/uploads/01a2.png \n\nFix the diff colors"}]}}"#,
+            ],
+        );
+        assert_eq!(read_title(&pasted).as_deref(), Some("Fix the diff colors"));
         let cleared = log(
             "pi-cleared.jsonl",
             &[

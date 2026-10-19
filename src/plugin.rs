@@ -258,8 +258,9 @@ pub fn stale_notice(copies: &[StaleCopy]) -> Option<String> {
 }
 
 /// Each skill in the owner's skill folders that has the name of a kit skill. The plugin leaves
-/// them, but a CLI then lists both, and pi, which has no plugin prefix, loads only one.
-pub fn clashes(kit: &Path, user_home: &Path) -> Vec<PathBuf> {
+/// them, but a CLI then lists both, and pi, which has no plugin prefix, loads only one. `active`
+/// adds the skill folders of homes picked by `CLAUDE_CONFIG_DIR` or `PI_CODING_AGENT_DIR`.
+pub fn clashes(kit: &Path, user_home: &Path, active: &[PathBuf]) -> Vec<PathBuf> {
     let Ok(entries) = std::fs::read_dir(kit.join("skills")) else {
         return Vec::new();
     };
@@ -269,13 +270,21 @@ pub fn clashes(kit: &Path, user_home: &Path) -> Vec<PathBuf> {
         .map(|entry| entry.file_name())
         .collect();
     names.sort();
-    SKILL_FOLDERS
+    let mut folders: Vec<PathBuf> = SKILL_FOLDERS
         .iter()
-        .flat_map(|folder| {
-            names
-                .iter()
-                .map(move |name| user_home.join(folder).join(name))
-        })
+        .map(|folder| user_home.join(folder))
+        .collect();
+    // A symlinked home, as an account launcher makes, is the same folder as its target.
+    let real =
+        |folder: &Path| std::fs::canonicalize(folder).unwrap_or_else(|_| folder.to_path_buf());
+    for folder in active {
+        if !folders.iter().any(|known| real(known) == real(folder)) {
+            folders.push(folder.clone());
+        }
+    }
+    folders
+        .iter()
+        .flat_map(|folder| names.iter().map(move |name| folder.join(name)))
         .filter(|path| path.symlink_metadata().is_ok())
         .collect()
 }
@@ -283,6 +292,45 @@ pub fn clashes(kit: &Path, user_home: &Path) -> Vec<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn clashes_also_read_the_active_skill_folders() {
+        let root = std::env::temp_dir().join(format!("swarm-clash-active-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let kit = root.join("kit");
+        std::fs::create_dir_all(kit.join("skills/swarm-voice")).unwrap();
+        std::fs::write(kit.join("skills/swarm-voice/SKILL.md"), "x").unwrap();
+        let home = root.join("home");
+        let work = root.join("claude-work/skills");
+        std::fs::create_dir_all(work.join("swarm-voice")).unwrap();
+        std::fs::create_dir_all(home.join(".pi/agent/skills/swarm-voice")).unwrap();
+        assert_eq!(
+            clashes(&kit, &home, &[]),
+            [home.join(".pi/agent/skills/swarm-voice")]
+        );
+        assert_eq!(
+            clashes(
+                &kit,
+                &home,
+                &[work.clone(), work.clone(), home.join(".pi/agent/skills")]
+            ),
+            [
+                home.join(".pi/agent/skills/swarm-voice"),
+                work.join("swarm-voice")
+            ]
+        );
+        // A symlinked home, as an account launcher makes, is the same folder.
+        let mirror = root.join("claude-mirror");
+        std::os::unix::fs::symlink(root.join("claude-work"), &mirror).unwrap();
+        assert_eq!(
+            clashes(&kit, &home, &[work.clone(), mirror.join("skills")]),
+            [
+                home.join(".pi/agent/skills/swarm-voice"),
+                work.join("swarm-voice")
+            ]
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
 
     #[test]
     fn versions_compare_content_ids_and_ignore_unused_old_caches() {

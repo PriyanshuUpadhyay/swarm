@@ -13,7 +13,8 @@
       "source": "codex_app_server",
       "reason": null,
       "reason_code": null,
-      "as_of_seconds": 1792050000
+      "as_of_seconds": 1792050000,
+      "reset_credits": {"available": 3, "expiry_time_seconds": [1792703000, 1793301126, null]}
     },
     {
       "provider": "codex",
@@ -55,7 +56,8 @@
       "source": "codex_app_server",
       "reason": null,
       "reason_code": null,
-      "as_of_seconds": 1792050000
+      "as_of_seconds": 1792050000,
+      "reset_credits": {"available": 1, "expiry_time_seconds": null}
     },
     {
       "provider": "claude",

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ApiError, type Api, type Snapshot } from "./api";
 import { App } from "./app";
-import { moveTarget, navRows, paletteSections, rankPalette, recentWork, shareTree, type PaletteItem, type Section, type SidebarRow, type TreeView } from "./nav";
+import { moveTarget, navRows, nextWaiting, paletteSections, rankPalette, recentWork, shareTree, type PaletteItem, type Section, type SidebarRow, type TreeView } from "./nav";
 
 const sel = (workspace: string | null, chat: string | null = null) => ({ workspace, chat, agentSession: null, agent: null });
 
@@ -347,5 +347,16 @@ describe("tree refresh", () => {
     expect(shared.sections[1].rows[0]).toBe(sample.sections[1].rows[0]);
     expect(shared.sections[1].rows[3]).not.toBe(sample.sections[1].rows[3]);
     expect(shared.sections[1].rows[3].age).toBe("2m");
+  });
+});
+
+describe("nextWaiting", () => {
+  it("opens the next waiting chat in sidebar order, wrapping, and skips the open one", () => {
+    const waits = new Set(["a", "c"]);
+    const waiting = (s: string) => waits.has(s);
+    expect(nextWaiting(["a", "b", "c"], waiting, "a")).toBe("c");
+    expect(nextWaiting(["a", "b", "c"], waiting, "c")).toBe("a");
+    expect(nextWaiting(["a", "b", "c"], waiting, null)).toBe("a");
+    expect(nextWaiting(["a", "b"], (s) => s === "a", "a")).toBeNull();
   });
 });
