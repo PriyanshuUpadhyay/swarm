@@ -119,7 +119,7 @@ export function WorkspaceLanding({ app }: { app: App }) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-4" data-testid="workspace-landing">
       <h2 className="text-lg font-semibold">{row?.title ?? view.workspace?.split("/").pop()}</h2>
-      <p className="text-muted-foreground">This workspace has no open chats.</p>
+      <p className="text-muted-foreground">{view.tabs?.tabs.some((tab) => tab.pending === null) ? "Pick a tab, or start a new chat." : "This workspace has no open chats."}</p>
       <Button size="sm" disabled={!row?.newChatEnabled} onClick={() => void app.startChat()}>
         New chat
       </Button>

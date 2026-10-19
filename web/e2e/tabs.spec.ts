@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import type { Tab, TabsView } from "../src/core/nav";
 
 const server = () => new URL(process.env.SWARM_SERVE_URL!);
 
@@ -20,6 +21,62 @@ async function choose(op: Record<string, unknown>) {
   const { revision } = await api<{ revision: string }>("/api/tree?view=workspaces");
   await api("/api/choices", { revision, ...op });
 }
+
+for (const pending of ["empty", null, "starting", "failed", "closing"] as const) {
+  test(`workspace landing text reflects ${pending ?? "ready"} tabs`, async ({ page: tab }, info) => {
+    const choicesPath = join(process.env.SWARM_E2E_HOME!, ".swarm/choices.json");
+    const before = readFileSync(choicesPath, "utf8");
+    try {
+      await tab.route("**/api/tabs?*", async (route) => {
+        const response = await route.fetch();
+        const body = await response.json() as TabsView;
+        body.view.selectedChat = null;
+        body.view.tabs = pending === "empty" ? [] : body.view.tabs.map((item): Tab => ({ ...item, pending }));
+        await route.fulfill({ response, json: body });
+      });
+      await tab.goto(`${server().origin}/${server().hash}`);
+      await tab.waitForFunction(() => window.__swarmReady === true);
+      await tab.locator('[data-testid="tree-row"][data-kind="workspace"]').filter({ hasText: "ws-tabs" }).click();
+      const landing = tab.getByTestId("workspace-landing");
+      await expect(landing).toBeVisible();
+      await expect(landing).toContainText(pending === null ? "Pick a tab, or start a new chat." : "This workspace has no open chats.");
+      await expect(landing.getByRole("button", { name: "New chat", exact: true })).toBeEnabled();
+    } finally {
+      await tab.screenshot({ path: info.outputPath("workspace-landing.png") });
+      await tab.close();
+      writeFileSync(choicesPath, before);
+    }
+  });
+}
+
+test("Rename chat prefills the title of a tab-only chat", async ({ page: tab }, info) => {
+  const choicesPath = join(process.env.SWARM_E2E_HOME!, ".swarm/choices.json");
+  const before = readFileSync(choicesPath, "utf8");
+  try {
+    await tab.goto(`${server().origin}/${server().hash}`);
+    await tab.waitForFunction(() => window.__swarmReady === true);
+    const workspace = tab.locator('[data-testid="tree-row"][data-kind="workspace"]').filter({ hasText: "ws-tabs" });
+    await workspace.click();
+    await expect(tab.getByTestId("tab")).toHaveCount(2);
+    const workspaceId = (await workspace.getAttribute("data-id"))!;
+    const session = (await tab.getByTestId("tab").nth(1).getAttribute("data-session"))!;
+    await choose({ op: "open_tab", workspace: workspaceId, chat: session, tab_only: true });
+    await choose({ op: "selected_chat", workspace: workspaceId, chat: session });
+    const strip = await api<TabsView>(`/api/tabs?${new URLSearchParams({ workspace: workspaceId })}`);
+    const title = strip.view.tabs.find((item) => item.session === session)!.title;
+    expect(title).not.toBe("");
+    await tab.reload();
+    await tab.waitForFunction(() => window.__swarmReady === true);
+    await expect(tab.locator(`[data-testid="tree-row"][data-session="${session}"]`)).toHaveCount(0);
+    await tab.locator(`[data-testid="tab"][data-session="${session}"]`).click({ button: "right" });
+    await tab.getByRole("menuitem", { name: "Rename chat…" }).click();
+    await expect(tab.getByTestId("ask-name")).toHaveValue(title);
+  } finally {
+    await tab.screenshot({ path: info.outputPath("tab-only-rename.png") });
+    await tab.close();
+    writeFileSync(choicesPath, before);
+  }
+});
 
 test("closing the open tab-only chat shows the other tab after archive confirmation", async ({ page: tab }, info) => {
   const fixtureHome = process.env.SWARM_E2E_HOME!;

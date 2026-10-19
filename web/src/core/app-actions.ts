@@ -68,9 +68,8 @@ export class AppActions {
 
   renameChat(session: string) {
     const workspace = workspaceOf(this.app.tree, this.app.snapshot, session);
-    const row = chatRows(this.app.tree).find((r) => r.selection?.chat === session);
     if (!workspace) return;
-    this.ask({ title: "Rename chat", value: row?.title ?? "", save: (name) => void this.app.navigation.choose({ op: "rename_chat", workspace, chat: session, name }) });
+    this.ask({ title: "Rename chat", value: this.app.chatTitle(session), save: (name) => void this.app.navigation.choose({ op: "rename_chat", workspace, chat: session, name }) });
   }
 
   renameWorkspace(path: string) {
