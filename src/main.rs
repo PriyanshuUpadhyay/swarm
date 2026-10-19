@@ -491,8 +491,11 @@ fn hook(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let Some(report) = hook_report(args, &payload, |name| env::var(name).ok())? else {
         return Ok(());
     };
-    // Before the bus, so a busy bus does not lose what the owner sees in the block.
+    // Before the bus, so a busy bus does not lose what the owner sees in the block. Claude Code
+    // and Antigravity send their own OSC 7501 reports in Rex, and a second writer flips the
+    // record's app, so only Codex, which sends none, gets reports from its hook.
     if let (Some(state), Some(provider)) = (&report.state, args.first())
+        && provider == "codex"
         && swarm::host::in_rex(|name| env::var(name).ok())
     {
         report_to_terminal(provider, state);
