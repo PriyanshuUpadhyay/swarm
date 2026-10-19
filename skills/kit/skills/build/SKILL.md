@@ -66,7 +66,7 @@ pattern file when a build solves a new one.
 Choose `<piece>`, the piece folder, by `references/run-folder.md`, so a new chat continues where
 the last one stopped.
 
-In the blocks, `{{site}}` is `<piece>` and `{{shots}}` is `<piece>/shots`, as `blocks/blocks.toml` says.
+`start` binds `{{site}}` and `{{shots}}` as `blocks/blocks.toml` says.
 
 Example. `~/work/seed-city/ink/` holds one file per step. Steps 1-4 are done, so line 1 of
 `04-style-frames.md` reads `Status: done 3f9a1c2b7e10`. A new chat gets
@@ -74,14 +74,15 @@ Example. `~/work/seed-city/ink/` holds one file per step. Steps 1-4 are done, so
 
 A piece is a step run, so `references/step-run.md` owns the status line, ready and stale steps,
 pick-up, close, and when a step waits for the user. Run the front door in `skills/plan/SKILL.md`
-with the preset below, and write `plan.md` in `<piece>/ink/`.
+with the preset below, and write `plan.md` in `<piece>/ink/`. The `Blocks` column makes `start`
+write each block's rules into its step file.
 Each file holds the step's output, not a copy of it.
 
 ## Preset
 
 Stop: owner
 
-| File | Needs | Holds | Block | Why |
+| File | Needs | Holds | Blocks | Why |
 |---|---|---|---|---|
 | `01-intake.md` | none | story, references, benchmark, form, size, limits, and delivery | reference-analysis | intake finds and labels the references |
 | `02-look.md` | intake | reference analysis and style grammar | reference-analysis | the look comes from measured references |
