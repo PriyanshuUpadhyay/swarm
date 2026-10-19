@@ -1,10 +1,16 @@
 # Helper apps and release package
 
 swarm ships as one Homebrew formula (ADR 0079). The web UI is inside the `swarm` binary, and
-`swarm ui` opens it in the browser. This folder holds the rest of the release.
+`swarm ui` opens it in `Swarm.app`. This folder holds the rest of the release.
 
 `SwarmNotify` is the notice helper (ADR 0077). It ships at `libexec/SwarmNotify.app` beside
 `bin/swarm`. `swarm` starts it for a notice, and it exits when idle.
+
+`SwarmApp` is the window that `swarm ui` opens. It ships at `libexec/Swarm.app`, shows the page
+in one WKWebView, starts in full screen, and paints the camera row above the full-screen window in
+the page's background colour. `swarm ui` opens it with `open -a`, so a running app only comes to the
+front. `SWARM_APP` points `swarm ui` at another build of the app. Its icon is the HUD's Deno guest;
+`make package` draws it with `SwarmHUD --app-icon <dir.iconset>` and `iconutil`. It has no Dock badge.
 
 `SwarmHUD` is the notch usage HUD (ADR 0087). It ships at `libexec/SwarmHUD.app`, reads
 `swarm usage --json` each minute and `swarm working --json` every 3 s, and keeps 7 days of samples

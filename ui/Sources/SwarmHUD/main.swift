@@ -7,7 +7,8 @@ import SwiftUI
 // design review and tests: open and closed for every phase, the closed wings for each mascot family
 // and state, the ring's edge cases, a sheet of every own mascot frame, and a sheet of every guest
 // mascot in each state at the closed and the open size. `--closed` is the reading
-// for the closed renders (default: `--fixture`). Without `--snapshot` the HUD runs.
+// for the closed renders (default: `--fixture`). `SwarmHUD --app-icon <dir.iconset>` writes
+// Swarm.app's icon for `iconutil`. Without either flag the HUD runs.
 let arguments = CommandLine.arguments
 if let at = arguments.firstIndex(of: "--snapshot"), arguments.count > at + 1 {
     // The owner's own Codex pets would make the cast sheet differ by machine; set CODEX_HOME to
@@ -16,11 +17,49 @@ if let at = arguments.firstIndex(of: "--snapshot"), arguments.count > at + 1 {
     MainActor.assumeIsolated { snapshot(to: URL(fileURLWithPath: arguments[at + 1]), arguments: arguments) }
     exit(0)
 }
+if let at = arguments.firstIndex(of: "--app-icon"), arguments.count > at + 1 {
+    appIcon(to: URL(fileURLWithPath: arguments[at + 1]))
+    exit(0)
+}
 
 let delegate = MainActor.assumeIsolated { AppDelegate() }
 let app = NSApplication.shared
 app.delegate = delegate
 app.run()
+
+/// The Deno guest's still idle frame on the page's `#101010`, in a rounded square, at each iconset
+/// size. The pixels scale with no smoothing, so the art stays sharp.
+func appIcon(to directory: URL) {
+    guard let deno = SheetMascot.all.first(where: { $0.name == "Deno" }).flatMap(Guest.init),
+          let art = deno.frame(.idle, tick: nil) else {
+        FileHandle.standardError.write(Data("SwarmHUD: no Deno sheet\n".utf8))
+        exit(1)
+    }
+    try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    for (points, scale) in [(16, 1), (16, 2), (32, 1), (32, 2), (128, 1), (128, 2), (256, 1), (256, 2), (512, 1), (512, 2)] {
+        let side = CGFloat(points * scale)
+        guard let context = CGContext(data: nil, width: Int(side), height: Int(side), bitsPerComponent: 8, bytesPerRow: 0,
+                                      space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { exit(1) }
+        // Apple's grid: the square is 824 of 1024 with a 185 radius.
+        let inset = side * 100 / 1024, square = side - 2 * inset
+        context.addPath(CGPath(roundedRect: CGRect(x: inset, y: inset, width: square, height: square),
+                               cornerWidth: square * 185 / 824, cornerHeight: square * 185 / 824, transform: nil))
+        context.setFillColor(CGColor(srgbRed: 0x10 / 255, green: 0x10 / 255, blue: 0x10 / 255, alpha: 1))
+        context.fillPath()
+        let fit = square * 0.7 / max(deno.cell.width, deno.cell.height)
+        let w = deno.cell.width * fit, h = deno.cell.height * fit
+        context.interpolationQuality = .none
+        context.draw(art, in: CGRect(x: (side - w) / 2, y: (side - h) / 2, width: w, height: h))
+        let name = scale == 1 ? "icon_\(points)x\(points).png" : "icon_\(points)x\(points)@2x.png"
+        guard let image = context.makeImage(),
+              let png = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]),
+              (try? png.write(to: directory.appending(path: name))) != nil else {
+            FileHandle.standardError.write(Data("SwarmHUD: cannot write \(name)\n".utf8))
+            exit(1)
+        }
+    }
+}
 
 @MainActor
 func snapshot(to directory: URL, arguments: [String]) {
