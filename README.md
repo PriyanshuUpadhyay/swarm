@@ -369,7 +369,9 @@ id. A chair gets both from its pane, which `swarm session new` registers. A chil
 The Herdr adapter's spawn verb runs `swarm herdr-split` through `$SWARM_EXE`, the path of the binary
 that runs the verb, so `swarm serve` finds it even with a short `PATH`. A disk adapter's spawn verb must pass
 `SWARM_HOME` and `SWARM_SESSION_ID` to the pane, because the Codex and AGY state hooks find the
-pane's own swarm through them (ADR 0034). Claude, Codex, and AGY run
+pane's own swarm through them (ADR 0034). The spawn verb also gets `SWARM_PANES`, this session's
+seat panes joined by spaces, so a host that stacks seats anchors only on its own session's panes.
+Claude, Codex, and AGY run
 `swarm host-context --provider <claude|codex|agy>` as a SessionStart hook to learn the host contract.
 
 ## Skills and demos
