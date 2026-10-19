@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { ApiError, type Agent, type Api, type Row, type RowFrame, type RowPage, type Session, type Snapshot } from "./api";
 import { App } from "./app";
-import { agentInput, confirmSent, MISSING_ADAPTER, sends, sentRow, submission, usageLabel } from "./composer";
+import { agentInput, confirmSent, MISSING_ADAPTER, sends, sentRow, settleSent, submission, usageLabel } from "./composer";
 
 const user = (id: string, text: string, offset = 10): Row => ({ id, kind: "user", text, order: [offset, 0] });
 const queued = (id: string, text: string): Row => ({ id, kind: "queued", text, order: [5, 0] });
@@ -57,6 +57,17 @@ describe("sent rows", () => {
     expect(left).toEqual([second]);
     const none = [first];
     expect(confirmSent(none, [earlier])).toBe(none);
+  });
+
+  it("stay through a turn that logs nothing, such as Claude's /compact, and leave when it ends", () => {
+    const idle = [sentRow("/compact ", "claude", [])];
+    expect(settleSent(idle, false)).toBe(idle);
+    const running = settleSent(idle, true);
+    expect(running[0].started).toBe(true);
+    expect(settleSent(running, true)).toBe(running);
+    expect(settleSent(running, false)).toEqual([]);
+    const queued: Row = { id: "q", kind: "queued", text: "/compact", order: [1, 0] };
+    expect(confirmSent(idle, [queued])).toEqual([]);
   });
 
   it("leave when a pi skill row shows the same command and words", () => {
@@ -265,6 +276,7 @@ describe("chat actions", () => {
     expect(app.view.lines.map((l) => [l.row.kind, l.row.text, l.row.detail])).toEqual([
       ["user", "hello", undefined],
       ["queued", "also check the docs", "Sent · joins after the next tool call"],
+      ["notice", "Working…", undefined],
     ]);
     codex({ state: "done" });
     app.openChat("chat");
@@ -285,7 +297,38 @@ describe("chat actions", () => {
     expect(app.view.lines.map((l) => [l.row.kind, l.row.text, l.row.detail])).toEqual([
       ["user", "hello", undefined],
       ["queued", "also check the docs", "Sent"],
+      ["notice", "Working…", undefined],
     ]);
+  });
+
+  it("shows Claude's /compact as a Sent row and a Working line while it runs, because Claude logs it only at the end", async () => {
+    const { app, snapshot } = harness();
+    const claude = (agent: Partial<Agent>) =>
+      (app as unknown as { applySnapshot(s: Snapshot): void }).applySnapshot({
+        version: 2,
+        sessions: [session({ chair_provider: "claude" })],
+        agents: { chat: [chair(agent)] },
+      });
+    snapshot();
+    claude({ state: "done" });
+    app.openChat("chat");
+    await settle();
+    await app.send("chat", "/compact");
+    const kinds = () => app.view.lines.map((l) => [l.row.kind, l.row.text]);
+    expect(kinds()).toEqual([
+      ["user", "hello"],
+      ["queued", "/compact"],
+    ]);
+    claude({ state: "working" });
+    app.openChat("chat");
+    expect(kinds()).toEqual([
+      ["user", "hello"],
+      ["queued", "/compact"],
+      ["notice", "Working…"],
+    ]);
+    claude({ state: "done" });
+    app.openChat("chat");
+    expect(kinds()).toEqual([["user", "hello"]]);
   });
 });
 

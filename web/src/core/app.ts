@@ -7,6 +7,7 @@ import {
   confirmSent,
   outgoing,
   sentRow,
+  settleSent,
   submission,
   type AgentInput,
   type Prompt,
@@ -71,14 +72,13 @@ type Chat = {
   shift: boolean;
   loadingOlder: boolean;
   // Reader state and render caches; the LRU drops them.
-  showHidden: boolean;
   folds: FoldChoices;
   opened: Map<string, boolean>;
   full: Map<string, FullText>;
   md: MarkdownCache;
-  built: { version: number; lines: Line[]; hidden: number } | null;
+  built: { version: number; lines: Line[] } | null;
   usage: Usage;
-  /** Texts typed into a running Codex or AGY chair, shown as queued rows until the log has them. */
+  /** Typed texts, shown as queued rows until the log has them. */
   sent: Sent[];
   memo: { sig: unknown[]; pane: Pane } | null;
 };
@@ -118,8 +118,6 @@ export type Pane = {
   chatState: "none" | "loading" | "ready" | "error";
   chatError: string | null;
   lines: Line[];
-  hidden: number;
-  showHidden: boolean;
   hasOlder: boolean;
   loadingOlder: boolean;
   shift: boolean;
@@ -170,7 +168,6 @@ export type View = Pane & {
 /** What a transcript's rows call. `App` is the reader of the chair's chat; `App.reader` gives a child's. */
 export type Reader = {
   toggleLine(line: Line): void;
-  toggleHidden(): void;
   loadFull(previewId: string): Promise<void>;
   fullText(previewId: string): Promise<string>;
   /** A pasted image's preview URL. */
@@ -194,13 +191,18 @@ export const paneId = (sessionId: string, agent: string) => `${sessionId}:${agen
 const DRAFT_PREFIX = "composer.draft.";
 const PICKS_PREFIX = "composer.skills.";
 const NO_FIND: Find = { open: false, query: "", matches: [], index: -1, seq: 0 };
+/** The last line while the agent runs. A turn can log nothing for minutes, such as Claude's /compact. */
+const WORKING: Line = {
+  id: "working",
+  row: { id: "working", kind: "notice", system_kind: "working", text: "Working…", order: [Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER] },
+  fold: null,
+  open: false,
+};
 const NO_PANE: Pane = {
   id: "",
   chatState: "none",
   chatError: null,
   lines: EMPTY,
-  hidden: 0,
-  showHidden: false,
   hasOlder: false,
   loadingOlder: false,
   shift: false,
@@ -370,15 +372,13 @@ export class App {
     const find = finds ? this.find : NO_FIND;
     const sig = [chat.version, chat.state, chat.loaded, chat.loadingOlder, find, this.snapshot, this.inputRev, sendKey, hasLog];
     if (chat.memo && sig.every((v, i) => v === chat.memo!.sig[i])) return chat.memo.pane;
-    if (chat.built?.version !== chat.version) chat.built = { version: chat.version, ...this.build(chat) };
+    if (chat.built?.version !== chat.version) chat.built = { version: chat.version, lines: this.build(chat) };
     const pane: Pane = {
       id: chat.id,
       // A child's column loads when it first shows; with no log yet it has nothing to load.
       chatState: chat.loaded ? chat.state : hasLog ? "loading" : "none",
       chatError: chat.error,
-      lines: chat.built.lines,
-      hidden: chat.built.hidden,
-      showHidden: chat.showHidden,
+      lines: this.chair(chat.id).running ? chat.built.lines.concat(WORKING) : chat.built.lines,
       hasOlder: chat.older > 0,
       loadingOlder: chat.loadingOlder,
       shift: chat.shift,
@@ -420,7 +420,7 @@ export class App {
 
   private build(chat: Chat) {
     const rows = chat.sent.length ? chat.rows.concat(chat.sent.map((s) => s.row)) : chat.rows;
-    return lines(rows, { showHidden: chat.showHidden, folds: chat.folds, opened: chat.opened });
+    return lines(rows, { folds: chat.folds, opened: chat.opened });
   }
 
   private composerView(chat: Chat, sendKey: SendKey): Composer {
@@ -563,12 +563,11 @@ export class App {
     // A card stays busy until its question goes; the same question shown again is a new ask.
     for (const [id, input] of this.inputs)
       if (input.answering && this.chair(id).prompt?.id !== input.answering.prompt) input.answering = null;
-    // A turn that ended took or dropped every typed text (ComposerSentMessages.update).
-    for (const chat of this.chats.values())
-      if (chat.sent.length && !this.chair(chat.id).running) {
-        chat.sent = [];
-        chat.version++;
-      }
+    for (const chat of this.chats.values()) {
+      const sent = settleSent(chat.sent, this.chair(chat.id).running);
+      if (sent.length !== chat.sent.length) chat.version++;
+      chat.sent = sent;
+    }
     // A chair's and a child's log can show up after the chat opens.
     if (this.open) this.loadChair(this.open);
     for (const id of this.visible) this.loadPane(id);
@@ -979,7 +978,6 @@ export class App {
 
   private freshReaderState() {
     return {
-      showHidden: false,
       folds: new FoldChoices(),
       opened: new Map<string, boolean>(),
       full: new Map<string, FullText>(),
@@ -1083,7 +1081,6 @@ export class App {
     if (!r) {
       r = {
         toggleLine: (line) => this.toggleLine(line, id),
-        toggleHidden: () => this.toggleHidden(id),
         loadFull: (previewId) => this.loadFull(previewId, id),
         fullText: (previewId) => this.fullText(previewId, id),
         imageUrl: this.imageUrl,
@@ -1110,13 +1107,6 @@ export class App {
     if (!chat) return;
     if (line.row.kind === "fold") chat.folds.set(line.row, !line.open);
     else chat.opened.set(line.id, !line.open);
-    this.changed(chat);
-  }
-
-  toggleHidden(id?: string) {
-    const chat = this.chat(id);
-    if (!chat) return;
-    chat.showHidden = !chat.showHidden;
     this.changed(chat);
   }
 
@@ -1184,7 +1174,7 @@ export class App {
   /** Matches follow the rows; the current match stays on its row when rows change. */
   private refind(chat: Chat | undefined) {
     const f = this.find;
-    const sig = `${chat?.id}:${chat?.version}:${chat?.showHidden}:${f.open}:${f.query}`;
+    const sig = `${chat?.id}:${chat?.version}:${f.open}:${f.query}`;
     if (sig === this.findVersion) return;
     this.findVersion = sig;
     if (!f.open || !chat) {
@@ -1192,7 +1182,7 @@ export class App {
       return;
     }
     const current = f.matches[f.index]?.id;
-    const matches = findMatches(chat.rows, f.query, chat.showHidden);
+    const matches = findMatches(chat.rows, f.query);
     const kept = current === undefined ? -1 : matches.findIndex((m) => m.id === current);
     this.find = { ...f, matches, index: kept >= 0 ? kept : matches.length ? matches.length - 1 : -1 };
     // A new current match must come into view.
@@ -1207,8 +1197,8 @@ export class App {
     chat.opened.set(m.id, true);
     chat.version++;
     chat.shift = false;
-    chat.built = { version: chat.version, ...this.build(chat) };
-    this.findVersion = `${chat.id}:${chat.version}:${chat.showHidden}:${f.open}:${f.query}`;
+    chat.built = { version: chat.version, lines: this.build(chat) };
+    this.findVersion = `${chat.id}:${chat.version}:${f.open}:${f.query}`;
     this.find = { ...f, seq: f.seq + 1 };
   }
 
@@ -1332,6 +1322,8 @@ export class App {
     // A send typed while Up and C-u presses run would be cut or garbled.
     if (!out || st.sending || st.pulling || chair.disabled) return false;
     const typed = submission(out);
+    const chat = this.chats.get(sessionId);
+    const sent = chat && sentRow(typed, chair.provider, chat.rows, chair.running);
     const ok = await this.act(
       sessionId,
       { sending: true },
@@ -1340,9 +1332,9 @@ export class App {
       () => void this.send(sessionId, text, draftText),
     );
     if (!ok) return false;
-    const chat = this.chats.get(sessionId);
-    if (chat && chair.running && ["codex", "agy", "pi"].includes(chair.provider ?? "")) {
-      chat.sent = [...chat.sent, sentRow(typed, chair.provider, chat.rows)];
+    if (chat && sent) {
+      // The log can show the text while the send is in flight.
+      chat.sent = confirmSent([...chat.sent, sent], chat.rows);
       this.changed(chat);
     }
     if (this.draft(sessionId) === draftText) this.replaceDraft(sessionId, "");

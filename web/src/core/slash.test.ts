@@ -97,25 +97,25 @@ describe("skillFirst", () => {
 
   it("ends a skill token at a newline or the end, and joins its arguments with one space", () => {
     expect(skillFirst("/skill:plan\nfix this", skills).text).toBe("/skill:plan fix this");
-    expect(skillFirst("fix /skill:plan\nnow", skills).text).toBe("/skill:plan fix now");
+    expect(skillFirst("fix /skill:plan\nnow", skills).text).toBe("/skill:plan fix /skill:plan\nnow");
     expect(skillFirst("/skill:plan", skills).text).toBe("/skill:plan");
   });
 
-  it("moves the first pi skill token to the start, where pi expands it", () => {
-    expect(skillFirst("fix this /skill:plan now", skills)).toEqual({ text: "/skill:plan fix this now", extra: [] });
-    expect(skillFirst("tail /skill:plan", skills)).toEqual({ text: "/skill:plan tail", extra: [] });
-    expect(skillFirst("one\n/skill:plan two", skills)).toEqual({ text: "/skill:plan one\ntwo", extra: [] });
+  it("puts the first pi skill token at the start, where pi expands it, and keeps it where it was typed", () => {
+    expect(skillFirst("fix this /skill:plan now", skills)).toEqual({ text: "/skill:plan fix this /skill:plan now", extra: [] });
+    expect(skillFirst("tail /skill:plan", skills)).toEqual({ text: "/skill:plan tail /skill:plan", extra: [] });
+    expect(skillFirst("one\n/skill:plan two", skills)).toEqual({ text: "/skill:plan one\n/skill:plan two", extra: [] });
   });
 
   it("keeps a draft that starts with a skill, and lists a second skill that stays as text", () => {
     expect(skillFirst("/skill:plan go", skills)).toEqual({ text: "/skill:plan go", extra: [] });
-    expect(skillFirst("a /skill:x b /skill:y", skills)).toEqual({ text: "/skill:x a b /skill:y", extra: ["/skill:y"] });
+    expect(skillFirst("a /skill:x b /skill:y", skills)).toEqual({ text: "/skill:x a /skill:x b /skill:y", extra: ["/skill:y"] });
     expect(skillFirst("/skill:x and /skill:y", skills)).toEqual({ text: "/skill:x and /skill:y", extra: ["/skill:y"] });
   });
 
   it("moves only a skill that pi listed, by the name up to the next space", () => {
     expect(skillFirst("fix /skill:nosuch now", skills)).toEqual({ text: "fix /skill:nosuch now", extra: [] });
-    expect(skillFirst("use /skill:my_skill here", skills)).toEqual({ text: "/skill:my_skill use here", extra: [] });
+    expect(skillFirst("use /skill:my_skill here", skills)).toEqual({ text: "/skill:my_skill use /skill:my_skill here", extra: [] });
     expect(skillFirst("see /skill:x.md", skills)).toEqual({ text: "see /skill:x.md", extra: [] });
     expect(skillFirst("a/skill:x b", skills)).toEqual({ text: "a/skill:x b", extra: [] });
   });
@@ -125,7 +125,7 @@ describe("skillFirst", () => {
     expect(skillFirst(fenced, skills)).toEqual({ text: fenced, extra: [] });
     const quoted = "about this:\n> + run /skill:plan now";
     expect(skillFirst(quoted, skills)).toEqual({ text: quoted, extra: [] });
-    expect(skillFirst("```\nx\n```\nthen /skill:plan", skills)).toEqual({ text: "/skill:plan ```\nx\n```\nthen", extra: [] });
+    expect(skillFirst("```\nx\n```\nthen /skill:plan", skills)).toEqual({ text: "/skill:plan ```\nx\n```\nthen /skill:plan", extra: [] });
   });
 });
 
@@ -142,7 +142,7 @@ describe("recorded picks", () => {
   it("tracks the picked occurrence, not a typed copy of the same token", () => {
     const text = "/skill:plan typed; fix /skill:plan now";
     const picks = [{ start: text.lastIndexOf("/skill:plan"), insert: "/skill:plan" }];
-    expect(skillFirst(text, new Set(), picks).text).toBe("/skill:plan /skill:plan typed; fix now");
+    expect(skillFirst(text, new Set(), picks).text).toBe("/skill:plan /skill:plan typed; fix /skill:plan now");
     expect(validPicks("fix /skill:plans now", picked)).toEqual([]);
   });
 
@@ -155,7 +155,7 @@ describe("recorded picks", () => {
   it("sends only the first recorded pick as a skill and lists the second as text", () => {
     const text = "fix /skill:plan and /skill:x";
     const picks = [...picked, { start: 20, insert: "/skill:x" }];
-    expect(skillFirst(text, new Set(), picks)).toEqual({ text: "/skill:plan fix and /skill:x", extra: ["/skill:x"] });
+    expect(skillFirst(text, new Set(), picks)).toEqual({ text: "/skill:plan fix /skill:plan and /skill:x", extra: ["/skill:x"] });
   });
 });
 
@@ -170,7 +170,7 @@ describe("toSend", () => {
     const { calls, load } = loads(null);
     const picks = [{ start: 4, insert: "/skill:plan" }];
     for (const list of [null, { commands: [], note: "probe failed" }]) {
-      expect(await toSend("fix /skill:plan\nnow", "pi", list, load, picks)).toEqual({ text: "/skill:plan fix now", list });
+      expect(await toSend("fix /skill:plan\nnow", "pi", list, load, picks)).toEqual({ text: "/skill:plan fix /skill:plan\nnow", list });
     }
     expect(calls).toHaveLength(0);
     for (const provider of ["claude", "agy", "codex"])
@@ -179,13 +179,13 @@ describe("toSend", () => {
 
   it("asks pi for its skills when the menu never loaded, then moves the skill", async () => {
     const { calls, load } = loads(listed);
-    expect(await toSend("fix /skill:plan now", "pi", null, load)).toEqual({ text: "/skill:plan fix now", list: listed });
+    expect(await toSend("fix /skill:plan now", "pi", null, load)).toEqual({ text: "/skill:plan fix /skill:plan now", list: listed });
     expect(calls).toHaveLength(1);
   });
 
   it("asks nothing when the list is there, the text has no skill, or the chat is not pi", async () => {
     const { calls, load } = loads(listed);
-    expect((await toSend("fix /skill:plan now", "pi", listed, load)).text).toBe("/skill:plan fix now");
+    expect((await toSend("fix /skill:plan now", "pi", listed, load)).text).toBe("/skill:plan fix /skill:plan now");
     expect(await toSend("plain words", "pi", null, load)).toEqual({ text: "plain words", list: null });
     expect(await toSend("fix /skill:plan now", "claude", null, load)).toEqual({ text: "fix /skill:plan now", list: null });
     expect(calls).toHaveLength(0);

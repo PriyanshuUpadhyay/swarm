@@ -3882,7 +3882,7 @@ impl LiveRows {
             if row.ends_turn {
                 self.context.1 = false;
             }
-            row.hidden = view::is_hidden(row);
+            row.collapsed = view::is_collapsed(row);
         }
         let reference = match event_type {
             "tool_call_update" | "tool_diff" => {
@@ -4288,13 +4288,15 @@ impl LiveRows {
                     .iter()
                     .filter_map(|key| self.records.get(key).cloned())
                     .collect();
-                let rows = view::view_rows_with_context(
+                let mut rows = view::view_rows_with_context(
                     &records,
                     true,
                     self.is_codex,
                     &self.shown,
                     Some(chunk.context),
                 );
+                // Queued texts come from the whole queue below, not from one chunk.
+                rows.retain(|row| row.kind != view::RowKind::Queued);
                 upsert.extend(rows.iter().filter(|row| !chunk.rows.contains(row)).cloned());
                 remove.extend(
                     chunk
@@ -4307,7 +4309,11 @@ impl LiveRows {
                 self.chunks.get_mut(&id).unwrap().rows = rows;
             }
             if self.queue_dirty {
-                let rows = view::view_rows(&self.pending_queue, true, self.is_codex, &self.shown);
+                let rows: Vec<_> =
+                    view::view_rows(&self.pending_queue, true, self.is_codex, &self.shown)
+                        .into_iter()
+                        .filter(|row| row.kind == view::RowKind::Queued)
+                        .collect();
                 upsert.extend(
                     rows.iter()
                         .filter(|row| !self.last_queued.contains(row))
@@ -4389,12 +4395,12 @@ impl LiveRows {
             context,
         );
         rows.retain(|row| row.kind != view::RowKind::Queued);
-        rows.extend(view::view_rows(
-            &self.pending_queue,
-            true,
-            self.is_codex,
-            &self.shown,
-        ));
+        // The queue edits already show as record rows above; only the queued texts come from here.
+        rows.extend(
+            view::view_rows(&self.pending_queue, true, self.is_codex, &self.shown)
+                .into_iter()
+                .filter(|row| row.kind == view::RowKind::Queued),
+        );
         if compacted && let Some(divider) = &self.clear_row {
             rows.insert(0, divider.clone());
         }
@@ -4872,6 +4878,8 @@ async fn tool_output(
                 "command_output" => view::command_output_text(view::string(event, "text")),
                 _ => view::string(event, "text").to_owned(),
             },
+            // A record row: an ignored, unknown or bookkeeping event.
+            (_, "output") => view::record_text(event),
             _ => return Err(error(StatusCode::NOT_FOUND, "unknown tool output")),
         };
         Ok(Json(json!({"text": text})))

@@ -333,12 +333,12 @@ pub(super) fn rows_with_context(
         if row.ends_turn {
             turn_open = false;
         }
-        row.hidden = is_hidden(row);
+        row.collapsed = is_collapsed(row);
     }
     rows
 }
 
-pub fn is_hidden(row: &Row) -> bool {
+pub fn is_collapsed(row: &Row) -> bool {
     (row.kind == RowKind::Notice
         && !row.starts_turn
         && ["hook_success", "title:", "model:", "cwd:"]
@@ -349,6 +349,6 @@ pub fn is_hidden(row: &Row) -> bool {
                 // Codex writes its setup prompt and AGENTS.md as developer and context messages.
                 || matches!(
                     row.system_kind.as_deref(),
-                    Some("injected" | "developer" | "context")
+                    Some("injected" | "developer" | "context" | "record")
                 )))
 }

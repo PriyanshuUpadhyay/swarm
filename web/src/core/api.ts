@@ -101,7 +101,8 @@ export type Row = {
   ends_turn?: boolean;
   starts_turn?: boolean;
   arrives_mid_turn?: boolean;
-  hidden?: boolean;
+  /** Bookkeeping or injected text: one closed line that opens to the whole row. */
+  collapsed?: boolean;
   output?: TextPreview;
   fold?: FoldSummary;
   steps?: Row[];

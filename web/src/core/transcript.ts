@@ -61,31 +61,24 @@ export class FoldChoices {
 /** One list line: a row, a fold, or a step of an open fold. `open` is the fold's or the card's state. */
 export type Line = { id: string; row: Row; fold: Row | null; open: boolean };
 
-export type LineState = { showHidden: boolean; folds: FoldChoices; opened: ReadonlyMap<string, boolean> };
+export type LineState = { folds: FoldChoices; opened: ReadonlyMap<string, boolean> };
 
 /** A failed tool card starts open; the reader's choice wins. */
 export const cardOpen = (row: Row, opened: ReadonlyMap<string, boolean>) => opened.get(row.id) ?? row.tool?.state === "failed";
 
-export function lines(rows: readonly Row[], s: LineState): { lines: Line[]; hidden: number } {
+/** Every row is a line; a collapsed row starts closed. */
+export function lines(rows: readonly Row[], s: LineState): Line[] {
   const out: Line[] = [];
-  let hidden = 0;
   for (const row of rows) {
-    if (row.hidden) {
-      hidden++;
-      if (!s.showHidden) continue;
-    }
     if (row.kind !== "fold") {
       out.push({ id: row.id, row, fold: null, open: cardOpen(row, s.opened) });
       continue;
     }
     const open = s.folds.isOpen(row);
     out.push({ id: row.id, row, fold: null, open });
-    for (const step of row.steps ?? []) {
-      if (step.hidden) hidden++;
-      if (open && (s.showHidden || !step.hidden)) out.push({ id: step.id, row: step, fold: row, open: cardOpen(step, s.opened) });
-    }
+    if (open) for (const step of row.steps ?? []) out.push({ id: step.id, row: step, fold: row, open: cardOpen(step, s.opened) });
   }
-  return { lines: out, hidden };
+  return out;
 }
 
 const searchCache = new WeakMap<Row, string>();
@@ -111,14 +104,13 @@ export function searchText(row: Row): string {
 export type Match = { id: string; fold: Row | null };
 
 /** Matches over every loaded row, in list order, including the steps of closed folds. */
-export function findMatches(rows: readonly Row[], query: string, showHidden: boolean): Match[] {
+export function findMatches(rows: readonly Row[], query: string): Match[] {
   const q = query.trim().toLowerCase();
   if (!q) return [];
   const out: Match[] = [];
   for (const row of rows) {
-    if (row.hidden && !showHidden) continue;
     if (searchText(row).includes(q)) out.push({ id: row.id, fold: null });
-    for (const step of row.steps ?? []) if ((showHidden || !step.hidden) && searchText(step).includes(q)) out.push({ id: step.id, fold: row });
+    for (const step of row.steps ?? []) if (searchText(step).includes(q)) out.push({ id: step.id, fold: row });
   }
   return out;
 }
@@ -153,6 +145,43 @@ export function parsePatch(patch: string): PatchLine[] {
     else if (text.startsWith("\\")) out.push({ kind: "meta", text });
   }
   return out;
+}
+
+const HUNK = /^@@ -\d+(?:,(\d+))? \+\d+(?:,(\d+))? @@/;
+
+/** True when the text holds a unified diff, such as `diff -u` or `git diff` output. */
+export const isPatch = (text: string) => /^@@ -\d+(?:,\d+)? \+\d+(?:,\d+)? @@/m.test(text);
+
+/** The colour class of each line of a text that holds unified diffs. Inside a hunk the header's
+ *  counts decide where it ends, so a removed `-- comment` line is not read as a `---` header. */
+export function patchKinds(lines: readonly string[]): PatchLine["kind"][] {
+  let old = 0;
+  let added = 0;
+  return lines.map((text) => {
+    if (old > 0 || added > 0) {
+      if (text.startsWith("\\")) return "meta";
+      const kind = text.startsWith("+") ? "add" : text.startsWith("-") ? "del" : "ctx";
+      if (kind !== "add") old--;
+      if (kind !== "del") added--;
+      return kind;
+    }
+    const h = HUNK.exec(text);
+    if (h) {
+      old = Number(h[1] ?? 1);
+      added = Number(h[2] ?? 1);
+      return "hunk";
+    }
+    return /^(diff |index |--- |\+\+\+ |new file|deleted file|similarity|rename )/.test(text) ? "meta" : "ctx";
+  });
+}
+
+/** Where `token` stands as its own word in `text`, or -1. */
+export function wordAt(text: string, token: string): number {
+  for (let i = text.indexOf(token); i >= 0; i = text.indexOf(token, i + 1)) {
+    const end = i + token.length;
+    if ((i === 0 || /[\s([]/.test(text[i - 1])) && (end === text.length || /\s/.test(text[end]))) return i;
+  }
+  return -1;
 }
 
 export type SplitRow = { left: PatchLine | null; right: PatchLine | null } | { hunk: string };
