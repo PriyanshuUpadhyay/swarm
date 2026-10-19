@@ -61,7 +61,7 @@
   ],
   "result_routing": {
     "review_files": "the chair runs verdict; it groups gaps by the owner seat in checklist.json",
-    "verdict": "03-verdict.md line 3, written only by the script and read by implement, deliver, and review-walk"
+    "verdict": "03-verdict.md line 3, written only by the script and read by implement, the change-review block, and walk mode"
   },
   "trace_cases": [
     {

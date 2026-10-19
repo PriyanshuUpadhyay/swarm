@@ -31,7 +31,7 @@ only the user can give.
    after a partial verdict finds no problem in those rows, in its own worktree from the reviewed head.
    Later rows go to the same fix seat as one more ask. The verdict word and the next review start
    wait for every review seat. Fix each `fix` row in one more iteration, then review the
-   new range. Handle each `ask` as review-check's Asks section says: answer-only work keeps
+   new range. Handle each `ask` as the Asks section of the `review` skill's `references/check.md` says: answer-only work keeps
    HEAD and the range fixed, then run `verdict` again on the same run. In an implement run, you also hold
    the review step, and the last verdict goes in
    `06-review.md`, because it covers the build range. Then print the implement workflow's `Next:` line for the
@@ -40,7 +40,7 @@ only the user can give.
    refuses or needs user input. Bring the open rows to the user with their weight (crash, wrong state,
    or hygiene). Pass an owner's saved line with `review <folder> <range> --continue <user-file>`.
    Write each limit the user accepts as
-   a `limit:` line in the run's `answers.md`, in review-check's answer shape with the user's words,
+   a `limit:` line in the run's `answers.md`, in the check mode's answer shape with the user's words,
    so it reaches the next run's `answers-before.md`. A dead end is reported with its evidence. Never
    relax the predicate to declare victory.
 

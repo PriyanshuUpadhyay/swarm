@@ -9,8 +9,8 @@ metadata:
   needs: "a task that spans turns"
   gives: "a task file and a status block on resume"
   conflicts: ""
-  users: "pair, deliver"
-  source: "skills/pair/SKILL.md (One task file per task, moved here 2026-10-13); skills/deliver/SKILL.md step 4; references/run-folder.md (where the folder is)"
+  users: "implement"
+  source: "skills/implement/references/pair.md (One task file per task, moved here 2026-10-13); skills/implement/references/auto.md step 4; references/run-folder.md (where the folder is)"
 ---
 
 ## Rules
@@ -22,7 +22,7 @@ metadata:
 - Give other agents the file's absolute path, never a summary of it.
 
 ## Example
-Initial state: a deliver run has landed units 1-3, and the session is compacted.
+Initial state: an `auto` mode run has landed units 1-3, and the session is compacted.
 Action: read `tmp/deliver/2026-10-13-login.md` first. The first reply is a status block: "Done: U1 a1b2c3d, U2 d4e5f6a, U3 b7c8d9e. Open: U4 token refresh. Next: write the failing refresh test."
 Result: the run goes on at unit 4, and no landed unit is redone.
 

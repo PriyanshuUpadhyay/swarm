@@ -9,7 +9,7 @@ metadata:
   needs: "a skill's seat list or orchestration.json, and an injected agent-host contract"
   gives: "visible seats with accepted results, closed at the end"
   conflicts: ""
-  users: "orchestrate-claude, orchestrate-codex, orchestrate-agy, council, web-search, review-check"
+  users: "orchestrate-claude, orchestrate-codex, orchestrate-agy, council, web-search, review"
   source: "skills/orchestrate-claude/SKILL.md, skills/orchestrate-codex/SKILL.md, skills/orchestrate-agy/SKILL.md (the shared text, moved here 2026-10-13); skills/council/SKILL.md (Execution backend)"
 ---
 

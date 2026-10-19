@@ -86,7 +86,7 @@ Resolve one of two ways:
 The WAL guards against loss, but the sooner the user confirms the "why", the better.
 Flush, in priority order:
 1. **Before a `git commit` this assistant runs**, if the WAL is non-empty (highest-signal
-   moment). Under `deliver`, flush once at task end instead; a direction-changing choice still
+   moment). Under `implement` in `auto` mode, flush once at task end instead; a direction-changing choice still
    stops the run. This is not an installed hook. Commits made outside this assistant leave the
    flags for the next flush request or session.
 2. **Right after a reversal is confirmed** — don't let it sit.

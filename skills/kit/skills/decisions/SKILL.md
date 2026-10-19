@@ -33,7 +33,7 @@ procedure: `references/capture-loop.md`.
 
 ## When to flush the buffer
 
-Apply the flush schedule in `references/capture-loop.md` section 3, including its `deliver` scope.
+Apply the flush schedule in `references/capture-loop.md` section 3, including its `auto` mode scope.
 
 ## When NOT to Trigger
 - Routine implementation detail, variable renames, local refactors — noise, not decisions.

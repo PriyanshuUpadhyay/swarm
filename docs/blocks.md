@@ -47,7 +47,7 @@ The parts and their owners:
 - **End condition.** A check that code can run: a line the owner wrote, a script result, a cap.
   "The model thinks it is done" is never an end condition.
 - **Loop stop.** Call `review_check.py start --parent-loop <key>`; the command owns the rule
-  (progress.md B1, B2). `implement_run.py review` passes the saved key for implement and deliver.
+  (progress.md B1, B2). `implement_run.py review` passes the saved key for both implement modes.
   View-and-talk loops move to this guard in B19; until then `blocks/comment-round/SKILL.md` owns their stop.
 
 ## Block format
@@ -126,6 +126,10 @@ On 2026-10-17, the owner chose `blocks/worker-brief/SKILL.md` as the owner of ga
 On 2026-10-17, the owner approved domain selection by `implement_run.py start --domains`;
 `skills/kit/skills/implement/SKILL.md` names the command and its saved choice.
 
+On 2026-10-19, the owner made every work verb a preset, the Template above: a start list of steps
+and blocks that the planner copies. `skills/plan/SKILL.md` owns the preset format and the front door,
+and `blocks/plan-review/scripts/start_plan.py` owns which presets stop for approval.
+
 1. A block owns one concern. Its `owns` line names that concern, and no other block's `owns` line
    names it.
 2. When two files state the same rule, that is a defect. The fix is one owner and a pointer, never a
@@ -154,7 +158,7 @@ Status: ✅ exists, ✂️ cut from a skill next, ⬜ later, 🆕 new, 🔒 stay
 | plan-review | step | the owner's approval of a plan before work starts | `plan.html`, `plan.md` → approved plan, started step run | `blocks/plan-review` with `scripts/start_plan.py`, which refuses a plan that changed after approval | the `plan` skill | ✅ basic |
 | comment-round | rule | one Plannotator round: command, saved result with file hashes, answers, loop stop | files → `<N>.json`, `<N>-answers.md` | `blocks/comment-round` with `scripts/comment_round.py` | plan-review, page-comments | ✅ basic |
 | page-comments | step | the comment, fix and check loop for a built page | page, its checks, its build block → approved page | `blocks/page-comments` | glitch-walk, any page | ✅ basic |
-| change-review | step | that a plan's commits get the full review-check verdict | range → verdict | `blocks/change-review`, which runs `skills/review-check` whole | plans that make commits | ✅ basic |
+| change-review | step | that a plan's commits get the full review check verdict | range → verdict | `blocks/change-review`, which runs `skills/review/references/check.md` whole | plans that make commits | ✅ basic |
 | voice-reply | rule | the final reply to the owner, by the session's reply rules | step results → reply | `blocks/voice-reply` (points to the agent instructions) | the last step of a plan | ✅ basic |
 | voice-teach | rule | the order of ideas in an explanation to learn from | subject, known terms → explanation | `blocks/voice-teach` | explain, the last step of an explain plan | ✅ basic |
 | voice-pr | rule | how PR titles and bodies read | change, tests → PR draft | `blocks/voice-pr` | the last step of a PR plan | ✅ basic |
@@ -182,7 +186,7 @@ Status: ✅ exists, ✂️ cut from a skill next, ⬜ later, 🆕 new, 🔒 stay
 | visual-qa | step | the visual verdict and the QA log | frames, playback → QA log | `blocks/visual-qa` | build | ✅ |
 | web-ui-basics | rule | the floor for one static page | page → pass or fail | `blocks/web-ui-basics` | any static page | ✅ HTML only |
 | serve-local | step | a local view of the checked build | built folder → URL, commit, stop command | `blocks/serve-local` | page-comments, build sites, any page | ✅ basic |
-| review | step | the review verdict | range → verdict | `skills/review-check` (stays whole; `blocks/change-review` calls it) | implement, deliver, plans | 🔒 |
+| review | step | the review verdict | range → verdict | `skills/review` check mode (stays whole; `blocks/change-review` calls it) | implement, plans | 🔒 |
 | report | step | the written answer | findings → report with checked links | `blocks/report` (report sections; the agent instructions own the reply) | research | ✅ |
 | done-when-evidence | rule | close maps claims to evidence | frame, results → evidence rows | `blocks/done-when-evidence` | every template | ✅ |
 
@@ -210,9 +214,9 @@ workflow calls them as one unit.
 
 | Unit | Why |
 |---|---|
-| pair chunk loop | propose, approve, patch, check, commit is one gate the edit hook reads |
-| deliver | the hands-off build loop and its stop |
-| review-check core | units, checklist, owner map and verdict are one coverage gate |
+| implement `pair` mode chunk loop | propose, approve, patch, check, commit is one gate the edit hook reads |
+| implement `auto` mode | the hands-off build loop and its stop |
+| review check mode core | units, checklist, owner map and verdict are one coverage gate |
 | web-search depth gate and fetch ladder | the gate enforces the depth rule; the ladder is a policy of this one owner |
 | council protocol | one sequence from Round 0 to cross-examination |
 | decisions | capture gate, tiers and immutable body are one contract |
@@ -220,8 +224,8 @@ workflow calls them as one unit.
 | glitch-walk start | its script refuses, stops and gives exact words; it runs as one step |
 | engineering-standards tables | each row already has an ID |
 | `build` skill seam law | one idea across three files in the `build` skill; it moves with `story` |
-| cleanup-gate pass | the six emissions in order are one gate; a step that emitted nothing did not run |
-| review-walk steps | each step needs the reviewer, and the map, comments and walk share one run |
+| review cleanup mode pass | the six emissions in order are one gate; a step that emitted nothing did not run |
+| review walk mode steps | each step needs the reviewer, and the map, comments and walk share one run |
 | implement step graph | the step list, status and catalog are one machine that `implement_run.py` runs |
 
 ## Every skill, split (2026-10-13)
@@ -234,15 +238,15 @@ below. The proof, checked-unit, and extraction rules live directly in
 | Skill | Blocks it points to | Stays in the skill |
 |---|---|---|
 | engineering-standards | decision-with-default (trade-off form) | the rule tables and the procedure |
-| pair | task-file, checked-units, when-to-extract | the chunk loop, its guards, commit per behavior |
-| deliver | task-file, checked-units, prove-it-works | the predicate loop, the commit gate, the review stop |
+| implement `pair` mode (`references/pair.md`) | task-file, checked-units, when-to-extract | the chunk loop, its guards, commit per behavior |
+| implement `auto` mode (`references/auto.md`) | task-file, checked-units, prove-it-works | the predicate loop, the commit gate, the review stop |
 | research | sources (parent of deep-search, primary-sources, cite-sources, link-check), local-research, deep-search, primary-sources, cite-sources, tool-trial, report, link-check, worker-brief (no-user gate) | the step table, the web seat triggers and timing |
 | web-search | sources (parent), deep-search, primary-sources, cite-sources, link-check, worker-brief, run-workers | seats, site sets, reach tools, Yield and Floor, the depth gate, the merge |
 | council | worker-brief, run-workers | the protocol, the convergence check, the output, the decision log |
 | orchestrate-claude, -codex, -agy | run-workers, worker-brief | the lines that differ by runtime |
-| review-check | when-to-extract, worker-brief (no-user gate) | the whole review gate |
-| review-walk | voice-review | the five steps and GitHub write gates (stays whole) |
-| cleanup-gate | when-to-extract (by its rules file) | the six-step pass (stays whole) |
+| review check mode | when-to-extract, worker-brief (no-user gate) | the whole review gate |
+| review walk mode | voice-review | the five steps and GitHub write gates (stays whole) |
+| review cleanup mode | when-to-extract (by its rules file) | the six-step pass (stays whole) |
 | decisions | none | the whole capture contract (stays whole) |
 | implement | prove-it-works, checked-units, worker-brief (no-user gate), and every block its catalog lines name | the step graph and the loader |
 | build | reference-analysis, story, look-check, headless-shot, visual-qa, build-site (which points to web-ui and design-tokens), build-canvas, web-ui-basics | the contract, the routes, the seam law, the reel rules |

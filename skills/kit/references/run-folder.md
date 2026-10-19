@@ -30,7 +30,7 @@ and do not default to a product repo's root. Keep its source and export there, w
 For council, `<log>` is the chosen log file's parent folder. The caller keeps its artifact names
 and passes the run kind here. This table changes no saved history or piece assets.
 
-Example. A `pair` task in `~/work/app/wt/feat-login` writes
+Example. An `implement` task in `pair` mode in `~/work/app/wt/feat-login` writes
 `~/work/app/wt/feat-login/tmp/pair/2026-09-30-login-rate-limit.md`. `git status` does not show it,
 because `/tmp/` is in the clone's `.git/info/exclude`.
 
