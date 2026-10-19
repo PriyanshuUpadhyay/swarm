@@ -30,7 +30,7 @@ pub fn is_step(row: &Row) -> bool {
     row.tool.is_some()
         || (row.system_kind.as_deref() == Some("swarm_ring") && !row.starts_turn)
         || row.kind == RowKind::Thought
-        || row.hidden
+        || row.collapsed
 }
 pub fn fold_expanded(
     rows: &[Row],
@@ -46,7 +46,7 @@ pub fn fold_expanded(
                     .is_some_and(|tool| tool.state == ToolState::Failed)
             }) || rows
                 .iter()
-                .filter(|row| !row.hidden && shown.contains(&row.id))
+                .filter(|row| !row.collapsed && shown.contains(&row.id))
                 .count()
                 >= 2
         })
@@ -56,10 +56,10 @@ pub const FOLD_STEP_LIMIT: usize = 100;
 
 pub fn fold_rows(rows: Vec<Row>, shown: &HashSet<String>) -> Vec<Row> {
     fn flush(run: &mut Vec<Row>, items: &mut Vec<Row>, shown: &HashSet<String>) {
-        if run.iter().filter(|row| !row.hidden).count() >= 2
+        if run.iter().filter(|row| !row.collapsed).count() >= 2
             && run.iter().any(|row| row.tool.is_some())
         {
-            let id = format!("fold:{}", run.iter().find(|row| !row.hidden).unwrap().id);
+            let id = format!("fold:{}", run.iter().find(|row| !row.collapsed).unwrap().id);
             let summary = summary(run);
             let mut fold = Row::new(RowKind::Fold, summary.text.clone(), id);
             fold.order = run[0].order;
@@ -103,7 +103,7 @@ pub fn summary(rows: &[Row]) -> FoldSummary {
         state: ToolState::Finished,
         text: String::new(),
     };
-    for row in rows.iter().filter(|row| !row.hidden) {
+    for row in rows.iter().filter(|row| !row.collapsed) {
         if row.system_kind.as_deref() == Some("swarm_ring") {
             result.rings += 1;
         }

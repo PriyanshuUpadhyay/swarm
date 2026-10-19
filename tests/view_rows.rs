@@ -201,7 +201,7 @@ fn hidden_rows() {
         json!({"type":"session_info","kind":"cwd","value":"/work"}),
     ]);
     assert_eq!(
-        rows.iter().map(|row| row.hidden).collect::<Vec<_>>(),
+        rows.iter().map(|row| row.collapsed).collect::<Vec<_>>(),
         [true, true, true, false, true, true, true]
     );
 }
@@ -589,7 +589,7 @@ fn bundled_skill_body_to_tool() {
         "Review target: the changes"
     );
     assert!(tool(&rows[1]).skill_body.is_none());
-    assert!(rows[2].hidden);
+    assert!(rows[2].collapsed);
 }
 #[test]
 fn unlinked_skill_body() {
@@ -601,7 +601,7 @@ fn unlinked_skill_body() {
     )]);
     assert_eq!(kinds(&rows), [RowKind::System]);
     assert_eq!(rows[0].system_kind.as_deref(), Some("skill_body"));
-    assert!(!rows[0].hidden);
+    assert!(!rows[0].collapsed);
 }
 #[test]
 fn model_command_output() {
@@ -678,7 +678,7 @@ fn injected_rows() {
     ]);
     assert_eq!(kinds(&rows), [RowKind::User, RowKind::System]);
     assert_eq!(
-        rows.iter().map(|row| row.hidden).collect::<Vec<_>>(),
+        rows.iter().map(|row| row.collapsed).collect::<Vec<_>>(),
         [false, true]
     );
 }
@@ -697,7 +697,7 @@ fn peer_message_starts_turn() {
     let message = rows.last().unwrap();
     assert_eq!(message.kind, RowKind::Notice);
     assert_eq!(message.text, "Review the parser");
-    assert!(!message.hidden);
+    assert!(!message.collapsed);
     assert!(transcript::is_active(&rows));
     let peer = "Another Claude session sent a message:\n<agent-message>Done</agent-message>";
     assert_eq!(
@@ -711,7 +711,7 @@ fn peer_message_starts_turn() {
             "model-word",
             ""
         )])[0]
-            .hidden
+            .collapsed
     );
 }
 #[test]
@@ -762,7 +762,7 @@ fn reminder_under_command_stays_hidden() {
         assert_eq!(kinds(&rows), [RowKind::System; 2]);
         assert!(rows[0].command.as_ref().unwrap().skill_body.is_none());
         assert!(!rows[0].starts_turn);
-        assert!(rows[1].hidden);
+        assert!(rows[1].collapsed);
     }
 }
 #[test]
@@ -867,7 +867,7 @@ fn ring_rows() {
     assert_eq!(kinds(&idle), [RowKind::System]);
     assert_eq!(idle[0].id, "ring-1:ring");
     assert!(idle[0].starts_turn);
-    assert!(!idle[0].hidden);
+    assert!(!idle[0].collapsed);
     assert_eq!(idle[0].search_text(), "New swarm message");
     let rows = build(vec![
         user("Run the council", "prompt"),
@@ -1020,6 +1020,7 @@ fn row_sources() {
         [
             vec!["raw-0", "raw-1"],
             vec!["raw-2", "raw-4"],
+            vec!["raw-3"],
             vec!["raw-5", "raw-6"]
         ]
     );
@@ -1679,7 +1680,7 @@ fn fold_is_lossless() {
                 .collect::<Vec<_>>();
             assert_eq!(flat, rows);
             for row in folded.iter().filter(|row| row.kind == RowKind::Fold) {
-                assert!(row.steps.iter().filter(|row| !row.hidden).count() >= 2);
+                assert!(row.steps.iter().filter(|row| !row.collapsed).count() >= 2);
                 assert!(row.steps.iter().any(|row| row.tool.is_some()));
             }
         }
@@ -1700,8 +1701,15 @@ fn queue_replay_keeps_owner_messages_and_sent_rows() {
     let queued = transcript::queued(&records);
     assert_eq!(texts(&queued), ["keep the old name"]);
     let rows = transcript::rows(&records, false, false);
-    assert_eq!(kinds(&rows), [RowKind::User]);
-    assert!(rows[0].arrives_mid_turn);
+    let user: Vec<_> = rows.iter().filter(|row| !row.collapsed).collect();
+    assert_eq!(user.len(), 1);
+    assert!(user[0].arrives_mid_turn);
+    assert_eq!(
+        rows.iter()
+            .filter(|row| row.system_kind.as_deref() == Some("record"))
+            .count(),
+        5
+    );
 }
 #[test]
 fn clear_boundary_removes_only_preamble() {
@@ -1779,7 +1787,7 @@ fn previews_bound_wire_bytes_and_keep_full_counts() {
     assert_eq!(preview.full_bytes, huge.len());
     assert!(serde_json::to_vec(&rows).unwrap().len() < 2500);
     let wire = serde_json::to_value(&rows).unwrap();
-    assert!(wire[0].get("hidden").is_none());
+    assert!(wire[0].get("collapsed").is_none());
     assert!(wire[0].get("steps").is_none());
     for field in [
         "diffs",
@@ -1827,7 +1835,7 @@ fn inline_fixture(format: &str, lines: &[&str]) -> Vec<Value> {
 }
 
 #[test]
-fn bookkeeping_records_have_no_rows() {
+fn bookkeeping_records_are_collapsed_rows_with_their_source() {
     const LINES: [&str; 6] = [
         r#"{"type":"attachment","uuid":"u1","sessionId":"s1","attachment":{"type":"credential_org","organizationUuid":"org-1"}}"#,
         r#"{"type":"worktree-state","worktreeSession":{"originalCwd":"/work/main","worktreePath":"/work/wt","worktreeName":"wt","worktreeBranch":"wt","sessionId":"s1","enteredExisting":true},"sessionId":"s1"}"#,
@@ -1845,7 +1853,22 @@ fn bookkeeping_records_have_no_rows() {
             .take(2)
             .all(|event| event["type"] == "queue_operation")
     );
-    assert!(build(events).is_empty());
+    let rows = build(events);
+    assert_eq!(rows.len(), 6);
+    assert!(
+        rows.iter()
+            .all(|row| row.collapsed && row.system_kind.as_deref() == Some("record"))
+    );
+    assert_eq!(rows[0].text, "ignored · attachment/credential_org");
+    assert!(
+        rows[0]
+            .output
+            .as_ref()
+            .unwrap()
+            .text
+            .contains("\"organizationUuid\": \"org-1\"")
+    );
+    assert_eq!(rows[4].text, "queue_operation · enqueue");
 }
 
 #[test]
@@ -1861,7 +1884,7 @@ fn absorbed_queued_message() {
     let events = inline_fixture("claude", &LINES);
     let rows: Vec<_> = build(events)
         .into_iter()
-        .filter(|row| !row.hidden)
+        .filter(|row| !row.collapsed)
         .collect();
     assert_eq!(
         kinds(&rows),

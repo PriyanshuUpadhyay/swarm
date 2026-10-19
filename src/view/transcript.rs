@@ -60,6 +60,15 @@ impl Record {
             }
             text_preview = Some(preview);
         }
+        if is_record(&event) {
+            let mut preview = TextPreview::new(&record_text(&event), 120);
+            preview.id = format!("{source_id}:output");
+            // The preview holds the record; the full-output route reads the line again.
+            if let Some(object) = event.as_object_mut() {
+                object.remove("raw");
+            }
+            text_preview = Some(preview);
+        }
         if string(&event, "type") == "tool_diff"
             && let Ok(diff) = serde_json::from_value::<Diff>(event.clone())
         {
@@ -152,7 +161,7 @@ pub struct Row {
     #[serde(skip_serializing_if = "super::is_false")]
     pub arrives_mid_turn: bool,
     #[serde(skip_serializing_if = "super::is_false")]
-    pub hidden: bool,
+    pub collapsed: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub output: Option<TextPreview>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -181,7 +190,7 @@ impl Row {
             ends_turn: false,
             starts_turn: false,
             arrives_mid_turn: false,
-            hidden: false,
+            collapsed: false,
             output: None,
             fold: None,
             steps: Vec::new(),
@@ -255,6 +264,25 @@ impl Row {
         }
         parts.join("\n")
     }
+}
+/// A log record with no row of its own: an ignored or unknown line, or bookkeeping that the view
+/// reads elsewhere. It shows as a collapsed row that opens to the whole record.
+fn is_record(event: &Value) -> bool {
+    matches!(
+        string(event, "type"),
+        "ignored" | "unknown" | "usage" | "queue_operation" | "turn_started"
+    ) || (string(event, "type") == "session_info" && string(event, "kind") == "agent_name")
+}
+/// The whole record: the source line of an ignored or unknown event, else the event itself.
+/// JSON is pretty-printed, so the record reads as lines.
+pub fn record_text(event: &Value) -> String {
+    let raw = string(event, "raw");
+    if raw.is_empty() {
+        return serde_json::to_string_pretty(event).unwrap_or_default();
+    }
+    serde_json::from_str::<Value>(raw)
+        .and_then(|value| serde_json::to_string_pretty(&value))
+        .unwrap_or_else(|_| raw.into())
 }
 /// The log formats the transcript tool reads, by provider id.
 pub const LOG_FORMATS: [&str; 4] = ["claude", "codex", "agy", "pi"];
@@ -594,7 +622,25 @@ pub fn row(record: &Record) -> Option<Row> {
                 }
             }
         }
-        "session_info" if string(event, "kind") == "agent_name" => return None,
+        _ if is_record(event) => {
+            let detail = match event_type {
+                "queue_operation" => string(event, "operation"),
+                _ => string(event, "kind"),
+            };
+            let mut row = Row::new(
+                RowKind::System,
+                [event_type, detail]
+                    .into_iter()
+                    .filter(|part| !part.is_empty())
+                    .collect::<Vec<_>>()
+                    .join(" · "),
+                // Its own id form: a uuid-less queue edit also makes a queued row under `key`.
+                format!("record-{}", record.source_id),
+            );
+            row.system_kind = Some("record".into());
+            row.output = record.text_preview.clone();
+            row
+        }
         "session_info" => Row::new(
             RowKind::Notice,
             format!("{}: {}", string(event, "kind"), string(event, "value")),
@@ -626,12 +672,21 @@ pub fn row(record: &Record) -> Option<Row> {
             ),
             key(record, "image"),
         ),
-        "unknown" => Row::new(
-            RowKind::Notice,
-            string(event, "raw").into(),
-            key(record, "unknown"),
-        ),
-        _ => return None,
+        // A page marker is the tool's own window bound, not a log record.
+        "page" => return None,
+        // A new event type shows as its JSON until the view learns it.
+        _ => {
+            let mut row = Row::new(
+                RowKind::System,
+                event_type.into(),
+                format!("record-{}", record.source_id),
+            );
+            row.system_kind = Some("record".into());
+            let mut preview = TextPreview::new(&record_text(event), 120);
+            preview.id = format!("{}:output", record.source_id);
+            row.output = Some(preview);
+            row
+        }
     };
     if row.id.is_empty() || row.id.starts_with(':') {
         row.id = format!("event-{}", record.source_id);
@@ -639,7 +694,7 @@ pub fn row(record: &Record) -> Option<Row> {
     Some(row)
 }
 
-pub use super::builder::{is_hidden, rows};
+pub use super::builder::{is_collapsed, rows};
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct ChatUsage {

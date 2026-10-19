@@ -5,7 +5,7 @@ import { eventKey, installKeys, parseChord, Registry } from "./commands";
 import { renderMarkdown } from "./markdown";
 import { MAX_RECORDS, measure } from "./perf";
 import { SseParser } from "./sse";
-import { FoldChoices, findMatches, lines, mergeRows, parsePatch, splitPatch } from "./transcript";
+import { FoldChoices, findMatches, isPatch, lines, mergeRows, parsePatch, patchKinds, splitPatch, wordAt } from "./transcript";
 
 // A row as the server sends it; `order` is [source offset, event ordinal].
 const row = (id: string, offset: number, extra: Partial<Row> = {}): Row => ({ id, kind: "assistant", text: id, order: [offset, 0], ...extra });
@@ -43,14 +43,18 @@ describe("row merge", () => {
 });
 
 describe("folds and lines", () => {
-  const steps = [tool("read-config", 100), row("model-notice", 101, { kind: "notice", hidden: true }), tool("run-tests", 102)];
+  const steps = [tool("read-config", 100), row("model-notice", 101, { kind: "notice", collapsed: true }), tool("run-tests", 102)];
 
-  it("draws a closed fold as one line, and an open fold with its shown steps under it", () => {
-    const state = { showHidden: false, folds: new FoldChoices(), opened: new Map() };
-    expect(ids(lines([fold("run", steps)], state).lines)).toEqual(["run"]);
-    expect(ids(lines([fold("run", steps, { default_open: true })], state).lines)).toEqual(["run", "read-config", "run-tests"]);
-    expect(lines([fold("run", steps)], state).hidden).toBe(1);
-    expect(ids(lines([fold("run", steps, { default_open: true })], { ...state, showHidden: true }).lines)).toContain("model-notice");
+  it("draws a closed fold as one line, and an open fold with every step under it, collapsed ones too", () => {
+    const state = { folds: new FoldChoices(), opened: new Map() };
+    expect(ids(lines([fold("run", steps)], state))).toEqual(["run"]);
+    expect(ids(lines([fold("run", steps, { default_open: true })], state))).toEqual(["run", "read-config", "model-notice", "run-tests"]);
+  });
+
+  it("shows a collapsed row as a closed line that the reader can open", () => {
+    const record = row("record", 1, { kind: "system", system_kind: "record", collapsed: true });
+    expect(lines([record], { folds: new FoldChoices(), opened: new Map() })[0].open).toBe(false);
+    expect(lines([record], { folds: new FoldChoices(), opened: new Map([["record", true]]) })[0].open).toBe(true);
   });
 
   it("keeps the reader's choice when the run gains a step and the fold id changes", () => {
@@ -66,25 +70,24 @@ describe("folds and lines", () => {
 
   it("opens a failed tool card by default, and the reader's choice wins", () => {
     const failed = tool("cargo-test", 5, "failed");
-    expect(lines([failed], { showHidden: false, folds: new FoldChoices(), opened: new Map() }).lines[0].open).toBe(true);
-    expect(lines([failed], { showHidden: false, folds: new FoldChoices(), opened: new Map([["cargo-test", false]]) }).lines[0].open).toBe(false);
+    expect(lines([failed], { folds: new FoldChoices(), opened: new Map() })[0].open).toBe(true);
+    expect(lines([failed], { folds: new FoldChoices(), opened: new Map([["cargo-test", false]]) })[0].open).toBe(false);
   });
 });
 
 describe("find", () => {
   it("finds a step inside a closed fold and names the fold that holds it", () => {
     const rows = [row("intro", 1, { text: "Running the parser tests" }), fold("run", [tool("read-config", 10), tool("parser-check", 11)])];
-    const matches = findMatches(rows, "PARSER", false);
+    const matches = findMatches(rows, "PARSER");
     expect(matches.map((m) => [m.id, m.fold?.id ?? null])).toEqual([
       ["intro", null],
       ["parser-check", "run"],
     ]);
   });
 
-  it("skips hidden rows unless they are shown", () => {
-    const rows = [row("model-notice", 1, { kind: "notice", text: "model: opus", hidden: true })];
-    expect(findMatches(rows, "opus", false)).toEqual([]);
-    expect(findMatches(rows, "opus", true)).toHaveLength(1);
+  it("finds collapsed rows too", () => {
+    const rows = [row("model-notice", 1, { kind: "notice", text: "model: opus", collapsed: true })];
+    expect(findMatches(rows, "opus")).toHaveLength(1);
   });
 
   it("opens the fold and the card of the match the reader steps to", async () => {
@@ -276,5 +279,32 @@ describe("perf records", () => {
       delete g.window;
       delete g.requestAnimationFrame;
     }
+  });
+});
+
+describe("diffs in plain text", () => {
+  it("colours `diff -u` output by hunk counts, so a removed `-- comment` is not a file header", () => {
+    const out = ["--- a.sql\t2026", "+++ a.sql\t2026", "@@ -1,2 +1,2 @@", " keep", "--- old comment", "+-- new comment", "done"];
+    expect(isPatch(out.join("\n"))).toBe(true);
+    expect(patchKinds(out)).toEqual(["meta", "meta", "hunk", "ctx", "del", "add", "ctx"]);
+    expect(isPatch("a + b\n- item")).toBe(false);
+  });
+
+  it("colours a diff fence and keeps its text", () => {
+    const html = renderMarkdown("```diff\n-old\n+new\n```");
+    expect(html).toContain('<span class="dl del">-old\n</span><span class="dl add">+new\n</span>');
+  });
+});
+
+describe("owner messages and skill chips", () => {
+  it("keeps the owner's typed line breaks, and agent text stays plain markdown", () => {
+    expect(renderMarkdown("one\ntwo", true)).toContain("one<br>\ntwo");
+    expect(renderMarkdown("one\ntwo")).not.toContain("<br>");
+  });
+
+  it("finds a skill token only as its own word", () => {
+    expect(wordAt("please use /skill:plan now", "/skill:plan")).toBe(11);
+    expect(wordAt("see /skill:plans and (/skill:plan)", "/skill:plan")).toBe(-1);
+    expect(wordAt("see /skill:plans and (/skill:plan\nnext", "/skill:plan")).toBe(22);
   });
 });

@@ -9,6 +9,7 @@ import {
   CircleStopIcon,
   CopyIcon,
   FileCodeIcon,
+  LoaderCircleIcon,
   MailIcon,
   MessageSquareDashedIcon,
   TriangleAlertIcon,
@@ -19,7 +20,7 @@ import { VList, Virtualizer, type VirtualizerHandle } from "virtua";
 import type { DiffPreview, Row, TextPreview, ToolState } from "../core/api";
 import type { App, FullText, Pane, Reader } from "../core/app";
 import type { MarkdownCache } from "../core/markdown";
-import { duration, parsePatch, splitPatch, type Line, type PatchLine, type SplitRow } from "../core/transcript";
+import { duration, isPatch, parsePatch, patchKinds, splitPatch, wordAt, type Line, type PatchLine, type SplitRow } from "../core/transcript";
 import { ContextMenu, ContextMenuTrigger } from "../components/ui/context-menu";
 import { Kbd } from "../components/ui/kbd";
 import { ChatInput } from "./composer";
@@ -172,7 +173,7 @@ function Transcript({ app, view, testid = "transcript", empty }: { app: Reader; 
   );
 }
 
-/** Top of the loaded history: Load earlier messages, and Show N hidden rows. */
+/** Top of the loaded history: Load earlier messages. */
 function Head({ app, view }: { app: Reader; view: Pane }) {
   return (
     <div className="t-head" style={{ height: HEAD_HEIGHT }}>
@@ -182,12 +183,6 @@ function Head({ app, view }: { app: Reader; view: Pane }) {
         </button>
       ) : (
         <span className="text-faint-foreground">Start of chat</span>
-      )}
-      <span className="flex-1" />
-      {view.hidden > 0 && (
-        <button type="button" className="t-link" data-testid="toggle-hidden" onClick={() => app.toggleHidden()}>
-          {view.showHidden ? `Hide ${view.hidden} hidden rows` : `Show ${view.hidden} hidden rows`}
-        </button>
       )}
     </div>
   );
@@ -291,11 +286,18 @@ function RowBody(ctx: Ctx) {
   const { row } = line;
   if (row.kind === "fold") return <FoldLine app={app} line={line} />;
   if (row.tool) return <ToolCard {...ctx} />;
+  if (row.collapsed) return <Collapsed {...ctx} />;
   if (row.kind === "divider")
     return (
       <div className="divider">
         <span>{row.text}</span>
         {row.detail && <span className="text-faint-foreground">{row.detail}</span>}
+      </div>
+    );
+  if (row.system_kind === "working")
+    return (
+      <div className="quiet" role="status" data-testid="working">
+        <LoaderCircleIcon className="glyph working" /> {row.text}
       </div>
     );
   if (row.system_kind === "swarm_ring")
@@ -324,7 +326,7 @@ function RowBody(ctx: Ctx) {
   if (row.kind === "user" || row.kind === "queued")
     return (
       <Bubble row={row} queued={row.kind === "queued" || row.system_kind === "queued_prompt"}>
-        <div className="md" dangerouslySetInnerHTML={{ __html: md.html(row.id, row.text) }} />
+        <div className="md" dangerouslySetInnerHTML={{ __html: md.html(row.id, row.text, true) }} />
         <ImageThumbs text={row.text} load={app.imageUrl} />
       </Bubble>
     );
@@ -415,16 +417,29 @@ function CopyMessage({ row }: { row: Row }) {
   );
 }
 
+/** A command and its words. A skill named mid-message shows its chip where the owner typed it. */
 function CommandChip({ row }: { row: Row }) {
   const chip = row.command!;
+  const name = (
+    <span className="chip">
+      <FileCodeIcon className="size-3" /> {chip.name}
+    </span>
+  );
+  const at = wordAt(chip.arguments, chip.name);
   return (
     <div className="grid gap-1">
-      <div className="flex items-baseline gap-2">
-        <span className="chip">
-          <FileCodeIcon className="size-3" /> {chip.name}
-        </span>
-        {chip.arguments && <span className="font-mono text-muted-foreground">{chip.arguments}</span>}
-      </div>
+      {at >= 0 ? (
+        <div className="whitespace-pre-wrap">
+          {chip.arguments.slice(0, at)}
+          {name}
+          {chip.arguments.slice(at + chip.name.length)}
+        </div>
+      ) : (
+        <div className="flex items-baseline gap-2">
+          {name}
+          {chip.arguments && <span className="whitespace-pre-wrap">{chip.arguments}</span>}
+        </div>
+      )}
       {chip.skill_body && (
         <details className="text-xs">
           <summary className="cursor-default text-muted-foreground">Skill · {chip.name.replace(/^\/(skill:)?/, "")}</summary>
@@ -433,6 +448,20 @@ function CommandChip({ row }: { row: Row }) {
       )}
       {chip.output?.text && <div className="truncate text-xs text-muted-foreground">{chip.output.text}</div>}
     </div>
+  );
+}
+
+/** A collapsed row: one closed line, which opens to the whole row. */
+function Collapsed({ app, line, full }: Ctx) {
+  const { row } = line;
+  const text = row.text.trim();
+  const title = text.split("\n", 1)[0] || row.system_kind || row.kind;
+  if (!row.output?.text && !text.includes("\n"))
+    return <div className="quiet">{title}</div>;
+  return (
+    <Disclosure app={app} line={line} title={title} mono>
+      <OutputBox app={app} preview={row.output ?? textPreview(row)} full={full} title={row.system_kind === "record" ? "Record" : "Text"} />
+    </Disclosure>
   );
 }
 
@@ -566,6 +595,8 @@ function OutputBox({ app, preview, full, title }: { app: Reader; preview: TextPr
       </div>
       {f?.state === "ready" ? (
         <TextLines lines={f.lines} testid="full-output" />
+      ) : isPatch(preview.text) ? (
+        <PatchText text={preview.text} />
       ) : (
         <pre className="out">{preview.text || "No output was recorded."}</pre>
       )}
@@ -582,15 +613,32 @@ function OutputBox({ app, preview, full, title }: { app: Reader; preview: TextPr
   );
 }
 
+/** Text that holds a unified diff, such as `diff -u` output, with each line in its diff colour. */
+function PatchText({ text }: { text: string }) {
+  const lines = text.split("\n");
+  const kinds = patchKinds(lines);
+  return (
+    <pre className="out">
+      {lines.map((l, i) => (
+        <span key={i} className={`dl ${kinds[i]}`}>
+          {l}
+          {"\n"}
+        </span>
+      ))}
+    </pre>
+  );
+}
+
 const LINE_HEIGHT = 17;
 const BOX_HEIGHT = 360;
 
 /** A windowed box of text lines, so a 200,000-line output keeps a few dozen nodes. */
 function TextLines({ lines, testid }: { lines: string[]; testid?: string }) {
+  const kinds = useMemo(() => (lines.some((l) => l.startsWith("@@ ")) ? patchKinds(lines) : null), [lines]);
   return (
     <VList className="out vbox" data-testid={testid} style={{ height: Math.min(BOX_HEIGHT, lines.length * LINE_HEIGHT + 12) }} itemSize={LINE_HEIGHT} data={lines}>
       {(text: string, i: number) => (
-        <div key={i} className="vline">
+        <div key={i} className={kinds ? `vline dl ${kinds[i]}` : "vline"}>
           {text || " "}
         </div>
       )}

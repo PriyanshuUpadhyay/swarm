@@ -12,7 +12,8 @@ pub const Meta = struct {
 
 pub const Text = struct { meta: Meta, text: []const u8 };
 
-pub const Ignored = struct { meta: Meta, kind: []const u8 };
+/// `raw` is the whole source line; the translator fills it, so the app can show the record.
+pub const Ignored = struct { meta: Meta, kind: []const u8, raw: []const u8 = "" };
 pub const TurnStarted = struct { meta: Meta };
 pub const TurnEnded = struct { meta: Meta, duration_ms: ?i64, reason: enum { completed, aborted } };
 pub const ErrorEvent = struct { meta: Meta, message: []const u8 };
@@ -749,6 +750,7 @@ const Translator = struct {
                 }
             }
             for (events) |*event| {
+                if (event.* == .ignored) event.ignored.raw = line;
                 if (translator.format != .claude) {
                     switch (event.*) {
                         .unknown => |*unknown| {
@@ -1655,6 +1657,14 @@ test "ignored event writes its kind" {
     defer out.deinit();
     try writeEventJson(&out.writer, .{ .ignored = .{ .meta = .{ .session_id = "", .uuid = "", .timestamp = "" }, .kind = "mode" } });
     try std.testing.expect(std.mem.indexOf(u8, out.written(), "\"kind\":\"mode\"") != null);
+}
+
+test "translate gives an ignored record its source line" {
+    var reader = std.Io.Reader.fixed("{\"type\":\"mode\",\"mode\":\"plan\"}\n");
+    var out: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer out.deinit();
+    try translateWithLog(std.testing.allocator, .claude, "", &reader, &out.writer, null);
+    try std.testing.expect(std.mem.indexOf(u8, out.written(), "\"kind\":\"mode\",\"raw\":\"{\\\"type\\\":\\\"mode\\\",\\\"mode\\\":\\\"plan\\\"}\"") != null);
 }
 
 test "turn started event writes meta" {

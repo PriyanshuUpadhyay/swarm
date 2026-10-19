@@ -100,7 +100,7 @@ test("pi keeps menu picks as chips and runs the first after a reload without a l
 
   const beforeSend = lists;
   await tab.getByTestId("send").click();
-  await expect.poll(() => sent).toEqual(["/skill:plan fix this now"]);
+  await expect.poll(() => sent).toEqual(["/skill:plan fix this /skill:plan\nnow"]);
   await expect(tab.getByTestId("chat-banner")).toBeVisible();
   await expect(chips).toHaveCount(1);
   expect(lists).toBe(beforeSend);
@@ -108,7 +108,7 @@ test("pi keeps menu picks as chips and runs the first after a reload without a l
   await tab.getByTestId("chat-banner").getByRole("button", { name: "Retry" }).click();
   await expect(composer).toHaveValue("");
   await expect(chips).toHaveCount(0);
-  expect(sent).toEqual(["/skill:plan fix this now", "/skill:plan fix this now"]);
+  expect(sent).toEqual(["/skill:plan fix this /skill:plan\nnow", "/skill:plan fix this /skill:plan\nnow"]);
 
   listFails = false;
   await composer.fill("fix /ski");
