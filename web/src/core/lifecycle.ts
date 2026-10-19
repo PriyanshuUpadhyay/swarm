@@ -219,8 +219,8 @@ export class Lifecycle {
   }
 
   /** Creates the workspace and waits for its setup script. A failed setup keeps the workspace and
-   *  the dialog, which says so; otherwise the dialog closes on the new workspace. A workspace from
-   *  an issue starts a chat with the issue in its draft. With the dialog closed, a notice reports. */
+   *  the dialog, which says so; otherwise the dialog closes on the new workspace and starts a chat,
+   *  with the issue in its draft for a workspace from an issue. With the dialog closed, a notice reports. */
   async create(req: NewRequest) {
     if (this.state.create?.state === "working") return;
     this.set({ create: { state: "working", error: null, workspace: null, setup: null } });
@@ -250,7 +250,7 @@ export class Lifecycle {
     if (setup) this.app.notice("The setup script finished.");
     if (closed && !made.issue) return this.app.notice(`Created the workspace ${made.workspace}.`);
     await this.app.selectWorkspace(made.workspace);
-    if (made.issue) await this.app.startChat(made.workspace, {}, issuePrompt(made.issue));
+    await this.app.startChat(made.workspace, {}, made.issue ? issuePrompt(made.issue) : "");
   }
 
   /** The kept workspace after a failed setup. */
