@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { historyStep, recallOrder, recordSent, type HistoryEntry } from "./history";
+import { HISTORY_TEXT_MAX, historyStep, recallOrder, recordSent, type HistoryEntry } from "./history";
 
 const sent = (text: string, chat: string, at: number): HistoryEntry => ({ text, session: chat, at });
 
@@ -11,6 +11,8 @@ describe("recordSent", () => {
     expect(list.map((entry) => entry.session)).toEqual(["chat-1", "chat-2"]);
     const full = [sent("first", "chat-1", 1), sent("second", "chat-1", 2)];
     expect(recordSent(full, sent("third", "chat-1", 3), 2).map((entry) => entry.text)).toEqual(["second", "third"]);
+    // A long paste stays out, so the list fits in the browser's storage.
+    expect(recordSent(full, sent("x".repeat(HISTORY_TEXT_MAX + 1), "chat-1", 3))).toEqual(full);
   });
 });
 
