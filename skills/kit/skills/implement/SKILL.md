@@ -24,7 +24,11 @@ The mode sets how the build step runs. The steps and the review stay the same.
 - `pair`: one diff of about 40 lines at a time, and the owner approves each. Follow
   [references/pair.md](references/pair.md).
 - `auto`: no stops after plan approval, up to a merge, a push, or another irreversible action.
-  Follow [references/auto.md](references/auto.md). Use it only when the owner chose it.
+  Follow [references/auto.md](references/auto.md).
+
+Write the choice in `01-frame.md` as `Mode: pair`, or as `Mode: auto, owner said: "<the owner's words>"`.
+`take 05-build` refuses `auto` without the owner's quoted words, so the agent never picks it alone.
+With no `Mode:` line, the build runs in `pair` mode.
 
 When a step ends and the next step is not yours, print `Next: <command>` as the last line of the
 reply, for example `Next: implement continue tmp/flow/2026-10-05-login 06-review`.
@@ -71,7 +75,8 @@ the git common dir (`git rev-parse --git-common-dir`), not the worktree folder n
    full text of the skills that the catalog gives the step (the `any` section, each chosen domain,
    and the repo rules) under `## Rules for this step`, and a todo list. Apply the rules, check each
    todo with its evidence after the last colon, write the result under `## Result`, and close the step
-   with `done`. Never set a step done or skipped by hand. When a tool
+   with `done`. A step file from `start --plan` also has a `Plan blocks:` line with the blocks that the
+   approved plan gives the step; follow `blocks/<id>/SKILL.md` for each of them too. Never set a step done or skipped by hand. When a tool
    that the profile names is missing, set the status to `unavailable <tool>` and tell the user.
 5. Write only your step's file. Line 1 is the status.
 
@@ -92,7 +97,7 @@ Start: python3 <skill-dir>/scripts/implement_run.py start --plan <run> [--domain
 
 | File | Needs | Holds | Block | Why |
 |---|---|---|---|---|
-| `01-frame.md` | none | `Worktree:`, `Branch:`, `Plan:`, goal, user, out of scope, done-when, and shared assumptions for design and contracts | requirements | the claims say when the change is done |
+| `01-frame.md` | none | `Worktree:`, `Branch:`, `Plan:`, `Mode:`, goal, user, out of scope, done-when, and shared assumptions for design and contracts | requirements | the claims say when the change is done |
 | `02-design.md` | frame | UX flow and screens, or `skipped: no UI` | decision-with-default | each UX fork gets a marked default |
 | `03-contracts.md` | frame | APIs, data model, integrations, and the result of the `decisions` skill's check for the topic | decision-with-default | each contract fork gets a marked default |
 | `04-impact.md` | contracts | the existing features that change, or "independent", judged from the `## Callers` section that `take` writes with the places that name each code name in backticks in `03-contracts.md` | call-tree | the callers show what the change breaks |

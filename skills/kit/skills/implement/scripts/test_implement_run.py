@@ -553,7 +553,8 @@ def test_start_plan_needs_approval(tmp):
     import hashlib
     plan = Path(tmp, "plan-run")
     plan.mkdir()
-    (plan / "plan.md").write_text("# Plan: x\n\nPreset: implement\n", encoding="utf-8")
+    (plan / "plan.md").write_text("# Plan: x\n\nPreset: implement\n\n| File | Needs | Holds | Block | Why |\n|---|---|---|---|---|\n"
+                                  "| 05-build | none | code | checked-units, ui-motion | the planner added ui-motion |\n", encoding="utf-8")
     (plan / "plan.html").write_text("<p>chart</p>", encoding="utf-8")
     out, folder, repo, run = blocks_start(tmp, "with-plan", "", None, "--plan", plan)
     assert out.returncode == 1 and "no round in" in out.stderr and not Path(repo, "tmp", "flow").exists(), out
@@ -563,6 +564,8 @@ def test_start_plan_needs_approval(tmp):
     out = run("start", "--plan", plan)
     assert out.returncode == 0, out.stderr
     assert f"Plan: {plan.resolve()}\n" in step_text(Path(out.stdout.splitlines()[0]), "01-frame")
+    assert "Plan blocks: checked-units, ui-motion\n" in step_text(Path(out.stdout.splitlines()[0]), "05-build"), \
+        "the step file carries the blocks that the approved plan gives the step"
     # A chat preset passes the stop rule with no round, but it is not an implement plan.
     explain = SCRIPT.parents[1].parent / "explain" / "SKILL.md"
     chat = Path(tmp, "chat-run")
@@ -573,6 +576,25 @@ def test_start_plan_needs_approval(tmp):
     shutil.rmtree(Path(out.stdout.splitlines()[0]))
     out = run("start", "--plan", chat)
     assert out.returncode == 1 and "needs `Preset: implement`" in out.stderr, out
+
+
+def test_auto_mode_needs_the_owners_words(tmp):
+    """`take 05-build` refuses `Mode: auto` unless 01-frame quotes the owner, so the model cannot pick auto alone."""
+    out, folder, repo, run = blocks_start(tmp, "auto-guard", "", None)
+    assert out.returncode == 0, out.stderr
+    for step in ("02-design", "03-contracts", "04-impact"):
+        assert run("skip", folder, step, "fast lane: test").returncode == 0
+    frame = folder / "01-frame.md"
+    body = frame.read_text(encoding="utf-8").replace("Status: open", "Status: done x", 1)
+    for mode, ok in (("Mode: auto\n", False), ('Mode: auto, owner said: ""\n', False),
+                     ('Mode: auto, owner said: "run it to the end"\n', True)):
+        frame.write_text(body.replace("Domains:", mode + "Domains:", 1), encoding="utf-8")
+        out = run("take", folder, "05-build", "a", "--force")
+        assert (out.returncode == 0) == ok, (mode, out.stderr)
+        if not ok:
+            assert 'needs `Mode: auto, owner said: "<the owner\'s words>"`' in out.stderr, out.stderr
+    frame.write_text(body.replace("Domains:", "Mode: pair\nDomains:", 1), encoding="utf-8")
+    assert run("take", folder, "05-build", "a", "--force").returncode == 0, "pair needs no quote"
 
 
 def test_start_domains(tmp):
@@ -1874,6 +1896,7 @@ with tempfile.TemporaryDirectory() as tmp:
     test_start_block_ledger(tmp)
     test_start_domains(tmp)
     test_start_plan_needs_approval(tmp)
+    test_auto_mode_needs_the_owners_words(tmp)
     test_start_ledger_without_chosen_blocks(tmp)
     test_block_in_step(tmp)
     test_block_hash_bytes(tmp)

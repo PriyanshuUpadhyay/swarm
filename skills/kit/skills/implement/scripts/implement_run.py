@@ -2,7 +2,7 @@
 """Make and take implement steps. Run from inside the repo.
 
   start [--profile <name>] [--domains <a,b>] [--parent-loop KEY] [--plan <run>] make tmp/flow/<date>-<branch>/
-  review <folder> <local|base..head> [--continue FILE] start review-check with this run's saved key
+  review <folder> <local|base..head> [--continue FILE] start the review check with this run's saved key
   status [<folder>]            print each step's status, whether it is ready, and whether it is stale
   take <folder> <step> <who> [--force] mark the step active and print its file with the skills the catalog gives it
   done <folder> <step>         set done with evidence; 07-close moves the run to tmp/flow/_closed/
@@ -19,7 +19,7 @@ The step graph is the step table in ../SKILL.md. `start` writes the need names a
 with `Revision: HEAD`, as references/step-run.md describes. The kit's references/step_run.py
 owns status, ready, stale, take, done, and events.log. This script adds the implement rules: the revision
 of 05-build is HEAD, take 04-impact lists the places that name the contracts' code names, and take
-07-close needs the review-check run's own APPROVE verdict on HEAD. `start --plan <run>` refuses a plan that
+07-close needs the check-mode run's own APPROVE verdict on HEAD. `start --plan <run>` refuses a plan that
 the plan skill's stop rule (blocks/plan-review/scripts/start_plan.py) does not pass, and names it in 01-frame.md.
 """
 
@@ -55,7 +55,8 @@ LEDGER_HEAD = "## Blocks considered"
 CALLERS_HEAD = "## Callers (written by implement_run.py take from the code names in 03-contracts.md; a search, not a judgment)"
 TODOS = {  # each item names the file that owns the rule
     "01-frame": ["Goal, user, and out of scope (implement)", "Done-when, each one checkable (implement)",
-                 "Lane, fast or full, and why (implement)"],
+                 "Lane, fast or full, and why (implement)",
+                 "A `Mode:` line, pair or auto; auto quotes the owner's words (implement)"],
     "02-design": ["UX flow and screens, or the reason no UI changes (implement)"],
     "03-contracts": ["APIs, data model, and integrations that change (implement)",
                      "Standards rows that apply (engineering-standards)", "Decision check for the topic (decisions)"],
@@ -66,7 +67,7 @@ TODOS = {  # each item names the file that owns the rule
                  "Scope: each file touched and the part of the change that names it (AGENTS.md)",
                  "Dead code: what this change made unused, removed; older dead code, named (AGENTS.md)",
                  "Check passes: command and its passing output (prove-it-works)"],
-    "06-review": ["review-check range, verdict, and each fix row with its fix or reason (review-check)",
+    "06-review": ["review check range, verdict, and each fix row with its fix or reason (review check mode)",
                   "A `Run: tmp/review-check/<run>` line under Result for the last run (implement)"],
     "07-close": ["Each done-when of 01-frame with its evidence (prove-it-works)"],
 }
@@ -132,6 +133,7 @@ def start(profile="default", domains=None, parent_loop=None, plan=None):
         with contextlib.redirect_stdout(sys.stderr):  # the folder stays the first stdout line
             start_plan.approved(plan)
         plan = Path(plan).resolve()
+        plan_blocks = {r[0]: r[3] for r in start_plan.preset.plan_chart.read_plan(plan / "plan.md")[2]}
     root = git("rev-parse", "--show-toplevel")
     if not root:
         raise SystemExit("not in a git repository")
@@ -171,6 +173,7 @@ def start(profile="default", domains=None, parent_loop=None, plan=None):
         for step, need in steps.items():
             extra = f"Worktree: {root}\nBranch: {branch}\nDomains: {', '.join(sorted(chosen))}\n" if step == "01-frame" else ""
             extra += f"Plan: {plan}\n" if step == "01-frame" and plan else ""
+            extra += f"Plan blocks: {', '.join(plan_blocks[step])}\n" if plan and plan_blocks.get(step) else ""
             extra += "Revision: HEAD\n" if step == "05-build" else ""  # the rule in rev(), for readers without this script
             uses = f"Uses: {', '.join(need)}".rstrip()
             paths = catalog[step][0]
@@ -248,6 +251,14 @@ def skill_paths(step, domains=None):
     return [kit_path(p) for p in paths + [str(root / r) for r in repo_rules]], [p.removeprefix("block:") for p in items if p.startswith("block:")]
 
 
+def check_mode(folder):
+    """Refuse auto mode unless 01-frame.md quotes the owner choosing it; no Mode line means pair."""
+    mode = re.search(r"^Mode: (.*)$", read_utf8(Path(folder) / "01-frame.md"), re.M)
+    if mode and mode[1].startswith("auto") and not re.fullmatch(r'auto, owner said: ".*\S.*"', mode[1]):
+        raise SystemExit('05-build in auto mode needs `Mode: auto, owner said: "<the owner\'s words>"` in 01-frame.md; '
+                         "the owner chooses auto, never the agent")
+
+
 def take(folder, step, who, force=False):
     need = graph().get(step)
     if need is None:
@@ -257,6 +268,8 @@ def take(folder, step, who, force=False):
         raise SystemExit(f"{step} is not ready; it needs {', '.join(waiting)}")
     if step == "07-close":
         approved(folder)
+    if step == "05-build":
+        check_mode(folder)
     step_run.take(folder, step, who, need, rev, force=force,
                   on_claim=write_callers if step == "04-impact" else None)
 
@@ -285,7 +298,7 @@ def skip(folder, step, *why):
 
 
 def approved(folder):
-    """Refuse 07-close unless 06-review names a review-check run whose verdict is APPROVE on HEAD.
+    """Refuse 07-close unless 06-review names a check-mode run whose verdict is APPROVE on HEAD.
     The verdict is read from the run's own 03-verdict.md, not from what the step file says."""
     text = (Path(folder) / "06-review.md").read_text(encoding="utf-8")
     runs = re.findall(r"^Run: (\S+)", text, re.M)
@@ -307,7 +320,7 @@ def approved(folder):
     head = target.get("head", "") if isinstance(target.get("head"), str) else ""
     if not head.startswith(rev(folder, "05-build")):
         raise SystemExit(f"{runs[-1]} covers {head[:12] or 'no head'}, but the build is now {rev(folder, '05-build')}; "
-                         "run review-check on the new range")
+                         "run the review check on the new range")
 
 
 def block(folder, step, *why):
