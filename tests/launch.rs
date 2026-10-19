@@ -2573,3 +2573,84 @@ fn a_run_verb_gets_the_launch_line_and_nothing_is_rung() {
     assert_eq!(rings.lines().count(), 1, "{rings}");
     assert!(rings.ends_with("'exited'\n"), "{rings}");
 }
+
+/// With a `run` verb the agent can end before swarm stores its pane. `exited` runs inside that
+/// pane, so it asks the adapter's `self` verb and still saves the log and reports the end.
+#[test]
+fn exited_finds_its_own_pane_before_the_pane_is_stored() {
+    let home = scratch("exited-own-pane");
+    std::fs::create_dir_all(home.join(".swarm/adapters")).unwrap();
+    std::fs::write(
+        home.join(".swarm/adapters/fake.conf"),
+        "self = printf pane-own\nspawn = printf pane-spawn\nring = true\nlist = true\nclose = true\ncapture = printf 'last words'\n",
+    )
+    .unwrap();
+    let session = swarm(
+        &home,
+        &[("SWARM_ADAPTER", "fake")],
+        &["session", "new", "lane"],
+    );
+    assert!(session.status.success(), "{}", stderr(&session));
+    let session = String::from_utf8(session.stdout)
+        .unwrap()
+        .trim()
+        .to_string();
+    let connection = swarm::store::open(&home.join(".swarm/swarm.db")).unwrap();
+    swarm::store::add_agent(&connection, &session, "orchestrator", "orchestrator").unwrap();
+    swarm::store::set_pane(&connection, &session, "orchestrator", "pane-chair").unwrap();
+    swarm::store::add_agent(&connection, &session, "seat", "coder").unwrap();
+    let seat = [
+        ("SWARM_ADAPTER", "fake"),
+        ("SWARM_SESSION_ID", session.as_str()),
+        ("SWARM_AGENT_ID", "seat"),
+    ];
+    let exited = swarm(&home, &seat, &["exited"]);
+    assert!(exited.status.success(), "{}", stderr(&exited));
+    assert_eq!(
+        std::fs::read_to_string(home.join(format!(".swarm/runs/{session}/seat.log"))).unwrap(),
+        "last words"
+    );
+}
+
+/// A second spawn of a live seat's id is refused before it writes anything, so the live seat's
+/// launch script stays as it was.
+#[test]
+fn a_refused_duplicate_spawn_leaves_the_live_seats_script() {
+    let home = scratch("duplicate-script");
+    std::fs::create_dir_all(home.join(".swarm/adapters")).unwrap();
+    std::fs::write(
+        home.join(".swarm/adapters/fake.conf"),
+        "self = printf chair\nspawn = printf pane-spawn\nrun = printf pane-run\nring = true\nlist = true\nclose = true\ncapture = true\n",
+    )
+    .unwrap();
+    let session = swarm(
+        &home,
+        &[("SWARM_ADAPTER", "fake")],
+        &["session", "new", "lane"],
+    );
+    assert!(session.status.success(), "{}", stderr(&session));
+    let session = String::from_utf8(session.stdout)
+        .unwrap()
+        .trim()
+        .to_string();
+    let chair = [
+        ("SWARM_ADAPTER", "fake"),
+        ("SWARM_SESSION_ID", session.as_str()),
+        ("SWARM_AGENT_ID", "orchestrator"),
+    ];
+    let first = swarm(
+        &home,
+        &chair,
+        &["spawn", "seat", "coder", "--", "echo", "first"],
+    );
+    assert!(first.status.success(), "{}", stderr(&first));
+    let script = home.join(format!(".swarm/runs/{session}/seat.sh"));
+    let before = std::fs::read_to_string(&script).unwrap();
+    let second = swarm(
+        &home,
+        &chair,
+        &["spawn", "seat", "coder", "--", "echo", "second"],
+    );
+    assert!(!second.status.success());
+    assert_eq!(std::fs::read_to_string(&script).unwrap(), before);
+}

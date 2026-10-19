@@ -3253,19 +3253,34 @@ fn add_agent(
 fn register_spawned_pane(
     connection: &rusqlite::Connection,
     adapter: &swarm::adapter::Adapter,
-    verb: &str,
     session_id: &str,
     agent_id: &str,
     role: &str,
     provider: Option<&str>,
     vars: &[(&str, &str)],
     launch: Option<(&swarm::config::Runner, Option<&str>)>,
-) -> Result<String, Box<dyn std::error::Error>> {
+    line: impl FnOnce() -> Result<Option<String>, Box<dyn std::error::Error>>,
+) -> Result<(String, Option<String>), Box<dyn std::error::Error>> {
     swarm::store::add_agent(connection, session_id, agent_id, role)?;
     if let Some(provider) = provider {
         swarm::store::set_provider(connection, session_id, agent_id, provider)?;
     }
-    let pane = match adapter.run(verb, vars) {
+    // The launch line is written only after the insert above refused no live id, so a duplicate
+    // spawn leaves the live seat's script alone. A host with `run` makes it the pane's program.
+    let text = match line() {
+        Ok(text) => text,
+        Err(error) => {
+            swarm::store::remove_agent(connection, session_id, agent_id)?;
+            return Err(error);
+        }
+    };
+    let runs = text.is_some() && adapter.run_line.is_some();
+    let mut vars = vars.to_vec();
+    if let Some(text) = text.as_deref().filter(|_| runs) {
+        vars.push(("command", text));
+    }
+    let verb = if runs { "run" } else { "spawn" };
+    let pane = match adapter.run(verb, &vars) {
         Ok(pane) => pane,
         Err(error) => {
             swarm::store::remove_agent(connection, session_id, agent_id)?;
@@ -3276,7 +3291,8 @@ fn register_spawned_pane(
     if let Some((runner, account)) = launch {
         swarm::store::set_launch(connection, session_id, agent_id, role, runner, account)?;
     }
-    Ok(pane)
+    let ring = text.filter(|_| !runs);
+    Ok((pane, ring))
 }
 
 fn list_models(provider: &str) -> Result<swarm::providers::ModelList, Box<dyn std::error::Error>> {
@@ -3402,11 +3418,10 @@ fn spawn_agent(
         ("adapter", current_adapter.as_str()),
         ("panes", panes.as_str()),
     ];
-    // The launch line, built before the pane exists, so a host with `run` can make it the pane's
-    // program instead of typing it into a shell.
-    let text = if options.command.is_empty() {
-        None
-    } else {
+    let line = || {
+        if options.command.is_empty() {
+            return Ok(None);
+        }
         // When run through the pane's `runs/<session>/bin/swarm` link, current_exe is that link,
         // and linking to it would make the link point at itself.
         let exe = std::fs::canonicalize(env::current_exe()?)?;
@@ -3447,26 +3462,21 @@ fn spawn_agent(
             swarm::adapter::shell_line(options.command)
         };
         let line = script_line(root, &session_id, agent_id, &format!("{path}{child}"))?;
-        Some(format!("{line}; {hook}"))
+        Ok(Some(format!("{line}; {hook}")))
     };
-    let program = text.as_deref().filter(|_| adapter.run_line.is_some());
-    let mut vars = vars.to_vec();
-    if let Some(text) = program {
-        vars.push(("command", text));
-    }
-    let pane = register_spawned_pane(
+    let (pane, ring) = register_spawned_pane(
         connection,
         &adapter,
-        if program.is_some() { "run" } else { "spawn" },
         &session_id,
         agent_id,
         role,
         provider.map(Provider::id),
         &vars,
         options.runner.map(|runner| (runner, options.account)),
+        line,
     )?;
-    if let Some(text) = text.as_deref().filter(|_| program.is_none()) {
-        adapter.run("ring", &[("pane", &pane), ("text", text)])?;
+    if let Some(text) = ring {
+        adapter.run("ring", &[("pane", &pane), ("text", &text)])?;
     }
     println!("{pane}");
     if let Some(account) = account {
@@ -5450,7 +5460,12 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             Ok(())
         }
         [cmd] if cmd == "exited" => {
-            let pane = swarm::store::require_pane(&connection, &session_id, &agent_id)?;
+            // A `run` pane can end before swarm stores it. This runs inside that pane, so the
+            // adapter's `self` names it.
+            let pane = match swarm::store::require_pane(&connection, &session_id, &agent_id) {
+                Ok(pane) => pane,
+                Err(error) => own_pane().map_err(|_| error)?,
+            };
             let text =
                 swarm::adapter::load(&root, &adapter_name())?.run("capture", &[("pane", &pane)])?;
             let run_dir = root.join(format!("runs/{session_id}"));
@@ -8478,13 +8493,13 @@ mod tests {
         register_spawned_pane(
             &connection,
             &adapter,
-            "spawn",
             &session,
             CODER,
             "code.complex",
             Some("codex"),
             &[],
             Some((&runner, Some("work"))),
+            || Ok(None),
         )
         .unwrap();
         let profile: String = connection
@@ -8529,13 +8544,13 @@ mod tests {
             register_spawned_pane(
                 &connection,
                 &failed,
-                "spawn",
                 &session,
                 CODER,
                 "coder",
                 None,
                 &[],
-                None
+                None,
+                || Ok(None),
             )
             .is_err()
         );
@@ -8554,15 +8569,16 @@ mod tests {
             register_spawned_pane(
                 &connection,
                 &working,
-                "spawn",
                 &session,
                 CODER,
                 "coder",
                 None,
                 &[],
-                None
+                None,
+                || Ok(None),
             )
-            .unwrap(),
+            .unwrap()
+            .0,
             "%2"
         );
     }
