@@ -385,7 +385,8 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
                   choose(r, false);
                 }}
               >
-                <span className="shrink-0 font-mono">{r.insert}</span>
+                {/* A file path can be wider than the menu, so it wraps; a command name never does. */}
+                <span className={cn("font-mono", r.kind === "file" ? "min-w-0 break-all" : "shrink-0")}>{r.insert}</span>
                 {r.hint && <span className="shrink-0 font-mono text-xs text-faint-foreground">{r.hint}</span>}
                 <span className="min-w-0 flex-1 truncate text-muted-foreground">{r.description}</span>
                 {r.dialog && (

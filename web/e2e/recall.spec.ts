@@ -54,6 +54,10 @@ test("the composer recalls, stashes, reuses and finds prompts, and @ inserts a f
   await expect(menu.getByTestId("slash-row").first()).toContainText("@README.md");
   await tab.keyboard.press("Tab");
   await expect(composer).toHaveValue("see @README.md ");
+  await tab.keyboard.type("@module");
+  await expect(menu.getByTestId("slash-row").first()).toContainText("module.ts");
+  expect(await menu.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+  await tab.keyboard.press("Escape");
   await tab.keyboard.press("Escape");
 
   // ⌘K finds the prompt, and picking it fills the composer.

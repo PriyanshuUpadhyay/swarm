@@ -103,6 +103,8 @@ function gitWorkspace(cwd: string, env: NodeJS.ProcessEnv) {
   git("init", "-q", "-b", "main");
   write("src/app.ts", app.join("\n") + "\n");
   write("README.md", "# Project\n\nA test repository.\n");
+  // A path wider than the @ menu.
+  write(`${"deeply/nested/".repeat(8)}module.ts`, "export {};\n");
   git("add", ".");
   git("commit", "-q", "-m", "base");
   git("remote", "add", "origin", "https://github.com/example/project.git");
