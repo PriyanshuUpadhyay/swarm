@@ -20,6 +20,7 @@ import { measure, whenPainted, type PerfKind } from "./perf";
 import { chatFromPath, chatPath, resolveChat, shortId } from "./route";
 import { readSse, type SseEvent } from "./sse";
 import { isChair, movePane, paneCells, paneStatus, type Direction, type PaneCell } from "./panes";
+import { recallOrder, recordSent, type HistoryEntry } from "./history";
 import { FoldChoices, findMatches, lines, mergeRows, type Line, type Match } from "./transcript";
 import { Lifecycle } from "./lifecycle";
 import { editPicks, validPicks, type CommandList, type SkillPick } from "./slash";
@@ -190,6 +191,8 @@ const NO_FULL: ReadonlyMap<string, FullText> = new Map();
 export const paneId = (sessionId: string, agent: string) => `${sessionId}:${agent}`;
 const DRAFT_PREFIX = "composer.draft.";
 const PICKS_PREFIX = "composer.skills.";
+const HISTORY_PREFIX = "composer.history.";
+const STASH_PREFIX = "composer.stash.";
 const NO_FIND: Find = { open: false, query: "", matches: [], index: -1, seq: 0 };
 /** The last line while the agent runs. A turn can log nothing for minutes, such as Claude's /compact. */
 const WORKING: Line = {
@@ -287,6 +290,8 @@ export class App {
   private inputs = new Map<string, Input>();
   private drafts = new Map<string, string>();
   private picks = new Map<string, SkillPick[]>();
+  private histories = new Map<string, HistoryEntry[]>();
+  private stashes = new Map<string, string>();
   private alreadySentSeq = 0;
   private inputRev = 0;
   private pane = { focused: null as string | null, zoomed: null as string | null, reveal: null as string | null, revealSeq: 0 };
@@ -1296,6 +1301,56 @@ export class App {
     writeStore(PICKS_PREFIX + sessionId, next.length ? JSON.stringify(next) : "");
   }
 
+  /** History is per workspace, so a new chat recalls the prompts of the workspace's other chats. */
+  private historyKey(sessionId: string): string {
+    const session = this.target(sessionId).session;
+    const info = this.snapshot?.sessions.find((s) => s.id === session);
+    return HISTORY_PREFIX + (info?.workspace || info?.cwd || session);
+  }
+
+  private historyList(key: string): HistoryEntry[] {
+    let list = this.histories.get(key);
+    if (!list) {
+      try {
+        const stored = JSON.parse(readStore(key) ?? "[]");
+        list = Array.isArray(stored) ? stored.filter((e) => typeof e?.text === "string" && typeof e?.session === "string") : [];
+      } catch { list = []; }
+      this.histories.set(key, list);
+    }
+    return list;
+  }
+
+  /** Sent prompts for Up, ⌘K and Reuse, newest first: this chat's, then the workspace's. */
+  history(sessionId: string): string[] {
+    return recallOrder(this.historyList(this.historyKey(sessionId)), sessionId);
+  }
+
+  private recordHistory(sessionId: string, text: string) {
+    const key = this.historyKey(sessionId);
+    const list = recordSent(this.historyList(key), { text, session: sessionId, at: Date.now() });
+    this.histories.set(key, list);
+    writeStore(key, JSON.stringify(list));
+  }
+
+  /** The one draft that Esc or Reuse cleared, so the owner can take it back. */
+  stashed(sessionId: string): string {
+    let s = this.stashes.get(sessionId);
+    if (s === undefined) this.stashes.set(sessionId, (s = readStore(STASH_PREFIX + sessionId) ?? ""));
+    return s;
+  }
+
+  setStash(sessionId: string, text: string) {
+    this.stashes.set(sessionId, text);
+    writeStore(STASH_PREFIX + sessionId, text);
+  }
+
+  /** Puts a past prompt in the composer. A different draft goes to the stash, so nothing is lost. */
+  reuse(sessionId: string, text: string) {
+    const draft = this.draft(sessionId);
+    if (draft.trim() && draft !== text) this.setStash(sessionId, draft);
+    this.replaceDraft(sessionId, text);
+  }
+
   private replaceDraft(sessionId: string, text: string) {
     this.setDraft(sessionId, text);
     this.update(sessionId, { draftRev: this.input(sessionId).draftRev + 1 });
@@ -1337,6 +1392,8 @@ export class App {
       chat.sent = confirmSent([...chat.sent, sent], chat.rows);
       this.changed(chat);
     }
+    // The owner's words, before a pi skill moved to the front.
+    this.recordHistory(sessionId, outgoing(draftText) ?? out);
     if (this.draft(sessionId) === draftText) this.replaceDraft(sessionId, "");
     return true;
   }

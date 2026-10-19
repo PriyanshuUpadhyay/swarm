@@ -1,6 +1,7 @@
-import { ArrowUpIcon, ChevronDownIcon, CircleHelpIcon, LoaderCircleIcon, SquareIcon, TriangleAlertIcon } from "lucide-react";
+import { ArrowUpIcon, ChevronDownIcon, Maximize2Icon, Minimize2Icon, CircleHelpIcon, LoaderCircleIcon, SquareIcon, TriangleAlertIcon } from "lucide-react";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import type { App, Banner, Composer, Input } from "../core/app";
+import { historyStep, type Browse } from "../core/history";
 import { modelLabel, outgoing, sends, usageLabel, type Prompt } from "../core/composer";
 import { editPicks, matches, menuAt, moved, offered, pick, picksAndSends, showsEmpty, skillFirst, skillNames, toSend, type CommandList, type MenuRow, type SkillPick } from "../core/slash";
 import { Button } from "../components/ui/button";
@@ -142,6 +143,9 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
   const [dismissed, setDismissed] = useState<number | null>(null);
   const pickedCaret = useRef<number | null>(null);
   const listId = useId();
+  const browse = useRef<Browse | null>(null);
+  const [stashNote, setStashNote] = useState(false);
+  const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
     const el = box.current;
@@ -166,13 +170,13 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
     const el = box.current;
     if (!el) return;
     el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+    el.style.height = expanded ? "" : `${Math.min(el.scrollHeight, 200)}px`;
     if (highlights.current) highlights.current.scrollTop = el.scrollTop;
     if (pickedCaret.current !== null) {
       el.setSelectionRange(pickedCaret.current, pickedCaret.current);
       pickedCaret.current = null;
     }
-  }, [text, picks]);
+  }, [text, picks, expanded]);
 
   const menu = focused && !chair.disabled ? menuAt(text, caret, chair.provider) : null;
   const rows = menu && list ? matches(offered(list.commands, menu, chair.provider), menu.query) : [];
@@ -204,6 +208,7 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
 
   const change = (next: string, recorded?: readonly SkillPick[]) => {
     setText(next);
+    setStashNote(false);
     app.setDraft(sessionId, next, recorded);
     setPicks(app.draftPicks(sessionId));
   };
@@ -302,11 +307,32 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
         change(el.value);
       }
     } else if (e.key === "Escape") {
+      // Esc keeps one cleared draft, and Esc in an empty box gives it back.
       e.preventDefault();
-      change("");
+      if (text.trim()) {
+        app.setStash(sessionId, text);
+        change("");
+        setStashNote(true);
+      } else if (app.stashed(sessionId)) {
+        const back = app.stashed(sessionId);
+        app.setStash(sessionId, "");
+        change(back);
+        pickedCaret.current = back.length;
+      }
     } else if (e.key === "ArrowUp" && text === "" && canPullBack) {
+      // The CLI's queue comes back before the history, as in Claude Code (ADR 0038).
       e.preventDefault();
       void app.pullBack(sessionId);
+    } else if ((e.key === "ArrowUp" || e.key === "ArrowDown") && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      const el = e.currentTarget;
+      if (el.selectionStart !== el.selectionEnd) return;
+      const step = historyStep(app.history(sessionId), browse.current, text, el.selectionStart, e.key === "ArrowUp" ? "up" : "down");
+      if (!step) return;
+      e.preventDefault();
+      change(step.text);
+      browse.current = step.browse;
+      setCaret(step.caret);
+      pickedCaret.current = step.caret;
     }
   };
 
@@ -323,6 +349,8 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
           ? "Already sent"
           : canPullBack && text === ""
             ? "↑ to edit queued messages"
+            : stashNote
+              ? "Draft cleared. Esc brings it back."
             : extraSkills.length
               ? `pi runs one skill per message, so ${extraSkills.join(", ")} goes as text`
               : null;
@@ -392,7 +420,7 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
           <textarea
             ref={box}
             rows={2}
-            className={cn("block max-h-[200px] w-full resize-none bg-transparent px-3 pt-2.5 text-base outline-none placeholder:text-faint-foreground", chair.provider === "pi" && "composer-text relative")}
+            className={cn("block w-full", expanded ? "h-[60vh]" : "max-h-[200px]", "resize-none bg-transparent px-3 pt-2.5 text-base outline-none placeholder:text-faint-foreground", chair.provider === "pi" && "composer-text relative")}
             data-testid="composer"
             aria-label={`Message ${target}`}
             placeholder={chair.who ? `Message ${target}` : `Message ${target}. Press ⌘L to focus.`}
@@ -441,6 +469,20 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
           </button>
           {showStop && !chair.who && <span className="text-faint-foreground">⌘. stops</span>}
           <span className="flex-1" />
+          <Button
+            variant="ghost"
+            size="icon"
+            data-testid="composer-expand"
+            aria-label={expanded ? "Shrink composer" : "Expand composer"}
+            aria-pressed={expanded}
+            title={expanded ? "Shrink composer" : "Expand composer"}
+            onClick={() => {
+              setExpanded(!expanded);
+              box.current?.focus();
+            }}
+          >
+            {expanded ? <Minimize2Icon className="size-3.5" /> : <Maximize2Icon className="size-3.5" />}
+          </Button>
           {showStop && (
             <Button
               variant="outline"

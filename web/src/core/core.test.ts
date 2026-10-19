@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { takeToken, type Api, type Row, type RowPage } from "./api";
+import { takeToken, type Api, type Row, type RowPage, type Snapshot } from "./api";
 import { App } from "./app";
 import { eventKey, installKeys, parseChord, Registry } from "./commands";
 import { renderMarkdown } from "./markdown";
@@ -319,5 +319,33 @@ describe("owner messages and skill chips", () => {
     expect(wordAt("please use /skill:plan now", "/skill:plan")).toBe(11);
     expect(wordAt("see /skill:plans and (/skill:plan)", "/skill:plan")).toBe(-1);
     expect(wordAt("see /skill:plans and (/skill:plan\nnext", "/skill:plan")).toBe(22);
+  });
+});
+
+describe("prompt history", () => {
+  it("records a send for the workspace, so a new chat recalls it, and Reuse keeps the draft", async () => {
+    let refuse = false;
+    const api = { action: async () => { if (refuse) throw new Error("no pane"); } } as unknown as Api;
+    const app = new App(api);
+    const session = (id: string, workspace: string) => ({ id, cwd: `/w/${workspace}`, created_at: 0, chair_provider: "codex", adapter: "tmux", project: "p", workspace });
+    const chair = { id: "orchestrator", role: "orchestrator", state: "idle", alive: true, pane: "%1", provider: "codex" };
+    (app as unknown as { applySnapshot(s: Snapshot): void }).applySnapshot({
+      version: 1,
+      sessions: [session("a", "main"), session("b", "main"), session("c", "other")],
+      agents: { a: [chair], b: [chair], c: [chair] },
+    });
+
+    refuse = true;
+    expect(await app.send("a", "not sent")).toBe(false);
+    refuse = false;
+    expect(await app.send("a", "  run the tests  ")).toBe(true);
+
+    expect(app.history("b")).toEqual(["run the tests"]);
+    expect(app.history("c")).toEqual([]);
+
+    app.setDraft("b", "half typed");
+    app.reuse("b", "run the tests");
+    expect(app.draft("b")).toBe("run the tests");
+    expect(app.stashed("b")).toBe("half typed");
   });
 });
