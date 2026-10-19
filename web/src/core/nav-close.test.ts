@@ -20,8 +20,8 @@ function harness(options: { tabOnly?: boolean; live?: boolean; beforeClose?: () 
   const actions: string[] = [];
   const notices: string[] = [];
   let revision = 1;
-  let tabs: Tabs = { workspace, tabs: [tab("a"), tab("b"), tab("c", options.tabOnly)],
-    history: [], selectedChat: "c", previousRecent: null, nextRecent: null, stepTargets: {} };
+  let tabs: Tabs = { workspace, tabs: [tab("older"), tab("next"), tab("open", options.tabOnly)],
+    history: [], selectedChat: "open", previousRecent: null, nextRecent: null, stepTargets: {} };
   const row: SidebarRow = {
     id: workspace, kind: "workspace", depth: 0, parentId: null, expanded: true, hasChildren: false,
     childrenSummary: null, title: "app", detail: "", status: null, counts: [], age: null, help: "app",
@@ -37,8 +37,8 @@ function harness(options: { tabOnly?: boolean; live?: boolean; beforeClose?: () 
       }))] }],
   });
   const snapshot: Snapshot = {
-    version: 1, sessions: ["a", "b", "c"].map((id) => ({ id, cwd: workspace, workspace, project: "/r", created_at: 1, chair_provider: null, adapter: null })),
-    agents: options.live ? { c: [{ id: "orchestrator", role: "o", state: "working", alive: true }] } : {},
+    version: 1, sessions: ["older", "next", "open"].map((id) => ({ id, cwd: workspace, workspace, project: "/r", created_at: 1, chair_provider: null, adapter: null })),
+    agents: options.live ? { open: [{ id: "orchestrator", role: "o", state: "working", alive: true }] } : {},
   };
   const remove = (session: string) => {
     const remaining = tabs.tabs.filter((t) => t.session !== session);
@@ -69,13 +69,13 @@ function harness(options: { tabOnly?: boolean; live?: boolean; beforeClose?: () 
       if (path === "/api/sessions/archive") {
         await options.beforeArchive?.();
         if (options.failArchive) throw new ApiError(500, "archive failed");
-        remove("c");
+        remove("open");
       }
     },
   } as unknown as Api;
   const app = new App(api);
   app.workspace = workspace;
-  app.openId = "c";
+  app.openId = "open";
   app.tabs = tabs;
   app.tree = tree();
   app.snapshot = snapshot;
@@ -93,40 +93,38 @@ describe("closing tabs", () => {
     await vi.waitFor(() => expect(writes.filter((op) => op.op === "close_tab")).toHaveLength(1));
     first.resolve();
     await Promise.all(closing);
-    expect(writes.flatMap((op) => op.op === "close_tab" ? [op.chat] : [])).toEqual(["c", "b"]);
-    expect(app.openId).toBe("a");
-    expect(app.closedTabs).toEqual(["c", "b"]);
+    expect(writes.flatMap((op) => op.op === "close_tab" ? [op.chat] : [])).toEqual(["open", "next"]);
+    expect(app.openId).toBe("older");
+    expect(app.closedTabs).toEqual(["open", "next"]);
     expect(notices).toEqual([]);
   });
 
   it("waits for a tab-only archive before the second press closes the next tab", async () => {
-    const sessions = { open: "c", next: "b", older: "a" };
     const archive = deferred();
     const { app, writes, actions } = harness({ tabOnly: true, beforeArchive: () => archive.promise });
     const closing = [app.closeTab(), app.closeTab()];
     await vi.waitFor(() => expect(actions).toHaveLength(1));
-    expect(app.openId).toBe(sessions.open);
+    expect(app.openId).toBe("open");
     expect(writes.filter((op) => op.op === "close_tab")).toHaveLength(0);
     archive.resolve();
     await Promise.all(closing);
     expect(actions).toEqual(["/api/sessions/archive"]);
-    expect(writes.flatMap((op) => op.op === "close_tab" ? [op.chat] : [])).toEqual([sessions.next]);
-    expect(app.openId).toBe(sessions.older);
-    expect(app.closedTabs).toEqual([sessions.open, sessions.next]);
+    expect(writes.flatMap((op) => op.op === "close_tab" ? [op.chat] : [])).toEqual(["next"]);
+    expect(app.openId).toBe("older");
+    expect(app.closedTabs).toEqual(["open", "next"]);
   });
 
   it("lets a later close run after a strip read never settles", async () => {
     vi.useFakeTimers();
     try {
-      const nextSession = "b";
       const { app, writes } = harness({ beforeTabs: () => new Promise(() => {}) });
       const settled = vi.fn();
-      const closing = Promise.all([app.closeTab(), app.closeTab(nextSession)]).then(settled);
+      const closing = Promise.all([app.closeTab(), app.closeTab("next")]).then(settled);
       await vi.advanceTimersByTimeAsync(4999);
       expect(writes.filter((op) => op.op === "close_tab")).toHaveLength(1);
       expect(settled).not.toHaveBeenCalled();
       await vi.advanceTimersByTimeAsync(1);
-      expect(writes.flatMap((op) => op.op === "close_tab" ? [op.chat] : [])).toEqual(["c", nextSession]);
+      expect(writes.flatMap((op) => op.op === "close_tab" ? [op.chat] : [])).toEqual(["open", "next"]);
       expect(settled).toHaveBeenCalledOnce();
       await closing;
     } finally {
@@ -137,22 +135,22 @@ describe("closing tabs", () => {
   it("leaves the nav sequence unchanged when a background tab closes", async () => {
     const { app } = harness();
     const seq = app.navSeq;
-    await app.closeTab("a");
+    await app.closeTab("older");
     expect(app.navSeq).toBe(seq);
-    expect(app.openId).toBe("c");
-    expect(app.closedTabs).toEqual(["a"]);
+    expect(app.openId).toBe("open");
+    expect(app.closedTabs).toEqual(["older"]);
   });
 
   it("does not add a refused close to the reopen list", async () => {
     const { app } = harness({ refuse: true });
     await app.closeTab();
     expect(app.closedTabs).toEqual([]);
-    expect(app.openId).toBe("c");
+    expect(app.openId).toBe("open");
   });
 
   it("keeps the reopen list and open chat after cancelling a tab-only close", async () => {
     const { app, actions } = harness({ tabOnly: true, live: true });
-    app.closedTabs = ["a"];
+    app.closedTabs = ["older"];
     const settled = vi.fn();
     const closing = app.closeTab().then(settled);
     await vi.waitFor(() => expect(app.life.state.confirm).not.toBeNull());
@@ -160,11 +158,11 @@ describe("closing tabs", () => {
     app.life.close("confirm");
     await closing;
     expect(settled).toHaveBeenCalledOnce();
-    expect(app.closedTabs).toEqual(["a"]);
-    expect(app.openId).toBe("c");
+    expect(app.closedTabs).toEqual(["older"]);
+    expect(app.openId).toBe("open");
     const open = vi.spyOn(app.navigation, "openChat");
     app.reopenTab();
-    expect(open).toHaveBeenCalledWith("a");
+    expect(open).toHaveBeenCalledWith("older");
     expect(actions).toEqual([]);
   });
 
@@ -179,8 +177,8 @@ describe("closing tabs", () => {
     await closing;
     expect(settled).toHaveBeenCalledOnce();
     expect(actions).toEqual(["/api/agent/close", "/api/sessions/archive"]);
-    expect(app.closedTabs).toEqual(["c"]);
-    expect(app.openId).toBe("b");
+    expect(app.closedTabs).toEqual(["open"]);
+    expect(app.openId).toBe("next");
   });
 
   it("does not record a failed archive", async () => {
@@ -189,7 +187,7 @@ describe("closing tabs", () => {
     await vi.waitFor(() => expect(app.life.state.confirm).not.toBeNull());
     expect(await app.life.confirmed()).toBe("archive failed");
     expect(app.closedTabs).toEqual([]);
-    expect(app.openId).toBe("c");
+    expect(app.openId).toBe("open");
     expect(app.life.state.confirm).not.toBeNull();
     app.life.close("confirm");
     await closing;
@@ -198,7 +196,7 @@ describe("closing tabs", () => {
   it("opens the strip selection after a tab-only close without a confirm", async () => {
     const { app } = harness({ tabOnly: true });
     await app.closeTab();
-    await vi.waitFor(() => expect(app.openId).toBe("b"));
-    expect(app.closedTabs).toEqual(["c"]);
+    await vi.waitFor(() => expect(app.openId).toBe("next"));
+    expect(app.closedTabs).toEqual(["open"]);
   });
 });
