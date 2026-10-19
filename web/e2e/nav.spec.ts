@@ -246,9 +246,12 @@ test("clicking a tab-only chat marks its workspace as current", async ({ page: t
     await expect(workspace).toHaveAttribute("aria-selected", "true");
     expect(errors).toEqual([]);
   } finally {
-    await tab.screenshot({ path: info.outputPath("tab-only-current.png") });
-    await tab.close();
-    writeFileSync(choicesPath, before);
+    try {
+      await tab.screenshot({ path: info.outputPath("tab-only-current.png") });
+    } finally {
+      await tab.close();
+      writeFileSync(choicesPath, before);
+    }
   }
 });
 
@@ -266,9 +269,12 @@ test("reloading at / restores the selected tab-only chat", async ({ page: tab },
     await expect(tab.getByTestId("workspace-landing")).toHaveCount(0);
     expect(errors).toEqual([]);
   } finally {
-    await tab.screenshot({ path: info.outputPath("tab-only-reload.png") });
-    await tab.close();
-    writeFileSync(choicesPath, before);
+    try {
+      await tab.screenshot({ path: info.outputPath("tab-only-reload.png") });
+    } finally {
+      await tab.close();
+      writeFileSync(choicesPath, before);
+    }
   }
 });
 
@@ -297,8 +303,11 @@ test("refresh after an external close shows the strip selected chat", async ({ p
     await expect(tab.getByTestId("workspace-landing")).toHaveCount(0);
     expect(errors).toEqual([]);
   } finally {
-    await tab.screenshot({ path: info.outputPath("external-tab-close.png") });
-    await tab.close();
-    writeFileSync(choicesPath, before);
+    try {
+      await tab.screenshot({ path: info.outputPath("external-tab-close.png") });
+    } finally {
+      await tab.close();
+      writeFileSync(choicesPath, before);
+    }
   }
 });

@@ -42,9 +42,12 @@ for (const pending of ["empty", null, "starting", "failed", "closing"] as const)
       await expect(landing).toContainText(pending === null ? "Pick a tab, or start a new chat." : "This workspace has no open chats.");
       await expect(landing.getByRole("button", { name: "New chat", exact: true })).toBeEnabled();
     } finally {
-      await tab.screenshot({ path: info.outputPath("workspace-landing.png") });
-      await tab.close();
-      writeFileSync(choicesPath, before);
+      try {
+        await tab.screenshot({ path: info.outputPath("workspace-landing.png") });
+      } finally {
+        await tab.close();
+        writeFileSync(choicesPath, before);
+      }
     }
   });
 }
@@ -72,9 +75,12 @@ test("Rename chat prefills the title of a tab-only chat", async ({ page: tab }, 
     await tab.getByRole("menuitem", { name: "Rename chat…" }).click();
     await expect(tab.getByTestId("ask-name")).toHaveValue(title);
   } finally {
-    await tab.screenshot({ path: info.outputPath("tab-only-rename.png") });
-    await tab.close();
-    writeFileSync(choicesPath, before);
+    try {
+      await tab.screenshot({ path: info.outputPath("tab-only-rename.png") });
+    } finally {
+      await tab.close();
+      writeFileSync(choicesPath, before);
+    }
   }
 });
 
@@ -187,25 +193,28 @@ test("closing the open tab-only chat shows the other tab after archive confirmat
     await expect(tab.locator(`[data-testid="tab"][data-session="${other}"]`)).toHaveAttribute("aria-selected", "true");
     await expect(tab.getByTestId("workspace-landing")).toHaveCount(0);
   } finally {
-    await tab.screenshot({ path: info.outputPath("tab-only-archive-close.png") });
-    await tab.close();
     try {
-      if (restore) {
-        const { session, pane } = restore;
-        await api("/api/sessions/unarchive", { ids: [session] });
-        rmSync(join(fixtureHome, `closed-${pane}`), { force: true });
-        // Closing clears the stored pane too; a chair rejoin restores it without a new chat.
-        execFileSync(process.env.SWARM_E2E_SWARM!, ["agent", "add", "orchestrator", "orchestrator"], {
-          env: {
-            PATH: process.env.PATH, USER: "e2e", HOME: fixtureHome, SWARM_HOME: fixtureHome,
-            CLAUDE_CONFIG_DIR: join(fixtureHome, ".claude"), CODEX_HOME: join(fixtureHome, ".codex"),
-            SWARM_ADAPTER: "tmux-swarm", SWARM_SESSION_ID: session, FIXTURE_PANE: pane,
-          },
-          stdio: "pipe",
-        });
-      }
+      await tab.screenshot({ path: info.outputPath("tab-only-archive-close.png") });
     } finally {
-      writeFileSync(choicesPath, before);
+      await tab.close();
+      try {
+        if (restore) {
+          const { session, pane } = restore;
+          await api("/api/sessions/unarchive", { ids: [session] });
+          rmSync(join(fixtureHome, `closed-${pane}`), { force: true });
+          // Closing clears the stored pane too; a chair rejoin restores it without a new chat.
+          execFileSync(process.env.SWARM_E2E_SWARM!, ["agent", "add", "orchestrator", "orchestrator"], {
+            env: {
+              PATH: process.env.PATH, USER: "e2e", HOME: fixtureHome, SWARM_HOME: fixtureHome,
+              CLAUDE_CONFIG_DIR: join(fixtureHome, ".claude"), CODEX_HOME: join(fixtureHome, ".codex"),
+              SWARM_ADAPTER: "tmux-swarm", SWARM_SESSION_ID: session, FIXTURE_PANE: pane,
+            },
+            stdio: "pipe",
+          });
+        }
+      } finally {
+        writeFileSync(choicesPath, before);
+      }
     }
   }
 });
