@@ -8,6 +8,8 @@ import type { App } from "./app";
 type NavRead = { workspace: string; writeSeq: number; navSeq: number };
 
 export class AppNavigation {
+  private closes: Promise<void> = Promise.resolve();
+
   constructor(private readonly app: App) {}
 
   /** Points the URL at the open chat once the first tree has restored one. */
@@ -223,15 +225,23 @@ export class AppNavigation {
 
   /** ⌘W and a tab's ×. Closing the open tab shows the chat the server picks, else the landing. A
    *  chat started in a tab is in no sidebar, so closing its tab archives it to Archived chats. */
-  async closeTab(key?: string) {
+  closeTab(key?: string): Promise<void> {
+    const run = this.closes.then(() => this.closeTabNow(key));
+    this.closes = run.catch(() => {});
+    return run;
+  }
+
+  private async closeTabNow(key?: string) {
     const workspace = this.app.workspace;
     const tab = this.stripTabs().find((t) => (key ? t.id === key : t.session === this.app.openId));
     if (!workspace || !tab?.canHide) return;
-    this.app.closedTabs = [...this.app.closedTabs.filter((s) => s !== tab.session), tab.session];
-    if (tab.tabOnly) return this.app.life.endChat(tab.session, true);
+    const closed = () => { this.app.closedTabs = [...this.app.closedTabs.filter((s) => s !== tab.session), tab.session]; };
+    if (tab.tabOnly) return this.app.life.endChat(tab.session, true, closed);
     const wasOpen = tab.session === this.app.openId;
-    const seq = ++this.app.navSeq;
-    if (!(await this.choose({ op: "close_tab", workspace, chat: tab.id })) || !wasOpen) return;
+    const seq = wasOpen ? ++this.app.navSeq : this.app.navSeq;
+    if (!(await this.choose({ op: "close_tab", workspace, chat: tab.id }))) return;
+    closed();
+    if (!wasOpen) return;
     let next: Tabs | null = null;
     try {
       next = (await this.app.api.tabs(workspace)).view;

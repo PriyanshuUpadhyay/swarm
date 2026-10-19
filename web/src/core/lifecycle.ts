@@ -209,12 +209,12 @@ export class Lifecycle {
 
   /** End chat… and Archive chat. Live agents ask first (SwarmSessionCloser); Archive then moves the
    *  chat to Archived chats. */
-  endChat(session: string, archive: boolean) {
-    this.endChats([session], archive);
+  endChat(session: string, archive: boolean, done?: () => void) {
+    this.endChats([session], archive, done);
   }
 
   /** End or Archive for the sidebar's selected chats, with one confirm for all of them. */
-  endChats(sessions: string[], archive: boolean) {
+  endChats(sessions: string[], archive: boolean, done?: () => void) {
     const live = sessions.map((session) => ({ session, agents: this.liveAgents(session) }));
     const agents = live.reduce((n, l) => n + l.agents.length, 0);
     const run = async () => {
@@ -223,6 +223,7 @@ export class Lifecycle {
         await this.api.action("/api/sessions/archive", { ids: sessions });
         for (const session of sessions) this.app.leaveChat(session);
       }
+      done?.();
     };
     const many = sessions.length > 1;
     if (!agents && !archive) return this.app.notice(many ? "These chats have already ended." : "This chat has already ended.");
