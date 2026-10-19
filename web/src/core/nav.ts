@@ -172,6 +172,15 @@ export function navRows(tree: TreeView | null, folds: ReadonlyMap<string, boolea
   return out;
 }
 
+/** The visible chat row, else its workspace row or the header of its folded section. */
+export function currentRow(rows: NavRow[], openId: string | null, workspace: string | null): string | null {
+  const chat = openId ? rows.find((r) => r.kind === "chat" && r.row?.selection?.chat === openId) : undefined;
+  if (chat) return chat.id;
+  const owner = rows.find((r) => r.kind === "workspace" && r.id === workspace);
+  if (owner) return owner.id;
+  return rows.find((r) => !r.row && r.section.rows.some((row) => row.kind === "workspace" && row.id === workspace))?.id ?? null;
+}
+
 /** The session of an `archived-chat:<session>` row. */
 export const archivedSession = (id: string) => id.slice("archived-chat:".length);
 

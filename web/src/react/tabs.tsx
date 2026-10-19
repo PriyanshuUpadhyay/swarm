@@ -244,10 +244,10 @@ function TabMenu({ app, tabs, scroller }: { app: App; tabs: Tabs | null; scrolle
       <ContextMenuItem disabled={!tab.canHide} onSelect={() => void app.closeTab(tab.id)}>
         Close tab
       </ContextMenuItem>
-      <ContextMenuItem disabled={!tab.canClose} onSelect={() => app.life.endChat(tab.session, false)}>
+      <ContextMenuItem disabled={!tab.canClose} onSelect={() => void app.life.endChat(tab.session, false)}>
         End chat…
       </ContextMenuItem>
-      <ContextMenuItem onSelect={() => app.life.endChat(tab.session, true)}>Archive chat</ContextMenuItem>
+      <ContextMenuItem onSelect={() => void app.life.endChat(tab.session, true)}>Archive chat</ContextMenuItem>
     </ContextMenuContent>
   );
 }
