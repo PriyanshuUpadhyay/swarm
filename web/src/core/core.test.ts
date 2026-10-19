@@ -1,11 +1,12 @@
-import { describe, expect, it } from "vitest";
-import { takeToken, type Api, type Row, type RowPage } from "./api";
+import { describe, expect, it, vi } from "vitest";
+import { takeToken, type Api, type Row, type RowPage, type Snapshot } from "./api";
 import { App } from "./app";
 import { eventKey, installKeys, parseChord, Registry } from "./commands";
 import { renderMarkdown } from "./markdown";
+import { paletteSections, type TreeView } from "./nav";
 import { MAX_RECORDS, measure } from "./perf";
 import { SseParser } from "./sse";
-import { FoldChoices, findMatches, isPatch, lines, mergeRows, parsePatch, patchKinds, splitPatch, wordAt } from "./transcript";
+import { FoldChoices, findMatches, isPatch, lines, mergeRows, parsePatch, patchKinds, promptIndex, splitPatch, wordAt } from "./transcript";
 
 // A row as the server sends it; `order` is [source offset, event ordinal].
 const row = (id: string, offset: number, extra: Partial<Row> = {}): Row => ({ id, kind: "assistant", text: id, order: [offset, 0], ...extra });
@@ -319,5 +320,105 @@ describe("owner messages and skill chips", () => {
     expect(wordAt("please use /skill:plan now", "/skill:plan")).toBe(11);
     expect(wordAt("see /skill:plans and (/skill:plan)", "/skill:plan")).toBe(-1);
     expect(wordAt("see /skill:plans and (/skill:plan\nnext", "/skill:plan")).toBe(22);
+  });
+});
+
+describe("prompt history", () => {
+  it("records a send for the workspace, so a new chat recalls it, and Reuse keeps the draft", async () => {
+    const saved = new Map<string, string>();
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => saved.get(key) ?? null,
+      setItem: (key: string, value: string) => saved.set(key, value),
+      removeItem: (key: string) => saved.delete(key),
+    });
+    let refuse = false;
+    const api = {
+      action: async () => { if (refuse) throw new Error("no pane"); },
+      rows: async (): Promise<RowPage> => ({ page: { start_offset: 0, end_offset: 0 }, rows: [], usage: null }),
+    } as unknown as Api;
+    const app = new App(api);
+    const session = (id: string, workspace: string) => ({ id, cwd: `/w/${workspace}`, created_at: 0, chair_provider: "codex", adapter: "tmux", project: "p", workspace });
+    const chair = { id: "orchestrator", role: "orchestrator", state: "idle", alive: true, pane: "%1", provider: "codex" };
+    (app as unknown as { applySnapshot(s: Snapshot): void }).applySnapshot({
+      version: 1,
+      sessions: [session("a", "main"), session("b", "main"), session("c", "other")],
+      agents: { a: [chair], b: [chair], c: [chair] },
+    });
+
+    refuse = true;
+    expect(await app.send("a", "not sent")).toBe(false);
+    refuse = false;
+    expect(await app.send("a", "  run the tests  ")).toBe(true);
+
+    expect(app.history("b")).toEqual(["run the tests"]);
+    expect(app.history("c")).toEqual([]);
+    // A second tab on the workspace adds to the stored list and does not overwrite it.
+    const tab = new App(api);
+    (tab as unknown as { applySnapshot(s: Snapshot): void }).applySnapshot({ version: 1, sessions: [session("a", "main")], agents: { a: [chair] } });
+    tab.history("a");
+    expect(await app.send("a", "from the first tab")).toBe(true);
+    expect(await tab.send("a", "from the second tab")).toBe(true);
+    expect(tab.history("a")).toEqual(["from the second tab", "from the first tab", "run the tests"]);
+    // Text that code composes, such as the diff comments, is not the owner's prompt.
+    expect(await app.send("a", "Review comments on the diff (1):", undefined, false)).toBe(true);
+    expect(app.history("a")).toEqual(["from the first tab", "run the tests"]);
+
+    app.setDraft("b", "half typed");
+    app.reuse("b", "run the tests");
+    expect(app.draft("b")).toBe("run the tests");
+    expect(app.stashed("b")).toBe("half typed");
+
+    // ⌘K lists the prompts only for a query.
+    app.openChat("b");
+    const sections = (q: string) => paletteSections(app.paletteItems(), q).map((s) => [s.title, s.items.map((i) => i.title)]);
+    expect(sections("tests")).toContainEqual(["Prompts", ["run the tests"]]);
+    // A long first line is cut by whole characters, so an emoji at the cut is not split.
+    expect(await app.send("b", `${"x".repeat(119)}😀 tail`)).toBe(true);
+    expect(app.paletteItems().find((i) => i.group === "prompt")?.title).toBe(`${"x".repeat(119)}😀`);
+    // Every kept prompt is a search target, not only the newest ones.
+    for (let i = 0; i < 60; i++) expect(await app.send("b", `filler ${i}`)).toBe(true);
+    expect(sections("tests")).toContainEqual(["Prompts", ["run the tests"]]);
+    expect(sections("").flatMap(([, titles]) => titles)).not.toContain("run the tests");
+    vi.unstubAllGlobals();
+  });
+});
+
+describe("openWaiting", () => {
+  it("opens a waiting chat that the sidebar does not list, and skips an agent with no pane and an archived workspace", () => {
+    const api = { rows: async (): Promise<RowPage> => ({ page: { start_offset: 0, end_offset: 0 }, rows: [], usage: null }) } as unknown as Api;
+    const app = new App(api);
+    const session = (id: string, workspace = "w") => ({ id, cwd: `/${workspace}`, created_at: 0, chair_provider: "claude", adapter: "tmux", project: "p", workspace });
+    const chair = (pane: string | null) => ({ id: "orchestrator", role: "orchestrator", state: "waiting", alive: true, pane });
+    // The tree lists workspace w with no chat rows, as when it is collapsed or its chats are under
+    // "… more". The archived workspace "gone" is not in it, as the Dock badge skips it.
+    const workspace = { id: "w", kind: "workspace", archived: false, selection: { workspace: "w", chat: null, agentSession: null, agent: null } };
+    (app as unknown as { tree: TreeView }).tree = { view: "workspaces", sections: [{ rows: [workspace] }] } as unknown as TreeView;
+    (app as unknown as { applySnapshot(s: Snapshot): void }).applySnapshot({
+      version: 1,
+      sessions: [session("archived", "gone"), session("no-pane"), session("asks")],
+      agents: { archived: [chair("%2")], "no-pane": [chair(null)], asks: [chair("%1")] },
+    });
+    app.openWaiting();
+    expect(app.view.openId).toBe("asks");
+
+    // The Archived view lists only archived workspaces, and the tree is null before it loads.
+    const gone = { ...workspace, id: "gone", archived: true, selection: { ...workspace.selection, workspace: "gone" } };
+    const goneChat = { id: "chat:archived", kind: "chat", archived: false, fields: [], selection: { workspace: "gone", chat: "archived", agentSession: null, agent: null } };
+    for (const tree of [{ view: "archived", sections: [{ rows: [gone, goneChat] }] }, null]) {
+      app.openChat("no-pane");
+      (app as unknown as { tree: TreeView | null }).tree = tree as unknown as TreeView | null;
+      app.openWaiting();
+      expect(app.view.openId).toBe("asks");
+    }
+  });
+});
+
+describe("promptIndex", () => {
+  it("finds the owner's prompt before or after a line, and -1 past the ends", () => {
+    const ls = lines([row("u1", 1, { kind: "user" }), row("a1", 2), row("a2", 3), row("u2", 4, { kind: "user" }), row("a3", 5)], { folds: new FoldChoices(), opened: new Map() });
+    expect(promptIndex(ls, 2, -1)).toBe(0);
+    expect(promptIndex(ls, 0, 1)).toBe(3);
+    expect(promptIndex(ls, 3, 1)).toBe(-1);
+    expect(promptIndex(ls, 0, -1)).toBe(-1);
   });
 });
