@@ -1386,8 +1386,9 @@ export class App {
     }
   }
 
-  /** Types `text` into the chair. Clear only the source draft, which can differ after a skill moves. */
-  async send(sessionId: string, text: string, draftText = text): Promise<boolean> {
+  /** Types `text` into the chair. Clear only the source draft, which can differ after a skill moves.
+   *  `owner` is false for text that code composes, which stays out of the prompt history. */
+  async send(sessionId: string, text: string, draftText = text, owner = true): Promise<boolean> {
     const chair = this.chair(sessionId);
     const st = this.input(sessionId);
     const out = outgoing(text);
@@ -1401,7 +1402,7 @@ export class App {
       { sending: true },
       { sending: false },
       () => this.api.action("/api/chat/send", { ...this.target(sessionId), text: typed }),
-      () => void this.send(sessionId, text, draftText),
+      () => void this.send(sessionId, text, draftText, owner),
     );
     if (!ok) return false;
     if (chat && sent) {
@@ -1410,7 +1411,7 @@ export class App {
       this.changed(chat);
     }
     // The owner's words, before a pi skill moved to the front.
-    this.recordHistory(sessionId, outgoing(draftText) ?? out);
+    if (owner) this.recordHistory(sessionId, outgoing(draftText) ?? out);
     if (this.draft(sessionId) === draftText) this.replaceDraft(sessionId, "");
     return true;
   }

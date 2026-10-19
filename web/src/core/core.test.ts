@@ -346,6 +346,9 @@ describe("prompt history", () => {
 
     expect(app.history("b")).toEqual(["run the tests"]);
     expect(app.history("c")).toEqual([]);
+    // Text that code composes, such as the diff comments, is not the owner's prompt.
+    expect(await app.send("a", "Review comments on the diff (1):", undefined, false)).toBe(true);
+    expect(app.history("a")).toEqual(["run the tests"]);
 
     app.setDraft("b", "half typed");
     app.reuse("b", "run the tests");
