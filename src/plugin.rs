@@ -274,13 +274,11 @@ pub fn clashes(kit: &Path, user_home: &Path, active: &[PathBuf]) -> Vec<PathBuf>
         .iter()
         .map(|folder| user_home.join(folder))
         .collect();
-    folders.extend(
-        active
-            .iter()
-            .filter(|folder| !folders.contains(folder))
-            .cloned()
-            .collect::<Vec<_>>(),
-    );
+    for folder in active {
+        if !folders.contains(folder) {
+            folders.push(folder.clone());
+        }
+    }
     folders
         .iter()
         .flat_map(|folder| names.iter().map(move |name| folder.join(name)))
@@ -308,7 +306,11 @@ mod tests {
             [home.join(".pi/agent/skills/swarm-voice")]
         );
         assert_eq!(
-            clashes(&kit, &home, &[work.clone(), home.join(".pi/agent/skills")]),
+            clashes(
+                &kit,
+                &home,
+                &[work.clone(), work.clone(), home.join(".pi/agent/skills")]
+            ),
             [
                 home.join(".pi/agent/skills/swarm-voice"),
                 work.join("swarm-voice")

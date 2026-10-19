@@ -1520,8 +1520,11 @@ impl HookFiles {
         let homes = codex_homes(user_home)?;
         // A Claude home picked with `CLAUDE_CONFIG_DIR` is one more target, as `CODEX_HOME` is
         // for Codex.
+        // An empty or missing folder names no home.
         let active = env::var_os("CLAUDE_CONFIG_DIR")
-            .map(|dir| std::path::PathBuf::from(dir).join("settings.json"));
+            .map(std::path::PathBuf::from)
+            .filter(|dir| dir.is_absolute() && dir.is_dir())
+            .map(|dir| dir.join("settings.json"));
         let claude_settings = unique_targets(
             std::iter::once(user_home.join(".claude/settings.json"))
                 .chain(active)
@@ -2395,7 +2398,10 @@ fn plugin_plan(
     ]
     .iter()
     .filter_map(|(variable, folder)| {
-        env::var_os(variable).map(|dir| std::path::PathBuf::from(dir).join(folder))
+        env::var_os(variable)
+            .map(std::path::PathBuf::from)
+            .filter(|dir| dir.is_absolute() && dir.is_dir())
+            .map(|dir| dir.join(folder))
     })
     .collect();
     let clashes = swarm::plugin::clashes(&kit, user_home, &active);

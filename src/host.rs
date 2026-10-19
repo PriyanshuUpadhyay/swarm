@@ -141,8 +141,9 @@ pub fn context(provider: &str, env: impl Fn(&str) -> Option<String>) -> Option<S
     };
     // A Herdr child pane can be a worker with no swarm id; only a swarm seat gets this block.
     // `SWARM_ROLE` is no pane variable: the caller reads it from the store.
-    if let Some(agent) = env("SWARM_AGENT_ID").filter(|agent| agent != "orchestrator")
-        && let Some(session) = env("SWARM_SESSION_ID")
+    if let Some(agent) =
+        env("SWARM_AGENT_ID").filter(|agent| !agent.is_empty() && agent != "orchestrator")
+        && let Some(session) = env("SWARM_SESSION_ID").filter(|session| !session.is_empty())
     {
         let role = env("SWARM_ROLE")
             .map(|role| format!(" with role `{role}`"))
@@ -871,6 +872,11 @@ mod tests {
         )
         .unwrap();
         assert!(!chair.contains("[swarm-seat]"));
+        let empty = context(
+            "claude",
+            env(&[REX[0], REX[1], ("SWARM_AGENT_ID", ""), seat[2]]),
+        );
+        assert!(!empty.unwrap().contains("[swarm-seat]"));
         let herdr_child = context(
             "claude",
             env(&[HERDR[0], HERDR[1], ("HERDR_AGENT_PANE", "1")]),
