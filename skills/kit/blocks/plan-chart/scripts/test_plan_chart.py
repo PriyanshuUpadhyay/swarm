@@ -100,14 +100,22 @@ def test_mermaid_chart():
     # The fence sits right under the title, between the markers.
     assert md.startswith("# Plan: add dark mode to settings\n\n<!-- plan-chart:start -->\n```mermaid\nflowchart TD\n"), md[:200]
     chart_text = md.split("```mermaid\n")[1].split("```")[0]
-    for line in ('  subgraph S1["1 · frame"]', '    s1["01-frame<br/>requirements"]',
-                 '  subgraph S2["2 · parallel"]', '    s4["04-build<br/>build-site · web-ui-basics"]',
-                 '    s5(["05-reply<br/>voice-reply"])', "  s2 --> s4", "  s3 --> s4",
-                 '  subgraph X["Dropped blocks"]', '    x6["↳ call-tree: the task has no use for it"]',
-                 "  s5 ~~~ X", "  classDef drop stroke-dasharray:4 3,color:#888"):
-        assert line + "\n" in chart_text, (line, chart_text)
+    # Only a stage of 2 or more steps gets a subgraph; the chart holds the flow and no dropped block.
+    assert chart_text.split("  s1 --> s2")[0] == "\n".join([
+        "flowchart TD", '  s1["01-frame<br/>requirements"]', '  subgraph S2["2 · parallel"]',
+        '    s2["02-read<br/>local-research"]', '    s3["03-tokens<br/>design-tokens"]', "  end",
+        '  s4["04-build<br/>build-site · web-ui-basics"]', '  s5(["05-reply<br/>voice-reply"])', ""]), chart_text
+    assert "  s2 --> s4\n  s3 --> s4\n  s4 --> s5\n" in chart_text and "build-canvas" not in chart_text, chart_text
+    # The Dropped line sits under the fence, inside the markers, with names only.
+    dropped = md.split("```\n\n")[1].split("\n<!-- plan-chart:end -->")[0]
+    assert dropped.startswith("Dropped (39): build-canvas, change-review,"), dropped
+    for part in ("diagram (when-to-diagram, html-diagram, call-tree, diagram-check)",
+                 "voice ↳ (voice-pr, voice-review, voice-teach)", "web-ui ↳ (ui-motion, headless-shot, look-check)"):
+        assert part in dropped, (part, dropped)
+    assert "voice-reply" not in dropped and "no use" not in dropped, dropped
     # plan.html draws the same text with the pinned Pele build, offline.
     page = (folder / "plan.html").read_text(encoding="utf-8")
+    assert f'<p class="dropped">{dropped}</p>' in page
     assert plan_chart.html.escape(chart_text) in page and "/*! Pele 1.6.0 | MIT License" in page and "<script src" not in page
     rendered = pele_render(chart_text)
     assert rendered is None or rendered.startswith("<svg"), rendered
@@ -129,13 +137,7 @@ def test_hostile_label():
     hostile = 'a"] --> evil[x | <b>#35; `c` (d) {e} %% f; & g\nh'
     text = plan_chart.label(hostile, "two")
     assert text == '"a#34;#93; --#62; evil#91;x #124; #60;b#62;#35;35#59; #96;c#96; #40;d#41; #123;e#125; #37;#37; f#59; #38; g h<br/>two"', text
-    # A table cell cannot hold `|`, so the plan carries the rest of the hostile text.
-    body = PLAN.replace("| the task has no use for it |", f"| {hostile.replace(chr(10), ' ').replace('| ', '')} |", 1)
-    out, folder = chart(body)
-    assert out.returncode == 0, out.stderr
-    chart_text = (folder / "plan.md").read_text(encoding="utf-8").split("```mermaid\n")[1].split("```")[0]
-    assert '"build-canvas: a#34;#93; --#62; evil#91;x #60;b#62;#35;35#59; #96;c#96; #40;d#41; #123;e#125; #37;#37;…"' in chart_text, chart_text
-    rendered = pele_render(chart_text)
+    rendered = pele_render(f"flowchart TD\n  s1[{text}]\n  s2[{plan_chart.label('b')}]\n  s1 --> s2\n")
     assert rendered is None or "a&quot;] --&gt; evil[x" in rendered, rendered[-2000:]
 
 

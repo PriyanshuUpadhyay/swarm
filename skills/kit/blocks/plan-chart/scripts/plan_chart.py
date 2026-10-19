@@ -8,8 +8,8 @@ The table is the step-run table (| File | Needs | Holds |) with two more columns
 `references/step_run.py start <run> <plan.md>` runs the same file once the owner approves it.
 A second table, | Block | Status | Why |, lists every catalog block once as Chosen or Rejected. The script checks it
 against the step table, draws it under the chart, and prints it grouped for the plan reply.
-The Mermaid chart goes into plan.md between the START and END markers, so the approved plan.md holds the chart
-the owner saw, and plan.html draws the same text with the pinned Pele build in ../assets.
+The Mermaid chart and the Dropped line go into plan.md between the START and END markers, so the approved plan.md
+holds the chart the owner saw, and plan.html draws the same text with the pinned Pele build in ../assets.
 """
 
 import html
@@ -194,7 +194,8 @@ ul.steps{list-style:none;padding:0;margin:0;display:grid;grid-template-columns:r
 .step p{margin:.25rem 0;font-size:14px}
 .step code{font-size:13px;background:#eef;padding:0 .25rem;border-radius:3px}
 .end{border-color:#6a5acd}
-#chart{margin:0 0 2rem;overflow-x:auto}
+#chart{margin:0;overflow-x:auto}
+.dropped{color:#666;font-size:14px;margin:.5rem 0 2rem}
 #chart pre{white-space:pre-wrap;font-size:13px}
 .pele{--pele-bg:#fafafa;--pele-font:system-ui,sans-serif}
 table{border-collapse:collapse;font-size:14px}
@@ -258,38 +259,43 @@ def label(*lines):
     return '"' + "<br/>".join(re.sub(r'[#"<>\[\]{}()|&`%;]', lambda m: f"#{ord(m[0])};", " ".join(t.split())) for t in lines) + '"'
 
 
-def mermaid(rows, uses, ledger):
-    """flowchart TD text: a subgraph per stage, a node per step, arrows from Needs, and the dropped blocks."""
+def mermaid(rows, uses):
+    """flowchart TD text: a node per step, arrows from Needs, and a subgraph only round a stage of parallel steps."""
     ids = {r[0]: f"s{i}" for i, r in enumerate(rows, 1)}
     by_name = {r[0]: r for r in rows}
     used = {u for need in uses.values() for u in need}
     out = ["flowchart TD"]
     for i, group in enumerate(stages(uses), 1):
-        name = "parallel" if len(group) > 1 else group[0].split("-", 1)[1]
-        out.append(f"  subgraph S{i}[{label(f'{i} · {name}')}]")
+        if len(group) > 1:
+            out.append(f"  subgraph S{i}[{label(f'{i} · parallel')}]")
         for step in group:
             text = label(step, " · ".join(by_name[step][3]))
-            out.append(f"    {ids[step]}{f'([{text}])' if step not in used else f'[{text}]'}")
-        out.append("  end")
+            out.append(f"{'    ' if len(group) > 1 else '  '}{ids[step]}{f'([{text}])' if step not in used else f'[{text}]'}")
+        if len(group) > 1:
+            out.append("  end")
     out += [f"  {ids[u]} --> {ids[n]}" for n in ids for u in uses[n]]
-    dropped = dict(ledger_rows(ledger))["Rejected"]
-    if dropped:
-        out.append(f"  subgraph X[{label('Dropped blocks')}]")
-        out += [f"    x{i}[{label(f'{name}: {short(why, 8)}')}]" for i, (name, why) in enumerate(dropped, 1)]
-        # ponytail: invisible links make rows of 2, so 420 px stays readable; Pele has no width-aware grid for loose nodes.
-        out += [f"    x{i} ~~~ x{i + 2}" for i in range(1, len(dropped) - 1)]
-        out.append("  end")
-        end = next(n for n in ids if n not in used)
-        out.append(f"  {ids[end]} ~~~ X")
-        out.append("  classDef drop stroke-dasharray:4 3,color:#888")
-        out.append(f"  class {','.join(f'x{i}' for i in range(1, len(dropped) + 1))} drop")
     return "\n".join(out) + "\n"
 
 
-def put_chart(plan, chart):
-    """Write the chart fence between the markers, right under the title; replace the old one."""
+def dropped_line(ledger):
+    """`Dropped (N): a, parent (part, part), other ↳ (part)`: names only; the Rejected table holds the reasons."""
+    rejected = sorted(b for b, (status, _) in ledger.items() if status == "Rejected")
+    if not rejected:
+        return ""
+    groups = {}
+    for parent, parts in parents().items():
+        if here := [p for p in parts if p in rejected]:
+            groups[parent] = here
+    folded = {p for parts in groups.values() for p in parts}
+    heads = sorted({b for b in rejected if b not in folded} | set(groups))
+    names = [f"{h}{'' if h in rejected else ' ↳'} ({', '.join(groups[h])})" if h in groups else h for h in heads]
+    return f"Dropped ({len(rejected)}): {', '.join(names)}"
+
+
+def put_chart(plan, chart, dropped):
+    """Write the chart fence and the dropped line between the markers, right under the title; replace the old ones."""
     text = plan.read_text(encoding="utf-8")
-    block = f"{START}\n```mermaid\n{chart}```\n{END}"
+    block = f"{START}\n```mermaid\n{chart}```\n" + (f"\n{dropped}\n" if dropped else "") + END
     if START in text and END in text:
         new = text[:text.index(START)] + block + text[text.index(END) + len(END):]
     else:
@@ -300,7 +306,7 @@ def put_chart(plan, chart):
         plan.write_text(new, encoding="utf-8")
 
 
-def render(title, done, rows, uses, ledger, claims, proofs, chart):
+def render(title, done, rows, uses, ledger, claims, proofs, chart, dropped):
     holds = {r[0]: r[2] for r in rows}
     by_name = {r[0]: r for r in rows}
     selected = resolve_blocks(None, {r[0]: r[3] for r in rows}, "default", blocks_dir=KIT / "blocks", pack=False)
@@ -325,6 +331,7 @@ def render(title, done, rows, uses, ledger, claims, proofs, chart):
             f'<div id="chart"><pre>{html.escape(chart)}</pre></div>'
             f"<script>{(ASSETS / 'pele.global.js').read_text(encoding='utf-8')}</script>"
             "<script>const c=document.getElementById('chart');pele.mount(c,c.textContent)</script>"
+            f'<p class="dropped">{html.escape(dropped)}</p>'
             f'<figure><ol class="stages">{"".join(out)}</ol>'
             f"<figcaption>Stages run top to bottom. Steps in one stage run in parallel. "
             f"Each step gets the outputs that its Gets line names.</figcaption></figure>{render_ledger(ledger)}</html>\n")
@@ -343,10 +350,10 @@ def main(argv):
     claims, proofs = read_claims(plan)
     ledger = read_ledger(plan)
     check_ledger(rows, ledger)
-    chart = mermaid(rows, uses, ledger)
-    put_chart(plan, chart)
+    chart, dropped = mermaid(rows, uses), dropped_line(ledger)
+    put_chart(plan, chart, dropped)
     page = plan.with_suffix(".html")
-    page.write_text(render(title, done, rows, uses, ledger, claims, proofs, chart), encoding="utf-8")
+    page.write_text(render(title, done, rows, uses, ledger, claims, proofs, chart, dropped), encoding="utf-8")
     print(page)
     print(ledger_markdown(ledger))
 
