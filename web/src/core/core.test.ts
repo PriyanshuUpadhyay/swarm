@@ -372,6 +372,9 @@ describe("prompt history", () => {
     app.openChat("b");
     const sections = (q: string) => paletteSections(app.paletteItems(), q).map((s) => [s.title, s.items.map((i) => i.title)]);
     expect(sections("tests")).toContainEqual(["Prompts", ["run the tests"]]);
+    // Every kept prompt is a search target, not only the newest ones.
+    for (let i = 0; i < 60; i++) expect(await app.send("b", `filler ${i}`)).toBe(true);
+    expect(sections("tests")).toContainEqual(["Prompts", ["run the tests"]]);
     expect(sections("").flatMap(([, titles]) => titles)).not.toContain("run the tests");
     vi.unstubAllGlobals();
   });

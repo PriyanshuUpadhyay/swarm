@@ -1683,7 +1683,7 @@ export class App {
     }
     // Shown only for a query, as the empty palette lists Recent and Actions.
     const prompts: PaletteItem[] = open
-      ? this.history(open).slice(0, 50).map((text, i) => ({
+      ? this.history(open).map((text, i) => ({
           id: `prompt:${i}`,
           title: text.split("\n")[0].slice(0, 120),
           group: "prompt",
