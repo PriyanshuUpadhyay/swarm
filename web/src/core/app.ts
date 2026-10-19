@@ -177,6 +177,8 @@ export type Reader = {
   setFindQuery(query: string): void;
   stepFind(dir: number): void;
   closeFind(): void;
+  /** Reuse on a sent prompt: puts its text in the composer `composerId`. */
+  reuse(composerId: string, text: string): void;
 };
 
 /** A name the owner types: a rename. */
@@ -1093,6 +1095,7 @@ export class App {
         setFindQuery: (query) => this.setFindQuery(query),
         stepFind: (dir) => this.stepFind(dir),
         closeFind: () => this.closeFind(),
+        reuse: (composerId, text) => this.reuse(composerId, text),
       };
       this.readers.set(id, r);
     }
@@ -1655,7 +1658,19 @@ export class App {
             });
       }
     }
-    return [...items, ...chats, ...agents];
+    // Shown only for a query, as the empty palette lists Recent and Actions.
+    const prompts: PaletteItem[] = open
+      ? this.history(open).slice(0, 50).map((text, i) => ({
+          id: `prompt:${i}`,
+          title: text.split("\n")[0].slice(0, 120),
+          group: "prompt",
+          run: () => {
+            this.reuse(open, text);
+            document.querySelector<HTMLElement>('[data-testid="composer"]')?.focus();
+          },
+        }))
+      : [];
+    return [...items, ...chats, ...agents, ...prompts];
   }
 
   // ---- stream ----

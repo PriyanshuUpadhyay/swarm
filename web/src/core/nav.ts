@@ -274,7 +274,7 @@ export type PaletteItem = {
   id: string;
   title: string;
   subtitle?: string;
-  group: "action" | "workspace" | "chat" | "agent";
+  group: "action" | "workspace" | "chat" | "agent" | "prompt";
   shortcut?: string;
   status?: Status | null;
   recency?: number | null;
@@ -287,6 +287,7 @@ export const PALETTE_GROUPS = [
   ["workspace", "Workspaces"],
   ["chat", "Chats"],
   ["agent", "Agents"],
+  ["prompt", "Prompts"],
 ] as const;
 
 /** An empty query lists recent items newest first, then the actions; ties keep the input order. A
@@ -309,7 +310,7 @@ export function rankPalette(items: PaletteItem[], query: string): PaletteItem[] 
   return found.map((f) => f.item);
 }
 
-/** The palette's sections: Recent then Actions with no query, else the four groups in order. */
+/** The palette's sections: Recent then Actions with no query, else the groups in order. */
 export function paletteSections(items: PaletteItem[], query: string): { title: string; items: PaletteItem[] }[] {
   const ranked = rankPalette(items, query);
   const sections = query.trim()

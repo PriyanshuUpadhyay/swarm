@@ -3,6 +3,7 @@ import { takeToken, type Api, type Row, type RowPage, type Snapshot } from "./ap
 import { App } from "./app";
 import { eventKey, installKeys, parseChord, Registry } from "./commands";
 import { renderMarkdown } from "./markdown";
+import { paletteSections } from "./nav";
 import { MAX_RECORDS, measure } from "./perf";
 import { SseParser } from "./sse";
 import { FoldChoices, findMatches, isPatch, lines, mergeRows, parsePatch, patchKinds, splitPatch, wordAt } from "./transcript";
@@ -325,7 +326,10 @@ describe("owner messages and skill chips", () => {
 describe("prompt history", () => {
   it("records a send for the workspace, so a new chat recalls it, and Reuse keeps the draft", async () => {
     let refuse = false;
-    const api = { action: async () => { if (refuse) throw new Error("no pane"); } } as unknown as Api;
+    const api = {
+      action: async () => { if (refuse) throw new Error("no pane"); },
+      rows: async (): Promise<RowPage> => ({ page: { start_offset: 0, end_offset: 0 }, rows: [], usage: null }),
+    } as unknown as Api;
     const app = new App(api);
     const session = (id: string, workspace: string) => ({ id, cwd: `/w/${workspace}`, created_at: 0, chair_provider: "codex", adapter: "tmux", project: "p", workspace });
     const chair = { id: "orchestrator", role: "orchestrator", state: "idle", alive: true, pane: "%1", provider: "codex" };
@@ -347,5 +351,11 @@ describe("prompt history", () => {
     app.reuse("b", "run the tests");
     expect(app.draft("b")).toBe("run the tests");
     expect(app.stashed("b")).toBe("half typed");
+
+    // ⌘K lists the prompts only for a query.
+    app.openChat("b");
+    const sections = (q: string) => paletteSections(app.paletteItems(), q).map((s) => [s.title, s.items.map((i) => i.title)]);
+    expect(sections("tests")).toContainEqual(["Prompts", ["run the tests"]]);
+    expect(sections("").flatMap(([, titles]) => titles)).not.toContain("run the tests");
   });
 });

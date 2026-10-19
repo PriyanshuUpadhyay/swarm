@@ -12,6 +12,7 @@ import {
   LoaderCircleIcon,
   MailIcon,
   MessageSquareDashedIcon,
+  PencilIcon,
   TriangleAlertIcon,
   XIcon,
 } from "lucide-react";
@@ -156,6 +157,7 @@ function Transcript({ app, view, testid = "transcript", empty }: { app: Reader; 
                       index={index}
                       md={view.md!}
                       full={view.full}
+                      composerId={view.composer?.id}
                       match={line.id === current ? "current" : undefined}
                     />
                   )}
@@ -254,9 +256,9 @@ function ChatSkeleton() {
   );
 }
 
-type Ctx = { app: Reader; line: Line; md: MarkdownCache; full: ReadonlyMap<string, FullText> };
+type Ctx = { app: Reader; line: Line; md: MarkdownCache; full: ReadonlyMap<string, FullText>; composerId?: string };
 
-function LineView({ app, line, index, md, full, match }: Ctx & { index: number; match?: string }) {
+function LineView({ app, line, index, md, full, match, composerId }: Ctx & { index: number; match?: string }) {
   const { row } = line;
   return (
     <div
@@ -267,7 +269,7 @@ function LineView({ app, line, index, md, full, match }: Ctx & { index: number; 
       data-match={match}
       className={`line${line.fold ? " step" : ""}`}
     >
-      <RowBody app={app} line={line} md={md} full={full} />
+      <RowBody app={app} line={line} md={md} full={full} composerId={composerId} />
     </div>
   );
 }
@@ -328,7 +330,11 @@ function RowBody(ctx: Ctx) {
     );
   if (row.kind === "user" || row.kind === "queued")
     return (
-      <Bubble row={row} queued={row.kind === "queued" || row.system_kind === "queued_prompt"}>
+      <Bubble
+        row={row}
+        queued={row.kind === "queued" || row.system_kind === "queued_prompt"}
+        reuse={row.kind === "user" && ctx.composerId ? () => app.reuse(ctx.composerId!, row.text) : undefined}
+      >
         <div className="md" dangerouslySetInnerHTML={{ __html: md.html(row.id, row.text, true) }} />
         <ImageThumbs text={row.text} load={app.imageUrl} />
       </Bubble>
@@ -400,10 +406,28 @@ function RowBody(ctx: Ctx) {
 /** A row with only text: its own preview, so Show full output still works without a server id. */
 const textPreview = (row: Row): TextPreview => ({ id: "", text: row.text, full_lines: 0, full_bytes: 0, hidden_lines: 0 });
 
-function Bubble({ row, queued, children }: { row: Row; queued?: boolean; children: React.ReactNode }) {
+function Bubble({ row, queued, reuse, children }: { row: Row; queued?: boolean; reuse?: () => void; children: React.ReactNode }) {
   return (
     <div className="bubble-row">
       <CopyMessage row={row} />
+      {reuse && (
+        <button
+          type="button"
+          className="copy-msg icon-btn"
+          data-testid="reuse-prompt"
+          aria-label="Reuse this prompt"
+          title="Reuse this prompt"
+          onClick={(e) => {
+            reuse();
+            // The composer under this transcript, in the chat or in a child's column.
+            let box: HTMLElement | null = null;
+            for (let el = e.currentTarget.parentElement; el && !box; el = el.parentElement) box = el.querySelector<HTMLElement>('[data-testid="composer"]');
+            box?.focus();
+          }}
+        >
+          <PencilIcon />
+        </button>
+      )}
       <div className={`bubble${queued ? " queued" : ""}`}>
         {queued && <div className="row-label">{row.detail || "Queued"}</div>}
         {children}
