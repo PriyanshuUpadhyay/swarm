@@ -213,6 +213,19 @@ pub struct UsageMeter {
     /// Set exactly when `reason` is; a reader matches this, never the text.
     pub reason_code: Option<ReasonCode>,
     pub as_of_seconds: Option<i64>,
+    /// Codex only: the account's usage limit resets, on each of its window meters. An older
+    /// cache has no field, which reads as none.
+    #[serde(default)]
+    pub reset_credits: Option<ResetCredits>,
+}
+
+/// Usage limit resets that ChatGPT granted a Codex account (`docs/usage-format.md`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ResetCredits {
+    pub available: i64,
+    /// One entry per listed credit, soonest first, a credit that never expires (null) last. Null
+    /// when the reply had no list; the list can be shorter than `available`.
+    pub expiry_time_seconds: Option<Vec<Option<i64>>>,
 }
 
 impl UsageMeter {
@@ -376,6 +389,7 @@ mod tests {
             reason: code.map(|code| code.text().into()),
             reason_code: code,
             as_of_seconds: None,
+            reset_credits: None,
         }
     }
 
@@ -482,6 +496,7 @@ mod tests {
             reason: None,
             reason_code: None,
             as_of_seconds: None,
+            reset_credits: None,
         };
         let fable = UsageMeter {
             window: Some("fb".into()),

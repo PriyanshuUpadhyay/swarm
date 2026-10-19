@@ -31,6 +31,14 @@ then the first. The automatic account pick still reads every account.
 | `reason` | string or null | Text for a person. Do not parse it |
 | `reason_code` | string or null | The machine code of `reason`. Set exactly when `reason` is set |
 | `as_of_seconds` | integer or null | When the reading was taken, in seconds since 1970 (UTC) |
+| `reset_credits` | object or null | Codex only: the usage limit resets that ChatGPT granted the account, the same on each of its window meters. Null for every other meter |
+
+`reset_credits` is `{"available": <integer>, "expiry_time_seconds": [<integer or null>, ...] or null}`.
+`available` is the count of resets the account can redeem in ChatGPT. `expiry_time_seconds` has one
+entry per listed credit, in seconds since 1970 (UTC), soonest first; a null entry is a credit that
+never expires, and it comes last. The list is null when Codex gave only the count, and it can be
+shorter than `available`, because Codex may cap it. A read drops each credit that has expired since
+the reading, and lowers `available` with it.
 
 A meter `state` is one of five values:
 
