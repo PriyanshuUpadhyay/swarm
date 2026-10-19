@@ -438,21 +438,27 @@ fn accounts_pick_finds_the_codex_home_that_holds_a_session() {
 }
 
 #[test]
-fn unknown_and_signed_out_accounts_never_execute_the_cli() {
+fn an_unknown_account_never_executes_the_cli_and_a_named_signed_out_one_does() {
     let home = fixture("refuse");
     for provider in ["claude", "codex"] {
-        for (account, message) in [("absent", "unknown"), ("personal", "signed out")] {
-            let output = command(&home, &["run", provider, "--account", account])
-                .output()
-                .unwrap();
-            assert!(!output.status.success());
-            assert!(
-                String::from_utf8_lossy(&output.stderr).contains(message),
-                "{}",
-                String::from_utf8_lossy(&output.stderr)
-            );
-            assert!(!home.join("child-env").exists());
-        }
+        let output = command(&home, &["run", provider, "--account", "absent"])
+            .output()
+            .unwrap();
+        assert!(!output.status.success());
+        assert!(String::from_utf8_lossy(&output.stderr).contains("unknown"));
+        assert!(!home.join("child-env").exists());
+
+        let output = command(&home, &["run", provider, "--account", "personal"])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(String::from_utf8_lossy(&output.stderr).contains("sign in from the CLI"));
+        assert!(env(&home).contains("personal"), "{}", env(&home));
+        std::fs::remove_file(home.join("child-env")).unwrap();
     }
 }
 
