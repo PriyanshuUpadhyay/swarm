@@ -742,15 +742,27 @@ fn adapter_name() -> String {
 /// The host contract that `swarm host-context` would print in a pane that `launch` is about to
 /// open, for a CLI with no SessionStart hook. The pane gets these ids, and a tmux-swarm pane
 /// always has `TMUX_PANE`.
-fn pane_context(provider: &str, session: &str, agent_id: &str) -> Option<String> {
+fn pane_context(provider: &str, session: &str, agent_id: &str, role: &str) -> Option<String> {
     let adapter = adapter_name();
     swarm::host::context(provider, |name| match name {
         "SWARM_SESSION_ID" => Some(session.into()),
         "SWARM_AGENT_ID" => Some(agent_id.into()),
+        "SWARM_ROLE" => Some(role.into()),
         "SWARM_ADAPTER" => Some(adapter.clone()),
         "TMUX_PANE" if adapter == "tmux-swarm" => Some("pane".into()),
         _ => env::var(name).ok(),
     })
+}
+
+/// The stored role of a seat, for its start context. Best effort: the context still prints
+/// without it.
+fn seat_role(session: &str, agent_id: &str) -> Option<String> {
+    let connection = swarm::store::open(&swarm::paths::sqlite_db().ok()?).ok()?;
+    swarm::store::agents(&connection, session)
+        .ok()?
+        .into_iter()
+        .find(|agent| agent.id == agent_id)
+        .map(|agent| agent.role)
 }
 
 /// A pane that `swarm launch` made carries its ids in its env. A chair keeps none: `swarm session
@@ -4581,7 +4593,14 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             "{}",
             swarm::host::render(
                 provider,
-                swarm::host::context(provider, |name| env::var(name).ok()).as_deref()
+                swarm::host::context(provider, |name| match name {
+                    "SWARM_ROLE" => env::var("SWARM_SESSION_ID")
+                        .ok()
+                        .zip(env::var("SWARM_AGENT_ID").ok())
+                        .and_then(|(session, agent)| seat_role(&session, &agent)),
+                    _ => env::var(name).ok(),
+                })
+                .as_deref()
             )
         );
         return Ok(());
@@ -5129,7 +5148,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 let session = session_id()?;
                 let id = format!("{session}-{agent_id}");
                 let mut args = vec!["--session-id".to_string(), id.clone()];
-                if let Some(context) = pane_context(kind.id(), &session, agent_id) {
+                if let Some(context) = pane_context(kind.id(), &session, agent_id, role) {
                     args.extend(["--append-system-prompt".into(), context]);
                 }
                 extra.splice(0..0, args);
