@@ -757,12 +757,19 @@ fn pane_context(provider: &str, session: &str, agent_id: &str, role: &str) -> Op
 /// The stored role of a seat, for its start context. Best effort: the context still prints
 /// without it.
 fn seat_role(session: &str, agent_id: &str) -> Option<String> {
-    let connection = swarm::store::open(&swarm::paths::sqlite_db().ok()?).ok()?;
-    swarm::store::agents(&connection, session)
-        .ok()?
-        .into_iter()
-        .find(|agent| agent.id == agent_id)
-        .map(|agent| agent.role)
+    // Read only, with a column every schema has: a start hook from another build must not create,
+    // migrate, or refuse the database that the launching build owns.
+    let db = swarm::paths::sqlite_db().ok().filter(|db| db.is_file())?;
+    let connection =
+        rusqlite::Connection::open_with_flags(db, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .ok()?;
+    connection
+        .query_row(
+            "SELECT role FROM agent WHERE session_id = ?1 AND id = ?2",
+            (session, agent_id),
+            |row| row.get(0),
+        )
+        .ok()
 }
 
 /// A pane that `swarm launch` made carries its ids in its env. A chair keeps none: `swarm session

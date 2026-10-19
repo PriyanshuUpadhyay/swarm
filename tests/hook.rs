@@ -2036,3 +2036,30 @@ fn host_context_names_the_seat_and_its_stored_role() {
         );
     }
 }
+
+/// A seat's start hook in a home with no swarm database prints its context and makes no database.
+#[test]
+fn host_context_makes_no_database_for_a_seat_role() {
+    let home = scratch("host-context-no-db");
+    let seat = [
+        ("SWARM_ADAPTER", "rex"),
+        ("REX_BLOCK", "block:seat"),
+        ("TERM_PROGRAM", "rex"),
+        ("SWARM_SESSION_ID", "01a15391-109c-75b2-b09c-5eac0d553e25"),
+        ("SWARM_AGENT_ID", "rev-1"),
+    ];
+    let output = swarm(
+        &home,
+        &seat,
+        &["host-context", "--provider", "claude"],
+        "{}",
+    );
+    assert!(output.status.success(), "{output:?}");
+    assert!(
+        stdout(&output).contains("You are seat `rev-1` in swarm session"),
+        "{}",
+        stdout(&output)
+    );
+    assert!(!home.join(".swarm/swarm.db").exists());
+    let _ = std::fs::remove_dir_all(&home);
+}
