@@ -314,6 +314,9 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
       if (text.trim()) {
         app.setStash(sessionId, text);
         change("");
+      } else if (text) {
+        // Spaces alone are not worth the one stash slot.
+        change("");
       } else if (app.stashed(sessionId)) {
         const back = app.stashed(sessionId);
         app.setStash(sessionId, "");
