@@ -36,7 +36,7 @@ def ledger_markdown(ledger, aliases):
             if label in grouped or label not in ledger and not members:
                 continue
             if members:
-                out.append(f"| {label} (sub-blocks) | |")
+                out.append(f"| {label} (alias) | |")
             for block in members or [label]:
                 why = ledger[block][1].replace("|", "&#124;")
                 out.append(f"| {'↳ ' if members else ''}{block} | {why} |")

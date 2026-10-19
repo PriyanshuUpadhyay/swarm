@@ -20,7 +20,7 @@ from pathlib import Path
 KIT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(KIT / "references"))  # python3 -I does not add it
 import step_run  # noqa: E402
-from block_resolver import read_toml, resolve_blocks  # noqa: E402
+from block_resolver import read_parents, read_toml, resolve_blocks  # noqa: E402
 
 ASSETS = Path(__file__).resolve().parents[1] / "assets"
 START, END = "<!-- plan-chart:start -->", "<!-- plan-chart:end -->"
@@ -126,12 +126,7 @@ def conflicts(block):
 
 
 def parents():
-    """{parent: [parts]} from each `kind: parent` block's metadata.parts."""
-    out = {}
-    for path in sorted((KIT / "blocks").glob("*/SKILL.md")):
-        if line := re.search(r"^  parts: (.*)$", path.read_text(encoding="utf-8"), re.M):
-            out[path.parent.name] = [p.strip() for p in line[1].strip("\"'").split(",") if p.strip()]
-    return out
+    return read_parents({p.parent.name: p for p in sorted((KIT / "blocks").glob("*/SKILL.md"))})
 
 
 def check(title, done, rows):

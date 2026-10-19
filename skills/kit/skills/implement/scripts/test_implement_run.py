@@ -597,11 +597,11 @@ def test_start_block_ledger(tmp):
     kit = tomllib.loads((implement_run.BLOCKS / "blocks.toml").read_text(encoding="utf-8"))
     expected = {p.parent.name for p in implement_run.BLOCKS.glob("*/SKILL.md")} - set(kit["base"])
     rows = [line.split("|")[1].strip().removeprefix("↳ ") for line in tables.splitlines() if line.startswith("| ")]
-    names = [block for name in rows if name != "Block" and not name.endswith("(sub-blocks)") for block in name.split(", ")]
+    names = [block for name in rows if name != "Block" and not name.endswith("(alias)") for block in name.split(", ")]
     assert len(names) == len(set(names)) and set(names) == expected, names
     chosen, rejected = tables.split("### Rejected\n")
     assert {name for name in expected if f"| {name} |" in chosen or f"| ↳ {name} |" in chosen} == {"html-diagram", "prove-it-works"}
-    assert "| tech-diagram (sub-blocks) | |\n| ↳ html-diagram | Loaded by design, build |" in chosen, chosen
+    assert "| tech-diagram (alias) | |\n| ↳ html-diagram | Loaded by design, build |" in chosen, chosen
     assert "| prove-it-works | Loaded by build |" in chosen, chosen
     assert "| ↳ when-to-diagram | [off] no diagram choice needed &#124; here |" in rejected, rejected
     assert "| story | [off] no story |" in rejected, rejected
