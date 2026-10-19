@@ -44,6 +44,34 @@ def test_start_needs_the_current_approval():
     assert out.returncode == 0 and (run / "01-reply.md").read_text().startswith("Status: open\n"), out
 
 
+def test_the_preset_sets_the_stop():
+    sys.path.insert(0, str(SCRIPT.parent))
+    import start_plan, preset
+    kit = Path(tempfile.mkdtemp())
+    table = PLAN[PLAN.index("| File"):]
+    for verb, lines in (("talk", "Stop: chat"), ("make", "Stop: owner"), ("own", "Stop: chat\nStart: own.py start")):
+        (kit / "skills" / verb).mkdir(parents=True)
+        (kit / "skills" / verb / "SKILL.md").write_text(f"# {verb}\n\n## Preset\n\n{lines}\n\n{table}", encoding="utf-8")
+    preset.KIT = kit
+    for verb in ("talk", "make", "own"):
+        run = Path(tempfile.mkdtemp())
+        (run / "plan.md").write_text(PLAN.replace("# Plan: x\n", f"# Plan: x\n\nPreset: {verb}\n"), encoding="utf-8")
+        (run / "plan.html").write_text("<p>chart</p>", encoding="utf-8")
+        try:
+            start_plan.main([str(run)])
+            error = None
+        except SystemExit as stop:
+            error = str(stop)
+        made = (run / "01-reply.md").exists()
+        if verb == "talk":
+            assert error is None and made, "a chat preset starts with no round"
+        elif verb == "make":
+            assert "no round in" in error and not made, error
+        else:
+            assert error == "this preset runs its own step run: own.py start" and not made, error
+
+
 if __name__ == "__main__":
     test_start_needs_the_current_approval()
+    test_the_preset_sets_the_stop()
     print("ok")

@@ -22,6 +22,7 @@ The following scopes use these paths, including when invoked from a repository.
 | web-search | `<reports>/<YYYY-MM-DD>-<slug>-seats/`; launch scratch at `~/.swarm/ws/<run>` | `<reports>/<YYYY-MM-DD>-<slug>-web.md`, with seat reports in the run folder |
 | council | `<log>/<YYYY-MM-DD>-<slug>/` beside the log file; temporary input at `/tmp/councils/<run-id>/` | caller-pinned external log path, or `~/dotfiles/docs/council/<YYYY-MM-DD>-<slug>.md` |
 | build piece | `<piece>/ink/` | source and export stay in `<piece>/` |
+| plan | the verb's run state folder above, or `<repo-root>/tmp/plan/<YYYY-MM-DD>-<slug>/` for a verb with no row | `plan.md` and `plan.html` in that folder |
 
 For build, `<piece>` is the folder the owner names. When none is named, ask the owner at intake,
 and do not default to a product repo's root. Keep its source and export there, with the `ink/` progress folder inside it.

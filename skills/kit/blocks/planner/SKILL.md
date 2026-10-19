@@ -15,7 +15,8 @@ metadata:
 
 ## Rules
 - The kit's `references/plan-layout.md` owns how this file's schema fits the reply layout.
-- Make the run folder `<repo-root>/tmp/plan/<YYYY-MM-DD>-<slug>/` by the kit's `references/run-folder.md`, and write `plan.md` in it.
+- Make the run folder by the kit's `references/run-folder.md`, and write `plan.md` in it.
+- When a verb sent the task, start from that verb's preset, as `skills/plan/SKILL.md` defines it. Copy its table into `plan.md` and write `Preset: <verb>` (or `Preset: <verb> <mode>`) on the line under the title. Add blocks or steps where the task needs them. When you drop a preset step, add a line `Dropped steps: <step> (<reason>), ...` under the step table, so the owner sees it.
 - List the blocks with `rg -N '^(name|description|  needs|  gives|  conflicts):' <kit root>/blocks/*/SKILL.md`. Pick from that list only. Read a block's full file only when its line does not settle the choice.
 - `plan.md` opens with `# Plan: <the task in one line>`, then `Done when: <the result in one short line>`. After it, one bullet per claim, then a line `Evidence:` and one bullet per proof. Choose that evidence by `blocks/requirements/SKILL.md`, and map results by `blocks/done-when-evidence/SKILL.md`. Write each claim and each proof as one short line, with no `(1) ... (2) ...` list inside a line.
 - Then one table with the header `| File | Needs | Holds | Block | Why |`.
