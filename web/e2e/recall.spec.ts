@@ -87,6 +87,14 @@ test("the composer recalls, stashes, reuses and finds prompts, and @ inserts a f
   await tab.keyboard.press("Escape");
   await expect(composer).toHaveValue("second draft");
   await tab.keyboard.press("Escape");
+  // Esc on a prompt recalled from an empty box keeps the stash as it was.
+  await tab.keyboard.press("ArrowUp");
+  await expect(composer).toHaveValue(prompt);
+  await tab.keyboard.press("Escape");
+  await expect(composer).toHaveValue("");
+  await tab.keyboard.press("Escape");
+  await expect(composer).toHaveValue("second draft");
+  await tab.keyboard.press("Escape");
 
   // Down onto a recalled prompt that ends in an @path opens no menu, so Enter sends it.
   await tab.keyboard.type("check @README.md");

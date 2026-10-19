@@ -220,7 +220,6 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
   const canPullBack = chair.pullBack && !chair.disabled && composer.queued > 0;
   const skills = skillNames(list);
   const loadingSkills = useRef(false);
-  /** pi runs a skill only at the message's start, so the draft shows the moved text it sends. */
   // Browsing ends without the draft coming back, so keep the draft where Esc finds it.
   const endBrowse = () => {
     const draft = browse.current?.draft;
@@ -228,6 +227,7 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
     if (draft?.trim()) app.setStash(sessionId, draft);
   };
 
+  /** pi runs a skill only at the message's start, so the draft shows the moved text it sends. */
   const submit = async () => {
     if (!canSend || loadingSkills.current) return;
     endBrowse();
@@ -319,8 +319,8 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
     } else if (e.key === "Escape") {
       // Esc keeps one cleared draft, and Esc in an empty box gives it back.
       e.preventDefault();
-      if (browse.current?.draft.trim()) {
-        // The recalled prompt stays in the history, so the slot keeps the draft.
+      if (browse.current) {
+        // The recalled prompt stays in the history, so the slot keeps the draft, or what it held.
         endBrowse();
         change("");
       } else if (text.trim()) {
