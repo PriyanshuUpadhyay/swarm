@@ -17,6 +17,10 @@ export class AppNavigation {
 
   constructor(private readonly app: App) {}
 
+  stopKeyboardFollow() {
+    this.keyboardFollow = null;
+  }
+
   /** Points the URL at the open chat once the first tree has restored one. */
   followUrl() {
     if (typeof location === "undefined" || !this.app.restored) return;

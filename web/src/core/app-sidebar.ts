@@ -49,6 +49,7 @@ export class AppSidebar {
   toggle(id: string) {
     const row = this.app.rows.find((r) => r.id === id);
     if (!row || row.expanded === null) return;
+    this.app.navigation.stopKeyboardFollow();
     const open = !row.expanded;
     this.app.folds.set(foldId(row), open);
     this.app.rows = navRows(this.app.tree, this.app.folds);

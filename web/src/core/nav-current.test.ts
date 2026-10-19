@@ -152,6 +152,24 @@ describe("the sidebar keyboard row", () => {
     expect(app.view.selected).toBe("chat:docs");
   });
 
+  it("keeps the row opened by a manual expand instead of following the chat", async () => {
+    const folded = tree([section("/r", "project", [{ ...appMain, expanded: false }, docs])]);
+    const { app, refresh, setTree } = harness(folded);
+    await refresh();
+    app.workspace = "/r/app";
+    app.openChat("docs");
+    await app.writes;
+    await refresh();
+    expect(app.view.selected).toBe("/r/app");
+    app.sidebar.expand();
+    expect(app.view.selected).toBe("/r/app");
+    await app.writes;
+    setTree(tree([section("/r", "project", [appMain, docs])]));
+    await refresh();
+    expect(app.view.rows.some((r) => r.id === "chat:docs")).toBe(true);
+    expect(app.view.selected).toBe("/r/app");
+  });
+
   it.each(["restore", "keyboard move"])("keeps the keyboard row after expansion for a %s", async (reason) => {
     const folded = tree([section("pinned", "pinned", [web, webChat]), section("/r", "project", [appMain, docs], { expanded: false })]);
     const { app, refresh, setTree } = harness(folded);
