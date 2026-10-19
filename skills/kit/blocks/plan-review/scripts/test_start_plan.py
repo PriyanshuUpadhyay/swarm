@@ -1,5 +1,5 @@
 """Run: python3 test_start_plan.py"""
-import hashlib, json, subprocess, sys, tempfile
+import contextlib, hashlib, io, json, subprocess, sys, tempfile
 from pathlib import Path
 
 SCRIPT = Path(__file__).with_name("start_plan.py")
@@ -57,8 +57,10 @@ def test_the_preset_sets_the_stop():
         run = Path(tempfile.mkdtemp())
         (run / "plan.md").write_text(PLAN.replace("# Plan: x\n", f"# Plan: x\n\nPreset: {verb}\n"), encoding="utf-8")
         (run / "plan.html").write_text("<p>chart</p>", encoding="utf-8")
+        out = io.StringIO()
         try:
-            start_plan.main([str(run)])
+            with contextlib.redirect_stdout(out):
+                start_plan.main([str(run)])
             error = None
         except SystemExit as stop:
             error = str(stop)
@@ -68,7 +70,7 @@ def test_the_preset_sets_the_stop():
         elif verb == "make":
             assert "no round in" in error and not made, error
         else:
-            assert error == "this preset runs its own step run: own.py start" and not made, error
+            assert error is None and out.getvalue() == "start with: own.py start\n" and not made, (error, out.getvalue())
 
 
 if __name__ == "__main__":

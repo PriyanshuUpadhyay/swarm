@@ -25,7 +25,7 @@ after the user asks.
 
 An entry point, wrapper, interface, or type that exists without a consumer is removed, not kept for
 a future that has not been requested. The kit block `blocks/when-to-extract/SKILL.md` (in the kit root, two folders up from the
-cleanup-gate folder) decides when a layer stays
+`review` skill folder) decides when a layer stays
 and when it is inlined.
 
 ## 3 — Constants local to their consumer
@@ -48,7 +48,7 @@ documented surface other code depends on.
 
 ## 6 — Type local data and remove repeated validation
 
-Source: review-check lens C-3; block-consolidation council 2026-10-16 (D11).
+Source: review check mode lens C-3; block-consolidation council 2026-10-16 (D11).
 
 For data our own code made, use its type and remove repeated validation, `unknown`, or a schema
 that adds no check at a separate boundary. Keep checks at trust boundaries, such as user input,

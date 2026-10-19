@@ -1,16 +1,26 @@
----
-name: review-walk
-description: Walk a GitHub PR with the user in five steps (scope, map, check, comments, walk), one status file per step under tmp/review-walk/ in the repo. The check is a review-check run; this skill adds comments in the reviewer's own voice in a pending GitHub review that the reviewer submits, and in a new round shows each file's diff since the reviewer last viewed it. Use for "review pr" with a PR number or "review-walk continue" with a run when the user reviews a PR themselves. implement, deliver, and pair call review-check instead.
----
+# review mode: walk
 
-# review-walk
+The `review` skill owns the mode choice. This file owns the PR walk, its steps, and its GitHub writes.
 
-Example. `review-walk pr 42` makes `<repo>/tmp/review-walk/pr-42-01/` with five step files.
-The agent maps the files into groups, runs review-check on the PR range, and drafts 15
+Example. A walk of PR 42 (`review_walk.py start 42`) makes `<repo>/tmp/review-walk/pr-42-01/` with five step files.
+The agent maps the files into groups, runs check mode on the PR range, and drafts 15
 short comments in your voice. You say yes, and they go into your pending review on GitHub. You walk
 the PR there, mark files viewed, edit or delete drafts, and submit. The author pushes again.
-`review-walk pr 42` then makes `pr-42-02`, which shows only what changed in each file after you
+A second walk of PR 42 then makes `pr-42-02`, which shows only what changed in each file after you
 viewed it, and marks the unchanged files viewed again on GitHub after you say yes.
+
+## Preset
+
+Stop: owner
+Start: python3 <skill-dir>/scripts/review_walk.py start <pr-number|url|local|base..head>
+
+| File | Needs | Holds | Block | Why |
+|---|---|---|---|---|
+| 01-scope | none | target, base, head, and each file's state | base-rules | the script scopes what the reviewer sees |
+| 02-map | scope | file groups, intent, critical path, and a diagram when one helps | when-to-diagram, call-tree | the reader meets a type before its users |
+| 03-check | scope | the check verdict line and its run folder | change-review | check mode owns the findings |
+| 04-comments | map, check | the comments in the reviewer's voice | voice-review | findings become the reviewer's own comments |
+| 05-walk | comments | viewed marks, the reviewer's comments, what was submitted | voice-review | the reviewer submits on GitHub |
 
 ## Contract
 
@@ -18,8 +28,8 @@ viewed it, and marks the unchanged files viewed again on GitHub after you say ye
   `git fetch` gets objects and `FETCH_HEAD` only.
 - Never submit or publish a review. The user does it on GitHub.
 - Every GitHub write (`post`, `remark`) needs the user's yes in chat for that run.
-- review-check owns the findings, the lens, the repo rules, and the verdict. This skill never
-  states a verdict that review-check did not print.
+- Check mode owns the findings, the lens, the repo rules, and the verdict. This mode never
+  states a verdict that check mode did not print.
 - No findings about secrets in plain text in a public comment. Tell the user in chat instead.
   `post` refuses a body with a known token or key shape, but that check is partial, so read each
   body for other secrets too.
@@ -45,7 +55,7 @@ ready step.
 ## Status line
 
 A review walk is a step run, so the kit's `references/step-run.md` (the kit root is
-two folders up from this skill's folder) owns the status line, ready
+two folders up from the `review` skill's folder) owns the status line, ready
 and stale steps, pick-up, close, and when a step waits for the user. The script reads the same
 status line.
 
@@ -55,7 +65,7 @@ status line.
 |---|---|---|---|
 | `01-scope.md` | script | none | target, base, head, every file with its state: new to you, changed since view, unchanged since view, whitespace only |
 | `02-map.md` | chair | 01 | the intent, files in groups by feature in reading order with one cited line of purpose per group, the critical path, and a diagram when the change needs one |
-| `03-check.md` | chair | 01 | line 3 of the review-check `03-verdict.md`, then `Run: <its run folder>` |
+| `03-check.md` | chair | 01 | line 3 of the check run's `03-verdict.md`, then `Run: <its run folder>` |
 | `04-comments.md` | chair | 02, 03 | the verdict, and the comments in the reviewer's voice |
 | `05-walk.md` | user, chair | 04 | viewed marks, the user's own comments, what was submitted |
 
@@ -80,15 +90,15 @@ status line.
    `python3 <skill-dir>/scripts/validate_citations.py <run>/diff.patch <run>/02-map.md`. Fix or
    drop each citation that it rejects, because a wrong citation looks as sure as a right one. The
    map explains and never judges. Findings belong to step 03.
-3. **Check.** Run review-check on `<Base>..<Head>` from `01-scope.md`, or `local` for a local
-   target, with `--parent-loop review-walk:<run>`, where `<run>` is this review-walk folder's name.
+3. **Check.** Run check mode on `<Base>..<Head>` from `01-scope.md`, or `local` for a local
+   target, with `--parent-loop review-walk:<run>`, where `<run>` is this walk run's folder name.
    In a new round, add `--patch <run>/since-view.patch`, which holds what changed since
-   view and the whole diff of each file new to you. Follow review-check to its verdict. Line 3 of
+   view and the whole diff of each file new to you. Follow check mode to its verdict. Line 3 of
    `03-check.md` is line 3 of its `03-verdict.md`, and line 4 is `Run: <its run folder>`, relative
    to the repo root. An `INCOMPLETE` verdict keeps this step open. `status` prints a problem when
-   the map skips a file or names one twice, or when line 3 does not match a done review-check run
+   the map skips a file or names one twice, or when line 3 does not match a done check run
    of this head.
-4. **Comments.** Take the `fix`, `ask`, and `note` rows of the review-check run. Apply the kit block
+4. **Comments.** Take the `fix`, `ask`, and `note` rows of the check run. Apply the kit block
    `blocks/voice-review/SKILL.md` for wording, repeated findings, and comment placement. Write
    `comments.json` as a list of `{path, body, first, last}`, where `first` and `last` are exact
    quotes from the new side and a file-level comment has no `first`. A row that quotes a removed
@@ -102,16 +112,16 @@ status line.
 ## Roles
 
 The chair does every step, because steps 01, 02, 04, and 05 need the user. Step 03 uses
-review-check's seats, as review-check's `orchestration.json` declares.
+the check mode's seats, as `../orchestration-check.json` declares.
 
 ## Voice
 
 The kit block `blocks/voice-review/SKILL.md` owns the review voice and its private preferences.
-The repo rules belong to review-check.
+The repo rules belong to check mode.
 
 ## Callers
 
-implement, deliver, and pair call review-check, not this skill.
+`implement` and the `change-review` block call check mode, not this mode.
 
 ## Output
 

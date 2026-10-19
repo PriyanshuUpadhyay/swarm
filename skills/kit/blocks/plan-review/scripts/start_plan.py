@@ -5,7 +5,7 @@
 
 A plan whose `Preset:` line names a `Stop: chat` preset starts with no round. Any other plan needs the
 newest review round to have approved plan.md and plan.html as they are now. A preset with a `Start:`
-line runs its own step run, so this script refuses to make step files for it.
+line runs its own step run, so this script makes no step files for it and prints that command.
 """
 
 import sys
@@ -34,7 +34,8 @@ def main(argv):
         raise SystemExit(__doc__.strip().splitlines()[2].strip())
     run = Path(argv[0])
     if start := approved(run):
-        raise SystemExit(f"this preset runs its own step run: {start}")
+        print(f"start with: {start}")
+        return
     step_run.start(run, run / "plan.md")
 
 

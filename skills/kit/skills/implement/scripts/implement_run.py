@@ -114,7 +114,7 @@ def loop_key(folder, inherited=None):
 
 
 def review(folder, target, *opts):
-    script = BLOCKS.parent / "skills" / "review-check" / "scripts" / "review_check.py"
+    script = BLOCKS.parent / "skills" / "review" / "scripts" / "review_check.py"
     result = subprocess.run([sys.executable, str(script), "start", target, "--parent-loop", loop_key(folder), *opts])
     if result.returncode:
         raise SystemExit(result.returncode)

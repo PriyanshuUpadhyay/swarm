@@ -1,9 +1,6 @@
----
-name: cleanup-gate
-description: "Run the full six-step cleanup pass only when the user explicitly asks for a cleanup pass — readability, simplification, dead-code removal, or triage of automated review comments — or when a substantial branch or pull-request diff reaches its delivery gate. This skill owns that activation rule: skip the pass for a routine diff. Do not use it to plan an unwritten change."
----
+# review mode: cleanup
 
-# Cleanup gate
+The `review` skill owns the mode choice. This file owns the cleanup pass and when it activates.
 
 One pass over the working tree, run BEFORE a substantial diff, patch, or pull request is presented.
 It replaces the three after-the-fact passes the user otherwise pays for one at a time — readability
@@ -13,7 +10,7 @@ diff, so the review budget goes to design instead of style churn.
 **Activation.** The six-step pass runs only when the user explicitly asked for a cleanup,
 readability, simplification, dead-code, or review-comment pass over work already written, or when a
 substantial branch or pull-request diff has reached its delivery gate. A routine diff does not
-activate this pass, and a `pair` task never does; its per-chunk `approve` is the gate. This skill
+activate this pass, and an `implement` build in `pair` mode never does; its per-chunk `approve` is the gate. This skill
 owns that decision — no other instruction file states it — and six
 emitted steps over a two-file edit cost more than they return. When the pass is not activated, do
 not emit its steps and do not announce that it was skipped.
@@ -31,8 +28,22 @@ that emitted nothing did not run. The six emissions are presented together, abov
 every step, including step 3 and step 4.
 
 **Rules.** The global coding rules are authoritative for the smallest clear change, comments,
-direct control flow and plain data, dead code, and unrelated cleanup. `references/rules.md` adds
+direct control flow and plain data, dead code, and unrelated cleanup. `references/cleanup-rules.md` adds
 only the rules the global file does not state, public contracts among them.
+
+## Preset
+
+Stop: owner
+
+| File | Needs | Holds | Block | Why |
+|---|---|---|---|---|
+| 01-scope-delta | none | each changed file mapped to a scope item, and the ride-alongs | requirements | step 1 decides what later steps may touch |
+| 02-dead-weight | scope-delta | each removal with its reason, or `none` | when-to-extract | remove what no requirement needs |
+| 03-readability | dead-weight | each edit, or `none` | when-to-extract | collapse indirection that only an old iteration needed |
+| 04-comments | readability | comments added and deleted, or `none` | base-rules | comments only for what code cannot say |
+| 05-constants | comments | each constant moved, renamed, or kept, or `none` | base-rules | a constant lives next to its consumers |
+| 06-triage | constants | each test, fixture, and bot comment with its verdict | prove-it-works | keep required tests and settle each bot comment |
+| 07-reply | triage | the six emissions above the diff | voice-reply | the owner reads the cleaned diff |
 
 ## The pass
 
@@ -65,27 +76,27 @@ Emit: one line per removal with its reason, or `none`.
 
 ### 3 — Readability
 
-Apply `references/rules.md` and the global coding rules. Collapse indirection that exists only
+Apply `references/cleanup-rules.md` and the global coding rules. Collapse indirection that exists only
 because an earlier iteration needed it.
 
 Emit: one line per edit, or `none`.
 
 ### 4 — Comments and documentation
 
-Apply the global comment rule and section 5 of `references/rules.md` to the working set.
+Apply the global comment rule and section 5 of `references/cleanup-rules.md` to the working set.
 
 Emit two lists — added (each with the reason it is not obvious) and deleted — or `none`.
 
 ### 5 — Constant locality
 
-Apply section 3 of `references/rules.md` to every constant this task introduced.
+Apply section 3 of `references/cleanup-rules.md` to every constant this task introduced.
 
 Emit: one line per constant moved, renamed, or kept shared with the consumer count, or `none`.
 
 ### 6 — Test and review triage
 
 Classify each test, fixture, and scratch file in the working set by section 1 of
-`references/rules.md`.
+`references/cleanup-rules.md`.
 
 Review bots: implement or refute each open automated review comment on this change, in one line
 naming the `path:line` or the rule that settles it. Every comment gets a verdict here; do not
@@ -104,11 +115,11 @@ should never be the first person to notice an item on this list.
 | Signal | Action |
 |---|---|
 | The pass ran on a routine diff nobody asked to clean | It should not have activated. See **Activation**. |
-| A rule attributed to the global file that is not in it | Fix the attribution, or move the rule into `references/rules.md`. |
+| A rule attributed to the global file that is not in it | Fix the attribution, or move the rule into `references/cleanup-rules.md`. |
 | A step you ran "mentally" with nothing emitted | It did not run. Run it and emit. |
 | A ride-along file you improved instead of reported | Revert the improvement; report the file. |
 | Scope confirmed only by your own inference | Not confirmed. Return to the entry contract. |
 | A comment added because the code looked bare | Delete it. Bare is the default. |
-| A hand-rolled validator beside an existing schema library | Replace it. See `references/rules.md`. |
+| A hand-rolled validator beside an existing schema library | Replace it. See `references/cleanup-rules.md`. |
 | An edit in a file this task never otherwise touched | Unrelated cleanup. Revert it. |
 | A required regression test dropped from the diff | Restore it. Step 6 removes only temporary or out-of-scope tests. |
