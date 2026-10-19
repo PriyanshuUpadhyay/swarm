@@ -1,6 +1,6 @@
 ---
 name: implement
-description: Build one change through seven steps (frame, design, contracts, impact, build, review, close) in pair mode or auto mode, from the implement preset. Use when the user asks to implement, pair on, or deliver a change, or says "implement continue" with a folder.
+description: Build one change through seven steps (frame, design, contracts, impact, build, review, close) in pair or auto mode. Use when the user asks to implement, pair on, or deliver a change, or says "implement continue" with a folder.
 ---
 
 # Implement

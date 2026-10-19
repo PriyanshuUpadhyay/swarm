@@ -1,6 +1,6 @@
 ---
 name: review
-description: Review in one of three modes, each with its own preset. Check a commit range with a script verdict, walk a GitHub PR into a pending review, or run a cleanup pass. Use when the user asks to review, check a range, review a PR, or clean up a diff.
+description: Review in one of three modes. Check a commit range with a script verdict, walk a GitHub PR into a pending review, or run a cleanup pass. Use when the user asks to review, check a range, or clean up.
 ---
 
 # Review

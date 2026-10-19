@@ -25,6 +25,7 @@ def presets():
 
 def test_each_preset_resolves_with_its_stop():
     found = presets()
+    assert set(found) == set(STOPS), sorted(set(found) ^ set(STOPS))
     for name, file in found.items():
         stop, _, steps = preset.check(file)
         assert STOPS.get(name) == stop, (name, stop)

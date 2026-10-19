@@ -1,6 +1,6 @@
 ---
 name: web-search
-description: Wide web search by three visible seats (GPT, Gemini, Claude) that each search a different set of sites with their own tools and report to files. Depth is a hard rule, so every brief names the known answers as baseline only and the seats dig for under-discussed options. Use when one session's fetches are blocked or when the user asks for a wide, deep, or intensive search.
+description: Wide web search by three visible seats (GPT, Gemini, Claude) on separate sites, which dig past the known answers and report to files. Use when this session's fetches are blocked, or the user asks for a wide search.
 ---
 
 # Web search

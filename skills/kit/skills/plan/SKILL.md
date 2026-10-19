@@ -1,6 +1,6 @@
 ---
 name: plan
-description: The front door of every work verb. Plan from the verb's preset or the block catalog, draw the flowchart, stop for approval when the preset says so, then run the steps. Use when a verb skill sends you here, or for "plan this".
+description: The front door of every work verb. Plan from a verb's preset or the block catalog, draw the flowchart, wait for approval when the preset stops, then run the steps. Use when a verb skill sends you here.
 ---
 
 # Plan

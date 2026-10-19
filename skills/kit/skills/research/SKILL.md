@@ -1,6 +1,6 @@
 ---
 name: research
-description: Research one question and write a short evidence-backed report, shown in full in the reply and kept as a file. Use when the user says research, look into, find out, compare, find me, writeups, articles, good reads, or asks what others do, and for "research continue" with a folder. Calls the `web-search` skill for a wide forum search. A Fable chair sends the web part to a `search.web` seat.
+description: Research one question and write a short evidence-backed report, shown in full in the reply and kept as a file. Use when the user says research, look into, find out, compare, or find me, or asks what others do.
 ---
 
 # Research
@@ -14,19 +14,24 @@ Research is a step run, so the kit's `references/step-run.md` owns the status li
 close, and when a step waits for the user. `references/run-folder.md` owns the research run and
 report paths. "research continue <folder>" picks up that run.
 
-Before start, write `<folder>/steps.md` with the table below. When local facts set the web query,
-set `03-web.md`'s Needs cell to `local`; otherwise keep `question`. Start with
-`python3 <kit root>/references/step_run.py start <folder> <folder>/steps.md`, and close each step
-with `done`. The saved table keeps this run's chosen inputs.
+Run the front door in `skills/plan/SKILL.md` with the preset below, and write `plan.md` in the
+research run folder. When local facts set the web query, set `03-web.md`'s Needs cell to `local`;
+otherwise keep `question`. Close each step with
+`python3 <kit root>/references/step_run.py done <folder> <step>`. The saved `plan.md` keeps this
+run's chosen inputs.
 
-| File | Needs | Holds |
-|---|---|---|
-| `01-question.md` | none | the question in one line and the decision it serves in one line |
-| `02-local.md` | question | what the local sources say, with paths |
-| `03-web.md` | question | the `web-search` run folder, or the reason no trigger below held; a `Fetched:` list of URLs whose page content was read; the origin rows from `blocks/primary-sources/SKILL.md`, or `skipped: <reason>`; what the web says, with links to the sources that own the claims; the off-path ideas and the searches that found them |
-| `04-test.md` | local, web | for a tool pick, each candidate's install, task, time, and result; else `skipped: not a tool pick` |
-| `05-report.md` | local, web, test | the report path and the result of the link check |
-| `06-close.md` | report | the reply as sent |
+## Preset
+
+Stop: owner
+
+| File | Needs | Holds | Block | Why |
+|---|---|---|---|---|
+| `01-question.md` | none | the question in one line and the decision it serves in one line | requirements | the question and its decision frame the run |
+| `02-local.md` | question | what the local sources say, with paths | local-research | local sources come first |
+| `03-web.md` | question | the `web-search` run folder, or the reason no trigger below held; a `Fetched:` list of URLs whose page content was read; the origin rows from `blocks/primary-sources/SKILL.md`, or `skipped: <reason>`; what the web says, with links to the sources that own the claims; the off-path ideas and the searches that found them | deep-search, primary-sources, cite-sources | the web part goes past the known answers |
+| `04-test.md` | local, web | for a tool pick, each candidate's install, task, time, and result; else `skipped: not a tool pick` | tool-trial | a tool pick needs a hands-on test |
+| `05-report.md` | local, web, test | the report path and the result of the link check | report, link-check | the report keeps the answer with checked links |
+| `06-close.md` | report | the reply as sent | voice-reply | the owner reads the answer |
 
 ## 01-question
 
