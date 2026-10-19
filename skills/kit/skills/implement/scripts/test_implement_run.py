@@ -548,6 +548,23 @@ def test_installed_kit_paths(tmp):
         assert implement_run.step_run.kit_path(SCRIPT) == str(SCRIPT)
 
 
+def test_start_plan_needs_approval(tmp):
+    """`start --plan <run>` refuses a plan that the plan skill's stop rule does not pass, and names it in 01-frame."""
+    import hashlib
+    plan = Path(tmp, "plan-run")
+    plan.mkdir()
+    (plan / "plan.md").write_text("# Plan: x\n\nPreset: implement\n", encoding="utf-8")
+    (plan / "plan.html").write_text("<p>chart</p>", encoding="utf-8")
+    out, folder, repo, run = blocks_start(tmp, "with-plan", "", None, "--plan", plan)
+    assert out.returncode == 1 and "no round in" in out.stderr and not Path(repo, "tmp", "flow").exists(), out
+    files = {f"../{n}": hashlib.sha256((plan / n).read_bytes()).hexdigest() for n in ("plan.html", "plan.md")}
+    (plan / "plan-review").mkdir()
+    (plan / "plan-review" / "1.json").write_text(json.dumps({"files": files, "result": {"decision": "approved"}}))
+    out = run("start", "--plan", plan)
+    assert out.returncode == 0, out.stderr
+    assert f"Plan: {plan.resolve()}\n" in step_text(Path(out.stdout.splitlines()[0]), "01-frame")
+
+
 def test_start_domains(tmp):
     """A run selects profile domains once, always keeps any, and rejects unknown domains."""
     for name, selected in (("selected", True), ("all", False)):
@@ -1794,8 +1811,8 @@ with tempfile.TemporaryDirectory() as tmp:
     refused = run("done", folder, "05-build")
     assert refused.returncode != 0 and "Failing check first" in refused.stderr
     f = folder / "05-build.md"
-    f.write_text(f.read_text().replace("- [ ] Task file path and Base commit (pair or deliver): ",
-                                       "- [x] Task file path and Base commit (pair or deliver): "))
+    f.write_text(f.read_text().replace("- [ ] Task file path and Base commit (pair or auto mode): ",
+                                       "- [x] Task file path and Base commit (pair or auto mode): "))
     assert "no evidence" in run("done", folder, "05-build").stderr
     fill(f)
     head = git("rev-parse", "HEAD")
@@ -1846,6 +1863,7 @@ with tempfile.TemporaryDirectory() as tmp:
     test_installed_kit_paths(tmp)
     test_start_block_ledger(tmp)
     test_start_domains(tmp)
+    test_start_plan_needs_approval(tmp)
     test_start_ledger_without_chosen_blocks(tmp)
     test_block_in_step(tmp)
     test_block_hash_bytes(tmp)

@@ -1,35 +1,29 @@
----
-name: deliver
-description: Explicit autonomous delivery of one named task. Use only when the user invokes deliver and wants the agent to drive the task to a checkable exit condition without stopping. Never select it for an ordinary implementation request, and never for chunk-by-chunk work, which `pair` owns.
-disable-model-invocation: true
----
+# implement mode: auto
 
-# Deliver
+The owner chose `auto` for the build step of an `implement` run. The `implement` skill owns the run, the steps, and the review.
 
 You own the exit condition. State it, then drive to it without stopping.
 
-Deliver runs in supervised mode. The agent picks the next step and edits without asking, and it
+Auto runs in supervised mode. The agent picks the next step and edits without asking, and it
 stops only before a merge, a push, or another irreversible action, or when it is blocked on input
 only the user can give.
 
 1. State the exit condition as a checkable predicate before the first change: tests green, the
    repro fixed, the feature exercised on the real surface. Show it in one line and start. Do not
-   wait for approval of the predicate. When no `implement` run folder is named, first run
-   `python3 <implement-skill-dir>/scripts/implement_run.py start` and follow the `implement` skill's entry rule.
-   With an `implement` run folder, the predicate is the done-when of its `01-frame.md`, and you hold its
+   wait for approval of the predicate. The predicate is the done-when of its `01-frame.md`, and you hold its
    build step. Before the first change, apply the rules and the todo list in its `05-build.md`.
 2. Each iteration makes the smallest change the evidence justifies, verifies it against the
    predicate, commits when it advanced, and discards a change that did not help. A change that
    "might help" is reverted, not left to ride. Order the work per the
    kit block `blocks/checked-units/SKILL.md`, and judge each check per the kit block
-   `blocks/prove-it-works/SKILL.md`. The kit root, with its `blocks/` and `references/` folders, is two folders up from this skill's folder.
+   `blocks/prove-it-works/SKILL.md`. The kit root, with its `blocks/` and `references/` folders, is three folders up from this file.
 3. A mid-run discovery is yours when it blocks the predicate. Fix it, such as a broken helper or a
    flaky check, in its own commit, then return to the predicate. Do not park reversible work for
    the user. Report any other defect in the final result and leave it unfixed.
 4. Keep the task file as the kit block `blocks/task-file/SKILL.md` says, at
    `<repo-root>/tmp/deliver/<YYYY-MM-DD>-<slug>.md`, with the predicate as its goal and one
    evidence line per iteration.
-5. When the predicate holds, run `python3 <implement-skill-dir>/scripts/implement_run.py review <folder> <base>..HEAD`,
+5. When the predicate holds, run `python3 <skill-dir>/scripts/implement_run.py review <folder> <base>..HEAD`,
    where `<folder>` is the run from step 1 and `<base>` is the commit before this run's first commit.
    The command passes its saved parent-loop key to `review_check.py start`, which owns the loop stop.
    Fixes use the same folder; a re-plan starts with `start --parent-loop <saved-key>`.

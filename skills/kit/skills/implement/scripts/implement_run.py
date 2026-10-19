@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Make and take implement steps. Run from inside the repo.
 
-  start [--profile <name>] [--domains <a,b>] [--parent-loop KEY] make tmp/flow/<date>-<branch>/
+  start [--profile <name>] [--domains <a,b>] [--parent-loop KEY] [--plan <run>] make tmp/flow/<date>-<branch>/
   review <folder> <local|base..head> [--continue FILE] start review-check with this run's saved key
   status [<folder>]            print each step's status, whether it is ready, and whether it is stale
   take <folder> <step> <who> [--force] mark the step active and print its file with the skills the catalog gives it
@@ -19,7 +19,8 @@ The step graph is the step table in ../SKILL.md. `start` writes the need names a
 with `Revision: HEAD`, as references/step-run.md describes. The kit's references/step_run.py
 owns status, ready, stale, take, done, and events.log. This script adds the implement rules: the revision
 of 05-build is HEAD, take 04-impact lists the places that name the contracts' code names, and take
-07-close needs the review-check run's own APPROVE verdict on HEAD.
+07-close needs the review-check run's own APPROVE verdict on HEAD. `start --plan <run>` refuses a plan that
+the plan skill's stop rule (blocks/plan-review/scripts/start_plan.py) does not pass, and names it in 01-frame.md.
 """
 
 import codecs
@@ -59,7 +60,7 @@ TODOS = {  # each item names the file that owns the rule
     "03-contracts": ["APIs, data model, and integrations that change (implement)",
                      "Standards rows that apply (engineering-standards)", "Decision check for the topic (decisions)"],
     "04-impact": ["Existing features that change, judged from the Callers section and the contracts, or independent (implement)"],
-    "05-build": ["Task file path and Base commit (pair or deliver)",
+    "05-build": ["Task file path and Base commit (pair or auto mode)",
                  "Failing check first: command and its failing output (prove-it-works)",
                  "Standards rows for each behavior, or none and why (engineering-standards)",
                  "Scope: each file touched and the part of the change that names it (AGENTS.md)",
@@ -119,9 +120,16 @@ def review(folder, target, *opts):
         raise SystemExit(result.returncode)
 
 
-def start(profile="default", domains=None, parent_loop=None):
+def start(profile="default", domains=None, parent_loop=None, plan=None):
     if parent_loop is not None:
         check_loop_key(parent_loop)
+    if plan is not None:
+        sys.path.insert(0, str(BLOCKS / "plan-review" / "scripts"))
+        import contextlib
+        import start_plan
+        with contextlib.redirect_stdout(sys.stderr):  # the folder stays the first stdout line
+            start_plan.approved(plan)
+        plan = Path(plan).resolve()
     root = git("rev-parse", "--show-toplevel")
     if not root:
         raise SystemExit("not in a git repository")
@@ -160,6 +168,7 @@ def start(profile="default", domains=None, parent_loop=None):
         folder.mkdir(parents=True)
         for step, need in steps.items():
             extra = f"Worktree: {root}\nBranch: {branch}\nDomains: {', '.join(sorted(chosen))}\n" if step == "01-frame" else ""
+            extra += f"Plan: {plan}\n" if step == "01-frame" and plan else ""
             extra += "Revision: HEAD\n" if step == "05-build" else ""  # the rule in rev(), for readers without this script
             uses = f"Uses: {', '.join(need)}".rstrip()
             paths = catalog[step][0]
@@ -424,7 +433,7 @@ if __name__ == "__main__":
             raise SystemExit("done <folder> <step> accepts no --force" if command == "done" else f"{command} accepts no --force")
         options = {"force": force} if command == "take" else {}
         if command == "start":
-            while len(args) >= 2 and args[0] in ("--profile", "--domains", "--parent-loop") and args[0][2:].replace("-", "_") not in options:
+            while len(args) >= 2 and args[0] in ("--profile", "--domains", "--parent-loop", "--plan") and args[0][2:].replace("-", "_") not in options:
                 options[args[0][2:].replace("-", "_")] = args[1]
                 args = args[2:]
         minimum, maximum = arity[command]

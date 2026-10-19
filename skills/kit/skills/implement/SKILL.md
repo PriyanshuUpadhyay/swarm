@@ -1,21 +1,30 @@
 ---
 name: implement
-description: Run one change through seven steps (frame, design, contracts, impact, build, review, close), with one status file per step under tmp/flow at the repo root and, for each step, the skills that the domain catalog gives the repo's domains. Use when the user says "implement continue" with a folder or "implement start", names a tmp/flow step file, or when pair or deliver starts with no implement run folder.
+description: Build one change through seven steps (frame, design, contracts, impact, build, review, close) in pair mode or auto mode, from the implement preset. Use when the user asks to implement, pair on, or deliver a change, or says "implement continue" with a folder.
 ---
 
 # Implement
 
-Use the `implement` skill for any change that `pair` or `deliver` builds. A one-line change takes the fast lane.
+Use the `implement` skill for any change. A one-line change takes the fast lane.
 The kit's `references/run-folder.md` owns the run and settings paths.
 
 ## Entry and lanes
 
-`/pair`, `/deliver`, and "implement start" all use this route. When `pair` or `deliver` starts with no
-run folder for the `implement` skill named, make the folder and do `01-frame.md` first. Then pick
+Run the front door in `skills/plan/SKILL.md` with the preset below. After the owner approves the
+plan, start the run with the preset's `Start:` command, then do `01-frame.md` first. Then pick
 the lane from the change and the repo's contracts, never from the missing folder. The fast lane skips `02-design.md`,
 `03-contracts.md`, and `04-impact.md` with `skip <folder> <step> fast lane: <reason>` only when none
-of them needs a new decision. Otherwise do them before build. The command keeps its own mode.
-After "implement start", ask the user to choose `pair` or `deliver` in the reply that shows `01-frame.md`.
+of them needs a new decision. Otherwise do them before build.
+Ask the user to choose the mode in the reply that shows `01-frame.md`, unless the request named it.
+
+## Modes
+
+The mode sets how the build step runs. The steps and the review stay the same.
+
+- `pair`: one diff of about 40 lines at a time, and the owner approves each. Follow
+  [references/pair.md](references/pair.md).
+- `auto`: no stops after plan approval, up to a merge, a push, or another irreversible action.
+  Follow [references/auto.md](references/auto.md). Use it only when the owner chose it.
 
 When a step ends and the next step is not yours, print `Next: <command>` as the last line of the
 reply, for example `Next: implement continue tmp/flow/2026-10-05-login 06-review`.
@@ -73,27 +82,30 @@ line, the `Uses:` line, pick-up, close, and when a step waits for the user. The 
 the script reads. The revision of `05-build` is `HEAD`, so a new commit makes `06-review` stale.
 `start` marks `05-build.md` with the `Revision: HEAD` line that step-run.md describes.
 
-## Steps
+## Preset
+
+Stop: owner
+Start: python3 <skill-dir>/scripts/implement_run.py start --plan <run> [--domains <a,b>]
 
 `02-design` and `03-contracts` need only frame, so both run by the pick-up rule in
 `references/step-run.md`; the frame names their shared assumptions.
 
-| File | Needs | Holds |
-|---|---|---|
-| `01-frame.md` | none | `Worktree:`, `Branch:`, goal, user, out of scope, done-when, and shared assumptions for design and contracts |
-| `02-design.md` | frame | UX flow and screens, or `skipped: no UI` |
-| `03-contracts.md` | frame | APIs, data model, integrations, and the result of the `decisions` skill's check for the topic |
-| `04-impact.md` | contracts | the existing features that change, or "independent", judged from the `## Callers` section that `take` writes with the places that name each code name in backticks in `03-contracts.md` |
-| `05-build.md` | impact, and design unless skipped | the task-file path of the `pair` or `deliver` run that the user started, and `Base:`, the commit before its first commit |
-| `06-review.md` | build | the `review-check` runs on `<Base>..<build revision>`, line 3 of the newest run's `03-verdict.md`, each `fix` row with its fix or the reason it stays, and one `Run: tmp/review-check/<run>` line per round, newest last |
-| `07-close.md` | review with APPROVE | the done-when of `01-frame.md`, each with its evidence |
+| File | Needs | Holds | Block | Why |
+|---|---|---|---|---|
+| `01-frame.md` | none | `Worktree:`, `Branch:`, `Plan:`, goal, user, out of scope, done-when, and shared assumptions for design and contracts | requirements | the claims say when the change is done |
+| `02-design.md` | frame | UX flow and screens, or `skipped: no UI` | decision-with-default | each UX fork gets a marked default |
+| `03-contracts.md` | frame | APIs, data model, integrations, and the result of the `decisions` skill's check for the topic | decision-with-default | each contract fork gets a marked default |
+| `04-impact.md` | contracts | the existing features that change, or "independent", judged from the `## Callers` section that `take` writes with the places that name each code name in backticks in `03-contracts.md` | call-tree | the callers show what the change breaks |
+| `05-build.md` | impact, and design unless skipped | the task-file path of the `pair` or `auto` mode run, and `Base:`, the commit before its first commit | checked-units, prove-it-works, task-file | small checked units, kept in a task file |
+| `06-review.md` | build | the `review` check runs on `<Base>..<build revision>`, line 3 of the newest run's `03-verdict.md`, each `fix` row with its fix or the reason it stays, and one `Run: tmp/review-check/<run>` line per round, newest last | change-review | new seats judge the commits |
+| `07-close.md` | review with APPROVE | the done-when of `01-frame.md`, each with its evidence | done-when-evidence, voice-reply | each claim maps to evidence in the reply |
 
 `take 07-close` reads line 3 of the last run's own `03-verdict.md` and refuses unless it is APPROVE
 and the run's head is `HEAD`. A NEEDS DISCUSSION verdict closes only after the user's words go into
-the run's `answers.md` as answers or `limit:` lines per review-check's Asks section, and `verdict`
-runs again to APPROVE. A REQUEST CHANGES verdict goes to the user, who starts a `pair` or `deliver` run for the
+the run's `answers.md` as answers or `limit:` lines per the Asks section of the `review` skill's `references/check.md`, and `verdict`
+runs again to APPROVE. A REQUEST CHANGES verdict goes to the user, who starts a `pair` or `auto` build for the
 findings. That run moves the build revision, so the review is stale and runs again on the new
-range. Answer each `ask` in the run's `answers.md` per review-check's Asks section.
+range. Answer each `ask` in the run's `answers.md` per the Asks section of the `review` skill's `references/check.md`.
 
 Start reviews with `python3 <skill-dir>/scripts/implement_run.py review <folder> <Base>..HEAD`.
 It passes the saved `loop.json` parent-loop key to `review_check.py start`, which owns the loop stop.
@@ -107,15 +119,15 @@ Release is a separate action that the user asks for.
 
 ## Owners
 
-For owner gates in `pair` or `deliver`, and the build-to-review handoff when this session cannot start seats, apply `blocks/worker-brief/SKILL.md`.
+For owner gates in `pair` or `auto` mode, and the build-to-review handoff when this session cannot start seats, apply `blocks/worker-brief/SKILL.md`.
 
 
 The `implement` skill owns the step list, the order, the profiles, and the domain catalog.
 Its script uses `references/step_run.py` for the shared status commands in
 `references/step-run.md`.
-`pair` or `deliver` owns the plan, the chunks, and the commits; the `implement` skill never starts `deliver`
-by itself.
-`review-check` owns the review and its verdict; the `implement` skill never fixes a finding itself. An `INCOMPLETE` verdict is no review.
+The mode file owns the chunks, the commits, and the build loop; the `implement` skill never starts `auto`
+mode by itself.
+The `review` skill's check mode owns the review and its verdict; the `implement` skill never fixes a finding itself. An `INCOMPLETE` verdict is no review.
 The kit root, with its `blocks/` and `references/` folders, is two folders up from this skill's folder. The kit block
 `blocks/prove-it-works/SKILL.md` owns the choice of check and the evidence.
 The kit block `blocks/checked-units/SKILL.md` owns the unit order. `decisions` owns the ADRs. The `implement` skill never pushes.

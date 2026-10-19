@@ -15,8 +15,9 @@ def test_plugin_ships_the_workflow_verbs():
     source = next(p["source"] for p in marketplace["plugins"] if p["name"] == plugin["name"])
     assert (KIT / source).resolve() == KIT
     skills = KIT / "skills"  # Each plugin uses its default skills/ folder.
-    assert {"build", "implement", "explain", "deliver"} <= {p.parent.name for p in skills.glob("*/SKILL.md")}
-    assert not any((skills / name).exists() for name in ("ink", "flow"))
+    assert {"build", "implement", "explain"} <= {p.parent.name for p in skills.glob("*/SKILL.md")}
+    # deliver and pair are implement modes since 2026-10-19; the kit README names what to type now.
+    assert not any((skills / name).exists() for name in ("ink", "flow", "deliver", "pair"))
     assert not any((skills / name).exists() for name in (
         "prove-it-works", "minimize-reader-load", "sequence-verifiable-units"))
 
