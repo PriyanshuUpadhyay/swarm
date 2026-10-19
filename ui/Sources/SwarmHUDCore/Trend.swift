@@ -189,10 +189,13 @@ public struct WorkingSnapshot: Decodable, Equatable, Sendable {
     public var isActive: Bool { !working.isEmpty || !waiting.isEmpty }
 }
 
-/// The provider with the most agents in `counts`, Claude first on a tie. Only providers with a
-/// mascot count.
+/// The providers with a mascot of their own, in tie-break order.
+public let mascotFamilies = ["claude", "codex", "agy", "pi"]
+
+/// The provider with the most agents in `counts`, the earlier family first on a tie. Only
+/// providers with a mascot count.
 public func busiest(_ counts: [String: Int]) -> String? {
-    ["claude", "codex"].filter { counts[$0, default: 0] > 0 }.max { counts[$0]! < counts[$1]! }
+    mascotFamilies.filter { counts[$0, default: 0] > 0 }.max { counts[$0]! < counts[$1]! }
 }
 
 /// What the closed wing's mascot does.
