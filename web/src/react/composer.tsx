@@ -145,7 +145,6 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
   const pickedCaret = useRef<number | null>(null);
   const listId = useId();
   const browse = useRef<Browse | null>(null);
-  const [stashNote, setStashNote] = useState(false);
   const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
@@ -212,7 +211,6 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
 
   const change = (next: string, recorded?: readonly SkillPick[]) => {
     setText(next);
-    setStashNote(false);
     app.setDraft(sessionId, next, recorded);
     setPicks(app.draftPicks(sessionId));
   };
@@ -316,7 +314,6 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
       if (text.trim()) {
         app.setStash(sessionId, text);
         change("");
-        setStashNote(true);
       } else if (app.stashed(sessionId)) {
         const back = app.stashed(sessionId);
         app.setStash(sessionId, "");
@@ -353,7 +350,7 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
           ? "Already sent"
           : canPullBack && text === ""
             ? "↑ to edit queued messages"
-            : stashNote
+            : text === "" && app.stashed(sessionId)
               ? "Draft cleared. Esc brings it back."
             : extraSkills.length
               ? `pi runs one skill per message, so ${extraSkills.join(", ")} goes as text`
@@ -508,7 +505,7 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
           )}
         </div>
       </div>
-      <div className="flex min-h-5 items-center gap-2 px-1 pt-1 text-xs text-muted-foreground" data-testid="composer-status">
+      <div role="status" className="flex min-h-5 items-center gap-2 px-1 pt-1 text-xs text-muted-foreground" data-testid="composer-status">
         <span className="flex-1">{chair.disabled ?? caption}</span>
       </div>
     </div>

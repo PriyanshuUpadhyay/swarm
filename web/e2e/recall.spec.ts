@@ -42,6 +42,7 @@ test("the composer recalls, stashes, reuses and finds prompts, and @ inserts a f
   await tab.keyboard.press("Escape");
   await expect(composer).toHaveValue("");
   await expect(status).toContainText("Draft cleared. Esc brings it back.");
+  await expect(status).toHaveAttribute("role", "status");
   await tab.keyboard.press("Escape");
   await expect(composer).toHaveValue("half a thought");
   await tab.keyboard.press("Escape");
@@ -71,10 +72,13 @@ test("the composer recalls, stashes, reuses and finds prompts, and @ inserts a f
   const userRow = tab.locator('[data-testid="row"][data-kind="user"]').filter({ hasText: logged });
   await expect(userRow).toBeVisible();
   await tab.keyboard.type("keep this draft");
+  await tab.keyboard.press("Escape");
+  await expect(status).toContainText("Draft cleared. Esc brings it back.");
   await userRow.hover();
   await userRow.getByTestId("reuse-prompt").click();
   await expect(composer).toHaveValue(logged);
   await expect(composer).toBeFocused();
+  await expect(status).not.toContainText("Draft cleared.");
   await tab.keyboard.press("Meta+a");
   await tab.keyboard.press("Backspace");
   await tab.keyboard.press("Escape");
@@ -91,9 +95,12 @@ test("the composer recalls, stashes, reuses and finds prompts, and @ inserts a f
   const answer = Array.from({ length: 80 }, (_, i) => `answer line ${i}`).join("\n\n");
   appendFileSync(process.env.SWARM_E2E_GIT_LOG!, JSON.stringify({ type: "assistant", uuid: `a-${info.project.name}`, parentUuid: `u-${info.project.name}`, sessionId: "fixture-session", timestamp: at, message: { role: "assistant", model: "claude-opus-4-6", content: [{ type: "text", text: answer }] } }) + "\n");
   await expect(tab.getByText("answer line 79")).toBeAttached();
-  await tab.getByTestId("transcript").evaluate((el) => (el.scrollTop = el.scrollHeight));
-  await expect(tab.getByText("answer line 79")).toBeInViewport();
-  await expect(userRow).not.toBeInViewport();
+  // The list measures the new rows after they paint, so scroll again until the end holds.
+  await expect(async () => {
+    await tab.getByTestId("transcript").evaluate((el) => (el.scrollTop = el.scrollHeight));
+    await expect(tab.getByText("answer line 79")).toBeInViewport({ timeout: 500 });
+    await expect(userRow).not.toBeInViewport({ timeout: 500 });
+  }).toPass();
   await tab.keyboard.press("Control+Alt+ArrowUp");
   await expect(userRow).toBeInViewport();
   await tab.keyboard.press("Control+Meta+w");
