@@ -106,10 +106,14 @@ fn ring_pane(
             .capture_within(&vars, std::time::Duration::from_secs(1))
             .unwrap_or_default()
     };
-    if proof == Proof::Wait
-        && let Some(provider) = provider.filter(|provider| swarm::screen::reads_composer(provider))
-    {
-        let _ = wait_for_input_box(provider, &read);
+    if proof == Proof::Wait {
+        match provider {
+            Some(provider) if swarm::screen::reads_composer(provider) => {
+                let _ = wait_for_input_box(provider, &read);
+            }
+            Some("agy") if adapter.status.is_some() => wait_for_record(&adapter, pane),
+            _ => {}
+        }
     }
     let rung_at = unix_now()?;
     adapter.run("ring", &[("pane", pane), ("text", &text)])?;
@@ -127,6 +131,7 @@ fn ring_pane(
                 enters += 1;
             }
         } else {
+            refresh_host(connection, &adapter, session_id, agent_id, provider, pane);
             match ring_proof(
                 connection,
                 session_id,
@@ -149,6 +154,55 @@ fn ring_pane(
         if std::time::Instant::now() + RING_POLL >= deadline {
             return Ok(Some(Delivery::Unconfirmed));
         }
+    }
+}
+
+/// Wait until the agent in `pane` reports a program-status record, for at most
+/// `RING_READY_TIMEOUT`. AGY draws no input box that swarm reads, and it reports `idle` once it
+/// takes input, or `blocked` while a dialog, such as folder trust, waits.
+fn wait_for_record(adapter: &swarm::adapter::Adapter, pane: &str) {
+    let ready = std::time::Instant::now() + RING_READY_TIMEOUT;
+    while std::time::Instant::now() < ready {
+        if adapter
+            .status(&[("pane", pane)], std::time::Duration::from_secs(1))
+            .is_some()
+        {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(200));
+    }
+}
+
+/// A pi agent's host record and its time from the adapter's `status` verb (ADR 0070: hooks first,
+/// host records second). Other providers have hooks, so they get None.
+fn host_record_of(
+    adapter: &swarm::adapter::Adapter,
+    provider: Option<&str>,
+    pane: &str,
+    seen_work: bool,
+) -> Option<(swarm::host::HookState, i64)> {
+    if provider != Some("pi") {
+        return None;
+    }
+    let body = adapter.status(&[("pane", pane)], std::time::Duration::from_millis(300))?;
+    swarm::host::host_record(&body, seen_work)
+}
+
+/// Stores a pi agent's host record, so `ring_proof` reads a turn that the record shows. A failed
+/// read or write proves nothing either way, so the next pass reads again.
+fn refresh_host(
+    connection: &rusqlite::Connection,
+    adapter: &swarm::adapter::Adapter,
+    session_id: &str,
+    agent_id: &str,
+    provider: Option<&str>,
+    pane: &str,
+) {
+    let Some((record, at)) = host_record_of(adapter, provider, pane, false) else {
+        return;
+    };
+    if let Err(error) = store_state(connection, session_id, agent_id, &record, "host", at) {
+        eprintln!("swarm: host record not stored: {error}");
     }
 }
 
@@ -509,8 +563,14 @@ fn hook(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let Some(state) = &report.state else {
         return Ok(());
     };
-    if store_state(&connection, &report.session, &report.agent, state)?
-        && let Some(provider) = &report.usage_provider
+    if store_state(
+        &connection,
+        &report.session,
+        &report.agent,
+        state,
+        "hook",
+        unix_now()?,
+    )? && let Some(provider) = &report.usage_provider
     {
         // Store the state before a usage read can wait on the log or bus.
         let _ = swarm::store::update_usage(&connection, &report.session, &report.agent, provider);
@@ -533,27 +593,26 @@ fn store_log(
     Ok(())
 }
 
-/// Stores an agent's own report of its state, and posts a notice when it starts to wait. False
-/// when the session holds no such agent.
+/// Stores an agent's own report of its state, from `source` (`hook` or `host`) at `at`, and posts
+/// a notice when it starts to wait. False when the session holds no such agent.
 fn store_state(
     connection: &rusqlite::Connection,
     session: &str,
     agent: &str,
     report: &swarm::host::HookState,
+    source: &str,
+    at: i64,
 ) -> Result<bool, Box<dyn std::error::Error>> {
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)?
-        .as_secs() as i64;
     // An agent the session does not hold has no row to change, so it gets no notice.
     let Some(old) = swarm::store::set_state(
         connection,
         session,
         agent,
         report.state,
-        "hook",
+        source,
         report.detail.as_deref(),
         report.kind,
-        now,
+        at,
     )?
     else {
         return Ok(false);
@@ -616,7 +675,7 @@ fn status_feed() -> Result<(), Box<dyn std::error::Error>> {
                         store_log(&connection, &session, &agent, &path)?;
                         logged = true;
                     }
-                    store_state(&connection, &session, &agent, &report)
+                    store_state(&connection, &session, &agent, &report, "hook", unix_now()?)
                 });
             // The feed must keep reading, or the pane's output backs up; a lost report is the
             // smaller harm, and the next one corrects it.
@@ -3839,6 +3898,27 @@ fn sweep_once(
     Ok(())
 }
 
+/// A pane's state, its detail, and the question on it, read from the screen (ADR 0021).
+type ScreenRead = (
+    swarm::screen::ScreenState,
+    Option<String>,
+    Option<swarm::screen::Prompt>,
+);
+
+/// The listing's screen check of one live pane: None when the `screen` verb or its read fails.
+fn read_screen(
+    adapter: &swarm::adapter::Adapter,
+    pane: &str,
+    provider: Option<&str>,
+) -> Option<ScreenRead> {
+    let capture =
+        || adapter.capture_within(&[("pane", pane)], std::time::Duration::from_millis(300));
+    let output = adapter.screen(&[("pane", pane)], std::time::Duration::from_millis(300))?;
+    let prompt = swarm::screen::whole_prompt(&output, capture);
+    let (state, detail) = swarm::screen::read_pane(provider, &output, capture)?;
+    Some((state, detail, prompt))
+}
+
 /// Whether the chair's pane reads idle with no question on it. A ring's Enter typed over a
 /// question, such as a permission prompt, would answer it.
 fn chair_idle(
@@ -3894,6 +3974,7 @@ fn settle_rings(
         // and with neither only the deadline settles it.
         let (rows, screen) = match swarm::store::pane_of(connection, session_id, &agent)? {
             Some(pane) => {
+                refresh_host(connection, adapter, session_id, &agent, provider, &pane);
                 let vars = [("pane", pane.as_str())];
                 adapter
                     .capture_within(&vars, std::time::Duration::from_secs(1))
@@ -4153,13 +4234,9 @@ fn list_agents_from(
         })
         .collect();
     // The screen check (ADR 0021) reads each live pane once per listing, all at the same
-    // time, so six agents cost about one capture.
-    type ScreenRead = (
-        swarm::screen::ScreenState,
-        Option<String>,
-        Option<swarm::screen::Prompt>,
-    );
-    let screens: Vec<Option<ScreenRead>> = std::thread::scope(|scope| {
+    // time, so six agents cost about one capture. A pi pane's host record is read beside it.
+    type HostRead = Option<(swarm::host::HookState, i64)>;
+    let screens: Vec<(Option<ScreenRead>, HostRead)> = std::thread::scope(|scope| {
         let reads: Vec<_> = rows
             .iter()
             .zip(&alive)
@@ -4169,45 +4246,57 @@ fn list_agents_from(
                     (Some(true), Some(pane)) => Some((pane, provider.as_deref())),
                     _ => None,
                 };
+                let seen_work = matches!(row.state.as_deref(), Some("working" | "waiting"));
                 scope.spawn(move || {
-                    let (pane, provider) = target?;
-                    let output =
-                        adapter.screen(&[("pane", pane)], std::time::Duration::from_millis(300))?;
-                    let prompt = swarm::screen::whole_prompt(&output, || {
-                        adapter.capture_within(
-                            &[("pane", pane)],
-                            std::time::Duration::from_millis(300),
-                        )
-                    });
-                    let (state, detail) = swarm::screen::read_pane(provider, &output, || {
-                        adapter.capture_within(
-                            &[("pane", pane)],
-                            std::time::Duration::from_millis(300),
-                        )
-                    })?;
-                    Some((state, detail, prompt))
+                    let Some((pane, provider)) = target else {
+                        return (None, None);
+                    };
+                    let host = host_record_of(adapter, provider, pane, seen_work);
+                    (read_screen(adapter, pane, provider), host)
                 })
             })
             .collect();
         reads
             .into_iter()
-            .map(|read| read.join().ok().flatten())
+            .map(|read| read.join().unwrap_or((None, None)))
             .collect()
     });
     // All reads must finish in time; a due ring below can run past their deadline.
     adapter.check_deadline()?;
     let mut chair_row_idle = false;
     let mut agents = Vec::new();
-    for (((mut row, alive), screen), provider) in
+    for (((mut row, alive), (screen, host)), provider) in
         rows.into_iter().zip(alive).zip(screens).zip(providers)
     {
         let (screen, detail, prompt) = match screen {
             Some((screen, detail, prompt)) => (Some(screen), detail, prompt),
             None => (None, None, None),
         };
+        // A host record is stored with its own time when it differs from the row, so a record
+        // read again keeps the time its turn began.
+        if let Some((record, at)) = &host
+            && (
+                row.state.as_deref(),
+                row.state_kind.as_deref(),
+                row.state_source.as_deref(),
+                row.state_at,
+            ) != (Some(record.state), record.kind, Some("host"), Some(*at))
+        {
+            match store_state(connection, session_id, &row.id, record, "host", *at) {
+                Ok(_) => {
+                    row.state = Some(record.state.to_string());
+                    row.state_kind = record.kind.map(str::to_string);
+                    (row.state_at, row.state_source, row.state_detail) =
+                        (Some(*at), Some("host".into()), record.detail.clone());
+                }
+                Err(error) => eprintln!("swarm: host record not stored: {error}"),
+            }
+        }
         let (state, write) = if swarm::screen::held_by_send(row.sent_at, row.state_at, screen, now)
         {
             (Some("working".to_string()), None)
+        } else if let Some((record, _)) = &host {
+            (Some(record.state.to_string()), None)
         } else {
             swarm::screen::resolve(
                 provider.as_deref(),

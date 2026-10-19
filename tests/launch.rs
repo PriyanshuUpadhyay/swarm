@@ -712,6 +712,133 @@ fn a_send_stores_the_turn_start_hook_as_the_ring_proof() {
     }
 }
 
+/// `seat_session` whose adapter also has a `status` verb that prints `$HOME/status`, the seat's
+/// program-status record, or nothing while that file is missing.
+fn status_session(home: &Path, provider: &str, ring: &str) -> (String, rusqlite::Connection) {
+    let made = seat_session(home, provider, ring);
+    let conf = home.join(".swarm/adapters/fake.conf");
+    let mut text = std::fs::read_to_string(&conf).unwrap();
+    text.push_str("status = cat \"$HOME/status\" 2>/dev/null || true\n");
+    std::fs::write(conf, text).unwrap();
+    made
+}
+
+fn listed_seat(home: &Path, session: &str) -> serde_json::Value {
+    let output = swarm(home, &chair(session), &["agents", "--json"]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    let list: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    list["agents"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|agent| agent["id"] == "seat")
+        .unwrap()
+        .clone()
+}
+
+/// A pi seat's state comes from its host record, with the record's own time, ahead of the screen
+/// (ADR 0070). A hooked provider keeps its hook, so a record never replaces it.
+#[test]
+fn a_pi_seat_shows_its_host_record_as_its_state() {
+    let home = scratch("host-pi");
+    std::fs::write(
+        home.join("screen"),
+        include_str!("fixtures/screens/pi-idle.txt"),
+    )
+    .unwrap();
+    let (session, connection) = status_session(&home, "pi", "true");
+    let status = |record: &str| std::fs::write(home.join("status"), record).unwrap();
+    status("state=working:at=100");
+    let seat = listed_seat(&home, &session);
+    assert_eq!(
+        (&seat["state"], &seat["state_source"], &seat["state_at_s"]),
+        (&"working".into(), &"host".into(), &100.into()),
+        "{seat}"
+    );
+    status("state=blocked:kind=question:at=110");
+    let seat = listed_seat(&home, &session);
+    assert_eq!(
+        (&seat["state"], &seat["state_kind"], &seat["state_at_s"]),
+        (&"waiting".into(), &"question".into(), &110.into()),
+        "{seat}"
+    );
+    status("state=done:at=120");
+    let seat = listed_seat(&home, &session);
+    assert_eq!(
+        (&seat["state"], &seat["state_source"], &seat["state_at_s"]),
+        (&"done".into(), &"host".into(), &120.into()),
+        "{seat}"
+    );
+    swarm::store::set_provider(&connection, &session, "seat", "claude").unwrap();
+    std::fs::write(
+        home.join("screen"),
+        include_str!("fixtures/screens/claude-idle.txt"),
+    )
+    .unwrap();
+    status("state=working:at=130");
+    let seat = listed_seat(&home, &session);
+    assert_ne!(seat["state_at_s"], 130, "{seat}");
+}
+
+/// A pi seat has no hook, so the record its host keeps proves the ring: a turn the record shows
+/// as started at or after the ring.
+#[test]
+fn a_host_record_after_the_ring_proves_a_pi_ring() {
+    let home = scratch("host-proof-pi");
+    std::fs::write(
+        home.join("screen"),
+        include_str!("fixtures/screens/pi-idle.txt"),
+    )
+    .unwrap();
+    std::fs::write(home.join("status"), "state=done:at=1").unwrap();
+    let (session, _connection) = status_session(
+        &home,
+        "pi",
+        "printf 'state=working:at=%s' \"$(date +%s)\" > \"$HOME/status\"",
+    );
+    let sent = swarm(&home, &chair(&session), &["send", "seat", "task"]);
+    assert!(sent.status.success(), "{}", stderr(&sent));
+    let listed = swarm(&home, &chair(&session), &["messages", "--json"]);
+    let listed: serde_json::Value = serde_json::from_slice(&listed.stdout).unwrap();
+    assert_eq!(
+        listed["messages"][0]["delivery"],
+        "hook",
+        "{}",
+        stderr(&sent)
+    );
+}
+
+/// AGY draws no input box that swarm reads, so a ring to it first waits for AGY's own record,
+/// which AGY reports once it takes input.
+#[test]
+fn a_ring_to_an_agy_seat_waits_for_its_ready_record() {
+    let home = scratch("agy-ready");
+    std::fs::write(
+        home.join("screen"),
+        include_str!("fixtures/screens/agy-idle.txt"),
+    )
+    .unwrap();
+    let (session, _connection) = status_session(
+        &home,
+        "agy",
+        "cat \"$HOME/status\" > \"$HOME/rang\" 2>/dev/null; SWARM_AGENT_ID=seat \"$SWARM_EXE\" hook agy PreInvocation < /dev/null",
+    );
+    let ready = {
+        let status = home.join("status");
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_secs(1));
+            std::fs::write(status, "state=idle:at=1").unwrap();
+        })
+    };
+    let sent = swarm(&home, &chair(&session), &["send", "seat", "task"]);
+    assert!(sent.status.success(), "{}", stderr(&sent));
+    ready.join().unwrap();
+    assert_eq!(
+        std::fs::read_to_string(home.join("rang")).unwrap_or_default(),
+        "state=idle:at=1"
+    );
+}
+
 /// A chair and an AGY seat whose screen is `$HOME/screen`, with one unseen message to the seat
 /// whose first ring, appended to `$HOME/rings`, went out two minutes ago. Each ring starts a turn,
 /// so the seat's screen shows it working and proves the ring.
