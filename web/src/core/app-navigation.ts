@@ -5,6 +5,8 @@ import { chatRows, currentRow, navRows, shareTree, workspaceOf, type ChoiceOp, t
 import { message, markable } from "./app-types";
 import type { App } from "./app";
 
+const CLOSE_READ_TIMEOUT_MS = 5_000;
+
 type NavRead = { workspace: string; writeSeq: number; navSeq: number };
 
 export class AppNavigation {
@@ -251,10 +253,17 @@ export class AppNavigation {
     closed();
     if (!wasOpen) return;
     let next: Tabs | null = null;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
-      next = (await this.app.api.tabs(workspace)).view;
+      next = await Promise.race([
+        this.app.api.tabs(workspace).then((tabs) => tabs.view),
+        // A stalled strip read must release the close queue.
+        new Promise<null>((resolve) => { timer = setTimeout(() => resolve(null), CLOSE_READ_TIMEOUT_MS); }),
+      ]);
     } catch {
       // The landing shows.
+    } finally {
+      clearTimeout(timer);
     }
     if (seq !== this.app.navSeq) return;
     if (next) this.app.tabs = next;

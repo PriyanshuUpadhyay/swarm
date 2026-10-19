@@ -15,7 +15,7 @@ function deferred() {
   return { promise, resolve };
 }
 
-function harness(options: { tabOnly?: boolean; live?: boolean; beforeClose?: () => Promise<void>; beforeArchive?: () => Promise<void>; refuse?: boolean; failArchive?: boolean } = {}) {
+function harness(options: { tabOnly?: boolean; live?: boolean; beforeClose?: () => Promise<void>; beforeArchive?: () => Promise<void>; beforeTabs?: () => Promise<void>; refuse?: boolean; failArchive?: boolean } = {}) {
   const writes: ChoiceOp[] = [];
   const actions: string[] = [];
   const notices: string[] = [];
@@ -47,7 +47,10 @@ function harness(options: { tabOnly?: boolean; live?: boolean; beforeClose?: () 
   const api = {
     snapshot: async () => snapshot,
     tree: async () => tree(),
-    tabs: async () => ({ version: revision, revision: `rev-${revision}`, view: tabs }),
+    tabs: async () => {
+      await options.beforeTabs?.();
+      return { version: revision, revision: `rev-${revision}`, view: tabs };
+    },
     rows: async () => ({ page: { start_offset: 0, end_offset: 0 }, rows: [], usage: null }),
     choice: async (_revision: string, op: ChoiceOp) => {
       writes.push(op);
@@ -110,6 +113,25 @@ describe("closing tabs", () => {
     expect(writes.flatMap((op) => op.op === "close_tab" ? [op.chat] : [])).toEqual([sessions.next]);
     expect(app.openId).toBe(sessions.older);
     expect(app.closedTabs).toEqual([sessions.open, sessions.next]);
+  });
+
+  it("lets a later close run after a strip read never settles", async () => {
+    vi.useFakeTimers();
+    try {
+      const nextSession = "b";
+      const { app, writes } = harness({ beforeTabs: () => new Promise(() => {}) });
+      const settled = vi.fn();
+      const closing = Promise.all([app.closeTab(), app.closeTab(nextSession)]).then(settled);
+      await vi.advanceTimersByTimeAsync(4999);
+      expect(writes.filter((op) => op.op === "close_tab")).toHaveLength(1);
+      expect(settled).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(writes.flatMap((op) => op.op === "close_tab" ? [op.chat] : [])).toEqual(["c", nextSession]);
+      expect(settled).toHaveBeenCalledOnce();
+      await closing;
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("leaves the nav sequence unchanged when a background tab closes", async () => {
