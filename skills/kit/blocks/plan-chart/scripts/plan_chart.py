@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """Check a plan's step table and draw it as one HTML page for the owner to review.
 
-  plan_chart.py <plan.md>    write plan.html beside it, or stop with the first defect and exit 1
+  plan_chart.py <plan.md>    write the chart into plan.md and plan.html beside it, or stop with the first defect and exit 1
 
 `Done when:` is a result line, then a bullet per claim, then `Evidence:` and a bullet per proof.
 The table is the step-run table (| File | Needs | Holds |) with two more columns, Block and Why, so
 `references/step_run.py start <run> <plan.md>` runs the same file once the owner approves it.
 A second table, | Block | Status | Why |, lists every catalog block once as Chosen or Rejected. The script checks it
 against the step table, draws it under the chart, and prints it grouped for the plan reply.
+The Mermaid chart and the Dropped line go into plan.md between the START and END markers, so the approved plan.md
+holds the chart the owner saw, and plan.html draws the same text with the pinned Pele build in ../assets.
 """
 
 import html
@@ -18,9 +20,10 @@ from pathlib import Path
 KIT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(KIT / "references"))  # python3 -I does not add it
 import step_run  # noqa: E402
-from block_ledger import ledger_groups, ledger_markdown  # noqa: E402
-from block_resolver import read_toml, resolve_blocks  # noqa: E402
+from block_resolver import read_parents, read_toml, resolve_blocks  # noqa: E402
 
+ASSETS = Path(__file__).resolve().parents[1] / "assets"
+START, END = "<!-- plan-chart:start -->", "<!-- plan-chart:end -->"
 HEAD = re.compile(r"\|\s*File\s*\|\s*Needs\s*\|\s*Holds\s*\|\s*Block\s*\|\s*Why\s*\|")
 
 
@@ -122,6 +125,10 @@ def conflicts(block):
     return [c.strip() for c in line[1].strip("\"'").split(",") if c.strip()] if line else []
 
 
+def parents():
+    return read_parents({p.parent.name: p for p in sorted((KIT / "blocks").glob("*/SKILL.md"))})
+
+
 def check(title, done, rows):
     """Each step's needed step files, or SystemExit with the first defect."""
     if not rows:
@@ -182,6 +189,12 @@ ul.steps{list-style:none;padding:0;margin:0;display:grid;grid-template-columns:r
 .step p{margin:.25rem 0;font-size:14px}
 .step code{font-size:13px;background:#eef;padding:0 .25rem;border-radius:3px}
 .end{border-color:#6a5acd}
+#chart{margin:0;overflow-x:auto}
+.dropped{color:#666;font-size:14px;margin:.5rem 0 2rem}
+#chart pre{white-space:pre-wrap;font-size:13px}
+.pele{--pele-bg:#fafafa;--pele-font:system-ui,sans-serif}
+table{border-collapse:collapse;font-size:14px}
+td{padding:.2rem .75rem .2rem 0;vertical-align:top}
 """
 
 
@@ -195,21 +208,100 @@ def render_done(done, claims, proofs):
     return f'<div class="done"><p>Done when: {inline(done)}</p>{items(claims)}<p>Evidence:</p>{items(proofs)}</div>'
 
 
+def short(text, words=12):
+    """The first `words` words of a reason, with a cut `code` span closed."""
+    cut = text.split()
+    if len(cut) <= words:
+        return text
+    text = " ".join(cut[:words]) + "…"
+    return text + "`" if text.count("`") % 2 else text
+
+
+def ledger_rows(ledger):
+    """[(status, [(label, why)])]: one row per block, each part right under its parent."""
+    part_of = {part: parent for parent, parts in parents().items() for part in parts}
+    groups = []
+    for status in ("Chosen", "Rejected"):
+        names = sorted(b for b, (s, _) in ledger.items() if s == status)
+        order = sorted(names, key=lambda b: (part_of.get(b, b), b in part_of, b))
+        rows = []
+        for block in order:
+            parent = part_of.get(block)
+            label = block if not parent else f"↳ {block}" if parent in names else f"{parent} ↳ {block}"
+            rows.append((label, short(ledger[block][1])))
+        groups.append((status, rows))
+    return groups
+
+
+def ledger_markdown(ledger):
+    out = []
+    for status, rows in ledger_rows(ledger):
+        out += [f"### {status} ({len(rows)})", "", "| Block | Why |", "|---|---|"]
+        out += [f"| {label} | {why.replace('|', '&#124;')} |" for label, why in rows] + [""]
+    return "\n".join(out)
+
+
 def render_ledger(ledger):
     out = ['<section><h2>Blocks considered</h2><p>Say "drop X", "add Y", or "add sub-block Z" and the plan is made again.</p>']
-    for status, entries in ledger_groups(ledger, blocks_toml().get("aliases", {})):
-        items = []
-        for label, members in entries:
-            if members:
-                subs = "".join(f"<li><code>{html.escape(m)}</code>: {inline(ledger[m][1])}</li>" for m in members)
-                items.append(f"<li><code>{html.escape(label)}</code> (sub-blocks)<ul>{subs}</ul></li>")
-            else:
-                items.append(f"<li><code>{html.escape(label)}</code>: {inline(ledger[label][1])}</li>")
-        out.append(f"<h3>{status} ({sum(len(m) or 1 for _, m in entries)})</h3><ul>{''.join(items)}</ul>")
+    for status, rows in ledger_rows(ledger):
+        items = "".join(f"<tr><td><code>{html.escape(label)}</code></td><td>{inline(why)}</td></tr>" for label, why in rows)
+        out.append(f"<h3>{status} ({len(rows)})</h3><table>{items}</table>")
     return "".join(out) + "</section>"
 
 
-def render(title, done, rows, uses, ledger, claims, proofs):
+def label(*lines):
+    """A quoted Mermaid label: each line escaped as #code; so no text can end the label or the graph."""
+    return '"' + "<br/>".join(re.sub(r'[#"<>\[\]{}()|&`%;]', lambda m: f"#{ord(m[0])};", " ".join(t.split())) for t in lines) + '"'
+
+
+def mermaid(rows, uses):
+    """flowchart TD text: a node per step, arrows from Needs, and a subgraph only round a stage of parallel steps."""
+    ids = {r[0]: f"s{i}" for i, r in enumerate(rows, 1)}
+    by_name = {r[0]: r for r in rows}
+    used = {u for need in uses.values() for u in need}
+    out = ["flowchart TD"]
+    for i, group in enumerate(stages(uses), 1):
+        if len(group) > 1:
+            out.append(f"  subgraph S{i}[{label(f'{i} · parallel')}]")
+        for step in group:
+            text = label(step, " · ".join(by_name[step][3]))
+            out.append(f"{'    ' if len(group) > 1 else '  '}{ids[step]}{f'([{text}])' if step not in used else f'[{text}]'}")
+        if len(group) > 1:
+            out.append("  end")
+    out += [f"  {ids[u]} --> {ids[n]}" for n in ids for u in uses[n]]
+    return "\n".join(out) + "\n"
+
+
+def dropped_line(ledger):
+    """`Dropped (N): a, parent (part, part), other ↳ (part)`: names only; the Rejected table holds the reasons."""
+    rejected = sorted(b for b, (status, _) in ledger.items() if status == "Rejected")
+    if not rejected:
+        return ""
+    groups = {}
+    for parent, parts in parents().items():
+        if here := [p for p in parts if p in rejected]:
+            groups[parent] = here
+    folded = {p for parts in groups.values() for p in parts}
+    heads = sorted({b for b in rejected if b not in folded} | set(groups))
+    names = [f"{h}{'' if h in rejected else ' ↳'} ({', '.join(groups[h])})" if h in groups else h for h in heads]
+    return f"Dropped ({len(rejected)}): {', '.join(names)}"
+
+
+def put_chart(plan, chart, dropped):
+    """Write the chart fence and the dropped line between the markers, right under the title; replace the old ones."""
+    text = plan.read_text(encoding="utf-8")
+    block = f"{START}\n```mermaid\n{chart}```\n" + (f"\n{dropped}\n" if dropped else "") + END
+    if START in text and END in text:
+        new = text[:text.index(START)] + block + text[text.index(END) + len(END):]
+    else:
+        lines = text.split("\n")
+        at = next((i + 1 for i, line in enumerate(lines) if line.startswith("# ")), 0)
+        new = "\n".join(lines[:at] + ["", block] + lines[at:])
+    if new != text:
+        plan.write_text(new, encoding="utf-8")
+
+
+def render(title, done, rows, uses, ledger, claims, proofs, chart, dropped):
     holds = {r[0]: r[2] for r in rows}
     by_name = {r[0]: r for r in rows}
     selected = resolve_blocks(None, {r[0]: r[3] for r in rows}, "default", blocks_dir=KIT / "blocks", pack=False)
@@ -231,6 +323,10 @@ def render(title, done, rows, uses, ledger, claims, proofs):
     return (f'<!doctype html><html lang="en"><meta charset="utf-8"><title>{html.escape(title)}</title>'
             f"<style>{CSS}</style><h1>{html.escape(title)}</h1>"
             f"{render_done(done, claims, proofs)}"
+            f'<div id="chart"><pre>{html.escape(chart)}</pre></div>'
+            f"<script>{(ASSETS / 'pele.global.js').read_text(encoding='utf-8')}</script>"
+            "<script>const c=document.getElementById('chart');pele.mount(c,c.textContent)</script>"
+            f'<p class="dropped">{html.escape(dropped)}</p>'
             f'<figure><ol class="stages">{"".join(out)}</ol>'
             f"<figcaption>Stages run top to bottom. Steps in one stage run in parallel. "
             f"Each step gets the outputs that its Gets line names.</figcaption></figure>{render_ledger(ledger)}</html>\n")
@@ -249,10 +345,12 @@ def main(argv):
     claims, proofs = read_claims(plan)
     ledger = read_ledger(plan)
     check_ledger(rows, ledger)
+    chart, dropped = mermaid(rows, uses), dropped_line(ledger)
+    put_chart(plan, chart, dropped)
     page = plan.with_suffix(".html")
-    page.write_text(render(title, done, rows, uses, ledger, claims, proofs), encoding="utf-8")
+    page.write_text(render(title, done, rows, uses, ledger, claims, proofs, chart, dropped), encoding="utf-8")
     print(page)
-    print(ledger_markdown(ledger, blocks_toml().get("aliases", {})))
+    print(ledger_markdown(ledger))
 
 
 if __name__ == "__main__":

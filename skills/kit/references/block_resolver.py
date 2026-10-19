@@ -21,6 +21,24 @@ def kit_profile(kit, kit_file, name):
     return profile
 
 
+def read_parents(files):
+    """{parent: [parts]} from {block: SKILL.md path}. Membership has one owner: a parent's metadata.parts."""
+    parents = {}
+    for block, path in files.items():
+        text = read_utf8(path)
+        head = text[3:].partition("\n---\n")[0] if text.startswith("---\n") else ""
+        meta = dict(re.findall(r"^  (kind|parts): (.*)$", head, re.M))
+        meta = {k: v.strip().strip("\"'") for k, v in meta.items()}
+        if "parts" in meta and meta.get("kind") != "parent":
+            raise SystemExit(f"block {block}: parts is only allowed on kind: parent")
+        if meta.get("kind") == "parent":
+            parts = [p.strip() for p in meta.get("parts", "").split(",") if p.strip()]
+            if not parts:
+                raise SystemExit(f"parent {block} has no parts")
+            parents[block] = parts
+    return parents
+
+
 def resolve_blocks(root, wanted, profile_name, *, blocks_dir=None, pack=True, params_override=None, judge_todos=False):
     """For each step key in `wanted` (key -> catalog block ids), the blocks it gets from the catalog and
     the repo's .blocks.toml, packed by the profile: (Skills read items, rules text, script todos). Also
@@ -110,20 +128,7 @@ def resolve_blocks(root, wanted, profile_name, *, blocks_dir=None, pack=True, pa
         if not isinstance(reason, str) or not one_line(reason).strip():  # the text that the Off line prints
             raise SystemExit(f"[off] {block} needs a reason in {repo_file}")
 
-    # Membership has one owner: a parent's metadata.parts, never a field on its parts.
-    parents, parent_of = {}, {}
-    for block, path in files.items():
-        text = read_utf8(path)
-        head = text[3:].partition("\n---\n")[0] if text.startswith("---\n") else ""
-        meta = dict(re.findall(r"^  (kind|parts): (.*)$", head, re.M))
-        meta = {k: v.strip().strip("\"'") for k, v in meta.items()}
-        if "parts" in meta and meta.get("kind") != "parent":
-            raise SystemExit(f"block {block}: parts is only allowed on kind: parent")
-        if meta.get("kind") == "parent":
-            parts = [p.strip() for p in meta.get("parts", "").split(",") if p.strip()]
-            if not parts:
-                raise SystemExit(f"parent {block} has no parts")
-            parents[block] = parts
+    parents, parent_of = read_parents(files), {}
     for parent, parts in parents.items():
         for part in parts:
             if part not in files:
