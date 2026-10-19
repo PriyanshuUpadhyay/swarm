@@ -11,8 +11,10 @@ swarm ships as one Homebrew formula (ADR 0079). The web UI is inside the `swarm`
 for the pace in `~/Library/Application Support/SwarmHUD/history.json`. `swarm hud install` starts it
 at login. Closed, it shows a pixel mascot that works, waits or sleeps with the swarm agents, and a
 ring for the best account's fullest limit; the open card shows the same mascot larger, with its
-credit. Swarm's own mascot and 16 open-licence guests take turns every 10 minutes. `python3 -I
-Tools/mascots.py` rebuilds the guests' sheets from pinned commits, and `MASCOT-NOTICE` holds
+credit. A Codex account row shows its usage limit resets under its name. Swarm's own mascot, its
+bee, 23 open-licence guests and any pets installed for Codex (`$CODEX_HOME/pets`, by default
+`~/.codex/pets`, read once at launch) take turns every 10 minutes. `python3 -I Tools/mascots.py`
+rebuilds the guests' sheets from pinned commits, and `MASCOT-NOTICE` holds
 their licences, which `make package` appends to `libexec/NOTICE`. `SwarmHUD --snapshot <dir> --fixture
 Tests/SwarmHUDTests/fixtures/nine-accounts.json --closed Tests/SwarmHUDTests/fixtures/closed.json
 --history Tests/SwarmHUDTests/fixtures/history.json --working Tests/SwarmHUDTests/fixtures/working.json
