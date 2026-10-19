@@ -3253,6 +3253,7 @@ fn add_agent(
 fn register_spawned_pane(
     connection: &rusqlite::Connection,
     adapter: &swarm::adapter::Adapter,
+    verb: &str,
     session_id: &str,
     agent_id: &str,
     role: &str,
@@ -3264,7 +3265,7 @@ fn register_spawned_pane(
     if let Some(provider) = provider {
         swarm::store::set_provider(connection, session_id, agent_id, provider)?;
     }
-    let pane = match adapter.run("spawn", vars) {
+    let pane = match adapter.run(verb, vars) {
         Ok(pane) => pane,
         Err(error) => {
             swarm::store::remove_agent(connection, session_id, agent_id)?;
@@ -3401,17 +3402,11 @@ fn spawn_agent(
         ("adapter", current_adapter.as_str()),
         ("panes", panes.as_str()),
     ];
-    let pane = register_spawned_pane(
-        connection,
-        &adapter,
-        &session_id,
-        agent_id,
-        role,
-        provider.map(Provider::id),
-        &vars,
-        options.runner.map(|runner| (runner, options.account)),
-    )?;
-    if !options.command.is_empty() {
+    // The launch line, built before the pane exists, so a host with `run` can make it the pane's
+    // program instead of typing it into a shell.
+    let text = if options.command.is_empty() {
+        None
+    } else {
         // When run through the pane's `runs/<session>/bin/swarm` link, current_exe is that link,
         // and linking to it would make the link point at itself.
         let exe = std::fs::canonicalize(env::current_exe()?)?;
@@ -3452,10 +3447,26 @@ fn spawn_agent(
             swarm::adapter::shell_line(options.command)
         };
         let line = script_line(root, &session_id, agent_id, &format!("{path}{child}"))?;
-        adapter.run(
-            "ring",
-            &[("pane", &pane), ("text", &format!("{line}; {hook}"))],
-        )?;
+        Some(format!("{line}; {hook}"))
+    };
+    let program = text.as_deref().filter(|_| adapter.run_line.is_some());
+    let mut vars = vars.to_vec();
+    if let Some(text) = program {
+        vars.push(("command", text));
+    }
+    let pane = register_spawned_pane(
+        connection,
+        &adapter,
+        if program.is_some() { "run" } else { "spawn" },
+        &session_id,
+        agent_id,
+        role,
+        provider.map(Provider::id),
+        &vars,
+        options.runner.map(|runner| (runner, options.account)),
+    )?;
+    if let Some(text) = text.as_deref().filter(|_| program.is_none()) {
+        adapter.run("ring", &[("pane", &pane), ("text", text)])?;
     }
     println!("{pane}");
     if let Some(account) = account {
@@ -8467,6 +8478,7 @@ mod tests {
         register_spawned_pane(
             &connection,
             &adapter,
+            "spawn",
             &session,
             CODER,
             "code.complex",
@@ -8517,6 +8529,7 @@ mod tests {
             register_spawned_pane(
                 &connection,
                 &failed,
+                "spawn",
                 &session,
                 CODER,
                 "coder",
@@ -8541,6 +8554,7 @@ mod tests {
             register_spawned_pane(
                 &connection,
                 &working,
+                "spawn",
                 &session,
                 CODER,
                 "coder",

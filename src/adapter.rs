@@ -21,6 +21,9 @@ pub struct Adapter {
     pub key: Option<String>,
     /// Prints the pid of the host client, for window activation after focus.
     pub client: Option<String>,
+    /// Opens a pane whose program is `$SWARM_COMMAND`, the launch line `spawn` would ring, and
+    /// prints its id. With it, `launch` does not ring the line into a shell.
+    pub run_line: Option<String>,
 }
 
 /// The adapters this binary carries, which are the ones it is tested against.
@@ -102,6 +105,7 @@ fn build(name: &str, mut verbs: Verbs) -> Result<Adapter, Box<dyn std::error::Er
         screen: verbs.remove("screen"),
         key: verbs.remove("key"),
         client: verbs.remove("client"),
+        run_line: verbs.remove("run"),
     };
     if let Some(key) = verbs.keys().next() {
         return Err(format!("adapter {name}: unknown key {key}").into());
@@ -199,6 +203,10 @@ impl Adapter {
                 .client
                 .as_ref()
                 .ok_or_else(|| format!("swarm: {} has no client", self.name))?,
+            "run" => self
+                .run_line
+                .as_ref()
+                .ok_or_else(|| format!("swarm: {} has no run", self.name))?,
             _ => return Err(format!("adapter: unknown verb {verb}").into()),
         };
         if let Some(deadline) = self.deadline {

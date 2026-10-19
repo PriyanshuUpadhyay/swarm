@@ -2522,3 +2522,54 @@ fn spawn_names_only_this_sessions_seat_panes() {
         "a1:[]\na2:[pane-a1]\nb1:[]\na3:[pane-a1 pane-a2]\n"
     );
 }
+
+/// An adapter with `run` opens the pane with the launch line as its program, so swarm does not
+/// ring the line into a shell. One without `run` still rings it.
+#[test]
+fn a_run_verb_gets_the_launch_line_and_nothing_is_rung() {
+    let home = scratch("run-verb");
+    std::fs::create_dir_all(home.join(".swarm/adapters")).unwrap();
+    let verbs = "self = printf chair\n\
+         spawn = printf pane-spawn\n\
+         ring = printf '%s\\n' \"$SWARM_TEXT\" >> \"$HOME/rings\"\n\
+         list = true\nclose = true\ncapture = true\n";
+    std::fs::write(
+        home.join(".swarm/adapters/fake.conf"),
+        format!(
+            "{verbs}run = printf '%s|%s' \"$SWARM_AGENT_ID\" \"$SWARM_COMMAND\" > \"$HOME/program\"; printf pane-run\n"
+        ),
+    )
+    .unwrap();
+    std::fs::write(home.join(".swarm/adapters/plain.conf"), verbs).unwrap();
+    let mut seen = Vec::new();
+    for adapter in ["fake", "plain"] {
+        let session = swarm(
+            &home,
+            &[("SWARM_ADAPTER", adapter)],
+            &["session", "new", "lane"],
+        );
+        assert!(session.status.success(), "{}", stderr(&session));
+        let session = String::from_utf8(session.stdout)
+            .unwrap()
+            .trim()
+            .to_string();
+        let chair = [
+            ("SWARM_ADAPTER", adapter),
+            ("SWARM_SESSION_ID", session.as_str()),
+            ("SWARM_AGENT_ID", "orchestrator"),
+        ];
+        let output = swarm(&home, &chair, &["spawn", "seat", "coder", "--", "true"]);
+        assert!(output.status.success(), "{adapter}: {}", stderr(&output));
+        seen.push(String::from_utf8(output.stdout).unwrap().trim().to_string());
+    }
+    assert_eq!(seen, ["pane-run", "pane-spawn"]);
+    let program = std::fs::read_to_string(home.join("program")).unwrap();
+    assert!(program.starts_with("seat|"), "{program}");
+    assert!(
+        program.contains("seat.sh'; '") && program.ends_with("'exited'"),
+        "{program}"
+    );
+    let rings = std::fs::read_to_string(home.join("rings")).unwrap();
+    assert_eq!(rings.lines().count(), 1, "{rings}");
+    assert!(rings.ends_with("'exited'\n"), "{rings}");
+}
