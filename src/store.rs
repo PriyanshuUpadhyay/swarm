@@ -134,6 +134,13 @@ fn migrate_locked(connection: &mut Connection) -> Result<(), Box<dyn std::error:
     // first; taking the write lock before the read waits on busy_timeout instead. The version is
     // read again under the lock, because another swarm may have migrated since.
     let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    // Only a key that the migration breaks refuses it; an older broken row is not its fault.
+    let broken = |tx: &rusqlite::Transaction| -> rusqlite::Result<i64> {
+        tx.query_row("SELECT count(*) FROM pragma_foreign_key_check", [], |row| {
+            row.get(0)
+        })
+    };
+    let broken_before = broken(&tx)?;
 
     let version: i64 = tx.query_row("PRAGMA user_version", [], |row| row.get(0))?;
     if version == 0 {
@@ -203,11 +210,12 @@ fn migrate_locked(connection: &mut Connection) -> Result<(), Box<dyn std::error:
         tx.pragma_update(None, "user_version", 13)?;
     }
 
-    let broken: i64 = tx.query_row("SELECT count(*) FROM pragma_foreign_key_check", [], |row| {
-        row.get(0)
-    })?;
-    if broken > 0 {
-        return Err(format!("migration left {broken} rows with a broken foreign key").into());
+    let added = broken(&tx)? - broken_before;
+    if added > 0 {
+        return Err(format!(
+            "migration would break a foreign key in {added} rows, so it changed nothing; report this swarm bug"
+        )
+        .into());
     }
 
     tx.commit()?;
@@ -2743,6 +2751,34 @@ mod tests {
                 )
                 .is_err()
         );
+    }
+
+    /// A broken key from before the migration, such as a row an older build or a hand edit left,
+    /// is not the rebuild's fault, so it does not refuse the database.
+    #[test]
+    fn migration_keeps_a_database_whose_old_rows_already_break_a_key() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        for migration in &MIGRATIONS[..12] {
+            connection.execute_batch(migration).unwrap();
+        }
+        connection.pragma_update(None, "user_version", 12).unwrap();
+        connection
+            .pragma_update(None, "foreign_keys", false)
+            .unwrap();
+        connection
+            .execute_batch(&format!(
+                "INSERT INTO session (id, talk_mode, cwd) VALUES ('{SESSION}', 'lane', '/test');
+                 INSERT INTO job (session_id, agent_id, kind) VALUES ('{SESSION}', 'gone', 'build');"
+            ))
+            .unwrap();
+        connection
+            .pragma_update(None, "foreign_keys", true)
+            .unwrap();
+        migrate(&mut connection).unwrap();
+        let version: i64 = connection
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, MIGRATIONS.len() as i64);
     }
 
     /// A host record is the agent's own report, as a hook is, so it proves a ring, and its `done`

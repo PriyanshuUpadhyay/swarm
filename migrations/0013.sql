@@ -1,7 +1,7 @@
 -- A host record (ADR 0070), such as Rex's program status, is a state source too. SQLite cannot
--- change a column check, so `agent` is rebuilt with the same columns. `migrate` runs before
--- `open` turns foreign keys on, and the keys of `message` and `job` name `agent` by name, so they
--- hold after the rename.
+-- change a column check, so `agent` is rebuilt with the same columns. `migrate` turns foreign
+-- keys off for the rebuild and checks them before the commit. The keys of `message` and `job` name
+-- `agent` by name, so they hold after the rename.
 CREATE TABLE agent_0013 (
     id TEXT NOT NULL,
     session_id TEXT NOT NULL REFERENCES session(id),
