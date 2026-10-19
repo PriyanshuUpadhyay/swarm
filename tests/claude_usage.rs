@@ -293,10 +293,11 @@ fn curl_timeout_uses_the_remaining_deadline() {
 #[test]
 fn current_config_home_uses_its_own_keychain_service() {
     let home = fixture("current-keychain");
+    // swarm writes the auth header to curl's stdin, so a fake that exits unread breaks the pipe.
     tool(
         &home,
         "curl",
-        "echo '{\"five_hour\":{\"utilization\":10}}'; printf '\\n200'",
+        "cat >/dev/null; echo '{\"five_hour\":{\"utilization\":10}}'; printf '\\n200'",
     );
     let output = Command::new(env!("CARGO_BIN_EXE_swarm"))
         .env_clear()
