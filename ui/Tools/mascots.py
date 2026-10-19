@@ -130,18 +130,19 @@ def main() -> None:
                         {"idle": looking, "working": run, "waiting": walk, "sleeping": ([looking[0][0]], 1.0)}))
 
         # Pixel Agents: 16 x 32 cells, row 0 faces front; 0-2 walk, 3-4 type, 5-6 read.
-        for n in range(6):
+        for n in range(6):  # char_0.png to char_5.png at the pinned commit
             agent = fetch(f"{AGENTS}/char_{n}.png", tmp / f"agent{n}.png")
             pc = lambda c: crop(agent, f"16x32+{c * 16}+0", tmp / f"agent{n}-{c}.png")
-            entries.append(("worker" if n == 0 else f"worker{n + 1}", "Office worker" if n == 0 else f"Office worker {n + 1}",
+            entries.append((f"worker{n + 1}", "Office worker" if n == 0 else f"Office worker {n + 1}",
                             "pixel-agents (MIT); art from JIK-A-4 MetroCity (CC0)", False, {
                 "idle": ([pc(1)], 1.0), "working": ([pc(3), pc(4)], 4.0),
                 "waiting": ([pc(5), pc(6)], 2.0), "sleeping": ([pc(1)], 1.0),
             }))
 
         # Ninja Adventure animals: two 16 px frames, sitting and leaping.
-        for mascot_id, name in [("frog", "Frog"), ("raccoon", "Raccoon")]:
-            actor = fetch(f"{NINJA}/{name.replace('Raccoon', 'Racoon')}/SpriteSheet.png", tmp / f"{mascot_id}.png")
+        # The pack spells the raccoon's folder "Racoon".
+        for mascot_id, name, folder in [("frog", "Frog", "Frog"), ("raccoon", "Raccoon", "Racoon")]:
+            actor = fetch(f"{NINJA}/{folder}/SpriteSheet.png", tmp / f"{mascot_id}.png")
             sit, leap = (crop(actor, f"16x16+{c * 16}+0", tmp / f"{mascot_id}-{c}.png") for c in (0, 1))
             entries.append((mascot_id, name, "Pixel-boy and AAA, Ninja Adventure (CC0)", False, {
                 "idle": ([sit], 1.0), "working": ([sit, leap], 4.0),

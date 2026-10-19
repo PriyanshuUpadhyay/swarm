@@ -10,6 +10,9 @@ import SwiftUI
 // for the closed renders (default: `--fixture`). Without `--snapshot` the HUD runs.
 let arguments = CommandLine.arguments
 if let at = arguments.firstIndex(of: "--snapshot"), arguments.count > at + 1 {
+    // The owner's own Codex pets would make the cast sheet differ by machine; set CODEX_HOME to
+    // render a test pet.
+    if ProcessInfo.processInfo.environment["CODEX_HOME"] == nil { setenv("CODEX_HOME", "/var/empty", 1) }
     MainActor.assumeIsolated { snapshot(to: URL(fileURLWithPath: arguments[at + 1]), arguments: arguments) }
     exit(0)
 }

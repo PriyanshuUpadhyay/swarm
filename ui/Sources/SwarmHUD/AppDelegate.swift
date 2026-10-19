@@ -42,6 +42,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+        // The cast decodes every sheet, the owner's Codex pets too; do it before the first draw needs it.
+        DispatchQueue.global(qos: .utility).async { _ = MascotCast.guests }
         buildPanel()
         reposition()
         model.read()

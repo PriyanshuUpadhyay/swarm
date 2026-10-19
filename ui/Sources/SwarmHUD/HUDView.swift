@@ -558,9 +558,10 @@ struct AccountName: View {
                 .lineLimit(1).truncationMode(.middle).help(account.name)
             // A Codex account's resets sit under its name, where the row has a free second line.
             if let credits = account.resetCredits, let short = credits.short() {
+                let full = credits.text() ?? short
                 Text(short).font(.system(size: 11)).foregroundStyle(Palette.tertiary).lineLimit(1)
-                    .help("\(credits.text() ?? short)\nRedeem one in ChatGPT settings.")
-                    .accessibilityLabel(credits.text() ?? short)
+                    .help("\(full)\nRedeem one in ChatGPT settings.")
+                    .accessibilityLabel(full)
             }
         }
         .frame(width: Layout.nameColumn, alignment: .leading)

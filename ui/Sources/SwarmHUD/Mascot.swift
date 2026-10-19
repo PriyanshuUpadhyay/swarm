@@ -517,30 +517,49 @@ extension Guest {
                   columns: columns, sheet: image, animations: animations)
     }
 
+    /// Each decoded sheet stays in memory, so the cast takes at most this many Codex pets, each at
+    /// most 4096 x 4096 pixels (Codex's own sheet is 1536 x 1872).
+    static let maxCodexPets = 16, maxSheetSide = 4096
+
     /// The pets the owner installed for Codex, `<home>/pets/<id>/pet.json`, by folder name. A pet
-    /// whose manifest or sheet does not read, or whose sheet is smaller than its grid, is left out.
+    /// whose manifest or sheet does not read, whose sheet is too big, or whose sheet is smaller than
+    /// its grid, is left out with a line on stderr.
     static func codexPets(home: URL) -> [Guest] {
         let pets = home.appendingPathComponent("pets")
         let ids = (try? FileManager.default.contentsOfDirectory(atPath: pets.path))?.sorted() ?? []
-        return ids.compactMap { id in
+        return Array(ids.compactMap { id -> Guest? in
             let folder = pets.appendingPathComponent(id)
-            guard let data = try? Data(contentsOf: folder.appendingPathComponent("pet.json")),
-                  let pet = try? CodexPetManifest.parse(data, folder: id),
-                  let source = CGImageSourceCreateWithURL(folder.appendingPathComponent(pet.sheetPath) as CFURL, nil),
-                  let sheet = CGImageSourceCreateImageAtIndex(source, 0, nil),
-                  sheet.width >= pet.frame.width * pet.frame.columns,
-                  sheet.height >= pet.frame.height * pet.frame.rows else { return nil }
+            let skip = { (why: String) -> Guest? in
+                FileHandle.standardError.write(Data("SwarmHUD: Codex pet \(id) left out: \(why)\n".utf8))
+                return nil
+            }
+            guard let data = try? Data(contentsOf: folder.appendingPathComponent("pet.json")) else { return nil }
+            let pet: CodexPetManifest
+            do { pet = try CodexPetManifest.parse(data, folder: id) } catch { return skip("\(error)") }
+            guard let source = CGImageSourceCreateWithURL(folder.appendingPathComponent(pet.sheetPath) as CFURL, nil),
+                  let size = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+                  let width = size[kCGImagePropertyPixelWidth] as? Int, let height = size[kCGImagePropertyPixelHeight] as? Int
+            else { return skip("\(pet.sheetPath) does not read as an image") }
+            guard width <= maxSheetSide, height <= maxSheetSide else { return skip("sheet is \(width) x \(height)") }
+            guard width >= pet.frame.width * pet.frame.columns, height >= pet.frame.height * pet.frame.rows,
+                  let sheet = CGImageSourceCreateImageAtIndex(source, 0, nil)
+            else { return skip("sheet is smaller than its frame grid") }
             return Guest(name: pet.name, credit: "Your Codex pet", ownZ: false, smooth: true,
                          cell: CGSize(width: pet.frame.width, height: pet.frame.height), columns: pet.frame.columns,
                          sheet: sheet, animations: pet.animations)
-        }
+        }.prefix(maxCodexPets))
     }
 }
 
 /// Who takes turns: turn 0 is the busiest provider's own art, turn 1 swarm's bee, then the built-in
 /// guests, then the owner's Codex pets.
 enum MascotCast {
-    /// Read once at launch; a pet installed later joins at the next launch.
+    static let beeTurn = 1
+    /// Turns of swarm's own art before the first guest: the provider family and the bee.
+    static let ownTurns = 2
+
+    /// Read once; the HUD warms it off the main thread at launch (`AppDelegate`), and a pet
+    /// installed later joins at the next launch.
     static let guests: [Guest] = SheetMascot.all.compactMap(Guest.init) + Guest.codexPets(home: codexHome)
 
     static var codexHome: URL {
@@ -548,14 +567,16 @@ enum MascotCast {
             ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex")
     }
 
-    static var count: Int { guests.count + 2 }
+    static var count: Int { guests.count + ownTurns }
 
-    static func guest(_ turn: Int) -> Guest? { turn >= 2 && !guests.isEmpty ? guests[(turn - 2) % guests.count] : nil }
+    static func guest(_ turn: Int) -> Guest? {
+        turn >= ownTurns && !guests.isEmpty ? guests[(turn - ownTurns) % guests.count] : nil
+    }
 
     /// The own art that draws `turn` when it is not a guest's.
-    static func family(_ family: String, turn: Int) -> String { turn == 1 ? "bee" : family }
+    static func family(_ family: String, turn: Int) -> String { turn == beeTurn ? "bee" : family }
 
-    static func name(_ turn: Int) -> String { guest(turn)?.name ?? (turn == 1 ? "Swarm bee" : "Swarm") }
+    static func name(_ turn: Int) -> String { guest(turn)?.name ?? (turn == beeTurn ? "Swarm bee" : "Swarm") }
 
     static func fps(turn: Int, state: MascotState) -> Double { guest(turn)?.fps(state) ?? state.fps }
 }
@@ -602,7 +623,8 @@ func mascotCue(_ state: MascotState, seconds: Double?, ownZ: Bool, strained: Boo
 }
 
 /// Draws one frame of whoever has the turn, `height` points tall and centred; wide art shrinks to
-/// the canvas width. The cue sits above the art's right edge and stays inside the canvas. The bee
+/// the canvas width. The cue sits above the art, at its right edge or, for the sweat drop, its left
+/// edge, and stays inside the canvas. The bee
 /// works in a swarm of `crowd` bees, up to 3.
 struct MascotCanvas: View {
     let family: String
@@ -636,7 +658,8 @@ struct MascotCanvas: View {
                 for bee in 0..<bees {
                     // Each bee beats its wings a frame apart, the middle one a little higher.
                     let pose = mascotPose(family: own, state: state, tick: tick.map { $0 + bee })
-                    let lift = bees > 1 && bee == 1 ? cell * 2 : 0
+                    // Only as high as the free space above the art, so no wing leaves the canvas.
+                    let lift = bees > 1 && bee == 1 ? min(cell * 2, max((size.height - h) / 2 - pose.bob * cell, 0)) : 0
                     let rect = CGRect(x: left + CGFloat(bee) * w, y: snap((size.height - h) / 2 - pose.bob * cell - lift), width: w, height: h)
                     draw(pose.sprite, { pose.palette[$0] }, at: rect.origin, cell: cell, in: context)
                     frame = frame.union(rect)

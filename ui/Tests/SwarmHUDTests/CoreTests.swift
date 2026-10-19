@@ -279,6 +279,7 @@ private func account(_ provider: String, _ name: String, _ windows: [UsageWindow
 @Test func codexMetersCarryResetCreditsToTheAccount() throws {
     let json = #"{"schema":"swarm.usage.v1","meters":[{"provider":"codex","account":"w","label":"w","window":"primary","window_minutes":300,"used_pct":40,"state":"fresh","reset_credits":{"available":2,"expiry_time_seconds":[1792703000,null]}},{"provider":"claude","account":"c","label":"c","window":"5h","used_pct":1,"state":"fresh","reset_credits":null}]}"#
     let list = accounts(from: try UsageSnapshot.decode(Data(json.utf8)).meters)
+    try #require(list.count == 2)
     #expect(list[0].resetCredits == ResetCredits(available: 2, expiryTimeSeconds: [1792703000, nil]))
     #expect(list[1].resetCredits == nil)
 }
@@ -323,6 +324,7 @@ private func account(_ provider: String, _ name: String, _ windows: [UsageWindow
 
 @Test func codexPetManifestRefusesAPathOutsideItsFolderAndBadFrames() {
     for json in [#"{"spritesheetPath":"../x.webp"}"#, #"{"spritesheetPath":"/etc/x.webp"}"#,
+                 #"{"spritesheetPath":"~/x.webp"}"#, #"{"spritesheetPath":"a/../../x.webp"}"#,
                  #"{"frame":{"width":0,"height":208,"columns":8,"rows":9}}"#,
                  #"{"animations":{"idle":{"frames":[72]}}}"#, #"{"animations":{"idle":{"frames":[]}}}"#] {
         #expect(throws: (any Error).self) { try CodexPetManifest.parse(Data(json.utf8), folder: "p") }
@@ -340,5 +342,7 @@ private func account(_ provider: String, _ name: String, _ windows: [UsageWindow
     #expect(BestAccount(account: calm, outlook: .left(1800)).offersReset)
     #expect(!BestAccount(account: calm, outlook: .lasts).offersReset)
     #expect(!BestAccount(account: account("codex", "w", [window(.session, 90)]), outlook: .lasts).offersReset)
-    #expect(!BestAccount(account: account("claude", "c", [window(.session, 99)]), outlook: .lasts).offersReset)
+    var claude = account("claude", "c", [window(.session, 99)])
+    claude.resetCredits = codex.resetCredits
+    #expect(!BestAccount(account: claude, outlook: .lasts).offersReset)
 }

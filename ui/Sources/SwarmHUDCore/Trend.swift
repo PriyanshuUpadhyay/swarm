@@ -239,8 +239,11 @@ extension BestAccount {
     /// A failed read keeps the last numbers, so they are marked old like a stale meter.
     public func isOld(readFailed: Bool) -> Bool { readFailed || account.windows.contains { !$0.isFresh } }
 
+    /// The worse of the used percent and the pace, so a ring that will fill soon warns early.
+    public var ringSeverity: Severity { max(Severity(pct: fullest), severity) }
+
     /// The ring warns, so even the account with the most room is near a limit: the pet sweats.
-    public var strained: Bool { max(Severity(pct: fullest), severity) != .calm }
+    public var strained: Bool { ringSeverity != .calm }
 
     /// A Codex reset would help now: the best account is Codex, strained, and has a reset left.
     public var offersReset: Bool { account.provider == "codex" && strained && (account.resetCredits?.available ?? 0) > 0 }
@@ -252,9 +255,9 @@ public enum UsageRing: Equatable, Sendable {
     case reading(usedPct: Int, severity: Severity, old: Bool)
 }
 
-/// Coloured by the worse of the used percent and the pace, so a ring that will fill soon warns early.
+/// Coloured by `ringSeverity`.
 public func usageRing(_ best: BestAccount?, readFailed: Bool) -> UsageRing {
     guard let best else { return .none }
-    return .reading(usedPct: best.fullest, severity: max(Severity(pct: best.fullest), best.severity),
+    return .reading(usedPct: best.fullest, severity: best.ringSeverity,
                     old: best.isOld(readFailed: readFailed))
 }
