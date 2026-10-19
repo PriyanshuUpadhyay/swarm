@@ -6,6 +6,7 @@ use swarm::view::{
     choices::{self, ChoiceOp, OwnerChoices, PendingTab, ViewState},
     navigation,
     tabs::{self, Grouping, TabGroup, TabStrip},
+    tree::AgentStatus,
 };
 fn strip(open: &[&str]) -> TabStrip {
     TabStrip {
@@ -892,8 +893,27 @@ fn a_chat_started_in_a_tab_stays_out_of_the_sidebar() {
     };
     let after = main_row(&owner, &state);
     assert_eq!(count(&after.detail), count(&before.detail) - 1);
+    // Its status and badges skip the hidden chat too, so a waiting tab chat shows no waiting row.
+    assert_eq!(after.status, Some(AgentStatus::Working));
+    assert!(
+        after
+            .counts
+            .iter()
+            .all(|c| c.status != AgentStatus::Waiting)
+    );
     let view = tabs::view(&tree, &owner, &state, "/repo/wt/main", 1, &BTreeMap::new()).unwrap();
     let tab_only = |id: &str| view.tabs.iter().find(|t| t.id == id).unwrap().tab_only;
     assert!(tab_only("review"));
     assert!(!tab_only("design"));
+    // A live tab chat whose tab left the strip without an archive shows in the sidebar again.
+    let strip = owner.tabs.get_mut("/repo/wt/main").unwrap();
+    strip.open.retain(|k| !k.contains("review"));
+    let rows: Vec<_> =
+        swarm::view::tree::sections(&tree, &owner, &state, false, 1, &BTreeMap::new())
+            .into_iter()
+            .flat_map(|s| s.rows)
+            .map(|r| r.id)
+            .collect();
+    assert!(rows.contains(&"chat:review".to_owned()));
+    assert_eq!(main_row(&owner, &state).status, before.status);
 }
