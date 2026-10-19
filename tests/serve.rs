@@ -997,8 +997,18 @@ fn chat_routes_run_the_real_cli_against_a_fake_provider_and_adapter() {
     // Numbered choices send the digit alone; arrow choices send Enter (Prompt::keys).
     assert!(!actions().contains("key fixture-chair Enter\n"));
     assert!(actions().contains("interrupt fixture-chair\n"));
-    post("/api/agent/close", target);
     let connection = rusqlite::Connection::open(server.dir.join("home/.swarm/swarm.db")).unwrap();
+    // A removed worktree's chat: its folder is gone, and its pane still closes.
+    connection
+        .execute(
+            "UPDATE session SET cwd = ?1 WHERE id = ?2",
+            (
+                server.dir.join("removed-worktree").to_str().unwrap(),
+                &server.session,
+            ),
+        )
+        .unwrap();
+    post("/api/agent/close", target);
     assert_eq!(
         swarm::store::pane_of(&connection, &server.session, "orchestrator").unwrap(),
         None
@@ -1193,6 +1203,33 @@ fn workspace_lifecycle_http_refuses_unlisted_paths_before_any_change() {
         "keep"
     );
     assert!(!server.dir.join("home/actions").exists());
+
+    let shown = json!({"text":"Delete failed","page":"/"}).to_string();
+    let (status, ..) = server.request(
+        "POST",
+        "/api/ui-error",
+        "Content-Type: application/json\r\n",
+        &shown,
+        true,
+    );
+    assert_eq!(status, 204);
+    let entries: Vec<Value> = fs::read_to_string(root.join("errors.jsonl"))
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    let delete = entries
+        .iter()
+        .find(|e| e["uri"] == "/api/workspace/delete")
+        .unwrap();
+    assert_eq!(delete["status"], 403);
+    assert_eq!(delete["request"]["workspace"], json!(outside));
+    assert!(delete["reply"]["error"].is_string());
+    let last = entries.last().unwrap();
+    assert_eq!(
+        (&last["source"], &last["text"]),
+        (&json!("ui"), &json!("Delete failed"))
+    );
 }
 
 #[test]

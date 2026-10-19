@@ -6,7 +6,6 @@
 import { CopyIcon, Maximize2Icon, Minimize2Icon, PowerIcon, SquareIcon, TerminalIcon } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { flushSync } from "react-dom";
-import { toast } from "sonner";
 import type { App, Pane, Strip } from "../core/app";
 import { attachCommand, chatWidth, columns, columnWidth, midTurn, saveSplit, splitShare, waitingMessage, type PaneCell, type PaneWidths } from "../core/panes";
 import { Button } from "../components/ui/button";
@@ -14,6 +13,7 @@ import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuLabel, Con
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "../components/ui/dialog";
 import { PromptCard } from "./composer";
 import { copyText } from "./copy";
+import { showError } from "./errors";
 import { StatusGlyph } from "./status";
 import { store } from "./store";
 import { ChatView, PaneBody } from "./transcript";
@@ -33,7 +33,7 @@ function readWidths(): PaneWidths {
 
 type Action = { title: string; label: string; icon: React.ReactNode; disabled?: boolean; run: () => void };
 
-const failed = (err: unknown) => toast.error(err instanceof Error ? err.message : String(err));
+const failed = (err: unknown) => showError(err instanceof Error ? err.message : String(err));
 
 export function PaneStrip({ app }: { app: App }) {
   const strip = useSyncExternalStore(app.subscribe, () => app.view.strip);
