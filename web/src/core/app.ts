@@ -186,24 +186,8 @@ export class App {
     return this.navigation.choose(op);
   }
 
-  moveSelection(to: number | "home" | "end", e?: KeyboardEvent) {
-    return this.sidebar.moveSelection(to, e);
-  }
-
-  collapse(e?: KeyboardEvent) {
-    return this.sidebar.collapse(e);
-  }
-
-  expand(e?: KeyboardEvent) {
-    return this.sidebar.expand(e);
-  }
-
   toggle(id: string) {
     return this.sidebar.toggle(id);
-  }
-
-  activate(e?: KeyboardEvent) {
-    return this.sidebar.activate(e);
   }
 
   unarchiving = new Set<string>();
@@ -268,14 +252,6 @@ export class App {
     return this.navigation.chatTitle(session);
   }
 
-  pickChat(n: number, e?: KeyboardEvent) {
-    return this.navigation.pickChat(n, e);
-  }
-
-  stepChat(delta: number, e?: KeyboardEvent) {
-    return this.navigation.stepChat(delta, e);
-  }
-
   openWaiting(e?: KeyboardEvent) {
     return this.actions.openWaiting(e);
   }
@@ -287,20 +263,12 @@ export class App {
     return this.navigation.reopenTab();
   }
 
-  stepRecent(delta: number, e?: KeyboardEvent) {
-    return this.navigation.stepRecent(delta, e);
-  }
-
   closeTab(key?: string) {
     return this.navigation.closeTab(key);
   }
 
   openChat(sessionId: string, e?: KeyboardEvent, opts: { write?: boolean; history?: boolean; tabOnly?: boolean } = {}) {
     return this.navigation.openChat(sessionId, e, opts);
-  }
-
-  stepWorkspace(delta: number, e?: KeyboardEvent) {
-    return this.navigation.stepWorkspace(delta, e);
   }
 
   reader(id: string): Reader {
@@ -413,10 +381,6 @@ export class App {
 
   paneFocused(agent: string | null) {
     return this.panes.paneFocused(agent);
-  }
-
-  revealChat() {
-    return this.panes.revealChat();
   }
 
   movePaneFocus(direction: Direction): boolean {
