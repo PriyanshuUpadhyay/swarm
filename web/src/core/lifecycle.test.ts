@@ -82,6 +82,13 @@ describe("new workspace", () => {
     expect(life.state.newWorkspace).toBeNull();
   });
 
+  it("closes on success and starts an empty chat in the new workspace", async () => {
+    const { life, calls } = fakeApp(async () => ({ workspace: NEW_WORKSPACE }));
+    life.state = { ...life.state, newWorkspace: { project: "/work/proj" } };
+    await life.create({ project: "/work/proj", name: "Fix", mode: "new-branch", base: "main" });
+    expect(calls.slice(-2)).toEqual([`select ${NEW_WORKSPACE}`, `chat ${NEW_WORKSPACE} `]);
+  });
+
   it("closes on success and starts a chat with the issue's title and body in its draft", async () => {
     const issue = { number: 7, title: "Fix Sidebar", body: "Use less space" };
     const { life, calls } = fakeApp(async () => ({ workspace: NEW_WORKSPACE, issue }));

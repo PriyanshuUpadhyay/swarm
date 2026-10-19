@@ -150,7 +150,8 @@ pub struct ArchivedChat {
 }
 impl Workspace {
     /// The chats the sidebar lists: a chat started in a tab shows only as a tab (ADR 0085)
-    /// while its tab is open, so a live chat that lost its tab still shows (ADR 0093).
+    /// while its tab is open, so a live chat that lost its tab still shows (ADR 0093). The first
+    /// open tab always shows, so a workspace with only tab chats still has a row (ADR 0094).
     pub fn listed_chats<'a>(&'a self, owner: &'a OwnerChoices) -> impl Iterator<Item = &'a Chat> {
         let open = owner
             .tabs
@@ -158,9 +159,10 @@ impl Workspace {
             .cloned()
             .unwrap_or_else(|| self.seed_tabs())
             .open;
-        self.chats
-            .iter()
-            .filter(move |c| !(owner.tab_chats.contains(&c.key) && open.contains(&c.key)))
+        self.chats.iter().filter(move |c| {
+            open.first() == Some(&c.key)
+                || !(owner.tab_chats.contains(&c.key) && open.contains(&c.key))
+        })
     }
     pub fn chat(&self, id: &str) -> Option<&Chat> {
         self.chats
