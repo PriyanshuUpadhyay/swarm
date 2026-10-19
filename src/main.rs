@@ -343,9 +343,14 @@ fn valid_session_id(id: &str) -> Result<String, String> {
 /// Every agent pane has one of these set. It is a guard against a model's mistake, not a trust
 /// boundary.
 fn in_agent_pane() -> bool {
-    ["TMUX_PANE", "HERDR_PANE_ID", "SUPERSET_TERMINAL_ID"]
-        .iter()
-        .any(|name| env::var_os(name).is_some())
+    [
+        "TMUX_PANE",
+        "HERDR_PANE_ID",
+        "SUPERSET_TERMINAL_ID",
+        "REX_BLOCK",
+    ]
+    .iter()
+    .any(|name| env::var_os(name).is_some())
 }
 
 /// What one hook call reports: the session and agent, the state with its detail and wait kind,
@@ -4732,11 +4737,11 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             &session,
             chair.as_ref().map(|(p, id)| (p.as_str(), id.as_str())),
         )?;
-        // A chair in a Herdr, Superset, or tmux pane is registered here, so it needs no ids of its
-        // own. The app's `tmux-swarm` chair is launched as an agent instead. A child pane already
-        // has an agent id, and registering it would take its pane from its own session.
+        // A chair in a Herdr, Superset, Rex, or tmux pane is registered here, so it needs no ids of
+        // its own. The app's `tmux-swarm` chair is launched as an agent instead. A child pane
+        // already has an agent id, and registering it would take its pane from its own session.
         if env::var_os("SWARM_AGENT_ID").is_none()
-            && matches!(adapter.as_str(), "herdr" | "superset" | "tmux")
+            && matches!(adapter.as_str(), "herdr" | "superset" | "rex" | "tmux")
             && own_pane().is_ok()
         {
             add_agent(

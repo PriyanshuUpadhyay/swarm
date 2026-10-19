@@ -41,6 +41,24 @@ This session is a worker pane, a child of the orchestrator session. Act only on 
 - Remain a leaf: no provider-native subagents, workflow fan-out, headless one-shots, review rounds, or multi-agent pipelines.
 - Report results to the orchestrator only; do not notify the user."#;
 
+const REX_CONTEXT: &str = r#"[agent-host: rex]
+This session is running inside a Rex block. The top-level session is the orchestrator.
+- A pane worker is a Rex block in the same session; the first one splits right of this block and the rest stack below it.
+- Open one session per run with `swarm session new lane`; it registers this block as the orchestrator.
+- Spawn with `swarm launch <unique-name> ROLE --cwd "$PWD" [-- extra agent flags]`; it resolves the provider, model and effort, prepares trust, and opens the pane.
+- Send work with `swarm send <name> ask`; a reply arrives as the prompt `swarm: new message`, then `swarm inbox`, read, `swarm ack`. Close with `swarm close <name>`.
+- Native background subagents are allowed. Prefer a visible pane when the user must watch or answer the worker, when it runs on another provider, or when a skill asks for visible seats.
+- Do not use headless CLIs or detached processes.
+- For pane lifecycle detail, load `~/.swarm/kit/skills/swarm-orchestrator/SKILL.md`.
+- When the run is done, notify the owner with `swarm notify "swarm: <project> done" --body "<one line>"`; swarm itself notifies when an agent waits on a permission or a question.
+- Workers are leaves: answer only, do not orchestrate, spawn descendants, or notify the user."#;
+
+const REX_WORKER_CONTEXT: &str = r#"[agent-host: rex — worker]
+This session is a worker pane, a child of the orchestrator session. Act only on the task you were assigned.
+- Never spawn panes: `swarm launch`, `swarm spawn`, and Rex block-creating commands (`rex split`, `rex run`, `rex new`) are orchestrator-only.
+- Remain a leaf: no provider-native subagents, workflow fan-out, headless one-shots, review rounds, or multi-agent pipelines.
+- Report results to the orchestrator only; do not notify the user."#;
+
 // The app opens the session and launches the chair as `orchestrator` before the CLI starts, so
 // the chair must not open a second session that the app would not show.
 const APP_CONTEXT: &str = r#"[agent-host: swarm-app]
@@ -72,15 +90,24 @@ fn in_superset(env: impl Fn(&str) -> Option<String>) -> bool {
     env("SUPERSET_TERMINAL_ID").is_some_and(|terminal| !terminal.is_empty())
 }
 
+/// Whether this process runs in a Rex block. A tmux started from a Rex block copies `REX_BLOCK`
+/// into every one of its panes, naming the outer block, but sets its own `TERM_PROGRAM`.
+fn in_rex(env: impl Fn(&str) -> Option<String>) -> bool {
+    env("REX_BLOCK").is_some_and(|block| !block.is_empty())
+        && env("TERM_PROGRAM").as_deref() == Some("rex")
+}
+
 /// The adapter every pane verb uses: `SWARM_ADAPTER` when set, else `herdr` in a Herdr pane, else
-/// `superset` in a Superset terminal, else `tmux`. So a chair in Herdr or Superset reaches its
-/// panes with no variable of its own to keep set.
+/// `superset` in a Superset terminal, else `rex` in a Rex block, else `tmux`. So a chair in Herdr,
+/// Superset, or Rex reaches its panes with no variable of its own to keep set.
 pub fn adapter(env: impl Fn(&str) -> Option<String>) -> String {
     env("SWARM_ADAPTER").unwrap_or_else(|| {
         if in_herdr(&env) {
             "herdr".into()
         } else if in_superset(&env) {
             "superset".into()
+        } else if in_rex(&env) {
+            "rex".into()
         } else {
             "tmux".into()
         }
@@ -91,12 +118,15 @@ pub fn adapter(env: impl Fn(&str) -> Option<String>) -> String {
 /// Herdr wins over Superset and the app's tmux host when they match too, because its pane is the
 /// one on screen. An explicit `SWARM_ADAPTER` other than `superset` skips Superset, so a chair that
 /// names tmux or `tmux-swarm` in a Superset terminal gets that host's contract, as `adapter()` does.
+/// Rex follows the same rule after Superset.
 pub fn context(provider: &str, env: impl Fn(&str) -> Option<String>) -> Option<String> {
     let set = |name: &str| env(name).is_some_and(|value| !value.is_empty());
     let (chair, worker) = if in_herdr(&env) {
         (HERDR_CONTEXT, HERDR_WORKER_CONTEXT)
     } else if in_superset(&env) && env("SWARM_ADAPTER").is_none_or(|name| name == "superset") {
         (SUPERSET_CONTEXT, SUPERSET_WORKER_CONTEXT)
+    } else if in_rex(&env) && env("SWARM_ADAPTER").is_none_or(|name| name == "rex") {
+        (REX_CONTEXT, REX_WORKER_CONTEXT)
     } else if env("SWARM_ADAPTER").as_deref() == Some("tmux-swarm")
         && set("SWARM_SESSION_ID")
         && set("TMUX_PANE")
@@ -708,6 +738,46 @@ mod tests {
         assert!(herdr.starts_with("[agent-host: herdr]\n"));
     }
 
+    const REX: [(&str, &str); 2] = [("REX_BLOCK", "block:1"), ("TERM_PROGRAM", "rex")];
+
+    #[test]
+    fn a_rex_block_picks_rex_unless_herdr_superset_or_swarm_adapter_wins() {
+        assert_eq!(adapter(env(&REX)), "rex");
+        assert_eq!(adapter(env(&[("REX_BLOCK", ""), REX[1]])), "tmux");
+        assert_eq!(adapter(env(&[HERDR[0], HERDR[1], REX[0], REX[1]])), "herdr");
+        assert_eq!(adapter(env(&[SUPERSET[0], REX[0], REX[1]])), "superset");
+        assert_eq!(
+            adapter(env(&[REX[0], REX[1], ("SWARM_ADAPTER", "tmux")])),
+            "tmux"
+        );
+    }
+
+    #[test]
+    fn a_tmux_pane_inside_rex_is_not_a_rex_block() {
+        let nested = [REX[0], ("TERM_PROGRAM", "tmux"), ("TMUX_PANE", "%0")];
+        assert_eq!(adapter(env(&nested)), "tmux");
+        assert_eq!(context("claude", env(&nested)), None);
+    }
+
+    #[test]
+    fn the_rex_contract_marks_chair_and_worker() {
+        let chair = context("claude", env(&REX)).unwrap();
+        assert!(chair.starts_with("[agent-host: rex]\n"));
+        let worker = context(
+            "claude",
+            env(&[REX[0], REX[1], ("SWARM_AGENT_ID", "cl-seat-1")]),
+        );
+        assert!(worker.unwrap().starts_with("[agent-host: rex — worker]"));
+        let herdr = context("claude", env(&[HERDR[0], HERDR[1], REX[0], REX[1]])).unwrap();
+        assert!(herdr.starts_with("[agent-host: herdr]\n"));
+        assert_eq!(
+            context("claude", env(&[REX[0], REX[1], ("SWARM_ADAPTER", "tmux")])),
+            None
+        );
+        let named = context("claude", env(&[REX[0], REX[1], ("SWARM_ADAPTER", "rex")]));
+        assert!(named.unwrap().starts_with("[agent-host: rex]\n"));
+    }
+
     #[test]
     fn outside_a_host_codex_gets_an_empty_object_and_claude_nothing() {
         assert_eq!(
@@ -748,12 +818,13 @@ mod tests {
     #[test]
     fn only_the_chair_contracts_name_swarm_notify() {
         let line = "- When the run is done, notify the owner with `swarm notify";
-        for chair in [HERDR_CONTEXT, SUPERSET_CONTEXT, APP_CONTEXT] {
+        for chair in [HERDR_CONTEXT, SUPERSET_CONTEXT, REX_CONTEXT, APP_CONTEXT] {
             assert!(chair.contains(line), "{chair}");
         }
         for worker in [
             HERDR_WORKER_CONTEXT,
             SUPERSET_WORKER_CONTEXT,
+            REX_WORKER_CONTEXT,
             APP_WORKER_CONTEXT,
         ] {
             assert!(!worker.contains("swarm notify"), "{worker}");
