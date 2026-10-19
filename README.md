@@ -374,8 +374,10 @@ seat panes joined by spaces, so a host that stacks seats anchors only on its own
 An adapter may also have a `run` verb. It gets the spawn variables and `SWARM_COMMAND`, the launch
 line with its `swarm exited`, opens a pane that runs that line as its program, and prints the pane
 id. With `run`, `launch` and `spawn` do not ring the line into a shell. The Rex adapter keeps such a
-block open after the line ends, and its `list` verb leaves the ended block out. Only a shipped
-adapter may name `run`, because an older binary refuses a file with an unknown verb.
+block open after the line ends, and its `list` verb leaves the ended block out. A deployed file
+that changes `spawn` or `list` turns off the shipped `run` unless it names its own `run`. Do not put
+`run` in a deployed file that an older binary may read, because an older binary refuses a file with
+an unknown verb.
 Claude, Codex, and AGY run
 `swarm host-context --provider <claude|codex|agy>` as a SessionStart hook to learn the host contract.
 

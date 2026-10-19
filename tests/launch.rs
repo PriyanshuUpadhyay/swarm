@@ -2610,6 +2610,18 @@ fn exited_finds_its_own_pane_before_the_pane_is_stored() {
         std::fs::read_to_string(home.join(format!(".swarm/runs/{session}/seat.log"))).unwrap(),
         "last words"
     );
+    let unknown = [
+        ("SWARM_ADAPTER", "fake"),
+        ("SWARM_SESSION_ID", session.as_str()),
+        ("SWARM_AGENT_ID", "ghost"),
+    ];
+    let refused = swarm(&home, &unknown, &["exited"]);
+    assert!(!refused.status.success());
+    assert!(
+        stderr(&refused).contains("no agent ghost"),
+        "{}",
+        stderr(&refused)
+    );
 }
 
 /// A second spawn of a live seat's id is refused before it writes anything, so the live seat's

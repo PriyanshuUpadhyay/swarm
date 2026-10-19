@@ -5461,10 +5461,10 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         }
         [cmd] if cmd == "exited" => {
             // A `run` pane can end before swarm stores it. This runs inside that pane, so the
-            // adapter's `self` names it.
-            let pane = match swarm::store::require_pane(&connection, &session_id, &agent_id) {
-                Ok(pane) => pane,
-                Err(error) => own_pane().map_err(|_| error)?,
+            // adapter's `self` names it. An id the session does not hold stays an error.
+            let pane = match swarm::store::pane_of(&connection, &session_id, &agent_id) {
+                Ok(None) => own_pane()?,
+                _ => swarm::store::require_pane(&connection, &session_id, &agent_id)?,
             };
             let text =
                 swarm::adapter::load(&root, &adapter_name())?.run("capture", &[("pane", &pane)])?;

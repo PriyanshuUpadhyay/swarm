@@ -123,9 +123,15 @@ pub fn load(root: &std::path::Path, name: &str) -> Result<Adapter, Box<dyn std::
         (Some(base), Ok(text)) => {
             let mut merged = verbs(name, base)?;
             let deployed = verbs(name, &text)?;
-            // `run` opens the same pane as `spawn`, so a machine's own `spawn` stays in force
-            // unless its file names `run` too.
-            if deployed.contains_key("spawn") && !deployed.contains_key("run") {
+            // `run` stands in for the shipped `spawn` and needs the shipped `list`, which leaves an
+            // ended pane out. A machine's own `spawn` or `list` stays in force unless its file
+            // names `run` too.
+            let changed = |verb: &str| {
+                deployed
+                    .get(verb)
+                    .is_some_and(|line| merged.get(verb) != Some(line))
+            };
+            if (changed("spawn") || changed("list")) && !deployed.contains_key("run") {
                 merged.remove("run");
             }
             merged.extend(deployed);
@@ -594,8 +600,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
-    /// `run` opens the same pane as `spawn`, so a machine's own `spawn` stays in force: the shipped
-    /// `run` drops out unless the deployed file names `run` too.
+    /// `run` stands in for `spawn` and needs the shipped `list`, so a machine's own `spawn` or
+    /// `list` stays in force: the shipped `run` drops out unless the file names `run` too.
     #[test]
     fn a_deployed_spawn_turns_off_the_shipped_run() {
         let root = std::env::temp_dir().join(format!("swarm-adapter-run-{}", std::process::id()));
@@ -607,6 +613,11 @@ mod tests {
         let edited = load(&root, "rex").unwrap();
         assert_eq!(edited.spawn, "own-split");
         assert_eq!(edited.run_line, None);
+        std::fs::write(adapters.join("rex.conf"), "list = own-list\n").unwrap();
+        assert_eq!(load(&root, "rex").unwrap().run_line, None);
+        // A full copy of the shipped file changes nothing, so it keeps the shipped `run`.
+        std::fs::write(adapters.join("rex.conf"), shipped("rex").unwrap()).unwrap();
+        assert!(load(&root, "rex").unwrap().run_line.is_some());
         std::fs::write(
             adapters.join("rex.conf"),
             "spawn = own-split\nrun = own-run\n",
