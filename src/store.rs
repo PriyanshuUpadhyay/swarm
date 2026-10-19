@@ -27,6 +27,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0010.sql"),
     include_str!("../migrations/0011.sql"),
     include_str!("../migrations/0012.sql"),
+    include_str!("../migrations/0013.sql"),
 ];
 
 #[derive(serde::Serialize)]
@@ -118,6 +119,17 @@ fn migrate(connection: &mut Connection) -> Result<(), Box<dyn std::error::Error>
     if version == MIGRATIONS.len() as i64 {
         return Ok(());
     }
+    // Migration 0013 rebuilds `agent`. SQLite's rebuild steps need foreign keys off, and a
+    // transaction cannot change that, so it is off for the whole migration and checked before
+    // the commit.
+    let keys: bool = connection.query_row("PRAGMA foreign_keys", [], |row| row.get(0))?;
+    connection.pragma_update(None, "foreign_keys", false)?;
+    let migrated = migrate_locked(connection);
+    connection.pragma_update(None, "foreign_keys", keys)?;
+    migrated
+}
+
+fn migrate_locked(connection: &mut Connection) -> Result<(), Box<dyn std::error::Error>> {
     // Immediate: a read that later upgrades to a write fails at once when another swarm migrated
     // first; taking the write lock before the read waits on busy_timeout instead. The version is
     // read again under the lock, because another swarm may have migrated since.
@@ -137,6 +149,14 @@ fn migrate(connection: &mut Connection) -> Result<(), Box<dyn std::error::Error>
             "database made by another swarm build; use another SWARM_HOME or delete it".into(),
         );
     }
+    // Counted only in a db that is swarm's: another program's keys may not even parse. Only a key
+    // that the migration breaks refuses it; an older broken row is not its fault.
+    let broken = |tx: &rusqlite::Transaction| -> rusqlite::Result<i64> {
+        tx.query_row("SELECT count(*) FROM pragma_foreign_key_check", [], |row| {
+            row.get(0)
+        })
+    };
+    let broken_before = broken(&tx)?;
     if version < 2 {
         tx.execute_batch(MIGRATIONS[1])?;
     }
@@ -184,6 +204,19 @@ fn migrate(connection: &mut Connection) -> Result<(), Box<dyn std::error::Error>
     if version < 12 {
         tx.execute_batch(MIGRATIONS[11])?;
         tx.pragma_update(None, "user_version", 12)?;
+    }
+
+    if version < 13 {
+        tx.execute_batch(MIGRATIONS[12])?;
+        tx.pragma_update(None, "user_version", 13)?;
+    }
+
+    let added = broken(&tx)? - broken_before;
+    if added > 0 {
+        return Err(format!(
+            "migration would break a foreign key in {added} rows, so it changed nothing; report this swarm bug"
+        )
+        .into());
     }
 
     tx.commit()?;
@@ -1237,8 +1270,8 @@ pub fn unreported_lost(
     Ok(rows.collect::<Result<_, _>>()?)
 }
 
-/// Whether a hook of `agent_id` reported a turn at or after `since` (unix seconds). `done` is no
-/// turn start, because Claude's idle notice writes it on an idle pane.
+/// Whether a hook or a host record of `agent_id` reported a turn at or after `since` (unix
+/// seconds). `done` is no turn start, because Claude's idle notice writes it on an idle pane.
 pub fn turn_started(
     connection: &Connection,
     session_id: &str,
@@ -1247,7 +1280,7 @@ pub fn turn_started(
 ) -> Result<bool, Box<dyn std::error::Error>> {
     let started: bool = connection.query_row(
         "SELECT EXISTS (SELECT 1 FROM agent
-                        WHERE session_id = ?1 AND id = ?2 AND state_source = 'hook'
+                        WHERE session_id = ?1 AND id = ?2 AND state_source IN ('hook', 'host')
                           AND state IN ('working', 'waiting') AND state_at >= ?3)",
         (session_id, agent_id, since),
         |row| row.get(0),
@@ -2558,7 +2591,7 @@ mod tests {
         let version: i64 = connection
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 12);
+        assert_eq!(version, MIGRATIONS.len() as i64);
         let old = create_session(&connection, "lane", Path::new("/work"), None, None).unwrap();
         let new = create_session(&connection, "lane", Path::new("/work"), None, None).unwrap();
         continue_session(&connection, &new, &old).unwrap();
@@ -2585,7 +2618,7 @@ mod tests {
         let version: i64 = connection
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 12);
+        assert_eq!(version, MIGRATIONS.len() as i64);
         let coder = &agents(&connection, SESSION).unwrap()[0];
         assert_eq!(coder.state, None);
         set_state(
@@ -2627,7 +2660,169 @@ mod tests {
         let version: i64 = connection
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 12);
+        assert_eq!(version, MIGRATIONS.len() as i64);
+    }
+
+    /// Migration 0013 rebuilds `agent` so a host record (ADR 0070) can be its state source. Every
+    /// row, key, and other check survives the rebuild.
+    #[test]
+    fn migration_lets_a_version_twelve_database_store_a_host_state() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        for migration in &MIGRATIONS[..12] {
+            connection.execute_batch(migration).unwrap();
+        }
+        connection.pragma_update(None, "user_version", 12).unwrap();
+        connection
+            .execute_batch(&format!(
+                "INSERT INTO session (id, talk_mode, cwd) VALUES ('{SESSION}', 'lane', '/test');
+                 INSERT INTO agent (id, session_id, role, pane_id, state, state_source, state_at, runner, sent_at)
+                     VALUES ('{ORCHESTRATOR}', '{SESSION}', 'orchestrator', '%1', 'done', 'screen', 5, NULL, NULL),
+                            ('{CODER}', '{SESSION}', 'coder', '%2', 'working', 'hook', 7, 'claude/opus/high', 9);
+                 INSERT INTO message (session_id, seq, sender_id, recipient_id, kind, body_path)
+                     VALUES ('{SESSION}', 0, '{ORCHESTRATOR}', '{CODER}', 'ask', 'runs/0.txt');
+                 INSERT INTO read_mark (session_id, message_seq, agent_id) VALUES ('{SESSION}', 0, '{CODER}');
+                 INSERT INTO job (session_id, agent_id, kind) VALUES ('{SESSION}', '{CODER}', 'build');"
+            ))
+            .unwrap();
+        migrate(&mut connection).unwrap();
+        let version: i64 = connection
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, 13);
+        type Row = (
+            String,
+            Option<String>,
+            Option<String>,
+            Option<i64>,
+            Option<String>,
+            Option<i64>,
+        );
+        let rows: Vec<Row> = connection
+            .prepare("SELECT id, pane_id, state_source, state_at, runner, sent_at FROM agent ORDER BY id")
+            .unwrap()
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(
+            rows,
+            [
+                (
+                    CODER.to_string(),
+                    Some("%2".into()),
+                    Some("hook".into()),
+                    Some(7),
+                    Some("claude/opus/high".into()),
+                    Some(9)
+                ),
+                (
+                    ORCHESTRATOR.to_string(),
+                    Some("%1".into()),
+                    Some("screen".into()),
+                    Some(5),
+                    None,
+                    None
+                ),
+            ]
+        );
+        set_state(&connection, SESSION, CODER, "done", "host", None, None, 11).unwrap();
+        assert!(set_state(&connection, SESSION, CODER, "done", "guess", None, None, 12).is_err());
+        assert!(
+            connection
+                .execute(
+                    "UPDATE agent SET state = 'done', state_kind = 'permission' WHERE id = ?1",
+                    [CODER]
+                )
+                .is_err()
+        );
+        connection
+            .pragma_update(None, "foreign_keys", true)
+            .unwrap();
+        let broken: i64 = connection
+            .query_row("SELECT count(*) FROM pragma_foreign_key_check", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(broken, 0);
+        assert!(
+            connection
+                .execute(
+                    &format!("INSERT INTO job (session_id, agent_id, kind) VALUES ('{SESSION}', 'ghost', 'build')"),
+                    []
+                )
+                .is_err()
+        );
+    }
+
+    /// A broken key from before the migration, such as a row an older build or a hand edit left,
+    /// is not the rebuild's fault, so it does not refuse the database.
+    #[test]
+    fn migration_keeps_a_database_whose_old_rows_already_break_a_key() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        for migration in &MIGRATIONS[..12] {
+            connection.execute_batch(migration).unwrap();
+        }
+        connection.pragma_update(None, "user_version", 12).unwrap();
+        connection
+            .pragma_update(None, "foreign_keys", false)
+            .unwrap();
+        connection
+            .execute_batch(&format!(
+                "INSERT INTO session (id, talk_mode, cwd) VALUES ('{SESSION}', 'lane', '/test');
+                 INSERT INTO job (session_id, agent_id, kind) VALUES ('{SESSION}', 'gone', 'build');"
+            ))
+            .unwrap();
+        connection
+            .pragma_update(None, "foreign_keys", true)
+            .unwrap();
+        migrate(&mut connection).unwrap();
+        let version: i64 = connection
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, MIGRATIONS.len() as i64);
+    }
+
+    /// A host record is the agent's own report, as a hook is, so it proves a ring, and its `done`
+    /// at the record's time counts for a stall.
+    #[test]
+    fn a_host_state_proves_a_turn_and_counts_for_a_stall() {
+        let mut connection = seed(0);
+        let root = temp_root("host-state");
+        set_pane(&connection, SESSION, CODER, "%2").unwrap();
+        let ask = send_message(
+            &mut connection,
+            &root,
+            SESSION,
+            ORCHESTRATOR,
+            CODER,
+            "ask",
+            "body",
+        )
+        .unwrap();
+        connection
+            .execute_batch(
+                "UPDATE message SET rung_at = 100, rings = 1, delivery = 'hook', seen_at = 101",
+            )
+            .unwrap();
+        set_state(
+            &connection,
+            SESSION,
+            CODER,
+            "working",
+            "host",
+            None,
+            None,
+            100,
+        )
+        .unwrap();
+        assert!(turn_started(&connection, SESSION, CODER, 100).unwrap());
+        assert!(!turn_started(&connection, SESSION, CODER, 101).unwrap());
+        set_state(&connection, SESSION, CODER, "done", "host", None, None, 105).unwrap();
+        assert_eq!(
+            stalls(&connection, SESSION).unwrap(),
+            [(CODER.to_string(), StallKind::Unacked, ask)]
+        );
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
@@ -2655,7 +2850,7 @@ mod tests {
         let version: i64 = connection
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 12);
+        assert_eq!(version, MIGRATIONS.len() as i64);
     }
 
     #[test]
@@ -3120,7 +3315,7 @@ mod tests {
         let db = root.join("swarm.db");
         let connection = Connection::open(&db).unwrap();
         connection
-            .execute_batch("PRAGMA user_version = 13")
+            .execute_batch("PRAGMA user_version = 14")
             .unwrap();
         drop(connection);
 
@@ -3205,6 +3400,24 @@ mod tests {
         assert_eq!(tables, ["bookmark"]);
         open(&root.join("new.db")).unwrap();
         assert!(made_by_swarm(&root.join("new.db")));
+    }
+
+    /// A key that SQLite cannot check, in another program's db, still gets the ADR 0036 refusal,
+    /// because migrate counts broken keys only in a db it knows is swarm's.
+    #[test]
+    fn another_programs_database_with_a_bad_key_gets_the_refusal() {
+        let root = temp_root("other-program-key");
+        std::fs::create_dir_all(&root).unwrap();
+        let db = root.join("swarm.db");
+        Connection::open(&db)
+            .unwrap()
+            .execute_batch("CREATE TABLE p (a, b); CREATE TABLE ch (x REFERENCES p(a));")
+            .unwrap();
+        assert_eq!(
+            open(&db).unwrap_err().to_string(),
+            "database not made by swarm; use another SWARM_HOME or move it"
+        );
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// A second swarm that opens the db while the first migrates it waits and then finds it

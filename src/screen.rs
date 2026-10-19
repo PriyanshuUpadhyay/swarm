@@ -526,10 +526,13 @@ pub fn resolve(
     now: i64,
 ) -> (Option<String>, Option<&'static str>) {
     let age = state_at.map(|at| now - at);
-    if source == Some("hook") && age.is_some_and(|age| age < HOOK_AUTHORITY_S) {
+    // A stored host record reaches here only when its read failed, and an agent's own report
+    // stands over the screen the same way, whether a hook or its host gave it (ADR 0070).
+    let own = matches!(source, Some("hook" | "host"));
+    if own && age.is_some_and(|age| age < HOOK_AUTHORITY_S) {
         return (state.map(str::to_string), None);
     }
-    if source == Some("hook")
+    if own
         && age.is_some_and(|age| age <= STALE_S)
         && screen.is_some_and(|screen| !screen_gap(provider, screen))
     {

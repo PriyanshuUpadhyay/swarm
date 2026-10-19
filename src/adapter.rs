@@ -24,6 +24,9 @@ pub struct Adapter {
     /// Opens a pane whose program is `$SWARM_COMMAND`, the launch line `spawn` would ring, and
     /// prints its id. With it, `launch` does not ring the line into a shell.
     pub run_line: Option<String>,
+    /// Prints the root program-status record of the agent in `$SWARM_PANE` as one OSC 7501 body
+    /// with `:at=<unix seconds>`, the record's own time, or nothing when it reported none.
+    pub status: Option<String>,
 }
 
 /// The adapters this binary carries, which are the ones it is tested against.
@@ -106,6 +109,7 @@ fn build(name: &str, mut verbs: Verbs) -> Result<Adapter, Box<dyn std::error::Er
         key: verbs.remove("key"),
         client: verbs.remove("client"),
         run_line: verbs.remove("run"),
+        status: verbs.remove("status"),
     };
     if let Some(key) = verbs.keys().next() {
         return Err(format!("adapter {name}: unknown key {key}").into());
@@ -248,6 +252,15 @@ impl Adapter {
     /// hold the listing up.
     pub fn screen(&self, vars: &[(&str, &str)], timeout: std::time::Duration) -> Option<String> {
         self.read_bounded(self.screen.as_ref()?, vars, timeout).ok()
+    }
+
+    /// The `status` verb's record, or None when the adapter has none, it fails, it takes longer
+    /// than `timeout`, or the agent reported no record.
+    pub fn status(&self, vars: &[(&str, &str)], timeout: std::time::Duration) -> Option<String> {
+        let record = self
+            .read_bounded(self.status.as_ref()?, vars, timeout)
+            .ok()?;
+        Some(record.trim().to_string()).filter(|record| !record.is_empty())
     }
 
     /// The `capture` verb's output under the same limit as `screen`.
@@ -481,7 +494,25 @@ mod tests {
         assert!(adapter.interrupt.is_some());
         assert!(adapter.key.is_some());
         assert!(adapter.screen.is_some());
+        assert!(adapter.status.is_some());
         assert!(adapter.caller.contains("REX_BLOCK"));
+    }
+
+    #[test]
+    fn the_status_verb_is_optional_and_no_record_is_none() {
+        let wait = std::time::Duration::from_secs(1);
+        let status = |line: &str| {
+            parse("fake", &format!("{FULL}status = {line}\n"))
+                .unwrap()
+                .status(&[("pane", "%3")], wait)
+        };
+        assert_eq!(
+            status("printf 'state=working:at=7 %s' \"$SWARM_PANE\"").as_deref(),
+            Some("state=working:at=7 %3")
+        );
+        assert_eq!(status("true"), None);
+        assert_eq!(status("printf 'state=done:at=7'; exit 1"), None);
+        assert_eq!(parse("fake", FULL).unwrap().status(&[], wait), None);
     }
 
     #[test]
