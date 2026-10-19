@@ -208,9 +208,16 @@ pub struct HookState {
 pub fn hook_state(provider: &str, event: &str, payload: &serde_json::Value) -> Option<HookState> {
     let text = |name: &str| payload.get(name).and_then(serde_json::Value::as_str);
     let error = text("error").filter(|error| !error.is_empty());
+    let tool = text("tool_name");
     let (state, kind) = match (provider, event) {
         // An in-process Claude subagent's events are not the pane's state.
         ("claude", _) if text("agent_id").is_some_and(|id| !id.is_empty()) => return None,
+        // Codex asks with a tool that returns at once, then waits in `clocksleep` calls until the
+        // owner's reply arrives as a UserPromptSubmit, so a sleep keeps the question's state.
+        ("codex", "PreToolUse" | "PostToolUse") if tool == Some("request_user_input_async") => {
+            ("waiting", Some("question"))
+        }
+        ("codex", "PreToolUse" | "PostToolUse") if tool == Some("clocksleep") => return None,
         ("claude" | "codex", "UserPromptSubmit" | "PreToolUse" | "PostToolUse") => {
             ("working", None)
         }
@@ -1121,5 +1128,32 @@ mod tests {
                 .map(|report| (report.state, report.detail.as_deref()));
             assert_eq!(got, *expected, "{provider} {event} {payload}");
         }
+    }
+
+    /// The order a live Codex seat sent on 2026-10-19 while it asked the owner one question.
+    #[test]
+    fn a_codex_question_waits_through_its_sleeps_until_the_reply() {
+        use serde_json::json;
+        let state = |event: &str, payload: serde_json::Value| {
+            hook_state("codex", event, &payload).map(|s| (s.state, s.kind))
+        };
+        let ask = json!({"tool_name": "request_user_input_async"});
+        let sleep = json!({"tool_name": "clocksleep"});
+        assert_eq!(
+            state("PreToolUse", ask.clone()),
+            Some(("waiting", Some("question")))
+        );
+        assert_eq!(
+            state("PostToolUse", ask),
+            Some(("waiting", Some("question")))
+        );
+        assert_eq!(state("PreToolUse", sleep.clone()), None);
+        assert_eq!(state("PostToolUse", sleep), None);
+        let reply = json!({"prompt": "<send_user_message_question_reply>\n[]"});
+        assert_eq!(state("UserPromptSubmit", reply), Some(("working", None)));
+        assert_eq!(
+            state("PreToolUse", json!({"tool_name": "Bash"})),
+            Some(("working", None))
+        );
     }
 }
