@@ -333,6 +333,8 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
       const step = historyStep(app.history(sessionId), browse.current, text, el.selectionStart, e.key === "ArrowUp" ? "up" : "down");
       if (!step) return;
       e.preventDefault();
+      // Browsing starts from a typed draft: keep it where Esc finds it, as an edit ends browsing.
+      if (!browse.current && step.browse && text.trim()) app.setStash(sessionId, text);
       change(step.text);
       browse.current = step.browse;
       setCaret(step.caret);
