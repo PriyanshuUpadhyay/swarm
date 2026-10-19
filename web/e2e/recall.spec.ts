@@ -151,6 +151,27 @@ test("the composer recalls, stashes, reuses and finds prompts, and @ inserts a f
   await expect(composer).toHaveValue("keep this draft");
   await tab.keyboard.press("Escape");
 
+  // Reuse, or a switch to another chat, while a recalled prompt shows keeps the typed draft.
+  for (const leave of ["reuse", "switch"]) {
+    await composer.fill(`draft before ${leave}`);
+    await composer.evaluate((el: HTMLTextAreaElement) => el.setSelectionRange(0, 0));
+    await tab.keyboard.press("ArrowUp");
+    await expect(composer).not.toHaveValue(`draft before ${leave}`);
+    if (leave === "reuse") {
+      await userRow.hover();
+      await userRow.getByTestId("reuse-prompt").click();
+      await expect(composer).toHaveValue(logged);
+    } else {
+      await tab.locator('[data-testid="tree-row"][data-kind="chat"]').filter({ hasNot: tab.locator(`[data-session="${process.env.SWARM_E2E_GIT}"]`) }).first().click();
+      await tab.locator(`[data-testid="tree-row"][data-session="${process.env.SWARM_E2E_GIT}"]`).click();
+      await expect(composer).toBeEnabled();
+    }
+    await composer.fill("");
+    await composer.press("Escape");
+    await expect(composer).toHaveValue(`draft before ${leave}`);
+    await composer.press("Escape");
+  }
+
   // Expand lifts the 200 px cap.
   await expect(tab.getByTestId("composer-expand")).not.toHaveAttribute("aria-pressed");
   await tab.getByTestId("composer-expand").click();

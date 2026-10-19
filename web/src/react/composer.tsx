@@ -159,11 +159,21 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
     return () => el.removeEventListener("beforeinput", before);
   }, [chair.provider]);
 
-  // A send or a pull-back changed the draft in the app.
+  // Browsing ends without the draft coming back, so keep the draft where Esc finds it.
+  const endBrowse = () => {
+    const draft = browse.current?.draft;
+    browse.current = null;
+    if (draft?.trim()) app.setStash(sessionId, draft);
+  };
+
+  // A send, a pull-back or Reuse changed the draft in the app, which ends history browsing.
   useEffect(() => {
+    endBrowse();
     setText(app.draft(sessionId));
     setPicks(app.draftPicks(sessionId));
   }, [app, sessionId, state.draftRev]);
+  // A switch to another chat ends browsing too, so the draft is in the stash on return.
+  useEffect(() => endBrowse, [app, sessionId]);
 
   // Grows with the text up to about 8 lines. After a pick the caret goes after the inserted text.
   useLayoutEffect(() => {
@@ -220,13 +230,6 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
   const canPullBack = chair.pullBack && !chair.disabled && composer.queued > 0;
   const skills = skillNames(list);
   const loadingSkills = useRef(false);
-  // Browsing ends without the draft coming back, so keep the draft where Esc finds it.
-  const endBrowse = () => {
-    const draft = browse.current?.draft;
-    browse.current = null;
-    if (draft?.trim()) app.setStash(sessionId, draft);
-  };
-
   /** pi runs a skill only at the message's start, so the draft shows the moved text it sends. */
   const submit = async () => {
     if (!canSend || loadingSkills.current) return;
