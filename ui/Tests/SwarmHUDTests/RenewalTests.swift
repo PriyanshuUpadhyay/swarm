@@ -134,3 +134,19 @@ func renewalRunsOncePerAccountAndRefreshesDuringCooldown(renewed: Bool) async th
     #expect(MascotCast.guest(MascotCast.ownTurns)?.name == SheetMascot.all[0].name)
     #expect(MascotCast.count == MascotCast.guests.count + MascotCast.ownTurns)
 }
+
+@Test func theCastTakesAtMostSixteenCodexPetsInFolderOrder() throws {
+    let home = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: home) }
+    let png = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAYAAAD0In+KAAAADklEQVR4nGP4z8AAQv8BD/kD/YURmXYAAAAASUVORK5CYII=")!
+    for n in 0..<(Guest.maxCodexPets + 2) {
+        let folder = home.appendingPathComponent(String(format: "pets/p%02d", n))
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try png.write(to: folder.appendingPathComponent("s.png"))
+        try Data(#"{"spritesheetPath":"s.png","frame":{"width":1,"height":1,"columns":2,"rows":1}}"#.utf8)
+            .write(to: folder.appendingPathComponent("pet.json"))
+    }
+    let pets = Guest.codexPets(home: home)
+    #expect(pets.count == Guest.maxCodexPets)
+    #expect(pets.first?.name == "p00" && pets.last?.name == "p15")
+}
