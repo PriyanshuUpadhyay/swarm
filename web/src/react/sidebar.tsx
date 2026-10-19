@@ -5,7 +5,7 @@
 import { ArchiveRestoreIcon, TriangleAlertIcon } from "lucide-react";
 import { useRef, useState, useSyncExternalStore, type DragEvent, type MouseEvent } from "react";
 import { SIDEBAR_VIEWS, type App } from "../core/app";
-import { archivedSession, type NavRow, type SidebarRow } from "../core/nav";
+import { archivedSession, currentRow, type SidebarRow } from "../core/nav";
 import { Button } from "../components/ui/button";
 import { ContextMenu, ContextMenuTrigger } from "../components/ui/context-menu";
 import { NewChatMenu, RowHints, RowMenu, type NewChatAnchor } from "./row-overlays";
@@ -56,6 +56,7 @@ function WorkspaceList({ app }: { app: App }) {
   const [dragging, setDragging] = useState(false);
   const archive = treeName === "archived";
   const hasPinned = tree?.sections.some((s) => s.kind === "pinned") ?? false;
+  const current = currentRow(rows, openId, workspace);
 
   const onClick = (e: MouseEvent) => {
     const el = (e.target as Element).closest<HTMLElement>('[data-testid="tree-row"]');
@@ -140,7 +141,7 @@ function WorkspaceList({ app }: { app: App }) {
               </div>
             )}
             {rows.map((row) => (
-              <RowView key={row.id} row={row} selected={row.id === selected} marked={marked.size ? marked.has(row.id) : null} current={isCurrent(row, openId, workspace)} archive={archive} />
+              <RowView key={row.id} row={row} selected={row.id === selected} marked={marked.size ? marked.has(row.id) : null} current={row.id === current} archive={archive} />
             ))}
             {!loaded && !error && <SidebarSkeleton />}
             {loaded && rows.length === 0 && <SidebarNote title={archive ? "No archived workspaces" : "No projects yet"} body={archive ? "" : "Import or create a project from the + menu above."} />}
@@ -169,10 +170,6 @@ function WorkspaceList({ app }: { app: App }) {
     </>
   );
 }
-
-/** The open chat's row, or with no chat open, the selected workspace's. */
-const isCurrent = (row: NavRow, openId: string | null, workspace: string | null) =>
-  openId ? row.kind === "chat" && row.row?.selection?.chat === openId : row.kind === "workspace" && row.id === workspace;
 
 /** Every listed chat across projects, newest activity first (jean's Recent list). j/k, arrows and
  *  Enter work here as in the tree. */

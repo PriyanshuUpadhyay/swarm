@@ -1,7 +1,7 @@
 import { ApiError } from "./api";
 import { measure, type PerfKind } from "./perf";
 import { chatPath, resolveChat, shortId } from "./route";
-import { chatRows, navRows, shareTree, workspaceOf, type ChoiceOp, type Tab, type Tabs } from "./nav";
+import { chatRows, currentRow, navRows, shareTree, workspaceOf, type ChoiceOp, type Tab, type Tabs } from "./nav";
 import { message, markable } from "./app-types";
 import type { App } from "./app";
 
@@ -71,7 +71,7 @@ export class AppNavigation {
   afterNav() {
     const tree = this.app.tree;
     if (!tree) return;
-    if (!this.app.selected || !this.app.rows.some((r) => r.id === this.app.selected)) this.app.selected = this.app.rows[0]?.id ?? null;
+    if (!this.app.selected || !this.app.rows.some((r) => r.id === this.app.selected)) this.app.selected = currentRow(this.app.rows, this.app.openId, this.app.workspace) ?? this.app.rows[0]?.id ?? null;
     // A picked chat that left the tree (archived, ended elsewhere) must not come back picked.
     const kept = new Set(this.app.rows.filter((r) => this.app.marked.has(r.id) && markable(r)).map((r) => r.id));
     if (kept.size !== this.app.marked.size) this.app.marked = kept;
@@ -244,9 +244,8 @@ export class AppNavigation {
     const workspace = workspaceOf(this.app.tree, this.app.snapshot, sessionId);
     const moved = workspace !== null && workspace !== this.app.workspace;
     if (workspace) this.app.workspace = workspace;
-    const row = chatRows(this.app.tree).find((r) => r.selection?.chat === sessionId);
     // A restore leaves the keyboard row where it was.
-    if (row && opts.write !== false) this.app.selected = row.id;
+    if (opts.write !== false) this.app.selected = currentRow(this.app.rows, sessionId, this.app.workspace);
     if (workspace && this.app.revision !== null && opts.write !== false) {
       // Swift's select: open the tab, then select; only a move to another workspace opens its project.
       const section = this.app.tree?.sections.find((s) => s.rows.some((r) => r.selection?.chat === sessionId));

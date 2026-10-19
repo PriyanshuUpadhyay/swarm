@@ -1,4 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
+import { readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 
 // The sidebar and tab strip on the Rust view model (P2b). Each case puts the owner choices it
 // changes back, because both browsers share one server home.
@@ -9,7 +11,7 @@ const token = () => new URLSearchParams(server().hash.slice(1)).get("token")!;
 /** The tree as the server has it now, read outside the page. */
 async function readTree() {
   const res = await fetch(`${server().origin}/api/tree?view=workspaces`, { headers: { Authorization: `Bearer ${token()}` } });
-  return (await res.json()) as { sections: { kind: string; rows: { id: string; kind: string; title: string; pinned: boolean }[] }[] };
+  return (await res.json()) as { revision: string; sections: { kind: string; rows: { id: string; kind: string; title: string; pinned: boolean }[] }[] };
 }
 
 async function open(tab: Page) {
@@ -186,4 +188,41 @@ test("Recent lists chats across projects and opens one in another project from t
   await expect(tab.locator(`[data-testid="recent-row"][data-session="${edit}"]`)).toHaveAttribute("aria-current", "true");
   await tab.keyboard.press("Alt+Meta+1");
   expect(errors).toEqual([]);
+});
+
+test("clicking a tab-only chat marks its workspace as current", async ({ page: tab }, info) => {
+  const errors = await open(tab);
+  const workspace = workspaceRow(tab, "ws-tabs");
+  await workspace.click();
+  const tabs = tab.getByTestId("tab");
+  await expect(tabs).toHaveCount(2);
+  const workspaceId = (await workspace.getAttribute("data-id"))!;
+  const session = (await tabs.nth(1).getAttribute("data-session"))!;
+  const choicesPath = join(process.env.SWARM_E2E_HOME!, ".swarm/choices.json");
+  const before = readFileSync(choicesPath, "utf8");
+  try {
+    const { revision } = await readTree();
+    const response = await fetch(`${server().origin}/api/choices`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token()}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ revision, op: "open_tab", workspace: workspaceId, chat: session, tab_only: true }),
+    });
+    expect(response.status).toBe(200);
+    await tab.reload();
+    await tab.waitForFunction(() => window.__swarmReady === true);
+    await workspace.click();
+    await expect(tab.locator(`[data-testid="tree-row"][data-session="${session}"]`)).toHaveCount(0);
+    await tabs.first().click();
+    const selected = tab.waitForResponse((r) => r.url().endsWith("/api/choices") && r.request().postDataJSON().op === "selected_chat" && r.request().postDataJSON().chat === session);
+    await tab.locator(`[data-testid="tab"][data-session="${session}"]`).click();
+    expect((await selected).status()).toBe(200);
+    await expect(tab.locator(`[data-testid="tab"][data-session="${session}"]`)).toHaveAttribute("aria-selected", "true");
+    await expect(workspace).toHaveAttribute("aria-current", "true");
+    await expect(workspace).toHaveAttribute("aria-selected", "true");
+    expect(errors).toEqual([]);
+  } finally {
+    await tab.screenshot({ path: info.outputPath("tab-only-current.png") });
+    await tab.close();
+    writeFileSync(choicesPath, before);
+  }
 });
