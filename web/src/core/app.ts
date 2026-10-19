@@ -1685,7 +1685,8 @@ export class App {
     const prompts: PaletteItem[] = open
       ? this.history(open).map((text, i) => ({
           id: `prompt:${i}`,
-          title: text.split("\n")[0].slice(0, 120),
+          // By code point, so an emoji at the cut stays whole.
+          title: Array.from(text.split("\n")[0]).slice(0, 120).join(""),
           group: "prompt",
           run: () => {
             this.reuse(open, text);
