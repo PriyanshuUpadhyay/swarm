@@ -85,8 +85,10 @@ function quoted(text: string, at: number): boolean {
   return /^\s*>/.test(line) || (text.slice(0, at).match(/^\s*```/gm)?.length ?? 0) % 2 === 1;
 }
 
-/** pi expands one skill at the message's start. The first recorded pick moves there; without
- *  picks, use the first typed token in pi's list. `extra` holds the tokens sent as text. */
+/** pi expands one skill at the message's start. The first recorded pick goes there; without
+ *  picks, use the first typed token in pi's list. A token typed mid-message also stays in place,
+ *  so the agent and the transcript chip read it where the owner typed it. `extra` holds the tokens
+ *  sent as text. */
 export function skillFirst(text: string, skills: ReadonlySet<string>, picks: readonly SkillPick[] = []): { text: string; extra: string[] } {
   const recorded = validPicks(text, picks);
   const found = [...text.matchAll(SKILL)]
@@ -95,7 +97,8 @@ export function skillFirst(text: string, skills: ReadonlySet<string>, picks: rea
   const first = recorded[0] ?? found[0];
   const extra = validPicks(text, [...recorded, ...found]).filter((p) => p.start !== first?.start).map((p) => p.insert);
   if (!first) return { text, extra };
-  const words = (text.slice(0, first.start) + text.slice(first.start + first.insert.length).replace(/^\s+/, "")).trim();
+  if (text.slice(0, first.start).trim()) return { text: `${first.insert} ${text.trim()}`, extra };
+  const words = text.slice(first.start + first.insert.length).trim();
   return { text: words ? `${first.insert} ${words}` : first.insert, extra };
 }
 
