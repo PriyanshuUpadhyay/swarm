@@ -15,7 +15,7 @@ function deferred() {
   return { promise, resolve };
 }
 
-function harness(options: { tabOnly?: boolean; live?: boolean; beforeClose?: () => Promise<void>; refuse?: boolean; failArchive?: boolean } = {}) {
+function harness(options: { tabOnly?: boolean; live?: boolean; beforeClose?: () => Promise<void>; beforeArchive?: () => Promise<void>; refuse?: boolean; failArchive?: boolean } = {}) {
   const writes: ChoiceOp[] = [];
   const actions: string[] = [];
   const notices: string[] = [];
@@ -64,6 +64,7 @@ function harness(options: { tabOnly?: boolean; live?: boolean; beforeClose?: () 
     action: async (path: string) => {
       actions.push(path);
       if (path === "/api/sessions/archive") {
+        await options.beforeArchive?.();
         if (options.failArchive) throw new ApiError(500, "archive failed");
         remove("c");
       }
@@ -95,6 +96,22 @@ describe("closing tabs", () => {
     expect(notices).toEqual([]);
   });
 
+  it("waits for a tab-only archive before the second press closes the next tab", async () => {
+    const sessions = { open: "c", next: "b", older: "a" };
+    const archive = deferred();
+    const { app, writes, actions } = harness({ tabOnly: true, beforeArchive: () => archive.promise });
+    const closing = [app.closeTab(), app.closeTab()];
+    await vi.waitFor(() => expect(actions).toHaveLength(1));
+    expect(app.openId).toBe(sessions.open);
+    expect(writes.filter((op) => op.op === "close_tab")).toHaveLength(0);
+    archive.resolve();
+    await Promise.all(closing);
+    expect(actions).toEqual(["/api/sessions/archive"]);
+    expect(writes.flatMap((op) => op.op === "close_tab" ? [op.chat] : [])).toEqual([sessions.next]);
+    expect(app.openId).toBe(sessions.older);
+    expect(app.closedTabs).toEqual([sessions.open, sessions.next]);
+  });
+
   it("leaves the nav sequence unchanged when a background tab closes", async () => {
     const { app } = harness();
     const seq = app.navSeq;
@@ -114,9 +131,13 @@ describe("closing tabs", () => {
   it("keeps the reopen list and open chat after cancelling a tab-only close", async () => {
     const { app, actions } = harness({ tabOnly: true, live: true });
     app.closedTabs = ["a"];
-    await app.closeTab();
-    expect(app.life.state.confirm).not.toBeNull();
+    const settled = vi.fn();
+    const closing = app.closeTab().then(settled);
+    await vi.waitFor(() => expect(app.life.state.confirm).not.toBeNull());
+    expect(settled).not.toHaveBeenCalled();
     app.life.close("confirm");
+    await closing;
+    expect(settled).toHaveBeenCalledOnce();
     expect(app.closedTabs).toEqual(["a"]);
     expect(app.openId).toBe("c");
     const open = vi.spyOn(app.navigation, "openChat");
@@ -127,9 +148,14 @@ describe("closing tabs", () => {
 
   it("records a confirmed archive only after success and opens the strip selection on refresh", async () => {
     const { app, actions } = harness({ tabOnly: true, live: true });
-    await app.closeTab();
+    const settled = vi.fn();
+    const closing = app.closeTab().then(settled);
+    await vi.waitFor(() => expect(app.life.state.confirm).not.toBeNull());
+    expect(settled).not.toHaveBeenCalled();
     expect(app.closedTabs).toEqual([]);
     expect(await app.life.confirmed()).toBeNull();
+    await closing;
+    expect(settled).toHaveBeenCalledOnce();
     expect(actions).toEqual(["/api/agent/close", "/api/sessions/archive"]);
     expect(app.closedTabs).toEqual(["c"]);
     expect(app.openId).toBe("b");
@@ -137,11 +163,14 @@ describe("closing tabs", () => {
 
   it("does not record a failed archive", async () => {
     const { app } = harness({ tabOnly: true, live: true, failArchive: true });
-    await app.closeTab();
+    const closing = app.closeTab();
+    await vi.waitFor(() => expect(app.life.state.confirm).not.toBeNull());
     expect(await app.life.confirmed()).toBe("archive failed");
     expect(app.closedTabs).toEqual([]);
     expect(app.openId).toBe("c");
     expect(app.life.state.confirm).not.toBeNull();
+    app.life.close("confirm");
+    await closing;
   });
 
   it("opens the strip selection after a tab-only close without a confirm", async () => {

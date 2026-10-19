@@ -241,7 +241,10 @@ export class AppNavigation {
     const tab = this.stripTabs().find((t) => (key ? t.id === key : t.session === this.app.openId));
     if (!workspace || !tab?.canHide) return;
     const closed = () => { this.app.closedTabs = [...this.app.closedTabs.filter((s) => s !== tab.session), tab.session]; };
-    if (tab.tabOnly) return this.app.life.endChat(tab.session, true, closed);
+    if (tab.tabOnly) {
+      await this.app.life.endChat(tab.session, true, closed);
+      return;
+    }
     const wasOpen = tab.session === this.app.openId;
     const seq = wasOpen ? ++this.app.navSeq : this.app.navSeq;
     if (!(await this.choose({ op: "close_tab", workspace, chat: tab.id }))) return;

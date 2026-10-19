@@ -29,6 +29,7 @@ export class Lifecycle {
   state: LifeState = { newWorkspace: null, create: null, project: null, importChoice: null, projectPath: "", existing: null, setupScript: null, switchModel: null, handoff: null, confirm: null, closed: false, imports: false };
   private listeners = new Set<() => void>();
   private roles: Promise<Profile[]> | null = null;
+  private confirmDone: (() => void) | null = null;
 
   constructor(private readonly app: App) {}
 
@@ -59,6 +60,10 @@ export class Lifecycle {
   }
 
   close<K extends keyof LifeState>(key: K) {
+    if (key === "confirm") {
+      this.confirmDone?.();
+      this.confirmDone = null;
+    }
     this.set({ [key]: key === "closed" || key === "imports" ? false : null } as Partial<LifeState>);
   }
 
@@ -210,11 +215,11 @@ export class Lifecycle {
   /** End chat… and Archive chat. Live agents ask first (SwarmSessionCloser); Archive then moves the
    *  chat to Archived chats. */
   endChat(session: string, archive: boolean, done?: () => void) {
-    this.endChats([session], archive, done);
+    return this.endChats([session], archive, done);
   }
 
   /** End or Archive for the sidebar's selected chats, with one confirm for all of them. */
-  endChats(sessions: string[], archive: boolean, done?: () => void) {
+  async endChats(sessions: string[], archive: boolean, done?: () => void): Promise<void> {
     const live = sessions.map((session) => ({ session, agents: this.liveAgents(session) }));
     const agents = live.reduce((n, l) => n + l.agents.length, 0);
     const run = async () => {
@@ -227,11 +232,11 @@ export class Lifecycle {
     };
     const many = sessions.length > 1;
     if (!agents && !archive) return this.app.notice(many ? "These chats have already ended." : "This chat has already ended.");
-    if (!agents) return void this.runAction(run);
+    if (!agents) return this.runAction(run);
     // An agent whose turn is over still has an open pane; only a working or waiting one is "running".
     const busy = sessions.flatMap((s) => this.app.agentsOf(s).agents).filter((a) => a.alive && (a.state === "working" || a.state === "waiting")).length;
     const verb = archive ? "Archiving" : "Ending";
-    this.ask({
+    return this.ask({
       title: `${archive ? "Archive" : "End"} ${many ? `${sessions.length} chats` : `“${this.app.chatTitle(sessions[0])}”`}?`,
       body: `${busy ? `${plural(busy, "agent")} still working. ${verb} stops them.` : `${verb} closes ${many ? "their" : "its"} agent${agents > 1 ? "s" : ""}.`}${archive ? (many ? " The chats move to Archived." : " The chat moves to Archived.") : ""}`,
       action: `${archive ? "Archive" : "End"} ${many ? `${sessions.length} Chats` : "Chat"}`,
@@ -410,21 +415,28 @@ export class Lifecycle {
 
   // ---- confirm ----
 
-  private ask(confirm: Confirm) {
-    this.set({ confirm });
+  private ask(confirm: Confirm): Promise<void> {
+    this.confirmDone?.();
+    return new Promise((resolve) => {
+      this.confirmDone = resolve;
+      this.set({ confirm });
+    });
   }
 
   /** The confirm dialog's action. A failure keeps the dialog and shows the server's text. */
   async confirmed(): Promise<string | null> {
     const c = this.state.confirm;
     if (!c) return null;
+    const done = this.confirmDone;
     try {
       await c.run();
     } catch (err) {
       return message(err);
     }
     this.set({ confirm: null });
+    this.confirmDone = null;
     await this.app.refresh();
+    done?.();
     return null;
   }
 
