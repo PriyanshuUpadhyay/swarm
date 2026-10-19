@@ -344,17 +344,19 @@ function RowBody(ctx: Ctx) {
         <CommandChip row={row} />
       </Bubble>
     );
-  if (row.kind === "user" || row.kind === "queued")
+  if (row.kind === "user" || row.kind === "queued") {
+    const composerId = ctx.composerId;
     return (
       <Bubble
         row={row}
         queued={row.kind === "queued" || row.system_kind === "queued_prompt"}
-        reuse={row.kind === "user" && ctx.composerId ? () => app.reuse(ctx.composerId!, row.text) : undefined}
+        reuse={row.kind === "user" && composerId ? () => app.reuse(composerId, row.text) : undefined}
       >
         <div className="md" dangerouslySetInnerHTML={{ __html: md.html(row.id, row.text, true) }} />
         <ImageThumbs text={row.text} load={app.imageUrl} />
       </Bubble>
     );
+  }
   if (row.ends_turn) {
     const interrupted = row.kind === "notice" || row.text === "aborted";
     const title = row.kind === "notice" ? "Interrupted by you" : interrupted ? "Turn interrupted" : "Turn finished";
