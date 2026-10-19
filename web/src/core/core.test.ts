@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { takeToken, type Api, type Row, type RowPage, type Snapshot } from "./api";
 import { App } from "./app";
 import { eventKey, installKeys, parseChord, Registry } from "./commands";
@@ -325,6 +325,12 @@ describe("owner messages and skill chips", () => {
 
 describe("prompt history", () => {
   it("records a send for the workspace, so a new chat recalls it, and Reuse keeps the draft", async () => {
+    const saved = new Map<string, string>();
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => saved.get(key) ?? null,
+      setItem: (key: string, value: string) => saved.set(key, value),
+      removeItem: (key: string) => saved.delete(key),
+    });
     let refuse = false;
     const api = {
       action: async () => { if (refuse) throw new Error("no pane"); },
@@ -346,9 +352,16 @@ describe("prompt history", () => {
 
     expect(app.history("b")).toEqual(["run the tests"]);
     expect(app.history("c")).toEqual([]);
+    // A second tab on the workspace adds to the stored list and does not overwrite it.
+    const tab = new App(api);
+    (tab as unknown as { applySnapshot(s: Snapshot): void }).applySnapshot({ version: 1, sessions: [session("a", "main")], agents: { a: [chair] } });
+    tab.history("a");
+    expect(await app.send("a", "from the first tab")).toBe(true);
+    expect(await tab.send("a", "from the second tab")).toBe(true);
+    expect(tab.history("a")).toEqual(["from the second tab", "from the first tab", "run the tests"]);
     // Text that code composes, such as the diff comments, is not the owner's prompt.
     expect(await app.send("a", "Review comments on the diff (1):", undefined, false)).toBe(true);
-    expect(app.history("a")).toEqual(["run the tests"]);
+    expect(app.history("a")).toEqual(["from the first tab", "run the tests"]);
 
     app.setDraft("b", "half typed");
     app.reuse("b", "run the tests");
@@ -360,6 +373,7 @@ describe("prompt history", () => {
     const sections = (q: string) => paletteSections(app.paletteItems(), q).map((s) => [s.title, s.items.map((i) => i.title)]);
     expect(sections("tests")).toContainEqual(["Prompts", ["run the tests"]]);
     expect(sections("").flatMap(([, titles]) => titles)).not.toContain("run the tests");
+    vi.unstubAllGlobals();
   });
 });
 

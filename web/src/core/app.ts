@@ -1344,6 +1344,8 @@ export class App {
 
   private recordHistory(sessionId: string, text: string) {
     const key = this.historyKey(sessionId);
+    // Read the stored list again, so a send from another tab is kept.
+    this.histories.delete(key);
     const list = recordSent(this.historyList(key), { text, session: sessionId, at: Date.now() });
     this.histories.set(key, list);
     writeStore(key, JSON.stringify(list));
