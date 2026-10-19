@@ -14,7 +14,7 @@ metadata:
 ---
 
 ## Rules
-- The skill owns its seats, prompts, rounds, result routing, and refusals. Read its `orchestration.json` as requirements, not as advice. This block runs those requirements and stops when the host cannot meet them. It does not change the workflow or copy its prompts.
+- The skill owns its seats, prompts, rounds, result routing, and refusals. Read its orchestration file (`orchestration*.json`) as requirements, not as advice. This block runs those requirements and stops when the host cannot meet them. It does not change the workflow or copy its prompts.
 - Before the first worker, require an injected `[agent-host: ...]` contract. With none, go on alone only when the skill allows it; else report the missing capability and stop.
 - Load the host reference that the contract names. The host owns pane creation, sending, liveness, result collection, and close.
 - Resolve every seat role with `swarm roles get <role>` before launch. Keep `runnerId`, `provider`, `mode`, `model`, `effort`, and `fallbackRunnerIds`. Use only the declared fallbacks. Refuse a role that does not resolve or that the host cannot run. Never hardcode a model, an effort, a sandbox, or an approval value.

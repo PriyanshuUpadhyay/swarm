@@ -1,7 +1,7 @@
 ---
 name: decisions
 user-invocable: false
-description: Record project decisions as committed in-repo ADRs, each confirmed by the user. Use when a choice or reversal is stated ("let's go with X", "scrap that"), when asked what was decided or for an ADR, or before an assistant-run commit.
+description: Record decisions as in-repo ADRs that the user confirms. Use when a choice or reversal is stated ("let's go with X", "scrap that"), when asked what was decided, for unwritten decisions, an ADR, or a rebuilt index, and before commits.
 ---
 
 # decisions — Lifecycle Decision Records

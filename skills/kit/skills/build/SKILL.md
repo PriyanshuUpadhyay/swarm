@@ -1,6 +1,6 @@
 ---
 name: build
-description: Make pictures, short films, and websites where code draws every frame (Canvas 2D, p5.js, three.js, shaders), from a story or a reference. Use when the user asks for a reel, loop, generative still, animated site, or "make this in code".
+description: Make pictures, films, and sites where code (p5.js, three.js, shaders) draws every frame. Use when the user asks for a reel, loop, generative still, landing page, portfolio, "make this in code", or style rules from references only.
 ---
 
 # build

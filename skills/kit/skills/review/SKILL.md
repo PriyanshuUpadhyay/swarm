@@ -1,6 +1,6 @@
 ---
 name: review
-description: Review in one of three modes. Check a commit range with a script verdict, walk a GitHub PR into a pending review, or run a cleanup pass. Use when the user asks to review, check a range, or clean up.
+description: Check a range with a script verdict, walk a GitHub PR, or run a cleanup pass. Use when asked to review, check a range, review a PR, or clean up, on "review continue", or when a big diff reaches delivery.
 ---
 
 # Review
@@ -22,5 +22,6 @@ Ask the owner which mode to run, unless the request names it. The answer picks t
 | `cleanup` | the six-step cleanup pass on work already written | [references/cleanup.md](references/cleanup.md); its Activation section owns when it runs |
 
 Run the front door in `skills/plan/SKILL.md` with `Preset: review <mode>`, then follow the mode
-file. A caller that needs only a verdict, such as `implement` step 06 or the `change-review`
+file. `review continue <run>` makes no new plan. It goes to the mode that owns that run folder
+(`tmp/review-walk/` is walk, `tmp/review-check/` is check), and that mode's continue rule applies. A caller that needs only a verdict, such as `implement` step 06 or the `change-review`
 block, runs the check mode's script as `references/check.md` says, with no plan of its own.

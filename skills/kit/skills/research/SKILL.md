@@ -1,6 +1,6 @@
 ---
 name: research
-description: Research one question and write a short evidence-backed report, shown in full in the reply and kept as a file. Use when the user says research, look into, find out, compare, or find me, or asks what others do.
+description: Research one question and write a short evidence-backed report. Use when the user says research, look into, find out, compare, find me, writeups, articles, or good reads, asks what others do, or says "research continue".
 ---
 
 # Research
