@@ -193,7 +193,7 @@ fn rows(
     if let Some(mark) = &workspace.mark {
         detail.push_str(&format!(" · {mark}"));
     }
-    let status = workspace.status();
+    let status = workspace.status(owner);
     let mut context = fields::workspace_context(
         std::slice::from_ref(workspace),
         &title,
@@ -227,13 +227,11 @@ fn rows(
         status,
         counts: status_counts(
             workspace
-                .chats
-                .iter()
+                .listed_chats(owner)
                 .flat_map(|c| c.agents.iter().map(AgentStatus::agent)),
         ),
         age: workspace
-            .chats
-            .iter()
+            .listed_chats(owner)
             .map(|c| c.last_activity)
             .max()
             .map(|at| age(at, now)),
