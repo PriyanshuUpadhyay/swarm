@@ -245,6 +245,7 @@ export class AppNavigation {
   /** ⌘W and a tab's ×. Closing the open tab shows the chat the server picks, else the landing. A
    *  chat started in a tab is in no sidebar, so closing its tab archives it to Archived chats. */
   closeTab(key?: string): Promise<void> {
+    if (this.app.life.state.confirm) return Promise.resolve();
     const run = this.closes.then(() => this.closeTabNow(key));
     this.closes = run.catch(() => {});
     return run;

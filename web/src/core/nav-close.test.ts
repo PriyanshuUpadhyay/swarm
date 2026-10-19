@@ -166,6 +166,24 @@ describe("closing tabs", () => {
     expect(actions).toEqual([]);
   });
 
+  it("ignores another close press while the tab-only confirm is open", async () => {
+    const { app, actions } = harness({ tabOnly: true, live: true });
+    const dialogs = vi.fn();
+    app.life.subscribe(() => { if (app.life.state.confirm) dialogs(); });
+    const closing = app.closeTab();
+    await vi.waitFor(() => expect(app.life.state.confirm).not.toBeNull());
+    const repeated = app.closeTab();
+    app.life.close("confirm");
+    const settled = vi.fn();
+    void Promise.all([closing, repeated]).then(settled);
+    await vi.waitFor(() => expect(settled).toHaveBeenCalledOnce());
+    expect(dialogs).toHaveBeenCalledOnce();
+    expect(app.life.state.confirm).toBeNull();
+    expect(app.openId).toBe("open");
+    expect(app.closedTabs).toEqual([]);
+    expect(actions).toEqual([]);
+  });
+
   it("records a confirmed archive only after success and opens the strip selection on refresh", async () => {
     const { app, actions } = harness({ tabOnly: true, live: true });
     const settled = vi.fn();
