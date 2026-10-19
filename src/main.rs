@@ -1518,15 +1518,21 @@ struct HookFiles {
 impl HookFiles {
     fn of(user_home: &std::path::Path) -> Result<Self, Box<dyn std::error::Error>> {
         let homes = codex_homes(user_home)?;
+        // A Claude home picked with `CLAUDE_CONFIG_DIR` is one more target, as `CODEX_HOME` is
+        // for Codex.
+        let active = env::var_os("CLAUDE_CONFIG_DIR")
+            .map(|dir| std::path::PathBuf::from(dir).join("settings.json"));
         let claude_settings = unique_targets(
-            std::iter::once(user_home.join(".claude/settings.json")).chain(
-                std::fs::read_dir(user_home.join(".claude/.profiles"))
-                    .into_iter()
-                    .flatten()
-                    .filter_map(Result::ok)
-                    .map(|entry| entry.path().join("settings.json"))
-                    .filter(|path| path.exists()),
-            ),
+            std::iter::once(user_home.join(".claude/settings.json"))
+                .chain(active)
+                .chain(
+                    std::fs::read_dir(user_home.join(".claude/.profiles"))
+                        .into_iter()
+                        .flatten()
+                        .filter_map(Result::ok)
+                        .map(|entry| entry.path().join("settings.json"))
+                        .filter(|path| path.exists()),
+                ),
         );
         let codex_hooks = unique_targets(homes.iter().map(|home| home.join("hooks.json")));
         Ok(Self {
@@ -2383,7 +2389,16 @@ fn plugin_plan(
         .filter(|cli| !found.contains(cli))
         .map(|cli| format!("{cli} is not on PATH"))
         .collect();
-    let clashes = swarm::plugin::clashes(&kit, user_home);
+    let active: Vec<std::path::PathBuf> = [
+        ("CLAUDE_CONFIG_DIR", "skills"),
+        ("PI_CODING_AGENT_DIR", "skills"),
+    ]
+    .iter()
+    .filter_map(|(variable, folder)| {
+        env::var_os(variable).map(|dir| std::path::PathBuf::from(dir).join(folder))
+    })
+    .collect();
+    let clashes = swarm::plugin::clashes(&kit, user_home, &active);
     notes.extend(
         clashes
             .iter()

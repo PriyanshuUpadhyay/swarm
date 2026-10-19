@@ -548,3 +548,39 @@ fn a_partial_hooks_setup_names_the_files_it_already_wrote() {
     );
     std::fs::remove_dir_all(&home).unwrap();
 }
+
+/// A Claude home picked with `CLAUDE_CONFIG_DIR` is a guard target too, through the same plan and
+/// record as `~/.claude/settings.json`.
+#[test]
+fn hooks_setup_guards_the_claude_home_that_claude_config_dir_names() {
+    let home = scratch("claude-config-dir");
+    write(&home, ".swarm/guards.json", RULES);
+    let work = home.join("claude-work");
+    std::fs::create_dir_all(&work).unwrap();
+    let setup = Command::new(env!("CARGO_BIN_EXE_swarm"))
+        .env_clear()
+        .env("HOME", &home)
+        .env("SWARM_HOME", &home)
+        .env("PATH", "/usr/bin:/bin")
+        .env("CLAUDE_CONFIG_DIR", &work)
+        .current_dir(&home)
+        .args(["setup", "hooks", "--yes"])
+        .output()
+        .unwrap();
+    assert!(setup.status.success(), "{setup:?}");
+    let db = rusqlite::Connection::open(home.join(".swarm/swarm.db")).unwrap();
+    let files: Vec<String> = db
+        .prepare("SELECT file FROM managed_edit WHERE off = 0 AND writer = 'hooks.guard'")
+        .unwrap()
+        .query_map([], |row| row.get(0))
+        .unwrap()
+        .map(Result::unwrap)
+        .collect();
+    for settings in [
+        home.join(".claude/settings.json"),
+        work.join("settings.json"),
+    ] {
+        let settings = settings.display().to_string();
+        assert!(files.contains(&settings), "{settings} not in {files:?}");
+    }
+}
