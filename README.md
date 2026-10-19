@@ -38,7 +38,7 @@ model. Each agent learns its part from a skill: `swarm-orchestrator` for the cha
 
 Panes live in [tmux](https://github.com/tmux/tmux) (the default) or in
 [Herdr](https://github.com/herdrdev/herdr). In a Herdr pane, swarm picks Herdr by itself.
-`swarm ui` opens a chat UI over the same sessions in your browser. The web UI is inside the `swarm`
+`swarm ui` opens a chat UI over the same sessions in the Swarm app. The web UI is inside the `swarm`
 binary, and `swarm serve` serves it on 127.0.0.1 (ADR 0075, ADR 0079).
 
 ## Install
@@ -194,9 +194,10 @@ The chair follows `swarm-orchestrator`, and the worker pane opens beside it.
 
 ### From the web UI
 
-Run `swarm ui`. It starts the server in the background on port 4747, opens the page in your
-browser, starts the usage HUD when it is not running, and gives your terminal back. A second
-`swarm ui` opens the same server's page. `swarm ui stop` stops the server, and `swarm ui
+Run `swarm ui`. It starts the server in the background on port 4747, opens the page in the Swarm
+app in full screen, starts the usage HUD when it is not running, and gives your terminal back. A
+second `swarm ui` brings the app's window to the front. A build with no `Swarm.app` beside it opens
+the page in your browser. `swarm ui stop` stops the server, and `swarm ui
 --foreground` serves in the terminal until Ctrl-C. The page keeps its token in local storage, so a
 reload or a new tab needs no link. The URL names the open chat as `/chat/<id>`, and the short id
 beside the tab strip copies the full id.

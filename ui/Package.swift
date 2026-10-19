@@ -7,9 +7,11 @@ let package = Package(
     products: [
         .executable(name: "SwarmNotify", targets: ["SwarmNotify"]),
         .executable(name: "SwarmHUD", targets: ["SwarmHUD"]),
+        .executable(name: "SwarmApp", targets: ["SwarmApp"]),
     ],
     targets: [
         .executableTarget(name: "SwarmNotify", swiftSettings: [.swiftLanguageMode(.v6)]),
+        .executableTarget(name: "SwarmApp", swiftSettings: [.swiftLanguageMode(.v6)]),
         .target(name: "SwarmHUDCore", swiftSettings: [.swiftLanguageMode(.v6)]),
         .executableTarget(name: "SwarmHUD", dependencies: ["SwarmHUDCore"], swiftSettings: [.swiftLanguageMode(.v6)]),
         .testTarget(name: "SwarmHUDTests", dependencies: ["SwarmHUDCore", "SwarmHUD"], exclude: ["fixtures"], swiftSettings: [.swiftLanguageMode(.v6)]),
