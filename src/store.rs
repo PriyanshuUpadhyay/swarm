@@ -134,13 +134,6 @@ fn migrate_locked(connection: &mut Connection) -> Result<(), Box<dyn std::error:
     // first; taking the write lock before the read waits on busy_timeout instead. The version is
     // read again under the lock, because another swarm may have migrated since.
     let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
-    // Only a key that the migration breaks refuses it; an older broken row is not its fault.
-    let broken = |tx: &rusqlite::Transaction| -> rusqlite::Result<i64> {
-        tx.query_row("SELECT count(*) FROM pragma_foreign_key_check", [], |row| {
-            row.get(0)
-        })
-    };
-    let broken_before = broken(&tx)?;
 
     let version: i64 = tx.query_row("PRAGMA user_version", [], |row| row.get(0))?;
     if version == 0 {
@@ -156,6 +149,14 @@ fn migrate_locked(connection: &mut Connection) -> Result<(), Box<dyn std::error:
             "database made by another swarm build; use another SWARM_HOME or delete it".into(),
         );
     }
+    // Counted only in a db that is swarm's: another program's keys may not even parse. Only a key
+    // that the migration breaks refuses it; an older broken row is not its fault.
+    let broken = |tx: &rusqlite::Transaction| -> rusqlite::Result<i64> {
+        tx.query_row("SELECT count(*) FROM pragma_foreign_key_check", [], |row| {
+            row.get(0)
+        })
+    };
+    let broken_before = broken(&tx)?;
     if version < 2 {
         tx.execute_batch(MIGRATIONS[1])?;
     }
@@ -3399,6 +3400,24 @@ mod tests {
         assert_eq!(tables, ["bookmark"]);
         open(&root.join("new.db")).unwrap();
         assert!(made_by_swarm(&root.join("new.db")));
+    }
+
+    /// A key that SQLite cannot check, in another program's db, still gets the ADR 0036 refusal,
+    /// because migrate counts broken keys only in a db it knows is swarm's.
+    #[test]
+    fn another_programs_database_with_a_bad_key_gets_the_refusal() {
+        let root = temp_root("other-program-key");
+        std::fs::create_dir_all(&root).unwrap();
+        let db = root.join("swarm.db");
+        Connection::open(&db)
+            .unwrap()
+            .execute_batch("CREATE TABLE p (a, b); CREATE TABLE ch (x REFERENCES p(a));")
+            .unwrap();
+        assert_eq!(
+            open(&db).unwrap_err().to_string(),
+            "database not made by swarm; use another SWARM_HOME or move it"
+        );
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// A second swarm that opens the db while the first migrates it waits and then finds it

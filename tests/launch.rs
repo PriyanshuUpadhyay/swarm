@@ -782,9 +782,9 @@ fn a_pi_seat_shows_its_host_record_as_its_state() {
 
 /// One failed record read is no news: a fresh host state stands, as a fresh hook report does, so
 /// an idle-looking screen does not end a wait and post a second wait notice. A record time ahead
-/// of the clock is stored as now, so it cannot prove a later ring.
+/// of the clock is no record, so it cannot prove a later ring.
 #[test]
-fn a_failed_record_read_keeps_a_fresh_host_wait_and_a_future_time_is_now() {
+fn a_failed_record_read_keeps_a_fresh_host_wait_and_a_future_record_is_none() {
     let home = scratch("host-gap");
     std::fs::write(
         home.join("screen"),
@@ -817,7 +817,11 @@ fn a_failed_record_read_keeps_a_fresh_host_wait_and_a_future_time_is_now() {
     )
     .unwrap();
     let seat = listed_seat(&home, &session);
-    assert_eq!(seat["state"], "working", "{seat}");
+    assert_eq!(
+        (&seat["state"], &seat["state_source"]),
+        (&"waiting".into(), &"host".into()),
+        "{seat}"
+    );
     assert!(seat["state_at_s"].as_i64().unwrap() <= now(), "{seat}");
 }
 

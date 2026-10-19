@@ -27,7 +27,7 @@ pub struct Agent {
     /// `working`, `waiting`, `done`, or `failed`; null until the first report (ADR 0021).
     pub state: Option<String>,
     pub state_at_s: Option<i64>,
-    /// `hook` or `screen`.
+    /// `hook`, `host` (the host terminal's program-status record), or `screen`.
     pub state_source: Option<String>,
     pub state_detail: Option<String>,
     pub state_kind: Option<String>,

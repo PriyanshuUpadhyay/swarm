@@ -40,7 +40,7 @@ fn unix_now() -> Result<i64, std::time::SystemTimeError> {
 /// What one ring proved (ADR 0041), stored on `message.delivery`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Delivery {
-    /// The recipient's hook reported a turn after the ring.
+    /// The recipient's own report, from its hook or its host record, showed a turn after the ring.
     Hook,
     /// The recipient's screen showed a turn or a question after the ring. A busy CLI queues or
     /// steers the ring and fires no turn-start hook (ADR 0038), so this is its only proof.
@@ -185,9 +185,9 @@ fn host_record_of(
         return None;
     }
     let body = adapter.status(&[("pane", pane)], std::time::Duration::from_millis(300))?;
-    let (record, at) = swarm::host::host_record(&body, seen_work)?;
-    // A time ahead of this clock would prove every later ring, so it counts as now.
-    Some((record, at.min(unix_now().ok()?)))
+    // A time ahead of this clock would prove every later ring, so such a record is no record.
+    swarm::host::host_record(&body, seen_work)
+        .filter(|(_, at)| unix_now().is_ok_and(|now| *at <= now))
 }
 
 /// Stores a pi agent's host record, so `ring_proof` reads a turn that the record shows. A failed
