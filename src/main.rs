@@ -437,6 +437,47 @@ fn read_within<R: std::io::Read + Send + 'static>(
     text.recv_timeout(limit).ok()?.ok()
 }
 
+/// Writes a hook state to the agent's terminal as an OSC 7501 report. A provider starts its hooks
+/// with no controlling terminal, so the report goes to the nearest ancestor that has one, the
+/// agent CLI. A hook must not fail the turn, so a missing terminal only skips the report.
+fn report_to_terminal(provider: &str, state: &swarm::host::HookState) {
+    use std::io::Write;
+    let Some(body) = swarm::host::program_status_report(provider, state) else {
+        return;
+    };
+    let Some(tty) = ancestor_tty(std::process::id()) else {
+        return;
+    };
+    if let Ok(mut terminal) = std::fs::OpenOptions::new().write(true).open(tty) {
+        let _ = write!(terminal, "\x1b]7501;{body}\x1b\\");
+    }
+}
+
+/// The terminal device of `pid` or its nearest ancestor that has one.
+fn ancestor_tty(mut pid: u32) -> Option<std::path::PathBuf> {
+    let mut seen = std::collections::HashSet::new();
+    while pid > 1 && seen.insert(pid) {
+        let output = std::process::Command::new("ps")
+            .args(["-o", "ppid=,tty=", "-p", &pid.to_string()])
+            .output()
+            .ok()?;
+        if !output.status.success() {
+            return None;
+        }
+        let text = String::from_utf8(output.stdout).ok()?;
+        let mut fields = text.split_whitespace();
+        let parent = fields.next()?.parse().ok()?;
+        match fields.next() {
+            // ps prints `??` (macOS) or `?` (Linux) for a process with no terminal.
+            Some(tty) if !tty.starts_with('?') => {
+                return Some(std::path::Path::new("/dev").join(tty));
+            }
+            _ => pid = parent,
+        }
+    }
+    None
+}
+
 /// `swarm hook`: a hook must never block or fail an agent's turn, so every error goes to stderr
 /// and the caller always gets `{}` and exit 0. Providers give a hook about 3 s: stdin gets 2 s,
 /// the bus 1 s.
@@ -450,6 +491,15 @@ fn hook(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let Some(report) = hook_report(args, &payload, |name| env::var(name).ok())? else {
         return Ok(());
     };
+    // Before the bus, so a busy bus does not lose what the owner sees in the block. Claude Code
+    // and Antigravity send their own OSC 7501 reports in Rex, and a second writer flips the
+    // record's app, so only Codex, which sends none, gets reports from its hook.
+    if let (Some(state), Some(provider)) = (&report.state, args.first())
+        && provider == "codex"
+        && swarm::host::in_rex(|name| env::var(name).ok())
+    {
+        report_to_terminal(provider, state);
+    }
     let connection = swarm::store::open(&swarm::paths::sqlite_db()?)?;
     // The providers give a hook about 3 s; a busy bus loses this report rather than the turn.
     connection.busy_timeout(std::time::Duration::from_secs(1))?;

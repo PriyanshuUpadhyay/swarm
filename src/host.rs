@@ -92,7 +92,7 @@ fn in_superset(env: impl Fn(&str) -> Option<String>) -> bool {
 
 /// Whether this process runs in a Rex block. A tmux started from a Rex block copies `REX_BLOCK`
 /// into every one of its panes, naming the outer block, but sets its own `TERM_PROGRAM`.
-fn in_rex(env: impl Fn(&str) -> Option<String>) -> bool {
+pub fn in_rex(env: impl Fn(&str) -> Option<String>) -> bool {
     env("REX_BLOCK").is_some_and(|block| !block.is_empty())
         && env("TERM_PROGRAM").as_deref() == Some("rex")
 }
@@ -208,9 +208,16 @@ pub struct HookState {
 pub fn hook_state(provider: &str, event: &str, payload: &serde_json::Value) -> Option<HookState> {
     let text = |name: &str| payload.get(name).and_then(serde_json::Value::as_str);
     let error = text("error").filter(|error| !error.is_empty());
+    let tool = text("tool_name");
     let (state, kind) = match (provider, event) {
         // An in-process Claude subagent's events are not the pane's state.
         ("claude", _) if text("agent_id").is_some_and(|id| !id.is_empty()) => return None,
+        // Codex asks with a tool that returns at once, then waits in `clocksleep` calls until the
+        // owner's reply arrives as a UserPromptSubmit, so a sleep keeps the question's state.
+        ("codex", "PreToolUse" | "PostToolUse") if tool == Some("request_user_input_async") => {
+            ("waiting", Some("question"))
+        }
+        ("codex", "PreToolUse" | "PostToolUse") if tool == Some("clocksleep") => return None,
         ("claude" | "codex", "UserPromptSubmit" | "PreToolUse" | "PostToolUse") => {
             ("working", None)
         }
@@ -286,6 +293,21 @@ pub fn program_status(body: &str, seen_work: bool) -> Option<HookState> {
         detail: if state == "failed" { message } else { None },
         kind,
     })
+}
+
+/// The OSC 7501 report body for a hook state, the inverse of `program_status`, so a terminal that
+/// speaks the protocol shows a hooked agent's state. A report replaces its whole record, so each
+/// one names the provider as `app`. A failure's detail is left out: it needs base64.
+pub fn program_status_report(provider: &str, state: &HookState) -> Option<String> {
+    let body = match (state.state, state.kind) {
+        ("working", _) => "state=working".to_string(),
+        ("waiting", Some(kind)) => format!("state=blocked:kind={kind}"),
+        ("waiting", None) => "state=blocked".to_string(),
+        ("done", _) => "state=done".to_string(),
+        ("failed", _) => "state=error".to_string(),
+        _ => return None,
+    };
+    Some(format!("{body}:app={provider}"))
 }
 
 /// Standard base64 with optional padding, decoded as UTF-8.
@@ -679,6 +701,35 @@ mod tests {
         );
         // A malformed pair is skipped and the rest still counts.
         assert_eq!(state("junk:state=done", true), Some(("done", None, None)));
+    }
+
+    #[test]
+    fn a_hook_state_report_reads_back_as_the_same_state() {
+        let report = |state: &'static str, kind: Option<&'static str>| {
+            let hook = HookState {
+                state,
+                detail: None,
+                kind,
+            };
+            program_status_report("claude", &hook)
+        };
+        assert_eq!(
+            report("waiting", Some("permission")).as_deref(),
+            Some("state=blocked:kind=permission:app=claude")
+        );
+        assert_eq!(report("idle", None), None);
+        for (state, kind) in [
+            ("working", None),
+            ("waiting", Some("permission")),
+            ("waiting", Some("question")),
+            ("waiting", None),
+            ("done", None),
+            ("failed", None),
+        ] {
+            let body = report(state, kind).unwrap();
+            let back = program_status(&body, true).unwrap();
+            assert_eq!((back.state, back.kind), (state, kind), "{body}");
+        }
     }
 
     #[test]
@@ -1077,5 +1128,32 @@ mod tests {
                 .map(|report| (report.state, report.detail.as_deref()));
             assert_eq!(got, *expected, "{provider} {event} {payload}");
         }
+    }
+
+    /// The order a live Codex seat sent on 2026-10-19 while it asked the owner one question.
+    #[test]
+    fn a_codex_question_waits_through_its_sleeps_until_the_reply() {
+        use serde_json::json;
+        let state = |event: &str, payload: serde_json::Value| {
+            hook_state("codex", event, &payload).map(|s| (s.state, s.kind))
+        };
+        let ask = json!({"tool_name": "request_user_input_async"});
+        let sleep = json!({"tool_name": "clocksleep"});
+        assert_eq!(
+            state("PreToolUse", ask.clone()),
+            Some(("waiting", Some("question")))
+        );
+        assert_eq!(
+            state("PostToolUse", ask),
+            Some(("waiting", Some("question")))
+        );
+        assert_eq!(state("PreToolUse", sleep.clone()), None);
+        assert_eq!(state("PostToolUse", sleep), None);
+        let reply = json!({"prompt": "<send_user_message_question_reply>\n[]"});
+        assert_eq!(state("UserPromptSubmit", reply), Some(("working", None)));
+        assert_eq!(
+            state("PreToolUse", json!({"tool_name": "Bash"})),
+            Some(("working", None))
+        );
     }
 }
