@@ -30,11 +30,12 @@ pub struct Adapter {
 /// pane id reached the repository and never reached the machine: `agent add` recorded no pane and
 /// every `type` answered `no pane recorded`. A deployed file is an edit now, and it overrides only
 /// the verbs it names, so one edited verb cannot hold back a fix to any other. See `load`.
-pub const SHIPPED: [(&str, &str); 4] = [
+pub const SHIPPED: [(&str, &str); 5] = [
     ("tmux", include_str!("../adapters/tmux.conf")),
     ("tmux-swarm", include_str!("../adapters/tmux-swarm.conf")),
     ("herdr", include_str!("../adapters/herdr.conf")),
     ("superset", include_str!("../adapters/superset.conf")),
+    ("rex", include_str!("../adapters/rex.conf")),
 ];
 
 pub fn shipped(name: &str) -> Option<&'static str> {
@@ -451,6 +452,16 @@ mod tests {
         assert!(adapter.key.is_none());
         assert!(adapter.screen.is_some());
         assert!(adapter.caller.contains("SUPERSET_TERMINAL_ID"));
+    }
+
+    #[test]
+    fn shipped_rex_has_the_required_verbs_and_key_but_no_attach() {
+        let adapter = parse("rex", shipped("rex").unwrap()).unwrap();
+        assert!(adapter.attach.is_none());
+        assert!(adapter.interrupt.is_some());
+        assert!(adapter.key.is_some());
+        assert!(adapter.screen.is_some());
+        assert!(adapter.caller.contains("REX_BLOCK"));
     }
 
     #[test]

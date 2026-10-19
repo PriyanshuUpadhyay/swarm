@@ -2136,6 +2136,32 @@ fn a_superset_terminal_counts_as_an_agent_pane_for_the_owner_only_guard() {
 }
 
 #[test]
+fn a_rex_chair_registers_as_orchestrator_on_session_new() {
+    let home = scratch("rex-chair");
+    let rex = [("REX_BLOCK", "block:1")];
+    let session = swarm(&home, &rex, &["session", "new", "lane"]);
+    assert!(session.status.success(), "{}", stderr(&session));
+    let inbox = swarm(&home, &rex, &["inbox"]);
+    assert!(inbox.status.success(), "{}", stderr(&inbox));
+}
+
+#[test]
+fn a_rex_block_counts_as_an_agent_pane_for_the_owner_only_guard() {
+    let home = scratch("rex-guard");
+    let output = swarm(
+        &home,
+        &[("REX_BLOCK", "block:1")],
+        &["answer", "w1", "p1", "1"],
+    );
+    assert!(!output.status.success());
+    assert!(
+        stderr(&output).contains("only the owner answers"),
+        "{}",
+        stderr(&output)
+    );
+}
+
+#[test]
 fn claude_launch_uses_shared_chats_and_bypasses_shell_functions() {
     let (home, session, cwd) = account_launch_fixture("launch-env");
     tool(
