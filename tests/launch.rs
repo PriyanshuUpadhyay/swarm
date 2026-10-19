@@ -780,6 +780,47 @@ fn a_pi_seat_shows_its_host_record_as_its_state() {
     assert_ne!(seat["state_at_s"], 130, "{seat}");
 }
 
+/// One failed record read is no news: a fresh host state stands, as a fresh hook report does, so
+/// an idle-looking screen does not end a wait and post a second wait notice. A record time ahead
+/// of the clock is stored as now, so it cannot prove a later ring.
+#[test]
+fn a_failed_record_read_keeps_a_fresh_host_wait_and_a_future_time_is_now() {
+    let home = scratch("host-gap");
+    std::fs::write(
+        home.join("screen"),
+        include_str!("fixtures/screens/pi-idle.txt"),
+    )
+    .unwrap();
+    let (session, _connection) = status_session(&home, "pi", "true");
+    let now = || {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64
+    };
+    std::fs::write(
+        home.join("status"),
+        format!("state=blocked:kind=question:at={}", now()),
+    )
+    .unwrap();
+    assert_eq!(listed_seat(&home, &session)["state"], "waiting");
+    std::fs::remove_file(home.join("status")).unwrap();
+    let seat = listed_seat(&home, &session);
+    assert_eq!(
+        (&seat["state"], &seat["state_source"]),
+        (&"waiting".into(), &"host".into()),
+        "{seat}"
+    );
+    std::fs::write(
+        home.join("status"),
+        format!("state=working:at={}", now() + 600),
+    )
+    .unwrap();
+    let seat = listed_seat(&home, &session);
+    assert_eq!(seat["state"], "working", "{seat}");
+    assert!(seat["state_at_s"].as_i64().unwrap() <= now(), "{seat}");
+}
+
 /// A pi seat has no hook, so the record its host keeps proves the ring: a turn the record shows
 /// as started at or after the ring.
 #[test]

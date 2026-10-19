@@ -185,7 +185,9 @@ fn host_record_of(
         return None;
     }
     let body = adapter.status(&[("pane", pane)], std::time::Duration::from_millis(300))?;
-    swarm::host::host_record(&body, seen_work)
+    let (record, at) = swarm::host::host_record(&body, seen_work)?;
+    // A time ahead of this clock would prove every later ring, so it counts as now.
+    Some((record, at.min(unix_now().ok()?)))
 }
 
 /// Stores a pi agent's host record, so `ring_proof` reads a turn that the record shows. A failed
