@@ -33,6 +33,31 @@ async function openChat(tab: Page, session: string) {
   await expect(tab.locator(`[data-testid="tab"][data-session="${session}"]`)).toHaveAttribute("aria-selected", "true");
 }
 
+async function chooseOutside(op: Record<string, unknown>) {
+  const { revision } = await readTree();
+  const response = await fetch(`${server().origin}/api/choices`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token()}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ revision, ...op }),
+  });
+  expect(response.status).toBe(200);
+}
+
+async function selectTabOnlyOutside(tab: Page) {
+  const workspace = workspaceRow(tab, "ws-tabs");
+  const selected = tab.waitForResponse((r) => r.url().endsWith("/api/choices") && r.request().postDataJSON().op === "selected_chat" && r.request().postDataJSON().chat !== null);
+  await workspace.click();
+  expect((await selected).status()).toBe(200);
+  const tabs = tab.getByTestId("tab");
+  await expect(tabs).toHaveCount(2);
+  const workspaceId = (await workspace.getAttribute("data-id"))!;
+  const session = (await tabs.nth(1).getAttribute("data-session"))!;
+  const key = (await tabs.nth(1).getAttribute("data-id"))!;
+  await chooseOutside({ op: "open_tab", workspace: workspaceId, chat: session, tab_only: true });
+  await chooseOutside({ op: "selected_chat", workspace: workspaceId, chat: session });
+  return { workspaceId, session, key };
+}
+
 test("a workspace dragged onto the Pinned header is pinned; the menu pins and unpins", async ({ page: tab }) => {
   // After the other specs the tree is long. WebKit drops a drag that must scroll the list on the
   // way, so both rows must fit above the usage footer.
@@ -222,6 +247,57 @@ test("clicking a tab-only chat marks its workspace as current", async ({ page: t
     expect(errors).toEqual([]);
   } finally {
     await tab.screenshot({ path: info.outputPath("tab-only-current.png") });
+    await tab.close();
+    writeFileSync(choicesPath, before);
+  }
+});
+
+test("reloading at / restores the selected tab-only chat", async ({ page: tab }, info) => {
+  const errors = await open(tab);
+  const choicesPath = join(process.env.SWARM_E2E_HOME!, ".swarm/choices.json");
+  const before = readFileSync(choicesPath, "utf8");
+  try {
+    const { session } = await selectTabOnlyOutside(tab);
+    await tab.evaluate(() => history.replaceState(null, "", "/"));
+    await tab.reload();
+    await tab.waitForFunction(() => window.__swarmReady === true);
+    await expect(tab.locator(`[data-testid="tree-row"][data-session="${session}"]`)).toHaveCount(0);
+    await expect(tab.locator(`[data-testid="tab"][data-session="${session}"]`)).toHaveAttribute("aria-selected", "true");
+    await expect(tab.getByTestId("workspace-landing")).toHaveCount(0);
+    expect(errors).toEqual([]);
+  } finally {
+    await tab.screenshot({ path: info.outputPath("tab-only-reload.png") });
+    await tab.close();
+    writeFileSync(choicesPath, before);
+  }
+});
+
+test("refresh after an external close shows the strip selected chat", async ({ page: tab }, info) => {
+  const errors = await open(tab);
+  const choicesPath = join(process.env.SWARM_E2E_HOME!, ".swarm/choices.json");
+  const before = readFileSync(choicesPath, "utf8");
+  try {
+    const { workspaceId, session, key } = await selectTabOnlyOutside(tab);
+    await tab.evaluate(() => history.replaceState(null, "", "/"));
+    await tab.reload();
+    await tab.waitForFunction(() => window.__swarmReady === true);
+    const selected = tab.waitForResponse((r) => r.url().endsWith("/api/choices") && r.request().postDataJSON().op === "selected_chat" && r.request().postDataJSON().chat === session);
+    await workspaceRow(tab, "ws-tabs").click();
+    expect((await selected).status()).toBe(200);
+    await expect(tab.locator(`[data-testid="tab"][data-session="${session}"]`)).toHaveAttribute("aria-selected", "true");
+    const refreshed = tab.waitForResponse((r) => r.url().includes("/api/tabs?") && r.request().method() === "GET");
+    await chooseOutside({ op: "close_tab", workspace: workspaceId, chat: key });
+    const response = await fetch(`${server().origin}/api/tabs?workspace=${encodeURIComponent(workspaceId)}`, { headers: { Authorization: `Bearer ${token()}` } });
+    const next = (await response.json()).view.selectedChat as string;
+    expect(next).toBeTruthy();
+    expect(next).not.toBe(session);
+    await refreshed;
+    await expect(tab.locator(`[data-testid="tab"][data-session="${session}"]`)).toHaveCount(0);
+    await expect(tab.locator(`[data-testid="tab"][data-session="${next}"]`)).toHaveAttribute("aria-selected", "true");
+    await expect(tab.getByTestId("workspace-landing")).toHaveCount(0);
+    expect(errors).toEqual([]);
+  } finally {
+    await tab.screenshot({ path: info.outputPath("external-tab-close.png") });
     await tab.close();
     writeFileSync(choicesPath, before);
   }

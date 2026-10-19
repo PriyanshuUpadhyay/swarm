@@ -5,6 +5,8 @@ import { chatRows, currentRow, navRows, shareTree, workspaceOf, type ChoiceOp, t
 import { message, markable } from "./app-types";
 import type { App } from "./app";
 
+type NavRead = { workspace: string; writeSeq: number; navSeq: number };
+
 export class AppNavigation {
   constructor(private readonly app: App) {}
 
@@ -30,9 +32,9 @@ export class AppNavigation {
       do {
         this.app.snapshotAgain = false;
         try {
-          const [snap] = await Promise.all([this.app.api.snapshot(), this.loadNav()]);
+          const [snap, read] = await Promise.all([this.app.api.snapshot(), this.loadNav()]);
           this.app.streaming.applySnapshot(snap);
-          this.afterNav();
+          this.afterNav(read);
           this.app.error = null;
         } catch (err) {
           this.app.error = String(err);
@@ -45,9 +47,10 @@ export class AppNavigation {
     return this.app.snapshotBusy;
   }
 
-  /** Reads the tree and the current workspace's tab strip. */
-  async loadNav() {
+  /** Reads the tree and strip, with the sequences that show whether the strip is still fresh. */
+  async loadNav(): Promise<NavRead | null> {
     const seq = this.app.writeSeq;
+    const navSeq = this.app.navSeq;
     const name = this.app.treeName;
     const workspace = this.app.workspace;
     const [tree, tabs] = await Promise.all([
@@ -55,7 +58,7 @@ export class AppNavigation {
       // An unknown workspace is a 404; the strip stays empty.
       workspace ? this.app.api.tabs(workspace).catch(() => null) : null,
     ]);
-    if (name !== this.app.treeName) return;
+    if (name !== this.app.treeName) return null;
     // A write that landed while these were in flight holds the newer revision and folds.
     if (this.app.writing === 0 && seq === this.app.writeSeq) {
       this.app.revision = tree.revision;
@@ -64,11 +67,12 @@ export class AppNavigation {
     this.app.tree = shareTree(this.app.tree?.view === name ? this.app.tree : null, tree);
     if (tabs && workspace === this.app.workspace) this.app.tabs = tabs.view;
     this.app.rows = navRows(this.app.tree, this.app.folds);
+    return tabs ? { workspace: tabs.view.workspace, writeSeq: seq, navSeq } : null;
   }
 
   /** After each tree: the first one restores the owner's last chat. A chat is marked seen only when
    *  it is selected (`selected_chat`), as in Swift's WorkspaceNavigation.select. */
-  afterNav() {
+  afterNav(read: NavRead | null) {
     const tree = this.app.tree;
     if (!tree) return;
     if (!this.app.selected || !this.app.rows.some((r) => r.id === this.app.selected)) this.app.selected = currentRow(this.app.rows, this.app.openId, this.app.workspace) ?? this.app.rows[0]?.id ?? null;
@@ -87,6 +91,14 @@ export class AppNavigation {
         else if (row.kind === "workspace") this.app.workspace = row.id;
         void this.refreshSnapshot();
       }
+    }
+    const tabs = this.app.tabs;
+    // The snapshot can finish after the strip, so freshness is checked after both reads.
+    if (read && this.app.writing === 0 && read.writeSeq === this.app.writeSeq && read.navSeq === this.app.navSeq
+      && tree.view === "workspaces" && this.app.workspace && read.workspace === this.app.workspace
+      && tabs?.workspace === this.app.workspace && tabs.selectedChat && tabs.selectedChat !== this.app.openId
+      && !tabs.tabs.some((tab) => tab.session === this.app.openId)) {
+      this.openChat(tabs.selectedChat, undefined, { write: false });
     }
   }
 
