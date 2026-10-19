@@ -731,6 +731,7 @@ fn router(app: App) -> Router {
         .route("/api/chat/new", post(chat_action))
         .route("/api/sessions/archived", get(archived_sessions))
         .route("/api/chats/importable", get(importable_chats))
+        .route("/api/ui-error", post(ui_error))
         .fallback(static_file)
         .layer(DefaultBodyLimit::max(64 * 1024))
         .layer(middleware::from_fn_with_state(app.clone(), guard))
@@ -802,7 +803,84 @@ async fn guard(State(app): State<App>, request: Request, next: Next) -> Response
         )
         .into_response();
     }
-    next.run(request).await
+    record_errors(&app, request, next).await
+}
+
+/// Runs the request and appends each failed reply, with the JSON body that caused it, to
+/// `<root>/errors.jsonl`, so an error that the page showed can be diagnosed later.
+async fn record_errors(app: &App, request: Request, next: Next) -> Response {
+    const LIMIT: usize = 64 * 1024;
+    let method = request.method().to_string();
+    let uri = request.uri().to_string();
+    let json_body = request
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value.starts_with("application/json"));
+    let (request, sent) = if json_body {
+        let (parts, body) = request.into_parts();
+        let Ok(bytes) = axum::body::to_bytes(body, LIMIT).await else {
+            return error(StatusCode::PAYLOAD_TOO_LARGE, "length limit exceeded").into_response();
+        };
+        (
+            Request::from_parts(parts, Body::from(bytes.clone())),
+            Some(bytes),
+        )
+    } else {
+        (request, None)
+    };
+    let response = next.run(request).await;
+    if !(response.status().is_client_error() || response.status().is_server_error()) {
+        return response;
+    }
+    let (parts, body) = response.into_parts();
+    let reply = axum::body::to_bytes(body, LIMIT).await.unwrap_or_default();
+    let value = |bytes: &[u8]| {
+        serde_json::from_slice(bytes)
+            .unwrap_or_else(|_| Value::String(String::from_utf8_lossy(bytes).into_owned()))
+    };
+    append_error(
+        &app.root,
+        json!({
+            "source": "server",
+            "method": method,
+            "uri": uri,
+            "status": parts.status.as_u16(),
+            "reply": value(&reply),
+            "request": sent.as_deref().map(value),
+        }),
+    );
+    Response::from_parts(parts, Body::from(reply))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ShownError {
+    text: String,
+    page: String,
+}
+/// An error that the page showed to the owner, such as a toast.
+async fn ui_error(State(app): State<App>, Json(shown): Json<ShownError>) -> StatusCode {
+    append_error(
+        &app.root,
+        json!({"source": "ui", "text": shown.text, "page": shown.page}),
+    );
+    StatusCode::NO_CONTENT
+}
+
+// ponytail: the log is never rotated; cap or rotate it if it grows.
+fn append_error(root: &Path, mut entry: Value) {
+    use std::os::unix::fs::OpenOptionsExt;
+    entry["at"] = json!(discovery::now());
+    let written = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .mode(0o600)
+        .open(root.join("errors.jsonl"))
+        .and_then(|mut file| writeln!(file, "{entry}"));
+    if let Err(err) = written {
+        eprintln!("swarm serve: could not record an error: {err}");
+    }
 }
 
 fn read_connection(root: &Path) -> rusqlite::Result<rusqlite::Connection> {
@@ -3400,10 +3478,17 @@ async fn run_cli_with_timeout(
             command.env_remove(name);
         }
     }
+    // A chat of a removed worktree keeps its gone folder as cwd, and a spawn there fails, so its
+    // close or archive runs from the swarm home; SWARM_SESSION_ID still names the chat.
+    let cwd = if call.cwd.is_dir() {
+        &call.cwd
+    } else {
+        &app.root
+    };
     command
         .args(&call.args)
-        .current_dir(&call.cwd)
-        .env("PWD", &call.cwd)
+        .current_dir(cwd)
+        .env("PWD", cwd)
         .env("SWARM_HOME", app.root.parent().expect("swarm home"))
         .env("SWARM_ADAPTER", &call.adapter)
         .stdin(std::process::Stdio::piped())

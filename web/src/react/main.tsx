@@ -2,6 +2,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { createRoot } from "react-dom/client";
 import { usePanelRef, useDefaultLayout } from "react-resizable-panels";
 import { toast } from "sonner";
+import { showError, shownErrors } from "./errors";
 import { CopyIcon } from "lucide-react";
 import { forgetToken } from "../core/api";
 import type { App } from "../core/app";
@@ -125,7 +126,9 @@ const app = boot();
 const changes = typeof app === "string" ? null : new Changes(app);
 if (typeof app !== "string") {
   app.registry.add(...changes!.commands());
-  app.notice = (text, error) => (error ? toast.error(text) : toast(text));
+  app.notice = (text, error) => (error ? showError(text) : toast(text));
+  // A failed report is dropped, so it never shows an error of its own.
+  shownErrors.report = (text) => void app.api.post("/api/ui-error", { text, page: location.pathname }).catch(() => {});
   // A token that the server refuses is forgotten, so the next link that swarm ui opens saves its own.
   app.unauthorized = () => {
     forgetToken(savedStore());
