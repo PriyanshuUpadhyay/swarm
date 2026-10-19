@@ -913,13 +913,14 @@ export class App {
   /** ⌃⌘W opens the next chat whose chair or child waits for the owner. */
   openWaiting(e?: KeyboardEvent) {
     // Listed chats in sidebar order, then the chats that a collapsed workspace or "… more" hides.
-    // A workspace that the tree does not list, such as an archived one, is skipped, as the Dock badge does.
+    // Chats of an archived workspace are skipped, as the Dock badge does. The Workspaces view
+    // leaves an archived workspace out; the Archived view and a tree not loaded yet mark nothing.
     const listed = chatRows(this.tree).flatMap((r) => (r.selection?.chat ? [r.selection.chat] : []));
-    const shown = (s: string) => {
+    const archived = (s: string) => {
       const row = workspaceRow(this.tree, workspaceOf(this.tree, this.snapshot, s));
-      return !!row && !row.archived;
+      return row ? row.archived : this.tree?.view === "workspaces" && !listed.includes(s);
     };
-    const order = [...new Set([...listed, ...this.chatIds().filter(shown)])];
+    const order = [...new Set([...listed, ...this.chatIds()])].filter((s) => !archived(s));
     const waiting = (s: string) => (this.snapshot?.agents[s] ?? []).some((a) => paneStatus(a) === "waiting");
     const next = nextWaiting(order, waiting, this.openId);
     if (next) this.openChat(next, e);
