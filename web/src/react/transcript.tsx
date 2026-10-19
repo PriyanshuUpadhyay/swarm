@@ -97,9 +97,12 @@ function Transcript({ app, view, testid = "transcript", empty }: { app: Reader; 
 
   // Copy buttons inside markdown HTML: one listener for the whole list.
   const onClick = (e: React.MouseEvent) => {
+    const layout = (e.target as Element).closest<HTMLElement>("[data-diff-layout]");
+    if (layout) return setSplit(layout.dataset.diffLayout === "1");
     const button = (e.target as Element).closest<HTMLElement>("[data-copy]");
     if (!button) return;
-    if (button.dataset.copy === "code") copyText(button.closest(".md-code")?.querySelector("pre")?.textContent ?? "", "code");
+    const code = button.closest<HTMLElement>(".md-code");
+    if (button.dataset.copy === "code") copyText(code?.dataset.raw ?? code?.querySelector("pre")?.textContent ?? "", "code");
     else if (button.dataset.copy === "table") copyText(button.closest<HTMLElement>(".md-table")?.dataset.raw ?? "", "table");
   };
 
@@ -646,15 +649,28 @@ function TextLines({ lines, testid }: { lines: string[]; testid?: string }) {
   );
 }
 
+// One Unified/Split choice for every diff, kept across sessions. The markdown diff fences are
+// static HTML, so CSS reads the choice from `data-diff-split` on <html>.
 const SPLIT_KEY = "swarm.diff.split";
+const splitSubs = new Set<() => void>();
+let splitNow = store.getItem(SPLIT_KEY) === "1";
+document.documentElement.dataset.diffSplit = splitNow ? "1" : "0";
+
+function setSplit(v: boolean) {
+  splitNow = v;
+  store.setItem(SPLIT_KEY, v ? "1" : "0");
+  document.documentElement.dataset.diffSplit = v ? "1" : "0";
+  splitSubs.forEach((f) => f());
+}
+
+const subscribeSplit = (f: () => void) => {
+  splitSubs.add(f);
+  return () => splitSubs.delete(f);
+};
 
 /** A patch: Unified or Split, the capped preview, Show full patch, Copy patch, and its counts. */
 function DiffView({ app, diff, full }: { app: Reader; diff: DiffPreview; full: ReadonlyMap<string, FullText> }) {
-  const [split, setSplitState] = useState(() => store.getItem(SPLIT_KEY) === "1");
-  const setSplit = (v: boolean) => {
-    setSplitState(v);
-    store.setItem(SPLIT_KEY, v ? "1" : "0");
-  };
+  const split = useSyncExternalStore(subscribeSplit, () => splitNow);
   const f = full.get(diff.id);
   const patch = f?.state === "ready" ? f.text : diff.patch;
   const capped = diff.omitted_lines > 0 || diff.shortened_lines > 0;

@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "diff2html/bundles/css/diff2html.min.css";
 
 /* The mirror paints only backgrounds; the textarea keeps native text, caret, and editing. */
 .composer-text {
@@ -933,6 +934,78 @@
 }
 .md-scroll {
   overflow-x: auto;
+}
+/* Diff fences come from diff2html. Its light-scheme variables take the app tokens, so both themes
+   follow the app. Its file box and Viewed box are dropped, because the fence head already holds the
+   label and Copy. */
+.md-head .seg {
+  margin-left: auto;
+  margin-right: 8px;
+}
+:root:not([data-diff-split="1"]) .md-head [data-diff-layout="0"],
+:root[data-diff-split="1"] .md-head [data-diff-layout="1"] {
+  background: var(--selected);
+  color: var(--foreground);
+}
+:root:not([data-diff-split="1"]) .d2h .split,
+:root[data-diff-split="1"] .d2h .unified {
+  display: none;
+}
+.d2h {
+  --d2h-bg-color: var(--code);
+  --d2h-border-color: var(--border);
+  --d2h-dim-color: var(--faint-foreground);
+  --d2h-line-border-color: var(--border);
+  --d2h-file-header-bg-color: var(--surface);
+  --d2h-file-header-border-color: var(--border);
+  --d2h-empty-placeholder-bg-color: color-mix(in srgb, var(--foreground) 3%, transparent);
+  --d2h-empty-placeholder-border-color: var(--border);
+  --d2h-selected-color: var(--selected);
+  --d2h-ins-bg-color: color-mix(in srgb, var(--status-done) 14%, transparent);
+  --d2h-ins-border-color: color-mix(in srgb, var(--status-done) 30%, transparent);
+  --d2h-ins-highlight-bg-color: color-mix(in srgb, var(--status-done) 35%, transparent);
+  --d2h-ins-label-color: var(--status-done);
+  --d2h-del-bg-color: color-mix(in srgb, var(--status-failed) 14%, transparent);
+  --d2h-del-border-color: color-mix(in srgb, var(--status-failed) 30%, transparent);
+  --d2h-del-highlight-bg-color: color-mix(in srgb, var(--status-failed) 35%, transparent);
+  --d2h-del-label-color: var(--status-failed);
+  --d2h-change-del-color: color-mix(in srgb, var(--status-failed) 14%, transparent);
+  --d2h-change-ins-color: color-mix(in srgb, var(--status-done) 14%, transparent);
+  --d2h-change-label-color: var(--status-waiting);
+  --d2h-info-bg-color: color-mix(in srgb, var(--status-working) 8%, transparent);
+  --d2h-info-border-color: transparent;
+  --d2h-moved-label-color: var(--status-working);
+  font: 12px var(--font-mono);
+  color: var(--foreground);
+}
+.d2h .d2h-wrapper,
+.d2h .d2h-file-wrapper {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+}
+.d2h .d2h-file-collapse,
+.d2h.bare .d2h-file-header {
+  display: none;
+}
+.d2h .d2h-file-header {
+  font: 11px var(--font-mono);
+  height: auto;
+  padding: 3px 8px;
+}
+.md .d2h table {
+  font-size: 12px;
+}
+.md .d2h td {
+  border-top: 0;
+  padding: 0;
+}
+.d2h .d2h-code-line,
+.d2h .d2h-code-side-line {
+  color: var(--foreground);
+}
+.d2h .d2h-info {
+  color: var(--muted-foreground);
 }
 .md table {
   border-collapse: collapse;

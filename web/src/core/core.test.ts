@@ -294,6 +294,19 @@ describe("diffs in plain text", () => {
     const html = renderMarkdown("```diff\n-old\n+new\n```");
     expect(html).toContain('<span class="dl del">-old\n</span><span class="dl add">+new\n</span>');
   });
+
+  it("renders a hunk fence with wrong counts and no file header in both layouts, escaped", () => {
+    // The counts say 1 line, but four follow and a second hunk comes after them.
+    const html = renderMarkdown("```diff\n@@ -1,1 +1,1 @@\n keep\n-<script>x</script>\n+new\n-gone\n@@ -9,1 +9,1 @@\n-late\n```");
+    expect(html).toContain('<div class="d2h bare"><div class="unified">');
+    expect(html).toContain('<div class="split">');
+    expect(html).not.toContain("<script>");
+    expect(html).toContain('data-raw="@@ -1,1 +1,1 @@\n keep\n-&lt;script&gt;');
+    const unified = html.slice(0, html.indexOf('<div class="split">'));
+    expect(unified.match(/<td class="d2h-del/g)).toHaveLength(3);
+    expect(unified.match(/<td class="d2h-ins/g)).toHaveLength(1);
+    expect(unified).toContain("@@ -9,1 +9,1 @@");
+  });
 });
 
 describe("owner messages and skill chips", () => {
