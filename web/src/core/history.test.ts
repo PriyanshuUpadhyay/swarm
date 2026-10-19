@@ -18,10 +18,11 @@ describe("recordSent", () => {
 
 describe("recallOrder", () => {
   it("puts this chat first, then other chats of the workspace, each text once", () => {
-    const list = [sent("old here", "chat-1", 1), sent("other", "chat-2", 2), sent("new here", "chat-1", 3), sent("other", "chat-1", 4)];
-    expect(recallOrder(list, "chat-1")).toEqual(["other", "new here", "old here"]);
-    // A new chat has no sends, so it recalls the workspace.
-    expect(recallOrder(list, "fresh")).toEqual(["other", "new here", "old here"]);
+    // The other chat sent last, so only the own-chat-first rule puts "mine" first.
+    const list = [sent("old mine", "chat-1", 1), sent("shared", "chat-2", 2), sent("mine", "chat-1", 3), sent("shared", "chat-1", 4), sent("theirs", "chat-2", 5)];
+    expect(recallOrder(list, "chat-1")).toEqual(["shared", "mine", "old mine", "theirs"]);
+    // A new chat has no sends, so it recalls the workspace, newest first.
+    expect(recallOrder(list, "fresh")).toEqual(["theirs", "shared", "mine", "old mine"]);
   });
 });
 
