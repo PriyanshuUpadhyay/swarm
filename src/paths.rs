@@ -181,6 +181,14 @@ pub fn sqlite_db() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
     Ok(root_dir()?.join(SWARM_DB))
 }
 
+/// The db path for a read that must leave a new home as it is, such as a seat's start hook, so it
+/// does not claim the swarm folder.
+pub fn sqlite_db_to_read() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
+    Ok(std::path::PathBuf::from(home()?)
+        .join(SWARM_DIR)
+        .join(SWARM_DB))
+}
+
 #[cfg(test)]
 mod tests {
     use super::{branch_folder, branch_home};
