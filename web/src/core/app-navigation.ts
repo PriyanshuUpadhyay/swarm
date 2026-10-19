@@ -9,6 +9,8 @@ type NavRead = { workspace: string; writeSeq: number; navSeq: number };
 
 export class AppNavigation {
   private closes: Promise<void> = Promise.resolve();
+  // A fresh strip can still list an archived chat until the server prunes it.
+  private leftChat: string | null = null;
 
   constructor(private readonly app: App) {}
 
@@ -99,6 +101,8 @@ export class AppNavigation {
     if (read && this.app.writing === 0 && read.writeSeq === this.app.writeSeq && read.navSeq === this.app.navSeq
       && tree.view === "workspaces" && this.app.workspace && read.workspace === this.app.workspace
       && tabs?.workspace === this.app.workspace && tabs.selectedChat && tabs.selectedChat !== this.app.openId
+      && tabs.selectedChat !== this.leftChat
+      && tabs.tabs.some((tab) => tab.session === tabs.selectedChat)
       && !tabs.tabs.some((tab) => tab.session === this.app.openId)) {
       this.openChat(tabs.selectedChat, undefined, { write: false });
     }
@@ -166,6 +170,7 @@ export class AppNavigation {
   /** An archived chat leaves the page; its workspace's landing shows. */
   leaveChat(session: string) {
     if (this.app.openId !== session) return;
+    this.leftChat = session;
     this.app.navSeq++;
     this.app.panes.leavePanes("");
     this.app.openId = null;
@@ -259,6 +264,7 @@ export class AppNavigation {
   /** Opens a chat: its tab, the owner's selected chat, and its transcript. `write: false` only
    *  shows it (a restore at start); `history: false` keeps the tab history order (⌃Tab). */
   openChat(sessionId: string, e?: KeyboardEvent, opts: { write?: boolean; history?: boolean; tabOnly?: boolean } = {}) {
+    if (this.leftChat === sessionId) this.leftChat = null;
     this.app.navSeq++;
     const kind: PerfKind = this.app.lru.includes(sessionId) ? "switch" : "open";
     if (this.app.openId !== sessionId) this.app.panes.leavePanes(sessionId);

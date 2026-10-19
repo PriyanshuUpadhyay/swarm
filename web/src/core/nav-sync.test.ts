@@ -94,6 +94,37 @@ describe("sync after a fresh strip read", () => {
     expect(app.view.openId).toBe(open);
   });
 
+  it.each([{ name: "an empty strip", tabs: [] }, { name: "a strip with another chat", tabs: [tab("other")] }])("keeps the workspace landing when selectedChat has no tab in $name", async ({ tabs }) => {
+    const { app, writes } = harness({ tabs: async () => reply(strip(tabs, "old")) });
+    await app.refresh();
+    expect(app.view.openId).toBeNull();
+    expect(writes).toEqual([]);
+  });
+
+  it("does not restore a chat left after archive while a fresh strip still lists it", async () => {
+    const { app, writes } = harness({ tabs: async () => reply(strip([tab("old")], "old")) });
+    app.openId = "old";
+    app.leaveChat("old");
+    await app.refresh();
+    expect(app.view.openId).toBeNull();
+    await app.refresh();
+    expect(app.view.openId).toBeNull();
+    expect(writes).toEqual([]);
+  });
+
+  it.each([true, false])("an explicit openChat clears the left chat record with write %s", async (write) => {
+    const { app } = harness({ tabs: async () => reply(strip([tab("old")], "old")) });
+    app.openId = "old";
+    app.leaveChat("old");
+    app.snapshot = snapshot;
+    app.openChat("old", undefined, { write });
+    expect(app.view.openId).toBe("old");
+    await app.writes;
+    app.openChat("other", undefined, { write: false });
+    await app.refresh();
+    expect(app.view.openId).toBe("old");
+  });
+
   it("does not sync the Archived view", async () => {
     const { app } = harness({ tree: { ...tree, view: "archived" } });
     app.treeName = "archived";

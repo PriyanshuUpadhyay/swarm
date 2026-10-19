@@ -78,6 +78,76 @@ test("Rename chat prefills the title of a tab-only chat", async ({ page: tab }, 
   }
 });
 
+test("archiving the last open sidebar chat shows the workspace landing", async ({ page: tab }, info) => {
+  const fixtureHome = process.env.SWARM_E2E_HOME!;
+  const choicesPath = join(fixtureHome, ".swarm/choices.json");
+  const before = readFileSync(choicesPath, "utf8");
+  let restore: { session: string; pane: string } | undefined;
+  let previousSelection: { workspace: string; chat: string | null } | undefined;
+  try {
+    await tab.goto(`${server().origin}/${server().hash}`);
+    await tab.waitForFunction(() => window.__swarmReady === true);
+    const workspace = tab.locator('[data-testid="tree-row"][data-kind="workspace"]').filter({ hasText: "ws-tabs" });
+    const workspaceId = (await workspace.getAttribute("data-id"))!;
+    const strip = await api<TabsView>(`/api/tabs?${new URLSearchParams({ workspace: workspaceId })}`);
+    previousSelection = { workspace: workspaceId, chat: strip.view.selectedChat };
+    const selected = tab.waitForResponse((r) => r.url().endsWith("/api/choices") && r.request().postDataJSON().op === "selected_chat" && r.request().postDataJSON().chat !== null);
+    await workspace.click();
+    expect((await selected).status()).toBe(200);
+    const tabs = tab.getByTestId("tab");
+    await expect(tabs).toHaveCount(2);
+    const session = (await tabs.first().getAttribute("data-session"))!;
+    const other = (await tabs.nth(1).getAttribute("data-id"))!;
+    const snapshot = await api<{ agents: Record<string, { id: string; pane: string }[]> }>("/api/snapshot");
+    const pane = snapshot.agents[session].find((agent) => agent.id === "orchestrator")?.pane;
+    expect(["fixture-tabs-1", "fixture-tabs-2"]).toContain(pane);
+    restore = { session, pane: pane! };
+    await choose({ op: "close_tab", workspace: workspaceId, chat: other });
+    await choose({ op: "selected_chat", workspace: workspaceId, chat: session });
+    await tab.reload();
+    await tab.waitForFunction(() => window.__swarmReady === true);
+    await expect(tabs).toHaveCount(1);
+    await expect(tabs.first()).toHaveAttribute("data-session", session);
+    await expect(tabs.first()).toHaveAttribute("aria-selected", "true");
+    const row = tab.locator(`[data-testid="tree-row"][data-session="${session}"]`);
+    await row.click({ button: "right" });
+    await tab.getByRole("menuitem", { name: "Archive chat", exact: true }).click();
+    const confirm = tab.getByTestId("confirm");
+    await expect(confirm).toBeVisible();
+    await expect(confirm.getByTestId("confirm-action")).toHaveText("Archive Chat");
+    await confirm.getByTestId("confirm-action").click();
+    await expect(confirm).toBeHidden();
+    await expect(tabs).toHaveCount(0);
+    await expect(row).toHaveCount(0);
+    await expect(tab.getByTestId("workspace-landing")).toBeVisible();
+    await expect(tab.getByTestId("workspace-landing")).toContainText("This workspace has no open chats.");
+  } finally {
+    try {
+      await tab.screenshot({ path: info.outputPath("last-sidebar-chat-archive.png") });
+    } finally {
+      await tab.close();
+      try {
+        if (restore) {
+          const { session, pane } = restore;
+          await api("/api/sessions/unarchive", { ids: [session] });
+          rmSync(join(fixtureHome, `closed-${pane}`), { force: true });
+          execFileSync(process.env.SWARM_E2E_SWARM!, ["agent", "add", "orchestrator", "orchestrator"], {
+            env: {
+              PATH: process.env.PATH, USER: "e2e", HOME: fixtureHome, SWARM_HOME: fixtureHome,
+              CLAUDE_CONFIG_DIR: join(fixtureHome, ".claude"), CODEX_HOME: join(fixtureHome, ".codex"),
+              SWARM_ADAPTER: "tmux-swarm", SWARM_SESSION_ID: session, FIXTURE_PANE: pane,
+            },
+            stdio: "pipe",
+          });
+        }
+        if (previousSelection) await choose({ op: "selected_chat", ...previousSelection });
+      } finally {
+        writeFileSync(choicesPath, before);
+      }
+    }
+  }
+});
+
 test("closing the open tab-only chat shows the other tab after archive confirmation", async ({ page: tab }, info) => {
   const fixtureHome = process.env.SWARM_E2E_HOME!;
   const choicesPath = join(fixtureHome, ".swarm/choices.json");
