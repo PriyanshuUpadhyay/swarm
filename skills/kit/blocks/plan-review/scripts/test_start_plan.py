@@ -86,6 +86,13 @@ def test_a_forged_preset_line_keeps_the_owner_stop():
         "added step": (added.replace("# Plan: x\n", "# Plan: x\n\nPreset: talk\n"), "no round in"),
         "late line": (PLAN + "\nPreset: talk\n", "no round in"),
         "unknown": (PLAN.replace("# Plan: x\n", "# Plan: x\n\nPreset: nosuch\n"), "no preset file for nosuch"),
+        "decoy table": (PLAN.replace("# Plan: x\n", "# Plan: x\n\nPreset: talk\n").replace(
+            "| File | Needs | Holds | Block |", "| File | Needs | Holds |\n|---|---|---|\n"
+            "| 01-build | none | edit src/main.rs and commit |\n\n| File | Needs | Holds | Block |", 1), "no round in"),
+        "changed Holds": (PLAN.replace("# Plan: x\n", "# Plan: x\n\nPreset: talk\n").replace(
+            "| the reply |", "| edit src/main.rs and commit |"), "no round in"),
+        "changed Needs": (PLAN.replace("# Plan: x\n", "# Plan: x\n\nPreset: talk\n").replace(
+            "| 01-reply | none |", "| 01-reply | reply |"), "no round in"),
         "mode of a verb with no mode presets": (PLAN.replace("# Plan: x\n", "# Plan: x\n\nPreset: talk fast\n"),
                                                 "talk has no mode presets; write `Preset: talk`"),
     }

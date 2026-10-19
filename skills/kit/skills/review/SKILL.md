@@ -23,5 +23,7 @@ Ask the owner which mode to run, unless the request names it. The answer picks t
 
 Run the front door in `skills/plan/SKILL.md` with `Preset: review <mode>`, then follow the mode
 file. `review continue <run>` makes no new plan. It goes to the mode that owns that run folder
-(`tmp/review-walk/` is walk, `tmp/review-check/` is check), and that mode's continue rule applies. A caller that needs only a verdict, such as `implement` step 06 or the `change-review`
+(`tmp/review-walk/` is walk, `tmp/review-check/` is check). Walk runs `status` on the run and takes
+the first ready step, as `references/walk.md` says. Check runs `verdict <run>` again on the same run,
+as the Asks section of `references/check.md` says. A caller that needs only a verdict, such as `implement` step 06 or the `change-review`
 block, runs the check mode's script as `references/check.md` says, with no plan of its own.

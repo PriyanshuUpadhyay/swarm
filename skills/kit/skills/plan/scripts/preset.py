@@ -14,6 +14,7 @@ from pathlib import Path
 KIT = Path(__file__).resolve().parents[3]
 sys.path[:0] = [str(KIT / "references"), str(KIT / "blocks" / "plan-chart" / "scripts")]  # python3 -I adds neither
 import plan_chart  # noqa: E402
+import step_run  # noqa: E402
 from block_resolver import resolve_blocks  # noqa: E402
 
 
@@ -69,9 +70,16 @@ def of_plan(plan):
 
 
 def same_steps(plan, file):
-    """True when the plan's steps and blocks are the preset's, so the preset's stop holds for the plan."""
-    ours = [(r[0], r[3]) for r in plan_chart.read_plan(plan)[2]]
-    return ours == [(r[0], r[3]) for r in section(file)[2]]
+    """True when every row that the start writes is the preset's own row, so the preset's stop holds for the plan.
+
+    step_run.start makes the steps from the first | File | Needs | Holds | table, so that table must equal the
+    preset's File, Needs, and Holds, and the plan's step table must also equal its blocks. Why stays free.
+    """
+    theirs = section(file)[2]
+    written = [r[:3] for r in step_run.table(plan)]
+    drawn = [(r[0], r[1], r[2], r[3]) for r in plan_chart.read_plan(plan)[2]]
+    return (written == [(n, need, holds.strip("`")) for n, need, holds, *_ in theirs]
+            and drawn == [r[:4] for r in theirs])
 
 
 def check(file):

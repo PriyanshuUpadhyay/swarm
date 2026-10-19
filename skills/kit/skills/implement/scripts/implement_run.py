@@ -252,11 +252,14 @@ def skill_paths(step, domains=None):
 
 
 def check_mode(folder):
-    """Refuse auto mode unless 01-frame.md quotes the owner choosing it; no Mode line means pair."""
-    mode = re.search(r"^Mode: (.*)$", read_utf8(Path(folder) / "01-frame.md"), re.M)
-    if mode and mode[1].startswith("auto") and not re.fullmatch(r'auto, owner said: ".*\S.*"', mode[1]):
-        raise SystemExit('05-build in auto mode needs `Mode: auto, owner said: "<the owner\'s words>"` in 01-frame.md; '
-                         "the owner chooses auto, never the agent")
+    """Refuse auto mode unless 01-frame.md quotes the owner choosing it; no Mode line means pair.
+
+    Any line whose key reads as mode, in any case or after a list mark, counts, so an odd line refuses.
+    """
+    lines = [l for l in read_utf8(Path(folder) / "01-frame.md").splitlines() if re.match(r"\W*mode\s*:", l, re.I)]
+    if lines and (len(lines) > 1 or not re.fullmatch(r'Mode: (pair|auto, owner said: ".*\S.*")', lines[0])):
+        raise SystemExit('05-build needs at most one line `Mode: pair` or `Mode: auto, owner said: "<the owner\'s words>"` '
+                         f"in 01-frame.md, not {' / '.join(lines)}; the owner chooses auto, never the agent")
 
 
 def take(folder, step, who, force=False):

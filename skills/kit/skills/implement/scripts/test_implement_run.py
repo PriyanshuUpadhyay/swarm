@@ -586,13 +586,14 @@ def test_auto_mode_needs_the_owners_words(tmp):
         assert run("skip", folder, step, "fast lane: test").returncode == 0
     frame = folder / "01-frame.md"
     body = frame.read_text(encoding="utf-8").replace("Status: open", "Status: done x", 1)
-    for mode, ok in (("Mode: auto\n", False), ('Mode: auto, owner said: ""\n', False),
-                     ('Mode: auto, owner said: "run it to the end"\n', True)):
+    variants = ("Mode: auto\n", 'Mode: auto, owner said: ""\n', "Mode: Auto\n", "Mode:  auto\n", "Mode: full auto\n",
+                "Mode: deliver\n", "Mode: pair\nMode: auto\n", "mode: auto\n", "- Mode: auto\n", "Mode: pair \n")
+    for mode, ok in [(v, False) for v in variants] + [('Mode: auto, owner said: "run it to the end"\n', True)]:
         frame.write_text(body.replace("Domains:", mode + "Domains:", 1), encoding="utf-8")
         out = run("take", folder, "05-build", "a", "--force")
         assert (out.returncode == 0) == ok, (mode, out.stderr)
         if not ok:
-            assert 'needs `Mode: auto, owner said: "<the owner\'s words>"`' in out.stderr, out.stderr
+            assert 'one line `Mode: pair` or `Mode: auto, owner said: "<the owner\'s words>"`' in out.stderr, (mode, out.stderr)
     frame.write_text(body.replace("Domains:", "Mode: pair\nDomains:", 1), encoding="utf-8")
     assert run("take", folder, "05-build", "a", "--force").returncode == 0, "pair needs no quote"
 

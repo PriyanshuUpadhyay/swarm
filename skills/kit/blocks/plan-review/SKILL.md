@@ -28,7 +28,7 @@ Action: round 1 returns `annotated` with the note "skip this, the page has token
 Result: `start_plan.py <run>` makes the step files. Had the plan changed after round 2, it would print `../plan.md changed after round 2; start a new round` and make no step file.
 
 ## Check (script)
-- `python3 -I <kit root>/blocks/plan-review/scripts/test_start_plan.py` prints `ok`: an owner-stop plan refuses with no round, with an unapproved round, and after an edit, and starts after a current approval; a chat preset starts with no round only when its steps and blocks are unchanged; a late, unknown, or wrong-mode `Preset:` line keeps the owner stop; a `Start:` preset prints its command.
+- `python3 -I <kit root>/blocks/plan-review/scripts/test_start_plan.py` prints `ok`: an owner-stop plan refuses with no round, with an unapproved round, and after an edit, and starts after a current approval; a chat preset starts with no round only when every row that the start writes (File, Needs, Holds, Block) is the preset's own, so a decoy table or a changed Holds needs the round; a late, unknown, or wrong-mode `Preset:` line keeps the owner stop; a `Start:` preset prints its command.
 
 ## Check (judge)
 - Was the step run started by `start_plan.py`, after the newest round? Quote the round file's decision and the start command's output.

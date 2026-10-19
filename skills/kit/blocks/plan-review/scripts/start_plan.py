@@ -3,8 +3,9 @@
 
   start_plan.py <run>    <run> holds plan.md, plan.html, and the rounds in plan-review/
 
-A plan whose `Preset:` line names a `Stop: chat` preset, and whose steps and blocks equal that preset's,
-starts with no round. Any other plan, also one that adds a step or a block, needs the newest review round to have approved plan.md and plan.html as they are now. A preset with a `Start:`
+A plan whose `Preset:` line names a `Stop: chat` preset, and whose File, Needs, Holds, and Block rows equal
+that preset's (in the table that the start reads), starts with no round. Any other plan, also one that adds
+a step, a block, or a decoy table, needs the newest review round to have approved plan.md and plan.html as they are now. A preset with a `Start:`
 line runs its own step run, so this script makes no step files for it and prints that command.
 """
 
