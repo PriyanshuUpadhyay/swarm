@@ -181,7 +181,7 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
   const menu = focused && !chair.disabled ? menuAt(text, caret, chair.provider) : null;
   const shownList = menu?.opener === "@" ? files : list;
   const rows = menu && shownList ? matches(offered(shownList.commands, menu, chair.provider), menu.query) : [];
-  const open = menu !== null && dismissed !== menu.start && (rows.length > 0 || showsEmpty(menu));
+  const open = menu !== null && dismissed !== menu.start && (rows.length > 0 || showsEmpty(menu, shownList));
   const current = Math.min(selected, Math.max(rows.length - 1, 0));
   const menuKey = menu ? `${menu.opener}${menu.start}` : null;
 

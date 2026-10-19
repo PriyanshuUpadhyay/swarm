@@ -118,8 +118,9 @@ export async function toSend(text: string, provider: string | null, list: Comman
   return { text: skillFirst(text, skillNames(used)).text, list: used };
 }
 
-/** Mid-draft a `/` or `$` can be a path or a price, so that menu shows only with matching rows. */
-export const showsEmpty = (menu: Menu) => atStart(menu) || menu.opener === "@";
+/** Mid-draft a `/` or `$` can be a path or a price, so that menu shows only with matching rows. An
+ *  empty `@` menu shows only while `list` loads (null) or to show the read's error. */
+export const showsEmpty = (menu: Menu, list: CommandList | null) => atStart(menu) || (menu.opener === "@" && (!list || !!list.note));
 
 /** `/api/chat/files` as menu rows. */
 export function fileRows(files: readonly string[], note: string | null): CommandList {

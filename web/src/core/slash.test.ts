@@ -48,7 +48,11 @@ describe("menuAt", () => {
     expect(menuAt("price 5@3", 9, "claude")).toBeNull();
     const files = fileRows(["src/main.rs", "README.md"], null);
     const menu = menuAt("read @ma", 8, "pi")!;
-    expect(showsEmpty(menu)).toBe(true);
+    // An empty @ menu shows only while the files load or with the read's error, so a word with no
+    // match leaves Up and Down to the text area.
+    expect(showsEmpty(menu, null)).toBe(true);
+    expect(showsEmpty(menu, fileRows([], "Git cannot list the files of this chat's folder."))).toBe(true);
+    expect(showsEmpty(menu, files)).toBe(false);
     expect(matches(offered([...rows, ...files.commands], menu, "pi"), menu.query).map((r) => r.insert)).toEqual(["@src/main.rs"]);
     // A pick inserts the path with a space, and the send key only inserts it.
     expect(pick("read @ma", menu, files.commands[0])).toEqual({ text: "read @src/main.rs ", caret: 18 });
@@ -75,8 +79,8 @@ describe("offered and matches", () => {
     const pi = [row("/compact", { kind: "builtin" }), row("/review", { kind: "command" }), row("/skill:plan", { kind: "skill" })];
     expect(offered(pi, menuAt("/", 1, "pi")!, "pi").map((r) => r.insert)).toEqual(["/compact", "/review", "/skill:plan"]);
     expect(offered(pi, menuAt("x /", 3, "pi")!, "pi").map((r) => r.insert)).toEqual(["/skill:plan"]);
-    expect(showsEmpty(start)).toBe(true);
-    expect(showsEmpty(menuAt("x /", 3, "claude")!)).toBe(false);
+    expect(showsEmpty(start, null)).toBe(true);
+    expect(showsEmpty(menuAt("x /", 3, "claude")!, null)).toBe(false);
   });
 
   it("puts the exact name, then a prefix, before fuzzy matches", () => {
