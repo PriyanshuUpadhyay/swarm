@@ -2060,6 +2060,7 @@ fn host_context_makes_no_database_for_a_seat_role() {
         "{}",
         stdout(&output)
     );
-    assert!(!home.join(".swarm/swarm.db").exists());
+    // Nor the marker that claims the home: a start hook only reads.
+    assert!(!home.join(".swarm/swarm-home").exists());
     let _ = std::fs::remove_dir_all(&home);
 }

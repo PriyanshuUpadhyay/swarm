@@ -759,7 +759,9 @@ fn pane_context(provider: &str, session: &str, agent_id: &str, role: &str) -> Op
 fn seat_role(session: &str, agent_id: &str) -> Option<String> {
     // Read only, with a column every schema has: a start hook from another build must not create,
     // migrate, or refuse the database that the launching build owns.
-    let db = swarm::paths::sqlite_db().ok().filter(|db| db.is_file())?;
+    let db = swarm::paths::sqlite_db_to_read()
+        .ok()
+        .filter(|db| db.is_file())?;
     let connection =
         rusqlite::Connection::open_with_flags(db, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
             .ok()?;
