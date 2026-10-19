@@ -1,23 +1,39 @@
 // Agent text -> HTML. Raw HTML is off, images are off, and links open only http(s).
 
+import { html as diffHtml } from "diff2html";
 import MarkdownIt from "markdown-it";
-import { isPatch, patchKinds } from "./transcript";
+import { isPatch } from "./transcript";
 
 const esc = new MarkdownIt().utils.escapeHtml;
 
 // Code blocks and tables get a header with a Copy button. The list's one click listener reads
-// `data-copy`: code copies the <pre> text, a table copies its markdown source from `data-raw`.
+// `data-copy`: code copies its `data-raw` source or else the <pre> text, and a table copies its
+// markdown source from `data-raw`.
 const head = (label: string, what: string) =>
   `<div class="md-head"><span>${esc(label)}</span><button type="button" data-copy="${what}" aria-label="Copy ${what}">Copy</button></div>`;
 
-/** A diff as one `<pre>` whose lines carry their colour class; the text stays the same. A fence
- *  with no hunk header is coloured by each line's first character. */
-function patchHtml(patch: string): string {
+/** A diff fence with hunks, rendered by diff2html in both layouts. CSS shows the layout that the
+ *  `data-diff-split` attribute on <html> picks. Agents often write hunks with wrong counts or with
+ *  no `---`/`+++` header. diff2html still reads wrong counts, but it drops a hunk that has no file
+ *  header, so a bare fence gets a placeholder header, which CSS hides. */
+function diffFence(lang: string, patch: string): string {
+  const headed = /^--- /m.test(patch.slice(0, patch.search(/^@@ /m)));
+  const src = headed ? patch : `--- a/patch\n+++ b/patch\n${patch}`;
+  const layout = (outputFormat: "line-by-line" | "side-by-side") => diffHtml(src, { drawFileList: false, outputFormat });
+  const seg =
+    '<div class="seg" role="group" aria-label="Diff layout"><button type="button" data-diff-layout="0">Unified</button><button type="button" data-diff-layout="1">Split</button></div>';
+  // The rendered table is not the patch text, so Copy reads `data-raw`.
+  return (
+    `<div class="md-code" data-raw="${esc(patch)}">${head(lang, "code").replace("<button", `${seg}<button`)}` +
+    `<div class="d2h${headed ? "" : " bare"}"><div class="unified">${layout("line-by-line")}</div><div class="split">${layout("side-by-side")}</div></div></div>`
+  );
+}
+
+/** A diff fence with no hunk: one `<pre>` whose lines are coloured by their first character. */
+function prefixHtml(patch: string): string {
+  const kind = (l: string) => (l.startsWith("+") ? "add" : l.startsWith("-") ? "del" : l.startsWith("@@") ? "hunk" : "ctx");
   const lines = patch.replace(/\n$/, "").split("\n");
-  const kinds = isPatch(patch)
-    ? patchKinds(lines)
-    : lines.map((l) => (l.startsWith("+") ? "add" : l.startsWith("-") ? "del" : l.startsWith("@@") ? "hunk" : "ctx"));
-  return `<pre><code>${lines.map((l, i) => `<span class="dl ${kinds[i]}">${esc(l)}\n</span>`).join("")}</code></pre>`;
+  return `<pre><code>${lines.map((l) => `<span class="dl ${kind(l)}">${esc(l)}\n</span>`).join("")}</code></pre>`;
 }
 
 function make(breaks: boolean) {
@@ -35,7 +51,9 @@ function make(breaks: boolean) {
   const defaultFence = md.renderer.rules.fence!;
   md.renderer.rules.fence = (tokens, i, opts, env, self) => {
     const lang = tokens[i].info.trim().split(/\s+/)[0];
-    const body = lang === "diff" || lang === "patch" ? patchHtml(tokens[i].content) : defaultFence(tokens, i, opts, env, self);
+    const diff = lang === "diff" || lang === "patch";
+    if (diff && isPatch(tokens[i].content)) return diffFence(lang, tokens[i].content);
+    const body = diff ? prefixHtml(tokens[i].content) : defaultFence(tokens, i, opts, env, self);
     return `<div class="md-code">${head(lang || "code", "code")}${body}</div>`;
   };
 
