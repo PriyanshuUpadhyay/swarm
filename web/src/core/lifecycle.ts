@@ -433,8 +433,10 @@ export class Lifecycle {
     } catch (err) {
       return message(err);
     }
-    this.set({ confirm: null });
-    this.confirmDone = null;
+    if (this.state.confirm === c) {
+      this.set({ confirm: null });
+      this.confirmDone = null;
+    }
     await this.app.refresh();
     done?.();
     return null;

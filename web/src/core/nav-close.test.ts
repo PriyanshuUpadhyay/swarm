@@ -193,6 +193,27 @@ describe("closing tabs", () => {
     await closing;
   });
 
+  it.each(["confirm", "cancel"])("keeps a replacement dialog and settles its close after %s", async (action) => {
+    const archive = deferred();
+    const { app, actions } = harness({ tabOnly: true, live: true, beforeArchive: () => archive.promise });
+    const firstClose = app.life.endChat("open", true);
+    const confirming = app.life.confirmed();
+    await vi.waitFor(() => expect(actions).toContain("/api/sessions/archive"));
+    const settled = vi.fn();
+    const secondClose = app.life.endChat("open", true).then(settled);
+    const replacement = app.life.state.confirm;
+    archive.resolve();
+    expect(await confirming).toBeNull();
+    await firstClose;
+    expect(app.life.state.confirm).toBe(replacement);
+    expect(settled).not.toHaveBeenCalled();
+    if (action === "confirm") expect(await app.life.confirmed()).toBeNull();
+    else app.life.close("confirm");
+    await vi.waitFor(() => expect(settled).toHaveBeenCalledOnce());
+    await secondClose;
+    expect(app.life.state.confirm).toBeNull();
+  });
+
   it("opens the strip selection after a tab-only close without a confirm", async () => {
     const { app } = harness({ tabOnly: true });
     await app.closeTab();
