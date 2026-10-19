@@ -3391,6 +3391,7 @@ async fn run_cli_with_timeout(
             "SWARM_PANE",
             "TMUX_PANE",
             "SUPERSET_TERMINAL_ID",
+            "REX_BLOCK",
         ]
         .contains(&key.as_ref())
             || key.starts_with("HERDR_")
