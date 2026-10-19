@@ -1056,8 +1056,7 @@ fn select_account(
     if requested != "auto"
         && let Ok(list) = &accounts
         && let Some(account) = list.accounts.iter().find(|account| {
-            account.name == requested
-                && account.auth_state == swarm::profiles::AuthState::SignedOut
+            account.name == requested && account.auth_state == swarm::profiles::AuthState::SignedOut
         })
     {
         eprintln!(
