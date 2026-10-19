@@ -295,6 +295,19 @@ pub fn program_status(body: &str, seen_work: bool) -> Option<HookState> {
     })
 }
 
+/// The state and time of a host record, the adapter `status` verb's output: an OSC 7501 body
+/// with `:at=<unix seconds>`. A record without its time is None, so an old record never reads as
+/// a turn that started after a ring.
+pub fn host_record(body: &str, seen_work: bool) -> Option<(HookState, i64)> {
+    let at = body
+        .split(':')
+        .find_map(|pair| pair.trim().strip_prefix("at="))
+        .filter(|at| !at.is_empty() && at.bytes().all(|b| b.is_ascii_digit()))?
+        .parse()
+        .ok()?;
+    Some((program_status(body, seen_work)?, at))
+}
+
 /// The OSC 7501 report body for a hook state, the inverse of `program_status`, so a terminal that
 /// speaks the protocol shows a hooked agent's state. A report replaces its whole record, so each
 /// one names the provider as `app`. A failure's detail is left out: it needs base64.
@@ -660,6 +673,23 @@ mod tests {
     }
 
     const HERDR: [(&str, &str); 2] = [("HERDR_ENV", "1"), ("HERDR_PANE_ID", "wK:p1")];
+
+    #[test]
+    fn a_host_record_needs_its_time() {
+        let record = |body| host_record(body, true).map(|(s, at)| (s.state, s.kind, at));
+        assert_eq!(
+            record("state=working:at=1792408632"),
+            Some(("working", None, 1792408632))
+        );
+        assert_eq!(
+            record("state=blocked:kind=permission:at=5"),
+            Some(("waiting", Some("permission"), 5))
+        );
+        assert_eq!(record("state=working"), None);
+        assert_eq!(record("state=working:at=soon"), None);
+        assert_eq!(record("state=working:at=-5"), None);
+        assert_eq!(record("state=working:id=build:at=5"), None);
+    }
 
     #[test]
     fn program_status_maps_the_root_record() {

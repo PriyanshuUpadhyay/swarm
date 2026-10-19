@@ -378,6 +378,11 @@ block open after the line ends, and its `list` verb leaves the ended block out. 
 that changes `spawn` or `list` turns off the shipped `run` unless it names its own `run`. Do not put
 `run` in a deployed file that an older binary may read, because an older binary refuses a file with
 an unknown verb.
+An adapter may also have a `status` verb, under the same rule. It prints the root program-status
+record of the agent in `SWARM_PANE` as one OSC 7501 body with `:at=<unix seconds>`, the record's own
+time, or nothing. A pi agent's state then comes from that record as `state_source` `host`, the
+second source after hooks (ADR 0070), and a ring to an AGY agent first waits, up to 15 s, for AGY
+to report a record. Rex reads the record from the agent's own reports.
 Claude, Codex, and AGY run
 `swarm host-context --provider <claude|codex|agy>` as a SessionStart hook to learn the host contract.
 
