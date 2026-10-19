@@ -563,6 +563,16 @@ def test_start_plan_needs_approval(tmp):
     out = run("start", "--plan", plan)
     assert out.returncode == 0, out.stderr
     assert f"Plan: {plan.resolve()}\n" in step_text(Path(out.stdout.splitlines()[0]), "01-frame")
+    # A chat preset passes the stop rule with no round, but it is not an implement plan.
+    explain = SCRIPT.parents[1].parent / "explain" / "SKILL.md"
+    chat = Path(tmp, "chat-run")
+    chat.mkdir()
+    table = explain.read_text(encoding="utf-8").split("## Preset\n", 1)[1].split("\n\n", 2)[1]
+    (chat / "plan.md").write_text(f"# Plan: x\n\nPreset: explain\n\n{table}", encoding="utf-8")
+    (chat / "plan.html").write_text("<p>chart</p>", encoding="utf-8")
+    shutil.rmtree(Path(out.stdout.splitlines()[0]))
+    out = run("start", "--plan", chat)
+    assert out.returncode == 1 and "needs `Preset: implement`" in out.stderr, out
 
 
 def test_start_domains(tmp):

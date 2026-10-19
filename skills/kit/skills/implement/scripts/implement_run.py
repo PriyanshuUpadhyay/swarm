@@ -127,6 +127,8 @@ def start(profile="default", domains=None, parent_loop=None, plan=None):
         sys.path.insert(0, str(BLOCKS / "plan-review" / "scripts"))
         import contextlib
         import start_plan
+        if start_plan.preset.of_plan(Path(plan) / "plan.md") != SKILL_MD:
+            raise SystemExit(f"{plan}/plan.md needs `Preset: implement` on the line under its title")
         with contextlib.redirect_stdout(sys.stderr):  # the folder stays the first stdout line
             start_plan.approved(plan)
         plan = Path(plan).resolve()

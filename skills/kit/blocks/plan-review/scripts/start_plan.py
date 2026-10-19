@@ -3,8 +3,8 @@
 
   start_plan.py <run>    <run> holds plan.md, plan.html, and the rounds in plan-review/
 
-A plan whose `Preset:` line names a `Stop: chat` preset starts with no round. Any other plan needs the
-newest review round to have approved plan.md and plan.html as they are now. A preset with a `Start:`
+A plan whose `Preset:` line names a `Stop: chat` preset, and whose steps and blocks equal that preset's,
+starts with no round. Any other plan, also one that adds a step or a block, needs the newest review round to have approved plan.md and plan.html as they are now. A preset with a `Start:`
 line runs its own step run, so this script makes no step files for it and prints that command.
 """
 
@@ -24,7 +24,7 @@ def approved(run):
     run = Path(run)
     file = preset.of_plan(run / "plan.md")
     stop, start, _ = preset.section(file) if file else ("owner", None, [])
-    if stop == "owner":
+    if stop == "owner" or not preset.same_steps(run / "plan.md", file):
         comment_round.check(run / "plan-review", [str(run / "plan.html"), str(run / "plan.md")])
     return start
 
