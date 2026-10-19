@@ -1,5 +1,6 @@
 mod sidebar_fixture;
 mod tab_fixture;
+use serde_json::json;
 use sidebar_fixture::*;
 use std::collections::BTreeMap;
 use swarm::view::{
@@ -207,6 +208,89 @@ fn ended_tabs_hide_when_leaving() {
     .unwrap();
     assert!(!owner.tabs["/repo/wt/main"].open.contains(&"ended".into()));
     assert_eq!(tree.workspace("/repo/wt/main").unwrap().1.chats.len(), 3);
+}
+#[test]
+fn unknown_agent_liveness_keeps_the_tab_when_leaving() {
+    let mut unknown = agent("orchestrator", "working");
+    unknown["alive"] = json!(null);
+    let tree = swarm::view::tree::build(
+        &snapshot(
+            vec![
+                session("design", "/repo/wt/main", 1),
+                session("review", "/repo/wt/main", 2),
+            ],
+            json!({"design":[unknown, agent("worker", "ended")],"review":[agent("orchestrator", "waiting")]}),
+        ),
+        &owner(),
+    );
+    assert_eq!(
+        tree.chat_in("/repo/wt/main", "design").unwrap().is_running,
+        Some(false)
+    );
+    let mut owner = owner();
+    owner
+        .tabs
+        .insert("/repo/wt/main".into(), strip(&["design", "review"]));
+    let mut state = ViewState::default();
+    for chat in ["design", "review"] {
+        choices::apply(
+            &mut owner,
+            &mut state,
+            &tree,
+            ChoiceOp::SelectedChat {
+                workspace: "/repo/wt/main".into(),
+                chat: Some(chat.into()),
+                recording_history: true,
+            },
+            1,
+        )
+        .unwrap();
+    }
+    assert_eq!(owner.tabs["/repo/wt/main"].open, ["design", "review"]);
+    assert_eq!(state.selected_chats["/repo/wt/main"], "review");
+    assert_eq!(state.tab_history["/repo/wt/main"], ["design", "review"]);
+}
+#[test]
+fn ended_tab_only_chat_keeps_the_tab_when_leaving() {
+    let tree = tree();
+    let mut owner = owner();
+    owner
+        .tabs
+        .insert("/repo/wt/main".into(), strip(&["design", "review"]));
+    let mut state = ViewState::default();
+    choices::apply(
+        &mut owner,
+        &mut state,
+        &tree,
+        ChoiceOp::OpenTab {
+            workspace: "/repo/wt/main".into(),
+            chat: "ended".into(),
+            tab_only: true,
+        },
+        1,
+    )
+    .unwrap();
+    for chat in ["ended", "review"] {
+        choices::apply(
+            &mut owner,
+            &mut state,
+            &tree,
+            ChoiceOp::SelectedChat {
+                workspace: "/repo/wt/main".into(),
+                chat: Some(chat.into()),
+                recording_history: true,
+            },
+            1,
+        )
+        .unwrap();
+    }
+    assert_eq!(
+        owner.tabs["/repo/wt/main"].open,
+        ["design", "review", "ended"]
+    );
+    assert!(owner.tab_chats.contains("ended"));
+    assert_eq!(state.selected_chats["/repo/wt/main"], "review");
+    assert_eq!(state.tab_history["/repo/wt/main"], ["ended", "review"]);
 }
 #[test]
 fn recent_cycle_keeps_history_and_workspace_selection() {

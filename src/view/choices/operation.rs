@@ -268,6 +268,8 @@ pub fn apply(
             if let Some((previous_workspace, id)) = previous
                 && let Some(old) = tree.chat_in(&previous_workspace, &id)
                 && old.is_running == Some(false)
+                && old.agents.iter().all(|agent| agent["alive"] == false)
+                && !owner.tab_chats.contains(&old.key)
                 && chat
                     .as_deref()
                     .and_then(|id| tree.chat_in(&workspace, id))
