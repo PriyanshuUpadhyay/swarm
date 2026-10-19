@@ -238,6 +238,12 @@ extension BestAccount {
 
     /// A failed read keeps the last numbers, so they are marked old like a stale meter.
     public func isOld(readFailed: Bool) -> Bool { readFailed || account.windows.contains { !$0.isFresh } }
+
+    /// The ring warns, so even the account with the most room is near a limit: the pet sweats.
+    public var strained: Bool { max(Severity(pct: fullest), severity) != .calm }
+
+    /// A Codex reset would help now: the best account is Codex, strained, and has a reset left.
+    public var offersReset: Bool { account.provider == "codex" && strained && (account.resetCredits?.available ?? 0) > 0 }
 }
 
 /// The closed wing's ring: the best account's fullest limit.

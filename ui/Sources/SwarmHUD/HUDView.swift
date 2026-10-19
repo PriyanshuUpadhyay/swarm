@@ -18,6 +18,8 @@ enum Palette {
     static let tertiary = Color(hex: 0x8F8F94)
     static let warn = Color(hex: 0xFFA049)
     static let critical = Color(hex: 0xFF5A4F)
+    /// The mascot's sweat drop: a cue, not a warning, so it is not one of the severity colours.
+    static let sweat = Color(hex: 0x7FC4FF)
     static let track = Color.white.opacity(0.10)
     /// Brighter than `track`: a 3 pt ring needs more contrast than a 6 pt bar.
     static let ringTrack = Color.white.opacity(0.18)
@@ -202,7 +204,14 @@ struct HUDView: View {
     }
 }
 
-func providerTitle(_ provider: String) -> String { provider == "claude" ? "Claude" : "Codex" }
+func providerTitle(_ provider: String) -> String {
+    switch provider {
+    case "claude": return "Claude"
+    case "codex": return "Codex"
+    case "agy": return "AGY"
+    default: return provider
+    }
+}
 
 /// Gray, so only warnings carry colour; the two shapes still tell the providers apart.
 struct ProviderMark: View {
@@ -269,7 +278,7 @@ extension BestAccount {
 /// "2 Claude agents working, Codex agent waiting for you", "No agent working".
 func agentsSpoken(_ agents: WorkingSnapshot) -> String {
     func phrase(_ counts: [String: Int], _ verb: String) -> [String] {
-        ["claude", "codex"].compactMap { provider in
+        mascotFamilies.compactMap { provider in
             counts[provider].map { $0 == 1 ? "\(providerTitle(provider)) agent \(verb)" : "\($0) \(providerTitle(provider)) agents \(verb)" }
         }
     }
@@ -285,7 +294,7 @@ extension UsageModel {
         let best = bestAccount(accounts, history: history, now: now)
         return Mascot(family: mascotFamily(agents, lastWorking: lastWorking, best: best),
                       state: mascotState(agents, lastActive: lastActive, now: now),
-                      turn: mascotTurn(now: now), height: height, live: live)
+                      turn: mascotTurn(now: now), height: height, live: live, strained: best?.strained ?? false)
     }
 }
 
@@ -305,12 +314,19 @@ struct ClosedWings: View {
                 .padding(.leading, Layout.closedEar)
             Spacer(minLength: 0)
             UsageRingView(ring: usageRing(best, readFailed: model.readError != nil), theme: theme)
+                .overlay(alignment: .topTrailing) {
+                    // A reset would help now; the open card says how many and until when.
+                    if best?.offersReset == true {
+                        Circle().fill(Palette.warn).frame(width: 5, height: 5).offset(x: 3, y: -3)
+                    }
+                }
                 .frame(width: Layout.wing - Layout.closedEar)
                 .padding(.trailing, Layout.closedEar)
         }
         .frame(maxHeight: .infinity)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(agentsSpoken(model.agents) + ", " + (best.map { lowercasedFirst($0.spoken(now: now)) } ?? "no usage reading"))
+        .accessibilityLabel(agentsSpoken(model.agents) + ", " + (best.map { lowercasedFirst($0.spoken(now: now)) } ?? "no usage reading")
+                            + (best?.offersReset == true ? ", a Codex reset is available" : ""))
         .accessibilityAddTraits(.isButton)
         .accessibilityHint(model.hotKeyReady ? "Opens the usage card. Control Option Shift Command U also opens it." : "Opens the usage card.")
         .accessibilityAction { model.toggleFromKeyboard?() }
@@ -536,9 +552,17 @@ struct AccountName: View {
 
     var body: some View {
         // The group heading and the mark name the provider, so the name stands alone.
-        Text(account.name).font(.system(size: 13, weight: .medium)).foregroundStyle(color)
-            .lineLimit(1).truncationMode(.middle).help(account.name)
-            .frame(width: Layout.nameColumn, alignment: .leading)
+        VStack(alignment: .leading, spacing: 2) {
+            Text(account.name).font(.system(size: 13, weight: .medium)).foregroundStyle(color)
+                .lineLimit(1).truncationMode(.middle).help(account.name)
+            // A Codex account's resets sit under its name, where the row has a free second line.
+            if let credits = account.resetCredits, let short = credits.short() {
+                Text(short).font(.system(size: 11)).foregroundStyle(Palette.tertiary).lineLimit(1)
+                    .help("\(credits.text() ?? short)\nRedeem one in ChatGPT settings.")
+                    .accessibilityLabel(credits.text() ?? short)
+            }
+        }
+        .frame(width: Layout.nameColumn, alignment: .leading)
     }
 }
 

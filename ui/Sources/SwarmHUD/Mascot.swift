@@ -190,6 +190,7 @@ struct MascotArt {
     )
 
     static let bang: Sprite = ["K", "K", "K", ".", "K"]
+    static let drop: Sprite = [".K.", ".K.", "KKK", "KKK", ".K."]
     static let zee: Sprite = ["KKKKK", "...K.", "..K..", ".K...", "KKKKK"]
 }
 
@@ -276,15 +277,17 @@ func mascotPose(family: String, state: MascotState, tick: Int?) -> MascotPose {
 }
 
 /// The `!` blinks once a second while an agent waits; the `z` rises a step a second, three steps,
-/// then starts again. `seconds` is nil for the still frame.
-func mascotCue(_ state: MascotState, seconds: Double?, ownZ: Bool) -> (glyph: Sprite, color: Color, rise: Int)? {
+/// then starts again; a sweat drop falls a step a second, two steps, while a strained pet works or
+/// idles. `seconds` is nil for the still frame.
+func mascotCue(_ state: MascotState, seconds: Double?, ownZ: Bool, strained: Bool = false)
+    -> (glyph: Sprite, color: Color, rise: Int, left: Bool)? {
     switch state {
     case .waiting:
-        return seconds.map { Int($0 * 2) % 2 == 0 } ?? true ? (MascotArt.bang, Palette.warn, 0) : nil
+        return seconds.map { Int($0 * 2) % 2 == 0 } ?? true ? (MascotArt.bang, Palette.warn, 0, false) : nil
     case .sleeping:
-        return ownZ ? nil : (MascotArt.zee, Palette.secondary, seconds.map { Int($0) % 3 } ?? 1)
+        return ownZ ? nil : (MascotArt.zee, Palette.secondary, seconds.map { Int($0) % 3 } ?? 1, false)
     case .working, .idle:
-        return nil
+        return strained ? (MascotArt.drop, Palette.sweat, 2 - (seconds.map { Int($0) % 2 } ?? 0), true) : nil
     }
 }
 
@@ -297,6 +300,7 @@ struct MascotCanvas: View {
     let height: CGFloat
     let tick: Int?
     let seconds: Double?
+    var strained = false
 
     var body: some View {
         Canvas { context, size in
@@ -317,10 +321,10 @@ struct MascotCanvas: View {
                 art = CGRect(x: snap((size.width - w) / 2), y: snap((size.height - h) / 2 - pose.bob * cell), width: w, height: h)
                 draw(pose.sprite, { pose.palette[$0] }, at: art.origin, cell: cell, in: context)
             }
-            if let cue = mascotCue(state, seconds: seconds, ownZ: MascotCast.guest(turn)?.ownZ ?? false) {
+            if let cue = mascotCue(state, seconds: seconds, ownZ: MascotCast.guest(turn)?.ownZ ?? false, strained: strained) {
                 let cell = max((height / 24).rounded(), 1)
                 let w = CGFloat(cue.glyph[0].count) * cell, h = CGFloat(cue.glyph.count) * cell
-                let x = min(art.maxX - w / 2, size.width - w)
+                let x = cue.left ? max(art.minX - w / 2, 0) : min(art.maxX - w / 2, size.width - w)
                 let y = max(art.minY - h, 0) + CGFloat(2 - cue.rise) * cell
                 draw(cue.glyph, { $0 == "K" ? cue.color : nil }, at: CGPoint(x: snap(x), y: snap(y)), cell: cell, in: context)
             }
@@ -346,6 +350,7 @@ struct Mascot: View {
     let turn: Int
     let height: CGFloat
     let live: Bool
+    var strained = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -355,11 +360,11 @@ struct Mascot: View {
             TimelineView(.periodic(from: Date(timeIntervalSinceReferenceDate: 0), by: 1 / fps)) { context in
                 let seconds = context.date.timeIntervalSinceReferenceDate
                 MascotCanvas(family: family, state: state, turn: turn, height: height,
-                             tick: Int((seconds * fps).rounded()), seconds: seconds)
+                             tick: Int((seconds * fps).rounded()), seconds: seconds, strained: strained)
             }
             .id("\(turn)-\(state)")
         } else {
-            MascotCanvas(family: family, state: state, turn: turn, height: height, tick: nil, seconds: nil)
+            MascotCanvas(family: family, state: state, turn: turn, height: height, tick: nil, seconds: nil, strained: strained)
         }
     }
 }

@@ -328,3 +328,17 @@ private func account(_ provider: String, _ name: String, _ windows: [UsageWindow
         #expect(throws: (any Error).self) { try CodexPetManifest.parse(Data(json.utf8), folder: "p") }
     }
 }
+
+@Test func aStrainedCodexBestAccountWithAResetOffersIt() {
+    var codex = account("codex", "w", [window(.session, 90)])
+    codex.resetCredits = ResetCredits(available: 2, expiryTimeSeconds: nil)
+    #expect(BestAccount(account: codex, outlook: .lasts).strained)
+    #expect(BestAccount(account: codex, outlook: .lasts).offersReset)
+    var calm = account("codex", "w", [window(.session, 10)])
+    calm.resetCredits = codex.resetCredits
+    #expect(!BestAccount(account: calm, outlook: .lasts).strained)
+    #expect(BestAccount(account: calm, outlook: .left(1800)).offersReset)
+    #expect(!BestAccount(account: calm, outlook: .lasts).offersReset)
+    #expect(!BestAccount(account: account("codex", "w", [window(.session, 90)]), outlook: .lasts).offersReset)
+    #expect(!BestAccount(account: account("claude", "c", [window(.session, 99)]), outlook: .lasts).offersReset)
+}
