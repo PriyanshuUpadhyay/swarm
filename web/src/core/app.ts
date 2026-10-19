@@ -912,8 +912,10 @@ export class App {
 
   /** ⌃⌘W opens the next chat whose chair or child waits for the owner. */
   openWaiting(e?: KeyboardEvent) {
-    const order = chatRows(this.tree).flatMap((r) => (r.selection?.chat ? [r.selection.chat] : []));
-    const waiting = (s: string) => (this.snapshot?.agents[s] ?? []).some((a) => a.state === "waiting" && a.alive !== false);
+    // Listed chats in sidebar order, then the chats that a collapsed workspace or "… more" hides.
+    const listed = chatRows(this.tree).flatMap((r) => (r.selection?.chat ? [r.selection.chat] : []));
+    const order = [...new Set([...listed, ...this.chatIds()])];
+    const waiting = (s: string) => (this.snapshot?.agents[s] ?? []).some((a) => paneStatus(a) === "waiting");
     const next = nextWaiting(order, waiting, this.openId);
     if (next) this.openChat(next, e);
     else this.notice("No chat is waiting for you.");

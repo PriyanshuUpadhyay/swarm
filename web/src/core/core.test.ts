@@ -360,6 +360,23 @@ describe("prompt history", () => {
   });
 });
 
+describe("openWaiting", () => {
+  it("opens a waiting chat that the sidebar does not list, and skips an agent with no pane", () => {
+    const api = { rows: async (): Promise<RowPage> => ({ page: { start_offset: 0, end_offset: 0 }, rows: [], usage: null }) } as unknown as Api;
+    const app = new App(api);
+    const session = (id: string) => ({ id, cwd: "/w", created_at: 0, chair_provider: "claude", adapter: "tmux", project: "p", workspace: "w" });
+    const chair = (pane: string | null) => ({ id: "orchestrator", role: "orchestrator", state: "waiting", alive: true, pane });
+    // The tree is empty, as for a collapsed workspace or a chat under "… more".
+    (app as unknown as { applySnapshot(s: Snapshot): void }).applySnapshot({
+      version: 1,
+      sessions: [session("no-pane"), session("asks")],
+      agents: { "no-pane": [chair(null)], asks: [chair("%1")] },
+    });
+    app.openWaiting();
+    expect(app.view.openId).toBe("asks");
+  });
+});
+
 describe("promptIndex", () => {
   it("finds the owner's prompt before or after a line, and -1 past the ends", () => {
     const ls = lines([row("u1", 1, { kind: "user" }), row("a1", 2), row("a2", 3), row("u2", 4, { kind: "user" }), row("a3", 5)], { folds: new FoldChoices(), opened: new Map() });
