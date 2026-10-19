@@ -1684,7 +1684,8 @@ export class App {
           group: "prompt",
           run: () => {
             this.reuse(open, text);
-            document.querySelector<HTMLElement>('[data-testid="composer"]')?.focus();
+            // The closing dialog gives the focus back to where it was, so focus after it is gone.
+            whenPainted(() => !document.querySelector('[role="dialog"]'), () => document.querySelector<HTMLElement>('[data-testid="composer"]')?.focus());
           },
         }))
       : [];

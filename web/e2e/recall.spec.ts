@@ -1,0 +1,102 @@
+import { expect, test } from "@playwright/test";
+import { appendFileSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+
+// The composer's recall on the live git chat from serve.ts: Up and Down history, the Esc stash,
+// the @ file menu, ⌘K Prompts, Reuse, the expand control, and the jump keys.
+
+const typed = () => {
+  try {
+    return readFileSync(join(process.env.SWARM_E2E_HOME!, "typed"), "utf8");
+  } catch {
+    return "";
+  }
+};
+
+test("the composer recalls, stashes, reuses and finds prompts, and @ inserts a file", async ({ page: tab }, info) => {
+  const errors: string[] = [];
+  tab.on("pageerror", (e) => !e.message.startsWith("ResizeObserver loop") && errors.push(e.message));
+  tab.on("console", (m) => m.type() === "error" && errors.push(m.text()));
+  const url = new URL(process.env.SWARM_SERVE_URL!);
+  await tab.goto(`${url.origin}/${url.hash}`);
+  await tab.waitForFunction(() => window.__swarmReady === true);
+  await tab.locator(`[data-testid="tree-row"][data-session="${process.env.SWARM_E2E_GIT}"]`).click();
+  const composer = tab.getByTestId("composer");
+  const status = tab.getByTestId("composer-status");
+  await expect(composer).toBeEnabled();
+  await composer.click();
+
+  // A sent prompt comes back with Up; Down past it gives the typed draft back.
+  const prompt = `recall me from ${info.project.name}`;
+  await tab.keyboard.type(prompt);
+  await tab.keyboard.press("Enter");
+  await expect.poll(typed).toContain(prompt);
+  await expect(composer).toHaveValue("");
+  await tab.keyboard.press("ArrowUp");
+  await expect(composer).toHaveValue(prompt);
+  await tab.keyboard.press("ArrowDown");
+  await expect(composer).toHaveValue("");
+
+  // Esc keeps the cleared draft, and Esc in the empty box gives it back.
+  await tab.keyboard.type("half a thought");
+  await tab.keyboard.press("Escape");
+  await expect(composer).toHaveValue("");
+  await expect(status).toContainText("Draft cleared. Esc brings it back.");
+  await tab.keyboard.press("Escape");
+  await expect(composer).toHaveValue("half a thought");
+  await tab.keyboard.press("Escape");
+
+  // @ lists the chat folder's files, and Tab inserts the path with a space.
+  await tab.keyboard.type("see @READ");
+  const menu = tab.getByTestId("slash-menu");
+  await expect(menu).toHaveAttribute("aria-label", "Files");
+  await expect(menu.getByTestId("slash-row").first()).toContainText("@README.md");
+  await tab.keyboard.press("Tab");
+  await expect(composer).toHaveValue("see @README.md ");
+  await tab.keyboard.press("Escape");
+
+  // ⌘K finds the prompt, and picking it fills the composer.
+  await tab.keyboard.press("Meta+k");
+  await tab.getByPlaceholder("Search actions, workspaces, chats, agents, and prompts").fill(`recall me from ${info.project.name}`);
+  await tab.getByRole("group", { name: "Prompts" }).getByRole("option").first().click();
+  await expect(composer).toHaveValue(prompt);
+  await expect(composer).toBeFocused();
+  await tab.keyboard.press("Escape");
+
+  // Reuse on a sent row fills the composer and stashes the draft. The chat's log gets the prompt
+  // as the CLI would write it.
+  const logged = `logged prompt from ${info.project.name}`;
+  const at = new Date().toISOString();
+  appendFileSync(process.env.SWARM_E2E_GIT_LOG!, JSON.stringify({ type: "user", uuid: `u-${info.project.name}`, parentUuid: null, sessionId: "fixture-session", timestamp: at, message: { role: "user", content: logged } }) + "\n");
+  const userRow = tab.locator('[data-testid="row"][data-kind="user"]').filter({ hasText: logged });
+  await expect(userRow).toBeVisible();
+  await tab.keyboard.type("keep this draft");
+  await userRow.hover();
+  await userRow.getByTestId("reuse-prompt").click();
+  await expect(composer).toHaveValue(logged);
+  await expect(composer).toBeFocused();
+  await tab.keyboard.press("Meta+a");
+  await tab.keyboard.press("Backspace");
+  await tab.keyboard.press("Escape");
+  await expect(composer).toHaveValue("keep this draft");
+  await tab.keyboard.press("Escape");
+
+  // Expand lifts the 200 px cap.
+  await tab.getByTestId("composer-expand").click();
+  expect((await composer.boundingBox())!.height).toBeGreaterThan(300);
+  await tab.getByRole("button", { name: "Shrink composer" }).click();
+  expect((await composer.boundingBox())!.height).toBeLessThanOrEqual(200);
+
+  // ⌃⌥↑ moves the transcript back to the prompt above a long answer; ⌃⌘W says when no chat waits.
+  const answer = Array.from({ length: 80 }, (_, i) => `answer line ${i}`).join("\n\n");
+  appendFileSync(process.env.SWARM_E2E_GIT_LOG!, JSON.stringify({ type: "assistant", uuid: `a-${info.project.name}`, parentUuid: `u-${info.project.name}`, sessionId: "fixture-session", timestamp: at, message: { role: "assistant", model: "claude-opus-4-6", content: [{ type: "text", text: answer }] } }) + "\n");
+  await expect(tab.getByText("answer line 79")).toBeAttached();
+  await tab.getByTestId("transcript").evaluate((el) => (el.scrollTop = el.scrollHeight));
+  await expect(tab.getByText("answer line 79")).toBeInViewport();
+  await expect(userRow).not.toBeInViewport();
+  await tab.keyboard.press("Control+Alt+ArrowUp");
+  await expect(userRow).toBeInViewport();
+  await tab.keyboard.press("Control+Meta+w");
+  await expect(tab.getByText("No chat is waiting for you.")).toBeVisible();
+  expect(errors).toEqual([]);
+});
