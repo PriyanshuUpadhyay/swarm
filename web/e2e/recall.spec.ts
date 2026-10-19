@@ -179,18 +179,46 @@ test("the composer recalls, stashes, reuses and finds prompts, and @ inserts a f
   await tab.getByRole("button", { name: "Shrink composer" }).click();
   expect((await composer.boundingBox())!.height).toBeLessThanOrEqual(200);
 
-  // ⌃⌥↑ moves the transcript back to the prompt above a long answer; ⌃⌘W says when no chat waits.
-  const answer = Array.from({ length: 80 }, (_, i) => `answer line ${i}`).join("\n\n");
-  appendFileSync(process.env.SWARM_E2E_GIT_LOG!, JSON.stringify({ type: "assistant", uuid: `a-${info.project.name}`, parentUuid: `u-${info.project.name}`, sessionId: "fixture-session", timestamp: at, message: { role: "assistant", model: "claude-opus-4-6", content: [{ type: "text", text: answer }] } }) + "\n");
-  await expect(tab.getByText("answer line 79")).toBeAttached();
+  // ⌃⌥↑ moves the transcript back to the prompt above a long answer, and to a prompt that the top
+  // edge cuts, not past it; ⌃⌘W says when no chat waits. Each project writes its own rows.
+  const reply = (id: string, parent: string) => {
+    const text = Array.from({ length: 80 }, (_, i) => `${id} line ${i}`).join("\n\n");
+    appendFileSync(process.env.SWARM_E2E_GIT_LOG!, JSON.stringify({ type: "assistant", uuid: id, parentUuid: parent, sessionId: "fixture-session", timestamp: at, message: { role: "assistant", model: "claude-opus-4-6", content: [{ type: "text", text }] } }) + "\n");
+    return tab.getByText(`${id} line 79`, { exact: true });
+  };
+  const scroller = tab.getByTestId("transcript");
+  const end = reply(`a-${info.project.name}`, `u-${info.project.name}`);
+  await expect(end).toBeAttached();
   // The list measures the new rows after they paint, so scroll again until the end holds.
   await expect(async () => {
-    await tab.getByTestId("transcript").evaluate((el) => (el.scrollTop = el.scrollHeight));
-    await expect(tab.getByText("answer line 79")).toBeInViewport({ timeout: 500 });
+    await scroller.evaluate((el) => (el.scrollTop = el.scrollHeight));
+    await expect(end).toBeInViewport({ timeout: 500 });
     await expect(userRow).not.toBeInViewport({ timeout: 500 });
   }).toPass();
   await tab.keyboard.press("Control+Alt+ArrowUp");
   await expect(userRow).toBeInViewport();
+
+  const second = `second prompt from ${info.project.name}`;
+  appendFileSync(process.env.SWARM_E2E_GIT_LOG!, JSON.stringify({ type: "user", uuid: `u2-${info.project.name}`, parentUuid: `a-${info.project.name}`, sessionId: "fixture-session", timestamp: at, message: { role: "user", content: second } }) + "\n");
+  const end2 = reply(`a2-${info.project.name}`, `u2-${info.project.name}`);
+  await expect(async () => {
+    await scroller.evaluate((el) => (el.scrollTop = el.scrollHeight));
+    await expect(end2).toBeInViewport({ timeout: 500 });
+  }).toPass();
+  const secondRow = tab.locator('[data-testid="row"][data-kind="user"]').filter({ hasText: second });
+  await tab.keyboard.press("Control+Alt+ArrowUp");
+  await expect(secondRow).toBeInViewport();
+  // Cut the second prompt at the top edge by 4 px.
+  await scroller.evaluate((el, text) => {
+    const row = [...el.querySelectorAll<HTMLElement>('[data-kind="user"]')].find((r) => r.textContent?.includes(text))!;
+    el.scrollTop += row.getBoundingClientRect().top - el.getBoundingClientRect().top + 4;
+  }, second);
+  await tab.keyboard.press("Control+Alt+ArrowUp");
+  await expect(secondRow).toBeInViewport();
+  expect(await scroller.evaluate((el, text) => {
+    const row = [...el.querySelectorAll<HTMLElement>('[data-kind="user"]')].find((r) => r.textContent?.includes(text))!;
+    return Math.abs(row.getBoundingClientRect().top - el.getBoundingClientRect().top);
+  }, second)).toBeLessThan(40);
   await tab.keyboard.press("Control+Meta+w");
   await expect(tab.getByText("No chat is waiting for you.")).toBeVisible();
   expect(errors).toEqual([]);

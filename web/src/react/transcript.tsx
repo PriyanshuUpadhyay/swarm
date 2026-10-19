@@ -95,8 +95,17 @@ function Transcript({ app, view, testid = "transcript", empty }: { app: Reader; 
     if (testid !== "transcript") return;
     const onJump = (e: Event) => {
       const h = handle.current;
-      if (!h) return;
-      const to = promptIndex(lines, h.findItemIndex(h.scrollOffset), (e as CustomEvent<1 | -1>).detail);
+      const scroller = scrollRef.current;
+      if (!h || !scroller) return;
+      const dir = (e as CustomEvent<1 | -1>).detail;
+      // The first row with a part in view. A prompt cut at the top is still above, so ⌃⌥↑ goes to it.
+      const viewTop = scroller.getBoundingClientRect().top;
+      const first = [...scroller.querySelectorAll<HTMLElement>("[data-index]")]
+        .filter((r) => r.getBoundingClientRect().bottom > viewTop + 1)
+        .sort((a, b) => Number(a.dataset.index) - Number(b.dataset.index))[0];
+      const top = first ? Number(first.dataset.index) : h.findItemIndex(h.scrollOffset);
+      const cut = !!first && first.getBoundingClientRect().top < viewTop - 1;
+      const to = promptIndex(lines, dir < 0 && cut ? top + 1 : top, dir);
       if (to < 0) return;
       // Off the bottom, so new rows do not pull the list back to the end.
       atBottom.current = false;
