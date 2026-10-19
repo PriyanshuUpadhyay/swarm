@@ -99,3 +99,22 @@ func renewalRunsOncePerAccountAndRefreshesDuringCooldown(renewed: Bool) async th
     }
     #expect(model.refreshError == nil)
 }
+
+@Test func codexPetsLoadFromTheirFoldersAndABadOneIsLeftOut() throws {
+    let home = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: home) }
+    let blob = home.appendingPathComponent("pets/blob"), bad = home.appendingPathComponent("pets/bad")
+    try FileManager.default.createDirectory(at: blob, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: bad, withIntermediateDirectories: true)
+    // A 2x1 grid of 1x1 frames.
+    let png = "iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAYAAAD0In+KAAAADklEQVR4nGP4z8AAQv8BD/kD/YURmXYAAAAASUVORK5CYII="
+    try Data(base64Encoded: png)!.write(to: blob.appendingPathComponent("s.png"))
+    try Data(#"{"displayName":"Blob","spritesheetPath":"s.png","frame":{"width":1,"height":1,"columns":2,"rows":1}}"#.utf8)
+        .write(to: blob.appendingPathComponent("pet.json"))
+    try Data(#"{"spritesheetPath":"../blob/s.png","frame":{"width":1,"height":1,"columns":2,"rows":1}}"#.utf8)
+        .write(to: bad.appendingPathComponent("pet.json"))
+    let pets = Guest.codexPets(home: home)
+    #expect(pets.map(\.name) == ["Blob"])
+    #expect(pets.first?.smooth == true && pets.first?.credit == "Your Codex pet")
+    #expect(pets.first?.frame(.working, tick: 1) != nil)
+}

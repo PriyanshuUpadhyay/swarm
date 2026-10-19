@@ -119,12 +119,12 @@ func snapshot(to directory: URL, arguments: [String]) {
     // Every own frame at the closed size, a row per family, for judging the art.
     let ticks: [MascotState: [Int]] = [.working: [0, 1], .waiting: [0, 1], .idle: [0, 13], .sleeping: [0, 1, 2]]
     write(VStack(spacing: 4) {
-        ForEach(["claude", "codex"], id: \.self) { family in
+        ForEach(mascotFamilies + ["bee"], id: \.self) { family in
             HStack(spacing: 4) {
                 ForEach(MascotState.allCases, id: \.self) { state in
                     ForEach(ticks[state]!, id: \.self) { tick in
                         MascotCanvas(family: family, state: state, turn: 0, height: Layout.closedMascot,
-                                     tick: tick, seconds: Double(tick))
+                                     tick: tick, seconds: Double(tick), crowd: tick + 2)
                             .frame(width: Layout.wing - Layout.closedEar, height: Layout.minNotch)
                             .background(Color.black)
                     }
@@ -139,7 +139,7 @@ func snapshot(to directory: URL, arguments: [String]) {
     write(VStack(alignment: .leading, spacing: 4) {
         ForEach(0..<MascotCast.count, id: \.self) { turn in
             HStack(spacing: 4) {
-                Text(MascotCast.guest(turn)?.name ?? "Swarm").font(.system(size: 11)).foregroundStyle(.white)
+                Text(MascotCast.name(turn)).font(.system(size: 11)).foregroundStyle(.white)
                     .frame(width: 90, alignment: .leading)
                 ForEach(MascotState.allCases, id: \.self) { state in
                     MascotCanvas(family: "claude", state: state, turn: turn, height: Layout.closedMascot, tick: nil, seconds: nil)

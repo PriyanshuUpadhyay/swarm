@@ -11,9 +11,15 @@ public struct CodexPetManifest: Equatable, Sendable {
         public let rows: Int
     }
 
+    /// Frame indices into the sheet, row by row, and their rate.
     public struct Animation: Equatable, Sendable {
         public let frames: [Int]
         public let fps: Double
+
+        public init(frames: [Int], fps: Double) {
+            self.frames = frames
+            self.fps = fps
+        }
     }
 
     public let name: String

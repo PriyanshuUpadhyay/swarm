@@ -294,7 +294,8 @@ extension UsageModel {
         let best = bestAccount(accounts, history: history, now: now)
         return Mascot(family: mascotFamily(agents, lastWorking: lastWorking, best: best),
                       state: mascotState(agents, lastActive: lastActive, now: now),
-                      turn: mascotTurn(now: now), height: height, live: live, strained: best?.strained ?? false)
+                      turn: mascotTurn(now: now), height: height, live: live, strained: best?.strained ?? false,
+                      crowd: agents.working.values.reduce(0, +))
     }
 }
 
@@ -466,10 +467,10 @@ struct OpenContent: View {
 
     /// Who the mascot is and who drew it; the credit is also what the guests' licences ask for.
     private var credit: some View {
-        let guest = MascotCast.guest(model.mascotTurn(now: now))
+        let turn = model.mascotTurn(now: now)
         return VStack(alignment: .trailing, spacing: 2) {
-            Text(guest?.name ?? "Swarm").foregroundStyle(Palette.secondary)
-            Text(guest?.credit ?? "swarm's own art")
+            Text(MascotCast.name(turn)).foregroundStyle(Palette.secondary)
+            Text(MascotCast.guest(turn)?.credit ?? "swarm's own art")
         }
         .multilineTextAlignment(.trailing)
         .frame(maxWidth: 260, alignment: .trailing)

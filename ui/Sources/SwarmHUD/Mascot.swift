@@ -21,7 +21,15 @@ struct MascotArt {
 
     static let columns = 12, rows = 10
 
-    static func of(_ family: String) -> MascotArt { family == "codex" ? codex : claude }
+    static func of(_ family: String) -> MascotArt {
+        switch family {
+        case "codex": return codex
+        case "agy": return agy
+        case "pi": return pi
+        case "bee": return bee
+        default: return claude
+        }
+    }
 
     /// A chunky terracotta creature with ear nubs and big shiny eyes, typing at a small gray
     /// keyboard while it works. B body, H highlight, S shade, P cheek, E eye, W eye shine, K keys.
@@ -189,6 +197,254 @@ struct MascotArt {
         ]
     )
 
+    /// Swarm's bee, side on, facing right; it takes its own turn in the cast. Y body, D stripe,
+    /// W wing, E eye, K sting and legs.
+    static let bee = MascotArt(
+        palette: [
+            "Y": Color(hex: 0xF2C230), "D": Color(hex: 0x2B2420), "W": Color(hex: 0xD8E8FA),
+            "E": Color(hex: 0x15110F), "K": Color(hex: 0x4A3F38),
+        ],
+        idle: [
+            "....WW.WW...",
+            "...WWWWWWW..",
+            "....WWWWW...",
+            "..YDDYDDYY..",
+            ".YYDDYDDYEY.",
+            "KYYDDYDDYYY.",
+            ".YYDDYDDYYY.",
+            "..YDDYDDYY..",
+            "...K....K...",
+            "............",
+        ],
+        blink: [
+            "....WW.WW...",
+            "...WWWWWWW..",
+            "....WWWWW...",
+            "..YDDYDDYY..",
+            ".YYDDYDDYYY.",
+            "KYYDDYDDYYY.",
+            ".YYDDYDDYYY.",
+            "..YDDYDDYY..",
+            "...K....K...",
+            "............",
+        ],
+        working: [
+            [
+                "..WWW..WWW..",
+                "...WWW.WWW..",
+                "....WWWWW...",
+                "..YDDYDDYY..",
+                ".YYDDYDDYEY.",
+                "KYYDDYDDYYY.",
+                ".YYDDYDDYYY.",
+                "..YDDYDDYY..",
+                "...K....K...",
+                "............",
+            ],
+            [
+                "............",
+                "............",
+                "..WWWWWWWW..",
+                ".WYDDYDDYYW.",
+                ".YYDDYDDYEY.",
+                "KYYDDYDDYYY.",
+                ".YYDDYDDYYY.",
+                "..YDDYDDYY..",
+                "...K....K...",
+                "............",
+            ],
+        ],
+        waiting: [
+            "....WW.WW...",
+            "...WWWWWWW..",
+            "....WWWWW...",
+            "..YDDYDDYY..",
+            ".YYDDYDDYEY.",
+            "KYYDDYDDYYY.",
+            ".YYDDYDDYYY.",
+            "..YDDYDDYY..",
+            "..K......K..",
+            "............",
+        ],
+        sleeping: [
+            "............",
+            "............",
+            "............",
+            "...WWWWWW...",
+            "..YDDYDDYY..",
+            ".YYDDYDDYDY.",
+            "KYYDDYDDYYY.",
+            ".YYDDYDDYYY.",
+            "..KKKKKKKK..",
+            "............",
+        ]
+    )
+
+    /// pi's mascot: a π that walks on its two legs. B body, S shade, W eye shine, E eye.
+    static let pi = MascotArt(
+        palette: [
+            "B": Color(hex: 0x9A7BD8), "S": Color(hex: 0x6E54A8), "W": Color(hex: 0xF4EEFF),
+            "E": Color(hex: 0x1C1530),
+        ],
+        idle: [
+            "............",
+            ".BBBBBBBBBB.",
+            "BBWEBBBBWEBB",
+            "BBEEBBBBEEBB",
+            ".SSBSSSSBSS.",
+            "...BB...BB..",
+            "...BB...BB..",
+            "...BB...BB..",
+            "...BB...BBB.",
+            "..BB.....BB.",
+        ],
+        blink: [
+            "............",
+            ".BBBBBBBBBB.",
+            "BBBBBBBBBBBB",
+            "BBEEBBBBEEBB",
+            ".SSBSSSSBSS.",
+            "...BB...BB..",
+            "...BB...BB..",
+            "...BB...BB..",
+            "...BB...BBB.",
+            "..BB.....BB.",
+        ],
+        working: [
+            [
+                "............",
+                ".BBBBBBBBBB.",
+                "BBWEBBBBWEBB",
+                "BBEEBBBBEEBB",
+                ".SSBSSSSBSS.",
+                "...BB...BB..",
+                "...BB...BB..",
+                "..BB.....BB.",
+                ".BB.......BB",
+                ".B.........B",
+            ],
+            [
+                "............",
+                ".BBBBBBBBBB.",
+                "BBWEBBBBWEBB",
+                "BBEEBBBBEEBB",
+                ".SSBSSSSBSS.",
+                "...BB...BB..",
+                "...BB...BB..",
+                "....BB.BB...",
+                "....BB.BB...",
+                "...BB...BB..",
+            ],
+        ],
+        waiting: [
+            "............",
+            ".BBBBBBBBBB.",
+            "BBWEBBBBWEBB",
+            "BBEEBBBBEEBB",
+            ".SSBSSSSBSS.",
+            "...BB...BB..",
+            "...BB...BBBB",
+            "...BB.......",
+            "...BB.......",
+            "..BB........",
+        ],
+        sleeping: [
+            "............",
+            "............",
+            "............",
+            "............",
+            "............",
+            ".BBBBBBBBBB.",
+            "BBBBBBBBBBBB",
+            "BBEEBBBBEEBB",
+            ".SSBSSSSBSS.",
+            "..BBB..BBB..",
+        ]
+    )
+
+    /// AGY's mascot: a big star with a face and its small twin. B and P stars, b and p dimmed,
+    /// E eye.
+    static let agy = MascotArt(
+        palette: [
+            "B": Color(hex: 0x7EA6FF), "P": Color(hex: 0xE08CF2), "b": Color(hex: 0x4A5F94),
+            "p": Color(hex: 0x7E5689), "E": Color(hex: 0x141A2C),
+        ],
+        idle: [
+            "............",
+            "....B.....P.",
+            "....B....PPP",
+            "...BBB....P.",
+            "..BEBEB.....",
+            "BBBBBBBBB...",
+            "..BBBBB.....",
+            "...BBB......",
+            "....B.......",
+            "....B.......",
+        ],
+        blink: [
+            "............",
+            "....B.....P.",
+            "....B....PPP",
+            "...BBB....P.",
+            "..BBBBB.....",
+            "BBBBBBBBB...",
+            "..BBBBB.....",
+            "...BBB......",
+            "....B.......",
+            "....B.......",
+        ],
+        working: [
+            [
+                "............",
+                "....B.....P.",
+                "....B....PPP",
+                "...BBB....P.",
+                "..BEBEB.....",
+                "BBBBBBBBB...",
+                "..BBBBB.....",
+                "...BBB......",
+                "....B.......",
+                "....B.......",
+            ],
+            [
+                "............",
+                "............",
+                "....B.......",
+                "...BBB......",
+                "..BEBEB.....",
+                ".BBBBBBB....",
+                "..BBBBB...P.",
+                "...BBB...PPP",
+                "....B.....P.",
+                "............",
+            ],
+        ],
+        waiting: [
+            "............",
+            "....B.....p.",
+            "....B....ppp",
+            "...BBB....p.",
+            "..BEBEB.....",
+            "BBBBBBBBB...",
+            "..BBBBB.....",
+            "...BBB......",
+            "....B.......",
+            "....B.......",
+        ],
+        sleeping: [
+            "............",
+            "............",
+            "....b.......",
+            "...bbb......",
+            "..bbbbb.....",
+            ".bbbbbbb....",
+            "..bEbEb.....",
+            "...bbb...p..",
+            "....b...ppp.",
+            ".........p..",
+        ]
+    )
+
     static let bang: Sprite = ["K", "K", "K", ".", "K"]
     static let drop: Sprite = [".K.", ".K.", "KKK", "KKK", ".K."]
     static let zee: Sprite = ["KKKKK", "...K.", "..K..", ".K...", "KKKKK"]
@@ -205,7 +461,8 @@ extension MascotState {
     }
 }
 
-/// A guest mascot: a PNG sheet with a row per state and a column per frame (`MascotSheets.swift`).
+/// A built-in guest mascot: a PNG sheet with a row per state and a column per frame
+/// (`MascotSheets.swift`).
 struct SheetMascot {
     let id: String
     let name: String
@@ -220,34 +477,88 @@ struct SheetMascot {
     let png: String
 
     static let rows: [MascotState] = [.idle, .working, .waiting, .sleeping]
+}
 
-    func row(_ state: MascotState) -> Int { Self.rows.firstIndex(of: state)! }
+/// A mascot drawn from a decoded sprite sheet: a built-in guest or one of the owner's Codex pets.
+struct Guest {
+    let name: String
+    let credit: String
+    /// The art draws its own sleep, so the HUD adds no `z`.
+    let ownZ: Bool
+    /// Painted art (a Codex pet) scales smoothly; pixel art keeps hard edges.
+    let smooth: Bool
+    /// One frame, in sheet pixels.
+    let cell: CGSize
+    let columns: Int
+    let sheet: CGImage
+    let animations: [MascotState: CodexPetManifest.Animation]
 
-    /// Decoded once; a sheet that fails to decode draws nothing.
-    static let sheets: [String: CGImage] = Dictionary(uniqueKeysWithValues: all.compactMap { mascot in
-        guard let data = Data(base64Encoded: mascot.png),
-              let source = CGImageSourceCreateWithData(data as CFData, nil),
-              let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return nil }
-        return (mascot.id, image)
-    })
+    func fps(_ state: MascotState) -> Double { animations[state]?.fps ?? 1 }
 
     func frame(_ state: MascotState, tick: Int?) -> CGImage? {
-        let r = row(state)
-        let column = (tick ?? 0) % frames[r]
-        return Self.sheets[id]?.cropping(to: CGRect(x: CGFloat(column) * cell.width, y: CGFloat(r) * cell.height,
-                                                    width: cell.width, height: cell.height))
+        guard let frames = animations[state]?.frames, !frames.isEmpty else { return nil }
+        let index = frames[(tick ?? 0) % frames.count]
+        return sheet.cropping(to: CGRect(x: CGFloat(index % columns) * cell.width, y: CGFloat(index / columns) * cell.height,
+                                         width: cell.width, height: cell.height))
     }
 }
 
-/// Who takes turns: turn 0 is swarm's own Claude or Codex art, turn n is `SheetMascot.all[n - 1]`.
-enum MascotCast {
-    static var count: Int { SheetMascot.all.count + 1 }
-
-    static func guest(_ turn: Int) -> SheetMascot? { turn > 0 ? SheetMascot.all[(turn - 1) % SheetMascot.all.count] : nil }
-
-    static func fps(turn: Int, state: MascotState) -> Double {
-        guest(turn).map { $0.fps[$0.row(state)] } ?? state.fps
+extension Guest {
+    /// A sheet that fails to decode leaves the guest out.
+    init?(_ mascot: SheetMascot) {
+        guard let data = Data(base64Encoded: mascot.png),
+              let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return nil }
+        let columns = mascot.frames.max() ?? 1
+        var animations: [MascotState: CodexPetManifest.Animation] = [:]
+        for (row, state) in SheetMascot.rows.enumerated() {
+            animations[state] = .init(frames: (0..<mascot.frames[row]).map { row * columns + $0 }, fps: mascot.fps[row])
+        }
+        self.init(name: mascot.name, credit: mascot.credit, ownZ: mascot.ownZ, smooth: false, cell: mascot.cell,
+                  columns: columns, sheet: image, animations: animations)
     }
+
+    /// The pets the owner installed for Codex, `<home>/pets/<id>/pet.json`, by folder name. A pet
+    /// whose manifest or sheet does not read, or whose sheet is smaller than its grid, is left out.
+    static func codexPets(home: URL) -> [Guest] {
+        let pets = home.appendingPathComponent("pets")
+        let ids = (try? FileManager.default.contentsOfDirectory(atPath: pets.path))?.sorted() ?? []
+        return ids.compactMap { id in
+            let folder = pets.appendingPathComponent(id)
+            guard let data = try? Data(contentsOf: folder.appendingPathComponent("pet.json")),
+                  let pet = try? CodexPetManifest.parse(data, folder: id),
+                  let source = CGImageSourceCreateWithURL(folder.appendingPathComponent(pet.sheetPath) as CFURL, nil),
+                  let sheet = CGImageSourceCreateImageAtIndex(source, 0, nil),
+                  sheet.width >= pet.frame.width * pet.frame.columns,
+                  sheet.height >= pet.frame.height * pet.frame.rows else { return nil }
+            return Guest(name: pet.name, credit: "Your Codex pet", ownZ: false, smooth: true,
+                         cell: CGSize(width: pet.frame.width, height: pet.frame.height), columns: pet.frame.columns,
+                         sheet: sheet, animations: pet.animations)
+        }
+    }
+}
+
+/// Who takes turns: turn 0 is the busiest provider's own art, turn 1 swarm's bee, then the built-in
+/// guests, then the owner's Codex pets.
+enum MascotCast {
+    /// Read once at launch; a pet installed later joins at the next launch.
+    static let guests: [Guest] = SheetMascot.all.compactMap(Guest.init) + Guest.codexPets(home: codexHome)
+
+    static var codexHome: URL {
+        ProcessInfo.processInfo.environment["CODEX_HOME"].map { URL(fileURLWithPath: $0) }
+            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex")
+    }
+
+    static var count: Int { guests.count + 2 }
+
+    static func guest(_ turn: Int) -> Guest? { turn >= 2 && !guests.isEmpty ? guests[(turn - 2) % guests.count] : nil }
+
+    /// The own art that draws `turn` when it is not a guest's.
+    static func family(_ family: String, turn: Int) -> String { turn == 1 ? "bee" : family }
+
+    static func name(_ turn: Int) -> String { guest(turn)?.name ?? (turn == 1 ? "Swarm bee" : "Swarm") }
+
+    static func fps(turn: Int, state: MascotState) -> Double { guest(turn)?.fps(state) ?? state.fps }
 }
 
 struct MascotPose {
@@ -292,7 +603,8 @@ func mascotCue(_ state: MascotState, seconds: Double?, ownZ: Bool, strained: Boo
 }
 
 /// Draws one frame of whoever has the turn, `height` points tall and centred; wide art shrinks to
-/// the canvas width. The cue sits above the art's right edge and stays inside the canvas.
+/// the canvas width. The cue sits above the art's right edge and stays inside the canvas. The bee
+/// works in a swarm of `crowd` bees, up to 3.
 struct MascotCanvas: View {
     let family: String
     let state: MascotState
@@ -301,6 +613,7 @@ struct MascotCanvas: View {
     let tick: Int?
     let seconds: Double?
     var strained = false
+    var crowd = 1
 
     var body: some View {
         Canvas { context, size in
@@ -312,14 +625,24 @@ struct MascotCanvas: View {
                 let w = snap(guest.cell.width * scale), h = snap(guest.cell.height * scale)
                 art = CGRect(x: snap((size.width - w) / 2), y: snap((size.height - h) / 2), width: w, height: h)
                 if let frame = guest.frame(state, tick: tick) {
-                    context.draw(Image(decorative: frame, scale: 1).interpolation(.none), in: art)
+                    context.draw(Image(decorative: frame, scale: 1).interpolation(guest.smooth ? .high : .none), in: art)
                 }
             } else {
-                let pose = mascotPose(family: family, state: state, tick: tick)
-                let cell = min(snap(height / CGFloat(MascotArt.rows)), snap(size.width / CGFloat(MascotArt.columns)))
+                let own = MascotCast.family(family, turn: turn)
+                let bees = own == "bee" && state == .working ? min(max(crowd, 1), 3) : 1
+                let cell = min(snap(height / CGFloat(MascotArt.rows)), snap(size.width / CGFloat(MascotArt.columns * bees)))
                 let w = CGFloat(MascotArt.columns) * cell, h = CGFloat(MascotArt.rows) * cell
-                art = CGRect(x: snap((size.width - w) / 2), y: snap((size.height - h) / 2 - pose.bob * cell), width: w, height: h)
-                draw(pose.sprite, { pose.palette[$0] }, at: art.origin, cell: cell, in: context)
+                let left = snap((size.width - w * CGFloat(bees)) / 2)
+                var frame = CGRect.null
+                for bee in 0..<bees {
+                    // Each bee beats its wings a frame apart, the middle one a little higher.
+                    let pose = mascotPose(family: own, state: state, tick: tick.map { $0 + bee })
+                    let lift = bees > 1 && bee == 1 ? cell * 2 : 0
+                    let rect = CGRect(x: left + CGFloat(bee) * w, y: snap((size.height - h) / 2 - pose.bob * cell - lift), width: w, height: h)
+                    draw(pose.sprite, { pose.palette[$0] }, at: rect.origin, cell: cell, in: context)
+                    frame = frame.union(rect)
+                }
+                art = frame
             }
             if let cue = mascotCue(state, seconds: seconds, ownZ: MascotCast.guest(turn)?.ownZ ?? false, strained: strained) {
                 let cell = max((height / 24).rounded(), 1)
@@ -351,6 +674,7 @@ struct Mascot: View {
     let height: CGFloat
     let live: Bool
     var strained = false
+    var crowd = 1
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -360,11 +684,11 @@ struct Mascot: View {
             TimelineView(.periodic(from: Date(timeIntervalSinceReferenceDate: 0), by: 1 / fps)) { context in
                 let seconds = context.date.timeIntervalSinceReferenceDate
                 MascotCanvas(family: family, state: state, turn: turn, height: height,
-                             tick: Int((seconds * fps).rounded()), seconds: seconds, strained: strained)
+                             tick: Int((seconds * fps).rounded()), seconds: seconds, strained: strained, crowd: crowd)
             }
             .id("\(turn)-\(state)")
         } else {
-            MascotCanvas(family: family, state: state, turn: turn, height: height, tick: nil, seconds: nil, strained: strained)
+            MascotCanvas(family: family, state: state, turn: turn, height: height, tick: nil, seconds: nil, strained: strained, crowd: crowd)
         }
     }
 }
