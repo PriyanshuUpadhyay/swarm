@@ -109,6 +109,7 @@ fn the_plugin_plan_names_each_command_and_its_digest_applies_only_that_plan() {
             link.display()
         ),
         "run  'claude' 'plugin' 'install' 'swarm@swarm'".into(),
+        "run  'claude' 'plugin' 'update' 'swarm@swarm' '--scope' 'user'".into(),
         format!("run  'pi' 'install' '{}'", link.display()),
         "skipped (plugin): codex is not on PATH".into(),
         format!("--- {}", old.display()),
@@ -163,7 +164,7 @@ fn the_plugin_plan_names_each_command_and_its_digest_applies_only_that_plan() {
     assert_eq!(
         f.calls(),
         format!(
-            "claude plugin marketplace add {0}\nclaude plugin install swarm@swarm\npi install {0}\n",
+            "claude plugin marketplace add {0}\nclaude plugin install swarm@swarm\nclaude plugin update swarm@swarm --scope user\npi install {0}\n",
             link.display()
         )
     );
@@ -181,6 +182,105 @@ fn the_plugin_plan_names_each_command_and_its_digest_applies_only_that_plan() {
         .find(|row| row["id"] == "plugin")
         .unwrap();
     assert_eq!(row["state"], "ok", "{row}");
+}
+
+#[test]
+fn doctor_and_launch_report_stale_copies_without_running_a_cli() {
+    let f = Fixture::new("stale-plugin");
+    for cli in ["codex", "agy"] {
+        let path = f.home.join("bin").join(cli);
+        std::fs::write(&path, "#!/bin/sh\necho called >> \"$HOME/calls\"\n").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    std::fs::write(f.home.join(".swarm/swarm-home"), "swarm\n").unwrap();
+    let kit = f.home.join("prefix/libexec/skills/kit");
+    std::fs::write(kit.join("plugin.json"), r#"{"version":"0.1.0+new"}"#).unwrap();
+    let claude = f.home.join(".claude/plugins");
+    std::fs::create_dir_all(&claude).unwrap();
+    std::fs::write(
+        claude.join("installed_plugins.json"),
+        r#"{"version":2,"plugins":{"swarm@swarm":[{"scope":"user","version":"0.1.0+old"}]}}"#,
+    )
+    .unwrap();
+    for folder in [
+        ".codex/plugins/cache/swarm/swarm/0.1.0+old",
+        ".codex-work/plugins/cache/swarm/swarm/0.1.0+old",
+        ".swarm/accounts/codex/work/plugins/cache/swarm/swarm/0.1.0+old",
+        ".gemini/config/plugins/swarm",
+    ] {
+        let folder = f.home.join(folder);
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(folder.join("plugin.json"), r#"{"version":"0.1.0+old"}"#).unwrap();
+    }
+    let out = f.run(&[], &["doctor", "--json"]);
+    assert!(out.status.success(), "{out:?}");
+    let doctor: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let stale: Vec<_> = doctor["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|row| row["id"].as_str().unwrap().starts_with("plugin-"))
+        .collect();
+    assert_eq!(stale.len(), 5, "{doctor}");
+    for row in stale {
+        assert_eq!(row["state"], "setup");
+        assert_eq!(row["group"], "plugin");
+        assert!(
+            row["reason"]
+                .as_str()
+                .unwrap()
+                .contains("swarm setup plugin")
+        );
+    }
+    let launch = f.run(&[], &["launch", "bad/id", "chat"]);
+    let stderr = text(&launch.stderr);
+    let notices: Vec<_> = stderr
+        .lines()
+        .filter(|line| line.contains("stale plugin"))
+        .collect();
+    assert_eq!(notices.len(), 1, "{stderr}");
+    for name in ["Claude", "Codex", "AGY", "swarm setup plugin"] {
+        assert!(notices[0].contains(name), "{stderr}");
+    }
+    assert!(f.calls().is_empty(), "a stale check must not run a CLI");
+    let marketplace = claude.join("known_marketplaces.json");
+    std::fs::write(
+        &marketplace,
+        serde_json::json!({
+            "swarm": {"source": {"source": "directory", "path": f.home.join(".swarm/kit")}}
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let launch = f.run(&[], &["launch", "bad/id", "chat"]);
+    let stderr = text(&launch.stderr);
+    assert!(stderr.contains("Codex, AGY"), "{stderr}");
+    assert!(!stderr.contains("in Claude"), "{stderr}");
+    std::fs::write(
+        &marketplace,
+        r#"{"swarm":{"source":{"source":"directory","path":"/old/kit"}}}"#,
+    )
+    .unwrap();
+    // Setup skips CLIs absent from PATH, so their old records must not leave a warning.
+    for (cli, remaining) in [("codex", 2), ("agy", 1), ("claude", 0)] {
+        std::fs::remove_file(f.home.join("bin").join(cli)).unwrap();
+        let out = f.run(&[], &["doctor", "--json"]);
+        let doctor: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+        let rows: Vec<_> = doctor["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|row| row["id"].as_str().unwrap().starts_with("plugin-"))
+            .collect();
+        assert_eq!(rows.len(), remaining, "{cli}: {doctor}");
+        let launch = f.run(&[], &["launch", "bad/id", "chat"]);
+        let stderr = text(&launch.stderr);
+        assert_eq!(stderr.contains("stale plugin"), remaining > 0, "{stderr}");
+    }
+    let setup = f.run(&[], &["setup", "plugin", "--yes"]);
+    assert!(setup.status.success(), "{setup:?}");
+    let doctor = f.run(&[], &["doctor", "--json"]);
+    assert!(!text(&doctor.stdout).contains("Plugin 0.1.0+old"));
 }
 
 #[test]

@@ -103,9 +103,11 @@ notice helper and no bundled skills.
    - `plugin`: the skill kit, which the formula ships beside `swarm`, as the plugin `swarm` in each
      of Claude Code, Codex (once for each Codex home), AGY and pi on `PATH`. Each CLI installs from
      the link `~/.swarm/kit`, which names the kit through Homebrew's `opt/swarm` path, so it still
-     holds after `brew upgrade`. Run it again after an upgrade, because Codex and AGY keep a copy. It
+     holds after `brew upgrade`. Run `swarm setup plugin` again to refresh each CLI's copy.
+     `swarm doctor` lists stale copies, and `swarm launch` prints one line with the fix. It
      also removes the skill links an older swarm made, and a skill of the same name in your own
-     skills folders stays, because the CLI then lists both (ADR 0090).
+     skills folders stays, because the CLI then lists both (ADR 0090). Each release kit has a
+     content version, such as `0.1.0+90b3d081e6c7a812`. An upgrade changes no CLI config by itself.
    - `hud`: the notch usage HUD, which starts at login (ADR 0087).
 
    `swarm managed list` lists each file entry swarm added, and `swarm managed revert` removes one

@@ -361,6 +361,8 @@ Claude Code refused the former proof pointer skill because it set `disable-model
 Codex and AGY loaded it. Its rule now lives directly in `blocks/prove-it-works/SKILL.md`.
 The research report is in the owner's private reports folder.
 
+For current installs and refreshes, use `swarm setup plugin` as described in the kit README.
+
 ## Open questions
 
 - How many required stages does a ledger with no template need beyond frame, end condition and close?
