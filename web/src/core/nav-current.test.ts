@@ -121,6 +121,52 @@ describe("the sidebar keyboard row", () => {
     expect(app.view.selected).toBe("/r/app");
   });
 
+  it("keeps the archived keyboard row when an opened live chat has no current row", async () => {
+    const archived = row("archived-chat:older", "archived-chat", 1);
+    const archivedTree = tree([section("archived", "project", [archived])], "archived");
+    const { app, refresh } = harness(archivedTree);
+    app.treeName = "archived";
+    await refresh();
+    app.selected = archived.id;
+    app.openChat("docs");
+    expect(app.view.selected).toBe(archived.id);
+    await refresh();
+    expect(app.view.selected).toBe(archived.id);
+  });
+
+  it.each(["header", "workspace"])("follows the open chat after its %s expands", async (container) => {
+    const folded = tree([
+      section("pinned", "pinned", [web, webChat]),
+      section("/r", "project", [{ ...appMain, expanded: container !== "workspace" }, docs], { expanded: container !== "header" }),
+    ]);
+    const { app, refresh, setTree } = harness(folded);
+    await refresh();
+    app.workspace = "/r/web";
+    app.openId = "site";
+    app.openChat("docs");
+    expect(app.view.selected).toBe(container === "header" ? "/r" : "/r/app");
+    await app.writes;
+    setTree(tree([section("pinned", "pinned", [web, webChat]), section("/r", "project", [appMain, docs])]));
+    await refresh();
+    expect(app.view.rows.some((r) => r.id === "chat:docs")).toBe(true);
+    expect(app.view.selected).toBe("chat:docs");
+  });
+
+  it.each(["restore", "keyboard move"])("keeps the keyboard row after expansion for a %s", async (reason) => {
+    const folded = tree([section("pinned", "pinned", [web, webChat]), section("/r", "project", [appMain, docs], { expanded: false })]);
+    const { app, refresh, setTree } = harness(folded);
+    await refresh();
+    app.workspace = "/r/web";
+    app.selected = "/r";
+    app.openChat("docs", undefined, { write: reason !== "restore" });
+    if (reason === "keyboard move") app.selected = "pinned";
+    const selected = app.selected;
+    await app.writes;
+    setTree(tree([section("pinned", "pinned", [web, webChat]), section("/r", "project", [appMain, docs])]));
+    await refresh();
+    expect(app.view.selected).toBe(selected);
+  });
+
   it("moves a keyboard row that left the list to the open chat's workspace", async () => {
     const { app, refresh, setTree } = harness();
     await refresh();

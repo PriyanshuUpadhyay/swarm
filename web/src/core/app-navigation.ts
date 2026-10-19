@@ -11,6 +11,7 @@ type NavRead = { workspace: string; writeSeq: number; navSeq: number };
 
 export class AppNavigation {
   private closes: Promise<void> = Promise.resolve();
+  private keyboardFollow: { session: string; row: string } | null = null;
   // A fresh strip can still list an archived chat until the server prunes it.
   private leftChat: string | null = null;
 
@@ -81,6 +82,17 @@ export class AppNavigation {
   afterNav(read: NavRead | null) {
     const tree = this.app.tree;
     if (!tree) return;
+    const follow = this.keyboardFollow;
+    if (follow) {
+      if (this.app.openId !== follow.session || this.app.selected !== follow.row) this.keyboardFollow = null;
+      else {
+        const chat = this.app.rows.find((row) => row.kind === "chat" && row.row?.selection?.chat === follow.session);
+        if (chat) {
+          this.app.selected = chat.id;
+          this.keyboardFollow = null;
+        }
+      }
+    }
     if (!this.app.selected || !this.app.rows.some((r) => r.id === this.app.selected)) this.app.selected = currentRow(this.app.rows, this.app.openId, this.app.workspace) ?? this.app.rows[0]?.id ?? null;
     // A picked chat that left the tree (archived, ended elsewhere) must not come back picked.
     const kept = new Set(this.app.rows.filter((r) => this.app.marked.has(r.id) && markable(r)).map((r) => r.id));
@@ -285,7 +297,14 @@ export class AppNavigation {
     const moved = workspace !== null && workspace !== this.app.workspace;
     if (workspace) this.app.workspace = workspace;
     // A restore leaves the keyboard row where it was.
-    if (opts.write !== false) this.app.selected = currentRow(this.app.rows, sessionId, this.app.workspace);
+    this.keyboardFollow = null;
+    if (opts.write !== false) {
+      const row = currentRow(this.app.rows, sessionId, this.app.workspace);
+      if (row !== null) {
+        this.app.selected = row;
+        this.keyboardFollow = { session: sessionId, row };
+      }
+    }
     if (workspace && this.app.revision !== null && opts.write !== false) {
       // Swift's select: open the tab, then select; only a move to another workspace opens its project.
       const section = this.app.tree?.sections.find((s) => s.rows.some((r) => r.selection?.chat === sessionId));
