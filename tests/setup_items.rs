@@ -187,6 +187,11 @@ fn the_plugin_plan_names_each_command_and_its_digest_applies_only_that_plan() {
 #[test]
 fn doctor_and_launch_report_stale_copies_without_running_a_cli() {
     let f = Fixture::new("stale-plugin");
+    for cli in ["codex", "agy"] {
+        let path = f.home.join("bin").join(cli);
+        std::fs::write(&path, "#!/bin/sh\necho called >> \"$HOME/calls\"\n").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
     std::fs::write(f.home.join(".swarm/swarm-home"), "swarm\n").unwrap();
     let kit = f.home.join("prefix/libexec/skills/kit");
     std::fs::write(kit.join("plugin.json"), r#"{"version":"0.1.0+new"}"#).unwrap();
@@ -238,6 +243,44 @@ fn doctor_and_launch_report_stale_copies_without_running_a_cli() {
         assert!(notices[0].contains(name), "{stderr}");
     }
     assert!(f.calls().is_empty(), "a stale check must not run a CLI");
+    let marketplace = claude.join("known_marketplaces.json");
+    std::fs::write(
+        &marketplace,
+        serde_json::json!({
+            "swarm": {"source": {"source": "directory", "path": f.home.join(".swarm/kit")}}
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let launch = f.run(&[], &["launch", "bad/id", "chat"]);
+    let stderr = text(&launch.stderr);
+    assert!(stderr.contains("Codex, AGY"), "{stderr}");
+    assert!(!stderr.contains("in Claude"), "{stderr}");
+    std::fs::write(
+        &marketplace,
+        r#"{"swarm":{"source":{"source":"directory","path":"/old/kit"}}}"#,
+    )
+    .unwrap();
+    // Setup skips CLIs absent from PATH, so their old records must not leave a warning.
+    for (cli, remaining) in [("codex", 2), ("agy", 1), ("claude", 0)] {
+        std::fs::remove_file(f.home.join("bin").join(cli)).unwrap();
+        let out = f.run(&[], &["doctor", "--json"]);
+        let doctor: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+        let rows: Vec<_> = doctor["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|row| row["id"].as_str().unwrap().starts_with("plugin-"))
+            .collect();
+        assert_eq!(rows.len(), remaining, "{cli}: {doctor}");
+        let launch = f.run(&[], &["launch", "bad/id", "chat"]);
+        let stderr = text(&launch.stderr);
+        assert_eq!(stderr.contains("stale plugin"), remaining > 0, "{stderr}");
+    }
+    let setup = f.run(&[], &["setup", "plugin", "--yes"]);
+    assert!(setup.status.success(), "{setup:?}");
+    let doctor = f.run(&[], &["doctor", "--json"]);
+    assert!(!text(&doctor.stdout).contains("Plugin 0.1.0+old"));
 }
 
 #[test]

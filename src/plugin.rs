@@ -1,6 +1,7 @@
 //! `swarm setup plugin`: the commands that install the kit as the plugin `swarm` in each agent CLI
 //! (ADR 0090). Every CLI installs from the link `~/.swarm/kit`, so a new kit source only moves the
-//! link. Claude updates its copy, Codex and AGY copy it again on install, and pi reads the link.
+//! link. Claude and pi read the link in place; Codex and AGY copy it again on install.
+//! Claude update syncs its version record when the manifest version changes.
 //! Codex stores the resolved folder of a marketplace and refuses a second folder under the same
 //! name, so a Codex home whose `swarm` marketplace holds another folder removes it first.
 
@@ -178,9 +179,12 @@ impl StaleCopy {
 
 /// Read only local plugin records. Versions identify content, so compare the whole string,
 /// including build metadata. Old cache folders do not make a current copy stale.
-/// pi reads the kit link directly and has no separate copy.
+/// Skip CLIs absent from `found`. Claude and pi read the kit link directly; a Claude
+/// marketplace at another path can still have a stale installed version.
 pub fn stale_copies(
     kit: &Path,
+    link: &Path,
+    found: &[&str],
     claude_home: &Path,
     codex_homes: &[PathBuf],
     user_home: &Path,
@@ -199,7 +203,15 @@ pub fn stale_copies(
             });
         }
     };
-    if let Some(index) = read_json(&claude_home.join("plugins/installed_plugins.json"))
+    // Compare the lexical link, since resolving it would hide a package move.
+    let claude_reads_link = found.contains(&"claude")
+        && read_json(&claude_home.join("plugins/known_marketplaces.json")).is_some_and(|markets| {
+            markets["swarm"]["source"]["source"] == "directory"
+                && markets["swarm"]["source"]["path"].as_str().map(Path::new) == Some(link)
+        });
+    if found.contains(&"claude")
+        && !claude_reads_link
+        && let Some(index) = read_json(&claude_home.join("plugins/installed_plugins.json"))
         && let Some(installs) = index["plugins"]["swarm@swarm"].as_array()
     {
         for install in installs.iter().filter(|install| install["scope"] == "user") {
@@ -208,7 +220,7 @@ pub fn stale_copies(
             }
         }
     }
-    for home in codex_homes {
+    for home in codex_homes.iter().filter(|_| found.contains(&"codex")) {
         let Ok(entries) = std::fs::read_dir(home.join("plugins/cache/swarm/swarm")) else {
             continue;
         };
@@ -224,7 +236,9 @@ pub fn stale_copies(
             compare("Codex", home, versions.join(", "));
         }
     }
-    if let Some(version) = kit_version(&user_home.join(".gemini/config/plugins/swarm")) {
+    if found.contains(&"agy")
+        && let Some(version) = kit_version(&user_home.join(".gemini/config/plugins/swarm"))
+    {
         compare("AGY", user_home, version);
     }
     stale
@@ -285,16 +299,19 @@ mod tests {
             )
             .unwrap();
         };
+        let read_stale = |homes: &[PathBuf]| {
+            stale_copies(&kit, &root.join(".swarm/kit"), &CLIS, &claude, homes, &root)
+        };
         manifest(&kit, "0.1.0+new");
-        assert!(stale_copies(&kit, &claude, std::slice::from_ref(&codex), &root).is_empty());
+        assert!(read_stale(std::slice::from_ref(&codex)).is_empty());
         let cache = codex.join("plugins/cache/swarm/swarm");
         manifest(&cache.join("0.1.0+old"), "0.1.0+old");
-        let copies = stale_copies(&kit, &claude, std::slice::from_ref(&codex), &root);
+        let copies = read_stale(std::slice::from_ref(&codex));
         assert_eq!(copies.len(), 1);
         assert_eq!(copies[0].cli, "Codex");
         assert_eq!(copies[0].installed, "0.1.0+old");
         manifest(&cache.join("0.1.0+new"), "0.1.0+new");
-        assert!(stale_copies(&kit, &claude, std::slice::from_ref(&codex), &root).is_empty());
+        assert!(read_stale(std::slice::from_ref(&codex)).is_empty());
 
         std::fs::create_dir_all(claude.join("plugins")).unwrap();
         let index = claude.join("plugins/installed_plugins.json");
@@ -304,15 +321,15 @@ mod tests {
         )
         .unwrap();
         manifest(&claude.join("plugins/cache/swarm/swarm/old"), "0.1.0+old");
-        assert!(stale_copies(&kit, &claude, &[], &root).is_empty());
+        assert!(read_stale(&[]).is_empty());
         std::fs::write(&index, "invalid JSON").unwrap();
-        assert!(stale_copies(&kit, &claude, &[], &root).is_empty());
+        assert!(read_stale(&[]).is_empty());
         // An unstamped checkout still compares its ordinary manifest version.
         manifest(&kit, "0.1.0");
         manifest(&root.join(".gemini/config/plugins/swarm"), "0.1.0");
-        assert!(stale_copies(&kit, &claude, &[], &root).is_empty());
+        assert!(read_stale(&[]).is_empty());
         manifest(&root.join(".gemini/config/plugins/swarm"), "0.0.9");
-        let copies = stale_copies(&kit, &claude, &[], &root);
+        let copies = read_stale(&[]);
         assert_eq!(copies.len(), 1);
         assert_eq!(copies[0].cli, "AGY");
         assert!(stale_notice(&[]).is_none());
@@ -321,7 +338,7 @@ mod tests {
             "swarm: stale plugin copies in AGY; run `swarm setup plugin`"
         );
         std::fs::remove_file(kit.join("plugin.json")).unwrap();
-        assert!(stale_copies(&kit, &claude, &[], &root).is_empty());
+        assert!(read_stale(&[]).is_empty());
         std::fs::remove_dir_all(root).unwrap();
     }
 

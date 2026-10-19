@@ -2148,7 +2148,22 @@ fn stale_plugin_copies(home: &std::path::Path) -> Vec<swarm::plugin::StaleCopy> 
     let claude = env::var_os("CLAUDE_CONFIG_DIR")
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|| home.join(".claude"));
-    swarm::plugin::stale_copies(&kit, &claude, &codex_homes(home).unwrap_or_default(), home)
+    let Ok(swarm_home) = swarm::paths::home() else {
+        return Vec::new();
+    };
+    let link = std::path::PathBuf::from(swarm_home).join(".swarm/kit");
+    let found: Vec<&str> = swarm::plugin::CLIS
+        .into_iter()
+        .filter(|cli| installed(cli))
+        .collect();
+    swarm::plugin::stale_copies(
+        &kit,
+        &link,
+        &found,
+        &claude,
+        &codex_homes(home).unwrap_or_default(),
+        home,
+    )
 }
 
 /// `swarm doctor [--json]`, also `swarm setup [--json]`: the rows of `setup_rows`, then each thing

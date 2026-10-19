@@ -60,16 +60,15 @@ By hand, from a clone, the kit folder is its own marketplace:
 
 ```sh
 claude plugin marketplace add <repo>/skills/kit && claude plugin install swarm@swarm
-claude plugin update swarm@swarm --scope user
 codex plugin marketplace add <repo>/skills/kit && codex plugin add swarm@swarm
 agy plugin install <repo>/skills/kit
 pi install <repo>/skills/kit
 ```
 
 Claude Code shows each skill with the plugin name in front, for example `/swarm:implement`; pi shows
-`/skill:implement`. pi reads the local folder in place. Run the commands above after an edit to
-refresh the copies and their recorded versions in Claude Code, Codex and Antigravity.
-The package build stamps both plugin manifests from the kit content in `scripts/stamp-kit.py`.
+`/skill:implement`. Claude Code and pi read the local folder in place, so edits reach the next session.
+Run the commands above after an edit to refresh the copies in Codex and Antigravity.
+The package build stamps both plugin manifests from the kit content in `<repo>/scripts/stamp-kit.py`.
 A source checkout keeps its ordinary manifest version and needs no stamp.
 
 Do not link a kit skill folder into an agent's skills folder. A tool reads `../../blocks/` from the
