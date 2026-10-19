@@ -271,6 +271,8 @@ export class App {
   private lru: string[] = [];
   private listeners = new Set<() => void>();
   private streamId: string | null = null;
+  /** The server build of the first stream; a later stream from another build reloads the page. */
+  private serverBuild: string | null = null;
   private sentKeys = "";
   private pending = new Map<string, RowFrame[]>();
   private find: Find = NO_FIND;
@@ -1631,6 +1633,8 @@ export class App {
     }
     switch (e.event) {
       case "hello":
+        if (this.serverBuild !== null && data.build !== this.serverBuild) return location.reload();
+        this.serverBuild = String(data.build);
         this.streamId = String(data.stream);
         this.syncSubscriptions();
         void this.refreshSnapshot();
@@ -1648,6 +1652,9 @@ export class App {
       }
       case "reset":
         void this.reset(String(data.key));
+        break;
+      case "reload":
+        location.reload();
         break;
       case "setup":
       case "handoff":

@@ -258,17 +258,30 @@ pub fn ui(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         }
         return start(port.unwrap_or(UI_PORT), assets, dev_origin, Some(record));
     }
-    let url = match running {
-        Some((url, _, build)) if build.as_deref() == Some(BUILD) => url,
+    let (url, spawned) = match running {
+        Some((url, _, build)) if build.as_deref() == Some(BUILD) => (url, false),
         // A server of another build, such as one whose files an upgrade removed, gives way.
         Some(_) => {
             stop_ui(&record)?;
-            spawn_ui(&root, &record, rest)?
+            (spawn_ui(&root, &record, rest)?, true)
         }
-        None => spawn_ui(&root, &record, rest)?,
+        None => (spawn_ui(&root, &record, rest)?, true),
     };
     println!("{url}");
-    open_page(&url);
+    // An open page reloads in place. After a new server starts, its pages need up to a second to
+    // reconnect, so wait for them before a new window opens beside them.
+    let deadline =
+        std::time::Instant::now() + Duration::from_millis(if spawned { 1500 } else { 0 });
+    loop {
+        if reload_pages(&url) > 0 {
+            break;
+        }
+        if std::time::Instant::now() >= deadline {
+            open_page(&url);
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(250));
+    }
     start_hud();
     Ok(())
 }
@@ -460,37 +473,81 @@ fn new_token() -> Result<String, Box<dyn std::error::Error>> {
 
 /// True when the server at `http://127.0.0.1:<port>/#token=<token>` takes that token.
 fn answers(url: &str) -> bool {
-    let Some((port, token)) = url
-        .strip_prefix("http://127.0.0.1:")
-        .and_then(|rest| rest.split_once("/#token="))
-    else {
-        return false;
-    };
-    let Ok(port) = port.parse::<u16>() else {
-        return false;
-    };
-    let address = std::net::SocketAddr::from((std::net::Ipv4Addr::LOCALHOST, port));
-    let Ok(mut stream) = std::net::TcpStream::connect_timeout(&address, Duration::from_millis(500))
-    else {
-        return false;
-    };
-    let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
-    let request = format!(
-        "GET /api/badge HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nAuthorization: Bearer {token}\r\nConnection: close\r\n\r\n"
-    );
-    let mut status = [0; 12];
-    stream.write_all(request.as_bytes()).is_ok()
-        && stream.read_exact(&mut status).is_ok()
-        && &status == b"HTTP/1.1 200"
+    call(url, "GET", "/api/badge").is_some()
 }
 
+/// Asks the server at `url` to reload its open pages, and returns how many it reached.
+fn reload_pages(url: &str) -> u64 {
+    call(url, "POST", "/api/reload")
+        .and_then(|body| serde_json::from_str::<Value>(&body).ok())
+        .and_then(|body| body["pages"].as_u64())
+        .unwrap_or(0)
+}
+
+/// The body of a 200 answer from the server at `url` to `method path` with its token.
+fn call(url: &str, method: &str, path: &str) -> Option<String> {
+    let (port, token) = url
+        .strip_prefix("http://127.0.0.1:")?
+        .split_once("/#token=")?;
+    let port = port.parse::<u16>().ok()?;
+    let address = std::net::SocketAddr::from((std::net::Ipv4Addr::LOCALHOST, port));
+    let mut stream =
+        std::net::TcpStream::connect_timeout(&address, Duration::from_millis(500)).ok()?;
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
+    let request = format!(
+        "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nAuthorization: Bearer {token}\r\nContent-Type: application/json\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{{}}"
+    );
+    stream.write_all(request.as_bytes()).ok()?;
+    let mut answer = String::new();
+    stream.read_to_string(&mut answer).ok()?;
+    let (head, body) = answer.split_once("\r\n\r\n")?;
+    head.starts_with("HTTP/1.1 200").then(|| body.to_string())
+}
+
+/// Opens `url` as an app window of the default browser when it is Chromium based, else as a tab.
+/// An app window has no tab bar, and the browser passes ⌘N, ⌘T and ⌘W to the page.
 fn open_page(url: &str) {
-    if cfg!(target_os = "macos") {
-        let _ = std::process::Command::new("open")
-            .arg(url)
-            .stdin(std::process::Stdio::null())
-            .status();
+    if !cfg!(target_os = "macos") {
+        return;
     }
+    let mut open = std::process::Command::new("open");
+    match default_browser().filter(|id| CHROMIUM.contains(&id.as_str())) {
+        // `-n` starts a second process, which hands `--app` to the running browser and exits.
+        Some(id) => open
+            .args(["-n", "-b", &id, "--args"])
+            .arg(format!("--app={url}")),
+        None => open.arg(url),
+    };
+    let _ = open.stdin(std::process::Stdio::null()).status();
+}
+
+/// Bundle ids of browsers that take `--app=URL`, in the lower case that Launch Services stores.
+const CHROMIUM: &[&str] = &[
+    "com.google.chrome",
+    "com.google.chrome.beta",
+    "com.google.chrome.canary",
+    "com.brave.browser",
+    "com.microsoft.edgemac",
+    "com.vivaldi.vivaldi",
+    "org.chromium.chromium",
+];
+
+/// The bundle id of the `http` handler that the user chose, or None when the system default holds.
+fn default_browser() -> Option<String> {
+    let plist = std::env::home_dir()?
+        .join("Library/Preferences/com.apple.LaunchServices/com.apple.launchservices.secure.plist");
+    let output = std::process::Command::new("plutil")
+        .args(["-convert", "json", "-o", "-"])
+        .arg(plist)
+        .output()
+        .ok()?;
+    let prefs: Value = serde_json::from_slice(&output.stdout).ok()?;
+    prefs["LSHandlers"]
+        .as_array()?
+        .iter()
+        .find(|handler| handler["LSHandlerURLScheme"] == "http")?["LSHandlerRoleAll"]
+        .as_str()
+        .map(str::to_lowercase)
 }
 
 type Options = (Option<u16>, Option<PathBuf>, Option<String>);
@@ -654,6 +711,7 @@ fn router(app: App) -> Router {
         .route("/api/rows", get(transcript_rows))
         .route("/api/tool-output", get(tool_output))
         .route("/api/stream", get(stream))
+        .route("/api/reload", post(reload))
         .route("/api/subscribe", post(subscribe))
         .route("/api/chat/send", post(chat_action))
         .route("/api/chat/pull-back", post(chat_action))
@@ -4862,9 +4920,20 @@ async fn stream(State(app): State<App>) -> Sse<Events> {
         keys: HashMap::new(),
         row_keys: HashSet::new(),
     };
-    client.push(Frame::new("hello", json!({"stream": id}), None));
+    client.push(Frame::new(
+        "hello",
+        json!({"stream": id, "build": BUILD}),
+        None,
+    ));
     app.hub.lock().unwrap().streams.insert(id.clone(), client);
     Sse::new(Events { app, id })
+}
+
+/// `swarm ui` reloads the open pages, so they show this server's build.
+async fn reload(State(app): State<App>) -> Json<Value> {
+    let mut hub = app.hub.lock().unwrap();
+    hub.publish(Frame::new("reload", json!({}), None));
+    Json(json!({"pages": hub.streams.len()}))
 }
 
 #[derive(Deserialize)]
@@ -5293,6 +5362,7 @@ async fn static_file(State(app): State<App>, request: Request) -> Response {
         Some("js" | "mjs") => "text/javascript; charset=utf-8",
         Some("css") => "text/css; charset=utf-8",
         Some("json") => "application/json",
+        Some("webmanifest") => "application/manifest+json",
         Some("svg") => "image/svg+xml",
         Some("png") => "image/png",
         Some("ico") => "image/x-icon",
