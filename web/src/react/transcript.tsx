@@ -12,15 +12,16 @@ import {
   LoaderCircleIcon,
   MailIcon,
   MessageSquareDashedIcon,
+  PencilIcon,
   TriangleAlertIcon,
   XIcon,
 } from "lucide-react";
-import { useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { VList, Virtualizer, type VirtualizerHandle } from "virtua";
 import type { DiffPreview, Row, TextPreview, ToolState } from "../core/api";
-import type { App, FullText, Pane, Reader } from "../core/app";
+import { PROMPT_JUMP, type App, type FullText, type Pane, type Reader } from "../core/app";
 import type { MarkdownCache } from "../core/markdown";
-import { duration, isPatch, parsePatch, patchKinds, splitPatch, wordAt, type Line, type PatchLine, type SplitRow } from "../core/transcript";
+import { duration, isPatch, parsePatch, patchKinds, promptIndex, splitPatch, wordAt, type Line, type PatchLine, type SplitRow } from "../core/transcript";
 import { ContextMenu, ContextMenuTrigger } from "../components/ui/context-menu";
 import { Kbd } from "../components/ui/kbd";
 import { ChatInput } from "./composer";
@@ -89,6 +90,31 @@ function Transcript({ app, view, testid = "transcript", empty }: { app: Reader; 
     if (offset < 400) void app.loadOlder();
   };
 
+  // ⌃⌥↑ and ⌃⌥↓ (App's prompt.prev and prompt.next) move between the owner's prompts in the chat.
+  useEffect(() => {
+    if (testid !== "transcript") return;
+    const onJump = (e: Event) => {
+      const h = handle.current;
+      const scroller = scrollRef.current;
+      if (!h || !scroller) return;
+      const dir = (e as CustomEvent<1 | -1>).detail;
+      // The first row with a part in view. A prompt cut at the top is still above, so ⌃⌥↑ goes to it.
+      const viewTop = scroller.getBoundingClientRect().top;
+      const first = [...scroller.querySelectorAll<HTMLElement>("[data-index]")]
+        .filter((r) => r.getBoundingClientRect().bottom > viewTop + 1)
+        .sort((a, b) => Number(a.dataset.index) - Number(b.dataset.index))[0];
+      const top = first ? Number(first.dataset.index) : h.findItemIndex(h.scrollOffset);
+      const cut = !!first && first.getBoundingClientRect().top < viewTop - 1;
+      const to = promptIndex(lines, dir < 0 && cut ? top + 1 : top, dir);
+      if (to < 0) return;
+      // Off the bottom, so new rows do not pull the list back to the end.
+      atBottom.current = false;
+      h.scrollToIndex(to, { align: "start" });
+    };
+    window.addEventListener(PROMPT_JUMP, onJump);
+    return () => window.removeEventListener(PROMPT_JUMP, onJump);
+  }, [testid, lines]);
+
   const jump = () => {
     atBottom.current = true;
     setAway(false);
@@ -156,6 +182,8 @@ function Transcript({ app, view, testid = "transcript", empty }: { app: Reader; 
                       index={index}
                       md={view.md!}
                       full={view.full}
+                      // An unreachable agent shows no text box, so its rows offer no Reuse.
+                      composerId={view.composer && !view.composer.agent.unreachable ? view.composer.id : undefined}
                       match={line.id === current ? "current" : undefined}
                     />
                   )}
@@ -254,9 +282,9 @@ function ChatSkeleton() {
   );
 }
 
-type Ctx = { app: Reader; line: Line; md: MarkdownCache; full: ReadonlyMap<string, FullText> };
+type Ctx = { app: Reader; line: Line; md: MarkdownCache; full: ReadonlyMap<string, FullText>; composerId?: string };
 
-function LineView({ app, line, index, md, full, match }: Ctx & { index: number; match?: string }) {
+function LineView({ app, line, index, md, full, match, composerId }: Ctx & { index: number; match?: string }) {
   const { row } = line;
   return (
     <div
@@ -267,7 +295,7 @@ function LineView({ app, line, index, md, full, match }: Ctx & { index: number; 
       data-match={match}
       className={`line${line.fold ? " step" : ""}`}
     >
-      <RowBody app={app} line={line} md={md} full={full} />
+      <RowBody app={app} line={line} md={md} full={full} composerId={composerId} />
     </div>
   );
 }
@@ -326,13 +354,19 @@ function RowBody(ctx: Ctx) {
         <CommandChip row={row} />
       </Bubble>
     );
-  if (row.kind === "user" || row.kind === "queued")
+  if (row.kind === "user" || row.kind === "queued") {
+    const composerId = ctx.composerId;
     return (
-      <Bubble row={row} queued={row.kind === "queued" || row.system_kind === "queued_prompt"}>
+      <Bubble
+        row={row}
+        queued={row.kind === "queued" || row.system_kind === "queued_prompt"}
+        reuse={row.kind === "user" && composerId ? () => app.reuse(composerId, row.text) : undefined}
+      >
         <div className="md" dangerouslySetInnerHTML={{ __html: md.html(row.id, row.text, true) }} />
         <ImageThumbs text={row.text} load={app.imageUrl} />
       </Bubble>
     );
+  }
   if (row.ends_turn) {
     const interrupted = row.kind === "notice" || row.text === "aborted";
     const title = row.kind === "notice" ? "Interrupted by you" : interrupted ? "Turn interrupted" : "Turn finished";
@@ -400,10 +434,28 @@ function RowBody(ctx: Ctx) {
 /** A row with only text: its own preview, so Show full output still works without a server id. */
 const textPreview = (row: Row): TextPreview => ({ id: "", text: row.text, full_lines: 0, full_bytes: 0, hidden_lines: 0 });
 
-function Bubble({ row, queued, children }: { row: Row; queued?: boolean; children: React.ReactNode }) {
+function Bubble({ row, queued, reuse, children }: { row: Row; queued?: boolean; reuse?: () => void; children: React.ReactNode }) {
   return (
     <div className="bubble-row">
       <CopyMessage row={row} />
+      {reuse && (
+        <button
+          type="button"
+          className="copy-msg icon-btn"
+          data-testid="reuse-prompt"
+          aria-label="Reuse this prompt"
+          title="Reuse this prompt"
+          onClick={(e) => {
+            reuse();
+            // The composer under this transcript, in the chat or in a child's column.
+            let box: HTMLElement | null = null;
+            for (let el = e.currentTarget.parentElement; el && !box; el = el.parentElement) box = el.querySelector<HTMLElement>('[data-testid="composer"]');
+            box?.focus();
+          }}
+        >
+          <PencilIcon />
+        </button>
+      )}
       <div className={`bubble${queued ? " queued" : ""}`}>
         {queued && <div className="row-label">{row.detail || "Queued"}</div>}
         {children}

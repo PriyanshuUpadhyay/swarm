@@ -99,3 +99,54 @@ func renewalRunsOncePerAccountAndRefreshesDuringCooldown(renewed: Bool) async th
     }
     #expect(model.refreshError == nil)
 }
+
+@Test func codexPetsLoadFromTheirFoldersAndABadOneIsLeftOut() throws {
+    let home = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: home) }
+    let blob = home.appendingPathComponent("pets/blob"), bad = home.appendingPathComponent("pets/bad")
+    try FileManager.default.createDirectory(at: blob, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: bad, withIntermediateDirectories: true)
+    // A 2x1 grid of 1x1 frames.
+    let png = "iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAYAAAD0In+KAAAADklEQVR4nGP4z8AAQv8BD/kD/YURmXYAAAAASUVORK5CYII="
+    try Data(base64Encoded: png)!.write(to: blob.appendingPathComponent("s.png"))
+    try Data(#"{"displayName":"Blob","spritesheetPath":"s.png","frame":{"width":1,"height":1,"columns":2,"rows":1}}"#.utf8)
+        .write(to: blob.appendingPathComponent("pet.json"))
+    try Data(#"{"spritesheetPath":"../blob/s.png","frame":{"width":1,"height":1,"columns":2,"rows":1}}"#.utf8)
+        .write(to: bad.appendingPathComponent("pet.json"))
+    let pets = Guest.codexPets(home: home)
+    #expect(pets.map(\.name) == ["Blob"])
+    #expect(pets.first?.smooth == true && pets.first?.credit == "Your Codex pet")
+    #expect(pets.first?.frame(.working, tick: 1) != nil)
+}
+
+@Test func aStrainedPetSweatsWhileItWorksOrIdlesButNotWhileItWaitsOrSleeps() {
+    #expect(mascotCue(.working, seconds: nil, ownZ: false, strained: true)?.left == true)
+    #expect(mascotCue(.idle, seconds: 1, ownZ: false, strained: true)?.glyph == MascotArt.drop)
+    #expect(mascotCue(.working, seconds: nil, ownZ: false, strained: false) == nil)
+    #expect(mascotCue(.waiting, seconds: nil, ownZ: false, strained: true)?.glyph == MascotArt.bang)
+    #expect(mascotCue(.sleeping, seconds: nil, ownZ: false, strained: true)?.glyph == MascotArt.zee)
+}
+
+@Test func theCastIsTheFamilyThenTheBeeThenTheGuests() {
+    #expect(MascotCast.name(0) == "Swarm" && MascotCast.guest(0) == nil)
+    #expect(MascotCast.name(MascotCast.beeTurn) == "Swarm bee" && MascotCast.family("pi", turn: MascotCast.beeTurn) == "bee")
+    #expect(MascotCast.family("pi", turn: 0) == "pi")
+    #expect(MascotCast.guest(MascotCast.ownTurns)?.name == SheetMascot.all[0].name)
+    #expect(MascotCast.count == MascotCast.guests.count + MascotCast.ownTurns)
+}
+
+@Test func theCastTakesAtMostSixteenCodexPetsInFolderOrder() throws {
+    let home = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: home) }
+    let png = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAYAAAD0In+KAAAADklEQVR4nGP4z8AAQv8BD/kD/YURmXYAAAAASUVORK5CYII=")!
+    for n in 0..<(Guest.maxCodexPets + 2) {
+        let folder = home.appendingPathComponent(String(format: "pets/p%02d", n))
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try png.write(to: folder.appendingPathComponent("s.png"))
+        try Data(#"{"spritesheetPath":"s.png","frame":{"width":1,"height":1,"columns":2,"rows":1}}"#.utf8)
+            .write(to: folder.appendingPathComponent("pet.json"))
+    }
+    let pets = Guest.codexPets(home: home)
+    #expect(pets.count == Guest.maxCodexPets)
+    #expect(pets.first?.name == "p00" && pets.last?.name == "p15")
+}

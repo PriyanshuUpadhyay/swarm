@@ -8,7 +8,7 @@ informed-by:
   - web/src/core/lifecycle.ts (Lifecycle.create)
 ---
 
-# 0095. A new workspace starts a chat
+# 0097. A new workspace starts a chat
 
 ## Context and Problem Statement
 

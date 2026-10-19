@@ -9,7 +9,7 @@ informed-by:
   - src/view/tree.rs (Workspace::listed_chats)
 ---
 
-# 0094. The first open tab of a workspace always shows in the sidebar
+# 0096. The first open tab of a workspace always shows in the sidebar
 
 ## Context and Problem Statement
 

@@ -232,7 +232,6 @@ private func account(_ provider: String, _ name: String, _ windows: [UsageWindow
     let both = WorkingSnapshot(working: ["claude": 1, "codex": 3], waiting: ["claude": 5])
     #expect(mascotFamily(both, lastWorking: "claude", best: nil) == "codex")
     #expect(mascotFamily(WorkingSnapshot(working: ["claude": 2, "codex": 2]), lastWorking: nil, best: nil) == "claude")
-    #expect(mascotFamily(WorkingSnapshot(working: ["agy": 4], waiting: ["codex": 1]), lastWorking: "claude", best: nil) == "codex")
     #expect(mascotFamily(WorkingSnapshot(), lastWorking: "claude", best: best) == "claude")
     #expect(mascotFamily(WorkingSnapshot(), lastWorking: nil, best: best) == "codex")
     #expect(mascotFamily(WorkingSnapshot(), lastWorking: nil, best: nil) == "claude")
@@ -275,4 +274,75 @@ private func account(_ provider: String, _ name: String, _ windows: [UsageWindow
     #expect(usageRing(bestAccount([full], history: [], now: now), readFailed: false)
             == .reading(usedPct: 100, severity: .critical, old: false))
     #expect(usageRing(nil, readFailed: true) == .none)
+}
+
+@Test func codexMetersCarryResetCreditsToTheAccount() throws {
+    let json = #"{"schema":"swarm.usage.v1","meters":[{"provider":"codex","account":"w","label":"w","window":"primary","window_minutes":300,"used_pct":40,"state":"fresh","reset_credits":{"available":2,"expiry_time_seconds":[1792703000,null]}},{"provider":"claude","account":"c","label":"c","window":"5h","used_pct":1,"state":"fresh","reset_credits":null}]}"#
+    let list = accounts(from: try UsageSnapshot.decode(Data(json.utf8)).meters)
+    try #require(list.count == 2)
+    #expect(list[0].resetCredits == ResetCredits(available: 2, expiryTimeSeconds: [1792703000, nil]))
+    #expect(list[1].resetCredits == nil)
+}
+
+@Test func resetCreditsTextListsDatesWithNoExpiryLastAndAShortForm() {
+    let utc = TimeZone(identifier: "UTC")!
+    let oct4 = 1791115200.0, oct23 = 1792756800.0 // 2026-10-04 and 2026-10-23, 12:00 UTC
+    let three = ResetCredits(available: 3, expiryTimeSeconds: [oct4, oct23, nil])
+    #expect(three.text(timeZone: utc) == "3 resets · expire Oct 4, Oct 23, no expiry")
+    #expect(three.short(timeZone: utc) == "3 resets · next Oct 4")
+    #expect(ResetCredits(available: 1, expiryTimeSeconds: [oct4]).text(timeZone: utc) == "1 reset · expires Oct 4")
+    #expect(ResetCredits(available: 3, expiryTimeSeconds: [oct4]).text(timeZone: utc) == "3 resets · expire Oct 4, …")
+    #expect(ResetCredits(available: 2, expiryTimeSeconds: nil).text(timeZone: utc) == "2 resets")
+    #expect(ResetCredits(available: 2, expiryTimeSeconds: [nil, nil]).short(timeZone: utc) == "2 resets")
+    #expect(ResetCredits(available: 0, expiryTimeSeconds: [oct4]).text(timeZone: utc) == nil)
+}
+
+@Test func agyAndPiAgentsGetTheirOwnFamily() {
+    #expect(mascotFamily(WorkingSnapshot(working: ["agy": 4], waiting: ["codex": 1]), lastWorking: "claude", best: nil) == "agy")
+    #expect(mascotFamily(WorkingSnapshot(working: ["pi": 3, "claude": 1]), lastWorking: nil, best: nil) == "pi")
+    #expect(mascotFamily(WorkingSnapshot(working: ["other": 9]), lastWorking: nil, best: nil) == "claude")
+}
+
+@Test func codexPetManifestTakesDefaultsAndCustomAnimations() throws {
+    let plain = try CodexPetManifest.parse(Data(#"{"id":"chefito","displayName":"Chefito"}"#.utf8), folder: "chef")
+    #expect(plain.name == "Chefito" && plain.sheetPath == "spritesheet.webp")
+    #expect(plain.frame == CodexPetManifest.Frame(width: 192, height: 208, columns: 8, rows: 9))
+    #expect(plain.animations[.working] == .init(frames: Array(56...61), fps: 8))
+    #expect(plain.animations[.waiting] == .init(frames: Array(48...53), fps: 6.67))
+    #expect(plain.animations[.idle]?.frames == Array(0...5))
+    #expect(plain.animations[.sleeping] == .init(frames: [0], fps: 1))
+    let custom = try CodexPetManifest.parse(Data(#"""
+        {"spritesheetPath":"art/sheet.png","frame":{"width":32,"height":32,"columns":4,"rows":2},
+         "animations":{"running":{"frames":[4,5,6],"fps":30},"idle":{"frames":[0,1]}}}
+        """#.utf8), folder: "blob")
+    #expect(custom.name == "blob" && custom.sheetPath == "art/sheet.png")
+    #expect(custom.animations[.working] == .init(frames: [4, 5, 6], fps: 8))
+    #expect(custom.animations[.idle] == .init(frames: [0, 1], fps: 8))
+    // A default animation that falls outside a small sheet uses the idle frames instead.
+    #expect(custom.animations[.waiting] == .init(frames: [0, 1], fps: 8))
+}
+
+@Test func codexPetManifestRefusesAPathOutsideItsFolderAndBadFrames() {
+    for json in [#"{"spritesheetPath":"../x.webp"}"#, #"{"spritesheetPath":"/etc/x.webp"}"#,
+                 #"{"spritesheetPath":"~/x.webp"}"#, #"{"spritesheetPath":"a/../../x.webp"}"#,
+                 #"{"frame":{"width":0,"height":208,"columns":8,"rows":9}}"#,
+                 #"{"animations":{"idle":{"frames":[72]}}}"#, #"{"animations":{"idle":{"frames":[]}}}"#] {
+        #expect(throws: (any Error).self) { try CodexPetManifest.parse(Data(json.utf8), folder: "p") }
+    }
+}
+
+@Test func aStrainedCodexBestAccountWithAResetOffersIt() {
+    var codex = account("codex", "w", [window(.session, 90)])
+    codex.resetCredits = ResetCredits(available: 2, expiryTimeSeconds: nil)
+    #expect(BestAccount(account: codex, outlook: .lasts).strained)
+    #expect(BestAccount(account: codex, outlook: .lasts).offersReset)
+    var calm = account("codex", "w", [window(.session, 10)])
+    calm.resetCredits = codex.resetCredits
+    #expect(!BestAccount(account: calm, outlook: .lasts).strained)
+    #expect(BestAccount(account: calm, outlook: .left(1800)).offersReset)
+    #expect(!BestAccount(account: calm, outlook: .lasts).offersReset)
+    #expect(!BestAccount(account: account("codex", "w", [window(.session, 90)]), outlook: .lasts).offersReset)
+    var claude = account("claude", "c", [window(.session, 99)])
+    claude.resetCredits = codex.resetCredits
+    #expect(!BestAccount(account: claude, outlook: .lasts).offersReset)
 }

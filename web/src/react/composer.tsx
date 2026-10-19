@@ -1,6 +1,7 @@
-import { ArrowUpIcon, ChevronDownIcon, CircleHelpIcon, LoaderCircleIcon, SquareIcon, TriangleAlertIcon } from "lucide-react";
+import { ArrowUpIcon, ChevronDownIcon, Maximize2Icon, Minimize2Icon, CircleHelpIcon, LoaderCircleIcon, SquareIcon, TriangleAlertIcon } from "lucide-react";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import type { App, Banner, Composer, Input } from "../core/app";
+import { historyStep, type Browse } from "../core/history";
 import { modelLabel, outgoing, sends, usageLabel, type Prompt } from "../core/composer";
 import { editPicks, matches, menuAt, moved, offered, pick, picksAndSends, showsEmpty, skillFirst, skillNames, toSend, type CommandList, type MenuRow, type SkillPick } from "../core/slash";
 import { Button } from "../components/ui/button";
@@ -137,11 +138,14 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
   const [caret, setCaret] = useState(0);
   const [focused, setFocused] = useState(false);
   const [list, setList] = useState<CommandList | null>(null);
+  const [files, setFiles] = useState<CommandList | null>(null);
   const [selected, setSelected] = useState(0);
   // The start of the token whose menu Escape closed; the menu stays shut until the token changes.
   const [dismissed, setDismissed] = useState<number | null>(null);
   const pickedCaret = useRef<number | null>(null);
   const listId = useId();
+  const browse = useRef<Browse | null>(null);
+  const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
     const el = box.current;
@@ -155,28 +159,39 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
     return () => el.removeEventListener("beforeinput", before);
   }, [chair.provider]);
 
-  // A send or a pull-back changed the draft in the app.
+  // Browsing ends without the draft coming back, so keep the draft where Esc finds it.
+  const endBrowse = () => {
+    const draft = browse.current?.draft;
+    browse.current = null;
+    if (draft?.trim()) app.setStash(sessionId, draft);
+  };
+
+  // A send, a pull-back or Reuse changed the draft in the app, which ends history browsing.
   useEffect(() => {
+    endBrowse();
     setText(app.draft(sessionId));
     setPicks(app.draftPicks(sessionId));
   }, [app, sessionId, state.draftRev]);
+  // A switch to another chat ends browsing too, so the draft is in the stash on return.
+  useEffect(() => endBrowse, [app, sessionId]);
 
   // Grows with the text up to about 8 lines. After a pick the caret goes after the inserted text.
   useLayoutEffect(() => {
     const el = box.current;
     if (!el) return;
     el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+    el.style.height = expanded ? "" : `${Math.min(el.scrollHeight, 200)}px`;
     if (highlights.current) highlights.current.scrollTop = el.scrollTop;
     if (pickedCaret.current !== null) {
       el.setSelectionRange(pickedCaret.current, pickedCaret.current);
       pickedCaret.current = null;
     }
-  }, [text, picks]);
+  }, [text, picks, expanded]);
 
   const menu = focused && !chair.disabled ? menuAt(text, caret, chair.provider) : null;
-  const rows = menu && list ? matches(offered(list.commands, menu, chair.provider), menu.query) : [];
-  const open = menu !== null && dismissed !== menu.start && (rows.length > 0 || showsEmpty(menu));
+  const shownList = menu?.opener === "@" ? files : list;
+  const rows = menu && shownList ? matches(offered(shownList.commands, menu, chair.provider), menu.query) : [];
+  const open = menu !== null && dismissed !== menu.start && (rows.length > 0 || showsEmpty(menu, shownList));
   const current = Math.min(selected, Math.max(rows.length - 1, 0));
   const menuKey = menu ? `${menu.opener}${menu.start}` : null;
 
@@ -187,9 +202,11 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
       return;
     }
     let live = true;
-    app.menuCommands(sessionId).then(
-      (next) => live && setList(next),
-      (err: unknown) => live && setList((old) => ({ commands: old?.commands ?? [], note: err instanceof Error ? err.message : String(err) })),
+    // The file list stays apart, so pi's skill list keeps its rows for the send.
+    const set = menuKey.startsWith("@") ? setFiles : setList;
+    (menuKey.startsWith("@") ? app.menuFiles(sessionId) : app.menuCommands(sessionId)).then(
+      (next) => live && set(next),
+      (err: unknown) => live && set((old) => ({ commands: old?.commands ?? [], note: err instanceof Error ? err.message : String(err) })),
     );
     return () => {
       live = false;
@@ -216,6 +233,7 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
   /** pi runs a skill only at the message's start, so the draft shows the moved text it sends. */
   const submit = async () => {
     if (!canSend || loadingSkills.current) return;
+    endBrowse();
     loadingSkills.current = true;
     setListing(true);
     const out = await toSend(text, chair.provider, list, () => app.menuCommands(sessionId), picks).finally(() => {
@@ -302,11 +320,41 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
         change(el.value);
       }
     } else if (e.key === "Escape") {
+      // Esc keeps one cleared draft, and Esc in an empty box gives it back.
       e.preventDefault();
-      change("");
+      if (browse.current) {
+        // The recalled prompt stays in the history, so the slot keeps the draft, or what it held.
+        endBrowse();
+        change("");
+      } else if (text.trim()) {
+        browse.current = null;
+        app.setStash(sessionId, text);
+        change("");
+      } else if (text) {
+        // Spaces alone are not worth the one stash slot.
+        change("");
+      } else if (app.stashed(sessionId)) {
+        const back = app.stashed(sessionId);
+        app.setStash(sessionId, "");
+        change(back);
+        pickedCaret.current = back.length;
+      }
     } else if (e.key === "ArrowUp" && text === "" && canPullBack) {
+      // The CLI's queue comes back before the history, as in Claude Code (ADR 0038).
       e.preventDefault();
       void app.pullBack(sessionId);
+    } else if ((e.key === "ArrowUp" || e.key === "ArrowDown") && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      const el = e.currentTarget;
+      if (el.selectionStart !== el.selectionEnd) return;
+      const step = historyStep(app.history(sessionId), browse.current, text, el.selectionStart, e.key === "ArrowUp" ? "up" : "down");
+      if (!step) return;
+      e.preventDefault();
+      change(step.text);
+      browse.current = step.browse;
+      setCaret(step.caret);
+      pickedCaret.current = step.caret;
+      // A recalled prompt that ends in an @path or a /command opens no menu.
+      setDismissed(menuAt(step.text, step.caret, chair.provider)?.start ?? null);
     }
   };
 
@@ -323,6 +371,8 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
           ? "Already sent"
           : canPullBack && text === ""
             ? "↑ to edit queued messages"
+            : text === "" && app.stashed(sessionId)
+              ? "Draft cleared. Esc brings it back."
             : extraSkills.length
               ? `pi runs one skill per message, so ${extraSkills.join(", ")} goes as text`
               : null;
@@ -337,7 +387,7 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
           <div
             id={listId}
             role="listbox"
-            aria-label="Commands and skills"
+            aria-label={menu.opener === "@" ? "Files" : "Commands and skills"}
             data-testid="slash-menu"
             className="absolute right-0 bottom-full left-0 z-20 mb-1 max-h-72 overflow-y-auto rounded-lg border border-border-strong bg-surface p-1 text-sm shadow-lg"
           >
@@ -356,7 +406,8 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
                   choose(r, false);
                 }}
               >
-                <span className="shrink-0 font-mono">{r.insert}</span>
+                {/* A file path can be wider than the menu, so it wraps; a command name never does. */}
+                <span className={cn("font-mono", r.kind === "file" ? "min-w-0 break-all" : "shrink-0")}>{r.insert}</span>
                 {r.hint && <span className="shrink-0 font-mono text-xs text-faint-foreground">{r.hint}</span>}
                 <span className="min-w-0 flex-1 truncate text-muted-foreground">{r.description}</span>
                 {r.dialog && (
@@ -372,10 +423,10 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
             ))}
             {rows.length === 0 && (
               <div className="px-2 py-1 text-muted-foreground" data-testid="slash-status">
-                {list ? "No matches" : "Loading commands…"}
+                {shownList ? "No matches" : menu.opener === "@" ? "Loading files…" : "Loading commands…"}
               </div>
             )}
-            {list?.note && <div className="px-2 py-1 text-xs text-failed">{list.note}</div>}
+            {shownList?.note && <div className="px-2 py-1 text-xs text-failed">{shownList.note}</div>}
           </div>
         )}
         <ImageThumbs text={text} load={app.imageUrl} remove={(path) => change(text.split(path).join("").replace(/  +/g, " "))} />
@@ -392,7 +443,7 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
           <textarea
             ref={box}
             rows={2}
-            className={cn("block max-h-[200px] w-full resize-none bg-transparent px-3 pt-2.5 text-base outline-none placeholder:text-faint-foreground", chair.provider === "pi" && "composer-text relative")}
+            className={cn("block w-full", expanded ? "h-[60vh]" : "max-h-[200px]", "resize-none bg-transparent px-3 pt-2.5 text-base outline-none placeholder:text-faint-foreground", chair.provider === "pi" && "composer-text relative")}
             data-testid="composer"
             aria-label={`Message ${target}`}
             placeholder={chair.who ? `Message ${target}` : `Message ${target}. Press ⌘L to focus.`}
@@ -408,6 +459,8 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
                 if (edit.inputType.endsWith("Backward")) edit.start -= removed;
                 else edit.end += removed;
               }
+              // An edit ends browsing.
+              endBrowse();
               change(e.target.value, editPicks(text, e.target.value, picks, edit ?? undefined));
               setCaret(e.target.selectionStart);
             }}
@@ -441,6 +494,19 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
           </button>
           {showStop && !chair.who && <span className="text-faint-foreground">⌘. stops</span>}
           <span className="flex-1" />
+          <Button
+            variant="ghost"
+            size="icon"
+            data-testid="composer-expand"
+            aria-label={expanded ? "Shrink composer" : "Expand composer"}
+            title={expanded ? "Shrink composer" : "Expand composer"}
+            onClick={() => {
+              setExpanded(!expanded);
+              box.current?.focus();
+            }}
+          >
+            {expanded ? <Minimize2Icon className="size-3.5" /> : <Maximize2Icon className="size-3.5" />}
+          </Button>
           {showStop && (
             <Button
               variant="outline"
@@ -462,7 +528,7 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
           )}
         </div>
       </div>
-      <div className="flex min-h-5 items-center gap-2 px-1 pt-1 text-xs text-muted-foreground" data-testid="composer-status">
+      <div role="status" className="flex min-h-5 items-center gap-2 px-1 pt-1 text-xs text-muted-foreground" data-testid="composer-status">
         <span className="flex-1">{chair.disabled ?? caption}</span>
       </div>
     </div>

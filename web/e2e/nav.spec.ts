@@ -155,7 +155,7 @@ test("⌘K finds a chat by a fuzzy query and opens it", async ({ page: tab }) =>
   await tab.getByTestId("sidebar").focus();
   await tab.keyboard.press("Meta+k");
   // Dropped letters and a missing word still find "Show the build log".
-  await tab.getByPlaceholder("Search actions, workspaces, chats, and agents").fill("buld lg");
+  await tab.getByPlaceholder("Search actions, workspaces, chats, agents, and prompts").fill("buld lg");
   const option = tab.getByRole("option").filter({ hasText: "Show the build log" }).first();
   await expect(option).toBeVisible();
   await option.click();

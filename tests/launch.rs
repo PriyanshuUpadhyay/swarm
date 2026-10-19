@@ -712,6 +712,178 @@ fn a_send_stores_the_turn_start_hook_as_the_ring_proof() {
     }
 }
 
+/// `seat_session` whose adapter also has a `status` verb that prints `$HOME/status`, the seat's
+/// program-status record, or nothing while that file is missing.
+fn status_session(home: &Path, provider: &str, ring: &str) -> (String, rusqlite::Connection) {
+    let made = seat_session(home, provider, ring);
+    let conf = home.join(".swarm/adapters/fake.conf");
+    let mut text = std::fs::read_to_string(&conf).unwrap();
+    text.push_str("status = cat \"$HOME/status\" 2>/dev/null || true\n");
+    std::fs::write(conf, text).unwrap();
+    made
+}
+
+fn listed_seat(home: &Path, session: &str) -> serde_json::Value {
+    let output = swarm(home, &chair(session), &["agents", "--json"]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    let list: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    list["agents"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|agent| agent["id"] == "seat")
+        .unwrap()
+        .clone()
+}
+
+/// A pi seat's state comes from its host record, with the record's own time, ahead of the screen
+/// (ADR 0070). A hooked provider keeps its hook, so a record never replaces it.
+#[test]
+fn a_pi_seat_shows_its_host_record_as_its_state() {
+    let home = scratch("host-pi");
+    std::fs::write(
+        home.join("screen"),
+        include_str!("fixtures/screens/pi-idle.txt"),
+    )
+    .unwrap();
+    let (session, connection) = status_session(&home, "pi", "true");
+    let status = |record: &str| std::fs::write(home.join("status"), record).unwrap();
+    status("state=working:at=100");
+    let seat = listed_seat(&home, &session);
+    assert_eq!(
+        (&seat["state"], &seat["state_source"], &seat["state_at_s"]),
+        (&"working".into(), &"host".into(), &100.into()),
+        "{seat}"
+    );
+    status("state=blocked:kind=question:at=110");
+    let seat = listed_seat(&home, &session);
+    assert_eq!(
+        (&seat["state"], &seat["state_kind"], &seat["state_at_s"]),
+        (&"waiting".into(), &"question".into(), &110.into()),
+        "{seat}"
+    );
+    status("state=done:at=120");
+    let seat = listed_seat(&home, &session);
+    assert_eq!(
+        (&seat["state"], &seat["state_source"], &seat["state_at_s"]),
+        (&"done".into(), &"host".into(), &120.into()),
+        "{seat}"
+    );
+    swarm::store::set_provider(&connection, &session, "seat", "claude").unwrap();
+    std::fs::write(
+        home.join("screen"),
+        include_str!("fixtures/screens/claude-idle.txt"),
+    )
+    .unwrap();
+    status("state=working:at=130");
+    let seat = listed_seat(&home, &session);
+    assert_ne!(seat["state_at_s"], 130, "{seat}");
+}
+
+/// One failed record read is no news: a fresh host state stands, as a fresh hook report does, so
+/// an idle-looking screen does not end a wait and post a second wait notice. A record time ahead
+/// of the clock is no record, so it cannot prove a later ring.
+#[test]
+fn a_failed_record_read_keeps_a_fresh_host_wait_and_a_future_record_is_none() {
+    let home = scratch("host-gap");
+    std::fs::write(
+        home.join("screen"),
+        include_str!("fixtures/screens/pi-idle.txt"),
+    )
+    .unwrap();
+    let (session, _connection) = status_session(&home, "pi", "true");
+    let now = || {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64
+    };
+    std::fs::write(
+        home.join("status"),
+        format!("state=blocked:kind=question:at={}", now()),
+    )
+    .unwrap();
+    assert_eq!(listed_seat(&home, &session)["state"], "waiting");
+    std::fs::remove_file(home.join("status")).unwrap();
+    let seat = listed_seat(&home, &session);
+    assert_eq!(
+        (&seat["state"], &seat["state_source"]),
+        (&"waiting".into(), &"host".into()),
+        "{seat}"
+    );
+    std::fs::write(
+        home.join("status"),
+        format!("state=working:at={}", now() + 600),
+    )
+    .unwrap();
+    let seat = listed_seat(&home, &session);
+    assert_eq!(
+        (&seat["state"], &seat["state_source"]),
+        (&"waiting".into(), &"host".into()),
+        "{seat}"
+    );
+    assert!(seat["state_at_s"].as_i64().unwrap() <= now(), "{seat}");
+}
+
+/// A pi seat has no hook, so the record its host keeps proves the ring: a turn the record shows
+/// as started at or after the ring.
+#[test]
+fn a_host_record_after_the_ring_proves_a_pi_ring() {
+    let home = scratch("host-proof-pi");
+    std::fs::write(
+        home.join("screen"),
+        include_str!("fixtures/screens/pi-idle.txt"),
+    )
+    .unwrap();
+    std::fs::write(home.join("status"), "state=done:at=1").unwrap();
+    let (session, _connection) = status_session(
+        &home,
+        "pi",
+        "printf 'state=working:at=%s' \"$(date +%s)\" > \"$HOME/status\"",
+    );
+    let sent = swarm(&home, &chair(&session), &["send", "seat", "task"]);
+    assert!(sent.status.success(), "{}", stderr(&sent));
+    let listed = swarm(&home, &chair(&session), &["messages", "--json"]);
+    let listed: serde_json::Value = serde_json::from_slice(&listed.stdout).unwrap();
+    assert_eq!(
+        listed["messages"][0]["delivery"],
+        "hook",
+        "{}",
+        stderr(&sent)
+    );
+}
+
+/// AGY draws no input box that swarm reads, so a ring to it first waits for AGY's own record,
+/// which AGY reports once it takes input.
+#[test]
+fn a_ring_to_an_agy_seat_waits_for_its_ready_record() {
+    let home = scratch("agy-ready");
+    std::fs::write(
+        home.join("screen"),
+        include_str!("fixtures/screens/agy-idle.txt"),
+    )
+    .unwrap();
+    let (session, _connection) = status_session(
+        &home,
+        "agy",
+        "cat \"$HOME/status\" > \"$HOME/rang\" 2>/dev/null; SWARM_AGENT_ID=seat \"$SWARM_EXE\" hook agy PreInvocation < /dev/null",
+    );
+    let ready = {
+        let status = home.join("status");
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_secs(1));
+            std::fs::write(status, "state=idle:at=1").unwrap();
+        })
+    };
+    let sent = swarm(&home, &chair(&session), &["send", "seat", "task"]);
+    assert!(sent.status.success(), "{}", stderr(&sent));
+    ready.join().unwrap();
+    assert_eq!(
+        std::fs::read_to_string(home.join("rang")).unwrap_or_default(),
+        "state=idle:at=1"
+    );
+}
+
 /// A chair and an AGY seat whose screen is `$HOME/screen`, with one unseen message to the seat
 /// whose first ring, appended to `$HOME/rings`, went out two minutes ago. Each ring starts a turn,
 /// so the seat's screen shows it working and proves the ring.
@@ -2478,4 +2650,235 @@ fn a_typed_prompt_marks_the_agent_working_at_once() {
         )
         .unwrap();
     assert_eq!(state, None);
+}
+
+/// A pi seat has no SessionStart hook, so its system prompt carries the same seat block, with
+/// the role it was launched for.
+#[test]
+fn a_pi_seat_gets_its_seat_block_in_the_system_prompt() {
+    let home = scratch("pi-seat");
+    tool(&home, "pi", "true");
+    std::fs::create_dir_all(home.join(".config/agent-routing")).unwrap();
+    std::fs::write(
+        home.join(".config/agent-routing/roles.json"),
+        r#"{"routes": {"pi.seat": ["pi-haiku"]},
+            "runners": {"pi-haiku": {"provider": "pi", "model": "anthropic/claude-haiku-5-5", "effort": "low"}}}"#,
+    )
+    .unwrap();
+    std::fs::create_dir_all(home.join(".swarm/adapters")).unwrap();
+    std::fs::write(
+        home.join(".swarm/adapters/tmux-swarm.conf"),
+        "self = printf chair\nspawn = printf pane\nring = true\nlist = true\nclose = true\ncapture = true\n",
+    )
+    .unwrap();
+    let app = [("SWARM_ADAPTER", "tmux-swarm")];
+    let session = swarm(&home, &app, &["session", "new", "lane"]);
+    assert!(session.status.success(), "{}", stderr(&session));
+    let session = String::from_utf8(session.stdout)
+        .unwrap()
+        .trim()
+        .to_string();
+    let env = [
+        ("SWARM_ADAPTER", "tmux-swarm"),
+        ("SWARM_SESSION_ID", session.as_str()),
+        ("SWARM_AGENT_ID", "orchestrator"),
+    ];
+    let cwd = home.to_string_lossy().into_owned();
+    let output = swarm(&home, &env, &["launch", "pi-1", "pi.seat", "--cwd", &cwd]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    let script =
+        std::fs::read_to_string(home.join(format!(".swarm/runs/{session}/pi-1.sh"))).unwrap();
+    assert!(
+        script.contains(&format!(
+            "You are seat `pi-1` with role `pi.seat` in swarm session `{session}`."
+        )),
+        "{script}"
+    );
+}
+
+/// `spawn` gets this session's own seat panes as `SWARM_PANES`, so a host that stacks seats
+/// anchors only on its own session's panes, never on another chair's seats.
+#[test]
+fn spawn_names_only_this_sessions_seat_panes() {
+    let home = scratch("spawn-panes");
+    std::fs::create_dir_all(home.join(".swarm/adapters")).unwrap();
+    std::fs::write(
+        home.join(".swarm/adapters/fake.conf"),
+        "self = printf chair\n\
+         spawn = printf '%s:[%s]\\n' \"$SWARM_AGENT_ID\" \"$SWARM_PANES\" >> \"$HOME/spawns\"; printf 'pane-%s' \"$SWARM_AGENT_ID\"\n\
+         ring = true\nlist = true\nclose = true\ncapture = true\n",
+    )
+    .unwrap();
+    let mut sessions = Vec::new();
+    for _ in 0..2 {
+        let session = swarm(
+            &home,
+            &[("SWARM_ADAPTER", "fake")],
+            &["session", "new", "lane"],
+        );
+        assert!(session.status.success(), "{}", stderr(&session));
+        sessions.push(
+            String::from_utf8(session.stdout)
+                .unwrap()
+                .trim()
+                .to_string(),
+        );
+    }
+    for (session, seat) in [(0, "a1"), (0, "a2"), (1, "b1"), (0, "a3")] {
+        let chair = [
+            ("SWARM_ADAPTER", "fake"),
+            ("SWARM_SESSION_ID", sessions[session].as_str()),
+            ("SWARM_AGENT_ID", "orchestrator"),
+        ];
+        let output = swarm(&home, &chair, &["spawn", seat, "coder"]);
+        assert!(output.status.success(), "{seat}: {}", stderr(&output));
+    }
+    assert_eq!(
+        std::fs::read_to_string(home.join("spawns")).unwrap(),
+        "a1:[]\na2:[pane-a1]\nb1:[]\na3:[pane-a1 pane-a2]\n"
+    );
+}
+
+/// An adapter with `run` opens the pane with the launch line as its program, so swarm does not
+/// ring the line into a shell. One without `run` still rings it.
+#[test]
+fn a_run_verb_gets_the_launch_line_and_nothing_is_rung() {
+    let home = scratch("run-verb");
+    std::fs::create_dir_all(home.join(".swarm/adapters")).unwrap();
+    let verbs = "self = printf chair\n\
+         spawn = printf pane-spawn\n\
+         ring = printf '%s\\n' \"$SWARM_TEXT\" >> \"$HOME/rings\"\n\
+         list = true\nclose = true\ncapture = true\n";
+    std::fs::write(
+        home.join(".swarm/adapters/fake.conf"),
+        format!(
+            "{verbs}run = printf '%s|%s' \"$SWARM_AGENT_ID\" \"$SWARM_COMMAND\" > \"$HOME/program\"; printf pane-run\n"
+        ),
+    )
+    .unwrap();
+    std::fs::write(home.join(".swarm/adapters/plain.conf"), verbs).unwrap();
+    let mut seen = Vec::new();
+    for adapter in ["fake", "plain"] {
+        let session = swarm(
+            &home,
+            &[("SWARM_ADAPTER", adapter)],
+            &["session", "new", "lane"],
+        );
+        assert!(session.status.success(), "{}", stderr(&session));
+        let session = String::from_utf8(session.stdout)
+            .unwrap()
+            .trim()
+            .to_string();
+        let chair = [
+            ("SWARM_ADAPTER", adapter),
+            ("SWARM_SESSION_ID", session.as_str()),
+            ("SWARM_AGENT_ID", "orchestrator"),
+        ];
+        let output = swarm(&home, &chair, &["spawn", "seat", "coder", "--", "true"]);
+        assert!(output.status.success(), "{adapter}: {}", stderr(&output));
+        seen.push(String::from_utf8(output.stdout).unwrap().trim().to_string());
+    }
+    assert_eq!(seen, ["pane-run", "pane-spawn"]);
+    let program = std::fs::read_to_string(home.join("program")).unwrap();
+    assert!(program.starts_with("seat|"), "{program}");
+    assert!(
+        program.contains("seat.sh'; '") && program.ends_with("'exited'"),
+        "{program}"
+    );
+    let rings = std::fs::read_to_string(home.join("rings")).unwrap();
+    assert_eq!(rings.lines().count(), 1, "{rings}");
+    assert!(rings.ends_with("'exited'\n"), "{rings}");
+}
+
+/// With a `run` verb the agent can end before swarm stores its pane. `exited` runs inside that
+/// pane, so it asks the adapter's `self` verb and still saves the log and reports the end.
+#[test]
+fn exited_finds_its_own_pane_before_the_pane_is_stored() {
+    let home = scratch("exited-own-pane");
+    std::fs::create_dir_all(home.join(".swarm/adapters")).unwrap();
+    std::fs::write(
+        home.join(".swarm/adapters/fake.conf"),
+        "self = printf pane-own\nspawn = printf pane-spawn\nring = true\nlist = true\nclose = true\ncapture = printf 'last words'\n",
+    )
+    .unwrap();
+    let session = swarm(
+        &home,
+        &[("SWARM_ADAPTER", "fake")],
+        &["session", "new", "lane"],
+    );
+    assert!(session.status.success(), "{}", stderr(&session));
+    let session = String::from_utf8(session.stdout)
+        .unwrap()
+        .trim()
+        .to_string();
+    let connection = swarm::store::open(&home.join(".swarm/swarm.db")).unwrap();
+    swarm::store::add_agent(&connection, &session, "orchestrator", "orchestrator").unwrap();
+    swarm::store::set_pane(&connection, &session, "orchestrator", "pane-chair").unwrap();
+    swarm::store::add_agent(&connection, &session, "seat", "coder").unwrap();
+    let seat = [
+        ("SWARM_ADAPTER", "fake"),
+        ("SWARM_SESSION_ID", session.as_str()),
+        ("SWARM_AGENT_ID", "seat"),
+    ];
+    let exited = swarm(&home, &seat, &["exited"]);
+    assert!(exited.status.success(), "{}", stderr(&exited));
+    assert_eq!(
+        std::fs::read_to_string(home.join(format!(".swarm/runs/{session}/seat.log"))).unwrap(),
+        "last words"
+    );
+    let unknown = [
+        ("SWARM_ADAPTER", "fake"),
+        ("SWARM_SESSION_ID", session.as_str()),
+        ("SWARM_AGENT_ID", "ghost"),
+    ];
+    let refused = swarm(&home, &unknown, &["exited"]);
+    assert!(!refused.status.success());
+    assert!(
+        stderr(&refused).contains("no agent ghost"),
+        "{}",
+        stderr(&refused)
+    );
+}
+
+/// A second spawn of a live seat's id is refused before it writes anything, so the live seat's
+/// launch script stays as it was.
+#[test]
+fn a_refused_duplicate_spawn_leaves_the_live_seats_script() {
+    let home = scratch("duplicate-script");
+    std::fs::create_dir_all(home.join(".swarm/adapters")).unwrap();
+    std::fs::write(
+        home.join(".swarm/adapters/fake.conf"),
+        "self = printf chair\nspawn = printf pane-spawn\nrun = printf pane-run\nring = true\nlist = true\nclose = true\ncapture = true\n",
+    )
+    .unwrap();
+    let session = swarm(
+        &home,
+        &[("SWARM_ADAPTER", "fake")],
+        &["session", "new", "lane"],
+    );
+    assert!(session.status.success(), "{}", stderr(&session));
+    let session = String::from_utf8(session.stdout)
+        .unwrap()
+        .trim()
+        .to_string();
+    let chair = [
+        ("SWARM_ADAPTER", "fake"),
+        ("SWARM_SESSION_ID", session.as_str()),
+        ("SWARM_AGENT_ID", "orchestrator"),
+    ];
+    let first = swarm(
+        &home,
+        &chair,
+        &["spawn", "seat", "coder", "--", "echo", "first"],
+    );
+    assert!(first.status.success(), "{}", stderr(&first));
+    let script = home.join(format!(".swarm/runs/{session}/seat.sh"));
+    let before = std::fs::read_to_string(&script).unwrap();
+    let second = swarm(
+        &home,
+        &chair,
+        &["spawn", "seat", "coder", "--", "echo", "second"],
+    );
+    assert!(!second.status.success());
+    assert_eq!(std::fs::read_to_string(&script).unwrap(), before);
 }
