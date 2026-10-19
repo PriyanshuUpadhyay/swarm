@@ -85,7 +85,9 @@ def sheet(rows: dict[str, tuple[list[pathlib.Path], float]], work: pathlib.Path)
             sh("magick", str(out), "(", str(placed[i]), "-crop", box, "+repage", ")",
                "-geometry", f"+{c * cw}+{r * ch}", "-composite", f"PNG32:{out}")
             i += 1
-    sh("magick", str(out), "-strip", "-define", "png:compression-level=9", f"PNG32:{out}")
+    sh("magick", str(out), "-strip", "-define", "png:compression-level=9",
+       # No time chunk, so a rebuild from the same commits gives the same file.
+       "-define", "png:exclude-chunks=date,time", f"PNG32:{out}")
     return base64.b64encode(out.read_bytes()).decode(), cw, ch, [len(rows[s][0]) for s in STATES], [rows[s][1] for s in STATES]
 
 
@@ -157,7 +159,7 @@ def main() -> None:
             work.mkdir()
             png, cw, ch, counts, fps = sheet(rows, work)
             lines += [
-                f"        SheetMascot(id: {json.dumps(mascot_id)}, name: {json.dumps(name)}, credit: {json.dumps(credit, ensure_ascii=False)}, ownZ: {str(own_z).lower()},",
+                f"        SheetMascot(name: {json.dumps(name)}, credit: {json.dumps(credit, ensure_ascii=False)}, ownZ: {str(own_z).lower()},",
                 f"                    cell: CGSize(width: {cw}, height: {ch}), frames: {counts}, fps: {fps},",
                 f'                    png: "{png}"),',
             ]

@@ -464,7 +464,6 @@ extension MascotState {
 /// A built-in guest mascot: a PNG sheet with a row per state and a column per frame
 /// (`MascotSheets.swift`).
 struct SheetMascot {
-    let id: String
     let name: String
     let credit: String
     /// The art draws its own sleep, so the HUD adds no `z`.
