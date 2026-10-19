@@ -97,7 +97,10 @@ function Transcript({ app, view, testid = "transcript", empty }: { app: Reader; 
       const h = handle.current;
       if (!h) return;
       const to = promptIndex(lines, h.findItemIndex(h.scrollOffset), (e as CustomEvent<1 | -1>).detail);
-      if (to >= 0) h.scrollToIndex(to, { align: "start" });
+      if (to < 0) return;
+      // Off the bottom, so new rows do not pull the list back to the end.
+      atBottom.current = false;
+      h.scrollToIndex(to, { align: "start" });
     };
     window.addEventListener(PROMPT_JUMP, onJump);
     return () => window.removeEventListener(PROMPT_JUMP, onJump);
