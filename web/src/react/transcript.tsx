@@ -173,7 +173,8 @@ function Transcript({ app, view, testid = "transcript", empty }: { app: Reader; 
                       index={index}
                       md={view.md!}
                       full={view.full}
-                      composerId={view.composer?.id}
+                      // An unreachable agent shows no text box, so its rows offer no Reuse.
+                      composerId={view.composer && !view.composer.agent.unreachable ? view.composer.id : undefined}
                       match={line.id === current ? "current" : undefined}
                     />
                   )}
