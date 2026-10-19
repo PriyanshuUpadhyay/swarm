@@ -9,7 +9,7 @@ metadata:
   needs: "a task for one seat"
   gives: "a brief that a seat can follow alone"
   conflicts: ""
-  users: "run-workers, council, web-search, review-check, deliver"
+  users: "run-workers, council, web-search, review, implement"
   source: "skills/orchestrate-claude/SKILL.md (Worker contract and the report-only paragraph of all three adapters, moved here 2026-10-13); skills/council/SKILL.md (Pinned brief, report-only seat brief); skills/web-search/SKILL.md (Guards)"
 ---
 

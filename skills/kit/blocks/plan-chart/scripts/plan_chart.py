@@ -24,12 +24,12 @@ from block_resolver import read_parents, read_toml, resolve_blocks  # noqa: E402
 
 ASSETS = Path(__file__).resolve().parents[1] / "assets"
 START, END = "<!-- plan-chart:start -->", "<!-- plan-chart:end -->"
-HEAD = re.compile(r"\|\s*File\s*\|\s*Needs\s*\|\s*Holds\s*\|\s*Block\s*\|\s*Why\s*\|")
+HEAD = re.compile(r"\|\s*File\s*\|\s*Needs\s*\|\s*Holds\s*\|\s*Blocks?\s*\|\s*Why\s*\|")  # Blocks: step_run.py writes the block rules into each step
 
 
-def read_plan(path):
-    """(title, done_when, rows) where a row is (file, needs, holds, blocks, why)."""
-    text = Path(path).read_text(encoding="utf-8")
+def read_plan(path, text=None):
+    """(title, done_when, rows) where a row is (file, needs, holds, blocks, why); `text` replaces the file's text."""
+    text = Path(path).read_text(encoding="utf-8") if text is None else text
     title = next((line[2:].strip() for line in text.splitlines() if line.startswith("# ")), "Plan")
     done = next((line.split(":", 1)[1].strip() for line in text.splitlines() if line.startswith("Done when:")), "")
     rows, inside = [], False

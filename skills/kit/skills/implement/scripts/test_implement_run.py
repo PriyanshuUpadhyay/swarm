@@ -548,6 +548,56 @@ def test_installed_kit_paths(tmp):
         assert implement_run.step_run.kit_path(SCRIPT) == str(SCRIPT)
 
 
+def test_start_plan_needs_approval(tmp):
+    """`start --plan <run>` refuses a plan that the plan skill's stop rule does not pass, and names it in 01-frame."""
+    import hashlib
+    plan = Path(tmp, "plan-run")
+    plan.mkdir()
+    (plan / "plan.md").write_text("# Plan: x\n\nPreset: implement\n\n| File | Needs | Holds | Block | Why |\n|---|---|---|---|---|\n"
+                                  "| 05-build | none | code | checked-units, ui-motion | the planner added ui-motion |\n", encoding="utf-8")
+    (plan / "plan.html").write_text("<p>chart</p>", encoding="utf-8")
+    out, folder, repo, run = blocks_start(tmp, "with-plan", "", None, "--plan", plan)
+    assert out.returncode == 1 and "no round in" in out.stderr and not Path(repo, "tmp", "flow").exists(), out
+    files = {f"../{n}": hashlib.sha256((plan / n).read_bytes()).hexdigest() for n in ("plan.html", "plan.md")}
+    (plan / "plan-review").mkdir()
+    (plan / "plan-review" / "1.json").write_text(json.dumps({"files": files, "result": {"decision": "approved"}}))
+    out = run("start", "--plan", plan)
+    assert out.returncode == 0, out.stderr
+    assert f"Plan: {plan.resolve()}\n" in step_text(Path(out.stdout.splitlines()[0]), "01-frame")
+    assert "Plan blocks: checked-units, ui-motion\n" in step_text(Path(out.stdout.splitlines()[0]), "05-build"), \
+        "the step file carries the blocks that the approved plan gives the step"
+    # A chat preset passes the stop rule with no round, but it is not an implement plan.
+    explain = SCRIPT.parents[1].parent / "explain" / "SKILL.md"
+    chat = Path(tmp, "chat-run")
+    chat.mkdir()
+    table = explain.read_text(encoding="utf-8").split("## Preset\n", 1)[1].split("\n\n", 2)[1]
+    (chat / "plan.md").write_text(f"# Plan: x\n\nPreset: explain\n\n{table}", encoding="utf-8")
+    (chat / "plan.html").write_text("<p>chart</p>", encoding="utf-8")
+    shutil.rmtree(Path(out.stdout.splitlines()[0]))
+    out = run("start", "--plan", chat)
+    assert out.returncode == 1 and "needs `Preset: implement`" in out.stderr, out
+
+
+def test_auto_mode_needs_the_owners_words(tmp):
+    """`take 05-build` refuses `Mode: auto` unless 01-frame quotes the owner, so the model cannot pick auto alone."""
+    out, folder, repo, run = blocks_start(tmp, "auto-guard", "", None)
+    assert out.returncode == 0, out.stderr
+    for step in ("02-design", "03-contracts", "04-impact"):
+        assert run("skip", folder, step, "fast lane: test").returncode == 0
+    frame = folder / "01-frame.md"
+    body = frame.read_text(encoding="utf-8").replace("Status: open", "Status: done x", 1)
+    variants = ("Mode: auto\n", 'Mode: auto, owner said: ""\n', "Mode: Auto\n", "Mode:  auto\n", "Mode: full auto\n",
+                "Mode: deliver\n", "Mode: pair\nMode: auto\n", "mode: auto\n", "- Mode: auto\n", "Mode: pair \n")
+    for mode, ok in [(v, False) for v in variants] + [('Mode: auto, owner said: "run it to the end"\n', True)]:
+        frame.write_text(body.replace("Domains:", mode + "Domains:", 1), encoding="utf-8")
+        out = run("take", folder, "05-build", "a", "--force")
+        assert (out.returncode == 0) == ok, (mode, out.stderr)
+        if not ok:
+            assert 'one line `Mode: pair` or `Mode: auto, owner said: "<the owner\'s words>"`' in out.stderr, (mode, out.stderr)
+    frame.write_text(body.replace("Domains:", "Mode: pair\nDomains:", 1), encoding="utf-8")
+    assert run("take", folder, "05-build", "a", "--force").returncode == 0, "pair needs no quote"
+
+
 def test_start_domains(tmp):
     """A run selects profile domains once, always keeps any, and rejects unknown domains."""
     for name, selected in (("selected", True), ("all", False)):
@@ -1794,8 +1844,8 @@ with tempfile.TemporaryDirectory() as tmp:
     refused = run("done", folder, "05-build")
     assert refused.returncode != 0 and "Failing check first" in refused.stderr
     f = folder / "05-build.md"
-    f.write_text(f.read_text().replace("- [ ] Task file path and Base commit (pair or deliver): ",
-                                       "- [x] Task file path and Base commit (pair or deliver): "))
+    f.write_text(f.read_text().replace("- [ ] Task file path and Base commit (pair or auto mode): ",
+                                       "- [x] Task file path and Base commit (pair or auto mode): "))
     assert "no evidence" in run("done", folder, "05-build").stderr
     fill(f)
     head = git("rev-parse", "HEAD")
@@ -1846,6 +1896,8 @@ with tempfile.TemporaryDirectory() as tmp:
     test_installed_kit_paths(tmp)
     test_start_block_ledger(tmp)
     test_start_domains(tmp)
+    test_start_plan_needs_approval(tmp)
+    test_auto_mode_needs_the_owners_words(tmp)
     test_start_ledger_without_chosen_blocks(tmp)
     test_block_in_step(tmp)
     test_block_hash_bytes(tmp)

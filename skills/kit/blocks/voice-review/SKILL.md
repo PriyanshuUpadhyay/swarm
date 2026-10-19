@@ -10,7 +10,7 @@ metadata:
   gives: "comments in the reviewer's voice"
   conflicts: ""
   users: "plan"
-  source: "skills/review-walk/SKILL.md, step 4 (Comments) and Voice"
+  source: "skills/review/references/walk.md, step 4 (Comments) and Voice"
 ---
 
 ## Rules

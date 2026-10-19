@@ -1,11 +1,8 @@
----
-name: review-check
-description: Judge a commit range or uncommitted changes with a script-enforced verdict. A script splits the diff into units (changed functions, hunks, removed code), a checklist gives each unit every rule whose file glob and regex match it plus a reference check, seats answer each rule with a quoted row, and the script gives APPROVE, REQUEST CHANGES, or NEEDS DISCUSSION only when every rule of every unit has a result. Use when implement, deliver, or review-walk needs a review verdict, or for "check this range". Not for a GitHub PR walk with comments in your voice, which review-walk owns.
----
+# review mode: check
 
-# review-check
+The `review` skill owns the mode choice. This file owns the review gate, its script, and its verdict.
 
-Example. deliver finishes on `feat-x` and runs `review-check a1b2c3d..HEAD`. The script finds 14
+Example. An `auto` build finishes on `feat-x` and runs a check of `a1b2c3d..HEAD`. The script finds 14
 units in 6 files. For `index.ts` `hunk 2365-2380` it lists 23 checks: the lens rules whose `Files:`
 glob and `Applies:` regex match the hunk, among them `C-7` (magic number), the TypeScript and
 Cloudflare rules that match, the repo's `T-` rules, and `REF`, with the 3 places that call the
@@ -13,6 +10,16 @@ changed method. `start` prints the seats and their check counts. `verdict` print
 `INCOMPLETE (14 of 14 units, 301 of 305 checks ...)` and names the four missing IDs. The seats
 answer them, and the result is `REQUEST CHANGES`, because `C-7` found `bytes / 32000` next to a
 helper that already does that math.
+
+## Preset
+
+Stop: owner
+
+| File | Needs | Holds | Block | Why |
+|---|---|---|---|---|
+| 01-units | none | the run folder that `review_check.py start` printed, and its seat map | worker-brief | each seat needs a brief from the seat map |
+| 02-seats | units | each seat's `02-review-<seat>.md` | run-workers, when-to-extract | new seats answer every unit-rule pair |
+| 03-verdict | seats | line 3 of `03-verdict.md`, then each kept row | voice-reply | the owner reads the script's verdict |
 
 ## Contract
 
@@ -24,7 +31,7 @@ For a gate to new seats and the `implement` handoff from a leaf, apply `blocks/w
   the script did not print.
 - Every unit gets at least one row, and every rule ID in its checklist gets a result. A missing
   lens, rules file, or ctags language never skips a unit.
-- The session that wrote the change never fills the checklist. In `implement`, `deliver`, and `pair`,
+- The session that wrote the change never fills the checklist. In `implement`, in both modes,
   the rows come from new seats.
 - Judge the change on its own merits. Messy code around it does not excuse a new defect.
 - No style nits that a linter or formatter owns.
@@ -54,7 +61,7 @@ A CI descendant that starts its own session escapes the group kill and must be s
 
 Run it from the repo root. The run folder is `<repo-root>/tmp/review-check/<run>/`, where `<run>`
 is `range-<base7>-<head7>-NN` or `local-NN`, as the kit's `references/run-folder.md` describes. The kit
-root is two folders up from this skill's folder; a bare `references/` path below is this skill's own.
+root is two folders up from the `review` skill's folder; a bare `references/` path below is that skill's own.
 
 | File | Who | Holds |
 |---|---|---|
@@ -163,11 +170,11 @@ files have none. `scripts/test_review_check.py` runs them with the oxlint on PAT
 ## Seats
 
 Use every seat in `checklist.json` on its listed route, as
-[orchestration.json](orchestration.json) declares. Each seat answers only the unit-rule pairs
+[orchestration-check.json](../orchestration-check.json) declares. Each seat answers only the unit-rule pairs
 whose `owners` entry names it, never an ID under `tool`. A `pass` or `n/a` row may list many IDs
 with one quote and one proof, so write one row for each group of IDs.
 
-Dispatch and gap follow-ups follow [the kit's fan-out.md](../../references/fan-out.md).
+Dispatch and gap follow-ups follow [the kit's fan-out.md](../../../references/fan-out.md).
 
 `start` splits each `review.check` aspect by assigned unit-rule pairs, with one shard per
 150 checks rounded up, at most three. Units stay whole and in order. The split balances check
@@ -204,7 +211,7 @@ must not write files, so check that its type checker sets `noEmit`.
 
 ## Callers
 
-`implement` step 06, `deliver`, and `review-walk` step 03 read line 3 of `03-verdict.md`. A caller treats
+`implement` step 06 (both modes), the `change-review` block, and walk mode step 03 read line 3 of `03-verdict.md`. A caller treats
 `INCOMPLETE`, or a verdict file older than its range, as no review.
 
 ## Output

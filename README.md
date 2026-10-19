@@ -153,18 +153,19 @@ put blocks into the steps of a run. Claude Code shows a skill as `/swarm:<name>`
 
 | Skill | Use |
 |---|---|
-| `plan` | Plan any task from the blocks, show the plan as a flowchart, and run it after you approve |
+| `plan` | The front door of every work verb: plan from its preset, show the flowchart, run it after approval |
 | `research` | Answer one question in a short report; can send the web part to a `search.web` seat |
 | `web-search` | Three seats search different parts of the web; the chair merges |
 | `council` | Claude, GPT, and Gemini voices debate in panes and end in one verdict |
-| `pair` | Write code with you, one approved diff of about 40 lines at a time |
-| `deliver` | Drive one named task to a checkable end, and stop before a push or merge |
-| `implement` | Run one change through frame, design, contracts, impact, build, review, and close |
-| `review-check`, `review-walk` | Judge a diff with a script verdict; walk a PR into a pending review |
+| `implement` | Run one change through frame, design, contracts, impact, build, review, and close, in `pair` mode (one approved diff of about 40 lines at a time) or `auto` mode (stops before a push or merge) |
+| `review` | Judge a diff with a script verdict, walk a PR into a pending review, or run a cleanup pass on request |
 | `build` | Pictures, films, and sites drawn by code |
 | `explain` | Explain a subject with one running example |
-| `decisions`, `cleanup-gate`, `engineering-standards` | ADRs, a cleanup pass on request, and engineering rules |
+| `decisions`, `engineering-standards` | ADRs and engineering rules |
 | `orchestrate-claude`, `-codex`, `-agy` | Bind a skill's worker needs to each agent CLI |
+
+`skills/kit/README.md` lists the removed skill names (`pair`, `deliver`, `review-check`, `review-walk`,
+`cleanup-gate`) and what to type now.
 
 The proof, code extraction, and checked-unit rules live in `skills/kit/blocks/prove-it-works/SKILL.md`,
 `skills/kit/blocks/when-to-extract/SKILL.md`, and `skills/kit/blocks/checked-units/SKILL.md`.

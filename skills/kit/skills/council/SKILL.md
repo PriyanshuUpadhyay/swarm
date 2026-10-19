@@ -1,6 +1,6 @@
 ---
 name: council
-description: Orchestrate a visible multi-model debate between configured Gemini/AGY, GPT/Codex, and Claude voices to produce one advisory recommendation. Use for council, multi-model debate, cross-model second opinions, or high-stakes plan/design review.
+description: Run a visible debate between Gemini/AGY, GPT/Codex, and Claude voices on one pinned question, and give one advisory recommendation. Use when the user asks for a council, a multi-model debate, a cross-model second opinion, or a high-stakes design review.
 ---
 
 # Council
@@ -19,16 +19,20 @@ that remains with the user.
 
 A council is a step run, so the kit's `references/step-run.md` owns the status line, pick-up,
 close, and when a step waits for the user. Choose the council run and log paths by
-`references/run-folder.md`. "council continue <folder>" picks it up. Make the folder with
-`python3 <kit root>/references/step_run.py start <folder> <this SKILL.md>`, and close each step with `done`.
+`references/run-folder.md`. "council continue <folder>" picks it up. Make the folder with the
+front door in `skills/plan/SKILL.md` and the preset below, and close each step with `done`.
 
-| File | Needs | Holds |
-|---|---|---|
-| `01-brief.md` | none | the pinned brief path, the seat names, and their routed models |
-| `02-round1.md` | brief | the combined Round-0 and Round-1 ask, any questions and user answers, and each seat's Round-1 verdict and file |
-| `03-cross.md` | round1 | Rounds 2-3 per seat, or `skipped converged at round 1` |
-| `04-verdict.md` | cross | the Output block |
-| `05-close.md` | verdict | the decision-log path, the seats closed and verified, and the scratch removed |
+## Preset
+
+Stop: chat
+
+| File | Needs | Holds | Block | Why |
+|---|---|---|---|---|
+| `01-brief.md` | none | the pinned brief path, the seat names, and their routed models | worker-brief | each seat judges one pinned brief |
+| `02-round1.md` | brief | the combined Round-0 and Round-1 ask, any questions and user answers, and each seat's Round-1 verdict and file | run-workers | three visible seats answer the question |
+| `03-cross.md` | round1 | Rounds 2-3 per seat, or `skipped converged at round 1` | run-workers | seats test each other's claims |
+| `04-verdict.md` | cross | the Output block | decision-with-default | the options keep the decision with the user |
+| `05-close.md` | verdict | the decision-log path, the seats closed and verified, and the scratch removed | voice-reply | the user reads the verdict and its log |
 
 Round-0 questions that survive the filter, and a split after Round 3, set the step to `waiting`.
 

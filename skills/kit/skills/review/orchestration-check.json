@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "workflow_kind": "review-walk",
+  "workflow_kind": "review-check",
   "required_operations": [
     "resolve_roles",
     "validate_host_capabilities",
@@ -15,10 +15,10 @@
     "review.deep"
   ],
   "seat_template": {
-    "isolation": "review-check's seats do step 03; review-walk adds no seat of its own",
+    "isolation": "one seat per checklist.json seat-map entry; each answers only its owned unit-rule pairs; review.check holds lens, lang, and repo shards; refs stays one review.deep seat; a seat never reviews a change its own session wrote",
     "visibility": "host-visible owned leaf",
-    "permission": "reads the repository and the run folder; writes only its own step file; no repository edits, no GitHub writes, no commits",
-    "artifact": "the review-check run that 03-check.md names",
+    "permission": "reads the repository and the frozen run folder; writes only its own 02-review-<seat>.md; no repository edits, no commits",
+    "artifact": "02-review-<seat>.md under <repo>/tmp/review-check/<run>/, with a result for every unit-rule pair whose owners entry names the seat",
     "deadline": "bounded by the chair"
   },
   "refusals": [
@@ -60,33 +60,34 @@
     }
   ],
   "result_routing": {
-    "check": "03-check.md names the review-check run and copies line 3 of its 03-verdict.md",
-    "comments": "04-comments.md, then the pending review after the user says yes"
+    "review_files": "the chair runs verdict; it groups gaps by the owner seat in checklist.json",
+    "verdict": "03-verdict.md line 3, written only by the script and read by implement, the change-review block, and walk mode"
   },
   "trace_cases": [
     {
       "id": "happy-path",
       "events": [
-        "start:01-scope",
-        "map:02-map",
-        "review-check:03-check",
-        "draft:04-comments",
-        "user-yes",
-        "post",
-        "walk:05-walk"
+        "start:01-units,checklist,seats-plan",
+        "dispatch:every-seat-in-map",
+        "overlap:build-in-verify-worktree,seat-results",
+        "verdict:03-verdict"
       ]
     },
     {
-      "id": "new-round",
+      "id": "gap",
       "events": [
-        "start:01-scope",
-        "previous-run-viewed-read",
-        "remark-offered",
-        "review-check --patch since-view.patch"
+        "start:01-units,checklist,seats-plan",
+        "dispatch:every-seat-in-map",
+        "overlap:build-in-verify-worktree,seat-results",
+        "verdict:INCOMPLETE,gaps-by-seat",
+        "follow-up:every-seat-with-gaps",
+        "missing-ids-answered",
+        "verdict:03-verdict"
       ]
     }
   ],
   "role_policy": {
     "disposition": "report-only"
-  }
+  },
+  "fan_out_policy": "references/fan-out.md"
 }

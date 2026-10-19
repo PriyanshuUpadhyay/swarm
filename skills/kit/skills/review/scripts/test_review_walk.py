@@ -9,7 +9,6 @@ from unittest.mock import patch
 
 import review_walk as rw
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "review-check" / "scripts"))
 import review_check as rc
 
 
@@ -132,7 +131,7 @@ def test_anchor_uses_new_side_lines():
 
 @isolated
 def test_four_checks_on_main():
-    instruction = Path(__file__).resolve().parents[1] / "SKILL.md"
+    instruction = Path(__file__).resolve().parents[1] / "references" / "walk.md"
     assert "--parent-loop review-walk:<run>" in instruction.read_text(), "Check step must pass the run's key"
     with patch.object(rc, "load_rules", return_value=[]):
         for n in range(4):

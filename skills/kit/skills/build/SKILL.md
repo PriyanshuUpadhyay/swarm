@@ -1,6 +1,6 @@
 ---
 name: build
-description: Draw pictures, generative plates, short films, and websites where every frame is made by code (Canvas 2D, p5.js, three.js, WebGL or WebGPU shaders, 3D models), from a story, a visual reference, or both. Use for a story reel, animated short, explainer, title sequence, loop, generative still or plate, dense comic or print-style illustration, or infinite zoom; for a landing page, portfolio, or product site with a 3D hero, a loader, or scroll motion; for "make a website like this", "make this in p5.js", "animate this story", "storyboard and code this", "draw every frame in JavaScript", "creative coding from this reference", "recreate this style in code", or "animate this like the reel"; and for extracting style, story, and motion rules from references without building. Keeps story, look, and motion apart, proves the look with style frames beside the reference, and proves the story with an animatic.
+description: Make pictures, films, and sites where code (p5.js, three.js, shaders) draws every frame. Use when the user asks for a reel, loop, generative still, landing page, portfolio, "make this in code", or style rules from references only.
 ---
 
 # build
@@ -73,19 +73,26 @@ Example. `~/work/seed-city/ink/` holds one file per step. Steps 1-4 are done, so
 `build continue ~/work/seed-city`, reads line 1 of every file, and starts `05-animatic.md`.
 
 A piece is a step run, so `references/step-run.md` owns the status line, ready and stale steps,
-pick-up, close, and when a step waits for the user. Run `start <piece>/ink/ <this SKILL.md>`
-with its script.
+pick-up, close, and when a step waits for the user. Run the front door in `skills/plan/SKILL.md`
+with the preset below, and write `plan.md` in `<piece>/ink/`. The `Blocks` column makes `start`
+write each block's rules into its step file.
 Each file holds the step's output, not a copy of it.
 
-| File | Needs | Holds | Blocks |
-|---|---|---|---|
-| `01-intake.md` | none | story, references, benchmark, form, size, limits, and delivery | reference-analysis |
-| `02-look.md` | intake | reference analysis and style grammar | reference-analysis |
-| `03-story.md` | intake | story sheet, shot list, transitions, and scene graph | story |
-| `04-style-frames.md` | look, story | style frames, compare images, and scores | look-check, headless-shot, visual-qa |
-| `05-animatic.md` | story | animatic and timing | build-canvas |
-| `06-detail.md` | style-frames, animatic | detail passes and frame paths | build-canvas |
-| `07-export.md` | style-frames, detail | QA log, export, and handoff | build-canvas, headless-shot, visual-qa |
+## Preset
+
+Stop: owner
+
+| File | Needs | Holds | Blocks | Why |
+|---|---|---|---|---|
+| `01-intake.md` | none | story, references, benchmark, form, size, limits, and delivery | reference-analysis | intake finds and labels the references |
+| `02-look.md` | intake | reference analysis and style grammar | reference-analysis | the look comes from measured references |
+| `03-story.md` | intake | story sheet, shot list, transitions, and scene graph | story | the story lives apart from the look |
+| `04-style-frames.md` | look, story | style frames, compare images, and scores | look-check, headless-shot, visual-qa | style frames prove the look before production |
+| `05-animatic.md` | story | animatic and timing | build-canvas | the animatic proves the story before production |
+| `06-detail.md` | style-frames, animatic | detail passes and frame paths | build-canvas | detail passes bring scenes up to the frames |
+| `07-export.md` | style-frames, detail | QA log, export, and handoff | build-canvas, headless-shot, visual-qa, voice-reply | inspected frames and the handoff reach the owner |
+
+For a website, the planner puts `build-site` in place of `build-canvas`, as the Steps section says.
 
 - A build step lists its frame paths and a hash of its source files in its body, so a code change
   changes its revision.

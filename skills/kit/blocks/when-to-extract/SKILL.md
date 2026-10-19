@@ -9,7 +9,7 @@ metadata:
   needs: "a change that adds, splits, or keeps a unit of code"
   gives: "the reason that holds for each extraction, or an inline"
   conflicts: ""
-  users: "pair, review-check, cleanup-gate"
+  users: "implement, review"
   source: "blocks/when-to-extract/SKILL.md (rule moved from its former skill on 2026-10-13)"
 ---
 
