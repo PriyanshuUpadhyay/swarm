@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { Tab, TabsView } from "../src/core/nav";
+import type { Tab, TabsView, TreeView } from "../src/core/nav";
 
 const server = () => new URL(process.env.SWARM_SERVE_URL!);
 
@@ -146,7 +146,14 @@ test("archiving the last open sidebar chat shows the workspace landing", async (
             stdio: "pipe",
           });
         }
-        if (previousSelection) await choose({ op: "selected_chat", ...previousSelection });
+        if (previousSelection) {
+          const { workspace, chat } = previousSelection;
+          if (chat) await expect.poll(async () => {
+            const tree = await api<TreeView>("/api/tree?view=workspaces");
+            return tree.sections.some((section) => section.rows.some((row) => row.kind === "chat" && row.selection?.workspace === workspace && row.selection.chat === chat));
+          }, { intervals: [100], timeout: 10_000 }).toBe(true);
+          await choose({ op: "selected_chat", ...previousSelection });
+        }
       } finally {
         writeFileSync(choicesPath, before);
       }
