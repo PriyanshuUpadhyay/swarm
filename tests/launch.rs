@@ -2138,7 +2138,7 @@ fn a_superset_terminal_counts_as_an_agent_pane_for_the_owner_only_guard() {
 #[test]
 fn a_rex_chair_registers_as_orchestrator_on_session_new() {
     let home = scratch("rex-chair");
-    let rex = [("REX_BLOCK", "block:1")];
+    let rex = [("REX_BLOCK", "block:1"), ("TERM_PROGRAM", "rex")];
     let session = swarm(&home, &rex, &["session", "new", "lane"]);
     assert!(session.status.success(), "{}", stderr(&session));
     let inbox = swarm(&home, &rex, &["inbox"]);

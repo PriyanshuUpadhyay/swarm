@@ -90,9 +90,11 @@ fn in_superset(env: impl Fn(&str) -> Option<String>) -> bool {
     env("SUPERSET_TERMINAL_ID").is_some_and(|terminal| !terminal.is_empty())
 }
 
-/// Whether this process runs in a Rex block.
+/// Whether this process runs in a Rex block. A tmux started from a Rex block copies `REX_BLOCK`
+/// into every one of its panes, naming the outer block, but sets its own `TERM_PROGRAM`.
 fn in_rex(env: impl Fn(&str) -> Option<String>) -> bool {
     env("REX_BLOCK").is_some_and(|block| !block.is_empty())
+        && env("TERM_PROGRAM").as_deref() == Some("rex")
 }
 
 /// The adapter every pane verb uses: `SWARM_ADAPTER` when set, else `herdr` in a Herdr pane, else
@@ -736,30 +738,43 @@ mod tests {
         assert!(herdr.starts_with("[agent-host: herdr]\n"));
     }
 
-    const REX: [(&str, &str); 1] = [("REX_BLOCK", "block:1")];
+    const REX: [(&str, &str); 2] = [("REX_BLOCK", "block:1"), ("TERM_PROGRAM", "rex")];
 
     #[test]
     fn a_rex_block_picks_rex_unless_herdr_superset_or_swarm_adapter_wins() {
         assert_eq!(adapter(env(&REX)), "rex");
-        assert_eq!(adapter(env(&[("REX_BLOCK", "")])), "tmux");
-        assert_eq!(adapter(env(&[HERDR[0], HERDR[1], REX[0]])), "herdr");
-        assert_eq!(adapter(env(&[SUPERSET[0], REX[0]])), "superset");
-        assert_eq!(adapter(env(&[REX[0], ("SWARM_ADAPTER", "tmux")])), "tmux");
+        assert_eq!(adapter(env(&[("REX_BLOCK", ""), REX[1]])), "tmux");
+        assert_eq!(adapter(env(&[HERDR[0], HERDR[1], REX[0], REX[1]])), "herdr");
+        assert_eq!(adapter(env(&[SUPERSET[0], REX[0], REX[1]])), "superset");
+        assert_eq!(
+            adapter(env(&[REX[0], REX[1], ("SWARM_ADAPTER", "tmux")])),
+            "tmux"
+        );
+    }
+
+    #[test]
+    fn a_tmux_pane_inside_rex_is_not_a_rex_block() {
+        let nested = [REX[0], ("TERM_PROGRAM", "tmux"), ("TMUX_PANE", "%0")];
+        assert_eq!(adapter(env(&nested)), "tmux");
+        assert_eq!(context("claude", env(&nested)), None);
     }
 
     #[test]
     fn the_rex_contract_marks_chair_and_worker() {
         let chair = context("claude", env(&REX)).unwrap();
         assert!(chair.starts_with("[agent-host: rex]\n"));
-        let worker = context("claude", env(&[REX[0], ("SWARM_AGENT_ID", "cl-seat-1")]));
+        let worker = context(
+            "claude",
+            env(&[REX[0], REX[1], ("SWARM_AGENT_ID", "cl-seat-1")]),
+        );
         assert!(worker.unwrap().starts_with("[agent-host: rex — worker]"));
-        let herdr = context("claude", env(&[HERDR[0], HERDR[1], REX[0]])).unwrap();
+        let herdr = context("claude", env(&[HERDR[0], HERDR[1], REX[0], REX[1]])).unwrap();
         assert!(herdr.starts_with("[agent-host: herdr]\n"));
         assert_eq!(
-            context("claude", env(&[REX[0], ("SWARM_ADAPTER", "tmux")])),
+            context("claude", env(&[REX[0], REX[1], ("SWARM_ADAPTER", "tmux")])),
             None
         );
-        let named = context("claude", env(&[REX[0], ("SWARM_ADAPTER", "rex")]));
+        let named = context("claude", env(&[REX[0], REX[1], ("SWARM_ADAPTER", "rex")]));
         assert!(named.unwrap().starts_with("[agent-host: rex]\n"));
     }
 
