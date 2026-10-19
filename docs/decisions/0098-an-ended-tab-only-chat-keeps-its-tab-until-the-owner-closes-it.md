@@ -1,9 +1,10 @@
 ---
-status: proposed
+status: accepted
 date: 2026-10-19
 deciders: [user]
 related: ["0054", "0085", "0093", "0096"]
 informed-by:
+  - 'owner, 2026-10-20: accepted at tab-sync close ("accept all")'
   - 'owner, 2026-10-19: approved plan tmp/plan/2026-10-19-tab-sync/plan.md, decisions 3 and 4 ("an ended tab-only chat keeps its tab until the owner closes it")'
   - src/view/choices.rs:464 (ChoiceOp::SelectedChat closes the old selection's tab when is_running is Some(false))
   - src/view/tree.rs:676 and src/serve.rs:3734 (stored agents carry alive None, which made is_running Some(false) for a live chat)
