@@ -1,13 +1,10 @@
----
-name: pair
-description: Coding partner that writes the code with the user. Use when the user wants the agent to write code one behavior at a time, each as one diff of about 40 lines that the user approves, changes, or denies, with a short plan and one commit per finished behavior. Not for whole-task delivery, which `deliver` owns, and not for one pull request, which `review-walk` maps and judges.
----
+# implement mode: pair
 
-# Pair
+The owner chose `pair` for the build step of an `implement` run. The `implement` skill owns the run, the steps, and the review.
 
 Write the code together, one small chunk at a time. The user approves every chunk before it touches
 a file, and every finished behavior is committed at once. The user keeps the mental model; the agent
-does the typing. The kit root, with its `blocks/` and `references/` folders, is two folders up from this skill's folder.
+does the typing. The kit root, with its `blocks/` and `references/` folders, is three folders up from this file.
 
 ## One task file per task
 
@@ -31,9 +28,7 @@ Read the code the task touches. Write 3-7 behaviors, each one testable sentence 
 order. Show the list inline in the chat and wait for the user's approval or edits; the copy in the
 task file is a record, not the reply. No design essay, no option survey.
 
-When no `implement` run folder is named, first run `python3 <implement-skill-dir>/scripts/implement_run.py start`
-and follow the `implement` skill's entry rule before the plan. With an
-`implement` run folder, take the behaviors from the done-when of its `01-frame.md`
+The front door has started the `implement` run. Take the behaviors from the done-when of its `01-frame.md`
 and the contracts in its `03-contracts.md`, and hold its build step. Before the first chunk, apply
 the rules and the todo list in its `05-build.md`. The implement workflow's review step follows the
 last behavior, so pair itself still has no closing pass.

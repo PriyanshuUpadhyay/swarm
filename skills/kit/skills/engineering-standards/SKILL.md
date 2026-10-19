@@ -1,7 +1,7 @@
 ---
 name: engineering-standards
 user-invocable: false
-description: Supply scoped engineering rules before design or coding and during review of API contracts, data models, queries, retries, deadlines, quotas, and entitlement failures. Distinguish protocol requirements, project rules, and advice. The calling workflow owns code changes and review verdicts.
+description: Supply scoped engineering rules for API contracts, data models, queries, retries, deadlines, quotas, and entitlement failures, marked as protocol, project rule, or advice. Use when design, coding, or review starts. The caller owns changes and verdicts.
 ---
 
 # Engineering standards
@@ -99,7 +99,7 @@ forks, two rows conflict, or an item is contested, emit the trade-off form of th
 
 ## Refusals
 
-- No `APPROVE` or `REQUEST CHANGES` verdict, and no coverage claim. `review-check` owns those.
+- No `APPROVE` or `REQUEST CHANGES` verdict, and no coverage claim. The `review` skill's check mode owns those.
 - No ADR, no decision record. `decisions` owns those.
 - No security rules. Out of scope by the user's instruction.
 - This skill supplies no implementation workflow, migrations, or installs; the caller owns them.

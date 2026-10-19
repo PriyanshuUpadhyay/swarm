@@ -5,7 +5,7 @@ description: Section order and layout rules for a substantial execution plan or 
 # Plan layout
 
 One owner file for the shape of a substantial execution plan and of a long reply that carries one.
-Short plans keep the `pair` skill's 3-7 behavior list. Research reports, reviews, and council
+Short plans keep the 3-7 behavior list of `implement` in `pair` mode. Research reports, reviews, and council
 verdicts keep their own section order under the first screen below. Codex and AGY seats never load
 this file, so a brief that needs it quotes it.
 

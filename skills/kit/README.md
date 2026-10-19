@@ -7,20 +7,31 @@ Workflow skills for coding agents (Claude Code, Codex, Antigravity). Each skill 
 
 | Skill | Use |
 |---|---|
-| `pair` | Write code with the user, one approved diff at a time |
-| `deliver` | Drive one named task to a checkable exit condition, stop before a push or merge |
-| `implement` | Run one feature through frame, design, contracts, impact, build and close, one status file per step (on trial) |
+| `plan` | The front door of every work verb: plan from the verb's preset, draw it, get approval, run the steps |
+| `implement` | Run one change through frame, design, contracts, impact, build, review, and close, in `pair` or `auto` mode (on trial) |
 | `research` | Answer one question from evidence in a short report |
 | `web-search` | Three visible seats search different parts of the web, the chair merges |
 | `council` | A visible debate between Claude, GPT and Gemini voices that ends in a verdict |
-| `review-check` | Judge a range or local changes; a script gives the verdict only when every changed unit has a row |
-| `review-walk` | Walk a PR with review-check findings drafted in your voice into a pending review |
+| `review` | Check a range with a script verdict, walk a PR into a pending review, or run a cleanup pass on request |
 | `decisions` | Record consequential choices as in-repo ADRs |
-| `cleanup-gate` | A full cleanup pass, only on request |
 | `engineering-standards` | Scoped engineering rules for design, code and review |
 | `build` | Pictures, generative plates, films, and websites drawn by code, from a story or a visual reference |
 | `explain` | Explain a subject with one running example, using the `voice-teach` block |
 | `orchestrate-claude`, `orchestrate-codex`, `orchestrate-agy` | Runtime adapters that bind the skills' worker needs to each agent CLI |
+
+## Removed skill names (2026-10-19)
+
+Every work verb now starts from a preset through `plan` (see `skills/plan/SKILL.md`). Five skills
+merged into two, and their run folders (`tmp/pair/`, `tmp/deliver/`, `tmp/review-check/`,
+`tmp/review-walk/`) stay where they were.
+
+| You typed | Type now |
+|---|---|
+| `/pair` | `/implement`, then choose `pair` mode |
+| `/deliver` | `/implement`, then choose `auto` mode |
+| `/review-check` | `/review`, then choose `check` |
+| `/review-walk` | `/review`, then choose `walk` |
+| `/cleanup-gate` | `/review`, then choose `cleanup` |
 
 The rules for proof, checked units, and code extraction live directly in
 `blocks/prove-it-works/SKILL.md`, `blocks/checked-units/SKILL.md`, and

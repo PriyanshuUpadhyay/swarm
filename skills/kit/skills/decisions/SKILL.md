@@ -1,7 +1,7 @@
 ---
 name: decisions
 user-invocable: false
-description: Record project decisions as committed in-repo ADRs. Use when a consequential choice or reversal is expressed, such as "let's go with X", "use X instead of Y", "scrap that", or "changed my mind", or "write an ADR", and when the user asks what was decided, asks for unwritten decisions, or asks to rebuild the decision index. Also flush the decision buffer before an assistant-run git commit. Skips routine coding choices; writes are always user-confirmed.
+description: Record decisions as in-repo ADRs that the user confirms. Use when a choice or reversal is stated ("let's go with X", "scrap that"), when asked what was decided, for unwritten decisions, an ADR, or a rebuilt index, and before commits.
 ---
 
 # decisions — Lifecycle Decision Records
@@ -33,7 +33,7 @@ procedure: `references/capture-loop.md`.
 
 ## When to flush the buffer
 
-Apply the flush schedule in `references/capture-loop.md` section 3, including its `deliver` scope.
+Apply the flush schedule in `references/capture-loop.md` section 3, including its `auto` mode scope.
 
 ## When NOT to Trigger
 - Routine implementation detail, variable renames, local refactors — noise, not decisions.
