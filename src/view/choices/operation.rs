@@ -268,6 +268,7 @@ pub fn apply(
             if let Some((previous_workspace, id)) = previous
                 && let Some(old) = tree.chat_in(&previous_workspace, &id)
                 && old.is_running == Some(false)
+                // Unknown liveness keeps the tab; is_running alone treats it as ended (ADR 0098).
                 && old.agents.iter().all(|agent| agent["alive"] == false)
                 && !owner.tab_chats.contains(&old.key)
                 && chat
