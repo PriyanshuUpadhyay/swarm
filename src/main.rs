@@ -1052,6 +1052,19 @@ fn select_account(
         )
         .map_err(|error| format!("swarm: {error}"))?;
     }
+    // A signed-out account the owner names still opens the CLI, so its own login can sign it in.
+    if requested != "auto"
+        && let Ok(list) = &accounts
+        && let Some(account) = list.accounts.iter().find(|account| {
+            account.name == requested && account.auth_state == swarm::profiles::AuthState::SignedOut
+        })
+    {
+        eprintln!(
+            "swarm: {} account {requested} is signed out; sign in from the CLI",
+            provider.id()
+        );
+        return Ok(Some(account.clone()));
+    }
     match accounts
         .and_then(|accounts| swarm::profiles::resolve_account(&accounts, requested).cloned())
     {
