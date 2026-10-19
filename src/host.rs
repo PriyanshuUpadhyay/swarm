@@ -92,7 +92,7 @@ fn in_superset(env: impl Fn(&str) -> Option<String>) -> bool {
 
 /// Whether this process runs in a Rex block. A tmux started from a Rex block copies `REX_BLOCK`
 /// into every one of its panes, naming the outer block, but sets its own `TERM_PROGRAM`.
-fn in_rex(env: impl Fn(&str) -> Option<String>) -> bool {
+pub fn in_rex(env: impl Fn(&str) -> Option<String>) -> bool {
     env("REX_BLOCK").is_some_and(|block| !block.is_empty())
         && env("TERM_PROGRAM").as_deref() == Some("rex")
 }
@@ -286,6 +286,21 @@ pub fn program_status(body: &str, seen_work: bool) -> Option<HookState> {
         detail: if state == "failed" { message } else { None },
         kind,
     })
+}
+
+/// The OSC 7501 report body for a hook state, the inverse of `program_status`, so a terminal that
+/// speaks the protocol shows a hooked agent's state. A report replaces its whole record, so each
+/// one names the provider as `app`. A failure's detail is left out: it needs base64.
+pub fn program_status_report(provider: &str, state: &HookState) -> Option<String> {
+    let body = match (state.state, state.kind) {
+        ("working", _) => "state=working".to_string(),
+        ("waiting", Some(kind)) => format!("state=blocked:kind={kind}"),
+        ("waiting", None) => "state=blocked".to_string(),
+        ("done", _) => "state=done".to_string(),
+        ("failed", _) => "state=error".to_string(),
+        _ => return None,
+    };
+    Some(format!("{body}:app={provider}"))
 }
 
 /// Standard base64 with optional padding, decoded as UTF-8.
@@ -679,6 +694,35 @@ mod tests {
         );
         // A malformed pair is skipped and the rest still counts.
         assert_eq!(state("junk:state=done", true), Some(("done", None, None)));
+    }
+
+    #[test]
+    fn a_hook_state_report_reads_back_as_the_same_state() {
+        let report = |state: &'static str, kind: Option<&'static str>| {
+            let hook = HookState {
+                state,
+                detail: None,
+                kind,
+            };
+            program_status_report("claude", &hook)
+        };
+        assert_eq!(
+            report("waiting", Some("permission")).as_deref(),
+            Some("state=blocked:kind=permission:app=claude")
+        );
+        assert_eq!(report("idle", None), None);
+        for (state, kind) in [
+            ("working", None),
+            ("waiting", Some("permission")),
+            ("waiting", Some("question")),
+            ("waiting", None),
+            ("done", None),
+            ("failed", None),
+        ] {
+            let body = report(state, kind).unwrap();
+            let back = program_status(&body, true).unwrap();
+            assert_eq!((back.state, back.kind), (state, kind), "{body}");
+        }
     }
 
     #[test]
