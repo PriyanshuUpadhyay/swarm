@@ -61,7 +61,8 @@ export function menuAt(draft: string, caret: number, provider: string | null): M
 }
 
 function token(draft: string, caret: number, opener: Menu["opener"]): Menu | null {
-  const at = draft.lastIndexOf(opener, caret - 1);
+  // lastIndexOf clamps a start of -1 to 0, so a caret at 0 would still find an opener at 0.
+  const at = caret > 0 ? draft.lastIndexOf(opener, caret - 1) : -1;
   if (at < 0) return null;
   const query = draft.slice(at + 1, caret);
   if (/\s/.test(query)) return null;

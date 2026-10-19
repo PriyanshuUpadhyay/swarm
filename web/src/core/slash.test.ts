@@ -55,6 +55,12 @@ describe("menuAt", () => {
     expect(picksAndSends("@ma", menuAt("@ma", 3, "claude")!, files.commands[0])).toBe(false);
   });
 
+  it("opens no menu with the caret before an opener at the draft's start", () => {
+    // Up recall puts the caret at 0, and Enter must then send the prompt.
+    expect(menuAt("@README.md fix this", 0, "claude")).toBeNull();
+    expect(menuAt("/plan now", 0, "claude")).toBeNull();
+  });
+
   it("reaches to the end of the word when the caret is inside it", () => {
     expect(menuAt("/clxar more", 3, "claude")).toEqual({ opener: "/", start: 0, end: 6, query: "cl" });
   });
