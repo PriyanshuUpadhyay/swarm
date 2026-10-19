@@ -274,8 +274,11 @@ pub fn clashes(kit: &Path, user_home: &Path, active: &[PathBuf]) -> Vec<PathBuf>
         .iter()
         .map(|folder| user_home.join(folder))
         .collect();
+    // A symlinked home, as an account launcher makes, is the same folder as its target.
+    let real =
+        |folder: &Path| std::fs::canonicalize(folder).unwrap_or_else(|_| folder.to_path_buf());
     for folder in active {
-        if !folders.contains(folder) {
+        if !folders.iter().any(|known| real(known) == real(folder)) {
             folders.push(folder.clone());
         }
     }
@@ -311,6 +314,16 @@ mod tests {
                 &home,
                 &[work.clone(), work.clone(), home.join(".pi/agent/skills")]
             ),
+            [
+                home.join(".pi/agent/skills/swarm-voice"),
+                work.join("swarm-voice")
+            ]
+        );
+        // A symlinked home, as an account launcher makes, is the same folder.
+        let mirror = root.join("claude-mirror");
+        std::os::unix::fs::symlink(root.join("claude-work"), &mirror).unwrap();
+        assert_eq!(
+            clashes(&kit, &home, &[work.clone(), mirror.join("skills")]),
             [
                 home.join(".pi/agent/skills/swarm-voice"),
                 work.join("swarm-voice")
