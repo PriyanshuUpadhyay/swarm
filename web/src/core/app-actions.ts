@@ -99,8 +99,8 @@ export class AppActions {
     if (open)
       items.push(
         chatAction("closeTab", "Close Tab", () => void this.app.navigation.closeTab()),
-        chatAction("endChat", "End chat", () => this.app.life.endChat(open, false)),
-        chatAction("archiveChat", "Archive chat", () => this.app.life.endChat(open, true)),
+        chatAction("endChat", "End chat", () => void this.app.life.endChat(open, false)),
+        chatAction("archiveChat", "Archive chat", () => void this.app.life.endChat(open, true)),
         chatAction("renameChat", "Rename chat", () => this.renameChat(open)),
       );
     items.push(chatAction("reopenChat", "Archived chats", () => this.app.life.openClosed()));

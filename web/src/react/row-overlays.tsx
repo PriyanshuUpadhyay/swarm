@@ -73,10 +73,10 @@ export function RowMenu({ app, listRef }: { app: App; listRef: RefObject<HTMLDiv
     return (
       <ContextMenuContent onCloseAutoFocus={onClose} onEscapeKeyDown={onClose} onPointerDownOutside={onClose} data-testid="row-menu">
         <ContextMenuLabel className="normal-case">{group.length} chats selected</ContextMenuLabel>
-        <ContextMenuItem onSelect={() => app.life.endChats(group, false)}>
+        <ContextMenuItem onSelect={() => void app.life.endChats(group, false)}>
           <SquareIcon /> End {group.length} chats…
         </ContextMenuItem>
-        <ContextMenuItem onSelect={() => app.life.endChats(group, true)}>
+        <ContextMenuItem onSelect={() => void app.life.endChats(group, true)}>
           <ArchiveIcon /> Archive {group.length} chats
         </ContextMenuItem>
         <ContextMenuSeparator />
@@ -138,10 +138,10 @@ function ChatItems({ app, row, fold }: { app: App; row: SidebarRow; fold: React.
       <ContextMenuItem disabled={!session} onSelect={() => session && app.renameChat(session)}>
         <PencilIcon /> Rename chat…
       </ContextMenuItem>
-      <ContextMenuItem disabled={!session} onSelect={() => session && app.life.endChat(session, false)}>
+      <ContextMenuItem disabled={!session} onSelect={() => session && void app.life.endChat(session, false)}>
         <SquareIcon /> End chat…
       </ContextMenuItem>
-      <ContextMenuItem disabled={!session} onSelect={() => session && app.life.endChat(session, true)}>
+      <ContextMenuItem disabled={!session} onSelect={() => session && void app.life.endChat(session, true)}>
         <ArchiveIcon /> Archive chat
       </ContextMenuItem>
       <ContextMenuSeparator />

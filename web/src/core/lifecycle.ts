@@ -108,7 +108,7 @@ export class Lifecycle {
   }
 
   removeProject(path: string, title: string) {
-    this.ask({
+    void this.ask({
       title: "Remove project?",
       body: `Hide ${title} from the sidebar? Its folder and chats stay on disk.`,
       action: "Remove Project",
@@ -314,7 +314,7 @@ export class Lifecycle {
     }
     const run = () => this.api.post("/api/workspace/archive", { workspace });
     if (!impact.confirmationRequired) return void this.runAction(run, null, workspace);
-    this.ask({
+    void this.ask({
       title: "Archive workspace?",
       body: `${plural(impact.liveAgents, "agent")} still running. Archiving stops them and keeps the workspace folder.`,
       action: "Archive Workspace",
@@ -341,7 +341,7 @@ export class Lifecycle {
     if (impact.confirmationRequired) lines.push(`${plural(impact.liveAgents, "agent")} still running. Deleting stops them before the folder is removed.`);
     if (impact.ignoredCount) lines.push(`${plural(impact.ignoredCount, "ignored file")} will be deleted too, such as ${impact.firstIgnoredPath}.`);
     if (impact.deleteBlocker) lines.push(impact.deleteBlocker);
-    this.ask({
+    void this.ask({
       title: "Delete workspace?",
       body: lines.join("\n\n"),
       action: "Delete Workspace",
@@ -360,7 +360,7 @@ export class Lifecycle {
     } catch (err) {
       return this.app.notice(message(err), true);
     }
-    this.ask({
+    void this.ask({
       title: "Prune missing worktrees?",
       body: `Prune removes the worktree records for these missing folders in ${project}:\n\n${impact.prunePaths.join("\n")}`,
       action: "Prune",
