@@ -742,15 +742,36 @@ fn adapter_name() -> String {
 /// The host contract that `swarm host-context` would print in a pane that `launch` is about to
 /// open, for a CLI with no SessionStart hook. The pane gets these ids, and a tmux-swarm pane
 /// always has `TMUX_PANE`.
-fn pane_context(provider: &str, session: &str, agent_id: &str) -> Option<String> {
+fn pane_context(provider: &str, session: &str, agent_id: &str, role: &str) -> Option<String> {
     let adapter = adapter_name();
     swarm::host::context(provider, |name| match name {
         "SWARM_SESSION_ID" => Some(session.into()),
         "SWARM_AGENT_ID" => Some(agent_id.into()),
+        "SWARM_ROLE" => Some(role.into()),
         "SWARM_ADAPTER" => Some(adapter.clone()),
         "TMUX_PANE" if adapter == "tmux-swarm" => Some("pane".into()),
         _ => env::var(name).ok(),
     })
+}
+
+/// The stored role of a seat, for its start context. Best effort: the context still prints
+/// without it.
+fn seat_role(session: &str, agent_id: &str) -> Option<String> {
+    // Read only, with a column every schema has: a start hook from another build must not create,
+    // migrate, or refuse the database that the launching build owns.
+    let db = swarm::paths::sqlite_db_to_read()
+        .ok()
+        .filter(|db| db.is_file())?;
+    let connection =
+        rusqlite::Connection::open_with_flags(db, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .ok()?;
+    connection
+        .query_row(
+            "SELECT role FROM agent WHERE session_id = ?1 AND id = ?2",
+            (session, agent_id),
+            |row| row.get(0),
+        )
+        .ok()
 }
 
 /// A pane that `swarm launch` made carries its ids in its env. A chair keeps none: `swarm session
@@ -1506,15 +1527,24 @@ struct HookFiles {
 impl HookFiles {
     fn of(user_home: &std::path::Path) -> Result<Self, Box<dyn std::error::Error>> {
         let homes = codex_homes(user_home)?;
+        // A Claude home picked with `CLAUDE_CONFIG_DIR` is one more target, as `CODEX_HOME` is
+        // for Codex.
+        // An empty or missing folder names no home.
+        let active = env::var_os("CLAUDE_CONFIG_DIR")
+            .map(std::path::PathBuf::from)
+            .filter(|dir| dir.is_absolute() && dir.is_dir())
+            .map(|dir| dir.join("settings.json"));
         let claude_settings = unique_targets(
-            std::iter::once(user_home.join(".claude/settings.json")).chain(
-                std::fs::read_dir(user_home.join(".claude/.profiles"))
-                    .into_iter()
-                    .flatten()
-                    .filter_map(Result::ok)
-                    .map(|entry| entry.path().join("settings.json"))
-                    .filter(|path| path.exists()),
-            ),
+            std::iter::once(user_home.join(".claude/settings.json"))
+                .chain(active)
+                .chain(
+                    std::fs::read_dir(user_home.join(".claude/.profiles"))
+                        .into_iter()
+                        .flatten()
+                        .filter_map(Result::ok)
+                        .map(|entry| entry.path().join("settings.json"))
+                        .filter(|path| path.exists()),
+                ),
         );
         let codex_hooks = unique_targets(homes.iter().map(|home| home.join("hooks.json")));
         Ok(Self {
@@ -2371,7 +2401,19 @@ fn plugin_plan(
         .filter(|cli| !found.contains(cli))
         .map(|cli| format!("{cli} is not on PATH"))
         .collect();
-    let clashes = swarm::plugin::clashes(&kit, user_home);
+    let active: Vec<std::path::PathBuf> = [
+        ("CLAUDE_CONFIG_DIR", "skills"),
+        ("PI_CODING_AGENT_DIR", "skills"),
+    ]
+    .iter()
+    .filter_map(|(variable, folder)| {
+        env::var_os(variable)
+            .map(std::path::PathBuf::from)
+            .filter(|dir| dir.is_absolute() && dir.is_dir())
+            .map(|dir| dir.join(folder))
+    })
+    .collect();
+    let clashes = swarm::plugin::clashes(&kit, user_home, &active);
     notes.extend(
         clashes
             .iter()
@@ -4610,7 +4652,14 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             "{}",
             swarm::host::render(
                 provider,
-                swarm::host::context(provider, |name| env::var(name).ok()).as_deref()
+                swarm::host::context(provider, |name| match name {
+                    "SWARM_ROLE" => env::var("SWARM_SESSION_ID")
+                        .ok()
+                        .zip(env::var("SWARM_AGENT_ID").ok())
+                        .and_then(|(session, agent)| seat_role(&session, &agent)),
+                    _ => env::var(name).ok(),
+                })
+                .as_deref()
             )
         );
         return Ok(());
@@ -5158,7 +5207,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 let session = session_id()?;
                 let id = format!("{session}-{agent_id}");
                 let mut args = vec!["--session-id".to_string(), id.clone()];
-                if let Some(context) = pane_context(kind.id(), &session, agent_id) {
+                if let Some(context) = pane_context(kind.id(), &session, agent_id, role) {
                     args.extend(["--append-system-prompt".into(), context]);
                 }
                 extra.splice(0..0, args);

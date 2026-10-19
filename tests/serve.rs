@@ -997,8 +997,18 @@ fn chat_routes_run_the_real_cli_against_a_fake_provider_and_adapter() {
     // Numbered choices send the digit alone; arrow choices send Enter (Prompt::keys).
     assert!(!actions().contains("key fixture-chair Enter\n"));
     assert!(actions().contains("interrupt fixture-chair\n"));
-    post("/api/agent/close", target);
     let connection = rusqlite::Connection::open(server.dir.join("home/.swarm/swarm.db")).unwrap();
+    // A removed worktree's chat: its folder is gone, and its pane still closes.
+    connection
+        .execute(
+            "UPDATE session SET cwd = ?1 WHERE id = ?2",
+            (
+                server.dir.join("removed-worktree").to_str().unwrap(),
+                &server.session,
+            ),
+        )
+        .unwrap();
+    post("/api/agent/close", target);
     assert_eq!(
         swarm::store::pane_of(&connection, &server.session, "orchestrator").unwrap(),
         None
@@ -1036,6 +1046,69 @@ fn chat_routes_run_the_real_cli_against_a_fake_provider_and_adapter() {
     );
     assert!(actions().contains(&format!("spawn {session} orchestrator tmux-swarm\n")));
     post("/api/chat/new", json!({"cwd": env!("CARGO_MANIFEST_DIR")}));
+}
+
+#[test]
+fn chat_files_list_only_the_chat_folder_for_the_at_menu() {
+    let server = Server::with_actions(true);
+    let repo = server.dir.join("repo");
+    fs::create_dir_all(repo.join("sub")).unwrap();
+    for (path, text) in [
+        ("a.txt", "a"),
+        ("sub/b.rs", "b"),
+        ("ignored.log", "x"),
+        (".gitignore", "*.log\n"),
+    ] {
+        fs::write(repo.join(path), text).unwrap();
+    }
+    let git = |args: &[&str]| {
+        let status = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&repo)
+            .args(args)
+            .status()
+            .unwrap();
+        assert!(status.success());
+    };
+    git(&["init", "-q"]);
+    git(&["add", "a.txt", ".gitignore"]);
+    fs::write(repo.join("new.md"), "untracked").unwrap();
+    let connection = swarm::store::open(&server.dir.join("home/.swarm/swarm.db")).unwrap();
+    let set_cwd = |cwd: &std::path::Path| {
+        connection
+            .execute(
+                "UPDATE session SET cwd = ?1 WHERE id = ?2",
+                (cwd.to_string_lossy().as_ref(), &server.session),
+            )
+            .unwrap();
+    };
+    let files = |session: &str| {
+        let (status, _, body) = server.request(
+            "GET",
+            &format!("/api/chat/files?session={session}&agent=chair"),
+            "",
+            "",
+            true,
+        );
+        (
+            status,
+            serde_json::from_str::<Value>(&body).unwrap_or(Value::Null),
+        )
+    };
+    set_cwd(&repo);
+    let (status, listed) = files(&server.session);
+    assert_eq!(status, 200, "{listed}");
+    assert_eq!(
+        listed,
+        json!({"files": [".gitignore", "a.txt", "new.md", "sub/b.rs"], "note": null})
+    );
+    // A folder git cannot list gives an empty menu with the reason, not an error.
+    set_cwd(&server.dir.join("missing"));
+    let (status, listed) = files(&server.session);
+    assert_eq!(status, 200);
+    assert_eq!(listed["files"], json!([]));
+    assert!(listed["note"].as_str().unwrap().contains("Git cannot list"));
+    assert_eq!(files("no-such-session").0, 404);
 }
 
 fn tree_choices(server: &Server) -> Value {
@@ -1193,6 +1266,33 @@ fn workspace_lifecycle_http_refuses_unlisted_paths_before_any_change() {
         "keep"
     );
     assert!(!server.dir.join("home/actions").exists());
+
+    let shown = json!({"text":"Delete failed","page":"/"}).to_string();
+    let (status, ..) = server.request(
+        "POST",
+        "/api/ui-error",
+        "Content-Type: application/json\r\n",
+        &shown,
+        true,
+    );
+    assert_eq!(status, 204);
+    let entries: Vec<Value> = fs::read_to_string(root.join("errors.jsonl"))
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    let delete = entries
+        .iter()
+        .find(|e| e["uri"] == "/api/workspace/delete")
+        .unwrap();
+    assert_eq!(delete["status"], 403);
+    assert_eq!(delete["request"]["workspace"], json!(outside));
+    assert!(delete["reply"]["error"].is_string());
+    let last = entries.last().unwrap();
+    assert_eq!(
+        (&last["source"], &last["text"]),
+        (&json!("ui"), &json!("Delete failed"))
+    );
 }
 
 #[test]

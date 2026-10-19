@@ -2002,3 +2002,65 @@ fn host_context_refuses_pi_which_gets_its_context_at_launch() {
             .success()
     );
 }
+
+/// A seat's SessionStart context names its stored role, so the seat knows its job without
+/// a pane variable for it.
+#[test]
+fn host_context_names_the_seat_and_its_stored_role() {
+    let home = scratch("host-context-seat");
+    assert!(swarm(&home, &[], &["init"], "").status.success());
+    let connection = swarm::store::open(&home.join(".swarm/swarm.db")).unwrap();
+    let session = swarm::store::create_session(&connection, "lane", &home, None, None).unwrap();
+    swarm::store::add_agent(&connection, &session, "rev-1", "review.check").unwrap();
+    let seat = [
+        ("SWARM_ADAPTER", "rex"),
+        ("REX_BLOCK", "block:seat"),
+        ("TERM_PROGRAM", "rex"),
+        ("SWARM_SESSION_ID", session.as_str()),
+        ("SWARM_AGENT_ID", "rev-1"),
+    ];
+    for provider in ["claude", "codex", "agy"] {
+        let output = swarm(
+            &home,
+            &seat,
+            &["host-context", "--provider", provider],
+            "{}",
+        );
+        assert!(output.status.success(), "{provider}: {output:?}");
+        assert!(
+            stdout(&output).contains(&format!(
+                "You are seat `rev-1` with role `review.check` in swarm session `{session}`."
+            )),
+            "{provider}: {}",
+            stdout(&output)
+        );
+    }
+}
+
+/// A seat's start hook in a home with no swarm database prints its context and makes no database.
+#[test]
+fn host_context_makes_no_database_for_a_seat_role() {
+    let home = scratch("host-context-no-db");
+    let seat = [
+        ("SWARM_ADAPTER", "rex"),
+        ("REX_BLOCK", "block:seat"),
+        ("TERM_PROGRAM", "rex"),
+        ("SWARM_SESSION_ID", "01a15391-109c-75b2-b09c-5eac0d553e25"),
+        ("SWARM_AGENT_ID", "rev-1"),
+    ];
+    let output = swarm(
+        &home,
+        &seat,
+        &["host-context", "--provider", "claude"],
+        "{}",
+    );
+    assert!(output.status.success(), "{output:?}");
+    assert!(
+        stdout(&output).contains("You are seat `rev-1` in swarm session"),
+        "{}",
+        stdout(&output)
+    );
+    // Nor the marker that claims the home: a start hook only reads.
+    assert!(!home.join(".swarm/swarm-home").exists());
+    let _ = std::fs::remove_dir_all(&home);
+}

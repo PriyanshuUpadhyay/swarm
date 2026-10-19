@@ -20,7 +20,7 @@ fn fixture(role: &str) -> PathBuf {
         "claude",
         "echo '{\"loggedIn\":true,\"email\":\"owner@example.test\"}'",
     );
-    std::fs::write(home.join("limits.json"), r#"{"id":3,"result":{"rateLimits":{"primary":{"usedPercent":30,"windowDurationMins":300,"resetsAt":1791540000},"secondary":null}}}"#).unwrap();
+    std::fs::write(home.join("limits.json"), r#"{"id":3,"result":{"rateLimits":{"primary":{"usedPercent":30,"windowDurationMins":300,"resetsAt":1791540000},"secondary":null},"rateLimitResetCredits":{"availableCount":2,"credits":[{"id":"c1","resetType":"codexRateLimits","status":"available","grantedAt":1791000000,"expiresAt":null},{"id":"c2","resetType":"codexRateLimits","status":"available","grantedAt":1791000000,"expiresAt":4102444800}]}}}"#).unwrap();
     home
 }
 

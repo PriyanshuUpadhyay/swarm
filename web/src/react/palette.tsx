@@ -32,7 +32,7 @@ function PaletteBody({ app }: { app: App }) {
   };
   return (
     <Command shouldFilter={false} loop label="Command palette" data-testid="palette">
-      <CommandInput autoFocus value={query} onValueChange={setQuery} placeholder="Search actions, workspaces, chats, and agents" />
+      <CommandInput autoFocus value={query} onValueChange={setQuery} placeholder="Search actions, workspaces, chats, agents, and prompts" />
       <CommandList>
         <CommandEmpty>No matches</CommandEmpty>
         {sections.map((s) => (
