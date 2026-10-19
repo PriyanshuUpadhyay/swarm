@@ -2058,7 +2058,7 @@ fn setup_rows(
     let setup = |reason: &str| ("setup", reason.to_string());
     let kit = swarm::paths::bundled("skills/kit").and_then(|kit| std::fs::canonicalize(kit).ok());
     let hud = swarm::hud::status(home);
-    Ok(vec![
+    let mut rows = vec![
         doctor_row(
             "hooks",
             "Agent hooks",
@@ -2129,7 +2129,26 @@ fn setup_rows(
             },
             Some("hud"),
         ),
-    ])
+    ];
+    for (index, copy) in stale_plugin_copies(home).iter().enumerate() {
+        rows.push(doctor_row(
+            &format!("plugin-{index}"),
+            &format!("Plugin swarm in {}", copy.label()),
+            ("setup", copy.reason()),
+            Some("plugin"),
+        ));
+    }
+    Ok(rows)
+}
+
+fn stale_plugin_copies(home: &std::path::Path) -> Vec<swarm::plugin::StaleCopy> {
+    let Some(kit) = swarm::paths::bundled("skills/kit") else {
+        return Vec::new();
+    };
+    let claude = env::var_os("CLAUDE_CONFIG_DIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| home.join(".claude"));
+    swarm::plugin::stale_copies(&kit, &claude, &codex_homes(home).unwrap_or_default(), home)
 }
 
 /// `swarm doctor [--json]`, also `swarm setup [--json]`: the rows of `setup_rows`, then each thing
@@ -4323,6 +4342,14 @@ const LOGIN_ADAPTER_TIMEOUT_SECONDS: u64 = 18;
 const LOGIN_PANE_CLOSE_TIMEOUT_SECONDS: u64 = 1;
 
 fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    if args.first().is_some_and(|arg| arg == "launch")
+        && let Some(home) = env::var_os("HOME")
+        && let Some(notice) =
+            swarm::plugin::stale_notice(&stale_plugin_copies(&std::path::PathBuf::from(home)))
+    {
+        use std::io::Write;
+        let _ = writeln!(std::io::stderr(), "{notice}");
+    }
     if let [cmd, rest @ ..] = args
         && cmd == "run"
     {
