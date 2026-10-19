@@ -27,6 +27,7 @@ import { editPicks, fileRows, validPicks, type CommandList, type SkillPick } fro
 import { Settings } from "./settings";
 import {
   chatRows,
+  nextWaiting,
   foldId,
   moveTarget,
   archivedSession,
@@ -192,6 +193,8 @@ const NO_FULL: ReadonlyMap<string, FullText> = new Map();
 /** The chat id of a child agent's column. It is also the agent's stream key. */
 export const paneId = (sessionId: string, agent: string) => `${sessionId}:${agent}`;
 const DRAFT_PREFIX = "composer.draft.";
+/** The window event that moves the chat's transcript to the owner's previous (-1) or next (1) prompt. */
+export const PROMPT_JUMP = "swarm:prompt-jump";
 const PICKS_PREFIX = "composer.skills.";
 const HISTORY_PREFIX = "composer.history.";
 const STASH_PREFIX = "composer.stash.";
@@ -905,6 +908,15 @@ export class App {
     const i = tabs.findIndex((t) => t.session === this.openId);
     const next = i < 0 ? (delta < 0 ? tabs.length - 1 : 0) : (i + (delta % tabs.length) + tabs.length) % tabs.length;
     if (tabs[next].session !== this.openId) this.openChat(tabs[next].session, e);
+  }
+
+  /** ⌃⌘W opens the next chat whose chair or child waits for the owner. */
+  openWaiting(e?: KeyboardEvent) {
+    const order = chatRows(this.tree).flatMap((r) => (r.selection?.chat ? [r.selection.chat] : []));
+    const waiting = (s: string) => (this.snapshot?.agents[s] ?? []).some((a) => a.state === "waiting" && a.alive !== false);
+    const next = nextWaiting(order, waiting, this.openId);
+    if (next) this.openChat(next, e);
+    else this.notice("No chat is waiting for you.");
   }
 
   /** Sessions of closed tabs, the last closed at the end, for ⇧⌘T. */
@@ -1861,6 +1873,9 @@ export class App {
       cmds.push({ id: `sidebar.view.${n}`, title: `Show ${SIDEBAR_VIEWS[n - 1]}`, chord: `Alt+Meta+${n}`, run: () => this.setSidebarView(n) });
     cmds.push(
       { id: "find.open", title: "Find", chord: "Meta+F", when: chat, run: () => this.openFind() },
+      { id: "prompt.prev", title: "Previous Prompt", chord: "Ctrl+Alt+ArrowUp", when: chat, run: () => void window.dispatchEvent(new CustomEvent(PROMPT_JUMP, { detail: -1 })) },
+      { id: "prompt.next", title: "Next Prompt", chord: "Ctrl+Alt+ArrowDown", when: chat, run: () => void window.dispatchEvent(new CustomEvent(PROMPT_JUMP, { detail: 1 })) },
+      { id: "chat.waiting", title: "Next Waiting Chat", chord: "Ctrl+Meta+W", run: (e) => this.openWaiting(e) },
       {
         id: "chat.stop",
         title: "Stop the Chair",

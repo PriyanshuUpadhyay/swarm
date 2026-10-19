@@ -6,7 +6,7 @@ import { renderMarkdown } from "./markdown";
 import { paletteSections } from "./nav";
 import { MAX_RECORDS, measure } from "./perf";
 import { SseParser } from "./sse";
-import { FoldChoices, findMatches, isPatch, lines, mergeRows, parsePatch, patchKinds, splitPatch, wordAt } from "./transcript";
+import { FoldChoices, findMatches, isPatch, lines, mergeRows, parsePatch, patchKinds, promptIndex, splitPatch, wordAt } from "./transcript";
 
 // A row as the server sends it; `order` is [source offset, event ordinal].
 const row = (id: string, offset: number, extra: Partial<Row> = {}): Row => ({ id, kind: "assistant", text: id, order: [offset, 0], ...extra });
@@ -357,5 +357,15 @@ describe("prompt history", () => {
     const sections = (q: string) => paletteSections(app.paletteItems(), q).map((s) => [s.title, s.items.map((i) => i.title)]);
     expect(sections("tests")).toContainEqual(["Prompts", ["run the tests"]]);
     expect(sections("").flatMap(([, titles]) => titles)).not.toContain("run the tests");
+  });
+});
+
+describe("promptIndex", () => {
+  it("finds the owner's prompt before or after a line, and -1 past the ends", () => {
+    const ls = lines([row("u1", 1, { kind: "user" }), row("a1", 2), row("a2", 3), row("u2", 4, { kind: "user" }), row("a3", 5)], { folds: new FoldChoices(), opened: new Map() });
+    expect(promptIndex(ls, 2, -1)).toBe(0);
+    expect(promptIndex(ls, 0, 1)).toBe(3);
+    expect(promptIndex(ls, 3, 1)).toBe(-1);
+    expect(promptIndex(ls, 0, -1)).toBe(-1);
   });
 });

@@ -336,3 +336,13 @@ export function paletteSources(tree: TreeView | null, snapshot: Snapshot | null)
   const byActivity = [...workspaces].sort((a, b) => (b.at ?? 0) - (a.at ?? 0) || (a.row.id < b.row.id ? -1 : 1));
   return [...byActivity.filter((w) => w.row.pinned), ...byActivity.filter((w) => !w.row.pinned)];
 }
+
+/** The first waiting chat after `current` in sidebar order, wrapping; null when none waits. */
+export function nextWaiting(order: readonly string[], waiting: (session: string) => boolean, current: string | null): string | null {
+  const from = current ? order.indexOf(current) : -1;
+  for (let k = 1; k <= order.length; k++) {
+    const s = order[(from + k + order.length) % order.length];
+    if (s !== current && waiting(s)) return s;
+  }
+  return null;
+}

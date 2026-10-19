@@ -16,12 +16,12 @@ import {
   TriangleAlertIcon,
   XIcon,
 } from "lucide-react";
-import { useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { VList, Virtualizer, type VirtualizerHandle } from "virtua";
 import type { DiffPreview, Row, TextPreview, ToolState } from "../core/api";
-import type { App, FullText, Pane, Reader } from "../core/app";
+import { PROMPT_JUMP, type App, type FullText, type Pane, type Reader } from "../core/app";
 import type { MarkdownCache } from "../core/markdown";
-import { duration, isPatch, parsePatch, patchKinds, splitPatch, wordAt, type Line, type PatchLine, type SplitRow } from "../core/transcript";
+import { duration, isPatch, parsePatch, patchKinds, promptIndex, splitPatch, wordAt, type Line, type PatchLine, type SplitRow } from "../core/transcript";
 import { ContextMenu, ContextMenuTrigger } from "../components/ui/context-menu";
 import { Kbd } from "../components/ui/kbd";
 import { ChatInput } from "./composer";
@@ -89,6 +89,19 @@ function Transcript({ app, view, testid = "transcript", empty }: { app: Reader; 
     setAway(!atBottom.current && h.scrollSize - offset - h.viewportSize > 400);
     if (offset < 400) void app.loadOlder();
   };
+
+  // ⌃⌥↑ and ⌃⌥↓ (App's prompt.prev and prompt.next) move between the owner's prompts in the chat.
+  useEffect(() => {
+    if (testid !== "transcript") return;
+    const onJump = (e: Event) => {
+      const h = handle.current;
+      if (!h) return;
+      const to = promptIndex(lines, h.findItemIndex(h.scrollOffset), (e as CustomEvent<1 | -1>).detail);
+      if (to >= 0) h.scrollToIndex(to, { align: "start" });
+    };
+    window.addEventListener(PROMPT_JUMP, onJump);
+    return () => window.removeEventListener(PROMPT_JUMP, onJump);
+  }, [testid, lines]);
 
   const jump = () => {
     atBottom.current = true;
