@@ -221,8 +221,16 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
   const skills = skillNames(list);
   const loadingSkills = useRef(false);
   /** pi runs a skill only at the message's start, so the draft shows the moved text it sends. */
+  // Browsing ends without the draft coming back, so keep the draft where Esc finds it.
+  const endBrowse = () => {
+    const draft = browse.current?.draft;
+    browse.current = null;
+    if (draft?.trim()) app.setStash(sessionId, draft);
+  };
+
   const submit = async () => {
     if (!canSend || loadingSkills.current) return;
+    endBrowse();
     loadingSkills.current = true;
     setListing(true);
     const out = await toSend(text, chair.provider, list, () => app.menuCommands(sessionId), picks).finally(() => {
@@ -311,7 +319,12 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
     } else if (e.key === "Escape") {
       // Esc keeps one cleared draft, and Esc in an empty box gives it back.
       e.preventDefault();
-      if (text.trim()) {
+      if (browse.current?.draft.trim()) {
+        // The recalled prompt stays in the history, so the slot keeps the draft.
+        endBrowse();
+        change("");
+      } else if (text.trim()) {
+        browse.current = null;
         app.setStash(sessionId, text);
         change("");
       } else if (text) {
@@ -333,12 +346,12 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
       const step = historyStep(app.history(sessionId), browse.current, text, el.selectionStart, e.key === "ArrowUp" ? "up" : "down");
       if (!step) return;
       e.preventDefault();
-      // Browsing starts from a typed draft: keep it where Esc finds it, as an edit ends browsing.
-      if (!browse.current && step.browse && text.trim()) app.setStash(sessionId, text);
       change(step.text);
       browse.current = step.browse;
       setCaret(step.caret);
       pickedCaret.current = step.caret;
+      // A recalled prompt that ends in an @path or a /command opens no menu.
+      setDismissed(menuAt(step.text, step.caret, chair.provider)?.start ?? null);
     }
   };
 
@@ -443,6 +456,8 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
                 if (edit.inputType.endsWith("Backward")) edit.start -= removed;
                 else edit.end += removed;
               }
+              // An edit ends browsing.
+              endBrowse();
               change(e.target.value, editPicks(text, e.target.value, picks, edit ?? undefined));
               setCaret(e.target.selectionStart);
             }}

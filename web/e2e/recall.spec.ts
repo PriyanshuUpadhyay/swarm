@@ -54,17 +54,52 @@ test("the composer recalls, stashes, reuses and finds prompts, and @ inserts a f
   await expect(composer).toHaveValue("half a thought");
   await tab.keyboard.press("Escape");
 
-  // Up from a typed draft keeps it in the stash, so an edit of the recalled prompt does not lose it.
+  // Browsing that ends without Down keeps the typed draft where Esc finds it: after Esc on the
+  // recalled prompt, and after an edit of it, also on a second browse.
+  const fromStart = () => composer.evaluate((el: HTMLTextAreaElement) => el.setSelectionRange(0, 0));
   await tab.keyboard.type("my draft");
-  // WebKit on macOS does not move the caret on Home.
-  await composer.evaluate((el: HTMLTextAreaElement) => el.setSelectionRange(0, 0));
+  await fromStart(); // WebKit on macOS does not move the caret on Home.
   await tab.keyboard.press("ArrowUp");
   await expect(composer).toHaveValue(prompt);
-  await tab.keyboard.type("x");
-  await composer.fill("");
+  await tab.keyboard.press("Escape");
+  await expect(composer).toHaveValue("");
   await tab.keyboard.press("Escape");
   await expect(composer).toHaveValue("my draft");
+  for (const draft of ["my draft", "second draft"]) {
+    await composer.fill(draft);
+    await fromStart();
+    await tab.keyboard.press("ArrowUp");
+    await expect(composer).toHaveValue(prompt);
+    await tab.keyboard.type("x");
+    await composer.fill("");
+    await tab.keyboard.press("Escape");
+    await expect(composer).toHaveValue(draft);
+  }
+  // Down past the newest gives the draft back, so the stash keeps what it had.
   await tab.keyboard.press("Escape");
+  await composer.fill("third draft");
+  await fromStart();
+  await tab.keyboard.press("ArrowUp");
+  await tab.keyboard.press("ArrowDown");
+  await expect(composer).toHaveValue("third draft");
+  await composer.fill("");
+  await expect(status).toContainText("Draft cleared. Esc brings it back.");
+  await tab.keyboard.press("Escape");
+  await expect(composer).toHaveValue("second draft");
+  await tab.keyboard.press("Escape");
+
+  // Down onto a recalled prompt that ends in an @path opens no menu, so Enter sends it.
+  await tab.keyboard.type("check @README.md");
+  await tab.keyboard.press("Escape");
+  await tab.keyboard.press("Enter");
+  await expect.poll(typed).toContain("check @README.md");
+  await tab.keyboard.press("ArrowUp");
+  await tab.keyboard.press("ArrowUp");
+  await expect(composer).toHaveValue(prompt);
+  await tab.keyboard.press("ArrowDown");
+  await expect(composer).toHaveValue("check @README.md");
+  await expect(tab.getByTestId("slash-menu")).toBeHidden();
+  await composer.fill("");
 
   // @ lists the chat folder's files, and Tab inserts the path with a space.
   await tab.keyboard.type("see @READ");
