@@ -1,5 +1,7 @@
 use crate::profiles::native::{AppServer, read_json, read_stdout};
-use crate::profiles::{Account, AccountList, AuthState, ReasonCode, Usage, UsageMeter};
+use crate::profiles::{
+    Account, AccountList, AuthState, ReasonCode, ResetCredits, Usage, UsageMeter,
+};
 use crate::providers::Provider;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -125,6 +127,7 @@ fn status_meter(
         reason: None,
         reason_code: None,
         as_of_seconds: None,
+        reset_credits: None,
     };
     meter.set_reason(code, text);
     meter
@@ -440,6 +443,7 @@ pub(crate) fn normalize_meter(stored: &UsageMeter, now: i64) -> UsageMeter {
         meter.window_minutes = meter.window_minutes.filter(|minutes| *minutes > 0);
         meter.reset_time_seconds = None;
         meter.as_of_seconds = None;
+        meter.reset_credits = None;
         // The app acts on these codes, so a cached read must keep them.
         let code = match (meter.state.as_str(), stored.reason_code) {
             ("missing", Some(code @ (ReasonCode::NoCredentials | ReasonCode::NoQuotaWindows))) => {
@@ -452,6 +456,14 @@ pub(crate) fn normalize_meter(stored: &UsageMeter, now: i64) -> UsageMeter {
         };
         meter.set_reason(code, None);
         return meter;
+    }
+    // A credit that expired since the read is gone, and the count drops with it.
+    if let Some(credits) = &mut meter.reset_credits
+        && let Some(list) = &mut credits.expiry_time_seconds
+    {
+        let before = list.len();
+        list.retain(|at| at.is_none_or(|at| at > now));
+        credits.available = (credits.available - (before - list.len()) as i64).max(0);
     }
     // Either half of the pair means a failed refresh kept this reading, so the pair stays whole.
     if stored.reason.is_some() || stored.reason_code.is_some() {
@@ -921,6 +933,7 @@ fn normalize_limits(
         let id = bucket["limitId"].as_str().unwrap_or("");
         buckets.insert(id.into(), bucket);
     }
+    let credits = reset_credits(&result["rateLimitResetCredits"]);
     let mut meters = Vec::new();
     for (id, bucket) in buckets {
         for window in ["primary", "secondary"] {
@@ -963,6 +976,7 @@ fn normalize_limits(
                 reason: None,
                 reason_code: None,
                 as_of_seconds: Some(now),
+                reset_credits: credits.clone(),
             });
         }
     }
@@ -976,6 +990,31 @@ fn normalize_limits(
         ));
     }
     Ok(meters)
+}
+
+/// `rateLimitResetCredits` of a Codex reply: the count, and the expiry of each listed credit that
+/// is still available. None when the reply has no count.
+fn reset_credits(value: &Value) -> Option<ResetCredits> {
+    let available = value["availableCount"].as_i64()?.max(0);
+    let expiry_time_seconds = value["credits"].as_array().map(|list| {
+        let mut expiries: Vec<Option<i64>> = list
+            .iter()
+            .filter(|credit| credit["status"] == "available")
+            .filter_map(|credit| match &credit["expiresAt"] {
+                Value::Null => Some(None),
+                at => at
+                    .as_i64()
+                    .filter(|at| (0..=MAX_RESET_SECONDS).contains(at))
+                    .map(Some),
+            })
+            .collect();
+        expiries.sort_by_key(|at| at.unwrap_or(i64::MAX));
+        expiries
+    });
+    Some(ResetCredits {
+        available,
+        expiry_time_seconds,
+    })
 }
 
 #[cfg(test)]
@@ -1155,6 +1194,7 @@ mod tests {
                     reason: None,
                     reason_code: None,
                     as_of_seconds: Some(1_791_000_000),
+                    reset_credits: None,
                 };
                 if state == "stale" {
                     meter.set_reason(ReasonCode::RefreshFailed, None);
@@ -1345,5 +1385,59 @@ mod tests {
             assert_eq!(cached.reason_code, Some(code));
             assert_eq!(cached.reason.as_deref(), Some(code.text()));
         }
+    }
+    #[test]
+    fn codex_reset_credits_ride_on_each_window_and_expired_ones_drop_on_read() {
+        let reply = json!({
+            "rateLimits": {"primary": {"usedPercent": 5}, "secondary": {"usedPercent": 9}},
+            "rateLimitResetCredits": {"availableCount": 3, "credits": [
+                {"status": "available", "expiresAt": null},
+                {"status": "available", "expiresAt": 2000},
+                {"status": "redeemed", "expiresAt": 1500},
+                {"status": "available", "expiresAt": 1200},
+            ]},
+        });
+        let meters = normalize_limits(&work(), &reply, 1000).unwrap();
+        let credits = ResetCredits {
+            available: 3,
+            expiry_time_seconds: Some(vec![Some(1200), Some(2000), None]),
+        };
+        assert!(
+            meters
+                .iter()
+                .all(|meter| meter.reset_credits == Some(credits.clone()))
+        );
+        // One credit expired after the read: the count drops with it.
+        assert_eq!(
+            normalize_meter(&meters[0], 1300).reset_credits,
+            Some(ResetCredits {
+                available: 2,
+                expiry_time_seconds: Some(vec![Some(2000), None]),
+            })
+        );
+        // A count with no list keeps the count; no field at all is no credits object.
+        let count_only = json!({"rateLimits": {"primary": {"usedPercent": 5}},
+                                "rateLimitResetCredits": {"availableCount": 1, "credits": null}});
+        assert_eq!(
+            normalize_limits(&work(), &count_only, 1000).unwrap()[0].reset_credits,
+            Some(ResetCredits {
+                available: 1,
+                expiry_time_seconds: None
+            })
+        );
+        let none = json!({"rateLimits": {"primary": {"usedPercent": 5}}});
+        assert_eq!(
+            normalize_limits(&work(), &none, 1000).unwrap()[0].reset_credits,
+            None
+        );
+        // A failed cached meter has no reading, so it carries no credits.
+        let mut broken = meters[0].clone();
+        broken.used_pct = Some(101);
+        assert_eq!(normalize_meter(&broken, 1000).reset_credits, None);
+        // An old cache line has no field and still reads.
+        let old: UsageMeter = serde_json::from_value(json!({"provider":"codex","account":"w","label":"w",
+            "window":"primary","window_minutes":300,"used_pct":5,"reset_time_seconds":null,"state":"fresh",
+            "source":null,"reason":null,"reason_code":null,"as_of_seconds":1000})).unwrap();
+        assert_eq!(old.reset_credits, None);
     }
 }

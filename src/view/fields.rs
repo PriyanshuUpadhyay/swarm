@@ -226,13 +226,16 @@ pub fn workspace_context(
     now: i64,
     cache: &BTreeMap<String, WorkspaceFields>,
 ) -> Context {
-    let chats: Vec<_> = workspaces.iter().flat_map(|w| &w.chats).collect();
+    let chats: Vec<_> = workspaces
+        .iter()
+        .flat_map(|w| w.listed_chats(owner))
+        .collect();
     let contexts: Vec<_> = chats
         .iter()
         .map(|c| chat_context(c, state, now, None, None))
         .collect();
     let mut context = Context {
-        status: AgentStatus::aggregate(workspaces.iter().filter_map(Workspace::status)),
+        status: AgentStatus::aggregate(workspaces.iter().filter_map(|w| w.status(owner))),
         unread: chats
             .iter()
             .any(|c| state.is_unread(&c.key, c.last_activity)),

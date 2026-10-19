@@ -3429,11 +3429,19 @@ fn spawn_agent(
     let session = session_id.to_string();
     let home = swarm::paths::home()?;
     let current_adapter = adapter_name();
+    // A host that stacks seats anchors on these, so a seat never lands beside another
+    // session's seats on the same server.
+    let panes = swarm::store::live_children(connection, &session_id, "orchestrator")?
+        .into_iter()
+        .map(|(_, pane)| pane)
+        .collect::<Vec<_>>()
+        .join(" ");
     let vars = [
         ("session_id", session.as_str()),
         ("agent_id", agent_id),
         ("home", home.as_str()),
         ("adapter", current_adapter.as_str()),
+        ("panes", panes.as_str()),
     ];
     let pane = register_spawned_pane(
         connection,

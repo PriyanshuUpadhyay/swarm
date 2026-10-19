@@ -2523,3 +2523,46 @@ fn a_pi_seat_gets_its_seat_block_in_the_system_prompt() {
         "{script}"
     );
 }
+
+/// `spawn` gets this session's own seat panes as `SWARM_PANES`, so a host that stacks seats
+/// anchors only on its own session's panes, never on another chair's seats.
+#[test]
+fn spawn_names_only_this_sessions_seat_panes() {
+    let home = scratch("spawn-panes");
+    std::fs::create_dir_all(home.join(".swarm/adapters")).unwrap();
+    std::fs::write(
+        home.join(".swarm/adapters/fake.conf"),
+        "self = printf chair\n\
+         spawn = printf '%s:[%s]\\n' \"$SWARM_AGENT_ID\" \"$SWARM_PANES\" >> \"$HOME/spawns\"; printf 'pane-%s' \"$SWARM_AGENT_ID\"\n\
+         ring = true\nlist = true\nclose = true\ncapture = true\n",
+    )
+    .unwrap();
+    let mut sessions = Vec::new();
+    for _ in 0..2 {
+        let session = swarm(
+            &home,
+            &[("SWARM_ADAPTER", "fake")],
+            &["session", "new", "lane"],
+        );
+        assert!(session.status.success(), "{}", stderr(&session));
+        sessions.push(
+            String::from_utf8(session.stdout)
+                .unwrap()
+                .trim()
+                .to_string(),
+        );
+    }
+    for (session, seat) in [(0, "a1"), (0, "a2"), (1, "b1"), (0, "a3")] {
+        let chair = [
+            ("SWARM_ADAPTER", "fake"),
+            ("SWARM_SESSION_ID", sessions[session].as_str()),
+            ("SWARM_AGENT_ID", "orchestrator"),
+        ];
+        let output = swarm(&home, &chair, &["spawn", seat, "coder"]);
+        assert!(output.status.success(), "{seat}: {}", stderr(&output));
+    }
+    assert_eq!(
+        std::fs::read_to_string(home.join("spawns")).unwrap(),
+        "a1:[]\na2:[pane-a1]\nb1:[]\na3:[pane-a1 pane-a2]\n"
+    );
+}
