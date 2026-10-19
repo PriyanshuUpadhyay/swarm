@@ -1,22 +1,23 @@
 import { describe, expect, it } from "vitest";
 import { historyStep, recallOrder, recordSent, type HistoryEntry } from "./history";
 
-const e = (text: string, session: string, at: number): HistoryEntry => ({ text, session, at });
+const sent = (text: string, chat: string, at: number): HistoryEntry => ({ text, session: chat, at });
 
 describe("recordSent", () => {
   it("appends, keeps one copy of a repeat from the same chat, and caps the list", () => {
-    let list = recordSent([], e("a", "s1", 1));
-    list = recordSent(list, e("a", "s1", 2));
-    list = recordSent(list, e("a", "s2", 3));
-    expect(list.map((x) => x.session)).toEqual(["s1", "s2"]);
-    expect(recordSent([e("a", "s", 1), e("b", "s", 2)], e("c", "s", 3), 2).map((x) => x.text)).toEqual(["b", "c"]);
+    let list = recordSent([], sent("fix it", "chat-1", 1));
+    list = recordSent(list, sent("fix it", "chat-1", 2));
+    list = recordSent(list, sent("fix it", "chat-2", 3));
+    expect(list.map((entry) => entry.session)).toEqual(["chat-1", "chat-2"]);
+    const full = [sent("first", "chat-1", 1), sent("second", "chat-1", 2)];
+    expect(recordSent(full, sent("third", "chat-1", 3), 2).map((entry) => entry.text)).toEqual(["second", "third"]);
   });
 });
 
 describe("recallOrder", () => {
   it("puts this chat first, then other chats of the workspace, each text once", () => {
-    const list = [e("old here", "s1", 1), e("other", "s2", 2), e("new here", "s1", 3), e("other", "s1", 4)];
-    expect(recallOrder(list, "s1")).toEqual(["other", "new here", "old here"]);
+    const list = [sent("old here", "chat-1", 1), sent("other", "chat-2", 2), sent("new here", "chat-1", 3), sent("other", "chat-1", 4)];
+    expect(recallOrder(list, "chat-1")).toEqual(["other", "new here", "old here"]);
     // A new chat has no sends, so it recalls the workspace.
     expect(recallOrder(list, "fresh")).toEqual(["other", "new here", "old here"]);
   });
