@@ -6,8 +6,9 @@ export type HistoryEntry = { text: string; session: string; at: number };
 /** Entries kept per workspace. */
 export const HISTORY_CAP = 200;
 
-/** Longer texts are not kept: 200 long pastes would pass the 5 MB that localStorage allows. */
-export const HISTORY_TEXT_MAX = 10_000;
+/** Longer texts are not kept. Every workspace's list shares the about 5 million characters that
+ *  localStorage allows, and 200 prompts of 2,000 characters are 0.4 million, so about 12 busy workspaces fit. */
+export const HISTORY_TEXT_MAX = 2_000;
 
 /** Appends a send, newest last. A repeat of the newest text from the same chat is kept once. */
 export function recordSent(list: readonly HistoryEntry[], entry: HistoryEntry, cap = HISTORY_CAP): HistoryEntry[] {

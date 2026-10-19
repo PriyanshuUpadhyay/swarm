@@ -13,6 +13,8 @@ describe("recordSent", () => {
     expect(recordSent(full, sent("third", "chat-1", 3), 2).map((entry) => entry.text)).toEqual(["second", "third"]);
     // A long paste stays out, so the list fits in the browser's storage.
     expect(recordSent(full, sent("x".repeat(HISTORY_TEXT_MAX + 1), "chat-1", 3))).toEqual(full);
+    // Many workspaces share the 5 MB, so a 5 KB paste stays out too.
+    expect(recordSent(full, sent("x".repeat(5_000), "chat-1", 3))).toEqual(full);
   });
 });
 
