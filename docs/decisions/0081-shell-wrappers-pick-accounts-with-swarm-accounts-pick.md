@@ -33,7 +33,9 @@ Chosen: `swarm accounts pick --provider <claude|codex> [--account <auto|NAME> | 
 - The JSON is `{schema: "swarm.account-pick.v1", name, home, env, clear}`. `clear` names the
   account variables to unset first. `env` holds the variables to set. `name` is null when `auto`
   finds no usable account, and the CLI then keeps its own login, the same as `swarm run`.
-- An unknown or signed-out name exits non-zero with swarm's message, and prints no JSON.
+- An unknown name exits non-zero with swarm's message, and prints no JSON. A signed-out name
+  prints its account with a warning, so the CLI opens on that account and its own login signs it
+  in. `auto` never picks a signed-out account, and `swarm launch` still refuses one.
 - `pi()` calls it once for Claude and once for Codex. `--profile NAME` and `--codex-profile NAME`
   pass the name, and each picks `auto` when it is not given. Pi then sets `PI_CODEX_PROFILE` and
   `PI_CODEX_HOME` from the Codex pick.
