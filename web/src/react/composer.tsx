@@ -481,7 +481,6 @@ function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
             size="icon"
             data-testid="composer-expand"
             aria-label={expanded ? "Shrink composer" : "Expand composer"}
-            aria-pressed={expanded}
             title={expanded ? "Shrink composer" : "Expand composer"}
             onClick={() => {
               setExpanded(!expanded);

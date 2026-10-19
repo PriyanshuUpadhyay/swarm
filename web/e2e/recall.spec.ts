@@ -109,6 +109,7 @@ test("the composer recalls, stashes, reuses and finds prompts, and @ inserts a f
   await tab.keyboard.press("Escape");
 
   // Expand lifts the 200 px cap.
+  await expect(tab.getByTestId("composer-expand")).not.toHaveAttribute("aria-pressed");
   await tab.getByTestId("composer-expand").click();
   expect((await composer.boundingBox())!.height).toBeGreaterThan(300);
   await tab.getByRole("button", { name: "Shrink composer" }).click();
