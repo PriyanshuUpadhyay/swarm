@@ -10,13 +10,13 @@ metadata:
   gives: "the page URL, its source path, its content hash, and the commit"
   conflicts: ""
   users: "page-comments, planner"
-  source: "docs/decisions/0101-agent-pages-go-to-a-loopback-shelf-served-by-swarm-pages.md; ~/dotfiles/docs/council/2026-10-21-page-shelf.md (required changes 1-8)"
+  source: "docs/decisions/0101-agent-pages-go-to-a-loopback-shelf-served-by-swarm-pages.md (Decision Outcome)"
 ---
 
 ## Rules
 - Build the page as one folder with a top `index.html`, self-contained where possible. The shelf sends each page in a sandbox, so a page that needs local storage, module scripts, or a fetch of a sibling file goes to the `serve-local` block.
 - Run `swarm pages publish <folder>`. The command copies the page into the shelf, starts the shelf when it does not run, and prints the URL with the page's hash and source. Its error text says what to fix.
-- Give the owner the URL line in the reply. The hash line names the published copy, so a later publish with a new hash shows that the page changed. Publishing the same folder again on the same day keeps the URL.
+- Give the owner the URL line in the reply, with the commit line as printed. A `+dirty` end on the commit means the page came from uncommitted work. The hash line names the published copy, so a later publish with a new hash shows that the page changed. Publishing the same folder again on the same day keeps the URL.
 
 ## Example
 Initial state: the step made `tmp/skill-blocks/index.html`, one self-contained page.

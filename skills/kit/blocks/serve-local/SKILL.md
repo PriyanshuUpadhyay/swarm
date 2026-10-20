@@ -10,12 +10,12 @@ metadata:
   gives: "a URL, the served folder, the build commit, and the stop command"
   conflicts: ""
   users: "page-comments, page-shelf, build-canvas, planner"
-  source: "docs/blocks.md (serve-local row, view and talk stage); blocks/build-canvas/SKILL.md (Delivery: ES modules fail over file://); mined rows s4#34, s4#45"
+  source: "docs/blocks-catalog.md (serve-local row); docs/blocks.md (view and talk stage); blocks/build-canvas/SKILL.md (Delivery: ES modules fail over file://); mined rows s4#34, s4#45"
 ---
 
 ## Rules
 - Use this block only for a page that the `page-shelf` block cannot carry: one that needs a dev server, module scripts, local storage, or a fetch of its own files. Give every other page by `page-shelf`.
-- Use the project's own dev or preview command (`npm run preview`, `vite preview`, or the README's command), bound to `127.0.0.1`. A project with no such command uses `page-shelf`. Never bind to `0.0.0.0` or a public address.
+- Use the project's own dev or preview command (`npm run preview`, `vite preview`, or the README's command), bound to `127.0.0.1`. A folder with no such command runs `npx vite@6 <folder> --host 127.0.0.1 --port <port> --strictPort`, because Vite refuses a foreign Host and a file outside the folder. Never bind to `0.0.0.0` or a public address.
 - Serve the build that the checks ran on. Record the URL, the folder, the commit (`git rev-parse --short HEAD`, and say so when the tree has changes), and the stop command with the process id.
 - The server runs until you stop it, so start it where a tool time limit cannot stop it. Check that `curl -sI <url>` answers before you give the URL to anyone.
 - When the step that needs the server ends, stop it, and check that the port is free.

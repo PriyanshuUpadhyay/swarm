@@ -15,7 +15,7 @@ metadata:
 
 ## Rules
 - Run each round with the `comment-round` block on the page's files, with `<run>/page-comments` as its folder.
-- Give the owner the page by the `page-shelf` block, or by the `serve-local` block when the page needs a dev server, and put the URL in chat with the round. Publish again after each fix.
+- Give the owner the page by the `page-shelf` block, or by the `serve-local` block when the page needs a dev server, and put the URL in chat with the round. With `page-shelf`, publish again after each fix.
 - For each note, change the page with the block that built it, run the page's checks again, and answer the note with the change and the check result. Then start the next round.
 - The step ends when `comment_round.py check` passes on the page's files, or at the loop stop of `comment-round`.
 - Apply `blocks/plan-review/SKILL.md` for the gate that starts planned work.
