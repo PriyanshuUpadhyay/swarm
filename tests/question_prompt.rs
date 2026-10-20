@@ -26,13 +26,24 @@ fn tall_question_uses_only_a_matching_open_log_question() {
     assert_eq!(
         found.choices[..4],
         [
-            "Release on the planned date\nRelease on the planned date and list the open review findings in the release notes.",
-            "Fix critical findings, then release this week\nHold the release a few days to repair only the high-severity review findings.",
-            "Fix every finding before any release\nDelay the release until all review findings are fixed and verified by a full retest.",
-            "Release gradually to a small user group\nShip the build to a small share of users first, watch crash and error reports, and widen the rollout in steps."
+            "Release on the planned date",
+            "Fix critical findings, then release this week",
+            "Fix every finding before any release",
+            "Release gradually to a small user group"
         ]
     );
     assert_eq!(found.choices[4..], ["Type something.", "Chat about this"]);
+    assert_eq!(
+        serde_json::to_value(&found).unwrap()["details"],
+        serde_json::json!([
+            "Release on the planned date and list the open review findings in the release notes.",
+            "Hold the release a few days to repair only the high-severity review findings.",
+            "Delay the release until all review findings are fixed and verified by a full retest.",
+            "Ship the build to a small share of users first, watch crash and error reports, and widen the rollout in steps.",
+            "",
+            ""
+        ])
+    );
     assert!(found.numbered);
     assert!(!found.cut);
     assert_eq!(found.cursor, 0);
@@ -73,15 +84,23 @@ fn fallback_keeps_empty_descriptions_plain_and_preserves_description_lines() {
         found.choices[1],
         "Fix critical findings, then release this week"
     );
+    assert_eq!(found.choices[2], "Fix every finding before any release");
     assert_eq!(
-        found.choices[2],
-        "Fix every finding before any release\nFix all findings.\nRun the full retest."
+        serde_json::to_value(&found).unwrap()["details"],
+        serde_json::json!([
+            "",
+            "",
+            "Fix all findings.\nRun the full retest.",
+            "Ship the build to a small share of users first, watch crash and error reports, and widen the rollout in steps.",
+            "",
+            ""
+        ])
     );
     assert_eq!(found.choices[4..], ["Type something.", "Chat about this"]);
     record["message"]["content"][0]["input"]["questions"][0]["options"][2]["description"] =
         "A different description.".into();
     std::fs::write(&log, format!("{record}\n")).unwrap();
-    assert_ne!(read().id, found.id);
+    assert_eq!(read().id, found.id);
     std::fs::remove_dir_all(root).unwrap();
 }
 
@@ -96,6 +115,7 @@ fn fallback_keeps_null_descriptions_plain() {
     let found = agent_prompt(Some("claude"), TALL, || None, Some(&log))
         .expect("a null description must leave the prompt readable");
     assert_eq!(found.choices[0], "Release on the planned date");
+    assert_eq!(serde_json::to_value(&found).unwrap()["details"][0], "");
     std::fs::remove_dir_all(root).unwrap();
 }
 
@@ -109,12 +129,19 @@ fn fallback_keeps_whitespace_descriptions_plain() {
     std::fs::write(&log, format!("{record}\n")).unwrap();
     let found = agent_prompt(Some("claude"), TALL, || None, Some(&log)).unwrap();
     assert_eq!(found.choices[0], "Release on the planned date");
+    assert_eq!(serde_json::to_value(&found).unwrap()["details"][0], "");
     std::fs::remove_dir_all(root).unwrap();
 }
 
 #[test]
 fn two_question_screen_keeps_the_existing_prompt() {
     let before = whole_prompt(TWO, || None).unwrap();
+    assert!(
+        serde_json::to_value(&before)
+            .unwrap()
+            .get("details")
+            .is_none()
+    );
     assert_eq!(
         before.question,
         "←  ☐ Color  ☐ Size  ✔ Submit  →\nWhich color?"
@@ -297,7 +324,11 @@ fn answer_accepts_the_id_that_the_listing_shows_for_a_tall_question() {
     assert_eq!(listing["agents"][0]["state"], "waiting");
     assert_eq!(
         listing["agents"][0]["prompt"]["choices"][0],
-        "Release on the planned date\nRelease on the planned date and list the open review findings in the release notes."
+        "Release on the planned date"
+    );
+    assert_eq!(
+        listing["agents"][0]["prompt"]["details"][0],
+        "Release on the planned date and list the open review findings in the release notes."
     );
     let id = listing["agents"][0]["prompt"]["id"]
         .as_str()

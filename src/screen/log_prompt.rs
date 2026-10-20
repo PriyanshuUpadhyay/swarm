@@ -36,17 +36,17 @@ pub fn agent_prompt(
         {
             return None;
         }
-        for (choice, option) in choices.iter_mut().zip(question.options) {
-            let description = option.description.as_deref().unwrap_or_default().trim();
-            if !description.is_empty() {
-                choice.push('\n');
-                choice.push_str(description);
-            }
-        }
+        let mut details: Vec<String> = question
+            .options
+            .into_iter()
+            .map(|option| option.description.unwrap_or_default().trim().to_string())
+            .collect();
+        details.extend([String::new(), String::new()]);
         let id = prompt_id(&question.question, &choices);
         Some(Prompt {
             question: question.question,
             choices,
+            details,
             numbered: true,
             cursor,
             id,

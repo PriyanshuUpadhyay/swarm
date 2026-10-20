@@ -6,6 +6,9 @@ pub struct Prompt {
     /// The rows above the choices, up to a rule or an earlier history row.
     pub question: String,
     pub choices: Vec<String>,
+    /// Log-backed descriptions in choice order, with empty entries for choices without one.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub details: Vec<String>,
     /// Numbered choices take their number as the key; unnumbered ones take arrow keys.
     pub numbered: bool,
     /// The choice the screen's cursor marker is on.
@@ -205,6 +208,7 @@ fn prompt_above(lines: &[&str], footer: usize) -> Option<Prompt> {
     Some(Prompt {
         question,
         choices,
+        details: Vec::new(),
         numbered,
         cursor,
         id,

@@ -31,6 +31,7 @@ export function PromptCard({
     const own = a?.matches('[data-testid="composer"]') && ref.current?.closest(".chat-input")?.contains(a);
     if (own || (!who && (!a || a === document.body))) ref.current?.focus();
   }, [prompt.id]);
+  // App state shows the answer's result, so this handler does not await the promise.
   const pick = (i: number) => void app.answer(sessionId, prompt, i);
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey || !/^[1-9]$/.test(e.key)) return;
@@ -60,23 +61,21 @@ export function PromptCard({
       <div className="text-sm whitespace-pre-wrap select-text">{prompt.question}</div>
       <div className="grid gap-1">
         {prompt.choices.map((choice, i) => {
-          const newline = choice.indexOf("\n");
-          const label = newline < 0 ? choice : choice.slice(0, newline);
-          const description = newline < 0 ? "" : choice.slice(newline + 1);
+          const detail = prompt.details?.[i];
           return (
             <button
               key={i}
               type="button"
               data-testid="prompt-choice"
-              title={choice}
+              title={detail ? `${choice}\n${detail}` : choice}
               disabled={busy !== null}
               onClick={() => pick(i)}
               className="flex items-start gap-2 rounded-md border border-border-strong bg-background px-2.5 py-1.5 text-left text-sm hover:bg-hover disabled:opacity-60"
             >
               <span className="font-mono text-muted-foreground tabular-nums">{i + 1}</span>
               <span className="min-w-0 flex-1 break-words">
-                <span className="block whitespace-pre-wrap">{label}</span>
-                {description && <span className="line-clamp-2 text-xs whitespace-pre-wrap text-muted-foreground">{description}</span>}
+                <span className="block whitespace-pre-wrap">{choice}</span>
+                {detail && <span className="line-clamp-2 text-xs whitespace-pre-wrap text-muted-foreground">{detail}</span>}
               </span>
               {busy === i && <LoaderCircleIcon className="size-3.5 animate-spin" />}
             </button>
