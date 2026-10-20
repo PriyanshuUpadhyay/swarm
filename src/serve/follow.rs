@@ -26,7 +26,7 @@ pub(super) async fn flush_transcript(
             if let Some(state) = &mut follower.rows {
                 let mut start = follower.from;
                 for (end, events) in batches.iter() {
-                    state.ingest_log_line(source, start, *end, events)?;
+                    state.ingest_log_line(source, start, *end, events);
                     start = *end;
                 }
             }

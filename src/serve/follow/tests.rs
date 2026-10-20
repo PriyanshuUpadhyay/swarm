@@ -179,3 +179,83 @@ async fn rows_and_raw_clients_share_one_follower_and_stable_tool_id() {
     assert!(hub.followers.is_empty());
     assert_eq!(hub.row_cache.len(), 1);
 }
+
+#[tokio::test]
+async fn a_page_end_without_a_newline_keeps_the_follower() {
+    let fixture = Fixture::new();
+    std::fs::write(&fixture.log, "prefix\nline\n").unwrap();
+    let source = std::fs::File::open(&fixture.log).unwrap();
+    let end = source.metadata().unwrap().len();
+    let key = "drifted-chat";
+    let generation = "same-follower";
+    let (stop, _) = watch::channel(false);
+    let (_, done) = watch::channel(false);
+    fixture.app.hub.lock().unwrap().followers.insert(
+        key.into(),
+        Follower {
+            generation: generation.into(),
+            from: 1,
+            stop,
+            done,
+            rows: Some(LiveRows::empty(1, false)),
+            rendering_rows: false,
+        },
+    );
+    let event = json!({"type":"user_message_chunk","text":"fallback"});
+    let mut batches = vec![(end - 1, vec![event])];
+    flush_transcript(
+        &Arc::downgrade(&fixture.app),
+        key,
+        generation,
+        &mut batches,
+        &source,
+    )
+    .await
+    .unwrap();
+    {
+        let hub = fixture.app.hub.lock().unwrap();
+        let follower = &hub.followers[key];
+        assert_eq!(follower.generation, generation);
+        assert_eq!(follower.from, end - 1);
+        assert_eq!(
+            follower.rows.as_ref().unwrap().records[&(1, 0)].event["text"],
+            "fallback"
+        );
+    }
+    let mut batches = vec![(end, vec![])];
+    flush_transcript(
+        &Arc::downgrade(&fixture.app),
+        key,
+        generation,
+        &mut batches,
+        &source,
+    )
+    .await
+    .unwrap();
+    std::fs::OpenOptions::new()
+        .append(true)
+        .open(&fixture.log)
+        .unwrap()
+        .write_all(b"next\n")
+        .unwrap();
+    let mut batches = vec![(
+        end + 5,
+        vec![json!({"type":"user_message_chunk","text":"next"})],
+    )];
+    flush_transcript(
+        &Arc::downgrade(&fixture.app),
+        key,
+        generation,
+        &mut batches,
+        &source,
+    )
+    .await
+    .unwrap();
+    let hub = fixture.app.hub.lock().unwrap();
+    let follower = &hub.followers[key];
+    assert_eq!(follower.from, end + 5);
+    assert_eq!(
+        follower.rows.as_ref().unwrap().records[&(end, 0)].event["text"],
+        "next"
+    );
+}

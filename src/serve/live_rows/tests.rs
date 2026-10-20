@@ -20,9 +20,9 @@ fn overlapping_log_windows_keep_one_record_per_source_event() {
     let mut live = LiveRows::empty(0, false);
     let mut reference = LiveRows::empty(0, false);
     reference.ingest(start, end, &events);
-    live.ingest_log_line(&source, 0, end, &events).unwrap();
+    live.ingest_log_line(&source, 0, end, &events);
     live.delta("chat");
-    live.ingest_log_line(&source, start, end, &events).unwrap();
+    live.ingest_log_line(&source, start, end, &events);
     live.delta("chat");
     assert_eq!(live.records.len(), events.len());
     reference.shown = live.shown.clone();
@@ -39,18 +39,14 @@ fn source_positions_skip_fragments_and_preserve_identical_lines() {
     let end = line.len() as u64;
     let events = [json!({"type":"unknown","raw":"same"})];
     let mut state = LiveRows::empty(0, false);
-    state.ingest_log_line(&source, 1, end, &events).unwrap();
+    state.ingest_log_line(&source, 1, end, &events);
     assert!(state.records.is_empty());
-    state.ingest_log_line(&source, 0, end, &events).unwrap();
-    state
-        .ingest_log_line(&source, end, end * 2, &events)
-        .unwrap();
+    state.ingest_log_line(&source, 0, end, &events);
+    state.ingest_log_line(&source, end, end * 2, &events);
     assert_eq!(state.records.len(), 2);
     assert_eq!(state.records[&(0, 0)].source_id, "raw-0-0");
     assert_eq!(state.records[&(end, 0)].source_id, format!("raw-{end}-0"));
-    state
-        .ingest_log_line(&source, end * 2, end * 2, &[])
-        .unwrap();
+    state.ingest_log_line(&source, end * 2, end * 2, &[]);
     assert_eq!(state.records.len(), 2);
 }
 
@@ -291,4 +287,15 @@ fn row_frames_report_changed_usage_and_clear_it() {
     );
     let payload: Value = serde_json::from_str(&state.delta("chat").data).unwrap();
     assert!(payload.get("usage").unwrap().is_null());
+}
+
+#[test]
+fn failed_source_reads_fall_back_to_page_positions() {
+    let fixture = Fixture::new();
+    let source = std::fs::File::create(&fixture.log).unwrap();
+    let events = [json!({"type":"user_message_chunk","text":"fallback"})];
+    let mut state = LiveRows::empty(1, false);
+    state.ingest_log_line(&source, 1, 9, &events);
+    assert_eq!(state.records[&(1, 0)].event, events[0]);
+    assert_eq!(state.end, 9);
 }

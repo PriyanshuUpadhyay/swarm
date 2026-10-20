@@ -68,14 +68,7 @@ pub(super) async fn read_row_window(
                         "history file changed; reopen this chat",
                     ));
                 }
-                state
-                    .ingest_log_line(&source, cursor, next, &events)
-                    .map_err(|_| {
-                        error(
-                            StatusCode::CONFLICT,
-                            "history file changed; reopen this chat",
-                        )
-                    })?;
+                state.ingest_log_line(&source, cursor, next, &events);
                 events.clear();
                 cursor = next;
                 if next == end {
