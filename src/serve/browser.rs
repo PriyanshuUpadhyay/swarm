@@ -71,7 +71,7 @@ pub(super) fn shell_app() -> Option<PathBuf> {
     swarm::paths::bundled("Swarm.app")
 }
 
-/// Opens `url` in Swarm.app, which starts in full screen or, when it runs, comes to the front.
+/// Opens `url` in Swarm.app, which opens its window or, when it runs, comes to the front.
 /// Without the app, it opens an app window of the default browser when it is Chromium based, else
 /// a tab. An app window has no tab bar, and the browser passes ⌘N, ⌘T and ⌘W to the page.
 pub(super) fn open_page(url: &str) {

@@ -195,7 +195,7 @@ The chair follows `swarm-orchestrator`, and the worker pane opens beside it.
 ### From the web UI
 
 Run `swarm ui`. It starts the server in the background on port 4747, opens the page in the Swarm
-app in full screen, starts the usage HUD when it is not running, and gives your terminal back. A
+app, starts the usage HUD when it is not running, and gives your terminal back. A
 second `swarm ui` brings the app's window to the front. A build with no `Swarm.app` beside it opens
 the page in your browser. `swarm ui stop` stops the server, and `swarm ui
 --foreground` serves in the terminal until Ctrl-C. The page keeps its token in local storage, so a
@@ -250,32 +250,7 @@ See the Homebrew [formula guide](https://docs.brew.sh/Formula-Cookbook) and
 
 ## Environment
 
-When `SWARM_HOME` is not set, only a release build uses `HOME`. release.yml marks it with
-`SWARM_RELEASE_BUILD=1`. Every other build is a dev build and uses `~/.swarm-<branch>`, `main` too
-(`~/.swarm-main`), so a dev build never touches the real data (ADR 0027, amended in ADR 0048). A
-dev build from a detached HEAD uses `~/.swarm-head+4b9253d8ff1ee183`. A branch name with a character outside `[a-z0-9._-]`, one that starts with `.` or
-`-`, or one over 200 bytes gets its letters made lowercase and its other unsafe bytes made `-`, is cut
-to 200 bytes, and gets a hash of the whole name added, so `feat/login` uses
-`~/.swarm-feat-login+407712bf7898fb7f` and never meets `feat-login`. An uppercase letter also takes
-the hash, because the default macOS disk ignores case, so `Feature` and `feature` get two folders. `branch_folder` in `src/paths.rs`
-states the exact rule.
-`swarm --version` prints the branch after the commit, nothing for a release build and `HEAD` for
-a detached one. An explicit `SWARM_HOME` always wins, and an empty one is an error. The data
-directory is always `$SWARM_HOME/.swarm`.
-
-Swarm writes there only when the folder is its own (ADR 0036). A missing or empty folder gets the
-marker file `.swarm/swarm-home` before any other file. A folder from an older swarm, with swarm's
-`swarm.db` and no marker, gets the marker. Any other folder is refused with no write, and the
-message names the folder and `SWARM_HOME`.
-
-| Variable | Meaning |
-|---|---|
-| `SWARM_HOME` | Parent of the `.swarm/` data directory. Defaults to `$HOME` for a release build, or `~/.swarm-<branch>` for a dev build. |
-| `SWARM_ADAPTER` | Adapter file name under `.swarm/adapters/`. Defaults to `herdr` in a Herdr pane, else `superset` in a Superset terminal, else `rex` in a Rex block (`REX_BLOCK` set and `TERM_PROGRAM=rex`), else `tmux`. |
-| `AGENT_ROUTING_CONFIG` | The old routing file that the first read imports. A path that does not exist is an error. |
-| `SWARM_SESSION_ID` | Session the caller belongs to. `spawn` stamps it into each child pane. |
-| `SWARM_AGENT_ID` | Identity of the caller. `spawn` stamps it into each child pane. |
-| `SWARM_SUMMARIZER` | Shell line `drain` runs with a log on stdin. Required by `drain` only. |
+The variables and data folders are in [docs/environment.md](docs/environment.md).
 
 ## Profiles and runners
 
@@ -300,92 +275,8 @@ no runner can run fails with one line per runner.
 
 ## Commands
 
-Caller `any` needs no identity. `session` needs a session, and `agent` needs a session and an agent
-id. A chair gets both from its pane, which `swarm session new` registers. A child gets
-`SWARM_SESSION_ID` and `SWARM_AGENT_ID`, which `launch` and `spawn` stamp into its pane. The
-`orchestrator` caller also must match the session's orchestrator agent.
-
-| Command | Caller | Effect and output |
-|---|---|---|
-| `--version` | any | Print the package version and build commit. |
-| `init` | any | Claim `.swarm/` (ADR 0036), then create `runs/`, `adapters/`, and the database. Shipped adapters stay in the binary; matching old disk copies are removed. |
-| `ui [stop \| --foreground] [--port N] [--assets DIR]` | any | Start the web UI server that is inside the binary on 127.0.0.1:4747 in the background (log in `.swarm/ui.log`), print the URL with its token, open it in the browser, start the usage HUD when it is not running, and exit. When `.swarm/ui-url` names a server of this home that still takes its token, open that one. The token lasts in `.swarm/ui-token` (mode 0600). `stop` stops the server; `--foreground` serves in this process until Ctrl-C. `--assets DIR` serves a `web/dist` folder instead. Needs a build with `--features serve` (ADR 0088). |
-| `serve [--port N] [--assets DIR] [--dev-origin ORIGIN]` | any | The same server with no browser and no `ui-url` record; it prints the URL and runs until stopped. |
-| `setup [--json]` | any | List what `swarm setup` sets up, as `swarm doctor` does, then the `swarm setup <items>` command for each item that needs it. It writes nothing (ADR 0092). |
-| `setup status --json` | any | Print whether `hooks` (swarm's Codex and AGY state hooks), `guard` (as for `hooks status`), and `trust` (the owner's answer, `standing` or `ask`, for launch folder trust in `~/.swarm/consent.json`) have nothing pending. |
-| `setup <all\|hooks,trust,plugin,hud> [--plan [--json] \| --digest <digest> \| --yes] [--cwd <dir>] [--consent <standing\|ask>] [--resume]` | any; a child may only plan | One plan of each named item, or with `all` each item that needs setup, with one digest (ADR 0043, ADR 0092). `hooks` trusts swarm's Codex hooks in `~/.codex`, each `~/.codex-<name>`, and each `~/.swarm/accounts/codex/<name>`, adds the `swarm` group to AGY's `hooks.json`, and with a rule list at `~/.swarm/guards.json` registers `swarm guard` in each Claude `settings.json`, each Codex `hooks.json` with its trust, and AGY's `swarm-guard` group (ADR 0040). `trust` sets the consent file (to `--consent`, by default the recorded answer, else `standing`, as a managed edit whose undo means `ask`) and each trust entry a seat launched in `--cwd` (default the current folder) would need, or with `--resume` a resuming seat, whose Claude runs in that folder itself. `plugin` points `~/.swarm/kit` at the kit in `libexec/skills/kit`, through `<prefix>/opt/swarm` for a Homebrew install, removes the skill links an older swarm recorded, and runs each CLI's plugin install; a Codex home whose `swarm` marketplace holds another folder removes it first (ADR 0090). `hud` writes the LaunchAgent and loads it. The run prints a unified diff per file, each command, each conflict, and each skipped part with its reason, then asks on a terminal; with no terminal it needs `--yes` or `--digest`. An entry that swarm needs where the owner already has another one, or a file that swarm cannot read or edit, is a conflict: setup names it with its fix, writes no file, and exits 1. `--plan` only prints, and with `--json` gives each file, command and conflict its `group`. `--digest` refuses a plan that changed after it was shown. Apply writes each file in plan order and records each entry (ADR 0042); with nothing pending it prints `already set up` and exits 0. |
-| `hooks status --json` | any | Print whether swarm's own Codex and AGY state hooks are set up, and as `guard` whether the guard registrations match the rule list: all in place while `~/.swarm/guards.json` exists, none left once it is gone (ADR 0040). |
-| `managed list [--json]` | any | Print each item swarm wrote outside its home (a TOML key, a JSON key, a JSON array item, or a skill link) with its live state: `present` (equals what swarm wrote), `changed` (with the value `found` now), `unreadable` (swarm cannot read the file or the path in it, with the reason as `error`; revert refuses it), `gone`, or `off` (swarm removed it). An item with no record that equals swarm's current hook text is listed with `recorded: false` (ADR 0042). |
-| `managed revert (<id>... \| --all) [--plan [--json] \| --digest <digest>]` | any but a child | Remove each named item, or each `present` one with `--all`, and only while it equals what swarm wrote; a value swarm replaced is set back. A Codex guard trust key goes with its `hooks.json` group. An item with another value is a conflict with its fix, and no file is written. `--plan` and `--digest` work as for `setup`. A child caller is refused, because a revert can remove the guard that blocks its own calls; its `--plan` still prints (ADR 0042). |
-| `guard <claude\|codex\|agy> PreToolUse` | a CLI hook | Read the CLI's hook payload on stdin, run each matching rule of `~/.swarm/guards.json` (`SWARM_GUARDS` overrides the path), and print that CLI's allow or deny. A guard rule that crashes, times out, or does not start, a bad list, or a missing list blocks the call (ADR 0040). |
-| `adapter check <name>` | any | Load the shipped adapter plus any disk overrides. Print the verbs that the disk file overrides. |
-| `session new <lane\|relay\|open> [--chair <claude\|codex\|pi>:<id>]` | any | Create a session for the physical current directory (`pwd -P`) and print its UUID v7 id. Without `--chair`, use a chair id from the current CLI environment when present. |
-| `session chair <claude\|codex\|pi>:<id>` | orchestrator | Set the chair transcript id. Refuse any other agent. |
-| `session continue <new_id> <old_id>` | any | Link a newer session to an older session in the same directory after the new chair receives its context. |
-| `session archive <id>...` | any | Archive one or more UUID v7 sessions. |
-| `session unarchive <id>...` | any | Restore one or more archived UUID v7 sessions. |
-| `sessions --json` | any | List active sessions and resolved chair logs as JSON. |
-| `sessions --json --archived` | any | List all active sessions, then the newest 50 archived sessions in archive order, with `archivedAt` in Unix seconds. |
-| `host-context --provider <claude\|codex\|agy>` | any | Print the session's host contract in that provider's hook format, or nothing outside a visible host. |
-| `hook <claude\|codex\|agy> [event]` | any | Read a provider hook's JSON on stdin and record the agent's state (`working`, `waiting`, `done`, `failed`) for `SWARM_AGENT_ID`. A Claude or Codex `Stop` also stores the model and token total. Claude reads at most 8 MiB per Stop and adds new message usage; Codex copies its cumulative total. A cost is stored only from a complete provider record. For Codex in a Rex block it also writes the state to the agent's terminal as an OSC 7501 report (`working`, `blocked` with its kind, `done`, `error`, with `app=codex`), so Rex shows it for the block. Claude Code and Antigravity send their own reports, so their hooks write none. Does nothing outside a swarm agent. Always prints `{}` and exits 0. AGY sends no event name, so its hook passes it, as in `swarm hook agy Stop`. |
-| `status-feed` | pane | Read a pane's raw output on stdin until it closes, and record each OSC 7501 Program Status report (`working`, `blocked`, `done`, `error`) as the state of `SWARM_AGENT_ID`. The `tmux-swarm` adapter pipes each pane here, so pi and any other agent that speaks the protocol need no swarm hook. An `idle` before any `working` is the start-up report and is ignored; an `idle` after one is stored as `done`, because pi reports `idle` when a run is cancelled. A `blocked` report with `kind=permission` or `kind=question` is stored as `waiting` with that kind. |
-| `notify <title> [--body <text>]` | orchestrator or owner | Store one owner notice, with chair ids when known. Start the small SwarmNotify helper if needed, never the full app. Needs no session and refuses a worker. The helper posts it with the notice settings (ADR 0077). |
-| `doctor [--json]` | any | Print one row per setup item (hooks, guard, trust, plugin, hud, transcript, notices, and the `swarm ui` server) as `ok`, `setup` (swarm can set it up), or `broken` (needs the owner), each with a reason. `--json` prints `swarm.doctor.v1`. It exits 0 when it can read the swarm home. Settings › Setup & doctor, also at `/setup`, shows the same rows. |
-| `notices --json` | owner | Read unposted owner notices and mark them posted in one store transaction. Each row carries `id`, `session_id`, `agent_id`, `title`, and `body`. |
-| `notices --due` | SwarmNotify helper | Like `notices --json`, but apply the notice preferences in `choices.json` (`prefs.notices`) first, so muted or switched-off rows are marked and not returned (ADR 0077). |
-| `herdr-split` | any | Split a child pane right of `HERDR_PANE_ID`, stack it under earlier children at equal height, and print its id. The herdr adapter's spawn verb. |
-| `roles --json` | any | Print every profile, the file's `revision`, and `imported` when the file came from the old routing file. Reads no usage. |
-| `roles check --json` | any | Print, for each profile, the runner a launch would take now (`pick`) and each skipped runner with its `code` and `text`. |
-| `roles get <role> [--provider <claude\|codex\|agy\|pi>]` | any | Print the runner a launch would take as JSON: its fields plus `role`, `runnerId` (`<role>#<n>`), `fallbackRunnerIds`, `skipped`, and `substitutedFor` when a later runner was taken. With `--provider`, that provider's runners are tried first, and a profile with no runner of that provider is refused. |
-| `roles save --revision <revision> <profile-json>` | any | Replace one profile, as `{"name", "runners"}`, and print the new revision. Fails when the file changed after `revision` was read. |
-| `providers --json` | any | List each provider with its efforts, default effort, whether it has accounts, and the flags a runner of it takes. |
-| `models --provider <claude\|codex\|agy\|pi> --json` | any | List models for a provider. Codex, AGY, and pi use their CLI catalogs, and a Codex model lists its efforts; Claude shows its model aliases. A pi model id is `provider/model`, as `pi --list-models` prints it. |
-| `accounts --provider <claude\|codex\|agy\|pi> --json` | any | List accounts for one provider as JSON. |
-| `usage --json` | any | List account use meters as JSON, in the `swarm.usage.v1` format of [docs/usage-format.md](docs/usage-format.md). |
-| `working --json` | any | Count the agents with a pane that reported `working` or `waiting` in the last 10 minutes, by provider, as `{"schema":"swarm.working.v1","working":{"claude":2},"waiting":{"codex":1}}`. It reads only the store, so the usage HUD polls it to animate its mark. |
-| `usage --format openusage` | any | Print the cached meters in the OpenUsage `openusage.limits.v1` shape, with no provider call. The rules are in [docs/usage-format.md](docs/usage-format.md). |
-| `usage --refresh --provider <claude\|codex> --json` | any | Read that provider's usage again from its source, save it, and list its meters as JSON. A failed read keeps an older reading with state `stale` and a `reason`. With no older reading, or after HTTP 401 or 403, the meter has state `failed`. A Claude token that has expired gets no request and one `failed` meter (`token_expired`) with no older reading kept. A failed read never gives zero usage. |
-| `accounts login --provider <claude\|codex> --name <name> --revision <revision> --json [--cwd <dir>]` | any | Open the provider's own login for the account `name` in a pane. A child caller is refused. |
-| `hud <uninstall\|status> [--json]` | owner | Remove the LaunchAgent that starts the notch usage HUD (`libexec/SwarmHUD.app`) at login, or report it as `swarm.hud.v1` (`installed`, `running`, `app`). `swarm setup hud` installs it. The web UI asks once and has a switch in Settings (ADR 0087). |
-| `run <claude\|codex> [--account [auto\|menu\|name]] [-- <args>...]` | any | Start the provider CLI in this terminal on the picked account, `auto` by default. `--account` with no name, or `menu`, lists the accounts with their usage left on the terminal and reads a number or a name; Enter picks `auto`. `accounts pick --account menu` shows the same menu. It needs no session. |
-| `drain` | any | Run queued summarize jobs, print `done`, `retry`, or `parked` per job. |
-| `agent add <id> <role>` | session | Register an agent. The `orchestrator` role also records the caller pane and session adapter. |
-| `agents --json` | session | List agents, pane state, agent state, and adapter attach support as JSON. Each row includes `state_kind` (`permission`, `question`, or null) beside `state_detail`; null or an absent field means no known wait kind. Each row also includes `profile`, `runner`, `model`, `effort`, `account`, `costUsd`, and `tokens` when known. Missing values are omitted. For each live agent it reads the pane's bottom rows (the adapter's `screen` verb). A hook report stands through 45 s unless, after the first 10 s, the screen shows a state the provider's hooks cannot send (Codex failed, AGY waiting, any idle; ADR 0070). It re-rings a due message to an idle pane and, while the adapter lists the chair's pane and it reads idle with no question, sends the sweep's reports. None of its rings waits for proof: the next listing or sweep settles it from the hook state and the screen (ADR 0041). |
-| `agents --json --all` | any | Print one JSON object that maps a session id to its `agents --json` listing, read with that session's stored adapter. It has a key only for a non-archived session that has agents and a stored adapter and whose read worked; a failed read prints an error on stderr. Adapter work shares an 18 s batch budget, divided across the remaining sessions. A session that exceeds its share is omitted with an error on stderr. The app's sidebar uses it once per refresh. |
-| `messages --json [--after <seq>]` | session | List message metadata and available bodies as JSON. `delivery` is what the last ring proved: `hook` (the agent's own report, from a hook or a host record), `screen`, `seen` (the agent read its messages after the ring), `unconfirmed`, `unchecked`, or null until the ring's proof is settled; more values may come (ADR 0041). |
-| `launch <id> <role> [--provider <claude\|codex\|agy\|pi>] [--model <name> for chat] [--account <auto\|name>] [--cwd <dir>] [-- <args>...]` | session | Start the first runner of the role's profile that can run, or, with `chat --provider <provider> --model <name>`, exactly that model once with the chat profile's effort for that provider and no fallback (ADR 0033). Without `--account` the account is `auto`, the one with the most usage left. `--account` is ignored for a provider with no accounts, and without `--model` a `--provider` the profile has no runner of is refused. Register the agent, split a pane in `--cwd`, and start its provider CLI. A child caller is refused. A Claude child runs from `<cwd>/.herdr/workers`. A pi agent starts with `PI_PROGRAM_STATUS=1`, `--session-id <session>-<agent>`, and the host contract in `--append-system-prompt`, because pi has no hooks; a pi chair is named at launch, and the app finds a pi log by that id (ADR 0086). The pane dir is marked trusted for Claude, Codex, and AGY only with standing consent from `swarm setup`, or for a chair, whose folder the owner picked; each write is recorded and printed as a bare `trusted <provider> <dir>` line on stderr. With no consent, launch writes nothing and prints a bare `trust-pending <provider> <dir>` line, the diff, and the `swarm setup --plan --cwd` command that approves it; the pane shows its CLI's own trust question (ADR 0043). |
-| `spawn <id> <role> [--provider <p>] [--account <auto\|name>] [-- <cmd>...]` | session | Register the agent, split a pane, and optionally run `<cmd>; swarm exited`. Print the pane id. |
-| `type <id>` | session | Read text from stdin and type it into a live agent pane. A closed pane causes an error before any input is sent. |
-| `interrupt <id>` | session | Send the adapter interrupt action to the agent pane. |
-| `attach <id>` | session | Attach to the agent pane when the adapter supports it. |
-| `focus <session_id> <agent_id>` | any | Focus the stored agent pane, retry the chair once if needed, and raise the host app. Exit 1 with `swarm: pane closed` if both panes fail. Herdr, Rex, and tmux support focus; Superset and tmux-swarm report `has no focus`. |
-| `close <id>` | session | Close the pane of `<id>` and forget it. |
-| `send <recipient> <kind>` | agent | Store stdin as a message, ring the recipient, print the seq. The ring waits, up to 30 s, for the recipient's turn-start hook, its host record, or a working screen, and presses Enter again while a Claude or Codex input box still holds it. With no proof it warns on stderr and still exits 0 (ADR 0041). |
-| `finish` | agent | Send stdin as a `summary` to the orchestrator, print the seq. |
-| `exited` | agent | Capture the own pane to `runs/<session>/<id>.log`, report a missing summary. |
-| `sweep [--every <secs>]` | agent | Report each child whose pane is gone, print `dead <id>`. Re-ring an unseen message at most once after 60 s, for a child or the caller itself, then wait for an ack. When that ring starts no turn, the chair gets `unconfirmed:<seq>` from the agent and the sweep prints `unconfirmed <id> <seq>`; for the chair's own message it prints only the line. It sends the chair `stall:unacked:<seq>` for a child at done with a read, unacked message, and `stall:silent:<seq>` for a child at done that sent nothing after a proven ring, once each, and prints `stall <id> unacked\|silent <seq>`. It sends these reports only while the chair's screen reads idle with no question, so the ring's Enter cannot answer one; a later pass sends the rest. `agents --json` sends the same messages one pass later, because its rings do not wait (ADR 0041). With `--every`, repeat every N seconds and warn instead of exit on a failed pass. |
-| `inbox` | agent | Print `seq sender kind body_path` per unread message. |
-| `ack <seq>` | agent | Mark one message read. |
-
-The Herdr adapter's spawn verb runs `swarm herdr-split` through `$SWARM_EXE`, the path of the binary
-that runs the verb, so `swarm serve` finds it even with a short `PATH`. A disk adapter's spawn verb must pass
-`SWARM_HOME` and `SWARM_SESSION_ID` to the pane, because the Codex and AGY state hooks find the
-pane's own swarm through them (ADR 0034). The spawn verb also gets `SWARM_PANES`, this session's
-seat panes joined by spaces, so a host that stacks seats anchors only on its own session's panes.
-An adapter may also have a `run` verb. It gets the spawn variables and `SWARM_COMMAND`, the launch
-line with its `swarm exited`, opens a pane that runs that line as its program, and prints the pane
-id. With `run`, `launch` and `spawn` do not ring the line into a shell. The Rex adapter keeps such a
-block open after the line ends, and its `list` verb leaves the ended block out. A deployed file
-that changes `spawn` or `list` turns off the shipped `run` unless it names its own `run`. Do not put
-`run` in a deployed file that an older binary may read, because an older binary refuses a file with
-an unknown verb.
-An adapter may also have a `status` verb, under the same rule. It prints the root program-status
-record of the agent in `SWARM_PANE` as one OSC 7501 body with `:at=<unix seconds>`, the record's own
-time, or nothing. A pi agent's state then comes from that record as `state_source` `host`, the
-second source after hooks (ADR 0070), and a ring to an AGY agent first waits, up to 15 s, for AGY
-to report a record. Rex reads the record from the agent's own reports.
-Claude, Codex, and AGY run
-`swarm host-context --provider <claude|codex|agy>` as a SessionStart hook to learn the host contract.
+Each command, its caller and its effect are in [docs/commands.md](docs/commands.md) and
+[docs/commands-agents.md](docs/commands-agents.md).
 
 ## Skills and demos
 
