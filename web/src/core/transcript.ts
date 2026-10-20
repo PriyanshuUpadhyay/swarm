@@ -1,5 +1,6 @@
 // Rows built in Rust (`/api/rows`, `rows` frames) -> the lines the list draws. The client only
-// merges rows by id, places them by `order`, and keeps the reader's open and closed choices.
+// skips rows the server marks `collapsed`, merges rows by id, places them by `order`, and keeps
+// the reader's open and closed choices.
 
 import type { Row } from "./api";
 
