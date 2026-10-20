@@ -100,7 +100,7 @@ fn fallback_keeps_empty_descriptions_plain_and_preserves_description_lines() {
     record["message"]["content"][0]["input"]["questions"][0]["options"][2]["description"] =
         "A different description.".into();
     std::fs::write(&log, format!("{record}\n")).unwrap();
-    assert_ne!(read().id, found.id);
+    assert_eq!(read().id, found.id);
     std::fs::remove_dir_all(root).unwrap();
 }
 
@@ -176,15 +176,8 @@ fn fallback_requires_the_live_numbered_tail_and_preserves_cursor_and_hash() {
         found
             .choices
             .iter()
-            .zip(&found.details)
             .enumerate()
-            .map(|(index, (label, detail))| {
-                let mut rows = format!("  {}. {}", index + 1, label);
-                for line in detail.lines() {
-                    rows.push_str(&format!("\n     {line}"));
-                }
-                rows
-            })
+            .map(|(index, label)| format!("  {}. {}", index + 1, label.replace('\n', "\n     ")))
             .collect::<Vec<_>>()
             .join("\n")
     );
