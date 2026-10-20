@@ -1,6 +1,6 @@
 [package]
 name = "swarm"
-version = "0.0.24"
+version = "0.0.25"
 edition = "2024"
 license = "MIT"
 description = "Message bus and pane control for a tree of agent CLIs"
