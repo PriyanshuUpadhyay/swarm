@@ -7,6 +7,7 @@ pub(super) async fn flush_transcript(
     key: &str,
     generation: &str,
     batches: &mut Vec<(u64, Vec<Value>)>,
+    source: &std::fs::File,
 ) -> std::io::Result<()> {
     if batches.is_empty() {
         return Ok(());
@@ -25,7 +26,7 @@ pub(super) async fn flush_transcript(
             if let Some(state) = &mut follower.rows {
                 let mut start = follower.from;
                 for (end, events) in batches.iter() {
-                    state.ingest(start, *end, events);
+                    state.ingest_log_line(source, start, *end, events)?;
                     start = *end;
                 }
             }
@@ -157,6 +158,7 @@ pub(super) async fn follow(
 ) {
     let result = async {
         if *stop.borrow() { return Ok(()); }
+        let source = std::fs::File::open(&log.path)?;
         let mut child = tokio::process::Command::new(tool)
             .args(["--follow", "--from", &entry.from.to_string(), "--format", &log.format])
             .arg(log.path).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::inherit()).kill_on_drop(true).spawn()?;
@@ -171,7 +173,7 @@ pub(super) async fn follow(
                 biased;
                 _ = stop.changed() => break Ok::<_, std::io::Error>(()),
                 _ = timer.tick() => {
-                    flush_transcript(&app, &entry.key, &generation, &mut batches).await?;
+                    flush_transcript(&app, &entry.key, &generation, &mut batches, &source).await?;
                     timer.reset();
                 }
                 line = lines.next_line() => {

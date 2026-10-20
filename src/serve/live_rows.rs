@@ -91,6 +91,53 @@ impl LiveRows {
             self.append(position);
         }
     }
+    pub(super) fn ingest_log_line(
+        &mut self,
+        source: &std::fs::File,
+        start: u64,
+        end: u64,
+        events: &[Value],
+    ) -> std::io::Result<()> {
+        use std::os::unix::fs::FileExt;
+
+        if events.is_empty() {
+            self.ingest(start, end, events);
+            return Ok(());
+        }
+        let mut cursor = end.checked_sub(1).ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "transcript line end missing",
+            )
+        })?;
+        let mut newline = [0];
+        source.read_exact_at(&mut newline, cursor)?;
+        if newline != *b"\n" {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "transcript line is incomplete",
+            ));
+        }
+        let mut buffer = [0; 4096];
+        let line_start = loop {
+            if cursor == 0 {
+                break 0;
+            }
+            let count = cursor.min(buffer.len() as u64) as usize;
+            cursor -= count as u64;
+            source.read_exact_at(&mut buffer[..count], cursor)?;
+            if let Some(index) = buffer[..count].iter().rposition(|byte| *byte == b'\n') {
+                break cursor + index as u64 + 1;
+            }
+        };
+        // A read that starts inside a line cannot translate that line in full.
+        if start > line_start {
+            self.ingest(start, end, &[]);
+        } else {
+            self.ingest(line_start, end, events);
+        }
+        Ok(())
+    }
     pub(super) fn update_queue(&mut self, key: Position) {
         let record = &self.records[&key];
         let event = &record.event;

@@ -44,6 +44,9 @@ fn live_rows_full_rebuild_baseline() {
 #[ignore = "release cadence check during a 30000-tool turn-end rebuild"]
 async fn large_turn_end_keeps_other_keys_running() {
     let fixture = Fixture::new();
+    std::fs::write(&fixture.log, vec![b'\n'; 30_001]).unwrap();
+    let source = std::fs::File::open(&fixture.log).unwrap();
+    let heavy_source = source.try_clone().unwrap();
     let mut state = LiveRows::empty(0, false);
     state.ingest(
         0,
@@ -83,7 +86,7 @@ async fn large_turn_end_keeps_other_keys_running() {
             30_001,
             vec![json!({"type":"turn_ended","reason":"completed"})],
         )];
-        flush_transcript(&weak, "large", "cadence", &mut batches)
+        flush_transcript(&weak, "large", "cadence", &mut batches, &heavy_source)
             .await
             .unwrap();
     });
@@ -99,6 +102,7 @@ async fn large_turn_end_keeps_other_keys_running() {
             "small",
             "cadence",
             &mut batches,
+            &source,
         )
         .await
         .unwrap();

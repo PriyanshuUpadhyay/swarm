@@ -13,6 +13,8 @@ pub(super) async fn read_row_window(
     if start == end {
         return Ok(state);
     }
+    let source = std::fs::File::open(&log.path)
+        .map_err(|_| error(StatusCode::NOT_FOUND, "transcript log unavailable"))?;
     let mut child = tokio::process::Command::new(tool)
         .args([
             "--follow",
@@ -66,7 +68,14 @@ pub(super) async fn read_row_window(
                         "history file changed; reopen this chat",
                     ));
                 }
-                state.ingest(cursor, next, &events);
+                state
+                    .ingest_log_line(&source, cursor, next, &events)
+                    .map_err(|_| {
+                        error(
+                            StatusCode::CONFLICT,
+                            "history file changed; reopen this chat",
+                        )
+                    })?;
                 events.clear();
                 cursor = next;
                 if next == end {

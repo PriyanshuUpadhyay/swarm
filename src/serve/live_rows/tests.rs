@@ -2,6 +2,118 @@
 
 use super::*;
 use crate::serve::test_support::*;
+
+#[test]
+fn overlapping_log_windows_keep_one_record_per_source_event() {
+    let fixture = Fixture::new();
+    let prefix = "{\"type\":\"short\"}\n";
+    let line = "{\"type\":\"assistant\"}\n";
+    std::fs::write(&fixture.log, format!("{prefix}{line}")).unwrap();
+    let source = std::fs::File::open(&fixture.log).unwrap();
+    let start = prefix.len() as u64;
+    let end = start + line.len() as u64;
+    let events = [
+        json!({"type":"usage","kind":"context","context_tokens":80,"context_capacity_tokens":100}),
+        json!({"type":"tool_call","tool_call_id":"ask","name":"AskUserQuestion","input":{}}),
+        json!({"type":"elicitation","tool_call_id":"ask","questions":[{"question":"Which?","header":"Pick","options":[{"label":"One","description":"First"}]}]}),
+    ];
+    let mut live = LiveRows::empty(0, false);
+    let mut reference = LiveRows::empty(0, false);
+    reference.ingest(start, end, &events);
+    live.ingest_log_line(&source, 0, end, &events).unwrap();
+    live.delta("chat");
+    live.ingest_log_line(&source, start, end, &events).unwrap();
+    live.delta("chat");
+    assert_eq!(live.records.len(), events.len());
+    reference.shown = live.shown.clone();
+    assert_eq!(live.rows(), reference.rows_full());
+    assert_eq!(live.usage.value(), reference.usage.value());
+}
+
+#[test]
+fn source_positions_skip_fragments_and_preserve_identical_lines() {
+    let fixture = Fixture::new();
+    let line = format!("{}\r\n", "x".repeat(5000));
+    std::fs::write(&fixture.log, line.repeat(2)).unwrap();
+    let source = std::fs::File::open(&fixture.log).unwrap();
+    let end = line.len() as u64;
+    let events = [json!({"type":"unknown","raw":"same"})];
+    let mut state = LiveRows::empty(0, false);
+    state.ingest_log_line(&source, 1, end, &events).unwrap();
+    assert!(state.records.is_empty());
+    state.ingest_log_line(&source, 0, end, &events).unwrap();
+    state
+        .ingest_log_line(&source, end, end * 2, &events)
+        .unwrap();
+    assert_eq!(state.records.len(), 2);
+    assert_eq!(state.records[&(0, 0)].source_id, "raw-0-0");
+    assert_eq!(state.records[&(end, 0)].source_id, format!("raw-{end}-0"));
+    state
+        .ingest_log_line(&source, end * 2, end * 2, &[])
+        .unwrap();
+    assert_eq!(state.records.len(), 2);
+}
+
+#[tokio::test]
+async fn partial_append_and_overlapping_page_keep_one_question() {
+    let fixture = Fixture::new();
+    let prefix = "{\"type\":\"short\"}\n";
+    let call = json!({"type":"assistant","uuid":"ask","message":{"content":[{"type":"tool_use","id":"ask","name":"AskUserQuestion","input":{"questions":[{"question":"Which?","options":[{"label":"One","description":"First"}]}]}}]}}).to_string() + "\n";
+    let split = call.len() / 2;
+    std::fs::write(&fixture.log, format!("{prefix}{}", &call[..split])).unwrap();
+    let page = row_page(&fixture, 200, None).await.unwrap();
+    let key = format!("{}:chair", fixture.session);
+    fixture
+        .app
+        .hub
+        .lock()
+        .unwrap()
+        .streams
+        .insert("live".into(), client(&[]));
+    let _ = subscribe(
+        State(fixture.app.clone()),
+        Json(Subscription {
+            stream: "live".into(),
+            keys: vec![SubscriptionKey {
+                key: key.clone(),
+                from: page["page"]["end_offset"].as_u64().unwrap(),
+                view: Some("rows".into()),
+            }],
+        }),
+    )
+    .await
+    .unwrap();
+    std::fs::OpenOptions::new()
+        .append(true)
+        .open(&fixture.log)
+        .unwrap()
+        .write_all(&call.as_bytes()[split..])
+        .unwrap();
+    row_page(&fixture, 1, None).await.unwrap();
+    let end = (prefix.len() + call.len()) as u64;
+    until_cursor(&fixture.app, "live", &key, end).await;
+    let log = Log {
+        path: fixture.log.clone(),
+        format: "claude".into(),
+    };
+    let mut reference = read_row_window(&fixture.app.tool, &log, 0, end)
+        .await
+        .unwrap();
+    {
+        let hub = fixture.app.hub.lock().unwrap();
+        let live = hub.followers[&key].rows.as_ref().unwrap();
+        reference.shown = live.shown.clone();
+        assert_eq!(live.rows(), reference.rows_full());
+        assert_eq!(live.records.len(), reference.records.len());
+    }
+    let mut done = fixture.app.hub.lock().unwrap().followers[&key].done.clone();
+    drop(Events {
+        app: fixture.app.clone(),
+        id: "live".into(),
+    });
+    done.wait_for(|finished| *finished).await.unwrap();
+}
+
 #[test]
 fn live_chunks_match_full_frames_for_claude_and_codex() {
     for codex in [false, true] {
