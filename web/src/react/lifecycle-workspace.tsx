@@ -173,7 +173,7 @@ function NewWorkspaceBody({ app, initialProject }: { app: App; initialProject: s
           </Button>
         ) : (
           <Button type="submit" size="sm" data-testid="nw-create" disabled={!req || working}>
-            {working && <LoaderCircleIcon className="animate-spin" />}
+            {working && <LoaderCircleIcon className="animate-spin motion-reduce:animate-none" />}
             Create
           </Button>
         )}
@@ -243,7 +243,7 @@ function CreateProgress({ app }: { app: App }) {
     <div className="grid gap-2" data-testid="nw-progress" data-state={create.state} data-setup={setup?.state}>
       {create.state === "working" && (
         <p className="flex items-center gap-1.5 text-sm text-muted-foreground" role="status">
-          <LoaderCircleIcon className="size-3.5 animate-spin" />
+          <LoaderCircleIcon className="size-3.5 animate-spin motion-reduce:animate-none" />
           {setup ? "Running the setup script…" : "Creating the workspace…"}
         </p>
       )}

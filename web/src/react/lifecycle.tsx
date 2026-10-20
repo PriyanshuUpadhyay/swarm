@@ -57,7 +57,7 @@ function ConfirmDialog({ app }: { app: App }) {
                 setBusy(false);
               }}
             >
-              {busy && <LoaderCircleIcon className="animate-spin" />}
+              {busy && <LoaderCircleIcon className="animate-spin motion-reduce:animate-none" />}
               {confirm.action}
             </Button>
           </div>

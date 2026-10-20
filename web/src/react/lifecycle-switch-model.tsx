@@ -124,7 +124,7 @@ function SwitchModelBody({ app, old }: { app: App; old: string }) {
             const done = phaseIndex > i || handoff.phase === "completed";
             return (
               <li key={p} className={`flex items-center gap-2 ${now ? "text-foreground" : "text-muted-foreground"}`}>
-                {now && running ? <LoaderCircleIcon className="size-3.5 animate-spin" /> : done ? <CheckIcon className="size-3.5 text-done" /> : <CircleIcon className="size-3.5" />}
+                {now && running ? <LoaderCircleIcon className="size-3.5 animate-spin motion-reduce:animate-none" /> : done ? <CheckIcon className="size-3.5 text-done" /> : <CircleIcon className="size-3.5" />}
                 {label}
               </li>
             );
@@ -148,7 +148,7 @@ function SwitchModelBody({ app, old }: { app: App; old: string }) {
           </Button>
         )}
         <Button type="button" size="sm" data-testid="sm-start" disabled={!model || running} onClick={() => model && void app.life.switchModel(old, provider, model, account || null)}>
-          {running && <LoaderCircleIcon className="animate-spin" />}
+          {running && <LoaderCircleIcon className="animate-spin motion-reduce:animate-none" />}
           Switch
         </Button>
       </div>
