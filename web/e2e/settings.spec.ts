@@ -69,6 +69,37 @@ function due(chair = false): { sound: boolean }[] {
 
 const choices = () => JSON.parse(readFileSync(join(home(), ".swarm/choices.json"), "utf8")) as { prefs?: Record<string, unknown> & { notices?: Record<string, unknown> } };
 
+test("a usage refresh has a static busy sign with reduced motion", async ({ page: tab }, info) => {
+  await tab.emulateMedia({ reducedMotion: "reduce" });
+  const usage = await api<{ meters: unknown[] }>("/api/usage");
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => { release = resolve; });
+  await tab.route("**/api/usage/refresh", async (route) => {
+    await pending;
+    await route.fulfill({ json: { ...usage, refresh: { next_in_seconds: 300 } } });
+  });
+  const errors = await open(tab);
+  const meters = tab.getByTestId("usage-meters");
+  const toggle = meters.getByRole("button", { name: /Usage/ });
+  if ((await toggle.getAttribute("aria-expanded")) === "false") await toggle.click();
+  const button = meters.getByTestId("usage-refresh-claude");
+  const status = meters.getByTestId("usage-wait-claude");
+  try {
+    await button.click();
+    await expect(button).toBeDisabled();
+    await expect(button).toHaveAttribute("aria-busy", "true");
+    await expect(status).toBeVisible();
+    await expect(status).toHaveText("refreshing…");
+    expect(await button.locator("svg").evaluate((el) => getComputedStyle(el).animationName)).toBe("none");
+    await tab.screenshot({ path: info.outputPath("usage-refresh-reduced-motion.png") });
+  } finally {
+    release();
+  }
+  await expect(button).toHaveAttribute("aria-busy", "false");
+  await expect(status).toHaveText(/^next [0-4]:\d\d$/);
+  expect(errors).toEqual([]);
+});
+
 test("usage meters show the cached reading, and a refresh waits for the server's 300 s limit", async ({ page: tab }, info) => {
   const errors = await open(tab);
   const meters = tab.getByTestId("usage-meters");

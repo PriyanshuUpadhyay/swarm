@@ -1,0 +1,262 @@
+//! CLI commands launch.
+
+use super::*;
+pub(crate) fn commands_launch(
+    args: &[String],
+    root: &std::path::Path,
+    connection: &mut rusqlite::Connection,
+) -> Result<Option<()>, Box<dyn std::error::Error>> {
+    if let [cmd, agent_id, role, rest @ ..] = args
+        && cmd == "launch"
+    {
+        if !swarm::bus::valid_agent_id(agent_id) {
+            return Err(format!("swarm: bad agent id {agent_id}").into());
+        }
+        let herdr_agent_pane = env::var("HERDR_AGENT_PANE").ok();
+        if let Some(reason) = swarm::bus::launch_refusal(
+            env::var("SWARM_AGENT_ID").ok().as_deref(),
+            herdr_agent_pane.as_deref(),
+        ) {
+            return Err(reason.into());
+        }
+        // Fail before any trust write, so a stray launch outside a session changes nothing.
+        session_id()?;
+        let (options, extra) = match rest.iter().position(|arg| arg == "--") {
+            Some(index) => (&rest[..index], &rest[index + 1..]),
+            None => (rest, &[][..]),
+        };
+        let (mut account, mut cwd, mut requested_provider, mut requested_model) =
+            (Some("auto"), None, None, None);
+        for pair in options.chunks(2) {
+            match pair {
+                [flag, value] if flag == "--account" => account = Some(value.as_str()),
+                [flag, value] if flag == "--cwd" => cwd = Some(std::path::PathBuf::from(value)),
+                [flag, value] if flag == "--provider" && Provider::parse(value).is_some() => {
+                    requested_provider = Some(value.as_str())
+                }
+                [flag, value] if flag == "--model" => requested_model = Some(value.as_str()),
+                _ => return Err(USAGE.into()),
+            }
+        }
+        let cwd = cwd.map_or_else(env::current_dir, Ok)?;
+        let cwd = std::fs::canonicalize(&cwd)
+            .map_err(|error| format!("swarm: bad --cwd {}: {error}", cwd.display()))?;
+        let (resolved, probe): (swarm::bus::ResolvedRole, Probe) = match requested_model {
+            Some(_) if role != "chat" => {
+                return Err("swarm: --model requires the chat role".into());
+            }
+            // A one-off chat pick runs exactly that runner, with no fallback (ADR 0033).
+            Some(model) => {
+                let provider = requested_provider
+                    .and_then(Provider::parse)
+                    .ok_or("swarm: a chat --model needs --provider")?;
+                let (config, _) =
+                    swarm::config::load().map_err(|error| format!("swarm: {error}"))?;
+                let runner = swarm::config::one_off(&config.profiles[0], provider, model)
+                    .map_err(|error| format!("swarm: {error}"))?;
+                (
+                    serde_json::from_value(serde_json::to_value(runner)?)?,
+                    Probe::new(&config, account),
+                )
+            }
+            None => {
+                let (value, probe) = resolve_role(role, requested_provider, account, true)?;
+                let resolved = serde_json::from_value(value)
+                    .map_err(|error| format!("swarm: cannot resolve role {role}: {error}"))?;
+                (resolved, probe)
+            }
+        };
+        let account_deadline = probe.deadline;
+        if let Some(reason) = swarm::bus::fable_refusal(agent_id, role, resolved.model.as_deref()) {
+            return Err(reason.into());
+        }
+        let provider = resolved.provider.clone();
+        let mut command =
+            swarm::bus::argv(agent_id, role, &resolved, &swarm::paths::home()?, &cwd)?;
+        let kind = Provider::parse(provider.as_deref().unwrap_or_default())
+            .ok_or("swarm: launch has no known provider")?;
+        let runner = swarm::config::Runner {
+            provider: kind,
+            model: resolved.model.clone().ok_or("swarm: launch has no model")?,
+            effort: resolved
+                .effort
+                .clone()
+                .ok_or("swarm: launch has no effort")?,
+            sandbox: resolved.sandbox.clone(),
+            approval: resolved.approval.clone(),
+            permission: resolved.permission.clone(),
+        };
+        let mut extra = swarm::bus::extra_args(kind, extra)?;
+        // Trust and pane environment must use the same native pick.
+        // A provider with no account source launches on its CLI's own login, so `auto` means
+        // nothing there; the chat profile passes it whichever runner starts.
+        let picked = match (account, kind.has_accounts()) {
+            (Some(requested), true) => {
+                let mut cache = probe.accounts.borrow_mut();
+                let accounts = cache
+                    .entry(kind)
+                    .or_insert_with(|| pick_accounts(kind, account_deadline, requested == "auto"));
+                select_account(
+                    kind,
+                    requested,
+                    resolved.model.as_deref(),
+                    probe.min_usage_left_pct,
+                    accounts.as_ref().map_err(Clone::clone),
+                )?
+            }
+            _ => None,
+        };
+        let mut pane_dir = cwd.clone();
+        let user_home = std::path::PathBuf::from(env_var("HOME")?);
+        // The app makes a chair launch in the folder the owner picked, and hides its pane, so
+        // that pick is consent for that one folder (owner answer I1, ADR 0043).
+        let consent = if standing_consent() {
+            TrustConsent::Standing
+        } else if agent_id == "orchestrator" {
+            TrustConsent::Picked
+        } else {
+            TrustConsent::Ask
+        };
+        let launch_trust = LaunchTrust {
+            store: connection,
+            consent,
+            // Auto keeps the base rule for a launch with no account: a file that cannot take the
+            // entry is a warning. Only a named account must get it.
+            required: picked.is_some() && account.is_some_and(|name| name != "auto"),
+            cwd: &cwd,
+        };
+        // Codex has no per-launch hook to name its chair, and the app lists and reads a chat only
+        // by its chair provider. Its thread id comes later with its log.
+        if kind == Provider::Codex && agent_id == "orchestrator" {
+            swarm::store::set_chair_provider(connection, &session_id()?, "codex")?;
+        }
+        match kind {
+            Provider::Codex | Provider::Agy => match trust_target(&cwd, &user_home) {
+                Ok(target) if kind == Provider::Codex => {
+                    // A selected account needs trust in its own Codex home.
+                    let homes = if let Some(account) = &picked {
+                        vec![std::path::PathBuf::from(&account.home)]
+                    } else {
+                        codex_homes(&user_home)?
+                    };
+                    launch_trust.run("codex", &target, &homes, swarm::bus::codex_trust_plan)?;
+                }
+                Ok(target) => {
+                    // AGY has no accounts, and its one settings file must take the entry.
+                    let agy = LaunchTrust {
+                        required: true,
+                        ..launch_trust
+                    };
+                    let settings = vec![agy_settings(&user_home)];
+                    agy.run("agy", &target, &settings, swarm::bus::agy_trust_plan)?;
+                }
+                Err(reason) => eprintln!(
+                    "swarm: not pre-trusting for {}: {reason}; answer the prompt in the pane",
+                    kind.id()
+                ),
+            },
+            Provider::Pi => {
+                // pi has no hooks. It takes the session id swarm gives it, so its log is found by
+                // that id, and it reads the host contract from its system prompt (ADR 0086).
+                let session = session_id()?;
+                let id = format!("{session}-{agent_id}");
+                let mut args = vec!["--session-id".to_string(), id.clone()];
+                if let Some(context) = pane_context(kind.id(), &session, agent_id, role) {
+                    args.extend(["--append-system-prompt".into(), context]);
+                }
+                extra.splice(0..0, args);
+                if agent_id == "orchestrator" {
+                    swarm::store::set_chair(connection, &session, Some((kind.id(), &id)))?;
+                }
+            }
+            Provider::Claude => {
+                // The app hides the chair's pane, so a trust dialog there waits for nobody. The
+                // chair runs in cwd itself, as a resuming child does (ADR 0008).
+                if agent_id != "orchestrator" {
+                    let (dir, args) =
+                        swarm::bus::claude_child(agent_id, &cwd, &extra, &uuid::Uuid::now_v7());
+                    // A checked-out repo can commit `.herdr` or `.herdr/workers` as a link, and
+                    // trusting where it points could trust any folder, such as `/`. The check
+                    // stops create_dir_all from making dirs through a committed link. A resuming
+                    // child runs in cwd itself, so nothing below cwd is checked for it.
+                    for path in dir.ancestors().take_while(|path| *path != cwd) {
+                        if std::fs::symlink_metadata(path).is_ok_and(|meta| meta.is_symlink()) {
+                            return Err(format!(
+                                "swarm: {} is a symlink; refusing to trust where it points",
+                                path.display()
+                            )
+                            .into());
+                        }
+                    }
+                    std::fs::create_dir_all(&dir)?;
+                    pane_dir = std::fs::canonicalize(&dir)?;
+                    // cwd is canonical, so a link made after the check still shows here.
+                    if pane_dir != dir {
+                        return Err(format!(
+                            "swarm: {} resolves to {}; refusing to trust it",
+                            dir.display(),
+                            pane_dir.display()
+                        )
+                        .into());
+                    }
+                    extra = args;
+                }
+                // The app lets the owner pick any folder for a chair, such as $HOME or a shared
+                // one, and consent covers only a folder that passes the check (ADR 0043), so a
+                // chair or a seat gets the entry only where Codex and AGY may be pre-trusted.
+                if let Err(reason) = trust_target(&cwd, &user_home) {
+                    eprintln!(
+                        "swarm: not pre-trusting for claude: {reason}; answer the prompt in the pane"
+                    );
+                } else {
+                    let configs = vec![user_home.join(".claude.json")];
+                    launch_trust.run(
+                        "claude",
+                        &pane_dir,
+                        &configs,
+                        swarm::bus::claude_trust_plan,
+                    )?;
+                }
+            }
+        }
+        command.extend(extra);
+        // Every adapter's spawn verb opens the pane in the working directory it runs in.
+        env::set_current_dir(&pane_dir)?;
+        return spawn_agent(
+            connection,
+            root,
+            agent_id,
+            role,
+            SpawnOptions {
+                provider: provider.as_deref(),
+                account: picked.as_ref().map(|picked| picked.name.as_str()),
+                resolved_account: picked.as_ref(),
+                command: &command,
+                runner: Some(&runner),
+            },
+            account_deadline,
+        )
+        .map(Some);
+    }
+    if let [cmd, agent_id, role, rest @ ..] = args
+        && cmd == "spawn"
+    {
+        if let Some(reason) = swarm::bus::launch_refusal(
+            env::var("SWARM_AGENT_ID").ok().as_deref(),
+            env::var("HERDR_AGENT_PANE").ok().as_deref(),
+        ) {
+            return Err(reason.into());
+        }
+        let options = parse_spawn_options(rest)?;
+        return spawn_agent(
+            connection,
+            root,
+            agent_id,
+            role,
+            options,
+            swarm::profiles::native::deadline(ACCOUNT_PICK_TIMEOUT_SECONDS),
+        )
+        .map(Some);
+    }
+    Ok(None)
+}

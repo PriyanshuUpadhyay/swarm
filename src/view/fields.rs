@@ -13,7 +13,7 @@ pub const FIELDS: &[&str] = &[
 pub fn known_field(field: &str) -> bool {
     FIELDS.contains(&field)
 }
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RowFieldLists {
     pub project: Vec<String>,
     pub workspace: Vec<String>,
@@ -26,11 +26,27 @@ impl Default for RowFieldLists {
         Self {
             project: list(&["title", "status"]),
             workspace: list(&["status", "title", "branch", "children", "age", "steps"]),
-            chat: list(&[
-                "status", "title", "age", "steps", "children", "unread", "tokens",
-            ]),
-            tab: list(&["status", "title", "provider", "unread", "tokens"]),
+            chat: list(&["status", "title", "unread"]),
+            tab: list(&["status", "title", "unread"]),
         }
+    }
+}
+impl Serialize for RowFieldLists {
+    fn serialize<S: serde::Serializer>(&self, encoder: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let bundled = Self::default();
+        let mut saved = encoder.serialize_map(None)?;
+        for (name, fields, default) in [
+            ("project", &self.project, &bundled.project),
+            ("workspace", &self.workspace, &bundled.workspace),
+            ("chat", &self.chat, &bundled.chat),
+            ("tab", &self.tab, &bundled.tab),
+        ] {
+            if fields != default {
+                saved.serialize_entry(name, fields)?;
+            }
+        }
+        saved.end()
     }
 }
 impl<'de> Deserialize<'de> for RowFieldLists {
@@ -49,11 +65,21 @@ impl<'de> Deserialize<'de> for RowFieldLists {
                 .map(|f| f.into_iter().filter(|s| known_field(s)).collect())
                 .unwrap_or(default)
         };
+        // Version 0.0.22 saved bundled lists even when the owner never chose fields.
+        let chat = saved.chat.filter(|f| {
+            f.as_slice()
+                != [
+                    "status", "title", "age", "steps", "children", "unread", "tokens",
+                ]
+        });
+        let tab = saved
+            .tab
+            .filter(|f| f.as_slice() != ["status", "title", "provider", "unread", "tokens"]);
         Ok(Self {
             project: list(saved.project, bundled.project),
             workspace: list(saved.workspace, bundled.workspace),
-            chat: list(saved.chat, bundled.chat),
-            tab: list(saved.tab, bundled.tab),
+            chat: list(chat, bundled.chat),
+            tab: list(tab, bundled.tab),
         })
     }
 }

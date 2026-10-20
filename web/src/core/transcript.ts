@@ -1,5 +1,6 @@
 // Rows built in Rust (`/api/rows`, `rows` frames) -> the lines the list draws. The client only
-// merges rows by id, places them by `order`, and keeps the reader's open and closed choices.
+// skips rows the server marks `collapsed`, merges rows by id, places them by `order`, and keeps
+// the reader's open and closed choices.
 
 import type { Row } from "./api";
 
@@ -66,17 +67,18 @@ export type LineState = { folds: FoldChoices; opened: ReadonlyMap<string, boolea
 /** A failed tool card starts open; the reader's choice wins. */
 export const cardOpen = (row: Row, opened: ReadonlyMap<string, boolean>) => opened.get(row.id) ?? row.tool?.state === "failed";
 
-/** Every row is a line; a collapsed row starts closed. */
+/** Visible rows become lines; an open fold includes only its visible steps. */
 export function lines(rows: readonly Row[], s: LineState): Line[] {
   const out: Line[] = [];
   for (const row of rows) {
+    if (row.collapsed) continue;
     if (row.kind !== "fold") {
       out.push({ id: row.id, row, fold: null, open: cardOpen(row, s.opened) });
       continue;
     }
     const open = s.folds.isOpen(row);
     out.push({ id: row.id, row, fold: null, open });
-    if (open) for (const step of row.steps ?? []) out.push({ id: step.id, row: step, fold: row, open: cardOpen(step, s.opened) });
+    if (open) for (const step of row.steps ?? []) if (!step.collapsed) out.push({ id: step.id, row: step, fold: row, open: cardOpen(step, s.opened) });
   }
   return out;
 }
@@ -103,14 +105,15 @@ export function searchText(row: Row): string {
 /** A find match: the row, and the fold that holds it when it is a step. */
 export type Match = { id: string; fold: Row | null };
 
-/** Matches over every loaded row, in list order, including the steps of closed folds. */
+/** Matches over visible loaded rows, in list order, including visible steps of closed folds. */
 export function findMatches(rows: readonly Row[], query: string): Match[] {
   const q = query.trim().toLowerCase();
   if (!q) return [];
   const out: Match[] = [];
   for (const row of rows) {
+    if (row.collapsed) continue;
     if (searchText(row).includes(q)) out.push({ id: row.id, fold: null });
-    for (const step of row.steps ?? []) if (searchText(step).includes(q)) out.push({ id: step.id, fold: row });
+    for (const step of row.steps ?? []) if (!step.collapsed && searchText(step).includes(q)) out.push({ id: step.id, fold: row });
   }
   return out;
 }

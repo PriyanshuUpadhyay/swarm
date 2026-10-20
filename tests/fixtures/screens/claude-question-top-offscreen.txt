@@ -1,0 +1,24 @@
+     Release on the planned date and list the open review findings in the
+     release notes. This keeps the schedule and gets users the new features
+     fast, but it carries the risk that unfixed defects reach users and need a
+     quick patch later.
+  2. Fix critical findings, then release this week
+     Hold the release a few days to repair only the high-severity review
+     findings. Lower-risk items move to the next version. This balances safety
+     and speed, but it needs a clear severity cut line and a short retest before
+     shipping.
+  3. Fix every finding before any release
+     Delay the release until all review findings are fixed and verified by a
+     full retest. This gives the cleanest build and the least user risk, but it
+     moves the date by an unknown amount and delays all new features.
+  4. Release gradually to a small user group
+     Ship the build to a small share of users first, watch crash and error
+     reports, and widen the rollout in steps. This limits the damage from
+     unfixed findings, but it needs monitoring, a rollback path, and more total
+     release time.
+  5. Type something.
+────────────────────────────────────────────────────────────────────────────────
+  6. Chat about this
+
+Enter to select · ↑/↓ to navigate · Esc to cancel
+─────────────────────────────────────────────────────────────────── probe-ask1 ─

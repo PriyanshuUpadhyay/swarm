@@ -1,132 +1,14 @@
-import { ArrowUpIcon, ChevronDownIcon, Maximize2Icon, Minimize2Icon, CircleHelpIcon, LoaderCircleIcon, SquareIcon, TriangleAlertIcon } from "lucide-react";
+import { ArrowUpIcon, ChevronDownIcon, Maximize2Icon, Minimize2Icon, SquareIcon } from "lucide-react";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
-import type { App, Banner, Composer, Input } from "../core/app";
+import type { App, Composer } from "../core/app";
 import { historyStep, type Browse } from "../core/history";
-import { modelLabel, outgoing, sends, usageLabel, type Prompt } from "../core/composer";
+import { modelLabel, outgoing, sends, usageLabel } from "../core/composer";
 import { editPicks, matches, menuAt, moved, offered, pick, picksAndSends, showsEmpty, skillFirst, skillNames, toSend, type CommandList, type MenuRow, type SkillPick } from "../core/slash";
 import { Button } from "../components/ui/button";
 import { ImageThumbs } from "./images";
 import { cn } from "../lib/utils";
 
-/** Below the transcript: the error banner, the agent's question, and the composer. */
-export function ChatInput({ app, composer }: { app: App; composer: Composer }) {
-  const { id, agent, state } = composer;
-  return (
-    <div className="chat-input shrink-0 px-6 pt-1 pb-4">
-      <div className="mx-auto grid max-w-[820px] gap-2">
-        {state.banner && <ChatBanner app={app} sessionId={id} banner={state.banner} />}
-        {agent.prompt && <PromptCard app={app} sessionId={id} who={agent.who} prompt={agent.prompt} state={state} />}
-        {/* A child with no pane shows only the reason (ChildColumnView). A chair with none shows
-            only its log, and Continue chat starts a new chat from its summary (ADR 0083). */}
-        {agent.who && agent.unreachable ? (
-          <p className="text-xs text-muted-foreground" data-testid="composer-status">
-            {agent.disabled}
-          </p>
-        ) : agent.unreachable ? (
-          <div className="flex justify-center">
-            <Button variant="outline" size="sm" data-testid="continue-chat" onClick={() => app.life.openSwitchModel(id)}>
-              Continue chat
-            </Button>
-          </div>
-        ) : (
-          <ComposerBox key={id} app={app} composer={composer} />
-        )}
-      </div>
-    </div>
-  );
-}
-
-function ChatBanner({ app, sessionId, banner }: { app: App; sessionId: string; banner: Banner }) {
-  return (
-    <div role="alert" data-testid="chat-banner" className="flex items-start gap-2 rounded-lg border border-failed/40 bg-failed/10 px-3 py-2 text-sm">
-      <TriangleAlertIcon className="mt-0.5 size-4 shrink-0 text-failed" />
-      <span className="flex-1 font-mono text-xs leading-5 break-words whitespace-pre-wrap">{banner.text}</span>
-      <Button variant="outline" size="sm" onClick={banner.retry}>
-        Retry
-      </Button>
-      <Button variant="ghost" size="sm" onClick={() => app.dismissBanner(sessionId)}>
-        Dismiss
-      </Button>
-    </div>
-  );
-}
-
-/** An agent's question, one button per choice in the CLI's words (ADR 0029). Nothing is picked
- *  for the owner. While the card has focus, 1 to 9 pick a choice, as in the CLI. `sessionId` is the
- *  chat id, and `who` the child agent's id (null for the chair). */
-export function PromptCard({
-  app,
-  sessionId,
-  who,
-  prompt,
-  state,
-  showColumn,
-}: {
-  app: App;
-  sessionId: string;
-  who: string | null;
-  prompt: Prompt;
-  state: Input;
-  showColumn?: () => void;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-  const busy = state.answering?.prompt === prompt.id ? state.answering.choice : null;
-  // The composer cannot send while the question is open, so the card takes its focus. The chair's
-  // card also takes the keyboard when nothing has it. A child's question takes it from nothing
-  // else, so it never moves the owner out of the chat or out of another pane.
-  useEffect(() => {
-    const a = document.activeElement;
-    const own = a?.matches('[data-testid="composer"]') && ref.current?.closest(".chat-input")?.contains(a);
-    if (own || (!who && (!a || a === document.body))) ref.current?.focus();
-  }, [prompt.id]);
-  const pick = (i: number) => void app.answer(sessionId, prompt, i);
-  const onKeyDown = (e: React.KeyboardEvent) => {
-    if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey || !/^[1-9]$/.test(e.key)) return;
-    const i = Number(e.key) - 1;
-    if (i >= prompt.choices.length) return;
-    e.preventDefault();
-    pick(i);
-  };
-  return (
-    <div
-      ref={ref}
-      tabIndex={0}
-      data-testid="prompt-card"
-      aria-label={`${who ?? "The chair"} is waiting: ${prompt.question}`}
-      className="grid gap-2 rounded-lg border border-waiting/40 bg-waiting/10 p-3 outline-none focus-visible:ring-1 focus-visible:ring-ring"
-      onKeyDown={onKeyDown}
-    >
-      <div className="flex items-center gap-1.5 text-xs font-semibold text-waiting">
-        <CircleHelpIcon className="size-3.5" />
-        <span className="flex-1">{who ?? "The chair"} is waiting for you</span>
-        {showColumn && (
-          <button type="button" className="t-link font-normal" onClick={showColumn}>
-            Show column
-          </button>
-        )}
-      </div>
-      <div className="text-sm whitespace-pre-wrap select-text">{prompt.question}</div>
-      <div className="grid gap-1">
-        {prompt.choices.map((label, i) => (
-          <button
-            key={i}
-            type="button"
-            data-testid="prompt-choice"
-            disabled={busy !== null}
-            onClick={() => pick(i)}
-            className="flex items-start gap-2 rounded-md border border-border-strong bg-background px-2.5 py-1.5 text-left text-sm hover:bg-hover disabled:opacity-60"
-          >
-            <span className="font-mono text-muted-foreground tabular-nums">{i + 1}</span>
-            <span className="flex-1 whitespace-pre-wrap">{label}</span>
-            {busy === i && <LoaderCircleIcon className="size-3.5 animate-spin" />}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
+export function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
   const { id: sessionId, agent: chair, state, sendKey } = composer;
   // "the chair" means nothing to a new owner, so the chat's own agent is named.
   const target = chair.who ?? (chair.provider ? `the ${chair.provider} agent` : "the agent");

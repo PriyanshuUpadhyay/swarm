@@ -9,15 +9,80 @@ use swarm::view::{
 };
 #[test]
 fn field_defaults_and_unknown_names() {
+    assert_eq!(RowFieldLists::default().project, ["title", "status"]);
     assert_eq!(
         RowFieldLists::default().workspace,
         ["status", "title", "branch", "children", "age", "steps"]
     );
+    assert_eq!(RowFieldLists::default().chat, ["status", "title", "unread"]);
+    assert_eq!(RowFieldLists::default().tab, ["status", "title", "unread"]);
     let fields: RowFieldLists =
         serde_json::from_value(json!({"chat":["title","future","cost"],"tab":[]})).unwrap();
     assert_eq!(fields.chat, ["title", "cost"]);
     assert!(fields.tab.is_empty());
     assert_eq!(fields.project, RowFieldLists::default().project);
+}
+#[test]
+fn field_old_bundled_lists_load_as_current_defaults() {
+    let fields: RowFieldLists = serde_json::from_value(json!({
+        "chat": ["status", "title", "age", "steps", "children", "unread", "tokens"],
+        "tab": ["status", "title", "provider", "unread", "tokens"]
+    }))
+    .unwrap();
+    assert_eq!(fields, RowFieldLists::default());
+    assert_eq!(fields.chat, ["status", "title", "unread"]);
+    assert_eq!(fields.tab, ["status", "title", "unread"]);
+}
+#[test]
+fn field_defaults_keep_unread_for_recent_rows_and_tabs() {
+    let t = tree();
+    let o = owner();
+    let c = t.chats().next().unwrap();
+    let mut state = ViewState::default();
+    state.last_seen.insert(c.key.clone(), c.last_activity - 1);
+    let context = fields::chat_context(c, &state, 100, None, None);
+    for list in [&o.fields.chat, &o.fields.tab] {
+        assert!(context.values(list).iter().any(|f| f.field == "unread"));
+    }
+}
+#[test]
+fn field_custom_lists_keep_order_and_optional_fields() {
+    let saved = json!({
+        "project": ["status", "title"],
+        "workspace": [],
+        "chat": ["title", "status", "tokens"],
+        "tab": ["title", "status", "provider", "unread", "tokens"]
+    });
+    let fields: RowFieldLists = serde_json::from_value(saved.clone()).unwrap();
+    assert_eq!(serde_json::to_value(&fields).unwrap(), saved);
+    assert_eq!(fields.chat, ["title", "status", "tokens"]);
+    assert_eq!(
+        fields.tab,
+        ["title", "status", "provider", "unread", "tokens"]
+    );
+}
+#[test]
+fn field_serialization_writes_only_lists_that_differ_from_defaults() {
+    let mut fields = RowFieldLists::default();
+    assert_eq!(serde_json::to_value(&fields).unwrap(), json!({}));
+    for surface in ["project", "workspace", "chat", "tab"] {
+        let list = match surface {
+            "project" => &mut fields.project,
+            "workspace" => &mut fields.workspace,
+            "chat" => &mut fields.chat,
+            _ => &mut fields.tab,
+        };
+        list.clear();
+        let saved = serde_json::to_value(&fields).unwrap();
+        assert_eq!(saved, json!({surface: []}));
+        assert_eq!(
+            serde_json::from_value::<RowFieldLists>(saved).unwrap(),
+            fields
+        );
+        fields = RowFieldLists::default();
+    }
+    let owner = swarm::view::choices::OwnerChoices::default();
+    assert_eq!(serde_json::to_value(owner).unwrap()["fields"], json!({}));
 }
 #[test]
 fn agent_keys_order_and_currency_cost() {

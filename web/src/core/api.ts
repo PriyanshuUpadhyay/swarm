@@ -101,7 +101,7 @@ export type Row = {
   ends_turn?: boolean;
   starts_turn?: boolean;
   arrives_mid_turn?: boolean;
-  /** Bookkeeping or injected text: one closed line that opens to the whole row. */
+  /** The server marks rows hidden by the CLI; the chat skips them. */
   collapsed?: boolean;
   output?: TextPreview;
   fold?: FoldSummary;

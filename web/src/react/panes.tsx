@@ -11,7 +11,7 @@ import { attachCommand, chatWidth, columns, columnWidth, midTurn, saveSplit, spl
 import { Button } from "../components/ui/button";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuLabel, ContextMenuTrigger } from "../components/ui/context-menu";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "../components/ui/dialog";
-import { PromptCard } from "./composer";
+import { PromptCard } from "./prompt-card";
 import { copyText } from "./copy";
 import { showError } from "./errors";
 import { StatusGlyph } from "./status";

@@ -4,7 +4,7 @@
 import type { Agent, Row, Session } from "./api";
 
 /** `swarm agents --json` `prompt`: a question on the agent's screen (ADR 0029). */
-export type Prompt = { id: string; question: string; choices: string[] };
+export type Prompt = { id: string; question: string; choices: string[]; details?: string[] };
 
 export type SendKey = "return" | "commandReturn";
 
