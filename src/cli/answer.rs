@@ -18,7 +18,13 @@ pub(crate) fn answer(
         let choice: usize = choice
             .parse()
             .map_err(|_| format!("swarm: choice {choice:?} is not a number"))?;
-        let pane = swarm::store::require_pane(connection, &session_id()?, agent_id)?;
+        let session = session_id()?;
+        let pane = swarm::store::require_pane(connection, &session, agent_id)?;
+        let agent = swarm::store::agents(connection, &session)?
+            .into_iter()
+            .find(|agent| agent.id == *agent_id)
+            .ok_or("swarm: unknown agent")?;
+        let provider = swarm::store::provider_of(connection, &session, agent_id)?;
         let adapter = swarm::adapter::load(root, &adapter_name())?;
         // One answer per pane at a time, so the chair's card and the column's card cannot mix
         // their keys. The lock ends with this process.
@@ -29,9 +35,12 @@ pub(crate) fn answer(
         let read = || {
             let pane = [("pane", pane.as_str())];
             let screen = adapter.screen(&pane, std::time::Duration::from_secs(1))?;
-            swarm::screen::whole_prompt(&screen, || {
-                adapter.capture_within(&pane, std::time::Duration::from_secs(1))
-            })
+            swarm::screen::agent_prompt(
+                provider.as_deref(),
+                &screen,
+                || adapter.capture_within(&pane, std::time::Duration::from_secs(1)),
+                agent.log.as_deref().map(std::path::Path::new),
+            )
         };
         let prompt = read().ok_or(format!("swarm: {agent_id} shows no question now"))?;
         if prompt.id != *prompt_id {

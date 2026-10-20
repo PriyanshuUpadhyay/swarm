@@ -110,7 +110,10 @@ pub(crate) fn list_agents_from(
                         return (None, None);
                     };
                     let host = host_record_of(adapter, provider, pane, seen_work);
-                    (read_screen(adapter, pane, provider), host)
+                    (
+                        read_screen(adapter, pane, provider, row.log.as_deref()),
+                        host,
+                    )
                 })
             })
             .collect();

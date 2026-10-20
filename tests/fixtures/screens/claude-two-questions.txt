@@ -1,0 +1,24 @@
+
+ ▐▛███▛█   Claude Code v2.1.304
+▝▜██████▀  Sonnet 5.5 with high effort · Claude Max
+ ▝▝   ▝▝   ~/work/swarm/wt/cli-mirror/.herdr/workers
+
+
+❯ Use the AskUserQuestion tool once with two questions. Question 1 header
+  "Color": which color, options Red and Blue. Question 2 header "Size": which
+  size, options Small and Large. Do nothing else and do not read any files.
+────────────────────────────────────────────────────────────────────────────────
+←  ☐ Color  ☐ Size  ✔ Submit  →
+
+Which color?
+
+❯ 1. Red
+     Red
+  2. Blue
+     Blue
+  3. Type something.
+────────────────────────────────────────────────────────────────────────────────
+  4. Chat about this
+
+Enter to select · Tab/Arrow keys to navigate · Esc to cancel
+─────────────────────────────────────────────────────────────────── probe-ask1 ─

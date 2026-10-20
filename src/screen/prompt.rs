@@ -19,7 +19,7 @@ pub struct Prompt {
 
 /// Rows that end a choice list on every prompt seen: Claude permission and AskUserQuestion,
 /// Codex approval and folder trust, AGY folder trust and ask_question (tests/fixtures/screens).
-const PROMPT_FOOTERS: &[&str] = &[
+pub(super) const PROMPT_FOOTERS: &[&str] = &[
     "esc to cancel",
     "press enter to confirm",
     "enter continue",
@@ -28,12 +28,12 @@ const PROMPT_FOOTERS: &[&str] = &[
     "enter confirm",
     "tab amend",
 ];
-const CURSORS: &[char] = &['❯', '›', '>'];
+pub(super) const CURSORS: &[char] = &['❯', '›', '>'];
 /// Rows the question does not reach past: a history entry's marker.
 const HISTORY: &[char] = &['❯', '›', '>', '•', '⏺', '●', '↳', '✻', '▸'];
 
 /// A numbered choice's number, label, and label column, as in `❯ 1. Yes` or `  2. No`.
-fn numbered_choice(line: &str) -> Option<(usize, &str, usize)> {
+pub(super) fn numbered_choice(line: &str) -> Option<(usize, &str, usize)> {
     let rest = line.trim_start().trim_start_matches(CURSORS).trim_start();
     let digits = rest.chars().take_while(char::is_ascii_digit).count();
     let after = rest[digits..].strip_prefix(". ")?.trim_start();
@@ -47,7 +47,7 @@ fn indent(line: &str) -> usize {
 }
 
 /// How many status rows a live prompt's footer can have below it, such as AGY's mode line.
-const ROWS_BELOW_FOOTER: usize = 2;
+pub(super) const ROWS_BELOW_FOOTER: usize = 2;
 
 /// The prompt a pane's screen shows: at least two choices with only blank rows between the last
 /// one and a known footer row near the bottom. Numbered choices run 1, 2, … and may have a
@@ -201,21 +201,26 @@ fn prompt_above(lines: &[&str], footer: usize) -> Option<Prompt> {
     }
     question.reverse();
     let question = question.join("\n");
-    // FNV-1a: stable across builds, so a listing and a later answer agree.
-    let id = std::iter::once(question.as_str())
-        .chain(choices.iter().map(String::as_str))
-        .flat_map(|part| part.bytes().chain([0]))
-        .fold(0xcbf29ce484222325_u64, |hash, byte| {
-            (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3)
-        });
+    let id = prompt_id(&question, &choices);
     Some(Prompt {
         question,
         choices,
         numbered,
         cursor,
-        id: format!("{id:016x}"),
+        id,
         cut: !bounded,
     })
+}
+
+pub(super) fn prompt_id(question: &str, choices: &[String]) -> String {
+    // FNV-1a: stable across builds, so a listing and a later answer agree.
+    let id = std::iter::once(question)
+        .chain(choices.iter().map(String::as_str))
+        .flat_map(|part| part.bytes().chain([0]))
+        .fold(0xcbf29ce484222325_u64, |hash, byte| {
+            (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3)
+        });
+    format!("{id:016x}")
 }
 
 impl Prompt {
