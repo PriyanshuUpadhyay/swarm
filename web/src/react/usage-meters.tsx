@@ -49,7 +49,7 @@ function RefreshButton({ app, provider, now }: { app: App; provider: string; now
       disabled={refreshing !== null || wait > 0}
       onClick={() => void app.settings.refreshUsage(provider)}
     >
-      <RefreshCwIcon className={refreshing === provider ? "animate-spin" : undefined} />
+      <RefreshCwIcon className={refreshing === provider ? "animate-spin motion-reduce:animate-none" : undefined} />
     </Button>
   );
 }
