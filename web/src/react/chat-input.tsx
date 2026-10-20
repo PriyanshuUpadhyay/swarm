@@ -34,9 +34,9 @@ export function ChatInput({ app, composer }: { app: App; composer: Composer }) {
 
 function ChatBanner({ app, sessionId, banner }: { app: App; sessionId: string; banner: Banner }) {
   return (
-    <div role="alert" data-testid="chat-banner" className="flex items-start gap-2 rounded-lg border border-failed/40 bg-failed/10 px-3 py-2 text-sm">
+    <div role="alert" data-testid="chat-banner" className="flex min-w-0 items-start gap-2 rounded-lg border border-failed/40 bg-failed/10 px-3 py-2 text-sm">
       <TriangleAlertIcon className="mt-0.5 size-4 shrink-0 text-failed" />
-      <span className="flex-1 font-mono text-xs leading-5 break-words whitespace-pre-wrap">{banner.text}</span>
+      <span className="min-w-0 flex-1 font-mono text-xs leading-5 break-words whitespace-pre-wrap">{banner.text}</span>
       <Button variant="outline" size="sm" onClick={banner.retry}>
         Retry
       </Button>

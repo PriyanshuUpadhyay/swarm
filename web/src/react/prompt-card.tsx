@@ -23,14 +23,14 @@ export function PromptCard({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const busy = state.answering?.prompt === prompt.id ? state.answering.choice : null;
-  // The composer cannot send while the question is open, so the card takes its focus. The chair's
-  // card also takes the keyboard when nothing has it. A child's question takes it from nothing
+  // A new question or asking agent takes focus from its own disabled composer. The chair's card
+  // also takes the keyboard when nothing has it. A child's question takes it from nothing
   // else, so it never moves the owner out of the chat or out of another pane.
   useEffect(() => {
     const a = document.activeElement;
     const own = a?.matches('[data-testid="composer"]') && ref.current?.closest(".chat-input")?.contains(a);
     if (own || (!who && (!a || a === document.body))) ref.current?.focus();
-  }, [prompt.id]);
+  }, [prompt.id, who]);
   // App state shows the answer's result, so this handler does not await the promise.
   const pick = (i: number) => void app.answer(sessionId, prompt, i);
   const onKeyDown = (e: React.KeyboardEvent) => {
@@ -44,6 +44,7 @@ export function PromptCard({
     <div
       ref={ref}
       tabIndex={0}
+      role="group"
       data-testid="prompt-card"
       aria-label={`${who ?? "The chair"} is waiting: ${prompt.question}`}
       className="grid gap-2 rounded-lg border border-waiting/40 bg-waiting/10 p-3 outline-none focus-visible:ring-1 focus-visible:ring-ring"
@@ -58,7 +59,7 @@ export function PromptCard({
           </button>
         )}
       </div>
-      <div className="text-sm whitespace-pre-wrap select-text">{prompt.question}</div>
+      <div className="min-w-0 text-sm break-words whitespace-pre-wrap select-text">{prompt.question}</div>
       <div className="grid gap-1">
         {prompt.choices.map((choice, i) => {
           const detail = prompt.details?.[i];
@@ -77,7 +78,7 @@ export function PromptCard({
                 <span className="block whitespace-pre-wrap">{choice}</span>
                 {detail && <span className="line-clamp-2 text-xs whitespace-pre-wrap text-muted-foreground">{detail}</span>}
               </span>
-              {busy === i && <LoaderCircleIcon className="size-3.5 animate-spin" />}
+              {busy === i && <LoaderCircleIcon className="size-3.5 animate-spin motion-reduce:animate-none" />}
             </button>
           );
         })}
