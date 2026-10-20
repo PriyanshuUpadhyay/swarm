@@ -123,6 +123,9 @@ struct Choice {
 }
 
 fn open_questions(path: &Path) -> Option<Vec<Question>> {
+    if !std::fs::metadata(path).ok()?.is_file() {
+        return None;
+    }
     let mut file = std::fs::File::open(path).ok()?;
     let metadata = file.metadata().ok()?;
     if !metadata.is_file() {

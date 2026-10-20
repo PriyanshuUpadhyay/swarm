@@ -156,6 +156,38 @@ fn fallback_reads_only_complete_questions_in_the_capped_log_tail() {
     std::fs::remove_dir_all(root).unwrap();
 }
 
+#[cfg(unix)]
+#[test]
+fn fallback_rejects_a_fifo_without_waiting_for_a_writer() {
+    let root = scratch();
+    let fifo = root.join("question.fifo");
+    assert!(
+        Command::new("mkfifo")
+            .arg(&fifo)
+            .status()
+            .unwrap()
+            .success()
+    );
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let path = fifo.clone();
+    let reader = std::thread::spawn(move || {
+        sender
+            .send(agent_prompt(Some("claude"), TALL, || None, Some(&path)))
+            .unwrap();
+    });
+    let result = receiver.recv_timeout(std::time::Duration::from_secs(1));
+    if result.is_err() {
+        // Release the blocked reader so a regression fails without hanging the test suite.
+        drop(std::fs::OpenOptions::new().write(true).open(&fifo).unwrap());
+    }
+    reader.join().unwrap();
+    std::fs::remove_dir_all(root).unwrap();
+    assert_eq!(
+        result.expect("a FIFO must be rejected before opening it"),
+        None
+    );
+}
+
 fn cli(home: &Path, session: &str, args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_swarm"))
         .env_clear()
