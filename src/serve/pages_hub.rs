@@ -4,6 +4,9 @@ use super::*;
 use sha2::{Digest, Sha256};
 use std::{fs, time::SystemTime};
 
+pub(super) const CSP: &str =
+    "sandbox allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads";
+
 #[derive(Debug)]
 pub(super) struct Published {
     pub(super) folder: String,
@@ -34,6 +37,7 @@ pub(super) fn publish(
     {
         return Err("swarm pages: date must have the form YYYY-MM-DD".into());
     }
+    refuse_link(source.components().as_path())?;
     let mut files = Vec::new();
     source_files(source, Path::new(""), true, &mut files)?;
     if !files
@@ -43,7 +47,7 @@ pub(super) fn publish(
         return Err("swarm pages: source needs a top index.html".into());
     }
     files.sort();
-    fs::create_dir_all(shelf).map_err(io_error)?;
+    prepare_shelf(shelf).map_err(io_error)?;
     let temporary = shelf.join(format!(".tmp-{}", uuid::Uuid::now_v7()));
     fs::create_dir(&temporary).map_err(io_error)?;
     let folder = format!("{date}-{slug}");
@@ -98,6 +102,15 @@ pub(super) fn publish(
         let _ = fs::remove_dir_all(&temporary);
     }
     result
+}
+
+pub(super) fn prepare_shelf(shelf: &Path) -> std::io::Result<()> {
+    use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
+    fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(shelf)?;
+    fs::set_permissions(shelf, fs::Permissions::from_mode(0o700))
 }
 
 fn io_error(error: std::io::Error) -> String {
@@ -159,10 +172,7 @@ async fn shelf(State(app): State<Shelf>, request: Request) -> Response {
     let (request, _) = request.into_parts();
     let mut response = shelf_response(&app, &request).await;
     for (name, value) in [
-        (
-            "content-security-policy",
-            "sandbox allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads",
-        ),
+        ("content-security-policy", CSP),
         ("x-content-type-options", "nosniff"),
         ("cache-control", "no-cache"),
         ("referrer-policy", "no-referrer"),
@@ -230,7 +240,7 @@ async fn shelf_response(app: &Shelf, request: &axum::http::request::Parts) -> Re
     let Ok(bytes) = tokio::fs::read(&file).await else {
         return StatusCode::NOT_FOUND.into_response();
     };
-    bytes_response(bytes, content_type(&file))
+    bytes_response(bytes, assets::content_type(&file))
 }
 
 fn decode_path(raw: &str) -> Option<String> {
@@ -284,22 +294,6 @@ fn bytes_response(bytes: Vec<u8>, content_type: &'static str) -> Response {
     response
 }
 
-fn content_type(path: &Path) -> &'static str {
-    // Keep the same media types as the serve/assets.rs static-file table.
-    match path.extension().and_then(|extension| extension.to_str()) {
-        Some("html") => "text/html; charset=utf-8",
-        Some("js" | "mjs") => "text/javascript; charset=utf-8",
-        Some("css") => "text/css; charset=utf-8",
-        Some("json") => "application/json",
-        Some("webmanifest") => "application/manifest+json",
-        Some("svg") => "image/svg+xml",
-        Some("png") => "image/png",
-        Some("ico") => "image/x-icon",
-        Some("woff2") => "font/woff2",
-        _ => "application/octet-stream",
-    }
-}
-
 async fn index(root: &Path) -> String {
     let mut rows = Vec::new();
     if let Ok(mut entries) = tokio::fs::read_dir(root).await {
@@ -319,9 +313,10 @@ async fn index(root: &Path) -> String {
             let Some(file) = safe_path(root, &format!("{name}/index.html")).await else {
                 continue;
             };
-            let Ok(html) = tokio::fs::read_to_string(file).await else {
+            let Ok(bytes) = tokio::fs::read(file).await else {
                 continue;
             };
+            let html = String::from_utf8_lossy(&bytes);
             let lower = html.to_ascii_lowercase();
             let title = lower
                 .find("<title>")

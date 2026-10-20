@@ -192,6 +192,28 @@ async fn files_head_and_percent_decoding() {
     );
 }
 
+#[test]
+fn shared_content_type_preserves_existing_types() {
+    for (name, expected) in [
+        ("index.html", "text/html; charset=utf-8"),
+        ("main.js", "text/javascript; charset=utf-8"),
+        ("main.mjs", "text/javascript; charset=utf-8"),
+        ("style.css", "text/css; charset=utf-8"),
+        ("data.json", "application/json"),
+        ("app.webmanifest", "application/manifest+json"),
+        ("icon.svg", "image/svg+xml"),
+        ("image.png", "image/png"),
+        ("favicon.ico", "image/x-icon"),
+        ("font.woff2", "font/woff2"),
+        ("unknown", "application/octet-stream"),
+    ] {
+        assert_eq!(
+            super::super::assets::content_type(Path::new(name)),
+            expected
+        );
+    }
+}
+
 #[tokio::test]
 async fn index_newest_first_escapes_titles_and_names() {
     let fixture = Fixture::new();
@@ -222,7 +244,52 @@ async fn index_newest_first_escapes_titles_and_names() {
     assert!(html.contains("2026-10-21-a&amp;b"));
     assert!(!html.contains("<img"));
     assert!(!html.contains("Hidden"));
-    assert!(html.contains("1970") || html.contains("20"));
+    for (name, seconds) in [("2026-10-21-new", 20), ("2026-10-20-old", 10)] {
+        assert!(html.contains(&format!(
+            "<a href=\"/{name}/\">{name}</a> <time>{seconds} seconds since 1970-01-01 UTC</time>"
+        )));
+    }
+}
+
+#[tokio::test]
+async fn index_includes_pages_with_non_utf8_html() {
+    let fixture = Fixture::new();
+    let page = fixture.page("2026-10-21-latin1", "");
+    fs::write(page.join("index.html"), b"<title>Caf\xe9</title>").unwrap();
+    let html = body(fixture.get("/").await).await;
+    assert!(html.contains("<li>Caf\u{fffd} <a href=\"/2026-10-21-latin1/\">2026-10-21-latin1</a>"));
+}
+
+#[test]
+fn publish_refuses_a_symlinked_source_root_without_copying() {
+    let fixture = Fixture::new();
+    let source = fixture.page("source", "page");
+    let link = fixture.0.join("linked-source");
+    symlink(&source, &link).unwrap();
+    let shelf = fixture.0.join("shelf");
+    for source in [&link, &link.join("")] {
+        let result = publish(&shelf, source, "page", "2026-10-21");
+        assert_eq!(result.unwrap_err(), link_error(&link));
+        assert!(!shelf.exists());
+    }
+}
+
+#[test]
+fn publish_makes_new_and_existing_shelves_private() {
+    use std::os::unix::fs::PermissionsExt;
+    let fixture = Fixture::new();
+    let source = fixture.page("source", "page");
+    let shelf = fixture.0.join("pages");
+    for existing in [false, true] {
+        if existing {
+            fs::set_permissions(&shelf, fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        publish(&shelf, &source, "page", "2026-10-21").unwrap();
+        assert_eq!(
+            fs::metadata(&shelf).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+    }
 }
 
 #[test]

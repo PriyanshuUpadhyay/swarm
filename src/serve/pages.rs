@@ -175,6 +175,7 @@ fn commit_line(head: &str, status: &str) -> Option<String> {
 fn source_commit(source: &Path) -> Option<String> {
     let git = |args: &[&str]| {
         let output = Process::new("git")
+            .arg("--no-optional-locks")
             .arg("-C")
             .arg(source)
             .args(args)
@@ -208,9 +209,15 @@ fn folders(shelf: &Path) -> Result<Vec<String>> {
         let Ok(name) = entry.file_name().into_string() else {
             continue;
         };
-        let metadata = fs::symlink_metadata(entry.path())?;
-        if name.starts_with('.')
-            || !metadata.is_dir()
+        if name.starts_with('.') {
+            continue;
+        }
+        let metadata = match fs::symlink_metadata(entry.path()) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(error.into()),
+        };
+        if !metadata.is_dir()
             || !fs::symlink_metadata(entry.path().join("index.html"))
                 .is_ok_and(|file| file.is_file())
         {
@@ -223,7 +230,7 @@ fn folders(shelf: &Path) -> Result<Vec<String>> {
 }
 
 fn foreground(root: &Path, record: &Path, port: u16) -> Result<()> {
-    fs::create_dir_all(root.join("pages"))?;
+    pages_hub::prepare_shelf(&root.join("pages"))?;
     let listener = std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, port)).map_err(
         |error| -> Box<dyn std::error::Error> {
             if error.kind() == std::io::ErrorKind::AddrInUse {
@@ -262,8 +269,9 @@ fn answers(url: &str, deadline: Instant) -> bool {
                 .filter(|left| !left.is_zero())
         };
         let mut stream = std::net::TcpStream::connect_timeout(&address, remaining()?).ok()?;
-        let request =
-            format!("GET / HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n");
+        let request = format!(
+            "GET /.swarm-pages-probe HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n"
+        );
         let mut bytes = request.as_bytes();
         while !bytes.is_empty() {
             stream.set_write_timeout(Some(remaining()?)).ok()?;
@@ -273,16 +281,26 @@ fn answers(url: &str, deadline: Instant) -> bool {
             }
             bytes = &bytes[written..];
         }
-        let mut status = Vec::new();
-        while status.len() < 128 {
+        let mut headers = Vec::new();
+        while headers.len() < 8192 {
             stream.set_read_timeout(Some(remaining()?)).ok()?;
             let mut byte = [0];
             stream.read_exact(&mut byte).ok()?;
-            status.push(byte[0]);
-            if byte[0] == b'\n' {
-                return (status.starts_with(b"HTTP/1.1 200 ")
-                    || status.starts_with(b"HTTP/1.0 200 "))
-                .then_some(());
+            headers.push(byte[0]);
+            if headers.ends_with(b"\r\n\r\n") {
+                let headers = std::str::from_utf8(&headers).ok()?;
+                let mut lines = headers.split("\r\n");
+                let status = lines.next()?;
+                if !status.starts_with("HTTP/1.1 ") && !status.starts_with("HTTP/1.0 ") {
+                    return None;
+                }
+                return lines
+                    .filter_map(|line| line.split_once(':'))
+                    .any(|(name, value)| {
+                        name.eq_ignore_ascii_case("content-security-policy")
+                            && value.trim() == pages_hub::CSP
+                    })
+                    .then_some(());
             }
         }
         None

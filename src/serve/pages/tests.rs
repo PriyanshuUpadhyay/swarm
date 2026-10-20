@@ -159,3 +159,46 @@ fn pages_list_shows_only_page_folders_newest_first() {
     assert!(folders(&root.join("missing")).unwrap().is_empty());
     fs::remove_dir_all(root).unwrap();
 }
+
+fn probe_reply(response: &str) -> (bool, String) {
+    let listener = std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let response = response.to_owned();
+    let server = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(2)))
+            .unwrap();
+        let mut request = Vec::new();
+        while !request.ends_with(b"\r\n\r\n") {
+            let mut byte = [0];
+            stream.read_exact(&mut byte).unwrap();
+            request.push(byte[0]);
+        }
+        stream.write_all(response.as_bytes()).unwrap();
+        String::from_utf8(request).unwrap()
+    });
+    let accepted = answers(&format!("http://127.0.0.1:{port}/"), Instant::now() + WAIT);
+    (accepted, server.join().unwrap())
+}
+
+#[test]
+fn pages_probe_refuses_http_200_without_shelf_csp() {
+    let (accepted, _) = probe_reply("HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n");
+    assert!(!accepted, "HTTP 200 without the shelf CSP must be refused");
+}
+
+#[test]
+fn pages_probe_accepts_exact_shelf_csp_on_a_cheap_path() {
+    const CSP: &str = "sandbox allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads";
+    for status in ["200 OK", "404 Not Found"] {
+        let (accepted, request) = probe_reply(&format!(
+            "HTTP/1.1 {status}\r\nContent-Security-Policy: {CSP}\r\nContent-Length: 0\r\n\r\n"
+        ));
+        assert!(accepted, "the exact shelf CSP must be accepted ({status})");
+        assert!(request.starts_with("GET /.swarm-pages-probe HTTP/1.1\r\n"));
+    }
+    let (accepted, _) =
+        probe_reply("HTTP/1.1 200 OK\r\nContent-Security-Policy: sandbox allow-scripts\r\n\r\n");
+    assert!(!accepted, "a different sandbox policy must be refused");
+}
