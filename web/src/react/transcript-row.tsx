@@ -44,7 +44,6 @@ function RowBody(ctx: Ctx) {
   const { row } = line;
   if (row.kind === "fold") return <FoldLine app={app} line={line} />;
   if (row.tool) return <ToolCard {...ctx} />;
-  if (row.collapsed) return <Collapsed {...ctx} />;
   if (row.kind === "divider")
     return (
       <div className="divider">
@@ -230,20 +229,6 @@ function CommandChip({ row }: { row: Row }) {
       )}
       {chip.output?.text && <div className="truncate text-xs text-muted-foreground">{chip.output.text}</div>}
     </div>
-  );
-}
-
-/** A collapsed row: one closed line, which opens to the whole row. */
-function Collapsed({ app, line, full }: Ctx) {
-  const { row } = line;
-  const text = row.text.trim();
-  const title = text.split("\n", 1)[0] || row.system_kind || row.kind;
-  if (!row.output?.text && !text.includes("\n"))
-    return <div className="quiet">{title}</div>;
-  return (
-    <Disclosure app={app} line={line} title={title} mono>
-      <OutputBox app={app} preview={row.output ?? textPreview(row)} full={full} title={row.system_kind === "record" ? "Record" : "Text"} />
-    </Disclosure>
   );
 }
 
