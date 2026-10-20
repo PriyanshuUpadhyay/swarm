@@ -4,7 +4,7 @@
 #   swarm-<version>/libexec/transcript           the row tool that `swarm serve` runs
 #   swarm-<version>/libexec/SwarmNotify.app      the notice helper (ADR 0077)
 #   swarm-<version>/libexec/SwarmHUD.app         the notch usage HUD (ADR 0087)
-#   swarm-<version>/libexec/Swarm.app            the full-screen window that `swarm ui` opens
+#   swarm-<version>/libexec/Swarm.app            the window that `swarm ui` opens
 #   swarm-<version>/libexec/skills               the plugin swarm (kit/)
 #   swarm-<version>/libexec/NOTICE               third-party notices: the web UI's, then the HUD mascots'
 set -euo pipefail

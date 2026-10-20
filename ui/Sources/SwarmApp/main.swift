@@ -1,4 +1,4 @@
-// SwarmApp: Swarm.app's executable, one full-screen window with one WKWebView on the `swarm ui`
+// SwarmApp: Swarm.app's executable, one window with one WKWebView on the `swarm ui`
 // server. `swarm ui` starts it with `open -a Swarm.app --args <url>`; when it already runs, that
 // `open` only activates it and its window comes to the front. A copy at another path, such as the
 // one of a newer Homebrew version, starts a second process, which closes the older one.
@@ -15,7 +15,6 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKUIDelega
     /// full-screen window never covers that row; macOS leaves it black.
     var strip: NSPanel?
     var stripColor: NSKeyValueObservation?
-    var startedFullScreen = false
 
     init(url: URL?) {
         self.url = url
@@ -48,14 +47,6 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKUIDelega
             webView.loadHTMLString("<p style=\"font: 13px -apple-system; padding: 16px\">Run <code>swarm ui</code> to open Swarm.</p>", baseURL: nil)
         }
         NSApp.activate()
-    }
-
-    /// Full screen needs the active app. macOS may refuse the activation of a launch from a process
-    /// in the background, so the window goes full screen at the first activation, not at launch.
-    func applicationDidBecomeActive(_ notification: Notification) {
-        guard !startedFullScreen else { return }
-        startedFullScreen = true
-        window.toggleFullScreen(nil)
     }
 
     /// `open` on the running app: show the window, also when it is minimized.

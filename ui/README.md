@@ -7,8 +7,8 @@ swarm ships as one Homebrew formula (ADR 0079). The web UI is inside the `swarm`
 `bin/swarm`. `swarm` starts it for a notice, and it exits when idle.
 
 `SwarmApp` is the window that `swarm ui` opens. It ships at `libexec/Swarm.app`, shows the page
-in one WKWebView, starts in full screen, and paints the camera row above the full-screen window in
-the page's background colour. `swarm ui` opens it with `open -a`, so a running app only comes to the
+in one WKWebView in a normal window, and in full screen (⌃⌘F) paints the camera row above the window
+in the page's background colour. `swarm ui` opens it with `open -a`, so a running app only comes to the
 front. `SWARM_APP` points `swarm ui` at another build of the app. Its icon is the HUD's Deno guest;
 `make package` draws it with `SwarmHUD --app-icon <dir.iconset>` and `iconutil`. It has no Dock badge.
 
