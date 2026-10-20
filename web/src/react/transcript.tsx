@@ -5,7 +5,7 @@ import { PROMPT_JUMP, type App, type Pane, type Reader } from "../core/app";
 import { promptIndex, type Line } from "../core/transcript";
 import { ContextMenu, ContextMenuTrigger } from "../components/ui/context-menu";
 import { Kbd } from "../components/ui/kbd";
-import { ChatInput } from "./composer";
+import { ChatInput } from "./chat-input";
 import { copyText } from "./copy";
 import { SourcePopover, TranscriptMenu, type Source } from "./transcript-overlays";
 import { setSplit } from "./transcript-output";
