@@ -33,10 +33,24 @@ fn a_missing_listing_keeps_the_last_live_prompt_until_a_new_listing() {
         .unwrap();
     swarm::store::set_pane(&connection, &fixture.session, "worker", "pane").unwrap();
     swarm::store::set_provider(&connection, &fixture.session, "worker", "claude").unwrap();
+    let state_at = discovery::now();
+    swarm::store::set_state(
+        &connection,
+        &fixture.session,
+        "worker",
+        "working",
+        "hook",
+        None,
+        None,
+        state_at,
+    )
+    .unwrap();
     let mut previous = BTreeMap::new();
     let listings = all_agent_listings(&mut connection, root, Duration::from_secs(2)).unwrap();
     let first = agent_snapshot(&connection, &listings, &mut previous);
     assert_eq!(first[&fixture.session][0]["alive"], true);
+    assert_eq!(first[&fixture.session][0]["state"], "working");
+    assert_eq!(first[&fixture.session][0]["state_at_s"], state_at);
     assert_eq!(
         first[&fixture.session][0]["prompt"]["question"],
         "☐ Color\nWhich color do you prefer?"
@@ -76,6 +90,7 @@ fn a_session_without_a_good_listing_keeps_reading_stored_agents() {
 fn cached_waiting_worker() -> (Fixture, rusqlite::Connection, BTreeMap<String, Value>) {
     let fixture = Fixture::new();
     let connection = swarm::store::open(&fixture.app.root.join("swarm.db")).unwrap();
+    swarm::store::set_pane(&connection, &fixture.session, "worker", "pane").unwrap();
     swarm::store::set_state(
         &connection,
         &fixture.session,
@@ -116,7 +131,7 @@ fn a_missed_listing_shows_new_agents_and_drops_removed_agents() {
 }
 
 #[test]
-fn a_missed_listing_keeps_hook_changes_and_live_prompt() {
+fn a_missed_listing_keeps_hook_changes_and_drops_the_old_prompt() {
     let (fixture, connection, mut previous) = cached_waiting_worker();
     swarm::store::set_state(
         &connection,
@@ -135,7 +150,67 @@ fn a_missed_listing_keeps_hook_changes_and_live_prompt() {
     assert_eq!(row["state_kind"], "permission");
     assert_eq!(row["state_at_s"], 200);
     assert_eq!(row["alive"], true);
-    assert_eq!(row["prompt"]["id"], "old-prompt");
+    assert!(row["prompt"].is_null());
+}
+
+#[test]
+fn a_degraded_listing_drops_cached_observations_after_every_pane_is_cleared() {
+    let (fixture, mut connection, mut previous) = cached_waiting_worker();
+    swarm::store::clear_pane(&connection, &fixture.session, "worker").unwrap();
+    let adapter = swarm::adapter::parse(
+        "fake",
+        "self = true\nspawn = true\nring = true\nlist = true\nclose = true\ncapture = true\n",
+    )
+    .unwrap();
+    let listing = crate::cli::list_agents_from(
+        &mut connection,
+        &fixture.app.root,
+        &fixture.session,
+        &adapter,
+        Some(String::new()),
+    )
+    .unwrap();
+    assert!(listing.agents.iter().all(|agent| agent.alive.is_none()));
+    let listings = BTreeMap::from([(fixture.session.clone(), listing)]);
+    let snapshot = agent_snapshot(&connection, &listings, &mut previous);
+    let stored = stored_agents(&connection, &fixture.session).unwrap();
+    assert_eq!(snapshot[&fixture.session][0]["alive"], stored[0]["alive"]);
+    assert!(snapshot[&fixture.session][0]["prompt"].is_null());
+}
+
+#[test]
+fn a_missed_listing_drops_cached_observations_for_a_replaced_pane() {
+    let (fixture, connection, mut previous) = cached_waiting_worker();
+    swarm::store::set_pane(&connection, &fixture.session, "worker", "new-pane").unwrap();
+    let snapshot = agent_snapshot(&connection, &BTreeMap::new(), &mut previous);
+    assert_eq!(snapshot[&fixture.session][0]["pane"], "new-pane");
+    assert!(snapshot[&fixture.session][0]["alive"].is_null());
+    assert!(snapshot[&fixture.session][0]["prompt"].is_null());
+}
+
+#[test]
+fn a_missed_listing_keeps_the_resolved_state_when_the_stored_timestamp_is_unchanged() {
+    let (fixture, connection, mut previous) = cached_waiting_worker();
+    swarm::store::set_state(
+        &connection,
+        &fixture.session,
+        "worker",
+        "working",
+        "hook",
+        None,
+        None,
+        100,
+    )
+    .unwrap();
+    let stored = stored_agents(&connection, &fixture.session).unwrap();
+    assert_eq!(stored[0]["state"], "working");
+    assert_eq!(stored[0]["state_at_s"], 100);
+    assert_eq!(previous[&fixture.session][0]["state"], "waiting");
+    assert_eq!(previous[&fixture.session][0]["state_at_s"], 100);
+    let snapshot = agent_snapshot(&connection, &BTreeMap::new(), &mut previous);
+    assert_eq!(snapshot[&fixture.session][0]["state"], "waiting");
+    assert_eq!(snapshot[&fixture.session][0]["prompt"]["id"], "old-prompt");
+    assert_eq!(snapshot[&fixture.session][0]["alive"], true);
 }
 
 #[test]

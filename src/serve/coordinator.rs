@@ -120,10 +120,13 @@ fn agent_snapshot(
                         && let Some(agents) = rows.as_array_mut()
                     {
                         for agent in agents {
-                            if let Some(old) = previous.iter().find(|old| old["id"] == agent["id"])
-                            {
+                            if let Some(old) = previous.iter().find(|old| {
+                                old["id"] == agent["id"] && old["pane"] == agent["pane"]
+                            }) {
                                 agent["alive"] = old["alive"].clone();
-                                if agent["state"] == "waiting" {
+                                // A resolved listing state can differ from the stored hook state.
+                                if agent["state_at_s"] == old["state_at_s"] {
+                                    agent["state"] = old["state"].clone();
                                     agent["prompt"] = old["prompt"].clone();
                                 }
                             }
