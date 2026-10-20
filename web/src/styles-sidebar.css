@@ -1,0 +1,460 @@
+
+/* Sidebar tree rows in jean's look: full-width rows, muted until hovered, and the open row marked by
+   a brand tint with a 3px brand bar. Plain elements; one menu, tooltip and hover card serve the list
+   (decision 3). A row is one line, or two when steps or a chat's children start a second
+   (SidebarRowView.lines). */
+.trow {
+  position: relative;
+  user-select: none;
+  padding-right: 6px;
+  cursor: default;
+  white-space: nowrap;
+  outline: none;
+  color: var(--muted-foreground);
+  transition: background-color 0.15s, color 0.15s;
+}
+.trow .tline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  min-width: 0;
+}
+.trow .tline.sub {
+  height: 18px;
+  margin-top: -5px;
+  padding-bottom: 3px;
+}
+.trow:hover {
+  background: var(--hover);
+  color: var(--foreground);
+}
+.trow .label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+.trow .fld {
+  flex: none;
+  font-size: 11px;
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+.trow .fld.title,
+.trow .fld.branch {
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.trow .fld.link:hover {
+  color: var(--foreground);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+/* Hovering a row swaps its age (marked .swap) for per-status counts. */
+.trow .fld.counts {
+  display: none;
+  gap: 6px;
+}
+.trow:hover .fld.counts {
+  display: inline-flex;
+}
+.trow:hover .fld.swap {
+  display: none;
+}
+.trow[data-dimmed] .label,
+.trow[data-dimmed] .fld,
+.trow[data-dimmed] .glyph {
+  opacity: 0.6;
+}
+.trow .chev {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  color: var(--faint-foreground);
+  transition: transform 0.1s;
+}
+.trow .chev[data-open="true"] {
+  transform: rotate(90deg);
+}
+.trow .chev[data-action]:hover {
+  color: var(--foreground);
+}
+.trow .grip,
+.trow .row-btn {
+  display: none;
+}
+.trow .grip {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  color: var(--faint-foreground);
+}
+.trow:hover .grip,
+.trow:hover .row-btn,
+.trow[aria-current="true"] .row-btn {
+  display: inline-grid;
+}
+.trow .row-btn {
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  flex: none;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted-foreground);
+}
+.trow .row-btn:hover {
+  background: var(--selected);
+  color: var(--foreground);
+}
+.trow .row-btn svg {
+  width: 12px;
+  height: 12px;
+}
+.trow.head {
+  margin-top: 6px;
+  padding-left: 8px;
+  font-size: 13px;
+  color: var(--foreground);
+}
+.trow.head:first-child {
+  margin-top: 0;
+}
+.trow.head .chev {
+  opacity: 0;
+}
+.trow.head:hover .chev,
+.trow.head[aria-expanded="false"] .chev {
+  opacity: 1;
+}
+/* jean's project avatar: the first letter on a small tile. */
+.avatar {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  flex: none;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--muted-foreground) 20%, transparent);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+}
+.avatar-icon {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  color: var(--muted-foreground);
+}
+/* The open chat is marked; the keyboard row shows only while the list has focus. */
+.trow[aria-current="true"] {
+  background: color-mix(in srgb, var(--brand) 10%, transparent);
+  color: var(--foreground);
+}
+.trow[aria-current="true"]::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--brand);
+}
+/* Chats picked with ⌘-click or Shift-click stay marked when the list loses focus. */
+.trow[data-marked],
+[data-testid="sidebar"]:focus-within .trow[aria-selected="true"]:not([aria-current="true"]) {
+  background: var(--selected);
+  color: var(--foreground);
+}
+.trow:focus-visible,
+.trow[data-menu="true"],
+.trow[data-over="true"],
+.pin-zone[data-over="true"] {
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+.pin-zone {
+  margin: 0 6px 6px;
+  padding: 6px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-md);
+  text-align: center;
+  font-size: 11px;
+  color: var(--muted-foreground);
+}
+.unread {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--status-working);
+}
+
+/* Sidebar header: jean's search field and its Projects / Recent switch. */
+.search-box {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 26px;
+  margin: 0 4px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: transparent;
+  font-size: 12px;
+  /* Muted, not faint: an enabled label needs 4.5:1 in both themes. */
+  color: var(--muted-foreground);
+}
+.search-box:hover {
+  color: var(--foreground);
+  border-color: var(--border-strong);
+}
+.search-box svg {
+  width: 13px;
+  height: 13px;
+  flex: none;
+}
+.view-switch {
+  display: flex;
+  flex: none;
+  margin: 0 8px 6px;
+  padding: 2px;
+  border-radius: var(--radius-md);
+  background: var(--hover);
+}
+.view-switch button {
+  flex: 1;
+  height: 24px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+.view-switch button:hover {
+  color: var(--foreground);
+}
+.view-switch button[aria-selected="true"],
+.view-switch button[aria-checked="true"] {
+  background: var(--selected);
+  color: var(--foreground);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.12);
+}
+
+/* The usage meters in the sidebar footer (S5): one line per window. */
+.usage-meters {
+  display: grid;
+  flex: none;
+  gap: 4px;
+  padding: 6px 10px 8px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+}
+.meter-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 16px;
+}
+.meter-line[data-old] {
+  opacity: 0.6;
+}
+.meter-window {
+  width: 20px;
+  flex: none;
+  color: var(--muted-foreground);
+}
+.meter-bar {
+  position: relative;
+  flex: 1;
+  min-width: 24px;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--selected);
+}
+.meter-bar > span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 2px;
+}
+
+/* A switch on a native checkbox, so the browser keeps its keys and its form role. */
+.toggle {
+  appearance: none;
+  position: relative;
+  flex: none;
+  width: 28px;
+  height: 16px;
+  border-radius: 8px;
+  background: var(--border-strong);
+  transition: background-color 120ms;
+}
+.toggle::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 6px;
+  background: var(--background);
+  transition: transform 120ms;
+}
+.toggle:checked {
+  background: var(--brand);
+}
+.toggle:checked::after {
+  transform: translateX(12px);
+}
+.toggle:focus-visible {
+  outline: 1px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* jean's Recent rows: two lines, the open one raised as a card. */
+.recent-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 4px;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-lg);
+  color: var(--muted-foreground);
+  cursor: default;
+  outline: none;
+  transition: background-color 0.15s, border-color 0.15s;
+}
+.recent-row:hover {
+  background: var(--hover);
+}
+.recent-row[aria-current="true"] {
+  border-color: var(--border-strong);
+  background: var(--selected);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.15);
+}
+[data-testid="recent"]:focus-within .recent-row[aria-selected="true"],
+.recent-row:focus-visible {
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+
+/* Chat tabs in jean's look: flat cells with a hairline between them; the open one filled. */
+.tab-bar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  height: 36px;
+  padding-right: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.tab-title {
+  flex: none;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 10px 0 14px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--foreground);
+}
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  min-width: 120px;
+  max-width: 220px;
+  padding: 0 6px 0 12px;
+  border-right: 1px solid color-mix(in srgb, var(--border-strong) 60%, transparent);
+  font-size: 12px;
+  color: var(--muted-foreground);
+  cursor: default;
+  white-space: nowrap;
+  transition: background-color 0.15s, color 0.15s;
+}
+.tab:first-child {
+  border-left: 1px solid color-mix(in srgb, var(--border-strong) 60%, transparent);
+}
+.tab:hover {
+  background: var(--hover);
+  color: var(--foreground);
+}
+.tab[aria-selected="true"] {
+  background: var(--selected);
+  color: var(--foreground);
+}
+.tab .label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tab .fld {
+  flex: none;
+  font-size: 11px;
+  color: var(--muted-foreground);
+}
+.tab .glyph {
+  width: 11px;
+  height: 11px;
+}
+.tab-close {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  flex: none;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--faint-foreground);
+  opacity: 0;
+}
+.tab:hover .tab-close,
+.tab[aria-selected="true"] .tab-close,
+.tab-close:focus-visible {
+  opacity: 0.7;
+}
+.tab-close:hover {
+  background: var(--hover);
+  color: var(--foreground);
+  opacity: 1;
+}
+
+/* Status glyph: shape and colour, so colour is never the only signal. */
+.glyph {
+  width: 12px;
+  height: 12px;
+  flex: none;
+}
+.glyph.working {
+  color: var(--status-working);
+}
+.glyph.waiting {
+  color: var(--status-waiting);
+}
+.glyph.failed {
+  color: var(--status-failed);
+}
+.glyph.done {
+  color: var(--status-done);
+}
+.glyph.ended {
+  color: var(--status-ended);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .glyph.working {
+    animation: spin 1.1s linear infinite;
+  }
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
