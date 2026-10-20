@@ -34,7 +34,14 @@ pub(crate) fn list_agents(
 pub(crate) fn read_pane_list(
     adapter: &swarm::adapter::Adapter,
 ) -> Result<Option<String>, Box<dyn std::error::Error>> {
-    match adapter.run("list", &[]) {
+    pane_list_result(adapter, adapter.run("list", &[]))
+}
+
+fn pane_list_result(
+    adapter: &swarm::adapter::Adapter,
+    result: Result<String, Box<dyn std::error::Error>>,
+) -> Result<Option<String>, Box<dyn std::error::Error>> {
+    match result {
         Ok(listing) => Ok(Some(listing)),
         Err(error) => {
             adapter.check_deadline()?;
@@ -298,8 +305,10 @@ pub(crate) fn all_agent_listings(
         session.adapter.as_deref().expect("filtered adapter").trim()
     }
     // Every shipped adapter's `list` names all panes, not one session's, so it runs once per
-    // adapter, with the env of the first session that uses it. An Err leaves those sessions out.
+    // adapter, with the env of the first session that uses it. A load error or expired deadline
+    // leaves those sessions out.
     let mut pane_lists: Vec<(&str, Result<Option<String>, String>)> = Vec::new();
+    let mut failed_pane_lists = std::collections::HashSet::new();
     for session in &sessions {
         if !pane_lists
             .iter()
@@ -320,7 +329,11 @@ pub(crate) fn all_agent_listings(
                 let now = std::time::Instant::now();
                 adapter.deadline =
                     Some(now + deadline.saturating_duration_since(now) / (adapters - index) as u32);
-                read_pane_list(&adapter)
+                let result = adapter.run("list", &[]);
+                if result.is_err() {
+                    failed_pane_lists.insert(name.to_string());
+                }
+                pane_list_result(&adapter, result)
             })
             .map_err(|error| error.to_string());
     }
@@ -332,7 +345,7 @@ pub(crate) fn all_agent_listings(
             .1
     };
     // Only a session with a live pane reads its screen, so only those share the time left. A
-    // session whose panes are unknown counts as live.
+    // session whose panes are unknown counts as live; a failed pane list reads no screen.
     let mut live = Vec::with_capacity(sessions.len());
     for session in &sessions {
         let rows = swarm::store::agents(connection, &session.id)?;
@@ -342,7 +355,8 @@ pub(crate) fn all_agent_listings(
                     .as_deref()
                     .is_some_and(|pane| swarm::adapter::listing_has_pane(panes, pane))
             }),
-            _ => true,
+            Ok(None) => !failed_pane_lists.contains(adapter_of(session)),
+            Err(_) => false,
         });
     }
     for (index, session) in sessions.iter().enumerate() {

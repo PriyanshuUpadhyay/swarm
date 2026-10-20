@@ -6,6 +6,69 @@ mod cases {
     use super::*;
     use crate::cli::test_support::*;
 
+    #[test]
+    fn batch_failed_pane_lists_do_not_share_the_live_sessions_budget() {
+        let root = std::env::temp_dir().join(format!(
+            "swarm-batch-failed-list-share-{}",
+            uuid::Uuid::now_v7()
+        ));
+        std::fs::create_dir_all(root.join("adapters")).unwrap();
+        for (name, list, screen) in [
+            (
+                "live",
+                "printf pane",
+                "sleep 0.2; printf '{\"result\":{\"agent\":{\"agent_status\":\"idle\"}}}'",
+            ),
+            ("failed", "false", "true"),
+        ] {
+            std::fs::write(
+                root.join("adapters").join(format!("{name}.conf")),
+                format!(
+                    "self = true\nspawn = true\nring = true\nlist = {list}\nclose = true\ncapture = true\nscreen = {screen}\n"
+                ),
+            )
+            .unwrap();
+        }
+        let mut connection = swarm::store::open(&root.join("swarm.db")).unwrap();
+        let mut ids = Vec::new();
+        // The live session runs first and needs more than an even share of the budget.
+        for index in 0..50 {
+            let adapter = if index == 0 { "live" } else { "failed" };
+            let session =
+                swarm::store::create_session(&connection, "lane", &root, None, Some(adapter))
+                    .unwrap();
+            swarm::store::add_agent(&connection, &session, CODER, "code").unwrap();
+            swarm::store::set_pane(&connection, &session, CODER, "pane").unwrap();
+            connection
+                .execute(
+                    "UPDATE session SET created_at = ?1 WHERE id = ?2",
+                    rusqlite::params![100 - index, session],
+                )
+                .unwrap();
+            ids.push(session);
+        }
+        let listings = all_agent_listings(
+            &mut connection,
+            &root,
+            std::time::Duration::from_millis(900),
+        )
+        .unwrap();
+        let listed = listings
+            .get(&ids[0])
+            .expect("live session must not time out");
+        assert_eq!(listed.agents[0].alive, Some(true));
+        assert_eq!(listings.len(), ids.len());
+        for id in &ids[1..] {
+            assert_eq!(listings[id].agents[0].alive, None);
+            assert!(listings[id].agents[0].prompt.is_none());
+        }
+        // A single-session listing still falls back to unknown liveness on adapter failure.
+        let adapter = swarm::adapter::load(&root, "failed").unwrap();
+        let listed = list_agents(&mut connection, &root, &ids[1], &adapter).unwrap();
+        assert_eq!(listed.agents[0].alive, None);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     /// A listing reads every unarchived session, and a restarted tmux or Herdr server can give a
     /// stored pane id to another pane. So the listing sends a report only while the adapter lists
     /// the chair's pane.

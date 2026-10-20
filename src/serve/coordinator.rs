@@ -16,6 +16,7 @@ pub(super) fn start_coordinator(app: &App, action_queue: mpsc::Receiver<ActionJo
         };
         drop(app);
         let mut last_tree = None;
+        let mut last_listings = BTreeMap::new();
         loop {
             let Some(app) = weak.upgrade() else {
                 break;
@@ -27,23 +28,7 @@ pub(super) fn start_coordinator(app: &App, action_queue: mpsc::Receiver<ActionJo
             match super::all_agent_listings(&mut connection, &app.root, Duration::from_millis(900))
             {
                 Ok(listings) => {
-                    let mut agents = BTreeMap::new();
-                    // Sessions without a pane adapter still expose their stored agents.
-                    if let Ok(sessions) = swarm::store::sessions(&connection) {
-                        for session in sessions {
-                            let rows = listings
-                                .get(&session.id)
-                                .map(|listing| {
-                                    serde_json::to_value(&listing.agents)
-                                        .map_err(|err| Box::new(err) as Box<dyn std::error::Error>)
-                                })
-                                .unwrap_or_else(|| stored_agents(&connection, &session.id));
-                            if let Ok(rows) = rows {
-                                agents.insert(session.id, rows);
-                            }
-                        }
-                    }
-                    let value = json!(agents);
+                    let value = agent_snapshot(&connection, &listings, &mut last_listings);
                     let mut hub = app.hub.lock().unwrap();
                     if hub.agents != value {
                         hub.agents = value;
@@ -108,6 +93,34 @@ pub(super) fn start_coordinator(app: &App, action_queue: mpsc::Receiver<ActionJo
     });
 }
 
+fn agent_snapshot(
+    connection: &rusqlite::Connection,
+    listings: &BTreeMap<String, crate::cli::AgentListOutput>,
+    last_listings: &mut BTreeMap<String, Value>,
+) -> Value {
+    let mut agents = BTreeMap::new();
+    // A failed listing keeps the last pane state. Stored-only rows must stay fresh.
+    if let Ok(sessions) = swarm::store::sessions(connection) {
+        for session in sessions {
+            let rows = if let Some(listing) = listings.get(&session.id) {
+                serde_json::to_value(&listing.agents)
+                    .inspect(|rows| {
+                        last_listings.insert(session.id.clone(), rows.clone());
+                    })
+                    .map_err(|err| Box::new(err) as Box<dyn std::error::Error>)
+            } else if let Some(rows) = last_listings.get(&session.id) {
+                Ok(rows.clone())
+            } else {
+                stored_agents(connection, &session.id)
+            };
+            if let Ok(rows) = rows {
+                agents.insert(session.id, rows);
+            }
+        }
+    }
+    json!(agents)
+}
+
 pub(super) fn stored_agents(
     connection: &rusqlite::Connection,
     session: &str,
@@ -140,3 +153,7 @@ pub(super) fn stored_agents(
         .collect();
     Ok(serde_json::to_value(agents)?)
 }
+
+#[cfg(test)]
+#[path = "coordinator/tests.rs"]
+mod tests;
