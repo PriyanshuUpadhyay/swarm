@@ -39,7 +39,14 @@ pub fn agent_prompt(
         let mut details: Vec<String> = question
             .options
             .into_iter()
-            .map(|option| option.description.unwrap_or_default().trim().to_string())
+            .map(|option| {
+                option
+                    .description
+                    .as_str()
+                    .unwrap_or_default()
+                    .trim()
+                    .to_string()
+            })
             .collect();
         details.extend([String::new(), String::new()]);
         let id = prompt_id(&question.question, &choices);
@@ -127,7 +134,8 @@ struct Question {
 #[derive(serde::Deserialize)]
 struct Choice {
     label: String,
-    description: Option<String>,
+    #[serde(default)]
+    description: serde_json::Value,
 }
 
 fn open_questions(path: &Path) -> Option<Vec<Question>> {

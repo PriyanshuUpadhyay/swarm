@@ -120,6 +120,71 @@ fn fallback_keeps_null_descriptions_plain() {
 }
 
 #[test]
+fn fallback_keeps_non_string_descriptions_plain() {
+    let root = scratch();
+    let log = root.join("question.jsonl");
+    std::fs::write(&log, LOG).unwrap();
+    let read = || agent_prompt(Some("claude"), TALL, || None, Some(&log));
+    let original = read().unwrap();
+    let mut expected = serde_json::to_value(&original).unwrap();
+    expected["details"][0] = "".into();
+    for description in [
+        serde_json::json!(5),
+        serde_json::json!(["a"]),
+        serde_json::json!({}),
+        serde_json::json!(true),
+    ] {
+        let mut record: serde_json::Value = serde_json::from_str(LOG).unwrap();
+        record["message"]["content"][0]["input"]["questions"][0]["options"][0]["description"] =
+            description.clone();
+        std::fs::write(&log, format!("{record}\n")).unwrap();
+        let found = read().expect("a non-string description must leave the prompt readable");
+        assert_eq!(
+            serde_json::to_value(found).unwrap(),
+            expected,
+            "{description}"
+        );
+    }
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn fallback_rejects_missing_or_non_string_question_and_labels() {
+    let root = scratch();
+    let log = root.join("question.jsonl");
+    for field in ["question", "label"] {
+        for value in [
+            None,
+            Some(serde_json::Value::Null),
+            Some(serde_json::json!(5)),
+            Some(serde_json::json!(["a"])),
+            Some(serde_json::json!({})),
+            Some(serde_json::json!(true)),
+        ] {
+            let mut record: serde_json::Value = serde_json::from_str(LOG).unwrap();
+            let question = &mut record["message"]["content"][0]["input"]["questions"][0];
+            let object = if field == "question" {
+                question.as_object_mut().unwrap()
+            } else {
+                question["options"][0].as_object_mut().unwrap()
+            };
+            if let Some(value) = &value {
+                object.insert(field.into(), value.clone());
+            } else {
+                object.remove(field);
+            }
+            std::fs::write(&log, format!("{record}\n")).unwrap();
+            assert_eq!(
+                agent_prompt(Some("claude"), TALL, || None, Some(&log)),
+                None,
+                "{field} = {value:?}"
+            );
+        }
+    }
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn fallback_keeps_whitespace_descriptions_plain() {
     let root = scratch();
     let log = root.join("question.jsonl");
