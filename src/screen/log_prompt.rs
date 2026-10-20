@@ -37,9 +37,10 @@ pub fn agent_prompt(
             return None;
         }
         for (choice, option) in choices.iter_mut().zip(question.options) {
-            if !option.description.is_empty() {
+            let description = option.description.as_deref().unwrap_or_default().trim();
+            if !description.is_empty() {
                 choice.push('\n');
-                choice.push_str(&option.description);
+                choice.push_str(description);
             }
         }
         let id = prompt_id(&question.question, &choices);
@@ -126,8 +127,7 @@ struct Question {
 #[derive(serde::Deserialize)]
 struct Choice {
     label: String,
-    #[serde(default)]
-    description: String,
+    description: Option<String>,
 }
 
 fn open_questions(path: &Path) -> Option<Vec<Question>> {

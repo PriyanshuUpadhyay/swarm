@@ -64,7 +64,7 @@ fn fallback_keeps_empty_descriptions_plain_and_preserves_description_lines() {
         .unwrap();
     options[0].as_object_mut().unwrap().remove("description");
     options[1]["description"] = "".into();
-    options[2]["description"] = "Fix all findings.\nRun the full retest.".into();
+    options[2]["description"] = " \tFix all findings.\nRun the full retest.\n".into();
     std::fs::write(&log, format!("{record}\n")).unwrap();
     let read = || agent_prompt(Some("claude"), TALL, || None, Some(&log)).unwrap();
     let found = read();
@@ -82,6 +82,33 @@ fn fallback_keeps_empty_descriptions_plain_and_preserves_description_lines() {
         "A different description.".into();
     std::fs::write(&log, format!("{record}\n")).unwrap();
     assert_ne!(read().id, found.id);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn fallback_keeps_null_descriptions_plain() {
+    let root = scratch();
+    let log = root.join("question.jsonl");
+    let mut record: serde_json::Value = serde_json::from_str(LOG).unwrap();
+    record["message"]["content"][0]["input"]["questions"][0]["options"][0]["description"] =
+        serde_json::Value::Null;
+    std::fs::write(&log, format!("{record}\n")).unwrap();
+    let found = agent_prompt(Some("claude"), TALL, || None, Some(&log))
+        .expect("a null description must leave the prompt readable");
+    assert_eq!(found.choices[0], "Release on the planned date");
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn fallback_keeps_whitespace_descriptions_plain() {
+    let root = scratch();
+    let log = root.join("question.jsonl");
+    let mut record: serde_json::Value = serde_json::from_str(LOG).unwrap();
+    record["message"]["content"][0]["input"]["questions"][0]["options"][0]["description"] =
+        " \t\n".into();
+    std::fs::write(&log, format!("{record}\n")).unwrap();
+    let found = agent_prompt(Some("claude"), TALL, || None, Some(&log)).unwrap();
+    assert_eq!(found.choices[0], "Release on the planned date");
     std::fs::remove_dir_all(root).unwrap();
 }
 
