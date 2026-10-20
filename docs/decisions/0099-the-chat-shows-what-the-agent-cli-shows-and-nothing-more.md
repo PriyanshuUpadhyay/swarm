@@ -1,9 +1,10 @@
 ---
-status: proposed
+status: accepted
 date: 2026-10-20
 deciders: [user]
 related: ["0021", "0070"]
 informed-by:
+  - 'owner, 2026-10-20: accepted at cli-mirror close ("accept al")'
   - 'owner, 2026-10-19: chose option 1 ("1 ofc"), the chat mirrors what the CLI shows, transformed; an embedded terminal was rejected'
   - 'owner, 2026-10-20: approved plan tmp/plan/2026-10-20-cli-mirror/plan.md (round 1, approved, no notes)'
   - 'commit c8f67c6e (2026-10-19): every log record with no row of its own became a collapsed row; no ADR'
