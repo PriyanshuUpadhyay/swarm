@@ -99,19 +99,38 @@ fn agent_snapshot(
     last_listings: &mut BTreeMap<String, Value>,
 ) -> Value {
     let mut agents = BTreeMap::new();
-    // A failed listing keeps the last pane state. Stored-only rows must stay fresh.
+    // A failed listing keeps pane observations, while stored membership and state stay fresh.
     if let Ok(sessions) = swarm::store::sessions(connection) {
+        let current: std::collections::BTreeSet<_> =
+            sessions.iter().map(|session| session.id.as_str()).collect();
+        last_listings.retain(|id, _| current.contains(id.as_str()));
         for session in sessions {
-            let rows = if let Some(listing) = listings.get(&session.id) {
+            let rows = if let Some(listing) = listings
+                .get(&session.id)
+                .filter(|listing| listing.agents.iter().any(|agent| agent.alive.is_some()))
+            {
                 serde_json::to_value(&listing.agents)
                     .inspect(|rows| {
                         last_listings.insert(session.id.clone(), rows.clone());
                     })
                     .map_err(|err| Box::new(err) as Box<dyn std::error::Error>)
-            } else if let Some(rows) = last_listings.get(&session.id) {
-                Ok(rows.clone())
             } else {
-                stored_agents(connection, &session.id)
+                stored_agents(connection, &session.id).map(|mut rows| {
+                    if let Some(previous) = last_listings.get(&session.id).and_then(Value::as_array)
+                        && let Some(agents) = rows.as_array_mut()
+                    {
+                        for agent in agents {
+                            if let Some(old) = previous.iter().find(|old| old["id"] == agent["id"])
+                            {
+                                agent["alive"] = old["alive"].clone();
+                                if agent["state"] == "waiting" {
+                                    agent["prompt"] = old["prompt"].clone();
+                                }
+                            }
+                        }
+                    }
+                    rows
+                })
             };
             if let Ok(rows) = rows {
                 agents.insert(session.id, rows);

@@ -72,3 +72,123 @@ fn a_session_without_a_good_listing_keeps_reading_stored_agents() {
     assert_eq!(next[&fixture.session].as_array().unwrap().len(), 2);
     assert!(previous.is_empty());
 }
+
+fn cached_waiting_worker() -> (Fixture, rusqlite::Connection, BTreeMap<String, Value>) {
+    let fixture = Fixture::new();
+    let connection = swarm::store::open(&fixture.app.root.join("swarm.db")).unwrap();
+    swarm::store::set_state(
+        &connection,
+        &fixture.session,
+        "worker",
+        "waiting",
+        "hook",
+        Some("Choose"),
+        None,
+        100,
+    )
+    .unwrap();
+    let mut rows = stored_agents(&connection, &fixture.session).unwrap();
+    rows[0]["alive"] = json!(true);
+    rows[0]["prompt"] = json!({"question":"Choose", "id":"old-prompt"});
+    let previous = BTreeMap::from([(fixture.session.clone(), rows)]);
+    (fixture, connection, previous)
+}
+
+#[test]
+fn a_missed_listing_shows_new_agents_and_drops_removed_agents() {
+    let (fixture, connection, mut previous) = cached_waiting_worker();
+    swarm::store::add_agent(&connection, &fixture.session, "new-worker", "code").unwrap();
+    let snapshot = agent_snapshot(&connection, &BTreeMap::new(), &mut previous);
+    let rows = snapshot[&fixture.session].as_array().unwrap();
+    assert_eq!(rows.len(), 2);
+    let new = rows.iter().find(|row| row["id"] == "new-worker").unwrap();
+    assert!(new["alive"].is_null());
+    assert!(new["prompt"].is_null());
+    connection
+        .execute(
+            "DELETE FROM agent WHERE session_id = ?1 AND id = 'worker'",
+            [&fixture.session],
+        )
+        .unwrap();
+    let snapshot = agent_snapshot(&connection, &BTreeMap::new(), &mut previous);
+    assert_eq!(snapshot[&fixture.session].as_array().unwrap().len(), 1);
+    assert_eq!(snapshot[&fixture.session][0]["id"], "new-worker");
+}
+
+#[test]
+fn a_missed_listing_keeps_hook_changes_and_live_prompt() {
+    let (fixture, connection, mut previous) = cached_waiting_worker();
+    swarm::store::set_state(
+        &connection,
+        &fixture.session,
+        "worker",
+        "waiting",
+        "hook",
+        Some("New detail"),
+        Some("permission"),
+        200,
+    )
+    .unwrap();
+    let snapshot = agent_snapshot(&connection, &BTreeMap::new(), &mut previous);
+    let row = &snapshot[&fixture.session][0];
+    assert_eq!(row["state_detail"], "New detail");
+    assert_eq!(row["state_kind"], "permission");
+    assert_eq!(row["state_at_s"], 200);
+    assert_eq!(row["alive"], true);
+    assert_eq!(row["prompt"]["id"], "old-prompt");
+}
+
+#[test]
+fn a_degraded_listing_keeps_the_last_good_prompt_and_cache() {
+    let (fixture, mut connection, mut previous) = cached_waiting_worker();
+    let adapter = swarm::adapter::parse(
+        "fake",
+        "self = true\nspawn = true\nring = true\nlist = false\nclose = true\ncapture = true\n",
+    )
+    .unwrap();
+    let listing = crate::cli::list_agents_from(
+        &mut connection,
+        &fixture.app.root,
+        &fixture.session,
+        &adapter,
+        None,
+    )
+    .unwrap();
+    assert!(listing.agents.iter().all(|agent| agent.alive.is_none()));
+    let listings = BTreeMap::from([(fixture.session.clone(), listing)]);
+    let good = previous.clone();
+    let snapshot = agent_snapshot(&connection, &listings, &mut previous);
+    assert_eq!(snapshot[&fixture.session][0]["prompt"]["id"], "old-prompt");
+    assert_eq!(snapshot[&fixture.session][0]["alive"], true);
+    assert_eq!(previous, good);
+}
+
+#[test]
+fn an_answered_stored_state_drops_a_cached_prompt() {
+    let (fixture, connection, mut previous) = cached_waiting_worker();
+    swarm::store::set_state(
+        &connection,
+        &fixture.session,
+        "worker",
+        "working",
+        "hook",
+        None,
+        None,
+        200,
+    )
+    .unwrap();
+    let snapshot = agent_snapshot(&connection, &BTreeMap::new(), &mut previous);
+    assert_eq!(snapshot[&fixture.session][0]["state"], "working");
+    assert!(snapshot[&fixture.session][0]["prompt"].is_null());
+    assert_eq!(snapshot[&fixture.session][0]["alive"], true);
+}
+
+#[test]
+fn a_session_no_longer_listed_by_the_store_drops_its_cached_rows() {
+    let (fixture, mut connection, mut previous) = cached_waiting_worker();
+    swarm::store::archive_sessions(&mut connection, std::slice::from_ref(&fixture.session))
+        .unwrap();
+    let snapshot = agent_snapshot(&connection, &BTreeMap::new(), &mut previous);
+    assert!(snapshot.get(&fixture.session).is_none());
+    assert!(previous.is_empty());
+}
