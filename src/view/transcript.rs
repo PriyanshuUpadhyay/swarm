@@ -188,8 +188,8 @@ impl Row {
         parts.join("\n")
     }
 }
-/// A log record with no row of its own: an ignored or unknown line, or bookkeeping that the view
-/// reads elsewhere. It shows as a collapsed row that opens to the whole record.
+/// A log record for an ignored or unknown line, or bookkeeping that the view reads elsewhere.
+/// The server keeps its collapsed row; the web skips it in the transcript and search (ADR 0099).
 fn is_record(event: &Value) -> bool {
     matches!(
         string(event, "type"),
