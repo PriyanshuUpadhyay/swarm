@@ -26,8 +26,8 @@ impl Default for RowFieldLists {
         Self {
             project: list(&["title", "status"]),
             workspace: list(&["status", "title", "branch", "children", "age", "steps"]),
-            chat: list(&["status", "title"]),
-            tab: list(&["status", "title"]),
+            chat: list(&["status", "title", "unread"]),
+            tab: list(&["status", "title", "unread"]),
         }
     }
 }

@@ -35,8 +35,8 @@ Chosen: the first option, because the owner works in the chat and the CLI alread
 person needs to see. The server keeps marking the rows the CLI hides (`collapsed`), and the web does
 not draw them or find them. A question keeps the screen as proof that a choice list is live; when
 the screen lost the top of a Claude question, the open AskUserQuestion in the agent's log fills in
-the text and options, a named gap under ADR 0070. Sidebar chat rows and tabs show the status glyph
-and title by default; other fields stay available as choices.
+the text and options, a named gap under ADR 0070. Sidebar chat rows and tabs show the status
+glyph, title, and unread dot by default; other fields stay available as choices.
 
 ### Consequences
 
