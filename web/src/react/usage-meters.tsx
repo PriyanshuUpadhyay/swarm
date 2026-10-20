@@ -45,6 +45,7 @@ function RefreshButton({ app, provider, now }: { app: App; provider: string; now
       size="icon-sm"
       data-testid={`usage-refresh-${provider}`}
       aria-label={name}
+      aria-busy={refreshing === provider}
       title={wait > 0 ? `Next refresh in ${waitText(wait)}` : name}
       disabled={refreshing !== null || wait > 0}
       onClick={() => void app.settings.refreshUsage(provider)}
@@ -114,10 +115,11 @@ export function UsageMeters({ app }: { app: App }) {
 }
 
 function Wait({ app, provider, now }: { app: App; provider: string; now: number }) {
+  const refreshing = useSettings(app, "refreshing") === provider;
   const wait = useWait(app, provider, now);
-  return wait ? (
+  return refreshing || wait ? (
     <span className="text-faint-foreground tabular-nums" data-testid={`usage-wait-${provider}`}>
-      next {wait}
+      {refreshing ? "refreshing…" : `next ${wait}`}
     </span>
   ) : null;
 }

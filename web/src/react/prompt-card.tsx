@@ -23,14 +23,14 @@ export function PromptCard({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const busy = state.answering?.prompt === prompt.id ? state.answering.choice : null;
-  // A new question or asking agent takes focus from its own disabled composer. The chair's card
+  // A new chat, question, or asking agent takes focus from its own disabled composer. The chair's card
   // also takes the keyboard when nothing has it. A child's question takes it from nothing
   // else, so it never moves the owner out of the chat or out of another pane.
   useEffect(() => {
     const a = document.activeElement;
     const own = a?.matches('[data-testid="composer"]') && ref.current?.closest(".chat-input")?.contains(a);
     if (own || (!who && (!a || a === document.body))) ref.current?.focus();
-  }, [prompt.id, who]);
+  }, [sessionId, prompt.id, who]);
   // App state shows the answer's result, so this handler does not await the promise.
   const pick = (i: number) => void app.answer(sessionId, prompt, i);
   const onKeyDown = (e: React.KeyboardEvent) => {
@@ -71,7 +71,7 @@ export function PromptCard({
               title={detail ? `${choice}\n${detail}` : choice}
               disabled={busy !== null}
               onClick={() => pick(i)}
-              className="flex items-start gap-2 rounded-md border border-border-strong bg-background px-2.5 py-1.5 text-left text-sm hover:bg-hover disabled:opacity-60"
+              className="flex min-w-0 items-start gap-2 rounded-md border border-border-strong bg-background px-2.5 py-1.5 text-left text-sm hover:bg-hover disabled:opacity-60"
             >
               <span className="font-mono text-muted-foreground tabular-nums">{i + 1}</span>
               <span className="min-w-0 flex-1 break-words">

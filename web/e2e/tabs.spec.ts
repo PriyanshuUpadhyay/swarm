@@ -59,7 +59,9 @@ test("Rename chat prefills the title of a tab-only chat", async ({ page: tab }, 
     await tab.goto(`${server().origin}/${server().hash}`);
     await tab.waitForFunction(() => window.__swarmReady === true);
     const workspace = tab.locator('[data-testid="tree-row"][data-kind="workspace"]').filter({ hasText: "ws-tabs" });
+    const selected = tab.waitForResponse((r) => r.url().endsWith("/api/choices") && r.request().postDataJSON().op === "selected_chat" && r.request().postDataJSON().chat !== null);
     await workspace.click();
+    expect((await selected).status()).toBe(200);
     await expect(tab.getByTestId("tab")).toHaveCount(2);
     const workspaceId = (await workspace.getAttribute("data-id"))!;
     const session = (await tab.getByTestId("tab").nth(1).getAttribute("data-session"))!;
