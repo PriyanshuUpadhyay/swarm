@@ -1,5 +1,5 @@
 # Implement test output cases and helpers.
-from implement_test_support import *
+from test_implement_run_support import *
 
 
 def test_impact_closed_stdout(repo, env, folder):

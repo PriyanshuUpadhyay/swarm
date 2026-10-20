@@ -8,16 +8,16 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # python3 -I does not add the script's folder
 import step_run  # noqa: E402
 
-from step_test_support import *
-from step_test_commands import *
-from step_test_todos import *
-from step_test_build import *
+from test_step_run_support import *
+from test_step_run_commands import *
+from test_step_run_todos import *
+from test_step_run_build import *
 
 
 def test_explicit_text_encoding():
     import ast
-    for name in ("test_step_run.py", "step_test_support.py", "step_test_commands.py",
-                 "step_test_todos.py", "step_test_build.py"):
+    for name in ("test_step_run.py", "test_step_run_support.py", "test_step_run_commands.py",
+                 "test_step_run_todos.py", "test_step_run_build.py"):
         tree = ast.parse(Path(__file__).with_name(name).read_text(encoding="utf-8"))
         missing = [node.lineno for node in ast.walk(tree) if isinstance(node, ast.Call)
                    and isinstance(node.func, ast.Attribute) and node.func.attr in ("read_text", "write_text", "open")

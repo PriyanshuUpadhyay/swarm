@@ -1,5 +1,5 @@
 # Implement test start cases and helpers.
-from implement_test_support import *
+from test_implement_run_support import *
 
 
 def test_installed_kit_paths(tmp):
