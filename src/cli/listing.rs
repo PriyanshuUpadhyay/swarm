@@ -311,7 +311,6 @@ pub(crate) fn all_agent_listings(
     // adapter, with the env of the first session that uses it. A load error or expired deadline
     // leaves those sessions out.
     let mut pane_lists: Vec<(&str, Result<Option<String>, String>)> = Vec::new();
-    let mut failed_pane_lists = std::collections::HashSet::new();
     for session in &sessions {
         if !pane_lists
             .iter()
@@ -333,9 +332,6 @@ pub(crate) fn all_agent_listings(
                 adapter.deadline =
                     Some(now + deadline.saturating_duration_since(now) / (adapters - index) as u32);
                 let result = adapter.run("list", &[]);
-                if result.is_err() {
-                    failed_pane_lists.insert(name.to_string());
-                }
                 pane_list_result(&adapter, result)
             })
             .map_err(|error| error.to_string());
@@ -347,8 +343,8 @@ pub(crate) fn all_agent_listings(
             .expect("listed adapter")
             .1
     };
-    // Only a session with a live pane reads its screen, so only those share the time left. A
-    // session whose panes are unknown counts as live; a failed pane list reads no screen.
+    // Only a session with a live pane reads its screen, so only those share the time left.
+    // A failed pane list reads no screen.
     let mut live = Vec::with_capacity(sessions.len());
     for session in &sessions {
         let rows = swarm::store::agents(connection, &session.id)?;
@@ -358,8 +354,7 @@ pub(crate) fn all_agent_listings(
                     .as_deref()
                     .is_some_and(|pane| swarm::adapter::listing_has_pane(panes, pane))
             }),
-            Ok(None) => !failed_pane_lists.contains(adapter_of(session)),
-            Err(_) => false,
+            Ok(None) | Err(_) => false,
         });
     }
     for (index, session) in sessions.iter().enumerate() {
