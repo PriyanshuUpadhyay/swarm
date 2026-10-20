@@ -42,7 +42,18 @@ pub fn agent_prompt(
             .map(|option| option.description.unwrap_or_default().trim().to_string())
             .collect();
         details.extend([String::new(), String::new()]);
-        let id = prompt_id(&question.question, &choices);
+        let id_choices: Vec<String> = choices
+            .iter()
+            .zip(&details)
+            .map(|(label, detail)| {
+                if detail.is_empty() {
+                    label.clone()
+                } else {
+                    format!("{label}\n{detail}")
+                }
+            })
+            .collect();
+        let id = prompt_id(&question.question, &id_choices);
         Some(Prompt {
             question: question.question,
             choices,
