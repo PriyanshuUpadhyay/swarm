@@ -1,0 +1,537 @@
+
+/* Transcript. Rows are plain elements (decision 3); agent text is markdown HTML, so it is styled here.
+   The glyph slot (16px) and its 8px gap set the indent of a card body and of an open fold's steps. */
+.transcript {
+  overflow-y: auto;
+  overflow-anchor: none;
+  min-height: 0;
+  padding: 0 24px 12px;
+  outline: none;
+}
+.transcript > div,
+.t-head {
+  max-width: 820px;
+  margin: 0 auto;
+}
+.t-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+}
+.t-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--muted-foreground);
+  background: transparent;
+  border: 0;
+  padding: 0;
+  cursor: default;
+}
+.t-link:hover:not(:disabled) {
+  color: var(--foreground);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.t-link:disabled {
+  opacity: 0.6;
+}
+.icon-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-sm);
+  color: var(--muted-foreground);
+  background: transparent;
+  border: 0;
+}
+.icon-btn svg {
+  width: 14px;
+  height: 14px;
+}
+.icon-btn:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--foreground);
+}
+.icon-btn:disabled {
+  opacity: 0.4;
+}
+.glyph-slot {
+  width: 16px;
+  height: 14px;
+  flex: none;
+}
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+.line {
+  position: relative;
+  padding: 6px 0;
+  overflow-wrap: anywhere;
+}
+.line.step {
+  padding: 2px 0 2px 24px;
+}
+.line[data-match="current"] {
+  background: color-mix(in srgb, var(--status-waiting) 14%, transparent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--status-waiting) 14%, transparent);
+  border-radius: var(--radius-sm);
+}
+.line[data-menu="true"] {
+  box-shadow: 0 0 0 1px var(--ring);
+  border-radius: var(--radius-sm);
+}
+.row-label {
+  font-size: 11px;
+  color: var(--muted-foreground);
+}
+.quiet {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--muted-foreground);
+}
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 11px;
+  color: var(--muted-foreground);
+  padding: 6px 0;
+}
+.divider::before,
+.divider::after {
+  content: "";
+  flex: 1;
+  border-top: 1px solid var(--border-strong);
+}
+
+/* Copy message shows on hover only, so the transcript stays calm. */
+.copy-msg {
+  position: absolute;
+  top: 6px;
+  right: 0;
+  opacity: 0;
+}
+.bubble-row .copy-msg {
+  position: static;
+  align-self: flex-start;
+}
+.line:hover .copy-msg,
+.copy-msg:focus-visible {
+  opacity: 1;
+}
+.bubble-row {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 6px;
+}
+.bubble {
+  max-width: 85%;
+  min-width: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 6px 12px;
+}
+.bubble.queued {
+  border-style: dashed;
+  color: var(--muted-foreground);
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font: 12px var(--font-mono);
+  padding: 1px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--background);
+}
+.disclosure {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  font: inherit;
+  font-size: 12px;
+  color: var(--muted-foreground);
+  background: transparent;
+  border: 0;
+  padding: 0;
+  text-align: left;
+}
+.disclosure:hover {
+  color: var(--foreground);
+}
+
+/* Markdown */
+.md p {
+  margin: 4px 0;
+}
+.md > :first-child {
+  margin-top: 0;
+}
+.md > :last-child {
+  margin-bottom: 0;
+}
+.md ul,
+.md ol {
+  margin: 4px 0;
+  padding-left: 20px;
+}
+.md ul {
+  list-style: disc;
+}
+.md ol {
+  list-style: decimal;
+}
+.md a {
+  color: var(--status-working);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.md h1,
+.md h2,
+.md h3,
+.md h4 {
+  font-weight: 600;
+  margin: 10px 0 4px;
+}
+.md h1 {
+  font-size: 17px;
+}
+.md h2 {
+  font-size: 15px;
+}
+.md h3,
+.md h4 {
+  font-size: 13px;
+}
+.md blockquote {
+  border-left: 3px solid var(--border-strong);
+  padding-left: 10px;
+  color: var(--muted-foreground);
+  margin: 6px 0;
+}
+.md hr {
+  border: 0;
+  border-top: 1px solid var(--border-strong);
+  margin: 10px 0;
+}
+.md code {
+  font: 12px var(--font-mono);
+}
+.md :not(pre) > code {
+  background: var(--code);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0 3px;
+}
+.md-code,
+.md-table {
+  margin: 6px 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--code);
+  overflow: hidden;
+}
+.md-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 3px 8px;
+  font: 11px var(--font-mono);
+  color: var(--muted-foreground);
+  border-bottom: 1px solid var(--border);
+}
+.md-head button {
+  font: 11px var(--font-sans);
+  color: var(--muted-foreground);
+  background: transparent;
+  border: 0;
+  padding: 0 2px;
+}
+.md-head button:hover {
+  color: var(--foreground);
+}
+.md-code pre {
+  margin: 0;
+  padding: 6px 8px;
+  overflow-x: auto;
+  font: 12px/1.45 var(--font-mono);
+  white-space: pre;
+}
+.md-scroll {
+  overflow-x: auto;
+}
+/* Diff fences come from diff2html. Its light-scheme variables take the app tokens, so both themes
+   follow the app. Its file box and Viewed box are dropped, because the fence head already holds the
+   label and Copy. */
+.md-head .seg {
+  margin-left: auto;
+  margin-right: 8px;
+}
+:root:not([data-diff-split="1"]) .md-head [data-diff-layout="0"],
+:root[data-diff-split="1"] .md-head [data-diff-layout="1"] {
+  background: var(--selected);
+  color: var(--foreground);
+}
+:root:not([data-diff-split="1"]) .d2h .split,
+:root[data-diff-split="1"] .d2h .unified {
+  display: none;
+}
+.d2h {
+  --d2h-bg-color: var(--code);
+  --d2h-border-color: var(--border);
+  --d2h-dim-color: var(--faint-foreground);
+  --d2h-line-border-color: var(--border);
+  --d2h-file-header-bg-color: var(--surface);
+  --d2h-file-header-border-color: var(--border);
+  --d2h-empty-placeholder-bg-color: color-mix(in srgb, var(--foreground) 3%, transparent);
+  --d2h-empty-placeholder-border-color: var(--border);
+  --d2h-selected-color: var(--selected);
+  --d2h-ins-bg-color: color-mix(in srgb, var(--status-done) 14%, transparent);
+  --d2h-ins-border-color: color-mix(in srgb, var(--status-done) 30%, transparent);
+  --d2h-ins-highlight-bg-color: color-mix(in srgb, var(--status-done) 35%, transparent);
+  --d2h-ins-label-color: var(--status-done);
+  --d2h-del-bg-color: color-mix(in srgb, var(--status-failed) 14%, transparent);
+  --d2h-del-border-color: color-mix(in srgb, var(--status-failed) 30%, transparent);
+  --d2h-del-highlight-bg-color: color-mix(in srgb, var(--status-failed) 35%, transparent);
+  --d2h-del-label-color: var(--status-failed);
+  --d2h-change-del-color: color-mix(in srgb, var(--status-failed) 14%, transparent);
+  --d2h-change-ins-color: color-mix(in srgb, var(--status-done) 14%, transparent);
+  --d2h-change-label-color: var(--status-waiting);
+  --d2h-info-bg-color: color-mix(in srgb, var(--status-working) 8%, transparent);
+  --d2h-info-border-color: transparent;
+  --d2h-moved-label-color: var(--status-working);
+  font: 12px var(--font-mono);
+  color: var(--foreground);
+}
+.d2h .d2h-wrapper,
+.d2h .d2h-file-wrapper {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+}
+.d2h .d2h-file-collapse,
+.d2h.bare .d2h-file-header {
+  display: none;
+}
+.d2h .d2h-file-header {
+  font: 11px var(--font-mono);
+  height: auto;
+  padding: 3px 8px;
+}
+.md .d2h table {
+  font-size: 12px;
+}
+.md .d2h td {
+  border-top: 0;
+  padding: 0;
+}
+.d2h .d2h-code-line,
+.d2h .d2h-code-side-line {
+  color: var(--foreground);
+}
+.d2h .d2h-info {
+  color: var(--muted-foreground);
+}
+.md table {
+  border-collapse: collapse;
+  margin: 0;
+  font-size: 12px;
+}
+.md td,
+.md th {
+  border-top: 1px solid var(--border);
+  padding: 3px 10px;
+  text-align: left;
+}
+.md th {
+  font-weight: 600;
+  border-top: 0;
+}
+
+/* Folds and tool cards: one line each when closed. */
+.fold,
+.card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  font: inherit;
+  color: var(--foreground);
+  background: transparent;
+  border: 0;
+  padding: 2px 0;
+  text-align: left;
+  white-space: nowrap;
+}
+.fold:hover .font-semibold,
+.card-head:hover .font-semibold {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+/* jean's tool card: a bordered one-line box that opens in place. */
+.card {
+  margin: 2px -8px;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--surface) 50%, transparent);
+}
+.card .card-head {
+  font-size: 12px;
+}
+.card.open {
+  background: var(--surface);
+  padding-bottom: 8px;
+}
+.card-indent {
+  margin-left: 24px;
+}
+.card-body {
+  display: grid;
+  gap: 8px;
+  padding-top: 6px;
+}
+pre.plain,
+pre.out {
+  margin: 0;
+  padding: 6px 8px;
+  background: var(--code);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow-x: auto;
+  font: 12px/1.45 var(--font-mono);
+  white-space: pre;
+}
+pre.plain {
+  white-space: pre-wrap;
+  max-height: 360px;
+  overflow-y: auto;
+}
+.vbox {
+  padding: 6px 8px;
+  background: var(--code);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font: 12px var(--font-mono);
+  overflow-x: auto;
+}
+.vline {
+  height: 17px;
+  line-height: 17px;
+  white-space: pre;
+}
+
+/* Diffs: a small own renderer, unified or split. */
+.diff {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--code);
+  overflow: hidden;
+}
+.diff-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+.seg {
+  display: inline-flex;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.seg button {
+  font: inherit;
+  font-size: 11px;
+  padding: 0 8px;
+  color: var(--muted-foreground);
+  background: transparent;
+  border: 0;
+}
+.seg button[aria-pressed="true"] {
+  background: var(--selected);
+  color: var(--foreground);
+}
+.patch {
+  font: 12px var(--font-mono);
+  overflow-x: auto;
+}
+.pl {
+  display: flex;
+  height: 17px;
+  line-height: 17px;
+  white-space: pre;
+  min-width: max-content;
+  width: 100%;
+}
+.pl .ln {
+  flex: none;
+  width: 40px;
+  padding-right: 6px;
+  text-align: right;
+  color: var(--faint-foreground);
+  user-select: none;
+}
+.pl .mark {
+  flex: none;
+  width: 14px;
+  color: var(--muted-foreground);
+  user-select: none;
+}
+.pl.hunk {
+  color: var(--muted-foreground);
+  background: color-mix(in srgb, var(--status-working) 8%, transparent);
+  padding-left: 8px;
+}
+.pl.add,
+.half.add {
+  background: color-mix(in srgb, var(--status-done) 14%, transparent);
+}
+.pl.del,
+.half.del {
+  background: color-mix(in srgb, var(--status-failed) 14%, transparent);
+}
+.pl.split {
+  min-width: 0;
+}
+/* Diff lines inside plain text: tool output and ```diff fences. */
+.dl.add {
+  color: var(--status-done);
+}
+.dl.del {
+  color: var(--status-failed);
+}
+.dl.hunk {
+  color: var(--status-working);
+}
+.dl.meta {
+  font-weight: 600;
+}
+.half {
+  display: flex;
+  flex: 1 1 50%;
+  min-width: 0;
+  overflow: hidden;
+}
+.half + .half {
+  border-left: 1px solid var(--border);
+}
+.half.empty {
+  background: color-mix(in srgb, var(--foreground) 3%, transparent);
+}
