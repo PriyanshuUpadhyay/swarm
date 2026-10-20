@@ -1,6 +1,7 @@
 // SwarmApp: Swarm.app's executable, one full-screen window with one WKWebView on the `swarm ui`
 // server. `swarm ui` starts it with `open -a Swarm.app --args <url>`; when it already runs, that
-// `open` only activates it and its window comes to the front.
+// `open` only activates it and its window comes to the front. A copy at another path, such as the
+// one of a newer Homebrew version, starts a second process, which closes the older one.
 // usage: SwarmApp <http://127.0.0.1:PORT/#token=HEX>
 import AppKit
 import WebKit
@@ -21,6 +22,13 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKUIDelega
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // An upgrade moves the bundle to a new versioned path, so `open -a` starts this process
+        // beside the old one instead of activating it. The newest launch keeps the one window.
+        if let id = Bundle.main.bundleIdentifier {
+            for other in NSRunningApplication.runningApplications(withBundleIdentifier: id) where other != .current {
+                other.terminate()
+            }
+        }
         NSApp.mainMenu = makeMenu()
         window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1280, height: 800),
