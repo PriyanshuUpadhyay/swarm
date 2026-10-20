@@ -279,6 +279,8 @@ use owner::*;
 mod panels;
 use panels::*;
 
+mod pages_hub;
+
 mod prompt_actions;
 use prompt_actions::*;
 
