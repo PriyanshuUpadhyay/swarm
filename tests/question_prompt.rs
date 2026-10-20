@@ -23,7 +23,15 @@ fn tall_question_uses_only_a_matching_open_log_question() {
     let found = read().expect("the open log question fills the missing screen rows");
     assert_eq!(found.question, QUESTION);
     assert_eq!(found.choices.len(), 6);
-    assert_eq!(found.choices[0], "Release on the planned date");
+    assert_eq!(
+        found.choices[..4],
+        [
+            "Release on the planned date\nRelease on the planned date and list the open review findings in the release notes.",
+            "Fix critical findings, then release this week\nHold the release a few days to repair only the high-severity review findings.",
+            "Fix every finding before any release\nDelay the release until all review findings are fixed and verified by a full retest.",
+            "Release gradually to a small user group\nShip the build to a small share of users first, watch crash and error reports, and widen the rollout in steps."
+        ]
+    );
     assert_eq!(found.choices[4..], ["Type something.", "Chat about this"]);
     assert!(found.numbered);
     assert!(!found.cut);
@@ -43,6 +51,37 @@ fn tall_question_uses_only_a_matching_open_log_question() {
     assert_eq!(read(), None);
     std::fs::write(&log, format!("{LOG}{{\"type\":\"user\",\"message\":{{\"content\":[{{\"type\":\"tool_result\",\"tool_use_id\":\"release-choice\",\"content\":\"answered\"}}]}}}}\n")).unwrap();
     assert_eq!(read(), None);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn fallback_keeps_empty_descriptions_plain_and_preserves_description_lines() {
+    let root = scratch();
+    let log = root.join("question.jsonl");
+    let mut record: serde_json::Value = serde_json::from_str(LOG).unwrap();
+    let options = record["message"]["content"][0]["input"]["questions"][0]["options"]
+        .as_array_mut()
+        .unwrap();
+    options[0].as_object_mut().unwrap().remove("description");
+    options[1]["description"] = "".into();
+    options[2]["description"] = "Fix all findings.\nRun the full retest.".into();
+    std::fs::write(&log, format!("{record}\n")).unwrap();
+    let read = || agent_prompt(Some("claude"), TALL, || None, Some(&log)).unwrap();
+    let found = read();
+    assert_eq!(found.choices[0], "Release on the planned date");
+    assert_eq!(
+        found.choices[1],
+        "Fix critical findings, then release this week"
+    );
+    assert_eq!(
+        found.choices[2],
+        "Fix every finding before any release\nFix all findings.\nRun the full retest."
+    );
+    assert_eq!(found.choices[4..], ["Type something.", "Chat about this"]);
+    record["message"]["content"][0]["input"]["questions"][0]["options"][2]["description"] =
+        "A different description.".into();
+    std::fs::write(&log, format!("{record}\n")).unwrap();
+    assert_ne!(read().id, found.id);
     std::fs::remove_dir_all(root).unwrap();
 }
 
@@ -84,7 +123,7 @@ fn fallback_requires_the_live_numbered_tail_and_preserves_cursor_and_hash() {
             .choices
             .iter()
             .enumerate()
-            .map(|(index, label)| format!("  {}. {label}", index + 1))
+            .map(|(index, label)| format!("  {}. {}", index + 1, label.replace('\n', "\n     ")))
             .collect::<Vec<_>>()
             .join("\n")
     );
@@ -229,6 +268,10 @@ fn answer_accepts_the_id_that_the_listing_shows_for_a_tall_question() {
     );
     let listing: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(listing["agents"][0]["state"], "waiting");
+    assert_eq!(
+        listing["agents"][0]["prompt"]["choices"][0],
+        "Release on the planned date\nRelease on the planned date and list the open review findings in the release notes."
+    );
     let id = listing["agents"][0]["prompt"]["id"]
         .as_str()
         .expect("listing has a prompt id");

@@ -23,7 +23,7 @@ pub fn agent_prompt(
     let (tail, cursor) = visible_tail(screen)?;
     let questions = open_questions(log?)?;
     let mut matches = questions.into_iter().filter_map(|question| {
-        let mut choices: Vec<String> = question.options.into_iter().map(|o| o.label).collect();
+        let mut choices: Vec<String> = question.options.iter().map(|o| o.label.clone()).collect();
         choices.extend(["Type something.".into(), "Chat about this".into()]);
         if question.question.trim().is_empty()
             || choices.iter().any(|choice| choice.trim().is_empty())
@@ -35,6 +35,12 @@ pub fn agent_prompt(
             })
         {
             return None;
+        }
+        for (choice, option) in choices.iter_mut().zip(question.options) {
+            if !option.description.is_empty() {
+                choice.push('\n');
+                choice.push_str(&option.description);
+            }
         }
         let id = prompt_id(&question.question, &choices);
         Some(Prompt {
@@ -120,6 +126,8 @@ struct Question {
 #[derive(serde::Deserialize)]
 struct Choice {
     label: String,
+    #[serde(default)]
+    description: String,
 }
 
 fn open_questions(path: &Path) -> Option<Vec<Question>> {
