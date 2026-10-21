@@ -116,6 +116,25 @@ mod cases {
     }
 
     #[test]
+    fn a_pi_or_agy_chair_resumes_too() {
+        let connection = swarm::store::open(std::path::Path::new(":memory:")).unwrap();
+        for (provider, kind) in [("pi", Provider::Pi), ("agy", Provider::Agy)] {
+            let session = swarm::store::create_session(
+                &connection,
+                "lane",
+                std::path::Path::new("/test"),
+                Some((provider, "id-1")),
+                None,
+            )
+            .unwrap();
+            assert_eq!(
+                resume_target(&connection, &session).unwrap(),
+                (kind, "id-1".to_string())
+            );
+        }
+    }
+
+    #[test]
     fn a_resumed_chair_takes_back_its_ended_row() {
         let connection = swarm::store::open(std::path::Path::new(":memory:")).unwrap();
         let session = swarm::store::create_session(

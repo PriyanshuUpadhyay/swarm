@@ -463,3 +463,110 @@ fn a_pi_seat_gets_its_seat_block_in_the_system_prompt() {
         "{script}"
     );
 }
+
+/// A model switch resumes the chair's own session on the new model and effort (ADR 0108).
+#[test]
+fn a_resume_runs_the_chosen_model_and_effort_in_the_same_session() {
+    let home = scratch("resume-switch");
+    tool(&home, "claude", "true");
+    tool(&home, "pi", "true");
+    std::fs::create_dir_all(home.join(".swarm/adapters")).unwrap();
+    std::fs::write(
+        home.join(".swarm/adapters/fake.conf"),
+        "self = printf chair\nspawn = printf pane\nring = true\nlist = true\nclose = true\ncapture = true\n",
+    )
+    .unwrap();
+    let cwd = home.join("repo");
+    std::fs::create_dir_all(&cwd).unwrap();
+    let cwd = cwd.to_string_lossy().into_owned();
+    for (chair, model, effort, want) in [
+        (
+            "claude:abc",
+            "sonnet",
+            "low",
+            vec!["'--model' 'sonnet' '--effort' 'low'", "'--resume' 'abc'"],
+        ),
+        (
+            "pi:",
+            "claude-bridge/claude-sonnet-5-5",
+            "minimal",
+            vec![
+                "'--model' 'claude-bridge/claude-sonnet-5-5' '--thinking' 'minimal'",
+                "'--session-id'",
+            ],
+        ),
+    ] {
+        let fake = [("SWARM_ADAPTER", "fake")];
+        // pi's chair id is `<session>-orchestrator`; the test needs only an id to resume.
+        let chair = if chair == "pi:" {
+            "pi:p1-orchestrator"
+        } else {
+            chair
+        };
+        let session = swarm(&home, &fake, &["session", "new", "lane", "--chair", chair]);
+        assert!(session.status.success(), "{}", stderr(&session));
+        let session = String::from_utf8(session.stdout)
+            .unwrap()
+            .trim()
+            .to_string();
+        let resumed = swarm(
+            &home,
+            &[
+                ("SWARM_ADAPTER", "fake"),
+                ("SWARM_SESSION_ID", session.as_str()),
+            ],
+            &[
+                "launch",
+                "orchestrator",
+                "chat",
+                "--resume",
+                "--model",
+                model,
+                "--effort",
+                effort,
+                "--cwd",
+                &cwd,
+            ],
+        );
+        assert!(resumed.status.success(), "{}", stderr(&resumed));
+        let command =
+            std::fs::read_to_string(home.join(format!(".swarm/runs/{session}/orchestrator.sh")))
+                .unwrap();
+        for part in want {
+            assert!(command.contains(part), "{part} not in {command}");
+        }
+    }
+    // Claude has no `ultra` level, so the switch is refused before any pane starts.
+    let fake = [("SWARM_ADAPTER", "fake")];
+    let session = swarm(
+        &home,
+        &fake,
+        &["session", "new", "lane", "--chair", "claude:abc"],
+    );
+    let session = String::from_utf8(session.stdout)
+        .unwrap()
+        .trim()
+        .to_string();
+    let bad = swarm(
+        &home,
+        &[
+            ("SWARM_ADAPTER", "fake"),
+            ("SWARM_SESSION_ID", session.as_str()),
+        ],
+        &[
+            "launch",
+            "orchestrator",
+            "chat",
+            "--resume",
+            "--effort",
+            "ultra",
+            "--cwd",
+            &cwd,
+        ],
+    );
+    assert!(
+        stderr(&bad).contains("not a level of this CLI"),
+        "{}",
+        stderr(&bad)
+    );
+}

@@ -83,6 +83,20 @@ pub fn set_chair_log(
         "UPDATE session SET chair_log = ?2 WHERE id = ?1",
         (session_id, path.to_string_lossy()),
     )?;
+    // An AGY log sits at `brain/<conversation id>/.system_generated/...`, the id `--conversation`
+    // resumes and that AGY's hook never names.
+    let mut parts = path
+        .components()
+        .map(|part| part.as_os_str().to_string_lossy());
+    if parts.any(|part| part == "brain")
+        && let Some(conversation) = parts.next()
+        && uuid::Uuid::try_parse(&conversation).is_ok()
+    {
+        connection.execute(
+            "UPDATE session SET chair_id = ?2 WHERE id = ?1 AND chair_provider = 'agy'",
+            (session_id, conversation.as_ref()),
+        )?;
+    }
     // A Codex rollout file ends in its thread id, which is the chair id that Codex never reports.
     let stem = path.file_stem().unwrap_or_default().to_string_lossy();
     if let Some(thread) = stem.get(stem.len().saturating_sub(36)..)
@@ -270,6 +284,26 @@ mod tests {
             create_session(&connection, "lane", Path::new("/second"), None, None).unwrap(),
             first
         );
+    }
+
+    #[test]
+    fn an_agy_chair_log_names_its_conversation() {
+        let connection = open(Path::new(":memory:")).unwrap();
+        let session = create_session(&connection, "lane", Path::new("/w"), None, None).unwrap();
+        set_chair_provider(&connection, &session, "agy").unwrap();
+        let id = "90f7dfab-e45b-43ed-87d0-1b6497513ac7";
+        let path = format!(
+            "/h/.gemini/antigravity-cli/brain/{id}/.system_generated/logs/transcript_full.jsonl"
+        );
+        set_chair_log(&connection, &session, Path::new(&path)).unwrap();
+        let chair: (Option<String>, Option<String>) = connection
+            .query_row(
+                "SELECT chair_provider, chair_id FROM session WHERE id = ?1",
+                [&session],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(chair, (Some("agy".into()), Some(id.into())));
     }
 
     #[test]
