@@ -49,7 +49,8 @@ LOCAL_ENV = {"GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_CONFIG", "GIT_CONFIG_PARAM
 
 
 def clean_env():
-    """os.environ with no repo-local GIT_ variable, and no GIT_CONFIG_KEY_n or GIT_CONFIG_VALUE_n of a dropped count."""
+    """os.environ with no repo-local GIT_ variable, and no GIT_CONFIG_KEY_n or GIT_CONFIG_VALUE_n of a dropped count.
+    step_checks.work_root uses it too, so both find the same repo."""
     return {k: v for k, v in os.environ.items()
             if k not in LOCAL_ENV and not k.startswith(("GIT_CONFIG_KEY_", "GIT_CONFIG_VALUE_"))}
 
@@ -82,7 +83,7 @@ def work_tree(folder):
         return None
     if found.returncode:
         raise SystemExit(f"scope check failed: git rev-parse: {found.stderr.strip()}")
-    if nearest is not None and Path(found.stdout.strip()).resolve() != nearest:
+    if nearest is not None and not Path(found.stdout.strip()).samefile(nearest):  # samefile: a case-blind disk
         raise SystemExit(f"scope check failed: git reads {found.stdout.strip()}, not the repo at {nearest}")
     index = Path(git(root, "rev-parse", "--path-format=absolute", "--git-path", "index", env=env).stdout.strip())
     with tempfile.TemporaryDirectory() as tmp:
@@ -102,12 +103,23 @@ def config_hash(root):
     return hashlib.sha256(file.read_bytes()).hexdigest()[:16] if file.is_file() else "none"
 
 
+def events(folder):
+    file = Path(folder) / "events.log"
+    return file.read_text(encoding="utf-8").splitlines() if file.exists() else []
+
+
+def snapshot(folder):
+    """`<tree> <config hash> <events>` for take's base line, or None outside git. <events> is the events.log line
+    count read before the tree, so a step done while the tree is read still counts as one that ran beside it."""
+    seen = len(events(folder))
+    now = work_tree(folder)
+    return now and f"{now[1]} {config_hash(now[0])} {seen}"
+
+
 def base(folder, step):
-    """`<tree> <config hash>` that the step's newest take recorded, or None."""
-    events = Path(folder) / "events.log"
-    lines = events.read_text(encoding="utf-8").splitlines() if events.exists() else []
+    """`<tree> <config hash> <events>` that the step's newest take recorded, or None."""
     found = None
-    for row in (line.split("\t") for line in lines):
+    for row in (line.split("\t") for line in events(folder)):
         if len(row) > 2 and row[1] == step:
             if row[2].startswith("take "):
                 found = None
@@ -117,16 +129,19 @@ def base(folder, step):
 
 
 def done_before_take(folder, step):
-    """The steps whose newest done line comes before the step's newest take: they did not run beside it."""
-    events = Path(folder) / "events.log"
-    lines = events.read_text(encoding="utf-8").splitlines() if events.exists() else []
-    done, before = set(), set()
-    for row in (line.split("\t") for line in lines):
-        if len(row) > 2 and row[1] == step and row[2].startswith("take ") and " failed: " not in row[2]:
-            before = set(done)
-        elif len(row) > 2 and row[2].startswith("done "):
-            done.add(row[1])
-    return before
+    """The steps whose newest event, a done line, comes before the step's newest base read: they did not run beside
+    it. A later take of such a step makes it run beside it again.
+
+    The read point is the events count in the step's `base` line, which only a take that claimed the step writes;
+    the agent name in a `take` line is free text, so it cannot tell a failed take apart.
+    """
+    parts = (base(folder, step) or "").split(" ")
+    seen = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0
+    last = {}
+    for i, row in enumerate(line.split("\t") for line in events(folder)):
+        if len(row) > 2 and row[1] != step and row[2].startswith(("take ", "done ")):
+            last[row[1]] = (i, row[2].startswith("done "))
+    return {name for name, (i, done) in last.items() if done and i < seen}
 
 
 def inside(path, scope):
@@ -142,7 +157,7 @@ def check(folder, step, text):
     own = writes(text)
     if own is None:
         return
-    start, _, config = (base(folder, step) or "").partition(" ")
+    start, config = ((base(folder, step) or "").split(" ") + [None, None])[:2]
     start = start or None
     now = work_tree(folder)
     if now is None:
@@ -202,8 +217,7 @@ def check_reviewer(folder, step, who):
     text = (Path(folder) / f"{step}.md").read_text(encoding="utf-8")
     if "change-review" not in blocks(folder, step, text):
         return
-    events = Path(folder) / "events.log"
-    rows = [l.split("\t") for l in (events.read_text(encoding="utf-8").splitlines() if events.exists() else [])]
+    rows = [l.split("\t") for l in events(folder)]
     for name in sorted(earlier(folder, step)):
         if writes((Path(folder) / f"{name}.md").read_text(encoding="utf-8")) and \
                 any(len(r) > 2 and r[1] == name and r[2] == f"take {who}" for r in rows):

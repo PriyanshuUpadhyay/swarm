@@ -20,7 +20,8 @@ def work_root(folder):
     """The git top level of the step folder's piece, else the piece itself; start and done both use it."""
     piece = Path(folder).resolve().parent
     directory = next(path for path in (piece, *piece.parents) if path.is_dir())
-    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    from step_scope import clean_env  # here, as step_scope imports this module
+    env = clean_env()
     try:
         git = subprocess.run(["git", "-C", str(directory), "rev-parse", "--show-toplevel"],
                              env=env, capture_output=True, text=True, encoding="utf-8", errors="replace")
