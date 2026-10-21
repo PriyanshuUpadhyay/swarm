@@ -89,6 +89,8 @@ export type AgentInput = {
   disabled: string | null;
   /** True when no pane takes input at all; ⌘. and the prompt card need one. */
   unreachable: boolean;
+  /** An unreachable chair whose own CLI session can start again in this chat (ADR 0107). */
+  resumable: boolean;
   running: boolean;
   prompt: Prompt | null;
   /** Claude in tmux keeps a queue that Up pulls back (ADR 0038). */
@@ -122,6 +124,7 @@ export function agentInput(session: Session | undefined, agents: readonly Agent[
     model: (agent?.model as string | undefined) ?? null,
     disabled,
     unreachable,
+    resumable: unreachable && !child && (provider === "claude" || provider === "codex") && typeof session?.chair_id === "string",
     running: agent?.state === "working",
     prompt: unreachable ? null : prompt,
     pullBack: provider === "claude" && (adapter === "tmux" || adapter === "tmux-swarm"),

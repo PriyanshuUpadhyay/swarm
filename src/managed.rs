@@ -12,8 +12,8 @@ pub use commit::{apply, digest, revert};
 use filesystem::write_target;
 pub use filesystem::{CHANGED, LOCK_WAIT, with_lock};
 pub(crate) use filesystem::{
-    json_object, json_text, read_json_object, read_optional, read_text, refuse_read_only, retried,
-    write_text,
+    json_object, json_text, read_json_object, read_optional, read_text, refuse_read_only,
+    remove_file, retried, write_text,
 };
 use links::{LinkLeaf, link_leaf, link_removal, validate_link, write_link};
 use output::link_text;
@@ -166,6 +166,8 @@ pub enum Kind {
     JsonArrayItem,
     /// The leaf itself; `path` is empty and `wrote` is its exact absolute target.
     Symlink,
+    /// A whole file that swarm made; `path` is empty and `wrote` is the SHA-256 of its text.
+    File,
 }
 
 /// The swarm feature that wrote an item. Wire names are open: a later build may add one (A4).
@@ -181,6 +183,8 @@ pub enum Writer {
     Herdr,
     #[serde(rename = "skills")]
     Skills,
+    #[serde(rename = "import.conductor")]
+    ImportConductor,
 }
 
 /// One item that a writer adds to a file outside the swarm home.
@@ -284,6 +288,12 @@ pub fn wire(value: &impl serde::Serialize) -> String {
         Ok(serde_json::Value::String(name)) => name,
         _ => unreachable!("Kind and Writer serialize as strings"),
     }
+}
+
+/// The `wrote` of a `Kind::File` item.
+pub fn file_hash(text: &str) -> serde_json::Value {
+    use sha2::Digest;
+    format!("{:x}", sha2::Sha256::digest(text.as_bytes())).into()
 }
 
 pub(crate) fn changed_error(path: &std::path::Path) -> String {

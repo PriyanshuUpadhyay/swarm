@@ -70,6 +70,9 @@ fn live(edit: &Edit, text: Option<&str>) -> Result<Option<serde_json::Value>, St
     let Some(text) = text else {
         return Ok(None);
     };
+    if edit.kind == Kind::File {
+        return Ok(Some(file_hash(text)));
+    }
     let (keys, last) = match edit.kind {
         Kind::JsonArrayItem => (&edit.path[..], None),
         _ => match edit.path.split_last() {

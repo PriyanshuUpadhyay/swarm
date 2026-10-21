@@ -199,6 +199,7 @@ pub(super) fn router(app: App) -> Router {
         .route("/api/sessions/archive", post(chat_action))
         .route("/api/sessions/unarchive", post(chat_action))
         .route("/api/chat/new", post(chat_action))
+        .route("/api/chat/resume", post(chat_action))
         .route("/api/sessions/archived", get(archived_sessions))
         .route("/api/chats/importable", get(importable_chats))
         .route("/api/ui-error", post(ui_error))

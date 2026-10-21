@@ -166,7 +166,7 @@ function ConductorImport({ app }: { app: App }) {
           {p.chats.map((c) => (
             <li key={c.conductorId}>
               {c.title || c.conductorId} · {c.provider} · {c.open ? "open" : "closed"} · {c.messages} messages
-              {!c.nativeLog && <span className="text-muted-foreground"> · log copied from Conductor</span>}
+              {!c.nativeLog && <span className="text-muted-foreground"> · session rebuilt from Conductor</span>}
             </li>
           ))}
         </ul>

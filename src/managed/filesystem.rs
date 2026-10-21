@@ -228,3 +228,13 @@ pub(crate) fn write_text(path: &std::path::Path, before: &str, text: &str) -> Re
             let _ = std::fs::remove_file(&tmp);
         })
 }
+
+/// Remove the file a `Kind::File` item made, only while its text is still `before`.
+pub(crate) fn remove_file(path: &std::path::Path, before: &str) -> Result<(), String> {
+    match read_optional(path)? {
+        None => Ok(()),
+        Some(now) if now == before => std::fs::remove_file(path)
+            .map_err(|error| format!("swarm: cannot remove {}: {error}", path.display())),
+        Some(_) => Err(changed_error(path)),
+    }
+}

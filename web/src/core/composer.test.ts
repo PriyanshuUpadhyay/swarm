@@ -99,6 +99,16 @@ describe("chair input", () => {
     expect(agentInput(session(), [chair({ state: "waiting" })]).disabled).toBe("The agent is asking a question. Answer it first in its pane.");
   });
 
+  it("offers Resume only for an ended Claude or Codex chair with a session id", () => {
+    const ended = [chair({ alive: false, pane: null })];
+    expect(agentInput(session({ chair_id: "id" }), ended).resumable).toBe(true);
+    expect(agentInput(session({ chair_id: "id", adapter: null, chair_provider: "codex" }), []).resumable).toBe(true);
+    expect(agentInput(session(), ended).resumable).toBe(false);
+    expect(agentInput(session({ chair_id: "id", chair_provider: "pi" }), [chair({ alive: false, provider: "pi" })]).resumable).toBe(false);
+    expect(agentInput(session({ chair_id: "id" }), [chair()]).resumable).toBe(false);
+    expect(agentInput(session({ chair_id: "id" }), ended, "coder").resumable).toBe(false);
+  });
+
   it("pulls back only Claude in tmux, and reads running from the chair state", () => {
     expect(agentInput(session(), [chair({ state: "working" })])).toMatchObject({ disabled: null, running: true, pullBack: true });
     expect(agentInput(session({ adapter: "herdr" }), [chair()]).pullBack).toBe(false);

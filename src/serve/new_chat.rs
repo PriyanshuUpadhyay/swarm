@@ -86,6 +86,23 @@ pub(super) async fn new_chat(app: &App, body: NewChat) -> Result<Value, ApiError
     Ok(json!({"ok": true, "session": session, "agent": "orchestrator", "pane": pane}))
 }
 
+/// Start the chat's own CLI session again in the chat, with its whole context (ADR 0107).
+pub(super) async fn resume_chat(app: &App, body: ResumeChat) -> Result<Value, ApiError> {
+    let mut call = action_session(app, &body.session)?;
+    // An imported chat has no adapter until its first pane.
+    call.adapter = "tmux-swarm".into();
+    call.args = ["launch", "orchestrator", "chat", "--resume"]
+        .map(String::from)
+        .to_vec();
+    let output = run_cli(app, call, None).await?;
+    let pane = output
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .ok_or_else(|| error(StatusCode::INTERNAL_SERVER_ERROR, "swarm returned no pane"))?;
+    Ok(json!({"ok": true, "session": body.session, "agent": "orchestrator", "pane": pane}))
+}
+
 #[cfg(test)]
 #[path = "new_chat/tests.rs"]
 mod tests;

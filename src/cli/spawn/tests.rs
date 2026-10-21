@@ -116,6 +116,72 @@ mod cases {
     }
 
     #[test]
+    fn a_resumed_chair_takes_back_its_ended_row() {
+        let connection = swarm::store::open(std::path::Path::new(":memory:")).unwrap();
+        let session = swarm::store::create_session(
+            &connection,
+            "lane",
+            std::path::Path::new("/test"),
+            Some(("codex", "thread")),
+            None,
+        )
+        .unwrap();
+        swarm::store::add_agent(&connection, &session, "orchestrator", "orchestrator").unwrap();
+        assert_eq!(
+            resume_target(&connection, &session).unwrap(),
+            (Provider::Codex, "thread".to_string())
+        );
+        let adapter = |spawn: &str| {
+            swarm::adapter::parse(
+                "fake",
+                &format!("self = true\nspawn = {spawn}\nring = true\nlist = true\nclose = true\ncapture = true\n"),
+            )
+            .unwrap()
+        };
+        let register = |adapter: &swarm::adapter::Adapter, id: &str| {
+            register_spawned_pane(
+                &connection,
+                adapter,
+                &session,
+                id,
+                "chat",
+                None,
+                &[],
+                None,
+                || Ok(None),
+            )
+        };
+        let failed = adapter("exit 1");
+        assert!(register(&failed, "orchestrator").is_err());
+        let rows = swarm::store::agents(&connection, &session).unwrap();
+        assert_eq!(rows.len(), 1, "a failed resume keeps the ended row");
+        assert_eq!(
+            register(&adapter("printf '%s' '%2'"), "orchestrator")
+                .unwrap()
+                .0,
+            "%2"
+        );
+        let rows = swarm::store::agents(&connection, &session).unwrap();
+        assert_eq!(
+            (rows.len(), rows[0].role.as_str(), rows[0].pane.as_deref()),
+            (1, "chat", Some("%2"))
+        );
+        let running = resume_target(&connection, &session)
+            .unwrap_err()
+            .to_string();
+        assert!(running.contains("still running"), "{running}");
+        assert!(
+            register(&adapter("printf '%s' '%3'"), "orchestrator").is_err(),
+            "a live chair keeps its pane"
+        );
+        swarm::store::add_agent(&connection, &session, CODER, "coder").unwrap();
+        assert!(
+            register(&adapter("printf '%s' '%4'"), CODER).is_err(),
+            "only a chair takes a row back"
+        );
+    }
+
+    #[test]
     fn orchestrator_registration_sets_the_session_adapter() {
         let root =
             std::env::temp_dir().join(format!("swarm-chair-adapter-test-{}", std::process::id()));

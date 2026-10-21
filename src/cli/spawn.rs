@@ -93,7 +93,20 @@ pub(crate) fn register_spawned_pane(
     launch: Option<(&swarm::config::Runner, Option<&str>)>,
     line: impl FnOnce() -> Result<Option<String>, Box<dyn std::error::Error>>,
 ) -> Result<(String, Option<String>), Box<dyn std::error::Error>> {
-    swarm::store::add_agent(connection, session_id, agent_id, role)?;
+    // A chair whose pane ended takes its row back, as `launch --resume` does (ADR 0107). Any other
+    // id that the session holds is still refused by the insert.
+    let ended = agent_id == "orchestrator"
+        && swarm::store::agents(connection, session_id)?
+            .iter()
+            .any(|agent| agent.id == agent_id && agent.pane.is_none());
+    if ended {
+        connection.execute(
+            "UPDATE agent SET role = ?3 WHERE session_id = ?1 AND id = ?2",
+            (session_id, agent_id, role),
+        )?;
+    } else {
+        swarm::store::add_agent(connection, session_id, agent_id, role)?;
+    }
     if let Some(provider) = provider {
         swarm::store::set_provider(connection, session_id, agent_id, provider)?;
     }
@@ -102,7 +115,9 @@ pub(crate) fn register_spawned_pane(
     let text = match line() {
         Ok(text) => text,
         Err(error) => {
-            swarm::store::remove_agent(connection, session_id, agent_id)?;
+            if !ended {
+                swarm::store::remove_agent(connection, session_id, agent_id)?;
+            }
             return Err(error);
         }
     };
@@ -115,7 +130,9 @@ pub(crate) fn register_spawned_pane(
     let pane = match adapter.run(verb, &vars) {
         Ok(pane) => pane,
         Err(error) => {
-            swarm::store::remove_agent(connection, session_id, agent_id)?;
+            if !ended {
+                swarm::store::remove_agent(connection, session_id, agent_id)?;
+            }
             return Err(error);
         }
     };

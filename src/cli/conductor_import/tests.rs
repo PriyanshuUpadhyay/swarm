@@ -25,7 +25,7 @@ fn reasons(plan: &Plan) -> Vec<(&str, &str)> {
 fn plan_skips_empty_known_and_duplicate_sessions() {
     let known = Known {
         provider_ids: ["in-swarm".to_owned()].into(),
-        logs: ["/imports/copied.jsonl".to_owned()].into(),
+        logs: ["/rebuilt/copied.jsonl".to_owned()].into(),
     };
     let sessions = vec![
         session("empty", None, 0),
@@ -43,7 +43,12 @@ fn plan_skips_empty_known_and_duplicate_sessions() {
         },
         session("new", None, 1),
     ];
-    let plan = plan(sessions, &known, Path::new("/imports"), |_| None);
+    let plan = plan(
+        sessions,
+        &known,
+        |_| None,
+        |session, _| PathBuf::from(format!("/rebuilt/{}.jsonl", session.id)),
+    );
     assert_eq!(
         reasons(&plan),
         [
@@ -57,10 +62,12 @@ fn plan_skips_empty_known_and_duplicate_sessions() {
     );
     let ids: Vec<_> = plan.chats.iter().map(|c| c.conductor_id.as_str()).collect();
     assert_eq!(ids, ["more", "new"]);
-    assert_eq!(plan.chats[1].log, "/imports/new.jsonl");
+    let new = &plan.chats[1];
+    assert_eq!(new.log, "/rebuilt/new.jsonl");
     assert_eq!(
-        plan.chats[1].format, "claude",
-        "a copied log is Claude's format"
+        new.provider_id.as_deref(),
+        Some(new.id.as_str()),
+        "a rebuilt session takes the swarm id"
     );
 }
 
@@ -71,14 +78,18 @@ fn plan_keeps_a_native_log_and_its_provider() {
         selected: true,
         ..session("closed", Some("thread"), 4)
     };
-    let plan = plan(vec![hidden], &Known::default(), Path::new("/i"), |_| {
-        Some(PathBuf::from("/codex/rollout-thread.jsonl"))
-    });
+    let plan = plan(
+        vec![hidden],
+        &Known::default(),
+        |_| Some(PathBuf::from("/codex/rollout-thread.jsonl")),
+        |_, _| unreachable!(),
+    );
     let chat = &plan.chats[0];
     assert_eq!(
-        (chat.format.as_str(), chat.log.as_str(), chat.native_log),
+        (chat.provider.as_str(), chat.log.as_str(), chat.native_log),
         ("codex", "/codex/rollout-thread.jsonl", true)
     );
+    assert_eq!(chat.provider_id.as_deref(), Some("thread"));
     assert_eq!(
         (chat.open, chat.selected, chat.closed_at),
         (false, false, Some(1_782_120_000))
@@ -93,31 +104,6 @@ fn swarm_id_is_stable_and_older_than_a_new_session() {
     assert_eq!(id.get_version_num(), 7);
     // `continue_session` links a newer session only when the old id sorts first.
     assert!(swarm_id(&old) < uuid::Uuid::now_v7().to_string());
-}
-
-#[test]
-fn log_line_turns_conductor_rows_into_claude_records() {
-    let user = log_line("user", "plan it", "m1", "2026-06-22T08:24:58.733Z", "s").unwrap();
-    assert_eq!(
-        user,
-        json!({"type": "user", "sessionId": "s", "uuid": "m1",
-               "timestamp": "2026-06-22T08:24:58.733Z",
-               "message": {"role": "user", "content": "plan it"}})
-    );
-    let answer = r#"{"type":"user","session_id":"t","parent_tool_use_id":null,
-        "message":{"role":"user","content":[]},"tool_use_result":{"answers":{}}}"#;
-    let record = log_line("assistant", answer, "m2", "at", "s").unwrap();
-    assert_eq!(record["sessionId"], "t");
-    assert_eq!(record["uuid"], "m2");
-    assert_eq!(record["toolUseResult"], json!({"answers": {}}));
-    assert!(record.get("tool_use_result").is_none());
-    let subagent = r#"{"type":"assistant","parent_tool_use_id":"toolu_1","message":{}}"#;
-    assert_eq!(log_line("assistant", subagent, "m3", "at", "s"), None);
-    assert_eq!(
-        log_line("assistant", r#"{"type":"result"}"#, "m4", "at", "s"),
-        None
-    );
-    assert_eq!(log_line("assistant", "not json", "m5", "at", "s"), None);
 }
 
 /// A Conductor database with one open chat that has messages and one closed one, in `dir`.
@@ -153,20 +139,24 @@ fn conductor_db(dir: &Path) -> PathBuf {
 }
 
 #[test]
-fn apply_adds_chats_tabs_and_logs_once() {
+fn apply_adds_chats_tabs_and_sessions_once() {
     let dir = env::temp_dir().join(format!("swarm-conductor-test-{}", uuid::Uuid::now_v7()));
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join("swarm-home"), "").unwrap();
     let copy = Copy::of(&conductor_db(&dir)).unwrap();
     let conductor = Connection::open(&copy.db).unwrap();
     let mut store = swarm::store::open(Path::new(":memory:")).unwrap();
-    let imports = dir.join("imports/conductor");
+    let rebuilt = dir.join("cli");
     let planned = |store: &Connection| {
         plan(
             read_sessions(&conductor).unwrap(),
             &known(store).unwrap(),
-            &imports,
             |_| None,
+            |session, id| {
+                rebuilt
+                    .join(&session.agent_type)
+                    .join(format!("{id}.jsonl"))
+            },
         )
     };
     let first = planned(&store);
@@ -181,11 +171,17 @@ fn apply_adds_chats_tabs_and_logs_once() {
         .unwrap()
         .collect::<Result<_, _>>()
         .unwrap();
+    let (open, closed) = (&first.chats[0], &first.chats[1]);
     assert_eq!(
         rows,
         [
-            (None, "claude".into(), Some("claude-id".into()), None),
-            (None, "claude".into(), None, Some(1_782_205_200)),
+            (None, "claude".into(), Some(open.id.clone()), None),
+            (
+                None,
+                "codex".into(),
+                Some(closed.id.clone()),
+                Some(1_782_205_200)
+            ),
         ]
     );
     let agents: i64 = store
@@ -197,7 +193,6 @@ fn apply_adds_chats_tabs_and_logs_once() {
         .unwrap();
     assert_eq!(agents, 2);
 
-    let open = &first.chats[0];
     let log = std::fs::read_to_string(&open.log).unwrap();
     let lines: Vec<Value> = log
         .lines()
@@ -205,7 +200,11 @@ fn apply_adds_chats_tabs_and_logs_once() {
         .collect();
     assert_eq!(lines.len(), 2, "the result row has no place in the log");
     assert_eq!(lines[0]["message"]["content"], "plan it");
-    assert_eq!(lines[1]["sessionId"], "claude-id");
+    assert_eq!(lines[1]["sessionId"], open.id.as_str());
+    assert_eq!(lines[1]["parentUuid"], "m1");
+    let rollout = std::fs::read_to_string(&closed.log).unwrap();
+    let meta: Value = serde_json::from_str(rollout.lines().next().unwrap()).unwrap();
+    assert_eq!(meta["payload"]["id"], closed.id.as_str());
     let modified = std::fs::metadata(&open.log).unwrap().modified().unwrap();
     assert_eq!(
         modified
@@ -232,6 +231,35 @@ fn apply_adds_chats_tabs_and_logs_once() {
             ("closed", "already in swarm"),
             ("empty", "no messages")
         ]
+    );
+
+    // Each rebuilt file is a managed edit, which a revert removes only while it is unchanged.
+    let entries = swarm::managed::list(&store, &[]).unwrap();
+    assert_eq!(entries.len(), 2);
+    assert!(
+        entries
+            .iter()
+            .all(|e| e.state == swarm::managed::State::Present
+                && e.edit.writer == Writer::ImportConductor)
+    );
+    std::fs::write(&closed.log, "resumed since\n").unwrap();
+    let target = swarm::managed::Target::All;
+    let plans = swarm::managed::revert_plan(&store, &[], &target).unwrap();
+    assert!(
+        swarm::managed::conflicts_text(&plans).is_none(),
+        "a changed file is not targeted"
+    );
+    swarm::managed::revert(&store, &plans).unwrap();
+    assert!(!Path::new(&open.log).exists());
+    assert_eq!(
+        std::fs::read_to_string(&closed.log).unwrap(),
+        "resumed since\n"
+    );
+    let ids = swarm::managed::Target::Ids(vec![entries[1].edit.id(), entries[0].edit.id()]);
+    let plans = swarm::managed::revert_plan(&store, &[], &ids).unwrap();
+    assert!(
+        swarm::managed::conflicts_text(&plans).is_some(),
+        "the resumed file is the CLI's"
     );
     std::fs::remove_dir_all(&dir).unwrap();
 }

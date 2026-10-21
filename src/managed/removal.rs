@@ -122,6 +122,8 @@ pub(super) fn removal(file: &std::path::Path, items: &[&Entry]) -> Result<FilePl
     }
     let after = match gone.is_empty() {
         true => before.clone(),
+        // An empty plan text removes the file (`commit`).
+        false if gone[0].kind == Kind::File => String::new(),
         false if gone[0].kind == Kind::TomlKey => remove_toml(file, &before, &gone)?,
         false => remove_json(file, &before, &gone, &mut conflicts)?,
     };
@@ -162,6 +164,7 @@ fn describe(edit: &Edit) -> String {
             edit.wrote
         ),
         Kind::Symlink => "the symlink".into(),
+        Kind::File => "the whole file".into(),
     }
 }
 

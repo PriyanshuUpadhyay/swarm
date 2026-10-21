@@ -279,6 +279,16 @@ export class Lifecycle {
     }
   }
 
+  /** Resume: the chat's own CLI session starts again in this chat, with its whole context. */
+  async resumeChat(session: string) {
+    try {
+      await this.api.post("/api/chat/resume", { session });
+      await this.app.refresh();
+    } catch (err) {
+      this.app.notice(message(err), true);
+    }
+  }
+
   async cancelSwitch() {
     const h = this.state.handoff;
     if (!h?.canCancel) return;

@@ -60,3 +60,26 @@ async fn new_chat_route() {
     .unwrap();
     assert!(action_calls(&fixture).ends_with("|launch orchestrator chat --account auto\n"));
 }
+
+#[tokio::test]
+async fn resume_chat_route_launches_the_chair_with_resume_in_its_chat() {
+    let fixture = action_fixture();
+    let body = json!({"session": fixture.session});
+    let response = call_action(&fixture, "/api/chat/resume", body)
+        .await
+        .unwrap()
+        .0;
+    assert_eq!(
+        (&response["session"], &response["pane"]),
+        (&json!(fixture.session), &json!("fixture-pane"))
+    );
+    let calls = action_calls(&fixture);
+    assert!(
+        calls.starts_with(&format!("tmux-swarm|{}|", fixture.session))
+            && calls.ends_with("|launch orchestrator chat --resume\n"),
+        "{calls}"
+    );
+    let unknown = json!({"session": uuid::Uuid::now_v7().to_string()});
+    let refused = call_action(&fixture, "/api/chat/resume", unknown).await;
+    assert_eq!(refused.unwrap_err().0, StatusCode::NOT_FOUND);
+}

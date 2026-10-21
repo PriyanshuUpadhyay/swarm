@@ -7,6 +7,10 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
+use swarm::managed::{Edit, Kind, Writer};
+
+mod sessions;
+use sessions::*;
 
 /// One Conductor session, as its database stores it.
 #[derive(Clone, Debug, Default)]
@@ -30,10 +34,9 @@ struct Chat {
     conductor_id: String,
     /// A UUID v7 at the Conductor creation time, so a continuation's newer id sorts after it.
     id: String,
-    /// The CLI that ran the chat, for the chair agent row.
+    /// The CLI that ran the chat; its log is in this CLI's format.
     provider: String,
-    /// The log format, which names the chat's provider in swarm: a converted log is Claude's.
-    format: String,
+    /// The id the CLI resumes: its own, or the swarm id of a session swarm rebuilds.
     provider_id: Option<String>,
     title: String,
     cwd: String,
@@ -44,7 +47,7 @@ struct Chat {
     closed_at: Option<i64>,
     messages: i64,
     log: String,
-    /// False when swarm writes `log` from Conductor's message rows.
+    /// False when swarm rebuilds `log` from Conductor's message rows, in the CLI's own folder.
     native_log: bool,
 }
 
@@ -111,11 +114,22 @@ pub(crate) fn import(args: &[String]) -> Result<(), Box<dyn std::error::Error>> 
     let copy = Copy::of(&db)?;
     let conductor = Connection::open(&copy.db)?;
     let mut store = swarm::store::open(&swarm::paths::sqlite_db()?)?;
+    let (claude_projects, codex_sessions) = (
+        claude_config()?.join("projects"),
+        default_codex_home()?.join("sessions"),
+    );
     let plan = plan(
         read_sessions(&conductor)?,
         &known(&store)?,
-        &root.join("imports/conductor"),
         |session| native_log(&conductor, session),
+        |session, id| match session.agent_type.as_str() {
+            "codex" => codex_sessions.join(rollout_name(&conductor, session.created_at, id)),
+            _ => claude_projects
+                .join(claude_project(Path::new(
+                    session.cwd.as_deref().unwrap_or_default(),
+                )))
+                .join(format!("{id}.jsonl")),
+        },
     );
     let Some(digest) = digest else {
         if json {
@@ -154,7 +168,10 @@ pub(crate) fn import(args: &[String]) -> Result<(), Box<dyn std::error::Error>> 
             "swarm: Conductor or swarm changed after the plan; check the plan again".into(),
         );
     }
-    apply(&root, &conductor, &mut store, &plan)?;
+    // The lock that every write outside the swarm home takes (ADR 0042).
+    swarm::managed::with_lock(&swarm::paths::trust_lock()?, || {
+        apply(&root, &conductor, &mut store, &plan).map_err(|error| error.to_string())
+    })?;
     let open = plan.chats.iter().filter(|c| c.open).count();
     println!(
         "swarm: imported {} chats from Conductor, {open} as open tabs and {} in Recently closed",
@@ -271,8 +288,8 @@ fn native_log(conductor: &Connection, session: &Session) -> Option<PathBuf> {
 fn plan(
     sessions: Vec<Session>,
     known: &Known,
-    converted_dir: &Path,
     native_log: impl Fn(&Session) -> Option<PathBuf>,
+    rebuilt_log: impl Fn(&Session, &str) -> PathBuf,
 ) -> Plan {
     // Of two sessions with one provider id, the one with more messages, then the older one.
     let mut best: BTreeMap<&str, &Session> = BTreeMap::new();
@@ -316,25 +333,27 @@ fn plan(
                 continue;
             }
         }
+        let id = swarm_id(session);
         let native = native_log(session);
-        let log = native
-            .clone()
-            .unwrap_or_else(|| converted_dir.join(format!("{}.jsonl", session.id)));
+        // A rebuilt session takes the swarm id, so its file name is known before it is written.
+        let (log, provider_id) = match &native {
+            Some(log) => (log.clone(), session.provider_id.clone()),
+            None => (rebuilt_log(session, &id), Some(id.clone())),
+        };
         let log = log.to_string_lossy().into_owned();
-        if known.logs.contains(&log) {
+        if known.logs.contains(&log)
+            || provider_id
+                .as_ref()
+                .is_some_and(|id| known.provider_ids.contains(id))
+        {
             result.skipped.push(skip("already in swarm".into()));
             continue;
         }
         result.chats.push(Chat {
             conductor_id: session.id.clone(),
-            id: swarm_id(session),
+            id,
             provider: session.agent_type.clone(),
-            format: if native.is_some() {
-                session.agent_type.clone()
-            } else {
-                "claude".into()
-            },
-            provider_id: session.provider_id.clone(),
+            provider_id,
             title: if session.title == "Untitled" {
                 String::new()
             } else {
@@ -385,7 +404,7 @@ fn plan_text(plan: &Plan) -> String {
             if chat.native_log {
                 ""
             } else {
-                " · log copied from Conductor"
+                " · session rebuilt from Conductor"
             },
         ));
     }
@@ -398,85 +417,49 @@ fn plan_text(plan: &Plan) -> String {
     text
 }
 
-/// One line of a Claude-format log from one Conductor message row, or None for a row that has no
-/// place in the log: a status event, or a step of a subagent, which Claude keeps in another file.
-fn log_line(role: &str, content: &str, id: &str, at: &str, session: &str) -> Option<Value> {
-    if role == "user" {
-        return Some(json!({
-            "type": "user",
-            "sessionId": session,
-            "uuid": id,
-            "timestamp": at,
-            "message": {"role": "user", "content": content},
-        }));
-    }
-    let mut event: Value = serde_json::from_str(content).ok()?;
-    let record = event.as_object_mut()?;
-    if !matches!(record.get("type")?.as_str()?, "assistant" | "user")
-        || record
-            .get("parent_tool_use_id")
-            .is_some_and(|parent| !parent.is_null())
-    {
-        return None;
-    }
-    let session = record
-        .get("session_id")
-        .and_then(Value::as_str)
-        .unwrap_or(session)
-        .to_owned();
-    record.entry("sessionId").or_insert(session.into());
-    record.entry("uuid").or_insert(id.into());
-    record.entry("timestamp").or_insert(at.into());
-    if let Some(result) = record.remove("tool_use_result") {
-        record.entry("toolUseResult").or_insert(result);
-    }
-    Some(event)
-}
-
-fn converted_log(conductor: &Connection, chat: &Chat) -> Result<String, String> {
-    let mut statement = conductor
-        .prepare(
-            "SELECT id, coalesce(role, ''), coalesce(content, ''), created_at
-             FROM session_messages WHERE session_id = ?1 AND cancelled_at IS NULL
-             ORDER BY created_at, rowid",
-        )
-        .map_err(schema_error)?;
-    let session = chat.provider_id.as_deref().unwrap_or(&chat.conductor_id);
-    let mut text = String::new();
-    let mut rows = statement
-        .query([&chat.conductor_id])
-        .map_err(schema_error)?;
-    while let Some(row) = rows.next().map_err(schema_error)? {
-        let get = |i| row.get::<_, String>(i).map_err(schema_error);
-        if let Some(line) = log_line(&get(1)?, &get(2)?, &get(0)?, &get(3)?, session) {
-            text.push_str(&line.to_string());
-            text.push('\n');
-        }
-    }
-    Ok(text)
-}
-
-/// Writes each converted log, then the chats in one transaction, then the owner's tabs. The
-/// database comes before the choices, as the app drops an imported key whose chat it cannot find.
+/// Writes each rebuilt session through `managed` (ADR 0042), under the caller's trust lock, then
+/// the chats in one transaction, then the owner's tabs. The database comes before the choices, as
+/// the app drops an imported key whose chat it cannot find.
 fn apply(
     root: &Path,
     conductor: &Connection,
     store: &mut Connection,
     plan: &Plan,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    for chat in plan.chats.iter().filter(|chat| !chat.native_log) {
-        let path = Path::new(&chat.log);
-        std::fs::create_dir_all(path.parent().unwrap())?;
-        let partial = path.with_extension(format!("jsonl.{}", uuid::Uuid::now_v7()));
-        std::fs::write(&partial, converted_log(conductor, chat)?)?;
-        // The sidebar sorts a chat by its log's time, which is the last message, not this import.
+    let rebuilt: Vec<&Chat> = plan.chats.iter().filter(|chat| !chat.native_log).collect();
+    let mut plans = Vec::new();
+    for chat in &rebuilt {
+        let id = chat.provider_id.as_deref().unwrap_or(&chat.id);
+        let records = records(conductor, chat)?;
+        let text = match chat.provider.as_str() {
+            "codex" => codex_log(records, &chat.cwd, id),
+            _ => claude_log(records, &chat.cwd, id),
+        };
+        let path = PathBuf::from(&chat.log);
+        let edit = Edit::new(
+            Writer::ImportConductor,
+            &path,
+            Kind::File,
+            &[],
+            swarm::managed::file_hash(&text),
+        );
+        plans.push(swarm::managed::Plan::from(swarm::managed::FilePlan {
+            path,
+            before: String::new(),
+            after: text,
+            conflicts: Vec::new(),
+            edits: vec![edit],
+        }));
+    }
+    swarm::managed::apply(store, &plans)?;
+    for chat in &rebuilt {
+        // The sidebar and each CLI's picker sort by the file's time: the last message, not now.
         let at = std::time::UNIX_EPOCH
             + std::time::Duration::from_secs(u64::try_from(chat.active_at).unwrap_or_default());
         std::fs::File::options()
             .write(true)
-            .open(&partial)?
+            .open(&chat.log)?
             .set_modified(at)?;
-        std::fs::rename(&partial, path)?;
     }
     let tx = store.transaction()?;
     for chat in &plan.chats {
@@ -490,7 +473,7 @@ fn apply(
                 &chat.cwd,
                 chat.created_at,
                 &chat.log,
-                &chat.format,
+                &chat.provider,
                 &chat.provider_id,
                 chat.closed_at,
             ),

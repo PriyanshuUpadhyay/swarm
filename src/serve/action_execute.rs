@@ -132,6 +132,7 @@ pub(super) async fn execute_action(app: &App, action: Action) -> Result<Value, A
         }
         Action::PullBack(body) => return pull_back(app, body).await,
         Action::New(body) => return new_chat(app, body).await,
+        Action::Resume(body) => return resume_chat(app, body).await,
         Action::Continue(body) => return execute_continue(app, body).await,
         Action::Archived => {
             let output = run_cli(
