@@ -47,3 +47,19 @@ export function backgroundRows(session: Session | undefined, agents: readonly Ag
   }
   return rows;
 }
+
+/** Calls `read` now, then `ms` after each call settles, so reads never overlap; a tick while
+ *  `hidden()` skips the read. A failed read waits for the next tick. Returns a stop. */
+export function poll(read: () => Promise<unknown>, ms: number, hidden: () => boolean): () => void {
+  let stopped = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const tick = async () => {
+    if (!hidden()) await read().catch(() => {});
+    if (!stopped) timer = setTimeout(tick, ms);
+  };
+  void tick();
+  return () => {
+    stopped = true;
+    clearTimeout(timer);
+  };
+}

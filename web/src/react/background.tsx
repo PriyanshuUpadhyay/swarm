@@ -8,7 +8,7 @@ import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { App } from "../core/app";
-import { backgroundRows, type BackgroundRow, type BackgroundTask } from "../core/background";
+import { backgroundRows, poll, type BackgroundRow, type BackgroundTask } from "../core/background";
 import { Button } from "../components/ui/button";
 import { StatusGlyph } from "./status";
 import { useTheme } from "./theme";
@@ -22,17 +22,15 @@ export function BackgroundPanel({ app, session }: { app: App; session: string })
 
   useEffect(() => {
     let stop = false;
-    const read = () =>
-      app.api
-        .get<{ tasks: BackgroundTask[] }>("/api/background", { session })
-        .then((r) => !stop && setTasks(r.tasks))
-        .catch(() => {});
     // A failed poll keeps the last list, and the next tick tries again.
-    void read();
-    const timer = setInterval(read, POLL_MS);
+    const end = poll(
+      () => app.api.get<{ tasks: BackgroundTask[] }>("/api/background", { session }).then((r) => !stop && setTasks(r.tasks)),
+      POLL_MS,
+      () => document.hidden,
+    );
     return () => {
       stop = true;
-      clearInterval(timer);
+      end();
     };
   }, [app, session]);
 
@@ -146,7 +144,7 @@ function Term({ app, session, agent, task }: { app: App; session: string; agent:
         ws.onmessage = (m) => term.write(typeof m.data === "string" ? m.data : new Uint8Array(m.data as ArrayBuffer));
         ws.onclose = () => !gone && term.write("\r\n\x1b[2m[closed]\x1b[0m\r\n");
       })
-      .catch((err: unknown) => term.write(`${err instanceof Error ? err.message : String(err)}\r\n`));
+      .catch((err: unknown) => !gone && term.write(`${err instanceof Error ? err.message : String(err)}\r\n`));
     const encoder = new TextEncoder();
     const subs = [
       term.onData((d) => send(encoder.encode(d))),

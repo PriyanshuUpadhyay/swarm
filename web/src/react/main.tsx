@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState, useSyncExternalStore } from "react";
+import { Component, lazy, Suspense, useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { usePanelRef, useDefaultLayout } from "react-resizable-panels";
 import { toast } from "sonner";
@@ -110,6 +110,23 @@ function Main({ app, changes }: { app: App; changes: Changes }) {
   );
 }
 
+/** Catches a failed load of the lazy panel, so the rest of the page stays. */
+class LoadFailed extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  render() {
+    return this.state.failed ? (
+      <p role="alert" className="p-3 text-sm text-muted-foreground">
+        The background panel failed to load. Reload the page to try again.
+      </p>
+    ) : (
+      this.props.children
+    );
+  }
+}
+
 /** The open chat over the ⌘J panel of its agents and background tasks (ADR 0102). */
 function ChatColumn({ app, openId }: { app: App; openId: string }) {
   const [open, setOpen] = useState(() => store.getItem(BOTTOM_KEY) === "1");
@@ -120,7 +137,8 @@ function ChatColumn({ app, openId }: { app: App; openId: string }) {
         return !was;
       });
   }, []);
-  const layout = useDefaultLayout({ id: "swarm.background", storage: store, panelIds: ["chat-panel", "background-panel"] });
+  // The ids must be the panels that mount, so each set keeps its own saved layout.
+  const layout = useDefaultLayout({ id: "swarm.background", storage: store, panelIds: open ? ["chat-panel", "background-panel"] : ["chat-panel"] });
   return (
     <ResizablePanelGroup orientation="vertical" defaultLayout={layout.defaultLayout} onLayoutChanged={layout.onLayoutChanged}>
       <ResizablePanel id="chat-panel" minSize="160px">
@@ -131,9 +149,11 @@ function ChatColumn({ app, openId }: { app: App; openId: string }) {
       {open && <ResizableHandle className="h-px w-full after:inset-x-0 after:inset-y-auto after:top-1/2 after:left-0 after:h-[7px] after:w-full after:translate-x-0 after:-translate-y-1/2" />}
       {open && (
         <ResizablePanel id="background-panel" defaultSize="280px" minSize="120px">
-          <Suspense>
-            <BackgroundPanel key={openId} app={app} session={openId} />
-          </Suspense>
+          <LoadFailed>
+            <Suspense fallback={<p className="p-3 text-sm text-muted-foreground">Loading…</p>}>
+              <BackgroundPanel key={openId} app={app} session={openId} />
+            </Suspense>
+          </LoadFailed>
         </ResizablePanel>
       )}
     </ResizablePanelGroup>
