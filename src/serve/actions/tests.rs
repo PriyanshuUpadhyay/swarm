@@ -56,7 +56,7 @@ target_route_test!(
     close_route,
     "/api/agent/close",
     json!({}),
-    "close orchestrator"
+    "close --now orchestrator"
 );
 
 macro_rules! session_route_test {

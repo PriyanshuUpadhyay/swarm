@@ -33,8 +33,8 @@ flowchart LR
 
 Swarm itself does no AI work. It owns the session, the panes, the messages, and the choice of
 model. Each agent learns its part from a skill: `swarm-orchestrator` for the chair and
-`swarm-voice` for a worker. A worker that exits without an answer is caught by `swarm sweep`, and
-`swarm drain` writes a summary from its log.
+`swarm-voice` for a worker. `swarm close` asks a worker for a wrap-up before it closes the pane, and
+a worker that exits without an answer is caught by `swarm sweep`, which tells the chair.
 
 Panes live in [tmux](https://github.com/tmux/tmux) (the default) or in
 [Herdr](https://github.com/herdrdev/herdr). In a Herdr pane, swarm picks Herdr by itself.
@@ -301,10 +301,9 @@ echo "parser done, tests green" | swarm finish        # prints the seq, e.g. 0
 # back in the orchestrator pane
 swarm inbox                                            # 0 coder summary runs/<session-id>/0.txt
 swarm ack 0
-swarm close coder
-
-# a child that exits without finish gets a fallback summary and a summarize job
-SWARM_SUMMARIZER='head -c 200' swarm drain            # done 1
+swarm close --now coder  # closes at once; my-agent is no swarm voice, so it would not answer a wrap-up
+# a child that runs the swarm-voice skill closes with `swarm close coder` instead, which asks for
+# a wrap-up, saves runs/<session-id>/coder.summary.md, and then closes the pane
 ```
 
 ## Performance profiling

@@ -33,7 +33,7 @@ swarm agent add orchestrator orchestrator
 echo "session $SWARM_SESSION_ID in $SWARM_HOME, voice $1"
 
 PANE=$(swarm spawn reviewer voice -- "$@")
-trap 'swarm close reviewer; rm -rf "$SWARM_HOME"' EXIT
+trap 'swarm close --now reviewer; rm -rf "$SWARM_HOME"' EXIT
 echo "pane $PANE"
 
 # The voice gets the protocol from the swarm-voice skill. The pointer is typed into the pane as

@@ -9,7 +9,7 @@ mod tests {
 
     #[test]
     fn rings_only_unread_and_rerings_once_until_seen() {
-        let mut connection = seed(0);
+        let mut connection = seed();
         let root = temp_root("old-unread");
         send_message(
             &mut connection,
@@ -72,7 +72,7 @@ mod tests {
     /// update finds the messages rung a moment ago, so it rings nothing and the cap holds.
     #[test]
     fn two_passes_that_find_a_rering_due_ring_it_once() {
-        let mut connection = seed(0);
+        let mut connection = seed();
         let root = temp_root("rering-race");
         let ask = send_message(
             &mut connection,
@@ -110,7 +110,7 @@ mod tests {
     /// pass rang again since, or that has a result already, keeps what it has.
     #[test]
     fn a_ring_result_is_stored_only_on_the_ring_it_settles() {
-        let mut connection = seed(0);
+        let mut connection = seed();
         let root = temp_root("delivery-race");
         let ask = send_message(
             &mut connection,
@@ -200,7 +200,7 @@ mod tests {
     /// stored once per sender and kind (ADR 0041).
     #[test]
     fn stores_a_ring_result_and_each_report_once() {
-        let mut connection = seed(0);
+        let mut connection = seed();
         let root = temp_root("delivery");
         let send = |connection: &mut Connection, kind: &str| {
             send_message(
@@ -243,7 +243,7 @@ mod tests {
     /// and the chair is never the subject (ADR 0041).
     #[test]
     fn finds_each_stall_once() {
-        let mut connection = seed(0);
+        let mut connection = seed();
         let root = temp_root("stalls");
         let run = |connection: &Connection, sql: &str| connection.execute_batch(sql).unwrap();
         let send = |connection: &mut Connection, from: &str, to: &str, kind: &str| {
@@ -328,7 +328,7 @@ mod tests {
     /// at the record's time counts for a stall.
     #[test]
     fn a_host_state_proves_a_turn_and_counts_for_a_stall() {
-        let mut connection = seed(0);
+        let mut connection = seed();
         let root = temp_root("host-state");
         set_pane(&connection, SESSION, CODER, "%2").unwrap();
         let ask = send_message(
