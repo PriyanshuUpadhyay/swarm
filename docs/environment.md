@@ -25,4 +25,3 @@ message names the folder and `SWARM_HOME`.
 | `AGENT_ROUTING_CONFIG` | The old routing file that the first read imports. A path that does not exist is an error. |
 | `SWARM_SESSION_ID` | Session the caller belongs to. `spawn` stamps it into each child pane. |
 | `SWARM_AGENT_ID` | Identity of the caller. `spawn` stamps it into each child pane. |
-| `SWARM_SUMMARIZER` | Shell line `drain` runs with a log on stdin. Required by `drain` only. |

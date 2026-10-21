@@ -15,6 +15,7 @@ You are one child agent. The orchestrator spawned your pane. `swarm` is on PATH.
 3. Reply once per message.
    - When the ask body starts with a line `round: N`, the reply body must start with the same line.
    - A final result goes to the orchestrator: `printf '%s' '<text>' | swarm finish`.
+   - A `wrap-up` message gets one `swarm finish` in the shape its body sets, and then no more work.
    - A question or note goes to a named agent: `printf '%s' '<text>' | swarm send <recipient> <kind>`.
      In lane mode a child can reach only the orchestrator; in relay mode the orchestrator forwards.
 4. Run `swarm ack <seq>` for each message you handled.

@@ -5,14 +5,12 @@ use rusqlite::{Connection, OptionalExtension, TransactionBehavior};
 mod agent_state;
 mod agents;
 mod delivery;
-mod jobs;
 mod messages;
 mod sessions;
 mod usage;
 pub use agent_state::*;
 pub use agents::*;
 pub use delivery::*;
-pub use jobs::*;
 pub use messages::*;
 pub use sessions::*;
 pub use usage::*;
@@ -265,13 +263,12 @@ mod tests {
     pub(super) const CODER: &str = "coder";
     pub(super) const OUTSIDER: &str = "outsider";
 
-    pub(super) fn seed(run_after: i64) -> Connection {
+    pub(super) fn seed() -> Connection {
         let connection = open(Path::new(":memory:")).unwrap();
         connection
             .execute_batch(&format!(
                 "INSERT INTO session (id, talk_mode, cwd) VALUES ('{SESSION}', 'lane', '/test'), ('{OTHER_SESSION}', 'lane', '/other');
-                 INSERT INTO agent (id, session_id, role) VALUES ('{ORCHESTRATOR}', '{SESSION}', 'orchestrator'), ('{CODER}', '{SESSION}', 'coder'), ('{OUTSIDER}', '{OTHER_SESSION}', 'coder');
-                 INSERT INTO job (id, session_id, agent_id, kind, run_after) VALUES (7, '{SESSION}', '{CODER}', 'build', {run_after});"
+                 INSERT INTO agent (id, session_id, role) VALUES ('{ORCHESTRATOR}', '{SESSION}', 'orchestrator'), ('{CODER}', '{SESSION}', 'coder'), ('{OUTSIDER}', '{OTHER_SESSION}', 'coder');"
             ))
             .unwrap();
         connection

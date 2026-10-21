@@ -7,7 +7,7 @@ This session is running inside Herdr. The top-level session is the orchestrator.
 - A pane worker is a visible foreground pane split from this pane.
 - Open one session per run with `swarm session new lane`; it registers this pane as the orchestrator.
 - Spawn with `swarm launch <unique-name> ROLE --cwd "$PWD" [-- extra agent flags]`; it resolves the provider, model and effort, prepares trust, and opens the pane.
-- Send work with `swarm send <name> ask`; a reply arrives as the prompt `swarm: new message`, then `swarm inbox`, read, `swarm ack`. Close with `swarm close <name>`.
+- Send work with `swarm send <name> ask`; a reply arrives as the prompt `swarm: new message`, then `swarm inbox`, read, `swarm ack`. Close with `swarm close <name>`; it waits up to 120 s for a wrap-up, so give the call a 180 s timeout.
 - Native background subagents are allowed. Prefer a visible pane when the user must watch or answer the worker, when it runs on another provider, or when a skill asks for visible seats.
 - Do not use headless CLIs or detached processes.
 - For pane lifecycle detail, load `~/.swarm/kit/skills/swarm-orchestrator/SKILL.md`.
@@ -25,7 +25,7 @@ This session is running inside a Superset terminal. The top-level session is the
 - A pane worker is a Superset terminal in the same workspace, created beside this one.
 - Open one session per run with `swarm session new lane`; it registers this terminal as the orchestrator.
 - Spawn with `swarm launch <unique-name> ROLE --cwd "$PWD" [-- extra agent flags]`; it resolves the provider, model and effort, prepares trust, and opens the pane.
-- Send work with `swarm send <name> ask`; a reply arrives as the prompt `swarm: new message`, then `swarm inbox`, read, `swarm ack`. Close with `swarm close <name>`.
+- Send work with `swarm send <name> ask`; a reply arrives as the prompt `swarm: new message`, then `swarm inbox`, read, `swarm ack`. Close with `swarm close <name>`; it waits up to 120 s for a wrap-up, so give the call a 180 s timeout.
 - `swarm answer` and `swarm interrupt` are not available on this host; answer a worker's prompt in the Superset app.
 - Native background subagents are allowed. Prefer a visible pane when the user must watch or answer the worker, when it runs on another provider, or when a skill asks for visible seats.
 - Do not use headless CLIs or detached processes.
@@ -44,7 +44,7 @@ This session is running inside a Rex block. The top-level session is the orchest
 - A pane worker is a Rex block in the same session; the first one splits right of this block and the rest stack below it.
 - Open one session per run with `swarm session new lane`; it registers this block as the orchestrator.
 - Spawn with `swarm launch <unique-name> ROLE --cwd "$PWD" [-- extra agent flags]`; it resolves the provider, model and effort, prepares trust, and opens the pane.
-- Send work with `swarm send <name> ask`; a reply arrives as the prompt `swarm: new message`, then `swarm inbox`, read, `swarm ack`. Close with `swarm close <name>`.
+- Send work with `swarm send <name> ask`; a reply arrives as the prompt `swarm: new message`, then `swarm inbox`, read, `swarm ack`. Close with `swarm close <name>`; it waits up to 120 s for a wrap-up, so give the call a 180 s timeout.
 - Native background subagents are allowed. Prefer a visible pane when the user must watch or answer the worker, when it runs on another provider, or when a skill asks for visible seats.
 - Do not use headless CLIs or detached processes.
 - For pane lifecycle detail, load `~/.swarm/kit/skills/swarm-orchestrator/SKILL.md`.
@@ -64,7 +64,7 @@ This session is a chair that the Swarm app started. The top-level session is the
 - The swarm session is already open and this chair is registered as `orchestrator`. Do not run `swarm session new` or `swarm agent add`.
 - A pane worker is a child agent CLI in its own tmux session; the app shows each child as a visible column beside the chat.
 - Spawn with `swarm launch <unique-name> ROLE --cwd "$PWD" [-- extra agent flags]`; it resolves the provider, model and effort, prepares trust, and opens the pane.
-- Send work with `swarm send <name> ask`; a reply arrives as the prompt `swarm: new message`, then `swarm inbox`, read, `swarm ack`. Close with `swarm close <name>`.
+- Send work with `swarm send <name> ask`; a reply arrives as the prompt `swarm: new message`, then `swarm inbox`, read, `swarm ack`. Close with `swarm close <name>`; it waits up to 120 s for a wrap-up, so give the call a 180 s timeout.
 - Native background subagents are allowed. Prefer a visible pane when the user must watch or answer the worker, when it runs on another provider, or when a skill asks for visible seats.
 - Do not use headless CLIs or detached processes.
 - For pane lifecycle detail, load `~/.swarm/kit/skills/swarm-orchestrator/SKILL.md` and skip its Session section.

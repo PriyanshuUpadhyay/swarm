@@ -84,7 +84,12 @@ def test_table_blocks():
                                       (" Blocks |", " |", [])):
             skill.write_text(f"| File | Needs | Holds |{extra}\n|---|---|---|\n"
                              f"| `01-ask.md` | none | the question |{cell}\n", encoding="utf-8")
-            assert step_run.table(skill) == [("01-ask", "none", "the question", expected)]
+            assert step_run.table(skill) == [("01-ask", "none", "the question", expected, None, False)]
+        # A plan table: Block counts beside Writes, and a File cell may end in (optional).
+        for name, writes, expected in (("`01-ask.md`", "none", []), ("`01-ask.md` (optional)", "`src/a/`, b.md", ["src/a/", "b.md"])):
+            skill.write_text("| File | Needs | Holds | Writes | Block | Why |\n|---|---|---|---|---|---|\n"
+                             f"| {name} | none | the question | {writes} | story | reason |\n", encoding="utf-8")
+            assert step_run.table(skill) == [("01-ask", "none", "the question", ["story"], expected, "optional" in name)]
 
 
 def test_build_start_without_tomllib():

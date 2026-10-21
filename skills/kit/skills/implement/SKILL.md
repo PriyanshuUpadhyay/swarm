@@ -52,7 +52,8 @@ the git common dir (`git rev-parse --git-common-dir`), not the worktree folder n
    ```sh
    python3 $F start [--profile <name>] [--domains <a,b>] # makes the folder and step files, writes each step's skills and blocks into its file in full
    python3 $F status [<folder>]              # each step's status, which open step is ready, and which is stale
-   python3 $F take <folder> <step> <agent>   # marks the step active and prints its file with its skills in full
+   python3 $F take <folder> <step> <agent>   # marks the step active and prints its file with its skills in full;
+                                             # take 06-review as `review-seats`, not as the agent that took 05-build
    python3 $F done <folder> <step> <n>       # sets the step done for take's claim #<n>, as references/step-run.md says
    python3 $F skip <folder> <step> <reason>  # skips 02-design, 03-contracts, or 04-impact, never another step
    python3 $F block <folder> <step> <reason> # records a blocked step
@@ -99,9 +100,9 @@ Start: python3 <skill-dir>/scripts/implement_run.py start --plan <run> [--domain
 | File | Needs | Holds | Block | Why |
 |---|---|---|---|---|
 | `01-frame.md` | none | `Worktree:`, `Branch:`, `Plan:`, `Mode:`, goal, user, out of scope, done-when, and shared assumptions for design and contracts | requirements | the claims say when the change is done |
-| `02-design.md` | frame | UX flow and screens, or `skipped: no UI` | decision-with-default | each UX fork gets a marked default |
-| `03-contracts.md` | frame | APIs, data model, integrations, and the result of the `decisions` skill's check for the topic | decision-with-default | each contract fork gets a marked default |
-| `04-impact.md` | contracts | the existing features that change, or "independent", judged from the `## Callers` section that `take` writes with the places that name each code name in backticks in `03-contracts.md` | call-tree | the callers show what the change breaks |
+| `02-design.md` (optional) | frame | UX flow and screens, or `skipped: no UI` | decision-with-default | each UX fork gets a marked default |
+| `03-contracts.md` (optional) | frame | APIs, data model, integrations, and the result of the `decisions` skill's check for the topic | decision-with-default | each contract fork gets a marked default |
+| `04-impact.md` (optional) | contracts | the existing features that change, or "independent", judged from the `## Callers` section that `take` writes with the places that name each code name in backticks in `03-contracts.md` | call-tree | the callers show what the change breaks |
 | `05-build.md` | impact, and design unless skipped | the task-file path of the `pair` or `auto` mode run, and `Base:`, the commit before its first commit | checked-units, prove-it-works, task-file | small checked units, kept in a task file |
 | `06-review.md` | build | the `review` check runs on `<Base>..<build revision>`, line 3 of the newest run's `03-verdict.md`, each `fix` row with its fix or the reason it stays, and one `Run: tmp/review-check/<run>` line per round, newest last | change-review | new seats judge the commits |
 | `07-close.md` | review with APPROVE | the done-when of `01-frame.md`, each with its evidence | done-when-evidence, voice-reply | each claim maps to evidence in the reply |

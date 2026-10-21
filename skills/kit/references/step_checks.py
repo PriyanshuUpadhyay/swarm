@@ -20,13 +20,18 @@ def work_root(folder):
     """The git top level of the step folder's piece, else the piece itself; start and done both use it."""
     piece = Path(folder).resolve().parent
     directory = next(path for path in (piece, *piece.parents) if path.is_dir())
-    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    from step_scope import clean_env  # here, as step_scope imports this module
+    env = clean_env()
     try:
         git = subprocess.run(["git", "-C", str(directory), "rev-parse", "--show-toplevel"],
                              env=env, capture_output=True, text=True, encoding="utf-8", errors="replace")
     except OSError:
         return piece, piece
     root = Path(git.stdout.strip()).resolve() if git.returncode == 0 else piece
+    if not piece.is_relative_to(root):
+        # A case-blind disk: a path typed in other letter case names the same folder, so take git's spelling.
+        same = next((p for p in (piece, *piece.parents) if p.exists() and p.samefile(root)), None)
+        piece = root / piece.relative_to(same) if same else piece
     return (root if piece.is_relative_to(root) else piece), piece
 
 
@@ -44,6 +49,30 @@ def block_checks(block):
     return [(line, re.compile(pattern(line[:c], SLOT) + pattern(line[c:], ".+?") + ":")) for line, c in zip(lines, cut)]
 
 
+def plan_blocks(folder, step):
+    """The resolved blocks of the step's row in the run's plan.md, for a plan with a Writes column; else none.
+
+    start writes the rules and check todos of exactly these blocks, so done needs no `Skills read:` line to know
+    them, and deleting that line skips no check.
+    """
+    plan = Path(folder) / "plan.md"
+    if not plan.is_file():
+        return set()
+    import sys
+    sys.path.insert(0, str(KIT / "blocks" / "plan-chart" / "scripts"))
+    import block_resolver
+    import plan_chart
+    rows = plan_chart.read_plan(plan)[2]
+    row = next((r for r in rows if r[0] == step), None)
+    if row is None or row[5] is None:
+        return set()
+    # The repo root and every row, as start passes them, so a repo `.blocks.toml` [off] block is off here too and
+    # an [add] key of another step is not reported as a step that does not exist.
+    root, _ = work_root(folder)
+    wanted = {r[0]: r[3] for r in rows}
+    return set(block_resolver.resolve_blocks(root, wanted, "default", blocks_dir=KIT / "blocks", pack=False)[step])
+
+
 def run_checks(folder, step, todo, text):
     """Run each checked `block <id> script:` todo that is in the run form; the worker's evidence never runs."""
     from step_run import log, plain
@@ -52,7 +81,7 @@ def run_checks(folder, step, todo, text):
     places = {"<kit root>": KIT, "<run>": folder.resolve(), "<repo-root>": root}
     found = [m.groups() for m in map(CHECK_TODO.match, todo.splitlines()) if m]
     read = next((l for l in text.splitlines() if l.startswith("Skills read: ")), "")
-    for block in re.findall(r"\bblock:([\w.-]+)@", read):
+    for block in sorted(set(re.findall(r"\bblock:([\w.-]+)@", read)) | plan_blocks(folder, step)):
         for line, p in block_checks(block) or []:
             if not any(b == block and p.match(t) for b, t in found):
                 raise SystemExit(f"{step} is not done: a blocks/{block} script check has no todo: "

@@ -121,7 +121,7 @@ pub fn require_pane(
         .optional()?;
     match row {
         None => Err(format!("swarm: no agent {agent_id} in this session").into()),
-        Some(pane) => pane.ok_or_else(|| "swarm: no pane recorded".into()),
+        Some(pane) => pane.ok_or_else(|| format!("swarm: no pane recorded for {agent_id}").into()),
     }
 }
 

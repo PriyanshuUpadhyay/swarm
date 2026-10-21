@@ -216,7 +216,7 @@ pub(super) async fn execute_lifecycle(
     ) {
         for (session, agent) in &targets {
             let (call, agent) = action_target(app, session, agent)?;
-            run_cli(app, call.args(&["close", &agent]), None).await?;
+            run_cli(app, call.args(&["close", "--now", &agent]), None).await?;
         }
     }
     let setup = if let LifecycleAction::New(request) = &action {

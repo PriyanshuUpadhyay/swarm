@@ -8,7 +8,7 @@ informed-by:
   - 'owner, 2026-10-21: "yeah remove it", on the proposal to drop the usage meters from the sidebar footer'
 ---
 
-# 0108. The sidebar drops its usage meters
+# 0109. The sidebar drops its usage meters
 
 In the context of the web UI sidebar, facing a usage footer that the owner does not want there and
 whose text was cut at the sidebar edge, we chose to remove the footer and keep the meters only in
