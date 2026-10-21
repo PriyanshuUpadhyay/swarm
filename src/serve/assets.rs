@@ -33,21 +33,7 @@ pub(super) async fn static_file(State(app): State<App>, request: Request) -> Res
             None => return StatusCode::NOT_FOUND.into_response(),
         },
     };
-    let content_type = match Path::new(relative)
-        .extension()
-        .and_then(|extension| extension.to_str())
-    {
-        Some("html") => "text/html; charset=utf-8",
-        Some("js" | "mjs") => "text/javascript; charset=utf-8",
-        Some("css") => "text/css; charset=utf-8",
-        Some("json") => "application/json",
-        Some("webmanifest") => "application/manifest+json",
-        Some("svg") => "image/svg+xml",
-        Some("png") => "image/png",
-        Some("ico") => "image/x-icon",
-        Some("woff2") => "font/woff2",
-        _ => "application/octet-stream",
-    };
+    let content_type = content_type(Path::new(relative));
     let length = bytes.len();
     let mut response = Response::new(if request.method() == Method::HEAD {
         Body::empty()
@@ -62,6 +48,36 @@ pub(super) async fn static_file(State(app): State<App>, request: Request) -> Res
         HeaderValue::from_str(&length.to_string()).unwrap(),
     );
     response
+}
+
+pub(super) fn content_type(path: &Path) -> &'static str {
+    let extension = path.extension().and_then(|extension| extension.to_str());
+    match extension.map(str::to_ascii_lowercase).as_deref() {
+        Some("html") => "text/html; charset=utf-8",
+        Some("js" | "mjs") => "text/javascript; charset=utf-8",
+        Some("css") => "text/css; charset=utf-8",
+        Some("json") => "application/json",
+        Some("webmanifest") => "application/manifest+json",
+        Some("svg") => "image/svg+xml",
+        Some("png") => "image/png",
+        Some("jpg" | "jpeg") => "image/jpeg",
+        Some("gif") => "image/gif",
+        Some("webp") => "image/webp",
+        Some("avif") => "image/avif",
+        Some("txt") => "text/plain; charset=utf-8",
+        Some("csv") => "text/csv; charset=utf-8",
+        Some("md") => "text/markdown; charset=utf-8",
+        Some("pdf") => "application/pdf",
+        Some("wasm") => "application/wasm",
+        Some("mp4") => "video/mp4",
+        Some("webm") => "video/webm",
+        Some("mp3") => "audio/mpeg",
+        Some("ico") => "image/x-icon",
+        Some("woff") => "font/woff",
+        Some("woff2") => "font/woff2",
+        Some("ttf") => "font/ttf",
+        _ => "application/octet-stream",
+    }
 }
 
 /// A file under `--assets DIR`, refused when a link leads out of DIR.

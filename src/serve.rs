@@ -279,6 +279,9 @@ use owner::*;
 mod panels;
 use panels::*;
 
+mod pages;
+mod pages_hub;
+
 mod prompt_actions;
 use prompt_actions::*;
 
@@ -312,6 +315,7 @@ use usage::*;
 mod workspace_setup;
 use workspace_setup::*;
 
+pub use pages::pages;
 pub use runtime::run;
 pub use ui::{ui, ui_state};
 

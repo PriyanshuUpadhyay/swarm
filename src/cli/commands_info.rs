@@ -20,6 +20,7 @@ pub(crate) fn commands_info(args: &[String]) -> Result<Option<()>, Box<dyn std::
     match args.first().map(String::as_str) {
         Some("serve") => return serve::run(&args[1..]).map(Some),
         Some("ui") => return serve::ui(&args[1..]).map(Some),
+        Some("pages") => return serve::pages(&args[1..]).map(Some),
         _ => {}
     }
     if let [cmd, session_id, agent_id] = args
