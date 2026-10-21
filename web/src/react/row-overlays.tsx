@@ -2,26 +2,21 @@
 // (decision 3). A Radix root per row would cost every key move and scroll frame. These components keep
 // their own state, so a hover or a menu never re-renders the rows; they find the row from the DOM event.
 
-import { ArchiveIcon, ArchiveRestoreIcon, ChevronsDownUpIcon, ChevronsUpDownIcon, CopyIcon, MessageSquareIcon, PinIcon, PinOffIcon, PencilIcon, PlusIcon, SquareIcon, TerminalIcon, Trash2Icon } from "lucide-react";
+import { ArchiveIcon, CopyIcon, PlusIcon, SquareIcon } from "lucide-react";
 import { useEffect, useState, type RefObject } from "react";
 import type { App } from "../core/app";
 import type { Profile } from "../core/lifecycle";
-import { archivedSession, type NavRow, type SidebarRow } from "../core/nav";
+import type { NavRow, SidebarRow } from "../core/nav";
 import { ContextMenuContent, ContextMenuItem, ContextMenuLabel, ContextMenuSeparator } from "../components/ui/context-menu";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "../components/ui/dropdown-menu";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "../components/ui/hover-card";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../components/ui/tooltip";
 import { copyText as copy } from "./copy";
+import { ROW, SEP, rowActions, rowOf } from "./row-actions";
 import { StatusGlyph } from "./status";
 
-const ROW = '[data-testid="tree-row"]';
 const TIP_DELAY = 400;
 const CARD_DELAY = 800;
-
-const rowOf = (app: App, el: Element | null): NavRow | undefined => {
-  const id = el?.closest<HTMLElement>(ROW)?.dataset.id;
-  return id ? app.view.rows.find((r) => r.id === id) : undefined;
-};
 
 const rowEl = (list: HTMLElement, id: string) => list.querySelector<HTMLElement>(`${ROW}[data-id="${CSS.escape(id)}"]`);
 
@@ -67,7 +62,6 @@ export function RowMenu({ app, listRef }: { app: App; listRef: RefObject<HTMLDiv
 
   if (!row) return null;
   const r = row.row;
-  const archive = app.view.treeName === "archived";
   const group = app.view.marked.has(row.id) ? app.markedChats() : [];
   if (group.length > 1)
     return (
@@ -86,124 +80,20 @@ export function RowMenu({ app, listRef }: { app: App; listRef: RefObject<HTMLDiv
         <ContextMenuItem onSelect={() => app.clearMarked()}>Clear selection</ContextMenuItem>
       </ContextMenuContent>
     );
-  const fold = row.expanded !== null && (
-    <ContextMenuItem onSelect={() => app.toggle(row.id)}>
-      {row.expanded ? <ChevronsDownUpIcon /> : <ChevronsUpDownIcon />} {row.expanded ? "Collapse" : "Expand"}
-    </ContextMenuItem>
-  );
+  const actions = rowActions(app, row);
   return (
     <ContextMenuContent onCloseAutoFocus={onClose} onEscapeKeyDown={onClose} onPointerDownOutside={onClose} data-testid="row-menu">
       <ContextMenuLabel className="max-w-[260px] truncate normal-case">{r ? r.title : row.section.title}</ContextMenuLabel>
-      {!r && row.kind === "project" && (
-        <>
-          {!archive && row.section.path && (
-            <ContextMenuItem onSelect={() => app.life.newWorkspace(row.section.path!)}>
-              <PlusIcon /> New Workspace…
-            </ContextMenuItem>
-          )}
-          <ContextMenuItem onSelect={() => app.renameProject(row.section.path ?? "", row.section.title)}>
-            <PencilIcon /> Rename Project…
+      {actions.map((a, i) =>
+        a === SEP ? (
+          <ContextMenuSeparator key={i} />
+        ) : (
+          <ContextMenuItem key={i} disabled={a.disabled} onSelect={a.run}>
+            {a.icon && <a.icon />} {a.label}
           </ContextMenuItem>
-          {!archive && row.section.path && (
-            <ContextMenuItem onSelect={() => app.life.editSetupScript(row.section.path!, row.section.title)}>
-              <TerminalIcon /> Setup script…
-            </ContextMenuItem>
-          )}
-          {row.section.path && (
-            <ContextMenuItem onSelect={() => app.life.removeProject(row.section.path!, row.section.title)}>
-              Remove Project…
-            </ContextMenuItem>
-          )}
-          {fold && <ContextMenuSeparator />}
-          {fold}
-        </>
+        ),
       )}
-      {!r && row.kind === "pinned" && fold}
-      {r?.kind === "archived-chat" && (
-        <ContextMenuItem onSelect={() => app.unarchive(archivedSession(r.id))}>
-          <ArchiveRestoreIcon /> Unarchive chat
-        </ContextMenuItem>
-      )}
-      {r?.kind === "chat" && <ChatItems app={app} row={r} fold={fold} />}
-      {r?.kind === "workspace" && <WorkspaceItems app={app} row={r} fold={fold} archive={archive} project={row.section.title} />}
     </ContextMenuContent>
-  );
-}
-
-function ChatItems({ app, row, fold }: { app: App; row: SidebarRow; fold: React.ReactNode }) {
-  const session = row.selection?.chat;
-  if (row.archived) return null;
-  return (
-    <>
-      <ContextMenuItem disabled={!session} onSelect={() => session && app.renameChat(session)}>
-        <PencilIcon /> Rename chat…
-      </ContextMenuItem>
-      <ContextMenuItem disabled={!session} onSelect={() => session && void app.life.endChat(session, false)}>
-        <SquareIcon /> End chat…
-      </ContextMenuItem>
-      <ContextMenuItem disabled={!session} onSelect={() => session && void app.life.endChat(session, true)}>
-        <ArchiveIcon /> Archive chat
-      </ContextMenuItem>
-      <ContextMenuSeparator />
-      {session && (
-        <ContextMenuItem onSelect={() => app.openChat(session)}>
-          <MessageSquareIcon /> Open chat
-        </ContextMenuItem>
-      )}
-      {fold}
-      {session && (
-        <ContextMenuItem onSelect={() => void copy(session, "session id")}>
-          <CopyIcon /> Copy session id
-        </ContextMenuItem>
-      )}
-    </>
-  );
-}
-
-function WorkspaceItems({ app, row, fold, archive, project }: { app: App; row: SidebarRow; fold: React.ReactNode; archive: boolean; project: string }) {
-  if (row.archived || archive)
-    return (
-      <>
-        <ContextMenuItem onSelect={() => app.life.restoreWorkspace(row.id)}>
-          <ArchiveRestoreIcon /> Restore workspace
-        </ContextMenuItem>
-        <ContextMenuItem onSelect={() => void app.life.deleteWorkspace(row.id)}>
-          <Trash2Icon /> Delete workspace…
-        </ContextMenuItem>
-      </>
-    );
-  const up = app.workspaceMoveTarget(row.id, -1);
-  const down = app.workspaceMoveTarget(row.id, 1);
-  return (
-    <>
-      <ContextMenuItem disabled={!row.newChatEnabled} onSelect={() => void app.startChat(row.id)}>
-        <PlusIcon /> New chat
-      </ContextMenuItem>
-      <ContextMenuItem onSelect={() => (row.pinned ? void app.choose({ op: "unpin", workspace: row.id }) : void app.pin(row.id))}>
-        {row.pinned ? <PinOffIcon /> : <PinIcon />} {row.pinned ? "Unpin workspace" : "Pin workspace"}
-      </ContextMenuItem>
-      <ContextMenuItem onSelect={() => app.renameWorkspace(row.id)}>
-        <PencilIcon /> Rename workspace…
-      </ContextMenuItem>
-      <ContextMenuItem disabled={!up} onSelect={() => up && void app.choose({ op: "reorder_workspace", workspace: row.id, target: up })}>
-        Move Up
-      </ContextMenuItem>
-      <ContextMenuItem disabled={!down} onSelect={() => down && void app.choose({ op: "reorder_workspace", workspace: row.id, target: down })}>
-        Move Down
-      </ContextMenuItem>
-      <ContextMenuItem onSelect={() => void app.life.archiveWorkspace(row.id)}>
-        <ArchiveIcon /> Archive workspace
-      </ContextMenuItem>
-      <ContextMenuItem onSelect={() => void app.life.deleteWorkspace(row.id)}>
-        <Trash2Icon /> Delete workspace…
-      </ContextMenuItem>
-      {row.missing && <ContextMenuItem onSelect={() => void app.life.pruneWorkspace(row.id, project)}>Prune worktree…</ContextMenuItem>}
-      <ContextMenuSeparator />
-      {fold}
-      <ContextMenuItem onSelect={() => void copy(row.id, "path")}>
-        <CopyIcon /> Copy path
-      </ContextMenuItem>
-    </>
   );
 }
 
