@@ -6,7 +6,7 @@
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } from "react";
 import type { App } from "../core/app";
 import { backgroundRows, poll, type BackgroundRow, type BackgroundTask } from "../core/background";
 import { Button } from "../components/ui/button";
@@ -31,10 +31,11 @@ export function BackgroundPanel({ app, session }: { app: App; session: string })
   };
   const ready = (key: string) => (focus: () => void) => {
     shown.current = { key, focus };
-    if (wanted.current === key) {
-      wanted.current = null;
-      focus();
-    }
+    // The first terminal to mount after a click is the chosen row, or the fallback when that row
+    // is gone; either way the request ends here, so it cannot wait for the row to come back.
+    const asked = wanted.current === key;
+    wanted.current = null;
+    if (asked) focus();
     return () => {
       if (shown.current?.key === key) shown.current = null;
     };
@@ -118,11 +119,13 @@ const css = (name: string) => getComputedStyle(document.documentElement).getProp
 const colors = () => ({ background: css("--background"), foreground: css("--foreground") });
 
 /** One xterm on one socket. `task` makes it a read-only view of that shell's output file. An
- *  agent terminal hands `onReady` its focus once the socket opens. */
+ *  agent terminal hands `onReady` its focus when it mounts; a focus asked before the socket opens
+ *  waits for the open. */
 function Term({ app, session, agent, task, onReady }: { app: App; session: string; agent: string; task?: string; onReady?: Ready }) {
   const shell = task !== undefined;
   const host = useRef<HTMLDivElement>(null);
   const live = useRef<Terminal | null>(null);
+  const register = useEffectEvent((focus: () => void) => onReady?.(focus));
   const theme = useTheme();
   useEffect(() => {
     const paint = () => {
@@ -152,7 +155,9 @@ function Term({ app, session, agent, task, onReady }: { app: App; session: strin
     term.attachCustomKeyEventHandler((e) => !app.registry.match(e));
     let ws: WebSocket | null = null;
     let gone = false;
-    let release: (() => void) | undefined;
+    let opened = false;
+    let asked = false;
+    const release = register(() => (opened ? term.focus() : (asked = true)));
     const send = (data: string | Uint8Array) => ws?.readyState === WebSocket.OPEN && ws.send(data);
     const resize = () => send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }));
     app.api
@@ -164,7 +169,8 @@ function Term({ app, session, agent, task, onReady }: { app: App; session: strin
         ws.onopen = () => {
           fit.fit();
           resize();
-          release = onReady?.(() => term.focus());
+          opened = true;
+          if (asked) term.focus();
         };
         ws.onmessage = (m) => term.write(typeof m.data === "string" ? m.data : new Uint8Array(m.data as ArrayBuffer));
         ws.onclose = () => !gone && term.write("\r\n\x1b[2m[closed]\x1b[0m\r\n");
