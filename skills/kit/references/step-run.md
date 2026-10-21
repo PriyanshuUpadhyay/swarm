@@ -33,7 +33,8 @@ which keep their evidence. It never runs the evidence. `done` accepts no `--forc
 A plan run is one whose table has a `Writes` column. Its step files carry `Writes: <paths>` (or `none`) under
 `Uses:`, and `Optional: yes` for a row marked `(optional)`. In a plan run, `skip` refuses a step with no
 `Optional: yes`. `take` records the work tree as a `base <tree>` line in `events.log`, and `done` refuses a
-path changed since then outside the step's Writes, the Writes of the other active steps, and the run folder.
+path changed since then outside the step's Writes, the Writes of the other active or done steps that it does
+not need, and the run folder. It also refuses a change to `.blocks.toml`, whose `[off]` table only the owner sets.
 Outside git, or with no base from `take`, it prints `not run: scope`. `done` also runs the script checks of each block in the step's row of
 `<folder>/plan.md`, so removing the `Skills read:` line skips none. `take` of a step with the `change-review`
 block refuses an agent that took a writing step it reaches through `Uses:`.

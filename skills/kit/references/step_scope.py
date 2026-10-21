@@ -25,6 +25,8 @@ def write_paths(cell):
     come through here, so the Writes grammar has one owner."""
     paths = [p.strip().strip("`").strip() for p in cell.split(",")]
     paths = [p for p in paths if p]
+    if not paths:
+        raise SystemExit("a Writes cell is empty; write `none` for a step that writes only its run folder")
     if "none" in paths and paths != ["none"]:
         raise SystemExit(f"Writes `none` stands alone, not beside paths: {cell}")
     return [] if paths == ["none"] else paths
@@ -36,9 +38,13 @@ def writes(text):
     return None if value is None else write_paths(value)
 
 
+def clean_env():
+    """os.environ with no GIT_ variable: a caller's GIT_DIR or GIT_WORK_TREE would point git at another repo."""
+    return {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+
+
 def git(root, *args, env=None):
-    # A caller's GIT_DIR or GIT_WORK_TREE would point the diff at another repo, so drop them all.
-    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")} if env is None else env
+    env = clean_env() if env is None else env
     try:
         return subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True, encoding="utf-8",
                               errors="replace", env=env)
@@ -53,7 +59,7 @@ def work_tree(folder):
     the index's stat cache, so an unchanged file is not read again.
     """
     root, _ = work_root(folder)
-    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    env = clean_env()
     if git(root, "rev-parse", "--show-toplevel", env=env).returncode:
         return None
     index = Path(git(root, "rev-parse", "--path-format=absolute", "--git-path", "index", env=env).stdout.strip())
@@ -69,20 +75,17 @@ def work_tree(folder):
 
 
 def base(folder, step):
-    """(tree, steps done since) for the step's newest take, or (None, set()) when that take recorded no tree."""
+    """The tree that the step's newest take recorded, or None."""
     events = Path(folder) / "events.log"
     lines = events.read_text(encoding="utf-8").splitlines() if events.exists() else []
-    rows = [line.split("\t") for line in lines]
-    found, since = None, set()
-    for row in rows:
+    found = None
+    for row in (line.split("\t") for line in lines):
         if len(row) > 2 and row[1] == step:
             if row[2].startswith("take "):
-                found, since = None, set()
+                found = None
             elif row[2].startswith("base "):
                 found = row[2].removeprefix("base ")
-        elif len(row) > 2 and row[2].startswith("done "):
-            since.add(row[1])
-    return found, since
+    return found
 
 
 def inside(path, scope):
@@ -92,12 +95,13 @@ def inside(path, scope):
 
 
 def check(folder, step, text):
-    """SystemExit when the step changed a path outside its own Writes, the Writes of every other active step, and
-    the run folder; a printed `not run: scope:` line when the check cannot run."""
+    """SystemExit when the step changed `.blocks.toml`, or a path outside its own Writes, the Writes of each step
+    that can run beside it (active or done, and not one it needs), and the run folder; a printed `not run: scope:`
+    line when the check cannot run."""
     own = writes(text)
     if own is None:
         return
-    start, since = base(folder, step)
+    start = base(folder, step)
     now = work_tree(folder)
     if start is None or now is None:
         print(f"not run: scope: {'no git work tree' if now is None else 'no base recorded at take'}")
@@ -105,10 +109,12 @@ def check(folder, step, text):
     root, tree = now
     allowed = list(own)
     # A step that ran beside this one counts too, also when it was done first: its files cannot be told apart.
+    # Its status says so, so the gap between done's file write and its log line does not matter.
+    needed = earlier(folder, step)
     for other in sorted(Path(folder).glob("[0-9][0-9]-*.md")):
-        if other.stem != step:
+        if other.stem != step and other.stem not in needed:
             body = other.read_text(encoding="utf-8")
-            if body.startswith("Status: active ") or other.stem in since:
+            if body.startswith(("Status: active ", "Status: done ")):
                 allowed += writes(body) or []
     run = Path(folder).resolve()
     if run.is_relative_to(root.resolve()):
@@ -117,6 +123,8 @@ def check(folder, step, text):
     if diff.returncode:  # a pruned base tree, say; refuse, so a failed diff never passes the check
         raise SystemExit(f"{step} is not done: scope check failed: {diff.stderr.strip()}; take the step again")
     changed = [p for p in diff.stdout.split("\0") if p]
+    if ".blocks.toml" in changed:  # its [off] table would turn off this step's own checks
+        raise SystemExit(f"{step} is not done: it changed .blocks.toml, which only the owner changes; undo it")
     if outside := next((p for p in changed if not any(inside(p, s) for s in allowed)), None):
         raise SystemExit(f"{step} is not done: it changed {outside}, outside the Writes of every step that ran beside it "
                          f"({', '.join(own) or 'none'} for {step}); undo it, or ask the owner to change the plan")

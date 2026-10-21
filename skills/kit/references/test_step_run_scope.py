@@ -85,6 +85,25 @@ def test_scope_parallel_order_names_and_a_lost_base(tmp):
     assert out.returncode == 1 and "scope check failed" in out.stderr, out
 
 
+def test_a_step_does_not_change_blocks_toml(tmp):
+    # Even inside its Writes: an [off] line there would turn off the step's own script checks.
+    repo, folder = scope_repo(tmp)
+    f = folder / "01-a.md"
+    f.write_text(f.read_text(encoding="utf-8").replace("Writes: src/a/", "Writes: src/a/, .blocks.toml"), encoding="utf-8")
+    assert run("take", folder, "01-a", "x").returncode == 0
+    (repo / ".blocks.toml").write_text('[off]\nplan-review = "no"\n', encoding="utf-8")
+    out = run("done", folder, "01-a", "1")
+    assert out.returncode == 1 and "it changed .blocks.toml, which only the owner changes" in out.stderr, out
+    assert step_scope.write_paths("none") == [] and step_scope.write_paths("`a/`, b") == ["a/", "b"]
+    for cell, error in (("", "a Writes cell is empty"), ("none, a/", "stands alone")):
+        try:
+            step_scope.write_paths(cell)
+        except SystemExit as stop:
+            assert error in str(stop), stop
+        else:
+            raise AssertionError(cell)
+
+
 def test_scope_needs_git_and_a_writes_line(tmp):
     folder = Path(tmp, "run")
     Path(tmp, "plan.md").write_text(PLAN, encoding="utf-8")
