@@ -45,7 +45,7 @@ fn judge_names_the_fix_for_each_state() {
         ),
     ];
     for (status, held, state, action) in cases {
-        let health = judge(status, held);
+        let health = judge(status, || held);
         assert_eq!(health["state"], state, "{health}");
         assert_eq!(health["action"].as_str(), action, "{health}");
     }

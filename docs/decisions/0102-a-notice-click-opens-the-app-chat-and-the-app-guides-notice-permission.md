@@ -36,6 +36,9 @@ not mapped to `pane closed`, and the card meets the owner where they work.
   app starts on `/chat/<id>`. The session id must be 1-64 of `[A-Za-z0-9-]`. A failed `open` is
   an error for a click; `swarm ui` keeps going as before. The click prints no URL, so the token
   stays off its output.
+- A click on a notice with no chat, such as a run's done notice or the test notice, runs
+  `swarm ui`, so it opens the app rather than posting `swarm: pane closed`. Only macOS opens a
+  window; elsewhere the click reports that.
 - The SwarmNotify helper gains `--status` and `--authorize`, which print the helper's notice
   settings as one JSON line. It holds no rule (ADR 0077).
 - `swarm notices health --json` owns the rule: `ok`, `allow` (macOS has not asked), `blocked`

@@ -33,7 +33,14 @@ pub(crate) fn notices_command(args: &[String]) -> Result<(), Box<dyn std::error:
             if let Some(helper) = helper_executable() {
                 let mut command = std::process::Command::new(helper);
                 command.arg("--authorize");
-                bounded_output(command, std::time::Duration::from_secs(120));
+                if bounded_output(command, std::time::Duration::from_secs(120)).is_none() {
+                    return print_json(&row(
+                        "unknown",
+                        "The notice helper did not answer the permission request within 2 minutes",
+                        &[],
+                        None,
+                    ));
+                }
             }
             print_json(&health())
         }
@@ -68,14 +75,15 @@ pub(crate) fn health() -> serde_json::Value {
     let status = bounded_output(command, std::time::Duration::from_secs(5))
         .and_then(|out| serde_json::from_str::<serde_json::Value>(&out).ok())
         .ok_or_else(|| "Could not read the notice permission from the notice helper".to_string());
-    judge(status, last_notice_held("1h"))
+    judge(status, || last_notice_held("1h"))
 }
 
 /// The rule, apart from macOS: the helper's `--status` answer (or why it is missing), then whether
 /// a Focus held the newest notice. A failed read is `unknown`, never `ok`.
+/// `held` reads the log only when the permission is fine, so the read stays within 20 s.
 pub(crate) fn judge(
     status: Result<serde_json::Value, String>,
-    held: Result<Option<bool>, String>,
+    held: impl FnOnce() -> Result<Option<bool>, String>,
 ) -> serde_json::Value {
     let status = match status {
         Ok(status) => status,
@@ -127,7 +135,7 @@ pub(crate) fn judge(
             );
         }
     }
-    match held {
+    match held() {
         Ok(Some(true)) => row(
             "held",
             "A Focus, such as Do Not Disturb, held swarm's last notice.",

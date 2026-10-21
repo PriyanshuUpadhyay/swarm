@@ -42,7 +42,8 @@ pub(super) struct NoticesWrite {
 }
 /// ADR 0102: the notice health, which only `swarm notices` reads.
 pub(super) async fn notices_read(State(app): State<App>) -> Result<Json<Value>, ApiError> {
-    notices_cli(&app, &["notices", "health", "--json"], 20).await
+    // Above the 20 s worst case: the helper's 5 s and the log's 15 s.
+    notices_cli(&app, &["notices", "health", "--json"], 30).await
 }
 /// Runs the owner's fix: the macOS prompt, a System Settings pane, or a test notice; then the
 /// health.

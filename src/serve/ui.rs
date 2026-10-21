@@ -20,6 +20,10 @@ pub fn open_chat(session: &str) -> Result<(), Box<dyn std::error::Error>> {
     if !valid_session(session) {
         return Err(format!("swarm: bad session id {session}").into());
     }
+    // Only macOS opens a window, so elsewhere a click says so rather than exit 0 with none.
+    if !cfg!(target_os = "macos") {
+        return Err("swarm: only macOS opens the app on a click".into());
+    }
     open_ui(&[], Some(session))
 }
 

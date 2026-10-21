@@ -158,7 +158,10 @@ final class Helper: NSObject, NSApplicationDelegate, UNUserNotificationCenterDel
             if status != 0 { failure = error.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines) }
             await MainActor.run { log("focus \(session) \(agent) exit \(status)") }
         } else {
-            failure = "swarm: pane closed"
+            // A notice with no chat, such as a run's done notice or the test notice, opens the app.
+            let (status, _, error) = await runSwarm(clickTarget, ["ui"])
+            if status != 0 { failure = error.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines) }
+            await MainActor.run { log("ui exit \(status)") }
         }
         if let failure {
             let content = UNMutableNotificationContent()
