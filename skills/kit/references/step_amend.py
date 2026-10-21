@@ -109,11 +109,16 @@ def add(folder, row, before):
         lines[at:at] = add
     page = plan.with_suffix(".html")
     old_page = page.read_bytes() if page.is_file() else None
+    held = folder / f"{before}.md" if before else None
+    old_held = held.read_bytes() if held else None
 
     def restore():
-        """Put plan.md and plan.html back as they were, and drop the new step file, so a refusal leaves no trace."""
+        """Put plan.md, plan.html, and the --before step file back as they were, and drop the new step file, so a
+        refusal leaves no trace."""
         plan.write_bytes(old_plan)
         page.write_bytes(old_page) if old_page is not None else page.unlink(missing_ok=True)
+        if held:
+            held.write_bytes(old_held)
         (folder / f"{name}.md").unlink(missing_ok=True)
 
     # From the first write of plan.md, any stop (a refusal, an error, Ctrl-C) puts every file back.
@@ -124,13 +129,12 @@ def add(folder, row, before):
         if checked.returncode:
             raise SystemExit(f"amend refused: {checked.stderr.strip()}")
         step_run.start(folder, plan)
+        if held:
+            uses = step_run.check_needs([r[:3] for r in step_run.table(plan)])[before]
+            rest = old_held.decode("utf-8").split("\n")
+            step_run.write_step(held, "\n".join([rest[0], f"Uses: {', '.join(uses)}", *rest[2:]]))
     except BaseException:
         restore()
         raise
     step_run.log(folder, name, f"amend {name}")
-    if before:
-        uses = step_run.check_needs([r[:3] for r in step_run.table(plan)])[before]
-        file = folder / f"{before}.md"
-        rest = file.read_text(encoding="utf-8").split("\n")
-        step_run.write_step(file, "\n".join([rest[0], f"Uses: {', '.join(uses)}", *rest[2:]]))
     print(f"{name}: amended ({spent(folder)} of {allowed} spent)")

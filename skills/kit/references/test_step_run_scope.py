@@ -71,20 +71,15 @@ def test_done_refuses_a_write_outside_scope(tmp):
 def test_scope_skips_a_step_done_before_the_take(tmp):
     repo, folder = scope_repo(tmp)
     assert run("take", folder, "01-a", "x").returncode == 0 and run("done", folder, "01-a", "1").returncode == 0
-    assert run("take", folder, "02-b", "y").returncode == 0
+    # An agent name that holds " failed: " is still a take.
+    assert run("take", folder, "02-b", "y failed: z").returncode == 0
     (repo / "src" / "a").mkdir()
     (repo / "src" / "a" / "late.ts").write_text("01-a was done before this take\n", encoding="utf-8")
     out = run("done", folder, "02-b", "1")
     assert out.returncode == 1 and "it changed src/a/late.ts" in out.stderr, out
-    # An agent name that holds " failed: " is still a take.
-    (repo / "src" / "a" / "late.ts").unlink()
-    assert run("take", folder, "02-b", "y failed: z", "--force").returncode == 0
-    (repo / "src" / "a" / "late.ts").write_text("written after the new take\n", encoding="utf-8")
-    out = run("done", folder, "02-b", "2")
-    assert out.returncode == 1 and "it changed src/a/late.ts" in out.stderr, out
     # A step taken again after this take runs beside it once more.
     assert run("take", folder, "01-a", "x2", "--force").returncode == 0
-    assert run("done", folder, "02-b", "2").returncode == 0
+    assert run("done", folder, "02-b", "1").returncode == 0
 
 
 def test_scope_counts_a_step_done_while_take_reads_the_tree(tmp):
@@ -188,19 +183,20 @@ def test_scope_fails_closed_in_a_repo(tmp):
         assert "not the repo at" in str(stop) and str(outer / "inner") in str(stop), stop
     else:
         raise AssertionError("git answered from the outer repo and the check passed")
-    # An unreadable .blocks.toml stops the take before it claims, with no traceback.
-    (repo / ".git" / "HEAD").write_text("ref: refs/heads/master\n", encoding="utf-8")
-    (repo / ".git" / "info" / "exclude").write_text("/tmp/\n/.blocks.toml\n", encoding="utf-8")  # git skips it
-    (repo / ".blocks.toml").write_text("", encoding="utf-8")
-    (repo / ".blocks.toml").chmod(0)
-    try:
-        out = run("take", folder, "02-b", "y")
-    finally:
-        (repo / ".blocks.toml").chmod(0o644)
-        (repo / ".blocks.toml").unlink()
-    assert out.returncode == 1 and "cannot be read" in out.stderr and "Traceback" not in out.stderr, out
-    assert (folder / "02-b.md").read_text(encoding="utf-8").startswith("Status: open")
-    (repo / ".git" / "HEAD").write_text("garbage\n", encoding="utf-8")
+    # An unreadable .blocks.toml stops the take before it claims, with no traceback. Root reads a mode-0 file.
+    if os.geteuid() != 0:
+        (repo / ".git" / "HEAD").write_text("ref: refs/heads/master\n", encoding="utf-8")
+        (repo / ".git" / "info" / "exclude").write_text("/tmp/\n/.blocks.toml\n", encoding="utf-8")  # git skips it
+        (repo / ".blocks.toml").write_text("", encoding="utf-8")
+        (repo / ".blocks.toml").chmod(0)
+        try:
+            out = run("take", folder, "02-b", "y")
+        finally:
+            (repo / ".blocks.toml").chmod(0o644)
+            (repo / ".blocks.toml").unlink()
+        assert out.returncode == 1 and "cannot be read" in out.stderr and "Traceback" not in out.stderr, out
+        assert (folder / "02-b.md").read_text(encoding="utf-8").startswith("Status: open")
+        (repo / ".git" / "HEAD").write_text("garbage\n", encoding="utf-8")
     # A take that cannot read the repo leaves the step open, not claimed with no base.
     out = run("take", folder, "02-b", "y")
     assert out.returncode == 1 and "scope check failed" in out.stderr, out

@@ -144,6 +144,17 @@ def test_amend_refuses_odd_rows(tmp):
             assert str(stop) == "boom", stop
     assert page.read_text(encoding="utf-8") == "before\n" and plan.read_text(encoding="utf-8") == ticked
     assert not (folder / "08-ok.md").exists()
+    # A failed Uses rewrite of the --before step puts its file back too, and spends no budget.
+    reply = (folder / "05-reply.md").read_bytes()
+    real = step_run.write_step
+    full = lambda file, text: (_ for _ in ()).throw(OSError("disk full")) if file.name == "05-reply.md" else real(file, text)
+    with patch.object(step_run, "write_step", full):
+        try:
+            step_amend.amend(folder, "| 08-ok | build | x | none | local-research | y |", "--before", "05-reply")
+        except OSError:
+            pass
+    assert (folder / "05-reply.md").read_bytes() == reply and plan.read_text(encoding="utf-8") == ticked
+    assert "amend 08-ok" not in (folder / "events.log").read_text(encoding="utf-8")
     # A --before step file with no plan row is refused, not a traceback.
     (folder / "99-stray.md").write_text("Status: open\nUses: \n", encoding="utf-8")
     out = run("amend", folder, "| 08-ok | build | x | none | local-research | y |", "--before", "99-stray")
