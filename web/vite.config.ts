@@ -22,8 +22,9 @@ export default defineConfig({
     babel({ include: [/\/src\/(react|components)\/.*\.tsx?$/], presets: [reactCompilerPreset()] }),
   ],
   server: {
-    // Keep the browser same-origin; the proxy rewrites Host to the serve port.
-    proxy: serve ? { "/api": { target: new URL(serve).origin, changeOrigin: true } } : undefined,
+    // Keep the browser same-origin; the proxy rewrites Host to the serve port. `ws` forwards the
+    // terminal socket; its Origin stays this dev server, which `--dev-origin` lets in.
+    proxy: serve ? { "/api": { target: new URL(serve).origin, changeOrigin: true, ws: true } } : undefined,
   },
   test: { include: ["src/**/*.test.ts"], environment: "node" },
 });

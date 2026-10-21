@@ -238,11 +238,19 @@ impl Adapter {
         &self,
         vars: &[(&str, &str)],
     ) -> Result<std::process::ExitStatus, Box<dyn std::error::Error>> {
+        Ok(self.attach_command(vars)?.status()?)
+    }
+
+    /// The `attach` line as a command, for a caller that runs it in its own terminal.
+    pub fn attach_command(
+        &self,
+        vars: &[(&str, &str)],
+    ) -> Result<std::process::Command, Box<dyn std::error::Error>> {
         let line = self
             .attach
             .as_ref()
             .ok_or_else(|| format!("swarm: adapter {} has no attach", self.name))?;
-        Ok(self.command(line, vars).status()?)
+        Ok(self.command(line, vars))
     }
 
     /// True when `pane` appears as a whole token in the list output, so %1 never matches %12.

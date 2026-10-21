@@ -227,6 +227,9 @@ use actions::*;
 mod assets;
 use assets::*;
 
+mod background;
+use background::*;
+
 mod browser;
 use browser::*;
 
@@ -296,6 +299,9 @@ use setup::*;
 
 mod snapshot;
 use snapshot::*;
+
+mod terminal;
+use terminal::*;
 
 mod tool_output;
 use tool_output::*;

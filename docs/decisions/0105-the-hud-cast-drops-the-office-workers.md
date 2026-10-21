@@ -9,7 +9,7 @@ informed-by:
   - "local gallery ui/Tools/mascot-gallery.py, which showed every mascot in each state"
 ---
 
-# 0104. The HUD cast drops the office workers
+# 0105. The HUD cast drops the office workers
 
 In the context of the HUD mascot cast, facing an owner who saw all 28 mascots side by side and
 judged the six Pixel Agents office workers bad, we chose to remove them from the built-in sheets,
