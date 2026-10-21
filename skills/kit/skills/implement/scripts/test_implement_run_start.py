@@ -27,17 +27,14 @@ def test_installed_kit_paths(tmp):
 
 def test_start_plan_needs_approval(tmp):
     """`start --plan <run>` refuses a plan that the plan skill's stop rule does not pass, and names it in 01-frame."""
-    import hashlib
     plan = Path(tmp, "plan-run")
     plan.mkdir()
-    (plan / "plan.md").write_text("# Plan: x\n\nPreset: implement\n\n| File | Needs | Holds | Block | Why |\n|---|---|---|---|---|\n"
-                                  "| 05-build | none | code | checked-units, ui-motion | the planner added ui-motion |\n", encoding="utf-8")
+    table = implement_table().replace("| checked-units, prove-it-works, task-file |", "| checked-units, ui-motion |")
+    (plan / "plan.md").write_text(f"# Plan: x\n\nPreset: implement\n\n{table}", encoding="utf-8")
     (plan / "plan.html").write_text("<p>chart</p>", encoding="utf-8")
     out, folder, repo, run = blocks_start(tmp, "with-plan", "", None, "--plan", plan)
     assert out.returncode == 1 and "no round in" in out.stderr and not Path(repo, "tmp", "flow").exists(), out
-    files = {f"../{n}": hashlib.sha256((plan / n).read_bytes()).hexdigest() for n in ("plan.html", "plan.md")}
-    (plan / "plan-review").mkdir()
-    (plan / "plan-review" / "1.json").write_text(json.dumps({"files": files, "result": {"decision": "approved"}}))
+    approve(plan)
     out = run("start", "--plan", plan)
     assert out.returncode == 0, out.stderr
     assert f"Plan: {plan.resolve()}\n" in step_text(Path(out.stdout.splitlines()[0]), "01-frame")
@@ -53,6 +50,61 @@ def test_start_plan_needs_approval(tmp):
     shutil.rmtree(Path(out.stdout.splitlines()[0]))
     out = run("start", "--plan", chat)
     assert out.returncode == 1 and "needs `Preset: implement`" in out.stderr, out
+
+
+def implement_table():
+    """The implement preset's step table, as a plan copies it."""
+    preset = (SCRIPT.parents[1] / "SKILL.md").read_text(encoding="utf-8").split("## Preset\n", 1)[1]
+    return "| File" + preset.split("\n| File", 1)[1].split("\n\n", 1)[0] + "\n"
+
+
+def approve(plan):
+    files = {f"../{n}": hashlib.sha256((plan / n).read_bytes()).hexdigest() for n in ("plan.html", "plan.md")}
+    (plan / "plan-review").mkdir(exist_ok=True)
+    (plan / "plan-review" / "1.json").write_text(json.dumps({"files": files, "result": {"decision": "approved"}}),
+                                                  encoding="utf-8")
+
+
+def test_start_plan_must_match_the_graph(tmp):
+    """An approved plan whose steps or Needs differ from implement's graph is refused, so no approved step is dropped."""
+    full = implement_table()
+    probe = "| `04-probe.md` | frame | CI logs | local-research | find the cause |\n"
+    cases = {
+        "added": (full.replace("| `05-build.md` |", probe + "| `05-build.md` |", 1), ["added 04-probe"]),
+        "missing": ("\n".join(l for l in full.splitlines() if "`02-design.md`" not in l) + "\n",
+                    ["missing 02-design", "skip 02-design, 03-contracts or 04-impact after 01-frame"]),
+        "needs": (full.replace("| `04-impact.md` | contracts |", "| `04-impact.md` | frame |", 1),
+                  ["04-impact needs 03-contracts in implement, 01-frame in plan", "approve it in a new round"]),
+        "twice": (full.replace("| `05-build.md` |", "| `05-build.md` | impact, and design unless skipped | code | ui-motion | again |\n"
+                               "| `05-build.md` |", 1), ["05-build twice"]),
+        "unnamed": (full.replace("| `05-build.md` |", "| `probe.md` | frame | logs | local-research | find it |\n"
+                                 "| `05-build.md` |", 1), ["probe is not NN-name"]),
+        "escape": (full.replace("| `07-close.md` |", "| `07-\x1b[2Jclose.md` |", 1), ["added 07-[2Jclose"]),
+    }
+    run = None
+    for name, (table, words) in cases.items():
+        plan = Path(tmp, f"plan-{name}")
+        plan.mkdir()
+        (plan / "plan.md").write_text(f"# Plan: x\n\nPreset: implement\n\n{table}", encoding="utf-8")
+        (plan / "plan.html").write_text("<p>chart</p>", encoding="utf-8")
+        approve(plan)
+        if run is None:
+            out, folder, repo, run = blocks_start(tmp, "graph-match", "", None, "--plan", plan)
+        else:
+            out = run("start", "--plan", plan)
+        assert out.returncode == 1, (name, out)
+        assert "differ from implement's graph" in out.stderr and all(w in out.stderr for w in words), (name, out.stderr)
+        assert not Path(repo, "tmp", "flow").exists(), f"{name}: a refused plan makes no run folder"
+    # Needs are a set, so the same steps in another word order still start.
+    plan = Path(tmp, "plan-order")
+    plan.mkdir()
+    table = full.replace("| impact, and design unless skipped |", "| design unless skipped, and impact |", 1)
+    assert table != full
+    (plan / "plan.md").write_text(f"# Plan: x\n\nPreset: implement\n\n{table}", encoding="utf-8")
+    (plan / "plan.html").write_text("<p>chart</p>", encoding="utf-8")
+    approve(plan)
+    out = run("start", "--plan", plan)
+    assert out.returncode == 0, out.stderr
 
 
 def test_auto_mode_needs_the_owners_words(tmp):

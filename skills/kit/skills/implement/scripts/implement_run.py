@@ -20,7 +20,8 @@ with `Revision: HEAD`, as references/step-run.md describes. The kit's references
 owns status, ready, stale, take, done, and events.log. This script adds the implement rules: the revision
 of 05-build is HEAD, take 04-impact lists the places that name the contracts' code names, and take
 07-close needs the check-mode run's own APPROVE verdict on HEAD. `start --plan <run>` refuses a plan that
-the plan skill's stop rule (blocks/plan-review/scripts/start_plan.py) does not pass, and names it in 01-frame.md.
+the plan skill's stop rule (blocks/plan-review/scripts/start_plan.py) does not pass, or whose steps or Needs
+differ from the step graph. A plan that starts is named in 01-frame.md.
 """
 
 import codecs
@@ -54,6 +55,25 @@ def review(folder, target, *opts):
         raise SystemExit(result.returncode)
 
 
+def check_graph(plan, rows):
+    """Refuse an approved plan whose steps or Needs differ from graph(), so no approved step is dropped in silence."""
+    # need_files reads the word after NN-, so a name without it is reported here and kept out of the Needs read.
+    odd = [r[0] for r in rows if not re.fullmatch(r"\d\d-[^-\s][^\s]*", r[0])]
+    names = [r[0] for r in rows if r[0] not in odd]
+    planned = {r[0]: step_run.need_files(r[1], names) for r in rows if r[0] not in odd}
+    ours = graph()
+    diff = [f"{s or '(empty)'} is not NN-name" for s in odd]
+    diff += [f"{s} twice" for s in dict.fromkeys(s for s in names if names.count(s) > 1)]
+    diff += [f"added {s}" for s in planned if s not in ours] + [f"missing {s}" for s in ours if s not in planned]
+    diff += [f"{s} needs {', '.join(ours[s]) or 'none'} in implement, {', '.join(planned[s]) or 'none'} in plan"
+             for s in ours if s in planned and sorted(planned[s]) != sorted(ours[s])]
+    if diff:
+        raise SystemExit(one_line(
+            f"{plan}/plan.md steps differ from implement's graph: {'; '.join(diff)}. Implement runs its own steps: "
+            f"skip {', '.join(SKIPPABLE[:-1])} or {SKIPPABLE[-1]} after 01-frame, and put other work in a plan for "
+            "another verb. Edit plan.md and approve it in a new round."))
+
+
 def start(profile="default", domains=None, parent_loop=None, plan=None):
     if parent_loop is not None:
         check_loop_key(parent_loop)
@@ -66,7 +86,9 @@ def start(profile="default", domains=None, parent_loop=None, plan=None):
         with contextlib.redirect_stdout(sys.stderr):  # the folder stays the first stdout line
             start_plan.approved(plan)
         plan = Path(plan).resolve()
-        plan_blocks = {r[0]: r[3] for r in start_plan.preset.plan_chart.read_plan(plan / "plan.md")[2]}
+        rows = start_plan.preset.plan_chart.read_plan(plan / "plan.md")[2]
+        check_graph(plan, rows)
+        plan_blocks = {r[0]: r[3] for r in rows}
     root = git("rev-parse", "--show-toplevel")
     if not root:
         raise SystemExit("not in a git repository")
