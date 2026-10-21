@@ -236,8 +236,8 @@ function RowCard({ row }: { row: SidebarRow }) {
   const [title, ...rest] = row.help.split("\n");
   return (
     <div className="grid gap-1.5">
-      <div className="flex items-center gap-1.5">
-        <span className="min-w-0 flex-1 truncate font-medium">{title || row.title}</span>
+      <div className="flex items-start gap-1.5">
+        <span className="min-w-0 flex-1 font-medium wrap-anywhere">{title || row.title}</span>
         {row.status && <StatusGlyph status={row.status} />}
       </div>
       {rest.length > 0 && <div className="font-mono text-xs break-all whitespace-pre-wrap text-muted-foreground">{rest.join("\n")}</div>}
