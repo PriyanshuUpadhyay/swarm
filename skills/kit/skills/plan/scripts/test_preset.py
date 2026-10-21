@@ -126,6 +126,15 @@ def test_a_new_skill_needs_a_name_and_a_description_that_yaml_reads():
     assert run("--check", text=skill("mine", " " + json.dumps("Use when: the owner asks")))["ok"]
     assert run("--check", text=skill("mine", "'Use when: the owner''s chat asks'"))["ok"]
     assert run("--check", text=skill("mine", "'Use when: it's open'"))["defect"] == "description is not a valid quoted string"
+    for bare in ("true", "123", "null", "Use when the owner asks:"):
+        assert run("--check", text=skill("mine", bare))["defect"] == "description has YAML punctuation, so it needs double quotes", bare
+
+
+def test_a_draft_that_is_not_utf8_is_a_defect():
+    out = subprocess.run([sys.executable, "-I", "-B", HERE / "preset.py", "--check"], input=b"## Preset\n\xff\n",
+                         capture_output=True)
+    assert out.returncode == 0, out.stderr
+    assert json.loads(out.stdout) == {"ok": False, "defect": "draft is not UTF-8 text"}
 
 
 def test_json_into_a_closed_pipe_exits_quietly():
@@ -152,6 +161,7 @@ if __name__ == "__main__":
     test_a_draft_defect_is_the_first_one_python_finds()
     test_cells_are_the_rows_that_a_run_reads()
     test_a_new_skill_needs_a_name_and_a_description_that_yaml_reads()
+    test_a_draft_that_is_not_utf8_is_a_defect()
     test_json_into_a_closed_pipe_exits_quietly()
     test_an_older_python_can_still_import_preset()
     print("ok")

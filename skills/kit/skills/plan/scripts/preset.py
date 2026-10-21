@@ -172,7 +172,8 @@ def front_matter_defect(text):
         description = written[1:-1].replace("''", "'")
     if not description.strip():
         return "description needs a `Use when` line"
-    if not quoted and (": " in description or " #" in description or description[0] in "!&*[]{}|>'%@`,?-:#\""):
+    plain = not quoted and (description.endswith(":") or re.fullmatch(r"(?i)true|false|yes|no|on|off|null|~|[-+.\d][\d._eE+-]*", description))
+    if plain or not quoted and (": " in description or " #" in description or description[0] in "!&*[]{}|>'%@`,?-:#\""):
         return "description has YAML punctuation, so it needs double quotes"
     return None
 
@@ -196,7 +197,13 @@ def main(argv):
         if argv == ["--check"] and sys.stdin.isatty():
             raise SystemExit("preset.py --check reads a draft on stdin; pipe one in")
         try:
-            print(json.dumps(kit_json() if argv == ["--json"] else draft(sys.stdin.buffer.read().decode("utf-8"))))
+            if argv == ["--json"]:
+                print(json.dumps(kit_json()))
+            else:
+                try:
+                    print(json.dumps(draft(sys.stdin.buffer.read().decode("utf-8"))))
+                except UnicodeDecodeError:
+                    print(json.dumps({"ok": False, "defect": "draft is not UTF-8 text"}))
             sys.stdout.flush()
         except BrokenPipeError:
             fd = os.open(os.devnull, os.O_WRONLY)
