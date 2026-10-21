@@ -190,7 +190,7 @@ def draft(text):
 
 def main(argv):
     if argv in (["--json"], ["--check"]):
-        # Only the Skills page needs 3.11 (blocks.toml); a plain preset check runs on older Python.
+        # Only --json and --check stop here; an import of this module (start_plan.py, plan_chart.py) runs on older Python.
         if sys.version_info < (3, 11):
             raise SystemExit("swarm kit: needs Python 3.11 or newer")
         if argv == ["--check"] and sys.stdin.isatty():
