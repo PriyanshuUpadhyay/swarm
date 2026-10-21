@@ -168,6 +168,8 @@ def check(folder, step, text):
         return
     if start is None:  # take records one in a git repo, so its loss must not skip the check
         raise SystemExit(f"{step} is not done: its take recorded no base; take it again")
+    if config is None:  # a take by an older kit logged the tree alone
+        raise SystemExit(f"{step} is not done: its take recorded no .blocks.toml hash; take it again")
     root, tree = now
     allowed = list(own)
     # A step that ran beside this one counts too, also when it was done first: its files cannot be told apart.

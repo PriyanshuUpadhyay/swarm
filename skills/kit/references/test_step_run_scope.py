@@ -170,6 +170,10 @@ def test_scope_fails_closed_in_a_repo(tmp):
                       encoding="utf-8")
     out = run("done", folder, "01-a", "1")
     assert out.returncode == 1 and "its take recorded no base; take it again" in out.stderr, out
+    with events.open("a", encoding="utf-8") as log:
+        log.write("2026-01-01T00:00:00\t01-a\tbase 4b825dc642cb6eb9a060e54bf8d69288fbee4904\n")
+    out = run("done", folder, "01-a", "1")
+    assert out.returncode == 1 and "no .blocks.toml hash; take it again" in out.stderr, out
     # A repo that git cannot read is not "no git".
     (repo / ".git" / "HEAD").write_text("garbage\n", encoding="utf-8")
     out = run("done", folder, "01-a", "1")

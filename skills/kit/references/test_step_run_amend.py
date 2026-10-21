@@ -61,6 +61,8 @@ def test_amend_within_the_owner_budget(tmp):
     before = plan.read_text(encoding="utf-8")
     out = run("amend", folder, "| 06-docs | nope | the docs | none | voice | the docs |")
     assert out.returncode == 1 and "amend refused" in out.stderr and "nope" in out.stderr and plan.read_text(encoding="utf-8") == before, out
+    # A CRLF plan keeps its Amend budget.
+    plan.write_bytes(plan.read_bytes().replace(b"\n", b"\r\n"))
     out = run("amend", folder, "| 06-check | build | a check | none | local-research | look again |", "--before", "05-reply")
     assert out.returncode == 0 and "06-check: amended (1 of 1 spent)" in out.stdout, out
     assert (folder / "06-check.md").read_text(encoding="utf-8").splitlines()[1:3] == ["Uses: 04-build", "Writes: none"]
@@ -129,7 +131,7 @@ def test_amend_refuses_odd_rows(tmp):
     crlf = plan.read_bytes().replace(b"\n", b"\r\n")
     plan.write_bytes(crlf)
     out = run("amend", folder, "| 08-bad | nope | x | none | local-research | y |")
-    assert out.returncode == 1 and plan.read_bytes() == crlf, out
+    assert out.returncode == 1 and "nope" in out.stderr and plan.read_bytes() == crlf, out
     plan.write_text(ticked, encoding="utf-8")
     # A start that fails after the chart passed leaves plan.html as it was.
     page = plan.with_suffix(".html")

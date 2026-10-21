@@ -64,7 +64,7 @@ def add(folder, row, before):
     if "\n" in row or "\r" in row:
         raise SystemExit("amend takes one table row on one line")
     old_plan = plan.read_bytes()
-    text = old_plan.decode("utf-8")
+    text = old_plan.decode("utf-8").replace("\r\n", "\n")  # as read_text gives it; a refusal writes old_plan back
     if (used := spent(folder)) >= (allowed := budget(text)):
         raise SystemExit(f"no Amend budget left ({used} of {allowed} spent); ask the owner")
     lines = text.split("\n")
