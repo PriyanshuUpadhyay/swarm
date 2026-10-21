@@ -13,7 +13,7 @@ pub(crate) fn report_dead(
     note: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     swarm::store::clear_pane(connection, session_id, child)?;
-    if !swarm::store::has_summary(connection, session_id, child)? {
+    if !swarm::store::answered(connection, session_id, child)? {
         let orchestrator = swarm::store::orchestrator_of(connection, session_id)?;
         deliver(
             connection,
@@ -327,7 +327,7 @@ mod tests {
             swarm::store::pane_of(&connection, &session, CODER).unwrap(),
             None
         );
-        assert!(swarm::store::has_summary(&connection, &session, CODER).unwrap());
+        assert!(swarm::store::answered(&connection, &session, CODER).unwrap());
         assert_eq!(std::fs::read_to_string(&ring_log).unwrap(), "%1\n");
     }
 

@@ -299,17 +299,15 @@ mod tests {
                 .unwrap()
                 .is_empty()
         );
-        assert!(!has_summary(&connection, SESSION, CODER).unwrap());
-        send_message(
-            &mut connection,
-            &temp_root("summary"),
-            SESSION,
-            CODER,
-            ORCHESTRATOR,
-            "summary",
-            "done",
-        )
-        .unwrap();
-        assert!(has_summary(&connection, SESSION, CODER).unwrap());
+        assert!(!answered(&connection, SESSION, CODER).unwrap());
+        let root = temp_root("summary");
+        let send = |connection: &mut Connection, sender, recipient, kind| {
+            send_message(connection, &root, SESSION, sender, recipient, kind, "x").unwrap();
+        };
+        send(&mut connection, CODER, ORCHESTRATOR, "summary");
+        send(&mut connection, ORCHESTRATOR, CODER, "ask");
+        assert!(!answered(&connection, SESSION, CODER).unwrap());
+        send(&mut connection, CODER, ORCHESTRATOR, "summary");
+        assert!(answered(&connection, SESSION, CODER).unwrap());
     }
 }

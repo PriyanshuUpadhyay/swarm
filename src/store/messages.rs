@@ -125,21 +125,24 @@ pub fn messages(
     Ok(rows.collect::<Result<_, _>>()?)
 }
 
-pub fn has_summary(
+/// Whether `sender_id` sent a summary after the last message it got, so a child that answered one
+/// ask and then died on the next one still counts as unanswered.
+pub fn answered(
     connection: &Connection,
     session_id: &str,
     sender_id: &str,
 ) -> Result<bool, Box<dyn std::error::Error>> {
-    let count: i64 = connection.query_row(
-        "SELECT count(*) FROM message WHERE session_id = ?1 AND sender_id = ?2 AND kind = 'summary'",
+    Ok(connection.query_row(
+        "SELECT EXISTS (
+             SELECT 1 FROM message
+             WHERE session_id = ?1 AND sender_id = ?2 AND kind = 'summary'
+               AND seq > (SELECT COALESCE(MAX(seq), -1) FROM message
+                          WHERE session_id = ?1 AND recipient_id = ?2))",
         (session_id, sender_id),
         |r| r.get(0),
-    )?;
-    Ok(count > 0)
+    )?)
 }
 
-/// Apply the session talk mode: open passes, lane blocks child-to-child, relay sends
-/// child-to-child to the orchestrator as `relay:<recipient>`. Returns (recipient, kind).
 pub fn route(
     connection: &Connection,
     session_id: &str,
