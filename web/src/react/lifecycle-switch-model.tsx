@@ -3,8 +3,8 @@
 import { CheckIcon, CircleIcon, LoaderCircleIcon, XIcon } from "lucide-react";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import type { App } from "../core/app";
-import { savedCarry, type Carry } from "../core/composer";
-import type { LifeState } from "../core/lifecycle";
+import { CARRY_OPTIONS, savedCarry, type Carry } from "../core/composer";
+import { isSettled, type LifeState } from "../core/lifecycle";
 import { Button } from "../components/ui/button";
 import { FIELD, message, useLife, Frame, Label, ErrorLine } from "./lifecycle-shared";
 import { Segmented } from "./settings-shared";
@@ -35,7 +35,7 @@ function SwitchModelBody({ app, old }: { app: App; old: string }) {
   const all = useLife(app, "handoff");
   // Only one switch runs at a time; another chat's switch shows only as a block.
   const handoff = all?.old === old ? all : null;
-  const busy = all !== null && !["completed", "failed", "cancelled"].includes(all.phase);
+  const busy = all !== null && !isSettled(all.phase);
   const saved = useSyncExternalStore(app.subscribe, () => savedCarry(app.view.tree?.prefs));
   const [carry, setCarry] = useState<Carry>(saved);
   const [providers, setProviders] = useState<{ id: string; label: string; accounts: boolean }[]>([]);
@@ -46,7 +46,7 @@ function SwitchModelBody({ app, old }: { app: App; old: string }) {
   const [query, setQuery] = useState("");
   const [model, setModel] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const running = handoff !== null && !["completed", "failed", "cancelled"].includes(handoff.phase);
+  const running = handoff !== null && !isSettled(handoff.phase);
 
   useEffect(() => {
     app.life.providers().then(
@@ -114,6 +114,7 @@ function SwitchModelBody({ app, old }: { app: App; old: string }) {
         </Label>
         <div data-testid="sm-models" className="max-h-[160px] overflow-y-auto rounded-md border border-border">
           {!models && <p className="px-2 py-1.5 text-sm text-muted-foreground">Reading models…</p>}
+          {models?.length === 0 && !custom && <p className="px-2 py-1.5 text-sm text-muted-foreground">No models listed. Type a model id.</p>}
           {shown.map((m) => (
             <button key={m.id} type="button" aria-pressed={model === m.id} className="flex w-full items-center gap-2 px-2 py-1 text-left text-sm hover:bg-hover aria-pressed:bg-selected" onClick={() => setModel(m.id)}>
               <span className="min-w-0 flex-1 truncate">{m.label}</span>
@@ -132,10 +133,7 @@ function SwitchModelBody({ app, old }: { app: App; old: string }) {
             label="Bring over"
             testid="sm-carry"
             value={carry}
-            options={[
-              ["summary", "Summary"],
-              ["clean", "Start clean"],
-            ]}
+            options={CARRY_OPTIONS}
             onChange={setCarry}
           />
         </div>
@@ -163,12 +161,12 @@ function SwitchModelBody({ app, old }: { app: App; old: string }) {
 
 /** The hand-off steps as they run, also in the run chip's popover. */
 function SwitchProgress({ handoff }: { handoff: NonNullable<LifeState["handoff"]> }) {
-  const running = !["completed", "failed", "cancelled"].includes(handoff.phase);
+  const running = !isSettled(handoff.phase);
   // A resume and Start clean only stop the old run and start the new one.
   const steps = handoff.carry === "resume" || handoff.carry === "clean" ? PHASES.filter(([p]) => p === "preparing" || p === "starting") : PHASES;
   const phaseIndex = steps.findIndex(([p]) => p === handoff.phase);
   return (
-    <ol className="grid gap-1 text-sm" data-testid="sm-progress" data-phase={handoff.phase} aria-label="Progress">
+    <ol className="grid gap-1 text-sm" data-testid="sm-progress" data-phase={handoff.phase} aria-label="Progress" aria-live="polite">
       {steps.map(([p, label], i) => {
         const now = handoff.phase === p;
         const done = phaseIndex > i || handoff.phase === "completed";

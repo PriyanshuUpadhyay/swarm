@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from "vitest";
 import { chair, session } from "./chat-fixtures";
-import { agentInput, applyBlock, cliName, outcomeText, runLabel, switchOutcome } from "./composer";
+import { agentInput, applyBlock, chooseModel, cliName, outcomeText, runLabel, switchOutcome } from "./composer";
 
 
 describe("run chip", () => {
@@ -34,5 +34,30 @@ describe("run chip", () => {
     expect(applyBlock({ ...idle, running: true }, run("claude", "b"))).toBe("Wait for this turn to end, or stop it.");
     expect(applyBlock(idle, run("claude", null))).toBe("Pick a model.");
     expect(applyBlock({ ...idle, provider: null }, run("claude", "b"))).toBe("This chat does not record its CLI, so it cannot switch.");
+  });
+
+  it("names an unknown CLI by its id, also one that is an Object key", () => {
+    expect(cliName("constructor")).toBe("constructor");
+    expect(cliName("gemini")).toBe("gemini");
+  });
+
+  it("blocks Apply while another chat switches", () => {
+    const idle = agentInput(session(), [chair({ provider: "claude" })]);
+    expect(applyBlock(idle, run("claude", "b"), true)).toBe("Another chat is switching. Wait for it to end.");
+  });
+
+  it("picks a model with a level it takes and keeps the account picked for its CLI", () => {
+    const claude = { id: "claude", efforts: ["low", "medium", "high"], default_effort: "medium" };
+    const codex = { id: "codex", efforts: ["low", "medium", "high"], default_effort: "medium" };
+    const current = run("claude", "a", "high", "work");
+    // A model that takes only low and ultra gets one of those, not the CLI's default.
+    expect(chooseModel(current, current, codex, { id: "sol", efforts: ["low", "ultra"] }).effort).toBe("low");
+    // An account picked in the popover stays when another model of the same CLI is picked.
+    const picked = { ...current, account: "personal" };
+    expect(chooseModel(current, picked, claude, "b").account).toBe("personal");
+    // Back from another CLI, the chat's own account comes back.
+    expect(chooseModel(current, run("codex", "x"), claude, "b").account).toBe("work");
+    expect(chooseModel(current, current, codex, "x").account).toBeNull();
+    expect(chooseModel(current, current, { id: "agy", efforts: [], default_effort: "" }, { id: "claude-sonnet-4-6", efforts: [] }).effort).toBeNull();
   });
 });

@@ -168,10 +168,27 @@ async fn resume_switch(app: &App, body: &ContinueChat) -> Result<Value, ApiError
         .and_then(|list| list.iter().find(|a| a["id"] == "orchestrator"))
         .cloned()
         .unwrap_or(Value::Null);
-    if action_provider(app, old, "orchestrator")?.as_deref() != Some(body.provider.as_str()) {
+    let (provider, chair_id): (Option<String>, Option<String>) = read_connection(&app.root)
+        .and_then(|connection| {
+            connection.query_row(
+                "SELECT chair_provider, chair_id FROM session WHERE id = ?1",
+                [old],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+        })
+        .map_err(|err| error(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()))?;
+    if provider.as_deref() != Some(body.provider.as_str()) {
         return Err(error(
             StatusCode::CONFLICT,
             "Only the chat's own CLI can keep this chat. Choose Summary or Start clean.",
+        ));
+    }
+    // A Codex or AGY chat learns its session id from its first log; before that a resume has
+    // nothing to open, and the chair must keep running.
+    if chair_id.is_none() {
+        return Err(error(
+            StatusCode::CONFLICT,
+            "This chat has no session to resume before its first reply. Send a message first, or choose Start clean.",
         ));
     }
     // A Codex session lives in one account's home, so only that account resumes it.
@@ -226,12 +243,23 @@ async fn resume_switch(app: &App, body: &ContinueChat) -> Result<Value, ApiError
     };
     if let Err(refused) = launch(Some(&body.model), body.effort.as_deref(), account).await {
         // The chair is closed by now, so its old run starts again and the chat keeps a pane.
-        let _ = launch(
+        if let Err(again) = launch(
             chair["model"].as_str().or(Some(&body.model)),
             chair["effort"].as_str(),
             chair["account"].as_str(),
         )
-        .await;
+        .await
+        {
+            let text = |(_, Json(body)): &ApiError| body["error"].as_str().unwrap_or("").to_owned();
+            return Err(error(
+                refused.0,
+                &format!(
+                    "{} The old run did not start again either: {}",
+                    text(&refused),
+                    text(&again)
+                ),
+            ));
+        }
         return Err(refused);
     }
     Ok(json!({"ok": true, "session": old, "agent": "orchestrator"}))

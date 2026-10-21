@@ -161,6 +161,17 @@ describe("chats", () => {
     expect(calls.filter((c) => c.startsWith("/api/chat/continue"))).toHaveLength(1);
   });
 
+  it("reports a failed switch of a chat whose popover is not open, and does not move to it", async () => {
+    let fail: (e: Error) => void = () => {};
+    const { life, calls } = fakeApp(() => new Promise((_, reject) => (fail = reject)));
+    const run = life.switchModel("chat-1", "codex", "gpt-5", null, null, "resume");
+    life.openSwitchModel("chat-2");
+    fail(new ApiError(409, "swarm: no session id to resume"));
+    await run;
+    expect(calls).toContain("notice swarm: no session id to resume");
+    expect(life.state.switchModel).toBe("chat-2");
+  });
+
   it("records the carry, so the progress lists only the steps that run", () => {
     const { life } = fakeApp(() => new Promise(() => {}));
     void life.switchModel("chat-1", "codex", "gpt-5", null, null, "clean");

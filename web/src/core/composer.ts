@@ -151,7 +151,7 @@ const CLI_NAMES: Record<string, string> = { claude: "Claude", codex: "Codex", ag
 
 /** The CLI's name in the chip, the popover's groups, and the outcome line. */
 export function cliName(id: string): string {
-  return CLI_NAMES[id] ?? id;
+  return Object.hasOwn(CLI_NAMES, id) ? CLI_NAMES[id] : id;
 }
 
 /** The run chip: `account · model · thinking`. Pi and AGY have no swarm accounts, so their CLI
@@ -169,6 +169,13 @@ export type Carry = "summary" | "clean";
 export type SwitchCarry = Carry | "resume";
 
 export type Outcome = "none" | "resume" | "handoff";
+
+/** The two answers to "what does a switch to another CLI bring", in the popover, the ended-chat
+ *  dialog, and Settings. */
+export const CARRY_OPTIONS: [Carry, string][] = [
+  ["summary", "Summary"],
+  ["clean", "Start clean"],
+];
 
 /** The saved answer to "what does a switch to another CLI bring"; unset means Summary. */
 export function savedCarry(prefs: { switchCarry?: string } | undefined): Carry {
@@ -197,9 +204,21 @@ export function outcomeText(outcome: Outcome, draft: Run, carry: Carry): string 
   }
 }
 
-/** Why Apply cannot run now, or null. */
-export function applyBlock(chair: AgentInput, draft: Run): string | null {
+/** Why Apply cannot run now, or null. Only one switch runs at a time, across all chats. */
+export function applyBlock(chair: AgentInput, draft: Run, otherSwitching = false): string | null {
   if (!chair.provider) return "This chat does not record its CLI, so it cannot switch.";
   if (chair.running) return "Wait for this turn to end, or stop it.";
+  if (otherSwitching) return "Another chat is switching. Wait for it to end.";
   return draft.model ? null : "Pick a model.";
+}
+
+/** The draft after a pick of model `m` of CLI `cli`. The draft keeps its level when the model
+ *  takes it, and its account while the CLI stays; back on the chat's own CLI, the chat's
+ *  account comes back. */
+export function chooseModel(current: Run, draft: Run, cli: { id: string; efforts: string[]; default_effort: string }, m: { id: string; efforts?: string[] } | string): Run {
+  const model = typeof m === "string" ? m : m.id;
+  const allowed = (typeof m === "string" ? null : m.efforts) ?? cli.efforts;
+  const effort = draft.effort && allowed.includes(draft.effort) ? draft.effort : allowed.includes(cli.default_effort) ? cli.default_effort : (allowed[0] ?? null);
+  const account = cli.id === draft.provider ? draft.account : cli.id === current.provider ? current.account : null;
+  return { provider: cli.id, model, effort, account };
 }

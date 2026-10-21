@@ -2,11 +2,11 @@
 
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import type { App } from "../core/app";
+import { cliName } from "../core/composer";
 import type { SettingsState } from "../core/settings";
 
 const FIELD = "h-8 min-w-0 rounded-md border border-border-strong bg-background px-2 outline-none focus:border-ring disabled:opacity-60";
-const PROVIDER_LABEL: Record<string, string> = { claude: "Claude", codex: "Codex", agy: "Gemini", pi: "Pi" };
-const label = (provider: string) => PROVIDER_LABEL[provider] ?? provider;
+const label = cliName;
 
 function useSettings<K extends keyof SettingsState>(app: App, key: K): SettingsState[K] {
   return useSyncExternalStore(app.settings.subscribe, () => app.settings.state[key]);

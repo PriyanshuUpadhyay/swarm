@@ -37,6 +37,11 @@ export type SetupRun = {
 
 export type Create = { state: "working" | "failed" | "kept"; error: string | null; workspace: string | null; setup: SetupRun | null };
 
+/** A switch phase after which nothing more runs. */
+export function isSettled(phase: string): boolean {
+  return phase === "completed" || phase === "failed" || phase === "cancelled";
+}
+
 /** A switch model run, from its `handoff` stream frames (P3b). */
 export type Handoff = { old: string; phase: string; canCancel: boolean; error: string | null; carry?: SwitchCarry };
 

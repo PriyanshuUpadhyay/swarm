@@ -154,6 +154,8 @@ pub(crate) fn hook(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     connection.busy_timeout(std::time::Duration::from_secs(1))?;
     // A CLI that the agent starts, such as a probe `agy -p`, inherits its SWARM_* variables, and
     // its hook once wrote its own log over a pi chat's log. Only the agent's own CLI speaks for it.
+    // An unknown CLI lets the hook through: a chair with no agent row reads as an error here and
+    // must still store its log, and a busy bus fails the writes below anyway.
     if swarm::store::provider_of(&connection, &report.session, &report.agent)
         .ok()
         .flatten()

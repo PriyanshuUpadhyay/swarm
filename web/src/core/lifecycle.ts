@@ -23,6 +23,7 @@ import {
   issuePrompt,
   setupFrame,
   setupFailure,
+  isSettled,
 } from "./lifecycle-state";
 
 export * from "./lifecycle-state";
@@ -60,7 +61,7 @@ export class Lifecycle {
       if (setup !== c.setup) this.set({ create: { ...c, setup } });
     }
     const h = this.state.handoff;
-    if (event === "handoff" && h && data.old_session === h.old && !["completed", "failed", "cancelled"].includes(h.phase))
+    if (event === "handoff" && h && data.old_session === h.old && !isSettled(h.phase))
       this.set({ handoff: { ...h, phase: String(data.phase), canCancel: data.canCancel === true, error: data.error ? String(data.error) : null } });
   }
 
@@ -255,7 +256,7 @@ export class Lifecycle {
     const h = this.state.handoff;
     // A running switch keeps its progress, also while another chat's switch opens, so only one
     // switch runs at a time.
-    this.set({ switchModel: session, handoff: h && !["completed", "failed", "cancelled"].includes(h.phase) ? h : null });
+    this.set({ switchModel: session, handoff: h && !isSettled(h.phase) ? h : null });
   }
 
   providers(): Promise<{ providers: ProviderInfo[] }> {
@@ -275,7 +276,7 @@ export class Lifecycle {
    *  new chat takes this chat's summary, or nothing on `clean`. Progress comes from `handoff`
    *  frames; on success the chat that runs now opens. */
   async switchModel(old: string, provider: string, model: string, account: string | null, effort: string | null = null, carry: SwitchCarry = "summary") {
-    if (this.state.handoff && !["completed", "failed", "cancelled"].includes(this.state.handoff.phase)) return;
+    if (this.state.handoff && !isSettled(this.state.handoff.phase)) return;
     // A resume closes the chair's pane, and the popover goes with the composer, so it closes now
     // and a failure shows as a notice. The server's frames own canCancel.
     this.set({ handoff: { old, phase: "preparing", canCancel: true, error: null, carry }, ...(carry === "resume" ? { switchModel: null } : {}) });
@@ -288,12 +289,15 @@ export class Lifecycle {
         ...(account ? { account } : {}),
         ...(effort ? { effort } : {}),
       });
-      this.set({ switchModel: null, handoff: null });
+      // The owner may have moved to another chat's popover; that one stays open.
+      const here = this.state.switchModel === null || this.state.switchModel === old;
+      this.set({ handoff: null, ...(here ? { switchModel: null } : {}) });
       await this.app.refresh();
-      this.app.openChat(done.session);
+      if (here) this.app.openChat(done.session);
     } catch (err) {
       const cancelled = err instanceof ApiError && err.message === "model switch cancelled";
-      if (!this.state.switchModel) this.app.notice(cancelled ? "Model switch cancelled." : message(err), !cancelled);
+      // Only this chat's open popover shows the error; anywhere else it is a notice.
+      if (this.state.switchModel !== old) this.app.notice(cancelled ? "Model switch cancelled." : message(err), !cancelled);
       this.set({ handoff: { old, phase: cancelled ? "cancelled" : "failed", canCancel: false, error: cancelled ? null : message(err), carry } });
     }
   }

@@ -4,6 +4,7 @@
 import { TriangleAlertIcon } from "lucide-react";
 import { useSyncExternalStore } from "react";
 import type { App } from "../core/app";
+import { CARRY_OPTIONS, savedCarry } from "../core/composer";
 import type { Prefs } from "../core/nav";
 import { PAGES, type Page } from "../core/settings";
 import { Button } from "../components/ui/button";
@@ -166,11 +167,8 @@ function AppearancePage({ app }: { app: App }) {
         <Segmented
           label="Switch to another CLI"
           testid="pref-switch-carry"
-          value={prefs.switchCarry === "clean" ? "clean" : "summary"}
-          options={[
-            ["summary", "Summary"],
-            ["clean", "Start clean"],
-          ]}
+          value={savedCarry(prefs)}
+          options={CARRY_OPTIONS}
           onChange={(v) => void app.settings.setPref("switchCarry", v)}
         />
       </Row>

@@ -4,8 +4,8 @@
 import { CheckIcon, ChevronDownIcon, LoaderCircleIcon } from "lucide-react";
 import { useEffect, useId, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
 import type { App } from "../core/app";
-import { applyBlock, cliName, outcomeText, runLabel, savedCarry, switchOutcome, type AgentInput, type Carry, type Run } from "../core/composer";
-import type { ModelInfo } from "../core/lifecycle";
+import { applyBlock, CARRY_OPTIONS, chooseModel, cliName, outcomeText, runLabel, savedCarry, switchOutcome, type AgentInput, type Carry, type Run } from "../core/composer";
+import { isSettled, type ModelInfo } from "../core/lifecycle";
 import type { ProviderInfo } from "../core/settings";
 import { Button } from "../components/ui/button";
 import { FIELD, message, useLife, ErrorLine } from "./lifecycle-shared";
@@ -19,7 +19,7 @@ export function RunChip({ app, sessionId, chair }: { app: App; sessionId: string
   const pop = useRef<HTMLDivElement>(null);
   // An anchor name must be a CSS ident; useId gives characters outside one.
   const anchor = `--run-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
-  const restarting = handoff?.old === sessionId && !["completed", "failed", "cancelled"].includes(handoff.phase);
+  const restarting = handoff?.old === sessionId && !isSettled(handoff.phase);
 
   useEffect(() => {
     const el = pop.current;
@@ -33,7 +33,9 @@ export function RunChip({ app, sessionId, chair }: { app: App; sessionId: string
   }, [open]);
   // A closed pane swaps the composer for Resume and Continue chat, which removes this chip with
   // no toggle event; the open state must not outlive it.
-  useEffect(() => () => void (app.life.state.switchModel === sessionId && app.life.close("switchModel")), [app, sessionId]);
+  // A child's chip shares the chat's id and never opens, so only the chair's chip closes it.
+  const own = chair.who === null;
+  useEffect(() => () => void (own && app.life.state.switchModel === sessionId && app.life.close("switchModel")), [app, sessionId, own]);
 
   return (
     <>
@@ -81,7 +83,8 @@ function RunBody({ app, sessionId, chair }: { app: App; sessionId: string; chair
   const [query, setQuery] = useState("");
   const anchorId = `run-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
   const [error, setError] = useState<string | null>(null);
-  const running = handoff?.old === sessionId && !["completed", "failed", "cancelled"].includes(handoff.phase);
+  const switching = handoff !== null && !isSettled(handoff.phase);
+  const running = switching && handoff.old === sessionId;
 
   useEffect(() => {
     let live = true;
@@ -121,18 +124,13 @@ function RunBody({ app, sessionId, chair }: { app: App; sessionId: string; chair
   const levels = model?.efforts ?? info?.efforts ?? [];
   const outcome = switchOutcome(current, draft);
   const q = query.trim().toLowerCase();
-  const blocked = applyBlock(chair, draft);
+  const blocked = applyBlock(chair, draft, switching && !running);
   // A failed accounts read still shows the chat's own account, which Apply sends.
   const accountRows = draft.account && !accounts.some((a) => a.name === draft.account) ? [{ name: draft.account, email: null }, ...accounts] : accounts;
 
   const choose = (provider: string, m: ModelInfo | string) => {
-    const id = typeof m === "string" ? m : m.id;
-    const p = providers.find((x) => x.id === provider);
-    const allowed = (typeof m === "string" ? null : m.efforts) ?? p?.efforts ?? [];
-    const effort = draft.effort && allowed.includes(draft.effort) ? draft.effort : allowed.length ? (p?.default_effort ?? allowed[0]) : null;
-    // Back on the chat's own CLI, its account comes back too.
-    const account = provider === current.provider ? current.account : provider === draft.provider ? draft.account : null;
-    setDraft({ provider, model: id, effort, account });
+    const cli = providers.find((x) => x.id === provider) ?? { id: provider, efforts: [], default_effort: "" };
+    setDraft(chooseModel(current, draft, cli, m));
   };
 
   const apply = () => {
@@ -221,10 +219,7 @@ function RunBody({ app, sessionId, chair }: { app: App; sessionId: string; chair
             label="Bring over"
             testid="run-carry-choice"
             value={carry}
-            options={[
-              ["summary", "Summary"],
-              ["clean", "Start clean"],
-            ]}
+            options={CARRY_OPTIONS}
             onChange={setCarry}
           />
           {/* setPref shows its own notice on failure, so the promise never rejects. */}

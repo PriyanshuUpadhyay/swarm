@@ -223,6 +223,7 @@ fn a_switch_resumes_the_same_chat_or_starts_clean() {
         "resume-no-log",
         "clean-no-log",
         "bad-effort",
+        "no-id",
     ] {
         let server = Server::with_actions(true);
         // A new chat has no log before its first turn; nothing it needs comes from the log.
@@ -231,12 +232,19 @@ fn a_switch_resumes_the_same_chat_or_starts_clean() {
         }
         let home = server.dir.join("home");
         let root = home.join(".swarm");
+        if carry == "no-id" {
+            // A Codex or AGY chat learns its session id from its first log.
+            swarm::store::open(&root.join("swarm.db"))
+                .unwrap()
+                .execute("UPDATE session SET chair_id = NULL", [])
+                .unwrap();
+        }
         fs::create_dir_all(home.join(".claude")).unwrap();
         fs::write(home.join("bin/claude"), "#!/bin/sh\nif [ \"$*\" = 'auth status' ]; then printf '%s\\n' '{\"loggedIn\":true}'; fi\n").unwrap();
         fs::set_permissions(home.join("bin/claude"), fs::Permissions::from_mode(0o755)).unwrap();
         let (provider, sent) = match carry {
             "other-cli" => ("codex", "resume"),
-            "resume-no-log" | "bad-effort" => ("claude", "resume"),
+            "resume-no-log" | "bad-effort" | "no-id" => ("claude", "resume"),
             "clean-no-log" => ("claude", "clean"),
             other => ("claude", other),
         };
@@ -260,6 +268,12 @@ fn a_switch_resumes_the_same_chat_or_starts_clean() {
             .unwrap();
         match carry {
             "resume-no-log" | "clean-no-log" => assert_eq!(status, 200, "{carry}: {reply}"),
+            "no-id" => {
+                // Nothing could start again, so the chair keeps running.
+                assert_eq!(status, 409, "{reply}");
+                assert!(reply.contains("no session to resume"), "{reply}");
+                assert!(!actions.contains("close"), "{actions}");
+            }
             "bad-effort" => {
                 // The refused launch comes after the close, so the old run starts again.
                 assert_eq!(status, 409, "{reply}");
