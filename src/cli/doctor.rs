@@ -225,7 +225,7 @@ pub(crate) fn notices_state() -> (&'static str, String) {
     if String::from_utf8_lossy(&out.stdout).contains("muted by DND") {
         (
             "broken",
-            "A Focus held swarm's notices in the last hour. Allow SwarmNotify in System Settings › Focus".into(),
+            "Do Not Disturb or another Focus held swarm's notices in the last hour. Turn it off, or allow Swarm Notices in System Settings › Focus".into(),
         )
     } else {
         ("ok", "No Focus held a notice in the last hour".into())

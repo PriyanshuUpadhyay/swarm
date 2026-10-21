@@ -146,7 +146,10 @@ final class Helper: NSObject, NSApplicationDelegate, UNUserNotificationCenterDel
         await MainActor.run { begin() }
         // A distinct name: older Swift reads `target` in the closure as the local declared below.
         let fallback = await MainActor.run { self.target }
-        let clickTarget = Target(swarm: info["swarm"] as? String ?? fallback.swarm, home: info["home"] as? String)
+        // An upgrade's cleanup can remove the swarm that an old notice names, so that notice uses
+        // this helper's swarm with its own home.
+        let stored = (info["swarm"] as? String).flatMap { FileManager.default.isExecutableFile(atPath: $0) ? $0 : nil }
+        let clickTarget = Target(swarm: stored ?? fallback.swarm, home: info["home"] as? String)
         // The same rule as the app's NoticeClick (ADR 0069): a failure posts one error notice
         // with no click action, so it cannot repeat the failed focus.
         var failure: String?
