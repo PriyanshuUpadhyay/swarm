@@ -90,3 +90,21 @@ def test_done_takes_blocks_from_the_plan(tmp):
     assert run("take", folder, "01-a", "x").returncode == 0
     out = run("done", folder, "01-a", "1")
     assert out.returncode == 1 and "a blocks/plan-review script check has no todo" in out.stderr, out
+
+
+def test_writer_does_not_take_its_review(tmp):
+    folder = Path(tmp, "run")
+    folder.mkdir()
+    (folder / "plan.md").write_text("| File | Needs | Holds | Writes | Block | Why |\n|---|---|---|---|---|---|\n"
+                                    "| `01-a.md` | none | part a | `src/` |  | it writes |\n"
+                                    "| `02-rev.md` | a | the verdict | none | change-review | new seats judge it |\n",
+                                    encoding="utf-8")
+    assert run("start", folder, folder / "plan.md").returncode == 0
+    f = folder / "01-a.md"
+    f.write_text(f.read_text(encoding="utf-8").replace("- [ ] part a: ", "- [x] part a: done"), encoding="utf-8")
+    assert run("take", folder, "01-a", "writer").returncode == 0
+    assert run("done", folder, "01-a", "1").returncode == 0
+    out = run("take", folder, "02-rev", "writer")
+    assert out.returncode == 1 and "02-rev covers 01-a, which writer took; a new seat takes the review" in out.stderr, out
+    assert (folder / "02-rev.md").read_text(encoding="utf-8").startswith("Status: open")
+    assert run("take", folder, "02-rev", "review-seats").returncode == 0

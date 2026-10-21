@@ -102,3 +102,38 @@ def check(folder, step, text):
     if outside := next((p for p in changed if not any(inside(p, s) for s in allowed)), None):
         raise SystemExit(f"{step} is not done: it changed {outside}, outside every active step's Writes "
                          f"({', '.join(own) or 'none'} for {step}); undo it, or ask the owner to change the plan")
+
+
+def blocks(folder, step, text):
+    """The step's blocks, from its plan row, its `Skills read:` line, and implement's `Plan blocks:` line."""
+    from step_checks import plan_blocks
+    import re
+    read = next((l for l in text.splitlines() if l.startswith("Skills read: ")), "")
+    labels = header(text, "Plan blocks") or ""
+    return (plan_blocks(folder, step) | set(re.findall(r"\bblock:([\w.-]+)@", read))
+            | {b.strip() for b in labels.split(",") if b.strip()})
+
+
+def earlier(folder, step):
+    """Every step that the step reaches back to through the `Uses:` lines of the step files."""
+    seen, todo = set(), [step]
+    while todo:
+        line = (Path(folder) / f"{todo.pop()}.md").read_text(encoding="utf-8").splitlines()[1]
+        for name in (n.strip().split("@")[0] for n in line.removeprefix("Uses:").split(",") if n.strip()):
+            if name not in seen:
+                seen.add(name)
+                todo.append(name)
+    return seen
+
+
+def check_reviewer(folder, step, who):
+    """SystemExit when the step has change-review and `who` took a writing step that it covers."""
+    text = (Path(folder) / f"{step}.md").read_text(encoding="utf-8")
+    if "change-review" not in blocks(folder, step, text):
+        return
+    events = Path(folder) / "events.log"
+    rows = [l.split("\t") for l in (events.read_text(encoding="utf-8").splitlines() if events.exists() else [])]
+    for name in sorted(earlier(folder, step)):
+        if writes((Path(folder) / f"{name}.md").read_text(encoding="utf-8")) and \
+                any(len(r) > 2 and r[1] == name and r[2] == f"take {who}" for r in rows):
+            raise SystemExit(f"{step} covers {name}, which {who} took; a new seat takes the review")

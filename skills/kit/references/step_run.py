@@ -273,6 +273,7 @@ def take(folder, step, who, need=None, rev=revision, force=False, on_claim=None)
         need = needs(folder, step) if need is None else need
         if not ready(folder, step, need):
             raise SystemExit(f"{step} is not ready; it needs {', '.join(need)}")
+        step_scope.check_reviewer(folder, step, who)
         uses = ", ".join(f"{n}@{rev(folder, n)}" for n in need)
         text = "\n".join([f"Status: active {who} #{max(claim_of(folder, step), int(number[1]) if number else 0) + 1}", f"Uses: {uses}", *lines[2:]])
         write_step(file, text)
