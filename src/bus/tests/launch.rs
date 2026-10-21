@@ -111,6 +111,8 @@ mod tests {
                 .collect::<Vec<_>>()
         );
         assert!(!agy_args.iter().any(|arg| arg.contains("SessionStart")));
+        assert!(agy_takes_effort(Some("gemini-3.8-flash")));
+        assert!(!agy_takes_effort(Some("claude-sonnet-4-6")));
         agy.model = Some("gemini-3.8-flash-high".into());
         assert_eq!(
             argv("coder", "coder", &agy, "/home", std::path::Path::new("/")),
