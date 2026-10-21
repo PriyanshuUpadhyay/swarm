@@ -262,13 +262,21 @@ export class Lifecycle {
     return this.api.get("/api/accounts", { provider });
   }
 
-  /** Switch model: a new chat on the chosen model takes this chat's summary (P3b). Progress comes
-   *  from `handoff` frames; on success the new chat opens. */
-  async switchModel(old: string, provider: string, model: string, account: string | null) {
+  /** Switch model (ADR 0108). `resume` starts the chat's own CLI session again on the new run; a
+   *  new chat takes this chat's summary, or nothing on `clean`. Progress comes from `handoff`
+   *  frames; on success the chat that runs now opens. */
+  async switchModel(old: string, provider: string, model: string, account: string | null, effort: string | null = null, carry: "resume" | "summary" | "clean" = "summary") {
     if (this.state.handoff && !["completed", "failed", "cancelled"].includes(this.state.handoff.phase)) return;
-    this.set({ handoff: { old, phase: "preparing", canCancel: true, error: null } });
+    this.set({ handoff: { old, phase: "preparing", canCancel: carry !== "resume", error: null } });
     try {
-      const done = await this.api.post<{ session: string }>("/api/chat/continue", account ? { old_session: old, provider, model, account } : { old_session: old, provider, model });
+      const done = await this.api.post<{ session: string }>("/api/chat/continue", {
+        old_session: old,
+        provider,
+        model,
+        carry,
+        ...(account ? { account } : {}),
+        ...(effort ? { effort } : {}),
+      });
       this.set({ switchModel: null, handoff: null });
       await this.app.refresh();
       this.app.openChat(done.session);

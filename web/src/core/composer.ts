@@ -85,6 +85,9 @@ export type AgentInput = {
   who: string | null;
   provider: string | null;
   model: string | null;
+  effort: string | null;
+  /** The swarm account; null for the CLI's own login. */
+  account: string | null;
   /** Why the composer cannot send now, or null. */
   disabled: string | null;
   /** True when no pane takes input at all; ⌘. and the prompt card need one. */
@@ -122,9 +125,11 @@ export function agentInput(session: Session | undefined, agents: readonly Agent[
     who: child,
     provider,
     model: (agent?.model as string | undefined) ?? null,
+    effort: (agent?.effort as string | undefined) ?? null,
+    account: (agent?.account as string | undefined) ?? null,
     disabled,
     unreachable,
-    resumable: unreachable && !child && (provider === "claude" || provider === "codex") && typeof session?.chair_id === "string",
+    resumable: unreachable && !child && provider !== null && typeof session?.chair_id === "string",
     running: agent?.state === "working",
     prompt: unreachable ? null : prompt,
     pullBack: provider === "claude" && (adapter === "tmux" || adapter === "tmux-swarm"),
@@ -147,4 +152,35 @@ export function modelLabel(input: AgentInput): string {
   if (input.model) return input.model;
   const p = input.provider;
   return p ? p[0].toUpperCase() + p.slice(1) : "Agent";
+}
+
+const cap = (p: string) => p[0].toUpperCase() + p.slice(1);
+
+/** The run chip: `account · model · thinking`. Pi and AGY have no swarm accounts, so their CLI
+ *  name stands in. */
+export function runLabel(input: AgentInput): string {
+  return [input.account ?? (input.provider ? cap(input.provider) : null), input.model ?? "Default model", input.effort].filter(Boolean).join(" · ");
+}
+
+/** One agent run: what the popover picks. */
+export type Run = { provider: string; model: string | null; effort: string | null; account: string | null };
+
+export type Carry = "summary" | "clean";
+
+/** What Apply does (ADR 0108). Inside one CLI the session starts again on the new run with its
+ *  history; another CLI, or another Codex account, cannot take the session, so a new chat starts. */
+export function switchOutcome(current: Run, draft: Run): "none" | "resume" | "handoff" {
+  if (current.provider !== draft.provider) return "handoff";
+  if (current.model === draft.model && current.effort === draft.effort && current.account === draft.account) return "none";
+  // Each Codex session lives in one account home.
+  return current.provider === "codex" && current.account !== draft.account ? "handoff" : "resume";
+}
+
+/** The What happens line under the popover. */
+export function outcomeText(outcome: "none" | "resume" | "handoff", draft: Run, carry: Carry): string {
+  if (outcome === "none") return "Nothing changes.";
+  if (outcome === "resume") return `${cap(draft.provider)} restarts on the new settings. The chat keeps its history.`;
+  return carry === "summary"
+    ? `A new ${cap(draft.provider)} chat starts and gets a summary of this one.`
+    : `A new ${cap(draft.provider)} chat starts with nothing from this one.`;
 }

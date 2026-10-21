@@ -140,6 +140,12 @@ describe("chats", () => {
     expect(failed.life.state.handoff?.error).toContain("Wait for the current reply");
   });
 
+  it("sends the carry and effort of a switch", async () => {
+    const app = fakeApp(async () => ({ session: "chat-1" }));
+    await app.life.switchModel("chat-1", "pi", "anthropic/claude-sonnet-5-5", null, "high", "resume");
+    expect(app.calls).toContain('/api/chat/continue {"old_session":"chat-1","provider":"pi","model":"anthropic/claude-sonnet-5-5","carry":"resume","effort":"high"}');
+  });
+
   it("follows handoff frames for its own chat until a final phase", () => {
     const { life } = fakeApp(() => new Promise(() => {}));
     void life.switchModel("chat-1", "codex", "gpt-5", null);
