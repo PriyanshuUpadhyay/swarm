@@ -39,6 +39,6 @@ with step_run.step_lock(sys.argv[2], sys.argv[3]):
 
 
 def claim(folder, step):
-    """The claim number on the step's status line, or 0 when no one holds it."""
+    """The claim number on the step's status line, or `#0` when no one holds it."""
     state = (Path(folder) / f"{step}.md").read_text(encoding="utf-8").split("\n", 1)[0]
     return f"#{state.rsplit(' #', 1)[1]}" if state.startswith("Status: active ") and " #" in state else "#0"

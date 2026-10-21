@@ -24,7 +24,7 @@ names its own script. `start <folder> <SKILL.md>` writes one file per table row,
 the row holds and a `## Result` section. A table can add a `Blocks` column; `blocks/blocks.toml`
 owns how those blocks become rules and evidence todos. A table with `Blocks` needs Python 3.11
 or later for `start`, because it reads TOML. `take <folder> <step> <agent>` marks a step `active <agent> #<n>` and fills
-its `Uses:` line; `<n>` counts the step's takes. `done <folder> <step> #<n>` sets the step done only for
+its `Uses:` line; `<n>` counts the step's takes. `done <folder> <step> <n>` sets the step done only for
 that claim, when every todo is checked with its evidence after the last colon, and when no `Uses:`
 input changed after `take`. It also runs each checked `block <id> script:` todo that
 `blocks/blocks.toml` calls runnable, and a failing one refuses. It prints `not run:` for the others,
@@ -32,8 +32,10 @@ which keep their evidence. It never runs the evidence. `done` accepts no `--forc
 `skip <folder> <step> <reason>` records a route skip.
 `block <folder> <step> <reason>` records a blocked step.
 Never set a step done by hand.
+Pass `<n>` as a bare number. An unquoted `#1` is a shell comment, so the shell drops it.
 `take` refuses a step active for another agent; use `--force` after confirming that run is gone.
-A dead run holds no lock; `--force` only overrides a stale `Status: active <agent>` line.
+A dead run holds no lock; `--force` only overrides a stale `Status: active <agent> #<n>` line, and the next
+take gets a higher `<n>`, so the replaced agent's `done` is refused.
 `take`, `done`, `skip`, and `block` add one line to `<folder>/events.log` with the time, the step, and the
 event, so the path of a run, and not only its last state, stays readable. A skill script with its
 own step graph or revision, such as the implement skill's `implement_run.py`, imports these
@@ -43,7 +45,7 @@ functions and passes its own.
 
 Line 1 of each step file is its status:
 
-`Status: open | active <agent> | waiting <question> | blocked <reason> | done <revision> | skipped <reason> | unavailable <tool>`
+`Status: open | active <agent> #<n> | waiting <question> | blocked <reason> | done <revision> | skipped <reason> | unavailable <tool>`
 
 - The revision of a step is the hash of its file below line 1,
   `tail -n +2 <file> | shasum | cut -c1-12`, unless the skill names another revision, such as a
@@ -69,7 +71,7 @@ Line 1 of each step file is its status:
 ## Close and move on
 
 1. Write the step's result and its evidence below line 2, then run
-   `python3 <kit root>/references/step_run.py done <folder> <step> #<n>`, with the `#<n>` that `take` printed.
+   `python3 <kit root>/references/step_run.py done <folder> <step> <n>`, with the `<n>` from the `#<n>` that `take` printed.
    Use the skill's script when it names one.
 2. Go on to every step now ready in the same turn, by `references/fan-out.md`.
 

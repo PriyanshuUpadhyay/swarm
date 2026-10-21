@@ -12,7 +12,7 @@ def test_callers_after_claim(run, folder):
     seen = []
 
     def write_callers(path):
-        assert file.read_text().startswith("Status: active a #"), "the claim must finish before callers are written"
+        assert file.read_text(encoding="utf-8").startswith("Status: active a #"), "the claim must finish before callers are written"
         try:
             implement_run.skip(folder, "04-impact", "racing skip")
             raise AssertionError("skip must refuse during the callers write")

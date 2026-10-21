@@ -50,10 +50,10 @@ def test_done_needs_the_current_claim(tmp):
 def test_done_refuses_a_stale_input(tmp):
     folder = gate_run(tmp, "stale", [])
     assert run("done", folder, "01-ask", take(folder, "01-ask")).returncode == 0
-    claim = take(folder, "02-work")
+    held = take(folder, "02-work")
     ask = folder / "01-ask.md"
     ask.write_text(ask.read_text(encoding="utf-8") + "a later edit\n", encoding="utf-8")
-    out = run("done", folder, "02-work", claim)
+    out = run("done", folder, "02-work", held)
     assert out.returncode == 1 and "input changed after take: 01-ask" in out.stderr, out
     out = run("done", folder, "02-work", take(folder, "02-work"))
     assert out.returncode == 0, out.stderr
@@ -67,13 +67,13 @@ def test_done_runs_script_checks(tmp):
     line = CANVAS.format(site=shlex.quote(str(site)))
     folder = gate_run(tmp, "checks", [f"block build-canvas script: {line}"])
     assert run("done", folder, "01-ask", take(folder, "01-ask")).returncode == 0
-    claim = take(folder, "02-work")
-    out = run("done", folder, "02-work", claim)
+    held = take(folder, "02-work")
+    out = run("done", folder, "02-work", held)
     assert out.returncode == 1 and "block build-canvas check failed (exit 0, expected: prints nothing)" in out.stderr, out
     assert "Math.random" in out.stderr and str(site) in out.stderr, "the refusal shows the command and its output"
     assert "check build-canvas exit 0" in (folder / "events.log").read_text(encoding="utf-8")
     (site / "index.js").write_text("const seed = 7;\n", encoding="utf-8")
-    out = run("done", folder, "02-work", claim)
+    out = run("done", folder, "02-work", held)
     assert out.returncode == 0, out.stderr
 
     work = gate_run(tmp, "tamper", [f"block build-canvas script: `true` prints nothing: {line}"])
@@ -93,17 +93,18 @@ def test_done_runs_script_checks(tmp):
 
 
 def test_kit_check_lines(tmp):
-    """Each kit `Check (script)` line is runnable or named as not run, and the runnable ones fill every placeholder."""
+    """Each kit `Check (script)` line is runnable or named as not run, and a runnable one with a placeholder done cannot fill prints not run."""
     import block_resolver
     runnable, reader = [], []
     for file in sorted((step_run.KIT / "blocks").glob("*/SKILL.md")):
         parts = block_resolver.sections(file.read_text(encoding="utf-8"))
         for line in block_resolver.check_lines(parts, "Check (script)"):
             (runnable if step_run.RUN_FORM.match(line) else reader).append(f"{file.parent.name}: {line[:40]}")
-            assert any(p.match(line + ": ok") for p in step_run.block_checks(file.parent.name)), line
+            filled = re.sub(r"\{\{\w+\}\}", "site/x", line)  # start fills a param in the command with one quoted word
+            assert any(p.match(filled + ": ok") for p in step_run.block_checks(file.parent.name)), line
     assert len(runnable) == 10 and len(reader) == 10, (runnable, reader)
     # The kit's own test scripts run through done with <kit root> filled and pass.
-    for block, script in (("plan-review", "test_start_plan.py"), ("comment-round", "test_comment_round.py")):
+    for block in ("plan-review", "comment-round"):
         line = next(l for l in block_resolver.check_lines(block_resolver.sections(
             (step_run.KIT / "blocks" / block / "SKILL.md").read_text(encoding="utf-8")), "Check (script)"))
         folder = gate_run(tmp, f"kit-{block}", [f"block {block} script: {line}"])

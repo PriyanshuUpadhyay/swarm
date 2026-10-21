@@ -13,13 +13,14 @@ from test_step_run_commands import *
 from test_step_run_todos import *
 from test_step_run_build import *
 from test_step_run_gate import *
+from test_step_run_gate_attacks import *
 
 
 def test_explicit_text_encoding():
     import ast
     for name in ("test_step_run.py", "test_step_run_support.py", "test_step_run_commands.py",
                  "test_step_run_todos.py", "test_step_run_build.py",
-                 "test_step_run_gate.py"):
+                 "test_step_run_gate.py", "test_step_run_gate_attacks.py"):
         tree = ast.parse(Path(__file__).with_name(name).read_text(encoding="utf-8"))
         missing = [node.lineno for node in ast.walk(tree) if isinstance(node, ast.Call)
                    and isinstance(node.func, ast.Attribute) and node.func.attr in ("read_text", "write_text", "open")
@@ -38,7 +39,9 @@ test_build_start_and_skip()
 
 test_start_refuses_bad_needs()
 for gate in (test_done_needs_the_current_claim, test_done_refuses_a_stale_input, test_done_runs_script_checks,
-             test_kit_check_lines):
+             test_kit_check_lines, test_claim_survives_odd_logs, test_check_slots_and_todos,
+             test_check_runs_in_the_piece, test_check_results,
+             test_take_logs_inside_the_lock):
     with tempfile.TemporaryDirectory() as tmp:
         gate(tmp)
 

@@ -62,7 +62,7 @@ def test_take_force(run, folder):
                       ([folder, "01-frame", "--force", "agent-d"], "agent-d")):
         out = run("take", *args)
         assert out.returncode == 0, out.stderr
-        assert file.read_text().startswith(f"Status: active {who} #")
+        assert file.read_text(encoding="utf-8").startswith(f"Status: active {who} #")
         assert (folder / "01-frame.lock").exists()
         assert (folder / "events.log").read_text().splitlines()[-1].endswith(f"\t01-frame\ttake {who}")
     file.write_text(original)

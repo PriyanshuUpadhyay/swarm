@@ -17,9 +17,10 @@
 # one precise question and the evidence its answer must quote. Form goes to script, meaning goes to
 # judge. A block with no script check says so in one line, `- none: <why>`.
 # `step_run.py done` runs a script check when its command span is followed by `exits 0`,
-# ``prints `X` `` (the last output line), `prints nothing` (exit 0 or rg's 1), or ``starts with `X` ``, then
+# ``prints `X` `` (the last output line), `prints nothing` (exit 0, or rg's no-match 1 with no stderr), or ``starts with `X` ``, then
 # `:`. It fills `<kit root>`, `<run>` (the step folder), and `<repo-root>`. Any other wording, or another
 # `<word>`, needs a reader, so done prints `not run:` and the todo's evidence stands.
+# A `{{param}}` in the command span must stay one shell word; done refuses a todo whose command differs.
 # `{{name}}` is filled from `[params]` in the repo's `.blocks.toml`; a missing one stops start.
 # The kit blocks use `source_of_truth` (the doc that facts come from; the base block needs it, so a
 # repo with no `.blocks.toml` runs without the base and its steps print an `Off:` line for it), `site`

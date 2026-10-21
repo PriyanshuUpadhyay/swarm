@@ -163,7 +163,7 @@ with tempfile.TemporaryDirectory() as tmp:
     assert "no evidence" in run("done", folder, "05-build", claim(folder, "05-build")).stderr
     fill(f)
     head = git("rev-parse", "HEAD")
-    assert run("done", folder, "05-build", claim(folder, "05-build")).returncode == 0 and f.read_text().startswith(f"Status: done {head[:12]}\n")
+    assert run("done", folder, "05-build", claim(folder, "05-build")).returncode == 0 and f.read_text(encoding="utf-8").startswith(f"Status: done {head[:12]}\n")
 
     # Close needs the review-check run's own APPROVE verdict on the current head.
     out = run("take", folder, "06-review", "a")
@@ -175,7 +175,7 @@ with tempfile.TemporaryDirectory() as tmp:
         out = run("take", folder, "06-review", "a")
         assert out.returncode == 0, out.stderr
         assert "bring the open rows" not in out.stdout, "review-check start owns the guard"
-        assert r.read_text().startswith("Status: active a #")
+        assert r.read_text(encoding="utf-8").startswith("Status: active a #")
         assert [line for line in r.read_text().splitlines() if line.startswith("Run:")] == [
             f"Run: tmp/review-check/range-{i}" for i in range(count)], "take must keep one Run: line per round, newest last"
     r.write_text(review_text)
