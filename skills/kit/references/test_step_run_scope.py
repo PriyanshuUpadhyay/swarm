@@ -72,3 +72,21 @@ def test_scope_needs_git_and_a_writes_line(tmp):
     assert step_scope.writes("Status: open\nUses: \n\n## Todo\n") is None
     assert step_scope.writes("Status: open\nUses: \nWrites: none\n\nx") == []
 
+
+
+def test_done_takes_blocks_from_the_plan(tmp):
+    # The run folder holds plan.md, as a plan run does. Deleting `Skills read:` and the check todo skips no check.
+    folder = Path(tmp, "run")
+    folder.mkdir()
+    (folder / "plan.md").write_text("| File | Needs | Holds | Writes | Block | Why |\n|---|---|---|---|---|---|\n"
+                                    "| `01-a.md` | none | part a | none | plan-review | it starts the plan |\n", encoding="utf-8")
+    assert run("start", folder, folder / "plan.md").returncode == 0
+    f = folder / "01-a.md"
+    text = f.read_text(encoding="utf-8")
+    assert "Skills read: " in text and "- [ ] block plan-review script: " in text, text
+    lines = [l for l in text.splitlines() if not l.startswith(("Skills read: ", "- [ ] block plan-review script: "))]
+    f.write_text("\n".join(l.replace("- [ ] ", "- [x] ", 1) + ("ok" if l.startswith("- [ ] ") else "") for l in lines) + "\n",
+                 encoding="utf-8")
+    assert run("take", folder, "01-a", "x").returncode == 0
+    out = run("done", folder, "01-a", "1")
+    assert out.returncode == 1 and "a blocks/plan-review script check has no todo" in out.stderr, out

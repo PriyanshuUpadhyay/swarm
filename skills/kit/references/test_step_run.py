@@ -46,7 +46,8 @@ for gate in (test_done_needs_the_current_claim, test_done_refuses_a_stale_input,
              test_done_sees_an_edit_during_checks, test_done_refuses_a_written_back_claim,
              test_timeout_wait_is_bounded, test_done_sees_an_input_edit_during_checks,
              test_take_refuses_a_name_that_forges_a_line, test_check_odd_system_answers,
-             test_done_refuses_a_write_outside_scope, test_scope_needs_git_and_a_writes_line):
+             test_done_refuses_a_write_outside_scope, test_scope_needs_git_and_a_writes_line,
+             test_done_takes_blocks_from_the_plan):
     with tempfile.TemporaryDirectory() as tmp:
         gate(tmp)
 

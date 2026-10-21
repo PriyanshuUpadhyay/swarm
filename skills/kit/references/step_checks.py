@@ -44,6 +44,25 @@ def block_checks(block):
     return [(line, re.compile(pattern(line[:c], SLOT) + pattern(line[c:], ".+?") + ":")) for line, c in zip(lines, cut)]
 
 
+def plan_blocks(folder, step):
+    """The resolved blocks of the step's row in the run's plan.md, for a plan with a Writes column; else none.
+
+    start writes the rules and check todos of exactly these blocks, so done needs no `Skills read:` line to know
+    them, and deleting that line skips no check.
+    """
+    plan = Path(folder) / "plan.md"
+    if not plan.is_file():
+        return set()
+    import sys
+    sys.path.insert(0, str(KIT / "blocks" / "plan-chart" / "scripts"))
+    import block_resolver
+    import plan_chart
+    row = next((r for r in plan_chart.read_plan(plan)[2] if r[0] == step), None)
+    if row is None or row[5] is None:
+        return set()
+    return set(block_resolver.resolve_blocks(None, {step: row[3]}, "default", blocks_dir=KIT / "blocks", pack=False)[step])
+
+
 def run_checks(folder, step, todo, text):
     """Run each checked `block <id> script:` todo that is in the run form; the worker's evidence never runs."""
     from step_run import log, plain
@@ -52,7 +71,7 @@ def run_checks(folder, step, todo, text):
     places = {"<kit root>": KIT, "<run>": folder.resolve(), "<repo-root>": root}
     found = [m.groups() for m in map(CHECK_TODO.match, todo.splitlines()) if m]
     read = next((l for l in text.splitlines() if l.startswith("Skills read: ")), "")
-    for block in re.findall(r"\bblock:([\w.-]+)@", read):
+    for block in sorted(set(re.findall(r"\bblock:([\w.-]+)@", read)) | plan_blocks(folder, step)):
         for line, p in block_checks(block) or []:
             if not any(b == block and p.match(t) for b, t in found):
                 raise SystemExit(f"{step} is not done: a blocks/{block} script check has no todo: "
