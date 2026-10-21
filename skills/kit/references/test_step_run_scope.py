@@ -195,12 +195,14 @@ def test_plan_blocks_follow_the_repo_off_table(tmp):
     repo.mkdir()
     subprocess.run(["git", "-C", str(repo), "init", "-q"], check=True,
                    env={k: v for k, v in os.environ.items() if not k.startswith("GIT_")})
-    (repo / ".blocks.toml").write_text('[params]\nsource_of_truth = "README.md"\n\n[off]\nplan-review = "no owner round"\n',
+    (repo / ".blocks.toml").write_text('[params]\nsource_of_truth = "README.md"\n\n[off]\nplan-review = "no owner round"\n'
+                                        '\n[add]\n02-b = []\n',
                                         encoding="utf-8")
     folder = repo / "run"
     folder.mkdir()
     (folder / "plan.md").write_text("| File | Needs | Holds | Writes | Block | Why |\n|---|---|---|---|---|---|\n"
-                                    "| `01-a.md` | none | part a | none | plan-review | it starts the plan |\n", encoding="utf-8")
+                                    "| `01-a.md` | none | part a | none | plan-review | it starts the plan |\n"
+                                    "| `02-b.md` | a | part b | none |  | it ends |\n", encoding="utf-8")
     out = run("start", folder, folder / "plan.md")
     assert out.returncode == 0, out
     f = folder / "01-a.md"
@@ -209,7 +211,7 @@ def test_plan_blocks_follow_the_repo_off_table(tmp):
                          for l in f.read_text(encoding="utf-8").splitlines(keepends=True)), encoding="utf-8")
     assert run("take", folder, "01-a", "x").returncode == 0
     out = run("done", folder, "01-a", "1")
-    assert out.returncode == 0, out
+    assert out.returncode == 0 and "names no step" not in out.stderr, out
 
 
 def test_amend_refuses_odd_rows(tmp):
@@ -225,9 +227,29 @@ def test_amend_refuses_odd_rows(tmp):
     out = run("amend", folder, row.replace("06-check", "extra"), "--before", "05-reply")
     assert out.returncode == 1 and "amended step extra is not NN-name" in out.stderr and "Traceback" not in out.stderr, out
     # The --before step's File cell carries (optional); the plan parser finds it.
+    # A held --before step stops the amend before it writes anything.
+    holder = lock_holder(folder, "05-reply")
+    try:
+        before = plan.read_text(encoding="utf-8")
+        out = run("amend", folder, row, "--before", "05-reply")
+        assert out.returncode == 1 and "05-reply is locked by a running amend" in out.stderr, out
+        assert plan.read_text(encoding="utf-8") == before and not (folder / "06-check.md").exists()
+    finally:
+        holder.stdin.close()
+        holder.wait(timeout=5)
     out = run("amend", folder, row, "--before", "05-reply")
     assert out.returncode == 0 and "Traceback" not in out.stderr, out
     assert (folder / "05-reply.md").read_text(encoding="utf-8").splitlines()[1] == "Uses: 04-build, 06-check"
+    # A backticked Needs cell takes the new step word, and a refused amend leaves plan.html as it was.
+    ticked = plan.read_text(encoding="utf-8").replace("| `05-reply.md` (optional) | build, check |",
+                                                      "| `05-reply.md` (optional) | `build, check` |")
+    assert ticked != plan.read_text(encoding="utf-8")
+    plan.write_text(ticked, encoding="utf-8")
+    page = plan.with_suffix(".html")
+    page.write_text("before\n", encoding="utf-8")
+    out = run("amend", folder, "| 08-bad | nope | x | none | local-research | y |")
+    assert out.returncode == 1 and page.read_text(encoding="utf-8") == "before\n", out
     # A part block brings its parent into the blocks table, as an approved plan lists it.
     out = run("amend", folder, "| 07-draw | build | a diagram | none | html-diagram | show the flow |", "--before", "05-reply")
     assert out.returncode == 0, out
+    assert (folder / "05-reply.md").read_text(encoding="utf-8").splitlines()[1] == "Uses: 04-build, 06-check, 07-draw"

@@ -57,12 +57,15 @@ def plan_blocks(folder, step):
     sys.path.insert(0, str(KIT / "blocks" / "plan-chart" / "scripts"))
     import block_resolver
     import plan_chart
-    row = next((r for r in plan_chart.read_plan(plan)[2] if r[0] == step), None)
+    rows = plan_chart.read_plan(plan)[2]
+    row = next((r for r in rows if r[0] == step), None)
     if row is None or row[5] is None:
         return set()
-    # The repo root, as start passes it, so a repo `.blocks.toml` [off] block is off here too.
+    # The repo root and every row, as start passes them, so a repo `.blocks.toml` [off] block is off here too and
+    # an [add] key of another step is not reported as a step that does not exist.
     root, _ = work_root(folder)
-    return set(block_resolver.resolve_blocks(root, {step: row[3]}, "default", blocks_dir=KIT / "blocks", pack=False)[step])
+    wanted = {r[0]: r[3] for r in rows}
+    return set(block_resolver.resolve_blocks(root, wanted, "default", blocks_dir=KIT / "blocks", pack=False)[step])
 
 
 def run_checks(folder, step, todo, text):

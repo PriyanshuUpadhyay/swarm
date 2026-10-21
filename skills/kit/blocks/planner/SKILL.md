@@ -74,7 +74,7 @@ Evidence:
 Result: 02-read and 03-tokens run in parallel, and 04-build waits for both. Only 03-tokens writes, so 02-read cannot change its files. The owner sees the Chosen blocks, and answers "add sub-block html-diagram" to change one.
 
 ## Check (script)
-- `python3 -I <kit root>/blocks/plan-chart/scripts/plan_chart.py <run>/plan.md` exits 0: `Done when:` has a bullet per claim and an `Evidence:` bullet list, every block exists, every Needs word names a step, the plan has no loop and one end, the end holds a `voice-` block, the first step holds `requirements`, each writing step has a later `change-review`, no two parallel steps write the same path, and the blocks table lists each block once, with Chosen equal to the blocks the steps use and Rejected equal to their `conflicts` alternatives.
+- `python3 -I <kit root>/blocks/plan-chart/scripts/plan_chart.py <run>/plan.md` exits 0: `Done when:` has a bullet per claim and an `Evidence:` bullet list, every block exists, every Needs word names a step, the plan has no loop and one end, the end holds a `voice-` block, each step with Needs `none` holds `requirements`, each writing step is reached through Needs by a `change-review` step, no two parallel steps write the same path, and the blocks table lists each block once, with Chosen equal to the blocks the steps use and Rejected equal to their `conflicts` alternatives.
 
 ## Check (judge)
 - Does each Rejected reason say why the task does not need that block, and does any block the steps do not use hold a rule that the task needs? Quote the reason and the task text.

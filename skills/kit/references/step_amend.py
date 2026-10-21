@@ -29,19 +29,29 @@ def spent(folder):
 
 
 def amend(folder, row, *opts):
+    import step_run
     plan = Path(folder) / "plan.md"
     if not plan.is_file():
         raise SystemExit(f"amend needs the run's plan.md in {folder}")
-    # One amend at a time: each reads the budget and plan.md, then writes plan.md or puts it back.
+    if opts and (len(opts) != 2 or opts[0] != "--before"):
+        raise SystemExit("amend <folder> <row> [--before <step>]")
+    before = opts[1] if opts else None
+    # One amend at a time: each reads the budget and plan.md, then writes plan.md or puts it back. The --before
+    # step is locked first too, so no take of it can land between the plan write and its Uses line.
     with plan.open("r+", encoding="utf-8") as held:
         try:
             fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise SystemExit("plan.md is locked by a running amend; wait for it") from None
-        add(folder, row, *opts)
+        if before is None:
+            return add(folder, row, None)
+        if not (Path(folder) / f"{before}.md").is_file():
+            raise SystemExit(f"{before} is not open")
+        with step_run.step_lock(folder, before, command="amend"):
+            add(folder, row, before)
 
 
-def add(folder, row, *opts):
+def add(folder, row, before):
     import step_run
     sys.path.insert(0, str(CHART.parent))
     import plan_chart
@@ -49,9 +59,6 @@ def add(folder, row, *opts):
     plan = folder / "plan.md"
     if "\n" in row or "\r" in row:
         raise SystemExit("amend takes one table row on one line")
-    if opts and (len(opts) != 2 or opts[0] != "--before"):
-        raise SystemExit("amend <folder> <row> [--before <step>]")
-    before = opts[1] if opts else None
     text = plan.read_text(encoding="utf-8")
     if (used := spent(folder)) >= (allowed := budget(text)):
         raise SystemExit(f"no Amend budget left ({used} of {allowed} spent); ask the owner")
@@ -74,19 +81,18 @@ def add(folder, row, *opts):
         end += 1
     lines.insert(end, row.strip())
     if before:
-        if not (folder / f"{before}.md").is_file() or step_run.status_of(folder, before) != "open":
+        if step_run.status_of(folder, before) != "open":
             raise SystemExit(f"{before} is not open")
         at = next(i for i in range(head + 2, end)
                   if plan_chart.read_plan(None, f"{lines[head]}\n{lines[i]}\n")[2][0][0] == before)
         cells = lines[at].strip().strip("|").split("|")
-        need = cells[1].strip()
+        need = cells[1].strip().strip("`")
         cells[1] = f" {name.split('-', 1)[1] if need == 'none' else need + ', ' + name.split('-', 1)[1]} "
         lines[at] = "|" + "|".join(cells) + "|"
-    # The ledger lists resolved blocks (parents and parts) and their conflicts alternatives, as check_ledger reads it.
+    # The ledger lists resolved blocks (parents and parts) and their conflicts alternatives. check_ledger resolves
+    # with no repo root, so a repo [off] block still counts as used, and so does it here.
     import block_resolver
-    from step_checks import work_root
-    resolved = block_resolver.resolve_blocks(work_root(folder)[0], {name: blocks}, "default", blocks_dir=KIT / "blocks",
-                                             pack=False)[name]
+    resolved = block_resolver.resolve_blocks(None, {name: blocks}, "default", blocks_dir=KIT / "blocks", pack=False)[name]
     ledger = plan_chart.read_ledger(plan)
     rivals = sorted({r for b in resolved for r in plan_chart.conflicts(b)} - set(ledger))
     if add := [f"| {b} | Chosen | amended step {name} needs it |" for b in resolved if b not in ledger] + \
@@ -98,24 +104,29 @@ def add(folder, row, *opts):
         while at < len(lines) and lines[at].startswith("|"):
             at += 1
         lines[at:at] = add
+    page = plan.with_suffix(".html")
+    old_page = page.read_bytes() if page.is_file() else None
+
+    def restore():
+        """Put plan.md and plan.html back as they were, and drop the new step file, so a refusal leaves no trace."""
+        plan.write_text(text, encoding="utf-8")
+        page.write_bytes(old_page) if old_page is not None else page.unlink(missing_ok=True)
+        (folder / f"{name}.md").unlink(missing_ok=True)
+
     plan.write_text("\n".join(lines), encoding="utf-8")
     checked = subprocess.run([sys.executable, "-I", str(CHART), str(plan)], capture_output=True, text=True)
     if checked.returncode:
-        plan.write_text(text, encoding="utf-8")
+        restore()
         raise SystemExit(f"amend refused: {checked.stderr.strip()}")
     try:
         step_run.start(folder, plan)
     except BaseException:
-        plan.write_text(text, encoding="utf-8")
-        (folder / f"{name}.md").unlink(missing_ok=True)
+        restore()
         raise
     step_run.log(folder, name, f"amend {name}")
     if before:
         uses = step_run.check_needs([r[:3] for r in step_run.table(plan)])[before]
         file = folder / f"{before}.md"
-        with step_run.step_lock(folder, before, command="amend"):
-            if step_run.status_of(folder, before) != "open":
-                raise SystemExit(f"{before} was taken during the amend; add {name} to its Needs by hand")
-            rest = file.read_text(encoding="utf-8").split("\n")
-            step_run.write_step(file, "\n".join([rest[0], f"Uses: {', '.join(uses)}", *rest[2:]]))
+        rest = file.read_text(encoding="utf-8").split("\n")
+        step_run.write_step(file, "\n".join([rest[0], f"Uses: {', '.join(uses)}", *rest[2:]]))
     print(f"{name}: amended ({spent(folder)} of {allowed} spent)")
