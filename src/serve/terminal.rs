@@ -15,6 +15,8 @@ pub(super) const SOCKET_PATH: &str = "/api/terminal";
 const TICKET_TTL: Duration = Duration::from_secs(30);
 const MAX_TICKETS: usize = 16;
 const MAX_LIVE: usize = 8;
+/// A live terminal ends only when its viewer leaves, so this is a guess, not a promise.
+const RETRY_TERMINAL: Duration = Duration::from_secs(5);
 /// How much of a shell's output file a new terminal shows first.
 const FILE_TAIL: u64 = 64 * 1024;
 
@@ -26,6 +28,15 @@ pub(super) enum Target {
 
 static TICKETS: Mutex<Vec<(String, Instant, Target)>> = Mutex::new(Vec::new());
 static LIVE: AtomicUsize = AtomicUsize::new(0);
+
+/// A 429 that says when to try again.
+fn busy(message: &str, retry_after: Duration) -> Response {
+    let mut response = error(StatusCode::TOO_MANY_REQUESTS, message).into_response();
+    response
+        .headers_mut()
+        .insert(header::RETRY_AFTER, retry_after.as_secs().into());
+    response
+}
 
 fn mint(target: Target) -> Result<String, ApiError> {
     let mut tickets = TICKETS.lock().unwrap();
@@ -61,18 +72,25 @@ pub(super) struct TicketRequest {
 pub(super) async fn terminal_ticket(
     State(app): State<App>,
     Json(request): Json<TicketRequest>,
-) -> Result<Json<Value>, ApiError> {
+) -> Result<Json<Value>, Response> {
     let target = tokio::task::spawn_blocking(move || target(&app, &request))
         .await
-        .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "ticket failed"))??;
-    Ok(Json(json!({"ticket": mint(target)?})))
+        .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "ticket failed"))
+        .flatten()
+        .map_err(IntoResponse::into_response)?;
+    let ticket = mint(target).map_err(|err| match err.0 {
+        // The oldest pending ticket is gone by then.
+        StatusCode::TOO_MANY_REQUESTS => busy("too many terminal tickets", TICKET_TTL),
+        _ => err.into_response(),
+    })?;
+    Ok(Json(json!({ "ticket": ticket })))
 }
 
 fn target(app: &Server, request: &TicketRequest) -> Result<Target, ApiError> {
     if let Some(task) = &request.task {
         let path = session_tasks(app, &request.session)
             .into_iter()
-            .find(|t| t.id == *task && t.agent == request.agent && t.kind == "shell")
+            .find(|t| t.id == *task && t.agent == request.agent && t.kind == TaskKind::Shell)
             .and_then(|t| t.output)
             .ok_or_else(|| error(StatusCode::NOT_FOUND, "unknown background shell"))?;
         return output_file(&app.root, &path)
@@ -92,8 +110,7 @@ fn target(app: &Server, request: &TicketRequest) -> Result<Target, ApiError> {
     let connection = read_connection(&app.root)
         .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "database read failed"))?;
     let adapter = swarm::store::adapter_of(&connection, &request.session)
-        .ok()
-        .flatten()
+        .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "database read failed"))?
         .unwrap_or_default();
     // Only this adapter is known to run each agent in a session of its own, so an attach shows
     // just that agent and restores its size (adapters/tmux-swarm.conf).
@@ -137,17 +154,36 @@ pub(super) async fn terminal_socket(
     let Some(target) = redeem(&query.ticket) else {
         return error(StatusCode::UNAUTHORIZED, "terminal ticket required").into_response();
     };
-    if LIVE.fetch_add(1, Ordering::SeqCst) >= MAX_LIVE {
-        LIVE.fetch_sub(1, Ordering::SeqCst);
-        return error(StatusCode::TOO_MANY_REQUESTS, "too many terminals").into_response();
-    }
+    let Some(slot) = Slot::take() else {
+        return busy("too many terminals", RETRY_TERMINAL);
+    };
     upgrade.on_upgrade(move |socket| async move {
+        let _slot = slot;
         match target {
             Target::Attach { adapter, pane } => attach(&app.root, &adapter, &pane, socket).await,
             Target::File(path) => follow_file(path, socket).await,
         }
-        LIVE.fetch_sub(1, Ordering::SeqCst);
     })
+}
+
+/// One of the `MAX_LIVE` terminals. Dropping it gives the place back, also when the upgrade
+/// fails (axum drops the callback unrun) or the terminal task panics.
+struct Slot;
+
+impl Slot {
+    fn take() -> Option<Slot> {
+        if LIVE.fetch_add(1, Ordering::SeqCst) >= MAX_LIVE {
+            LIVE.fetch_sub(1, Ordering::SeqCst);
+            return None;
+        }
+        Some(Slot)
+    }
+}
+
+impl Drop for Slot {
+    fn drop(&mut self) {
+        LIVE.fetch_sub(1, Ordering::SeqCst);
+    }
 }
 
 /// The adapter's `attach` for `pane`, ready for a PTY: a terminal type xterm.js draws, UTF-8, and

@@ -38,7 +38,46 @@ fn an_output_file_must_be_a_claude_task_file_of_this_user() {
     assert_eq!(output_file(&root, &link), None);
     assert_eq!(output_file(&root, &dir.join("../../etc/hosts")), None);
     assert_eq!(output_file(&root, Path::new("/etc/hosts")), None);
+    // A task file of this user, but outside `/tmp/claude-<uid>`.
+    let outside = PathBuf::from(format!("/tmp/swarm-test-{}.output", std::process::id()));
+    std::fs::write(&outside, "x").unwrap();
+    assert_eq!(output_file(&root, &outside), None);
+    let _ = std::fs::remove_file(&outside);
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Every other check passes: the file is under `/tmp/claude-0`, which this user made, and ends in
+/// `.output`. Only its owner is wrong for a server whose root uid 0 owns.
+#[test]
+fn an_output_file_of_another_user_is_refused() {
+    let base = Path::new("/tmp/claude-0");
+    let made = !base.exists() && std::fs::create_dir(base).is_ok();
+    let file = base.join(format!("swarm-test-{}.output", std::process::id()));
+    if std::fs::write(&file, "x").is_err() {
+        eprintln!("skipped: cannot write under {}", base.display());
+        return;
+    }
+    assert_eq!(output_file(Path::new("/"), &file), None);
+    let _ = std::fs::remove_file(&file);
+    if made {
+        let _ = std::fs::remove_dir(base);
+    }
+}
+
+/// A slot goes back when it drops, which is also what happens when axum drops an upgrade
+/// callback unrun, so a failed upgrade cannot use up the terminals.
+#[test]
+fn a_dropped_slot_frees_its_place_and_a_full_server_says_when_to_retry() {
+    let mut slots = Vec::new();
+    while let Some(slot) = Slot::take() {
+        slots.push(slot);
+    }
+    assert!(!slots.is_empty() && slots.len() <= MAX_LIVE);
+    slots.pop();
+    assert!(Slot::take().is_some());
+    let busy = busy("too many terminals", RETRY_TERMINAL);
+    assert_eq!(busy.status(), StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(busy.headers()[header::RETRY_AFTER], "5");
 }
 
 /// The socket takes no bearer header, so its ticket, Host, and Origin are its whole guard.
@@ -95,7 +134,7 @@ async fn the_socket_needs_a_fresh_ticket_the_host_and_the_app_origin() {
 }
 
 /// The shipped tmux-swarm `attach`, pointed at a private tmux server, in a PTY: keys reach the
-/// pane, and closing the PTY ends the client and puts the window back at its size.
+/// pane, and closing the PTY ends the client; the last viewer out puts the window back at its size.
 #[test]
 fn attach_in_a_pty_types_into_the_pane_and_restores_its_size() {
     if std::process::Command::new("tmux")
@@ -154,14 +193,32 @@ fn attach_in_a_pty_types_into_the_pane_and_restores_its_size() {
     ));
 
     // Like the server, a reader thread keeps a clone of the PTY open and drains it.
-    let mut reader = pair.master.try_clone_reader().unwrap();
-    std::thread::spawn(move || {
-        let mut buf = [0u8; 4096];
-        while matches!(reader.read(&mut buf), Ok(n) if n > 0) {}
-    });
+    let drain = |master: &dyn portable_pty::MasterPty| {
+        let mut reader = master.try_clone_reader().unwrap();
+        std::thread::spawn(move || {
+            let mut buf = [0u8; 4096];
+            while matches!(reader.read(&mut buf), Ok(n) if n > 0) {}
+        });
+    };
+    drain(&*pair.master);
+    // A second viewer joins and stays after the first leaves; the size the last one out puts
+    // back is still the one from before the first viewer.
+    let second = native_pty_system().openpty(size(70, 20)).unwrap();
+    let second_child = second
+        .slave
+        .spawn_command(attach_command(&root, "tmux-swarm", &pane).unwrap())
+        .unwrap();
+    drop(second.slave);
+    drain(&*second.master);
+    assert!(wait_for(
+        &|| tmux("display -p -t t '#{session_attached}'") == "2"
+    ));
     drop(writer);
     drop(pair.master);
     hang_up(child);
+    assert_eq!(tmux("display -p -t t '#{session_attached}'"), "1");
+    drop(second.master);
+    hang_up(second_child);
     assert_eq!(
         tmux("display -p -t t '#{window_width}x#{window_height} #{session_attached}'"),
         "120x40 0"

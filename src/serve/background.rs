@@ -6,12 +6,18 @@
 
 use super::*;
 
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub(super) enum TaskKind {
+    Shell,
+    Agent,
+}
+
 #[derive(Debug, PartialEq, serde::Serialize)]
 pub(super) struct Task {
     pub(super) id: String,
     pub(super) agent: String,
-    /// `shell` or `agent`.
-    pub(super) kind: &'static str,
+    pub(super) kind: TaskKind,
     pub(super) title: String,
     /// The notification's status (`completed`, `failed`, `killed`, ...), `running`, or `unknown`.
     pub(super) status: String,
@@ -21,10 +27,10 @@ pub(super) struct Task {
     pub(super) output: Option<PathBuf>,
 }
 
-/// Every background task one Claude log names, oldest first. `live` is whether the agent that
-/// wrote the log still runs; a task with no end record shows `running` only while it does and
-/// its output file is still there, since a restart or a cleanup can drop the notification.
-pub(super) fn tasks(agent: &str, log: &str, live: bool) -> Vec<Task> {
+/// Every background task one live agent's Claude log names, oldest first. A task with no end
+/// record shows `running` only while its output file is still there, since a restart or a cleanup
+/// can drop the notification.
+pub(super) fn tasks(agent: &str, log: &str) -> Vec<Task> {
     let mut titles: HashMap<String, String> = HashMap::new();
     let mut found: Vec<Task> = Vec::new();
     let mut ends: HashMap<String, (String, Option<String>)> = HashMap::new();
@@ -64,11 +70,11 @@ pub(super) fn tasks(agent: &str, log: &str, live: bool) -> Vec<Task> {
         }
         let result = &record["toolUseResult"];
         let (id, kind) = if let Some(id) = result["backgroundTaskId"].as_str() {
-            (id, "shell")
+            (id, TaskKind::Shell)
         } else if result["isAsync"] == true
             && let Some(id) = result["agentId"].as_str()
         {
-            (id, "agent")
+            (id, TaskKind::Agent)
         } else {
             continue;
         };
@@ -103,7 +109,7 @@ pub(super) fn tasks(agent: &str, log: &str, live: bool) -> Vec<Task> {
     for task in &mut found {
         (task.status, task.summary) = match ends.remove(&task.id) {
             Some(end) => end,
-            None if live && task.output.as_ref().is_some_and(|path| path.is_file()) => {
+            None if task.output.as_ref().is_some_and(|path| path.is_file()) => {
                 ("running".into(), None)
             }
             None => ("unknown".into(), None),
@@ -159,7 +165,7 @@ pub(super) fn session_tasks(app: &Server, session: &str) -> Vec<Task> {
         .flat_map(|(agent, log)| {
             // ponytail: reads each whole log per call; keep an offset per log if a long chat lags.
             let text = std::fs::read_to_string(log).unwrap_or_default();
-            tasks(&agent, &text, true)
+            tasks(&agent, &text)
         })
         .collect()
 }
@@ -174,7 +180,7 @@ pub(super) async fn background(
             .iter()
             .map(|task| {
                 let mut value = json!(task);
-                value["output"] = json!(task.kind == "shell" && task.output.is_some());
+                value["output"] = json!(task.kind == TaskKind::Shell && task.output.is_some());
                 value
             })
             .collect::<Vec<_>>()
@@ -233,7 +239,7 @@ mod tests {
         ]
         .concat();
 
-        let found = tasks("orchestrator", &log, true);
+        let found = tasks("orchestrator", &log);
         let brief: Vec<_> = found
             .iter()
             .map(|t| (t.id.as_str(), t.kind, t.title.as_str(), t.status.as_str()))
@@ -241,9 +247,9 @@ mod tests {
         assert_eq!(
             brief,
             [
-                ("b1", "shell", "Sleep for 30 seconds", "completed"),
-                ("b2", "shell", "cargo test", "running"),
-                ("a3", "agent", "Research speakers", "unknown"),
+                ("b1", TaskKind::Shell, "Sleep for 30 seconds", "completed"),
+                ("b2", TaskKind::Shell, "cargo test", "running"),
+                ("a3", TaskKind::Agent, "Research speakers", "unknown"),
             ]
         );
         assert_eq!(
@@ -258,8 +264,6 @@ mod tests {
             found[2].output.as_deref(),
             Some(Path::new("/tmp/claude-1/x/s/tasks/a3.output"))
         );
-        // A dead agent's unfinished task is unknown, not running.
-        assert_eq!(tasks("orchestrator", &log, false)[1].status, "unknown");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
