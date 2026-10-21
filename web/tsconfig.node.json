@@ -1,5 +1,5 @@
 {
   "extends": "./tsconfig.base.json",
   "compilerOptions": { "types": ["node"] },
-  "include": ["vite.config.ts", "playwright.config.ts", "e2e", "src/core/perf.ts"]
+  "include": ["vite.config.ts", "playwright.config.ts", "e2e", "src/core/perf.ts", "src/**/*.node.test.ts"]
 }
