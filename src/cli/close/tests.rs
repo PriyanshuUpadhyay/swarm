@@ -236,7 +236,6 @@ fn a_wrap_up_that_cannot_be_saved_fails_the_close() {
     std::fs::remove_dir_all(root).unwrap();
 }
 
-/// A screen capture that hangs does not hold `close` past its limit.
 /// Hung screen reads share one limit, so many silent children do not hold `close` long.
 #[test]
 fn hung_captures_share_one_limit() {
@@ -274,6 +273,7 @@ fn hung_captures_share_one_limit() {
     std::fs::remove_dir_all(root).unwrap();
 }
 
+/// A screen capture that hangs does not hold `close` past its limit.
 #[test]
 fn a_hung_capture_does_not_hold_close() {
     let (root, mut connection, session) = closing("close-hung");
