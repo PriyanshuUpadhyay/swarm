@@ -100,7 +100,10 @@ def work_tree(folder):
 def config_hash(root):
     """A hash of the repo's .blocks.toml, or `none`. take records it, because git add skips an ignored file."""
     file = Path(root) / ".blocks.toml"
-    return hashlib.sha256(file.read_bytes()).hexdigest()[:16] if file.is_file() else "none"
+    try:
+        return hashlib.sha256(file.read_bytes()).hexdigest()[:16] if file.is_file() else "none"
+    except OSError as error:
+        raise SystemExit(f"scope check failed: {file} cannot be read: {error.strerror}") from None
 
 
 def events(folder):

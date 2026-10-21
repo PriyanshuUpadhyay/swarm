@@ -174,6 +174,29 @@ def test_scope_fails_closed_in_a_repo(tmp):
     (repo / ".git" / "HEAD").write_text("garbage\n", encoding="utf-8")
     out = run("done", folder, "01-a", "1")
     assert out.returncode == 1 and "scope check failed: git " in out.stderr, out
+    # A run folder in a nested repo that git passes over for the repo around it refuses too.
+    outer = Path(tmp, "outer")
+    subprocess.run(["git", "init", "-q", str(outer)], check=True, env=step_scope.clean_env())
+    (outer / "inner" / ".git").mkdir(parents=True)
+    try:
+        step_scope.work_tree(outer / "inner" / "run")
+    except SystemExit as stop:
+        assert "not the repo at" in str(stop) and str(outer / "inner") in str(stop), stop
+    else:
+        raise AssertionError("git answered from the outer repo and the check passed")
+    # An unreadable .blocks.toml stops the take before it claims, with no traceback.
+    (repo / ".git" / "HEAD").write_text("ref: refs/heads/master\n", encoding="utf-8")
+    (repo / ".git" / "info" / "exclude").write_text("/tmp/\n/.blocks.toml\n", encoding="utf-8")  # git skips it
+    (repo / ".blocks.toml").write_text("", encoding="utf-8")
+    (repo / ".blocks.toml").chmod(0)
+    try:
+        out = run("take", folder, "02-b", "y")
+    finally:
+        (repo / ".blocks.toml").chmod(0o644)
+        (repo / ".blocks.toml").unlink()
+    assert out.returncode == 1 and "cannot be read" in out.stderr and "Traceback" not in out.stderr, out
+    assert (folder / "02-b.md").read_text(encoding="utf-8").startswith("Status: open")
+    (repo / ".git" / "HEAD").write_text("garbage\n", encoding="utf-8")
     # A take that cannot read the repo leaves the step open, not claimed with no base.
     out = run("take", folder, "02-b", "y")
     assert out.returncode == 1 and "scope check failed" in out.stderr, out

@@ -116,13 +116,13 @@ def add(folder, row, before):
         page.write_bytes(old_page) if old_page is not None else page.unlink(missing_ok=True)
         (folder / f"{name}.md").unlink(missing_ok=True)
 
-    plan.write_text("\n".join(lines), encoding="utf-8")
-    checked = subprocess.run([sys.executable, "-I", str(CHART), str(plan)], capture_output=True, text=True,
-                             encoding="utf-8", errors="replace")
-    if checked.returncode:
-        restore()
-        raise SystemExit(f"amend refused: {checked.stderr.strip()}")
+    # From the first write of plan.md, any stop (a refusal, an error, Ctrl-C) puts every file back.
     try:
+        plan.write_text("\n".join(lines), encoding="utf-8")
+        checked = subprocess.run([sys.executable, "-I", str(CHART), str(plan)], capture_output=True, text=True,
+                                 encoding="utf-8", errors="replace")
+        if checked.returncode:
+            raise SystemExit(f"amend refused: {checked.stderr.strip()}")
         step_run.start(folder, plan)
     except BaseException:
         restore()
