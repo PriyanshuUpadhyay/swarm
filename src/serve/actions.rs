@@ -48,6 +48,7 @@ pub(super) struct NewChat {
     pub(super) provider: Option<String>,
     pub(super) model: Option<String>,
     pub(super) account: Option<String>,
+    pub(super) effort: Option<String>,
 }
 
 #[derive(Deserialize)]

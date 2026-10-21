@@ -210,3 +210,74 @@ fn menu_http_matches_cli_json_and_keeps_bearer_guards() {
         );
     }
 }
+
+/// A same-CLI switch keeps the chat: it closes the chair and resumes its own session on the new
+/// run. Start clean makes a linked chat with nothing typed into it (ADR 0108).
+#[test]
+fn a_switch_resumes_the_same_chat_or_starts_clean() {
+    use std::os::unix::fs::PermissionsExt;
+    for carry in ["resume", "clean", "other-cli"] {
+        let server = Server::with_actions(true);
+        let home = server.dir.join("home");
+        let root = home.join(".swarm");
+        fs::create_dir_all(home.join(".claude")).unwrap();
+        fs::write(home.join("bin/claude"), "#!/bin/sh\nif [ \"$*\" = 'auth status' ]; then printf '%s\\n' '{\"loggedIn\":true}'; fi\n").unwrap();
+        fs::set_permissions(home.join("bin/claude"), fs::Permissions::from_mode(0o755)).unwrap();
+        let (provider, sent) = match carry {
+            "other-cli" => ("codex", "resume"),
+            other => ("claude", other),
+        };
+        let body = json!({"old_session":server.session,"provider":provider,"model":"sonnet","effort":"low","carry":sent});
+        let (status, _, reply) = server.request(
+            "POST",
+            "/api/chat/continue",
+            "Content-Type: application/json\r\n",
+            &body.to_string(),
+            true,
+        );
+        let actions = fs::read_to_string(home.join("actions")).unwrap_or_default();
+        let connection = swarm::store::open(&root.join("swarm.db")).unwrap();
+        let sessions: i64 = connection
+            .query_row("SELECT COUNT(*) FROM session", [], |r| r.get(0))
+            .unwrap();
+        match carry {
+            "resume" => {
+                assert_eq!(status, 200, "{reply}");
+                let reply: Value = serde_json::from_str(&reply).unwrap();
+                assert_eq!(reply["session"], server.session);
+                assert_eq!(sessions, 1);
+                assert!(actions.contains("close fixture-chair"), "{actions}");
+                let script = fs::read_to_string(
+                    root.join(format!("runs/{}/orchestrator.sh", server.session)),
+                )
+                .unwrap();
+                for part in [
+                    "'--model' 'sonnet' '--effort' 'low'",
+                    "'--resume' 'synthetic'",
+                ] {
+                    assert!(script.contains(part), "{part} not in {script}");
+                }
+            }
+            "clean" => {
+                assert_eq!(status, 200, "{reply}");
+                let reply: Value = serde_json::from_str(&reply).unwrap();
+                let linked: String = connection
+                    .query_row(
+                        "SELECT continuation_of FROM session WHERE id = ?1",
+                        [reply["session"].as_str().unwrap()],
+                        |r| r.get(0),
+                    )
+                    .unwrap();
+                assert_eq!(linked, server.session);
+                // A launch may ring its own pane; no summary or recent message goes in.
+                let typed = fs::read_to_string(home.join("text")).unwrap_or_default();
+                assert!(!typed.contains("prior"), "nothing is carried: {typed}");
+            }
+            _ => {
+                assert_eq!(status, 409, "{reply}");
+                assert!(reply.contains("Start clean"), "{reply}");
+                assert!(!actions.contains("close"), "{actions}");
+            }
+        }
+    }
+}
