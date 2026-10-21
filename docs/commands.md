@@ -37,6 +37,9 @@ id. A chair gets both from its pane, which `swarm session new` registers. A chil
 | `doctor [--json]` | any | Print one row per setup item (hooks, guard, trust, plugin, hud, transcript, notices, and the `swarm ui` server) as `ok`, `setup` (swarm can set it up), or `broken` (needs the owner), each with a reason. `--json` prints `swarm.doctor.v1`. It exits 0 when it can read the swarm home. Settings › Setup & doctor, also at `/setup`, shows the same rows. |
 | `notices --json` | owner | Read unposted owner notices and mark them posted in one store transaction. Each row carries `id`, `session_id`, `agent_id`, `title`, and `body`. |
 | `notices --due` | SwarmNotify helper | Like `notices --json`, but apply the notice preferences in `choices.json` (`prefs.notices`) first, so muted or switched-off rows are marked and not returned (ADR 0077). |
+| `notices health --json` | owner, app | Whether macOS lets swarm's notices through: `state` (`ok`, `allow`, `blocked`, `held`, `missing`, `unknown`, more may come), `reason`, `steps`, and `action` (`allow`, `notifications`, `focus`, or null) (ADR 0102). |
+| `notices allow\|test --json` | owner, app | `allow` runs the macOS prompt; `test` posts a test notice and waits up to 10 s for macOS. Both print the health after. |
+| `notices settings <notifications\|focus>` | owner, app | Open the System Settings pane for Swarm Notices, or the Focus pane. |
 | `herdr-split` | any | Split a child pane right of `HERDR_PANE_ID`, stack it under earlier children at equal height, and print its id. The herdr adapter's spawn verb. |
 | `roles --json` | any | Print every profile, the file's `revision`, and `imported` when the file came from the old routing file. Reads no usage. |
 | `roles check --json` | any | Print, for each profile, the runner a launch would take now (`pick`) and each skipped runner with its `code` and `text`. |

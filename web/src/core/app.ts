@@ -11,6 +11,7 @@ import { type Line } from "./transcript";
 import { Lifecycle } from "./lifecycle";
 import { type CommandList, type SkillPick } from "./slash";
 import { Settings } from "./settings";
+import { Notices } from "./notices";
 import { chatRows, type ChoiceOp, type NavRow, type PaletteItem, type RecentChat, type Tabs, type TreeName, type TreeView } from "./nav";
 import { type Chat, type Input, type Find, type Strip, type View, type Reader, type Ask, NO_FIND, NO_CELLS } from "./app-types";
 import { AppNavigation } from "./app-navigation";
@@ -37,6 +38,8 @@ export class App {
   readonly life = new Lifecycle(this);
   /** Usage meters and Settings (S5). */
   readonly settings = new Settings(this);
+  /** Whether macOS lets swarm's notices through (ADR 0102). */
+  readonly notices = new Notices(this);
   view: View;
   snapshot: Snapshot | null = null;
   tree: TreeView | null = null;

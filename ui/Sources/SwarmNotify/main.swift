@@ -201,6 +201,41 @@ func log(_ line: String) {
 
 let logger = Logger(subsystem: "io.github.priyanshuupadhyay.swarm.notify", category: "notice")
 
+/// `--status` prints the owner's notice settings for this helper as one JSON line, and
+/// `--authorize` asks for permission first. `swarm notices` runs the executable directly for them,
+/// so the rule that reads the answer stays in Rust.
+func printSettings() {
+    UNUserNotificationCenter.current().getNotificationSettings { settings in
+        let authorization = switch settings.authorizationStatus {
+        case .notDetermined: "notDetermined"
+        case .denied: "denied"
+        case .authorized: "authorized"
+        case .provisional: "provisional"
+        case .ephemeral: "ephemeral"
+        @unknown default: "unknown"
+        }
+        let style = switch settings.alertStyle {
+        case .none: "none"
+        case .banner: "banner"
+        case .alert: "alert"
+        @unknown default: "unknown"
+        }
+        print("{\"authorization\":\"\(authorization)\",\"style\":\"\(style)\"}")
+        exit(0)
+    }
+}
+
+switch CommandLine.arguments.dropFirst().first {
+case "--status":
+    printSettings()
+    dispatchMain()
+case "--authorize":
+    UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in printSettings() }
+    dispatchMain()
+default:
+    break
+}
+
 let helper = Helper()
 let application = NSApplication.shared
 application.delegate = helper

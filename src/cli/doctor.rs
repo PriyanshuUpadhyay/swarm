@@ -189,47 +189,18 @@ pub(crate) fn needed_items() -> Result<Vec<&'static str>, Box<dyn std::error::Er
         .collect())
 }
 
-/// Whether the notice helper ships, and whether a Focus held one of its notices in the last hour.
-/// A Focus lets through only the apps the owner allows, and an ad hoc signed helper cannot mark a
-/// notice time-sensitive, so the owner must allow it in the Focus.
+/// The notices row: the notice health that the app also shows (ADR 0102).
 pub(crate) fn notices_state() -> (&'static str, String) {
-    if notify_helper().is_none() {
-        return ("broken", "This build ships no notice helper".into());
-    }
-    // The bundle id is in ui/Resources/SwarmNotify-Info.plist.
-    let read = std::process::Command::new("/usr/bin/log")
-        .args([
-            "show",
-            "--last",
-            "1h",
-            "--style",
-            "compact",
-            "--predicate",
-            r#"process == "NotificationCenter" AND eventMessage CONTAINS "(io.github.priyanshuupadhyay.swarm.notify) muted by DND""#,
-        ])
-        .output();
-    // A failed read must not read as no mute.
-    let out = match read {
-        Ok(out) if out.status.success() => out,
-        failed => {
-            let why = match failed {
-                Ok(out) => String::from_utf8_lossy(&out.stderr).trim().to_string(),
-                Err(error) => error.to_string(),
-            };
-            return (
-                "broken",
-                format!("Could not read the notice log, so a Focus mute is unknown: {why}"),
-            );
-        }
-    };
-    if String::from_utf8_lossy(&out.stdout).contains("muted by DND") {
-        (
-            "broken",
-            "Do Not Disturb or another Focus held swarm's notices in the last hour. Turn it off, or allow Swarm Notices in System Settings › Focus".into(),
-        )
+    let health = health();
+    let state = if health["state"] == "ok" {
+        "ok"
     } else {
-        ("ok", "No Focus held a notice in the last hour".into())
-    }
+        "broken"
+    };
+    (
+        state,
+        health["reason"].as_str().unwrap_or_default().to_string(),
+    )
 }
 
 /// The plugin item: install the kit that ships beside `swarm` as the plugin `swarm` in each of

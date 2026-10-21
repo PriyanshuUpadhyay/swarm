@@ -149,6 +149,11 @@ pub(crate) fn commands_info(args: &[String]) -> Result<Option<()>, Box<dyn std::
     {
         return notices_due().map(Some);
     }
+    if let [cmd, rest @ ..] = args
+        && cmd == "notices"
+    {
+        return notices_command(rest).map(Some);
+    }
     if let [cmd] = args
         && cmd == "herdr-split"
     {

@@ -37,6 +37,53 @@ pub(super) async fn hud_cli(app: &App, verb: &str) -> Result<Value, ApiError> {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+pub(super) struct NoticesWrite {
+    pub(super) action: String,
+}
+/// ADR 0102: the notice health, which only `swarm notices` reads.
+pub(super) async fn notices_read(State(app): State<App>) -> Result<Json<Value>, ApiError> {
+    notices_cli(&app, &["notices", "health", "--json"], 20).await
+}
+/// Runs the owner's fix: the macOS prompt, a System Settings pane, or a test notice; then the
+/// health.
+pub(super) async fn notices_write(
+    State(app): State<App>,
+    body: Result<Json<NoticesWrite>, JsonRejection>,
+) -> Result<Json<Value>, ApiError> {
+    let Json(body) = body.map_err(|e| error(e.status(), &e.body_text()))?;
+    match body.action.as_str() {
+        // The macOS prompt waits for the owner, up to the helper's two minutes.
+        "allow" => notices_cli(&app, &["notices", "allow", "--json"], 130).await,
+        "test" => notices_cli(&app, &["notices", "test", "--json"], 40).await,
+        pane @ ("notifications" | "focus") => {
+            run_cli(&app, home_call(&app, &["notices", "settings", pane]), None).await?;
+            notices_read(State(app)).await
+        }
+        _ => Err(error(StatusCode::BAD_REQUEST, "unknown notices action")),
+    }
+}
+async fn notices_cli(app: &App, args: &[&str], seconds: u64) -> Result<Json<Value>, ApiError> {
+    let output = run_cli_with_timeout(
+        app,
+        home_call(app, args),
+        None,
+        Duration::from_secs(seconds),
+    )
+    .await?;
+    serde_json::from_str::<Value>(&output)
+        .ok()
+        .filter(|value| value["state"].is_string())
+        .map(Json)
+        .ok_or_else(|| {
+            error(
+                StatusCode::BAD_GATEWAY,
+                "swarm returned invalid notice health",
+            )
+        })
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(super) struct SetupWrite {
     /// A comma list of `SETUP_ITEMS`, with the digest of its plan.
     pub(super) only: String,

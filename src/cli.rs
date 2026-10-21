@@ -51,6 +51,9 @@ pub(crate) use logs::*;
 mod managed_hooks;
 pub(crate) use managed_hooks::*;
 
+mod notices;
+pub(crate) use notices::*;
+
 mod read_screen;
 pub(crate) use read_screen::*;
 

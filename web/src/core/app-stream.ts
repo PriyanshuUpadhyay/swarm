@@ -71,11 +71,20 @@ export class AppStream {
       case "reload":
         location.reload();
         break;
+      case "show":
+        void this.show(String(data.session));
+        break;
       case "setup":
       case "handoff":
         this.app.life.onFrame(e.event, data);
         break;
     }
+  }
+
+  /** ADR 0102: a notice click opens its chat. A chat newer than the snapshot is read first. */
+  async show(session: string) {
+    if (!this.app.chatIds().includes(session)) await this.app.navigation.refreshSnapshot();
+    if (this.app.chatIds().includes(session)) this.app.openChat(session);
   }
 
   /** Applies all buffered row frames once per animation frame. Only the open chat renders. */

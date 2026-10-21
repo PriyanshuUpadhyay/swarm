@@ -104,3 +104,40 @@ async fn twelve_row_keys_keep_live_state_and_drop_all_children() {
     assert!(hub.followers.is_empty());
     assert_eq!(hub.row_cache.len(), 4);
 }
+#[tokio::test]
+async fn show_tells_each_open_page_to_open_the_chat() {
+    let fixture = Fixture::new();
+    fixture
+        .app
+        .hub
+        .lock()
+        .unwrap()
+        .streams
+        .insert("all".into(), client(&[]));
+    let Json(answer) = show(
+        State(fixture.app.clone()),
+        Ok(Json(Show {
+            session: "01a1-b2".into(),
+        })),
+    )
+    .await
+    .unwrap();
+    assert_eq!(answer["pages"], 1);
+    {
+        let hub = fixture.app.hub.lock().unwrap();
+        let frame = hub.streams["all"].queue.back().unwrap();
+        assert_eq!(frame.name, "show");
+        assert_eq!(
+            serde_json::from_str::<Value>(&frame.data).unwrap()["session"],
+            "01a1-b2"
+        );
+    }
+    let bad = show(
+        State(fixture.app.clone()),
+        Ok(Json(Show {
+            session: "../x".into(),
+        })),
+    )
+    .await;
+    assert!(bad.is_err());
+}

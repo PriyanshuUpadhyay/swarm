@@ -76,23 +76,21 @@ fn focus_names_missing_panes_adapters_and_verbs() {
         String::from_utf8_lossy(&focused.stderr),
         "swarm: session has no adapter\n"
     );
-    for adapter in ["tmux-swarm", "superset"] {
-        swarm::store::set_adapter(&connection, &session, adapter).unwrap();
-        let missing = swarm(&home, &[], &["focus", &session, "coder"], "");
-        assert!(!missing.status.success(), "{missing:?}");
-        assert_eq!(
-            String::from_utf8_lossy(&missing.stderr),
-            format!("swarm: {adapter} has no focus\n")
-        );
-        swarm::store::set_pane(&connection, &session, "coder", "%2").unwrap();
-        let missing = swarm(&home, &[], &["focus", &session, "coder"], "");
-        assert!(!missing.status.success(), "{missing:?}");
-        assert_eq!(
-            String::from_utf8_lossy(&missing.stderr),
-            format!("swarm: {adapter} has no focus\n")
-        );
-        swarm::store::clear_pane(&connection, &session, "coder").unwrap();
-    }
+    // tmux-swarm opens Swarm.app (ADR 0102), so a test cannot run it without a window.
+    swarm::store::set_adapter(&connection, &session, "superset").unwrap();
+    let missing = swarm(&home, &[], &["focus", &session, "coder"], "");
+    assert!(!missing.status.success(), "{missing:?}");
+    assert_eq!(
+        String::from_utf8_lossy(&missing.stderr),
+        "swarm: superset has no focus\n"
+    );
+    swarm::store::set_pane(&connection, &session, "coder", "%2").unwrap();
+    let missing = swarm(&home, &[], &["focus", &session, "coder"], "");
+    assert!(!missing.status.success(), "{missing:?}");
+    assert_eq!(
+        String::from_utf8_lossy(&missing.stderr),
+        "swarm: superset has no focus\n"
+    );
     std::fs::remove_dir_all(&home).unwrap();
 }
 
