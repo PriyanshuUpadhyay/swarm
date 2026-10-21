@@ -152,6 +152,13 @@ pub(crate) fn hook(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let connection = swarm::store::open(&swarm::paths::sqlite_db()?)?;
     // The providers give a hook about 3 s; a busy bus loses this report rather than the turn.
     connection.busy_timeout(std::time::Duration::from_secs(1))?;
+    // A CLI that the agent starts, such as a probe `agy -p`, inherits its SWARM_* variables, and
+    // its hook once wrote its own log over a pi chat's log. Only the agent's own CLI speaks for it.
+    if agent_cli(&connection, &report.session, &report.agent)?
+        .is_some_and(|cli| Some(&cli) != args.first())
+    {
+        return Ok(());
+    }
     if let Some(log) = &report.log {
         store_log(&connection, &report.session, &report.agent, log)?;
     }
@@ -171,6 +178,26 @@ pub(crate) fn hook(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         let _ = swarm::store::update_usage(&connection, &report.session, &report.agent, provider);
     }
     Ok(())
+}
+
+/// The CLI an agent runs: its own row, or the session's chair CLI for the orchestrator. None while
+/// neither is known.
+pub(crate) fn agent_cli(
+    connection: &rusqlite::Connection,
+    session: &str,
+    agent: &str,
+) -> Result<Option<String>, Box<dyn std::error::Error>> {
+    use rusqlite::OptionalExtension;
+    Ok(connection
+        .query_row(
+            "SELECT COALESCE(a.provider, CASE WHEN ?2 = 'orchestrator' THEN s.chair_provider END)
+             FROM session s LEFT JOIN agent a ON a.session_id = s.id AND a.id = ?2
+             WHERE s.id = ?1",
+            (session, agent),
+            |row| row.get(0),
+        )
+        .optional()?
+        .flatten())
 }
 
 /// The orchestrator is the chair, so its log is the chat's log. Only `swarm sessions --json`

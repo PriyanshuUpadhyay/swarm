@@ -231,6 +231,33 @@ mod cases {
     }
 
     #[test]
+    fn a_hook_from_another_cli_than_the_agents_changes_nothing() {
+        let (home, connection, session) = stop_fixture("other-cli", Some("{}\n"));
+        swarm::store::set_provider(&connection, &session, CODER, "claude").unwrap();
+        let stray = home.join("stray.jsonl");
+        std::fs::write(&stray, "").unwrap();
+        let payload = format!(
+            r#"{{"transcriptPath":{}}}"#,
+            serde_json::to_string(&stray).unwrap()
+        );
+        run_stop_hook(&home, &session, "agy", "Stop", &payload);
+        let agent = &swarm::store::agents(&connection, &session).unwrap()[0];
+        assert_eq!(
+            agent.log.as_deref(),
+            Some(home.join("chat.jsonl").to_str().unwrap())
+        );
+        assert_eq!(agent.state, None);
+        // The agent's own CLI still reports.
+        run_stop_hook(&home, &session, "claude", "Stop", "{}");
+        assert_eq!(
+            swarm::store::agents(&connection, &session).unwrap()[0]
+                .state
+                .as_deref(),
+            Some("done")
+        );
+    }
+
+    #[test]
     fn stop_hook_commits_done_state_before_usage() {
         let log = r#"{"type":"assistant","message":{"id":"m1","model":"claude","usage":{"input_tokens":1,"output_tokens":2}}}"#;
         let (home, connection, session) = stop_fixture("state-before-usage", Some(log));
