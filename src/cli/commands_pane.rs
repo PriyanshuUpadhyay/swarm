@@ -6,18 +6,6 @@ pub(crate) fn commands_pane(
     root: &std::path::Path,
     connection: &mut rusqlite::Connection,
 ) -> Result<Option<()>, Box<dyn std::error::Error>> {
-    if let [cmd] = args
-        && cmd == "drain"
-    {
-        let summarizer = env_var("SWARM_SUMMARIZER")?;
-        while let Some(job_id) = swarm::store::claim_next(connection)? {
-            println!(
-                "{}",
-                process_summary_job(connection, root, &adapter_name(), &summarizer, job_id)?
-            );
-        }
-        return Ok(Some(()));
-    }
     if let [cmd, child] = args
         && cmd == "close"
     {

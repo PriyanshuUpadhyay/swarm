@@ -25,7 +25,6 @@ pub(crate) fn report_dead(
             "summary",
             note,
         )?;
-        swarm::store::enqueue_job(connection, session_id, child, "summarize")?;
     }
     Ok(())
 }
@@ -462,38 +461,5 @@ mod tests {
             swarm::store::pane_of(&connection, &session, CODER).unwrap(),
             None
         );
-    }
-
-    #[test]
-    fn a_failed_summary_delivery_keeps_the_log_and_releases_the_job() {
-        let root =
-            std::env::temp_dir().join(format!("swarm-summary-retry-test-{}", std::process::id()));
-        let mut connection = swarm::store::open(std::path::Path::new(":memory:")).unwrap();
-        let session = swarm::store::create_session(
-            &connection,
-            "lane",
-            std::path::Path::new("/test"),
-            None,
-            None,
-        )
-        .unwrap();
-        swarm::store::add_agent(&connection, &session, ORCHESTRATOR, "orchestrator").unwrap();
-        swarm::store::add_agent(&connection, &session, CODER, "coder").unwrap();
-        let log = root.join(format!("runs/{session}/{CODER}.log"));
-        std::fs::create_dir_all(log.parent().unwrap()).unwrap();
-        std::fs::write(&log, "captured output").unwrap();
-        let job = swarm::store::enqueue_job(&connection, &session, CODER, "summarize").unwrap();
-        assert_eq!(swarm::store::claim_next(&connection).unwrap(), Some(job));
-
-        let result = process_summary_job(&mut connection, &root, "fake", "cat", job).unwrap();
-
-        assert!(result.contains("orchestrator has no pane"));
-        assert!(log.exists());
-        let state: String = connection
-            .query_row("SELECT state FROM job WHERE id = ?1", [job], |row| {
-                row.get(0)
-            })
-            .unwrap();
-        assert_eq!(state, "queued");
     }
 }
