@@ -61,13 +61,13 @@ export function BackgroundPanel({ app, session }: { app: App; session: string })
         ))}
         {!rows.length && <li className="px-2 py-1 text-muted-foreground">No live agents.</li>}
       </ul>
-      <div className="flex min-w-0 flex-1 flex-col">{row && <Detail key={row.key} app={app} session={session} row={row} onOwner={pickAgent} />}</div>
+      <div className="flex min-w-0 flex-1 flex-col">{row && <Detail key={row.key} app={app} session={session} row={row} picked={picked !== null} onOwner={pickAgent} />}</div>
     </div>
   );
 }
 
-function Detail({ app, session, row, onOwner }: { app: App; session: string; row: BackgroundRow; onOwner: (agent: string) => void }) {
-  if (row.type === "agent") return <Term app={app} session={session} agent={row.agent} />;
+function Detail({ app, session, row, picked, onOwner }: { app: App; session: string; row: BackgroundRow; picked: boolean; onOwner: (agent: string) => void }) {
+  if (row.type === "agent") return <Term app={app} session={session} agent={row.agent} focus={picked} />;
   const { task } = row;
   return (
     <>
@@ -95,8 +95,10 @@ function Detail({ app, session, row, onOwner }: { app: App; session: string; row
 const css = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 const colors = () => ({ background: css("--background"), foreground: css("--foreground") });
 
-/** One xterm on one socket. `task` makes it a read-only view of that shell's output file. */
-function Term({ app, session, agent, task }: { app: App; session: string; agent: string; task?: string }) {
+/** One xterm on one socket. `task` makes it a read-only view of that shell's output file. `focus`
+ *  is set only for a row the user chose, so a panel that opens with the chat leaves the keys there. */
+function Term({ app, session, agent, task, focus = false }: { app: App; session: string; agent: string; task?: string; focus?: boolean }) {
+  const shell = task !== undefined;
   const host = useRef<HTMLDivElement>(null);
   const live = useRef<Terminal | null>(null);
   const theme = useTheme();
@@ -115,9 +117,9 @@ function Term({ app, session, agent, task }: { app: App; session: string; agent:
     const term = new Terminal({
       fontFamily: css("--font-mono"),
       fontSize: 12,
-      convertEol: !!task,
-      disableStdin: !!task,
-      cursorBlink: !task,
+      convertEol: shell,
+      disableStdin: shell,
+      cursorBlink: !shell,
       theme: colors(),
     });
     live.current = term;
@@ -131,7 +133,7 @@ function Term({ app, session, agent, task }: { app: App; session: string; agent:
     const send = (data: string | Uint8Array) => ws?.readyState === WebSocket.OPEN && ws.send(data);
     const resize = () => send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }));
     app.api
-      .post<{ ticket: string }>("/api/terminal/ticket", { session, agent, ...(task ? { task } : {}) })
+      .post<{ ticket: string }>("/api/terminal/ticket", { session, agent, ...(shell ? { task } : {}) })
       .then(({ ticket }) => {
         if (gone) return;
         ws = new WebSocket(`${location.origin.replace(/^http/, "ws")}/api/terminal?ticket=${encodeURIComponent(ticket)}`);
@@ -139,7 +141,7 @@ function Term({ app, session, agent, task }: { app: App; session: string; agent:
         ws.onopen = () => {
           fit.fit();
           resize();
-          if (!task) term.focus();
+          if (focus) term.focus();
         };
         ws.onmessage = (m) => term.write(typeof m.data === "string" ? m.data : new Uint8Array(m.data as ArrayBuffer));
         ws.onclose = () => !gone && term.write("\r\n\x1b[2m[closed]\x1b[0m\r\n");

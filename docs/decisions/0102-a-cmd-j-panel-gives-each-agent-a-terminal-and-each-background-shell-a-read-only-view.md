@@ -31,12 +31,13 @@ rejected a terminal inside the chat area, so the answer could not go into the ch
 
 Chosen: the bottom panel, because it adds what the owner asked for and leaves the chat as ADR 0099
 set it. An agent row runs the adapter's `attach` in a PTY on the server, over a WebSocket at
-`/api/terminal` that takes a single-use ticket bound to its target, the Host, and the app Origin.
+`/api/terminal` that takes a single-use ticket bound to its target; the socket also checks the
+Host and the app Origin.
 Only the tmux-swarm adapter has one session per agent, so only it gets a terminal; its `attach`
 verb puts the window back at its first size when the last viewer leaves. A background shell row is
 a read-only view of the output file that Claude Code names in its log, opened once after a check
-that it is this user's task file under `/tmp/claude-<uid>/`. One terminal is live at a time, and
-closing it never stops the agent. tmux control mode was rejected because nothing else attaches to
+that it is this user's task file under `/tmp/claude-<uid>/`. The page keeps one terminal live at
+a time, the server allows 8, and closing one never stops the agent. tmux control mode was rejected because nothing else attaches to
 these sessions.
 
 ### Consequences
@@ -44,7 +45,7 @@ these sessions.
 - Good: each agent's real CLI is one keypress away, and a background shell's output is visible.
 - Good: the chat itself does not change.
 - Bad: the server now runs a PTY child per open terminal and has a socket route outside the
-  bearer header, guarded by the ticket, Host, and Origin instead.
+  bearer header, guarded by the ticket and the Host and Origin checks instead.
 - Bad: a background task can be stopped only from its agent's own terminal (`/tasks`); Codex and
   AGY background work, a plain workspace shell, and other chats' tasks are out of v1.
 - Bad: shell rows depend on the wording of Claude Code's launch result and task notification, so

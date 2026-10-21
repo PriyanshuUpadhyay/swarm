@@ -414,13 +414,15 @@ pub(super) fn grown(file: &mut std::fs::File, at: &mut u64) -> std::io::Result<V
 /// A read-only view of a shell's output file: its last part, then whatever it grows by. Input from
 /// the socket is dropped, as nothing outside Claude Code can type into its shell.
 async fn follow_file(root: &Path, path: &Path, mut socket: WebSocket) {
-    let Some(mut file) = open_output(root, path) else {
+    // A failed first read says so, not replay the file from its start as if it were new.
+    let opened =
+        open_output(root, path).and_then(|mut file| Some((tail_start(&mut file).ok()?, file)));
+    let Some((mut at, mut file)) = opened else {
         let _ = socket
             .send(Message::Text("swarm: shell output unavailable\r\n".into()))
             .await;
         return;
     };
-    let mut at = tail_start(&mut file).unwrap_or(0);
     let mut tick = tokio::time::interval(FILE_POLL);
     loop {
         tokio::select! {

@@ -79,6 +79,10 @@ pub(super) fn tasks(agent: &str, log: &str) -> Vec<Task> {
         } else {
             continue;
         };
+        // The panel and the ticket name a shell by its id, so a task with none cannot be shown.
+        if id.is_empty() {
+            continue;
+        }
         let block = content.and_then(|blocks| blocks.first());
         let call = block.and_then(|b| b["tool_use_id"].as_str()).unwrap_or("");
         let mut texts = Vec::new();
@@ -259,6 +263,7 @@ mod tests {
             call("t3", "Agent", json!({"description": "ignored", "run_in_background": true})),
             launch("t3", json!({"isAsync": true, "agentId": "a3", "description": "Research speakers"}), "Async agent launched successfully.\nagentId: a3\noutput_file: /tmp/claude-1/x/s/tasks/a3.output\nDo NOT Read"),
             "not json\n".into(),
+            launch("t0", json!({"backgroundTaskId": ""}), "Output is being written to: /tmp/claude-1/x/s/tasks/.output."),
             // A Read of a file that quotes a notice is not an end record.
             line(json!({
                 "type": "user",

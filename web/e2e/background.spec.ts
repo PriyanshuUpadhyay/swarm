@@ -63,6 +63,9 @@ test("a resized panel keeps its height when Meta+J hides and shows it", async ({
   await expect(panel).toHaveCount(0);
   await tab.keyboard.press("Meta+j");
   await expect.poll(height).toBeCloseTo(resized, -1);
+  // A panel that opens with the chat leaves the keys with the chat, also once its terminal connects.
+  await expect(panel.locator(".xterm-rows")).not.toBeEmpty();
+  await expect(panel.locator(".xterm-helper-textarea")).not.toBeFocused();
   // The saved layout brings it back after a reload, shown or hidden at the time.
   await openChat(tab, info);
   await expect.poll(height).toBeCloseTo(resized, -1);
@@ -76,6 +79,6 @@ test("a panel that fails to load says so and keeps the chat", async ({ page: tab
   await tab.route(/\/assets\/background-[^/]*\.js$/, (route) => route.abort());
   await openChat(tab, info);
   await tab.keyboard.press("Meta+j");
-  await expect(tab.getByText("The background panel failed to load. Reload the page to try again.")).toBeVisible();
+  await expect(tab.getByText("The background panel failed. Reload the page to try again.")).toBeVisible();
   await expect(tab.locator('[data-testid="transcript"][data-state="ready"]')).toBeVisible();
 });

@@ -110,7 +110,8 @@ function Main({ app, changes }: { app: App; changes: Changes }) {
   );
 }
 
-/** Catches a failed load of the lazy panel, so the rest of the page stays. */
+/** Catches a failed load or render of the lazy panel, so the rest of the page stays. Keyed by
+ *  chat, so the next chat starts clean. */
 class LoadFailed extends Component<{ children: ReactNode }, { failed: boolean }> {
   state = { failed: false };
   static getDerivedStateFromError() {
@@ -119,7 +120,7 @@ class LoadFailed extends Component<{ children: ReactNode }, { failed: boolean }>
   render() {
     return this.state.failed ? (
       <p role="alert" className="p-3 text-sm text-muted-foreground">
-        The background panel failed to load. Reload the page to try again.
+        The background panel failed. Reload the page to try again.
       </p>
     ) : (
       this.props.children
@@ -152,9 +153,9 @@ function ChatColumn({ app, openId }: { app: App; openId: string }) {
       {open && <ResizableHandle className="h-px w-full after:inset-x-0 after:inset-y-auto after:top-1/2 after:left-0 after:h-[7px] after:w-full after:translate-x-0 after:-translate-y-1/2" />}
       {open && (
         <ResizablePanel id="background-panel" defaultSize="280px" minSize="120px">
-          <LoadFailed>
+          <LoadFailed key={openId}>
             <Suspense fallback={<p role="status" className="p-3 text-sm text-muted-foreground">Loading…</p>}>
-              <BackgroundPanel key={openId} app={app} session={openId} />
+              <BackgroundPanel app={app} session={openId} />
             </Suspense>
           </LoadFailed>
         </ResizablePanel>
