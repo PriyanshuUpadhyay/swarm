@@ -89,6 +89,9 @@ def start(profile="default", domains=None, parent_loop=None, plan=None):
         rows = start_plan.preset.plan_chart.read_plan(plan / "plan.md")[2]
         check_graph(plan, rows)
         plan_blocks = {r[0]: r[3] for r in rows}
+        # step_run's scope, review, and skip rules read these lines, so a plan with Writes keeps them in implement.
+        plan_scope = {r[0]: (f"Writes: {', '.join(r[5]) or 'none'}\n" + ("Optional: yes\n" if r[6] else ""))
+                      for r in rows if r[5] is not None}
     root = git("rev-parse", "--show-toplevel")
     if not root:
         raise SystemExit("not in a git repository")
@@ -129,6 +132,7 @@ def start(profile="default", domains=None, parent_loop=None, plan=None):
             extra = f"Worktree: {root}\nBranch: {branch}\nDomains: {', '.join(sorted(chosen))}\n" if step == "01-frame" else ""
             extra += f"Plan: {plan}\n" if step == "01-frame" and plan else ""
             extra += f"Plan blocks: {', '.join(plan_blocks[step])}\n" if plan and plan_blocks.get(step) else ""
+            extra += plan_scope.get(step, "") if plan else ""
             extra += "Revision: HEAD\n" if step == "05-build" else ""  # the rule in rev(), for readers without this script
             uses = f"Uses: {', '.join(need)}".rstrip()
             paths = catalog[step][0]
