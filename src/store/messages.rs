@@ -160,6 +160,25 @@ pub fn owes_wrap_up(
     )?)
 }
 
+/// The body path of the first summary from `sender_id` after message `seq`.
+pub fn summary_after(
+    connection: &Connection,
+    session_id: &str,
+    sender_id: &str,
+    seq: i64,
+) -> Result<Option<String>, Box<dyn std::error::Error>> {
+    use rusqlite::OptionalExtension;
+    Ok(connection
+        .query_row(
+            "SELECT body_path FROM message
+             WHERE session_id = ?1 AND sender_id = ?2 AND kind = 'summary' AND seq > ?3
+             ORDER BY seq LIMIT 1",
+            (session_id, sender_id, seq),
+            |r| r.get(0),
+        )
+        .optional()?)
+}
+
 pub fn route(
     connection: &Connection,
     session_id: &str,

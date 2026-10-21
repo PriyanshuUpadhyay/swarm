@@ -66,9 +66,14 @@ pub(super) async fn execute_action(app: &App, action: Action) -> Result<Value, A
             return interrupt_claude(app, body).await;
         }
         Action::Interrupt(body) | Action::Close(body) => {
-            let verb = if interrupt { "interrupt" } else { "close" };
+            // The app closes at once; only an orchestrator's `swarm close` waits for a wrap-up.
+            let verb: &[&str] = if interrupt {
+                &["interrupt"]
+            } else {
+                &["close", "--now"]
+            };
             let (call, agent) = action_target(app, &body.session, &body.agent)?;
-            (call.args(&[verb, &agent]), None)
+            (call.args(&[verb, &[agent.as_str()]].concat()), None)
         }
         Action::Key(body) => {
             if !matches!(body.key.as_str(), "Up" | "C-u") {
