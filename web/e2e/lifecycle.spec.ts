@@ -105,24 +105,31 @@ test("A chat whose chair has no pane shows only its log, and Continue chat opens
   expect(errors).toEqual([]);
 });
 
-test("Switch model shows its progress, and Cancel stops it while the chair writes its summary", async ({ page: tab }, info) => {
+test("The run chip hands off to another CLI with a summary, and Cancel stops it while the chair writes it", async ({ page: tab }, info) => {
   const errors = await open(tab);
   const live = process.env.SWARM_E2E_LIVE!;
   const chats = async () => (await readTree()).sections.flatMap((s) => s.rows).filter((r) => r.kind === "chat").length;
   const before = await chats();
   await tab.locator(`[data-testid="tree-row"][data-session="${live}"]`).click();
   await tab.getByTestId("model-chip").click();
-  const dialog = tab.getByTestId("switch-model");
+  const dialog = tab.getByTestId("run-popover");
   await expect(dialog).toBeVisible();
-  await dialog.getByTestId("sm-provider").selectOption("codex");
-  await dialog.getByTestId("sm-query").fill("gpt-e2e");
-  await dialog.getByTestId("sm-custom").click();
-  await dialog.getByTestId("sm-start").click();
+  await dialog.getByTestId("run-query").fill("gpt-e2e");
+  // The same CLI restarts its own session and asks nothing.
+  await dialog.getByTestId("run-custom-claude").click();
+  await expect(dialog.getByTestId("run-outcome")).toHaveText("Claude restarts on the new settings. The chat keeps its history.");
+  await expect(dialog.getByTestId("run-carry")).toHaveCount(0);
+  await dialog.getByTestId("run-custom-codex").click();
+  // Another CLI asks what to bring, with Summary as the default.
+  await expect(dialog.getByTestId("run-carry-choice").locator('[aria-checked="true"]')).toHaveText("Summary");
+  await expect(dialog.getByTestId("run-outcome")).toHaveText("A new Codex chat starts and gets a summary of this one.");
+  await shoot(tab, "run-popover", info.project.name);
+  await dialog.getByTestId("run-apply").click();
   const progress = dialog.getByTestId("sm-progress");
   // The live chair was asked for a summary and does not answer, so the switch waits here.
   await expect(progress).toHaveAttribute("data-phase", "summarizing");
   await shoot(tab, "switch-model", info.project.name);
-  await dialog.getByTestId("sm-cancel").click();
+  await dialog.getByTestId("run-cancel").click();
   await expect(progress).toHaveAttribute("data-phase", "cancelled");
   await expect(progress).toContainText("Cancelled. This chat is unchanged.");
   expect(await chats()).toBe(before);

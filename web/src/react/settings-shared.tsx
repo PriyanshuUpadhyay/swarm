@@ -50,4 +50,16 @@ function Toggle({ label: name, checked, onChange, testid, id, disabled, busy }: 
 }
 
 
-export { FIELD, label, Row, Toggle, useSettings, useNow };
+export { FIELD, label, Row, Segmented, Toggle, useSettings, useNow };
+
+function Segmented<T extends string>({ label: name, value, options, onChange, testid }: { label: string; value: T; options: [T, string][]; onChange: (v: T) => void; testid: string }) {
+  return (
+    <div role="radiogroup" aria-label={name} className="view-switch m-0 w-56" data-testid={testid}>
+      {options.map(([v, text]) => (
+        <button key={v} role="radio" aria-checked={value === v} data-value={v} onClick={() => value !== v && onChange(v)}>
+          {text}
+        </button>
+      ))}
+    </div>
+  );
+}

@@ -147,13 +147,6 @@ export function usageLabel(usage: Usage): string {
   return new Intl.NumberFormat("en-US", { notation: "compact" }).format(tokens);
 }
 
-/** The model, else the provider's name. A chat on the CLI's default model reports none. */
-export function modelLabel(input: AgentInput): string {
-  if (input.model) return input.model;
-  const p = input.provider;
-  return p ? p[0].toUpperCase() + p.slice(1) : "Agent";
-}
-
 const cap = (p: string) => p[0].toUpperCase() + p.slice(1);
 
 /** The run chip: `account · model · thinking`. Pi and AGY have no swarm accounts, so their CLI

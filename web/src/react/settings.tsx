@@ -9,7 +9,7 @@ import { PAGES, type Page } from "../core/settings";
 import { Button } from "../components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "../components/ui/dialog";
 import { chooseTheme, fontMono, fontSans, useTheme, type FontMono, type FontSans, type Theme } from "./appearance";
-import { label, Row, Toggle, useSettings } from "./settings-shared";
+import { label, Row, Segmented, Toggle, useSettings } from "./settings-shared";
 import { AccountsPage } from "./settings-accounts";
 import { ProfilesPage } from "./settings-profiles";
 import { SetupPage } from "./settings-setup";
@@ -93,18 +93,6 @@ function Banner({ app }: { app: App }) {
   );
 }
 
-function Segmented<T extends string>({ label: name, value, options, onChange, testid }: { label: string; value: T; options: [T, string][]; onChange: (v: T) => void; testid: string }) {
-  return (
-    <div role="radiogroup" aria-label={name} className="view-switch m-0 w-56" data-testid={testid}>
-      {options.map(([v, text]) => (
-        <button key={v} role="radio" aria-checked={value === v} data-value={v} onClick={() => value !== v && onChange(v)}>
-          {text}
-        </button>
-      ))}
-    </div>
-  );
-}
-
 /** The owner's prefs from the last tree; a write shows once the tree after it arrives. */
 function usePrefs(app: App): Prefs {
   return useSyncExternalStore(app.subscribe, () => app.view.tree?.prefs ?? NO_PREFS);
@@ -172,6 +160,18 @@ function AppearancePage({ app }: { app: App }) {
             ["commandReturn", "⌘Return"],
           ]}
           onChange={(v) => void app.settings.setPref("sendKey", v)}
+        />
+      </Row>
+      <Row title="Switch to another CLI" detail="What the new chat gets. The run chip asks each time with this as the default.">
+        <Segmented
+          label="Switch to another CLI"
+          testid="pref-switch-carry"
+          value={prefs.switchCarry === "clean" ? "clean" : "summary"}
+          options={[
+            ["summary", "Summary"],
+            ["clean", "Start clean"],
+          ]}
+          onChange={(v) => void app.settings.setPref("switchCarry", v)}
         />
       </Row>
     </div>

@@ -3,6 +3,7 @@
 import { CheckIcon, CircleIcon, LoaderCircleIcon, XIcon } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { App } from "../core/app";
+import type { LifeState } from "../core/lifecycle";
 import { Button } from "../components/ui/button";
 import { FIELD, message, useLife, Frame, Label, ErrorLine } from "./lifecycle-shared";
 
@@ -17,7 +18,9 @@ const PHASES: [string, string][] = [
 ];
 
 function SwitchModelDialog({ app }: { app: App }) {
-  const old = useLife(app, "switchModel");
+  const chosen = useLife(app, "switchModel");
+  // A live chair switches in the run chip's popover; this dialog continues an ended chat.
+  const old = chosen && app.chair(chosen).unreachable ? chosen : null;
   return (
     <Frame open={old !== null} onClose={() => app.life.close("switchModel")} title="Switch model" description="A new chat on the chosen model continues this one with its summary." testid="switch-model">
       {old && <SwitchModelBody app={app} old={old} key={old} />}
@@ -39,7 +42,7 @@ function SwitchModelBody({ app, old }: { app: App; old: string }) {
 
   useEffect(() => {
     app.life.providers().then(
-      (p) => setProviders(p.providers.filter((x) => x.id === "claude" || x.id === "codex")),
+      (p) => setProviders(p.providers),
       (err) => setError(`Could not read the providers: ${message(err)}`),
     );
   }, [app]);
@@ -73,7 +76,6 @@ function SwitchModelBody({ app, old }: { app: App; old: string }) {
   const q = query.trim();
   const shown = useMemo(() => (models ?? []).filter((m) => !q || m.label.toLowerCase().includes(q.toLowerCase())), [models, q]);
   const custom = q && !(models ?? []).some((m) => m.id === q) ? q : null;
-  const phaseIndex = handoff ? PHASES.findIndex(([p]) => p === handoff.phase) : -1;
 
   return (
     <div className="grid gap-3">
@@ -117,25 +119,7 @@ function SwitchModelBody({ app, old }: { app: App; old: string }) {
           )}
         </div>
       </fieldset>
-      {handoff && (
-        <ol className="grid gap-1 text-sm" data-testid="sm-progress" data-phase={handoff.phase} aria-label="Progress">
-          {PHASES.map(([p, label], i) => {
-            const now = handoff.phase === p;
-            const done = phaseIndex > i || handoff.phase === "completed";
-            return (
-              <li key={p} className={`flex items-center gap-2 ${now ? "text-foreground" : "text-muted-foreground"}`}>
-                {now && running ? <LoaderCircleIcon className="size-3.5 animate-spin motion-reduce:animate-none" /> : done ? <CheckIcon className="size-3.5 text-done" /> : <CircleIcon className="size-3.5" />}
-                {label}
-              </li>
-            );
-          })}
-          {handoff.phase === "cancelled" && (
-            <li className="flex items-center gap-2 text-muted-foreground">
-              <XIcon className="size-3.5" /> Cancelled. This chat is unchanged.
-            </li>
-          )}
-        </ol>
-      )}
+      {handoff && <SwitchProgress handoff={handoff} />}
       <ErrorLine text={handoff?.error ?? error} />
       <div className="flex justify-end gap-2">
         {running ? (
@@ -156,4 +140,29 @@ function SwitchModelBody({ app, old }: { app: App; old: string }) {
   );
 }
 
-export { SwitchModelDialog };
+/** The hand-off steps as they run, also in the run chip's popover. */
+function SwitchProgress({ handoff }: { handoff: NonNullable<LifeState["handoff"]> }) {
+  const running = !["completed", "failed", "cancelled"].includes(handoff.phase);
+  const phaseIndex = PHASES.findIndex(([p]) => p === handoff.phase);
+  return (
+    <ol className="grid gap-1 text-sm" data-testid="sm-progress" data-phase={handoff.phase} aria-label="Progress">
+      {PHASES.map(([p, label], i) => {
+        const now = handoff.phase === p;
+        const done = phaseIndex > i || handoff.phase === "completed";
+        return (
+          <li key={p} className={`flex items-center gap-2 ${now ? "text-foreground" : "text-muted-foreground"}`}>
+            {now && running ? <LoaderCircleIcon className="size-3.5 animate-spin motion-reduce:animate-none" /> : done ? <CheckIcon className="size-3.5 text-done" /> : <CircleIcon className="size-3.5" />}
+            {label}
+          </li>
+        );
+      })}
+      {handoff.phase === "cancelled" && (
+        <li className="flex items-center gap-2 text-muted-foreground">
+          <XIcon className="size-3.5" /> Cancelled. This chat is unchanged.
+        </li>
+      )}
+    </ol>
+  );
+}
+
+export { SwitchModelDialog, SwitchProgress };

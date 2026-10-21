@@ -5,6 +5,7 @@
 import { ApiError, sleep } from "./api";
 import type { App } from "./app";
 import { isChair } from "./panes";
+import type { ProviderInfo } from "./settings";
 import {
   type NewOptions,
   type Issue,
@@ -245,16 +246,19 @@ export class Lifecycle {
   }
 
   openSwitchModel(session: string) {
+    // The run chip's popover lives in the open chat's composer.
+    if (this.app.openId !== session) this.app.openChat(session);
     const h = this.state.handoff;
     // A switch still running for this chat keeps its progress.
     this.set({ switchModel: session, handoff: h?.old === session && !["completed", "failed", "cancelled"].includes(h.phase) ? h : null });
   }
 
-  providers(): Promise<{ providers: { id: string; label: string; accounts: boolean }[] }> {
+  providers(): Promise<{ providers: ProviderInfo[] }> {
     return this.api.get("/api/providers");
   }
 
-  models(provider: string): Promise<{ models: { id: string; label: string }[] }> {
+  /** `efforts` lists the levels one model takes; absent means the provider's list. */
+  models(provider: string): Promise<{ models: { id: string; label: string; efforts?: string[] }[] }> {
     return this.api.get("/api/models", { provider });
   }
 

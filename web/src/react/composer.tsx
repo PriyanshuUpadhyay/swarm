@@ -1,11 +1,12 @@
-import { ArrowUpIcon, ChevronDownIcon, Maximize2Icon, Minimize2Icon, SquareIcon } from "lucide-react";
+import { ArrowUpIcon, Maximize2Icon, Minimize2Icon, SquareIcon } from "lucide-react";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import type { App, Composer } from "../core/app";
 import { historyStep, type Browse } from "../core/history";
-import { modelLabel, outgoing, sends, usageLabel } from "../core/composer";
+import { outgoing, sends, usageLabel } from "../core/composer";
 import { editPicks, matches, menuAt, moved, offered, pick, picksAndSends, showsEmpty, skillFirst, skillNames, toSend, type CommandList, type MenuRow, type SkillPick } from "../core/slash";
 import { Button } from "../components/ui/button";
 import { ImageThumbs } from "./images";
+import { RunChip } from "./run-chip";
 import { cn } from "../lib/utils";
 
 export function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
@@ -359,18 +360,7 @@ export function ComposerBox({ app, composer }: { app: App; composer: Composer })
           />
         </div>
         <div className="flex items-center gap-2 px-2 pb-2 text-xs text-muted-foreground">
-          {/* A child's model does not switch. */}
-          <button
-            type="button"
-            data-testid="model-chip"
-            className="flex min-w-0 items-center gap-1 rounded-md px-1.5 py-1 hover:bg-hover disabled:pointer-events-none"
-            title={chair.who ? undefined : "Switch model"}
-            disabled={chair.who !== null}
-            onClick={() => app.life.openSwitchModel(sessionId)}
-          >
-            <span className="truncate">{modelLabel(chair)}</span>
-            <ChevronDownIcon className="size-3 shrink-0" />
-          </button>
+          <RunChip app={app} sessionId={sessionId} chair={chair} />
           <button type="button" data-testid="usage" className="rounded-md px-1.5 py-1 tabular-nums hover:bg-hover" title="Context, cache, and estimated cost for this agent session">
             {usageLabel(composer.usage)}
           </button>
