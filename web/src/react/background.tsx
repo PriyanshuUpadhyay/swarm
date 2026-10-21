@@ -39,7 +39,7 @@ export function BackgroundPanel({ app, session }: { app: App; session: string })
     snapshot?.agents[session],
     tasks,
   );
-  const row = rows.find((r) => r.key === picked) ?? rows[0];
+  const row: BackgroundRow | undefined = rows.find((r) => r.key === picked) ?? rows[0];
   const pickAgent = (agent: string) => setPicked(`agent:${agent}`);
 
   return (

@@ -6,10 +6,20 @@ use super::*;
 /// socket take turns.
 static SLOTS: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
+/// A fresh dir under `/tmp/claude-<uid>`, with the server root whose owner sets that uid.
+fn task_dir(name: &str) -> (PathBuf, PathBuf) {
+    use std::os::unix::fs::MetadataExt;
+    let root = std::env::temp_dir();
+    let uid = std::fs::metadata(&root).unwrap().uid();
+    let dir = PathBuf::from(format!("/tmp/claude-{uid}/{name}-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    (root, dir)
+}
+
 #[test]
 fn a_ticket_works_once_and_names_its_target() {
     let target = Target::File(PathBuf::from("/tmp/x.output"));
-    let ticket = mint(target.clone()).unwrap();
+    let ticket = mint(target.clone()).unwrap().unwrap();
     assert_eq!(ticket.len(), 64);
     assert_eq!(redeem(&ticket), Some(target));
     assert_eq!(redeem(&ticket), None);
@@ -18,14 +28,7 @@ fn a_ticket_works_once_and_names_its_target() {
 
 #[test]
 fn an_output_file_must_be_a_claude_task_file_of_this_user() {
-    use std::os::unix::fs::MetadataExt;
-    let root = std::env::temp_dir();
-    let uid = std::fs::metadata(&root).unwrap().uid();
-    let dir = PathBuf::from(format!(
-        "/tmp/claude-{uid}/swarm-test-{}",
-        std::process::id()
-    ));
-    std::fs::create_dir_all(&dir).unwrap();
+    let (root, dir) = task_dir("swarm-test");
     let good = dir.join("b1.output");
     std::fs::write(&good, "x").unwrap();
     let other = dir.join("notes.txt");
@@ -40,6 +43,9 @@ fn an_output_file_must_be_a_claude_task_file_of_this_user() {
     );
     assert_eq!(output_file(&root, &other), None);
     assert_eq!(output_file(&root, &link), None);
+    let folder = dir.join("d.output");
+    std::fs::create_dir_all(&folder).unwrap();
+    assert_eq!(output_file(&root, &folder), None);
     assert_eq!(output_file(&root, &dir.join("../../etc/hosts")), None);
     assert_eq!(output_file(&root, Path::new("/etc/hosts")), None);
     // A task file of this user, but outside `/tmp/claude-<uid>`.
@@ -55,14 +61,7 @@ fn an_output_file_must_be_a_claude_task_file_of_this_user() {
 #[test]
 fn an_open_output_file_ignores_a_later_swap_of_its_path() {
     use std::io::Write;
-    use std::os::unix::fs::MetadataExt;
-    let root = std::env::temp_dir();
-    let uid = std::fs::metadata(&root).unwrap().uid();
-    let dir = PathBuf::from(format!(
-        "/tmp/claude-{uid}/swarm-swap-{}",
-        std::process::id()
-    ));
-    std::fs::create_dir_all(&dir).unwrap();
+    let (root, dir) = task_dir("swarm-swap");
     let path = dir.join("b1.output");
     std::fs::write(&path, "one\n").unwrap();
     let secret = dir.join("secret.txt");
@@ -224,7 +223,7 @@ async fn the_socket_needs_a_fresh_ticket_the_host_and_the_app_origin() {
         )
     };
     let host = format!("127.0.0.1:{port}");
-    let ticket = mint(Target::File(file)).unwrap();
+    let ticket = mint(Target::File(file)).unwrap().unwrap();
 
     assert_eq!(status(open("guess", &host, Some(&origin))).await, "401");
     assert_eq!(status(open(&ticket, &host, None)).await, "403");
@@ -272,6 +271,16 @@ fn attach_in_a_pty_types_into_the_pane_and_restores_its_size() {
             .unwrap();
         String::from_utf8_lossy(&out.stdout).trim().to_string()
     };
+    // Ends the private server also when an assert below fails.
+    struct KillServer<'a>(&'a str);
+    impl Drop for KillServer<'_> {
+        fn drop(&mut self) {
+            let _ = std::process::Command::new("tmux")
+                .args(["-L", self.0, "kill-server"])
+                .output();
+        }
+    }
+    let _server = KillServer(&server);
     tmux("new-session -d -s t -x 120 -y 40 cat");
     let pane = tmux("display -p -t t '#{pane_id}'");
     // What a viewer killed with -9 leaves: its size on the window, the original in @swarm_size.
@@ -353,6 +362,5 @@ fn attach_in_a_pty_types_into_the_pane_and_restores_its_size() {
     );
     std::thread::sleep(Duration::from_millis(300));
     assert_eq!(tmux("display -p -t t '#{pane_current_command}'"), "cat");
-    tmux("kill-server");
     let _ = std::fs::remove_dir_all(&root);
 }

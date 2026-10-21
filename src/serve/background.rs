@@ -6,6 +6,11 @@
 
 use super::*;
 
+/// A task title keeps its first line, cut to this many characters.
+const TITLE_CHARS: usize = 200;
+/// How every Claude task output file name ends.
+pub(super) const OUTPUT_SUFFIX: &str = ".output";
+
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
 #[serde(rename_all = "lowercase")]
 pub(super) enum TaskKind {
@@ -95,7 +100,7 @@ pub(super) fn tasks(agent: &str, log: &str) -> Vec<Task> {
                 .next()
                 .unwrap_or("")
                 .chars()
-                .take(200)
+                .take(TITLE_CHARS)
                 .collect(),
             status: String::new(),
             summary: None,
@@ -138,7 +143,7 @@ fn output_path(text: &str) -> Option<PathBuf> {
         .iter()
         .find_map(|label| text.find(label).map(|at| at + label.len()))?;
     let rest = &text[start..];
-    let end = rest.find(".output")? + ".output".len();
+    let end = rest.find(OUTPUT_SUFFIX)? + OUTPUT_SUFFIX.len();
     Some(PathBuf::from(&rest[..end]))
 }
 
@@ -156,14 +161,20 @@ pub(super) struct BackgroundQuery {
     pub(super) session: String,
 }
 
-/// The live Claude agents of a session, as (agent id, log path).
-pub(super) fn claude_logs(app: &Server, session: &str) -> Vec<(String, PathBuf)> {
-    let hub = app.hub.lock().unwrap();
-    hub.agents[session]
+/// The live agents in a session's hub list.
+pub(super) fn live_agents(agents: &Value) -> impl Iterator<Item = &Value> {
+    agents
         .as_array()
         .into_iter()
         .flatten()
-        .filter(|agent| agent["alive"] == true && agent["provider"] == "claude")
+        .filter(|agent| agent["alive"] == true)
+}
+
+/// The live Claude agents of a session, as (agent id, log path).
+fn claude_logs(app: &Server, session: &str) -> Vec<(String, PathBuf)> {
+    let hub = app.hub.lock().unwrap();
+    live_agents(&hub.agents[session])
+        .filter(|agent| agent["provider"] == "claude")
         .filter_map(|agent| {
             let log = agent["log"].as_str().filter(|log| !log.is_empty())?;
             Some((agent["id"].as_str()?.to_string(), PathBuf::from(log)))

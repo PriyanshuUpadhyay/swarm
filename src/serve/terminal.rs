@@ -17,8 +17,12 @@ const MAX_TICKETS: usize = 16;
 const MAX_LIVE: usize = 8;
 /// A live terminal ends only when its viewer leaves, so this is a guess, not a promise.
 const RETRY_TERMINAL: Duration = Duration::from_secs(5);
-/// How much of a shell's output file a new terminal shows first.
+/// How much of a shell's output file a new terminal shows first, and the most one tick reads.
 const FILE_TAIL: u64 = 64 * 1024;
+/// How often a shell view looks for new output; with `FILE_TAIL` it keeps up to about 128 KiB/s.
+const FILE_POLL: Duration = Duration::from_millis(500);
+/// How long a hung-up attach gets to restore the window before it is killed.
+const HANG_UP_GRACE: Duration = Duration::from_secs(3);
 
 #[derive(Clone, Debug, PartialEq)]
 pub(super) enum Target {
@@ -38,19 +42,17 @@ fn busy(message: &str, retry_after: Duration) -> Response {
     response
 }
 
-fn mint(target: Target) -> Result<String, ApiError> {
+/// A new ticket for `target`, or None while `MAX_TICKETS` are pending.
+fn mint(target: Target) -> Result<Option<String>, ApiError> {
     let mut tickets = TICKETS.lock().unwrap();
     tickets.retain(|(_, made, _)| made.elapsed() < TICKET_TTL);
     if tickets.len() >= MAX_TICKETS {
-        return Err(error(
-            StatusCode::TOO_MANY_REQUESTS,
-            "too many terminal tickets",
-        ));
+        return Ok(None);
     }
     let ticket =
         new_token().map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "ticket failed"))?;
     tickets.push((ticket.clone(), Instant::now(), target));
-    Ok(ticket)
+    Ok(Some(ticket))
 }
 
 /// Takes the ticket out, so a second use finds nothing.
@@ -78,11 +80,10 @@ pub(super) async fn terminal_ticket(
         .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "ticket failed"))
         .flatten()
         .map_err(IntoResponse::into_response)?;
-    let ticket = mint(target).map_err(|err| match err.0 {
-        // The oldest pending ticket is gone by then.
-        StatusCode::TOO_MANY_REQUESTS => busy("too many terminal tickets", TICKET_TTL),
-        _ => err.into_response(),
-    })?;
+    // The oldest pending ticket is gone after TICKET_TTL.
+    let ticket = mint(target)
+        .map_err(IntoResponse::into_response)?
+        .ok_or_else(|| busy("too many terminal tickets", TICKET_TTL))?;
     Ok(Json(json!({ "ticket": ticket })))
 }
 
@@ -99,22 +100,19 @@ fn target(app: &Server, request: &TicketRequest) -> Result<Target, ApiError> {
     }
     let pane = {
         let hub = app.hub.lock().unwrap();
-        hub.agents[&request.session]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .find(|agent| agent["id"] == request.agent.as_str() && agent["alive"] == true)
+        live_agents(&hub.agents[&request.session])
+            .find(|agent| agent["id"] == request.agent.as_str())
             .and_then(|agent| agent["pane"].as_str().map(str::to_string))
     }
     .ok_or_else(|| error(StatusCode::NOT_FOUND, "no live agent"))?;
-    let connection = read_connection(&app.root)
-        .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "database read failed"))?;
+    let read_failed = || error(StatusCode::INTERNAL_SERVER_ERROR, "database read failed");
+    let connection = read_connection(&app.root).map_err(|_| read_failed())?;
     let adapter = swarm::store::adapter_of(&connection, &request.session)
         .map_err(|err| match err.downcast_ref::<rusqlite::Error>() {
             Some(rusqlite::Error::QueryReturnedNoRows) => {
                 error(StatusCode::NOT_FOUND, "unknown session")
             }
-            _ => error(StatusCode::INTERNAL_SERVER_ERROR, "database read failed"),
+            _ => read_failed(),
         })?
         .unwrap_or_default();
     // Only this adapter is known to run each agent in a session of its own, so an attach shows
@@ -140,7 +138,9 @@ pub(super) fn output_file(root: &Path, path: &Path) -> Option<PathBuf> {
     let path = path.canonicalize().ok()?;
     let meta = std::fs::metadata(&path).ok()?;
     (path.starts_with(&base)
-        && path.extension().is_some_and(|ext| ext == "output")
+        && path
+            .extension()
+            .is_some_and(|ext| ext == &OUTPUT_SUFFIX[1..])
         && meta.is_file()
         && meta.uid() == uid)
         .then_some(path)
@@ -249,9 +249,17 @@ async fn attach(root: &Path, adapter: &str, pane: &str, mut socket: WebSocket) {
             let pair = native_pty_system().openpty(size(80, 24))?;
             let child = pair.slave.spawn_command(command)?;
             drop(pair.slave);
-            let reader = pair.master.try_clone_reader()?;
-            let writer = pty_writer(&*pair.master)?;
-            Ok((pair.master, child, reader, writer))
+            let ends = (|| -> Result<_, Box<dyn std::error::Error>> {
+                Ok((pair.master.try_clone_reader()?, pty_writer(&*pair.master)?))
+            })();
+            match ends {
+                Ok((reader, writer)) => Ok((pair.master, child, reader, writer)),
+                // The attach already runs, so it is ended, not left behind.
+                Err(err) => {
+                    hang_up(child);
+                    Err(err)
+                }
+            }
         })
         .map_err(|err| err.to_string());
     let (master, child, mut reader, mut writer) = match started {
@@ -326,7 +334,7 @@ fn hang_up(mut child: Box<dyn portable_pty::Child + Send + Sync>) {
         // SAFETY: kill has no memory preconditions; the PTY child leads its own process group.
         unsafe { libc::kill(-(pid as i32), libc::SIGHUP) };
     }
-    let until = Instant::now() + Duration::from_secs(3);
+    let until = Instant::now() + HANG_UP_GRACE;
     while Instant::now() < until {
         if let Ok(Some(_)) = child.try_wait() {
             return;
@@ -412,7 +420,7 @@ async fn follow_file(root: &Path, path: &Path, mut socket: WebSocket) {
         return;
     };
     let mut at = tail_start(&mut file).unwrap_or(0);
-    let mut tick = tokio::time::interval(Duration::from_millis(500));
+    let mut tick = tokio::time::interval(FILE_POLL);
     loop {
         tokio::select! {
             _ = tick.tick() => {

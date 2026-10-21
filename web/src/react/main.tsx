@@ -30,8 +30,8 @@ const SIDE_KEY = "swarm.sidebar.side";
 // ⌘B and ⇧⌘B are registered before the panel exists; Root points them at it.
 const frame = { toggle: () => {}, move: () => {} };
 // ⌘J likewise; ChatColumn points it at the background panel. Open or not stays in this browser.
-const bottom = { toggle: () => {} };
-const BOTTOM_KEY = "swarm.background.open";
+const backgroundPanel = { toggle: () => {} };
+const BACKGROUND_KEY = "swarm.background.open";
 // xterm is large, so the panel loads at its first ⌘J.
 const BackgroundPanel = lazy(() => import("./background").then((m) => ({ default: m.BackgroundPanel })));
 
@@ -129,13 +129,16 @@ class LoadFailed extends Component<{ children: ReactNode }, { failed: boolean }>
 
 /** The open chat over the ⌘J panel of its agents and background tasks (ADR 0102). */
 function ChatColumn({ app, openId }: { app: App; openId: string }) {
-  const [open, setOpen] = useState(() => store.getItem(BOTTOM_KEY) === "1");
+  const [open, setOpen] = useState(() => store.getItem(BACKGROUND_KEY) === "1");
   useEffect(() => {
-    bottom.toggle = () =>
+    backgroundPanel.toggle = () =>
       setOpen((was) => {
-        store.setItem(BOTTOM_KEY, was ? "0" : "1");
+        store.setItem(BACKGROUND_KEY, was ? "0" : "1");
         return !was;
       });
+    return () => {
+      backgroundPanel.toggle = () => {};
+    };
   }, []);
   // The ids must be the panels that mount, so each set keeps its own saved layout.
   const layout = useDefaultLayout({ id: "swarm.background", storage: store, panelIds: open ? ["chat-panel", "background-panel"] : ["chat-panel"] });
@@ -150,7 +153,7 @@ function ChatColumn({ app, openId }: { app: App; openId: string }) {
       {open && (
         <ResizablePanel id="background-panel" defaultSize="280px" minSize="120px">
           <LoadFailed>
-            <Suspense fallback={<p className="p-3 text-sm text-muted-foreground">Loading…</p>}>
+            <Suspense fallback={<p role="status" className="p-3 text-sm text-muted-foreground">Loading…</p>}>
               <BackgroundPanel key={openId} app={app} session={openId} />
             </Suspense>
           </LoadFailed>
@@ -192,7 +195,7 @@ if (typeof app !== "string") {
   app.registry.add(
     { id: "sidebar.toggle", title: "Toggle Sidebar", chord: "Meta+B", run: () => frame.toggle() },
     { id: "sidebar.move", title: "Move Sidebar to Other Side", chord: "Shift+Meta+B", run: () => frame.move() },
-    { id: "panel.background", title: "Toggle Agents and Background Tasks", chord: "Meta+J", when: () => app.openId !== null, run: () => bottom.toggle() },
+    { id: "panel.background", title: "Toggle Agents and Background Tasks", chord: "Meta+J", when: () => app.openId !== null, run: () => backgroundPanel.toggle() },
   );
   for (const t of ["system", "light", "dark"] as const)
     app.registry.add({ id: `theme.${t}`, title: `Theme: ${t[0].toUpperCase()}${t.slice(1)}`, run: () => chooseTheme(app, t) });
