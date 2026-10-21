@@ -96,18 +96,18 @@ test("the Composer shows live text and graph, and Copy waits for Python to pass 
   const errors = await open(page);
   await page.getByTestId("skills-button").click();
   await page.getByTestId("skills-view-composer").click();
-  const copy = page.getByTestId("composer-copy");
-  const text = page.getByTestId("composer-text");
-  const status = page.getByTestId("composer-status");
+  const copy = page.getByTestId("draft-copy");
+  const text = page.getByTestId("draft-text");
+  const status = page.getByTestId("draft-status");
 
-  await page.getByTestId("composer-from").selectOption("explain");
+  await page.getByTestId("draft-from").selectOption("explain");
   await expect(text).toContainText("## Preset\n\nStop: chat\n");
   await expect(status).toHaveText("Python passed this text.");
   await expect(copy).toBeEnabled();
-  await expect(page.getByTestId("composer-graph").locator("[data-step]")).toHaveCount(2);
+  await expect(page.getByTestId("draft-graph").locator("[data-step]")).toHaveCount(2);
 
   // A pipe in a cell makes a sixth cell; Copy turns off at once and Python's defect shows.
-  const holds = page.getByTestId("composer-row").first().locator('[data-col="Holds"]');
+  const holds = page.getByTestId("draft-row").first().locator('[data-col="Holds"]');
   const before = await holds.inputValue();
   await holds.fill(`${before} | more`);
   await expect(copy).toBeDisabled();
@@ -116,15 +116,15 @@ test("the Composer shows live text and graph, and Copy waits for Python to pass 
   await expect(copy).toBeDisabled();
 
   await holds.fill(before);
-  await page.getByTestId("composer-add").click();
-  const row = page.getByTestId("composer-row").last();
+  await page.getByTestId("draft-add").click();
+  const row = page.getByTestId("draft-row").last();
   await row.locator('[data-col="File"]').fill("03-check");
   await row.locator('[data-col="Needs"]').fill("reply");
   await row.locator('[data-col="Holds"]').fill("the checked answer");
   await row.locator('[data-col="Block"]').fill("voice-reply");
   await row.locator('[data-col="Why"]').fill("the owner reads it once more");
   await expect(status).toHaveText("Python passed this text.");
-  await expect(page.getByTestId("composer-graph").locator("[data-step]")).toHaveCount(3);
+  await expect(page.getByTestId("draft-graph").locator("[data-step]")).toHaveCount(3);
   await copy.click();
   if (chromium) {
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(await text.textContent());
@@ -137,16 +137,16 @@ test("a new skill copies a whole SKILL.md", async ({ page }) => {
   const errors = await open(page);
   await page.getByTestId("skills-button").click();
   await page.getByTestId("skills-view-composer").click();
-  await page.getByTestId("composer-from").selectOption("");
-  await page.getByTestId("composer-name").fill("triage");
-  await page.getByTestId("composer-description").fill("Use when a bug report arrives.");
-  const row = page.getByTestId("composer-row").first();
+  await page.getByTestId("draft-from").selectOption("");
+  await page.getByTestId("draft-name").fill("triage");
+  await page.getByTestId("draft-description").fill("Use when a bug report arrives.");
+  const row = page.getByTestId("draft-row").first();
   await row.locator('[data-col="Holds"]').fill("the goal and the done-when");
   await row.locator('[data-col="Why"]').fill("the fix rests on them");
-  await expect(page.getByTestId("composer-status")).toHaveText("the last step 01-frame has no voice- block");
+  await expect(page.getByTestId("draft-status")).toHaveText("the last step 01-frame has no voice- block");
   await row.locator('[data-col="Block"]').fill("requirements, voice-reply");
-  await expect(page.getByTestId("composer-text")).toContainText("---\nname: triage\ndescription: Use when a bug report arrives.\n---\n\n# triage\n\n## Preset");
-  await expect(page.getByTestId("composer-status")).toHaveText("Python passed this text.");
-  await expect(page.getByTestId("composer-copy")).toBeEnabled();
+  await expect(page.getByTestId("draft-text")).toContainText("---\nname: triage\ndescription: Use when a bug report arrives.\n---\n\n# triage\n\n## Preset");
+  await expect(page.getByTestId("draft-status")).toHaveText("Python passed this text.");
+  await expect(page.getByTestId("draft-copy")).toBeEnabled();
   expect(errors).toEqual([]);
 });

@@ -21,13 +21,13 @@ export function Composer({ app, kit }: { app: App; kit: Kit }) {
   const presets = composable(kit);
   return (
     <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
-      <form className="grid min-h-0 content-start gap-4 overflow-y-auto border-r border-border p-5 text-sm" onSubmit={(e) => e.preventDefault()} data-testid="composer-form">
+      <form className="grid min-h-0 content-start gap-4 overflow-y-auto border-r border-border p-5 text-sm" onSubmit={(e) => e.preventDefault()} data-testid="draft-form">
         <div className="flex flex-wrap items-end gap-4">
           <label className="grid gap-1">
             <span className="text-xs text-muted-foreground">Start from</span>
             <select
               className={`${FIELD} base-select`}
-              data-testid="composer-from"
+              data-testid="draft-from"
               value={draft.from ?? ""}
               onChange={(e) => {
                 const preset = presets.find((p) => p.preset === e.target.value);
@@ -46,7 +46,7 @@ export function Composer({ app, kit }: { app: App; kit: Kit }) {
             <span className="text-xs text-muted-foreground">Stops for</span>
             <Segmented
               label="Stops for"
-              testid="composer-stop"
+              testid="draft-stop"
               value={draft.stop}
               options={[
                 ["owner", "The owner"],
@@ -60,17 +60,17 @@ export function Composer({ app, kit }: { app: App; kit: Kit }) {
           <div className="grid grid-cols-[12rem_minmax(0,1fr)] gap-3">
             <label className="grid gap-1">
               <span className="text-xs text-muted-foreground">Name</span>
-              <input className={`${FIELD} font-mono`} name="skill-name" autoComplete="off" spellCheck={false} data-testid="composer-name" value={draft.name} onChange={(e) => set({ name: e.target.value })} />
+              <input className={`${FIELD} font-mono`} name="skill-name" autoComplete="off" spellCheck={false} data-testid="draft-name" value={draft.name} onChange={(e) => set({ name: e.target.value })} />
             </label>
             <label className="grid gap-1">
               <span className="text-xs text-muted-foreground">Use when</span>
-              <input className={FIELD} name="skill-description" autoComplete="off" data-testid="composer-description" value={draft.description} onChange={(e) => set({ description: e.target.value })} />
+              <input className={FIELD} name="skill-description" autoComplete="off" data-testid="draft-description" value={draft.description} onChange={(e) => set({ description: e.target.value })} />
             </label>
           </div>
         )}
         <div className="grid gap-2">
           {draft.rows.map((row, i) => (
-            <fieldset key={i} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-2 rounded-lg border border-border p-2.5" data-testid="composer-row">
+            <fieldset key={i} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-2 rounded-lg border border-border p-2.5" data-testid="draft-row">
               <legend className="sr-only">Step {i + 1}</legend>
               {row.map((cell, j) => (
                 <label key={j} className={`grid gap-1 ${j >= 2 ? "col-span-2" : ""}`}>
@@ -98,13 +98,13 @@ export function Composer({ app, kit }: { app: App; kit: Kit }) {
               </Button>
             </fieldset>
           ))}
-          <Button type="button" variant="outline" size="sm" className="w-fit" data-testid="composer-add" onClick={() => set({ rows: [...draft.rows, [...NEW_ROW]] })}>
+          <Button type="button" variant="outline" size="sm" className="w-fit" data-testid="draft-add" onClick={() => set({ rows: [...draft.rows, [...NEW_ROW]] })}>
             Add step
           </Button>
         </div>
       </form>
       <div className="grid min-h-0 grid-rows-[minmax(0,1fr)_auto_minmax(0,1fr)]">
-        <div className="min-h-0 overflow-auto p-4" data-testid="composer-graph">
+        <div className="min-h-0 overflow-auto p-4" data-testid="draft-graph">
           {fresh && "result" in fresh && fresh.result.ok ? (
             <SkillGraph steps={fresh.result.preset.steps} />
           ) : (
@@ -112,7 +112,7 @@ export function Composer({ app, kit }: { app: App; kit: Kit }) {
           )}
         </div>
         <div className="flex items-center gap-3 border-y border-border px-4 py-2 text-sm">
-          <p aria-live="polite" className="min-w-0 flex-1 truncate" data-testid="composer-status">
+          <p aria-live="polite" className="min-w-0 flex-1 truncate" data-testid="draft-status">
             {!fresh ? (
               <span className="text-muted-foreground">Checking…</span>
             ) : "error" in fresh ? (
@@ -127,7 +127,7 @@ export function Composer({ app, kit }: { app: App; kit: Kit }) {
           </p>
           <Button
             size="sm"
-            data-testid="composer-copy"
+            data-testid="draft-copy"
             disabled={!copyable({ draft, check })}
             onClick={() => {
               void navigator.clipboard.writeText(text).then(
@@ -139,7 +139,7 @@ export function Composer({ app, kit }: { app: App; kit: Kit }) {
             Copy
           </Button>
         </div>
-        <pre className="min-h-0 overflow-auto p-4 font-mono text-xs whitespace-pre-wrap" data-testid="composer-text">
+        <pre className="min-h-0 overflow-auto p-4 font-mono text-xs whitespace-pre-wrap" data-testid="draft-text">
           {text}
         </pre>
       </div>
