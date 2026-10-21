@@ -17,6 +17,7 @@ pub(super) fn start_coordinator(app: &App, action_queue: mpsc::Receiver<ActionJo
         drop(app);
         let mut last_tree = None;
         let mut last_listings = BTreeMap::new();
+        let mut cache = crate::cli::ListingCache::default();
         loop {
             let Some(app) = weak.upgrade() else {
                 break;
@@ -25,8 +26,12 @@ pub(super) fn start_coordinator(app: &App, action_queue: mpsc::Receiver<ActionJo
                 break;
             }
             let started = std::time::Instant::now();
-            match super::all_agent_listings(&mut connection, &app.root, Duration::from_millis(900))
-            {
+            match crate::cli::all_agent_listings_kept(
+                &mut connection,
+                &app.root,
+                Duration::from_millis(900),
+                &mut cache,
+            ) {
                 Ok(listings) => {
                     let value = agent_snapshot(&connection, &listings, &mut last_listings);
                     let mut hub = app.hub.lock().unwrap();

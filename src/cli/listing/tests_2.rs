@@ -69,6 +69,91 @@ mod cases {
         std::fs::remove_dir_all(root).unwrap();
     }
 
+    #[test]
+    fn a_pane_that_printed_nothing_since_its_read_keeps_that_read() {
+        let root = std::env::temp_dir().join(format!("swarm-kept-screen-{}", uuid::Uuid::now_v7()));
+        std::fs::create_dir_all(root.join("adapters")).unwrap();
+        let (list, reads) = (root.join("list"), root.join("reads"));
+        std::fs::write(
+            root.join("adapters").join("kept.conf"),
+            format!(
+                "self = true\nspawn = true\nring = true\nlist = cat '{}'\nclose = true\ncapture = true\nscreen = echo >> '{}'; printf '{{\"result\":{{\"agent\":{{\"agent_status\":\"idle\"}}}}}}'\n",
+                list.display(),
+                reads.display()
+            ),
+        )
+        .unwrap();
+        let mut connection = swarm::store::open(&root.join("swarm.db")).unwrap();
+        let session =
+            swarm::store::create_session(&connection, "lane", &root, None, Some("kept")).unwrap();
+        swarm::store::add_agent(&connection, &session, CODER, "code").unwrap();
+        swarm::store::set_pane(&connection, &session, CODER, "%1").unwrap();
+        let mut cache = ListingCache::default();
+        let mut list_with = |line: String| {
+            std::fs::write(&list, line).unwrap();
+            let listings = all_agent_listings_kept(
+                &mut connection,
+                &root,
+                std::time::Duration::from_secs(5),
+                &mut cache,
+            )
+            .unwrap();
+            assert_eq!(listings[&session].agents[0].alive, Some(true));
+            std::fs::read_to_string(&reads)
+                .unwrap_or_default()
+                .lines()
+                .count()
+        };
+        let later = unix_now().unwrap() + 60;
+        assert_eq!(list_with("%1 node activity=0".into()), 1);
+        assert_eq!(
+            list_with("%1 node activity=0".into()),
+            1,
+            "no output since the read"
+        );
+        assert_eq!(
+            list_with(format!("%1 node activity={later}")),
+            2,
+            "new output"
+        );
+        assert_eq!(list_with("%1 node".into()), 3, "no activity token");
+        assert_eq!(list_with("%1 node".into()), 4);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_failed_pane_list_waits_before_it_runs_again() {
+        let root = std::env::temp_dir().join(format!("swarm-list-retry-{}", uuid::Uuid::now_v7()));
+        std::fs::create_dir_all(root.join("adapters")).unwrap();
+        let runs = root.join("runs");
+        std::fs::write(
+            root.join("adapters").join("down.conf"),
+            format!(
+                "self = true\nspawn = true\nring = true\nlist = echo >> '{}'; false\nclose = true\ncapture = true\n",
+                runs.display()
+            ),
+        )
+        .unwrap();
+        let mut connection = swarm::store::open(&root.join("swarm.db")).unwrap();
+        let session =
+            swarm::store::create_session(&connection, "lane", &root, None, Some("down")).unwrap();
+        swarm::store::add_agent(&connection, &session, CODER, "code").unwrap();
+        swarm::store::set_pane(&connection, &session, CODER, "%1").unwrap();
+        let mut cache = ListingCache::default();
+        for _ in 0..2 {
+            let listings = all_agent_listings_kept(
+                &mut connection,
+                &root,
+                std::time::Duration::from_secs(5),
+                &mut cache,
+            )
+            .unwrap();
+            assert_eq!(listings[&session].agents[0].alive, None);
+        }
+        assert_eq!(std::fs::read_to_string(&runs).unwrap().lines().count(), 1);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     /// A listing reads every unarchived session, and a restarted tmux or Herdr server can give a
     /// stored pane id to another pane. So the listing sends a report only while the adapter lists
     /// the chair's pane.
