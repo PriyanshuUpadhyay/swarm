@@ -29,6 +29,11 @@ test("Meta+J shows and hides the background panel with the chat's agents", async
   await expect.poll(background).not.toBe(before);
   await theme("System");
   await expect.poll(background).toBe(before);
+  // On "System", the OS switching to dark changes it too.
+  await tab.emulateMedia({ colorScheme: "dark" });
+  await expect.poll(background).not.toBe(before);
+  await tab.emulateMedia({ colorScheme: "light" });
+  await expect.poll(background).toBe(before);
   await tab.keyboard.press("Meta+j");
   await expect(panel).toHaveCount(0);
 });

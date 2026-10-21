@@ -103,7 +103,14 @@ function Term({ app, session, agent, task }: { app: App; session: string; agent:
   const live = useRef<Terminal | null>(null);
   const theme = useTheme();
   useEffect(() => {
-    if (live.current) live.current.options.theme = colors();
+    const paint = () => {
+      if (live.current) live.current.options.theme = colors();
+    };
+    paint();
+    // On "system" the page colours follow the OS with no change to the saved choice.
+    const os = matchMedia("(prefers-color-scheme: dark)");
+    os.addEventListener("change", paint);
+    return () => os.removeEventListener("change", paint);
   }, [theme]);
   useEffect(() => {
     const el = host.current!;

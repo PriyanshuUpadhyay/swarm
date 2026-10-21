@@ -84,6 +84,23 @@ fn an_open_output_file_ignores_a_later_swap_of_its_path() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// A long file's first view starts at a line, never inside a character or an escape sequence.
+#[test]
+fn the_first_view_of_a_long_file_starts_at_a_line() {
+    let path = std::env::temp_dir().join(format!("swarm-tail-{}.output", std::process::id()));
+    let line = "é\x1b[1mbold\x1b[0m\n";
+    std::fs::write(&path, line.repeat(FILE_TAIL as usize / line.len() + 10)).unwrap();
+    let mut file = std::fs::File::open(&path).unwrap();
+    let mut at = tail_start(&mut file).unwrap();
+    let first = grown(&mut file, &mut at).unwrap();
+    assert!(first.starts_with(line.as_bytes()));
+    assert_eq!(
+        tail_start(&mut std::fs::File::open("/dev/null").unwrap()).unwrap(),
+        0
+    );
+    let _ = std::fs::remove_file(&path);
+}
+
 /// Every other check passes: the file is under `/tmp/claude-0`, which this user made, and ends in
 /// `.output`. Only its owner is wrong for a server whose root uid 0 owns.
 #[test]
@@ -196,6 +213,10 @@ fn attach_in_a_pty_types_into_the_pane_and_restores_its_size() {
     };
     tmux("new-session -d -s t -x 120 -y 40 cat");
     let pane = tmux("display -p -t t '#{pane_id}'");
+    // What a viewer killed with -9 leaves: its size on the window, the original in @swarm_size.
+    tmux(
+        "set-option -w -t t @swarm_size '120 40' \\; resize-window -t t -x 60 -y 15 \\; set-option -w -u -t t window-size",
+    );
     let root = std::env::temp_dir().join(format!("swarm-term-root-{}", std::process::id()));
     std::fs::create_dir_all(root.join("adapters")).unwrap();
     let line = swarm::adapter::shipped("tmux-swarm")

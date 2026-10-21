@@ -348,6 +348,24 @@ pub(super) fn open_output(root: &Path, path: &Path) -> Option<std::fs::File> {
     (opened.dev() == named.dev() && opened.ino() == named.ino()).then_some(file)
 }
 
+/// Where the first view starts: the first line inside the last `FILE_TAIL` bytes, so the view
+/// does not open inside a character or an escape sequence.
+pub(super) fn tail_start(file: &mut std::fs::File) -> std::io::Result<u64> {
+    use std::io::{Seek, SeekFrom};
+    let start = file.metadata()?.len().saturating_sub(FILE_TAIL);
+    if start == 0 {
+        return Ok(0);
+    }
+    file.seek(SeekFrom::Start(start))?;
+    let mut head = Vec::new();
+    file.take(FILE_TAIL).read_to_end(&mut head)?;
+    // A tail with no line break at all starts where it is.
+    Ok(head
+        .iter()
+        .position(|&byte| byte == b'\n')
+        .map_or(start, |at| start + at as u64 + 1))
+}
+
 /// What the file grew by since `at`, at most `FILE_TAIL` bytes; `at` moves past it. A file that
 /// got shorter is read again from the start.
 pub(super) fn grown(file: &mut std::fs::File, at: &mut u64) -> std::io::Result<Vec<u8>> {
@@ -374,10 +392,7 @@ async fn follow_file(root: &Path, path: &Path, mut socket: WebSocket) {
             .await;
         return;
     };
-    let mut at = file
-        .metadata()
-        .map(|meta| meta.len().saturating_sub(FILE_TAIL))
-        .unwrap_or(0);
+    let mut at = tail_start(&mut file).unwrap_or(0);
     let mut tick = tokio::time::interval(Duration::from_millis(500));
     loop {
         tokio::select! {
