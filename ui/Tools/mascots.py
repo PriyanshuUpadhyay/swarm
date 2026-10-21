@@ -16,7 +16,6 @@ import tempfile
 PETS = "https://raw.githubusercontent.com/tonybaloney/vscode-pets/93a420cab4b6618bfa9928da0dd941447a145d8f/media"
 ONEKO = "https://raw.githubusercontent.com/adryd325/oneko.js/5281d057c4ea9bd4f6f997ee96ba30491aed16c0/oneko.gif"
 GOPHERS = "https://raw.githubusercontent.com/egonelbre/gophers/63b1f5a9f334f9e23735c6e09ac003479ffe5df5/animation"
-AGENTS = "https://raw.githubusercontent.com/pablodelucca/pixel-agents/d1e007a9fdf3003c252d2973abe1999ae59aec33/webview-ui/public/assets/characters"
 # Ninja Adventure is not on pixel-boy's GitHub; this mirror carries the pack with its CC0 LICENSE.txt.
 NINJA = "https://raw.githubusercontent.com/gainax2k1/godot_adventure/2011c813bd6d6f1c86ecd2ac632d175073c3d1ee/Ninja%20Adventure%20-%20Asset%20Pack/Actor/Animals"
 
@@ -128,16 +127,6 @@ def main() -> None:
         walk = gif_frames(fetch(f"{GOPHERS}/2bit-sprite/walk.gif", tmp / "g-walk.gif"), tmp / "g-walk")
         entries.append(("gopher", "Go gopher", gopher_credit, False,
                         {"idle": looking, "working": run, "waiting": walk, "sleeping": ([looking[0][0]], 1.0)}))
-
-        # Pixel Agents: 16 x 32 cells, row 0 faces front; 0-2 walk, 3-4 type, 5-6 read.
-        for n in range(6):  # char_0.png to char_5.png at the pinned commit
-            agent = fetch(f"{AGENTS}/char_{n}.png", tmp / f"agent{n}.png")
-            pc = lambda c: crop(agent, f"16x32+{c * 16}+0", tmp / f"agent{n}-{c}.png")
-            entries.append((f"worker{n + 1}", "Office worker" if n == 0 else f"Office worker {n + 1}",
-                            "pixel-agents (MIT); art from JIK-A-4 MetroCity (CC0)", False, {
-                "idle": ([pc(1)], 1.0), "working": ([pc(3), pc(4)], 4.0),
-                "waiting": ([pc(5), pc(6)], 2.0), "sleeping": ([pc(1)], 1.0),
-            }))
 
         # Ninja Adventure animals: two 16 px frames, sitting and leaping.
         # The pack spells the raccoon's folder "Racoon".
