@@ -121,7 +121,7 @@ pub enum ChoiceOp {
         fields: Vec<String>,
     },
     /// One owner preference under `prefs`, in the Swift `Prefs` keys: `theme`, `sendKey`, `fontSans`, `fontMono`, `usageHUDAsked`,
-    /// `switchCarry` (what a switch to another CLI brings, ADR 0108), or a
+    /// `switchCarry` (what a switch to another CLI brings, ADR 0110), or a
     /// notice switch `notices.post|sound|done|badge` that `swarm notices --due` reads (ADR 0077).
     Pref {
         key: String,

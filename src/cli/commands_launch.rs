@@ -61,7 +61,7 @@ pub(crate) fn commands_launch(
             true => Some(resume_target(connection, &session_id()?)?),
         };
         // A plain Resume runs the role's runner (ADR 0107). Only a chat whose profile has no
-        // runner for its CLI, such as pi or AGY, runs its last model and level (ADR 0108). The
+        // runner for its CLI, such as pi or AGY, runs its last model and level (ADR 0110). The
         // stored model is the transcript id, which drops a `[1m]` suffix.
         let no_runner = |provider: Provider| {
             swarm::config::load().is_ok_and(|(config, _)| {

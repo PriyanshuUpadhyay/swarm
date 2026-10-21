@@ -125,17 +125,55 @@ pub fn messages(
     Ok(rows.collect::<Result<_, _>>()?)
 }
 
-pub fn has_summary(
+/// Whether `sender_id` sent a summary after the last message it got, so a child that answered one
+/// ask and then died on the next one still counts as unanswered.
+pub fn answered(
     connection: &Connection,
     session_id: &str,
     sender_id: &str,
 ) -> Result<bool, Box<dyn std::error::Error>> {
-    let count: i64 = connection.query_row(
-        "SELECT count(*) FROM message WHERE session_id = ?1 AND sender_id = ?2 AND kind = 'summary'",
+    Ok(connection.query_row(
+        "SELECT EXISTS (
+             SELECT 1 FROM message
+             WHERE session_id = ?1 AND sender_id = ?2 AND kind = 'summary'
+               AND seq > (SELECT COALESCE(MAX(seq), -1) FROM message
+                          WHERE session_id = ?1 AND recipient_id = ?2))",
         (session_id, sender_id),
         |r| r.get(0),
+    )?)
+}
+
+/// Whether `agent` got a wrap-up after its last summary.
+pub fn owes_wrap_up(
+    connection: &Connection,
+    session_id: &str,
+    agent: &str,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    Ok(connection.query_row(
+        "SELECT EXISTS (
+             SELECT 1 FROM message
+             WHERE session_id = ?1 AND recipient_id = ?2 AND kind = 'wrap-up'
+               AND seq > (SELECT COALESCE(MAX(seq), -1) FROM message
+                          WHERE session_id = ?1 AND sender_id = ?2 AND kind = 'summary'))",
+        (session_id, agent),
+        |r| r.get(0),
+    )?)
+}
+
+/// The body paths of the summaries from `sender_id` after message `seq`, oldest first.
+pub fn summaries_after(
+    connection: &Connection,
+    session_id: &str,
+    sender_id: &str,
+    seq: i64,
+) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+    let mut statement = connection.prepare(
+        "SELECT body_path FROM message
+         WHERE session_id = ?1 AND sender_id = ?2 AND kind = 'summary' AND seq > ?3
+         ORDER BY seq",
     )?;
-    Ok(count > 0)
+    let rows = statement.query_map((session_id, sender_id, seq), |r| r.get(0))?;
+    Ok(rows.collect::<Result<_, _>>()?)
 }
 
 /// Apply the session talk mode: open passes, lane blocks child-to-child, relay sends
@@ -201,7 +239,7 @@ mod tests {
 
     #[test]
     fn sends_message_row_and_file() {
-        let mut connection = seed(0);
+        let mut connection = seed();
         let root = temp_root("send");
         let seq = send_message(
             &mut connection,
@@ -247,7 +285,7 @@ mod tests {
 
     #[test]
     fn inbox_lists_pending_in_seq_order_and_stamps_seen_once() {
-        let mut connection = seed(0);
+        let mut connection = seed();
         let root = temp_root("inbox");
         send_message(
             &mut connection,
@@ -336,7 +374,7 @@ mod tests {
 
     #[test]
     fn ack_marks_once_and_only_for_recipient() {
-        let mut connection = seed(0);
+        let mut connection = seed();
         let root = temp_root("ack");
         send_message(
             &mut connection,
@@ -374,14 +412,14 @@ mod tests {
 
     #[test]
     fn ack_of_a_seq_not_in_the_inbox_names_the_seq() {
-        let connection = seed(0);
+        let connection = seed();
         let error = ack(&connection, SESSION, 999999, CODER).unwrap_err();
         assert_eq!(error.to_string(), "swarm: no message 999999 in your inbox");
     }
 
     #[test]
     fn routes_by_talk_mode() {
-        let connection = seed(0);
+        let connection = seed();
         connection.execute_batch(&format!("INSERT INTO agent (id, session_id, role) VALUES ('reviewer', '{SESSION}', 'reviewer')")).unwrap();
         let set_mode = |mode: &str| {
             connection

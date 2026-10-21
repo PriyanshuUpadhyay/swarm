@@ -1,8 +1,8 @@
-// A chair resumed in its chat on a new run, and a new chair in an old chat (ADR 0108).
+// A chair resumed in its chat on a new run, and a new chair in an old chat (ADR 0110).
 
 use super::*;
 
-/// A model switch resumes the chair's own session on the new model and effort (ADR 0108).
+/// A model switch resumes the chair's own session on the new model and effort (ADR 0110).
 #[test]
 fn a_resume_runs_the_chosen_model_and_effort_in_the_same_session() {
     let home = scratch("resume-switch");

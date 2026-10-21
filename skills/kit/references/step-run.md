@@ -30,13 +30,25 @@ input changed after `take`. It also runs each checked `block <id> script:` todo 
 `blocks/blocks.toml` calls runnable, and a failing one refuses. It prints `not run:` for the others,
 which keep their evidence. It never runs the evidence. `done` accepts no `--force`. `status <folder>` also names each stale step.
 `skip <folder> <step> <reason>` records a route skip.
+A plan run is one whose table has a `Writes` column. Its step files carry `Writes: <paths>` (or `none`) under
+`Uses:`, and `Optional: yes` for a row marked `(optional)`. In a plan run, `skip` refuses a step with no
+`Optional: yes`. `take` records the work tree as a `base <tree>` line in `events.log`, and `done` refuses a
+path changed since then outside the step's Writes, the Writes of the other active or done steps that it does
+not need and that were not done before its take, and the run folder. Take records a hash of `.blocks.toml`, so an
+ignored copy counts too. It also refuses a change to `.blocks.toml`, whose `[off]` table only the owner sets.
+Outside git it prints `not run: scope`. A failed git call, or a take with no base, refuses. `done` also runs the script checks of each block in the step's row of
+`<folder>/plan.md`, so removing the `Skills read:` line skips none. `take` of a step with the `change-review`
+block refuses an agent that took a writing step it reaches through `Uses:`.
+`amend <folder> <row> [--before <step>]` adds one plan row that writes `none`, while the count of `amend`
+lines in `events.log` is below the `Amend: <N>` line of `plan.md`. It checks the plan with `plan_chart.py`
+and restores `plan.md` on a refusal. `--before` adds the new step to the Needs of an open step.
 `block <folder> <step> <reason>` records a blocked step.
 Never set a step done by hand.
 Pass `<n>` as a bare number. An unquoted `#1` is a shell comment, so the shell drops it.
 `take` refuses a step active for another agent; use `--force` after confirming that run is gone.
 A dead run holds no lock; `--force` only overrides a stale `Status: active <agent> #<n>` line, and the next
 take gets a higher `<n>`, so the replaced agent's `done` is refused.
-`take`, `done`, `skip`, and `block` add one line to `<folder>/events.log` with the time, the step, and the
+`take`, `done`, `skip`, `block`, and `amend` add one line to `<folder>/events.log` with the time, the step, and the
 event, and `done` adds a `check <id> exit <code>` line for each check it runs, so the path of a run, and not only its last state, stays readable. A skill script with its
 own step graph or revision, such as the implement skill's `implement_run.py`, imports these
 functions and passes its own.

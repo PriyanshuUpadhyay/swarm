@@ -11,7 +11,7 @@ informed-by:
   - 'probe 2026-10-21: Claude, Codex, pi, and AGY each resumed one session on a new model and recalled a word from the first turn; pi kept one session across claude-bridge and openai-codex models; no CLI config file changed'
 ---
 
-# 0108. A model switch resumes the same CLI session, and a CLI change asks what to bring
+# 0110. A model switch resumes the same CLI session, and a CLI change asks what to bring
 
 In the context of the composer's model switch, where ADR 0017 handed every switch to a new chat
 with a summary, so a Claude Opus to Sonnet switch lost the history that the CLI still had, we

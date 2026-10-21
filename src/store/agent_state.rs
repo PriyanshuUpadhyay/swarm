@@ -106,7 +106,7 @@ mod tests {
 
     #[test]
     fn sets_state_only_for_one_agent_and_refuses_unknown_values() {
-        let connection = seed(0);
+        let connection = seed();
         set_state(
             &connection,
             SESSION,
@@ -170,7 +170,7 @@ mod tests {
 
     #[test]
     fn a_waiting_hook_records_kind_and_a_screen_write_clears_it() {
-        let connection = seed(0);
+        let connection = seed();
         for (kind, screen_state) in [("permission", "waiting"), ("question", "done")] {
             set_state(
                 &connection,
@@ -206,7 +206,7 @@ mod tests {
 
     #[test]
     fn state_kind_checks_reject_non_waiting_states_and_unknown_kinds() {
-        let connection = seed(0);
+        let connection = seed();
         for (state, kind) in [("done", "permission"), ("waiting", "unknown")] {
             let error = set_state(
                 &connection,
@@ -226,7 +226,7 @@ mod tests {
 
     #[test]
     fn a_kindless_wait_keeps_its_kind_until_the_state_changes() {
-        let connection = seed(0);
+        let connection = seed();
         set_state(
             &connection,
             SESSION,
@@ -283,7 +283,7 @@ mod tests {
 
     #[test]
     fn a_same_second_kind_change_stops_the_screen_write() {
-        let connection = seed(0);
+        let connection = seed();
         set_state(
             &connection,
             SESSION,
@@ -315,7 +315,7 @@ mod tests {
 
     #[test]
     fn a_hook_state_without_kind_clears_the_previous_wait_kind() {
-        let connection = seed(0);
+        let connection = seed();
         set_state(
             &connection,
             SESSION,
@@ -335,7 +335,7 @@ mod tests {
 
     #[test]
     fn a_screen_write_does_not_overwrite_a_newer_hook_report() {
-        let connection = seed(0);
+        let connection = seed();
         set_state(
             &connection,
             SESSION,
@@ -380,7 +380,7 @@ mod tests {
 
     #[test]
     fn a_hook_in_the_same_second_as_the_read_still_stops_the_screen_write() {
-        let connection = seed(0);
+        let connection = seed();
         set_screen_state(
             &connection,
             SESSION,
@@ -415,7 +415,7 @@ mod tests {
 
     #[test]
     fn closing_a_pane_clears_the_agents_state() {
-        let connection = seed(0);
+        let connection = seed();
         set_pane(&connection, SESSION, CODER, "%2").unwrap();
         set_state(
             &connection,

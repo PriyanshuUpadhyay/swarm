@@ -1,5 +1,5 @@
 // The run chip `account · model · thinking` and its popover, which changes the chat's run
-// (ADR 0108). Inside one CLI the session restarts on the new run; another CLI asks what to bring.
+// (ADR 0110). Inside one CLI the session restarts on the new run; another CLI asks what to bring.
 
 import { CheckIcon, ChevronDownIcon, LoaderCircleIcon } from "lucide-react";
 import { useEffect, useId, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";

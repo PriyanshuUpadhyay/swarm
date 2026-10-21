@@ -269,7 +269,7 @@ export class Lifecycle {
     this.set({ switchModel: session, handoffs: h && !isSettled(h.phase) ? this.state.handoffs : rest });
   }
 
-  /** Switch model (ADR 0108). `resume` starts the chat's own CLI session again on the new run; a
+  /** Switch model (ADR 0110). `resume` starts the chat's own CLI session again on the new run; a
    *  new chat takes this chat's summary, or nothing on `clean`. Progress comes from `handoff`
    *  frames; on success the chat that runs now opens. */
   async switchModel(old: string, provider: string, model: string, account: string | null, effort: string | null = null, carry: SwitchCarry = "summary") {

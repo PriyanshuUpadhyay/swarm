@@ -14,13 +14,16 @@ from test_step_run_todos import *
 from test_step_run_build import *
 from test_step_run_gate import *
 from test_step_run_gate_attacks import *
+from test_step_run_scope import *
+from test_step_run_amend import *
 
 
 def test_explicit_text_encoding():
     import ast
     for name in ("test_step_run.py", "test_step_run_support.py", "test_step_run_commands.py",
                  "test_step_run_todos.py", "test_step_run_build.py",
-                 "test_step_run_gate.py", "test_step_run_gate_attacks.py"):
+                 "test_step_run_gate.py", "test_step_run_gate_attacks.py", "test_step_run_scope.py",
+                 "test_step_run_amend.py"):
         tree = ast.parse(Path(__file__).with_name(name).read_text(encoding="utf-8"))
         missing = [node.lineno for node in ast.walk(tree) if isinstance(node, ast.Call)
                    and isinstance(node.func, ast.Attribute) and node.func.attr in ("read_text", "write_text", "open")
@@ -44,7 +47,14 @@ for gate in (test_done_needs_the_current_claim, test_done_refuses_a_stale_input,
              test_take_logs_inside_the_lock, test_check_text_from_the_worker,
              test_done_sees_an_edit_during_checks, test_done_refuses_a_written_back_claim,
              test_timeout_wait_is_bounded, test_done_sees_an_input_edit_during_checks,
-             test_take_refuses_a_name_that_forges_a_line, test_check_odd_system_answers):
+             test_take_refuses_a_name_that_forges_a_line, test_check_odd_system_answers,
+             test_done_refuses_a_write_outside_scope, test_scope_needs_git_and_a_writes_line,
+             test_scope_parallel_order_names_and_a_lost_base, test_a_step_does_not_change_blocks_toml, test_scope_skips_a_step_done_before_the_take,
+             test_scope_counts_a_step_done_while_take_reads_the_tree,
+             test_scope_fails_closed_in_a_repo,
+             test_done_takes_blocks_from_the_plan, test_writer_does_not_take_its_review,
+             test_amend_within_the_owner_budget, test_plan_blocks_follow_the_repo_off_table,
+             test_amend_refuses_odd_rows):
     with tempfile.TemporaryDirectory() as tmp:
         gate(tmp)
 

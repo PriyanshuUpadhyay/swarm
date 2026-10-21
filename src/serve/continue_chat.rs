@@ -14,7 +14,7 @@ pub(super) struct ContinueChat {
     #[serde(default)]
     pub(super) carry: Carry,
 }
-/// What a switch keeps (ADR 0108). New values may appear.
+/// What a switch keeps (ADR 0110). New values may appear.
 #[derive(Clone, Copy, Default, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub(super) enum Carry {
@@ -155,7 +155,7 @@ pub(super) async fn handoff_rows(app: &App, old: &str) -> Result<Vec<Row>, ApiEr
     ))
 }
 
-/// Same CLI: stop the chair and start its own session again on the new run (ADR 0108).
+/// Same CLI: stop the chair and start its own session again on the new run (ADR 0110).
 async fn resume_switch(app: &App, body: &ContinueChat) -> Result<Value, ApiError> {
     let old = &body.old_session;
     continue_phase(app, old, "preparing")?;
@@ -227,7 +227,7 @@ async fn resume_switch(app: &App, body: &ContinueChat) -> Result<Value, ApiError
             ));
         }
         continue_phase(app, old, "starting")?;
-        run_cli(app, call.args(&["close", "orchestrator"]), None).await?;
+        run_cli(app, call.args(&["close", "--now", "orchestrator"]), None).await?;
     } else {
         continue_phase(app, old, "starting")?;
     }

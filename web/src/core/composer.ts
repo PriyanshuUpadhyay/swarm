@@ -182,7 +182,7 @@ export function savedCarry(prefs: { switchCarry?: string } | undefined): Carry {
   return prefs?.switchCarry === "clean" ? "clean" : "summary";
 }
 
-/** What Apply does (ADR 0108). Inside one CLI the session starts again on the new run with its
+/** What Apply does (ADR 0110). Inside one CLI the session starts again on the new run with its
  *  history; another CLI, or another Codex account, cannot take the session, so a new chat starts. */
 export function switchOutcome(current: Run, draft: Run): Outcome {
   if (current.provider !== draft.provider) return "handoff";

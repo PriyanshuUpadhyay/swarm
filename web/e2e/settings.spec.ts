@@ -69,65 +69,33 @@ function due(chair = false): { sound: boolean }[] {
 
 const choices = () => JSON.parse(readFileSync(join(home(), ".swarm/choices.json"), "utf8")) as { prefs?: Record<string, unknown> & { notices?: Record<string, unknown> } };
 
-test("a usage refresh has a static busy sign with reduced motion", async ({ page: tab }, info) => {
-  await tab.emulateMedia({ reducedMotion: "reduce" });
-  const usage = await api<{ meters: unknown[] }>("/api/usage");
-  let release!: () => void;
-  const pending = new Promise<void>((resolve) => { release = resolve; });
-  await tab.route("**/api/usage/refresh", async (route) => {
-    await pending;
-    await route.fulfill({ json: { ...usage, refresh: { next_in_seconds: 300 } } });
-  });
-  const errors = await open(tab);
-  const meters = tab.getByTestId("usage-meters");
-  const toggle = meters.getByRole("button", { name: /Usage/ });
-  if ((await toggle.getAttribute("aria-expanded")) === "false") await toggle.click();
-  const button = meters.getByTestId("usage-refresh-claude");
-  const status = meters.getByTestId("usage-wait-claude");
-  try {
-    await button.click();
-    await expect(button).toBeDisabled();
-    await expect(button).toHaveAttribute("aria-busy", "true");
-    await expect(status).toBeVisible();
-    await expect(status).toHaveText("refreshing…");
-    expect(await button.locator("svg").evaluate((el) => getComputedStyle(el).animationName)).toBe("none");
-    await tab.screenshot({ path: info.outputPath("usage-refresh-reduced-motion.png") });
-  } finally {
-    release();
-  }
-  await expect(button).toHaveAttribute("aria-busy", "false");
-  await expect(status).toHaveText(/^next [0-4]:\d\d$/);
-  expect(errors).toEqual([]);
-});
-
 test("usage meters show the cached reading, and a refresh waits for the server's 300 s limit", async ({ page: tab }, info) => {
   const errors = await open(tab);
-  const meters = tab.getByTestId("usage-meters");
-  await expect(meters).toBeVisible();
-  const toggle = meters.getByRole("button", { name: /Usage/ });
-  if ((await toggle.getAttribute("aria-expanded")) === "false") await toggle.click();
-  const claude = meters.getByTestId("usage-claude");
-  await expect(meters.getByTestId("usage-codex")).toContainText("No cached usage");
-  await claude.getByTestId("usage-refresh-claude").click();
+  await expect(tab.getByTestId("usage-meters")).toHaveCount(0);
+  let dialog = await settings(tab, "accounts");
+  const claude = dialog.getByTestId("accounts-claude");
+  const codex = dialog.getByTestId("accounts-codex");
+  await expect(codex).toContainText("No cached usage");
+  await claude.getByTestId("accounts-usage-refresh-claude").click();
   // The first browser refreshes; the second gets the cooldown with the reading the first took.
   await expect(claude.getByRole("meter", { name: "default 5h left" })).toHaveAttribute("aria-valuenow", "87");
   await expect(claude.getByRole("meter", { name: "default 7d left" })).toHaveAttribute("aria-valuenow", "58");
-  await expect(claude.getByTestId("usage-refresh-claude")).toBeDisabled();
-  await expect(claude.getByTestId("usage-wait-claude")).toHaveText(/^next [0-4]:\d\d$/);
-  await expect(claude.getByTestId("usage-refresh-claude")).toHaveAttribute("title", /^Next refresh in [0-4]:\d\d$/);
+  await expect(claude.getByTestId("accounts-usage-refresh-claude")).toBeDisabled();
+  await expect(claude.getByTestId("accounts-usage-refresh-claude")).toHaveText(/^Refresh usage in [0-4]:\d\d$/);
   // The reply's other providers do not double the Codex meter.
-  await expect(meters.getByTestId("usage-codex").getByTestId("meter")).toHaveCount(1);
+  await expect(codex.getByTestId("meter")).toHaveCount(1);
   // A new page knows nothing of the wait; the server still holds it. The page took the token out
   // of its URL, so it opens the server's link again; a hash change alone would not load it.
   await tab.goto("about:blank");
   await tab.goto(`${server().origin}/${server().hash}`);
   await tab.waitForFunction(() => window.__swarmReady === true);
-  await meters.getByTestId("usage-refresh-claude").click();
-  await expect(meters.getByTestId("usage-wait-claude")).toHaveText(/^next [0-4]:\d\d$/);
+  dialog = await settings(tab, "accounts");
+  await dialog.getByTestId("accounts-usage-refresh-claude").click();
+  await expect(dialog.getByTestId("accounts-usage-refresh-claude")).toHaveText(/^Refresh usage in [0-4]:\d\d$/);
   const again = await api<{ refresh: { state: string; next_in_seconds: number } }>("/api/usage/refresh", { provider: "claude" });
   expect(again.refresh.state).toBe("cooldown");
   expect(again.refresh.next_in_seconds).toBeLessThanOrEqual(300);
-  await shoot(tab, tab.locator(".bg-sidebar").first(), "meters", info.project.name);
+  await shoot(tab, dialog, "meters", info.project.name);
   expect(errors).toEqual([]);
 });
 

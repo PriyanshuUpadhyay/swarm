@@ -8,8 +8,10 @@
                                 with evidence, no input is stale, and each runnable script check passes
   skip <folder> <step> <reason> skip an open or active step, with the reason
   block <folder> <step> <reason> block an open or active step, with the reason
+  amend <folder> <row> [--before <step>]  add one `Writes: none` step to a plan run, within plan.md's Amend: N
+                                (step_amend.py)
 
-take, done, skip, and block add one line to <folder>/events.log, and done adds one more for each check it runs,
+take, done, skip, block, and amend add one line to <folder>/events.log, and done adds one more for each check it runs,
 so the path of a run stays readable after it ends.
 A skill script with its own step graph or revision (implement) imports these functions and passes `need`
 and `rev`.
@@ -28,6 +30,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from step_checks import run_checks, work_root  # noqa: E402
+import step_scope  # noqa: E402
 
 TODO_HEAD = "## Todo (check a box only with its evidence after the colon; `done` refuses an empty one)"
 # Parse by this prefix, so a step file written under an older head wording still has its todos checked.
@@ -70,17 +73,27 @@ def plain(text, *, keep_newlines=False):
 
 
 def table(skill_md):
-    """Rows of the first table whose header starts with | File | Needs | Holds |."""
+    """Rows (name, needs, holds, blocks, writes, optional) of the first table whose header starts with
+    | File | Needs | Holds |. blocks is None unless the table has `Blocks`, or `Block` beside `Writes` (a plan);
+    writes is None with no Writes column, else the paths ([] for `none`); optional is a File cell ending `(optional)`."""
     rows, inside = [], False
     for line in Path(skill_md).read_text(encoding="utf-8").splitlines():
         if re.match(r"\|\s*File\s*\|\s*Needs\s*\|\s*Holds\s*\|", line):
             inside = True
-            columns = [c.strip() for c in line.strip("|").split("|")]
-            has_blocks = len(columns) > 3 and columns[3] == "Blocks"
+            columns = [c.strip() for c in line.strip().strip("|").split("|")]
+            at = {c: i for i, c in enumerate(columns)}
+            block_at = at.get("Blocks", at.get("Block") if "Writes" in at else None)
         elif inside and line.startswith("|") and not line.startswith("|---"):
-            cells = [c.strip().strip("`") for c in line.strip("|").split("|")]
-            blocks = [b.strip() for b in cells[3].split(",") if b.strip()] if has_blocks else None
-            rows.append((cells[0].removesuffix(".md"), cells[1], cells[2], blocks))
+            cells = [c.strip() for c in line.strip().strip("|").split("|")]
+            cell = lambda i: cells[i].strip("`") if i is not None and i < len(cells) else ""
+            blocks = [b.strip() for b in cell(block_at).split(",") if b.strip()] if block_at is not None else None
+            writes = None
+            if "Writes" in at:
+                writes = step_scope.write_paths(cell(at["Writes"]))
+            name = cells[0]
+            optional = bool(re.search(r"\s*\(optional\)$", name))
+            name = re.sub(r"\s*\(optional\)$", "", name).strip("`")
+            rows.append((name.removesuffix(".md"), cell(1), cell(2), blocks, writes, optional))
         elif inside and not line.startswith("|"):
             break
     if not rows:
@@ -195,7 +208,7 @@ def start(folder, skill_md):
     folder = Path(folder)
     rows = table(skill_md)
     names = [r[0] for r in rows]
-    selected = {name: ids for name, _, _, ids in rows if ids is not None}
+    selected = {name: ids for name, _, _, ids, *_ in rows if ids is not None}
     blocks = {}
     if selected and not all((folder / f"{name}.md").exists() for name in names):
         sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -207,7 +220,7 @@ def start(folder, skill_md):
             params_override={"site": site, "shots": str(Path(site) / "shots")}, judge_todos=True)
     uses = check_needs([r[:3] for r in rows])
     folder.mkdir(parents=True, exist_ok=True)
-    for name, need, holds, _ in rows:
+    for name, need, holds, _, writes, optional in rows:
         file = folder / f"{name}.md"
         if file.exists():
             continue
@@ -215,7 +228,8 @@ def start(folder, skill_md):
         if any(token in rules + "\n".join(todos) for token in ("blocks/", "the kit's `references/", "<kit root>")):
             rules = f"Kit blocks (`blocks/<id>/`) and the kit's `references/` are under {kit_path(Path(__file__).resolve().parents[1])} (the kit root).\n{rules}"
         extra = (f"Skills read: {', '.join(read)}\n\n## Rules for this step\n{rules}\n" if read else "")
-        file.write_text(f"Status: open\nUses: {', '.join(uses[name])}\n\n{extra}"
+        scope = "" if writes is None else f"Writes: {', '.join(writes) or 'none'}\n" + ("Optional: yes\n" if optional else "")
+        file.write_text(f"Status: open\nUses: {', '.join(uses[name])}\n{scope}\n{extra}"
                         f"{TODO_HEAD}\n" + "".join(f"- [ ] {item}: \n" for item in [holds] + todos)
                         + f"\n{RESULT_HEAD}\n", encoding="utf-8")
     print(folder)
@@ -260,7 +274,11 @@ def take(folder, step, who, need=None, rev=revision, force=False, on_claim=None)
         need = needs(folder, step) if need is None else need
         if not ready(folder, step, need):
             raise SystemExit(f"{step} is not ready; it needs {', '.join(need)}")
+        step_scope.check_reviewer(folder, step, who)
         uses = ", ".join(f"{n}@{rev(folder, n)}" for n in need)
+        # done compares the work tree with this one, so only changes made after the take count. It is read before
+        # the claim, so a git failure (SystemExit) leaves the step as it was.
+        tree = step_scope.snapshot(folder) if step_scope.writes("\n".join(lines)) is not None else None
         text = "\n".join([f"Status: active {who} #{max(claim_of(folder, step), int(number[1]) if number else 0) + 1}", f"Uses: {uses}", *lines[2:]])
         write_step(file, text)
         if on_claim is not None:
@@ -273,6 +291,8 @@ def take(folder, step, who, need=None, rev=revision, force=False, on_claim=None)
             text = file.read_text(encoding="utf-8")
         # Logged inside the lock, so a take --force cannot count the same claim number.
         log(folder, step, f"take {who}")
+        if tree:
+            log(folder, step, f"base {tree}")
     print(text)
 
 
@@ -301,6 +321,7 @@ def done(folder, step, claim, rev=None, ends=(RESULT_HEAD,), rev_of=revision):
                              f"the step is {plain(state)}")
         if old := stale(folder, step, rev_of):
             raise SystemExit(f"{step} is not done: its input changed after take: {', '.join(old)}; take it again")
+        step_scope.check(folder, step, text)
         run_checks(folder, step, todo, text)
         if file.read_text(encoding="utf-8") != text:
             raise SystemExit(f"{step} is not done: its file changed while its checks ran; run done again")
@@ -321,6 +342,9 @@ def skip(folder, step, *why):
         state = status_of(folder, step)
         if state.split()[0] not in ("open", "active"):
             raise SystemExit(f"{step} is {state}; only an open or active step can be skipped")
+        text = file.read_text(encoding="utf-8")
+        if step_scope.writes(text) is not None and step_scope.header(text, "Optional") != "yes":
+            raise SystemExit(f"{step} is not marked (optional) in the plan; ask the owner to amend the plan")
         write_step(file, f"Status: skipped {reason}\n" + file.read_text(encoding="utf-8").split("\n", 1)[1])
     log(folder, step, f"skip {reason}")
     print(f"{step}: skipped {reason}")
@@ -346,8 +370,10 @@ if __name__ == "__main__":
     if hasattr(sys.stdout, "reconfigure"):
         # Escape non-ASCII output when the console uses an ASCII encoding.
         sys.stdout.reconfigure(errors="backslashreplace")
-    commands = {"start": start, "status": status, "take": take, "done": done, "skip": skip, "block": block}
-    arity = {"start": (2, 2), "status": (1, 1), "take": (3, 3), "done": (3, 3), "skip": (3, None), "block": (3, None)}
+    from step_amend import amend
+    commands = {"start": start, "status": status, "take": take, "done": done, "skip": skip, "block": block, "amend": amend}
+    arity = {"start": (2, 2), "status": (1, 1), "take": (3, 3), "done": (3, 3), "skip": (3, None), "block": (3, None),
+             "amend": (2, 4)}
     if len(sys.argv) < 2 or sys.argv[1] not in commands:
         raise SystemExit(__doc__)
     try:
@@ -356,7 +382,7 @@ if __name__ == "__main__":
         force = command == "take" and "--force" in args
         if command == "take":
             args = [arg for arg in args if arg != "--force"]
-        if command in ("done", "skip", "block") and "--force" in args:
+        if command in ("done", "skip", "block", "amend") and "--force" in args:
             raise SystemExit("done <folder> <step> <n> accepts no --force" if command == "done" else f"{command} accepts no --force")
         minimum, maximum = arity[command]
         if len(args) < minimum or maximum is not None and len(args) > maximum:

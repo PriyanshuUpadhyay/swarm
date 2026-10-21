@@ -212,7 +212,7 @@ fn menu_http_matches_cli_json_and_keeps_bearer_guards() {
 }
 
 /// A same-CLI switch keeps the chat: it closes the chair and resumes its own session on the new
-/// run. Start clean makes a linked chat with nothing typed into it (ADR 0108).
+/// run. Start clean makes a linked chat with nothing typed into it (ADR 0110).
 #[test]
 fn a_switch_resumes_the_same_chat_or_starts_clean() {
     use std::os::unix::fs::PermissionsExt;

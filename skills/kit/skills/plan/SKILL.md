@@ -19,7 +19,8 @@ The kit root, with its `blocks/` and `references/` folders, is two folders up fr
 A preset is a verb's start list of steps and blocks. It is a `## Preset` section in the verb's
 `SKILL.md`, or in `references/<mode>.md` for a verb with modes. The section has one line
 `Stop: owner` or `Stop: chat`, an optional line `Start: <command>` for a verb that runs its own
-step run, and one table in the plan step-table shape that `blocks/planner/SKILL.md` sets.
+step run, and one table in the plan step-table shape that `blocks/planner/SKILL.md` sets, with no
+Writes column. The planner adds Writes, so the Writes and duty rules apply to the plan, not the preset.
 `python3 -I <kit root>/skills/plan/scripts/preset.py <verb> [<mode>]` checks a preset and prints
 each step with the blocks it resolves to. A task with no verb has no preset.
 
@@ -28,7 +29,7 @@ each step with the blocks it resolves to. A task with no verb has no preset.
 1. Write the plan by `blocks/planner/SKILL.md`.
 2. Check it and draw it by `blocks/plan-chart/SKILL.md`.
 3. With `Stop: owner`, or with no preset, get the owner's approval by `blocks/plan-review/SKILL.md`.
-   Nothing runs before that. With `Stop: chat`, show the chart and the Chosen and Rejected tables in
+   Nothing runs before that. With `Stop: chat`, show the chart and the Chosen table in
    the reply, and go on.
 4. Start the steps with `python3 -I <kit root>/blocks/plan-review/scripts/start_plan.py <run>`. The
    script owns the stop rule. For a preset with a `Start:` line, it makes no step files and prints

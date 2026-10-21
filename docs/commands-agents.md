@@ -14,10 +14,10 @@ The caller rules are in [commands.md](commands.md).
 | `interrupt <id>` | session | Send the adapter interrupt action to the agent pane. |
 | `attach <id>` | session | Attach to the agent pane when the adapter supports it. |
 | `focus <session_id> <agent_id>` | any | Focus the stored agent pane, retry the chair once if needed, and raise the host app. Exit 1 with `swarm: pane closed` if both panes fail. Herdr, Rex, and tmux support focus; tmux-swarm opens Swarm.app on the chat (ADR 0102); Superset reports `has no focus`. |
-| `close <id>` | session | Close the pane of `<id>` and forget it. |
+| `close [--now] <id>...` | session | Send each child a `wrap-up` message, wait up to 120 s for its `finish`, write each reply that has every wrap-up heading to `runs/<session>/<id>.summary.md` and print that path; the same id twice gets one ask, then close each pane and forget it. A child with no reply in time leaves its screen in `runs/<session>/<id>.log` and a note to the orchestrator. `--now` skips the wrap-up. The app always closes with `--now` (ADR 0108). |
 | `send <recipient> <kind>` | agent | Store stdin as a message, ring the recipient, print the seq. The ring waits, up to 30 s, for the recipient's turn-start hook, its host record, or a working screen, and presses Enter again while a Claude or Codex input box still holds it. With no proof it warns on stderr and still exits 0 (ADR 0041). |
-| `finish` | agent | Send stdin as a `summary` to the orchestrator, print the seq. |
-| `exited` | agent | Capture the own pane to `runs/<session>/<id>.log`, report a missing summary. |
+| `finish` | agent | Send stdin as a `summary` to the orchestrator, print the seq. While the agent owes a wrap-up, it refuses a body without the lines `## Done`, `## Why`, `## Decisions`, `## Next steps`, and `## Open questions`. |
+| `exited` | agent | Capture the own pane to `runs/<session>/<id>.log`, and report a missing summary with that path when the agent sent none after its last received message. |
 | `sweep [--every <secs>]` | agent | Report each child whose pane is gone, print `dead <id>`. Re-ring an unseen message at most once after 60 s, for a child or the caller itself, then wait for an ack. When that ring starts no turn, the chair gets `unconfirmed:<seq>` from the agent and the sweep prints `unconfirmed <id> <seq>`; for the chair's own message it prints only the line. It sends the chair `stall:unacked:<seq>` for a child at done with a read, unacked message, and `stall:silent:<seq>` for a child at done that sent nothing after a proven ring, once each, and prints `stall <id> unacked\|silent <seq>`. It sends these reports only while the chair's screen reads idle with no question, so the ring's Enter cannot answer one; a later pass sends the rest. `agents --json` sends the same messages one pass later, because its rings do not wait (ADR 0041). With `--every`, repeat every N seconds and warn instead of exit on a failed pass. |
 | `inbox` | agent | Print `seq sender kind body_path` per unread message. |
 | `ack <seq>` | agent | Mark one message read. |
@@ -39,5 +39,8 @@ record of the agent in `SWARM_PANE` as one OSC 7501 body with `:at=<unix seconds
 time, or nothing. A pi agent's state then comes from that record as `state_source` `host`, the
 second source after hooks (ADR 0070), and a ring to an AGY agent first waits, up to 15 s, for AGY
 to report a record. Rex reads the record from the agent's own reports.
+A `list` line may end with `activity=<unix seconds>`, the last time the pane's window printed, as
+the tmux adapters do. The app's listing then reads that pane's screen again only after new output,
+or 10 s after its last read. A `list` that fails waits 30 s before the app runs it again.
 Claude, Codex, and AGY run
 `swarm host-context --provider <claude|codex|agy>` as a SessionStart hook to learn the host contract.

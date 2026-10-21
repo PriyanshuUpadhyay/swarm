@@ -95,6 +95,7 @@ pub(crate) fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         }
         [cmd] if cmd == "finish" => {
             let summary = std::io::read_to_string(std::io::stdin())?;
+            check_wrap_up_reply(&connection, &session_id, &agent_id, &summary)?;
             let orchestrator = swarm::store::orchestrator_of(&connection, &session_id)?;
             let seq = deliver(
                 &mut connection,
@@ -120,8 +121,12 @@ pub(crate) fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 swarm::adapter::load(&root, &adapter_name())?.run("capture", &[("pane", &pane)])?;
             let run_dir = root.join(format!("runs/{session_id}"));
             std::fs::create_dir_all(&run_dir)?;
-            swarm::store::write_atomic(&run_dir.join(format!("{agent_id}.log")), &text)?;
-            let note = format!("agent {agent_id} exited without a summary");
+            let log = run_dir.join(format!("{agent_id}.log"));
+            swarm::store::write_atomic(&log, &text)?;
+            let note = format!(
+                "agent {agent_id} exited without a summary; screen log: {}",
+                log.display()
+            );
             report_dead(
                 &mut connection,
                 &root,

@@ -27,7 +27,54 @@ pub(crate) fn list_agents(
     adapter: &swarm::adapter::Adapter,
 ) -> Result<AgentListOutput, Box<dyn std::error::Error>> {
     let listing = read_pane_list(adapter)?;
-    list_agents_from(connection, root, session_id, adapter, listing)
+    list_agents_from(
+        connection,
+        root,
+        session_id,
+        adapter,
+        listing,
+        &mut ListingCache::default(),
+    )
+}
+
+/// What one listing leaves for the next, for a caller that lists again and again.
+#[derive(Default)]
+pub(crate) struct ListingCache {
+    /// Each pane's last screen read, by (adapter, pane, provider): the unix second before the
+    /// read started, and what it read.
+    screens: std::collections::HashMap<(String, String, Option<String>), (i64, ScreenRead)>,
+    /// When each adapter's `list` last failed. It runs again after LIST_RETRY.
+    failed_lists: std::collections::HashMap<String, std::time::Instant>,
+}
+
+/// How long a failed `list` waits before it runs again, so an adapter whose server is down does
+/// not start a process and log an error on every listing.
+const LIST_RETRY: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// The longest a kept screen read stands in for a new one. The Claude prompt check also reads the
+/// transcript log, which can change while the screen prints nothing.
+const SCREEN_REUSE_S: i64 = 10;
+
+fn screen_key(
+    adapter: &swarm::adapter::Adapter,
+    pane: &str,
+    provider: Option<&str>,
+) -> (String, String, Option<String>) {
+    (
+        adapter.name.clone(),
+        pane.to_string(),
+        provider.map(str::to_string),
+    )
+}
+
+/// The `activity=<unix s>` token on `pane`'s line of a pane list, the last time its window
+/// printed. An adapter without it gets a new screen read on every listing.
+fn pane_activity(listing: &str, pane: &str) -> Option<i64> {
+    let line = listing
+        .lines()
+        .find(|line| line.split_whitespace().next() == Some(pane))?;
+    line.split_whitespace()
+        .find_map(|token| token.strip_prefix("activity=")?.parse().ok())
 }
 
 /// The adapter's `list` output, or None when it fails before the deadline.
@@ -57,6 +104,7 @@ pub(crate) fn list_agents_from(
     session_id: &str,
     adapter: &swarm::adapter::Adapter,
     listing: Option<String>,
+    cache: &mut ListingCache,
 ) -> Result<AgentListOutput, Box<dyn std::error::Error>> {
     let rows = swarm::store::agents(connection, session_id)?;
     let now = std::time::SystemTime::now()
@@ -93,40 +141,65 @@ pub(crate) fn list_agents_from(
         .collect();
     // The screen check (ADR 0021) reads each live pane once per listing, all at the same
     // time, so six agents cost about one capture. A pi pane's host record is read beside it.
+    // A pane whose window printed nothing since its last read keeps that read for up to
+    // SCREEN_REUSE_S, so the app's 1 s listing starts no process for an idle pane.
     type HostRead = Option<(swarm::host::HookState, i64)>;
-    let screens: Vec<(Option<ScreenRead>, HostRead)> = std::thread::scope(|scope| {
+    let screens: Vec<(Option<ScreenRead>, HostRead, bool)> = std::thread::scope(|scope| {
         let reads: Vec<_> = rows
             .iter()
             .zip(&alive)
             .zip(&providers)
             .map(|((row, alive), provider)| {
-                let target = match (alive, row.pane.as_deref()) {
-                    (Some(true), Some(pane)) => Some((pane, provider.as_deref())),
-                    _ => None,
+                let (Some(true), Some(pane)) = (alive, row.pane.as_deref()) else {
+                    return Err(Box::new((None, None, false)));
                 };
+                let provider = provider.as_deref();
+                let kept = listing
+                    .as_deref()
+                    .and_then(|list| pane_activity(list, pane))
+                    .and_then(|activity| {
+                        cache
+                            .screens
+                            .get(&screen_key(adapter, pane, provider))
+                            .filter(|(read_at, _)| {
+                                activity < *read_at && now - read_at < SCREEN_REUSE_S
+                            })
+                    })
+                    .map(|(_, read)| read.clone());
+                if kept.is_some() && provider != Some("pi") {
+                    return Err(Box::new((kept, None, false)));
+                }
                 let seen_work = matches!(row.state.as_deref(), Some("working" | "waiting"));
-                scope.spawn(move || {
-                    let Some((pane, provider)) = target else {
-                        return (None, None);
-                    };
+                Ok(scope.spawn(move || {
                     let host = host_record_of(adapter, provider, pane, seen_work);
-                    (
-                        read_screen(adapter, pane, provider, row.log.as_deref()),
-                        host,
-                    )
-                })
+                    let fresh = kept.is_none();
+                    let screen =
+                        kept.or_else(|| read_screen(adapter, pane, provider, row.log.as_deref()));
+                    (screen, host, fresh)
+                }))
             })
             .collect();
         reads
             .into_iter()
-            .map(|read| read.join().unwrap_or((None, None)))
+            .map(|read| match read {
+                Ok(handle) => handle.join().unwrap_or((None, None, false)),
+                Err(done) => *done,
+            })
             .collect()
     });
+    for ((row, provider), (screen, _, fresh)) in rows.iter().zip(&providers).zip(&screens) {
+        if let (true, Some(pane), Some(screen)) = (*fresh, row.pane.as_deref(), screen) {
+            cache.screens.insert(
+                screen_key(adapter, pane, provider.as_deref()),
+                (now, screen.clone()),
+            );
+        }
+    }
     // All reads must finish in time; a due ring below can run past their deadline.
     adapter.check_deadline()?;
     let mut chair_row_idle = false;
     let mut agents = Vec::new();
-    for (((mut row, alive), (screen, host)), provider) in
+    for (((mut row, alive), (screen, host, _)), provider) in
         rows.into_iter().zip(alive).zip(screens).zip(providers)
     {
         let (screen, detail, prompt) = match screen {
@@ -267,7 +340,15 @@ pub(crate) fn list_agents_from(
     ) {
         eprintln!("swarm: {error}");
     }
+    // The chair's screen is read again only when there is a report to send. A failed query
+    // counts as one, so the report below prints its error.
+    let reports_due = chair.as_ref().is_none_or(|chair| {
+        swarm::store::unreported_lost(connection, session_id, chair)
+            .map_or(true, |lost| !lost.is_empty())
+    }) || swarm::store::stalls(connection, session_id)
+        .map_or(true, |stalls| !stalls.is_empty());
     let chair_still_idle = chair_row_idle
+        && reports_due
         && chair_idle(connection, adapter, session_id).unwrap_or_else(|error| {
             eprintln!("swarm: {error}");
             false
@@ -291,6 +372,17 @@ pub(crate) fn all_agent_listings(
     connection: &mut rusqlite::Connection,
     root: &std::path::Path,
     budget: std::time::Duration,
+) -> Result<std::collections::BTreeMap<String, AgentListOutput>, Box<dyn std::error::Error>> {
+    all_agent_listings_kept(connection, root, budget, &mut ListingCache::default())
+}
+
+/// `all_agent_listings` for a caller that lists again and again, so an idle pane keeps its last
+/// screen read in `cache`.
+pub(crate) fn all_agent_listings_kept(
+    connection: &mut rusqlite::Connection,
+    root: &std::path::Path,
+    budget: std::time::Duration,
+    cache: &mut ListingCache,
 ) -> Result<std::collections::BTreeMap<String, AgentListOutput>, Box<dyn std::error::Error>> {
     let mut listings = std::collections::BTreeMap::new();
     let deadline = std::time::Instant::now() + budget;
@@ -325,6 +417,14 @@ pub(crate) fn all_agent_listings(
             .iter()
             .find(|s| adapter_of(s) == *name)
             .expect("listed adapter");
+        // A list that failed recently counts as failed again, as if it ran.
+        if cache
+            .failed_lists
+            .get(*name)
+            .is_some_and(|at| at.elapsed() < LIST_RETRY)
+        {
+            continue;
+        }
         *panes = swarm::adapter::load(root, name)
             .and_then(|mut adapter| {
                 adapter.session_id = Some(first.id.clone());
@@ -335,6 +435,13 @@ pub(crate) fn all_agent_listings(
                 pane_list_result(&adapter, result)
             })
             .map_err(|error| error.to_string());
+        if matches!(panes, Ok(None)) {
+            cache
+                .failed_lists
+                .insert(name.to_string(), std::time::Instant::now());
+        } else {
+            cache.failed_lists.remove(*name);
+        }
     }
     let panes_of = |session: &swarm::store::SessionRow| {
         &pane_lists
@@ -372,7 +479,7 @@ pub(crate) fn all_agent_listings(
                 let now = std::time::Instant::now();
                 adapter.deadline =
                     Some(now + deadline.saturating_duration_since(now) / sharers as u32);
-                list_agents_from(connection, root, &session.id, &adapter, panes)
+                list_agents_from(connection, root, &session.id, &adapter, panes, cache)
             });
         match listing {
             Ok(listing) => {
@@ -381,6 +488,12 @@ pub(crate) fn all_agent_listings(
             Err(error) => eprintln!("swarm: {}: {error}", session.id),
         }
     }
+    cache.screens.retain(|(adapter, pane, _), _| {
+        pane_lists.iter().any(|(name, panes)| {
+            name == adapter
+                && matches!(panes, Ok(Some(list)) if swarm::adapter::listing_has_pane(list, pane))
+        })
+    });
     Ok(listings)
 }
 

@@ -6,25 +6,19 @@ pub(crate) fn commands_pane(
     root: &std::path::Path,
     connection: &mut rusqlite::Connection,
 ) -> Result<Option<()>, Box<dyn std::error::Error>> {
-    if let [cmd] = args
-        && cmd == "drain"
-    {
-        let summarizer = env_var("SWARM_SUMMARIZER")?;
-        while let Some(job_id) = swarm::store::claim_next(connection)? {
-            println!(
-                "{}",
-                process_summary_job(connection, root, &adapter_name(), &summarizer, job_id)?
-            );
-        }
-        return Ok(Some(()));
-    }
-    if let [cmd, child] = args
+    if let [cmd, rest @ ..] = args
         && cmd == "close"
     {
+        let (wait, ids) = match rest {
+            [flag, ids @ ..] if flag == "--now" => (None, ids),
+            ids => (Some(WRAP_UP_WAIT), ids),
+        };
+        if ids.is_empty() {
+            return Err(USAGE.into());
+        }
         let session_id = session_id()?;
-        let pane = swarm::store::require_pane(connection, &session_id, child)?;
-        swarm::adapter::load(root, &adapter_name())?.run("close", &[("pane", &pane)])?;
-        return swarm::store::clear_pane(connection, &session_id, child).map(Some);
+        close_agents(connection, root, &adapter_name(), &session_id, ids, wait)?;
+        return Ok(Some(()));
     }
     if let [cmd, agent_id, json] = args
         && cmd == "commands"

@@ -9,7 +9,7 @@ from pathlib import Path
 
 KIT = Path(__file__).resolve().parents[1]
 BLOCKS = KIT / "blocks"
-ROW = re.compile(r"^\|\s*`?\d\d-[a-z0-9-]+(?:\.md)?`?\s*\|")
+ROW = re.compile(r"^\|\s*`?\d\d-[a-z0-9-]+(?:\.md)?`?(?:\s*\(optional\))?\s*\|")
 
 
 def refs(path, text):
@@ -18,8 +18,9 @@ def refs(path, text):
             yield n, id
         for id in re.findall(r"\bblock:([a-z0-9][a-z0-9-]*)", line):
             yield n, id
-        if ROW.match(line) and len(cells := re.split(r"(?<!\\)\|", line.strip().strip("|"))) == 5:
-            yield from ((n, id.strip(" `")) for id in cells[3].split(",") if id.strip(" `"))
+        # | File | Needs | Holds | Block | Why |, or with Writes before Block
+        if ROW.match(line) and len(cells := re.split(r"(?<!\\)\|", line.strip().strip("|"))) in (5, 6):
+            yield from ((n, id.strip(" `")) for id in cells[len(cells) - 2].split(",") if id.strip(" `"))
         if m := re.match(r"\s+conflicts: \"?([^\"]*)\"?$", line):
             yield from ((n, id.strip()) for id in m[1].split(",") if id.strip())
 
@@ -39,8 +40,9 @@ def test_every_named_block_exists():
 
 
 def test_the_scan_sees_each_form():
-    text = "see blocks/gone-a/SKILL.md\n- build: block:gone-b\n| 01-x | none | y | voice-reply, gone-c | z |\n  conflicts: \"gone-d\"\n"
-    assert [id for _, id in refs(Path("x.md"), text)] == ["gone-a", "gone-b", "voice-reply", "gone-c", "gone-d"]
+    text = ("see blocks/gone-a/SKILL.md\n- build: block:gone-b\n| 01-x | none | y | voice-reply, gone-c | z |\n  conflicts: \"gone-d\"\n"
+            "| `02-y.md` (optional) | x | y | `src/` | gone-e | z |\n")
+    assert [id for _, id in refs(Path("x.md"), text)] == ["gone-a", "gone-b", "voice-reply", "gone-c", "gone-d", "gone-e"]
 
 
 if __name__ == "__main__":

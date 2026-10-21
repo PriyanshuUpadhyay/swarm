@@ -176,7 +176,7 @@ pub(crate) fn hook(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let Some(report) = hook_report(args, &payload, |name| env::var(name).ok())? else {
         return Ok(());
     };
-    // A nested run speaks for no agent; its log once replaced a chat's own (ADR 0108).
+    // A nested run speaks for no agent; its log once replaced a chat's own (ADR 0110).
     if let Some(cli) = args.first()
         && nested_run(&ancestor_commands(std::process::id()), cli)
     {

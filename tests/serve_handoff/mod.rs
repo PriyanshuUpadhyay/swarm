@@ -258,7 +258,7 @@ async fn handoff_cancel_during_summary_and_refused_after_starting() {
 #[tokio::test]
 async fn handoff_rejects_duplicate_unknown_and_bad_launch_before_cli() {
     let (fixture, mut body) = handoff_fixture();
-    // AGY and pi switch too (ADR 0108); only an unknown CLI is refused.
+    // AGY and pi switch too (ADR 0110); only an unknown CLI is refused.
     body.provider = "gemini".into();
     assert_eq!(
         register_continue(&fixture.app, &body).unwrap_err().0,

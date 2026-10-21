@@ -142,19 +142,6 @@ export function hudCard(hud: Load<Hud>, treeLoaded: boolean, asked: boolean | un
   return hud.state === "ready" && hud.data.app !== null && !hud.data.installed ? "show" : "none";
 }
 
-/** The meters to show, one group per account. AGY and accounts with no usage source are left out. */
-export function meterGroups(usage: Usage | null): { key: string; provider: string; label: string; meters: Meter[] }[] {
-  const groups = new Map<string, { key: string; provider: string; label: string; meters: Meter[] }>();
-  for (const m of usage?.meters ?? []) {
-    if (!USAGE_PROVIDERS.includes(m.provider) || m.state === "no_source") continue;
-    const key = `${m.provider}:${m.account ?? m.label}`;
-    let g = groups.get(key);
-    if (!g) groups.set(key, (g = { key, provider: m.provider, label: m.label, meters: [] }));
-    g.meters.push(m);
-  }
-  return [...groups.values()];
-}
-
 export class Settings {
   state: SettingsState = {
     open: false,

@@ -1,5 +1,5 @@
-// Settings (⌘,) with five pages, and the compact usage meters in the sidebar footer (S5). Rows are
-// plain elements with inline buttons; no row has its own menu, tooltip or hover card.
+// Settings (⌘,) with five pages. Rows are plain elements with inline buttons; no row has its own
+// menu, tooltip or hover card.
 
 import { TriangleAlertIcon } from "lucide-react";
 import { useSyncExternalStore } from "react";
@@ -14,8 +14,6 @@ import { label, Row, Segmented, Toggle, useSettings } from "./settings-shared";
 import { AccountsPage } from "./settings-accounts";
 import { ProfilesPage } from "./settings-profiles";
 import { SetupPage } from "./settings-setup";
-
-export { UsageMeters } from "./usage-meters";
 
 // ---- dialog ----
 

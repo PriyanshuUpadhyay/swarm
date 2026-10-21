@@ -3,7 +3,7 @@
 use super::*;
 
 /// A child ended without `swarm finish`: forget its pane, then send a fallback summary in its
-/// name and queue a summarize job unless it already sent one (R19).
+/// name unless it answered its last message (R19).
 pub(crate) fn report_dead(
     connection: &mut rusqlite::Connection,
     root: &std::path::Path,
@@ -13,7 +13,7 @@ pub(crate) fn report_dead(
     note: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     swarm::store::clear_pane(connection, session_id, child)?;
-    if !swarm::store::has_summary(connection, session_id, child)? {
+    if !swarm::store::answered(connection, session_id, child)? {
         let orchestrator = swarm::store::orchestrator_of(connection, session_id)?;
         deliver(
             connection,
@@ -25,7 +25,6 @@ pub(crate) fn report_dead(
             "summary",
             note,
         )?;
-        swarm::store::enqueue_job(connection, session_id, child, "summarize")?;
     }
     Ok(())
 }
@@ -328,7 +327,7 @@ mod tests {
             swarm::store::pane_of(&connection, &session, CODER).unwrap(),
             None
         );
-        assert!(swarm::store::has_summary(&connection, &session, CODER).unwrap());
+        assert!(swarm::store::answered(&connection, &session, CODER).unwrap());
         assert_eq!(std::fs::read_to_string(&ring_log).unwrap(), "%1\n");
     }
 
@@ -462,38 +461,5 @@ mod tests {
             swarm::store::pane_of(&connection, &session, CODER).unwrap(),
             None
         );
-    }
-
-    #[test]
-    fn a_failed_summary_delivery_keeps_the_log_and_releases_the_job() {
-        let root =
-            std::env::temp_dir().join(format!("swarm-summary-retry-test-{}", std::process::id()));
-        let mut connection = swarm::store::open(std::path::Path::new(":memory:")).unwrap();
-        let session = swarm::store::create_session(
-            &connection,
-            "lane",
-            std::path::Path::new("/test"),
-            None,
-            None,
-        )
-        .unwrap();
-        swarm::store::add_agent(&connection, &session, ORCHESTRATOR, "orchestrator").unwrap();
-        swarm::store::add_agent(&connection, &session, CODER, "coder").unwrap();
-        let log = root.join(format!("runs/{session}/{CODER}.log"));
-        std::fs::create_dir_all(log.parent().unwrap()).unwrap();
-        std::fs::write(&log, "captured output").unwrap();
-        let job = swarm::store::enqueue_job(&connection, &session, CODER, "summarize").unwrap();
-        assert_eq!(swarm::store::claim_next(&connection).unwrap(), Some(job));
-
-        let result = process_summary_job(&mut connection, &root, "fake", "cat", job).unwrap();
-
-        assert!(result.contains("orchestrator has no pane"));
-        assert!(log.exists());
-        let state: String = connection
-            .query_row("SELECT state FROM job WHERE id = ?1", [job], |row| {
-                row.get(0)
-            })
-            .unwrap();
-        assert_eq!(state, "queued");
     }
 }

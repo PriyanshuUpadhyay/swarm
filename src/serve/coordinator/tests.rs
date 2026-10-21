@@ -1,6 +1,7 @@
 //! Tests for coordinator agent snapshots.
 
 use super::*;
+use crate::all_agent_listings;
 use crate::serve::test_support::Fixture;
 
 #[test]
@@ -168,6 +169,7 @@ fn a_degraded_listing_drops_cached_observations_after_every_pane_is_cleared() {
         &fixture.session,
         &adapter,
         Some(String::new()),
+        &mut Default::default(),
     )
     .unwrap();
     assert!(listing.agents.iter().all(|agent| agent.alive.is_none()));
@@ -227,6 +229,7 @@ fn a_degraded_listing_keeps_the_last_good_prompt_and_cache() {
         &fixture.session,
         &adapter,
         None,
+        &mut Default::default(),
     )
     .unwrap();
     assert!(listing.agents.iter().all(|agent| agent.alive.is_none()));
