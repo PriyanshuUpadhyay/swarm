@@ -26,18 +26,12 @@ KIT = Path(__file__).resolve().parents[3]
 sys.path[:0] = [str(KIT / "references"), str(Path(__file__).parent)]  # python3 -I adds neither
 import step_run  # noqa: E402
 from block_resolver import read_parents, resolve_blocks  # noqa: E402
-from plan_rules import blocks_toml, check_ledger, check_writes, conflicts, overlaps  # noqa: E402,F401
+from plan_rules import check_ledger, check_writes, conflicts  # noqa: E402
 
 ASSETS = Path(__file__).resolve().parents[1] / "assets"
 START, END = "<!-- plan-chart:start -->", "<!-- plan-chart:end -->"
 HEAD = re.compile(r"\|\s*File\s*\|\s*Needs\s*\|\s*Holds\s*\|(\s*Writes\s*\|)?\s*Blocks?\s*\|\s*Why\s*\|")  # Blocks: step_run.py writes the block rules into each step
 OPTIONAL = re.compile(r"\s*\(optional\)$")
-
-
-def write_paths(cell):
-    """[] for `none`, else the comma-separated paths with their backticks removed."""
-    paths = [p.strip().strip("`").strip() for p in cell.split(",")]
-    return [] if [p for p in paths if p] == ["none"] else [p for p in paths if p]
 
 
 def read_plan(path, text=None):
@@ -56,7 +50,7 @@ def read_plan(path, text=None):
             cells = [c.strip() for c in line.strip().strip("|").split("|")]
             if len(cells) != width:
                 raise SystemExit(f"row has {len(cells)} cells, not {width}: {line}")
-            writes = write_paths(cells.pop(3)) if width == 6 else None
+            writes = step_run.step_scope.write_paths(cells.pop(3)) if width == 6 else None
             name, need, holds, blocks, why = cells  # Holds and Why keep their `code` spans
             optional = bool(OPTIONAL.search(name))
             name, need, blocks = (c.strip("`") for c in (OPTIONAL.sub("", name), need, blocks))

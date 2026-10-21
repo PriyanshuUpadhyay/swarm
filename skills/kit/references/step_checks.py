@@ -60,7 +60,9 @@ def plan_blocks(folder, step):
     row = next((r for r in plan_chart.read_plan(plan)[2] if r[0] == step), None)
     if row is None or row[5] is None:
         return set()
-    return set(block_resolver.resolve_blocks(None, {step: row[3]}, "default", blocks_dir=KIT / "blocks", pack=False)[step])
+    # The repo root, as start passes it, so a repo `.blocks.toml` [off] block is off here too.
+    root, _ = work_root(folder)
+    return set(block_resolver.resolve_blocks(root, {step: row[3]}, "default", blocks_dir=KIT / "blocks", pack=False)[step])
 
 
 def run_checks(folder, step, todo, text):

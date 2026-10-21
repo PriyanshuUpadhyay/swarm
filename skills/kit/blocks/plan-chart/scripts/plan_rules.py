@@ -41,7 +41,7 @@ def check_ledger(rows, ledger):
 
 def conflicts(block):
     text = (KIT / "blocks" / block / "SKILL.md").read_text(encoding="utf-8")
-    line = re.search(r"^  conflicts: (.*)$", text, re.M)
+    line = re.search(r"^  conflicts: (.*)$", text[3:].partition("\n---\n")[0], re.M)  # the frontmatter only
     return [c.strip() for c in line[1].strip("\"'").split(",") if c.strip()] if line else []
 
 

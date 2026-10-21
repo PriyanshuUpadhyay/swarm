@@ -160,3 +160,44 @@ def test_amend_within_the_owner_budget(tmp):
     assert (folder / "05-reply.md").read_text(encoding="utf-8").splitlines()[1] == "Uses: 04-build, 06-check"
     out = run("amend", folder, "| 07-more | build | more | none | local-research | again |")
     assert out.returncode == 1 and "no Amend budget left (1 of 1 spent)" in out.stderr, out
+
+
+def test_plan_blocks_follow_the_repo_off_table(tmp):
+    # start leaves out a block that the repo's .blocks.toml turns off, so done must not ask for its todo.
+    repo = Path(tmp, "repo")
+    repo.mkdir()
+    subprocess.run(["git", "-C", str(repo), "init", "-q"], check=True,
+                   env={k: v for k, v in os.environ.items() if not k.startswith("GIT_")})
+    (repo / ".blocks.toml").write_text('[params]\nsource_of_truth = "README.md"\n\n[off]\nplan-review = "no owner round"\n',
+                                        encoding="utf-8")
+    folder = repo / "run"
+    folder.mkdir()
+    (folder / "plan.md").write_text("| File | Needs | Holds | Writes | Block | Why |\n|---|---|---|---|---|---|\n"
+                                    "| `01-a.md` | none | part a | none | plan-review | it starts the plan |\n", encoding="utf-8")
+    out = run("start", folder, folder / "plan.md")
+    assert out.returncode == 0, out
+    f = folder / "01-a.md"
+    assert "block plan-review script" not in f.read_text(encoding="utf-8")
+    f.write_text("".join(l.replace("- [ ] ", "- [x] ", 1).rstrip("\n") + " checked\n" if l.startswith("- [ ] ") else l
+                         for l in f.read_text(encoding="utf-8").splitlines(keepends=True)), encoding="utf-8")
+    assert run("take", folder, "01-a", "x").returncode == 0
+    out = run("done", folder, "01-a", "1")
+    assert out.returncode == 0, out
+
+
+def test_amend_refuses_odd_rows(tmp):
+    folder = Path(tmp, "run")
+    folder.mkdir()
+    plan = folder / "plan.md"
+    text = chart_plan().replace("| 05-reply |", "| `05-reply.md` (optional) |")
+    plan.write_text(text.replace("\n## Blocks considered", "\nAmend: 3\n\n## Blocks considered", 1), encoding="utf-8")
+    assert run("start", folder, plan).returncode == 0
+    row = "| 06-check | build | a check | none | local-research | look again |"
+    out = run("amend", folder, row + "\nAmend: 99")
+    assert out.returncode == 1 and "one table row on one line" in out.stderr, out
+    out = run("amend", folder, row.replace("06-check", "extra"), "--before", "05-reply")
+    assert out.returncode == 1 and "amended step extra is not NN-name" in out.stderr and "Traceback" not in out.stderr, out
+    # The --before step's File cell carries (optional); the plan parser finds it.
+    out = run("amend", folder, row, "--before", "05-reply")
+    assert out.returncode == 0 and "Traceback" not in out.stderr, out
+    assert (folder / "05-reply.md").read_text(encoding="utf-8").splitlines()[1] == "Uses: 04-build, 06-check"

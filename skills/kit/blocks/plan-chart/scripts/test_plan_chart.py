@@ -18,10 +18,9 @@ CHOSEN = ["requirements", "local-research", "web-ui", "design-tokens", "voice", 
           "voice-reply"]
 
 
-def ledger(chosen=CHOSEN, rejected=()):
-    """The blocks table: each Chosen block, then each Rejected conflicts alternative."""
+def ledger(chosen=CHOSEN):
+    """The blocks table: one row for each Chosen block."""
     rows = [f"| {n} | Chosen | the task needs it |" for n in chosen]
-    rows += [f"| {n} | Rejected | it conflicts with a chosen block |" for n in rejected]
     return "\n## Blocks considered\n\n| Block | Status | Why |\n|---|---|---|\n" + "\n".join(rows) + "\n"
 
 
@@ -218,7 +217,10 @@ def test_writes_overlap_by_path_parts():
     # 02-read and 03-tokens run in parallel: `DESIGN` is not a folder of `DESIGN.md`, and an ordered pair may share.
     out, _ = chart(PLAN.replace("| none | local-research |", "| `DESIGN` | local-research |"))
     assert out.returncode == 0, out.stderr
-    assert plan_chart.overlaps("src/a/", "src/a/b.ts") and not plan_chart.overlaps("src/a", "src/ab")
+    import plan_rules
+    assert plan_rules.overlaps("src/a/", "src/a/b.ts") and not plan_rules.overlaps("src/a", "src/ab")
+    out, _ = chart(PLAN.replace("| `DESIGN.md` | design-tokens |", "| none, `DESIGN.md` | design-tokens |"))
+    assert out.returncode == 1 and "Writes `none` stands alone" in out.stderr, out.stderr
     parallel = PLAN.replace("| none | local-research |", "| `src/a/b/` | local-research |").replace("| `DESIGN.md` | design-tokens |", "| `src/a/` | design-tokens |")
     out, _ = chart(parallel)
     assert out.returncode == 1 and "steps 02-read and 03-tokens both write src/a/b/; order them with Needs" in out.stderr, out.stderr

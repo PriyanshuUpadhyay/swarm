@@ -7,6 +7,7 @@ owner. `--before <step>` adds the new step to the Needs of that open step, so th
 checked again by plan_chart.py; on a refusal plan.md stays as it was. Each amend spends 1 and logs `amend <step>`.
 """
 
+import fcntl
 import re
 import subprocess
 import sys
@@ -28,13 +29,26 @@ def spent(folder):
 
 
 def amend(folder, row, *opts):
+    plan = Path(folder) / "plan.md"
+    if not plan.is_file():
+        raise SystemExit(f"amend needs the run's plan.md in {folder}")
+    # One amend at a time: each reads the budget and plan.md, then writes plan.md or puts it back.
+    with plan.open("r+", encoding="utf-8") as held:
+        try:
+            fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise SystemExit("plan.md is locked by a running amend; wait for it") from None
+        add(folder, row, *opts)
+
+
+def add(folder, row, *opts):
     import step_run
     sys.path.insert(0, str(CHART.parent))
     import plan_chart
     folder = Path(folder)
     plan = folder / "plan.md"
-    if not plan.is_file():
-        raise SystemExit(f"amend needs the run's plan.md in {folder}")
+    if "\n" in row or "\r" in row:
+        raise SystemExit("amend takes one table row on one line")
     if opts and (len(opts) != 2 or opts[0] != "--before"):
         raise SystemExit("amend <folder> <row> [--before <step>]")
     before = opts[1] if opts else None
@@ -49,6 +63,8 @@ def amend(folder, row, *opts):
     if len(new) != 1:
         raise SystemExit("amend takes one table row")
     name, _, _, blocks, _, writes, _ = new[0]
+    if not re.fullmatch(r"\d\d-[^-\s]\S*", name):
+        raise SystemExit(f"amended step {name or '(empty)'} is not NN-name")
     if writes != []:
         raise SystemExit("an amended step writes none; a write or a scope change goes back to the owner")
     if (folder / f"{name}.md").exists():
@@ -60,8 +76,8 @@ def amend(folder, row, *opts):
     if before:
         if not (folder / f"{before}.md").is_file() or step_run.status_of(folder, before) != "open":
             raise SystemExit(f"{before} is not open")
-        at = next(i for i in range(head + 2, end) if lines[i].strip("| ").split("|")[0].strip().strip("`")
-                  .split(" ")[0].removesuffix(".md") == before)
+        at = next(i for i in range(head + 2, end)
+                  if plan_chart.read_plan(None, f"{lines[head]}\n{lines[i]}\n")[2][0][0] == before)
         cells = lines[at].strip().strip("|").split("|")
         need = cells[1].strip()
         cells[1] = f" {name.split('-', 1)[1] if need == 'none' else need + ', ' + name.split('-', 1)[1]} "
@@ -80,11 +96,19 @@ def amend(folder, row, *opts):
     if checked.returncode:
         plan.write_text(text, encoding="utf-8")
         raise SystemExit(f"amend refused: {checked.stderr.strip()}")
-    step_run.start(folder, plan)
+    try:
+        step_run.start(folder, plan)
+    except BaseException:
+        plan.write_text(text, encoding="utf-8")
+        (folder / f"{name}.md").unlink(missing_ok=True)
+        raise
+    step_run.log(folder, name, f"amend {name}")
     if before:
         uses = step_run.check_needs([r[:3] for r in step_run.table(plan)])[before]
         file = folder / f"{before}.md"
-        rest = file.read_text(encoding="utf-8").split("\n")
-        step_run.write_step(file, "\n".join([rest[0], f"Uses: {', '.join(uses)}", *rest[2:]]))
-    step_run.log(folder, name, f"amend {name}")
+        with step_run.step_lock(folder, before, command="amend"):
+            if step_run.status_of(folder, before) != "open":
+                raise SystemExit(f"{before} was taken during the amend; add {name} to its Needs by hand")
+            rest = file.read_text(encoding="utf-8").split("\n")
+            step_run.write_step(file, "\n".join([rest[0], f"Uses: {', '.join(uses)}", *rest[2:]]))
     print(f"{name}: amended ({spent(folder)} of {allowed} spent)")

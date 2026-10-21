@@ -20,13 +20,20 @@ def header(text, key):
     return None
 
 
+def write_paths(cell):
+    """[] for `none`, else the comma-separated paths with their backticks removed. Plan cells and step files both
+    come through here, so the Writes grammar has one owner."""
+    paths = [p.strip().strip("`").strip() for p in cell.split(",")]
+    paths = [p for p in paths if p]
+    if "none" in paths and paths != ["none"]:
+        raise SystemExit(f"Writes `none` stands alone, not beside paths: {cell}")
+    return [] if paths == ["none"] else paths
+
+
 def writes(text):
     """The step's Writes paths ([] for `none`), or None when the step file has no Writes line."""
     value = header(text, "Writes")
-    if value is None:
-        return None
-    paths = [p.strip() for p in value.split(",") if p.strip()]
-    return [] if paths == ["none"] else paths
+    return None if value is None else write_paths(value)
 
 
 def git(root, *args, env=None):

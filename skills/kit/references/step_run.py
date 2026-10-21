@@ -89,8 +89,7 @@ def table(skill_md):
             blocks = [b.strip() for b in cell(block_at).split(",") if b.strip()] if block_at is not None else None
             writes = None
             if "Writes" in at:
-                paths = [w.strip().strip("`").strip() for w in cells[at["Writes"]].split(",") if w.strip()]
-                writes = [] if paths == ["none"] else paths
+                writes = step_scope.write_paths(cell(at["Writes"]))
             name = cells[0]
             optional = bool(re.search(r"\s*\(optional\)$", name))
             name = re.sub(r"\s*\(optional\)$", "", name).strip("`")
