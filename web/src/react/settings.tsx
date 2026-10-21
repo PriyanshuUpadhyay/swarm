@@ -8,7 +8,7 @@ import type { Prefs } from "../core/nav";
 import { PAGES, type Page } from "../core/settings";
 import { Button } from "../components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "../components/ui/dialog";
-import { chooseTheme, useTheme, type Theme } from "./theme";
+import { chooseTheme, fontMono, fontSans, useTheme, type FontMono, type FontSans, type Theme } from "./appearance";
 import { label, Row, Toggle, useSettings } from "./settings-shared";
 import { AccountsPage } from "./settings-accounts";
 import { ProfilesPage } from "./settings-profiles";
@@ -113,6 +113,8 @@ const NO_PREFS: Prefs = {};
 
 function AppearancePage({ app }: { app: App }) {
   const theme = useTheme();
+  const sans = fontSans.useChoice();
+  const mono = fontMono.useChoice();
   const prefs = usePrefs(app);
   return (
     <div className="grid gap-4">
@@ -129,6 +131,37 @@ function AppearancePage({ app }: { app: App }) {
           onChange={(t) => chooseTheme(app, t)}
         />
       </Row>
+      <Row title="UI font">
+        <Segmented<FontSans>
+          label="UI font"
+          testid="pref-font-sans"
+          value={sans}
+          options={[
+            ["system", "System"],
+            ["helvetica", "Helvetica"],
+            ["avenir", "Avenir"],
+          ]}
+          onChange={(f) => fontSans.choose(app, f)}
+        />
+      </Row>
+      <Row title="Code font">
+        <Segmented<FontMono>
+          label="Code font"
+          testid="pref-font-mono"
+          value={mono}
+          options={[
+            ["system", "System"],
+            ["menlo", "Menlo"],
+            ["monaco", "Monaco"],
+          ]}
+          onChange={(f) => fontMono.choose(app, f)}
+        />
+      </Row>
+      {/* Swarm.app owns zoom in its View menu, so the page has no zoom control of its own. */}
+      <div data-testid="zoom-hint">
+        <div className="text-sm">Zoom</div>
+        <div className="text-xs text-muted-foreground">In Swarm.app, use View › Zoom In, Zoom Out or Actual Size (⌘+, ⌘−, ⌘0). In a browser, use the browser's zoom.</div>
+      </div>
       <Row title="Send with" detail="The other key adds a new line.">
         <Segmented
           label="Send with"
