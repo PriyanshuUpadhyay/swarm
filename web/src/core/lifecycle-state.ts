@@ -69,7 +69,8 @@ export type LifeState = {
   setupScript: { project: string; title: string } | null;
   /** The chat that Switch model continues. */
   switchModel: string | null;
-  handoff: Handoff | null;
+  /** Each chat's switch, by its session; a switch blocks only its own chat. */
+  handoffs: Record<string, Handoff>;
   confirm: Confirm | null;
   closed: boolean;
   imports: boolean;

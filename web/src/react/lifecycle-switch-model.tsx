@@ -4,7 +4,7 @@ import { CheckIcon, CircleIcon, LoaderCircleIcon, XIcon } from "lucide-react";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import type { App } from "../core/app";
 import { CARRY_OPTIONS, savedCarry, type Carry } from "../core/composer";
-import { isSettled, type LifeState } from "../core/lifecycle";
+import { isSettled, type Handoff } from "../core/lifecycle";
 import { Button } from "../components/ui/button";
 import { FIELD, message, useLife, Frame, Label, ErrorLine } from "./lifecycle-shared";
 import { Segmented } from "./settings-shared";
@@ -32,10 +32,7 @@ function SwitchModelDialog({ app }: { app: App }) {
 }
 
 function SwitchModelBody({ app, old }: { app: App; old: string }) {
-  const all = useLife(app, "handoff");
-  // Only one switch runs at a time; another chat's switch shows only as a block.
-  const handoff = all?.old === old ? all : null;
-  const busy = all !== null && !isSettled(all.phase);
+  const handoff = useLife(app, "handoffs")[old] ?? null;
   const saved = useSyncExternalStore(app.subscribe, () => savedCarry(app.view.tree?.prefs));
   const [carry, setCarry] = useState<Carry>(saved);
   const [providers, setProviders] = useState<{ id: string; label: string; accounts: boolean }[]>([]);
@@ -139,10 +136,10 @@ function SwitchModelBody({ app, old }: { app: App; old: string }) {
         </div>
       </fieldset>
       {handoff && <SwitchProgress handoff={handoff} />}
-      <ErrorLine text={handoff?.error ?? (busy && !running ? "Another chat is switching. Wait for it to end." : error)} />
+      <ErrorLine text={handoff?.error ?? error} />
       <div className="flex justify-end gap-2">
         {running ? (
-          <Button type="button" variant="outline" size="sm" data-testid="sm-cancel" disabled={!handoff.canCancel} onClick={() => void app.life.cancelSwitch()}>
+          <Button type="button" variant="outline" size="sm" data-testid="sm-cancel" disabled={!handoff.canCancel} onClick={() => void app.life.cancelSwitch(old)}>
             Cancel switch
           </Button>
         ) : (
@@ -150,7 +147,7 @@ function SwitchModelBody({ app, old }: { app: App; old: string }) {
             Close
           </Button>
         )}
-        <Button type="button" size="sm" data-testid="sm-start" disabled={!model || busy} onClick={() => model && void app.life.switchModel(old, provider, model, account || null, null, carry)}>
+        <Button type="button" size="sm" data-testid="sm-start" disabled={!model || running} onClick={() => model && void app.life.switchModel(old, provider, model, account || null, null, carry)}>
           {running && <LoaderCircleIcon className="animate-spin motion-reduce:animate-none" />}
           Switch
         </Button>
@@ -160,7 +157,7 @@ function SwitchModelBody({ app, old }: { app: App; old: string }) {
 }
 
 /** The hand-off steps as they run, also in the run chip's popover. */
-function SwitchProgress({ handoff }: { handoff: NonNullable<LifeState["handoff"]> }) {
+function SwitchProgress({ handoff }: { handoff: Handoff }) {
   const running = !isSettled(handoff.phase);
   // A resume and Start clean only stop the old run and start the new one.
   const steps = handoff.carry === "resume" || handoff.carry === "clean" ? PHASES.filter(([p]) => p === "preparing" || p === "starting") : PHASES;

@@ -217,3 +217,70 @@ fn a_plain_resume_runs_the_chairs_stored_model() {
         assert!(command.contains(&part), "{part} not in {command}");
     }
 }
+
+/// A plain Resume of a chat whose profile has a runner for its CLI runs that runner, so a stored
+/// transcript id (no `[1m]`) does not replace it, and a non-chat role resumes too (ADR 0107).
+#[test]
+fn a_plain_resume_runs_the_profile_runner_when_it_has_one() {
+    let home = scratch("resume-profile");
+    tool(&home, "claude", "true");
+    std::fs::create_dir_all(home.join(".swarm/adapters")).unwrap();
+    std::fs::write(
+        home.join(".swarm/adapters/fake.conf"),
+        "self = printf chair\nspawn = printf pane\nring = true\nlist = true\nclose = true\ncapture = true\n",
+    )
+    .unwrap();
+    let cwd = home.join("repo");
+    std::fs::create_dir_all(&cwd).unwrap();
+    let cwd = cwd.to_string_lossy().into_owned();
+    for role in ["chat", "review.deep"] {
+        let fake = [("SWARM_ADAPTER", "fake")];
+        let session = swarm(&home, &fake, &["session", "new", "lane"]);
+        assert!(session.status.success(), "{}", stderr(&session));
+        let session = String::from_utf8(session.stdout)
+            .unwrap()
+            .trim()
+            .to_string();
+        let env = [
+            ("SWARM_ADAPTER", "fake"),
+            ("SWARM_SESSION_ID", session.as_str()),
+        ];
+        let first = swarm(
+            &home,
+            &env,
+            &[
+                "launch",
+                "orchestrator",
+                role,
+                "--provider",
+                "claude",
+                "--cwd",
+                &cwd,
+            ],
+        );
+        assert!(first.status.success(), "{}", stderr(&first));
+        // The chair ran one turn, so the store holds its transcript model and session id.
+        let db = swarm::store::open(&home.join(".swarm/swarm.db")).unwrap();
+        db.execute(
+            "UPDATE agent SET pane_id = NULL, model = 'claude-opus-9-9' WHERE session_id = ?1",
+            [&session],
+        )
+        .unwrap();
+        db.execute(
+            "UPDATE session SET chair_provider = 'claude', chair_id = 'abc' WHERE id = ?1",
+            [&session],
+        )
+        .unwrap();
+        let resumed = swarm(
+            &home,
+            &env,
+            &["launch", "orchestrator", role, "--resume", "--cwd", &cwd],
+        );
+        assert!(resumed.status.success(), "{role}: {}", stderr(&resumed));
+        let command =
+            std::fs::read_to_string(home.join(format!(".swarm/runs/{session}/orchestrator.sh")))
+                .unwrap();
+        assert!(!command.contains("claude-opus-9-9"), "{role}: {command}");
+        assert!(command.contains("'--resume' 'abc'"), "{role}: {command}");
+    }
+}

@@ -204,11 +204,10 @@ export function outcomeText(outcome: Outcome, draft: Run, carry: Carry): string 
   }
 }
 
-/** Why Apply cannot run now, or null. Only one switch runs at a time, across all chats. */
-export function applyBlock(chair: AgentInput, draft: Run, otherSwitching = false): string | null {
+/** Why Apply cannot run now, or null. A switch blocks only its own chat. */
+export function applyBlock(chair: AgentInput, draft: Run): string | null {
   if (!chair.provider) return "This chat does not record its CLI, so it cannot switch.";
   if (chair.running) return "Wait for this turn to end, or stop it.";
-  if (otherSwitching) return "Another chat is switching. Wait for it to end.";
   return draft.model ? null : "Pick a model.";
 }
 

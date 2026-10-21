@@ -41,11 +41,6 @@ describe("run chip", () => {
     expect(cliName("gemini")).toBe("gemini");
   });
 
-  it("blocks Apply while another chat switches", () => {
-    const idle = agentInput(session(), [chair({ provider: "claude" })]);
-    expect(applyBlock(idle, run("claude", "b"), true)).toBe("Another chat is switching. Wait for it to end.");
-  });
-
   it("picks a model with a level it takes and keeps the account picked for its CLI", () => {
     const claude = { id: "claude", efforts: ["low", "medium", "high"], default_effort: "medium" };
     const codex = { id: "codex", efforts: ["low", "medium", "high"], default_effort: "medium" };

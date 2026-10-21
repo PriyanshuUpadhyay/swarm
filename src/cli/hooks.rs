@@ -182,15 +182,6 @@ pub(crate) fn hook(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     {
         return Ok(());
     }
-    // Before the bus, so a busy bus does not lose what the owner sees in the block. Claude Code
-    // and Antigravity send their own OSC 7501 reports in Rex, and a second writer flips the
-    // record's app, so only Codex, which sends none, gets reports from its hook.
-    if let (Some(state), Some(provider)) = (&report.state, args.first())
-        && provider == "codex"
-        && swarm::host::in_rex(|name| env::var(name).ok())
-    {
-        report_to_terminal(provider, state);
-    }
     let connection = swarm::store::open(&swarm::paths::sqlite_db()?)?;
     // The providers give a hook about 3 s; a busy bus loses this report rather than the turn.
     connection.busy_timeout(std::time::Duration::from_secs(1))?;
@@ -204,6 +195,15 @@ pub(crate) fn hook(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         .is_some_and(|cli| Some(&cli) != args.first())
     {
         return Ok(());
+    }
+    // Before the writes, so a busy bus does not lose what the owner sees in the block. Claude Code
+    // and Antigravity send their own OSC 7501 reports in Rex, and a second writer flips the
+    // record's app, so only Codex, which sends none, gets reports from its hook.
+    if let (Some(state), Some(provider)) = (&report.state, args.first())
+        && provider == "codex"
+        && swarm::host::in_rex(|name| env::var(name).ok())
+    {
+        report_to_terminal(provider, state);
     }
     if let Some(log) = &report.log {
         store_log(&connection, &report.session, &report.agent, log)?;

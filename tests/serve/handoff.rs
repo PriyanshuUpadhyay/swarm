@@ -226,6 +226,7 @@ fn a_switch_resumes_the_same_chat_or_starts_clean() {
         "no-id",
         "bad-effort-ended",
         "spawn-fails",
+        "spawn-fails-no-model",
     ] {
         let server = Server::with_actions(true);
         // A new chat has no log before its first turn; nothing it needs comes from the log.
@@ -255,9 +256,12 @@ fn a_switch_resumes_the_same_chat_or_starts_clean() {
         fs::set_permissions(home.join("bin/claude"), fs::Permissions::from_mode(0o755)).unwrap();
         let (provider, sent) = match carry {
             "other-cli" => ("codex", "resume"),
-            "resume-no-log" | "bad-effort" | "bad-effort-ended" | "spawn-fails" | "no-id" => {
-                ("claude", "resume")
-            }
+            "resume-no-log"
+            | "bad-effort"
+            | "bad-effort-ended"
+            | "spawn-fails"
+            | "spawn-fails-no-model"
+            | "no-id" => ("claude", "resume"),
             "clean-no-log" => ("claude", "clean"),
             other => ("claude", other),
         };
@@ -266,9 +270,19 @@ fn a_switch_resumes_the_same_chat_or_starts_clean() {
         } else {
             "low"
         };
-        if carry == "spawn-fails" {
+        if carry.starts_with("spawn-fails") {
             // The new run's pane does not start, after the chair is closed.
             fs::write(home.join("fail-spawn"), "").unwrap();
+        }
+        if carry == "spawn-fails" {
+            // The fixture chair has no stored model; this one ran haiku before the switch.
+            swarm::store::open(&root.join("swarm.db"))
+                .unwrap()
+                .execute(
+                    "UPDATE agent SET model = 'haiku' WHERE id = 'orchestrator'",
+                    [],
+                )
+                .unwrap();
         }
         let body = json!({"old_session":server.session,"provider":provider,"model": "sonnet","effort":effort,"carry":sent});
         let (status, _, reply) = server.request(
@@ -308,8 +322,20 @@ fn a_switch_resumes_the_same_chat_or_starts_clean() {
                 assert!(actions.contains("close fixture-chair"), "{actions}");
                 assert!(
                     actions.contains("spawn"),
-                    "the chair starts again: {actions}"
+                    "the chair starts again: {actions} {reply}"
                 );
+                let script = fs::read_to_string(
+                    root.join(format!("runs/{}/orchestrator.sh", server.session)),
+                )
+                .unwrap();
+                assert!(script.contains("'--model' 'haiku'"), "{script}");
+            }
+            "spawn-fails-no-model" => {
+                // With no old model known, the old run is the role's runner, not the refused pick;
+                // this profile has no Claude runner, so nothing starts on sonnet again.
+                assert!(status >= 400, "{status} {reply}");
+                assert!(reply.contains("did not start again"), "{reply}");
+                assert!(!actions.contains("spawn"), "{actions}");
             }
             "resume" => {
                 assert_eq!(status, 200, "{reply}");

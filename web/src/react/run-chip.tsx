@@ -15,12 +15,12 @@ import { Segmented } from "./settings-shared";
 
 export function RunChip({ app, sessionId, chair }: { app: App; sessionId: string; chair: AgentInput }) {
   const chosen = useLife(app, "switchModel");
-  const handoff = useLife(app, "handoff");
+  const handoff = useLife(app, "handoffs")[sessionId];
   const open = chosen === sessionId && !chair.who && !chair.unreachable;
   const pop = useRef<HTMLDivElement>(null);
   // An anchor name must be a CSS ident; useId gives characters outside one.
   const anchor = `--run-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
-  const restarting = handoff?.old === sessionId && !isSettled(handoff.phase);
+  const switching = handoff && !isSettled(handoff.phase) ? (handoff.carry === "resume" ? "Restarting…" : "Switching…") : null;
 
   useEffect(() => {
     const el = pop.current;
@@ -50,7 +50,7 @@ export function RunChip({ app, sessionId, chair }: { app: App; sessionId: string
         style={{ anchorName: anchor } as CSSProperties}
         onClick={() => (open ? app.life.close("switchModel") : app.life.openSwitchModel(sessionId))}
       >
-        <span className="truncate">{restarting ? "Restarting…" : runLabel(chair)}</span>
+        <span className="truncate">{switching ?? runLabel(chair)}</span>
         {!chair.who && <ChevronDownIcon className="size-3 shrink-0" />}
       </button>
       {!chair.who && (
@@ -73,7 +73,7 @@ export function RunChip({ app, sessionId, chair }: { app: App; sessionId: string
 }
 
 function RunBody({ app, sessionId, chair }: { app: App; sessionId: string; chair: AgentInput }) {
-  const handoff = useLife(app, "handoff");
+  const handoff = useLife(app, "handoffs")[sessionId];
   const saved = useSyncExternalStore(app.subscribe, () => savedCarry(app.view.tree?.prefs));
   const current: Run = { provider: chair.provider ?? "claude", model: chair.model, effort: chair.effort, account: chair.account };
   const provider = current.provider;
@@ -85,8 +85,7 @@ function RunBody({ app, sessionId, chair }: { app: App; sessionId: string; chair
   const [query, setQuery] = useState("");
   const anchorId = `run-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
   const [error, setError] = useState<string | null>(null);
-  const switching = handoff !== null && !isSettled(handoff.phase);
-  const running = switching && handoff.old === sessionId;
+  const running = handoff !== undefined && !isSettled(handoff.phase);
 
   useEffect(() => {
     let live = true;
@@ -132,7 +131,7 @@ function RunBody({ app, sessionId, chair }: { app: App; sessionId: string; chair
   const levels = modelLevels(info?.efforts ?? [], model?.efforts);
   const outcome = switchOutcome(current, draft);
   const q = query.trim().toLowerCase();
-  const blocked = applyBlock(chair, draft, switching && !running);
+  const blocked = applyBlock(chair, draft);
   // A failed accounts read still shows the chat's own account, which Apply sends.
   const accountRows = draft.account && !accounts.some((a) => a.name === draft.account) ? [{ name: draft.account, email: null }, ...accounts] : accounts;
 
@@ -238,14 +237,14 @@ function RunBody({ app, sessionId, chair }: { app: App; sessionId: string; chair
           )}
         </div>
       )}
-      {handoff?.old === sessionId && <SwitchProgress handoff={handoff} />}
-      <ErrorLine text={(handoff?.old === sessionId ? handoff.error : null) ?? error} />
+      {handoff && <SwitchProgress handoff={handoff} />}
+      <ErrorLine text={handoff?.error ?? error} />
       <div className="flex items-center gap-2">
         <p className="min-w-0 flex-1 text-xs text-muted-foreground" data-testid="run-outcome" role="status">
           {running ? "Switching…" : (blocked ?? outcomeText(outcome, draft, carry))}
         </p>
         {running ? (
-          <Button type="button" variant="outline" size="sm" data-testid="run-cancel" disabled={!handoff.canCancel} onClick={() => void app.life.cancelSwitch()}>
+          <Button type="button" variant="outline" size="sm" data-testid="run-cancel" disabled={!handoff?.canCancel} onClick={() => void app.life.cancelSwitch(sessionId)}>
             Cancel switch
           </Button>
         ) : (

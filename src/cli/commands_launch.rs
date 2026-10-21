@@ -60,10 +60,18 @@ pub(crate) fn commands_launch(
             }
             true => Some(resume_target(connection, &session_id()?)?),
         };
-        // A plain Resume runs the chair's last model and level; the chat profile may have no
-        // runner for its CLI.
+        // A plain Resume runs the role's runner (ADR 0107). Only a chat whose profile has no
+        // runner for its CLI, such as pi or AGY, runs its last model and level (ADR 0108). The
+        // stored model is the transcript id, which drops a `[1m]` suffix.
+        let no_runner = |provider: Provider| {
+            swarm::config::load().is_ok_and(|(config, _)| {
+                config
+                    .profile(role)
+                    .is_ok_and(|profile| !profile.runners.iter().any(|r| r.provider == provider))
+            })
+        };
         let stored: Option<(Option<String>, Option<String>)> = match (&resume, requested_model) {
-            (Some(_), None) => connection
+            (Some((provider, _)), None) if role == "chat" && no_runner(*provider) => connection
                 .query_row(
                     "SELECT model, effort FROM agent WHERE session_id = ?1 AND id = 'orchestrator'",
                     [session_id()?],
