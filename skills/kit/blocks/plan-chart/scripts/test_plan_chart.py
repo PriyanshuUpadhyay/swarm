@@ -108,7 +108,7 @@ def test_mermaid_chart():
     assert "  s2 --> s4\n  s3 --> s4\n  s4 --> s5\n" in chart_text and "build-canvas" not in chart_text, chart_text
     # The Dropped line sits under the fence, inside the markers, with names only.
     dropped = md.split("```\n\n")[1].split("\n<!-- plan-chart:end -->")[0]
-    assert dropped.startswith("Dropped (39): build-canvas, change-review,"), dropped
+    assert dropped.startswith("Dropped (40): build-canvas, change-review,"), dropped
     for part in ("diagram (when-to-diagram, html-diagram, call-tree, diagram-check)",
                  "voice ↳ (voice-pr, voice-review, voice-teach)", "web-ui ↳ (ui-motion, headless-shot, look-check)"):
         assert part in dropped, (part, dropped)

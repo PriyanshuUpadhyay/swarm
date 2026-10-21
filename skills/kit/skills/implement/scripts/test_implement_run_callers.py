@@ -12,7 +12,7 @@ def test_callers_after_claim(run, folder):
     seen = []
 
     def write_callers(path):
-        assert file.read_text().startswith("Status: active a\n"), "the claim must finish before callers are written"
+        assert file.read_text(encoding="utf-8").startswith("Status: active a #"), "the claim must finish before callers are written"
         try:
             implement_run.skip(folder, "04-impact", "racing skip")
             raise AssertionError("skip must refuse during the callers write")
@@ -186,17 +186,17 @@ def test_callers_end_only_in_impact(tmp):
     step a pasted Callers line inside the list must not hide the open items after it."""
     folder = Path(tmp, "callers-end")
     folder.mkdir()
-    body = f"Status: open\n\n{implement_run.TODO_HEAD}\n- [x] a: ok\n{implement_run.CALLERS_HEAD}\n%s\n{implement_run.RESULT_HEAD}\n"
+    body = f"Status: active t #1\n\n{implement_run.TODO_HEAD}\n- [x] a: ok\n{implement_run.CALLERS_HEAD}\n%s\n{implement_run.RESULT_HEAD}\n"
     (folder / "03-contracts.md").write_text(body % "- [ ] b: ", encoding="utf-8")
     (folder / "04-impact.md").write_text(body % "- `name` 2 hits", encoding="utf-8")
     try:
         with redirect_stdout(StringIO()):
-            implement_run.done(folder, "03-contracts")
+            implement_run.done(folder, "03-contracts", claim(folder, "03-contracts"))
         raise AssertionError("03-contracts with an open item after a Callers line must not be done")
     except SystemExit as error:
         assert f"no todo list: the line {implement_run.CALLERS_HEAD!r} inside the list ends it" in str(error.code), error.code
     with redirect_stdout(StringIO()):
-        implement_run.done(folder, "04-impact")
+        implement_run.done(folder, "04-impact", claim(folder, "04-impact"))
     assert (folder / "04-impact.md").read_text(encoding="utf-8").startswith("Status: done "), "04-impact ends at Callers"
 
 

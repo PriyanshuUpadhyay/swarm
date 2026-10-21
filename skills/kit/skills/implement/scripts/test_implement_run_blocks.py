@@ -160,7 +160,7 @@ def test_block_headings(tmp):
         assert not has_control(design), design
         rules = design.split(implement_run.RULES_HEAD, 1)[1].split(implement_run.TODO_HEAD, 1)[0]
         assert all(k in rules for k in kept) and not any(line.startswith("## ") for line in rules.splitlines()), rules
-        done = run("done", folder, "02-design")
+        done = run("done", folder, "02-design", claim(folder, "02-design"))
         assert done.returncode == 1 and "- [ ] " in done.stderr and "no todo list" not in done.stderr, (name, done.stderr)
 
 

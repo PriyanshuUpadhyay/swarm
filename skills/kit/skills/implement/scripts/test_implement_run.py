@@ -114,7 +114,7 @@ with tempfile.TemporaryDirectory() as tmp:
     for step in ("01-frame", "03-contracts"):
         assert run("take", folder, step, "a").returncode == 0
         fill(folder / f"{step}.md")
-        assert run("done", folder, step).returncode == 0, step
+        assert run("done", folder, step, claim(folder, step)).returncode == 0, step
     c = folder / "03-contracts.md"
     c.write_text(c.read_text() + "`parse_phone()` rejects an empty string. `app.py` and `init` stay.\n")
 
@@ -148,22 +148,22 @@ with tempfile.TemporaryDirectory() as tmp:
     assert run("take", folder, "04-impact", "a").returncode == 0
     assert (folder / "04-impact.md").read_text(encoding="utf-8").count("## Callers (") == 1, "resume must keep the stored callers section"
     fill(folder / "04-impact.md")
-    assert run("done", folder, "04-impact").returncode == 0
+    assert run("done", folder, "04-impact", claim(folder, "04-impact")).returncode == 0
 
     out = run("take", folder, "05-build", "agent-b")
     assert out.returncode == 0 and "RULE TEXT 42" in out.stdout
     text = (folder / "05-build.md").read_text()
     assert text.startswith("Status: active agent-b") and f"Skills read: {rule}" in text and text.rstrip().endswith("## Result")
     assert "05-build: active agent-b" in run("status", folder).stdout
-    refused = run("done", folder, "05-build")
+    refused = run("done", folder, "05-build", claim(folder, "05-build"))
     assert refused.returncode != 0 and "Failing check first" in refused.stderr
     f = folder / "05-build.md"
     f.write_text(f.read_text().replace("- [ ] Task file path and Base commit (pair or auto mode): ",
                                        "- [x] Task file path and Base commit (pair or auto mode): "))
-    assert "no evidence" in run("done", folder, "05-build").stderr
+    assert "no evidence" in run("done", folder, "05-build", claim(folder, "05-build")).stderr
     fill(f)
     head = git("rev-parse", "HEAD")
-    assert run("done", folder, "05-build").returncode == 0 and f.read_text().startswith(f"Status: done {head[:12]}\n")
+    assert run("done", folder, "05-build", claim(folder, "05-build")).returncode == 0 and f.read_text(encoding="utf-8").startswith(f"Status: done {head[:12]}\n")
 
     # Close needs the review-check run's own APPROVE verdict on the current head.
     out = run("take", folder, "06-review", "a")
@@ -175,7 +175,7 @@ with tempfile.TemporaryDirectory() as tmp:
         out = run("take", folder, "06-review", "a")
         assert out.returncode == 0, out.stderr
         assert "bring the open rows" not in out.stdout, "review-check start owns the guard"
-        assert r.read_text().startswith("Status: active a\n")
+        assert r.read_text(encoding="utf-8").startswith("Status: active a #")
         assert [line for line in r.read_text().splitlines() if line.startswith("Run:")] == [
             f"Run: tmp/review-check/range-{i}" for i in range(count)], "take must keep one Run: line per round, newest last"
     r.write_text(review_text)
@@ -184,7 +184,8 @@ with tempfile.TemporaryDirectory() as tmp:
     (review / "target.json").write_text(json.dumps({"head": head}))
     (review / "03-verdict.md").write_text("Status: done x\nUses:\nVerdict: REQUEST CHANGES (1 of 1 units; 1 fix)\n")
     fill(r)
-    assert run("done", folder, "06-review").returncode == 0
+    assert run("take", folder, "06-review", "a", "--force").returncode == 0, "the written-back copy holds an old claim"
+    assert run("done", folder, "06-review", claim(folder, "06-review")).returncode == 0
     assert "needs a `Run:" in run("take", folder, "07-close", "a").stderr
     r.write_text(r.read_text() + "Run: tmp/review-check/range-1\n")
     assert "REQUEST CHANGES" in run("take", folder, "07-close", "a").stderr

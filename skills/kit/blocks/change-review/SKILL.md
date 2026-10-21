@@ -25,7 +25,7 @@ Action: run the check on that range. The verdict prints `REQUEST CHANGES` with `
 Result: the second verdict prints `APPROVE`, and the step quotes that line and its range.
 
 ## Check (script)
-- `sed -n 3p <repo-root>/tmp/review-check/<run>/03-verdict.md` starts with `Verdict: APPROVE`: the newest review approved the range.
+- `sed -n 3p <repo-root>/tmp/review-check/<review-run>/03-verdict.md` starts with `Verdict: APPROVE`: the newest review approved the range.
 
 ## Check (judge)
 - Does the step quote the verdict line as the script printed it, for a range that ends at the last build commit? Quote the line, the range, and `git log -1 --format=%h`.

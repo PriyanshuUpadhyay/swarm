@@ -4,11 +4,13 @@
   start <folder> <SKILL.md>    make one step file per table row, each with a todo and a result section
   status <folder>              print each step's status, whether it is ready, and whether it is stale
   take <folder> <step> <who> [--force]   claim the step and print its file; force takes a stale claim
-  done <folder> <step>          set the step done, only when every todo is checked with evidence
+  done <folder> <step> <n>      set the step done, only for take's claim #<n>, when every todo is checked
+                                with evidence, no input is stale, and each runnable script check passes
   skip <folder> <step> <reason> skip an open or active step, with the reason
   block <folder> <step> <reason> block an open or active step, with the reason
 
-take, done, skip, and block add one line to <folder>/events.log, so the path of a run stays readable after it ends.
+take, done, skip, and block add one line to <folder>/events.log, and done adds one more for each check it runs,
+so the path of a run stays readable after it ends.
 A skill script with its own step graph or revision (implement) imports these functions and passes `need`
 and `rev`.
 """
@@ -19,11 +21,13 @@ import hashlib
 import os
 import re
 import stat
-import subprocess
 import sys
 import tempfile
 from contextlib import contextmanager
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from step_checks import run_checks, work_root  # noqa: E402
 
 TODO_HEAD = "## Todo (check a box only with its evidence after the colon; `done` refuses an empty one)"
 # Parse by this prefix, so a step file written under an older head wording still has its todos checked.
@@ -161,6 +165,14 @@ def stale(folder, step, rev=revision):
     return [n for n, r in used.items() if rev(folder, n) != r]
 
 
+def claim_of(folder, step):
+    """The number of the step's newest take, from events.log."""
+    events = Path(folder) / "events.log"
+    lines = events.read_text(encoding="utf-8").splitlines() if events.exists() else []
+    rows = (line.split("\t") for line in lines)
+    return sum(1 for r in rows if len(r) > 2 and r[1] == step and r[2].startswith("take "))
+
+
 def log(folder, step, event):
     with (Path(folder) / "events.log").open("a", encoding="utf-8") as f:
         f.write(f"{datetime.datetime.now().isoformat(timespec='seconds')}\t{step}\t{event}\n")
@@ -188,14 +200,7 @@ def start(folder, skill_md):
     if selected and not all((folder / f"{name}.md").exists() for name in names):
         sys.path.insert(0, str(Path(__file__).resolve().parent))
         import block_resolver
-        piece = folder.resolve().parent
-        directory = next(path for path in (piece, *piece.parents) if path.is_dir())
-        env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
-        git = subprocess.run(["git", "-C", str(directory), "rev-parse", "--show-toplevel"],
-                             env=env, capture_output=True, text=True)
-        root = Path(git.stdout.strip()).resolve() if git.returncode == 0 else piece
-        if not piece.is_relative_to(root):
-            root = piece
+        root, piece = work_root(folder)
         site = str(piece.relative_to(root))
         blocks, _, _ = block_resolver.resolve_blocks(
             root, selected, "default", blocks_dir=Path(__file__).resolve().parents[1] / "blocks",
@@ -240,17 +245,23 @@ def step_lock(folder, step, command="take"):
 
 
 def take(folder, step, who, need=None, rev=revision, force=False, on_claim=None):
+    # events.log keeps one tab-split line per event, so a name with a tab or newline could forge a take.
+    if not who.strip() or plain(who) != who or "\t" in who:
+        raise SystemExit("take needs an agent name with no tab, newline, or other control character")
     with step_lock(folder, step, command="take"):
         file = Path(folder) / f"{step}.md"
         lines = file.read_text(encoding="utf-8").split("\n")
         owner = lines[0].removeprefix("Status: ")
-        if owner.startswith("active ") and owner != f"active {who}" and not force:
-            raise SystemExit(f"{step} is active for {owner.removeprefix('active ')}; use --force if that run is gone")
+        # The claim number is last, so a name that holds " #" stays whole.
+        holder = re.sub(r" #\d+$", "", owner.removeprefix("active "))
+        number = re.search(r" #(\d+)$", owner) if owner.startswith("active ") else None
+        if owner.startswith("active ") and holder != who and not force:
+            raise SystemExit(f"{step} is active for {holder}; use --force if that run is gone")
         need = needs(folder, step) if need is None else need
         if not ready(folder, step, need):
             raise SystemExit(f"{step} is not ready; it needs {', '.join(need)}")
         uses = ", ".join(f"{n}@{rev(folder, n)}" for n in need)
-        text = "\n".join([f"Status: active {who}", f"Uses: {uses}", *lines[2:]])
+        text = "\n".join([f"Status: active {who} #{max(claim_of(folder, step), int(number[1]) if number else 0) + 1}", f"Uses: {uses}", *lines[2:]])
         write_step(file, text)
         if on_claim is not None:
             try:
@@ -260,11 +271,12 @@ def take(folder, step, who, need=None, rev=revision, force=False, on_claim=None)
                 log(folder, step, f"take {who} failed: {message}")
                 raise
             text = file.read_text(encoding="utf-8")
-    log(folder, step, f"take {who}")
+        # Logged inside the lock, so a take --force cannot count the same claim number.
+        log(folder, step, f"take {who}")
     print(text)
 
 
-def done(folder, step, rev=None, ends=(RESULT_HEAD,)):
+def done(folder, step, claim, rev=None, ends=(RESULT_HEAD,), rev_of=revision):
     with step_lock(folder, step, command="done"):
         file = Path(folder) / f"{step}.md"
         text = file.read_text(encoding="utf-8")
@@ -280,6 +292,20 @@ def done(folder, step, rev=None, ends=(RESULT_HEAD,)):
         empty = [l for l in todo.splitlines() if l.startswith("- [x]") and not (":" in l[5:] and l.rsplit(":", 1)[-1].strip())]
         if open_items or empty:
             raise SystemExit(f"{step} is not done:\n" + "\n".join(open_items + [f"no evidence: {l}" for l in empty]))
+        state = text.split("\n", 1)[0].removeprefix("Status: ")
+        number = str(claim).removeprefix("#")
+        # events.log also counts the takes, so a stale copy of the file written back cannot bring an old claim back.
+        if not (state.startswith("active ") and state.rsplit(" #", 1)[-1] == number
+                and number.isascii() and number.isdigit() and int(number) >= claim_of(folder, step)):
+            raise SystemExit(f"{step} is not done: claim #{str(claim).removeprefix('#')} is not the current one; "
+                             f"the step is {plain(state)}")
+        if old := stale(folder, step, rev_of):
+            raise SystemExit(f"{step} is not done: its input changed after take: {', '.join(old)}; take it again")
+        run_checks(folder, step, todo, text)
+        if file.read_text(encoding="utf-8") != text:
+            raise SystemExit(f"{step} is not done: its file changed while its checks ran; run done again")
+        if old := stale(folder, step, rev_of):
+            raise SystemExit(f"{step} is not done: its input changed while its checks ran: {', '.join(old)}; take it again")
         rev = rev or revision(folder, step)
         write_step(file, f"Status: done {rev}\n" + text.split("\n", 1)[1])
     log(folder, step, f"done {rev}")
@@ -321,7 +347,7 @@ if __name__ == "__main__":
         # Escape non-ASCII output when the console uses an ASCII encoding.
         sys.stdout.reconfigure(errors="backslashreplace")
     commands = {"start": start, "status": status, "take": take, "done": done, "skip": skip, "block": block}
-    arity = {"start": (2, 2), "status": (1, 1), "take": (3, 3), "done": (2, 2), "skip": (3, None), "block": (3, None)}
+    arity = {"start": (2, 2), "status": (1, 1), "take": (3, 3), "done": (3, 3), "skip": (3, None), "block": (3, None)}
     if len(sys.argv) < 2 or sys.argv[1] not in commands:
         raise SystemExit(__doc__)
     try:
@@ -331,7 +357,7 @@ if __name__ == "__main__":
         if command == "take":
             args = [arg for arg in args if arg != "--force"]
         if command in ("done", "skip", "block") and "--force" in args:
-            raise SystemExit("done <folder> <step> accepts no --force" if command == "done" else f"{command} accepts no --force")
+            raise SystemExit("done <folder> <step> <n> accepts no --force" if command == "done" else f"{command} accepts no --force")
         minimum, maximum = arity[command]
         if len(args) < minimum or maximum is not None and len(args) > maximum:
             raise SystemExit(next(line.strip() for line in __doc__.splitlines()

@@ -17,7 +17,7 @@ report paths. "research continue <folder>" picks up that run.
 Run the front door in `skills/plan/SKILL.md` with the preset below, and write `plan.md` in the
 research run folder. When local facts set the web query, set `03-web.md`'s Needs cell to `local`;
 otherwise keep `question`. Close each step with
-`python3 <kit root>/references/step_run.py done <folder> <step>`. The saved `plan.md` keeps this
+`python3 <kit root>/references/step_run.py done <folder> <step> <n>`. The saved `plan.md` keeps this
 run's chosen inputs.
 
 ## Preset

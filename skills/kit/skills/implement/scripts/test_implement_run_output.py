@@ -12,7 +12,7 @@ def test_impact_closed_stdout(repo, env, folder):
             with subprocess.Popen(["head", "-1"], stdin=child.stdout, stdout=subprocess.PIPE) as consumer:
                 child.stdout.close()
                 output, _ = consumer.communicate()
-                assert consumer.returncode == 0 and output == b"Status: active pipe\n"
+                assert consumer.returncode == 0 and output.startswith(b"Status: active pipe #")
             errors = child.stderr.read()
             assert child.wait() == 0 and not errors, errors
         assert implement_run.CALLERS_HEAD in file.read_text(), "callers must be saved before printing to a closed pipe"
@@ -38,7 +38,7 @@ def test_impact_utf8(repo, env, folder):
                                  cwd=repo, env=ascii_env, capture_output=True, text=True)
             assert out.returncode == 0, out.stderr
             assert "\\u5408\\u610f" in out.stdout and "\\xff" in out.stdout and implement_run.CALLERS_HEAD in out.stdout
-            assert file.read_text(encoding="utf-8").startswith("Status: active ascii-owner\n")
+            assert file.read_text(encoding="utf-8").startswith("Status: active ascii-owner #")
             assert implement_run.CALLERS_HEAD in file.read_text(encoding="utf-8")
     finally:
         file.write_text(original, encoding="utf-8")

@@ -27,7 +27,7 @@ def test_command_wrong_count(run, folder):
 
 
 def test_done_wrong_count(run, folder):
-    for args in ((folder,), (folder, "01-frame", "extra")):
+    for args in ((folder, "01-frame"), (folder, "01-frame", "#1", "extra")):
         out = run("done", *args)
         assert out.returncode == 1 and "done <folder> <step>" in out.stderr, out.stderr
         assert "--force" not in out.stderr and "Traceback" not in out.stderr, out.stderr
@@ -62,7 +62,7 @@ def test_take_force(run, folder):
                       ([folder, "01-frame", "--force", "agent-d"], "agent-d")):
         out = run("take", *args)
         assert out.returncode == 0, out.stderr
-        assert file.read_text().startswith(f"Status: active {who}\n")
+        assert file.read_text(encoding="utf-8").startswith(f"Status: active {who} #")
         assert (folder / "01-frame.lock").exists()
         assert (folder / "events.log").read_text().splitlines()[-1].endswith(f"\t01-frame\ttake {who}")
     file.write_text(original)
@@ -87,7 +87,7 @@ def test_done_rejects_force(run, folder):
     try:
         fill(file)
         filled = file.read_text(encoding="utf-8")
-        for args in ((folder, "01-frame", "--force"), ("--force", folder, "01-frame")):
+        for args in ((folder, "01-frame", "#1", "--force"), ("--force", folder, "01-frame", "#1")):
             out = run("done", *args)
             assert out.returncode == 1, "done must refuse --force"
             assert "done <folder> <step>" in out.stderr and "Traceback" not in out.stderr, out.stderr

@@ -3,7 +3,7 @@ from test_step_run_support import *
 
 
 def test_command_wrong_count():
-    for command, count in (("start", 2), ("status", 1), ("take", 3), ("done", 2)):
+    for command, count in (("start", 2), ("status", 1), ("take", 3), ("done", 3)):
         usage = next(line.strip() for line in step_run.__doc__.splitlines()
                      if line.strip().split()[:1] == [command])
         for args in ((), ("unused",) * (count - 1), ("unused",) * (count + 1)):
@@ -13,7 +13,7 @@ def test_command_wrong_count():
 
 
 def test_done_wrong_count(folder):
-    for args in ((folder,), (folder, "01-ask", "extra")):
+    for args in ((folder, "01-ask"), (folder, "01-ask", "#1", "extra")):
         out = run("done", *args)
         assert out.returncode == 1 and "done <folder> <step>" in out.stderr, out.stderr
         assert "--force" not in out.stderr and "Traceback" not in out.stderr, out.stderr
@@ -24,7 +24,7 @@ def test_done_rejects_force(folder):
     original = file.read_text(encoding="utf-8")
     events = (folder / "events.log").read_text(encoding="utf-8")
     try:
-        for args in ((folder, "01-ask", "--force"), ("--force", folder, "01-ask")):
+        for args in ((folder, "01-ask", "#1", "--force"), ("--force", folder, "01-ask", "#1")):
             out = run("done", *args)
             assert out.returncode == 1, "done must refuse --force"
             assert "done <folder> <step>" in out.stderr and "Traceback" not in out.stderr, out.stderr
@@ -66,7 +66,7 @@ def test_process_lock(folder):
         # Neither an old mtime nor --force may let another process enter.
         old = time.time() - 7200
         os.utime(lock, (old, old))
-        for command, args in (("take", ("b",)), ("done", ())):
+        for command, args in (("take", ("b",)), ("done", ("#1",))):
             flags = (("--force",), ()) if command == "take" else ((),)
             for force in flags:
                 out = run(command, folder, "01-ask", *args, *force)
@@ -121,7 +121,7 @@ def test_claim_failure_log(folder):
             raise AssertionError("claim hook must raise")
         except RuntimeError as error:
             assert str(error) == "callers failed"
-        assert file.read_text(encoding="utf-8").startswith("Status: active hook\n")
+        assert file.read_text(encoding="utf-8").startswith("Status: active hook #")
         assert (folder / "events.log").read_text(encoding="utf-8").splitlines()[-1].endswith(
             "\t01-ask\ttake hook failed: callers failed")
         with step_run.step_lock(folder, "01-ask"):
@@ -184,7 +184,7 @@ def test_utf8_and_lock_context(folder):
         assert out.returncode == 0, out.stderr
         file.write_text(file.read_text(encoding="utf-8").replace("- [ ] what the sources say: ",
                                                              "- [x] what the sources say: 合意"), encoding="utf-8")
-        out = subprocess.run([sys.executable, SCRIPT, "done", str(folder), "02-look"],
+        out = subprocess.run([sys.executable, SCRIPT, "done", str(folder), "02-look", claim(folder, "02-look")],
                              env=env, capture_output=True, text=True)
         assert out.returncode == 0, out.stderr
         assert "合意" in file.read_text(encoding="utf-8")
@@ -209,7 +209,7 @@ def test_cli_output(folder):
                          env=env, capture_output=True, text=True)
     assert out.returncode == 0, out.stderr
     assert "active \\u5408\\u610f" in out.stdout
-    assert file.read_text(encoding="utf-8").startswith("Status: active 合意\n")
+    assert file.read_text(encoding="utf-8").startswith("Status: active 合意 #")
     file.write_text(original, encoding="utf-8")
     with subprocess.Popen([sys.executable, SCRIPT, "take", str(folder), "01-ask", "a"],
                           stdout=subprocess.PIPE, stderr=subprocess.PIPE) as child:
@@ -250,7 +250,7 @@ def test_atomic_step_writes(folder):
     with redirect_stdout(StringIO()), patch.object(step_run.os, "replace", check_replace):
         step_run.take(folder, "01-ask", "atomic", need=[])
         assert replacements == [file], "take must replace the file atomically"
-        step_run.done(folder, "01-ask", rev="atomic")
+        step_run.done(folder, "01-ask", claim(folder, "01-ask"), rev="atomic")
         assert replacements == [file, file], "done must replace the file atomically"
     assert file.read_text(encoding="utf-8") == previous and not file.with_suffix(".md.tmp").exists()
     assert len(set(sources)) == 2 and not any(source.exists() for source in sources), "each write needs its own temporary file"
