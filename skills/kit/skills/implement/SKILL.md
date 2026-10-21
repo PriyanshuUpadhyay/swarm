@@ -52,7 +52,8 @@ the git common dir (`git rev-parse --git-common-dir`), not the worktree folder n
    ```sh
    python3 $F start [--profile <name>] [--domains <a,b>] # makes the folder and step files, writes each step's skills and blocks into its file in full
    python3 $F status [<folder>]              # each step's status, which open step is ready, and which is stale
-   python3 $F take <folder> <step> <agent>   # marks the step active and prints its file with its skills in full
+   python3 $F take <folder> <step> <agent>   # marks the step active and prints its file with its skills in full;
+                                             # take 06-review as `review-seats`, not as the agent that took 05-build
    python3 $F done <folder> <step> <n>       # sets the step done for take's claim #<n>, as references/step-run.md says
    python3 $F skip <folder> <step> <reason>  # skips 02-design, 03-contracts, or 04-impact, never another step
    python3 $F block <folder> <step> <reason> # records a blocked step

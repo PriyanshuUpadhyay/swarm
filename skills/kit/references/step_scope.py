@@ -37,6 +37,8 @@ def writes(text):
 
 
 def git(root, *args, env=None):
+    # A caller's GIT_DIR or GIT_WORK_TREE would point the diff at another repo, so drop them all.
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")} if env is None else env
     try:
         return subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True, encoding="utf-8",
                               errors="replace", env=env)

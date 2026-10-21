@@ -82,8 +82,15 @@ def add(folder, row, *opts):
         need = cells[1].strip()
         cells[1] = f" {name.split('-', 1)[1] if need == 'none' else need + ', ' + name.split('-', 1)[1]} "
         lines[at] = "|" + "|".join(cells) + "|"
+    # The ledger lists resolved blocks (parents and parts) and their conflicts alternatives, as check_ledger reads it.
+    import block_resolver
+    from step_checks import work_root
+    resolved = block_resolver.resolve_blocks(work_root(folder)[0], {name: blocks}, "default", blocks_dir=KIT / "blocks",
+                                             pack=False)[name]
     ledger = plan_chart.read_ledger(plan)
-    if add := [f"| {b} | Chosen | amended step {name} needs it |" for b in blocks if b not in ledger]:
+    rivals = sorted({r for b in resolved for r in plan_chart.conflicts(b)} - set(ledger))
+    if add := [f"| {b} | Chosen | amended step {name} needs it |" for b in resolved if b not in ledger] + \
+              [f"| {b} | Rejected | it conflicts with a block of amended step {name} |" for b in rivals]:
         at = next((i for i, l in enumerate(lines) if plan_chart.LEDGER_HEAD.match(l)), None)
         if at is None:
             raise SystemExit("plan.md has no blocks table")

@@ -50,6 +50,12 @@ def test_done_refuses_a_write_outside_scope(tmp):
     (repo / "README.md").write_text("no step writes this\n", encoding="utf-8")
     out = run("done", folder, "02-b", "1")
     assert out.returncode == 1 and "it changed README.md" in out.stderr, out
+    # A caller's GIT_DIR does not point the diff at another repo.
+    other = Path(tmp, "other")
+    subprocess.run(["git", "init", "-q", str(other)], check=True)
+    out = subprocess.run([sys.executable, SCRIPT, "done", folder, "02-b", "1"], capture_output=True, text=True,
+                         env={**os.environ, "GIT_DIR": str(other / ".git")})
+    assert out.returncode == 1 and "it changed README.md" in out.stderr, out
     (repo / "README.md").unlink()
     (repo / "src" / "keep.ts").write_text("2\n", encoding="utf-8")
     out = run("done", folder, "02-b", "1")
@@ -203,3 +209,6 @@ def test_amend_refuses_odd_rows(tmp):
     out = run("amend", folder, row, "--before", "05-reply")
     assert out.returncode == 0 and "Traceback" not in out.stderr, out
     assert (folder / "05-reply.md").read_text(encoding="utf-8").splitlines()[1] == "Uses: 04-build, 06-check"
+    # A part block brings its parent into the blocks table, as an approved plan lists it.
+    out = run("amend", folder, "| 07-draw | build | a diagram | none | html-diagram | show the flow |", "--before", "05-reply")
+    assert out.returncode == 0, out
