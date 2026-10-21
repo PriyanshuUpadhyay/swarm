@@ -292,14 +292,16 @@ def done(folder, step, claim, rev=None, ends=(RESULT_HEAD,), rev_of=revision):
         number = str(claim).removeprefix("#")
         # events.log also counts the takes, so a stale copy of the file written back cannot bring an old claim back.
         if not (state.startswith("active ") and state.rsplit(" #", 1)[-1] == number
-                and number.isdigit() and int(number) >= claim_of(folder, step)):
+                and number.isascii() and number.isdigit() and int(number) >= claim_of(folder, step)):
             raise SystemExit(f"{step} is not done: claim #{str(claim).removeprefix('#')} is not the current one; "
-                             f"the step is {state}")
+                             f"the step is {plain(state)}")
         if old := stale(folder, step, rev_of):
             raise SystemExit(f"{step} is not done: its input changed after take: {', '.join(old)}; take it again")
         run_checks(folder, step, todo, text)
         if file.read_text(encoding="utf-8") != text:
             raise SystemExit(f"{step} is not done: its file changed while its checks ran; run done again")
+        if old := stale(folder, step, rev_of):
+            raise SystemExit(f"{step} is not done: its input changed while its checks ran: {', '.join(old)}; take it again")
         rev = rev or revision(folder, step)
         write_step(file, f"Status: done {rev}\n" + text.split("\n", 1)[1])
     log(folder, step, f"done {rev}")

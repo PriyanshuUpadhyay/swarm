@@ -91,13 +91,16 @@ def run_checks(folder, step, todo, text):
         except subprocess.TimeoutExpired:
             code, stdout, stderr, tail = "timeout", "", "", f"no result in {CHECK_SECONDS} s"
         finally:
-            # Ctrl-C does not reach the new session, so stop it here on every way out.
-            if child.poll() is None:
+            # Ctrl-C does not reach the new session, and a job the check put in the background outlives sh,
+            # so stop the whole group on every way out.
+            try:
                 os.killpg(child.pid, signal.SIGKILL)
-                try:
-                    child.communicate(timeout=5)
-                except subprocess.TimeoutExpired:
-                    pass  # a grandchild that left the group still holds the pipe; give up on its output
+            except ProcessLookupError:
+                pass
+            try:
+                child.communicate(timeout=5)
+            except (subprocess.TimeoutExpired, ValueError):
+                pass  # a grandchild that left the group still holds the pipe; give up on its output
         lines = [l.strip() for l in stdout.splitlines() if l.strip()]
         expect = form[2]
         passed = code == 0 and (

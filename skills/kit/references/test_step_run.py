@@ -43,7 +43,7 @@ for gate in (test_done_needs_the_current_claim, test_done_refuses_a_stale_input,
              test_check_runs_in_the_piece, test_check_results,
              test_take_logs_inside_the_lock, test_check_text_from_the_worker,
              test_done_sees_an_edit_during_checks, test_done_refuses_a_written_back_claim,
-             test_timeout_wait_is_bounded):
+             test_timeout_wait_is_bounded, test_done_sees_an_input_edit_during_checks):
     with tempfile.TemporaryDirectory() as tmp:
         gate(tmp)
 

@@ -95,7 +95,7 @@ def test_done_runs_script_checks(tmp):
 
 
 def test_kit_check_lines(tmp):
-    """Each kit `Check (script)` line is runnable or named as not run, and a runnable one with a placeholder done cannot fill prints not run."""
+    """Each kit `Check (script)` line is runnable or named as not run, and a runnable one prints `not run` when it needs a word that done does not fill."""
     import block_resolver
     runnable, reader = [], []
     for file in sorted((step_checks.KIT / "blocks").glob("*/SKILL.md")):

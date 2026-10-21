@@ -1,4 +1,4 @@
-# Step runner tests for the done gate: the ways round 1 of review found to pass or crash it.
+# Step runner tests for the done gate: edited todos, odd claims and logs, and checks that hang or leave jobs.
 import re
 import shlex
 import shutil
@@ -47,6 +47,7 @@ def test_check_slots_and_todos(tmp):
 
 def test_check_runs_in_the_piece(tmp):
     """A piece outside git runs its checks from the piece, where start resolved {{site}} to "."."""
+    # Not TMPDIR: scripts/kit-checks.sh sets it inside the repo, and this case needs a piece outside git.
     piece = Path(tempfile.mkdtemp(dir="/tmp"))
     try:
         (piece / "index.js").write_text("const seed = Math.random(); // é\n", encoding="utf-8")
@@ -81,8 +82,12 @@ def test_check_results(tmp):
                 assert shown in str(error.code), error.code
         with redirect_stdout(StringIO()):
             step_checks.run_checks(folder, "02-work", "- [x] block fake script: `exit 1` prints nothing: x: ok\n", "")
+            left = Path(tmp, "left")
+            step_checks.run_checks(folder, "02-work", f"- [x] block fake script: `(sleep 2; touch {shlex.quote(str(left))}) >/dev/null 2>&1 "
+                                   "& echo` exits 0: x: ok\n", "")
     time.sleep(2.5)
     assert not marker.exists(), "the timeout must stop the check's children too"
+    assert not left.exists(), "a passing check must not leave a background job running"
 
 
 def test_take_logs_inside_the_lock(tmp):
@@ -143,6 +148,10 @@ def test_done_refuses_a_written_back_claim(tmp):
     (folder / "01-ask.md").write_text(old, encoding="utf-8")
     out = run("done", folder, "01-ask", "1")
     assert out.returncode == 1 and "claim #1 is not the current one" in out.stderr, out
+    for odd in ("\u00b2", "\u0662"):
+        (folder / "01-ask.md").write_text(old.replace("active a #1", f"active a #{odd}", 1), encoding="utf-8")
+        out = run("done", folder, "01-ask", odd)
+        assert out.returncode == 1 and "is not the current one" in out.stderr and "Traceback" not in out.stderr, out
 
 
 def test_timeout_wait_is_bounded(tmp):
@@ -160,3 +169,22 @@ def test_timeout_wait_is_bounded(tmp):
         except SystemExit as error:
             assert "no result in 1 s" in str(error.code), error.code
     assert time.monotonic() - started < 15, "the wait after the kill must be bounded"
+
+
+def test_done_sees_an_input_edit_during_checks(tmp):
+    """An input that a check changes is stale when the checks end, so done does not close on an old input."""
+    folder = gate_run(tmp, "input", [])
+    ask, file = folder / "01-ask.md", folder / "02-work.md"
+    command = f"echo late >> {shlex.quote(str(ask))}"
+    text = file.read_text(encoding="utf-8")
+    file.write_text(text.replace(f"\n{step_run.RESULT_HEAD}", f"- [x] block fake script: `{command}` exits 0: x: ok\n"
+                                 f"\n{step_run.RESULT_HEAD}", 1), encoding="utf-8")
+    assert run("done", folder, "01-ask", take(folder, "01-ask")).returncode == 0
+    held = take(folder, "02-work")
+    with patch.object(step_checks, "block_checks", lambda block: [("`x` exits 0: x", re.compile(".*"))]):
+        try:
+            with redirect_stdout(StringIO()):
+                step_run.done(folder, "02-work", held)
+            raise AssertionError("done must refuse an input changed during its checks")
+        except SystemExit as error:
+            assert "input changed while its checks ran: 01-ask" in str(error.code), error.code
