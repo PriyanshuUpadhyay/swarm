@@ -39,5 +39,8 @@ record of the agent in `SWARM_PANE` as one OSC 7501 body with `:at=<unix seconds
 time, or nothing. A pi agent's state then comes from that record as `state_source` `host`, the
 second source after hooks (ADR 0070), and a ring to an AGY agent first waits, up to 15 s, for AGY
 to report a record. Rex reads the record from the agent's own reports.
+A `list` line may end with `activity=<unix seconds>`, the last time the pane's window printed, as
+the tmux adapters do. The app's listing then reads that pane's screen again only after new output,
+or 10 s after its last read. A `list` that fails waits 30 s before the app runs it again.
 Claude, Codex, and AGY run
 `swarm host-context --provider <claude|codex|agy>` as a SessionStart hook to learn the host contract.
