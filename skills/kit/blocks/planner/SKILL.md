@@ -7,7 +7,7 @@ metadata:
   owns: "which blocks a task uses, in which order, with which inputs"
   serves: "plan"
   needs: "a task"
-  gives: "plan.md, a step table with writes and blocks, and a Chosen/Rejected blocks table"
+  gives: "plan.md, a step table with writes and blocks, and a Chosen blocks table"
   conflicts: ""
   users: "plan"
   source: "docs/blocks.md (The model: plan block, ledger, end condition); references/step-run.md (step table, Needs); blocks/requirements/SKILL.md (done-when claims)"
@@ -29,12 +29,12 @@ metadata:
 - Each step with Needs `none` holds the `requirements` block.
 - Each step with Writes has a step with the `change-review` block that reaches it through Needs. An agent that took a writing step cannot take that review step.
 - The last step is the only step whose output no step uses. It holds a `voice-` block that fits the output: `voice-reply` for a reply to the owner, `voice-teach` when the owner wants to understand a subject, `voice-review` for review comments, and `voice-pr` for PR text.
-- After the step table, add `## Blocks considered` with the header `| Block | Status | Why |`. It holds one `Chosen` row for each block, and one `Rejected` row for each block that a Chosen block names in `conflicts`, each with one reason. `Chosen` is exactly the set of blocks that the steps load, after the parent and part expansion that `blocks/blocks.toml` sets. Sub-blocks are the parts of a parent block, as its `metadata.parts` names them. They have their own rows, and `plan-chart` shows them under their parent.
-- Two blocks that name each other in `conflicts` are alternatives. Keep one and say why the other is Rejected.
+- After the step table, add `## Blocks considered` with the header `| Block | Status | Why |`. It holds one `Chosen` row for each block, each with one reason. `Chosen` is exactly the set of blocks that the steps load, after the parent and part expansion that `blocks/blocks.toml` sets. Sub-blocks are the parts of a parent block, as its `metadata.parts` names them. They have their own rows, and `plan-chart` shows them under their parent.
+- Two blocks that name each other in `conflicts` cannot both be in the plan. Keep one, and say why in its Why cell.
 - `Amend: <N>` on its own line after the step table lets a run add N steps that write `none` with `step_run.py amend`, with no new approval. Leave it out (N is 0) unless the owner sets it.
 - When no block fits a step, write the step with the nearest block and say what is missing in Why. Do not invent a block id.
 - Then run the `plan-chart` block, then the `plan-review` block. Work starts only after the owner approves.
-- The reply that shows the plan carries the `### Chosen` and `### Rejected` tables that `plan-chart` prints, in full, before it asks for approval. The owner changes the plan with "drop X", "add Y", or "add sub-block Z". Change the step table and the blocks table to match, run `plan-chart` again, and show the new tables. Never start work on a changed plan that the owner has not seen.
+- The reply that shows the plan carries the `### Chosen` table that `plan-chart` prints, in full, before it asks for approval. The owner changes the plan with "drop X", "add Y", or "add sub-block Z". Change the step table and the blocks table to match, run `plan-chart` again, and show the new table. Never start work on a changed plan that the owner has not seen.
 
 ## Example
 Initial state: the task is "add dark mode to the settings page" in a repo with a theme file.
@@ -74,9 +74,9 @@ Evidence:
 Result: 02-read and 03-tokens run in parallel, and 04-build waits for both. Only 03-tokens writes, so 02-read cannot change its files. The owner sees the Chosen blocks, and answers "add sub-block html-diagram" to change one.
 
 ## Check (script)
-- `python3 -I <kit root>/blocks/plan-chart/scripts/plan_chart.py <run>/plan.md` exits 0: `Done when:` has a bullet per claim and an `Evidence:` bullet list, every block exists, every Needs word names a step, the plan has no loop and one end, the end holds a `voice-` block, each step with Needs `none` holds `requirements`, each writing step is reached through Needs by a `change-review` step, no two parallel steps write the same path, and the blocks table lists each block once, with Chosen equal to the blocks the steps use and Rejected equal to their `conflicts` alternatives.
+- `python3 -I <kit root>/blocks/plan-chart/scripts/plan_chart.py <run>/plan.md` exits 0: `Done when:` has a bullet per claim and an `Evidence:` bullet list, every block exists, every Needs word names a step, the plan has no loop and one end, the end holds a `voice-` block, each step with Needs `none` holds `requirements`, each writing step is reached through Needs by a `change-review` step, no two parallel steps write the same path, and the blocks table lists each block once, as Chosen, equal to the blocks the steps use.
 
 ## Check (judge)
-- Does each Rejected reason say why the task does not need that block, and does any block the steps do not use hold a rule that the task needs? Quote the reason and the task text.
+- Does any block the steps do not use hold a rule that the task needs? Quote the rule and the task text.
 - Is each claim and each proof one short line, and each Why cell one short line? Quote any that run long or hold a numbered list.
 - Does each Why line give a reason that the task needs, and does any step lack a block that the task needs? Quote the Why line, or the task text that no step covers.

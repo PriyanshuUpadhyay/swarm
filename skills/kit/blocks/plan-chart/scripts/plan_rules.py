@@ -15,28 +15,22 @@ def blocks_toml():
 
 
 def check_ledger(rows, ledger):
-    """Chosen matches the blocks the steps use, and Rejected holds exactly their `conflicts` alternatives."""
+    """The table lists exactly the blocks the steps use, each Chosen with a Why."""
     base = set(blocks_toml().get("base", []))
     catalog = {p.parent.name for p in (KIT / "blocks").glob("*/SKILL.md")} - base
     if not ledger:
-        raise SystemExit("no | Block | Status | Why | table; list each Chosen block and its conflicts alternatives")
+        raise SystemExit("no | Block | Status | Why | table; list each block the steps use as Chosen")
     if unknown := sorted(set(ledger) - catalog):
         raise SystemExit(f"blocks table names {unknown[0]}, which is not in the kit catalog")
     for block, (status, why) in ledger.items():
-        if status not in ("Chosen", "Rejected") or not why:
-            raise SystemExit(f"block {block} needs Status Chosen or Rejected, and a Why")
+        if status != "Chosen" or not why:
+            raise SystemExit(f"block {block} needs Status Chosen and a Why; the table lists only the blocks the steps use")
     chosen = {b for b, (status, _) in ledger.items() if status == "Chosen"}
     selected = resolve_blocks(None, {r[0]: r[3] for r in rows}, "default", blocks_dir=KIT / "blocks", pack=False)
     used = {b for blocks in selected.values() for b in blocks} - base
     if chosen != used:
         odd = sorted(chosen ^ used)[0]
         raise SystemExit(f"block {odd} is {'Chosen but no step uses it' if odd in chosen else 'used by a step but not Chosen'}")
-    rivals = {c for b in used for c in conflicts(b)} - used
-    rejected = set(ledger) - chosen
-    if extra := sorted(rejected - rivals):
-        raise SystemExit(f"blocks table lists {extra[0]}; list only Chosen blocks and their conflicts alternatives")
-    if missing := sorted(rivals - rejected):
-        raise SystemExit(f"blocks table leaves out {missing[0]}, a conflicts alternative; list it as Rejected with a reason")
 
 
 def conflicts(block):

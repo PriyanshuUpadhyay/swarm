@@ -63,7 +63,7 @@ def test_good_plan():
     # the table for the plan reply.
     chosen = page.split("<h3>Chosen (")[1]
     assert chosen.index("<code>voice</code>") < chosen.index("<code>↳ voice-reply</code>"), chosen[:400]
-    assert "### Chosen (9)" in out.stdout and "### Rejected (0)" in out.stdout and "html-diagram" not in out.stdout, out.stdout
+    assert "### Chosen (9)" in out.stdout and "Rejected" not in out.stdout and "html-diagram" not in out.stdout, out.stdout
     # The approved plan runs as a step run with no change, and each step file carries its Writes.
     run = subprocess.run([sys.executable, "-I", STEP_RUN, "start", folder / "run", folder / "plan.md"], capture_output=True, text=True)
     assert run.returncode == 0, run.stderr
@@ -106,15 +106,10 @@ def test_mermaid_chart():
         '    s2["02-read<br/>local-research"]', '    s3["03-tokens<br/>design-tokens"]', "  end",
         '  s4["04-build<br/>build-site · web-ui-basics"]', '  s5(["05-reply<br/>change-review · voice-reply"])', ""]), chart_text
     assert "  s2 --> s4\n  s3 --> s4\n  s4 --> s5\n" in chart_text and "build-canvas" not in chart_text, chart_text
-    # With no conflicts alternative there is no Dropped line.
+    # The fence ends at the end marker, with no line between.
     assert md.split("```\n", 1)[1].startswith("<!-- plan-chart:end -->"), md[:900]
-    assert plan_chart.dropped_line({"a": ("Chosen", "x"), "b": ("Rejected", "y")}) == "Dropped (1): b"
-    # Parts sit in brackets after their parent; ↳ marks a parent that is not Rejected itself.
-    rejected = {b: ("Rejected", "x") for b in ("diagram", "html-diagram", "voice-pr")}
-    assert plan_chart.dropped_line({**rejected, "voice": ("Chosen", "x")}) == "Dropped (3): diagram (html-diagram), voice ↳ (voice-pr)"
     # plan.html draws the same text with the pinned Pele build, offline.
     page = (folder / "plan.html").read_text(encoding="utf-8")
-    assert '<p class="dropped">' not in page
     assert plan_chart.html.escape(chart_text) in page and "/*! Pele 1.6.0 | MIT License" in page and "<script src" not in page
     rendered = pele_render(chart_text)
     assert rendered is None or rendered.startswith("<svg"), rendered
@@ -194,12 +189,12 @@ def test_defects_stop():
         (PLAN.replace("- the theme follows", "  - nested\n- the theme follows"), "each line is a `- ` bullet"),
         (PLAN.replace("Evidence:\n", ""), "needs a bullet per claim"),
         (PLAN.split("\n## Blocks considered")[0], "no | Block | Status | Why | table"),
-        (PLAN.replace("| voice | Chosen |", "| voice | Maybe |"), "block voice needs Status Chosen or Rejected"),
-        (PLAN + "| html-diagram-x | Rejected | no |\n", "names html-diagram-x, which is not in the kit catalog"),
+        (PLAN.replace("| voice | Chosen |", "| voice | Maybe |"), "block voice needs Status Chosen and a Why"),
+        (PLAN + "| html-diagram-x | Chosen | no |\n", "names html-diagram-x, which is not in the kit catalog"),
         (PLAN + "| report | Chosen | x |\n", "block report is Chosen but no step uses it"),
-        (PLAN.replace("| web-ui-basics | Chosen |", "| web-ui-basics | Rejected |"), "block web-ui-basics is used by a step but not Chosen"),
-        # C4: no census; a Rejected row is only a conflicts alternative.
-        (PLAN + "| html-diagram | Rejected | no use |\n", "blocks table lists html-diagram; list only Chosen blocks"),
+        (PLAN.replace("| web-ui-basics | Chosen |", "| web-ui-basics | Rejected |"), "block web-ui-basics needs Status Chosen and a Why"),
+        # C4: no census; the table lists only the blocks the steps use.
+        (PLAN + "| html-diagram | Rejected | no use |\n", "block html-diagram needs Status Chosen and a Why"),
         # C4: the duty blocks of a plan with Writes.
         (PLAN.replace("| none | requirements |", "| none | local-research |").replace("| requirements | Chosen | the task needs it |\n", ""),
          "the first step 01-frame has no requirements block"),
