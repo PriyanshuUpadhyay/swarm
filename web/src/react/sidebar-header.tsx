@@ -1,4 +1,4 @@
-import { HouseIcon, MonitorIcon, MoonIcon, PlusIcon, SearchIcon, SunIcon } from "lucide-react";
+import { BlocksIcon, HouseIcon, MonitorIcon, MoonIcon, PlusIcon, SearchIcon, SunIcon } from "lucide-react";
 import { type App } from "../core/app";
 import { Button } from "../components/ui/button";
 import {
@@ -44,6 +44,14 @@ export function SidebarHeader({ app }: { app: App }) {
         <span className="flex-1 text-left">Search…</span>
         <Kbd>⌘K</Kbd>
       </button>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button variant="ghost" size="icon-sm" aria-label="Skills" data-testid="skills-button" onClick={() => app.skills.show()}>
+            <BlocksIcon />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>Skills</TooltipContent>
+      </Tooltip>
       <ThemeMenu app={app} />
     </div>
   );

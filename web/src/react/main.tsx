@@ -17,6 +17,7 @@ import { PanelToggles, WorkspacePanel } from "./changes";
 import { AskDialog, Home, WorkspaceLanding } from "./home";
 import { LifecycleDialogs } from "./lifecycle";
 import { SettingsDialog } from "./settings";
+import { SkillsDialog } from "./skills";
 import { Palette } from "./palette";
 import { PaneStrip } from "./panes";
 import { Sidebar } from "./sidebar";
@@ -84,6 +85,7 @@ function Root({ app, changes }: { app: App; changes: Changes }) {
       <AskDialog app={app} />
       <LifecycleDialogs app={app} />
       <SettingsDialog app={app} />
+      <SkillsDialog app={app} />
       <Toaster theme={theme} position="bottom-right" />
     </TooltipProvider>
   );

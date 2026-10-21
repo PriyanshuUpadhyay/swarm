@@ -4,7 +4,7 @@
 
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createInterface } from "node:readline";
@@ -169,6 +169,8 @@ export default async function setup() {
   // The live chat: its chair registers from the stand-in pane, as a chair CLI does at start.
   mkdirSync(join(home, ".swarm/adapters"), { recursive: true });
   writeFileSync(join(home, ".swarm/adapters/tmux-swarm.conf"), FIXTURE_ADAPTER);
+  // The Skills page reads this repo's kit, as an installed kit sits at ~/.swarm/kit.
+  symlinkSync(join(repo, "skills/kit"), join(home, ".swarm/kit"));
   copyFileSync(join(repo, "tests/fixtures/screens/claude-idle.txt"), join(home, "screen"));
   const live = join(dir, "ws-live");
   mkdirSync(live);
