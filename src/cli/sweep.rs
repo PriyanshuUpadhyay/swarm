@@ -3,7 +3,7 @@
 use super::*;
 
 /// A child ended without `swarm finish`: forget its pane, then send a fallback summary in its
-/// name and queue a summarize job unless it already sent one (R19).
+/// name unless it answered its last message (R19).
 pub(crate) fn report_dead(
     connection: &mut rusqlite::Connection,
     root: &std::path::Path,
