@@ -188,6 +188,23 @@ fn size(cols: u16, rows: u16) -> PtySize {
     }
 }
 
+const SIGHUP: i32 = 1;
+
+unsafe extern "C" {
+    fn kill(pid: i32, signal: i32) -> i32;
+}
+
+/// A writer to the PTY that closes without a key. portable-pty's own writer sends a newline and
+/// EOF when it drops; the tmux client passes them on, and the agent's shell reads EOF and exits.
+fn pty_writer(
+    master: &dyn portable_pty::MasterPty,
+) -> Result<std::fs::File, Box<dyn std::error::Error>> {
+    let fd = master.as_raw_fd().ok_or("pty has no fd")?;
+    // SAFETY: `master` owns `fd` and stays alive for this call; the clone is a new owned fd.
+    let owned = unsafe { std::os::fd::BorrowedFd::borrow_raw(fd) }.try_clone_to_owned()?;
+    Ok(owned.into())
+}
+
 /// Bytes both ways between the socket and a PTY that runs the adapter's `attach`. Leaving closes
 /// the PTY, which ends only the tmux client; the agent's session stays.
 async fn attach(root: &Path, adapter: &str, pane: &str, mut socket: WebSocket) {
@@ -197,11 +214,11 @@ async fn attach(root: &Path, adapter: &str, pane: &str, mut socket: WebSocket) {
             let child = pair.slave.spawn_command(command)?;
             drop(pair.slave);
             let reader = pair.master.try_clone_reader()?;
-            let writer = pair.master.take_writer()?;
+            let writer = pty_writer(&*pair.master)?;
             Ok((pair.master, child, reader, writer))
         })
         .map_err(|err| err.to_string());
-    let (master, mut child, mut reader, mut writer) = match started {
+    let (master, child, mut reader, mut writer) = match started {
         Ok(parts) => parts,
         Err(err) => {
             let _ = socket
@@ -258,22 +275,29 @@ async fn attach(root: &Path, adapter: &str, pane: &str, mut socket: WebSocket) {
         }
     }
     drop(input);
+    drop(from_pty);
     drop(master);
     let _ = socket.send(Message::Close(None)).await;
-    // The closed PTY ends the client and the verb restores the window size; a child that is
-    // still there after that is killed, and every child is reaped.
-    let _ = tokio::task::spawn_blocking(move || {
-        let until = Instant::now() + Duration::from_secs(3);
-        while Instant::now() < until {
-            if let Ok(Some(_)) = child.try_wait() {
-                return;
-            }
-            std::thread::sleep(Duration::from_millis(50));
+    let _ = tokio::task::spawn_blocking(move || hang_up(child)).await;
+}
+
+/// Ends the attach child the way a closed terminal would. A reader thread can still hold the PTY
+/// open, so no hangup reaches the child on its own. SIGHUP ends the tmux client, then the verb
+/// restores the window size. A child that is still there after that is killed, and it is reaped.
+fn hang_up(mut child: Box<dyn portable_pty::Child + Send + Sync>) {
+    if let Some(pid) = child.process_id() {
+        // SAFETY: kill has no memory preconditions; the PTY child leads its own process group.
+        unsafe { kill(-(pid as i32), SIGHUP) };
+    }
+    let until = Instant::now() + Duration::from_secs(3);
+    while Instant::now() < until {
+        if let Ok(Some(_)) = child.try_wait() {
+            return;
         }
-        let _ = child.kill();
-        let _ = child.wait();
-    })
-    .await;
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    let _ = child.kill();
+    let _ = child.wait();
 }
 
 /// A read-only view of a shell's output file: its last part, then whatever it grows by. Input from
@@ -315,172 +339,5 @@ async fn follow_file(path: PathBuf, mut socket: WebSocket) {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_ticket_works_once_and_names_its_target() {
-        let target = Target::File(PathBuf::from("/tmp/x.output"));
-        let ticket = mint(target.clone()).unwrap();
-        assert_eq!(ticket.len(), 64);
-        assert_eq!(redeem(&ticket), Some(target));
-        assert_eq!(redeem(&ticket), None);
-        assert_eq!(redeem("guess"), None);
-    }
-
-    #[test]
-    fn an_output_file_must_be_a_claude_task_file_of_this_user() {
-        use std::os::unix::fs::MetadataExt;
-        let root = std::env::temp_dir();
-        let uid = std::fs::metadata(&root).unwrap().uid();
-        let dir = PathBuf::from(format!(
-            "/tmp/claude-{uid}/swarm-test-{}",
-            std::process::id()
-        ));
-        std::fs::create_dir_all(&dir).unwrap();
-        let good = dir.join("b1.output");
-        std::fs::write(&good, "x").unwrap();
-        let other = dir.join("notes.txt");
-        std::fs::write(&other, "x").unwrap();
-        let link = dir.join("link.output");
-        let _ = std::fs::remove_file(&link);
-        std::os::unix::fs::symlink("/etc/hosts", &link).unwrap();
-
-        assert_eq!(
-            output_file(&root, &good),
-            Some(good.canonicalize().unwrap())
-        );
-        assert_eq!(output_file(&root, &other), None);
-        assert_eq!(output_file(&root, &link), None);
-        assert_eq!(output_file(&root, &dir.join("../../etc/hosts")), None);
-        assert_eq!(output_file(&root, Path::new("/etc/hosts")), None);
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    /// The socket takes no bearer header, so its ticket, Host, and Origin are its whole guard.
-    #[tokio::test]
-    async fn the_socket_needs_a_fresh_ticket_the_host_and_the_app_origin() {
-        use super::super::test_support::Fixture;
-        use tokio::io::{AsyncReadExt, AsyncWriteExt};
-        let mut fixture = Fixture::new();
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let port = listener.local_addr().unwrap().port();
-        Arc::get_mut(&mut fixture.app).unwrap().port = port;
-        let app = fixture.app.clone();
-        tokio::spawn(async move { axum::serve(listener, router(app)).await });
-        let file = fixture.dir.join("b1.output");
-        std::fs::write(&file, "out\n").unwrap();
-
-        let status = |request: String| async move {
-            let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port))
-                .await
-                .unwrap();
-            stream.write_all(request.as_bytes()).await.unwrap();
-            let mut head = [0u8; 12];
-            stream.read_exact(&mut head).await.unwrap();
-            String::from_utf8_lossy(&head[9..12]).to_string()
-        };
-        let origin = format!("http://127.0.0.1:{port}");
-        let open = |ticket: &str, host: &str, origin: Option<&str>| {
-            format!(
-                "GET /api/terminal?ticket={ticket} HTTP/1.1\r\nHost: {host}\r\n{}Connection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: AAAAAAAAAAAAAAAAAAAAAA==\r\n\r\n",
-                origin
-                    .map(|o| format!("Origin: {o}\r\n"))
-                    .unwrap_or_default()
-            )
-        };
-        let host = format!("127.0.0.1:{port}");
-        let ticket = mint(Target::File(file)).unwrap();
-
-        assert_eq!(status(open("guess", &host, Some(&origin))).await, "401");
-        assert_eq!(status(open(&ticket, &host, None)).await, "403");
-        assert_eq!(
-            status(open(&ticket, &host, Some("http://evil.test"))).await,
-            "403"
-        );
-        assert_eq!(
-            status(open(&ticket, "evil.test", Some(&origin))).await,
-            "403"
-        );
-        assert_eq!(status(open(&ticket, &host, Some(&origin))).await, "101");
-        assert_eq!(status(open(&ticket, &host, Some(&origin))).await, "401");
-        let post = format!(
-            "POST /api/terminal/ticket HTTP/1.1\r\nHost: {host}\r\nContent-Type: application/json\r\nContent-Length: 2\r\n\r\n{{}}"
-        );
-        assert_eq!(status(post).await, "401");
-    }
-
-    /// The shipped tmux-swarm `attach`, pointed at a private tmux server, in a PTY: keys reach the
-    /// pane, and closing the PTY ends the client and puts the window back at its size.
-    #[test]
-    fn attach_in_a_pty_types_into_the_pane_and_restores_its_size() {
-        if std::process::Command::new("tmux")
-            .arg("-V")
-            .output()
-            .is_err()
-        {
-            eprintln!("skipped: no tmux");
-            return;
-        }
-        let server = format!("swarm-term-{}", std::process::id());
-        let tmux = |args: &str| {
-            let out = std::process::Command::new("sh")
-                .arg("-c")
-                .arg(format!("tmux -L {server} -f /dev/null {args}"))
-                .output()
-                .unwrap();
-            String::from_utf8_lossy(&out.stdout).trim().to_string()
-        };
-        tmux("new-session -d -s t -x 120 -y 40 cat");
-        let pane = tmux("display -p -t t '#{pane_id}'");
-        let root = std::env::temp_dir().join(format!("swarm-term-root-{}", std::process::id()));
-        std::fs::create_dir_all(root.join("adapters")).unwrap();
-        let line = swarm::adapter::shipped("tmux-swarm")
-            .unwrap()
-            .lines()
-            .find(|line| line.starts_with("attach = "))
-            .unwrap()
-            .replace("tmux -L swarm ", &format!("tmux -L {server} -f /dev/null "));
-        std::fs::write(root.join("adapters/tmux-swarm.conf"), format!("{line}\n")).unwrap();
-
-        let pair = native_pty_system().openpty(size(50, 12)).unwrap();
-        let child = pair
-            .slave
-            .spawn_command(attach_command(&root, "tmux-swarm", &pane).unwrap())
-            .unwrap();
-        drop(pair.slave);
-        let mut writer = pair.master.take_writer().unwrap();
-        let wait_for = |what: &dyn Fn() -> bool| {
-            let until = Instant::now() + Duration::from_secs(5);
-            while !what() && Instant::now() < until {
-                std::thread::sleep(Duration::from_millis(50));
-            }
-            what()
-        };
-        assert!(wait_for(
-            &|| tmux("display -p -t t '#{session_attached}'") == "1"
-        ));
-        assert_eq!(
-            tmux("display -p -t t '#{window_width}x#{window_height}'"),
-            "50x11"
-        );
-        writer.write_all(b"typed-through\r").unwrap();
-        assert!(wait_for(
-            &|| tmux("capture-pane -p -t t").contains("typed-through")
-        ));
-
-        drop(writer);
-        drop(pair.master);
-        let child = Mutex::new(child);
-        assert!(wait_for(&|| matches!(
-            child.lock().unwrap().try_wait(),
-            Ok(Some(_))
-        )));
-        assert_eq!(
-            tmux("display -p -t t '#{window_width}x#{window_height} #{session_attached}'"),
-            "120x40 0"
-        );
-        tmux("kill-server");
-        let _ = std::fs::remove_dir_all(&root);
-    }
-}
+#[path = "terminal/tests.rs"]
+mod tests;
