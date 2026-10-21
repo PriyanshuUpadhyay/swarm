@@ -28,15 +28,12 @@ pub(crate) fn close_agents(
     wait: Option<std::time::Duration>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Every pane is checked first, so a wrong id closes nothing.
-    let panes = ids
-        .iter()
-        .map(|id| {
-            Ok((
-                id.as_str(),
-                swarm::store::require_pane(connection, session_id, id)?,
-            ))
-        })
-        .collect::<Result<Vec<_>, Box<dyn std::error::Error>>>()?;
+    let mut panes: Vec<(&str, String)> = Vec::new();
+    for id in ids {
+        if !panes.iter().any(|(seen, _)| seen == id) {
+            panes.push((id, swarm::store::require_pane(connection, session_id, id)?));
+        }
+    }
     let adapter = swarm::adapter::load(root, adapter_name)?;
     if let Some(wait) = wait {
         wrap_up(connection, root, &adapter, session_id, &panes, wait)?;
@@ -71,7 +68,8 @@ fn wrap_up(
     let mut waiting = Vec::new();
     for (id, pane) in panes {
         if *id != orchestrator {
-            let seq = deliver(
+            // No ring waits for a turn, so all asks go out at once and the wait below is the bound.
+            let seq = deliver_with(
                 connection,
                 root,
                 &adapter.name,
@@ -80,6 +78,7 @@ fn wrap_up(
                 id,
                 "wrap-up",
                 &ask,
+                Proof::Later,
             )?;
             waiting.push((*id, pane.as_str(), seq));
         }
@@ -89,10 +88,19 @@ fn wrap_up(
         std::thread::sleep(std::time::Duration::from_millis(200));
         let mut left = Vec::new();
         for (id, pane, seq) in waiting {
-            if let Some(body_path) = swarm::store::summary_after(connection, session_id, id, seq)? {
+            // Only a reply with every heading is the wrap-up; a death note is a summary too.
+            let reply = swarm::store::summaries_after(connection, session_id, id, seq)?
+                .into_iter()
+                .map(|body_path| std::fs::read_to_string(root.join(body_path)))
+                .collect::<Result<Vec<_>, _>>()?
+                .into_iter()
+                .find(|body| missing_headings(body).is_empty());
+            if let Some(body) = reply {
                 let saved = root.join(format!("runs/{session_id}/{id}.summary.md"));
-                std::fs::copy(root.join(body_path), &saved)?;
-                println!("{}", saved.display());
+                match swarm::store::write_atomic(&saved, &body) {
+                    Ok(()) => println!("{}", saved.display()),
+                    Err(error) => eprintln!("swarm: {id}: wrap-up not saved: {error}"),
+                }
             } else if swarm::store::pane_of(connection, session_id, id)?.is_some() {
                 left.push((id, pane, seq));
             }
@@ -101,18 +109,19 @@ fn wrap_up(
     }
     for (id, pane, _) in waiting {
         let log = root.join(format!("runs/{session_id}/{id}.log"));
-        if let Err(error) = adapter
+        let note = match adapter
             .run("capture", &[("pane", pane)])
             .and_then(|text| Ok(swarm::store::write_atomic(&log, &text)?))
         {
-            eprintln!("swarm: {id}: screen not saved: {error}");
-        }
-        let note = format!(
-            "agent {id} closed without a wrap-up; screen log: {}",
-            log.display()
-        );
+            Ok(()) => format!(
+                "agent {id} closed without a wrap-up; screen log: {}",
+                log.display()
+            ),
+            Err(error) => format!("agent {id} closed without a wrap-up; screen not saved: {error}"),
+        };
         eprintln!("swarm: {note}");
-        if let Err(error) = deliver(
+        // The orchestrator's pane runs this command, so its turn cannot start until it returns.
+        if let Err(error) = deliver_with(
             connection,
             root,
             &adapter.name,
@@ -121,6 +130,7 @@ fn wrap_up(
             &orchestrator,
             "summary",
             &note,
+            Proof::Later,
         ) {
             eprintln!("swarm: {id}: note not sent: {error}");
         }
@@ -138,11 +148,7 @@ pub(crate) fn check_wrap_up_reply(
     if !swarm::store::owes_wrap_up(connection, session_id, agent)? {
         return Ok(());
     }
-    let missing: Vec<&str> = WRAP_UP
-        .into_iter()
-        .map(|(heading, _)| heading)
-        .filter(|heading| !body.lines().any(|line| line.trim_end() == *heading))
-        .collect();
+    let missing = missing_headings(body);
     if missing.is_empty() {
         return Ok(());
     }
@@ -152,6 +158,14 @@ pub(crate) fn check_wrap_up_reply(
         missing.join(", ")
     )
     .into())
+}
+
+fn missing_headings(body: &str) -> Vec<&'static str> {
+    WRAP_UP
+        .into_iter()
+        .map(|(heading, _)| heading)
+        .filter(|heading| !body.lines().any(|line| line.trim_end() == *heading))
+        .collect()
 }
 
 #[cfg(test)]
@@ -223,7 +237,8 @@ mod tests {
         session: &str,
         wait: Option<u64>,
     ) {
-        let ids = [CODER.to_string()];
+        // The same id twice gets one ask and one close.
+        let ids = [CODER.to_string(), CODER.to_string()];
         let wait = wait.map(std::time::Duration::from_secs);
         close_agents(connection, root, "fake", session, &ids, wait).unwrap();
         assert_eq!(
@@ -241,7 +256,9 @@ mod tests {
             let (root, session, body) = (root.clone(), session.clone(), body.clone());
             std::thread::spawn(move || {
                 let mut connection = swarm::store::open(&root.join("swarm.db")).unwrap();
+                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
                 while !swarm::store::owes_wrap_up(&connection, &session, CODER).unwrap() {
+                    assert!(std::time::Instant::now() < deadline, "no wrap-up was sent");
                     std::thread::sleep(std::time::Duration::from_millis(50));
                 }
                 check_wrap_up_reply(&connection, &session, CODER, &body).unwrap();
@@ -261,6 +278,8 @@ mod tests {
         close(&mut connection, &root, &session, Some(30));
 
         child.join().unwrap();
+        let asks = swarm::store::messages(&connection, &session, -1).unwrap();
+        assert_eq!(asks.iter().filter(|m| m.kind == "wrap-up").count(), 1);
         let saved = root.join(format!("runs/{session}/{CODER}.summary.md"));
         assert_eq!(std::fs::read_to_string(saved).unwrap(), body);
         std::fs::remove_dir_all(root).unwrap();
@@ -284,6 +303,44 @@ mod tests {
             )
         );
         assert!(swarm::store::answered(&connection, &session, CODER).unwrap());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    /// A child that dies during the wait gets the fallback note, which is not its wrap-up.
+    #[test]
+    fn a_death_note_is_not_saved_as_the_wrap_up() {
+        let (root, mut connection, session) = closing("close-dead");
+        let child = {
+            let (root, session) = (root.clone(), session.clone());
+            std::thread::spawn(move || {
+                let mut connection = swarm::store::open(&root.join("swarm.db")).unwrap();
+                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+                while !swarm::store::owes_wrap_up(&connection, &session, CODER).unwrap() {
+                    assert!(std::time::Instant::now() < deadline, "no wrap-up was sent");
+                    std::thread::sleep(std::time::Duration::from_millis(50));
+                }
+                report_dead(
+                    &mut connection,
+                    &root,
+                    "fake",
+                    &session,
+                    CODER,
+                    "agent coder died",
+                )
+                .unwrap();
+            })
+        };
+        let started = std::time::Instant::now();
+
+        close(&mut connection, &root, &session, Some(30));
+
+        child.join().unwrap();
+        assert!(started.elapsed() < std::time::Duration::from_secs(10));
+        assert!(
+            !root
+                .join(format!("runs/{session}/{CODER}.summary.md"))
+                .exists()
+        );
         std::fs::remove_dir_all(root).unwrap();
     }
 

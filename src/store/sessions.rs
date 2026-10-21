@@ -247,7 +247,7 @@ mod tests {
 
     #[test]
     fn creates_sessions_with_unique_uuid_v7_ids() {
-        let connection = seed(0);
+        let connection = seed();
         let relay = create_session(&connection, "relay", Path::new("/relay"), None, None).unwrap();
         let open_id = create_session(&connection, "open", Path::new("/open"), None, None).unwrap();
         assert_eq!(uuid::Uuid::parse_str(&relay).unwrap().get_version_num(), 7);

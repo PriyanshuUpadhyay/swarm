@@ -222,7 +222,7 @@ async fn lifecycle_routes_child() {
 printf '%s\n' "$*" >> "$SWARM_HOME/actions"
 case "$1 $2" in
 'agents --json') printf '%s\n' '{{"{id}":{{"agents":[{{"id":"orchestrator","alive":true}},{{"id":"worker","alive":true}}]}}}}' ;;
-'close worker') if [ -f "$HOME/change-during-close" ]; then printf keep > "$PWD/new-work.txt"; fi ;;
+'close --now') if [ "$3" = worker ] && [ -f "$HOME/change-during-close" ]; then printf keep > "$PWD/new-work.txt"; fi ;;
 esac
 "#,
         id = fixture.session
@@ -247,7 +247,7 @@ esac
     .await
     .unwrap();
     let calls = action_calls(&fixture);
-    assert!(calls.rfind("close worker").unwrap() < calls.rfind("close orchestrator").unwrap());
+    assert!(calls.rfind("close --now worker").unwrap() < calls.rfind("close --now orchestrator").unwrap());
     life_post(
         &fixture,
         "/api/workspace/restore",

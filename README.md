@@ -301,8 +301,9 @@ echo "parser done, tests green" | swarm finish        # prints the seq, e.g. 0
 # back in the orchestrator pane
 swarm inbox                                            # 0 coder summary runs/<session-id>/0.txt
 swarm ack 0
-swarm close coder        # asks coder for a wrap-up, saves runs/<session-id>/coder.summary.md, closes
-swarm close --now coder  # closes at once, with no wrap-up
+swarm close --now coder  # closes at once; my-agent is no swarm voice, so it would not answer a wrap-up
+# a child that runs the swarm-voice skill closes with `swarm close coder` instead, which asks for
+# a wrap-up, saves runs/<session-id>/coder.summary.md, and then closes the pane
 ```
 
 ## Performance profiling

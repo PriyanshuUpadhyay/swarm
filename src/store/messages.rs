@@ -160,25 +160,24 @@ pub fn owes_wrap_up(
     )?)
 }
 
-/// The body path of the first summary from `sender_id` after message `seq`.
-pub fn summary_after(
+/// The body paths of the summaries from `sender_id` after message `seq`, oldest first.
+pub fn summaries_after(
     connection: &Connection,
     session_id: &str,
     sender_id: &str,
     seq: i64,
-) -> Result<Option<String>, Box<dyn std::error::Error>> {
-    use rusqlite::OptionalExtension;
-    Ok(connection
-        .query_row(
-            "SELECT body_path FROM message
-             WHERE session_id = ?1 AND sender_id = ?2 AND kind = 'summary' AND seq > ?3
-             ORDER BY seq LIMIT 1",
-            (session_id, sender_id, seq),
-            |r| r.get(0),
-        )
-        .optional()?)
+) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+    let mut statement = connection.prepare(
+        "SELECT body_path FROM message
+         WHERE session_id = ?1 AND sender_id = ?2 AND kind = 'summary' AND seq > ?3
+         ORDER BY seq",
+    )?;
+    let rows = statement.query_map((session_id, sender_id, seq), |r| r.get(0))?;
+    Ok(rows.collect::<Result<_, _>>()?)
 }
 
+/// Apply the session talk mode: open passes, lane blocks child-to-child, relay sends
+/// child-to-child to the orchestrator as `relay:<recipient>`. Returns (recipient, kind).
 pub fn route(
     connection: &Connection,
     session_id: &str,
@@ -240,7 +239,7 @@ mod tests {
 
     #[test]
     fn sends_message_row_and_file() {
-        let mut connection = seed(0);
+        let mut connection = seed();
         let root = temp_root("send");
         let seq = send_message(
             &mut connection,
@@ -286,7 +285,7 @@ mod tests {
 
     #[test]
     fn inbox_lists_pending_in_seq_order_and_stamps_seen_once() {
-        let mut connection = seed(0);
+        let mut connection = seed();
         let root = temp_root("inbox");
         send_message(
             &mut connection,
@@ -375,7 +374,7 @@ mod tests {
 
     #[test]
     fn ack_marks_once_and_only_for_recipient() {
-        let mut connection = seed(0);
+        let mut connection = seed();
         let root = temp_root("ack");
         send_message(
             &mut connection,
@@ -413,14 +412,14 @@ mod tests {
 
     #[test]
     fn ack_of_a_seq_not_in_the_inbox_names_the_seq() {
-        let connection = seed(0);
+        let connection = seed();
         let error = ack(&connection, SESSION, 999999, CODER).unwrap_err();
         assert_eq!(error.to_string(), "swarm: no message 999999 in your inbox");
     }
 
     #[test]
     fn routes_by_talk_mode() {
-        let connection = seed(0);
+        let connection = seed();
         connection.execute_batch(&format!("INSERT INTO agent (id, session_id, role) VALUES ('reviewer', '{SESSION}', 'reviewer')")).unwrap();
         let set_mode = |mode: &str| {
             connection

@@ -68,7 +68,7 @@ owner, and only the orchestrator may run it.
 
 ```sh
 swarm sweep --every 30                                  # a dead pane arrives as a summary from that child
-swarm close <id>...                                     # ask for a wrap-up, save it, close the seat named by run-workers
+swarm close <id>...                                     # ask for a wrap-up, save it, close the seat named by run-workers; waits up to 120 s, so give the call a 180 s timeout
 swarm close --now <id>                                  # close at once, with no wrap-up
 ```
 

@@ -219,7 +219,7 @@ mod tests {
     /// said `no pane recorded` at the first message rather than at registration.
     #[test]
     fn an_empty_pane_is_refused() {
-        let connection = seed(0);
+        let connection = seed();
         let refused = set_pane(&connection, SESSION, ORCHESTRATOR, "  ")
             .unwrap_err()
             .to_string();
@@ -236,7 +236,7 @@ mod tests {
 
     #[test]
     fn a_command_on_an_unknown_agent_names_it() {
-        let connection = seed(0);
+        let connection = seed();
         let unknown = require_pane(&connection, SESSION, "no-such-agent")
             .unwrap_err()
             .to_string();
@@ -254,7 +254,7 @@ mod tests {
 
     #[test]
     fn sets_and_reads_pane() {
-        let connection = seed(0);
+        let connection = seed();
         assert_eq!(pane_of(&connection, SESSION, CODER).unwrap(), None);
         set_pane(&connection, SESSION, CODER, "w8A:p2").unwrap();
         assert_eq!(
@@ -267,7 +267,7 @@ mod tests {
 
     #[test]
     fn finds_the_session_orchestrator() {
-        let connection = seed(0);
+        let connection = seed();
         assert_eq!(orchestrator_of(&connection, SESSION).unwrap(), ORCHESTRATOR);
         connection
             .execute(
@@ -286,7 +286,7 @@ mod tests {
 
     #[test]
     fn lists_live_children_and_summaries() {
-        let mut connection = seed(0);
+        let mut connection = seed();
         set_pane(&connection, SESSION, CODER, "%2").unwrap();
         set_pane(&connection, SESSION, ORCHESTRATOR, "%1").unwrap();
         assert_eq!(

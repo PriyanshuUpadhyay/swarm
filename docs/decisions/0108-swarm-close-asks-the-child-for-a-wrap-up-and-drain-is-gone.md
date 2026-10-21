@@ -19,7 +19,8 @@ child a `wrap-up` message, wait up to 120 s for its `swarm finish`, save the rep
 `## Done`, `## Why`, `## Decisions`, `## Next steps`, and `## Open questions`, and `finish` refuses
 one without them. A child with no reply in time leaves its screen in `runs/<session>/<id>.log` and
 a note to the orchestrator; `swarm close --now` skips the wrap-up, and the app always uses it. A
-child that dies gets the note with its log path, also after it answered an earlier ask. We removed
+child that dies gets the fallback note also after it answered an earlier ask, and the note names
+its log when its own `swarm exited` hook saved one. We removed
 `swarm drain`, the summarize job, and `SWARM_SUMMARIZER`, and kept the `job` table, because a drop
 needs a migration and a change to the store's five-table identity check. We neglected closing the
 pane on `finish`, because `finish` answers one ask and a child answers several rounds, and a log
