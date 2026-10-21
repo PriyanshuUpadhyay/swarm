@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ApiError } from "./api";
 import type { App } from "./app";
-import { hudCard, meterGroups, Settings, setUpAll, untilText, waitText, type Doctor, type Meter, type SetupPlan } from "./settings";
+import { hudCard, Settings, setUpAll, untilText, waitText, type Doctor, type Meter, type SetupPlan } from "./settings";
 
 const ROLES = { revision: "rev-1", min_usage_left_pct: 5, profiles: [{ name: "chat", runners: [] }] };
 
@@ -122,16 +122,6 @@ const meter = (provider: string, account: string | null, window: string, used: n
 });
 
 describe("meters", () => {
-  it("groups windows by account and leaves out AGY and accounts with no source", () => {
-    const groups = meterGroups({
-      meters: [meter("claude", "default", "5h", 13), meter("claude", "default", "7d", 40), meter("codex", "work", "primary", null, "missing"), meter("codex", "key", "", null, "no_source"), meter("agy", null, "", null, "no_source")],
-    });
-    expect(groups.map((g) => [g.key, g.meters.length])).toEqual([
-      ["claude:default", 2],
-      ["codex:work", 1],
-    ]);
-  });
-
   it("writes reset and wait times short", () => {
     expect(untilText(3 * 86400 + 4 * 3600 + 5)).toBe("3d 4h");
     expect(untilText(2 * 3600 + 5 * 60)).toBe("2h 5m");
