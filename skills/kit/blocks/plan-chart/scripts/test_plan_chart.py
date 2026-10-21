@@ -109,6 +109,9 @@ def test_mermaid_chart():
     # With no conflicts alternative there is no Dropped line.
     assert md.split("```\n", 1)[1].startswith("<!-- plan-chart:end -->"), md[:900]
     assert plan_chart.dropped_line({"a": ("Chosen", "x"), "b": ("Rejected", "y")}) == "Dropped (1): b"
+    # Parts sit in brackets after their parent; ↳ marks a parent that is not Rejected itself.
+    rejected = {b: ("Rejected", "x") for b in ("diagram", "html-diagram", "voice-pr")}
+    assert plan_chart.dropped_line({**rejected, "voice": ("Chosen", "x")}) == "Dropped (3): diagram (html-diagram), voice ↳ (voice-pr)"
     # plan.html draws the same text with the pinned Pele build, offline.
     page = (folder / "plan.html").read_text(encoding="utf-8")
     assert '<p class="dropped">' not in page

@@ -26,8 +26,8 @@ metadata:
   - Writes: the repo paths the step may change, comma-separated, a folder with a trailing `/`, or `none` for a step that writes only its run folder. Two steps that can run at the same time may not write the same path or one inside the other. `done` refuses a step that changed a path outside its own Writes and those of the other active steps.
   - Block: one or more block ids, comma-separated. The step's agent reads each `blocks/<id>/SKILL.md` and follows it.
   - Why: one short line (about 12 words) that says why this step is in the plan. Put detail in the step file, not in this cell.
-- The first step holds the `requirements` block.
-- Each step with Writes has a later step with the `change-review` block. An agent that took a writing step cannot take that review step.
+- Each step with Needs `none` holds the `requirements` block.
+- Each step with Writes has a step with the `change-review` block that reaches it through Needs. An agent that took a writing step cannot take that review step.
 - The last step is the only step whose output no step uses. It holds a `voice-` block that fits the output: `voice-reply` for a reply to the owner, `voice-teach` when the owner wants to understand a subject, `voice-review` for review comments, and `voice-pr` for PR text.
 - After the step table, add `## Blocks considered` with the header `| Block | Status | Why |`. It holds one `Chosen` row for each block, and one `Rejected` row for each block that a Chosen block names in `conflicts`, each with one reason. `Chosen` is exactly the set of blocks that the steps load, after the parent and part expansion that `blocks/blocks.toml` sets. Sub-blocks are the parts of a parent block, as its `metadata.parts` names them. They have their own rows, and `plan-chart` shows them under their parent.
 - Two blocks that name each other in `conflicts` are alternatives. Keep one and say why the other is Rejected.
@@ -71,7 +71,7 @@ Evidence:
 | (one Chosen row for each other block that a step uses) | | |
 ```
 
-Result: 02-read and 03-tokens run in parallel, and 04-build waits for both. They write different paths, so neither can change the other's files. The owner sees the Chosen blocks, and answers "add sub-block html-diagram" to change one.
+Result: 02-read and 03-tokens run in parallel, and 04-build waits for both. Only 03-tokens writes, so 02-read cannot change its files. The owner sees the Chosen blocks, and answers "add sub-block html-diagram" to change one.
 
 ## Check (script)
 - `python3 -I <kit root>/blocks/plan-chart/scripts/plan_chart.py <run>/plan.md` exits 0: `Done when:` has a bullet per claim and an `Evidence:` bullet list, every block exists, every Needs word names a step, the plan has no loop and one end, the end holds a `voice-` block, the first step holds `requirements`, each writing step has a later `change-review`, no two parallel steps write the same path, and the blocks table lists each block once, with Chosen equal to the blocks the steps use and Rejected equal to their `conflicts` alternatives.

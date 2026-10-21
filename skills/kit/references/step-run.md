@@ -34,7 +34,7 @@ A plan run is one whose table has a `Writes` column. Its step files carry `Write
 `Uses:`, and `Optional: yes` for a row marked `(optional)`. In a plan run, `skip` refuses a step with no
 `Optional: yes`. `take` records the work tree as a `base <tree>` line in `events.log`, and `done` refuses a
 path changed since then outside the step's Writes, the Writes of the other active steps, and the run folder.
-Outside git it prints `not run: scope`. `done` also runs the script checks of each block in the step's row of
+Outside git, or with no base from `take`, it prints `not run: scope`. `done` also runs the script checks of each block in the step's row of
 `<folder>/plan.md`, so removing the `Skills read:` line skips none. `take` of a step with the `change-review`
 block refuses an agent that took a writing step it reaches through `Uses:`.
 `amend <folder> <row> [--before <step>]` adds one plan row that writes `none`, while the count of `amend`

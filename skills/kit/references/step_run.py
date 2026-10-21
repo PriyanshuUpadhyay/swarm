@@ -11,7 +11,7 @@
   amend <folder> <row> [--before <step>]  add one `Writes: none` step to a plan run, within plan.md's Amend: N
                                 (step_amend.py)
 
-take, done, skip, and block add one line to <folder>/events.log, and done adds one more for each check it runs,
+take, done, skip, block, and amend add one line to <folder>/events.log, and done adds one more for each check it runs,
 so the path of a run stays readable after it ends.
 A skill script with its own step graph or revision (implement) imports these functions and passes `need`
 and `rev`.
