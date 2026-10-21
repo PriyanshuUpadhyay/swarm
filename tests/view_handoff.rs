@@ -28,6 +28,18 @@ fn ready_before_log() {
     assert!(!handoff::ready(&session, "claude"));
     assert!(!handoff::ready(&json!({"chair_provider":"codex"}), "codex"));
 }
+/// AGY reports its conversation id only after a turn, so its idle screen says it is ready.
+#[test]
+fn an_agy_chair_is_ready_at_its_idle_prompt() {
+    let agents =
+        |state: Value| json!({"agents":[{"id":"orchestrator","alive":true,"state":state}]});
+    assert!(handoff::agy_ready(&agents(json!("done"))));
+    assert!(!handoff::agy_ready(&agents(json!(null))));
+    assert!(!handoff::agy_ready(&agents(json!("waiting"))));
+    assert!(!handoff::agy_ready(
+        &json!({"agents":[{"id":"orchestrator","alive":false,"state":"done"}]})
+    ));
+}
 #[test]
 fn completed_summary() {
     let events = vec![

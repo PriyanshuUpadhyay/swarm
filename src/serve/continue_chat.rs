@@ -360,11 +360,17 @@ pub(super) async fn execute_continue_timed(
             run_cli(app, call.args(&["session", "continue", session, old]), None).await?;
             return Ok(started);
         }
+        let new_call = CliCall { args: vec![], cwd: call.cwd.clone(), session: Some(session.into()), adapter: "tmux-swarm".into() };
         continue_phase(app, old, "waiting")?;
         let deadline = tokio::time::Instant::now() + ready_wait;
         let ready = tokio::time::timeout_at(deadline, async {
             loop {
                 tokio::time::sleep(poll).await;
+                if body.provider == "agy" {
+                    let output = run_cli(app, new_call.args(&["agents", "--json"]), None).await?;
+                    if serde_json::from_str(&output).is_ok_and(|agents| handoff::agy_ready(&agents)) { return Ok::<_, ApiError>(()); }
+                    continue;
+                }
                 let output = run_cli(app, call.args(&["sessions", "--json"]), None).await?;
                 let listing: Value = serde_json::from_str(&output).map_err(|_| error(StatusCode::BAD_GATEWAY, "invalid sessions JSON from swarm"))?;
                 let sessions = listing["sessions"].as_array().ok_or_else(|| error(StatusCode::BAD_GATEWAY, "missing sessions list from swarm"))?;
@@ -373,7 +379,6 @@ pub(super) async fn execute_continue_timed(
         }).await;
         ready.map_err(|_| error(StatusCode::GATEWAY_TIMEOUT, "The new agent did not become ready to receive the summary"))??;
         continue_phase(app, old, "delivering")?;
-        let new_call = CliCall { args: vec![], cwd: call.cwd.clone(), session: Some(session.into()), adapter: "tmux-swarm".into() };
         run_cli(app, new_call.args(&["type", "orchestrator"]), Some(handoff::first_message(&context, summary))).await?;
         run_cli(app, call.args(&["session", "continue", session, old]), None).await?;
         Ok(started)

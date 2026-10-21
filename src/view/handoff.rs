@@ -7,6 +7,15 @@ pub fn ready(session: &Value, provider: &str) -> bool {
     session["chair_provider"] == provider && session["chair_id"].is_string()
 }
 
+/// An AGY chair learns its conversation id only from a turn's hook, so before the summary it is
+/// ready when `agents --json` reads its pane as idle at the prompt.
+pub fn agy_ready(agents: &Value) -> bool {
+    agents["agents"].as_array().is_some_and(|list| {
+        list.iter()
+            .any(|a| a["id"] == "orchestrator" && a["alive"] == true && a["state"] == "done")
+    })
+}
+
 pub fn completed_summary(rows: &[Row], baseline: usize) -> Option<String> {
     let added = rows.get(baseline..)?;
     let question = added

@@ -30,5 +30,6 @@ for some models, so the popover hides Thinking for them. An ended AGY or pi chat
 now offers Resume on its last model, because the chat profile has no runner for their CLI, which
 replaces the ADR 0107 rule that AGY and pi chats have no Resume; a Claude or Codex Resume still runs
 the profile's runner. A Codex or AGY chat before its first reply has no session id yet, so it
-cannot resume. Each chat runs its own switch, so a switch in one chat never blocks another (owner,
+cannot resume. A Summary to AGY waits for the new pane's idle prompt, because AGY reports its
+conversation id only after a turn (live run 2026-10-22: the summary arrived in 9 s). Each chat runs its own switch, so a switch in one chat never blocks another (owner,
 2026-10-22: "we would not want to block another chat").
