@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { App } from "./app";
-import { blankDraft, catalogGroups, composable, copyable, draftText, presetDraft, Skills, type Checked, type Kit } from "./skills";
+import { blankDraft, catalogGroups, usedByLabel, composable, copyable, draftText, presetDraft, Skills, type Checked, type Kit } from "./skills";
 
 const script = fileURLToPath(new URL("../../../skills/kit/skills/plan/scripts/preset.py", import.meta.url));
 const python = (args: string[], input = "") => JSON.parse(execFileSync("python3", ["-I", "-B", script, ...args], { encoding: "utf8", input }));
@@ -67,6 +67,17 @@ function model(answer: (path: string, body?: Record<string, unknown>) => Promise
   };
   return { skills: new Skills(app as unknown as App), calls };
 }
+
+describe("usedByLabel", () => {
+  it("says a parent comes in for a named part, and a part through its parent", () => {
+    const blocks = new Map(kit.blocks.map((b) => [b.id, b]));
+    const parent = blocks.get("voice")!;
+    const part = blocks.get("voice-reply")!;
+    expect(parent.used_by.filter((u) => !u.named).map((u) => usedByLabel(parent, u))).toContain("for a named part");
+    expect(usedByLabel(part, { preset: "x", step: "y", named: false })).toBe("through voice");
+    expect(usedByLabel(part, { preset: "x", step: "y", named: true })).toBe("named");
+  });
+});
 
 describe("Skills", () => {
   it("turns Copy on only for the exact text that Python passed", async () => {

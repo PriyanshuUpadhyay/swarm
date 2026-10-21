@@ -3,7 +3,7 @@
 
 import { useState } from "react";
 import type { App } from "../core/app";
-import { catalogGroups, type Block, type Kit, type Preset, type SkillsView } from "../core/skills";
+import { catalogGroups, usedByLabel, type Block, type Kit, type Preset, type SkillsView } from "../core/skills";
 import { Button } from "../components/ui/button";
 import { FIELD } from "./settings-shared";
 import { SkillGraph } from "./skill-graph";
@@ -123,7 +123,7 @@ function BlockDetail({ app, block }: { app: App; block: Block }) {
                 >
                   {u.preset} · {u.step}
                 </button>
-                <span className="ml-2 text-xs text-muted-foreground">{u.named ? "named" : `through ${block.parent ?? "a parent"}`}</span>
+                <span className="ml-2 text-xs text-muted-foreground">{usedByLabel(block, u)}</span>
               </li>
             ))}
           </ul>

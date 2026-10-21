@@ -75,6 +75,12 @@ const KIND_TITLES: [string, string][] = [
 ];
 
 /** Parents with their parts under them, then the other blocks by kind; a filter keeps a parent whose part matches. */
+/** How a step loads a block; a parent that a step did not name comes in for one of its named parts. */
+export function usedByLabel(block: Block, use: UsedBy) {
+  if (use.named) return "named";
+  return block.parent ? `through ${block.parent}` : "for a named part";
+}
+
 export function catalogGroups(kit: Kit, filter: string): CatalogGroup[] {
   const q = filter.trim().toLowerCase();
   const hit = (b: Block) => !q || [b.id, b.description, b.needs, b.gives].some((t) => t.toLowerCase().includes(q));
