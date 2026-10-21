@@ -69,7 +69,7 @@ def test_check_results(tmp):
     marker = Path(tmp, "late")
     cases = (("sh -c 'echo boom >&2; exit 1'", "boom"),
              (f"(sleep 2; touch {shlex.quote(str(marker))}) & wait", "no result in 1 s"))
-    with patch.object(step_checks, "block_checks", lambda block: [re.compile(".*")]), \
+    with patch.object(step_checks, "block_checks", lambda block: [("`x` prints nothing: x", re.compile(".*"))]), \
          patch.object(step_checks, "CHECK_SECONDS", 1):
         for command, shown in cases:
             todo = f"- [x] block fake script: `{command}` prints nothing: x: ok\n"
@@ -101,3 +101,34 @@ def test_take_logs_inside_the_lock(tmp):
     with patch.object(step_run, "log", log), redirect_stdout(StringIO()):
         step_run.take(folder, "01-ask", "w")
     assert held == [True], "the take line must be logged inside the lock"
+
+
+def test_check_text_from_the_worker(tmp):
+    """A slot value cannot hide a check as `not run`, a backtick cannot cut the command, and a refusal drops ESC."""
+    for name, site, shown in (("angle", "'<x>'", "block build-canvas check failed"),
+                              ("tick", "'a` exits 0: b'", "the check text differs"),
+                              ("esc", "'\x1b[2J'; true", "the check text differs")):
+        folder = gate_run(tmp, name, [f"block build-canvas script: {CANVAS.format(site=site)}"])
+        assert run("done", folder, "01-ask", take(folder, "01-ask")).returncode == 0
+        out = run("done", folder, "02-work", take(folder, "02-work"))
+        assert out.returncode == 1 and shown in out.stderr and "\x1b" not in out.stderr, (name, out)
+
+
+def test_done_sees_an_edit_during_checks(tmp):
+    """An edit to the step file while its checks run refuses, so done never writes over it."""
+    folder = gate_run(tmp, "edit", [])
+    file = folder / "02-work.md"
+    command = f"echo late >> {shlex.quote(str(file))}"
+    text = file.read_text(encoding="utf-8")
+    file.write_text(text.replace(f"\n{step_run.RESULT_HEAD}", f"- [x] block fake script: `{command}` exits 0: x: ok\n"
+                                 f"\n{step_run.RESULT_HEAD}", 1), encoding="utf-8")
+    assert run("done", folder, "01-ask", take(folder, "01-ask")).returncode == 0
+    held = take(folder, "02-work")
+    with patch.object(step_checks, "block_checks", lambda block: [("`x` exits 0: x", re.compile(".*"))]):
+        try:
+            with redirect_stdout(StringIO()):
+                step_run.done(folder, "02-work", held)
+            raise AssertionError("done must refuse an edit made during its checks")
+        except SystemExit as error:
+            assert "changed while its checks ran" in str(error.code), error.code
+    assert file.read_text(encoding="utf-8").endswith("late\n"), "the edit stays"

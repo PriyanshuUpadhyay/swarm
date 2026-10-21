@@ -13,7 +13,7 @@ RUN_FORM = re.compile(r"`([^`]+)` (exits 0|prints nothing|prints `([^`]*)`|start
 CHECK_TODO = re.compile(r"- \[x\] block ([\w.-]+) script: (.*)")
 CHECK_SECONDS = 600
 # start fills a {{param}} in the command span with shlex.quote, so there it is one shell word and never `; cmd`.
-SLOT = "(?:[\\w@%+=:,./-]|'[^']*'|\"'\")+"
+SLOT = "(?:[\\w@%+=:,./-]|'[^'`]*'|\"'\")+"
 
 
 def work_root(folder):
@@ -31,8 +31,8 @@ def work_root(folder):
 
 
 def block_checks(block):
-    """The block's own `Check (script)` lines as patterns: a {{param}} in the command span matches one shell
-    word, and one after it matches any text."""
+    """The block's own `Check (script)` lines, each with its pattern: a {{param}} in the command span matches
+    one shell word, and one after it matches any text."""
     import block_resolver
     file = KIT / "blocks" / block / "SKILL.md"
     if not file.is_file():
@@ -41,7 +41,7 @@ def block_checks(block):
     def pattern(text, slot):
         return slot.join(map(re.escape, re.split(r"\{\{\w+\}\}", text)))
     cut = [line.index("`", 1) + 1 if line.startswith("`") and "`" in line[1:] else 0 for line in lines]
-    return [re.compile(pattern(line[:c], SLOT) + pattern(line[c:], ".+?") + ":") for line, c in zip(lines, cut)]
+    return [(line, re.compile(pattern(line[:c], SLOT) + pattern(line[c:], ".+?") + ":")) for line, c in zip(lines, cut)]
 
 
 def run_checks(folder, step, todo, text):
@@ -53,21 +53,22 @@ def run_checks(folder, step, todo, text):
     found = [m.groups() for m in map(CHECK_TODO.match, todo.splitlines()) if m]
     read = next((l for l in text.splitlines() if l.startswith("Skills read: ")), "")
     for block in re.findall(r"\bblock:([\w.-]+)@", read):
-        for p in block_checks(block) or []:
+        for line, p in block_checks(block) or []:
             if not any(b == block and p.match(t) for b, t in found):
                 raise SystemExit(f"{step} is not done: a blocks/{block} script check has no todo: "
-                                 f"{p.pattern[:120]}; restore the line that start wrote")
+                                 f"{line[:120]}; restore the line that start wrote")
     for line in todo.splitlines():
         found = CHECK_TODO.match(line)
         if not found:
             continue
         block, text = found.groups()
-        patterns = block_checks(block)
-        if patterns is None:
+        checks = block_checks(block)
+        if checks is None:
             print(f"not run: block {block}: no kit file blocks/{block}/SKILL.md")
             continue
-        if not any(p.match(text) for p in patterns):
-            raise SystemExit(f"{step} is not done: the check text differs from blocks/{block}: {text[:200]}")
+        source = next((l for l, p in checks if p.match(text)), None)
+        if source is None:
+            raise SystemExit(f"{step} is not done: the check text differs from blocks/{block}: {plain(text[:200])}")
         form = RUN_FORM.match(text)
         if not form:
             print(f"not run: block {block}: its expectation needs a reader")
@@ -75,8 +76,9 @@ def run_checks(folder, step, todo, text):
         command = form[1]
         for word, value in places.items():
             command = command.replace(word, shlex.quote(str(value)))
-        if left := re.search(r"<[\w -]+>", command):
-            print(f"not run: block {block}: needs {left[0]}")
+        # The block's own line decides a missing word, so a worker's slot value cannot turn a check off.
+        if left := next((w for w in re.findall(r"<[\w -]+>", source) if w not in places), None):
+            print(f"not run: block {block}: needs {left}")
             continue
         # A new session makes the check its own process group, so a timeout also stops a pipeline's children.
         child = subprocess.Popen(["sh", "-c", command], cwd=root, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
@@ -86,9 +88,15 @@ def run_checks(folder, step, todo, text):
             stdout, stderr = child.communicate(timeout=CHECK_SECONDS)
             code, tail = child.returncode, stdout + stderr
         except subprocess.TimeoutExpired:
-            os.killpg(child.pid, signal.SIGKILL)
-            child.communicate()
             code, stdout, stderr, tail = "timeout", "", "", f"no result in {CHECK_SECONDS} s"
+        finally:
+            # Ctrl-C does not reach the new session, so stop it here on every way out.
+            if child.poll() is None:
+                os.killpg(child.pid, signal.SIGKILL)
+                try:
+                    child.communicate(timeout=5)
+                except subprocess.TimeoutExpired:
+                    pass  # a grandchild that left the group still holds the pipe; give up on its output
         lines = [l.strip() for l in stdout.splitlines() if l.strip()]
         expect = form[2]
         passed = code == 0 and (
@@ -101,4 +109,4 @@ def run_checks(folder, step, todo, text):
         if not passed:
             last = "\n".join(plain(tail).splitlines()[-5:])
             raise SystemExit(f"{step} is not done: block {block} check failed (exit {code}, expected: {expect}):\n"
-                             f"{command}\n{last}")
+                             f"{plain(command)}\n{last}")

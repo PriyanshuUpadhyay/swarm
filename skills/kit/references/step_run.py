@@ -295,6 +295,8 @@ def done(folder, step, claim, rev=None, ends=(RESULT_HEAD,), rev_of=revision):
         if old := stale(folder, step, rev_of):
             raise SystemExit(f"{step} is not done: its input changed after take: {', '.join(old)}; take it again")
         run_checks(folder, step, todo, text)
+        if file.read_text(encoding="utf-8") != text:
+            raise SystemExit(f"{step} is not done: its file changed while its checks ran; run done again")
         rev = rev or revision(folder, step)
         write_step(file, f"Status: done {rev}\n" + text.split("\n", 1)[1])
     log(folder, step, f"done {rev}")
