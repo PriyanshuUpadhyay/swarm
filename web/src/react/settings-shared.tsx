@@ -54,9 +54,17 @@ export { FIELD, label, Row, Segmented, Toggle, useSettings, useNow };
 
 function Segmented<T extends string>({ label: name, value, options, onChange, testid }: { label: string; value: T; options: [T, string][]; onChange: (v: T) => void; testid: string }) {
   return (
-    <div role="radiogroup" aria-label={name} className="view-switch m-0 w-56" data-testid={testid}>
+    <div role="radiogroup" aria-label={name} className="view-switch m-0 w-56" data-testid={testid} onKeyDown={(e) => {
+      // A radiogroup is one tab stop; the arrow keys move the choice (WAI-ARIA radio group).
+      const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+      if (!step) return;
+      e.preventDefault();
+      const next = options[(options.findIndex(([v]) => v === value) + step + options.length) % options.length][0];
+      onChange(next);
+      e.currentTarget.querySelector<HTMLElement>(`[data-value="${next}"]`)?.focus();
+    }}>
       {options.map(([v, text]) => (
-        <button key={v} role="radio" aria-checked={value === v} data-value={v} onClick={() => value !== v && onChange(v)}>
+        <button key={v} type="button" role="radio" aria-checked={value === v} tabIndex={value === v ? 0 : -1} data-value={v} onClick={() => value !== v && onChange(v)}>
           {text}
         </button>
       ))}

@@ -147,12 +147,17 @@ export function usageLabel(usage: Usage): string {
   return new Intl.NumberFormat("en-US", { notation: "compact" }).format(tokens);
 }
 
-const cap = (p: string) => p[0].toUpperCase() + p.slice(1);
+const CLI_NAMES: Record<string, string> = { claude: "Claude", codex: "Codex", agy: "AGY", pi: "Pi" };
+
+/** The CLI's name in the chip, the popover's groups, and the outcome line. */
+export function cliName(id: string): string {
+  return CLI_NAMES[id] ?? id;
+}
 
 /** The run chip: `account · model · thinking`. Pi and AGY have no swarm accounts, so their CLI
  *  name stands in. */
 export function runLabel(input: AgentInput): string {
-  return [input.account ?? (input.provider ? cap(input.provider) : null), input.model ?? "Default model", input.effort].filter(Boolean).join(" · ");
+  return [input.account ?? (input.provider ? cliName(input.provider) : null), input.model ?? "Default model", input.effort].filter(Boolean).join(" · ");
 }
 
 /** One agent run: what the popover picks. */
@@ -160,9 +165,19 @@ export type Run = { provider: string; model: string | null; effort: string | nul
 
 export type Carry = "summary" | "clean";
 
+/** What `/api/chat/continue` does with the old chat. */
+export type SwitchCarry = Carry | "resume";
+
+export type Outcome = "none" | "resume" | "handoff";
+
+/** The saved answer to "what does a switch to another CLI bring"; unset means Summary. */
+export function savedCarry(prefs: { switchCarry?: string } | undefined): Carry {
+  return prefs?.switchCarry === "clean" ? "clean" : "summary";
+}
+
 /** What Apply does (ADR 0108). Inside one CLI the session starts again on the new run with its
  *  history; another CLI, or another Codex account, cannot take the session, so a new chat starts. */
-export function switchOutcome(current: Run, draft: Run): "none" | "resume" | "handoff" {
+export function switchOutcome(current: Run, draft: Run): Outcome {
   if (current.provider !== draft.provider) return "handoff";
   if (current.model === draft.model && current.effort === draft.effort && current.account === draft.account) return "none";
   // Each Codex session lives in one account home.
@@ -170,10 +185,21 @@ export function switchOutcome(current: Run, draft: Run): "none" | "resume" | "ha
 }
 
 /** The What happens line under the popover. */
-export function outcomeText(outcome: "none" | "resume" | "handoff", draft: Run, carry: Carry): string {
-  if (outcome === "none") return "Nothing changes.";
-  if (outcome === "resume") return `${cap(draft.provider)} restarts on the new settings. The chat keeps its history.`;
-  return carry === "summary"
-    ? `A new ${cap(draft.provider)} chat starts and gets a summary of this one.`
-    : `A new ${cap(draft.provider)} chat starts with nothing from this one.`;
+export function outcomeText(outcome: Outcome, draft: Run, carry: Carry): string {
+  const cli = cliName(draft.provider);
+  switch (outcome) {
+    case "none":
+      return "Nothing changes.";
+    case "resume":
+      return `${cli} restarts on the new settings. The chat keeps its history.`;
+    case "handoff":
+      return carry === "summary" ? `A new ${cli} chat starts and gets a summary of this one.` : `A new ${cli} chat starts with nothing from this one.`;
+  }
+}
+
+/** Why Apply cannot run now, or null. */
+export function applyBlock(chair: AgentInput, draft: Run): string | null {
+  if (!chair.provider) return "This chat does not record its CLI, so it cannot switch.";
+  if (chair.running) return "Wait for this turn to end, or stop it.";
+  return draft.model ? null : "Pick a model.";
 }

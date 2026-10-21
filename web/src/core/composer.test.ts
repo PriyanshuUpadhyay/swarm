@@ -1,21 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
-import { ApiError, type Agent, type Api, type Row, type RowFrame, type RowPage, type Session, type Snapshot } from "./api";
+import { ApiError, type Agent, type Api, type Row, type RowFrame, type RowPage, type Snapshot } from "./api";
 import { App } from "./app";
-import { agentInput, confirmSent, MISSING_ADAPTER, outcomeText, runLabel, sends, sentRow, settleSent, submission, switchOutcome, usageLabel } from "./composer";
+import { chair, session } from "./chat-fixtures";
+import { agentInput, confirmSent, MISSING_ADAPTER, sends, sentRow, settleSent, submission, usageLabel } from "./composer";
 
 const user = (id: string, text: string, offset = 10): Row => ({ id, kind: "user", text, order: [offset, 0] });
 const queued = (id: string, text: string): Row => ({ id, kind: "queued", text, order: [5, 0] });
-const session = (extra: Partial<Session> = {}): Session => ({
-  id: "chat",
-  cwd: "/work/app",
-  created_at: 0,
-  chair_provider: "claude",
-  adapter: "tmux-swarm",
-  project: null,
-  workspace: "/work/app",
-  ...extra,
-});
-const chair = (extra: Partial<Agent> = {}): Agent => ({ id: "orchestrator", role: "orchestrator", state: null, alive: true, pane: "%1", ...extra });
 const waitingPrompt = { id: "prompt-hash", question: "Do you want to proceed?", choices: ["Yes", "No"] };
 
 describe("send key", () => {
@@ -390,24 +380,5 @@ describe("usage from the rows stream", () => {
     expect(usageLabel(app.view.composer!.usage)).toBe("20% left");
     frame({ usage: null });
     expect(usageLabel(app.view.composer!.usage)).toBe("Usage");
-  });
-});
-
-describe("run chip", () => {
-  const run = (provider: string, model: string | null, effort: string | null = null, account: string | null = null) => ({ provider, model, effort, account });
-
-  it("names the account, model and thinking, and the CLI where no account is", () => {
-    expect(runLabel(agentInput(session(), [chair({ provider: "claude", model: "claude-sonnet-5-5", effort: "high", account: "work" })]))).toBe("work · claude-sonnet-5-5 · high");
-    expect(runLabel(agentInput(session({ chair_provider: "pi" }), [chair({ provider: "pi" })]))).toBe("Pi · Default model");
-  });
-
-  it("resumes inside one CLI and hands off to another CLI or Codex account", () => {
-    expect(switchOutcome(run("claude", "a"), run("claude", "a"))).toBe("none");
-    expect(switchOutcome(run("claude", "a"), run("claude", "b", "high", "work"))).toBe("resume");
-    // One pi session runs Claude and GPT models.
-    expect(switchOutcome(run("pi", "anthropic/x"), run("pi", "openai-codex/y"))).toBe("resume");
-    expect(switchOutcome(run("codex", "a", null, "one"), run("codex", "a", null, "two"))).toBe("handoff");
-    expect(switchOutcome(run("claude", "a"), run("agy", "a"))).toBe("handoff");
-    expect(outcomeText("handoff", run("agy", "a"), "clean")).toBe("A new Agy chat starts with nothing from this one.");
   });
 });

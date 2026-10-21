@@ -1,3 +1,5 @@
+import type { SwitchCarry } from "./composer";
+
 export type Mode = "new-branch" | "existing-branch" | "pr" | "issue";
 
 /** `GET /api/workspace/new-options`. */
@@ -36,7 +38,7 @@ export type SetupRun = {
 export type Create = { state: "working" | "failed" | "kept"; error: string | null; workspace: string | null; setup: SetupRun | null };
 
 /** A switch model run, from its `handoff` stream frames (P3b). */
-export type Handoff = { old: string; phase: string; canCancel: boolean; error: string | null };
+export type Handoff = { old: string; phase: string; canCancel: boolean; error: string | null; carry?: SwitchCarry };
 
 export type Confirm = { title: string; body: string; action: string; blocked?: boolean; run: () => Promise<unknown> };
 

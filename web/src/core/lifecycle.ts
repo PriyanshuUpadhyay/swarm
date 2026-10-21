@@ -6,6 +6,10 @@ import { ApiError, sleep } from "./api";
 import type { App } from "./app";
 import { isChair } from "./panes";
 import type { ProviderInfo } from "./settings";
+import type { SwitchCarry } from "./composer";
+
+/** One row of `GET /api/models`. */
+export type ModelInfo = { id: string; label: string; efforts?: string[] };
 import {
   type NewOptions,
   type Issue,
@@ -249,8 +253,9 @@ export class Lifecycle {
     // The run chip's popover lives in the open chat's composer.
     if (this.app.openId !== session) this.app.openChat(session);
     const h = this.state.handoff;
-    // A switch still running for this chat keeps its progress.
-    this.set({ switchModel: session, handoff: h?.old === session && !["completed", "failed", "cancelled"].includes(h.phase) ? h : null });
+    // A running switch keeps its progress, also while another chat's switch opens, so only one
+    // switch runs at a time.
+    this.set({ switchModel: session, handoff: h && !["completed", "failed", "cancelled"].includes(h.phase) ? h : null });
   }
 
   providers(): Promise<{ providers: ProviderInfo[] }> {
@@ -258,7 +263,7 @@ export class Lifecycle {
   }
 
   /** `efforts` lists the levels one model takes; absent means the provider's list. */
-  models(provider: string): Promise<{ models: { id: string; label: string; efforts?: string[] }[] }> {
+  models(provider: string): Promise<{ models: ModelInfo[] }> {
     return this.api.get("/api/models", { provider });
   }
 
@@ -269,9 +274,11 @@ export class Lifecycle {
   /** Switch model (ADR 0108). `resume` starts the chat's own CLI session again on the new run; a
    *  new chat takes this chat's summary, or nothing on `clean`. Progress comes from `handoff`
    *  frames; on success the chat that runs now opens. */
-  async switchModel(old: string, provider: string, model: string, account: string | null, effort: string | null = null, carry: "resume" | "summary" | "clean" = "summary") {
+  async switchModel(old: string, provider: string, model: string, account: string | null, effort: string | null = null, carry: SwitchCarry = "summary") {
     if (this.state.handoff && !["completed", "failed", "cancelled"].includes(this.state.handoff.phase)) return;
-    this.set({ handoff: { old, phase: "preparing", canCancel: carry !== "resume", error: null } });
+    // A resume closes the chair's pane, and the popover goes with the composer, so it closes now
+    // and a failure shows as a notice. The server's frames own canCancel.
+    this.set({ handoff: { old, phase: "preparing", canCancel: true, error: null, carry }, ...(carry === "resume" ? { switchModel: null } : {}) });
     try {
       const done = await this.api.post<{ session: string }>("/api/chat/continue", {
         old_session: old,
@@ -287,7 +294,7 @@ export class Lifecycle {
     } catch (err) {
       const cancelled = err instanceof ApiError && err.message === "model switch cancelled";
       if (!this.state.switchModel) this.app.notice(cancelled ? "Model switch cancelled." : message(err), !cancelled);
-      this.set({ handoff: { old, phase: cancelled ? "cancelled" : "failed", canCancel: false, error: cancelled ? null : message(err) } });
+      this.set({ handoff: { old, phase: cancelled ? "cancelled" : "failed", canCancel: false, error: cancelled ? null : message(err), carry } });
     }
   }
 

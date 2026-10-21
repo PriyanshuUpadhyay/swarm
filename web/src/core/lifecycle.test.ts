@@ -130,7 +130,7 @@ describe("chats", () => {
       throw new ApiError(409, "model switch cancelled");
     });
     await cancelled.life.switchModel("chat-1", "codex", "gpt-5", null);
-    expect(cancelled.life.state.handoff).toEqual({ old: "chat-1", phase: "cancelled", canCancel: false, error: null });
+    expect(cancelled.life.state.handoff).toEqual({ old: "chat-1", phase: "cancelled", canCancel: false, error: null, carry: "summary" });
 
     const failed = fakeApp(async () => {
       throw new ApiError(409, "Wait for the current reply to finish, or stop it before switching model.");
@@ -138,6 +138,33 @@ describe("chats", () => {
     await failed.life.switchModel("chat-1", "codex", "gpt-5", null);
     expect(failed.life.state.handoff?.phase).toBe("failed");
     expect(failed.life.state.handoff?.error).toContain("Wait for the current reply");
+  });
+
+  it("closes the popover when a resume starts, so its failure shows as a notice", async () => {
+    const app = fakeApp(async () => {
+      throw new ApiError(409, "swarm: --effort bogus is not a level of this CLI");
+    });
+    app.life.openSwitchModel("chat-1");
+    const run = app.life.switchModel("chat-1", "claude", "sonnet", null, "bogus", "resume");
+    // The chair's pane closes during a resume, which unmounts the popover with the composer.
+    expect(app.life.state.switchModel).toBeNull();
+    await run;
+    expect(app.calls).toContain("notice swarm: --effort bogus is not a level of this CLI");
+  });
+
+  it("keeps another chat's running switch, so a second one cannot start", async () => {
+    const { life, calls } = fakeApp(() => new Promise(() => {}));
+    void life.switchModel("chat-1", "codex", "gpt-5", null);
+    life.openSwitchModel("chat-2");
+    expect(life.state.handoff?.old).toBe("chat-1");
+    await life.switchModel("chat-2", "codex", "gpt-5", null);
+    expect(calls.filter((c) => c.startsWith("/api/chat/continue"))).toHaveLength(1);
+  });
+
+  it("records the carry, so the progress lists only the steps that run", () => {
+    const { life } = fakeApp(() => new Promise(() => {}));
+    void life.switchModel("chat-1", "codex", "gpt-5", null, null, "clean");
+    expect(life.state.handoff?.carry).toBe("clean");
   });
 
   it("sends the carry and effort of a switch", async () => {
@@ -151,7 +178,7 @@ describe("chats", () => {
     void life.switchModel("chat-1", "codex", "gpt-5", null);
     life.onFrame("handoff", { old_session: "other-chat", phase: "starting", canCancel: false });
     life.onFrame("handoff", { old_session: "chat-1", phase: "summarizing", canCancel: true });
-    expect(life.state.handoff).toEqual({ old: "chat-1", phase: "summarizing", canCancel: true, error: null });
+    expect(life.state.handoff).toEqual({ old: "chat-1", phase: "summarizing", canCancel: true, error: null, carry: "summary" });
     life.onFrame("handoff", { old_session: "chat-1", phase: "cancelled", canCancel: false });
     life.onFrame("handoff", { old_session: "chat-1", phase: "starting", canCancel: false });
     expect(life.state.handoff?.phase).toBe("cancelled");

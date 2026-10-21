@@ -112,8 +112,10 @@ test("The run chip hands off to another CLI with a summary, and Cancel stops it 
   const before = await chats();
   await tab.locator(`[data-testid="tree-row"][data-session="${live}"]`).click();
   await tab.getByTestId("model-chip").click();
-  const dialog = tab.getByTestId("run-popover");
+  const dialog = tab.getByRole("dialog", { name: "Change model, thinking, or account" });
   await expect(dialog).toBeVisible();
+  // Focus moves into the popover, so typing searches at once.
+  await expect(dialog.getByTestId("run-query")).toBeFocused();
   await dialog.getByTestId("run-query").fill("gpt-e2e");
   // The same CLI restarts its own session and asks nothing.
   await dialog.getByTestId("run-custom-claude").click();
@@ -121,7 +123,15 @@ test("The run chip hands off to another CLI with a summary, and Cancel stops it 
   await expect(dialog.getByTestId("run-carry")).toHaveCount(0);
   await dialog.getByTestId("run-custom-codex").click();
   // Another CLI asks what to bring, with Summary as the default.
-  await expect(dialog.getByTestId("run-carry-choice").locator('[aria-checked="true"]')).toHaveText("Summary");
+  const summary = dialog.getByTestId("run-carry-choice").getByRole("radio", { name: "Summary" });
+  await expect(summary).toHaveAttribute("aria-checked", "true");
+  // The choice is one tab stop, and the arrow keys move it.
+  await summary.focus();
+  await tab.keyboard.press("ArrowRight");
+  await expect(dialog.getByTestId("run-carry-choice").getByRole("radio", { name: "Start clean" })).toBeFocused();
+  await expect(dialog.getByTestId("run-outcome")).toHaveText("A new Codex chat starts with nothing from this one.");
+  await tab.keyboard.press("ArrowLeft");
+  await expect(summary).toHaveAttribute("aria-checked", "true");
   await expect(dialog.getByTestId("run-outcome")).toHaveText("A new Codex chat starts and gets a summary of this one.");
   await shoot(tab, "run-popover", info.project.name);
   await dialog.getByTestId("run-apply").click();
