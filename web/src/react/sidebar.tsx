@@ -12,7 +12,6 @@ import { Kbd } from "../components/ui/kbd";
 import { NewChatMenu, RowHints, RowMenu, type NewChatAnchor } from "./row-overlays";
 import { RecentMenu, RowBar, recentTarget, treeTarget } from "./row-actions";
 import { StatusGlyph } from "./status";
-import { UsageMeters } from "./settings";
 import { RowView, RecentRow } from "./sidebar-row";
 import { SidebarHeader } from "./sidebar-header";
 
@@ -23,7 +22,6 @@ export function Sidebar({ app }: { app: App }) {
       <SidebarHeader app={app} />
       <ViewSwitch app={app} current={sidebarView} />
       {sidebarView === 2 ? <RecentList app={app} /> : <WorkspaceList app={app} />}
-      <UsageMeters app={app} />
     </div>
   );
 }

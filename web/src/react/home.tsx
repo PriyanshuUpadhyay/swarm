@@ -21,6 +21,10 @@ export function Home({ app }: { app: App }) {
   const hudPending = useSyncExternalStore(app.settings.subscribe, () => app.settings.state.hudPending);
   // Fire-and-forget is safe: loadHud catches its own errors into the hud state.
   useEffect(() => void app.settings.loadHud(), [app]);
+  // loadUsage keeps its errors in state.usage, so nothing waits for it.
+  useEffect(() => {
+    if (app.settings.state.usage.state === "idle") void app.settings.loadUsage();
+  }, [app]);
   const card = hudCard(hud, view.loaded, view.tree?.prefs.usageHUDAsked);
   const answer = (add: boolean) => {
     if (hudPending) return;

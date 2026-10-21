@@ -141,7 +141,7 @@ It needs no other tool.
   the launch falls through to the next runner.
 - Swarm reads Claude usage with the account's own Keychain token (ADR 0072). The token stays in
   memory and is written to no file.
-- Compact usage meters in the web UI show each account's limits. `swarm setup hud` starts the
+- Settings › Accounts in the web UI shows each account's limits. `swarm setup hud` starts the
   notch usage HUD at login, a small helper app that shows the same meters (ADR 0087).
 
 AGY has no account source yet.
