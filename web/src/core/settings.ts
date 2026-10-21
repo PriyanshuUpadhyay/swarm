@@ -265,7 +265,7 @@ export class Settings {
 
   // ---- preferences ----
 
-  /** One `prefs` key: `theme`, `sendKey`, `fontSans`, `fontMono`, `usageHUDAsked` or `notices.post|sound|done|badge`. */
+  /** One `prefs` key: `theme`, `sendKey`, `switchCarry`, `fontSans`, `fontMono`, `usageHUDAsked` or `notices.post|sound|done|badge`. */
   setPref(key: string, value: string | boolean): Promise<boolean> {
     return this.app.choose({ op: "pref", key, value });
   }

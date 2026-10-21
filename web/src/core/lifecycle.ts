@@ -5,6 +5,8 @@
 import { ApiError, sleep } from "./api";
 import type { App } from "./app";
 import { isChair } from "./panes";
+import { RunCatalog } from "./run-catalog";
+import type { SwitchCarry } from "./composer";
 import {
   type NewOptions,
   type Issue,
@@ -15,9 +17,11 @@ import {
   type ImportableChat,
   type Profile,
   type LifeState,
+  type Handoff,
   issuePrompt,
   setupFrame,
   setupFailure,
+  isSettled,
 } from "./lifecycle-state";
 
 export * from "./lifecycle-state";
@@ -26,17 +30,25 @@ const message = (err: unknown) => (err instanceof Error ? err.message : String(e
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 export class Lifecycle {
-  state: LifeState = { newWorkspace: null, create: null, project: null, importChoice: null, projectPath: "", existing: null, setupScript: null, switchModel: null, handoff: null, confirm: null, closed: false, imports: false };
+  state: LifeState = { newWorkspace: null, create: null, project: null, importChoice: null, projectPath: "", existing: null, setupScript: null, switchModel: null, handoffs: {}, confirm: null, closed: false, imports: false };
   private listeners = new Set<() => void>();
+  /** The CLIs, models and accounts that the run chip and Switch model offer. */
+  readonly runs: RunCatalog;
   private roles: Promise<Profile[]> | null = null;
   private confirmDone: (() => void) | null = null;
 
-  constructor(private readonly app: App) {}
+  constructor(private readonly app: App) {
+    this.runs = new RunCatalog(() => app.api);
+  }
 
   subscribe = (fn: () => void) => {
     this.listeners.add(fn);
     return () => this.listeners.delete(fn);
   };
+
+  private setHandoff(h: Handoff, change: Partial<LifeState> = {}) {
+    this.set({ ...change, handoffs: { ...this.state.handoffs, [h.old]: h } });
+  }
 
   private set(change: Partial<LifeState>) {
     this.state = { ...this.state, ...change };
@@ -54,9 +66,14 @@ export class Lifecycle {
       const setup = setupFrame(c.setup, data);
       if (setup !== c.setup) this.set({ create: { ...c, setup } });
     }
-    const h = this.state.handoff;
-    if (event === "handoff" && h && data.old_session === h.old && !["completed", "failed", "cancelled"].includes(h.phase))
-      this.set({ handoff: { ...h, phase: String(data.phase), canCancel: data.canCancel === true, error: data.error ? String(data.error) : null } });
+    const h = event === "handoff" ? this.state.handoffs[String(data.old_session)] : undefined;
+    if (h && !isSettled(h.phase)) {
+      const phase = String(data.phase);
+      // A resume closes the chair's pane from `starting` on; its popover goes with the composer
+      // now, so the ended-chat dialog does not open for it.
+      const gone = h.carry === "resume" && phase === "starting" && this.state.switchModel === h.old;
+      this.setHandoff({ ...h, phase, canCancel: data.canCancel === true, error: data.error ? String(data.error) : null }, gone ? { switchModel: null } : {});
+    }
   }
 
   close<K extends keyof LifeState>(key: K) {
@@ -245,37 +262,40 @@ export class Lifecycle {
   }
 
   openSwitchModel(session: string) {
-    const h = this.state.handoff;
-    // A switch still running for this chat keeps its progress.
-    this.set({ switchModel: session, handoff: h?.old === session && !["completed", "failed", "cancelled"].includes(h.phase) ? h : null });
+    // The run chip's popover lives in the open chat's composer.
+    if (this.app.openId !== session) this.app.openChat(session);
+    // A settled switch's result stays only until its chat's popover opens again.
+    const { [session]: h, ...rest } = this.state.handoffs;
+    this.set({ switchModel: session, handoffs: h && !isSettled(h.phase) ? this.state.handoffs : rest });
   }
 
-  providers(): Promise<{ providers: { id: string; label: string; accounts: boolean }[] }> {
-    return this.api.get("/api/providers");
-  }
-
-  models(provider: string): Promise<{ models: { id: string; label: string }[] }> {
-    return this.api.get("/api/models", { provider });
-  }
-
-  accounts(provider: string): Promise<{ accounts: { name: string; email: string | null; auth_state?: string }[] }> {
-    return this.api.get("/api/accounts", { provider });
-  }
-
-  /** Switch model: a new chat on the chosen model takes this chat's summary (P3b). Progress comes
-   *  from `handoff` frames; on success the new chat opens. */
-  async switchModel(old: string, provider: string, model: string, account: string | null) {
-    if (this.state.handoff && !["completed", "failed", "cancelled"].includes(this.state.handoff.phase)) return;
-    this.set({ handoff: { old, phase: "preparing", canCancel: true, error: null } });
+  /** Switch model (ADR 0110). `resume` starts the chat's own CLI session again on the new run; a
+   *  new chat takes this chat's summary, or nothing on `clean`. Progress comes from `handoff`
+   *  frames; on success the chat that runs now opens. */
+  async switchModel(old: string, provider: string, model: string, account: string | null, effort: string | null = null, carry: SwitchCarry = "summary") {
+    const running = this.state.handoffs[old];
+    if (running && !isSettled(running.phase)) return;
+    // The server's frames own canCancel.
+    this.setHandoff({ old, phase: "preparing", canCancel: true, error: null, carry });
     try {
-      const done = await this.api.post<{ session: string }>("/api/chat/continue", account ? { old_session: old, provider, model, account } : { old_session: old, provider, model });
-      this.set({ switchModel: null, handoff: null });
+      const done = await this.api.post<{ session: string }>("/api/chat/continue", {
+        old_session: old,
+        provider,
+        model,
+        carry,
+        ...(account ? { account } : {}),
+        ...(effort ? { effort } : {}),
+      });
+      const { [old]: _, ...rest } = this.state.handoffs;
+      this.set({ handoffs: rest, ...(this.state.switchModel === old ? { switchModel: null } : {}) });
       await this.app.refresh();
-      this.app.openChat(done.session);
+      // The owner may have moved to another chat, also during the refresh; it stays open.
+      if (this.state.switchModel === null && this.app.openId === old) this.app.openChat(done.session);
     } catch (err) {
       const cancelled = err instanceof ApiError && err.message === "model switch cancelled";
-      if (!this.state.switchModel) this.app.notice(cancelled ? "Model switch cancelled." : message(err), !cancelled);
-      this.set({ handoff: { old, phase: cancelled ? "cancelled" : "failed", canCancel: false, error: cancelled ? null : message(err) } });
+      // Only this chat's open popover shows the error; anywhere else it is a notice.
+      if (this.state.switchModel !== old) this.app.notice(cancelled ? "Model switch cancelled." : message(err), !cancelled);
+      this.setHandoff({ old, phase: cancelled ? "cancelled" : "failed", canCancel: false, error: cancelled ? null : message(err), carry });
     }
   }
 
@@ -289,8 +309,8 @@ export class Lifecycle {
     }
   }
 
-  async cancelSwitch() {
-    const h = this.state.handoff;
+  async cancelSwitch(old: string) {
+    const h = this.state.handoffs[old];
     if (!h?.canCancel) return;
     try {
       await this.api.post("/api/chat/continue/cancel", { old_session: h.old });

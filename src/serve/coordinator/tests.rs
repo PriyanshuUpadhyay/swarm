@@ -1,6 +1,7 @@
 //! Tests for coordinator agent snapshots.
 
 use super::*;
+use crate::all_agent_listings;
 use crate::serve::test_support::Fixture;
 
 #[test]

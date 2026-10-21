@@ -1,6 +1,7 @@
 //! CLI commands launch.
 
 use super::*;
+use rusqlite::OptionalExtension;
 pub(crate) fn commands_launch(
     args: &[String],
     root: &std::path::Path,
@@ -32,8 +33,8 @@ pub(crate) fn commands_launch(
             .filter(|arg| *arg != "--resume")
             .cloned()
             .collect();
-        let (mut account, mut cwd, mut requested_provider, mut requested_model) =
-            (Some("auto"), None, None, None);
+        let (mut account, mut cwd, mut requested_provider, mut requested_model, mut effort) =
+            (Some("auto"), None, None, None, None);
         for pair in options.chunks(2) {
             match pair {
                 [flag, value] if flag == "--account" => account = Some(value.as_str()),
@@ -42,6 +43,7 @@ pub(crate) fn commands_launch(
                     requested_provider = Some(value.as_str())
                 }
                 [flag, value] if flag == "--model" => requested_model = Some(value.as_str()),
+                [flag, value] if flag == "--effort" => effort = Some(value.as_str()),
                 _ => return Err(USAGE.into()),
             }
         }
@@ -49,7 +51,6 @@ pub(crate) fn commands_launch(
             false => None,
             true if agent_id != "orchestrator"
                 || requested_provider.is_some()
-                || requested_model.is_some()
                 || !extra.is_empty() =>
             {
                 return Err(
@@ -59,6 +60,32 @@ pub(crate) fn commands_launch(
             }
             true => Some(resume_target(connection, &session_id()?)?),
         };
+        // A plain Resume runs the role's runner (ADR 0107). Only a chat whose profile has no
+        // runner for its CLI, such as pi or AGY, runs its last model and level (ADR 0110). The
+        // stored model is the transcript id, which drops a `[1m]` suffix.
+        let no_runner = |provider: Provider| {
+            swarm::config::load().is_ok_and(|(config, _)| {
+                config
+                    .profile(role)
+                    .is_ok_and(|profile| !profile.runners.iter().any(|r| r.provider == provider))
+            })
+        };
+        let stored: Option<(Option<String>, Option<String>)> = match (&resume, requested_model) {
+            (Some((provider, _)), None) if role == "chat" && no_runner(*provider) => connection
+                .query_row(
+                    "SELECT model, effort FROM agent WHERE session_id = ?1 AND id = 'orchestrator'",
+                    [session_id()?],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .optional()?,
+            _ => None,
+        };
+        if let Some((model, stored_effort)) = &stored
+            && let Some(model) = model
+        {
+            requested_model = Some(model.as_str());
+            effort = effort.or(stored_effort.as_deref());
+        }
         if let Some((provider, _)) = &resume {
             requested_provider = Some(provider.id());
         }
@@ -66,8 +93,8 @@ pub(crate) fn commands_launch(
         let cwd = std::fs::canonicalize(&cwd)
             .map_err(|error| format!("swarm: bad --cwd {}: {error}", cwd.display()))?;
         let (resolved, probe): (swarm::bus::ResolvedRole, Probe) = match requested_model {
-            Some(_) if role != "chat" => {
-                return Err("swarm: --model requires the chat role".into());
+            _ if role != "chat" && (requested_model.is_some() || effort.is_some()) => {
+                return Err("swarm: --model and --effort require the chat role".into());
             }
             // A one-off chat pick runs exactly that runner, with no fallback (ADR 0033).
             Some(model) => {
@@ -90,6 +117,15 @@ pub(crate) fn commands_launch(
                 (resolved, probe)
             }
         };
+        // A switch keeps the chat and changes only its run, so the effort is the owner's pick.
+        let mut resolved = resolved;
+        if let Some(effort) = effort {
+            let kind = resolved.provider.as_deref().and_then(Provider::parse);
+            if !kind.is_some_and(|kind| kind.info().efforts.contains(&effort)) {
+                return Err(format!("swarm: --effort {effort} is not a level of this CLI").into());
+            }
+            resolved.effort = Some(effort.into());
+        }
         let account_deadline = probe.deadline;
         if let Some(reason) = swarm::bus::fable_refusal(agent_id, role, resolved.model.as_deref()) {
             return Err(reason.into());
@@ -112,10 +148,7 @@ pub(crate) fn commands_launch(
         };
         let mut extra = swarm::bus::extra_args(kind, extra)?;
         if let Some((_, id)) = &resume {
-            extra = match kind {
-                Provider::Codex => vec!["resume".into(), id.clone()],
-                _ => vec!["--resume".into(), id.clone()],
-            };
+            extra = resume_args(kind, id);
         }
         // Trust and pane environment must use the same native pick.
         // A provider with no account source launches on its CLI's own login, so `auto` means
@@ -171,10 +204,15 @@ pub(crate) fn commands_launch(
             required: picked.is_some() && account.is_some_and(|name| name != "auto"),
             cwd: &cwd,
         };
-        // Codex has no per-launch hook to name its chair, and the app lists and reads a chat only
-        // by its chair provider. Its thread id comes later with its log.
-        if kind == Provider::Codex && agent_id == "orchestrator" {
-            swarm::store::set_chair_provider(connection, &session_id()?, "codex")?;
+        // Codex and AGY have no per-launch hook to name their chair, and the app lists and reads a
+        // chat only by its chair provider. Their session id comes later with their log.
+        if matches!(kind, Provider::Codex | Provider::Agy) && agent_id == "orchestrator" {
+            // A new chair has a new session, so the old id goes; a hook keeps a log only when it
+            // names the chair's id (set_chair_log).
+            if resume.is_none() {
+                swarm::store::set_chair(connection, &session_id()?, None)?;
+            }
+            swarm::store::set_chair_provider(connection, &session_id()?, kind.id())?;
         }
         match kind {
             Provider::Codex | Provider::Agy => match trust_target(&cwd, &user_home) {
@@ -205,7 +243,11 @@ pub(crate) fn commands_launch(
                 // pi has no hooks. It takes the session id swarm gives it, so its log is found by
                 // that id, and it reads the host contract from its system prompt (ADR 0086).
                 let session = session_id()?;
-                let id = format!("{session}-{agent_id}");
+                // A resume opens the stored session, which `session new` may have named.
+                let id = match &resume {
+                    Some((_, id)) => id.clone(),
+                    None => format!("{session}-{agent_id}"),
+                };
                 let mut args = vec!["--session-id".to_string(), id.clone()];
                 if let Some(context) = pane_context(kind.id(), &session, agent_id, role) {
                     args.extend(["--append-system-prompt".into(), context]);
@@ -316,6 +358,18 @@ pub(crate) fn commands_launch(
     Ok(None)
 }
 
+/// The args that start session `id` of `kind` again. The model and effort flags come before them
+/// from the run, so a switch resumes on its new model.
+pub(crate) fn resume_args(kind: Provider, id: &str) -> Vec<String> {
+    match kind {
+        Provider::Codex => vec!["resume".into(), id.into()],
+        Provider::Agy => vec!["--conversation".into(), id.into()],
+        // pi's launch passes the resumed id as `--session-id`, which opens that session.
+        Provider::Pi => Vec::new(),
+        Provider::Claude => vec!["--resume".into(), id.into()],
+    }
+}
+
 /// The CLI and its session id that `launch orchestrator <role> --resume` starts again in this
 /// chat, while its chair has no pane.
 pub(crate) fn resume_target(
@@ -336,8 +390,7 @@ pub(crate) fn resume_target(
     let provider = provider
         .as_deref()
         .and_then(Provider::parse)
-        .filter(|provider| matches!(provider, Provider::Claude | Provider::Codex))
-        .ok_or("swarm: only a Claude or Codex chat can resume")?;
+        .ok_or("swarm: this chat's CLI is unknown")?;
     let id = id.ok_or("swarm: this chat has no session id to resume")?;
     Ok((provider, id))
 }

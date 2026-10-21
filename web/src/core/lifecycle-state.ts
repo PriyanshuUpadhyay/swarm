@@ -1,3 +1,5 @@
+import type { SwitchCarry } from "./composer";
+
 export type Mode = "new-branch" | "existing-branch" | "pr" | "issue";
 
 /** `GET /api/workspace/new-options`. */
@@ -35,8 +37,13 @@ export type SetupRun = {
 
 export type Create = { state: "working" | "failed" | "kept"; error: string | null; workspace: string | null; setup: SetupRun | null };
 
+/** A switch phase after which nothing more runs. */
+export function isSettled(phase: string): boolean {
+  return phase === "completed" || phase === "failed" || phase === "cancelled";
+}
+
 /** A switch model run, from its `handoff` stream frames (P3b). */
-export type Handoff = { old: string; phase: string; canCancel: boolean; error: string | null };
+export type Handoff = { old: string; phase: string; canCancel: boolean; error: string | null; carry?: SwitchCarry };
 
 export type Confirm = { title: string; body: string; action: string; blocked?: boolean; run: () => Promise<unknown> };
 
@@ -62,7 +69,8 @@ export type LifeState = {
   setupScript: { project: string; title: string } | null;
   /** The chat that Switch model continues. */
   switchModel: string | null;
-  handoff: Handoff | null;
+  /** Each chat's switch, by its session; a switch blocks only its own chat. */
+  handoffs: Record<string, Handoff>;
   confirm: Confirm | null;
   closed: boolean;
   imports: boolean;

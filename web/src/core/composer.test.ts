@@ -1,21 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
-import { ApiError, type Agent, type Api, type Row, type RowFrame, type RowPage, type Session, type Snapshot } from "./api";
+import { ApiError, type Agent, type Api, type Row, type RowFrame, type RowPage, type Snapshot } from "./api";
 import { App } from "./app";
+import { chair, session } from "./chat-fixtures";
 import { agentInput, confirmSent, MISSING_ADAPTER, sends, sentRow, settleSent, submission, usageLabel } from "./composer";
 
 const user = (id: string, text: string, offset = 10): Row => ({ id, kind: "user", text, order: [offset, 0] });
 const queued = (id: string, text: string): Row => ({ id, kind: "queued", text, order: [5, 0] });
-const session = (extra: Partial<Session> = {}): Session => ({
-  id: "chat",
-  cwd: "/work/app",
-  created_at: 0,
-  chair_provider: "claude",
-  adapter: "tmux-swarm",
-  project: null,
-  workspace: "/work/app",
-  ...extra,
-});
-const chair = (extra: Partial<Agent> = {}): Agent => ({ id: "orchestrator", role: "orchestrator", state: null, alive: true, pane: "%1", ...extra });
 const waitingPrompt = { id: "prompt-hash", question: "Do you want to proceed?", choices: ["Yes", "No"] };
 
 describe("send key", () => {
@@ -99,12 +89,12 @@ describe("chair input", () => {
     expect(agentInput(session(), [chair({ state: "waiting" })]).disabled).toBe("The agent is asking a question. Answer it first in its pane.");
   });
 
-  it("offers Resume only for an ended Claude or Codex chair with a session id", () => {
+  it("offers Resume only for an ended chair with a session id", () => {
     const ended = [chair({ alive: false, pane: null })];
     expect(agentInput(session({ chair_id: "id" }), ended).resumable).toBe(true);
     expect(agentInput(session({ chair_id: "id", adapter: null, chair_provider: "codex" }), []).resumable).toBe(true);
     expect(agentInput(session(), ended).resumable).toBe(false);
-    expect(agentInput(session({ chair_id: "id", chair_provider: "pi" }), [chair({ alive: false, provider: "pi" })]).resumable).toBe(false);
+    expect(agentInput(session({ chair_id: "id", chair_provider: "pi" }), [chair({ alive: false, provider: "pi" })]).resumable).toBe(true);
     expect(agentInput(session({ chair_id: "id" }), [chair()]).resumable).toBe(false);
     expect(agentInput(session({ chair_id: "id" }), ended, "coder").resumable).toBe(false);
   });

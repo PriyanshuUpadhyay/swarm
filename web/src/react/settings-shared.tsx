@@ -2,11 +2,11 @@
 
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import type { App } from "../core/app";
+import { cliName } from "../core/composer";
 import type { SettingsState } from "../core/settings";
 
 const FIELD = "h-8 min-w-0 rounded-md border border-border-strong bg-background px-2 outline-none focus:border-ring disabled:opacity-60";
-const PROVIDER_LABEL: Record<string, string> = { claude: "Claude", codex: "Codex", agy: "Gemini", pi: "Pi" };
-const label = (provider: string) => PROVIDER_LABEL[provider] ?? provider;
+const label = cliName;
 
 function useSettings<K extends keyof SettingsState>(app: App, key: K): SettingsState[K] {
   return useSyncExternalStore(app.settings.subscribe, () => app.settings.state[key]);
@@ -50,4 +50,24 @@ function Toggle({ label: name, checked, onChange, testid, id, disabled, busy }: 
 }
 
 
-export { FIELD, label, Row, Toggle, useSettings, useNow };
+export { FIELD, label, Row, Segmented, Toggle, useSettings, useNow };
+
+function Segmented<T extends string>({ label: name, value, options, onChange, testid }: { label: string; value: T; options: [T, string][]; onChange: (v: T) => void; testid: string }) {
+  return (
+    <div role="radiogroup" aria-label={name} className="view-switch m-0 w-56" data-testid={testid} onKeyDown={(e) => {
+      // A radiogroup is one tab stop; the arrow keys move the choice (WAI-ARIA radio group).
+      const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+      if (!step) return;
+      e.preventDefault();
+      const next = options[(options.findIndex(([v]) => v === value) + step + options.length) % options.length][0];
+      onChange(next);
+      e.currentTarget.querySelector<HTMLElement>(`[data-value="${next}"]`)?.focus();
+    }}>
+      {options.map(([v, text]) => (
+        <button key={v} type="button" role="radio" aria-checked={value === v} tabIndex={value === v ? 0 : -1} data-value={v} onClick={() => value !== v && onChange(v)}>
+          {text}
+        </button>
+      ))}
+    </div>
+  );
+}

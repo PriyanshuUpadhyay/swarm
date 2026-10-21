@@ -105,30 +105,60 @@ test("A chat whose chair has no pane shows only its log, and Continue chat opens
   expect(errors).toEqual([]);
 });
 
-test("Switch model shows its progress, and Cancel stops it while the chair writes its summary", async ({ page: tab }, info) => {
+test("The run chip hands off to another CLI with a summary, and Cancel stops it while the chair writes it", async ({ page: tab }, info) => {
   const errors = await open(tab);
   const live = process.env.SWARM_E2E_LIVE!;
   const chats = async () => (await readTree()).sections.flatMap((s) => s.rows).filter((r) => r.kind === "chat").length;
   const before = await chats();
   await tab.locator(`[data-testid="tree-row"][data-session="${live}"]`).click();
   await tab.getByTestId("model-chip").click();
-  const dialog = tab.getByTestId("switch-model");
+  const dialog = tab.getByRole("dialog", { name: "Change model, thinking, or account" });
   await expect(dialog).toBeVisible();
-  await dialog.getByTestId("sm-provider").selectOption("codex");
-  await dialog.getByTestId("sm-query").fill("gpt-e2e");
-  await dialog.getByTestId("sm-custom").click();
-  await dialog.getByTestId("sm-start").click();
+  // Focus moves into the popover, so typing searches at once.
+  await expect(dialog.getByTestId("run-query")).toBeFocused();
+  await dialog.getByTestId("run-query").fill("gpt-e2e");
+  // The same CLI restarts its own session and asks nothing.
+  await dialog.getByTestId("run-custom-claude").click();
+  await expect(dialog.getByTestId("run-outcome")).toHaveText("Claude restarts on the new settings. The chat keeps its history.");
+  await expect(dialog.getByTestId("run-carry")).toHaveCount(0);
+  await dialog.getByTestId("run-custom-codex").click();
+  // Another CLI asks what to bring, with Summary as the default.
+  const summary = dialog.getByTestId("run-carry-choice").getByRole("radio", { name: "Summary" });
+  await expect(summary).toHaveAttribute("aria-checked", "true");
+  // The choice is one tab stop, and the arrow keys move it.
+  await summary.focus();
+  await tab.keyboard.press("ArrowRight");
+  await expect(dialog.getByTestId("run-carry-choice").getByRole("radio", { name: "Start clean" })).toBeFocused();
+  await expect(dialog.getByTestId("run-outcome")).toHaveText("A new Codex chat starts with nothing from this one.");
+  await tab.keyboard.press("ArrowLeft");
+  await expect(summary).toHaveAttribute("aria-checked", "true");
+  await expect(dialog.getByTestId("run-outcome")).toHaveText("A new Codex chat starts and gets a summary of this one.");
+  await shoot(tab, "run-popover", info.project.name);
+  await dialog.getByTestId("run-apply").click();
   const progress = dialog.getByTestId("sm-progress");
   // The live chair was asked for a summary and does not answer, so the switch waits here.
   await expect(progress).toHaveAttribute("data-phase", "summarizing");
   await shoot(tab, "switch-model", info.project.name);
-  await dialog.getByTestId("sm-cancel").click();
+  await dialog.getByTestId("run-cancel").click();
   await expect(progress).toHaveAttribute("data-phase", "cancelled");
   await expect(progress).toContainText("Cancelled. This chat is unchanged.");
   expect(await chats()).toBe(before);
   await tab.keyboard.press("Escape");
   await expect(tab.locator(`[data-testid="transcript"][data-chat="${live}"]`)).toBeVisible();
   expect(errors).toEqual([]);
+});
+
+test("The run chip still lists the chat's own models and takes a typed id when the CLI list fails", async ({ page: tab }) => {
+  const errors = await open(tab);
+  await tab.route("**/api/providers", (route) => route.fulfill({ status: 502, contentType: "application/json", body: JSON.stringify({ error: "providers down" }) }));
+  await tab.locator(`[data-testid="tree-row"][data-session="${process.env.SWARM_E2E_LIVE!}"]`).click();
+  await tab.getByTestId("model-chip").click();
+  const dialog = tab.getByRole("dialog", { name: "Change model, thinking, or account" });
+  await expect(dialog).toContainText("Could not read the CLIs: providers down");
+  await expect(dialog.locator('[data-provider="claude"]')).not.toContainText("Reading models…");
+  await dialog.getByTestId("run-query").fill("typed-model");
+  await expect(dialog.getByTestId("run-custom-claude")).toBeVisible();
+  expect(errors.filter((e) => !e.includes("502"))).toEqual([]);
 });
 
 test("Create Project on an existing folder offers Import, Import asks about a plain folder, and Remove Project hides it again", async ({ page: tab }, info) => {

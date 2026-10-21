@@ -7,6 +7,31 @@ mod cases {
     use crate::cli::test_support::*;
 
     #[test]
+    fn a_cli_run_inside_the_agents_own_cli_is_nested() {
+        let chain = |names: &[&str]| names.iter().map(|n| n.to_string()).collect::<Vec<_>>();
+        // The chair's own hook: one AGY above it.
+        assert!(!nested_run(
+            &chain(&["sh", "/Users/x/.local/bin/agy", "zsh", "tmux"]),
+            "agy"
+        ));
+        // `agy -p` from the chair's shell tool: a second AGY above the hook.
+        assert!(nested_run(
+            &chain(&[
+                "/Users/x/.local/bin/agy",
+                "zsh",
+                "/Users/x/.local/bin/agy",
+                "tmux"
+            ]),
+            "agy"
+        ));
+        // Another CLI in between does not count; the provider guard owns that case.
+        assert!(!nested_run(
+            &chain(&["codex", "zsh", "pi", "tmux"]),
+            "codex"
+        ));
+    }
+
+    #[test]
     fn hook_stdin_read_ends_at_its_deadline_while_the_writer_holds_the_pipe() {
         let (reader, mut writer) = std::io::pipe().unwrap();
         std::io::Write::write_all(&mut writer, b"{}").unwrap();
@@ -228,6 +253,33 @@ mod cases {
         let agent = &swarm::store::agents(&connection, &session).unwrap()[0];
         assert_eq!(agent.cost_usd, Some(0.0));
         assert_eq!(agent.model.as_deref(), Some("claude-new"));
+    }
+
+    #[test]
+    fn a_hook_from_another_cli_than_the_agents_changes_nothing() {
+        let (home, connection, session) = stop_fixture("other-cli", Some("{}\n"));
+        swarm::store::set_provider(&connection, &session, CODER, "claude").unwrap();
+        let stray = home.join("stray.jsonl");
+        std::fs::write(&stray, "").unwrap();
+        let payload = format!(
+            r#"{{"transcriptPath":{}}}"#,
+            serde_json::to_string(&stray).unwrap()
+        );
+        run_stop_hook(&home, &session, "agy", "Stop", &payload);
+        let agent = &swarm::store::agents(&connection, &session).unwrap()[0];
+        assert_eq!(
+            agent.log.as_deref(),
+            Some(home.join("chat.jsonl").to_str().unwrap())
+        );
+        assert_eq!(agent.state, None);
+        // The agent's own CLI still reports.
+        run_stop_hook(&home, &session, "claude", "Stop", "{}");
+        assert_eq!(
+            swarm::store::agents(&connection, &session).unwrap()[0]
+                .state
+                .as_deref(),
+            Some("done")
+        );
     }
 
     #[test]

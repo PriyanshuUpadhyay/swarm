@@ -85,6 +85,9 @@ export type AgentInput = {
   who: string | null;
   provider: string | null;
   model: string | null;
+  effort: string | null;
+  /** The swarm account; null for the CLI's own login. */
+  account: string | null;
   /** Why the composer cannot send now, or null. */
   disabled: string | null;
   /** True when no pane takes input at all; ⌘. and the prompt card need one. */
@@ -122,9 +125,11 @@ export function agentInput(session: Session | undefined, agents: readonly Agent[
     who: child,
     provider,
     model: (agent?.model as string | undefined) ?? null,
+    effort: (agent?.effort as string | undefined) ?? null,
+    account: (agent?.account as string | undefined) ?? null,
     disabled,
     unreachable,
-    resumable: unreachable && !child && (provider === "claude" || provider === "codex") && typeof session?.chair_id === "string",
+    resumable: unreachable && !child && provider !== null && typeof session?.chair_id === "string",
     running: agent?.state === "working",
     prompt: unreachable ? null : prompt,
     pullBack: provider === "claude" && (adapter === "tmux" || adapter === "tmux-swarm"),
@@ -142,9 +147,83 @@ export function usageLabel(usage: Usage): string {
   return new Intl.NumberFormat("en-US", { notation: "compact" }).format(tokens);
 }
 
-/** The model, else the provider's name. A chat on the CLI's default model reports none. */
-export function modelLabel(input: AgentInput): string {
-  if (input.model) return input.model;
-  const p = input.provider;
-  return p ? p[0].toUpperCase() + p.slice(1) : "Agent";
+const CLI_NAMES: Record<string, string> = { claude: "Claude", codex: "Codex", agy: "AGY", pi: "Pi" };
+
+/** The CLI's name in the chip, the popover's groups, and the outcome line. */
+export function cliName(id: string): string {
+  return Object.hasOwn(CLI_NAMES, id) ? CLI_NAMES[id] : id;
+}
+
+/** The run chip: `account · model · thinking`. Pi and AGY have no swarm accounts, so their CLI
+ *  name stands in. */
+export function runLabel(input: AgentInput): string {
+  return [input.account ?? (input.provider ? cliName(input.provider) : null), input.model ?? "Default model", input.effort].filter(Boolean).join(" · ");
+}
+
+/** One agent run: what the popover picks. */
+export type Run = { provider: string; model: string | null; effort: string | null; account: string | null };
+
+export type Carry = "summary" | "clean";
+
+/** What `/api/chat/continue` does with the old chat. */
+export type SwitchCarry = Carry | "resume";
+
+export type Outcome = "none" | "resume" | "handoff";
+
+/** The two answers to "what does a switch to another CLI bring", in the popover, the ended-chat
+ *  dialog, and Settings. */
+export const CARRY_OPTIONS: [Carry, string][] = [
+  ["summary", "Summary"],
+  ["clean", "Start clean"],
+];
+
+/** The saved answer to "what does a switch to another CLI bring"; unset means Summary. */
+export function savedCarry(prefs: { switchCarry?: string } | undefined): Carry {
+  return prefs?.switchCarry === "clean" ? "clean" : "summary";
+}
+
+/** What Apply does (ADR 0110). Inside one CLI the session starts again on the new run with its
+ *  history; another CLI, or another Codex account, cannot take the session, so a new chat starts. */
+export function switchOutcome(current: Run, draft: Run): Outcome {
+  if (current.provider !== draft.provider) return "handoff";
+  if (current.model === draft.model && current.effort === draft.effort && current.account === draft.account) return "none";
+  // Each Codex session lives in one account home.
+  return current.provider === "codex" && current.account !== draft.account ? "handoff" : "resume";
+}
+
+/** The What happens line under the popover. */
+export function outcomeText(outcome: Outcome, draft: Run, carry: Carry): string {
+  const cli = cliName(draft.provider);
+  switch (outcome) {
+    case "none":
+      return "Nothing changes.";
+    case "resume":
+      return `${cli} restarts on the new settings. The chat keeps its history.`;
+    case "handoff":
+      return carry === "summary" ? `A new ${cli} chat starts and gets a summary of this one.` : `A new ${cli} chat starts with nothing from this one.`;
+  }
+}
+
+/** Why Apply cannot run now, or null. A switch blocks only its own chat. */
+export function applyBlock(chair: AgentInput, draft: Run): string | null {
+  if (!chair.provider) return "This chat does not record its CLI, so it cannot switch.";
+  if (chair.running) return "Wait for this turn to end, or stop it.";
+  return draft.model ? null : "Pick a model.";
+}
+
+/** The levels a model can run on: its own list within the CLI's, or the CLI's. */
+export function modelLevels(cli: string[], model: string[] | undefined): string[] {
+  return model ? model.filter((level) => cli.includes(level)) : cli;
+}
+
+/** The draft after a pick of model `m` of CLI `cli`. The draft keeps its level when the model
+ *  takes it, and its account while the CLI stays; back on the chat's own CLI, the chat's
+ *  account comes back. */
+export function chooseModel(current: Run, draft: Run, cli: { id: string; efforts: string[]; default_effort: string }, m: { id: string; efforts?: string[] } | string): Run {
+  const model = typeof m === "string" ? m : m.id;
+  // launch takes only the CLI's own levels, also when the model lists more.
+  const allowed = modelLevels(cli.efforts, typeof m === "string" ? undefined : m.efforts);
+  const effort = draft.effort && allowed.includes(draft.effort) ? draft.effort : allowed.includes(cli.default_effort) ? cli.default_effort : (allowed[0] ?? null);
+  const account = cli.id === draft.provider ? draft.account : cli.id === current.provider ? current.account : null;
+  return { provider: cli.id, model, effort, account };
 }

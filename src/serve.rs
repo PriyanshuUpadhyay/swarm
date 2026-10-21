@@ -1,6 +1,5 @@
 //! HTTP server state and route modules.
 
-use crate::all_agent_listings;
 use axum::{
     Json, Router,
     body::Body,

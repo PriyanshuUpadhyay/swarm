@@ -42,6 +42,8 @@ esac
         provider: "codex".into(),
         model: "gpt-6-sol".into(),
         account: None,
+        effort: None,
+        carry: Carry::Summary,
     };
     (fixture, body)
 }
@@ -256,7 +258,8 @@ async fn handoff_cancel_during_summary_and_refused_after_starting() {
 #[tokio::test]
 async fn handoff_rejects_duplicate_unknown_and_bad_launch_before_cli() {
     let (fixture, mut body) = handoff_fixture();
-    body.provider = "agy".into();
+    // AGY and pi switch too (ADR 0110); only an unknown CLI is refused.
+    body.provider = "gemini".into();
     assert_eq!(
         register_continue(&fixture.app, &body).unwrap_err().0,
         StatusCode::BAD_REQUEST
@@ -387,4 +390,12 @@ cat "$SWARM_HOME/menu.json"
         .0,
         StatusCode::BAD_GATEWAY
     );
+}
+#[test]
+fn a_codex_resume_with_no_account_stays_in_its_account() {
+    use super::continue_chat::resume_account;
+    assert_eq!(resume_account("codex", None, Some("work")), Some("work"));
+    assert_eq!(resume_account("codex", Some("home"), Some("work")), Some("home"));
+    // Claude keeps no session in an account home, so no account means the launch default.
+    assert_eq!(resume_account("claude", None, Some("work")), None);
 }

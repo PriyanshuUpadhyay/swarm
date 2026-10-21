@@ -79,10 +79,27 @@ pub fn set_chair_log(
     session_id: &str,
     path: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    // A nested run of the chair's CLI, such as `agy -p` in its shell, never gets here: its hook
+    // stops at hooks.rs nested_run. So a new log is the chair's own, also after `/clear`.
     connection.execute(
         "UPDATE session SET chair_log = ?2 WHERE id = ?1",
         (session_id, path.to_string_lossy()),
     )?;
+    // An AGY log sits at `brain/<conversation id>/.system_generated/...`, the id `--conversation`
+    // resumes and that AGY's hook never names. A home folder can also be named `brain`.
+    let parts: Vec<_> = path
+        .components()
+        .map(|part| part.as_os_str().to_string_lossy())
+        .collect();
+    if let Some(at) = parts.iter().rposition(|part| part == "brain")
+        && let Some(conversation) = parts.get(at + 1)
+        && uuid::Uuid::try_parse(conversation).is_ok()
+    {
+        connection.execute(
+            "UPDATE session SET chair_id = ?2 WHERE id = ?1 AND chair_provider = 'agy'",
+            (session_id, conversation.as_ref()),
+        )?;
+    }
     // A Codex rollout file ends in its thread id, which is the chair id that Codex never reports.
     let stem = path.file_stem().unwrap_or_default().to_string_lossy();
     if let Some(thread) = stem.get(stem.len().saturating_sub(36)..)
@@ -270,6 +287,36 @@ mod tests {
             create_session(&connection, "lane", Path::new("/second"), None, None).unwrap(),
             first
         );
+    }
+
+    #[test]
+    fn an_agy_chair_log_names_its_conversation() {
+        let connection = open(Path::new(":memory:")).unwrap();
+        let session = create_session(&connection, "lane", Path::new("/w"), None, None).unwrap();
+        set_chair_provider(&connection, &session, "agy").unwrap();
+        let log = |id: &str| {
+            // A folder above the home may be named `brain` too; the conversation folder is the last one.
+            format!(
+                "/brain/.gemini/antigravity-cli/brain/{id}/.system_generated/logs/transcript_full.jsonl"
+            )
+        };
+        let chair = |connection: &Connection| -> (Option<String>, Option<String>) {
+            connection
+                .query_row(
+                    "SELECT chair_id, chair_log FROM session WHERE id = ?1",
+                    [&session],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .unwrap()
+        };
+        let id = "90f7dfab-e45b-43ed-87d0-1b6497513ac7";
+        set_chair_log(&connection, &session, Path::new(&log(id))).unwrap();
+        assert_eq!(chair(&connection), (Some(id.into()), Some(log(id))));
+        // `/clear` in the chair's pane starts a new conversation, which the chat follows. A nested
+        // `agy -p` never gets here (hooks.rs nested_run).
+        let next = "01a15e73-0000-7000-8000-000000000001";
+        set_chair_log(&connection, &session, Path::new(&log(next))).unwrap();
+        assert_eq!(chair(&connection), (Some(next.into()), Some(log(next))));
     }
 
     #[test]

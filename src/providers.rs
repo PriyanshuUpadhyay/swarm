@@ -128,7 +128,7 @@ impl Provider {
                 &["low", "medium", "high", "xhigh", "max", "ultra"],
                 CODEX_FIELDS,
             ),
-            Provider::Agy => ("Gemini", &["low", "medium", "high", "max"], AGY_FIELDS),
+            Provider::Agy => ("AGY", &["low", "medium", "high", "max"], AGY_FIELDS),
             // pi's `--thinking` levels.
             Provider::Pi => (
                 "Pi",
@@ -372,7 +372,7 @@ fn agy_models(output: &str) -> Vec<Model> {
             (!id.is_empty() && !label.is_empty()).then(|| Model {
                 id: id.into(),
                 label: label.into(),
-                efforts: None,
+                efforts: (!crate::bus::agy_takes_effort(Some(id))).then(Vec::new),
             })
         })
         .collect()
@@ -439,12 +439,22 @@ mod tests {
         );
         assert!(codex_models(b"not json").is_err());
         assert_eq!(
-            agy_models("Fetching...\ngemini-3.8-flash-high\tGemini 3.8 Flash (High)\n"),
-            vec![Model {
-                id: "gemini-3.8-flash-high".into(),
-                label: "Gemini 3.8 Flash (High)".into(),
-                efforts: None,
-            }]
+            agy_models(
+                "Fetching...\ngemini-3.8-flash\tGemini 3.8 Flash\nclaude-sonnet-4-6\tClaude Sonnet 4.6\n"
+            ),
+            vec![
+                Model {
+                    id: "gemini-3.8-flash".into(),
+                    label: "Gemini 3.8 Flash".into(),
+                    efforts: None,
+                },
+                // AGY refuses --effort for this model, so it lists no level.
+                Model {
+                    id: "claude-sonnet-4-6".into(),
+                    label: "Claude Sonnet 4.6".into(),
+                    efforts: Some(vec![]),
+                },
+            ]
         );
     }
 

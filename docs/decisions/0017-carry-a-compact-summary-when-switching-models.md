@@ -1,9 +1,9 @@
 ---
-status: accepted
+status: superseded
 date: 2026-09-24
 deciders: [user]
 supersedes:
-superseded-by:
+superseded-by: "0110"
 related: [0016]
 informed-by:
   - ui/Sources/SwarmCore/Agent/SwarmChatHandoff.swift

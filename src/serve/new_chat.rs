@@ -13,6 +13,7 @@ pub(super) async fn new_chat(app: &App, body: NewChat) -> Result<Value, ApiError
         Some(role),
         body.provider.as_deref(),
         body.model.as_deref(),
+        body.effort.as_deref(),
         account,
     ]
     .into_iter()
@@ -71,6 +72,7 @@ pub(super) async fn new_chat(app: &App, body: NewChat) -> Result<Value, ApiError
     for (flag, value) in [
         ("--provider", body.provider.as_deref()),
         ("--model", body.model.as_deref()),
+        ("--effort", body.effort.as_deref()),
         ("--account", account),
     ] {
         if let Some(value) = value {

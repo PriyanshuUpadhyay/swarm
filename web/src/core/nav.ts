@@ -61,6 +61,8 @@ export type TreeView = {
 export type Prefs = {
   theme?: string;
   sendKey?: string;
+  /** What a switch to another CLI brings: `summary` (absent) or `clean` (ADR 0110). */
+  switchCarry?: string;
   fontSans?: string;
   fontMono?: string;
   usageHUDAsked?: boolean;
