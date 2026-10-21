@@ -188,3 +188,24 @@ def test_done_sees_an_input_edit_during_checks(tmp):
             raise AssertionError("done must refuse an input changed during its checks")
         except SystemExit as error:
             assert "input changed while its checks ran: 01-ask" in str(error.code), error.code
+
+
+def test_take_refuses_a_name_that_forges_a_line(tmp):
+    """A newline or tab in the agent name would add a false row to events.log, so take refuses the name."""
+    folder = gate_run(tmp, "forge", [])
+    for name in ("w\n2026-10-21T00:00:00\t02-work\ttake x", "w\tx", " "):
+        out = run("take", folder, "01-ask", name)
+        assert out.returncode == 1 and "take needs an agent name" in out.stderr, (name, out)
+    assert not (folder / "events.log").exists() or "take" not in (folder / "events.log").read_text(encoding="utf-8")
+
+
+def test_check_odd_system_answers(tmp):
+    """A missing git falls back to the piece, and a killpg that macOS refuses does not crash done."""
+    folder = Path(tmp, "piece", "ink")
+    folder.mkdir(parents=True)
+    with patch.object(step_checks.subprocess, "run", side_effect=FileNotFoundError("git")):
+        assert step_checks.work_root(folder) == (folder.resolve().parent, folder.resolve().parent)
+    with patch.object(step_checks, "block_checks", lambda block: [("`x` exits 0: x", re.compile(".*"))]), \
+         patch.object(step_checks.os, "killpg", side_effect=PermissionError(1, "Operation not permitted")), \
+         redirect_stdout(StringIO()):
+        step_checks.run_checks(folder, "02-work", "- [x] block fake script: `true` exits 0: x: ok\n", "")

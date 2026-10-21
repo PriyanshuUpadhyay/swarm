@@ -56,7 +56,7 @@ def run_checks(folder, step, todo, text):
         for line, p in block_checks(block) or []:
             if not any(b == block and p.match(t) for b, t in found):
                 raise SystemExit(f"{step} is not done: a blocks/{block} script check has no todo: "
-                                 f"{line[:120]}; restore the line that start wrote, or start the run again if the block changed")
+                                 f"{line[:120]}; restore the line that start wrote, or start a new run folder if the block changed")
     for line in todo.splitlines():
         found = CHECK_TODO.match(line)
         if not found:
@@ -95,8 +95,8 @@ def run_checks(folder, step, todo, text):
             # so stop the whole group on every way out.
             try:
                 os.killpg(child.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
+            except (ProcessLookupError, PermissionError):
+                pass  # the group is gone, or macOS refuses a group whose leader is ending
             try:
                 child.communicate(timeout=5)
             except (subprocess.TimeoutExpired, ValueError):

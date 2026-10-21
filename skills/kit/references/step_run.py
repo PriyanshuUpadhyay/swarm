@@ -9,7 +9,8 @@
   skip <folder> <step> <reason> skip an open or active step, with the reason
   block <folder> <step> <reason> block an open or active step, with the reason
 
-take, done, skip, and block add one line to <folder>/events.log, so the path of a run stays readable after it ends.
+take, done, skip, and block add one line to <folder>/events.log, and done adds one more for each check it runs,
+so the path of a run stays readable after it ends.
 A skill script with its own step graph or revision (implement) imports these functions and passes `need`
 and `rev`.
 """
@@ -244,6 +245,9 @@ def step_lock(folder, step, command="take"):
 
 
 def take(folder, step, who, need=None, rev=revision, force=False, on_claim=None):
+    # events.log keeps one tab-split line per event, so a name with a tab or newline could forge a take.
+    if not who.strip() or plain(who) != who or "\t" in who:
+        raise SystemExit("take needs an agent name with no tab, newline, or other control character")
     with step_lock(folder, step, command="take"):
         file = Path(folder) / f"{step}.md"
         lines = file.read_text(encoding="utf-8").split("\n")

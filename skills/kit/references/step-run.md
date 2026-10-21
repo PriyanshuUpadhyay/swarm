@@ -37,7 +37,7 @@ Pass `<n>` as a bare number. An unquoted `#1` is a shell comment, so the shell d
 A dead run holds no lock; `--force` only overrides a stale `Status: active <agent> #<n>` line, and the next
 take gets a higher `<n>`, so the replaced agent's `done` is refused.
 `take`, `done`, `skip`, and `block` add one line to `<folder>/events.log` with the time, the step, and the
-event, so the path of a run, and not only its last state, stays readable. A skill script with its
+event, and `done` adds a `check <id> exit <code>` line for each check it runs, so the path of a run, and not only its last state, stays readable. A skill script with its
 own step graph or revision, such as the implement skill's `implement_run.py`, imports these
 functions and passes its own.
 
