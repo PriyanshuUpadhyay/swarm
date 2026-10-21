@@ -37,8 +37,11 @@ def writes(text):
 
 
 def git(root, *args, env=None):
-    return subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True, encoding="utf-8",
-                          errors="replace", env=env)
+    try:
+        return subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True, encoding="utf-8",
+                              errors="replace", env=env)
+    except OSError as error:  # no git on PATH: the caller reads a failed run
+        return subprocess.CompletedProcess(args, 127, "", str(error))
 
 
 def work_tree(folder):

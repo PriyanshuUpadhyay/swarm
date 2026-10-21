@@ -89,6 +89,8 @@ def test_scope_needs_git_and_a_writes_line(tmp):
         step_run.take(folder, "01-a", "x")
         step_run.done(folder, "01-a", "1")
     assert "not run: scope: no git work tree" in out.getvalue(), out.getvalue()
+    with patch.object(step_scope.subprocess, "run", side_effect=FileNotFoundError("git")):
+        assert step_scope.work_tree(folder) is None
     assert (folder / "01-a.md").read_text(encoding="utf-8").startswith("Status: done ")
     assert step_scope.writes("Status: open\nUses: \n\n## Todo\n") is None
     assert step_scope.writes("Status: open\nUses: \nWrites: none\n\nx") == []
