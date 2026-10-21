@@ -237,6 +237,43 @@ fn a_wrap_up_that_cannot_be_saved_fails_the_close() {
 }
 
 /// A screen capture that hangs does not hold `close` past its limit.
+/// Hung screen reads share one limit, so many silent children do not hold `close` long.
+#[test]
+fn hung_captures_share_one_limit() {
+    let (root, mut connection, session) = closing("close-hung-many");
+    std::fs::write(
+        root.join("adapters/fake.conf"),
+        "self = true\nspawn = true\nring = true\nlist = echo %1 %2 %3 %4 %5\nclose = true\n\
+         capture = sleep 60\n",
+    )
+    .unwrap();
+    let mut ids = vec![CODER.to_string()];
+    for (id, pane) in [("c3", "%3"), ("c4", "%4"), ("c5", "%5")] {
+        swarm::store::add_agent(&connection, &session, id, "coder").unwrap();
+        swarm::store::set_pane(&connection, &session, id, pane).unwrap();
+        ids.push(id.to_string());
+    }
+    let started = std::time::Instant::now();
+
+    close_agents(
+        &mut connection,
+        &root,
+        "fake",
+        &session,
+        &ids,
+        Some(std::time::Duration::from_secs(1)),
+    )
+    .unwrap();
+
+    // Four reads of 5 s each would take 20 s; the shared limit ends them after CAPTURES_WAIT.
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(18),
+        "{:?}",
+        started.elapsed()
+    );
+    std::fs::remove_dir_all(root).unwrap();
+}
+
 #[test]
 fn a_hung_capture_does_not_hold_close() {
     let (root, mut connection, session) = closing("close-hung");

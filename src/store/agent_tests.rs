@@ -244,7 +244,7 @@ mod tests {
         let no_pane = require_pane(&connection, SESSION, ORCHESTRATOR)
             .unwrap_err()
             .to_string();
-        assert_eq!(no_pane, "swarm: no pane recorded");
+        assert_eq!(no_pane, "swarm: no pane recorded for orchestrator");
         set_pane(&connection, SESSION, ORCHESTRATOR, "%1").unwrap();
         assert_eq!(
             require_pane(&connection, SESSION, ORCHESTRATOR).unwrap(),

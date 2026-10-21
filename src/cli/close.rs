@@ -58,6 +58,10 @@ pub(crate) fn close_agents(
 /// How long `close` waits for the screen of a child that sent no wrap-up.
 const CAPTURE_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
 
+/// How long all those screen reads may take together, so `close` stays inside the 180 s call
+/// timeout that the host contracts name, for any number of silent children.
+const CAPTURES_WAIT: std::time::Duration = std::time::Duration::from_secs(15);
+
 /// How often `close` looks for the wrap-ups.
 const WRAP_UP_POLL: std::time::Duration = std::time::Duration::from_millis(200);
 
@@ -127,10 +131,12 @@ fn wrap_up(
         }
         std::thread::sleep(WRAP_UP_POLL);
     }
+    let captures_end = std::time::Instant::now() + CAPTURES_WAIT;
     for (id, pane, _) in waiting {
         let log = root.join(format!("runs/{session_id}/{id}.log"));
+        let left = captures_end.saturating_duration_since(std::time::Instant::now());
         let note = match adapter
-            .capture_within(&[("pane", pane)], CAPTURE_WAIT)
+            .capture_within(&[("pane", pane)], CAPTURE_WAIT.min(left))
             .map(|text| swarm::store::write_atomic(&log, &text))
         {
             Some(Ok(())) => format!(
