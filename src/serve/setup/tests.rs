@@ -121,6 +121,38 @@ async fn setup_routes_run_the_cli_from_the_home_and_refuse_bad_input_first() {
     assert_eq!(link.0, StatusCode::CONFLICT);
 }
 
+#[tokio::test]
+async fn conductor_import_routes_plan_then_apply_the_digest() {
+    let fixture = action_fixture();
+    let plan = conductor_plan(State(fixture.app.clone())).await.unwrap().0;
+    assert_eq!(plan["digest"], "ab12");
+    let write = |digest: &str| {
+        conductor_write(
+            State(fixture.app.clone()),
+            Ok(Json(ImportWrite {
+                digest: digest.into(),
+            })),
+        )
+    };
+    for bad in ["", "ab 12", "ab12;rm"] {
+        assert_eq!(write(bad).await.unwrap_err().0, StatusCode::BAD_REQUEST);
+    }
+    assert_eq!(write("ab12").await.unwrap().0["ok"], true);
+    assert_eq!(write("dead").await.unwrap_err().0, StatusCode::CONFLICT);
+    assert_eq!(write("beef").await.unwrap_err().0, StatusCode::BAD_REQUEST);
+    let calls = action_calls(&fixture);
+    let root = fixture.app.root.to_string_lossy();
+    assert_eq!(
+        calls.lines().collect::<Vec<_>>(),
+        [
+            format!("|||{root}|import conductor --json"),
+            format!("|||{root}|import conductor --digest ab12"),
+            format!("|||{root}|import conductor --digest dead"),
+            format!("|||{root}|import conductor --digest beef"),
+        ]
+    );
+}
+
 #[test]
 fn one_notices_fix_runs_at_a_time() {
     let first = NoticesFix::start().unwrap();

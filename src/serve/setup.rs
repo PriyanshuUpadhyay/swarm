@@ -220,6 +220,58 @@ pub(super) async fn run_setup_write(app: &App, body: SetupWrite) -> Result<Value
     })
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct ImportWrite {
+    pub(super) digest: String,
+}
+/// ADR 0106: what `swarm import conductor` would add and skip, with the digest that applies it.
+pub(super) async fn conductor_plan(State(app): State<App>) -> Result<Json<Value>, ApiError> {
+    let args = ["import", "conductor", "--json"];
+    let output = run_cli(&app, home_call(&app, &args), None).await?;
+    serde_json::from_str::<Value>(&output)
+        .ok()
+        .filter(|value| value["digest"].is_string() && value["chats"].is_array())
+        .map(Json)
+        .ok_or_else(|| {
+            error(
+                StatusCode::BAD_GATEWAY,
+                "swarm returned an invalid import plan",
+            )
+        })
+}
+/// The owner's press is the consent; a digest that no longer matches the plan fails in the CLI.
+pub(super) async fn conductor_write(
+    State(app): State<App>,
+    body: Result<Json<ImportWrite>, JsonRejection>,
+) -> Result<Json<Value>, ApiError> {
+    let Json(body) = body.map_err(|e| error(e.status(), &e.body_text()))?;
+    if body.digest.is_empty() || !body.digest.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(error(
+            StatusCode::BAD_REQUEST,
+            "import takes the digest of its plan",
+        ));
+    }
+    enqueue_action(&app, Action::Import(body)).await.map(Json)
+}
+pub(super) async fn run_conductor_write(app: &App, body: ImportWrite) -> Result<Value, ApiError> {
+    let args = ["import", "conductor", "--digest", body.digest.as_str()];
+    let done = run_cli(app, home_call(app, &args), None)
+        .await
+        .map(|output| json!({"ok": true, "output": output}));
+    // run_cli reports every failure as 409; only a plan that changed keeps it, as in setup.
+    done.map_err(|(status, error)| {
+        let stale = error.0["error"]
+            .as_str()
+            .is_some_and(|text| text.contains("changed after the plan"));
+        if status == StatusCode::CONFLICT && !stale {
+            (StatusCode::BAD_REQUEST, error)
+        } else {
+            (status, error)
+        }
+    })
+}
+
 #[cfg(test)]
 #[path = "setup/tests.rs"]
 mod tests;

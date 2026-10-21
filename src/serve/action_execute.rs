@@ -117,6 +117,7 @@ pub(super) async fn execute_action(app: &App, action: Action) -> Result<Value, A
         }
         Action::Hud(_) => return hud_cli(app, "uninstall").await,
         Action::Setup(body) => return run_setup_write(app, body).await,
+        Action::Import(body) => return run_conductor_write(app, body).await,
         Action::Owner(write) => return run_owner_write(app, write).await,
         Action::RefreshView => {
             let app = app.clone();
@@ -131,6 +132,7 @@ pub(super) async fn execute_action(app: &App, action: Action) -> Result<Value, A
         }
         Action::PullBack(body) => return pull_back(app, body).await,
         Action::New(body) => return new_chat(app, body).await,
+        Action::Resume(body) => return resume_chat(app, body).await,
         Action::Continue(body) => return execute_continue(app, body).await,
         Action::Archived => {
             let output = run_cli(

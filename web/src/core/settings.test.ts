@@ -8,6 +8,7 @@ const ROLES = { revision: "rev-1", min_usage_left_pct: 5, profiles: [{ name: "ch
 /** An App stand-in: `get` and `post` answer by path, and every call is recorded. */
 function fakeApp(post: (path: string, body: Record<string, unknown>) => Promise<unknown>) {
   const calls: string[] = [];
+  let conductorReads = 0;
   const app = {
     api: {
       get: async (path: string, query?: Record<string, string>) => {
@@ -15,6 +16,7 @@ function fakeApp(post: (path: string, body: Record<string, unknown>) => Promise<
         if (path === "/api/roles") return ROLES;
         if (path === "/api/doctor") return DOCTOR;
         if (path === "/api/setup/plan") return { ...PLAN, digest: `d-${query?.only ?? "all"}` };
+        if (path === "/api/import/conductor") return { digest: `c-${++conductorReads}`, chats: [{ conductorId: "a", title: "A", provider: "codex", cwd: "/w", open: true, messages: 2, nativeLog: true }], skipped: [] };
         if (path === "/api/providers") return { providers: [] };
         if (path === "/api/accounts") return { provider: query!.provider, state: "ready", revision: "acc-1", auto: null, accounts: [] };
         return { meters: [meter("codex", "default", "primary", 50), meter("claude", "default", "5h", 90)] };
@@ -35,6 +37,26 @@ function fakeApp(post: (path: string, body: Record<string, unknown>) => Promise<
 const item = (id: string, state: "ok" | "setup" | "broken", group: string | null = id) => ({ id, title: id, state, reason: "", group });
 const DOCTOR: Doctor = { items: [item("hooks", "setup"), item("guard", "setup", "hooks"), item("trust", "setup"), item("plugin", "setup"), item("hud", "ok"), item("notices", "broken", null)] };
 const PLAN: SetupPlan = { digest: "d", files: [], conflicts: [{ group: "trust", file: "~/.claude.json", entry: "projects", fix: "remove it" }], skipped: [] };
+
+describe("Conductor import", () => {
+  it("imports with the digest of the plan the owner checked, then reads the plan again", async () => {
+    const { settings, calls } = fakeApp(async () => ({ ok: true }));
+    expect(await settings.importConductor()).toBe(false);
+    await settings.loadConductor();
+    expect(await settings.importConductor()).toBe(true);
+    expect(calls).toEqual(["GET /api/import/conductor", 'POST /api/import/conductor {"digest":"c-1"}', "GET /api/import/conductor"]);
+  });
+
+  it("a changed plan is a 409 that reloads the plan and says so", async () => {
+    const { settings } = fakeApp(async () => {
+      throw new ApiError(409, "changed after the plan");
+    });
+    await settings.loadConductor();
+    expect(await settings.importConductor()).toBe(false);
+    expect(settings.state.error).toMatch(/^The Conductor import changed elsewhere/);
+    expect(settings.state.conductor).toMatchObject({ state: "ready", data: { digest: "c-2" } });
+  });
+});
 
 describe("setup & doctor", () => {
   it("Set up all leaves out a conflicted group, ok rows and rows with no group", () => {

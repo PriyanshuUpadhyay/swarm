@@ -51,6 +51,12 @@ pub(super) struct NewChat {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct ResumeChat {
+    pub(super) session: String,
+}
+
+#[derive(Deserialize)]
 pub(super) enum Action {
     Send(SendAction),
     PullBack(ActionTarget),
@@ -61,6 +67,7 @@ pub(super) enum Action {
     Archive(SessionAction),
     Unarchive(SessionAction),
     New(NewChat),
+    Resume(ResumeChat),
     Continue(ContinueChat),
     Archived,
     Choices(choices::ChoiceWrite),
@@ -70,6 +77,7 @@ pub(super) enum Action {
     Hud(HudWrite),
     Setup(SetupWrite),
     Owner(OwnerWrite),
+    Import(ImportWrite),
 }
 
 pub(super) struct ActionJob {
@@ -121,6 +129,7 @@ pub(super) async fn chat_action(
         "/api/sessions/archive" => "Archive",
         "/api/sessions/unarchive" => "Unarchive",
         "/api/chat/new" => "New",
+        "/api/chat/resume" => "Resume",
         _ => return Err(error(StatusCode::NOT_FOUND, "unknown action")),
     };
     let action = serde_json::from_value(json!({kind: body}))
@@ -156,6 +165,7 @@ impl Action {
         match self {
             Self::Send(body) => Some(&body.session),
             Self::Continue(body) => Some(&body.old_session),
+            Self::Resume(body) => Some(&body.session),
             Self::Interrupt(body) | Self::Close(body) | Self::PullBack(body) => Some(&body.session),
             Self::Key(body) => Some(&body.session),
             Self::Answer(body) => Some(&body.session),
@@ -168,6 +178,7 @@ impl Action {
             | Self::UsageRefresh(_)
             | Self::Hud(_)
             | Self::Owner(_)
+            | Self::Import(_)
             | Self::RefreshView => None,
             // A plugin install can take minutes, so it waits in its own lane, not in the one that
             // folds and archives share.

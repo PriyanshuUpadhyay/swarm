@@ -27,6 +27,9 @@ pub(crate) use commands_pane::*;
 mod commands_session;
 pub(crate) use commands_session::*;
 
+mod conductor_import;
+pub(crate) use conductor_import::*;
+
 mod context;
 pub(crate) use context::*;
 

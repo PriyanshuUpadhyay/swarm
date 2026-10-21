@@ -25,6 +25,13 @@ pub(crate) fn commands_launch(
             Some(index) => (&rest[..index], &rest[index + 1..]),
             None => (rest, &[][..]),
         };
+        // `--resume` starts the chat's own CLI session again, with its whole context (ADR 0107).
+        let resume = options.iter().any(|arg| arg == "--resume");
+        let options: Vec<String> = options
+            .iter()
+            .filter(|arg| *arg != "--resume")
+            .cloned()
+            .collect();
         let (mut account, mut cwd, mut requested_provider, mut requested_model) =
             (Some("auto"), None, None, None);
         for pair in options.chunks(2) {
@@ -37,6 +44,23 @@ pub(crate) fn commands_launch(
                 [flag, value] if flag == "--model" => requested_model = Some(value.as_str()),
                 _ => return Err(USAGE.into()),
             }
+        }
+        let resume = match resume {
+            false => None,
+            true if agent_id != "orchestrator"
+                || requested_provider.is_some()
+                || requested_model.is_some()
+                || !extra.is_empty() =>
+            {
+                return Err(
+                    "swarm: --resume takes the chair and its own provider, with no extra args"
+                        .into(),
+                );
+            }
+            true => Some(resume_target(connection, &session_id()?)?),
+        };
+        if let Some((provider, _)) = &resume {
+            requested_provider = Some(provider.id());
         }
         let cwd = cwd.map_or_else(env::current_dir, Ok)?;
         let cwd = std::fs::canonicalize(&cwd)
@@ -87,6 +111,12 @@ pub(crate) fn commands_launch(
             permission: resolved.permission.clone(),
         };
         let mut extra = swarm::bus::extra_args(kind, extra)?;
+        if let Some((_, id)) = &resume {
+            extra = match kind {
+                Provider::Codex => vec!["resume".into(), id.clone()],
+                _ => vec!["--resume".into(), id.clone()],
+            };
+        }
         // Trust and pane environment must use the same native pick.
         // A provider with no account source launches on its CLI's own login, so `auto` means
         // nothing there; the chat profile passes it whichever runner starts.
@@ -96,9 +126,25 @@ pub(crate) fn commands_launch(
                 let accounts = cache
                     .entry(kind)
                     .or_insert_with(|| pick_accounts(kind, account_deadline, requested == "auto"));
+                // Codex keeps a session in one account's home, so only that account resumes it.
+                let owner = match &resume {
+                    Some((Provider::Codex, id)) => {
+                        let list = accounts
+                            .as_ref()
+                            .map_err(|error| format!("swarm: {error}"))?;
+                        let session = swarm::profiles::native::CodexSession::Id(id.clone());
+                        let owner =
+                            swarm::profiles::native::codex_session_owner(&list.accounts, &session)
+                                .ok_or_else(|| {
+                                    format!("swarm: session {id} is not in any codex account")
+                                })?;
+                        Some(owner.name.clone())
+                    }
+                    _ => None,
+                };
                 select_account(
                     kind,
-                    requested,
+                    owner.as_deref().unwrap_or(requested),
                     resolved.model.as_deref(),
                     probe.min_usage_left_pct,
                     accounts.as_ref().map_err(Clone::clone),
@@ -222,7 +268,7 @@ pub(crate) fn commands_launch(
         command.extend(extra);
         // Every adapter's spawn verb opens the pane in the working directory it runs in.
         env::set_current_dir(&pane_dir)?;
-        return spawn_agent(
+        spawn_agent(
             connection,
             root,
             agent_id,
@@ -235,8 +281,17 @@ pub(crate) fn commands_launch(
                 runner: Some(&runner),
             },
             account_deadline,
-        )
-        .map(Some);
+        )?;
+        // A resumed chat is open again, and an imported one now has panes the app reaches.
+        if resume.is_some() {
+            let session = session_id()?;
+            swarm::store::unarchive_sessions(connection, std::slice::from_ref(&session))?;
+            connection.execute(
+                "UPDATE session SET adapter = ?2 WHERE id = ?1 AND adapter IS NULL",
+                (&session, adapter_name()),
+            )?;
+        }
+        return Ok(Some(()));
     }
     if let [cmd, agent_id, role, rest @ ..] = args
         && cmd == "spawn"
@@ -259,4 +314,30 @@ pub(crate) fn commands_launch(
         .map(Some);
     }
     Ok(None)
+}
+
+/// The CLI and its session id that `launch orchestrator <role> --resume` starts again in this
+/// chat, while its chair has no pane.
+pub(crate) fn resume_target(
+    connection: &rusqlite::Connection,
+    session: &str,
+) -> Result<(Provider, String), Box<dyn std::error::Error>> {
+    let (provider, id, pane): (Option<String>, Option<String>, Option<String>) = connection
+        .query_row(
+            "SELECT s.chair_provider, s.chair_id, a.pane_id FROM session s
+             LEFT JOIN agent a ON a.session_id = s.id AND a.id = 'orchestrator'
+             WHERE s.id = ?1",
+            [session],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )?;
+    if pane.is_some() {
+        return Err("swarm: this chat's agent is still running".into());
+    }
+    let provider = provider
+        .as_deref()
+        .and_then(Provider::parse)
+        .filter(|provider| matches!(provider, Provider::Claude | Provider::Codex))
+        .ok_or("swarm: only a Claude or Codex chat can resume")?;
+    let id = id.ok_or("swarm: this chat has no session id to resume")?;
+    Ok((provider, id))
 }

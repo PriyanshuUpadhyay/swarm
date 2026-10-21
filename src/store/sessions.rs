@@ -40,6 +40,8 @@ pub fn continue_session(
     Ok(())
 }
 
+/// Names the chair's session. A new one has a new log; a resumed one keeps its log, which a hook
+/// that runs beside this one may have just recorded (ADR 0107).
 pub fn set_chair(
     connection: &Connection,
     session_id: &str,
@@ -47,7 +49,10 @@ pub fn set_chair(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let (provider, id) = chair.unzip();
     let changed = connection.execute(
-        "UPDATE session SET chair_provider = ?2, chair_id = ?3, chair_log = NULL WHERE id = ?1",
+        "UPDATE session SET chair_log = CASE WHEN chair_provider IS ?2 AND chair_id IS ?3
+                                             THEN chair_log END,
+                            chair_provider = ?2, chair_id = ?3
+         WHERE id = ?1",
         (session_id, provider, id),
     )?;
     if changed != 1 {
@@ -265,5 +270,36 @@ mod tests {
             create_session(&connection, "lane", Path::new("/second"), None, None).unwrap(),
             first
         );
+    }
+
+    #[test]
+    fn a_chair_named_again_keeps_its_log_and_a_new_one_drops_it() {
+        let connection = open(Path::new(":memory:")).unwrap();
+        let session = create_session(
+            &connection,
+            "lane",
+            Path::new("/w"),
+            Some(("claude", "a")),
+            None,
+        )
+        .unwrap();
+        let log = |connection: &Connection| -> Option<String> {
+            connection
+                .query_row(
+                    "SELECT chair_log FROM session WHERE id = ?1",
+                    [&session],
+                    |r| r.get(0),
+                )
+                .unwrap()
+        };
+        set_chair_log(&connection, &session, Path::new("/logs/a.jsonl")).unwrap();
+        set_chair(&connection, &session, Some(("claude", "a"))).unwrap();
+        assert_eq!(
+            log(&connection).as_deref(),
+            Some("/logs/a.jsonl"),
+            "a resume keeps the log"
+        );
+        set_chair(&connection, &session, Some(("claude", "b"))).unwrap();
+        assert_eq!(log(&connection), None, "/clear starts a new log");
     }
 }

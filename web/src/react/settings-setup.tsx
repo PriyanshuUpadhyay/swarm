@@ -123,7 +123,67 @@ function SetupPage({ app }: { app: App }) {
           </ul>
         </details>
       )}
+      <ConductorImport app={app} />
     </div>
+  );
+}
+
+/** ADR 0106: Check reads what `swarm import conductor` would add, and Import applies that plan. */
+function ConductorImport({ app }: { app: App }) {
+  const plan = useSettings(app, "conductor");
+  const busy = useSettings(app, "busy");
+  const p = plan.state === "ready" ? plan.data : null;
+  const open = p?.chats.filter((c) => c.open).length ?? 0;
+  return (
+    <section className="grid gap-2 border-t pt-4" data-testid="conductor-import">
+      <div className="flex items-center gap-2">
+        <div className="flex-1">
+          <h3 className="text-sm font-semibold">Import from Conductor</h3>
+          <p role="status" className="text-xs text-muted-foreground">
+            {plan.state === "loading"
+              ? "Reading Conductor…"
+              : p
+                ? p.chats.length === 0
+                  ? "Nothing new to import."
+                  : `${p.chats.length} chats: ${open} open tabs, ${p.chats.length - open} to Recently closed. ${p.skipped.length} skipped.`
+                : "Copies Conductor's chats and tabs into swarm. Conductor is not changed."}
+          </p>
+        </div>
+        <Button size="sm" variant="outline" data-testid="conductor-check" disabled={busy || plan.state === "loading"} onClick={() => void app.settings.loadConductor()}>
+          Check
+        </Button>
+        <Button size="sm" data-testid="conductor-apply" disabled={busy || !p || p.chats.length === 0} onClick={() => void app.settings.importConductor()}>
+          Import
+        </Button>
+      </div>
+      {plan.state === "error" && (
+        <p role="alert" className="text-sm break-words text-failed">
+          Could not read Conductor: {plan.error}
+        </p>
+      )}
+      {p && p.chats.length > 0 && (
+        <ul className="grid gap-1 text-xs break-words select-text" data-testid="conductor-chats">
+          {p.chats.map((c) => (
+            <li key={c.conductorId}>
+              {c.title || c.conductorId} · {c.provider} · {c.open ? "open" : "closed"} · {c.messages} messages
+              {!c.nativeLog && <span className="text-muted-foreground"> · session rebuilt from Conductor</span>}
+            </li>
+          ))}
+        </ul>
+      )}
+      {p && p.skipped.length > 0 && (
+        <details data-testid="conductor-skipped">
+          <summary className="cursor-pointer text-xs">Skipped · {p.skipped.length}</summary>
+          <ul className="mt-2 grid gap-1 text-xs break-words text-muted-foreground select-text">
+            {p.skipped.map((s) => (
+              <li key={s.conductorId}>
+                {s.title || s.conductorId}: {s.reason}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </section>
   );
 }
 

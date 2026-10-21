@@ -93,6 +93,12 @@ fn commit(
             }
             if writes {
                 match plan {
+                    Plan::File(plan)
+                        if plan.after.is_empty()
+                            && plan.edits.iter().any(|edit| edit.kind == Kind::File) =>
+                    {
+                        remove_file(&plan.path, &plan.before)?
+                    }
                     Plan::File(plan) => write_text(&plan.path, &plan.before, &plan.after)?,
                     Plan::Link(plan) => write_link(plan)?,
                 }

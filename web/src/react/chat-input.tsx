@@ -1,4 +1,5 @@
 import { TriangleAlertIcon } from "lucide-react";
+import { useState } from "react";
 import type { App, Banner, Composer } from "../core/app";
 import { Button } from "../components/ui/button";
 import { ComposerBox } from "./composer";
@@ -13,13 +14,15 @@ export function ChatInput({ app, composer }: { app: App; composer: Composer }) {
         {state.banner && <ChatBanner app={app} sessionId={id} banner={state.banner} />}
         {agent.prompt && <PromptCard app={app} sessionId={id} who={agent.who} prompt={agent.prompt} state={state} />}
         {/* A child with no pane shows only the reason (ChildColumnView). A chair with none shows
-            only its log, and Continue chat starts a new chat from its summary (ADR 0083). */}
+            only its log; Resume starts its own CLI session again (ADR 0107), and Continue chat
+            starts a new chat from its summary (ADR 0083). */}
         {agent.who && agent.unreachable ? (
           <p className="text-xs text-muted-foreground" data-testid="composer-status">
             {agent.disabled}
           </p>
         ) : agent.unreachable ? (
-          <div className="flex justify-center">
+          <div className="flex justify-center gap-2">
+            {agent.resumable && <ResumeButton app={app} sessionId={id} />}
             <Button variant="outline" size="sm" data-testid="continue-chat" onClick={() => app.life.openSwitchModel(id)}>
               Continue chat
             </Button>
@@ -29,6 +32,20 @@ export function ChatInput({ app, composer }: { app: App; composer: Composer }) {
         )}
       </div>
     </div>
+  );
+}
+
+function ResumeButton({ app, sessionId }: { app: App; sessionId: string }) {
+  const [busy, setBusy] = useState(false);
+  const resume = async () => {
+    setBusy(true);
+    await app.life.resumeChat(sessionId);
+    setBusy(false);
+  };
+  return (
+    <Button size="sm" data-testid="resume-chat" disabled={busy} onClick={resume}>
+      {busy ? "Resuming…" : "Resume"}
+    </Button>
   );
 }
 
