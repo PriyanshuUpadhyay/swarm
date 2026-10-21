@@ -100,7 +100,7 @@ export class AppActions {
       items.push(
         chatAction("closeTab", "Close Tab", () => void this.app.navigation.closeTab()),
         chatAction("endChat", "End chat", () => void this.app.life.endChat(open, false)),
-        chatAction("archiveChat", "Archive chat", () => void this.app.life.endChat(open, true)),
+        { ...chatAction("archiveChat", "Archive chat", () => void this.app.life.endChat(open, true)), shortcut: "Shift+Meta+W" },
         chatAction("renameChat", "Rename chat", () => this.renameChat(open)),
       );
     items.push(chatAction("reopenChat", "Archived chats", () => this.app.life.openClosed()));
@@ -149,8 +149,7 @@ export class AppActions {
 
   // ---- commands ----
 
-  /** The SwiftUI key map (AppKey.table), in the palette's action order (PaletteItems.actions).
-   *  A key whose target comes later is registered and says which phase brings it. */
+  /** The SwiftUI key map (AppKey.table), in the palette's action order (PaletteItems.actions). */
   commands(): Command[] {
     const inTree = () => {
       const a = document.activeElement;
@@ -163,14 +162,6 @@ export class AppActions {
       palette: false,
       when: () => !this.app.paletteOpen && inTree(),
       run,
-    });
-    const later = (id: string, title: string, chord: string, phase: string, palette = true): Command => ({
-      id,
-      title,
-      chord,
-      phase,
-      palette,
-      run: () => this.app.notice(`${title} comes in ${phase}.`),
     });
     const chat = () => this.app.openId !== null;
     const cmds: Command[] = [
@@ -215,10 +206,12 @@ export class AppActions {
         run: () => void this.app.composing.interrupt(this.app.openId!),
       },
       { id: "palette", title: "Search", chord: "Meta+K", palette: false, run: () => this.setPalette(!this.app.paletteOpen) },
+      { id: "palette.alt", title: "Search", chord: "Shift+Meta+P", palette: false, run: () => this.setPalette(!this.app.paletteOpen) },
       { id: "find.next", title: "Find Next", chord: "Meta+G", palette: false, when: chat, run: () => this.app.reading.stepFind(1) },
       { id: "find.prev", title: "Find Previous", chord: "Shift+Meta+G", palette: false, when: chat, run: () => this.app.reading.stepFind(-1) },
       { id: "tab.close", title: "Close Tab", chord: "Meta+W", palette: false, run: () => void this.app.navigation.closeTab() },
-      later("window.close", "Close Window", "Shift+Meta+W", "S6", false),
+      // The palette lists Archive chat with this key, so the command stays out of it.
+      { id: "chat.archive", title: "Archive Chat", chord: "Shift+Meta+W", palette: false, when: chat, run: (e) => void (e?.repeat || this.app.life.endChat(this.app.openId!, true)) },
       { id: "recent.closed", title: "Reopen Closed Tab", chord: "Shift+Meta+T", palette: false, run: () => this.app.navigation.reopenTab() },
       { id: "recent.prev", title: "Previous Recent Chat", chord: "Ctrl+Tab", palette: false, run: (e) => this.app.navigation.stepRecent(-1, e) },
       { id: "recent.next", title: "Next Recent Chat", chord: "Ctrl+Shift+Tab", palette: false, run: (e) => this.app.navigation.stepRecent(1, e) },
