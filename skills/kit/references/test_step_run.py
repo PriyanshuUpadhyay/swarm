@@ -12,12 +12,14 @@ from test_step_run_support import *
 from test_step_run_commands import *
 from test_step_run_todos import *
 from test_step_run_build import *
+from test_step_run_gate import *
 
 
 def test_explicit_text_encoding():
     import ast
     for name in ("test_step_run.py", "test_step_run_support.py", "test_step_run_commands.py",
-                 "test_step_run_todos.py", "test_step_run_build.py"):
+                 "test_step_run_todos.py", "test_step_run_build.py",
+                 "test_step_run_gate.py"):
         tree = ast.parse(Path(__file__).with_name(name).read_text(encoding="utf-8"))
         missing = [node.lineno for node in ast.walk(tree) if isinstance(node, ast.Call)
                    and isinstance(node.func, ast.Attribute) and node.func.attr in ("read_text", "write_text", "open")
@@ -35,6 +37,10 @@ test_build_start_and_skip()
 
 
 test_start_refuses_bad_needs()
+for gate in (test_done_needs_the_current_claim, test_done_refuses_a_stale_input, test_done_runs_script_checks,
+             test_kit_check_lines):
+    with tempfile.TemporaryDirectory() as tmp:
+        gate(tmp)
 
 with tempfile.TemporaryDirectory() as tmp:
     skill = Path(tmp, "SKILL.md")
@@ -45,10 +51,11 @@ with tempfile.TemporaryDirectory() as tmp:
     assert (folder / "02-look.md").read_text(encoding="utf-8").splitlines()[1] == "Uses: 01-ask"
     assert run("take", folder, "02-look", "a").returncode != 0
     assert (folder / "02-look.lock").exists()
-    assert "the question" in run("done", folder, "01-ask").stderr
+    assert "the question" in run("done", folder, "01-ask", claim(folder, "01-ask")).stderr
     f = folder / "01-ask.md"
     f.write_text(f.read_text(encoding="utf-8").replace("- [ ] the question: ", "- [x] the question: why is the sky blue"), encoding="utf-8")
-    assert run("done", folder, "01-ask").returncode == 0 and f.read_text(encoding="utf-8").startswith("Status: done ")
+    assert run("take", folder, "01-ask", "a").returncode == 0
+    assert run("done", folder, "01-ask", claim(folder, "01-ask")).returncode == 0 and f.read_text(encoding="utf-8").startswith("Status: done ")
     test_explicit_text_encoding()
     test_command_wrong_count()
     test_plain_controls()
@@ -76,9 +83,10 @@ with tempfile.TemporaryDirectory() as tmp:
     assert "(ready)" not in run("status", folder).stdout.split("02-look")[1]
     assert "stale" not in run("status", folder).stdout
     f.write_text(f.read_text(encoding="utf-8") + "a later edit\n", encoding="utf-8")
-    assert "02-look: active agent-b  (stale: 01-ask)" in run("status", folder).stdout
+    assert "02-look: active agent-b #1  (stale: 01-ask)" in run("status", folder).stdout
     events = [l.split("\t")[1:] for l in (folder / "events.log").read_text(encoding="utf-8").splitlines()]
-    assert events[0][0] == "01-ask" and events[0][1].startswith("done ") and events[1] == ["02-look", "take agent-b"]
+    assert events[0] == ["01-ask", "take a"] and events[1][0] == "01-ask" and events[1][1].startswith("done ")
+    assert events[2] == ["02-look", "take agent-b"]
     claimed = folder / "02-look.md"
     original = claimed.read_text(encoding="utf-8")
     original_events = (folder / "events.log").read_text(encoding="utf-8")
@@ -89,17 +97,17 @@ with tempfile.TemporaryDirectory() as tmp:
     assert (folder / "events.log").read_text(encoding="utf-8") == original_events
     assert (folder / "02-look.lock").exists()
     out = run("take", folder, "02-look", "agent-c", "--force")
-    assert out.returncode == 0 and claimed.read_text(encoding="utf-8").startswith("Status: active agent-c\n")
+    assert out.returncode == 0 and claimed.read_text(encoding="utf-8").startswith("Status: active agent-c #")
     assert (folder / "02-look.lock").exists()
     assert run("take", folder, "02-look", "agent-c").returncode == 0
     lock = folder / "02-look.lock"
-    claimed.write_text(original.replace("Status: active agent-b", "Status: open"), encoding="utf-8")
+    claimed.write_text(original.replace("Status: active agent-b #1", "Status: open"), encoding="utf-8")
     children = [subprocess.Popen([sys.executable, SCRIPT, "take", str(folder), "02-look", who],
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
                 for who in ("agent-d", "agent-e")]
     outputs = [child.communicate() for child in children]
     assert sorted(child.returncode for child in children) == [0, 1], outputs
     winner = ("agent-d", "agent-e")[next(i for i, child in enumerate(children) if child.returncode == 0)]
-    assert claimed.read_text(encoding="utf-8").startswith(f"Status: active {winner}\n")
+    assert claimed.read_text(encoding="utf-8").startswith(f"Status: active {winner} #")
     assert lock.exists()
     print("ok")

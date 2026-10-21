@@ -5,7 +5,7 @@
   review <folder> <local|base..head> [--continue FILE] start the review check with this run's saved key
   status [<folder>]            print each step's status, whether it is ready, and whether it is stale
   take <folder> <step> <who> [--force] mark the step active and print its file with the skills the catalog gives it
-  done <folder> <step>         set done with evidence; 07-close moves the run to tmp/flow/_closed/
+  done <folder> <step> #<n>    set done for take's claim #<n>, with evidence; 07-close moves the run to tmp/flow/_closed/
   skip <folder> <step> <why>    skip design, contracts, or impact, with the reason
   block <folder> <step> <why>   block an open or active step, with the reason
 
@@ -123,7 +123,7 @@ def start(profile="default", domains=None, parent_loop=None, plan=None):
                 f"{TODO_HEAD}\n" + "".join(f"- [ ] {item}: \n" for item in TODOS[step] + todos) + f"\n{RESULT_HEAD}\n", encoding="utf-8")
     loop_key(folder, parent_loop)
     print(folder)
-    print(f"Each step file holds its rules, a todo list, and a result section. Close a step with: python3 {kit_path(Path(__file__).resolve())} done <folder> <step>")
+    print(f"Each step file holds its rules, a todo list, and a result section. Close a step with: python3 {kit_path(Path(__file__).resolve())} done <folder> <step> #<n>")
     # Read the saved choice on repeat starts; changed domain lines apply only to a new run.
     frame = read_utf8(folder / "01-frame.md") if (folder / "01-frame.md").exists() else ""
     if saved := re.search(r"^Domains: .+$", frame, re.M):
@@ -157,17 +157,17 @@ def take(folder, step, who, force=False):
                   on_claim=write_callers if step == "04-impact" else None)
 
 
-def done(folder, step):
+def done(folder, step, claim):
     if step == "07-close":
         if Path(folder).resolve().parent.name == "_closed":
             raise SystemExit(f"{folder} is already closed")
         destination = Path(folder).resolve().parent / "_closed" / Path(folder).name
         if destination.exists() or destination.is_symlink():
             raise SystemExit(f"close destination already exists: {destination}; "
-                             "rename the run folder to a distinct name, then run done <renamed-folder> 07-close")
+                             "rename the run folder to a distinct name, then run done <renamed-folder> 07-close #<n>")
     # Only 04-impact gets a Callers section; elsewhere that line is pasted text and must not end the list.
     ends = (RESULT_HEAD, CALLERS_HEAD) if step == "04-impact" else (RESULT_HEAD,)
-    step_run.done(folder, step, rev(folder, step) if step == "05-build" else None, ends=ends)
+    step_run.done(folder, step, claim, rev(folder, step) if step == "05-build" else None, ends=ends, rev_of=rev)
     if step == "07-close":
         destination.parent.mkdir(parents=True, exist_ok=True)
         Path(folder).rename(destination)
@@ -288,7 +288,7 @@ if __name__ == "__main__":
         # Escape non-ASCII output when the console uses an ASCII encoding.
         sys.stdout.reconfigure(errors="backslashreplace")
     commands = {"start": start, "review": review, "status": status, "take": take, "done": done, "skip": skip, "block": block}
-    arity = {"start": (0, 0), "review": (2, None), "status": (0, 1), "take": (3, 3), "done": (2, 2), "skip": (3, None), "block": (3, None)}
+    arity = {"start": (0, 0), "review": (2, None), "status": (0, 1), "take": (3, 3), "done": (3, 3), "skip": (3, None), "block": (3, None)}
     if len(sys.argv) < 2 or sys.argv[1] not in commands:
         raise SystemExit(__doc__)
     try:
@@ -298,7 +298,7 @@ if __name__ == "__main__":
         if command == "take":
             args = [arg for arg in args if arg != "--force"]
         if command in ("done", "skip", "block") and "--force" in args:
-            raise SystemExit("done <folder> <step> accepts no --force" if command == "done" else f"{command} accepts no --force")
+            raise SystemExit("done <folder> <step> #<n> accepts no --force" if command == "done" else f"{command} accepts no --force")
         options = {"force": force} if command == "take" else {}
         if command == "start":
             while len(args) >= 2 and args[0] in ("--profile", "--domains", "--parent-loop", "--plan") and args[0][2:].replace("-", "_") not in options:

@@ -24,7 +24,7 @@ def test_start_kit_without_blocks(tmp):
     """A kit copy without blocks still starts without tomllib, with empty choice tables."""
     kit = Path(tmp, "kit-no-blocks")
     for part in ("skills/implement/scripts/implement_run.py", "skills/implement/scripts/implement_context.py",
-                 "skills/implement/SKILL.md", "references/step_run.py",
+                 "skills/implement/SKILL.md", "references/step_run.py", "references/step_checks.py",
                  "references/block_ledger.py", "references/block_resolver.py"):
         (kit / part).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(SCRIPT.parents[3] / part, kit / part)

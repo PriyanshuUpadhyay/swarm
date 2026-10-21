@@ -27,7 +27,7 @@ def test_block_checks(tmp):
     fill(f)
     text = f.read_text(encoding="utf-8")
     f.write_text(text.replace(script.replace("- [ ]", "- [x]").rstrip() + " evidence", script.replace("- [ ]", "- [x]").rstrip()), encoding="utf-8")
-    refused = run("done", folder, "05-build")
+    refused = run("done", folder, "05-build", claim(folder, "05-build"))
     assert refused.returncode == 1 and "no evidence: - [x] block html-diagram script:" in refused.stderr, refused.stderr
 
 

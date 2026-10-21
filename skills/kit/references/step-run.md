@@ -23,9 +23,12 @@ A skill with a step table makes its folder with the kit's `references/step_run.p
 names its own script. `start <folder> <SKILL.md>` writes one file per table row, with a todo for what
 the row holds and a `## Result` section. A table can add a `Blocks` column; `blocks/blocks.toml`
 owns how those blocks become rules and evidence todos. A table with `Blocks` needs Python 3.11
-or later for `start`, because it reads TOML. `take <folder> <step> <agent>` marks a step active and fills
-its `Uses:` line. `done <folder> <step>` sets the step done only when every todo is checked with its
-evidence after the last colon. `done` accepts no `--force`. `status <folder>` also names each stale step.
+or later for `start`, because it reads TOML. `take <folder> <step> <agent>` marks a step `active <agent> #<n>` and fills
+its `Uses:` line; `<n>` counts the step's takes. `done <folder> <step> #<n>` sets the step done only for
+that claim, when every todo is checked with its evidence after the last colon, and when no `Uses:`
+input changed after `take`. It also runs each checked `block <id> script:` todo that
+`blocks/blocks.toml` calls runnable, and a failing one refuses. It prints `not run:` for the others,
+which keep their evidence. It never runs the evidence. `done` accepts no `--force`. `status <folder>` also names each stale step.
 `skip <folder> <step> <reason>` records a route skip.
 `block <folder> <step> <reason>` records a blocked step.
 Never set a step done by hand.
@@ -66,7 +69,7 @@ Line 1 of each step file is its status:
 ## Close and move on
 
 1. Write the step's result and its evidence below line 2, then run
-   `python3 <kit root>/references/step_run.py done <folder> <step>`.
+   `python3 <kit root>/references/step_run.py done <folder> <step> #<n>`, with the `#<n>` that `take` printed.
    Use the skill's script when it names one.
 2. Go on to every step now ready in the same turn, by `references/fan-out.md`.
 

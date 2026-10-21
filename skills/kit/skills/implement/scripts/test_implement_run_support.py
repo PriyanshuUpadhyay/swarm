@@ -21,7 +21,8 @@ CALLERS_MEMORY_LIMIT = 1_000_000
 
 
 def fill(f, evidence="evidence"):
-    """Check every todo of a step file with evidence, as an agent would."""
+    """Check every todo of a step file with evidence, as an agent would; an open step gets the claim a take gives."""
+    f.write_text(f.read_text(encoding="utf-8").replace("Status: open\n", "Status: active t #1\n", 1), encoding="utf-8")
     f.write_text("".join(l.replace("- [ ]", "- [x]").rstrip() + (f" {evidence}\n" if l.startswith("- [") and l.rstrip().endswith(":") else "\n")
                          for l in f.read_text(encoding="utf-8").splitlines()), encoding="utf-8")
 
@@ -96,3 +97,9 @@ def block_rg(name, site):
     for out in runs:
         assert out.returncode in (0, 1), (out.args, out.stderr)
     return runs
+
+
+def claim(folder, step):
+    """The claim number on the step's status line, or 0 when no one holds it."""
+    state = (Path(folder) / f"{step}.md").read_text(encoding="utf-8").split("\n", 1)[0]
+    return f"#{state.rsplit(' #', 1)[1]}" if state.startswith("Status: active ") and " #" in state else "#0"

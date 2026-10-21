@@ -60,13 +60,14 @@ def test_build_block_todos():
         lines = text[head:end].splitlines()
         # The old single handoff todo cannot close a step whose block checks are still open.
         lines[1] = lines[1].replace("- [ ]", "- [x]") + " handoff evidence"
-        file.write_text(text[:head] + "\n".join(lines) + "\n" + text[end:], encoding="utf-8")
-        out = run("done", folder, "04-style-frames")
+        text = text[:head] + "\n".join(lines) + "\n" + text[end:]
+        file.write_text(text.replace("Status: open\n", "Status: active w #1\n", 1), encoding="utf-8")
+        out = run("done", folder, "04-style-frames", claim(folder, "04-style-frames"))
         assert out.returncode == 1 and "look-check" in out.stderr, out
         text = file.read_text(encoding="utf-8")
         file.write_text("\n".join(line.replace("- [ ]", "- [x]") + " evidence" if line.startswith("- [ ]")
                                   else line for line in text.splitlines()) + "\n", encoding="utf-8")
-        out = run("done", folder, "04-style-frames")
+        out = run("done", folder, "04-style-frames", claim(folder, "04-style-frames"))
         assert out.returncode == 0, out.stderr
         before = file.read_bytes()
         assert run("start", folder, skill).returncode == 0
