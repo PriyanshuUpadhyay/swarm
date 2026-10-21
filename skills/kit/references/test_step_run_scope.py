@@ -1,4 +1,4 @@
-# Step runner write-scope cases (council C3): done refuses a change outside every active step's Writes.
+# Step runner write-scope cases (council C3): done refuses a change outside the Writes of the steps beside it.
 from test_step_run_support import *
 import step_scope  # noqa: E402
 
@@ -42,7 +42,7 @@ def test_done_refuses_a_write_outside_scope(tmp):
     (repo / "src" / "a" / "y.ts").write_text("in scope\n", encoding="utf-8")
     (repo / "src" / "b" / "x.ts").write_text("out of scope\n", encoding="utf-8")
     out = run("done", folder, "01-a", "1")
-    assert out.returncode == 1 and "it changed src/b/x.ts, outside every active step's Writes (src/a/" in out.stderr, out
+    assert out.returncode == 1 and "it changed src/b/x.ts, outside the Writes of every step that ran beside it (src/a/" in out.stderr, out
     assert (folder / "01-a.md").read_text(encoding="utf-8").startswith("Status: active x #1")
     # While 02-b is active, its Writes count too: a parallel step's files cannot be told apart.
     assert run("take", folder, "02-b", "y").returncode == 0
@@ -56,6 +56,27 @@ def test_done_refuses_a_write_outside_scope(tmp):
     assert out.returncode == 1 and "it changed src/keep.ts" in out.stderr, out
     (repo / "src" / "keep.ts").write_text("1\n", encoding="utf-8")
     assert run("done", folder, "02-b", "1").returncode == 0
+
+
+def test_scope_parallel_order_names_and_a_lost_base(tmp):
+    repo, folder = scope_repo(tmp)
+    assert run("take", folder, "01-a", "x").returncode == 0 and run("take", folder, "02-b", "y").returncode == 0
+    for path in ("src/a/café.ts", "src/b/b.ts"):
+        (repo / path).parent.mkdir(exist_ok=True)
+        (repo / path).write_text("x\n", encoding="utf-8")
+    # 02-b is done first; 01-a still sees its files as a parallel step's, and git does not quote the é.
+    assert run("done", folder, "02-b", "1").returncode == 0
+    out = run("done", folder, "01-a", "1")
+    assert out.returncode == 0, out
+    # A base tree that git pruned fails the check closed.
+    f = folder / "03-end.md"
+    f.write_text(f.read_text(encoding="utf-8").replace("- [ ] the end: ", "- [x] the end: done"), encoding="utf-8")
+    assert run("take", folder, "03-end", "z").returncode == 0
+    (repo / "README.md").write_text("new\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(repo), "prune", "--expire=now"], check=True,
+                   env={k: v for k, v in os.environ.items() if not k.startswith("GIT_")})
+    out = run("done", folder, "03-end", "1")
+    assert out.returncode == 1 and "scope check failed" in out.stderr, out
 
 
 def test_scope_needs_git_and_a_writes_line(tmp):

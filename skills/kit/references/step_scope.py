@@ -1,4 +1,4 @@
-"""The write scope of a step: `take` records the work tree, and `done` refuses a change outside every active Writes.
+"""The write scope of a step: `take` records the work tree, and `done` refuses a change outside the Writes of every step beside it.
 
 A step file from a plan with a Writes column has a `Writes:` line under `Uses:` (see step_run.start). A step file
 with no such line, or a run outside git, has no scope check.
@@ -57,18 +57,20 @@ def work_tree(folder):
 
 
 def base(folder, step):
-    """The tree that the step's newest take recorded, or None."""
+    """(tree, steps done since) for the step's newest take, or (None, set()) when that take recorded no tree."""
     events = Path(folder) / "events.log"
     lines = events.read_text(encoding="utf-8").splitlines() if events.exists() else []
     rows = [line.split("\t") for line in lines]
-    found = None
+    found, since = None, set()
     for row in rows:
         if len(row) > 2 and row[1] == step:
             if row[2].startswith("take "):
-                found = None
+                found, since = None, set()
             elif row[2].startswith("base "):
                 found = row[2].removeprefix("base ")
-    return found
+        elif len(row) > 2 and row[2].startswith("done "):
+            since.add(row[1])
+    return found, since
 
 
 def inside(path, scope):
@@ -83,24 +85,28 @@ def check(folder, step, text):
     own = writes(text)
     if own is None:
         return
-    start = base(folder, step)
+    start, since = base(folder, step)
     now = work_tree(folder)
     if start is None or now is None:
         print(f"not run: scope: {'no git work tree' if now is None else 'no base recorded at take'}")
         return
     root, tree = now
     allowed = list(own)
+    # A step that ran beside this one counts too, also when it was done first: its files cannot be told apart.
     for other in sorted(Path(folder).glob("[0-9][0-9]-*.md")):
         if other.stem != step:
             body = other.read_text(encoding="utf-8")
-            if body.startswith("Status: active "):
+            if body.startswith("Status: active ") or other.stem in since:
                 allowed += writes(body) or []
     run = Path(folder).resolve()
     if run.is_relative_to(root.resolve()):
         allowed.append(run.relative_to(root.resolve()).as_posix())
-    changed = git(root, "diff", "--name-only", "--no-renames", start, tree).stdout.splitlines()
+    diff = git(root, "diff", "-z", "--name-only", "--no-renames", start, tree)
+    if diff.returncode:  # a pruned base tree, say; refuse, so a failed diff never passes the check
+        raise SystemExit(f"{step} is not done: scope check failed: {diff.stderr.strip()}; take the step again")
+    changed = [p for p in diff.stdout.split("\0") if p]
     if outside := next((p for p in changed if not any(inside(p, s) for s in allowed)), None):
-        raise SystemExit(f"{step} is not done: it changed {outside}, outside every active step's Writes "
+        raise SystemExit(f"{step} is not done: it changed {outside}, outside the Writes of every step that ran beside it "
                          f"({', '.join(own) or 'none'} for {step}); undo it, or ask the owner to change the plan")
 
 
