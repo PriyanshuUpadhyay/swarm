@@ -15,6 +15,9 @@ pub(crate) use answer::*;
 mod chair_idle;
 pub(crate) use chair_idle::*;
 
+mod close;
+pub(crate) use close::*;
+
 mod commands_info;
 pub(crate) use commands_info::*;
 

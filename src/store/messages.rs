@@ -143,6 +143,23 @@ pub fn answered(
     )?)
 }
 
+/// Whether `agent` got a wrap-up after its last summary.
+pub fn owes_wrap_up(
+    connection: &Connection,
+    session_id: &str,
+    agent: &str,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    Ok(connection.query_row(
+        "SELECT EXISTS (
+             SELECT 1 FROM message
+             WHERE session_id = ?1 AND recipient_id = ?2 AND kind = 'wrap-up'
+               AND seq > (SELECT COALESCE(MAX(seq), -1) FROM message
+                          WHERE session_id = ?1 AND sender_id = ?2 AND kind = 'summary'))",
+        (session_id, agent),
+        |r| r.get(0),
+    )?)
+}
+
 pub fn route(
     connection: &Connection,
     session_id: &str,
