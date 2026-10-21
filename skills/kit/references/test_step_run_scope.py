@@ -143,7 +143,7 @@ def test_scope_fails_closed_in_a_repo(tmp):
     # A repo that git cannot read is not "no git".
     (repo / ".git" / "HEAD").write_text("garbage\n", encoding="utf-8")
     out = run("done", folder, "01-a", "1")
-    assert out.returncode == 1 and "scope check failed: git rev-parse" in out.stderr, out
+    assert out.returncode == 1 and "scope check failed: git " in out.stderr, out
     # A take that cannot read the repo leaves the step open, not claimed with no base.
     out = run("take", folder, "02-b", "y")
     assert out.returncode == 1 and "scope check failed" in out.stderr, out

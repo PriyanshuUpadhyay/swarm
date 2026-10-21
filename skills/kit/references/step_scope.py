@@ -73,12 +73,17 @@ def work_tree(folder):
     """
     root, _ = work_root(folder)
     env = clean_env()
-    if (found := git(root, "rev-parse", "--show-toplevel", env=env)).returncode:
-        # A .git above the folder means a repo that git cannot read (a broken HEAD, a dubious owner): refuse.
-        # A missing git binary (127) stays a printed skip, as the check cannot run at all.
-        if found.returncode != 127 and any((p / ".git").exists() for p in (Path(root).resolve(), *Path(root).resolve().parents)):
-            raise SystemExit(f"scope check failed: git rev-parse: {found.stderr.strip()}")
+    here = Path(folder).resolve()  # not root: work_root already took git's answer, which may skip a broken repo
+    nearest = next((p for p in (here, *here.parents) if (p / ".git").exists()), None)
+    found = git(root, "rev-parse", "--show-toplevel", env=env)
+    # A .git that git cannot read (a broken HEAD, a dubious owner) refuses. So does one that git passes over for an
+    # outer repo, as it does for a broken nested repo. A missing git binary (127) stays a printed skip.
+    if found.returncode == 127 or (found.returncode and nearest is None):
         return None
+    if found.returncode:
+        raise SystemExit(f"scope check failed: git rev-parse: {found.stderr.strip()}")
+    if nearest is not None and Path(found.stdout.strip()).resolve() != nearest:
+        raise SystemExit(f"scope check failed: git reads {found.stdout.strip()}, not the repo at {nearest}")
     index = Path(git(root, "rev-parse", "--path-format=absolute", "--git-path", "index", env=env).stdout.strip())
     with tempfile.TemporaryDirectory() as tmp:
         copy = Path(tmp, "index")
