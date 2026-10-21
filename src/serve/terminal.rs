@@ -161,7 +161,7 @@ pub(super) async fn terminal_socket(
         let _slot = slot;
         match target {
             Target::Attach { adapter, pane } => attach(&app.root, &adapter, &pane, socket).await,
-            Target::File(path) => follow_file(path, socket).await,
+            Target::File(path) => follow_file(&app.root, &path, socket).await,
         }
     })
 }
@@ -336,32 +336,56 @@ fn hang_up(mut child: Box<dyn portable_pty::Child + Send + Sync>) {
     let _ = child.wait();
 }
 
+/// The checked output file, opened once. The path is checked again, and the open file must be
+/// the file the path names, not a link put there after the check; later reads use this handle,
+/// so a later swap of the path shows nothing new.
+pub(super) fn open_output(root: &Path, path: &Path) -> Option<std::fs::File> {
+    use std::os::unix::fs::MetadataExt;
+    let path = output_file(root, path)?;
+    let file = std::fs::File::open(&path).ok()?;
+    let opened = file.metadata().ok()?;
+    let named = std::fs::symlink_metadata(&path).ok()?;
+    (opened.dev() == named.dev() && opened.ino() == named.ino()).then_some(file)
+}
+
+/// What the file grew by since `at`, at most `FILE_TAIL` bytes; `at` moves past it. A file that
+/// got shorter is read again from the start.
+pub(super) fn grown(file: &mut std::fs::File, at: &mut u64) -> std::io::Result<Vec<u8>> {
+    use std::io::{Seek, SeekFrom};
+    let len = file.metadata()?.len();
+    if len < *at {
+        *at = 0;
+    }
+    let mut bytes = Vec::new();
+    if len > *at {
+        file.seek(SeekFrom::Start(*at))?;
+        file.take(FILE_TAIL).read_to_end(&mut bytes)?;
+        *at += bytes.len() as u64;
+    }
+    Ok(bytes)
+}
+
 /// A read-only view of a shell's output file: its last part, then whatever it grows by. Input from
 /// the socket is dropped, as nothing outside Claude Code can type into its shell.
-async fn follow_file(path: PathBuf, mut socket: WebSocket) {
-    use std::io::{Seek, SeekFrom};
-    let mut at = std::fs::metadata(&path)
+async fn follow_file(root: &Path, path: &Path, mut socket: WebSocket) {
+    let Some(mut file) = open_output(root, path) else {
+        let _ = socket
+            .send(Message::Text("swarm: shell output unavailable\r\n".into()))
+            .await;
+        return;
+    };
+    let mut at = file
+        .metadata()
         .map(|meta| meta.len().saturating_sub(FILE_TAIL))
         .unwrap_or(0);
     let mut tick = tokio::time::interval(Duration::from_millis(500));
     loop {
         tokio::select! {
             _ = tick.tick() => {
-                let len = std::fs::metadata(&path).map(|meta| meta.len()).unwrap_or(0);
-                if len < at {
-                    at = 0;
-                }
-                if len == at {
+                let Ok(bytes) = grown(&mut file, &mut at) else { continue };
+                if bytes.is_empty() {
                     continue;
                 }
-                let read = std::fs::File::open(&path).and_then(|mut file| {
-                    file.seek(SeekFrom::Start(at))?;
-                    let mut bytes = Vec::new();
-                    file.take(FILE_TAIL).read_to_end(&mut bytes)?;
-                    Ok(bytes)
-                });
-                let Ok(bytes) = read else { continue };
-                at += bytes.len() as u64;
                 if socket.send(Message::Binary(bytes.into())).await.is_err() {
                     break;
                 }

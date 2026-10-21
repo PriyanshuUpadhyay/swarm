@@ -2,6 +2,10 @@
 
 use super::*;
 
+/// The terminal slots are one global count, so the test that fills them and the test that opens a
+/// socket take turns.
+static SLOTS: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 #[test]
 fn a_ticket_works_once_and_names_its_target() {
     let target = Target::File(PathBuf::from("/tmp/x.output"));
@@ -46,6 +50,40 @@ fn an_output_file_must_be_a_claude_task_file_of_this_user() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// The view keeps reading the file it opened. Swapping the path for a link to another file
+/// after the open shows the real file's growth, never the other file.
+#[test]
+fn an_open_output_file_ignores_a_later_swap_of_its_path() {
+    use std::io::Write;
+    use std::os::unix::fs::MetadataExt;
+    let root = std::env::temp_dir();
+    let uid = std::fs::metadata(&root).unwrap().uid();
+    let dir = PathBuf::from(format!(
+        "/tmp/claude-{uid}/swarm-swap-{}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("b1.output");
+    std::fs::write(&path, "one\n").unwrap();
+    let secret = dir.join("secret.txt");
+    std::fs::write(&secret, "secret\n").unwrap();
+    let mut shell = std::fs::OpenOptions::new()
+        .append(true)
+        .open(&path)
+        .unwrap();
+
+    let mut file = open_output(&root, &path).unwrap();
+    let mut at = 0;
+    assert_eq!(grown(&mut file, &mut at).unwrap(), b"one\n");
+    std::fs::remove_file(&path).unwrap();
+    std::os::unix::fs::symlink(&secret, &path).unwrap();
+    shell.write_all(b"two\n").unwrap();
+    assert_eq!(grown(&mut file, &mut at).unwrap(), b"two\n");
+    assert_eq!(grown(&mut file, &mut at).unwrap(), b"");
+    assert!(open_output(&root, &path).is_none());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// Every other check passes: the file is under `/tmp/claude-0`, which this user made, and ends in
 /// `.output`. Only its owner is wrong for a server whose root uid 0 owns.
 #[test]
@@ -68,6 +106,7 @@ fn an_output_file_of_another_user_is_refused() {
 /// callback unrun, so a failed upgrade cannot use up the terminals.
 #[test]
 fn a_dropped_slot_frees_its_place_and_a_full_server_says_when_to_retry() {
+    let _turn = SLOTS.blocking_lock();
     let mut slots = Vec::new();
     while let Some(slot) = Slot::take() {
         slots.push(slot);
@@ -85,6 +124,7 @@ fn a_dropped_slot_frees_its_place_and_a_full_server_says_when_to_retry() {
 async fn the_socket_needs_a_fresh_ticket_the_host_and_the_app_origin() {
     use super::super::test_support::Fixture;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let _turn = SLOTS.lock().await;
     let mut fixture = Fixture::new();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
