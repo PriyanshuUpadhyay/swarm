@@ -110,7 +110,12 @@ fn target(app: &Server, request: &TicketRequest) -> Result<Target, ApiError> {
     let connection = read_connection(&app.root)
         .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "database read failed"))?;
     let adapter = swarm::store::adapter_of(&connection, &request.session)
-        .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "database read failed"))?
+        .map_err(|err| match err.downcast_ref::<rusqlite::Error>() {
+            Some(rusqlite::Error::QueryReturnedNoRows) => {
+                error(StatusCode::NOT_FOUND, "unknown session")
+            }
+            _ => error(StatusCode::INTERNAL_SERVER_ERROR, "database read failed"),
+        })?
         .unwrap_or_default();
     // Only this adapter is known to run each agent in a session of its own, so an attach shows
     // just that agent and restores its size (adapters/tmux-swarm.conf).
@@ -151,11 +156,12 @@ pub(super) async fn terminal_socket(
     Query(query): Query<SocketQuery>,
     upgrade: WebSocketUpgrade,
 ) -> Response {
-    let Some(target) = redeem(&query.ticket) else {
-        return error(StatusCode::UNAUTHORIZED, "terminal ticket required").into_response();
-    };
+    // The slot comes first, so a full server leaves the ticket unspent for the retry.
     let Some(slot) = Slot::take() else {
         return busy("too many terminals", RETRY_TERMINAL);
+    };
+    let Some(target) = redeem(&query.ticket) else {
+        return error(StatusCode::UNAUTHORIZED, "terminal ticket required").into_response();
     };
     upgrade.on_upgrade(move |socket| async move {
         let _slot = slot;
@@ -224,12 +230,6 @@ fn size(cols: u16, rows: u16) -> PtySize {
     }
 }
 
-const SIGHUP: i32 = 1;
-
-unsafe extern "C" {
-    fn kill(pid: i32, signal: i32) -> i32;
-}
-
 /// A writer to the PTY that closes without a key. portable-pty's own writer sends a newline and
 /// EOF when it drops; the tmux client passes them on, and the agent's shell reads EOF and exits.
 fn pty_writer(
@@ -272,9 +272,10 @@ async fn attach(root: &Path, adapter: &str, pane: &str, mut socket: WebSocket) {
             }
         }
     });
-    let (input, to_pty) = std::sync::mpsc::channel::<Vec<u8>>();
+    // Bounded, so a client that stops reading its input slows the socket instead of growing memory.
+    let (input, mut to_pty) = mpsc::channel::<Vec<u8>>(64);
     std::thread::spawn(move || {
-        for bytes in to_pty {
+        while let Some(bytes) = to_pty.blocking_recv() {
             if writer
                 .write_all(&bytes)
                 .and_then(|()| writer.flush())
@@ -296,7 +297,7 @@ async fn attach(root: &Path, adapter: &str, pane: &str, mut socket: WebSocket) {
             },
             message = socket.recv() => match message {
                 Some(Ok(Message::Binary(bytes))) => {
-                    if input.send(bytes.to_vec()).is_err() {
+                    if input.send(bytes.to_vec()).await.is_err() {
                         break;
                     }
                 }
@@ -323,7 +324,7 @@ async fn attach(root: &Path, adapter: &str, pane: &str, mut socket: WebSocket) {
 fn hang_up(mut child: Box<dyn portable_pty::Child + Send + Sync>) {
     if let Some(pid) = child.process_id() {
         // SAFETY: kill has no memory preconditions; the PTY child leads its own process group.
-        unsafe { kill(-(pid as i32), SIGHUP) };
+        unsafe { libc::kill(-(pid as i32), libc::SIGHUP) };
     }
     let until = Instant::now() + Duration::from_secs(3);
     while Instant::now() < until {
@@ -332,7 +333,16 @@ fn hang_up(mut child: Box<dyn portable_pty::Child + Send + Sync>) {
         }
         std::thread::sleep(Duration::from_millis(50));
     }
-    let _ = child.kill();
+    // The whole group, since the tmux client is a child of the verb's shell.
+    match child.process_id() {
+        // SAFETY: as above.
+        Some(pid) => unsafe {
+            libc::kill(-(pid as i32), libc::SIGKILL);
+        },
+        None => {
+            let _ = child.kill();
+        }
+    }
     let _ = child.wait();
 }
 
@@ -340,12 +350,21 @@ fn hang_up(mut child: Box<dyn portable_pty::Child + Send + Sync>) {
 /// the file the path names, not a link put there after the check; later reads use this handle,
 /// so a later swap of the path shows nothing new.
 pub(super) fn open_output(root: &Path, path: &Path) -> Option<std::fs::File> {
-    use std::os::unix::fs::MetadataExt;
-    let path = output_file(root, path)?;
-    let file = std::fs::File::open(&path).ok()?;
+    open_regular(&output_file(root, path)?)
+}
+
+/// `path` opened, if it is still a regular file and not a link. The open does not wait, so a
+/// FIFO put at the path after the check cannot hold the thread.
+pub(super) fn open_regular(path: &Path) -> Option<std::fs::File> {
+    use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NONBLOCK | libc::O_NOFOLLOW)
+        .open(path)
+        .ok()?;
     let opened = file.metadata().ok()?;
-    let named = std::fs::symlink_metadata(&path).ok()?;
-    (opened.dev() == named.dev() && opened.ino() == named.ino()).then_some(file)
+    let named = std::fs::symlink_metadata(path).ok()?;
+    (opened.is_file() && opened.dev() == named.dev() && opened.ino() == named.ino()).then_some(file)
 }
 
 /// Where the first view starts: the first line inside the last `FILE_TAIL` bytes, so the view

@@ -38,18 +38,14 @@ pub(super) fn tasks(agent: &str, log: &str) -> Vec<Task> {
         let Ok(record) = serde_json::from_str::<Value>(line) else {
             continue;
         };
-        if line.contains("<task-notification>") {
-            let mut texts = Vec::new();
-            strings(&record, &mut texts);
-            for text in texts {
-                let Some(id) = view::tagged(text, "task-id").map(str::trim) else {
-                    continue;
-                };
-                let status = view::tagged(text, "status").unwrap_or("").trim();
-                let summary = view::tagged(text, "summary").map(|s| s.trim().to_string());
-                if !status.is_empty() {
-                    ends.insert(id.into(), (status.into(), summary));
-                }
+        if line.contains("<task-notification>")
+            && let Some(text) = notice(&record)
+            && let Some(id) = view::tagged(text, "task-id").map(str::trim)
+        {
+            let status = view::tagged(text, "status").unwrap_or("").trim();
+            let summary = view::tagged(text, "summary").map(|s| s.trim().to_string());
+            if !status.is_empty() {
+                ends.insert(id.into(), (status.into(), summary));
             }
         }
         let content = record.pointer("/message/content").and_then(Value::as_array);
@@ -116,6 +112,23 @@ pub(super) fn tasks(agent: &str, log: &str) -> Vec<Task> {
         };
     }
     found
+}
+
+/// The text of a record that Claude Code writes for a task notification: the queued notice, the
+/// prompt it becomes, or its attachment. A tool result or a prompt snapshot that quotes the tag is
+/// not one.
+fn notice(record: &Value) -> Option<&str> {
+    let text = match record["type"].as_str()? {
+        "queue-operation" => record["content"].as_str(),
+        "user" => record.pointer("/message/content")?.as_str(),
+        "attachment" if record["attachment"]["type"] == "queued_command" => {
+            record.pointer("/attachment/prompt")?.as_str()
+        }
+        _ => None,
+    }?;
+    text.trim_start()
+        .starts_with("<task-notification>")
+        .then_some(text)
 }
 
 /// The output file a launch result names: `Output is being written to: <path>.output.` for a
@@ -235,6 +248,11 @@ mod tests {
             call("t3", "Agent", json!({"description": "ignored", "run_in_background": true})),
             launch("t3", json!({"isAsync": true, "agentId": "a3", "description": "Research speakers"}), "Async agent launched successfully.\nagentId: a3\noutput_file: /tmp/claude-1/x/s/tasks/a3.output\nDo NOT Read"),
             "not json\n".into(),
+            // A Read of a file that quotes a notice is not an end record.
+            line(json!({
+                "type": "user",
+                "message": {"role": "user", "content": [{"tool_use_id": "t9", "type": "tool_result", "content": "<task-notification>\n<task-id>b2</task-id>\n<status>killed</status>\n</task-notification>"}]},
+            })),
             notification("b1", "completed"),
         ]
         .concat();

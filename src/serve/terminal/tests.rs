@@ -101,6 +101,54 @@ fn the_first_view_of_a_long_file_starts_at_a_line() {
     let _ = std::fs::remove_file(&path);
 }
 
+/// A child that ignores the hangup is killed with its whole group, so a grandchild such as the
+/// tmux client does not outlive it.
+#[test]
+fn hang_up_kills_the_whole_group_when_the_hangup_is_ignored() {
+    let pair = native_pty_system().openpty(size(80, 24)).unwrap();
+    let mut command = CommandBuilder::new("sh");
+    command.args(["-c", "trap '' HUP; sleep 60 & echo $!; wait"]);
+    let child = pair.slave.spawn_command(command).unwrap();
+    drop(pair.slave);
+    let mut reader = pair.master.try_clone_reader().unwrap();
+    let mut seen = String::new();
+    let mut buf = [0u8; 256];
+    while !seen.contains('\n') {
+        let n = reader.read(&mut buf).unwrap();
+        seen.push_str(&String::from_utf8_lossy(&buf[..n]));
+    }
+    let grandchild: i32 = seen.trim().parse().unwrap();
+    std::thread::spawn(move || while matches!(reader.read(&mut buf), Ok(n) if n > 0) {});
+    hang_up(child);
+    // SAFETY: signal 0 only asks whether the process exists.
+    let alive = || unsafe { libc::kill(grandchild, 0) } == 0;
+    let until = Instant::now() + Duration::from_secs(2);
+    while alive() && Instant::now() < until {
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert!(!alive(), "grandchild {grandchild} still runs");
+}
+
+/// A FIFO put where the checked file was is refused at once; a plain open would wait for a writer.
+#[test]
+fn a_fifo_in_place_of_the_file_is_refused_without_waiting() {
+    let fifo = std::env::temp_dir().join(format!("swarm-fifo-{}.output", std::process::id()));
+    let _ = std::fs::remove_file(&fifo);
+    assert!(
+        std::process::Command::new("mkfifo")
+            .arg(&fifo)
+            .status()
+            .unwrap()
+            .success()
+    );
+    let (done, finished) = std::sync::mpsc::channel();
+    let path = fifo.clone();
+    std::thread::spawn(move || done.send(open_regular(&path).is_none()).unwrap());
+    let refused = finished.recv_timeout(Duration::from_secs(2));
+    let _ = std::fs::remove_file(&fifo);
+    assert_eq!(refused, Ok(true));
+}
+
 /// Every other check passes: the file is under `/tmp/claude-0`, which this user made, and ends in
 /// `.output`. Only its owner is wrong for a server whose root uid 0 owns.
 #[test]
@@ -110,6 +158,12 @@ fn an_output_file_of_another_user_is_refused() {
     let file = base.join(format!("swarm-test-{}.output", std::process::id()));
     if std::fs::write(&file, "x").is_err() {
         eprintln!("skipped: cannot write under {}", base.display());
+        return;
+    }
+    use std::os::unix::fs::MetadataExt;
+    if std::fs::metadata(&file).unwrap().uid() == 0 {
+        eprintln!("skipped: run as root, so uid 0 owns the file");
+        let _ = std::fs::remove_file(&file);
         return;
     }
     assert_eq!(output_file(Path::new("/"), &file), None);
@@ -182,6 +236,13 @@ async fn the_socket_needs_a_fresh_ticket_the_host_and_the_app_origin() {
         status(open(&ticket, "evil.test", Some(&origin))).await,
         "403"
     );
+    // A full server answers 429 and leaves the ticket for the retry.
+    let mut slots = Vec::new();
+    while let Some(slot) = Slot::take() {
+        slots.push(slot);
+    }
+    assert_eq!(status(open(&ticket, &host, Some(&origin))).await, "429");
+    drop(slots);
     assert_eq!(status(open(&ticket, &host, Some(&origin))).await, "101");
     assert_eq!(status(open(&ticket, &host, Some(&origin))).await, "401");
     let post = format!(
@@ -224,7 +285,13 @@ fn attach_in_a_pty_types_into_the_pane_and_restores_its_size() {
         .lines()
         .find(|line| line.starts_with("attach = "))
         .unwrap()
-        .replace("tmux -L swarm ", &format!("tmux -L {server} -f /dev/null "));
+        .to_string();
+    // Without this, a changed verb would run against the owner's real `swarm` server.
+    assert!(
+        line.contains("tmux -L swarm "),
+        "attach verb changed: {line}"
+    );
+    let line = line.replace("tmux -L swarm ", &format!("tmux -L {server} -f /dev/null "));
     std::fs::write(root.join("adapters/tmux-swarm.conf"), format!("{line}\n")).unwrap();
 
     let pair = native_pty_system().openpty(size(50, 12)).unwrap();
