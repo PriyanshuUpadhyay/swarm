@@ -6,10 +6,12 @@ use super::*;
 /// socket take turns.
 static SLOTS: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
-/// A fresh dir under `/tmp/claude-<uid>`, with the server root whose owner sets that uid.
+/// A fresh dir under `/tmp/claude-<uid>`, with the server root whose owner sets that uid. The
+/// root is made here, so this user owns it also when the temp dir belongs to root.
 fn task_dir(name: &str) -> (PathBuf, PathBuf) {
     use std::os::unix::fs::MetadataExt;
-    let root = std::env::temp_dir();
+    let root = std::env::temp_dir().join(format!("{name}-root-{}", std::process::id()));
+    std::fs::create_dir_all(&root).unwrap();
     let uid = std::fs::metadata(&root).unwrap().uid();
     let dir = PathBuf::from(format!("/tmp/claude-{uid}/{name}-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
@@ -54,6 +56,7 @@ fn an_output_file_must_be_a_claude_task_file_of_this_user() {
     assert_eq!(output_file(&root, &outside), None);
     let _ = std::fs::remove_file(&outside);
     let _ = std::fs::remove_dir_all(&dir);
+    let _ = std::fs::remove_dir(&root);
 }
 
 /// The view keeps reading the file it opened. Swapping the path for a link to another file
@@ -81,6 +84,7 @@ fn an_open_output_file_ignores_a_later_swap_of_its_path() {
     assert_eq!(grown(&mut file, &mut at).unwrap(), b"");
     assert!(open_output(&root, &path).is_none());
     let _ = std::fs::remove_dir_all(&dir);
+    let _ = std::fs::remove_dir(&root);
 }
 
 /// A long file's first view starts at a line, never inside a character or an escape sequence.

@@ -254,9 +254,10 @@ async fn attach(root: &Path, adapter: &str, pane: &str, mut socket: WebSocket) {
             })();
             match ends {
                 Ok((reader, writer)) => Ok((pair.master, child, reader, writer)),
-                // The attach already runs, so it is ended, not left behind.
+                // The attach already runs, so it is ended, not left behind. `hang_up` sleeps, so
+                // it runs off the async threads.
                 Err(err) => {
-                    hang_up(child);
+                    tokio::task::spawn_blocking(move || hang_up(child));
                     Err(err)
                 }
             }
