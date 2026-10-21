@@ -17,6 +17,7 @@ export function SkillsPage({ app, view }: { app: App; view: SkillsView }) {
       <div role="alert" className="grid content-start gap-3 p-5 text-sm">
         <p className="font-medium">The kit could not be read.</p>
         <p className="font-mono text-xs break-words whitespace-pre-wrap text-muted-foreground">{kit.error}</p>
+        {/* load() keeps its own failure in state.kit. */}
         <Button variant="outline" size="sm" className="w-fit" onClick={() => void app.skills.load()}>
           Try again
         </Button>

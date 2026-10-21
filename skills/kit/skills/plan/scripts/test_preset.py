@@ -117,8 +117,10 @@ def test_cells_are_the_rows_that_a_run_reads():
 def test_a_new_skill_needs_a_name_and_a_description_that_yaml_reads():
     def skill(name, description):
         return f"---\nname: {name}\ndescription: {description}\n---\n\n# x\n\n" + DRAFT
-    assert run("--check", text=skill("", "Use when x."))["defect"] == "name needs lowercase letters, digits, and dashes"
-    assert run("--check", text=skill("my skill", "Use when x."))["defect"] == "name needs lowercase letters, digits, and dashes"
+    assert run("--check", text=skill("", "Use when x."))["defect"] == "name needs a lowercase letter first, then letters, digits, and dashes"
+    assert run("--check", text=skill("my skill", "Use when x."))["defect"] == "name needs a lowercase letter first, then letters, digits, and dashes"
+    for bare in ("123", "on", "null"):
+        assert run("--check", text=skill(bare, "Use when x."))["defect"] == "name needs a lowercase letter first, then letters, digits, and dashes", bare
     assert run("--check", text=skill("mine", '""'))["defect"] == "description needs a `Use when` line"
     assert run("--check", text=skill("mine", "Use when: the owner asks"))["defect"] == \
         "description has YAML punctuation, so it needs double quotes"

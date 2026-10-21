@@ -138,6 +138,7 @@ export function Composer({ app, kit }: { app: App; kit: Kit }) {
             size="sm"
             data-testid="draft-copy"
             disabled={!copyable({ draft, check })}
+            // copyText shows its own toast on success and on failure.
             onClick={() => void copyText(text, draft.from ? "Stop line and step table" : "SKILL.md")}
           >
             Copy

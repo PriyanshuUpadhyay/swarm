@@ -158,8 +158,10 @@ def front_matter_defect(text):
     if not text.startswith("---\n"):
         return None
     found = dict(re.findall(r"^(name|description): ?(.*)$", text[4:].partition("\n---\n")[0], re.M))
-    if not re.fullmatch(r"[a-z0-9-]+", found.get("name", "")):
-        return "name needs lowercase letters, digits, and dashes"
+    name = found.get("name", "")
+    # A YAML reader takes a bare 123 or on as a number or a boolean, not a name.
+    if not re.fullmatch(r"[a-z][a-z0-9-]*", name) or name in ("true", "false", "yes", "no", "on", "off", "null"):
+        return "name needs a lowercase letter first, then letters, digits, and dashes"
     written = found.get("description", "").strip()
     quoted = written[:1] in ("'", '"')
     try:

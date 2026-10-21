@@ -30,7 +30,7 @@ describe("draftText", () => {
     expect(text.startsWith('---\nname: mine\ndescription: "Use when testing."\n---\n\n# mine\n\n## Preset\n\nStop: chat\n')).toBe(true);
     expect(check(text).ok).toBe(true);
     expect(check(draftText({ ...draft, description: "Use when: the owner asks" })).ok).toBe(true);
-    expect(check(draftText({ ...draft, name: "My skill" }))).toEqual({ ok: false, defect: "name needs lowercase letters, digits, and dashes" });
+    expect(check(draftText({ ...draft, name: "My skill" }))).toEqual({ ok: false, defect: "name needs a lowercase letter first, then letters, digits, and dashes" });
   });
 
   it("leaves a pipe in a cell as typed, so Python's defect names the row", () => {
