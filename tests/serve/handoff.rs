@@ -216,8 +216,19 @@ fn menu_http_matches_cli_json_and_keeps_bearer_guards() {
 #[test]
 fn a_switch_resumes_the_same_chat_or_starts_clean() {
     use std::os::unix::fs::PermissionsExt;
-    for carry in ["resume", "clean", "other-cli"] {
+    for carry in [
+        "resume",
+        "clean",
+        "other-cli",
+        "resume-no-log",
+        "clean-no-log",
+        "bad-effort",
+    ] {
         let server = Server::with_actions(true);
+        // A new chat has no log before its first turn; nothing it needs comes from the log.
+        if carry.ends_with("no-log") {
+            fs::remove_file(server.dir.join("chair.jsonl")).unwrap();
+        }
         let home = server.dir.join("home");
         let root = home.join(".swarm");
         fs::create_dir_all(home.join(".claude")).unwrap();
@@ -225,9 +236,16 @@ fn a_switch_resumes_the_same_chat_or_starts_clean() {
         fs::set_permissions(home.join("bin/claude"), fs::Permissions::from_mode(0o755)).unwrap();
         let (provider, sent) = match carry {
             "other-cli" => ("codex", "resume"),
+            "resume-no-log" | "bad-effort" => ("claude", "resume"),
+            "clean-no-log" => ("claude", "clean"),
             other => ("claude", other),
         };
-        let body = json!({"old_session":server.session,"provider":provider,"model":"sonnet","effort":"low","carry":sent});
+        let effort = if carry == "bad-effort" {
+            "bogus"
+        } else {
+            "low"
+        };
+        let body = json!({"old_session":server.session,"provider":provider,"model":"sonnet","effort":effort,"carry":sent});
         let (status, _, reply) = server.request(
             "POST",
             "/api/chat/continue",
@@ -241,6 +259,17 @@ fn a_switch_resumes_the_same_chat_or_starts_clean() {
             .query_row("SELECT COUNT(*) FROM session", [], |r| r.get(0))
             .unwrap();
         match carry {
+            "resume-no-log" | "clean-no-log" => assert_eq!(status, 200, "{carry}: {reply}"),
+            "bad-effort" => {
+                // The refused launch comes after the close, so the old run starts again.
+                assert_eq!(status, 409, "{reply}");
+                assert!(reply.contains("not a level"), "{reply}");
+                assert!(actions.contains("close fixture-chair"), "{actions}");
+                assert!(
+                    actions.contains("spawn"),
+                    "the chair starts again: {actions}"
+                );
+            }
             "resume" => {
                 assert_eq!(status, 200, "{reply}");
                 let reply: Value = serde_json::from_str(&reply).unwrap();

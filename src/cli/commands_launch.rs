@@ -180,6 +180,11 @@ pub(crate) fn commands_launch(
         // Codex and AGY have no per-launch hook to name their chair, and the app lists and reads a
         // chat only by its chair provider. Their session id comes later with their log.
         if matches!(kind, Provider::Codex | Provider::Agy) && agent_id == "orchestrator" {
+            // A new chair has a new session, so the old id goes; a hook keeps a log only when it
+            // names the chair's id (set_chair_log).
+            if resume.is_none() {
+                swarm::store::set_chair(connection, &session_id()?, None)?;
+            }
             swarm::store::set_chair_provider(connection, &session_id()?, kind.id())?;
         }
         match kind {
@@ -211,7 +216,11 @@ pub(crate) fn commands_launch(
                 // pi has no hooks. It takes the session id swarm gives it, so its log is found by
                 // that id, and it reads the host contract from its system prompt (ADR 0086).
                 let session = session_id()?;
-                let id = format!("{session}-{agent_id}");
+                // A resume opens the stored session, which `session new` may have named.
+                let id = match &resume {
+                    Some((_, id)) => id.clone(),
+                    None => format!("{session}-{agent_id}"),
+                };
                 let mut args = vec!["--session-id".to_string(), id.clone()];
                 if let Some(context) = pane_context(kind.id(), &session, agent_id, role) {
                     args.extend(["--append-system-prompt".into(), context]);
@@ -328,7 +337,7 @@ pub(crate) fn resume_args(kind: Provider, id: &str) -> Vec<String> {
     match kind {
         Provider::Codex => vec!["resume".into(), id.into()],
         Provider::Agy => vec!["--conversation".into(), id.into()],
-        // pi gets its fixed `--session-id` at launch, which opens the session it names.
+        // pi's launch passes the resumed id as `--session-id`, which opens that session.
         Provider::Pi => Vec::new(),
         Provider::Claude => vec!["--resume".into(), id.into()],
     }

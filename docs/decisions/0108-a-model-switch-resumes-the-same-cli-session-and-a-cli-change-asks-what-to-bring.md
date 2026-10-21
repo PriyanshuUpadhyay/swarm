@@ -18,7 +18,7 @@ with a summary, so a Claude Opus to Sonnet switch lost the history that the CLI 
 chose to resume the chat's own CLI session with the new flags. A switch of model, thinking level,
 or account inside the same CLI closes the chair pane and runs `swarm launch orchestrator chat
 --resume` with `--model`, `--effort`, and `--account`: `claude --resume <id>`, `codex resume <id>`,
-`pi --session <id>`, or `agy --conversation <id>`. Pi runs Claude and GPT models in one session,
+`pi --session-id <id>`, or `agy --conversation <id>`. Pi runs Claude and GPT models in one session,
 so a pi switch across them is a resume too. A switch to another CLI cannot keep the session, so
 the popover asks each time whether to bring a summary or start clean, with the owner's saved
 default preselected, a "Make default" button, and the same entry in Settings. Pi and AGY join

@@ -187,7 +187,12 @@ async fn resume_switch(app: &App, body: &ContinueChat) -> Result<Value, ApiError
         ));
     }
     if chair["alive"] == true {
-        if view::is_active(&handoff_rows(app, old).await?) {
+        // A chat before its first turn has no log yet, and so no reply that runs.
+        if chair["state"] == "working"
+            || handoff_rows(app, old)
+                .await
+                .is_ok_and(|rows| view::is_active(&rows))
+        {
             return Err(error(
                 StatusCode::CONFLICT,
                 "Wait for the current reply to finish, or stop it before switching model.",
@@ -198,24 +203,52 @@ async fn resume_switch(app: &App, body: &ContinueChat) -> Result<Value, ApiError
     } else {
         continue_phase(app, old, "starting")?;
     }
-    let mut args = vec![
-        "launch",
-        "orchestrator",
-        "chat",
-        "--resume",
-        "--model",
-        &body.model,
-    ];
-    for (flag, value) in [("--effort", &body.effort), ("--account", &body.account)] {
-        if let Some(value) = value {
-            args.extend([flag, value.as_str()]);
-        }
-    }
+    let account = resume_account(
+        &body.provider,
+        body.account.as_deref(),
+        chair["account"].as_str(),
+    );
     let mut call = call;
     // An imported chat has no adapter until its first pane.
     call.adapter = "tmux-swarm".into();
-    run_cli(app, call.args(&args), None).await?;
+    let launch = |model: Option<&str>, effort: Option<&str>, account: Option<&str>| {
+        let mut args = vec!["launch", "orchestrator", "chat", "--resume"];
+        for (flag, value) in [
+            ("--model", model),
+            ("--effort", effort),
+            ("--account", account),
+        ] {
+            if let Some(value) = value {
+                args.extend([flag, value]);
+            }
+        }
+        run_cli(app, call.args(&args), None)
+    };
+    if let Err(refused) = launch(Some(&body.model), body.effort.as_deref(), account).await {
+        // The chair is closed by now, so its old run starts again and the chat keeps a pane.
+        let _ = launch(
+            chair["model"].as_str().or(Some(&body.model)),
+            chair["effort"].as_str(),
+            chair["account"].as_str(),
+        )
+        .await;
+        return Err(refused);
+    }
     Ok(json!({"ok": true, "session": old, "agent": "orchestrator"}))
+}
+
+/// The account a resume launches on. A Codex session lives in its account's home, so a switch that
+/// names no account stays there instead of the launch default.
+pub(super) fn resume_account<'a>(
+    provider: &str,
+    requested: Option<&'a str>,
+    current: Option<&'a str>,
+) -> Option<&'a str> {
+    if provider == "codex" {
+        requested.or(current)
+    } else {
+        requested
+    }
 }
 
 pub(super) async fn execute_continue(app: &App, body: ContinueChat) -> Result<Value, ApiError> {
@@ -242,15 +275,16 @@ pub(super) async fn execute_continue_timed(
         if body.carry == Carry::Resume { return resume_switch(app, &body).await; }
         let prepare = async {
             continue_phase(app, old, "preparing")?;
+            // Clean carries nothing, so it needs neither the log nor the chair.
+            if body.carry == Carry::Clean {
+                return Ok((action_session(app, old)?, String::new(), false));
+            }
             let rows = handoff_rows(app, old).await?;
             let call = action_session(app, old)?;
             let output = run_cli(app, call.args(&["agents", "--json"]), None).await?;
             let agents: Value = serde_json::from_str(&output).map_err(|_| error(StatusCode::BAD_GATEWAY, "invalid agents JSON from swarm"))?;
             let agents = agents["agents"].as_array().ok_or_else(|| error(StatusCode::BAD_GATEWAY, "missing agents list from swarm"))?;
             let alive = agents.iter().any(|a| a["id"] == "orchestrator" && a["alive"] == true);
-            if body.carry == Carry::Clean {
-                return Ok((call, String::new(), false));
-            }
             if alive && view::is_active(&rows) {
                 return Err(error(StatusCode::CONFLICT, "Wait for the current reply to finish, or stop it before switching model."));
             }

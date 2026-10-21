@@ -391,3 +391,11 @@ cat "$SWARM_HOME/menu.json"
         StatusCode::BAD_GATEWAY
     );
 }
+#[test]
+fn a_codex_resume_with_no_account_stays_in_its_account() {
+    use super::continue_chat::resume_account;
+    assert_eq!(resume_account("codex", None, Some("work")), Some("work"));
+    assert_eq!(resume_account("codex", Some("home"), Some("work")), Some("home"));
+    // Claude keeps no session in an account home, so no account means the launch default.
+    assert_eq!(resume_account("claude", None, Some("work")), None);
+}

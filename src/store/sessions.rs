@@ -79,21 +79,28 @@ pub fn set_chair_log(
     session_id: &str,
     path: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    // An AGY or Codex log path names its session. Once the chair's id is known, a log that names
+    // another one is a nested run of the same CLI, such as `agy -p` in the chair's shell, which
+    // inherits the chair's env; it must not replace the chair's log.
     connection.execute(
-        "UPDATE session SET chair_log = ?2 WHERE id = ?1",
+        "UPDATE session SET chair_log = ?2 WHERE id = ?1
+         AND NOT (chair_provider IN ('agy', 'codex') AND chair_id IS NOT NULL
+                  AND instr(?2, chair_id) = 0)",
         (session_id, path.to_string_lossy()),
     )?;
     // An AGY log sits at `brain/<conversation id>/.system_generated/...`, the id `--conversation`
-    // resumes and that AGY's hook never names.
-    let mut parts = path
+    // resumes and that AGY's hook never names. A home folder can also be named `brain`.
+    let parts: Vec<_> = path
         .components()
-        .map(|part| part.as_os_str().to_string_lossy());
-    if parts.any(|part| part == "brain")
-        && let Some(conversation) = parts.next()
-        && uuid::Uuid::try_parse(&conversation).is_ok()
+        .map(|part| part.as_os_str().to_string_lossy())
+        .collect();
+    if let Some(at) = parts.iter().rposition(|part| part == "brain")
+        && let Some(conversation) = parts.get(at + 1)
+        && uuid::Uuid::try_parse(conversation).is_ok()
     {
         connection.execute(
-            "UPDATE session SET chair_id = ?2 WHERE id = ?1 AND chair_provider = 'agy'",
+            "UPDATE session SET chair_id = ?2
+             WHERE id = ?1 AND chair_provider = 'agy' AND chair_id IS NULL",
             (session_id, conversation.as_ref()),
         )?;
     }
@@ -291,19 +298,28 @@ mod tests {
         let connection = open(Path::new(":memory:")).unwrap();
         let session = create_session(&connection, "lane", Path::new("/w"), None, None).unwrap();
         set_chair_provider(&connection, &session, "agy").unwrap();
-        let id = "90f7dfab-e45b-43ed-87d0-1b6497513ac7";
-        let path = format!(
-            "/h/.gemini/antigravity-cli/brain/{id}/.system_generated/logs/transcript_full.jsonl"
-        );
-        set_chair_log(&connection, &session, Path::new(&path)).unwrap();
-        let chair: (Option<String>, Option<String>) = connection
-            .query_row(
-                "SELECT chair_provider, chair_id FROM session WHERE id = ?1",
-                [&session],
-                |r| Ok((r.get(0)?, r.get(1)?)),
+        let log = |id: &str| {
+            // A folder above the home may be named `brain` too; the conversation folder is the last one.
+            format!(
+                "/brain/.gemini/antigravity-cli/brain/{id}/.system_generated/logs/transcript_full.jsonl"
             )
-            .unwrap();
-        assert_eq!(chair, (Some("agy".into()), Some(id.into())));
+        };
+        let chair = |connection: &Connection| -> (Option<String>, Option<String>) {
+            connection
+                .query_row(
+                    "SELECT chair_id, chair_log FROM session WHERE id = ?1",
+                    [&session],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .unwrap()
+        };
+        let id = "90f7dfab-e45b-43ed-87d0-1b6497513ac7";
+        set_chair_log(&connection, &session, Path::new(&log(id))).unwrap();
+        assert_eq!(chair(&connection), (Some(id.into()), Some(log(id))));
+        // An `agy -p` that the chair runs inherits its env, and its hook names another conversation.
+        let probe = "01a15e73-0000-7000-8000-000000000001";
+        set_chair_log(&connection, &session, Path::new(&log(probe))).unwrap();
+        assert_eq!(chair(&connection), (Some(id.into()), Some(log(id))));
     }
 
     #[test]
