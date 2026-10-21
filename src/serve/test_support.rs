@@ -125,6 +125,11 @@ case "$1 $2" in
     '--digest f00d') echo 'swarm: ~/.claude/skills/x changed after the link plan; swarm leaves it' >&2; exit 1 ;;
     '--digest cafe') echo 'swarm: ~/.codex/config.toml changed while swarm edited it; run the command again' >&2; exit 1 ;;
   esac ;;
+  'import conductor') case "$3 $4" in
+    '--json ') printf '%s\n' '{{"digest":"ab12","chats":[],"skipped":[]}}' ;;
+    '--digest dead') echo 'swarm: Conductor or swarm changed after the plan; check the plan again' >&2; exit 1 ;;
+    '--digest beef') echo 'swarm: no Conductor database at /x' >&2; exit 1 ;;
+  esac ;;
   *) if [ "$1" = type ]; then cat > "$SWARM_HOME/text"; fi ;;
 esac
 "#)).unwrap();

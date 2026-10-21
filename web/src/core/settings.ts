@@ -29,6 +29,14 @@ export type SetupPlan = {
   skipped: { group: string; reason: string }[];
 };
 
+/** `swarm import conductor --json` (ADR 0106): the Conductor chats an import adds, and why it skips
+ *  the others. */
+export type ConductorPlan = {
+  digest: string;
+  chats: { conductorId: string; title: string; provider: string; cwd: string; open: boolean; messages: number; nativeLog: boolean }[];
+  skipped: { conductorId: string; title: string; reason: string }[];
+};
+
 /** What Set up all runs: each item that needs setup and has no conflict, in row order. A conflict
  *  needs the owner, so its item is left out. */
 export function setUpAll(doctor: Doctor, plan: SetupPlan): string[] {
@@ -100,6 +108,8 @@ export type SettingsState = {
   plan: Load<SetupPlan>;
   /** A Set up the owner pressed: the files its plan writes, shown until Apply or Cancel. */
   pending: { items: string[]; files: SetupPlan["files"]; commands: NonNullable<SetupPlan["commands"]>; digest: string } | null;
+  /** The Conductor import plan, read only when the owner asks for it. */
+  conductor: Load<ConductorPlan>;
 };
 
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
@@ -164,6 +174,7 @@ export class Settings {
     doctor: { state: "idle" },
     plan: { state: "idle" },
     pending: null,
+    conductor: { state: "idle" },
   };
   private listeners = new Set<() => void>();
   /** Counts HUD writes, so a read that began before a write cannot overwrite its reply. */
@@ -403,6 +414,25 @@ export class Settings {
 
   setUpItem(item: DoctorItem) {
     return item.group ? this.setUp([item.group]) : Promise.resolve();
+  }
+
+  // ---- Conductor import ----
+
+  async loadConductor() {
+    this.set({ conductor: { state: "loading" } });
+    try {
+      this.set({ conductor: { state: "ready", data: await this.api.get<ConductorPlan>("/api/import/conductor") } });
+    } catch (err) {
+      this.set({ conductor: { state: "error", error: message(err) } });
+    }
+  }
+
+  /** Imports the shown plan with its digest, so a chat that changed since the owner saw it is a
+   *  409. */
+  importConductor(): Promise<boolean> {
+    const c = this.state.conductor;
+    if (this.state.busy || c.state !== "ready" || c.data.chats.length === 0) return Promise.resolve(false);
+    return this.write(() => this.api.post("/api/import/conductor", { digest: c.data.digest }), "The Conductor import", () => this.loadConductor());
   }
 
   // ---- shared ----

@@ -70,6 +70,7 @@ pub(super) enum Action {
     Hud(HudWrite),
     Setup(SetupWrite),
     Owner(OwnerWrite),
+    Import(ImportWrite),
 }
 
 pub(super) struct ActionJob {
@@ -168,6 +169,7 @@ impl Action {
             | Self::UsageRefresh(_)
             | Self::Hud(_)
             | Self::Owner(_)
+            | Self::Import(_)
             | Self::RefreshView => None,
             // A plugin install can take minutes, so it waits in its own lane, not in the one that
             // folds and archives share.

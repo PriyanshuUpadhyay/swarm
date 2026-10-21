@@ -150,6 +150,10 @@ pub(super) fn router(app: App) -> Router {
         .route("/api/doctor", get(doctor_read))
         .route("/api/setup/plan", get(setup_plan))
         .route("/api/setup/apply", post(setup_write))
+        .route(
+            "/api/import/conductor",
+            get(conductor_plan).post(conductor_write),
+        )
         .route("/api/roles", get(menu_read).post(owner_write))
         .route("/api/providers", get(menu_read))
         .route("/api/models", get(menu_read))

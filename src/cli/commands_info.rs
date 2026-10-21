@@ -47,6 +47,9 @@ pub(crate) fn commands_info(args: &[String]) -> Result<Option<()>, Box<dyn std::
     if args.first().map(String::as_str) == Some("setup") {
         return setup(&args[1..]).map(Some);
     }
+    if args.first().map(String::as_str) == Some("import") {
+        return import(&args[1..]).map(Some);
+    }
     if args.first().map(String::as_str) == Some("doctor") {
         return doctor(&args[1..]).map(Some);
     }
