@@ -143,3 +143,20 @@ def test_done_refuses_a_written_back_claim(tmp):
     (folder / "01-ask.md").write_text(old, encoding="utf-8")
     out = run("done", folder, "01-ask", "1")
     assert out.returncode == 1 and "claim #1 is not the current one" in out.stderr, out
+
+
+def test_timeout_wait_is_bounded(tmp):
+    """A grandchild that leaves the check's process group keeps the pipe open; done still returns soon after the cap."""
+    folder = Path(tmp, "bounded")
+    folder.mkdir()
+    command = "perl -e 'setpgrp(0, 0); sleep 20' & sleep 20"
+    started = time.monotonic()
+    with patch.object(step_checks, "block_checks", lambda block: [("`x` exits 0: x", re.compile(".*"))]), \
+         patch.object(step_checks, "CHECK_SECONDS", 1):
+        try:
+            with redirect_stdout(StringIO()):
+                step_checks.run_checks(folder, "02-work", f"- [x] block fake script: `{command}` exits 0: x: ok\n", "")
+            raise AssertionError("a timeout must refuse")
+        except SystemExit as error:
+            assert "no result in 1 s" in str(error.code), error.code
+    assert time.monotonic() - started < 15, "the wait after the kill must be bounded"
