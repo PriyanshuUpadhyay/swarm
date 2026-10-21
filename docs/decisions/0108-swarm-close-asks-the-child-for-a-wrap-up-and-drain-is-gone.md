@@ -8,6 +8,7 @@ informed-by:
   - 'owner, 2026-10-21: "got it… create a pr for the same implement with auto" (approval of the close-not-finish proposal)'
   - 'probe 2026-10-21 of ~/.swarm/swarm.db: 14 summarize jobs queued and none done, because nothing ran swarm drain or set SWARM_SUMMARIZER'
   - 'owner, 2026-10-21: "your recommendation is cool… will need track these as accepted limits" (review runs range-3407689-f750844-01 and range-3407689-a29df28-01)'
+  - 'owner, 2026-10-21: "accept as limit yeah" (review run range-3407689-d8bd5fc-01, two closes of one child at once)'
 ---
 
 # 0108. swarm close asks the child for a wrap-up, and drain is gone
@@ -31,8 +32,8 @@ app's own close buttons save no wrap-up.
 
 ## Known limits
 
-The owner accepted these limits on 2026-10-21, from the review runs `range-3407689-f750844-01` and
-`range-3407689-a29df28-01`. The screen reads of silent children share one 15 s limit, so a close
+The owner accepted these limits on 2026-10-21, from the review runs `range-3407689-f750844-01`,
+`range-3407689-a29df28-01`, and `range-3407689-d8bd5fc-01`. The screen reads of silent children share one 15 s limit, so a close
 ends within about 140 s, inside the 180 s call timeout that the host contracts name.
 
 - A `close` that stops during its wait (Ctrl-C or a call timeout) leaves the child owing a
@@ -44,3 +45,5 @@ ends within about 140 s, inside the 180 s call timeout that the host contracts n
   it stay open.
 - The adapter's `close` verb has no time limit, as before this change, so a stuck tmux or Herdr
   server holds `swarm close`.
+- Two `swarm close` runs for one child at the same time write the same temporary file, so one can
+  report `wrap-up not saved` although the other saved `<id>.summary.md`.
