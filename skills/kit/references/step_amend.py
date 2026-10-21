@@ -47,6 +47,10 @@ def amend(folder, row, *opts):
             return add(folder, row, None)
         if not (Path(folder) / f"{before}.md").is_file():
             raise SystemExit(f"{before} is not open")
+        sys.path.insert(0, str(CHART.parent))
+        import plan_chart
+        if before not in [r[0] for r in plan_chart.read_plan(plan)[2]]:
+            raise SystemExit(f"{before} is not a step of plan.md")
         with step_run.step_lock(folder, before, command="amend"):
             add(folder, row, before)
 
@@ -59,7 +63,8 @@ def add(folder, row, before):
     plan = folder / "plan.md"
     if "\n" in row or "\r" in row:
         raise SystemExit("amend takes one table row on one line")
-    text = plan.read_text(encoding="utf-8")
+    old_plan = plan.read_bytes()
+    text = old_plan.decode("utf-8")
     if (used := spent(folder)) >= (allowed := budget(text)):
         raise SystemExit(f"no Amend budget left ({used} of {allowed} spent); ask the owner")
     lines = text.split("\n")
@@ -109,12 +114,13 @@ def add(folder, row, before):
 
     def restore():
         """Put plan.md and plan.html back as they were, and drop the new step file, so a refusal leaves no trace."""
-        plan.write_text(text, encoding="utf-8")
+        plan.write_bytes(old_plan)
         page.write_bytes(old_page) if old_page is not None else page.unlink(missing_ok=True)
         (folder / f"{name}.md").unlink(missing_ok=True)
 
     plan.write_text("\n".join(lines), encoding="utf-8")
-    checked = subprocess.run([sys.executable, "-I", str(CHART), str(plan)], capture_output=True, text=True)
+    checked = subprocess.run([sys.executable, "-I", str(CHART), str(plan)], capture_output=True, text=True,
+                             encoding="utf-8", errors="replace")
     if checked.returncode:
         restore()
         raise SystemExit(f"amend refused: {checked.stderr.strip()}")

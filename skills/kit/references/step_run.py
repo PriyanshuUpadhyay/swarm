@@ -276,6 +276,9 @@ def take(folder, step, who, need=None, rev=revision, force=False, on_claim=None)
             raise SystemExit(f"{step} is not ready; it needs {', '.join(need)}")
         step_scope.check_reviewer(folder, step, who)
         uses = ", ".join(f"{n}@{rev(folder, n)}" for n in need)
+        # done compares the work tree with this one, so only changes made after the take count. It is read before
+        # the claim, so a git failure (SystemExit) leaves the step as it was.
+        tree = step_scope.work_tree(folder) if step_scope.writes("\n".join(lines)) is not None else None
         text = "\n".join([f"Status: active {who} #{max(claim_of(folder, step), int(number[1]) if number else 0) + 1}", f"Uses: {uses}", *lines[2:]])
         write_step(file, text)
         if on_claim is not None:
@@ -288,9 +291,8 @@ def take(folder, step, who, need=None, rev=revision, force=False, on_claim=None)
             text = file.read_text(encoding="utf-8")
         # Logged inside the lock, so a take --force cannot count the same claim number.
         log(folder, step, f"take {who}")
-        # done compares the work tree with this one, so only changes made after the take count.
-        if step_scope.writes(text) is not None and (tree := step_scope.work_tree(folder)):  # SystemExit: done refuses
-            log(folder, step, f"base {tree[1]}")
+        if tree:
+            log(folder, step, f"base {tree[1]} {step_scope.config_hash(tree[0])}")
     print(text)
 
 

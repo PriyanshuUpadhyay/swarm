@@ -50,6 +50,10 @@ def test_done_refuses_a_write_outside_scope(tmp):
     (repo / "README.md").write_text("no step writes this\n", encoding="utf-8")
     out = run("done", folder, "02-b", "1")
     assert out.returncode == 1 and "it changed README.md" in out.stderr, out
+    # The user's git settings stay; only the variables that tie git to a repo go.
+    with patch.dict(os.environ, {"GIT_CONFIG_GLOBAL": "/x", "GIT_DIR": "/y"}):
+        env = step_scope.clean_env()
+    assert env["GIT_CONFIG_GLOBAL"] == "/x" and "GIT_DIR" not in env
     # A caller's GIT_DIR does not point the diff at another repo.
     other = Path(tmp, "other")
     subprocess.run(["git", "init", "-q", str(other)], check=True)
@@ -62,6 +66,16 @@ def test_done_refuses_a_write_outside_scope(tmp):
     assert out.returncode == 1 and "it changed src/keep.ts" in out.stderr, out
     (repo / "src" / "keep.ts").write_text("1\n", encoding="utf-8")
     assert run("done", folder, "02-b", "1").returncode == 0
+
+
+def test_scope_skips_a_step_done_before_the_take(tmp):
+    repo, folder = scope_repo(tmp)
+    assert run("take", folder, "01-a", "x").returncode == 0 and run("done", folder, "01-a", "1").returncode == 0
+    assert run("take", folder, "02-b", "y").returncode == 0
+    (repo / "src" / "a").mkdir()
+    (repo / "src" / "a" / "late.ts").write_text("01-a was done before this take\n", encoding="utf-8")
+    out = run("done", folder, "02-b", "1")
+    assert out.returncode == 1 and "it changed src/a/late.ts" in out.stderr, out
 
 
 def test_scope_parallel_order_names_and_a_lost_base(tmp):
@@ -94,6 +108,10 @@ def test_a_step_does_not_change_blocks_toml(tmp):
     (repo / ".blocks.toml").write_text('[off]\nplan-review = "no"\n', encoding="utf-8")
     out = run("done", folder, "01-a", "1")
     assert out.returncode == 1 and "it changed .blocks.toml, which only the owner changes" in out.stderr, out
+    # git add skips an ignored file, so the hash that take recorded catches it.
+    (repo / ".git" / "info" / "exclude").write_text("/tmp/\n/.blocks.toml\n", encoding="utf-8")
+    out = run("done", folder, "01-a", "1")
+    assert out.returncode == 1 and "it changed .blocks.toml" in out.stderr, out
     assert step_scope.write_paths("none") == [] and step_scope.write_paths("`a/`, b") == ["a/", "b"]
     for cell, error in (("", "a Writes cell is empty"), ("none, a/", "stands alone")):
         try:
@@ -122,6 +140,14 @@ def test_scope_fails_closed_in_a_repo(tmp):
                       encoding="utf-8")
     out = run("done", folder, "01-a", "1")
     assert out.returncode == 1 and "its take recorded no base; take it again" in out.stderr, out
+    # A repo that git cannot read is not "no git".
+    (repo / ".git" / "HEAD").write_text("garbage\n", encoding="utf-8")
+    out = run("done", folder, "01-a", "1")
+    assert out.returncode == 1 and "scope check failed: git rev-parse" in out.stderr, out
+    # A take that cannot read the repo leaves the step open, not claimed with no base.
+    out = run("take", folder, "02-b", "y")
+    assert out.returncode == 1 and "scope check failed" in out.stderr, out
+    assert (folder / "02-b.md").read_text(encoding="utf-8").startswith("Status: open")
 
 
 def test_scope_needs_git_and_a_writes_line(tmp):
@@ -265,10 +291,28 @@ def test_amend_refuses_odd_rows(tmp):
                                                       "| `05-reply.md` (optional) | `build, check` |")
     assert ticked != plan.read_text(encoding="utf-8")
     plan.write_text(ticked, encoding="utf-8")
+    # A refused amend puts plan.md back byte for byte, CRLF line ends too.
+    crlf = plan.read_bytes().replace(b"\n", b"\r\n")
+    plan.write_bytes(crlf)
+    out = run("amend", folder, "| 08-bad | nope | x | none | local-research | y |")
+    assert out.returncode == 1 and plan.read_bytes() == crlf, out
+    plan.write_text(ticked, encoding="utf-8")
+    # A start that fails after the chart passed leaves plan.html as it was.
     page = plan.with_suffix(".html")
     page.write_text("before\n", encoding="utf-8")
-    out = run("amend", folder, "| 08-bad | nope | x | none | local-research | y |")
-    assert out.returncode == 1 and page.read_text(encoding="utf-8") == "before\n", out
+    import step_amend
+    with patch.object(step_run, "start", side_effect=SystemExit("boom")):
+        try:
+            step_amend.amend(folder, "| 08-ok | build | x | none | local-research | y |", "--before", "05-reply")
+        except SystemExit as stop:
+            assert str(stop) == "boom", stop
+    assert page.read_text(encoding="utf-8") == "before\n" and plan.read_text(encoding="utf-8") == ticked
+    assert not (folder / "08-ok.md").exists()
+    # A --before step file with no plan row is refused, not a traceback.
+    (folder / "99-stray.md").write_text("Status: open\nUses: \n", encoding="utf-8")
+    out = run("amend", folder, "| 08-ok | build | x | none | local-research | y |", "--before", "99-stray")
+    assert out.returncode == 1 and "99-stray is not a step of plan.md" in out.stderr, out
+    (folder / "99-stray.md").unlink()
     # A part block brings its parent into the blocks table, as an approved plan lists it.
     out = run("amend", folder, "| 07-draw | build | a diagram | none | html-diagram | show the flow |", "--before", "05-reply")
     assert out.returncode == 0, out

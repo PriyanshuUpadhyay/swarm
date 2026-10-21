@@ -4,6 +4,7 @@ A step file from a plan with a Writes column has a `Writes:` line under `Uses:` 
 with no such line, or a run outside git, has no scope check.
 """
 
+import hashlib
 import os
 import shutil
 import subprocess
@@ -39,9 +40,18 @@ def writes(text):
     return None if value is None else write_paths(value)
 
 
+# `git rev-parse --local-env-vars`: the variables that tie git to one repo. A caller's GIT_DIR or GIT_WORK_TREE would
+# point git at another repo; the user's own settings, such as GIT_CONFIG_GLOBAL, stay.
+LOCAL_ENV = {"GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_CONFIG", "GIT_CONFIG_PARAMETERS", "GIT_CONFIG_COUNT",
+             "GIT_OBJECT_DIRECTORY", "GIT_DIR", "GIT_WORK_TREE", "GIT_IMPLICIT_WORK_TREE", "GIT_GRAFT_FILE",
+             "GIT_INDEX_FILE", "GIT_NO_REPLACE_OBJECTS", "GIT_REPLACE_REF_BASE", "GIT_PREFIX", "GIT_SHALLOW_FILE",
+             "GIT_COMMON_DIR"}
+
+
 def clean_env():
-    """os.environ with no GIT_ variable: a caller's GIT_DIR or GIT_WORK_TREE would point git at another repo."""
-    return {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    """os.environ with no repo-local GIT_ variable, and no GIT_CONFIG_KEY_n or GIT_CONFIG_VALUE_n of a dropped count."""
+    return {k: v for k, v in os.environ.items()
+            if k not in LOCAL_ENV and not k.startswith(("GIT_CONFIG_KEY_", "GIT_CONFIG_VALUE_"))}
 
 
 def git(root, *args, env=None):
@@ -63,7 +73,11 @@ def work_tree(folder):
     """
     root, _ = work_root(folder)
     env = clean_env()
-    if git(root, "rev-parse", "--show-toplevel", env=env).returncode:
+    if (found := git(root, "rev-parse", "--show-toplevel", env=env)).returncode:
+        # A .git above the folder means a repo that git cannot read (a broken HEAD, a dubious owner): refuse.
+        # A missing git binary (127) stays a printed skip, as the check cannot run at all.
+        if found.returncode != 127 and any((p / ".git").exists() for p in (Path(root).resolve(), *Path(root).resolve().parents)):
+            raise SystemExit(f"scope check failed: git rev-parse: {found.stderr.strip()}")
         return None
     index = Path(git(root, "rev-parse", "--path-format=absolute", "--git-path", "index", env=env).stdout.strip())
     with tempfile.TemporaryDirectory() as tmp:
@@ -77,8 +91,14 @@ def work_tree(folder):
     return root, out.stdout.strip()
 
 
+def config_hash(root):
+    """A hash of the repo's .blocks.toml, or `none`. take records it, because git add skips an ignored file."""
+    file = Path(root) / ".blocks.toml"
+    return hashlib.sha256(file.read_bytes()).hexdigest()[:16] if file.is_file() else "none"
+
+
 def base(folder, step):
-    """The tree that the step's newest take recorded, or None."""
+    """`<tree> <config hash>` that the step's newest take recorded, or None."""
     events = Path(folder) / "events.log"
     lines = events.read_text(encoding="utf-8").splitlines() if events.exists() else []
     found = None
@@ -89,6 +109,19 @@ def base(folder, step):
             elif row[2].startswith("base "):
                 found = row[2].removeprefix("base ")
     return found
+
+
+def done_before_take(folder, step):
+    """The steps whose newest done line comes before the step's newest take: they did not run beside it."""
+    events = Path(folder) / "events.log"
+    lines = events.read_text(encoding="utf-8").splitlines() if events.exists() else []
+    done, before = set(), set()
+    for row in (line.split("\t") for line in lines):
+        if len(row) > 2 and row[1] == step and row[2].startswith("take ") and " failed: " not in row[2]:
+            before = set(done)
+        elif len(row) > 2 and row[2].startswith("done "):
+            done.add(row[1])
+    return before
 
 
 def inside(path, scope):
@@ -104,7 +137,8 @@ def check(folder, step, text):
     own = writes(text)
     if own is None:
         return
-    start = base(folder, step)
+    start, _, config = (base(folder, step) or "").partition(" ")
+    start = start or None
     now = work_tree(folder)
     if now is None:
         print("not run: scope: no git work tree")
@@ -114,8 +148,9 @@ def check(folder, step, text):
     root, tree = now
     allowed = list(own)
     # A step that ran beside this one counts too, also when it was done first: its files cannot be told apart.
-    # Its status says so, so the gap between done's file write and its log line does not matter.
-    needed = earlier(folder, step)
+    # Its status says so, so the gap between done's file write and its log line does not matter. A step done
+    # before this take did not run beside it.
+    needed = earlier(folder, step) | done_before_take(folder, step)
     for other in sorted(Path(folder).glob("[0-9][0-9]-*.md")):
         if other.stem != step and other.stem not in needed:
             body = other.read_text(encoding="utf-8")
@@ -128,7 +163,7 @@ def check(folder, step, text):
     if diff.returncode:  # a pruned base tree, say; refuse, so a failed diff never passes the check
         raise SystemExit(f"{step} is not done: scope check failed: {diff.stderr.strip()}; take the step again")
     changed = [p for p in diff.stdout.split("\0") if p]
-    if ".blocks.toml" in changed:  # its [off] table would turn off this step's own checks
+    if ".blocks.toml" in changed or config != config_hash(root):  # its [off] table would turn off this step's checks
         raise SystemExit(f"{step} is not done: it changed .blocks.toml, which only the owner changes; undo it")
     if outside := next((p for p in changed if not any(inside(p, s) for s in allowed)), None):
         raise SystemExit(f"{step} is not done: it changed {outside}, outside the Writes of every step that ran beside it "
