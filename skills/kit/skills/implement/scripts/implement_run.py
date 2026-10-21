@@ -21,7 +21,7 @@ owns status, ready, stale, take, done, and events.log. This script adds the impl
 of 05-build is HEAD, take 04-impact lists the places that name the contracts' code names, and take
 07-close needs the check-mode run's own APPROVE verdict on HEAD. `start --plan <run>` refuses a plan that
 the plan skill's stop rule (blocks/plan-review/scripts/start_plan.py) does not pass, or whose steps or Needs
-differ from the step graph, and names the plan in 01-frame.md.
+differ from the step graph. A plan that starts is named in 01-frame.md.
 """
 
 import codecs
@@ -55,16 +55,20 @@ def review(folder, target, *opts):
         raise SystemExit(result.returncode)
 
 
-def same_graph(plan, planned):
+def check_graph(plan, rows):
     """Refuse an approved plan whose steps or Needs differ from graph(), so no approved step is dropped in silence."""
+    names = [r[0] for r in rows]
+    planned = {r[0]: step_run.need_files(r[1], names) for r in rows}
     ours = graph()
-    diff = [f"added {s}" for s in planned if s not in ours] + [f"missing {s}" for s in ours if s not in planned]
+    diff = [f"{s} twice" for s in dict.fromkeys(s for s in names if names.count(s) > 1)]
+    diff += [f"added {s}" for s in planned if s not in ours] + [f"missing {s}" for s in ours if s not in planned]
     diff += [f"{s} needs {', '.join(ours[s]) or 'none'} in implement, {', '.join(planned[s]) or 'none'} in plan"
-             for s in ours if s in planned and planned[s] != ours[s]]
+             for s in ours if s in planned and sorted(planned[s]) != sorted(ours[s])]
     if diff:
-        raise SystemExit(f"{plan}/plan.md steps differ from implement's graph: {'; '.join(diff)}. Implement runs its own "
-                         "steps: skip 02-design, 03-contracts or 04-impact after 01-frame, and put other work in a plan "
-                         "for another verb.")
+        raise SystemExit(one_line(
+            f"{plan}/plan.md steps differ from implement's graph: {'; '.join(diff)}. Implement runs its own steps: "
+            f"skip {', '.join(SKIPPABLE[:-1])} or {SKIPPABLE[-1]} after 01-frame, and put other work in a plan for "
+            "another verb. Edit plan.md and approve it in a new round."))
 
 
 def start(profile="default", domains=None, parent_loop=None, plan=None):
@@ -80,8 +84,8 @@ def start(profile="default", domains=None, parent_loop=None, plan=None):
             start_plan.approved(plan)
         plan = Path(plan).resolve()
         rows = start_plan.preset.plan_chart.read_plan(plan / "plan.md")[2]
+        check_graph(plan, rows)
         plan_blocks = {r[0]: r[3] for r in rows}
-        same_graph(plan, {r[0]: step_run.need_files(r[1], [s[0] for s in rows]) for r in rows})
     root = git("rev-parse", "--show-toplevel")
     if not root:
         raise SystemExit("not in a git repository")
