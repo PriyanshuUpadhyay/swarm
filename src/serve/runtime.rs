@@ -148,6 +148,8 @@ pub(super) fn router(app: App) -> Router {
         .route("/api/hud", get(hud_read).post(hud_write))
         .route("/api/notices", get(notices_read).post(notices_write))
         .route("/api/doctor", get(doctor_read))
+        .route("/api/kit", get(kit_read))
+        .route("/api/kit/check", post(kit_check))
         .route("/api/setup/plan", get(setup_plan))
         .route("/api/setup/apply", post(setup_write))
         .route(
