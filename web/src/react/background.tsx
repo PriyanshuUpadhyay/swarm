@@ -19,6 +19,26 @@ export function BackgroundPanel({ app, session }: { app: App; session: string })
   const snapshot = useSyncExternalStore(app.subscribe, () => app.snapshot);
   const [tasks, setTasks] = useState<BackgroundTask[]>([]);
   const [picked, setPicked] = useState<string | null>(null);
+  // A click asks for focus once: the shown terminal takes it now, a new one when its socket opens.
+  // Nothing else focuses, so a panel that opens with the chat, or a row that comes back, leaves
+  // the keys where they are.
+  const wanted = useRef<string | null>(null);
+  const shown = useRef<{ key: string; focus: () => void } | null>(null);
+  const choose = (key: string) => {
+    setPicked(key);
+    if (shown.current?.key === key) shown.current.focus();
+    else wanted.current = key;
+  };
+  const ready = (key: string) => (focus: () => void) => {
+    shown.current = { key, focus };
+    if (wanted.current === key) {
+      wanted.current = null;
+      focus();
+    }
+    return () => {
+      if (shown.current?.key === key) shown.current = null;
+    };
+  };
 
   useEffect(() => {
     let stop = false;
@@ -40,7 +60,7 @@ export function BackgroundPanel({ app, session }: { app: App; session: string })
     tasks,
   );
   const row: BackgroundRow | undefined = rows.find((r) => r.key === picked) ?? rows[0];
-  const pickAgent = (agent: string) => setPicked(`agent:${agent}`);
+  const pickAgent = (agent: string) => choose(`agent:${agent}`);
 
   return (
     <div className="flex h-full min-h-0 border-t bg-background" data-testid="background-panel">
@@ -51,7 +71,7 @@ export function BackgroundPanel({ app, session }: { app: App; session: string })
               type="button"
               aria-current={r.key === row?.key}
               className={`flex w-full items-center gap-2 py-1 pr-2 text-left hover:bg-accent aria-[current=true]:bg-accent ${r.type === "task" ? "pl-6" : "pl-2"}`}
-              onClick={() => setPicked(r.key)}
+              onClick={() => choose(r.key)}
             >
               <StatusGlyph status={r.status} />
               <span className="min-w-0 flex-1 truncate">{r.type === "agent" ? r.title : r.task.title || r.task.id}</span>
@@ -61,13 +81,15 @@ export function BackgroundPanel({ app, session }: { app: App; session: string })
         ))}
         {!rows.length && <li className="px-2 py-1 text-muted-foreground">No live agents.</li>}
       </ul>
-      <div className="flex min-w-0 flex-1 flex-col">{row && <Detail key={row.key} app={app} session={session} row={row} picked={row.key === picked} onOwner={pickAgent} />}</div>
+      <div className="flex min-w-0 flex-1 flex-col">{row && <Detail key={row.key} app={app} session={session} row={row} onReady={ready(row.key)} onOwner={pickAgent} />}</div>
     </div>
   );
 }
 
-function Detail({ app, session, row, picked, onOwner }: { app: App; session: string; row: BackgroundRow; picked: boolean; onOwner: (agent: string) => void }) {
-  if (row.type === "agent") return <Term app={app} session={session} agent={row.agent} focus={picked} />;
+type Ready = (focus: () => void) => () => void;
+
+function Detail({ app, session, row, onReady, onOwner }: { app: App; session: string; row: BackgroundRow; onReady: Ready; onOwner: (agent: string) => void }) {
+  if (row.type === "agent") return <Term app={app} session={session} agent={row.agent} onReady={onReady} />;
   const { task } = row;
   return (
     <>
@@ -95,18 +117,12 @@ function Detail({ app, session, row, picked, onOwner }: { app: App; session: str
 const css = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 const colors = () => ({ background: css("--background"), foreground: css("--foreground") });
 
-/** One xterm on one socket. `task` makes it a read-only view of that shell's output file. `focus`
- *  is set only for a row the user chose, so a panel that opens with the chat leaves the keys there. */
-function Term({ app, session, agent, task, focus = false }: { app: App; session: string; agent: string; task?: string; focus?: boolean }) {
+/** One xterm on one socket. `task` makes it a read-only view of that shell's output file. An
+ *  agent terminal hands `onReady` its focus once the socket opens. */
+function Term({ app, session, agent, task, onReady }: { app: App; session: string; agent: string; task?: string; onReady?: Ready }) {
   const shell = task !== undefined;
   const host = useRef<HTMLDivElement>(null);
   const live = useRef<Terminal | null>(null);
-  // The socket opens later, so it reads the newest choice, not the one from the first render.
-  const focused = useRef(focus);
-  focused.current = focus;
-  useEffect(() => {
-    if (focus) live.current?.focus();
-  }, [focus]);
   const theme = useTheme();
   useEffect(() => {
     const paint = () => {
@@ -136,6 +152,7 @@ function Term({ app, session, agent, task, focus = false }: { app: App; session:
     term.attachCustomKeyEventHandler((e) => !app.registry.match(e));
     let ws: WebSocket | null = null;
     let gone = false;
+    let release: (() => void) | undefined;
     const send = (data: string | Uint8Array) => ws?.readyState === WebSocket.OPEN && ws.send(data);
     const resize = () => send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }));
     app.api
@@ -147,7 +164,7 @@ function Term({ app, session, agent, task, focus = false }: { app: App; session:
         ws.onopen = () => {
           fit.fit();
           resize();
-          if (focused.current) term.focus();
+          release = onReady?.(() => term.focus());
         };
         ws.onmessage = (m) => term.write(typeof m.data === "string" ? m.data : new Uint8Array(m.data as ArrayBuffer));
         ws.onclose = () => !gone && term.write("\r\n\x1b[2m[closed]\x1b[0m\r\n");
@@ -163,6 +180,7 @@ function Term({ app, session, agent, task, focus = false }: { app: App; session:
     observer.observe(el);
     return () => {
       gone = true;
+      release?.();
       observer.disconnect();
       for (const s of subs) s.dispose();
       ws?.close();

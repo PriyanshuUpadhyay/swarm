@@ -89,6 +89,12 @@ test("clicking the row that is already shown gives its terminal the keys", async
   const panel = tab.getByTestId("background-panel").last();
   await expect(panel.locator(".xterm-rows")).not.toBeEmpty();
   await expect(panel.locator(".xterm-helper-textarea")).not.toBeFocused();
-  await panel.locator(`button[aria-current="true"]`).click();
+  const row = panel.locator(`button[aria-current="true"]`);
+  await row.click();
+  await expect(panel.locator(".xterm-helper-textarea")).toBeFocused();
+  // A second click, after the keys went elsewhere, gives them back.
+  await row.focus();
+  await expect(panel.locator(".xterm-helper-textarea")).not.toBeFocused();
+  await row.click();
   await expect(panel.locator(".xterm-helper-textarea")).toBeFocused();
 });
