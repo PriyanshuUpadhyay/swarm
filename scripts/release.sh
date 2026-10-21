@@ -1,27 +1,29 @@
 #!/bin/sh
 # Release from a checked, clean main branch, or finish a pushed release.
-# Usage: scripts/release.sh patch|minor|major [--local] [--dry-run]
+# Usage: scripts/release.sh patch|minor|major [--no-local] [--dry-run]
+# After the tag is pushed, it installs that tag through install-local.sh, unless --no-local is given.
 #        scripts/release.sh resume v<version> [--dry-run]
 set -eu
 
 die() { printf '%s\n' "release: $*" >&2; exit 1; }
 dry=false
-local_install=false
+local_install=true
 mode=
 tag=
 for arg in "$@"; do
     case "$arg" in
         --dry-run) dry=true ;;
-        --local) local_install=true ;;
+        --no-local) local_install=false ;;
         patch|minor|major|resume) [ -z "$mode" ] || die 'give one release mode'; mode=$arg ;;
         v*) [ "$mode" = resume ] && [ -z "$tag" ] || die "unexpected tag $arg"; tag=$arg ;;
         *) die "unknown argument $arg" ;;
     esac
 done
-[ -n "$mode" ] || die 'usage: scripts/release.sh patch|minor|major [--local] [--dry-run], or resume v<version>'
+[ -n "$mode" ] || die 'usage: scripts/release.sh patch|minor|major [--no-local] [--dry-run], or resume v<version>'
 root=$(git -C "$(dirname "$0")/.." rev-parse --show-toplevel)
 if [ "$mode" = resume ]; then
-    "$local_install" && die 'resume does not accept --local'
+    "$local_install" || die 'resume does not accept --no-local'
+    local_install=false  # resume finishes a pushed tag; the Tap step installs it
     python3 - "$tag" <<'PYTAG'
 import re
 import sys
