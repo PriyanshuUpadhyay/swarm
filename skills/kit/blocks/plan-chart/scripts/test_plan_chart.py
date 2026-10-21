@@ -219,6 +219,12 @@ def test_writes_overlap_by_path_parts():
     out, _ = chart(PLAN.replace("| none | local-research |", "| `DESIGN` | local-research |"))
     assert out.returncode == 0, out.stderr
     assert plan_chart.overlaps("src/a/", "src/a/b.ts") and not plan_chart.overlaps("src/a", "src/ab")
+    parallel = PLAN.replace("| none | local-research |", "| `src/a/b/` | local-research |").replace("| `DESIGN.md` | design-tokens |", "| `src/a/` | design-tokens |")
+    out, _ = chart(parallel)
+    assert out.returncode == 1 and "steps 02-read and 03-tokens both write src/a/b/; order them with Needs" in out.stderr, out.stderr
+    ordered = PLAN.replace("| `DESIGN.md` | design-tokens |", "| `src/a/` | design-tokens |").replace("| `web/src/`, `DESIGN.md` |", "| `src/a/b/` |")
+    out, _ = chart(ordered)
+    assert out.returncode == 0, out.stderr
     assert plan_chart.read_plan(None, PLAN.replace("| 02-read |", "| `02-read.md` (optional) |"))[2][1][5:] == ([], True)
 
 

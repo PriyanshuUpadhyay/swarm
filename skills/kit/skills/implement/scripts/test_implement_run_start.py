@@ -40,6 +40,18 @@ def test_start_plan_needs_approval(tmp):
     assert f"Plan: {plan.resolve()}\n" in step_text(Path(out.stdout.splitlines()[0]), "01-frame")
     assert "Plan blocks: checked-units, ui-motion\n" in step_text(Path(out.stdout.splitlines()[0]), "05-build"), \
         "the step file carries the blocks that the approved plan gives the step"
+    # A plan with Writes gives each step file its Writes and optional mark, which step_run's rules read.
+    rows = [r.split("|") for r in table.splitlines()]
+    rows = [r[:4] + [" Writes " if i == 0 else "---" if i == 1 else " `src/` " if "05-build" in r[1] else " none "] + r[4:]
+            for i, r in enumerate(rows)]
+    (plan / "plan.md").write_text(f"# Plan: x\n\nPreset: implement\n\n" + "\n".join("|".join(r) for r in rows) + "\n",
+                                  encoding="utf-8")
+    approve(plan)
+    shutil.rmtree(Path(out.stdout.splitlines()[0]))
+    out = run("start", "--plan", plan)
+    assert out.returncode == 0, out.stderr
+    assert "Writes: src/\n" in step_text(Path(out.stdout.splitlines()[0]), "05-build")
+    assert "Writes: none\nOptional: yes\n" in step_text(Path(out.stdout.splitlines()[0]), "02-design")
     # A chat preset passes the stop rule with no round, but it is not an implement plan.
     explain = SCRIPT.parents[1].parent / "explain" / "SKILL.md"
     chat = Path(tmp, "chat-run")
@@ -73,7 +85,7 @@ def test_start_plan_must_match_the_graph(tmp):
         "added": (full.replace("| `05-build.md` |", probe + "| `05-build.md` |", 1), ["added 04-probe"]),
         "missing": ("\n".join(l for l in full.splitlines() if "`02-design.md`" not in l) + "\n",
                     ["missing 02-design", "skip 02-design, 03-contracts or 04-impact after 01-frame"]),
-        "needs": (full.replace("| `04-impact.md` | contracts |", "| `04-impact.md` | frame |", 1),
+        "needs": (full.replace("| `04-impact.md` (optional) | contracts |", "| `04-impact.md` (optional) | frame |", 1),
                   ["04-impact needs 03-contracts in implement, 01-frame in plan", "approve it in a new round"]),
         "twice": (full.replace("| `05-build.md` |", "| `05-build.md` | impact, and design unless skipped | code | ui-motion | again |\n"
                                "| `05-build.md` |", 1), ["05-build twice"]),

@@ -19,7 +19,8 @@ The kit root, with its `blocks/` and `references/` folders, is two folders up fr
 A preset is a verb's start list of steps and blocks. It is a `## Preset` section in the verb's
 `SKILL.md`, or in `references/<mode>.md` for a verb with modes. The section has one line
 `Stop: owner` or `Stop: chat`, an optional line `Start: <command>` for a verb that runs its own
-step run, and one table in the plan step-table shape that `blocks/planner/SKILL.md` sets.
+step run, and one table in the plan step-table shape that `blocks/planner/SKILL.md` sets, with no
+Writes column. The planner adds Writes, so the Writes and duty rules apply to the plan, not the preset.
 `python3 -I <kit root>/skills/plan/scripts/preset.py <verb> [<mode>]` checks a preset and prints
 each step with the blocks it resolves to. A task with no verb has no preset.
 
