@@ -11,7 +11,8 @@ The kit's `references/run-folder.md` owns the run and settings paths.
 ## Entry and lanes
 
 Run the front door in `skills/plan/SKILL.md` with the preset below. After the owner approves the
-plan, start the run with the preset's `Start:` command, then do `01-frame.md` first. Then pick
+plan, start the run with the preset's `Start:` command, then do `01-frame.md` first. The plan may
+add blocks to a step but keeps the preset's steps and Needs, because `start` refuses any other. Then pick
 the lane from the change and the repo's contracts, never from the missing folder. The fast lane skips `02-design.md`,
 `03-contracts.md`, and `04-impact.md` with `skip <folder> <step> fast lane: <reason>` only when none
 of them needs a new decision. Otherwise do them before build.
