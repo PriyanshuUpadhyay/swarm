@@ -11,6 +11,9 @@ const BUNDLE: &str = "io.github.priyanshuupadhyay.swarm.notify";
 const NOTIFICATIONS_URL: &str = "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=io.github.priyanshuupadhyay.swarm.notify";
 const FOCUS_URL: &str = "x-apple.systempreferences:com.apple.Focus-Settings.extension";
 
+/// The title of `swarm notices test`'s notice, which `notices --due` posts with the done switch off.
+pub(crate) const TEST_NOTICE_TITLE: &str = "Swarm test";
+
 /// `swarm notices health|allow|test --json` and `swarm notices settings <notifications|focus>`.
 pub(crate) fn notices_command(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let json = |rest: &[String]| -> Result<(), Box<dyn std::error::Error>> {
@@ -109,7 +112,20 @@ pub(crate) fn judge(
                 Some("notifications"),
             );
         }
-        _ => {}
+        (Some("authorized" | "provisional" | "ephemeral"), Some("banner" | "alert")) => {}
+        // A value this code does not know is a failed read, never `ok`.
+        (authorization, style) => {
+            return row(
+                "unknown",
+                &format!(
+                    "The notice helper gave a permission that swarm does not know ({}, {})",
+                    authorization.unwrap_or("none"),
+                    style.unwrap_or("none")
+                ),
+                &[],
+                None,
+            );
+        }
     }
     match held {
         Ok(Some(true)) => row(
@@ -157,21 +173,29 @@ fn last_notice_held(window: &str) -> Result<Option<bool>, String> {
     ]);
     let out = bounded_output(command, std::time::Duration::from_secs(15))
         .ok_or_else(|| "log show failed or took over 15 s".to_string())?;
-    Ok(held_in(&out))
+    held_in(&out)
 }
 
 /// The outcome of the newest "Presenting" record of the helper: held when NotificationCenter
 /// logged that ident as muted by DND after it. NotificationCenter logs old idents as muted again,
-/// so only the newest presented ident counts.
-pub(crate) fn held_in(log: &str) -> Option<bool> {
-    let (at, line) = log
+/// so only the newest presented ident counts. None when no notice was presented; an error when the
+/// record has no ident that this reads, so a changed log text gives `unknown`, not `ok`.
+pub(crate) fn held_in(log: &str) -> Result<Option<bool>, String> {
+    let Some((at, line)) = log
         .lines()
         .enumerate()
         .filter(|(_, line)| line.contains("Presenting <NotificationRecord"))
-        .last()?;
-    let ident = line.split("ident:\"").nth(1)?.split('"').next()?;
+        .last()
+    else {
+        return Ok(None);
+    };
+    let ident = line
+        .split("ident:\"")
+        .nth(1)
+        .and_then(|rest| rest.split('"').next())
+        .ok_or("the notice log has a record with no ident")?;
     let muted = format!("{ident} ({BUNDLE}) muted by DND");
-    Some(log.lines().skip(at).any(|line| line.contains(&muted)))
+    Ok(Some(log.lines().skip(at).any(|line| line.contains(&muted))))
 }
 
 /// Adds a test notice, starts the helper, and waits up to 10 s for macOS to present it; then the
@@ -182,25 +206,34 @@ fn send_test() -> Result<serde_json::Value, Box<dyn std::error::Error>> {
         &connection,
         None,
         None,
-        "Swarm",
+        TEST_NOTICE_TITLE,
         "Test notice: swarm's notices reach you.",
     )?;
     start_notify_helper();
     let started = std::time::Instant::now();
+    let mut failed = None;
     while started.elapsed() < std::time::Duration::from_secs(10) {
         std::thread::sleep(std::time::Duration::from_secs(1));
         // One second more than has passed, so the window starts just before the post.
         let window = format!("{}s", started.elapsed().as_secs() + 1);
-        if let Ok(Some(_)) = last_notice_held(&window) {
-            return Ok(health());
+        match last_notice_held(&window) {
+            Ok(Some(_)) => {
+                // NotificationCenter logs a Focus hold just after the post, so wait for it.
+                std::thread::sleep(std::time::Duration::from_secs(2));
+                return Ok(health());
+            }
+            Ok(None) => {}
+            Err(why) => failed = Some(why),
         }
     }
-    Ok(row(
-        "unknown",
-        "No test notice reached macOS within 10 s. Check that Settings › Notices posts notices.",
-        &[],
-        None,
-    ))
+    let reason = match failed {
+        Some(why) => format!("Could not read the notice log, so the test result is unknown: {why}"),
+        None => {
+            "No test notice reached macOS within 10 s. Check that Settings › Notices posts notices."
+                .into()
+        }
+    };
+    Ok(row("unknown", &reason, &[], None))
 }
 
 /// The helper's executable, which `swarm notices` runs directly for `--status` and `--authorize`.

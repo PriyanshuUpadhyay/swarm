@@ -33,8 +33,10 @@ fn judge_names_the_fix_for_each_state() {
         ),
         (status("authorized", "alert"), Ok(Some(false)), "ok", None),
         (status("provisional", "banner"), Ok(None), "ok", None),
-        // A failed read never reads as ok.
+        // A failed read, or a value this code does not know, never reads as ok.
         (Err("no answer".into()), Ok(Some(false)), "unknown", None),
+        (status("unknown", "banner"), Ok(None), "unknown", None),
+        (Ok(serde_json::json!({})), Ok(None), "unknown", None),
         (
             status("authorized", "banner"),
             Err("log failed".into()),
@@ -59,12 +61,25 @@ fn held_in_reads_only_the_newest_presented_notice() {
     let muted = |ident: &str| {
         format!("NotificationCenter {ident} ({BUNDLE}) muted by DND suppression: delay")
     };
-    assert_eq!(held_in(""), None);
+    assert_eq!(held_in(""), Ok(None));
     assert_eq!(
-        held_in(&[presented("A"), muted("A")].join("\n")),
-        Some(true)
+        held_in(&[presented("old"), muted("old")].join("\n")),
+        Ok(Some(true))
     );
-    // NotificationCenter mutes the old ident A again; the newest notice B was shown.
-    let log = [presented("A"), muted("A"), presented("B"), muted("A")].join("\n");
-    assert_eq!(held_in(&log), Some(false));
+    // NotificationCenter mutes the old notice again; the newest notice was shown.
+    let log = [
+        presented("old"),
+        muted("old"),
+        presented("newest"),
+        muted("old"),
+    ]
+    .join("\n");
+    assert_eq!(held_in(&log), Ok(Some(false)));
+    // A record whose ident this cannot read is an error, so the health is unknown, not ok.
+    assert!(held_in("usernoted Presenting <NotificationRecord app:\"x\">").is_err());
+}
+
+#[test]
+fn the_settings_link_names_the_helper() {
+    assert!(NOTIFICATIONS_URL.ends_with(BUNDLE));
 }

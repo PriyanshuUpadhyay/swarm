@@ -72,7 +72,8 @@ export class AppStream {
         location.reload();
         break;
       case "show":
-        void this.show(String(data.session));
+        // Fire-and-forget is safe: show awaits only refreshSnapshot, which keeps its own errors.
+        if (typeof data.session === "string") void this.show(data.session);
         break;
       case "setup":
       case "handoff":

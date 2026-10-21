@@ -376,7 +376,8 @@ pub(crate) fn notices_due() -> Result<(), Box<dyn std::error::Error>> {
                 .any(|found| found.id == agent && found.state.as_deref() == Some("waiting")),
             _ => false,
         };
-        if waiting || on("done") {
+        // A test notice from Settings checks macOS delivery, so the done switch does not drop it.
+        if waiting || on("done") || row.title == TEST_NOTICE_TITLE {
             due.push(serde_json::json!({
                 "session_id": row.session_id,
                 "agent_id": row.agent_id,

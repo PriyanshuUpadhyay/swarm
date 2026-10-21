@@ -254,15 +254,20 @@ pub(crate) fn attach(
     swarm::adapter::load(&root, &adapter_name())?.attach(&[("pane", &pane)])
 }
 
+/// ADR 0102: a chat of the app's own detached server lives in Swarm.app, so the app opens it.
+#[cfg(any(feature = "serve", test))]
+pub(crate) fn app_opens(adapter: &str) -> bool {
+    adapter == "tmux-swarm"
+}
+
 pub(crate) fn focus(session_id: &str, agent_id: &str) -> Result<(), Box<dyn std::error::Error>> {
     let root = swarm::paths::root_dir()?;
     let connection = swarm::store::open(&swarm::paths::sqlite_db()?)?;
     let adapter = swarm::store::adapter_of(&connection, session_id)?
         .ok_or("swarm: session has no adapter")?;
     let adapter = swarm::adapter::load(&root, &adapter)?;
-    // ADR 0102: a chat of the app's own detached server lives in Swarm.app, so the app opens it.
     #[cfg(feature = "serve")]
-    if adapter.name == "tmux-swarm" {
+    if app_opens(&adapter.name) {
         return serve::open_chat(session_id);
     }
     // Unsupported hosts report their capability, rather than pretending the pane is closed.

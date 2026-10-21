@@ -52,9 +52,10 @@ pub(super) async fn notices_write(
 ) -> Result<Json<Value>, ApiError> {
     let Json(body) = body.map_err(|e| error(e.status(), &e.body_text()))?;
     match body.action.as_str() {
-        // The macOS prompt waits for the owner, up to the helper's two minutes.
-        "allow" => notices_cli(&app, &["notices", "allow", "--json"], 130).await,
-        "test" => notices_cli(&app, &["notices", "test", "--json"], 40).await,
+        // Each limit is above the command's worst case: `allow` waits up to 120 s for the owner's
+        // answer and `test` up to about 50 s, and each then reads the health for up to 20 s.
+        "allow" => notices_cli(&app, &["notices", "allow", "--json"], 150).await,
+        "test" => notices_cli(&app, &["notices", "test", "--json"], 75).await,
         pane @ ("notifications" | "focus") => {
             run_cli(&app, home_call(&app, &["notices", "settings", pane]), None).await?;
             notices_read(State(app)).await

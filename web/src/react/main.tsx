@@ -16,7 +16,6 @@ import "../styles.css";
 import { PanelToggles, WorkspacePanel } from "./changes";
 import { AskDialog, Home, WorkspaceLanding } from "./home";
 import { LifecycleDialogs } from "./lifecycle";
-import { NoticesCard } from "./notices";
 import { SettingsDialog } from "./settings";
 import { Palette } from "./palette";
 import { PaneStrip } from "./panes";
@@ -91,7 +90,6 @@ function Main({ app, changes }: { app: App; changes: Changes }) {
   const workspace = useSyncExternalStore(app.subscribe, () => app.view.workspace);
   return (
     <div className="flex h-full min-w-0 flex-col">
-      <NoticesCard app={app} />
       {(workspace || openId) && (
         <div className="flex min-w-0">
           <div className="min-w-0 flex-1">{workspace && <TabStrip app={app} />}</div>

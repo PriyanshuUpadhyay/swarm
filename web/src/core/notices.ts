@@ -16,12 +16,21 @@ export type NoticesState = {
 
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
+/** The states the card shows; `unknown` only after a fix, so a failed fix names its reason. */
+export const CARD_STATES = ["allow", "blocked", "held", "unknown"] as const;
+export type CardState = (typeof CARD_STATES)[number];
+
 /** The notice card: the health to fix, "fixed" once a fix made it ok, or null for no card. */
-export function noticesCard(state: NoticesState): NoticeHealth | "fixed" | null {
+export function noticesCard(state: NoticesState): (NoticeHealth & { state: CardState }) | "fixed" | null {
   if (state.hidden || state.health.state !== "ready") return null;
   const health = state.health.data;
   if (health.state === "ok") return state.fixing ? "fixed" : null;
-  return ["allow", "blocked", "held"].includes(health.state) ? health : null;
+  if (health.state === "unknown" && !state.fixing) return null;
+  return isCardState(health.state) ? { ...health, state: health.state } : null;
+}
+
+function isCardState(state: string): state is CardState {
+  return (CARD_STATES as readonly string[]).includes(state);
 }
 
 /** Whether macOS lets swarm's notices through, and the owner's fixes (ADR 0102). */
@@ -30,6 +39,8 @@ export class Notices {
   private listeners = new Set<() => void>();
   /** When the health was last read, in ms since 1970; reads come at most once each 30 s. */
   private readAt = 0;
+  /** Counts reads and fixes, so an older read cannot write over a newer answer. */
+  private writes = 0;
 
   constructor(private readonly app: App) {}
 
@@ -47,16 +58,19 @@ export class Notices {
   async load(force = false) {
     if (this.state.pending || (!force && Date.now() - this.readAt < 30_000)) return;
     this.readAt = Date.now();
+    const write = ++this.writes;
     try {
-      this.set({ health: { state: "ready", data: await this.app.api.get<NoticeHealth>("/api/notices") } });
+      const data = await this.app.api.get<NoticeHealth>("/api/notices");
+      if (write === this.writes) this.set({ health: { state: "ready", data } });
     } catch (err) {
-      this.set({ health: { state: "error", error: message(err) } });
+      if (write === this.writes) this.set({ health: { state: "error", error: message(err) } });
     }
   }
 
   /** Runs the card's fix: the macOS prompt, a System Settings pane, or a test notice. */
   async fix(action: NoticeAction) {
     if (this.state.pending) return;
+    this.writes++;
     this.set({ pending: action, fixing: true });
     try {
       this.set({ health: { state: "ready", data: await this.app.api.post<NoticeHealth>("/api/notices", { action }) } });

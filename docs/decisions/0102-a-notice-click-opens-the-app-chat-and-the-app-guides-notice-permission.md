@@ -34,18 +34,22 @@ not mapped to `pane closed`, and the card meets the owner where they work.
 - `swarm focus <session> <agent>` on `tmux-swarm` opens Swarm.app on that chat. An open page gets
   a `show` frame through `POST /api/show {"session"}` and opens the chat; with no open page, the
   app starts on `/chat/<id>`. The session id must be 1-64 of `[A-Za-z0-9-]`. A failed `open` is
-  an error. The command prints no URL, so the token stays off a notice click's output.
+  an error for a click; `swarm ui` keeps going as before. The click prints no URL, so the token
+  stays off its output.
 - The SwarmNotify helper gains `--status` and `--authorize`, which print the helper's notice
   settings as one JSON line. It holds no rule (ADR 0077).
 - `swarm notices health --json` owns the rule: `ok`, `allow` (macOS has not asked), `blocked`
   (denied, or alert style None), `held` (the unified log shows the newest presented notice muted by
-  DND), `missing`, or `unknown`, with steps and one `action`. More states may come. A failed read
-  is `unknown`, never `ok`. `swarm doctor`'s notices row reads it.
+  DND), `missing`, or `unknown`, with steps and one `action`. More states may come. A failed read,
+  or a value swarm does not know, is `unknown`, never `ok`. `swarm doctor`'s notices row reads it.
+  A test notice skips the done switch, because it checks delivery.
 - `swarm notices allow|test --json` and `swarm notices settings <notifications|focus>` run the
   fixes; the settings URLs are fixed in Rust. `GET|POST /api/notices` expose them to the app.
-- The app checks on start and when its window comes back, at most once each 30 s, and shows a card
-  for `allow`, `blocked` and `held` with numbered steps and the button. After a fix makes the state
-  `ok`, the card says notices work. Not now hides it until the page reloads.
+- Home checks on start and when the window comes back, at most once each 30 s, and shows a card
+  for `allow`, `blocked` and `held` with numbered steps and the button. Only Home shows it, so a
+  chat never moves. After a fix makes the state `ok`, the card says notices work; a fix that ends
+  `unknown` keeps the card with its reason. Not now hides it until the page reloads.
+- A failed health read shows no card; Settings › Setup shows its reason (owner, 2026-10-21).
 
 ### Consequences
 
@@ -54,6 +58,9 @@ not mapped to `pane closed`, and the card meets the owner where they work.
 - Bad: `held` reads the unified log, whose message text macOS may change; then the state is `ok`
   or `unknown`, not wrong advice.
 - Bad: the click selects the chat but not one agent column inside it.
+- Bad: a Focus that is on reads `ok` until it holds a swarm notice, because macOS does not tell
+  another app whether a Focus is on. The owner accepted this and needs no Focus bypass
+  (2026-10-21: "dnd bypass is not needed").
 - Bad: time-sensitive notices, which pass a Focus, still need a paid signing identity.
 
 ## Links

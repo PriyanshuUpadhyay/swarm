@@ -206,3 +206,11 @@ mod cases {
         );
     }
 }
+
+#[test]
+fn only_the_apps_own_adapter_opens_swarm_app_on_a_click() {
+    assert!(app_opens("tmux-swarm"));
+    for other in ["tmux", "herdr", "superset", "rex"] {
+        assert!(!app_opens(other), "{other}");
+    }
+}

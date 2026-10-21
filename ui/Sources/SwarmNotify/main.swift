@@ -108,7 +108,7 @@ final class Helper: NSObject, NSApplicationDelegate, UNUserNotificationCenterDel
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         guard let rows = try? decoder.decode([DueNotice].self, from: data), !rows.isEmpty else { return }
         do {
-            guard try await center.requestAuthorization(options: [.alert, .sound]) else {
+            guard try await center.requestAuthorization(options: noticeOptions) else {
                 log("notice permission denied; \(rows.count) notice(s) not shown")
                 return
             }
@@ -201,6 +201,9 @@ func log(_ line: String) {
 
 let logger = Logger(subsystem: "io.github.priyanshuupadhyay.swarm.notify", category: "notice")
 
+/// One option set for posting and `--authorize`, because macOS keeps the first set it grants.
+let noticeOptions: UNAuthorizationOptions = [.alert, .sound]
+
 /// `--status` prints the owner's notice settings for this helper as one JSON line, and
 /// `--authorize` asks for permission first. `swarm notices` runs the executable directly for them,
 /// so the rule that reads the answer stays in Rust.
@@ -230,7 +233,7 @@ case "--status":
     printSettings()
     dispatchMain()
 case "--authorize":
-    UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in printSettings() }
+    UNUserNotificationCenter.current().requestAuthorization(options: noticeOptions) { _, _ in printSettings() }
     dispatchMain()
 default:
     break

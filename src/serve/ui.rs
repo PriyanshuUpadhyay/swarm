@@ -23,19 +23,16 @@ pub fn open_chat(session: &str) -> Result<(), Box<dyn std::error::Error>> {
     open_ui(&[], Some(session))
 }
 
-/// A session id that may go into a URL path and a `show` frame as it is.
+/// A session id that may go into a URL path and a `show` frame as it is: the chair id's shape.
 pub(super) fn valid_session(id: &str) -> bool {
-    (1..=64).contains(&id.len())
-        && id
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+    crate::valid_chair_id(id)
 }
 
 /// The page URL that opens `session`: its path before the `#token=` fragment.
 pub(super) fn chat_url(url: &str, session: &str) -> String {
     match url.split_once("/#") {
         Some((base, fragment)) => format!("{base}/chat/{session}#{fragment}"),
-        None => url.to_string(),
+        None => format!("{}/chat/{session}", url.trim_end_matches('/')),
     }
 }
 
@@ -93,7 +90,12 @@ fn open_ui(args: &[String], chat: Option<&str>) -> Result<(), Box<dyn std::error
         };
         if reached || std::time::Instant::now() >= deadline {
             if !reached || shell_app().is_some() {
-                open_page(&page)?;
+                // `swarm ui` keeps going when `open` fails, as it always did; a notice click
+                // reports it, so it does not claim a window it never opened.
+                let opened = open_page(&page);
+                if chat.is_some() {
+                    opened?;
+                }
             }
             break;
         }
