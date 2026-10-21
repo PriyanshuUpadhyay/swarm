@@ -7,6 +7,11 @@ import { crossings } from "../src/core/skill-crossings";
 const server = () => new URL(process.env.SWARM_SERVE_URL!);
 const SHOTS = resolve(import.meta.dirname, "../../tmp/skills-shots");
 
+/** A screenshot for the result, only when E2E_SHOTS is set and in Chromium. */
+async function shoot(page: Page, name: string, browser: string) {
+  if (process.env.E2E_SHOTS && browser === "chromium") await page.screenshot({ path: `${SHOTS}/${name}.png` });
+}
+
 async function open(tab: Page) {
   const errors: string[] = [];
   tab.on("pageerror", (e) => !e.message.startsWith("ResizeObserver loop") && errors.push(e.message));
@@ -46,7 +51,7 @@ test("the Catalog shows each block's users, and an unused block says so", async 
   const unused = dialog.locator("[data-block]").filter({ hasText: "unused" }).first();
   await unused.click();
   await expect(page.getByTestId("skills-unused")).toHaveText("not used by a default preset");
-  if (info.project.name === "chromium") await page.screenshot({ path: `${SHOTS}/catalog.png` });
+  await shoot(page, "catalog", info.project.name);
   expect(errors).toEqual([]);
 });
 
@@ -70,7 +75,7 @@ for (const [name, width] of [
     await page.locator('[data-preset="implement"]').click();
     await page.locator('[data-step="05-build"]').click();
     await expect(page.getByTestId("skills-step")).toContainText("checked-units");
-    if (info.project.name === "chromium") await page.screenshot({ path: `${SHOTS}/graph-${name}.png` });
+    await shoot(page, `graph-${name}`, info.project.name);
     expect(errors).toEqual([]);
   });
 
@@ -112,10 +117,8 @@ test("the Composer shows live text and graph, and Copy waits for Python to pass 
   // The Composer graph only shows the draft, so its cards are not buttons.
   await expect(page.getByTestId("draft-graph").getByRole("button")).toHaveCount(0);
   await copy.click();
-  if (chromium) {
-    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(await text.textContent());
-    await page.screenshot({ path: `${SHOTS}/composer.png` });
-  }
+  if (chromium) expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(await text.textContent());
+  await shoot(page, "composer", info.project.name);
   // A new start asks first, because it drops the edits; a No keeps the draft.
   page.once("dialog", (d) => void d.dismiss());
   await page.getByTestId("draft-from").selectOption("research");
