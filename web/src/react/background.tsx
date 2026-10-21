@@ -11,6 +11,7 @@ import type { App } from "../core/app";
 import { backgroundRows, type BackgroundRow, type BackgroundTask } from "../core/background";
 import { Button } from "../components/ui/button";
 import { StatusGlyph } from "./status";
+import { useTheme } from "./theme";
 
 const POLL_MS = 3000;
 
@@ -26,6 +27,7 @@ export function BackgroundPanel({ app, session }: { app: App; session: string })
         .get<{ tasks: BackgroundTask[] }>("/api/background", { session })
         .then((r) => !stop && setTasks(r.tasks))
         .catch(() => {});
+    // A failed poll keeps the last list, and the next tick tries again.
     void read();
     const timer = setInterval(read, POLL_MS);
     return () => {
@@ -81,7 +83,11 @@ function Detail({ app, session, row, onOwner }: { app: App; session: string; row
         {task.kind === "shell" && task.output ? (
           <Term app={app} session={session} agent={row.agent} task={task.id} />
         ) : (
-          <p className="p-2 text-sm text-muted-foreground">A subagent's output is its own chat log; its owner reports the result.</p>
+          <p className="p-2 text-sm text-muted-foreground">
+            {task.kind === "shell"
+              ? "The log names no output file for this shell, so there is nothing to show."
+              : "A subagent's output is its own chat log; its owner reports the result."}
+          </p>
         )}
       </div>
     </>
@@ -89,10 +95,16 @@ function Detail({ app, session, row, onOwner }: { app: App; session: string; row
 }
 
 const css = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const colors = () => ({ background: css("--background"), foreground: css("--foreground") });
 
 /** One xterm on one socket. `task` makes it a read-only view of that shell's output file. */
 function Term({ app, session, agent, task }: { app: App; session: string; agent: string; task?: string }) {
   const host = useRef<HTMLDivElement>(null);
+  const live = useRef<Terminal | null>(null);
+  const theme = useTheme();
+  useEffect(() => {
+    if (live.current) live.current.options.theme = colors();
+  }, [theme]);
   useEffect(() => {
     const el = host.current!;
     const term = new Terminal({
@@ -101,8 +113,9 @@ function Term({ app, session, agent, task }: { app: App; session: string; agent:
       convertEol: !!task,
       disableStdin: !!task,
       cursorBlink: !task,
-      theme: { background: css("--background"), foreground: css("--foreground") },
+      theme: colors(),
     });
+    live.current = term;
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(el);
@@ -140,6 +153,7 @@ function Term({ app, session, agent, task }: { app: App; session: string; agent:
       observer.disconnect();
       for (const s of subs) s.dispose();
       ws?.close();
+      live.current = null;
       term.dispose();
     };
   }, [app, session, agent, task]);
