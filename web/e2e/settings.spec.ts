@@ -1,6 +1,6 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { CLAUDE_EMAIL, LOGIN_PANE } from "./serve";
 
@@ -227,6 +227,21 @@ test("the UI and code fonts are owner choices that utility and plain CSS text fo
   await expect(tab.locator("html")).not.toHaveAttribute("data-font-sans", /./);
   await expect(tab.locator("html")).not.toHaveAttribute("data-font-mono", /./);
   expect(errors).toEqual([]);
+});
+
+test("an absent font pref means System, also when this browser kept an older copy", async ({ page: tab }) => {
+  const file = join(home(), ".swarm/choices.json");
+  const saved = readFileSync(file, "utf8");
+  const { fontSans: _sans, fontMono: _mono, ...prefs } = JSON.parse(saved).prefs ?? {};
+  writeFileSync(file, JSON.stringify({ ...JSON.parse(saved), prefs }));
+  await tab.addInitScript(() => localStorage.setItem("swarm.fontMono", "monaco"));
+  try {
+    const errors = await open(tab);
+    await expect(tab.locator("html")).not.toHaveAttribute("data-font-mono", /./);
+    expect(errors).toEqual([]);
+  } finally {
+    writeFileSync(file, saved);
+  }
 });
 
 test("a profile edit saves through swarm roles, a stale page shows a conflict and reloads, and reset restores the bundled profiles", async ({ page: tab }, info) => {

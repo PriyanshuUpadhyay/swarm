@@ -91,7 +91,7 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKUIDelega
     @objc func zoomOut(_ sender: Any?) { setZoom(webView.pageZoom - 0.1) }
     @objc func actualSize(_ sender: Any?) { setZoom(1) }
 
-    /// Rounds to a 10% step and keeps 50% to 300%, the range of Safari's own zoom.
+    /// Rounds to a 10% step and keeps 50% to 300%.
     func setZoom(_ zoom: CGFloat) {
         webView.pageZoom = min(3, max(0.5, (zoom * 10).rounded() / 10))
         UserDefaults.standard.set(Double(webView.pageZoom), forKey: Self.zoomKey)

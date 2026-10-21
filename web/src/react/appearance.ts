@@ -42,14 +42,18 @@ function ownerChoice<T extends string>(key: Key, values: readonly T[]) {
       void app.settings.setPref(key, value).then((ok) => ok || set(before));
     },
     /** Follows `prefs[key]` when another window changes it. Only a changed value applies, so a tree
-     *  read that started before a local choice does not undo it. */
+     *  read that started before a local choice does not undo it. An absent or unknown value is
+     *  "system", so this browser's copy never outlives the owner's record. */
     follow(app: App) {
-      let seen: unknown;
+      let seen: T | undefined;
       const off = app.subscribe(() => {
-        const value = app.view.tree?.prefs?.[key];
+        const tree = app.view.tree;
+        if (!tree) return;
+        const saved = tree.prefs?.[key];
+        const value = known(saved) ? saved : ("system" as T);
         if (value === seen) return;
         seen = value;
-        if (known(value) && value !== current) set(value);
+        if (value !== current) set(value);
       });
       return () => void off();
     },
