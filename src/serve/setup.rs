@@ -136,7 +136,14 @@ pub(super) fn home_call(app: &App, args: &[&str]) -> CliCall {
     }
 }
 pub(super) async fn doctor_read(State(app): State<App>) -> Result<Json<Value>, ApiError> {
-    let output = run_cli(&app, home_call(&app, &["doctor", "--json"]), None).await?;
+    // Above the notices health read's 20 s worst case, as notices_read.
+    let output = run_cli_with_timeout(
+        &app,
+        home_call(&app, &["doctor", "--json"]),
+        None,
+        Duration::from_secs(30),
+    )
+    .await?;
     serde_json::from_str::<Value>(&output)
         .ok()
         .filter(|value| value["schema"] == crate::DOCTOR_SCHEMA)

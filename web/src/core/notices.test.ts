@@ -32,9 +32,9 @@ describe("notices card", () => {
     expect(noticesCard({ health: { state: "error", error: "x" }, pending: null, hidden: false, fixing: false })).toBeNull();
   });
 
-  it("reads at most once each 30 s unless forced", async () => {
+  it("reads at most once each 30 s", async () => {
     const { notices, calls } = fakeApp(async () => health("ok"));
-    await notices.load(true);
+    await notices.load();
     await notices.load();
     expect(calls).toEqual(["GET /api/notices"]);
     expect(noticesCard(notices.state)).toEqual(health("held", "focus"));
@@ -53,7 +53,7 @@ describe("notices card", () => {
     const { notices, calls } = fakeApp(async () => {
       throw new Error("no helper");
     });
-    await notices.load(true);
+    await notices.load();
     await notices.fix("focus");
     expect(calls).toContain("notice Notices: no helper");
     expect(notices.state.pending).toBeNull();
@@ -66,7 +66,7 @@ describe("notices card", () => {
       answerRead = resolve;
     });
     const { notices } = fakeApp(async () => health("ok"), slowRead);
-    const read = notices.load(true);
+    const read = notices.load();
     await notices.fix("test");
     answerRead(health("held", "focus"));
     await read;

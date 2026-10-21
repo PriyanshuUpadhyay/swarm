@@ -57,8 +57,8 @@ export class Notices {
   }
 
   /** Reads the health; on start and when the window comes back, at most once each 30 s. */
-  async load(force = false) {
-    if (this.state.pending || (!force && Date.now() - this.readAt < 30_000)) return;
+  async load() {
+    if (this.state.pending || Date.now() - this.readAt < 30_000) return;
     this.readAt = Date.now();
     const write = ++this.writes;
     try {
