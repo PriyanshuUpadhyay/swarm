@@ -133,7 +133,7 @@ not a limit.
 Delivery
 - Style frame or small piece: one HTML file, with libraries from a CDN through an import map.
 - Larger story: a Vite project with `look.js`, `scenes/`, `story.js` (the shot list), `main.js`, and a
-  README. Browsers block ES modules over `file://`, so serve it by the `serve-local` block with its preview command.
+  README. Browsers block ES modules over `file://`, so serve it by the `serve-local` block with its dev or preview command.
 - Offline delivery: vendor dependencies explicitly, in a `vendor/` folder.
 
 Technical references
