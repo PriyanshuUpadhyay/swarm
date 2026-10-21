@@ -24,7 +24,7 @@ pub fn pages(args: &[String]) -> Result<()> {
     match command {
         Command::List => {
             let running =
-                read_record(&record).filter(|(url, _)| answers(url, Instant::now() + WAIT));
+                read_record(&record).filter(|(url, pid)| answers(url, *pid, Instant::now() + WAIT));
             println!(
                 "{}",
                 running.as_ref().map_or("no shelf runs", |(url, _)| url)
@@ -36,7 +36,7 @@ pub fn pages(args: &[String]) -> Result<()> {
         Command::Stop => stop(&record)?,
         Command::Foreground(port) => {
             if let Some((url, _)) =
-                read_record(&record).filter(|(url, _)| answers(url, Instant::now() + WAIT))
+                read_record(&record).filter(|(url, pid)| answers(url, *pid, Instant::now() + WAIT))
             {
                 return Err(format!(
                     "swarm pages: a shelf already runs at {url}; run `swarm pages stop` first"
@@ -52,7 +52,7 @@ pub fn pages(args: &[String]) -> Result<()> {
             // Keep the original path so publish can refuse a symlink at the source itself.
             let published = pages_hub::publish(&root.join("pages"), &absolute, &slug, &today()?)?;
             let deadline = Instant::now() + WAIT;
-            let url = match read_record(&record).filter(|(url, _)| answers(url, deadline)) {
+            let url = match read_record(&record).filter(|(url, pid)| answers(url, *pid, deadline)) {
                 Some((url, _)) => url,
                 None => spawn(&root, &record, deadline)?,
             };
@@ -258,8 +258,9 @@ fn foreground(root: &Path, record: &Path, port: u16) -> Result<()> {
 }
 
 /// Every socket timeout uses the remaining probe budget, which is within the caller's deadline.
-fn answers(url: &str, deadline: Instant) -> bool {
+fn answers(url: &str, pid: i32, deadline: Instant) -> bool {
     let deadline = deadline.min(Instant::now() + Duration::from_millis(500));
+    let expected_pid = pid.to_string();
     let probe = || -> Option<()> {
         let port = url_port(url)?;
         let address = (Ipv4Addr::LOCALHOST, port).into();
@@ -297,8 +298,8 @@ fn answers(url: &str, deadline: Instant) -> bool {
                 return lines
                     .filter_map(|line| line.split_once(':'))
                     .any(|(name, value)| {
-                        name.eq_ignore_ascii_case("content-security-policy")
-                            && value.trim() == pages_hub::CSP
+                        name.eq_ignore_ascii_case("x-swarm-pages-pid")
+                            && value.trim() == expected_pid
                     })
                     .then_some(());
             }
@@ -341,7 +342,9 @@ fn spawn(root: &Path, record: &Path, deadline: Instant) -> Result<String> {
             )
             .into());
         }
-        if let Some((url, _)) = read_record(record).filter(|(url, _)| answers(url, deadline)) {
+        if let Some((url, _)) =
+            read_record(record).filter(|(url, pid)| answers(url, *pid, deadline))
+        {
             return Ok(url);
         }
         pause(deadline);
@@ -363,7 +366,8 @@ fn pause(deadline: Instant) {
 
 fn stop(record: &Path) -> Result<()> {
     let deadline = Instant::now() + WAIT;
-    let Some((url, pid)) = read_record(record).filter(|(url, _)| answers(url, deadline)) else {
+    let Some((url, pid)) = read_record(record).filter(|(url, pid)| answers(url, *pid, deadline))
+    else {
         let _ = fs::remove_file(record);
         println!("no shelf runs");
         return Ok(());
@@ -371,7 +375,7 @@ fn stop(record: &Path) -> Result<()> {
     unsafe extern "C" {
         fn kill(pid: i32, signal: i32) -> i32;
     }
-    // SAFETY: the record has a positive process pid and its URL just answered (ADR 0088).
+    // SAFETY: the record has a positive pid and its URL just proved that pid in a header (ADR 0088).
     if unsafe { kill(pid, 15) } != 0 {
         return Err(format!(
             "swarm pages: could not stop pid {pid}: {}",

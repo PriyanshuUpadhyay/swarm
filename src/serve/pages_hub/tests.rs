@@ -47,6 +47,15 @@ impl Drop for Fixture {
 }
 
 fn headers(response: &Response) {
+    assert_eq!(
+        response
+            .headers()
+            .get("x-swarm-pages-pid")
+            .unwrap()
+            .to_str()
+            .unwrap(),
+        std::process::id().to_string()
+    );
     for (key, expected) in [
         ("content-security-policy", CSP),
         ("x-content-type-options", "nosniff"),
@@ -203,12 +212,32 @@ fn shared_content_type_preserves_existing_types() {
         ("app.webmanifest", "application/manifest+json"),
         ("icon.svg", "image/svg+xml"),
         ("image.png", "image/png"),
+        ("image.PNG", "image/png"),
+        ("image.jpg", "image/jpeg"),
+        ("image.jpeg", "image/jpeg"),
+        ("image.gif", "image/gif"),
+        ("image.webp", "image/webp"),
+        ("image.avif", "image/avif"),
+        ("notes.txt", "text/plain; charset=utf-8"),
+        ("data.csv", "text/csv; charset=utf-8"),
+        ("notes.md", "text/markdown; charset=utf-8"),
+        ("report.pdf", "application/pdf"),
+        ("app.wasm", "application/wasm"),
+        ("video.mp4", "video/mp4"),
+        ("video.webm", "video/webm"),
+        ("audio.mp3", "audio/mpeg"),
+        ("font.woff", "font/woff"),
+        ("font.ttf", "font/ttf"),
         ("favicon.ico", "image/x-icon"),
         ("font.woff2", "font/woff2"),
         ("unknown", "application/octet-stream"),
     ] {
         assert_eq!(
             super::super::assets::content_type(Path::new(name)),
+            expected
+        );
+        assert_eq!(
+            super::super::assets::content_type(Path::new(&name.to_ascii_uppercase())),
             expected
         );
     }

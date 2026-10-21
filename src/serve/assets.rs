@@ -51,7 +51,8 @@ pub(super) async fn static_file(State(app): State<App>, request: Request) -> Res
 }
 
 pub(super) fn content_type(path: &Path) -> &'static str {
-    match path.extension().and_then(|extension| extension.to_str()) {
+    let extension = path.extension().and_then(|extension| extension.to_str());
+    match extension.map(str::to_ascii_lowercase).as_deref() {
         Some("html") => "text/html; charset=utf-8",
         Some("js" | "mjs") => "text/javascript; charset=utf-8",
         Some("css") => "text/css; charset=utf-8",
@@ -59,8 +60,22 @@ pub(super) fn content_type(path: &Path) -> &'static str {
         Some("webmanifest") => "application/manifest+json",
         Some("svg") => "image/svg+xml",
         Some("png") => "image/png",
+        Some("jpg" | "jpeg") => "image/jpeg",
+        Some("gif") => "image/gif",
+        Some("webp") => "image/webp",
+        Some("avif") => "image/avif",
+        Some("txt") => "text/plain; charset=utf-8",
+        Some("csv") => "text/csv; charset=utf-8",
+        Some("md") => "text/markdown; charset=utf-8",
+        Some("pdf") => "application/pdf",
+        Some("wasm") => "application/wasm",
+        Some("mp4") => "video/mp4",
+        Some("webm") => "video/webm",
+        Some("mp3") => "audio/mpeg",
         Some("ico") => "image/x-icon",
+        Some("woff") => "font/woff",
         Some("woff2") => "font/woff2",
+        Some("ttf") => "font/ttf",
         _ => "application/octet-stream",
     }
 }

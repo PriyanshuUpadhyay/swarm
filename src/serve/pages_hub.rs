@@ -181,6 +181,10 @@ async fn shelf(State(app): State<Shelf>, request: Request) -> Response {
             .headers_mut()
             .insert(name, HeaderValue::from_static(value));
     }
+    response.headers_mut().insert(
+        "x-swarm-pages-pid",
+        HeaderValue::from_str(&std::process::id().to_string()).unwrap(),
+    );
     if request.method == Method::HEAD {
         *response.body_mut() = Body::empty();
     }

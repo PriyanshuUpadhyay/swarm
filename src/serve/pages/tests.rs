@@ -178,27 +178,79 @@ fn probe_reply(response: &str) -> (bool, String) {
         stream.write_all(response.as_bytes()).unwrap();
         String::from_utf8(request).unwrap()
     });
-    let accepted = answers(&format!("http://127.0.0.1:{port}/"), Instant::now() + WAIT);
+    let accepted = answers(
+        &format!("http://127.0.0.1:{port}/"),
+        std::process::id() as i32,
+        Instant::now() + WAIT,
+    );
     (accepted, server.join().unwrap())
 }
 
 #[test]
-fn pages_probe_refuses_http_200_without_shelf_csp() {
+fn pages_probe_refuses_http_200_without_pid() {
     let (accepted, _) = probe_reply("HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n");
-    assert!(!accepted, "HTTP 200 without the shelf CSP must be refused");
+    assert!(
+        !accepted,
+        "HTTP 200 without the recorded pid must be refused"
+    );
 }
 
 #[test]
-fn pages_probe_accepts_exact_shelf_csp_on_a_cheap_path() {
-    const CSP: &str = "sandbox allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads";
+fn pages_probe_accepts_matching_pid_on_a_cheap_path() {
+    let pid = std::process::id();
     for status in ["200 OK", "404 Not Found"] {
         let (accepted, request) = probe_reply(&format!(
-            "HTTP/1.1 {status}\r\nContent-Security-Policy: {CSP}\r\nContent-Length: 0\r\n\r\n"
+            "HTTP/1.1 {status}\r\nx-SwArM-pAgEs-PiD: {pid}\r\nContent-Length: 0\r\n\r\n"
         ));
-        assert!(accepted, "the exact shelf CSP must be accepted ({status})");
+        assert!(accepted, "the recorded pid must be accepted ({status})");
         assert!(request.starts_with("GET /.swarm-pages-probe HTTP/1.1\r\n"));
     }
-    let (accepted, _) =
-        probe_reply("HTTP/1.1 200 OK\r\nContent-Security-Policy: sandbox allow-scripts\r\n\r\n");
-    assert!(!accepted, "a different sandbox policy must be refused");
+    let (accepted, _) = probe_reply(&format!(
+        "HTTP/1.1 404 Not Found\r\nX-Swarm-Pages-Pid: {pid}\r\nContent-Security-Policy: sandbox allow-scripts\r\n\r\n"
+    ));
+    assert!(accepted, "pid proof must survive a changed sandbox policy");
+}
+
+#[test]
+fn pages_probe_refuses_missing_or_wrong_pid_even_with_shelf_csp() {
+    for pid_header in [
+        String::new(),
+        format!("X-Swarm-Pages-Pid: {}\r\n", std::process::id() + 1),
+    ] {
+        let (accepted, _) = probe_reply(&format!(
+            "HTTP/1.1 200 OK\r\nContent-Security-Policy: {}\r\n{pid_header}\r\n",
+            pages_hub::CSP
+        ));
+        assert!(!accepted, "a missing or wrong pid must be refused");
+    }
+}
+
+#[tokio::test]
+async fn pages_probe_checks_pid_against_the_real_router() {
+    let root = temporary();
+    let listener = tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+        .await
+        .unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let router = pages_hub::router(root.clone(), port);
+    let server = tokio::spawn(async move {
+        axum::serve(listener, router).await.unwrap();
+    });
+    tokio::task::spawn_blocking(move || {
+        let url = format!("http://127.0.0.1:{port}/");
+        let pid = std::process::id() as i32;
+        assert!(
+            answers(&url, pid, Instant::now() + WAIT),
+            "the real router must prove its own pid"
+        );
+        assert!(
+            !answers(&url, pid + 1, Instant::now() + WAIT),
+            "the real router must not prove another pid"
+        );
+    })
+    .await
+    .unwrap();
+    server.abort();
+    let _ = server.await;
+    fs::remove_dir_all(root).unwrap();
 }
