@@ -233,8 +233,10 @@ case "--status":
     printSettings()
     dispatchMain()
 case "--authorize":
+    // The prompt is asked from an accessory app process, as the posting path asks it.
+    NSApplication.shared.setActivationPolicy(.accessory)
     UNUserNotificationCenter.current().requestAuthorization(options: noticeOptions) { _, _ in printSettings() }
-    dispatchMain()
+    NSApplication.shared.run()
 default:
     break
 }

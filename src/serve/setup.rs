@@ -51,6 +51,8 @@ pub(super) async fn notices_write(
     body: Result<Json<NoticesWrite>, JsonRejection>,
 ) -> Result<Json<Value>, ApiError> {
     let Json(body) = body.map_err(|e| error(e.status(), &e.body_text()))?;
+    // One fix at a time, so two pages or a double click do not show two macOS prompts.
+    let _running = NoticesFix::start()?;
     match body.action.as_str() {
         // Each limit is above the command's worst case: `allow` waits up to 120 s for the owner's
         // answer and `test` up to about 50 s, and each then reads the health for up to 20 s.
@@ -63,6 +65,29 @@ pub(super) async fn notices_write(
         _ => Err(error(StatusCode::BAD_REQUEST, "unknown notices action")),
     }
 }
+static NOTICES_FIX: AtomicBool = AtomicBool::new(false);
+
+/// The running notice fix; dropping it, also on a cancelled request, frees the slot.
+struct NoticesFix;
+
+impl NoticesFix {
+    fn start() -> Result<Self, ApiError> {
+        if NOTICES_FIX.swap(true, Ordering::SeqCst) {
+            return Err(error(
+                StatusCode::CONFLICT,
+                "a notices fix is already running",
+            ));
+        }
+        Ok(Self)
+    }
+}
+
+impl Drop for NoticesFix {
+    fn drop(&mut self) {
+        NOTICES_FIX.store(false, Ordering::SeqCst);
+    }
+}
+
 async fn notices_cli(app: &App, args: &[&str], seconds: u64) -> Result<Json<Value>, ApiError> {
     let output = run_cli_with_timeout(
         app,

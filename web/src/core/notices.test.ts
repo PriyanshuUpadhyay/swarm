@@ -20,7 +20,11 @@ function fakeApp(answer: () => Promise<unknown>, read: () => Promise<NoticeHealt
 
 describe("notices card", () => {
   it("shows a fix for allow, blocked and held, and nothing for ok, unknown, missing or a new state", () => {
-    for (const s of ["allow", "blocked", "held"]) expect(noticesCard(ready(health(s)))).toEqual(health(s));
+    for (const s of ["allow", "blocked", "held"]) {
+      const state = ready(health(s));
+      // The same object each call, or React's useSyncExternalStore renders without end.
+      expect(noticesCard(state)).toBe(state.health.state === "ready" && state.health.data);
+    }
     for (const s of ["ok", "unknown", "missing", "later"]) expect(noticesCard(ready(health(s)))).toBeNull();
     // After a fix, unknown keeps the card, so the owner reads why the fix gave no answer.
     expect(noticesCard(ready(health("unknown"), { fixing: true }))).toEqual(health("unknown"));
@@ -58,7 +62,9 @@ describe("notices card", () => {
 
   it("a read that started before a fix cannot write over the fix's answer", async () => {
     let answerRead: (h: NoticeHealth) => void = () => {};
-    const slowRead = () => new Promise<NoticeHealth>((resolve) => (answerRead = resolve));
+    const slowRead = () => new Promise<NoticeHealth>((resolve) => {
+      answerRead = resolve;
+    });
     const { notices } = fakeApp(async () => health("ok"), slowRead);
     const read = notices.load(true);
     await notices.fix("test");

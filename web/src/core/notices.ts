@@ -20,16 +20,18 @@ const message = (err: unknown) => (err instanceof Error ? err.message : String(e
 export const CARD_STATES = ["allow", "blocked", "held", "unknown"] as const;
 export type CardState = (typeof CARD_STATES)[number];
 
-/** The notice card: the health to fix, "fixed" once a fix made it ok, or null for no card. */
-export function noticesCard(state: NoticesState): (NoticeHealth & { state: CardState }) | "fixed" | null {
+/** The notice card: the health to fix, "fixed" once a fix made it ok, or null for no card. It
+ *  returns the stored health itself, because React's useSyncExternalStore needs the same object
+ *  until the store changes. */
+export function noticesCard(state: NoticesState): NoticeHealth | "fixed" | null {
   if (state.hidden || state.health.state !== "ready") return null;
   const health = state.health.data;
   if (health.state === "ok") return state.fixing ? "fixed" : null;
   if (health.state === "unknown" && !state.fixing) return null;
-  return isCardState(health.state) ? { ...health, state: health.state } : null;
+  return isCardState(health.state) ? health : null;
 }
 
-function isCardState(state: string): state is CardState {
+export function isCardState(state: string): state is CardState {
   return (CARD_STATES as readonly string[]).includes(state);
 }
 

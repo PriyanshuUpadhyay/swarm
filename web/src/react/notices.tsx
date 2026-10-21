@@ -3,7 +3,7 @@
 
 import { useEffect, useRef, useSyncExternalStore } from "react";
 import type { App } from "../core/app";
-import { noticesCard, type CardState, type NoticeAction } from "../core/notices";
+import { isCardState, noticesCard, type CardState, type NoticeAction } from "../core/notices";
 import { Button } from "../components/ui/button";
 
 const TITLE: Record<CardState, string> = {
@@ -31,8 +31,9 @@ export function NoticesCard({ app }: { app: App }) {
   const pending = useSyncExternalStore(app.notices.subscribe, () => app.notices.state.pending);
   const done = useRef<HTMLButtonElement>(null);
   useEffect(() => {
-    // Fire-and-forget is safe: load keeps its own error in the notices state.
-    void app.notices.load(true);
+    // Fire-and-forget is safe: load keeps its own error in the notices state. Home mounts again
+    // each time a chat closes, so this read keeps the 30 s limit too.
+    void app.notices.load();
     const again = () => void app.notices.load();
     addEventListener("focus", again);
     return () => removeEventListener("focus", again);
@@ -48,7 +49,7 @@ export function NoticesCard({ app }: { app: App }) {
     <section className="grid gap-2 rounded-md border border-border px-4 py-3" aria-label="Notices" data-testid="notices-card">
       {card !== "fixed" && (
         <>
-          <h2 className="font-semibold">{TITLE[card.state]}</h2>
+          <h2 className="font-semibold">{isCardState(card.state) ? TITLE[card.state] : ""}</h2>
           <p className="text-sm text-muted-foreground">{card.reason}</p>
           {card.steps.length > 0 && (
             <ol className="list-decimal pl-5 text-sm">
@@ -60,7 +61,8 @@ export function NoticesCard({ app }: { app: App }) {
         </>
       )}
       {/* One live region for both forms, so a screen reader hears the wait and the result. */}
-      <p role="status" className="text-sm">
+      {/* min-h keeps one line, so the buttons do not move when the wait text comes. */}
+      <p role="status" className="min-h-5 text-sm">
         {pending ? WAIT[pending] : card === "fixed" ? FIXED : ""}
       </p>
       <div className="flex flex-wrap gap-2">
