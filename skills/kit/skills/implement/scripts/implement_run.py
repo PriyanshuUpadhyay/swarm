@@ -57,10 +57,13 @@ def review(folder, target, *opts):
 
 def check_graph(plan, rows):
     """Refuse an approved plan whose steps or Needs differ from graph(), so no approved step is dropped in silence."""
-    names = [r[0] for r in rows]
-    planned = {r[0]: step_run.need_files(r[1], names) for r in rows}
+    # need_files reads the word after NN-, so a name without it is reported here and kept out of the Needs read.
+    odd = [r[0] for r in rows if not re.fullmatch(r"\d\d-[^-\s][^\s]*", r[0])]
+    names = [r[0] for r in rows if r[0] not in odd]
+    planned = {r[0]: step_run.need_files(r[1], names) for r in rows if r[0] not in odd}
     ours = graph()
-    diff = [f"{s} twice" for s in dict.fromkeys(s for s in names if names.count(s) > 1)]
+    diff = [f"{s or '(empty)'} is not NN-name" for s in odd]
+    diff += [f"{s} twice" for s in dict.fromkeys(s for s in names if names.count(s) > 1)]
     diff += [f"added {s}" for s in planned if s not in ours] + [f"missing {s}" for s in ours if s not in planned]
     diff += [f"{s} needs {', '.join(ours[s]) or 'none'} in implement, {', '.join(planned[s]) or 'none'} in plan"
              for s in ours if s in planned and sorted(planned[s]) != sorted(ours[s])]

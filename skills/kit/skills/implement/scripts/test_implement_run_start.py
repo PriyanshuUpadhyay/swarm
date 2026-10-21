@@ -77,6 +77,8 @@ def test_start_plan_must_match_the_graph(tmp):
                   ["04-impact needs 03-contracts in implement, 01-frame in plan", "approve it in a new round"]),
         "twice": (full.replace("| `05-build.md` |", "| `05-build.md` | impact, and design unless skipped | code | ui-motion | again |\n"
                                "| `05-build.md` |", 1), ["05-build twice"]),
+        "unnamed": (full.replace("| `05-build.md` |", "| `probe.md` | frame | logs | local-research | find it |\n"
+                                 "| `05-build.md` |", 1), ["probe is not NN-name"]),
         "escape": (full.replace("| `07-close.md` |", "| `07-\x1b[2Jclose.md` |", 1), ["added 07-[2Jclose"]),
     }
     run = None
