@@ -104,6 +104,26 @@ def test_a_step_does_not_change_blocks_toml(tmp):
             raise AssertionError(cell)
 
 
+def test_scope_fails_closed_in_a_repo(tmp):
+    repo, folder = scope_repo(tmp)
+    assert run("take", folder, "01-a", "x").returncode == 0
+    real = step_scope.git
+    broken = lambda root, *args, env=None: (subprocess.CompletedProcess(args, 128, "", "fatal: broken")
+                                             if args[:1] == ("add",) else real(root, *args, env=env))
+    with patch.object(step_scope, "git", broken):
+        try:
+            step_run.done(folder, "01-a", "1")
+        except SystemExit as stop:
+            assert "scope check failed: git add -A: fatal: broken" in str(stop), stop
+        else:
+            raise AssertionError("a failed git add passed the scope check")
+    events = folder / "events.log"
+    events.write_text("".join(l for l in events.read_text(encoding="utf-8").splitlines(keepends=True) if "\tbase " not in l),
+                      encoding="utf-8")
+    out = run("done", folder, "01-a", "1")
+    assert out.returncode == 1 and "its take recorded no base; take it again" in out.stderr, out
+
+
 def test_scope_needs_git_and_a_writes_line(tmp):
     folder = Path(tmp, "run")
     Path(tmp, "plan.md").write_text(PLAN, encoding="utf-8")

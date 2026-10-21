@@ -48,6 +48,7 @@ for gate in (test_done_needs_the_current_claim, test_done_refuses_a_stale_input,
              test_take_refuses_a_name_that_forges_a_line, test_check_odd_system_answers,
              test_done_refuses_a_write_outside_scope, test_scope_needs_git_and_a_writes_line,
              test_scope_parallel_order_names_and_a_lost_base, test_a_step_does_not_change_blocks_toml,
+             test_scope_fails_closed_in_a_repo,
              test_done_takes_blocks_from_the_plan, test_writer_does_not_take_its_review,
              test_amend_within_the_owner_budget, test_plan_blocks_follow_the_repo_off_table,
              test_amend_refuses_odd_rows):

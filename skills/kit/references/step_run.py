@@ -289,7 +289,7 @@ def take(folder, step, who, need=None, rev=revision, force=False, on_claim=None)
         # Logged inside the lock, so a take --force cannot count the same claim number.
         log(folder, step, f"take {who}")
         # done compares the work tree with this one, so only changes made after the take count.
-        if step_scope.writes(text) is not None and (tree := step_scope.work_tree(folder)):
+        if step_scope.writes(text) is not None and (tree := step_scope.work_tree(folder)):  # SystemExit: done refuses
             log(folder, step, f"base {tree[1]}")
     print(text)
 

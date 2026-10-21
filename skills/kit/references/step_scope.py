@@ -5,6 +5,7 @@ with no such line, or a run outside git, has no scope check.
 """
 
 import os
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path, PurePosixPath
@@ -53,10 +54,12 @@ def git(root, *args, env=None):
 
 
 def work_tree(folder):
-    """(root, tree id) of the work tree as it is now, untracked files included, or None outside git.
+    """(root, tree id) of the work tree as it is now, untracked files included, or None outside git. SystemExit
+    when git fails inside a repo, so a failure never reads as "no git".
 
-    A copy of the index takes the files, so the real index and the stash stay as they are, and the copy keeps
-    the index's stat cache, so an unchanged file is not read again.
+    A copy of the index takes the files, so the real index and the stash stay as they are. The copy keeps the
+    index's stat cache and its modify time: git's racy-clean test compares a file's time with the index file's, so
+    a fresh time would let a same-size edit in that second look unchanged.
     """
     root, _ = work_root(folder)
     env = clean_env()
@@ -66,12 +69,12 @@ def work_tree(folder):
     with tempfile.TemporaryDirectory() as tmp:
         copy = Path(tmp, "index")
         if index.is_file():
-            copy.write_bytes(index.read_bytes())
+            shutil.copy2(index, copy)
         env["GIT_INDEX_FILE"] = str(copy)
-        if git(root, "add", "-A", env=env).returncode:
-            return None
-        tree = git(root, "write-tree", env=env)
-    return (root, tree.stdout.strip()) if tree.returncode == 0 else None
+        for args in (("add", "-A"), ("write-tree",)):
+            if (out := git(root, *args, env=env)).returncode:
+                raise SystemExit(f"scope check failed: git {' '.join(args)}: {out.stderr.strip()}")
+    return root, out.stdout.strip()
 
 
 def base(folder, step):
@@ -103,9 +106,11 @@ def check(folder, step, text):
         return
     start = base(folder, step)
     now = work_tree(folder)
-    if start is None or now is None:
-        print(f"not run: scope: {'no git work tree' if now is None else 'no base recorded at take'}")
+    if now is None:
+        print("not run: scope: no git work tree")
         return
+    if start is None:  # take records one in a git repo, so its loss must not skip the check
+        raise SystemExit(f"{step} is not done: its take recorded no base; take it again")
     root, tree = now
     allowed = list(own)
     # A step that ran beside this one counts too, also when it was done first: its files cannot be told apart.
