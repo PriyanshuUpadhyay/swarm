@@ -179,6 +179,39 @@ test("Shift+F10 and the ContextMenu key open the focused row's menu", async ({ p
   expect(errors).toEqual([]);
 });
 
+test("holding ⌘ over a row shows its actions as icons, and releasing ⌘ hides them", async ({ page: tab }) => {
+  const errors = await open(tab);
+  const row = workspace(tab, "ws-build");
+  const bar = tab.getByTestId("row-bar");
+  await expect(tab.getByTestId("row-bar-hint")).toBeVisible();
+  // The new chat "+" shows without hover.
+  await tab.mouse.move(0, 0);
+  await expect(row.locator('[data-action="new-chat"]')).toBeVisible();
+  await row.hover();
+  await expect(bar).toBeHidden();
+  await tab.keyboard.down("Meta");
+  await expect(bar).toBeVisible();
+  await expect(bar.getByRole("button", { name: "Rename workspace…" })).toBeVisible();
+  await bar.getByRole("button", { name: "Copy path" }).hover();
+  await expect(bar).toBeVisible();
+  await tab.keyboard.up("Meta");
+  await expect(bar).toBeHidden();
+
+  // The Recent list has the same chat actions, by ⌘ hover and by right click.
+  await tab.getByTestId("view-recent").click();
+  const recent = tab.getByTestId("recent-row").first();
+  await recent.hover();
+  await tab.keyboard.down("Meta");
+  await expect(bar.getByRole("button", { name: "Archive chat" })).toBeVisible();
+  await tab.keyboard.up("Meta");
+  await expect(bar).toBeHidden();
+  await recent.click({ button: "right" });
+  await expect(tab.getByTestId("row-menu").getByRole("menuitem", { name: "Rename chat…" })).toBeVisible();
+  await tab.keyboard.press("Escape");
+  await tab.getByTestId("view-workspaces").click();
+  expect(errors).toEqual([]);
+});
+
 test("Tab reaches an agent pane's header buttons", async ({ page: tab }, info) => {
   const errors = await open(tab);
   await tab.setViewportSize({ width: 1600, height: 900 });

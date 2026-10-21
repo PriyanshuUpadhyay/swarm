@@ -81,8 +81,8 @@
 .trow .chev[data-action]:hover {
   color: var(--foreground);
 }
-.trow .grip,
-.trow .row-btn {
+/* The row buttons (new chat, new workspace, unarchive) always show; the grip only on hover. */
+.trow .grip {
   display: none;
 }
 .trow .grip {
@@ -91,12 +91,11 @@
   flex: none;
   color: var(--faint-foreground);
 }
-.trow:hover .grip,
-.trow:hover .row-btn,
-.trow[aria-current="true"] .row-btn {
+.trow:hover .grip {
   display: inline-grid;
 }
 .trow .row-btn {
+  display: inline-grid;
   place-items: center;
   width: 18px;
   height: 18px;
@@ -113,6 +112,39 @@
 .trow .row-btn svg {
   width: 12px;
   height: 12px;
+}
+/* The ⌘ action bar over the hovered row's right end (RowBar). */
+.row-bar {
+  position: fixed;
+  z-index: 20;
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--popover);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.2);
+}
+.row-bar button {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted-foreground);
+}
+.row-bar button:hover {
+  background: var(--selected);
+  color: var(--foreground);
+}
+.row-bar button:disabled {
+  opacity: 0.4;
+}
+.row-bar button svg {
+  width: 13px;
+  height: 13px;
 }
 .trow.head {
   margin-top: 6px;

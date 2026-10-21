@@ -8,7 +8,9 @@ import { SIDEBAR_VIEWS, type App } from "../core/app";
 import { archivedSession, currentRow, type SidebarRow } from "../core/nav";
 import { Button } from "../components/ui/button";
 import { ContextMenu, ContextMenuTrigger } from "../components/ui/context-menu";
+import { Kbd } from "../components/ui/kbd";
 import { NewChatMenu, RowHints, RowMenu, type NewChatAnchor } from "./row-overlays";
+import { RecentMenu, RowBar, recentTarget, treeTarget } from "./row-actions";
 import { StatusGlyph } from "./status";
 import { UsageMeters } from "./settings";
 import { RowView, RecentRow } from "./sidebar-row";
@@ -146,6 +148,7 @@ function WorkspaceList({ app }: { app: App }) {
             {!loaded && !error && <SidebarSkeleton />}
             {loaded && rows.length === 0 && <SidebarNote title={archive ? "No archived workspaces" : "No projects yet"} body={archive ? "" : "Import or create a project from the + menu above."} />}
             {error && rows.length === 0 && <SidebarNote error title="Could not load the workspaces" body={error} />}
+            <RowBar listRef={listRef} select={'[data-testid="tree-row"]'} target={treeTarget(app)} />
           </div>
         </ContextMenuTrigger>
         <RowMenu app={app} listRef={listRef} />
@@ -166,6 +169,9 @@ function WorkspaceList({ app }: { app: App }) {
           {archive ? "Workspaces" : "Archived"}
           {!archive && tree?.archivedStatus && <StatusGlyph status={tree.archivedStatus} />}
         </Button>
+        <span className="ml-auto truncate pr-1 text-[11px] text-muted-foreground" data-testid="row-bar-hint">
+          Hold <Kbd>⌘</Kbd> for actions
+        </span>
       </div>
     </>
   );
@@ -178,17 +184,27 @@ function RecentList({ app }: { app: App }) {
   const selected = useSyncExternalStore(app.subscribe, () => app.view.recentSelected);
   const openId = useSyncExternalStore(app.subscribe, () => app.view.openId);
   const loaded = useSyncExternalStore(app.subscribe, () => app.view.loaded);
+  const listRef = useRef<HTMLDivElement>(null);
   const onClick = (e: MouseEvent) => {
     const session = (e.target as Element).closest<HTMLElement>('[data-testid="recent-row"]')?.dataset.session;
     if (session) app.clickRecent(session);
   };
   return (
-    <div role="listbox" aria-label="Recent chats" data-testid="recent" tabIndex={selected ? -1 : 0} className="min-h-0 flex-1 overflow-y-auto px-2 pt-1 pb-3 outline-none" onClick={onClick}>
-      {recent.map((r) => (
-        <RecentRow key={r.session} r={r} selected={r.session === selected} current={r.session === openId} />
-      ))}
-      {loaded && recent.length === 0 && <SidebarNote title="No chats yet" body="Chats from every project show here, newest first." />}
-    </div>
+    <>
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          <div ref={listRef} role="listbox" aria-label="Recent chats" data-testid="recent" tabIndex={selected ? -1 : 0} className="min-h-0 flex-1 overflow-y-auto px-2 pt-1 pb-3 outline-none" onClick={onClick}>
+            {recent.map((r) => (
+              <RecentRow key={r.session} r={r} selected={r.session === selected} current={r.session === openId} />
+            ))}
+            {loaded && recent.length === 0 && <SidebarNote title="No chats yet" body="Chats from every project show here, newest first." />}
+            <RowBar listRef={listRef} select='[data-testid="recent-row"]' target={recentTarget(app)} />
+          </div>
+        </ContextMenuTrigger>
+        <RecentMenu app={app} listRef={listRef} />
+      </ContextMenu>
+      <RowHints app={app} listRef={listRef} />
+    </>
   );
 }
 
