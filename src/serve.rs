@@ -300,6 +300,9 @@ use setup::*;
 mod snapshot;
 use snapshot::*;
 
+mod terminal;
+use terminal::*;
+
 mod tool_output;
 use tool_output::*;
 

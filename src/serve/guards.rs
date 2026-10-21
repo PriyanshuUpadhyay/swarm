@@ -6,12 +6,15 @@ pub(super) async fn guard(State(app): State<App>, request: Request, next: Next) 
     if !request.uri().path().starts_with("/api/") {
         return next.run(request).await;
     }
+    // A WebSocket cannot send the bearer header; its single-use ticket stands in for it, and the
+    // Host and a required Origin still apply (terminal.rs).
+    let socket = request.uri().path() == SOCKET_PATH;
     let authorization = request
         .headers()
         .get(header::AUTHORIZATION)
         .and_then(|value| value.to_str().ok());
     let expected = format!("Bearer {}", app.token);
-    if authorization != Some(expected.as_str()) {
+    if !socket && authorization != Some(expected.as_str()) {
         let mut response = error(StatusCode::UNAUTHORIZED, "bearer token required").into_response();
         let challenge = if authorization.is_none() {
             "Bearer realm=\"swarm\""
@@ -44,6 +47,12 @@ pub(super) async fn guard(State(app): State<App>, request: Request, next: Next) 
         if !valid {
             return error(StatusCode::FORBIDDEN, "origin refused").into_response();
         }
+    } else if socket {
+        return error(StatusCode::FORBIDDEN, "origin required").into_response();
+    }
+    // Not through `record_errors`, whose log would keep the ticket in the URI.
+    if socket {
+        return next.run(request).await;
     }
     if request.method() == Method::POST
         && !request
