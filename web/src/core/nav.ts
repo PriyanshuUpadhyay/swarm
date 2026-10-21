@@ -61,6 +61,8 @@ export type TreeView = {
 export type Prefs = {
   theme?: string;
   sendKey?: string;
+  fontSans?: string;
+  fontMono?: string;
   usageHUDAsked?: boolean;
   notices?: { post?: boolean; sound?: boolean; done?: boolean; badge?: boolean; mutedProjects?: string[] };
 };

@@ -121,9 +121,28 @@
   --status-ended: #8a8a85;
 }
 
+/* The owner's UI and code fonts (prefs.fontSans, prefs.fontMono). `@theme inline` copies a value into
+   each utility, so the tokens name these variables and a choice reaches `font-sans` text too. */
+:root {
+  --ui-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, "Segoe UI", sans-serif;
+  --code-font: "SF Mono", ui-monospace, Menlo, Monaco, monospace;
+}
+:root[data-font-sans="helvetica"] {
+  --ui-font: "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+:root[data-font-sans="avenir"] {
+  --ui-font: "Avenir Next", Avenir, -apple-system, sans-serif;
+}
+:root[data-font-mono="menlo"] {
+  --code-font: Menlo, ui-monospace, monospace;
+}
+:root[data-font-mono="monaco"] {
+  --code-font: Monaco, ui-monospace, monospace;
+}
+
 @theme inline {
-  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, "Segoe UI", sans-serif;
-  --font-mono: "SF Mono", ui-monospace, Menlo, Monaco, monospace;
+  --font-sans: var(--ui-font);
+  --font-mono: var(--code-font);
 
   /* Compact type scale: body is 13px, as in the Swift app. */
   --text-2xs: 10px;

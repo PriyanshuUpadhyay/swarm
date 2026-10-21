@@ -22,7 +22,7 @@ import { PaneStrip } from "./panes";
 import { Sidebar } from "./sidebar";
 import { store } from "./store";
 import { TabStrip } from "./tabs";
-import { applyTheme, chooseTheme, followTheme, useTheme } from "./theme";
+import { applyAppearance, chooseTheme, followAppearance, useTheme } from "./appearance";
 import { copyText } from "./copy";
 
 // Sidebar side and width stay in this browser until P3b adds their owner choices.
@@ -32,7 +32,7 @@ const frame = { toggle: () => {}, move: () => {} };
 
 function Root({ app, changes }: { app: App; changes: Changes }) {
   useEffect(() => app.start(), [app]);
-  useEffect(() => followTheme(app), [app]);
+  useEffect(() => followAppearance(app), [app]);
   const theme = useTheme();
   const sidebar = usePanelRef();
   const [side, setSide] = useState(store.getItem(SIDE_KEY) === "right" ? "right" : "left");
@@ -121,7 +121,7 @@ function ChatId({ id, short }: { id: string; short: string }) {
   );
 }
 
-applyTheme();
+applyAppearance();
 const app = boot();
 const changes = typeof app === "string" ? null : new Changes(app);
 if (typeof app !== "string") {

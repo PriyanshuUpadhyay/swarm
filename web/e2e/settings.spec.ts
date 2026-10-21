@@ -1,6 +1,6 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { CLAUDE_EMAIL, LOGIN_PANE } from "./serve";
 
@@ -190,6 +190,58 @@ test("theme and send key are owner choices that the page follows", async ({ page
   await expect.poll(() => choices().prefs).toMatchObject({ theme: "system", sendKey: "return" });
   await expect(tab.locator("html")).not.toHaveAttribute("data-theme", /./);
   expect(errors).toEqual([]);
+});
+
+test("the UI and code fonts are owner choices that utility and plain CSS text follow, also after a reload", async ({ page: tab }) => {
+  const errors = await open(tab);
+  let dialog = await settings(tab, "appearance");
+  await expect(dialog.getByTestId("zoom-hint")).toContainText("View › Zoom In");
+  // A `font-mono` utility and a plain `var(--font-mono)` rule both follow the code font.
+  const families = () =>
+    tab.evaluate(() => {
+      const utility = Object.assign(document.createElement("span"), { className: "font-mono" });
+      const plain = document.createElement("span");
+      plain.style.font = "12px var(--font-mono)";
+      document.body.append(utility, plain);
+      const out = [getComputedStyle(document.body).fontFamily, getComputedStyle(utility).fontFamily, getComputedStyle(plain).fontFamily];
+      utility.remove();
+      plain.remove();
+      return out;
+    });
+  await dialog.getByTestId("pref-font-sans").getByRole("radio", { name: "Avenir" }).click();
+  await dialog.getByTestId("pref-font-mono").getByRole("radio", { name: "Menlo" }).click();
+  await expect(tab.locator("html")).toHaveAttribute("data-font-sans", "avenir");
+  await expect(tab.locator("html")).toHaveAttribute("data-font-mono", "menlo");
+  const [body, utility, plain] = await families();
+  expect(body).toMatch(/^"?Avenir Next/);
+  expect(utility).toMatch(/^Menlo/);
+  expect(plain).toMatch(/^Menlo/);
+  await expect.poll(() => choices().prefs).toMatchObject({ fontSans: "avenir", fontMono: "menlo" });
+  await tab.reload();
+  await tab.waitForFunction(() => window.__swarmReady === true);
+  await expect(tab.locator("html")).toHaveAttribute("data-font-mono", "menlo");
+  dialog = await settings(tab, "appearance");
+  await dialog.getByTestId("pref-font-sans").getByRole("radio", { name: "System" }).click();
+  await dialog.getByTestId("pref-font-mono").getByRole("radio", { name: "System" }).click();
+  await expect.poll(() => choices().prefs).toMatchObject({ fontSans: "system", fontMono: "system" });
+  await expect(tab.locator("html")).not.toHaveAttribute("data-font-sans", /./);
+  await expect(tab.locator("html")).not.toHaveAttribute("data-font-mono", /./);
+  expect(errors).toEqual([]);
+});
+
+test("an absent font pref means System, also when this browser kept an older copy", async ({ page: tab }) => {
+  const file = join(home(), ".swarm/choices.json");
+  const saved = readFileSync(file, "utf8");
+  const { fontSans: _sans, fontMono: _mono, ...prefs } = JSON.parse(saved).prefs ?? {};
+  writeFileSync(file, JSON.stringify({ ...JSON.parse(saved), prefs }));
+  await tab.addInitScript(() => localStorage.setItem("swarm.fontMono", "monaco"));
+  try {
+    const errors = await open(tab);
+    await expect(tab.locator("html")).not.toHaveAttribute("data-font-mono", /./);
+    expect(errors).toEqual([]);
+  } finally {
+    writeFileSync(file, saved);
+  }
 });
 
 test("a profile edit saves through swarm roles, a stale page shows a conflict and reloads, and reset restores the bundled profiles", async ({ page: tab }, info) => {

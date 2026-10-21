@@ -222,6 +222,8 @@ fn preference_ops_set_swift_keys_mute_listed_projects_and_refuse_bad_values() {
     for op in [
         json!({"op":"pref","key":"theme","value":"light"}),
         json!({"op":"pref","key":"sendKey","value":"commandReturn"}),
+        json!({"op":"pref","key":"fontSans","value":"avenir"}),
+        json!({"op":"pref","key":"fontMono","value":"menlo"}),
         json!({"op":"pref","key":"usageHUDAsked","value":true}),
         json!({"op":"pref","key":"notices.post","value":false}),
         json!({"op":"pref","key":"notices.sound","value":false}),
@@ -234,7 +236,7 @@ fn preference_ops_set_swift_keys_mute_listed_projects_and_refuse_bad_values() {
     }
     assert_eq!(
         o.prefs,
-        json!({"usageHUD": true, "theme": "light", "sendKey": "commandReturn", "usageHUDAsked": true, "notices": {
+        json!({"usageHUD": true, "theme": "light", "sendKey": "commandReturn", "fontSans": "avenir", "fontMono": "menlo", "usageHUDAsked": true, "notices": {
             "startAtLogin": false, "post": false, "sound": false, "done": false, "badge": false,
             "mutedProjects": [project]}})
     );
@@ -248,6 +250,8 @@ fn preference_ops_set_swift_keys_mute_listed_projects_and_refuse_bad_values() {
     for op in [
         json!({"op":"pref","key":"theme","value":"blue"}),
         json!({"op":"pref","key":"sendKey","value":true}),
+        json!({"op":"pref","key":"fontSans","value":"Comic Sans"}),
+        json!({"op":"pref","key":"fontMono","value":"avenir"}),
         json!({"op":"pref","key":"notices.post","value":"no"}),
         json!({"op":"pref","key":"notices.startAtLogin","value":true}),
         json!({"op":"pref","key":"usageHUD","value":true}),

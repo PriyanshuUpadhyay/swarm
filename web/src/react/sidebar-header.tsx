@@ -12,7 +12,7 @@ import {
 } from "../components/ui/dropdown-menu";
 import { Kbd } from "../components/ui/kbd";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../components/ui/tooltip";
-import { chooseTheme, useTheme, type Theme } from "./theme";
+import { chooseTheme, useTheme, type Theme } from "./appearance";
 
 export function SidebarHeader({ app }: { app: App }) {
   return (
