@@ -61,7 +61,7 @@ export function BackgroundPanel({ app, session }: { app: App; session: string })
         ))}
         {!rows.length && <li className="px-2 py-1 text-muted-foreground">No live agents.</li>}
       </ul>
-      <div className="flex min-w-0 flex-1 flex-col">{row && <Detail key={row.key} app={app} session={session} row={row} picked={picked !== null} onOwner={pickAgent} />}</div>
+      <div className="flex min-w-0 flex-1 flex-col">{row && <Detail key={row.key} app={app} session={session} row={row} picked={row.key === picked} onOwner={pickAgent} />}</div>
     </div>
   );
 }
@@ -101,6 +101,12 @@ function Term({ app, session, agent, task, focus = false }: { app: App; session:
   const shell = task !== undefined;
   const host = useRef<HTMLDivElement>(null);
   const live = useRef<Terminal | null>(null);
+  // The socket opens later, so it reads the newest choice, not the one from the first render.
+  const focused = useRef(focus);
+  focused.current = focus;
+  useEffect(() => {
+    if (focus) live.current?.focus();
+  }, [focus]);
   const theme = useTheme();
   useEffect(() => {
     const paint = () => {
@@ -141,7 +147,7 @@ function Term({ app, session, agent, task, focus = false }: { app: App; session:
         ws.onopen = () => {
           fit.fit();
           resize();
-          if (focus) term.focus();
+          if (focused.current) term.focus();
         };
         ws.onmessage = (m) => term.write(typeof m.data === "string" ? m.data : new Uint8Array(m.data as ArrayBuffer));
         ws.onclose = () => !gone && term.write("\r\n\x1b[2m[closed]\x1b[0m\r\n");

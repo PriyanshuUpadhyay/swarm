@@ -82,3 +82,13 @@ test("a panel that fails to load says so and keeps the chat", async ({ page: tab
   await expect(tab.getByText("The background panel failed. Reload the page to try again.")).toBeVisible();
   await expect(tab.locator('[data-testid="transcript"][data-state="ready"]')).toBeVisible();
 });
+
+test("clicking the row that is already shown gives its terminal the keys", async ({ page: tab }, info) => {
+  await openChat(tab, info);
+  await tab.keyboard.press("Meta+j");
+  const panel = tab.getByTestId("background-panel").last();
+  await expect(panel.locator(".xterm-rows")).not.toBeEmpty();
+  await expect(panel.locator(".xterm-helper-textarea")).not.toBeFocused();
+  await panel.locator(`button[aria-current="true"]`).click();
+  await expect(panel.locator(".xterm-helper-textarea")).toBeFocused();
+});
