@@ -10,12 +10,10 @@ A preset is a `## Preset` section with one `Stop: owner` or `Stop: chat` line, a
 """
 
 import json
+import os
 import re
 import sys
 from pathlib import Path
-
-if sys.version_info < (3, 11):
-    sys.exit("swarm kit: needs Python 3.11 or newer")
 
 KIT = Path(__file__).resolve().parents[3]
 sys.path[:0] = [str(KIT / "references"), str(KIT / "blocks" / "plan-chart" / "scripts")]  # python3 -I adds neither
@@ -103,12 +101,19 @@ def facts(file, verb, mode=None, text=None):
     stage = {n: i for i, names in enumerate(plan_chart.stages(uses)) for n in names}
     selected = resolve_blocks(None, {r[0]: r[3] for r in rows}, "default", blocks_dir=KIT / "blocks", pack=False)
     body = (file.read_text(encoding="utf-8") if text is None else text).split("\n## Preset\n", 1)[1]
-    raw = [[c.strip() for c in line.strip().strip("|").split("|")]
-           for line in body.split("\n## ", 1)[0].splitlines() if line.startswith("|")][2:len(rows) + 2]
+    lines = body.split("\n## ", 1)[0].splitlines()
+    head = next(i for i, line in enumerate(lines) if plan_chart.HEAD.match(line))
+    raw = []
+    for line in lines[head + 1:]:  # the lines that read_plan takes as rows
+        if line.startswith("|---"):
+            continue
+        if not line.startswith("|"):
+            break
+        raw.append([c.strip() for c in line.strip().strip("|").split("|")])
     # `cells` is each row as written, so a copy of a preset keeps its exact table text.
     steps = [{"file": name, "needs": need, "holds": holds, "why": why, "cells": cells, "blocks": blocks,
               "resolved": selected[name], "uses": uses[name], "stage": stage[name]}
-             for (name, need, holds, blocks, why, *_), cells in zip(rows, raw)]
+             for (name, need, holds, blocks, why, *_), cells in zip(rows, raw, strict=True)]
     return {"preset": f"{verb} {mode}" if mode else verb, "verb": verb, "mode": mode, "stop": stop, "start": start,
             "steps": steps}
 
@@ -148,8 +153,29 @@ def kit_json():
     return {"schema": "swarm.kit/1", "version": version, "blocks": blocks, "presets": presets}
 
 
+def front_matter_defect(text):
+    """The first defect in a new skill's `name` and `description`, or None for a draft with no front matter."""
+    if not text.startswith("---\n"):
+        return None
+    found = dict(re.findall(r"^(name|description): ?(.*)$", text[4:].partition("\n---\n")[0], re.M))
+    if not re.fullmatch(r"[a-z0-9-]+", found.get("name", "")):
+        return "name needs lowercase letters, digits, and dashes"
+    description = found.get("description", "").strip()
+    try:
+        description = json.loads(description) if description.startswith('"') else description
+    except ValueError:
+        return "description is not a valid quoted string"
+    if not description.strip():
+        return "description needs a `Use when` line"
+    if not found["description"].startswith('"') and (": " in description or " #" in description or description[0] in "!&*[]{}|>'%@`,?-:#\""):
+        return "description has YAML punctuation, so it needs double quotes"
+    return None
+
+
 def draft(text):
     """{"ok": true, "preset"} for a draft that passes every preset check, else {"ok": false, "defect"}."""
+    if defect := front_matter_defect(text):
+        return {"ok": False, "defect": defect}
     text = text if "\n## Preset\n" in text else "\n" + text
     try:
         return {"ok": True, "preset": facts(Path("draft"), "draft", text=text)}
@@ -158,10 +184,21 @@ def draft(text):
 
 
 def main(argv):
-    if argv == ["--json"]:
-        return print(json.dumps(kit_json()))
-    if argv == ["--check"]:
-        return print(json.dumps(draft(sys.stdin.read())))
+    if argv in (["--json"], ["--check"]):
+        # Only the Skills page needs 3.11 (blocks.toml); a plain preset check runs on older Python.
+        if sys.version_info < (3, 11):
+            raise SystemExit("swarm kit: needs Python 3.11 or newer")
+        if argv == ["--check"] and sys.stdin.isatty():
+            raise SystemExit("preset.py --check reads a draft on stdin; pipe one in")
+        try:
+            print(json.dumps(kit_json() if argv == ["--json"] else draft(sys.stdin.buffer.read().decode("utf-8"))))
+            sys.stdout.flush()
+        except BrokenPipeError:
+            fd = os.open(os.devnull, os.O_WRONLY)
+            # Python flushes stdout at exit; devnull prevents another error from the closed pipe.
+            os.dup2(fd, sys.stdout.fileno())
+            os.close(fd)
+        return None
     if not 1 <= len(argv) <= 2 or argv[0].startswith("-"):
         raise SystemExit(__doc__.strip().splitlines()[2].strip())
     stop, start, steps = check(path(*argv))

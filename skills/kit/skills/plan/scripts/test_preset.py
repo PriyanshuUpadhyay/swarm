@@ -103,10 +103,50 @@ def test_a_draft_defect_is_the_first_one_python_finds():
     assert run("--check", text="# no preset")["defect"].endswith("has no ## Preset section")
 
 
+def test_cells_are_the_rows_that_a_run_reads():
+    lead = DRAFT.replace("Stop: chat\n", "Stop: chat\n\n| a | b |\n|---|---|\n| c | d |\n")
+    steps = run("--check", text=lead)["preset"]["steps"]
+    assert steps[0]["cells"] == ["01-read", "none", "what the sources say", "local-research, requirements",
+                                 "the answer rests on the sources"], steps[0]
+    bare = run("--check", text=DRAFT.replace("|---|---|---|---|---|\n", ""))
+    assert [s["file"] for s in bare["preset"]["steps"]] == ["01-read", "02-web", "03-reply"], bare
+
+
+def test_a_new_skill_needs_a_name_and_a_description_that_yaml_reads():
+    def skill(name, description):
+        return f"---\nname: {name}\ndescription: {description}\n---\n\n# x\n\n" + DRAFT
+    assert run("--check", text=skill("", "Use when x."))["defect"] == "name needs lowercase letters, digits, and dashes"
+    assert run("--check", text=skill("my skill", "Use when x."))["defect"] == "name needs lowercase letters, digits, and dashes"
+    assert run("--check", text=skill("mine", '""'))["defect"] == "description needs a `Use when` line"
+    assert run("--check", text=skill("mine", "Use when: the owner asks"))["defect"] == \
+        "description has YAML punctuation, so it needs double quotes"
+    assert run("--check", text=skill("mine", json.dumps("Use when: the owner asks")))["ok"]
+
+
+def test_json_into_a_closed_pipe_exits_quietly():
+    reader = subprocess.Popen([sys.executable, "-I", "-B", HERE / "preset.py", "--json"], stdout=subprocess.PIPE,
+                              stderr=subprocess.PIPE)
+    reader.stdout.close()
+    assert reader.wait() == 0 and b"Traceback" not in reader.stderr.read()
+
+
+def test_an_older_python_can_still_import_preset():
+    old = Path("/usr/bin/python3")
+    if not old.is_file():
+        return
+    out = subprocess.run([old, "-I", "-B", "-c", f"import sys; sys.path.insert(0, {str(HERE)!r}); import preset; print(sys.version_info[:2])"],
+                         capture_output=True, text=True)
+    assert out.returncode == 0, out.stderr
+
+
 if __name__ == "__main__":
     test_each_preset_resolves_with_its_stop()
     test_the_command_prints_the_step_lines()
     test_the_json_gives_each_step_its_stage_and_each_block_its_users()
     test_a_draft_section_or_skill_passes_with_its_stages()
     test_a_draft_defect_is_the_first_one_python_finds()
+    test_cells_are_the_rows_that_a_run_reads()
+    test_a_new_skill_needs_a_name_and_a_description_that_yaml_reads()
+    test_json_into_a_closed_pipe_exits_quietly()
+    test_an_older_python_can_still_import_preset()
     print("ok")
