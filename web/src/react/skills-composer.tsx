@@ -15,6 +15,7 @@ const NEW_ROW = ["", "", "", "", ""];
 export function Composer({ app, kit }: { app: App; kit: Kit }) {
   const draft = useSkills(app, "draft");
   const check = useSkills(app, "check");
+  const undo = useSkills(app, "undo");
   const text = draftText(draft);
   const fresh = check?.text === text ? check : null;
   const set = (change: Partial<Draft>) => app.skills.setDraft({ ...draft, ...change });
@@ -34,9 +35,9 @@ export function Composer({ app, kit }: { app: App; kit: Kit }) {
               data-testid="draft-from"
               value={draft.from ?? ""}
               onChange={(e) => {
-                if (edited && !window.confirm("Start again? The edits in this draft are lost.")) return;
                 const preset = presets.find((p) => p.preset === e.target.value);
-                app.skills.setDraft(preset ? presetDraft(preset) : blankDraft());
+                // A confirm does not show in the app's web view, so a new start keeps the edits for Undo.
+                app.skills.setDraft(preset ? presetDraft(preset) : blankDraft(), edited ? draft : null);
               }}
             >
               <option value="">A new skill</option>
@@ -47,6 +48,11 @@ export function Composer({ app, kit }: { app: App; kit: Kit }) {
               ))}
             </select>
           </label>
+          {undo && (
+            <Button type="button" variant="outline" size="sm" data-testid="draft-undo" onClick={() => app.skills.setDraft(undo)}>
+              Undo new start
+            </Button>
+          )}
           <div className="grid gap-1">
             <span className="text-xs text-muted-foreground">Stops for</span>
             <Segmented
@@ -117,7 +123,7 @@ export function Composer({ app, kit }: { app: App; kit: Kit }) {
           )}
         </div>
         <div className="flex items-center gap-3 border-y border-border px-4 py-2 text-sm">
-          <p aria-live="polite" className="min-w-0 flex-1" data-testid="draft-status">
+          <p aria-live="polite" className="min-w-0 flex-1 [overflow-wrap:anywhere]" data-testid="draft-status">
             {!fresh ? (
               <span className="text-muted-foreground">Checking…</span>
             ) : "error" in fresh ? (

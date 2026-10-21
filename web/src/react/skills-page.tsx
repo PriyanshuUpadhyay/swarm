@@ -3,7 +3,7 @@
 
 import { useState } from "react";
 import type { App } from "../core/app";
-import { catalogGroups, NOT_USED, type Block, type Kit, type Preset, type SkillsView } from "../core/skills";
+import { catalogGroups, type Block, type Kit, type Preset, type SkillsView } from "../core/skills";
 import { Button } from "../components/ui/button";
 import { FIELD } from "./settings-shared";
 import { SkillGraph } from "./skill-graph";
@@ -62,7 +62,7 @@ function Catalog({ app, kit }: { app: App; kit: Kit }) {
           </p>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3" data-testid="skills-tree">
-          {groups.length === 0 && <p className="px-2 text-sm text-muted-foreground">No block matches.</p>}
+          {groups.length === 0 && <p role="status" className="px-2 text-sm text-muted-foreground">No block matches.</p>}
           {groups.map((g) => (
             <section key={g.title} aria-label={g.title} className="mt-2">
               <h3 className="px-2 pb-1 text-xs font-medium text-muted-foreground">{g.title}</h3>
@@ -107,7 +107,7 @@ function BlockDetail({ app, block }: { app: App; block: Block }) {
         <h4 className="text-xs font-medium text-muted-foreground">Used by</h4>
         {block.used_by.length === 0 ? (
           <p className="mt-1" data-testid="skills-unused">
-            {NOT_USED}
+            not used by a default preset
           </p>
         ) : (
           <ul className="mt-1 grid" data-testid="skills-used-by">

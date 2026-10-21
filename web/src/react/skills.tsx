@@ -41,7 +41,7 @@ export function SkillsDialog({ app }: { app: App }) {
             ))}
           </nav>
           <div className="flex min-w-0 flex-1 flex-col" data-testid={`skills-${view}`}>
-            <LoadFailed what="Skills page">
+            <LoadFailed key={view} what="Skills page">
               <Suspense fallback={<p role="status" className="p-5 text-sm text-muted-foreground">Loading…</p>}>
                 <SkillsPage app={app} view={view} />
               </Suspense>

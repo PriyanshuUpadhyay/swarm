@@ -105,7 +105,7 @@ def facts(file, verb, mode=None, text=None):
     head = next(i for i, line in enumerate(lines) if plan_chart.HEAD.match(line))
     raw = []
     for line in lines[head + 1:]:  # the lines that read_plan takes as rows
-        if line.startswith("|---"):
+        if line.startswith("|---") or plan_chart.HEAD.match(line):
             continue
         if not line.startswith("|"):
             break
@@ -160,14 +160,19 @@ def front_matter_defect(text):
     found = dict(re.findall(r"^(name|description): ?(.*)$", text[4:].partition("\n---\n")[0], re.M))
     if not re.fullmatch(r"[a-z0-9-]+", found.get("name", "")):
         return "name needs lowercase letters, digits, and dashes"
-    description = found.get("description", "").strip()
+    written = found.get("description", "").strip()
+    quoted = written[:1] in ("'", '"')
     try:
-        description = json.loads(description) if description.startswith('"') else description
+        description = json.loads(written) if written.startswith('"') else written
     except ValueError:
         return "description is not a valid quoted string"
+    if written.startswith("'"):
+        if len(written) < 2 or not written.endswith("'") or "'" in written[1:-1].replace("''", ""):
+            return "description is not a valid quoted string"
+        description = written[1:-1].replace("''", "'")
     if not description.strip():
         return "description needs a `Use when` line"
-    if not found["description"].startswith('"') and (": " in description or " #" in description or description[0] in "!&*[]{}|>'%@`,?-:#\""):
+    if not quoted and (": " in description or " #" in description or description[0] in "!&*[]{}|>'%@`,?-:#\""):
         return "description has YAML punctuation, so it needs double quotes"
     return None
 

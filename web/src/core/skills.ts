@@ -28,11 +28,12 @@ export type SkillsState = {
   preset: string | null;
   block: string | null;
   draft: Draft;
+  /** The edited draft that the last new start replaced, until the next edit. */
+  undo: Draft | null;
   check: Check | null;
 };
 
 const HEADER = "| File | Needs | Holds | Block | Why |\n|---|---|---|---|---|";
-export const NOT_USED = "not used by a default preset";
 const CHECK_DELAY_MS = 300;
 
 export function blankDraft(): Draft {
@@ -93,7 +94,7 @@ export function catalogGroups(kit: Kit, filter: string): CatalogGroup[] {
 }
 
 export class Skills {
-  state: SkillsState = { open: false, view: "catalog", kit: { state: "idle" }, preset: null, block: null, draft: blankDraft(), check: null };
+  state: SkillsState = { open: false, view: "catalog", kit: { state: "idle" }, preset: null, block: null, draft: blankDraft(), undo: null, check: null };
   private listeners = new Set<() => void>();
   private timer: ReturnType<typeof setTimeout> | null = null;
   /** Count reads and checks, so an older reply cannot replace a newer one. */
@@ -115,6 +116,7 @@ export class Skills {
   /** Opens the page. The kit is read once per open, so an upgraded kit shows on the next open. */
   show() {
     this.set({ open: true });
+    // load() keeps its own failure in state.kit, so nothing waits for it.
     void this.load();
   }
 
@@ -148,13 +150,14 @@ export class Skills {
   }
 
   /** A new draft keeps its text on screen at once; Python checks it after a short pause. */
-  setDraft(draft: Draft) {
-    this.set({ draft });
+  setDraft(draft: Draft, undo: Draft | null = null) {
+    this.set({ draft, undo });
     this.scheduleCheck(CHECK_DELAY_MS);
   }
 
   private scheduleCheck(delay: number) {
     if (this.timer) clearTimeout(this.timer);
+    // check() keeps its own failure in state.check, so nothing waits for it.
     this.timer = setTimeout(() => void this.check(), delay);
   }
 

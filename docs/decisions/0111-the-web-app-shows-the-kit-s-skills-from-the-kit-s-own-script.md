@@ -42,9 +42,9 @@ Each edge's minimum length is the stage gap, so each step sits in the row of its
 
 ### Consequences
 
-- Good: the page and a run agree by construction, and a vitest and an e2e test check every kit
-  preset for stage rows and for edges through cards.
-- Good: the chat app does not load the page; its chunk is about 17 kB gzip.
+- Good: the page and a run agree by construction. A vitest checks every kit preset for stage rows
+  and for edges through cards, and an e2e test checks the drawn cards of every preset for edges.
+- Good: the chat app does not load the page; its chunk is about 19 kB gzip.
 - Bad: the page needs Python 3.11 or newer on the server's PATH, and shows the script's error
   without it.
 - Bad: a copied layout file does not get Pele's fixes; it changes only when a newer release is

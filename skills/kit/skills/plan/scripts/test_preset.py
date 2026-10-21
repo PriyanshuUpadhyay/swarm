@@ -108,6 +108,8 @@ def test_cells_are_the_rows_that_a_run_reads():
     steps = run("--check", text=lead)["preset"]["steps"]
     assert steps[0]["cells"] == ["01-read", "none", "what the sources say", "local-research, requirements",
                                  "the answer rests on the sources"], steps[0]
+    twice = DRAFT.replace("|---|---|---|---|---|\n", "|---|---|---|---|---|\n| File | Needs | Holds | Block | Why |\n")
+    assert [s["file"] for s in run("--check", text=twice)["preset"]["steps"]] == ["01-read", "02-web", "03-reply"]
     bare = run("--check", text=DRAFT.replace("|---|---|---|---|---|\n", ""))
     assert [s["file"] for s in bare["preset"]["steps"]] == ["01-read", "02-web", "03-reply"], bare
 
@@ -121,6 +123,9 @@ def test_a_new_skill_needs_a_name_and_a_description_that_yaml_reads():
     assert run("--check", text=skill("mine", "Use when: the owner asks"))["defect"] == \
         "description has YAML punctuation, so it needs double quotes"
     assert run("--check", text=skill("mine", json.dumps("Use when: the owner asks")))["ok"]
+    assert run("--check", text=skill("mine", " " + json.dumps("Use when: the owner asks")))["ok"]
+    assert run("--check", text=skill("mine", "'Use when: the owner''s chat asks'"))["ok"]
+    assert run("--check", text=skill("mine", "'Use when: it's open'"))["defect"] == "description is not a valid quoted string"
 
 
 def test_json_into_a_closed_pipe_exits_quietly():

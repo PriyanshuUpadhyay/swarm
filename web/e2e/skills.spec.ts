@@ -119,9 +119,11 @@ test("the Composer shows live text and graph, and Copy waits for Python to pass 
   await copy.click();
   if (chromium) expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(await text.textContent());
   await shoot(page, "composer", info.project.name);
-  // A new start asks first, because it drops the edits; a No keeps the draft.
-  page.once("dialog", (d) => void d.dismiss());
+  // A new start drops the edits at once, and Undo brings them back.
   await page.getByTestId("draft-from").selectOption("research");
+  await expect(text).not.toContainText("03-check");
+  await page.getByTestId("draft-undo").click();
+  await expect(page.getByTestId("draft-undo")).toHaveCount(0);
   await expect(page.getByTestId("draft-from")).toHaveValue("explain");
   await expect(text).toContainText("03-check");
   expect(errors).toEqual([]);
