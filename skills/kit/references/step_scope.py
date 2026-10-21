@@ -160,16 +160,16 @@ def check(folder, step, text):
     own = writes(text)
     if own is None:
         return
-    start, config = ((base(folder, step) or "").split(" ") + [None, None])[:2]
-    start = start or None
+    parts = (base(folder, step) or "").split(" ")
+    start, config = parts[0] or None, parts[1] if len(parts) == 3 else None
     now = work_tree(folder)
     if now is None:
         print("not run: scope: no git work tree")
         return
     if start is None:  # take records one in a git repo, so its loss must not skip the check
         raise SystemExit(f"{step} is not done: its take recorded no base; take it again")
-    if config is None:  # a take by an older kit logged the tree alone
-        raise SystemExit(f"{step} is not done: its take recorded no .blocks.toml hash; take it again")
+    if config is None:  # a take by an older kit logged no .blocks.toml hash or no events count
+        raise SystemExit(f"{step} is not done: its take recorded an older base line; take it again")
     root, tree = now
     allowed = list(own)
     # A step that ran beside this one counts too, also when it was done first: its files cannot be told apart.
@@ -181,7 +181,7 @@ def check(folder, step, text):
             body = other.read_text(encoding="utf-8")
             if body.startswith(("Status: active ", "Status: done ")):
                 allowed += writes(body) or []
-    run = Path(folder).resolve()
+    run = work_root(folder)[1] / Path(folder).name  # in git's spelling of the path
     if run.is_relative_to(root.resolve()):
         allowed.append(run.relative_to(root.resolve()).as_posix())
     diff = git(root, "diff", "-z", "--name-only", "--no-renames", start, tree)

@@ -102,6 +102,12 @@ def test_scope_counts_a_step_done_while_take_reads_the_tree(tmp):
     if upper.exists():
         assert run("take", upper, "02-b", "y", "--force").returncode == 0
         assert run("done", upper, "02-b", "2").returncode == 0
+        # The .blocks.toml hash reads the repo's file, also through that path.
+        (repo / ".git" / "info" / "exclude").write_text("/tmp/\n/.blocks.toml\n", encoding="utf-8")
+        assert run("take", upper, "02-b", "y", "--force").returncode == 0
+        (repo / ".blocks.toml").write_text('[off]\nplan-review = "no"\n', encoding="utf-8")
+        out = run("done", upper, "02-b", "3")
+        assert out.returncode == 1 and "it changed .blocks.toml" in out.stderr, out
 
 def test_scope_parallel_order_names_and_a_lost_base(tmp):
     repo, folder = scope_repo(tmp)
@@ -165,10 +171,11 @@ def test_scope_fails_closed_in_a_repo(tmp):
                       encoding="utf-8")
     out = run("done", folder, "01-a", "1")
     assert out.returncode == 1 and "its take recorded no base; take it again" in out.stderr, out
-    with events.open("a", encoding="utf-8") as log:
-        log.write("2026-01-01T00:00:00\t01-a\tbase 4b825dc642cb6eb9a060e54bf8d69288fbee4904\n")
-    out = run("done", folder, "01-a", "1")
-    assert out.returncode == 1 and "no .blocks.toml hash; take it again" in out.stderr, out
+    for old in ("", " none"):  # the tree alone, then the tree and hash with no events count
+        with events.open("a", encoding="utf-8") as log:
+            log.write(f"2026-01-01T00:00:00\t01-a\tbase 4b825dc642cb6eb9a060e54bf8d69288fbee4904{old}\n")
+        out = run("done", folder, "01-a", "1")
+        assert out.returncode == 1 and "an older base line; take it again" in out.stderr, out
     # A repo that git cannot read is not "no git".
     (repo / ".git" / "HEAD").write_text("garbage\n", encoding="utf-8")
     out = run("done", folder, "01-a", "1")

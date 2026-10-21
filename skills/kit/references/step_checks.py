@@ -28,6 +28,10 @@ def work_root(folder):
     except OSError:
         return piece, piece
     root = Path(git.stdout.strip()).resolve() if git.returncode == 0 else piece
+    if not piece.is_relative_to(root):
+        # A case-blind disk: a path typed in other letter case names the same folder, so take git's spelling.
+        same = next((p for p in (piece, *piece.parents) if p.exists() and p.samefile(root)), None)
+        piece = root / piece.relative_to(same) if same else piece
     return (root if piece.is_relative_to(root) else piece), piece
 
 
