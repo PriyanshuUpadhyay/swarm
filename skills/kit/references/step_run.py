@@ -26,7 +26,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from step_checks import KIT, RUN_FORM, block_checks, run_checks, work_root  # noqa: E402,F401
+from step_checks import run_checks, work_root  # noqa: E402
 
 TODO_HEAD = "## Todo (check a box only with its evidence after the colon; `done` refuses an empty one)"
 # Parse by this prefix, so a step file written under an older head wording still has its todos checked.
@@ -289,7 +289,10 @@ def done(folder, step, claim, rev=None, ends=(RESULT_HEAD,), rev_of=revision):
         if open_items or empty:
             raise SystemExit(f"{step} is not done:\n" + "\n".join(open_items + [f"no evidence: {l}" for l in empty]))
         state = text.split("\n", 1)[0].removeprefix("Status: ")
-        if not (state.startswith("active ") and state.rsplit(" #", 1)[-1] == str(claim).removeprefix("#")):
+        number = str(claim).removeprefix("#")
+        # events.log also counts the takes, so a stale copy of the file written back cannot bring an old claim back.
+        if not (state.startswith("active ") and state.rsplit(" #", 1)[-1] == number
+                and number.isdigit() and int(number) >= claim_of(folder, step)):
             raise SystemExit(f"{step} is not done: claim #{str(claim).removeprefix('#')} is not the current one; "
                              f"the step is {state}")
         if old := stale(folder, step, rev_of):

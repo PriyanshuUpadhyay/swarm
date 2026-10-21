@@ -56,7 +56,7 @@ def run_checks(folder, step, todo, text):
         for line, p in block_checks(block) or []:
             if not any(b == block and p.match(t) for b, t in found):
                 raise SystemExit(f"{step} is not done: a blocks/{block} script check has no todo: "
-                                 f"{line[:120]}; restore the line that start wrote")
+                                 f"{line[:120]}; restore the line that start wrote, or start the run again if the block changed")
     for line in todo.splitlines():
         found = CHECK_TODO.match(line)
         if not found:
@@ -68,7 +68,8 @@ def run_checks(folder, step, todo, text):
             continue
         source = next((l for l, p in checks if p.match(text)), None)
         if source is None:
-            raise SystemExit(f"{step} is not done: the check text differs from blocks/{block}: {plain(text[:200])}")
+            raise SystemExit(f"{step} is not done: the check text differs from blocks/{block} (an edited todo, or a block "
+                             f"that changed after start): {plain(text[:200])}")
         form = RUN_FORM.match(text)
         if not form:
             print(f"not run: block {block}: its expectation needs a reader")

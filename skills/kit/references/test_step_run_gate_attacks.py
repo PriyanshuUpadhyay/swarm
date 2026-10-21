@@ -132,3 +132,14 @@ def test_done_sees_an_edit_during_checks(tmp):
         except SystemExit as error:
             assert "changed while its checks ran" in str(error.code), error.code
     assert file.read_text(encoding="utf-8").endswith("late\n"), "the edit stays"
+
+
+def test_done_refuses_a_written_back_claim(tmp):
+    """A replaced worker that writes back its old copy of the step file still holds an old claim."""
+    folder = gate_run(tmp, "copy", [])
+    take(folder, "01-ask", "a")
+    old = (folder / "01-ask.md").read_text(encoding="utf-8")
+    assert run("take", folder, "01-ask", "b", "--force").stdout.startswith("Status: active b #2")
+    (folder / "01-ask.md").write_text(old, encoding="utf-8")
+    out = run("done", folder, "01-ask", "1")
+    assert out.returncode == 1 and "claim #1 is not the current one" in out.stderr, out

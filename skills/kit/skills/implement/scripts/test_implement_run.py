@@ -184,6 +184,7 @@ with tempfile.TemporaryDirectory() as tmp:
     (review / "target.json").write_text(json.dumps({"head": head}))
     (review / "03-verdict.md").write_text("Status: done x\nUses:\nVerdict: REQUEST CHANGES (1 of 1 units; 1 fix)\n")
     fill(r)
+    assert run("take", folder, "06-review", "a", "--force").returncode == 0, "the written-back copy holds an old claim"
     assert run("done", folder, "06-review", claim(folder, "06-review")).returncode == 0
     assert "needs a `Run:" in run("take", folder, "07-close", "a").stderr
     r.write_text(r.read_text() + "Run: tmp/review-check/range-1\n")

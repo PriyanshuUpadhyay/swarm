@@ -2,6 +2,7 @@
 import re
 import shlex
 
+import step_checks
 from test_step_run_support import *
 
 CANVAS = ("`rg -n -g '*.html' -g '*.js' -g '*.mjs' -g '*.ts' -g '!**/vendor/**' -g '!**/node_modules/**' "
@@ -80,6 +81,7 @@ def test_done_runs_script_checks(tmp):
     assert run("done", work, "01-ask", take(work, "01-ask")).returncode == 0
     out = run("done", work, "02-work", take(work, "02-work"))
     assert out.returncode == 1 and "the check text differs from blocks/build-canvas" in out.stderr, out
+    assert "a block that changed after start" in out.stderr, "the refusal names both causes"
 
     marker = Path(tmp, "ran")
     read = gate_run(tmp, "reader", ["block look-check script: `ls {{shots}}/compare-*.png | wc -l` prints 1 or more: "
@@ -96,17 +98,17 @@ def test_kit_check_lines(tmp):
     """Each kit `Check (script)` line is runnable or named as not run, and a runnable one with a placeholder done cannot fill prints not run."""
     import block_resolver
     runnable, reader = [], []
-    for file in sorted((step_run.KIT / "blocks").glob("*/SKILL.md")):
+    for file in sorted((step_checks.KIT / "blocks").glob("*/SKILL.md")):
         parts = block_resolver.sections(file.read_text(encoding="utf-8"))
         for line in block_resolver.check_lines(parts, "Check (script)"):
-            (runnable if step_run.RUN_FORM.match(line) else reader).append(f"{file.parent.name}: {line[:40]}")
+            (runnable if step_checks.RUN_FORM.match(line) else reader).append(f"{file.parent.name}: {line[:40]}")
             filled = re.sub(r"\{\{\w+\}\}", "site/x", line)  # start fills a param in the command with one quoted word
-            assert any(p.match(filled + ": ok") for _, p in step_run.block_checks(file.parent.name)), line
+            assert any(p.match(filled + ": ok") for _, p in step_checks.block_checks(file.parent.name)), line
     assert len(runnable) == 10 and len(reader) == 10, (runnable, reader)
     # The kit's own test scripts run through done with <kit root> filled and pass.
     for block in ("plan-review", "comment-round"):
         line = next(l for l in block_resolver.check_lines(block_resolver.sections(
-            (step_run.KIT / "blocks" / block / "SKILL.md").read_text(encoding="utf-8")), "Check (script)"))
+            (step_checks.KIT / "blocks" / block / "SKILL.md").read_text(encoding="utf-8")), "Check (script)"))
         folder = gate_run(tmp, f"kit-{block}", [f"block {block} script: {line}"])
         assert run("done", folder, "01-ask", take(folder, "01-ask")).returncode == 0
         out = run("done", folder, "02-work", take(folder, "02-work"))
