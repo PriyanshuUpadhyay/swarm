@@ -2,27 +2,13 @@
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { layoutSkill, type Laid, type Placed, type Size } from "./skill-layout";
+import { crossings } from "./skill-crossings";
+import { layoutSkill, type Size } from "./skill-layout";
 import type { Kit } from "./skills";
 
 // The real kit, from the script the Skills page reads, so a new preset is tested on its own.
 const script = fileURLToPath(new URL("../../../skills/kit/skills/plan/scripts/preset.py", import.meta.url));
 const kit: Kit = JSON.parse(execFileSync("python3", ["-I", "-B", script, "--json"], { encoding: "utf8" }));
-
-/** Edges that pass through a box that is not one of their two ends. */
-function crossings(laid: Laid): string[] {
-  const inside = (b: Placed, x: number, y: number) => x > b.x + 1 && x < b.x + b.w - 1 && y > b.y + 1 && y < b.y + b.h - 1;
-  const hits: string[] = [];
-  for (const e of laid.edges)
-    for (const b of laid.boxes) {
-      if (b.file === e.from || b.file === e.to) continue;
-      for (let i = 1; i < e.points.length; i++) {
-        const [p, q] = [e.points[i - 1], e.points[i]];
-        for (let t = 0; t <= 1; t += 1 / 60) if (inside(b, p.x + (q.x - p.x) * t, p.y + (q.y - p.y) * t)) hits.push(`${e.from}->${e.to} via ${b.file}`);
-      }
-    }
-  return [...new Set(hits)];
-}
 
 // Card sizes the page can draw: the trial's box, a tall card, and a narrow pane's card.
 const SIZES: [string, (i: number) => Size][] = [

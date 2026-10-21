@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { resolve } from "node:path";
+import { crossings } from "../src/core/skill-crossings";
 
 // The Skills page (ADR 0111) on this repo's kit, which the e2e home links at ~/.swarm/kit.
 
@@ -32,23 +33,6 @@ async function drawn(tab: Page) {
   });
 }
 
-/** Edges that pass through a card that is not one of their ends, as the vitest counts them. */
-function crossings({ boxes, edges }: Awaited<ReturnType<typeof drawn>>) {
-  const hits: string[] = [];
-  for (const e of edges)
-    for (const b of boxes) {
-      if (b.file === e.from || b.file === e.to) continue;
-      for (let i = 1; i < e.points.length; i++) {
-        const [p, q] = [e.points[i - 1], e.points[i]];
-        for (let t = 0; t <= 1; t += 1 / 60) {
-          const [x, y] = [p.x + (q.x - p.x) * t, p.y + (q.y - p.y) * t];
-          if (x > b.x + 1 && x < b.x + b.w - 1 && y > b.y + 1 && y < b.y + b.h - 1) hits.push(`${e.from}->${e.to} via ${b.file}`);
-        }
-      }
-    }
-  return [...new Set(hits)];
-}
-
 test("the Catalog shows each block's users, and an unused block says so", async ({ page }, info) => {
   const errors = await open(page);
   await page.getByTestId("skills-button").click();
@@ -76,7 +60,7 @@ for (const [name, width] of [
     await page.keyboard.press("Meta+k");
     await page.getByTestId("palette").getByText("Skills…").click();
     await page.getByTestId("skills-view-graph").click();
-    const presets = page.getByRole("tablist", { name: "Default skills" }).getByRole("tab");
+    const presets = page.getByRole("navigation", { name: "Default skills" }).locator("[data-preset]");
     await expect(presets.first()).toBeVisible();
     for (const preset of await presets.all()) {
       await preset.click();
@@ -125,11 +109,18 @@ test("the Composer shows live text and graph, and Copy waits for Python to pass 
   await row.locator('[data-col="Why"]').fill("the owner reads it once more");
   await expect(status).toHaveText("Python passed this text.");
   await expect(page.getByTestId("draft-graph").locator("[data-step]")).toHaveCount(3);
+  // The Composer graph only shows the draft, so its cards are not buttons.
+  await expect(page.getByTestId("draft-graph").getByRole("button")).toHaveCount(0);
   await copy.click();
   if (chromium) {
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(await text.textContent());
     await page.screenshot({ path: `${SHOTS}/composer.png` });
   }
+  // A new start asks first, because it drops the edits; a No keeps the draft.
+  page.once("dialog", (d) => void d.dismiss());
+  await page.getByTestId("draft-from").selectOption("research");
+  await expect(page.getByTestId("draft-from")).toHaveValue("explain");
+  await expect(text).toContainText("03-check");
   expect(errors).toEqual([]);
 });
 
@@ -145,7 +136,7 @@ test("a new skill copies a whole SKILL.md", async ({ page }) => {
   await row.locator('[data-col="Why"]').fill("the fix rests on them");
   await expect(page.getByTestId("draft-status")).toHaveText("the last step 01-frame has no voice- block");
   await row.locator('[data-col="Block"]').fill("requirements, voice-reply");
-  await expect(page.getByTestId("draft-text")).toContainText("---\nname: triage\ndescription: Use when a bug report arrives.\n---\n\n# triage\n\n## Preset");
+  await expect(page.getByTestId("draft-text")).toContainText('---\nname: triage\ndescription: "Use when a bug report arrives."\n---\n\n# triage\n\n## Preset');
   await expect(page.getByTestId("draft-status")).toHaveText("Python passed this text.");
   await expect(page.getByTestId("draft-copy")).toBeEnabled();
   expect(errors).toEqual([]);

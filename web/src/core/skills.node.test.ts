@@ -27,8 +27,10 @@ describe("draftText", () => {
       ["02-reply", "read", "the answer", "voice-reply", "the owner reads it"],
     ];
     const text = draftText(draft);
-    expect(text.startsWith("---\nname: mine\ndescription: Use when testing.\n---\n\n# mine\n\n## Preset\n\nStop: chat\n")).toBe(true);
+    expect(text.startsWith('---\nname: mine\ndescription: "Use when testing."\n---\n\n# mine\n\n## Preset\n\nStop: chat\n')).toBe(true);
     expect(check(text).ok).toBe(true);
+    expect(check(draftText({ ...draft, description: "Use when: the owner asks" })).ok).toBe(true);
+    expect(check(draftText({ ...draft, name: "My skill" }))).toEqual({ ok: false, defect: "name needs lowercase letters, digits, and dashes" });
   });
 
   it("leaves a pipe in a cell as typed, so Python's defect names the row", () => {
@@ -99,6 +101,20 @@ describe("Skills", () => {
     expect(skills.state.check).toMatchObject({ result: { ok: false, defect: "newer" } });
   });
 
+  it("keeps the newer kit read when an older failure arrives last", async () => {
+    let fail: (e: Error) => void = () => {};
+    let first = true;
+    const { skills } = model(async () => {
+      if (first) return (first = false), new Promise((_, reject) => (fail = reject));
+      return kit;
+    });
+    const older = skills.load();
+    await skills.load();
+    fail(new Error("old"));
+    await older;
+    expect(skills.state.kit.state).toBe("ready");
+  });
+
   it("shows the server's error when the kit cannot be read", async () => {
     const { skills, calls } = model(async () => {
       throw new Error("swarm kit: python3 not found; the Skills page needs Python 3.11 or newer");
@@ -106,7 +122,7 @@ describe("Skills", () => {
     skills.show();
     await skills.load();
     expect(skills.state.open).toBe(true);
-    expect(skills.state.kit).toEqual({ state: "failed", error: "swarm kit: python3 not found; the Skills page needs Python 3.11 or newer" });
+    expect(skills.state.kit).toEqual({ state: "error", error: "swarm kit: python3 not found; the Skills page needs Python 3.11 or newer" });
     expect(calls.filter((c) => c === "GET /api/kit").length).toBe(2);
   });
 });

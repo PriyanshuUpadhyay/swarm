@@ -3,6 +3,8 @@
 // every draft check through `/api/kit/check`; this module parses no Needs text and checks nothing.
 
 import type { App } from "./app";
+import { message } from "./app-types";
+import type { Load } from "./changes";
 import type { Command } from "./commands";
 
 export type UsedBy = { preset: string; step: string; named: boolean };
@@ -16,7 +18,6 @@ export type Checked = { ok: true; preset: Preset } | { ok: false; defect: string
 export type SkillsView = "catalog" | "graph" | "composer";
 /** A Composer draft. `from` names the preset it started from, or null for a new skill. */
 export type Draft = { from: string | null; name: string; description: string; stop: "owner" | "chat"; rows: string[][] };
-type Load<T> = { state: "idle" | "loading" } | { state: "ready"; data: T } | { state: "failed"; error: string };
 /** The last check, for the exact text it checked. */
 export type Check = { text: string; result: Checked } | { text: string; error: string };
 
@@ -30,7 +31,7 @@ export type SkillsState = {
   check: Check | null;
 };
 
-export const HEADER = "| File | Needs | Holds | Block | Why |\n|---|---|---|---|---|";
+const HEADER = "| File | Needs | Holds | Block | Why |\n|---|---|---|---|---|";
 export const NOT_USED = "not used by a default preset";
 const CHECK_DELAY_MS = 300;
 
@@ -48,7 +49,8 @@ export function draftText(draft: Draft): string {
   const rows = draft.rows.map((cells) => `| ${cells.map((c) => c.trim()).join(" | ")} |`).join("\n");
   const section = `## Preset\n\nStop: ${draft.stop}\n\n${HEADER}\n${rows}\n`;
   if (draft.from) return section;
-  return `---\nname: ${draft.name.trim()}\ndescription: ${draft.description.trim()}\n---\n\n# ${draft.name.trim()}\n\n${section}`;
+  // A JSON string is a YAML double-quoted string, so a `: ` in the use line cannot break the front matter.
+  return `---\nname: ${draft.name.trim()}\ndescription: ${JSON.stringify(draft.description.trim())}\n---\n\n# ${draft.name.trim()}\n\n${section}`;
 }
 
 /** Copy is on only when Python passed exactly the text that Copy would give. */
@@ -94,7 +96,8 @@ export class Skills {
   state: SkillsState = { open: false, view: "catalog", kit: { state: "idle" }, preset: null, block: null, draft: blankDraft(), check: null };
   private listeners = new Set<() => void>();
   private timer: ReturnType<typeof setTimeout> | null = null;
-  /** Counts checks, so an older reply cannot replace a newer one. */
+  /** Count reads and checks, so an older reply cannot replace a newer one. */
+  private loads = 0;
   private checks = 0;
 
   constructor(private readonly app: App) {}
@@ -110,8 +113,8 @@ export class Skills {
   }
 
   /** Opens the page. The kit is read once per open, so an upgraded kit shows on the next open. */
-  show(view: SkillsView = this.state.view) {
-    this.set({ open: true, view });
+  show() {
+    this.set({ open: true });
     void this.load();
   }
 
@@ -123,7 +126,7 @@ export class Skills {
     this.set({ view });
   }
 
-  selectBlock(block: string | null) {
+  selectBlock(block: string) {
     this.set({ block });
   }
 
@@ -133,12 +136,14 @@ export class Skills {
 
   async load() {
     this.set({ kit: { state: "loading" } });
+    const seq = ++this.loads;
     try {
       const data = await this.app.api.get<Kit>("/api/kit");
+      if (seq !== this.loads) return;
       this.set({ kit: { state: "ready", data }, preset: this.state.preset ?? data.presets[0]?.preset ?? null });
       this.scheduleCheck(0);
     } catch (e) {
-      this.set({ kit: { state: "failed", error: (e as Error).message } });
+      if (seq === this.loads) this.set({ kit: { state: "error", error: message(e) } });
     }
   }
 
@@ -160,7 +165,7 @@ export class Skills {
       const result = await this.app.api.post<Checked>("/api/kit/check", { text });
       if (seq === this.checks) this.set({ check: { text, result } });
     } catch (e) {
-      if (seq === this.checks) this.set({ check: { text, error: (e as Error).message } });
+      if (seq === this.checks) this.set({ check: { text, error: message(e) } });
     }
   }
 

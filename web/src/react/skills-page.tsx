@@ -12,7 +12,7 @@ import { useSkills } from "./skills";
 
 export function SkillsPage({ app, view }: { app: App; view: SkillsView }) {
   const kit = useSkills(app, "kit");
-  if (kit.state === "failed")
+  if (kit.state === "error")
     return (
       <div role="alert" className="grid content-start gap-3 p-5 text-sm">
         <p className="font-medium">The kit could not be read.</p>
@@ -23,9 +23,16 @@ export function SkillsPage({ app, view }: { app: App; view: SkillsView }) {
       </div>
     );
   if (kit.state !== "ready") return <p role="status" className="p-5 text-sm text-muted-foreground">Reading the kit…</p>;
-  if (view === "catalog") return <Catalog app={app} kit={kit.data} />;
-  if (view === "graph") return <Graphs app={app} kit={kit.data} />;
-  return <Composer app={app} kit={kit.data} />;
+  switch (view) {
+    case "catalog":
+      return <Catalog app={app} kit={kit.data} />;
+    case "graph":
+      return <Graphs app={app} kit={kit.data} />;
+    case "composer":
+      return <Composer app={app} kit={kit.data} />;
+    default:
+      return view satisfies never;
+  }
 }
 
 // ---- Catalog ----
@@ -103,11 +110,11 @@ function BlockDetail({ app, block }: { app: App; block: Block }) {
             {NOT_USED}
           </p>
         ) : (
-          <ul className="mt-1 grid gap-1" data-testid="skills-used-by">
+          <ul className="mt-1 grid" data-testid="skills-used-by">
             {block.used_by.map((u) => (
               <li key={`${u.preset}/${u.step}`}>
                 <button
-                  className="font-mono text-xs underline-offset-2 hover:underline"
+                  className="py-1 font-mono text-xs underline-offset-2 hover:underline"
                   onClick={() => {
                     app.skills.selectPreset(u.preset);
                     app.skills.setView("graph");
@@ -142,12 +149,11 @@ function Graphs({ app, kit }: { app: App; kit: Kit }) {
   const [step, setStep] = useState<string | null>(null);
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div role="tablist" aria-label="Default skills" className="flex flex-wrap gap-1 border-b border-border p-3">
+      <nav aria-label="Default skills" className="flex flex-wrap gap-1 border-b border-border p-3">
         {kit.presets.map((p) => (
           <button
             key={p.preset}
-            role="tab"
-            aria-selected={p.preset === preset?.preset}
+            aria-current={p.preset === preset?.preset || undefined}
             className={`rounded-md px-2 py-1 font-mono text-xs ${p.preset === preset?.preset ? "bg-selected text-foreground" : "text-muted-foreground hover:bg-hover hover:text-foreground"}`}
             data-preset={p.preset}
             onClick={() => {
@@ -158,7 +164,7 @@ function Graphs({ app, kit }: { app: App; kit: Kit }) {
             {p.preset}
           </button>
         ))}
-      </div>
+      </nav>
       {preset && <PresetView key={preset.preset} preset={preset} step={step} onStep={setStep} />}
     </div>
   );

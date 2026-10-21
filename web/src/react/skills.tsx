@@ -5,6 +5,7 @@ import { lazy, Suspense, useSyncExternalStore } from "react";
 import type { App } from "../core/app";
 import type { SkillsState, SkillsView } from "../core/skills";
 import { Dialog, DialogContent, DialogTitle } from "../components/ui/dialog";
+import { LoadFailed } from "./load-failed";
 
 const SkillsPage = lazy(() => import("./skills-page").then((m) => ({ default: m.SkillsPage })));
 
@@ -40,9 +41,11 @@ export function SkillsDialog({ app }: { app: App }) {
             ))}
           </nav>
           <div className="flex min-w-0 flex-1 flex-col" data-testid={`skills-${view}`}>
-            <Suspense fallback={<p role="status" className="p-5 text-sm text-muted-foreground">Loading…</p>}>
-              <SkillsPage app={app} view={view} />
-            </Suspense>
+            <LoadFailed what="Skills page">
+              <Suspense fallback={<p role="status" className="p-5 text-sm text-muted-foreground">Loading…</p>}>
+                <SkillsPage app={app} view={view} />
+              </Suspense>
+            </LoadFailed>
           </div>
         </DialogContent>
       )}

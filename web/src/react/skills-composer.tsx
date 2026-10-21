@@ -4,6 +4,7 @@
 import type { App } from "../core/app";
 import { blankDraft, composable, copyable, draftText, presetDraft, type Draft, type Kit } from "../core/skills";
 import { Button } from "../components/ui/button";
+import { copyText } from "./copy";
 import { FIELD, Segmented } from "./settings-shared";
 import { SkillGraph } from "./skill-graph";
 import { useSkills } from "./skills";
@@ -19,6 +20,9 @@ export function Composer({ app, kit }: { app: App; kit: Kit }) {
   const set = (change: Partial<Draft>) => app.skills.setDraft({ ...draft, ...change });
   const setCell = (row: number, col: number, value: string) => set({ rows: draft.rows.map((r, i) => (i === row ? r.map((c, j) => (j === col ? value : c)) : r)) });
   const presets = composable(kit);
+  const origin = presets.find((p) => p.preset === draft.from);
+  // A draft that differs from where it started holds the owner's edits, which a new start would drop.
+  const edited = text !== draftText(origin ? presetDraft(origin) : blankDraft());
   return (
     <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
       <form className="grid min-h-0 content-start gap-4 overflow-y-auto border-r border-border p-5 text-sm" onSubmit={(e) => e.preventDefault()} data-testid="draft-form">
@@ -30,6 +34,7 @@ export function Composer({ app, kit }: { app: App; kit: Kit }) {
               data-testid="draft-from"
               value={draft.from ?? ""}
               onChange={(e) => {
+                if (edited && !window.confirm("Start again? The edits in this draft are lost.")) return;
                 const preset = presets.find((p) => p.preset === e.target.value);
                 app.skills.setDraft(preset ? presetDraft(preset) : blankDraft());
               }}
@@ -112,7 +117,7 @@ export function Composer({ app, kit }: { app: App; kit: Kit }) {
           )}
         </div>
         <div className="flex items-center gap-3 border-y border-border px-4 py-2 text-sm">
-          <p aria-live="polite" className="min-w-0 flex-1 truncate" data-testid="draft-status">
+          <p aria-live="polite" className="min-w-0 flex-1" data-testid="draft-status">
             {!fresh ? (
               <span className="text-muted-foreground">Checking…</span>
             ) : "error" in fresh ? (
@@ -120,21 +125,14 @@ export function Composer({ app, kit }: { app: App; kit: Kit }) {
             ) : fresh.result.ok ? (
               <span className="text-muted-foreground">Python passed this text.</span>
             ) : (
-              <span className="text-failed" title={fresh.result.defect}>
-                {fresh.result.defect}
-              </span>
+              <span className="text-failed">{fresh.result.defect}</span>
             )}
           </p>
           <Button
             size="sm"
             data-testid="draft-copy"
             disabled={!copyable({ draft, check })}
-            onClick={() => {
-              void navigator.clipboard.writeText(text).then(
-                () => app.notice(draft.from ? "Copied the ## Preset section." : "Copied the SKILL.md."),
-                () => app.notice("The browser refused the copy."),
-              );
-            }}
+            onClick={() => void copyText(text, draft.from ? "Stop line and step table" : "SKILL.md")}
           >
             Copy
           </Button>
