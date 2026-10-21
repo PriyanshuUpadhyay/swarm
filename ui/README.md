@@ -18,7 +18,7 @@ for the pace in `~/Library/Application Support/SwarmHUD/history.json`. `swarm hu
 at login. Closed, it shows a pixel mascot that works, waits or sleeps with the swarm agents, and a
 ring for the best account's fullest limit; the open card shows the same mascot larger, with its
 credit. A Codex account row shows its usage limit resets under its name. Swarm's own mascot, its
-bee, 23 open-licence guests and any pets installed for Codex (`$CODEX_HOME/pets`, by default
+bee, 17 open-licence guests and any pets installed for Codex (`$CODEX_HOME/pets`, by default
 `~/.codex/pets`, read once at launch) take turns every 10 minutes. `python3 -I Tools/mascots.py`
 rebuilds the guests' sheets from pinned commits, and `MASCOT-NOTICE` holds
 their licences, which `make package` appends to `libexec/NOTICE`. `SwarmHUD --snapshot <dir> --fixture
