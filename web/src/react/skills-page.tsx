@@ -7,6 +7,7 @@ import { catalogGroups, NOT_USED, type Block, type Kit, type Preset, type Skills
 import { Button } from "../components/ui/button";
 import { FIELD } from "./settings-shared";
 import { SkillGraph } from "./skill-graph";
+import { Composer } from "./skills-composer";
 import { useSkills } from "./skills";
 
 export function SkillsPage({ app, view }: { app: App; view: SkillsView }) {
@@ -24,7 +25,7 @@ export function SkillsPage({ app, view }: { app: App; view: SkillsView }) {
   if (kit.state !== "ready") return <p role="status" className="p-5 text-sm text-muted-foreground">Reading the kit…</p>;
   if (view === "catalog") return <Catalog app={app} kit={kit.data} />;
   if (view === "graph") return <Graphs app={app} kit={kit.data} />;
-  return null;
+  return <Composer app={app} kit={kit.data} />;
 }
 
 // ---- Catalog ----

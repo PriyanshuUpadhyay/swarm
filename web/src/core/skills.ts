@@ -52,7 +52,7 @@ export function draftText(draft: Draft): string {
 }
 
 /** Copy is on only when Python passed exactly the text that Copy would give. */
-export function copyable(state: SkillsState): boolean {
+export function copyable(state: Pick<SkillsState, "draft" | "check">): boolean {
   const check = state.check;
   return !!check && "result" in check && check.result.ok && check.text === draftText(state.draft);
 }
