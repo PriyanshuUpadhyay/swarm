@@ -28,6 +28,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from step_checks import run_checks, work_root  # noqa: E402
+import step_scope  # noqa: E402
 
 TODO_HEAD = "## Todo (check a box only with its evidence after the colon; `done` refuses an empty one)"
 # Parse by this prefix, so a step file written under an older head wording still has its todos checked.
@@ -285,6 +286,9 @@ def take(folder, step, who, need=None, rev=revision, force=False, on_claim=None)
             text = file.read_text(encoding="utf-8")
         # Logged inside the lock, so a take --force cannot count the same claim number.
         log(folder, step, f"take {who}")
+        # done compares the work tree with this one, so only changes made after the take count.
+        if step_scope.writes(text) is not None and (tree := step_scope.work_tree(folder)):
+            log(folder, step, f"base {tree[1]}")
     print(text)
 
 
@@ -313,6 +317,7 @@ def done(folder, step, claim, rev=None, ends=(RESULT_HEAD,), rev_of=revision):
                              f"the step is {plain(state)}")
         if old := stale(folder, step, rev_of):
             raise SystemExit(f"{step} is not done: its input changed after take: {', '.join(old)}; take it again")
+        step_scope.check(folder, step, text)
         run_checks(folder, step, todo, text)
         if file.read_text(encoding="utf-8") != text:
             raise SystemExit(f"{step} is not done: its file changed while its checks ran; run done again")

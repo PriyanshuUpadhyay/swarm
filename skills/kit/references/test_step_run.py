@@ -14,13 +14,14 @@ from test_step_run_todos import *
 from test_step_run_build import *
 from test_step_run_gate import *
 from test_step_run_gate_attacks import *
+from test_step_run_scope import *
 
 
 def test_explicit_text_encoding():
     import ast
     for name in ("test_step_run.py", "test_step_run_support.py", "test_step_run_commands.py",
                  "test_step_run_todos.py", "test_step_run_build.py",
-                 "test_step_run_gate.py", "test_step_run_gate_attacks.py"):
+                 "test_step_run_gate.py", "test_step_run_gate_attacks.py", "test_step_run_scope.py"):
         tree = ast.parse(Path(__file__).with_name(name).read_text(encoding="utf-8"))
         missing = [node.lineno for node in ast.walk(tree) if isinstance(node, ast.Call)
                    and isinstance(node.func, ast.Attribute) and node.func.attr in ("read_text", "write_text", "open")
@@ -44,7 +45,8 @@ for gate in (test_done_needs_the_current_claim, test_done_refuses_a_stale_input,
              test_take_logs_inside_the_lock, test_check_text_from_the_worker,
              test_done_sees_an_edit_during_checks, test_done_refuses_a_written_back_claim,
              test_timeout_wait_is_bounded, test_done_sees_an_input_edit_during_checks,
-             test_take_refuses_a_name_that_forges_a_line, test_check_odd_system_answers):
+             test_take_refuses_a_name_that_forges_a_line, test_check_odd_system_answers,
+             test_done_refuses_a_write_outside_scope, test_scope_needs_git_and_a_writes_line):
     with tempfile.TemporaryDirectory() as tmp:
         gate(tmp)
 
