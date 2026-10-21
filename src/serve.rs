@@ -227,6 +227,9 @@ use actions::*;
 mod assets;
 use assets::*;
 
+mod background;
+use background::*;
+
 mod browser;
 use browser::*;
 

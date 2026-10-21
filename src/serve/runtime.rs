@@ -171,6 +171,7 @@ pub(super) fn router(app: App) -> Router {
         .route("/api/transcript", get(transcript))
         .route("/api/rows", get(transcript_rows))
         .route("/api/tool-output", get(tool_output))
+        .route("/api/background", get(background))
         .route("/api/stream", get(stream))
         .route("/api/reload", post(reload))
         .route("/api/show", post(show))
