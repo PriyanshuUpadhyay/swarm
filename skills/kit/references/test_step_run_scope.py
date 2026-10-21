@@ -108,3 +108,34 @@ def test_writer_does_not_take_its_review(tmp):
     assert out.returncode == 1 and "02-rev covers 01-a, which writer took; a new seat takes the review" in out.stderr, out
     assert (folder / "02-rev.md").read_text(encoding="utf-8").startswith("Status: open")
     assert run("take", folder, "02-rev", "review-seats").returncode == 0
+
+
+def chart_plan():
+    sys.path.insert(0, str(SCRIPT.parents[1] / "blocks" / "plan-chart" / "scripts"))
+    import test_plan_chart
+    return test_plan_chart.PLAN
+
+
+def test_amend_within_the_owner_budget(tmp):
+    folder = Path(tmp, "run")
+    folder.mkdir()
+    plan = folder / "plan.md"
+    text = chart_plan().replace("| 02-read |", "| `02-read.md` (optional) |")
+    plan.write_text(text.replace("\n## Blocks considered", "\nAmend: 1\n\n## Blocks considered", 1), encoding="utf-8")
+    assert run("start", folder, plan).returncode == 0
+    # skip needs the plan's (optional) mark.
+    out = run("skip", folder, "03-tokens", "not needed")
+    assert out.returncode == 1 and "03-tokens is not marked (optional)" in out.stderr, out
+    assert run("skip", folder, "02-read", "not needed").returncode == 0
+    # A writing step goes back to the owner, and so does a step whose plan check fails.
+    out = run("amend", folder, "| 06-docs | build | the docs | `docs/` | voice | the docs |")
+    assert out.returncode == 1 and "an amended step writes none" in out.stderr, out
+    before = plan.read_text(encoding="utf-8")
+    out = run("amend", folder, "| 06-docs | nope | the docs | none | voice | the docs |")
+    assert out.returncode == 1 and "amend refused" in out.stderr and "nope" in out.stderr and plan.read_text(encoding="utf-8") == before, out
+    out = run("amend", folder, "| 06-check | build | a check | none | local-research | look again |", "--before", "05-reply")
+    assert out.returncode == 0 and "06-check: amended (1 of 1 spent)" in out.stdout, out
+    assert (folder / "06-check.md").read_text(encoding="utf-8").splitlines()[1:3] == ["Uses: 04-build", "Writes: none"]
+    assert (folder / "05-reply.md").read_text(encoding="utf-8").splitlines()[1] == "Uses: 04-build, 06-check"
+    out = run("amend", folder, "| 07-more | build | more | none | local-research | again |")
+    assert out.returncode == 1 and "no Amend budget left (1 of 1 spent)" in out.stderr, out

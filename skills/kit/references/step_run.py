@@ -8,6 +8,8 @@
                                 with evidence, no input is stale, and each runnable script check passes
   skip <folder> <step> <reason> skip an open or active step, with the reason
   block <folder> <step> <reason> block an open or active step, with the reason
+  amend <folder> <row> [--before <step>]  add one `Writes: none` step to a plan run, within plan.md's Amend: N
+                                (step_amend.py)
 
 take, done, skip, and block add one line to <folder>/events.log, and done adds one more for each check it runs,
 so the path of a run stays readable after it ends.
@@ -339,6 +341,9 @@ def skip(folder, step, *why):
         state = status_of(folder, step)
         if state.split()[0] not in ("open", "active"):
             raise SystemExit(f"{step} is {state}; only an open or active step can be skipped")
+        text = file.read_text(encoding="utf-8")
+        if step_scope.writes(text) is not None and step_scope.header(text, "Optional") != "yes":
+            raise SystemExit(f"{step} is not marked (optional) in the plan; ask the owner to amend the plan")
         write_step(file, f"Status: skipped {reason}\n" + file.read_text(encoding="utf-8").split("\n", 1)[1])
     log(folder, step, f"skip {reason}")
     print(f"{step}: skipped {reason}")
@@ -364,8 +369,10 @@ if __name__ == "__main__":
     if hasattr(sys.stdout, "reconfigure"):
         # Escape non-ASCII output when the console uses an ASCII encoding.
         sys.stdout.reconfigure(errors="backslashreplace")
-    commands = {"start": start, "status": status, "take": take, "done": done, "skip": skip, "block": block}
-    arity = {"start": (2, 2), "status": (1, 1), "take": (3, 3), "done": (3, 3), "skip": (3, None), "block": (3, None)}
+    from step_amend import amend
+    commands = {"start": start, "status": status, "take": take, "done": done, "skip": skip, "block": block, "amend": amend}
+    arity = {"start": (2, 2), "status": (1, 1), "take": (3, 3), "done": (3, 3), "skip": (3, None), "block": (3, None),
+             "amend": (2, 4)}
     if len(sys.argv) < 2 or sys.argv[1] not in commands:
         raise SystemExit(__doc__)
     try:
@@ -374,7 +381,7 @@ if __name__ == "__main__":
         force = command == "take" and "--force" in args
         if command == "take":
             args = [arg for arg in args if arg != "--force"]
-        if command in ("done", "skip", "block") and "--force" in args:
+        if command in ("done", "skip", "block", "amend") and "--force" in args:
             raise SystemExit("done <folder> <step> <n> accepts no --force" if command == "done" else f"{command} accepts no --force")
         minimum, maximum = arity[command]
         if len(args) < minimum or maximum is not None and len(args) > maximum:
