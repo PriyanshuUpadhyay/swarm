@@ -11,7 +11,7 @@ import type { App } from "../core/app";
 import { backgroundRows, poll, type BackgroundRow, type BackgroundTask } from "../core/background";
 import { Button } from "../components/ui/button";
 import { StatusGlyph } from "./status";
-import { useTheme } from "./theme";
+import { useTheme } from "./appearance";
 
 const POLL_MS = 3000;
 
