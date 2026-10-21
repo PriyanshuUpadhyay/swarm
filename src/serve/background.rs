@@ -1,4 +1,4 @@
-//! A chat's background tasks: the shells and subagents its live Claude agents started (ADR 0102).
+//! A chat's background tasks: the shells and subagents its live Claude agents started (ADR 0104).
 //!
 //! Claude Code runs them inside its own process, so nothing outside can stop them or type into
 //! them. Its log names each one: a tool result with `toolUseResult.backgroundTaskId` (a shell) or

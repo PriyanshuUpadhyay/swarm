@@ -1,4 +1,4 @@
-//! A terminal per agent and per background shell, over one WebSocket (ADR 0102).
+//! A terminal per agent and per background shell, over one WebSocket (ADR 0104).
 //!
 //! A WebSocket cannot carry the bearer header, so the page first asks `/api/terminal/ticket`
 //! (bearer-checked) for a ticket. The ticket is random, single use, short-lived, and names its one

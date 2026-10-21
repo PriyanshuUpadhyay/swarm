@@ -128,7 +128,7 @@ class LoadFailed extends Component<{ children: ReactNode }, { failed: boolean }>
   }
 }
 
-/** The open chat over the ⌘J panel of its agents and background tasks (ADR 0102). */
+/** The open chat over the ⌘J panel of its agents and background tasks (ADR 0104). */
 function ChatColumn({ app, openId }: { app: App; openId: string }) {
   const [open, setOpen] = useState(() => store.getItem(BACKGROUND_KEY) === "1");
   useEffect(() => {

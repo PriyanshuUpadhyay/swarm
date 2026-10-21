@@ -10,7 +10,7 @@ informed-by:
   - 'probe 2026-10-21: portable-pty drops its writer with a newline and EOF, which ended a live pane shell through tmux attach'
 ---
 
-# 0102. A Cmd+J panel gives each agent a terminal and each background shell a read-only view
+# 0104. A Cmd+J panel gives each agent a terminal and each background shell a read-only view
 
 ## Context and Problem Statement
 

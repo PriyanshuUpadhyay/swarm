@@ -1,4 +1,4 @@
-// The Cmd+J panel's list: the chat's live agents and their Claude background tasks (ADR 0102).
+// The Cmd+J panel's list: the chat's live agents and their Claude background tasks (ADR 0104).
 // Pure, so vitest covers it.
 
 import type { Agent, Session } from "./api";

@@ -1,5 +1,5 @@
 // The Cmd+J panel: the open chat's live agents and their Claude background tasks, with a terminal
-// for the selected row (ADR 0102). An agent's terminal is its tmux pane; a shell's is its output
+// for the selected row (ADR 0104). An agent's terminal is its tmux pane; a shell's is its output
 // file, read-only, since nothing outside Claude Code can type into it. One terminal is live at a
 // time, and hiding the panel or changing the row or the chat closes it.
 
