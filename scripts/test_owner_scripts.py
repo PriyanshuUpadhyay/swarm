@@ -166,9 +166,15 @@ class OwnerScripts(unittest.TestCase):
         self.assertNotIn('pushes', self.state)
 
     def test_local_failure_does_not_stop_release(self):
-        result = self.run_script(args=('patch', '--local'))
+        result = self.run_script()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('local install failed', result.stderr)
+        self.assertTrue(self.state['published'])
+
+    def test_no_local_skips_the_local_install(self):
+        result = self.run_script(args=('patch', '--no-local'))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn('local install failed', result.stderr)
         self.assertTrue(self.state['published'])
 
     def test_poll_error_retries(self):

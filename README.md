@@ -233,7 +233,7 @@ The install and release scripts accept `--dry-run` and make no changes in that m
 | Command | Use |
 |---|---|
 | `scripts/install-local.sh <tag-or-commit>` | Build a clean copy of the ref and install it through Homebrew. |
-| `scripts/release.sh patch\|minor\|major [--local]` | Check main, bump the version, push the release, and wait for Release and Tap. |
+| `scripts/release.sh patch\|minor\|major [--no-local]` | Check main, bump the version, push the release, install the tag locally (skip with `--no-local`), and wait for Release and Tap. |
 | `scripts/kit-checks.sh [worktree]` | Run the nine kit checks and keep full logs in `tmp/kit-checks/`. |
 | `scripts/prune-worktrees.sh [--yes]` | List merged, clean worktrees after a fetch; use `--yes` to remove them and their branches. |
 
