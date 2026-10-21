@@ -58,6 +58,25 @@ pub(super) async fn reload(State(app): State<App>) -> Json<Value> {
 }
 
 #[derive(Deserialize)]
+pub(super) struct Show {
+    pub(super) session: String,
+}
+
+/// ADR 0102: a notice click asks the open pages to open one chat.
+pub(super) async fn show(
+    State(app): State<App>,
+    body: Result<Json<Show>, JsonRejection>,
+) -> Result<Json<Value>, ApiError> {
+    let Json(body) = body.map_err(|e| error(e.status(), &e.body_text()))?;
+    if !valid_session(&body.session) {
+        return Err(error(StatusCode::BAD_REQUEST, "bad session id"));
+    }
+    let mut hub = app.hub.lock().unwrap();
+    hub.publish(Frame::new("show", json!({"session": body.session}), None));
+    Ok(Json(json!({"pages": hub.streams.len()})))
+}
+
+#[derive(Deserialize)]
 pub(super) struct Subscription {
     pub(super) stream: String,
     pub(super) keys: Vec<SubscriptionKey>,

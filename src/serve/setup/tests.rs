@@ -120,3 +120,11 @@ async fn setup_routes_run_the_cli_from_the_home_and_refuse_bad_input_first() {
         .unwrap_err();
     assert_eq!(link.0, StatusCode::CONFLICT);
 }
+
+#[test]
+fn one_notices_fix_runs_at_a_time() {
+    let first = NoticesFix::start().unwrap();
+    assert!(NoticesFix::start().is_err());
+    drop(first);
+    assert!(NoticesFix::start().is_ok());
+}

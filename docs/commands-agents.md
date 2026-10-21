@@ -13,7 +13,7 @@ The caller rules are in [commands.md](commands.md).
 | `type <id>` | session | Read text from stdin and type it into a live agent pane. A closed pane causes an error before any input is sent. |
 | `interrupt <id>` | session | Send the adapter interrupt action to the agent pane. |
 | `attach <id>` | session | Attach to the agent pane when the adapter supports it. |
-| `focus <session_id> <agent_id>` | any | Focus the stored agent pane, retry the chair once if needed, and raise the host app. Exit 1 with `swarm: pane closed` if both panes fail. Herdr, Rex, and tmux support focus; Superset and tmux-swarm report `has no focus`. |
+| `focus <session_id> <agent_id>` | any | Focus the stored agent pane, retry the chair once if needed, and raise the host app. Exit 1 with `swarm: pane closed` if both panes fail. Herdr, Rex, and tmux support focus; tmux-swarm opens Swarm.app on the chat (ADR 0102); Superset reports `has no focus`. |
 | `close <id>` | session | Close the pane of `<id>` and forget it. |
 | `send <recipient> <kind>` | agent | Store stdin as a message, ring the recipient, print the seq. The ring waits, up to 30 s, for the recipient's turn-start hook, its host record, or a working screen, and presses Enter again while a Claude or Codex input box still holds it. With no proof it warns on stderr and still exits 0 (ADR 0041). |
 | `finish` | agent | Send stdin as a `summary` to the orchestrator, print the seq. |

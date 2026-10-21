@@ -108,7 +108,7 @@ final class Helper: NSObject, NSApplicationDelegate, UNUserNotificationCenterDel
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         guard let rows = try? decoder.decode([DueNotice].self, from: data), !rows.isEmpty else { return }
         do {
-            guard try await center.requestAuthorization(options: [.alert, .sound]) else {
+            guard try await center.requestAuthorization(options: noticeOptions) else {
                 log("notice permission denied; \(rows.count) notice(s) not shown")
                 return
             }
@@ -146,7 +146,10 @@ final class Helper: NSObject, NSApplicationDelegate, UNUserNotificationCenterDel
         await MainActor.run { begin() }
         // A distinct name: older Swift reads `target` in the closure as the local declared below.
         let fallback = await MainActor.run { self.target }
-        let clickTarget = Target(swarm: info["swarm"] as? String ?? fallback.swarm, home: info["home"] as? String)
+        // An upgrade's cleanup can remove the swarm that an old notice names, so that notice uses
+        // this helper's swarm with its own home.
+        let stored = (info["swarm"] as? String).flatMap { FileManager.default.isExecutableFile(atPath: $0) ? $0 : nil }
+        let clickTarget = Target(swarm: stored ?? fallback.swarm, home: info["home"] as? String)
         // The same rule as the app's NoticeClick (ADR 0069): a failure posts one error notice
         // with no click action, so it cannot repeat the failed focus.
         var failure: String?
@@ -155,7 +158,10 @@ final class Helper: NSObject, NSApplicationDelegate, UNUserNotificationCenterDel
             if status != 0 { failure = error.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines) }
             await MainActor.run { log("focus \(session) \(agent) exit \(status)") }
         } else {
-            failure = "swarm: pane closed"
+            // A notice with no chat, such as a run's done notice or the test notice, opens the app.
+            let (status, _, error) = await runSwarm(clickTarget, ["ui"])
+            if status != 0 { failure = error.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines) }
+            await MainActor.run { log("ui exit \(status)") }
         }
         if let failure {
             let content = UNMutableNotificationContent()
@@ -197,6 +203,46 @@ func log(_ line: String) {
 }
 
 let logger = Logger(subsystem: "io.github.priyanshuupadhyay.swarm.notify", category: "notice")
+
+/// One option set for posting and `--authorize`, because macOS keeps the first set it grants.
+let noticeOptions: UNAuthorizationOptions = [.alert, .sound]
+
+/// `--status` prints the owner's notice settings for this helper as one JSON line, and
+/// `--authorize` asks for permission first. `swarm notices` runs the executable directly for them,
+/// so the rule that reads the answer stays in Rust.
+func printSettings() {
+    UNUserNotificationCenter.current().getNotificationSettings { settings in
+        let authorization = switch settings.authorizationStatus {
+        case .notDetermined: "notDetermined"
+        case .denied: "denied"
+        case .authorized: "authorized"
+        case .provisional: "provisional"
+        case .ephemeral: "ephemeral"
+        @unknown default: "unknown"
+        }
+        let style = switch settings.alertStyle {
+        case .none: "none"
+        case .banner: "banner"
+        case .alert: "alert"
+        @unknown default: "unknown"
+        }
+        print("{\"authorization\":\"\(authorization)\",\"style\":\"\(style)\"}")
+        exit(0)
+    }
+}
+
+switch CommandLine.arguments.dropFirst().first {
+case "--status":
+    printSettings()
+    dispatchMain()
+case "--authorize":
+    // The prompt is asked from an accessory app process, as the posting path asks it.
+    NSApplication.shared.setActivationPolicy(.accessory)
+    UNUserNotificationCenter.current().requestAuthorization(options: noticeOptions) { _, _ in printSettings() }
+    NSApplication.shared.run()
+default:
+    break
+}
 
 let helper = Helper()
 let application = NSApplication.shared

@@ -11,6 +11,36 @@ pub(super) const UI_PORT: u16 = 4747;
 /// the usage HUD when it is not running. `--foreground` serves in this process until Ctrl-C, and
 /// `stop` stops the recorded server.
 pub fn ui(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    open_ui(args, None)
+}
+
+/// ADR 0102: a notice click on a chat of the app's own adapter opens Swarm.app on that chat. An
+/// open page gets a `show` frame; with none, the app starts on the chat's path.
+pub fn open_chat(session: &str) -> Result<(), Box<dyn std::error::Error>> {
+    if !valid_session(session) {
+        return Err(format!("swarm: bad session id {session}").into());
+    }
+    // Only macOS opens a window, so elsewhere a click says so rather than exit 0 with none.
+    if !cfg!(target_os = "macos") {
+        return Err("swarm: only macOS opens the app on a click".into());
+    }
+    open_ui(&[], Some(session))
+}
+
+/// A session id that may go into a URL path and a `show` frame as it is: the chair id's shape.
+pub(super) fn valid_session(id: &str) -> bool {
+    crate::valid_chair_id(id)
+}
+
+/// The page URL that opens `session`: its path before the `#token=` fragment.
+pub(super) fn chat_url(url: &str, session: &str) -> String {
+    match url.split_once("/#") {
+        Some((base, fragment)) => format!("{base}/chat/{session}#{fragment}"),
+        None => format!("{}/chat/{session}", url.trim_end_matches('/')),
+    }
+}
+
+fn open_ui(args: &[String], chat: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
     let root = swarm::paths::root_dir()?;
     let record = root.join("ui-url");
     if args.first().map(String::as_str) == Some("stop") {
@@ -45,17 +75,31 @@ pub fn ui(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         }
         None => (spawn_ui(&root, &record, rest)?, true),
     };
-    println!("{url}");
+    // The URL holds the token, so a notice click, which any caller can run, does not print it.
+    if chat.is_none() {
+        println!("{url}");
+    }
     // An open page reloads in place. After a new server starts, its pages need up to a second to
     // reconnect, so wait for them before a new window opens beside them. Swarm.app is opened even
     // then, because that `open` brings its window to the front.
     let deadline =
         std::time::Instant::now() + Duration::from_millis(if spawned { 1500 } else { 0 });
+    // ponytail: a page that reloads for a new build in this second can miss the `show` frame and
+    // keep its own chat; the app still comes to the front.
+    let page = chat.map_or_else(|| url.clone(), |session| chat_url(&url, session));
     loop {
-        let reached = reload_pages(&url) > 0;
+        let reached = match chat {
+            Some(session) => show_chat(&url, session) > 0,
+            None => reload_pages(&url) > 0,
+        };
         if reached || std::time::Instant::now() >= deadline {
             if !reached || shell_app().is_some() {
-                open_page(&url);
+                // `swarm ui` keeps going when `open` fails, as it always did; a notice click
+                // reports it, so it does not claim a window it never opened.
+                let opened = open_page(&page);
+                if chat.is_some() {
+                    opened?;
+                }
             }
             break;
         }

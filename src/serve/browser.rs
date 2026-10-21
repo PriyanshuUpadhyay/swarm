@@ -37,7 +37,17 @@ pub(super) fn answers(url: &str) -> bool {
 
 /// Asks the server at `url` to reload its open pages, and returns how many it reached.
 pub(super) fn reload_pages(url: &str) -> u64 {
-    call(url, "POST", "/api/reload")
+    pages_reached(call(url, "POST", "/api/reload"))
+}
+
+/// Asks the server at `url` to open `session` in its open pages, and returns how many it reached.
+pub(super) fn show_chat(url: &str, session: &str) -> u64 {
+    let body = json!({"session": session}).to_string();
+    pages_reached(call_with(url, "POST", "/api/show", &body))
+}
+
+fn pages_reached(answer: Option<String>) -> u64 {
+    answer
         .and_then(|body| serde_json::from_str::<Value>(&body).ok())
         .and_then(|body| body["pages"].as_u64())
         .unwrap_or(0)
@@ -45,6 +55,11 @@ pub(super) fn reload_pages(url: &str) -> u64 {
 
 /// The body of a 200 answer from the server at `url` to `method path` with its token.
 pub(super) fn call(url: &str, method: &str, path: &str) -> Option<String> {
+    call_with(url, method, path, "{}")
+}
+
+/// `call` with a JSON `body`.
+pub(super) fn call_with(url: &str, method: &str, path: &str, body: &str) -> Option<String> {
     let (port, token) = url
         .strip_prefix("http://127.0.0.1:")?
         .split_once("/#token=")?;
@@ -54,7 +69,8 @@ pub(super) fn call(url: &str, method: &str, path: &str) -> Option<String> {
         std::net::TcpStream::connect_timeout(&address, Duration::from_millis(500)).ok()?;
     let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
     let request = format!(
-        "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nAuthorization: Bearer {token}\r\nContent-Type: application/json\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{{}}"
+        "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nAuthorization: Bearer {token}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        body.len()
     );
     stream.write_all(request.as_bytes()).ok()?;
     let mut answer = String::new();
@@ -74,15 +90,14 @@ pub(super) fn shell_app() -> Option<PathBuf> {
 /// Opens `url` in Swarm.app, which opens its window or, when it runs, comes to the front.
 /// Without the app, it opens an app window of the default browser when it is Chromium based, else
 /// a tab. An app window has no tab bar, and the browser passes ⌘N, ⌘T and ⌘W to the page.
-pub(super) fn open_page(url: &str) {
+pub(super) fn open_page(url: &str) -> Result<(), Box<dyn std::error::Error>> {
     if !cfg!(target_os = "macos") {
-        return;
+        return Ok(());
     }
     let mut open = std::process::Command::new("open");
     if let Some(app) = shell_app() {
         open.arg("-a").arg(app).args(["--args", url]);
-        let _ = open.stdin(std::process::Stdio::null()).status();
-        return;
+        return opened(open);
     }
     match default_browser().filter(|id| CHROMIUM.contains(&id.as_str())) {
         // `-n` starts a second process, which hands `--app` to the running browser and exits.
@@ -91,7 +106,16 @@ pub(super) fn open_page(url: &str) {
             .arg(format!("--app={url}")),
         None => open.arg(url),
     };
-    let _ = open.stdin(std::process::Stdio::null()).status();
+    opened(open)
+}
+
+/// Runs `open`; a failure is an error, so a notice click does not report a window it never opened.
+fn opened(mut open: std::process::Command) -> Result<(), Box<dyn std::error::Error>> {
+    let status = open.stdin(std::process::Stdio::null()).status()?;
+    if !status.success() {
+        return Err(format!("swarm: open could not show the page ({status})").into());
+    }
+    Ok(())
 }
 
 /// Bundle ids of browsers that take `--app=URL`, in the lower case that Launch Services stores.

@@ -40,3 +40,15 @@ fn the_ui_record_names_the_url_then_the_pid_and_the_token_lasts() {
     assert_eq!(mode & 0o777, 0o600);
     let _ = std::fs::remove_dir_all(&root);
 }
+
+#[test]
+fn a_notice_click_opens_the_chat_path_and_refuses_a_bad_id() {
+    assert_eq!(
+        chat_url("http://127.0.0.1:4747/#token=ab", "01a1-b2"),
+        "http://127.0.0.1:4747/chat/01a1-b2#token=ab"
+    );
+    assert!(valid_session("01a15460-dbe3-7372-88ad-662dc0d93cbd"));
+    for bad in ["", "../x", "a/b", "a#b", &"a".repeat(65)] {
+        assert!(!valid_session(bad), "{bad}");
+    }
+}

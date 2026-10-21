@@ -9,6 +9,7 @@ import { hudCard, USAGE_PROVIDERS, type Usage } from "../core/settings";
 import { Button } from "../components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "../components/ui/dialog";
 import { StatusGlyph } from "./status";
+import { NoticesCard } from "./notices";
 
 export function Home({ app }: { app: App }) {
   const view = useSyncExternalStore(app.subscribe, () => app.view);
@@ -38,6 +39,7 @@ export function Home({ app }: { app: App }) {
             Create Project…
           </Button>
         </div>
+        <NoticesCard app={app} />
         {card !== "none" && (
           <section
             className={`grid gap-2 rounded-md border border-border px-4 py-3${card === "hold" ? " invisible" : ""}`}

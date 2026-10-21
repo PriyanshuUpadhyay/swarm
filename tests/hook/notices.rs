@@ -251,7 +251,15 @@ fn notices_due_applies_the_notice_preferences() {
     add(Some(&in_muted), Some("coder"), "muted");
     add(Some(&in_open), Some("coder"), "waiting");
     add(None, None, "done");
-    assert_eq!(due(), [("waiting".to_string(), false)]);
+    // A test notice from Settings checks delivery, so the done switch does not drop it.
+    add(None, None, "Swarm test");
+    assert_eq!(
+        due(),
+        [
+            ("waiting".to_string(), false),
+            ("Swarm test".to_string(), false)
+        ]
+    );
     assert_eq!(due(), []);
 
     choices(r#"{"post":false}"#);

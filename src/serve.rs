@@ -317,7 +317,7 @@ use workspace_setup::*;
 
 pub use pages::pages;
 pub use runtime::run;
-pub use ui::{ui, ui_state};
+pub use ui::{open_chat, ui, ui_state};
 
 #[cfg(test)]
 mod test_support;
