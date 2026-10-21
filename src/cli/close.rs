@@ -35,18 +35,31 @@ pub(crate) fn close_agents(
         }
     }
     let adapter = swarm::adapter::load(root, adapter_name)?;
-    if let Some(wait) = wait {
-        wrap_up(connection, root, &adapter, session_id, &panes, wait)?;
-    }
+    // A failure for one child is reported at the end, so it does not leave the others open.
+    let mut failed = match wait {
+        Some(wait) => wrap_up(connection, root, &adapter, session_id, &panes, wait)?,
+        None => Vec::new(),
+    };
     for (id, pane) in panes {
-        // A child that exited while it wrote its wrap-up has no pane left to close.
-        if swarm::store::pane_of(connection, session_id, id)?.is_some() {
-            adapter.run("close", &[("pane", &pane)])?;
-            swarm::store::clear_pane(connection, session_id, id)?;
+        // The `exited` hook clears the pane id but can leave the pane, so close it anyway; a pane
+        // that is already gone is not a failure.
+        match adapter.run("close", &[("pane", &pane)]) {
+            Ok(_) => swarm::store::clear_pane(connection, session_id, id)?,
+            Err(_) if swarm::store::pane_of(connection, session_id, id)?.is_none() => {}
+            Err(error) => failed.push(format!("{id}: not closed: {error}")),
         }
     }
-    Ok(())
+    if failed.is_empty() {
+        return Ok(());
+    }
+    Err(format!("swarm: {}", failed.join("; swarm: ")).into())
 }
+
+/// How long `close` waits for the screen of a child that sent no wrap-up.
+const CAPTURE_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// How often `close` looks for the wrap-ups.
+const WRAP_UP_POLL: std::time::Duration = std::time::Duration::from_millis(200);
 
 fn wrap_up(
     connection: &mut rusqlite::Connection,
@@ -55,8 +68,9 @@ fn wrap_up(
     session_id: &str,
     panes: &[(&str, String)],
     wait: std::time::Duration,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<Vec<String>, Box<dyn std::error::Error>> {
     let orchestrator = swarm::store::orchestrator_of(connection, session_id)?;
+    let mut failed = Vec::new();
     let ask = format!(
         "You are being closed. Do no more work. Reply once with `swarm finish` and a body with \
          these headings, each on its own line with its text under it:\n\n{}\n\
@@ -69,7 +83,7 @@ fn wrap_up(
     for (id, pane) in panes {
         if *id != orchestrator {
             // No ring waits for a turn, so all asks go out at once and the wait below is the bound.
-            let seq = deliver_with(
+            match deliver_with(
                 connection,
                 root,
                 &adapter.name,
@@ -79,45 +93,54 @@ fn wrap_up(
                 "wrap-up",
                 &ask,
                 Proof::Later,
-            )?;
-            waiting.push((*id, pane.as_str(), seq));
+            ) {
+                Ok(seq) => waiting.push((*id, pane.as_str(), seq)),
+                Err(error) => failed.push(format!("{id}: wrap-up not asked: {error}")),
+            }
         }
     }
     let deadline = std::time::Instant::now() + wait;
-    while !waiting.is_empty() && std::time::Instant::now() < deadline {
-        std::thread::sleep(std::time::Duration::from_millis(200));
+    // The last look runs at the deadline, so a reply that comes during the final poll is kept.
+    loop {
         let mut left = Vec::new();
         for (id, pane, seq) in waiting {
+            // Read the pane before the replies, so a child that replies and then exits is saved.
+            let alive = swarm::store::pane_of(connection, session_id, id)?.is_some();
             // Only a reply with every heading is the wrap-up; a death note is a summary too.
             let reply = swarm::store::summaries_after(connection, session_id, id, seq)?
                 .into_iter()
-                .map(|body_path| std::fs::read_to_string(root.join(body_path)))
-                .collect::<Result<Vec<_>, _>>()?
-                .into_iter()
+                .filter_map(|body_path| std::fs::read_to_string(root.join(body_path)).ok())
                 .find(|body| missing_headings(body).is_empty());
             if let Some(body) = reply {
                 let saved = root.join(format!("runs/{session_id}/{id}.summary.md"));
                 match swarm::store::write_atomic(&saved, &body) {
                     Ok(()) => println!("{}", saved.display()),
-                    Err(error) => eprintln!("swarm: {id}: wrap-up not saved: {error}"),
+                    Err(error) => failed.push(format!("{id}: wrap-up not saved: {error}")),
                 }
-            } else if swarm::store::pane_of(connection, session_id, id)?.is_some() {
+            } else if alive {
                 left.push((id, pane, seq));
             }
         }
         waiting = left;
+        if waiting.is_empty() || std::time::Instant::now() >= deadline {
+            break;
+        }
+        std::thread::sleep(WRAP_UP_POLL);
     }
     for (id, pane, _) in waiting {
         let log = root.join(format!("runs/{session_id}/{id}.log"));
         let note = match adapter
-            .run("capture", &[("pane", pane)])
-            .and_then(|text| Ok(swarm::store::write_atomic(&log, &text)?))
+            .capture_within(&[("pane", pane)], CAPTURE_WAIT)
+            .map(|text| swarm::store::write_atomic(&log, &text))
         {
-            Ok(()) => format!(
+            Some(Ok(())) => format!(
                 "agent {id} closed without a wrap-up; screen log: {}",
                 log.display()
             ),
-            Err(error) => format!("agent {id} closed without a wrap-up; screen not saved: {error}"),
+            Some(Err(error)) => {
+                format!("agent {id} closed without a wrap-up; screen not saved: {error}")
+            }
+            None => format!("agent {id} closed without a wrap-up; screen not read"),
         };
         eprintln!("swarm: {note}");
         // The orchestrator's pane runs this command, so its turn cannot start until it returns.
@@ -132,10 +155,10 @@ fn wrap_up(
             &note,
             Proof::Later,
         ) {
-            eprintln!("swarm: {id}: note not sent: {error}");
+            failed.push(format!("{id}: note not sent: {error}"));
         }
     }
-    Ok(())
+    Ok(failed)
 }
 
 /// Refuse a `finish` body sent while `agent` owes a wrap-up, when the body misses a heading.
@@ -231,6 +254,34 @@ mod tests {
         (root, connection, session)
     }
 
+    /// A pane that will not close is reported, and the panes after it still close.
+    #[test]
+    fn a_failed_close_does_not_stop_the_others() {
+        let (root, connection, session) = closing("close-failed");
+        std::fs::write(
+            root.join("adapters/fake.conf"),
+            "self = true\nspawn = true\nring = true\nlist = echo %1 %2 %3\ncapture = true\nclose = test \"$SWARM_PANE\" != %2\n",
+        )
+        .unwrap();
+        swarm::store::add_agent(&connection, &session, "tester", "tester").unwrap();
+        swarm::store::set_pane(&connection, &session, "tester", "%3").unwrap();
+        let mut connection = connection;
+        let ids = [CODER.to_string(), "tester".to_string()];
+
+        let error = close_agents(&mut connection, &root, "fake", &session, &ids, None).unwrap_err();
+
+        assert!(error.to_string().contains("coder: not closed"), "{error}");
+        assert_eq!(
+            swarm::store::pane_of(&connection, &session, CODER).unwrap(),
+            Some("%2".into())
+        );
+        assert_eq!(
+            swarm::store::pane_of(&connection, &session, "tester").unwrap(),
+            None
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     fn close(
         connection: &mut rusqlite::Connection,
         root: &std::path::Path,
@@ -292,7 +343,7 @@ mod tests {
         close(&mut connection, &root, &session, Some(1));
 
         let log = root.join(format!("runs/{session}/{CODER}.log"));
-        assert_eq!(std::fs::read_to_string(&log).unwrap(), "screen text");
+        assert_eq!(std::fs::read_to_string(&log).unwrap(), "screen text\n");
         let inbox = swarm::store::inbox(&connection, &session, ORCHESTRATOR).unwrap();
         let note = std::fs::read_to_string(root.join(&inbox[0].body_path)).unwrap();
         assert_eq!(
