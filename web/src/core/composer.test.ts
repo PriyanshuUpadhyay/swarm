@@ -89,7 +89,7 @@ describe("chair input", () => {
     expect(agentInput(session(), [chair({ state: "waiting" })]).disabled).toBe("The agent is asking a question. Answer it first in its pane.");
   });
 
-  it("offers Resume only for an ended Claude or Codex chair with a session id", () => {
+  it("offers Resume only for an ended chair with a session id", () => {
     const ended = [chair({ alive: false, pane: null })];
     expect(agentInput(session({ chair_id: "id" }), ended).resumable).toBe(true);
     expect(agentInput(session({ chair_id: "id", adapter: null, chair_provider: "codex" }), []).resumable).toBe(true);

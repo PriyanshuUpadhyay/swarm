@@ -1,6 +1,7 @@
 //! CLI commands launch.
 
 use super::*;
+use rusqlite::OptionalExtension;
 pub(crate) fn commands_launch(
     args: &[String],
     root: &std::path::Path,
@@ -59,6 +60,24 @@ pub(crate) fn commands_launch(
             }
             true => Some(resume_target(connection, &session_id()?)?),
         };
+        // A plain Resume runs the chair's last model and level; the chat profile may have no
+        // runner for its CLI.
+        let stored: Option<(Option<String>, Option<String>)> = match (&resume, requested_model) {
+            (Some(_), None) => connection
+                .query_row(
+                    "SELECT model, effort FROM agent WHERE session_id = ?1 AND id = 'orchestrator'",
+                    [session_id()?],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .optional()?,
+            _ => None,
+        };
+        if let Some((model, stored_effort)) = &stored
+            && let Some(model) = model
+        {
+            requested_model = Some(model.as_str());
+            effort = effort.or(stored_effort.as_deref());
+        }
         if let Some((provider, _)) = &resume {
             requested_provider = Some(provider.id());
         }

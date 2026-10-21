@@ -128,7 +128,7 @@ impl Provider {
                 &["low", "medium", "high", "xhigh", "max", "ultra"],
                 CODEX_FIELDS,
             ),
-            Provider::Agy => ("Gemini", &["low", "medium", "high", "max"], AGY_FIELDS),
+            Provider::Agy => ("AGY", &["low", "medium", "high", "max"], AGY_FIELDS),
             // pi's `--thinking` levels.
             Provider::Pi => (
                 "Pi",

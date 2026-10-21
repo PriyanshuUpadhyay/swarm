@@ -79,13 +79,10 @@ pub fn set_chair_log(
     session_id: &str,
     path: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // An AGY or Codex log path names its session. Once the chair's id is known, a log that names
-    // another one is a nested run of the same CLI, such as `agy -p` in the chair's shell, which
-    // inherits the chair's env; it must not replace the chair's log.
+    // A nested run of the chair's CLI, such as `agy -p` in its shell, never gets here: its hook
+    // stops at hooks.rs nested_run. So a new log is the chair's own, also after `/clear`.
     connection.execute(
-        "UPDATE session SET chair_log = ?2 WHERE id = ?1
-         AND NOT (chair_provider IN ('agy', 'codex') AND chair_id IS NOT NULL
-                  AND instr(?2, chair_id) = 0)",
+        "UPDATE session SET chair_log = ?2 WHERE id = ?1",
         (session_id, path.to_string_lossy()),
     )?;
     // An AGY log sits at `brain/<conversation id>/.system_generated/...`, the id `--conversation`
@@ -99,8 +96,7 @@ pub fn set_chair_log(
         && uuid::Uuid::try_parse(conversation).is_ok()
     {
         connection.execute(
-            "UPDATE session SET chair_id = ?2
-             WHERE id = ?1 AND chair_provider = 'agy' AND chair_id IS NULL",
+            "UPDATE session SET chair_id = ?2 WHERE id = ?1 AND chair_provider = 'agy'",
             (session_id, conversation.as_ref()),
         )?;
     }
@@ -316,10 +312,11 @@ mod tests {
         let id = "90f7dfab-e45b-43ed-87d0-1b6497513ac7";
         set_chair_log(&connection, &session, Path::new(&log(id))).unwrap();
         assert_eq!(chair(&connection), (Some(id.into()), Some(log(id))));
-        // An `agy -p` that the chair runs inherits its env, and its hook names another conversation.
-        let probe = "01a15e73-0000-7000-8000-000000000001";
-        set_chair_log(&connection, &session, Path::new(&log(probe))).unwrap();
-        assert_eq!(chair(&connection), (Some(id.into()), Some(log(id))));
+        // `/clear` in the chair's pane starts a new conversation, which the chat follows. A nested
+        // `agy -p` never gets here (hooks.rs nested_run).
+        let next = "01a15e73-0000-7000-8000-000000000001";
+        set_chair_log(&connection, &session, Path::new(&log(next))).unwrap();
+        assert_eq!(chair(&connection), (Some(next.into()), Some(log(next))));
     }
 
     #[test]

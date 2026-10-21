@@ -5,11 +5,8 @@
 import { ApiError, sleep } from "./api";
 import type { App } from "./app";
 import { isChair } from "./panes";
-import type { ProviderInfo } from "./settings";
+import { RunCatalog } from "./run-catalog";
 import type { SwitchCarry } from "./composer";
-
-/** One row of `GET /api/models`. */
-export type ModelInfo = { id: string; label: string; efforts?: string[] };
 import {
   type NewOptions,
   type Issue,
@@ -34,10 +31,14 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 export class Lifecycle {
   state: LifeState = { newWorkspace: null, create: null, project: null, importChoice: null, projectPath: "", existing: null, setupScript: null, switchModel: null, handoff: null, confirm: null, closed: false, imports: false };
   private listeners = new Set<() => void>();
+  /** The CLIs, models and accounts that the run chip and Switch model offer. */
+  readonly runs: RunCatalog;
   private roles: Promise<Profile[]> | null = null;
   private confirmDone: (() => void) | null = null;
 
-  constructor(private readonly app: App) {}
+  constructor(private readonly app: App) {
+    this.runs = new RunCatalog(() => app.api);
+  }
 
   subscribe = (fn: () => void) => {
     this.listeners.add(fn);
@@ -259,19 +260,6 @@ export class Lifecycle {
     this.set({ switchModel: session, handoff: h && !isSettled(h.phase) ? h : null });
   }
 
-  providers(): Promise<{ providers: ProviderInfo[] }> {
-    return this.api.get("/api/providers");
-  }
-
-  /** `efforts` lists the levels one model takes; absent means the provider's list. */
-  models(provider: string): Promise<{ models: ModelInfo[] }> {
-    return this.api.get("/api/models", { provider });
-  }
-
-  accounts(provider: string): Promise<{ accounts: { name: string; email: string | null; auth_state?: string }[] }> {
-    return this.api.get("/api/accounts", { provider });
-  }
-
   /** Switch model (ADR 0108). `resume` starts the chat's own CLI session again on the new run; a
    *  new chat takes this chat's summary, or nothing on `clean`. Progress comes from `handoff`
    *  frames; on success the chat that runs now opens. */
@@ -289,8 +277,9 @@ export class Lifecycle {
         ...(account ? { account } : {}),
         ...(effort ? { effort } : {}),
       });
-      // The owner may have moved to another chat's popover; that one stays open.
-      const here = this.state.switchModel === null || this.state.switchModel === old;
+      // The owner may have moved to another chat; it stays open. A resume closed this chat's
+      // popover, so the open chat says where the owner is.
+      const here = this.state.switchModel === old || (this.state.switchModel === null && this.app.openId === old);
       this.set({ handoff: null, ...(here ? { switchModel: null } : {}) });
       await this.app.refresh();
       if (here) this.app.openChat(done.session);

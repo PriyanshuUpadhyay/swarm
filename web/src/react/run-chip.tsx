@@ -4,8 +4,9 @@
 import { CheckIcon, ChevronDownIcon, LoaderCircleIcon } from "lucide-react";
 import { useEffect, useId, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
 import type { App } from "../core/app";
-import { applyBlock, CARRY_OPTIONS, chooseModel, cliName, outcomeText, runLabel, savedCarry, switchOutcome, type AgentInput, type Carry, type Run } from "../core/composer";
-import { isSettled, type ModelInfo } from "../core/lifecycle";
+import { applyBlock, CARRY_OPTIONS, chooseModel, modelLevels, cliName, outcomeText, runLabel, savedCarry, switchOutcome, type AgentInput, type Carry, type Run } from "../core/composer";
+import { isSettled } from "../core/lifecycle";
+import type { ModelInfo } from "../core/run-catalog";
 import type { ProviderInfo } from "../core/settings";
 import { Button } from "../components/ui/button";
 import { FIELD, message, useLife, ErrorLine } from "./lifecycle-shared";
@@ -75,6 +76,7 @@ function RunBody({ app, sessionId, chair }: { app: App; sessionId: string; chair
   const handoff = useLife(app, "handoff");
   const saved = useSyncExternalStore(app.subscribe, () => savedCarry(app.view.tree?.prefs));
   const current: Run = { provider: chair.provider ?? "claude", model: chair.model, effort: chair.effort, account: chair.account };
+  const provider = current.provider;
   const [draft, setDraft] = useState<Run>(current);
   const [carry, setCarry] = useState<Carry>(saved);
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
@@ -88,29 +90,35 @@ function RunBody({ app, sessionId, chair }: { app: App; sessionId: string; chair
 
   useEffect(() => {
     let live = true;
-    app.life.providers().then(
+    const read = (id: string) =>
+      app.life.runs.models(id).then(
+        (m) => live && setModels((all) => ({ ...all, [id]: m.models })),
+        (err) => live && setModels((all) => ({ ...all, [id]: `Could not read the models: ${message(err)}` })),
+      );
+    app.life.runs.providers().then(
       ({ providers }) => {
         if (!live) return;
         setProviders(providers);
-        for (const p of providers)
-          app.life.models(p.id).then(
-            (m) => live && setModels((all) => ({ ...all, [p.id]: m.models })),
-            (err) => live && setModels((all) => ({ ...all, [p.id]: `Could not read the models: ${message(err)}` })),
-          );
+        for (const p of providers) void read(p.id);
       },
-      (err) => live && setError(`Could not read the providers: ${message(err)}`),
+      (err) => {
+        if (!live) return;
+        // The chat's own CLI still lists its models, and a typed id still works.
+        setError(`Could not read the CLIs: ${message(err)}`);
+        void read(provider);
+      },
     );
     return () => {
       live = false;
     };
-  }, [app]);
+  }, [app, provider]);
 
   const info = providers.find((p) => p.id === draft.provider);
   useEffect(() => {
     let live = true;
     setAccounts([]);
     if (info?.accounts)
-      app.life.accounts(info.id).then(
+      app.life.runs.accounts(info.id).then(
         (a) => live && setAccounts(a.accounts),
         () => {}, // Accounts are optional; the default account starts.
       );
@@ -121,7 +129,7 @@ function RunBody({ app, sessionId, chair }: { app: App; sessionId: string; chair
 
   const list = models[draft.provider];
   const model = Array.isArray(list) ? list.find((m) => m.id === draft.model) : undefined;
-  const levels = model?.efforts ?? info?.efforts ?? [];
+  const levels = modelLevels(info?.efforts ?? [], model?.efforts);
   const outcome = switchOutcome(current, draft);
   const q = query.trim().toLowerCase();
   const blocked = applyBlock(chair, draft, switching && !running);

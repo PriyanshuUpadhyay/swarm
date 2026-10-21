@@ -148,6 +148,19 @@ test("The run chip hands off to another CLI with a summary, and Cancel stops it 
   expect(errors).toEqual([]);
 });
 
+test("The run chip still lists the chat's own models and takes a typed id when the CLI list fails", async ({ page: tab }) => {
+  const errors = await open(tab);
+  await tab.route("**/api/providers", (route) => route.fulfill({ status: 502, contentType: "application/json", body: JSON.stringify({ error: "providers down" }) }));
+  await tab.locator(`[data-testid="tree-row"][data-session="${process.env.SWARM_E2E_LIVE!}"]`).click();
+  await tab.getByTestId("model-chip").click();
+  const dialog = tab.getByRole("dialog", { name: "Change model, thinking, or account" });
+  await expect(dialog).toContainText("Could not read the CLIs: providers down");
+  await expect(dialog.locator('[data-provider="claude"]')).not.toContainText("Reading models…");
+  await dialog.getByTestId("run-query").fill("typed-model");
+  await expect(dialog.getByTestId("run-custom-claude")).toBeVisible();
+  expect(errors.filter((e) => !e.includes("502"))).toEqual([]);
+});
+
 test("Create Project on an existing folder offers Import, Import asks about a plain folder, and Remove Project hides it again", async ({ page: tab }, info) => {
   const errors = await open(tab);
   const folder = join(process.env.SWARM_E2E_DIR!, `plain-${info.project.name}`);

@@ -172,6 +172,17 @@ describe("chats", () => {
     expect(life.state.switchModel).toBe("chat-2");
   });
 
+  it("stays on the chat the owner moved to when a resume ends", async () => {
+    let done: (v: unknown) => void = () => {};
+    const { life, calls } = fakeApp(() => new Promise((r) => (done = r)));
+    const run = life.switchModel("chat-1", "claude", "sonnet", null, null, "resume");
+    // The owner opens chat-2 and does not open its chip.
+    (life as unknown as { app: { openId: string } }).app.openId = "chat-2";
+    done({ session: "chat-1" });
+    await run;
+    expect(calls).not.toContain("open chat-1");
+  });
+
   it("records the carry, so the progress lists only the steps that run", () => {
     const { life } = fakeApp(() => new Promise(() => {}));
     void life.switchModel("chat-1", "codex", "gpt-5", null, null, "clean");

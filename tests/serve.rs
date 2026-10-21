@@ -89,7 +89,7 @@ impl Server {
             .unwrap();
             fs::create_dir_all(root.join("adapters")).unwrap();
             let adapter = r#"self = printf fixture-chair
-spawn = printf 'spawn %s %s %s\n' "$SWARM_SESSION_ID" "$SWARM_AGENT_ID" "$SWARM_ADAPTER" >> "$HOME/actions"; printf fixture-new
+spawn = if [ -e "$HOME/fail-spawn" ]; then rm "$HOME/fail-spawn"; exit 1; fi; printf 'spawn %s %s %s\n' "$SWARM_SESSION_ID" "$SWARM_AGENT_ID" "$SWARM_ADAPTER" >> "$HOME/actions"; printf fixture-new
 ring = printf 'ring %s %s %s\n' "$SWARM_SESSION_ID" "$SWARM_AGENT_ID" "$SWARM_ADAPTER" >> "$HOME/actions"; printf '%s' "$SWARM_TEXT" > "$HOME/text"
 list = printf 'fixture-chair sh\nfixture-worker sh\nfixture-new sh\n'
 close = printf 'close %s\n' "$SWARM_PANE" >> "$HOME/actions"

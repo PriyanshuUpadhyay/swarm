@@ -212,12 +212,18 @@ export function applyBlock(chair: AgentInput, draft: Run, otherSwitching = false
   return draft.model ? null : "Pick a model.";
 }
 
+/** The levels a model can run on: its own list within the CLI's, or the CLI's. */
+export function modelLevels(cli: string[], model: string[] | undefined): string[] {
+  return model ? model.filter((level) => cli.includes(level)) : cli;
+}
+
 /** The draft after a pick of model `m` of CLI `cli`. The draft keeps its level when the model
  *  takes it, and its account while the CLI stays; back on the chat's own CLI, the chat's
  *  account comes back. */
 export function chooseModel(current: Run, draft: Run, cli: { id: string; efforts: string[]; default_effort: string }, m: { id: string; efforts?: string[] } | string): Run {
   const model = typeof m === "string" ? m : m.id;
-  const allowed = (typeof m === "string" ? null : m.efforts) ?? cli.efforts;
+  // launch takes only the CLI's own levels, also when the model lists more.
+  const allowed = modelLevels(cli.efforts, typeof m === "string" ? undefined : m.efforts);
   const effort = draft.effort && allowed.includes(draft.effort) ? draft.effort : allowed.includes(cli.default_effort) ? cli.default_effort : (allowed[0] ?? null);
   const account = cli.id === draft.provider ? draft.account : cli.id === current.provider ? current.account : null;
   return { provider: cli.id, model, effort, account };

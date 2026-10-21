@@ -127,6 +127,42 @@ pub(crate) fn ancestor_tty(mut pid: u32) -> Option<std::path::PathBuf> {
     None
 }
 
+/// The command names of `pid` and its ancestors, nearest first.
+fn ancestor_commands(mut pid: u32) -> Vec<String> {
+    let mut names = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    while pid > 1 && seen.insert(pid) {
+        let Ok(output) = std::process::Command::new("ps")
+            .args(["-o", "ppid=,comm=", "-p", &pid.to_string()])
+            .output()
+        else {
+            break;
+        };
+        let text = String::from_utf8_lossy(&output.stdout);
+        let Some((parent, name)) = text.trim().split_once(char::is_whitespace) else {
+            break;
+        };
+        names.push(name.trim().to_owned());
+        let Ok(parent) = parent.parse() else { break };
+        pid = parent;
+    }
+    names
+}
+
+/// A hook of a CLI that runs inside the agent's own CLI, such as `agy -p` from an AGY chair's
+/// shell: it inherits the chair's SWARM_* variables, so two `cli` processes sit above the hook.
+pub(crate) fn nested_run(commands: &[String], cli: &str) -> bool {
+    commands
+        .iter()
+        .filter(|name| {
+            std::path::Path::new(name)
+                .file_name()
+                .is_some_and(|n| n == cli)
+        })
+        .count()
+        > 1
+}
+
 /// `swarm hook`: a hook must never block or fail an agent's turn, so every error goes to stderr
 /// and the caller always gets `{}` and exit 0. Providers give a hook about 3 s: stdin gets 2 s,
 /// the bus 1 s.
@@ -140,6 +176,12 @@ pub(crate) fn hook(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let Some(report) = hook_report(args, &payload, |name| env::var(name).ok())? else {
         return Ok(());
     };
+    // A nested run speaks for no agent; its log once replaced a chat's own (ADR 0108).
+    if let Some(cli) = args.first()
+        && nested_run(&ancestor_commands(std::process::id()), cli)
+    {
+        return Ok(());
+    }
     // Before the bus, so a busy bus does not lose what the owner sees in the block. Claude Code
     // and Antigravity send their own OSC 7501 reports in Rex, and a second writer flips the
     // record's app, so only Codex, which sends none, gets reports from its hook.

@@ -26,4 +26,6 @@ Claude and Codex in the composer's one run chip and popover. We neglected a type
 `/effort` in the pane, because a typed Claude level saves a default in the shared settings. We
 accept that a Codex switch to another account stays a hand-off, because a Codex session lives in
 one account's home, that the next reply re-reads the chat once, and that AGY refuses `--effort`
-for some models, so the popover hides Thinking for them.
+for some models, so the popover hides Thinking for them. An ended AGY or pi chat with a session id
+now offers Resume on its last model, which replaces the ADR 0107 rule that AGY and pi chats have no
+Resume; a Codex or AGY chat before its first reply has no session id yet, so it cannot resume.

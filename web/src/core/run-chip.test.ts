@@ -59,5 +59,7 @@ describe("run chip", () => {
     expect(chooseModel(current, run("codex", "x"), claude, "b").account).toBe("work");
     expect(chooseModel(current, current, codex, "x").account).toBeNull();
     expect(chooseModel(current, current, { id: "agy", efforts: [], default_effort: "" }, { id: "claude-sonnet-4-6", efforts: [] }).effort).toBeNull();
+    // A level the model lists but the CLI's launch does not take is never picked.
+    expect(chooseModel(current, run("codex", "x", "minimal"), codex, { id: "mini", efforts: ["minimal", "high"] }).effort).toBe("high");
   });
 });

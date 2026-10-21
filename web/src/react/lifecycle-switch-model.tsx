@@ -49,7 +49,7 @@ function SwitchModelBody({ app, old }: { app: App; old: string }) {
   const running = handoff !== null && !isSettled(handoff.phase);
 
   useEffect(() => {
-    app.life.providers().then(
+    app.life.runs.providers().then(
       (p) => setProviders(p.providers),
       (err) => setError(`Could not read the providers: ${message(err)}`),
     );
@@ -62,7 +62,7 @@ function SwitchModelBody({ app, old }: { app: App; old: string }) {
     setAccounts([]);
     setAccount("");
     setError(null);
-    app.life.models(provider).then(
+    app.life.runs.models(provider).then(
       (m) => live && setModels(m.models),
       (err) => {
         if (!live) return;
@@ -72,7 +72,7 @@ function SwitchModelBody({ app, old }: { app: App; old: string }) {
       },
     );
     if (hasAccounts)
-      app.life.accounts(provider).then(
+      app.life.runs.accounts(provider).then(
         (a) => live && setAccounts(a.accounts),
         () => {}, // Accounts are optional; the default account starts.
       );

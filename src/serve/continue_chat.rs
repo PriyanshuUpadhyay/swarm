@@ -188,7 +188,7 @@ async fn resume_switch(app: &App, body: &ContinueChat) -> Result<Value, ApiError
     if chair_id.is_none() {
         return Err(error(
             StatusCode::CONFLICT,
-            "This chat has no session to resume before its first reply. Send a message first, or choose Start clean.",
+            "This chat has no session to resume before its first reply. Send a message first, then switch.",
         ));
     }
     // A Codex session lives in one account's home, so only that account resumes it.
@@ -203,7 +203,18 @@ async fn resume_switch(app: &App, body: &ContinueChat) -> Result<Value, ApiError
             "A Codex chat stays in its account. Choose Summary or Start clean to move it.",
         ));
     }
-    if chair["alive"] == true {
+    // launch takes only the CLI's own levels; a refusal after the close would cost a restart.
+    if let Some(effort) = body.effort.as_deref()
+        && !swarm::providers::Provider::parse(&body.provider)
+            .is_some_and(|cli| cli.info().efforts.contains(&effort))
+    {
+        return Err(error(
+            StatusCode::CONFLICT,
+            &format!("swarm: --effort {effort} is not a level of this CLI"),
+        ));
+    }
+    let closed = chair["alive"] == true;
+    if closed {
         // A chat before its first turn has no log yet, and so no reply that runs.
         if chair["state"] == "working"
             || handoff_rows(app, old)
@@ -242,13 +253,14 @@ async fn resume_switch(app: &App, body: &ContinueChat) -> Result<Value, ApiError
         run_cli(app, call.args(&args), None)
     };
     if let Err(refused) = launch(Some(&body.model), body.effort.as_deref(), account).await {
-        // The chair is closed by now, so its old run starts again and the chat keeps a pane.
-        if let Err(again) = launch(
-            chair["model"].as_str().or(Some(&body.model)),
-            chair["effort"].as_str(),
-            chair["account"].as_str(),
-        )
-        .await
+        // A chair closed by this switch starts again on its old run, so the chat keeps a pane.
+        if closed
+            && let Err(again) = launch(
+                chair["model"].as_str().or(Some(&body.model)),
+                chair["effort"].as_str(),
+                chair["account"].as_str(),
+            )
+            .await
         {
             let text = |(_, Json(body)): &ApiError| body["error"].as_str().unwrap_or("").to_owned();
             return Err(error(

@@ -7,6 +7,31 @@ mod cases {
     use crate::cli::test_support::*;
 
     #[test]
+    fn a_cli_run_inside_the_agents_own_cli_is_nested() {
+        let chain = |names: &[&str]| names.iter().map(|n| n.to_string()).collect::<Vec<_>>();
+        // The chair's own hook: one AGY above it.
+        assert!(!nested_run(
+            &chain(&["sh", "/Users/x/.local/bin/agy", "zsh", "tmux"]),
+            "agy"
+        ));
+        // `agy -p` from the chair's shell tool: a second AGY above the hook.
+        assert!(nested_run(
+            &chain(&[
+                "/Users/x/.local/bin/agy",
+                "zsh",
+                "/Users/x/.local/bin/agy",
+                "tmux"
+            ]),
+            "agy"
+        ));
+        // Another CLI in between does not count; the provider guard owns that case.
+        assert!(!nested_run(
+            &chain(&["codex", "zsh", "pi", "tmux"]),
+            "codex"
+        ));
+    }
+
+    #[test]
     fn hook_stdin_read_ends_at_its_deadline_while_the_writer_holds_the_pipe() {
         let (reader, mut writer) = std::io::pipe().unwrap();
         std::io::Write::write_all(&mut writer, b"{}").unwrap();

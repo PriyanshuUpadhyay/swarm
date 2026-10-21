@@ -25,7 +25,7 @@ fn a_resume_runs_the_chosen_model_and_effort_in_the_same_session() {
             vec!["'--model' 'sonnet' '--effort' 'low'", "'--resume' 'abc'"],
         ),
         (
-            "pi:",
+            "pi:p1",
             "claude-bridge/claude-sonnet-5-5",
             "minimal",
             vec![
@@ -36,8 +36,7 @@ fn a_resume_runs_the_chosen_model_and_effort_in_the_same_session() {
         ),
     ] {
         let fake = [("SWARM_ADAPTER", "fake")];
-        // `session new` stores PI_SESSION_ID, or any `--chair pi:<id>`, as pi's chair id.
-        let chair = if chair == "pi:" { "pi:p1" } else { chair };
+        // `session new` stores any `--chair pi:<id>` as pi's chair id.
         let session = swarm(&home, &fake, &["session", "new", "lane", "--chair", chair]);
         assert!(session.status.success(), "{}", stderr(&session));
         let session = String::from_utf8(session.stdout)
@@ -164,4 +163,57 @@ fn a_new_agy_chair_forgets_the_old_conversation() {
         )
         .unwrap();
     assert_eq!(chair, (Some("agy".into()), None));
+}
+
+/// The plain Resume of an ended Pi or AGY chat runs its stored model, not the chat profile,
+/// which has no Pi or AGY runner.
+#[test]
+fn a_plain_resume_runs_the_chairs_stored_model() {
+    let home = scratch("resume-plain");
+    tool(&home, "pi", "true");
+    std::fs::create_dir_all(home.join(".swarm/adapters")).unwrap();
+    std::fs::write(
+        home.join(".swarm/adapters/fake.conf"),
+        "self = printf chair\nspawn = printf pane\nring = true\nlist = true\nclose = true\ncapture = true\n",
+    )
+    .unwrap();
+    let cwd = home.join("repo");
+    std::fs::create_dir_all(&cwd).unwrap();
+    let cwd = cwd.to_string_lossy().into_owned();
+    let fake = [("SWARM_ADAPTER", "fake")];
+    let session = swarm(&home, &fake, &["session", "new", "lane"]);
+    assert!(session.status.success(), "{}", stderr(&session));
+    let session = String::from_utf8(session.stdout)
+        .unwrap()
+        .trim()
+        .to_string();
+    let env = [
+        ("SWARM_ADAPTER", "fake"),
+        ("SWARM_SESSION_ID", session.as_str()),
+    ];
+    let model = "claude-bridge/claude-sonnet-5-5";
+    for args in [
+        vec!["--provider", "pi", "--model", model, "--effort", "high"],
+        vec!["--resume"],
+    ] {
+        let mut all = vec!["launch", "orchestrator", "chat"];
+        all.extend(args);
+        all.extend(["--cwd", &cwd]);
+        let launched = swarm(&home, &env, &all);
+        assert!(launched.status.success(), "{}", stderr(&launched));
+        // The pane ends, so the chat offers Resume.
+        swarm::store::open(&home.join(".swarm/swarm.db"))
+            .unwrap()
+            .execute("UPDATE agent SET pane_id = NULL", [])
+            .unwrap();
+    }
+    let command =
+        std::fs::read_to_string(home.join(format!(".swarm/runs/{session}/orchestrator.sh")))
+            .unwrap();
+    for part in [
+        format!("'--model' '{model}' '--thinking' 'high'"),
+        format!("'--session-id' '{session}-orchestrator'"),
+    ] {
+        assert!(command.contains(&part), "{part} not in {command}");
+    }
 }

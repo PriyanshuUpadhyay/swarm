@@ -224,6 +224,8 @@ fn a_switch_resumes_the_same_chat_or_starts_clean() {
         "clean-no-log",
         "bad-effort",
         "no-id",
+        "bad-effort-ended",
+        "spawn-fails",
     ] {
         let server = Server::with_actions(true);
         // A new chat has no log before its first turn; nothing it needs comes from the log.
@@ -232,6 +234,15 @@ fn a_switch_resumes_the_same_chat_or_starts_clean() {
         }
         let home = server.dir.join("home");
         let root = home.join(".swarm");
+        if carry == "bad-effort-ended" {
+            swarm::store::open(&root.join("swarm.db"))
+                .unwrap()
+                .execute(
+                    "UPDATE agent SET pane_id = NULL WHERE id = 'orchestrator'",
+                    [],
+                )
+                .unwrap();
+        }
         if carry == "no-id" {
             // A Codex or AGY chat learns its session id from its first log.
             swarm::store::open(&root.join("swarm.db"))
@@ -244,16 +255,22 @@ fn a_switch_resumes_the_same_chat_or_starts_clean() {
         fs::set_permissions(home.join("bin/claude"), fs::Permissions::from_mode(0o755)).unwrap();
         let (provider, sent) = match carry {
             "other-cli" => ("codex", "resume"),
-            "resume-no-log" | "bad-effort" | "no-id" => ("claude", "resume"),
+            "resume-no-log" | "bad-effort" | "bad-effort-ended" | "spawn-fails" | "no-id" => {
+                ("claude", "resume")
+            }
             "clean-no-log" => ("claude", "clean"),
             other => ("claude", other),
         };
-        let effort = if carry == "bad-effort" {
+        let effort = if carry.starts_with("bad-effort") {
             "bogus"
         } else {
             "low"
         };
-        let body = json!({"old_session":server.session,"provider":provider,"model":"sonnet","effort":effort,"carry":sent});
+        if carry == "spawn-fails" {
+            // The new run's pane does not start, after the chair is closed.
+            fs::write(home.join("fail-spawn"), "").unwrap();
+        }
+        let body = json!({"old_session":server.session,"provider":provider,"model": "sonnet","effort":effort,"carry":sent});
         let (status, _, reply) = server.request(
             "POST",
             "/api/chat/continue",
@@ -268,6 +285,11 @@ fn a_switch_resumes_the_same_chat_or_starts_clean() {
             .unwrap();
         match carry {
             "resume-no-log" | "clean-no-log" => assert_eq!(status, 200, "{carry}: {reply}"),
+            "bad-effort-ended" => {
+                // Nothing was closed, so nothing starts again.
+                assert_eq!(status, 409, "{reply}");
+                assert!(!actions.contains("spawn"), "{actions}");
+            }
             "no-id" => {
                 // Nothing could start again, so the chair keeps running.
                 assert_eq!(status, 409, "{reply}");
@@ -275,9 +297,14 @@ fn a_switch_resumes_the_same_chat_or_starts_clean() {
                 assert!(!actions.contains("close"), "{actions}");
             }
             "bad-effort" => {
-                // The refused launch comes after the close, so the old run starts again.
+                // A level the CLI does not take is refused before the chair closes.
                 assert_eq!(status, 409, "{reply}");
                 assert!(reply.contains("not a level"), "{reply}");
+                assert!(!actions.contains("close"), "{actions}");
+            }
+            "spawn-fails" => {
+                // The refused launch comes after the close, so the old run starts again.
+                assert!(status >= 400, "{status} {reply}");
                 assert!(actions.contains("close fixture-chair"), "{actions}");
                 assert!(
                     actions.contains("spawn"),
