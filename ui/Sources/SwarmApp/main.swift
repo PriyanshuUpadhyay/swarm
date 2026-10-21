@@ -15,6 +15,8 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKUIDelega
     /// full-screen window never covers that row; macOS leaves it black.
     var strip: NSPanel?
     var stripColor: NSKeyValueObservation?
+    /// The owner's View › Zoom level, kept in this app's UserDefaults. A browser tab has its own zoom.
+    static let zoomKey = "pageZoom"
 
     init(url: URL?) {
         self.url = url
@@ -38,6 +40,8 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKUIDelega
         window.delegate = self
         window.backgroundColor = NSColor(red: 0x10 / 255, green: 0x10 / 255, blue: 0x10 / 255, alpha: 1)
         webView.uiDelegate = self
+        let zoom = UserDefaults.standard.double(forKey: Self.zoomKey)
+        if zoom > 0 { setZoom(zoom) }
         window.contentView = webView
         window.makeFirstResponder(webView)
         window.makeKeyAndOrderFront(nil)
@@ -83,6 +87,16 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKUIDelega
         strip = nil
     }
 
+    @objc func zoomIn(_ sender: Any?) { setZoom(webView.pageZoom + 0.1) }
+    @objc func zoomOut(_ sender: Any?) { setZoom(webView.pageZoom - 0.1) }
+    @objc func actualSize(_ sender: Any?) { setZoom(1) }
+
+    /// Rounds to a 10% step and keeps 50% to 300%, the range of Safari's own zoom.
+    func setZoom(_ zoom: CGFloat) {
+        webView.pageZoom = min(3, max(0.5, (zoom * 10).rounded() / 10))
+        UserDefaults.standard.set(Double(webView.pageZoom), forKey: Self.zoomKey)
+    }
+
     /// A `target="_blank"` link opens in the default browser.
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
                  for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
@@ -110,6 +124,17 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKUIDelega
         let view = NSMenu(title: "View")
         view.addItem(withTitle: "Toggle Full Screen", action: #selector(NSWindow.toggleFullScreen(_:)), keyEquivalent: "f")
             .keyEquivalentModifierMask = [.control, .command]
+        view.addItem(.separator())
+        // ⌘+ shows in the menu; the hidden ⌘= twin takes the same key without Shift, as in Safari.
+        for (title, action, key, hidden) in [
+            ("Zoom In", #selector(zoomIn(_:)), "+", false), ("Zoom In", #selector(zoomIn(_:)), "=", true),
+            ("Zoom Out", #selector(zoomOut(_:)), "-", false), ("Actual Size", #selector(actualSize(_:)), "0", false),
+        ] {
+            let item = view.addItem(withTitle: title, action: action, keyEquivalent: key)
+            item.target = self
+            item.isHidden = hidden
+            item.allowsKeyEquivalentWhenHidden = hidden
+        }
         for menu in [app, edit, view] {
             let item = NSMenuItem()
             item.submenu = menu
