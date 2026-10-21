@@ -14,15 +14,14 @@ import implement_run
 import block_resolver
 import plan_chart
 
-CHOSEN = ["requirements", "local-research", "web-ui", "design-tokens", "voice", "build-site", "web-ui-basics", "voice-reply"]
+CHOSEN = ["requirements", "local-research", "web-ui", "design-tokens", "voice", "build-site", "web-ui-basics", "change-review",
+          "voice-reply"]
 
 
-def ledger(chosen=CHOSEN, drop=()):
-    """The blocks table: every catalog block but the base one, Chosen when a step uses it."""
-    base = re.search(r"^base = \[(.*?)\]", (KIT / "blocks" / "blocks.toml").read_text(encoding="utf-8"), re.M)[1]
-    names = sorted(p.parent.name for p in (KIT / "blocks").glob("*/SKILL.md") if f'"{p.parent.name}"' not in base)
-    rows = [f"| {n} | {'Chosen' if n in chosen else 'Rejected'} | {'the task needs it' if n in chosen else 'the task has no use for it'} |"
-            for n in names if n not in drop]
+def ledger(chosen=CHOSEN, rejected=()):
+    """The blocks table: each Chosen block, then each Rejected conflicts alternative."""
+    rows = [f"| {n} | Chosen | the task needs it |" for n in chosen]
+    rows += [f"| {n} | Rejected | it conflicts with a chosen block |" for n in rejected]
     return "\n## Blocks considered\n\n| Block | Status | Why |\n|---|---|---|\n" + "\n".join(rows) + "\n"
 
 
@@ -37,13 +36,13 @@ Evidence:
 - a screenshot at 375 px and 1280 px
 - a `vitest` case for the setting
 
-| File | Needs | Holds | Block | Why |
-|---|---|---|---|---|
-| 01-frame | none | done-when claims | requirements | the claims say when the work is done |
-| 02-read | frame | findings with paths | local-research | find where `theme.ts` sets it |
-| 03-tokens | frame | DESIGN.md tokens | design-tokens | the dark colors need tokens |
-| 04-build | read, tokens | the page | build-site, web-ui-basics | make the change |
-| 05-reply | build | the reply | voice-reply | the owner reads the result |
+| File | Needs | Holds | Writes | Block | Why |
+|---|---|---|---|---|---|
+| 01-frame | none | done-when claims | none | requirements | the claims say when the work is done |
+| 02-read | frame | findings with paths | none | local-research | find where `theme.ts` sets it |
+| 03-tokens | frame | DESIGN.md tokens | `DESIGN.md` | design-tokens | the dark colors need tokens |
+| 04-build | read, tokens | the page | `web/src/`, `DESIGN.md` | build-site, web-ui-basics | make the change |
+| 05-reply | build | the reply | none | change-review, voice-reply | the owner reads the result |
 """ + ledger()
 
 
@@ -61,15 +60,17 @@ def test_good_plan():
     assert "Stage 2, 2 steps run in parallel" in page and page.count('<li class="step') == 5, page
     assert "findings with paths from <b>02-read</b>; DESIGN.md tokens from <b>03-tokens</b>" in page, page
     assert '<li class="step end"><h2>05-reply' in page, page
-    # One row per block, parts right under their parent, and the stdout carries the table for the plan reply.
-    rejected = page.split("<h3>Rejected (")[1]
-    assert rejected.index("<code>diagram</code>") < rejected.index("<code>↳ html-diagram</code>") < rejected.index("<code>done-when-evidence"), rejected[:400]
-    assert "### Chosen (8)" in out.stdout and "| ↳ html-diagram | the task has no use for it |" in out.stdout, out.stdout
-    assert "| voice ↳ voice-pr | the task has no use for it |" in out.stdout, out.stdout
-    # The approved plan runs as a step run with no change.
+    # One row per Chosen block, parts right under their parent, no census of the rest, and the stdout carries
+    # the table for the plan reply.
+    chosen = page.split("<h3>Chosen (")[1]
+    assert chosen.index("<code>voice</code>") < chosen.index("<code>↳ voice-reply</code>"), chosen[:400]
+    assert "### Chosen (9)" in out.stdout and "### Rejected (0)" in out.stdout and "html-diagram" not in out.stdout, out.stdout
+    # The approved plan runs as a step run with no change, and each step file carries its Writes.
     run = subprocess.run([sys.executable, "-I", STEP_RUN, "start", folder / "run", folder / "plan.md"], capture_output=True, text=True)
     assert run.returncode == 0, run.stderr
-    assert (folder / "run" / "04-build.md").read_text(encoding="utf-8").splitlines()[1] == "Uses: 02-read, 03-tokens"
+    lines = (folder / "run" / "04-build.md").read_text(encoding="utf-8").splitlines()
+    assert lines[1:3] == ["Uses: 02-read, 03-tokens", "Writes: web/src/, DESIGN.md"], lines[:4]
+    assert (folder / "run" / "02-read.md").read_text(encoding="utf-8").splitlines()[2] == "Writes: none"
 
 
 def test_page_is_readable():
@@ -104,18 +105,14 @@ def test_mermaid_chart():
     assert chart_text.split("  s1 --> s2")[0] == "\n".join([
         "flowchart TD", '  s1["01-frame<br/>requirements"]', '  subgraph S2["2 · parallel"]',
         '    s2["02-read<br/>local-research"]', '    s3["03-tokens<br/>design-tokens"]', "  end",
-        '  s4["04-build<br/>build-site · web-ui-basics"]', '  s5(["05-reply<br/>voice-reply"])', ""]), chart_text
+        '  s4["04-build<br/>build-site · web-ui-basics"]', '  s5(["05-reply<br/>change-review · voice-reply"])', ""]), chart_text
     assert "  s2 --> s4\n  s3 --> s4\n  s4 --> s5\n" in chart_text and "build-canvas" not in chart_text, chart_text
-    # The Dropped line sits under the fence, inside the markers, with names only.
-    dropped = md.split("```\n\n")[1].split("\n<!-- plan-chart:end -->")[0]
-    assert dropped.startswith("Dropped (40): build-canvas, change-review,"), dropped
-    for part in ("diagram (when-to-diagram, html-diagram, call-tree, diagram-check)",
-                 "voice ↳ (voice-pr, voice-review, voice-teach)", "web-ui ↳ (ui-motion, headless-shot, look-check)"):
-        assert part in dropped, (part, dropped)
-    assert "voice-reply" not in dropped and "no use" not in dropped, dropped
+    # With no conflicts alternative there is no Dropped line.
+    assert md.split("```\n", 1)[1].startswith("<!-- plan-chart:end -->"), md[:900]
+    assert plan_chart.dropped_line({"a": ("Chosen", "x"), "b": ("Rejected", "y")}) == "Dropped (1): b"
     # plan.html draws the same text with the pinned Pele build, offline.
     page = (folder / "plan.html").read_text(encoding="utf-8")
-    assert f'<p class="dropped">{dropped}</p>' in page
+    assert '<p class="dropped">' not in page
     assert plan_chart.html.escape(chart_text) in page and "/*! Pele 1.6.0 | MIT License" in page and "<script src" not in page
     rendered = pele_render(chart_text)
     assert rendered is None or rendered.startswith("<svg"), rendered
@@ -148,7 +145,7 @@ def test_chart_replace_is_idempotent():
     first = plan.read_bytes()
     assert subprocess.run([sys.executable, "-I", SCRIPT, plan], capture_output=True).returncode == 0
     assert plan.read_bytes() == first
-    plan.write_text(first.decode().replace("| read, tokens |", "| read |").replace("| 05-reply | build |", "| 05-reply | build, tokens |"), encoding="utf-8")
+    plan.write_text(first.decode().replace("| read, tokens |", "| read |").replace("| 05-reply | build |", "| 05-reply | build, tokens |").replace("| `web/src/`, `DESIGN.md` |", "| `web/src/` |"), encoding="utf-8")
     assert subprocess.run([sys.executable, "-I", SCRIPT, plan], capture_output=True).returncode == 0
     text = plan.read_text(encoding="utf-8")
     assert text.count("plan-chart:start") == 1 and text.count("```mermaid") == 1 and "  s3 --> s5\n" in text and "  s3 --> s4" not in text, text[:900]
@@ -186,7 +183,7 @@ def test_defects_stop():
         (PLAN.replace("| read, tokens |", "| read, lookz |"), "needs 'lookz', which no step gives"),
         (PLAN.replace("| none | done-when", "| reply | done-when"), "cycle: 01-frame needs 'reply'"),
         (PLAN.replace("| read, tokens |", "| re, tokens |"), "step 04-build needs 're', which fits 02-read, 05-reply; name one"),
-        (PLAN.replace("| voice-reply |", "| report |"), "the last step 05-reply has no voice- block"),
+        (PLAN.replace("| change-review, voice-reply |", "| change-review, report |"), "the last step 05-reply has no voice- block"),
         (PLAN.replace("| read, tokens |", "| read |"), "steps 03-tokens, 05-reply give output that no step uses"),
         (PLAN.replace("| the owner reads the result |", "|  |"), "step 05-reply needs Holds, Block, and Why"),
         (PLAN.replace("Done when:", "Done:"), "no `Done when:` line"),
@@ -195,15 +192,34 @@ def test_defects_stop():
         (PLAN.replace("- the theme follows", "  - nested\n- the theme follows"), "each line is a `- ` bullet"),
         (PLAN.replace("Evidence:\n", ""), "needs a bullet per claim"),
         (PLAN.split("\n## Blocks considered")[0], "no | Block | Status | Why | table"),
-        (PLAN.replace("| html-diagram | Rejected |", "| html-diagram | Maybe |"), "block html-diagram needs Status Chosen or Rejected"),
-        (PLAN.replace("| html-diagram | Rejected |", "| html-diagram-x | Rejected |"), "names html-diagram-x, which is not in the kit catalog"),
-        (PLAN.replace("| html-diagram | Rejected | the task has no use for it |\n", ""), "leaves out html-diagram"),
-        (PLAN.replace("| report | Rejected |", "| report | Chosen |"), "block report is Chosen but no step uses it"),
+        (PLAN.replace("| voice | Chosen |", "| voice | Maybe |"), "block voice needs Status Chosen or Rejected"),
+        (PLAN + "| html-diagram-x | Rejected | no |\n", "names html-diagram-x, which is not in the kit catalog"),
+        (PLAN + "| report | Chosen | x |\n", "block report is Chosen but no step uses it"),
         (PLAN.replace("| web-ui-basics | Chosen |", "| web-ui-basics | Rejected |"), "block web-ui-basics is used by a step but not Chosen"),
+        # C4: no census; a Rejected row is only a conflicts alternative.
+        (PLAN + "| html-diagram | Rejected | no use |\n", "blocks table lists html-diagram; list only Chosen blocks"),
+        # C4: the duty blocks of a plan with Writes.
+        (PLAN.replace("| none | requirements |", "| none | local-research |").replace("| requirements | Chosen | the task needs it |\n", ""),
+         "the first step 01-frame has no requirements block"),
+        (PLAN.replace("| change-review, voice-reply |", "| voice-reply |").replace("| change-review | Chosen | the task needs it |\n", ""),
+         "step 03-tokens writes DESIGN.md, and no later step has a change-review block"),
+        # C3: a plan needs Writes, and unordered steps may not write the same path.
+        (re.sub(r"^(\|[^|]*\|[^|]*\|[^|]*)\|[^|]*(\|[^|]*\|[^|]*\|)$", r"\1\2", PLAN, flags=re.M),
+         "the step table has no Writes column"),
+        (PLAN.replace("| none | local-research |", "| `DESIGN.md/` | local-research |"),
+         "steps 02-read and 03-tokens both write DESIGN.md/; order them with Needs"),
     ]
     for text, error in cases:
         out, _ = chart(text)
         assert out.returncode == 1 and error in out.stderr and "Traceback" not in out.stderr, (error, out.stderr)
+
+
+def test_writes_overlap_by_path_parts():
+    # 02-read and 03-tokens run in parallel: `DESIGN` is not a folder of `DESIGN.md`, and an ordered pair may share.
+    out, _ = chart(PLAN.replace("| none | local-research |", "| `DESIGN` | local-research |"))
+    assert out.returncode == 0, out.stderr
+    assert plan_chart.overlaps("src/a/", "src/a/b.ts") and not plan_chart.overlaps("src/a", "src/ab")
+    assert plan_chart.read_plan(None, PLAN.replace("| 02-read |", "| `02-read.md` (optional) |"))[2][1][5:] == ([], True)
 
 
 def test_shared_resolver_import():
@@ -216,7 +232,7 @@ def test_parent_selection():
     parts = ["when-to-diagram", "html-diagram", "call-tree", "diagram-check"]
     for selected, expected in (("diagram, html-diagram, diagram", ["diagram", *parts]),
                                ("html-diagram, html-diagram", ["diagram", "html-diagram"])):
-        chosen = CHOSEN[:-3] + expected + ["voice-reply"]
+        chosen = CHOSEN[:-4] + expected + ["change-review", "voice-reply"]
         text = PLAN.split("\n## Blocks considered")[0].replace("| build-site, web-ui-basics |", f"| {selected} |") + ledger(chosen)
         out, folder = chart(text)
         assert out.returncode == 0, out.stderr
@@ -226,7 +242,7 @@ def test_parent_selection():
 
 
 def test_rejected_parent_stops():
-    chosen = CHOSEN[:-3] + ["html-diagram", "voice-reply"]
+    chosen = CHOSEN[:-4] + ["html-diagram", "change-review", "voice-reply"]
     text = PLAN.split("\n## Blocks considered")[0].replace("| build-site, web-ui-basics |", "| html-diagram |") + ledger(chosen)
     out, folder = chart(text)
     assert out.returncode == 1 and "block diagram is used by a step but not Chosen" in out.stderr, out

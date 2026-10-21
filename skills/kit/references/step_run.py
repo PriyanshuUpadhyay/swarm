@@ -70,17 +70,28 @@ def plain(text, *, keep_newlines=False):
 
 
 def table(skill_md):
-    """Rows of the first table whose header starts with | File | Needs | Holds |."""
+    """Rows (name, needs, holds, blocks, writes, optional) of the first table whose header starts with
+    | File | Needs | Holds |. blocks is None unless the table has `Blocks`, or `Block` beside `Writes` (a plan);
+    writes is None with no Writes column, else the paths ([] for `none`); optional is a File cell ending `(optional)`."""
     rows, inside = [], False
     for line in Path(skill_md).read_text(encoding="utf-8").splitlines():
         if re.match(r"\|\s*File\s*\|\s*Needs\s*\|\s*Holds\s*\|", line):
             inside = True
-            columns = [c.strip() for c in line.strip("|").split("|")]
-            has_blocks = len(columns) > 3 and columns[3] == "Blocks"
+            columns = [c.strip() for c in line.strip().strip("|").split("|")]
+            at = {c: i for i, c in enumerate(columns)}
+            block_at = at.get("Blocks", at.get("Block") if "Writes" in at else None)
         elif inside and line.startswith("|") and not line.startswith("|---"):
-            cells = [c.strip().strip("`") for c in line.strip("|").split("|")]
-            blocks = [b.strip() for b in cells[3].split(",") if b.strip()] if has_blocks else None
-            rows.append((cells[0].removesuffix(".md"), cells[1], cells[2], blocks))
+            cells = [c.strip() for c in line.strip().strip("|").split("|")]
+            cell = lambda i: cells[i].strip("`") if i is not None and i < len(cells) else ""
+            blocks = [b.strip() for b in cell(block_at).split(",") if b.strip()] if block_at is not None else None
+            writes = None
+            if "Writes" in at:
+                paths = [w.strip().strip("`").strip() for w in cells[at["Writes"]].split(",") if w.strip()]
+                writes = [] if paths == ["none"] else paths
+            name = cells[0]
+            optional = bool(re.search(r"\s*\(optional\)$", name))
+            name = re.sub(r"\s*\(optional\)$", "", name).strip("`")
+            rows.append((name.removesuffix(".md"), cell(1), cell(2), blocks, writes, optional))
         elif inside and not line.startswith("|"):
             break
     if not rows:
@@ -195,7 +206,7 @@ def start(folder, skill_md):
     folder = Path(folder)
     rows = table(skill_md)
     names = [r[0] for r in rows]
-    selected = {name: ids for name, _, _, ids in rows if ids is not None}
+    selected = {name: ids for name, _, _, ids, *_ in rows if ids is not None}
     blocks = {}
     if selected and not all((folder / f"{name}.md").exists() for name in names):
         sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -207,7 +218,7 @@ def start(folder, skill_md):
             params_override={"site": site, "shots": str(Path(site) / "shots")}, judge_todos=True)
     uses = check_needs([r[:3] for r in rows])
     folder.mkdir(parents=True, exist_ok=True)
-    for name, need, holds, _ in rows:
+    for name, need, holds, _, writes, optional in rows:
         file = folder / f"{name}.md"
         if file.exists():
             continue
@@ -215,7 +226,8 @@ def start(folder, skill_md):
         if any(token in rules + "\n".join(todos) for token in ("blocks/", "the kit's `references/", "<kit root>")):
             rules = f"Kit blocks (`blocks/<id>/`) and the kit's `references/` are under {kit_path(Path(__file__).resolve().parents[1])} (the kit root).\n{rules}"
         extra = (f"Skills read: {', '.join(read)}\n\n## Rules for this step\n{rules}\n" if read else "")
-        file.write_text(f"Status: open\nUses: {', '.join(uses[name])}\n\n{extra}"
+        scope = "" if writes is None else f"Writes: {', '.join(writes) or 'none'}\n" + ("Optional: yes\n" if optional else "")
+        file.write_text(f"Status: open\nUses: {', '.join(uses[name])}\n{scope}\n{extra}"
                         f"{TODO_HEAD}\n" + "".join(f"- [ ] {item}: \n" for item in [holds] + todos)
                         + f"\n{RESULT_HEAD}\n", encoding="utf-8")
     print(folder)
