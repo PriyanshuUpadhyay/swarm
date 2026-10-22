@@ -37,7 +37,7 @@ export function RunChip({ app, sessionId, chair }: { app: App; sessionId: string
   }, [open]);
   // A closed pane swaps the composer for Resume and Continue chat, which removes this chip with
   // no toggle event; the open state must not outlive it.
-  // A child's chip shares the chat's id and never opens, so only the chair's chip closes it.
+  // A child's chip never opens, so only the chair's chip closes it.
   const own = chair.who === null;
   useEffect(() => () => void (own && app.life.state.switchModel === sessionId && app.life.close("switchModel")), [app, sessionId, own]);
 

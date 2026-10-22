@@ -301,7 +301,9 @@ export function waitsForTurn(chair: AgentInput, handoff: Handoff | undefined): b
  *  may keep its last state, so a closed pane drops the change before the turn state is read. */
 export function queueStep(chair: AgentInput, handoff: Handoff | undefined): "wait" | "drop" | "start" {
   if (!chair.listed || (handoff !== undefined && !isSettled(handoff.phase))) return "wait";
-  if (chair.unreachable) return "drop";
+  // A switch that just completed may still show its old, closed pane, so the change waits for the new
+  // one. A pane that dies after such a switch keeps the change pending, and its chip can cancel it.
+  if (chair.unreachable) return handoff?.phase === "completed" ? "wait" : "drop";
   return waitsForTurn(chair, handoff) ? "wait" : "start";
 }
 

@@ -51,6 +51,8 @@ describe("run chip", () => {
     // A pane that closed in its turn may keep its last state; the change is still dropped.
     expect(queueStep(agentInput(session(), [chair({ provider: "claude", state: "working", alive: false })]), undefined)).toBe("drop");
     expect(queueStep(agentInput(session(), [chair({ provider: "claude", state: "done", alive: false })]), { old: "s", phase: "restarting", canCancel: false, error: null, carry: "resume" })).toBe("wait");
+    // A switch that just completed may still show its old pane as closed in the next snapshot.
+    expect(queueStep(agentInput(session(), [chair({ provider: "claude", state: "done", alive: false })]), { old: "s", phase: "completed", canCancel: false, error: null, carry: "resume" })).toBe("wait");
     expect(queueStep(agentInput(session(), [chair({ provider: "claude", state: "working" })]), undefined)).toBe("wait");
   });
 
