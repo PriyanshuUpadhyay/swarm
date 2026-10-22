@@ -169,6 +169,7 @@ export const RecentRow = memo(function RecentRow({ r, selected, current }: { r: 
       aria-current={current || undefined}
       tabIndex={selected ? 0 : -1}
       title={r.workspacePath}
+      draggable
       className="recent-row"
     >
       <span className="flex items-center gap-2">

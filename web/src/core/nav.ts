@@ -282,6 +282,17 @@ export function recentWork(tree: TreeView | null, snapshot: Snapshot | null, lim
   return out.slice(0, limit).map(({ at: _, ...r }) => r);
 }
 
+/** The Recent list in the user's dragged order. A chat not yet in `order` goes on top, newest first,
+ *  and keeps that place after. `order` comes back with the new chats added; ids of chats the list
+ *  does not show now stay in it, so a chat in a folded workspace keeps its place. */
+export function inOrder(list: RecentChat[], order: string[]): { list: RecentChat[]; order: string[] } {
+  const known = new Set(order);
+  const fresh = list.filter((r) => !known.has(r.session)).map((r) => r.session);
+  const next = fresh.length ? [...fresh, ...order] : order;
+  const at = new Map(next.map((id, i) => [id, i]));
+  return { list: [...list].sort((a, b) => at.get(a.session)! - at.get(b.session)!), order: next };
+}
+
 /** One palette result (PaletteItem). */
 export type PaletteItem = {
   id: string;

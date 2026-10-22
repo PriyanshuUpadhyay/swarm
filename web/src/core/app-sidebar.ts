@@ -1,8 +1,10 @@
 
 
 import { measure, whenPainted } from "./perf";
-import { foldId, moveTarget, archivedSession, navRows, recentWork, type NavRow, type RecentChat, type TreeName } from "./nav";
-import { SIDEBAR_VIEWS, message, markable } from "./app-types";
+import { foldId, moveTarget, archivedSession, navRows, inOrder, recentWork, type NavRow, type RecentChat, type TreeName } from "./nav";
+import { SIDEBAR_VIEWS, message, markable, readStore, writeStore } from "./app-types";
+
+const RECENT_ORDER = "swarm.recentOrder";
 import type { App } from "./app";
 
 export class AppSidebar {
@@ -132,13 +134,39 @@ export class AppSidebar {
     } else if (sel.chat) this.app.navigation.openChat(sel.chat, e);
   }
 
-  /** Every chat the tree lists, across projects, newest activity first. Home shows the first ones. */
+  /** Every chat the tree lists, across projects, in the order the user dragged them; a new chat goes
+   *  on top. Activity does not move a row. Home shows the first ones. */
   recentList(): RecentChat[] {
     const m = this.app.recentMemo;
     if (m && m.tree === this.app.tree && m.snapshot === this.app.snapshot) return m.list;
-    const list = recentWork(this.app.tree, this.app.snapshot, Infinity);
+    const stored = this.recentOrder();
+    const { list, order } = inOrder(recentWork(this.app.tree, this.app.snapshot, Infinity), stored);
+    if (order !== stored) writeStore(RECENT_ORDER, JSON.stringify(order));
     this.app.recentMemo = { tree: this.app.tree, snapshot: this.app.snapshot, list };
     return list;
+  }
+
+  private recentOrder(): string[] {
+    try {
+      const v = JSON.parse(readStore(RECENT_ORDER) ?? "[]");
+      return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+    } catch {
+      return [];
+    }
+  }
+
+  /** A Recent row dropped on another: it takes that row's place. */
+  dropRecent(session: string, target: string) {
+    const order = this.recentOrder().filter((id) => id !== session);
+    const i = order.indexOf(target);
+    if (i < 0) return;
+    const from = this.recentList().findIndex((r) => r.session === session);
+    const to = this.recentList().findIndex((r) => r.session === target);
+    // Dragged down, it lands after the target; dragged up, before it.
+    order.splice(from < to ? i + 1 : i, 0, session);
+    writeStore(RECENT_ORDER, JSON.stringify(order));
+    this.app.recentMemo = null;
+    this.app.notify();
   }
 
   moveRecent(to: number | "home" | "end", e?: KeyboardEvent) {
