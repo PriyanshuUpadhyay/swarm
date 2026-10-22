@@ -148,6 +148,10 @@ pub(super) async fn branch_chat(
     let Json(body) = body.map_err(|e| error(StatusCode::BAD_REQUEST, &e.body_text()))?;
     let old = body.session.as_str();
     let call = action_session(&app, old)?;
+    let (checking, cwd) = (app.clone(), call.cwd.to_string_lossy().into_owned());
+    tokio::task::spawn_blocking(move || refuse_read_only(&checking, &cwd, "chat"))
+        .await
+        .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "workspace check failed"))??;
     let provider: Option<String> = read_connection(&app.root)
         .and_then(|c| {
             c.query_row(
@@ -198,47 +202,63 @@ pub(super) async fn branch_chat(
     }
     new.session = Some(session.clone());
     // A branch from the first message has no history, so its chat starts new.
-    let mut launch = vec!["launch", "orchestrator", "chat"];
-    if first.as_deref() == Some(row.anchor_source_id.as_str()) {
-        run_cli(&app, new.args(&["session", "branch", &session, old]), None).await?;
-        launch.extend(["--provider", &provider]);
-    } else {
-        let id = match provider.as_str() {
-            // pi's status feed finds a chair's file by this name (hooks.rs).
-            "pi" => format!("{session}-orchestrator"),
-            _ => uuid::Uuid::now_v7().to_string(),
-        };
-        let (path, id_for_file, cli) = (log.path.clone(), id.clone(), provider.clone());
-        tokio::task::spawn_blocking(move || write_cut(&path, offset, &cli, &id_for_file))
-            .await
-            .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "branch task failed"))??;
-        let chair_arg = format!("{provider}:{id}");
-        run_cli(
-            &app,
-            new.args(&["session", "branch", &session, old, &chair_arg]),
-            None,
-        )
-        .await?;
-        launch.push("--resume");
-    }
-    for (flag, key) in [
-        ("--model", "model"),
-        ("--effort", "effort"),
-        ("--account", "account"),
-    ] {
-        if let Some(value) = chair[key].as_str() {
-            launch.extend([flag, value]);
+    let mut cut_file = None;
+    let launched = async {
+        let mut launch = vec!["launch", "orchestrator", "chat"];
+        if first.as_deref() == Some(row.anchor_source_id.as_str()) {
+            run_cli(&app, new.args(&["session", "branch", &session, old]), None).await?;
+            launch.extend(["--provider", &provider]);
+        } else {
+            let id = match provider.as_str() {
+                // pi's status feed finds a chair's file by this name (hooks.rs).
+                "pi" => format!("{session}-orchestrator"),
+                _ => uuid::Uuid::now_v7().to_string(),
+            };
+            let (path, id_for_file, cli) = (log.path.clone(), id.clone(), provider.clone());
+            cut_file = Some(
+                tokio::task::spawn_blocking(move || write_cut(&path, offset, &cli, &id_for_file))
+                    .await
+                    .map_err(|_| {
+                        error(StatusCode::INTERNAL_SERVER_ERROR, "branch task failed")
+                    })??,
+            );
+            let chair_arg = format!("{provider}:{id}");
+            run_cli(
+                &app,
+                new.args(&["session", "branch", &session, old, &chair_arg]),
+                None,
+            )
+            .await?;
+            launch.push("--resume");
         }
+        for (flag, key) in [
+            ("--model", "model"),
+            ("--effort", "effort"),
+            ("--account", "account"),
+        ] {
+            if let Some(value) = chair[key].as_str() {
+                launch.extend([flag, value]);
+            }
+        }
+        let output = run_cli(&app, new.args(&launch), None).await?;
+        first_line(&output)
+            .map(str::to_owned)
+            .ok_or_else(|| error(StatusCode::INTERNAL_SERVER_ERROR, "swarm returned no pane"))
     }
-    let output = run_cli(&app, new.args(&launch), None).await?;
-    let pane = first_line(&output).unwrap_or_default();
+    .await;
+    // The cut file is only the new chat's start; a chat that did not start leaves no file behind.
+    let pane = launched.inspect_err(|_| {
+        if let Some(path) = &cut_file {
+            let _ = std::fs::remove_file(path);
+        }
+    })?;
     Ok(Json(
         json!({"ok": true, "session": session, "agent": "orchestrator", "pane": pane, "text": text}),
     ))
 }
 
 /// Writes the cut of the log at `path` next to it, as the file the CLI resumes for `id`.
-fn write_cut(path: &Path, offset: usize, provider: &str, id: &str) -> Result<(), ApiError> {
+fn write_cut(path: &Path, offset: usize, provider: &str, id: &str) -> Result<PathBuf, ApiError> {
     use std::io::Write;
     let text = std::fs::read_to_string(path)
         .map_err(|_| error(StatusCode::CONFLICT, "The chat's log could not be read"))?;
@@ -267,13 +287,17 @@ fn write_cut(path: &Path, offset: usize, provider: &str, id: &str) -> Result<(),
             format!("{id}.jsonl"),
         )
     };
+    let target = dir.join(name);
     let mut file = std::fs::OpenOptions::new()
         .write(true)
         .create_new(true)
-        .open(dir.join(name))
+        .open(&target)
         .map_err(|err| error(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()))?;
-    file.write_all(cut.as_bytes())
-        .map_err(|err| error(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()))
+    file.write_all(cut.as_bytes()).map_err(|err| {
+        let _ = std::fs::remove_file(&target);
+        error(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string())
+    })?;
+    Ok(target)
 }
 
 #[cfg(test)]

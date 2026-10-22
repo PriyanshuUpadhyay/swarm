@@ -250,4 +250,103 @@ esac
             Some("tmux|agents --json")
         );
     }
+
+    /// A stand-in CLI that logs every call and lets a test change what two verbs do.
+    fn stand_in(fixture: &Fixture, branch: &str, launch: &str) {
+        use std::os::unix::fs::PermissionsExt;
+        let cli = &fixture.app.cli;
+        std::fs::write(
+            cli,
+            format!(
+                r#"#!/bin/sh
+printf '%s\n' "${{SWARM_ADAPTER-}}|$*" >> "$SWARM_HOME/actions"
+case "$1 $2" in
+  'agents --json') printf '%s\n' '{{"agents":[{{"id":"orchestrator"}}]}}' ;;
+  'session new') printf '%s\n' 01a1650a-0000-7000-8000-000000000001 ;;
+  'session branch') {branch} ;;
+  'launch orchestrator') {launch} ;;
+esac
+"#
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(cli, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    async fn second_message(fixture: &Fixture) -> String {
+        let rows = handoff_rows(&fixture.app, &fixture.session).await.unwrap();
+        let mut users = rows.iter().filter(|r| r.kind == view::RowKind::User);
+        let row = users.nth(1).unwrap();
+        format!("{}@{}", row.id, row.anchor_source_id)
+    }
+
+    fn logs_in(fixture: &Fixture) -> usize {
+        std::fs::read_dir(fixture.log.parent().unwrap())
+            .unwrap()
+            .filter(|e| {
+                e.as_ref()
+                    .unwrap()
+                    .path()
+                    .extension()
+                    .is_some_and(|x| x == "jsonl")
+            })
+            .count()
+    }
+
+    fn with_second_message(fixture: &Fixture) {
+        let mut log = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&fixture.log)
+            .unwrap();
+        std::io::Write::write_all(
+            &mut log,
+            br#"{"type":"user","sessionId":"synthetic","uuid":"u9","parentUuid":null,"timestamp":"2026-10-22T10:00:00Z","message":{"role":"user","content":"Now tidy the tests"}}
+"#,
+        )
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn an_archived_workspace_cannot_branch() {
+        let fixture = action_fixture();
+        stand_in(&fixture, "true", "echo pane");
+        with_second_message(&fixture);
+        let row = second_message(&fixture).await;
+        let cwd = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .to_string_lossy()
+            .into_owned();
+        choices_store::update(&fixture.app.root, None, |owner, _| {
+            owner.archived.insert(cwd);
+            Ok(())
+        })
+        .unwrap();
+        let refused = branch(&fixture, &fixture.session, &row).await.unwrap_err();
+        assert_eq!(refused.0, StatusCode::CONFLICT);
+        assert!(refused.1.0["error"].as_str().unwrap().contains("read-only"));
+        assert!(action_calls(&fixture).is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_failed_step_after_the_cut_removes_the_cut_file() {
+        let fixture = action_fixture();
+        stand_in(&fixture, "exit 1", "echo pane");
+        with_second_message(&fixture);
+        let row = second_message(&fixture).await;
+        let before = logs_in(&fixture);
+        let failed = branch(&fixture, &fixture.session, &row).await;
+        assert!(failed.is_err());
+        assert_eq!(logs_in(&fixture), before);
+    }
+
+    #[tokio::test]
+    async fn a_launch_that_prints_no_pane_is_an_error() {
+        let fixture = action_fixture();
+        stand_in(&fixture, "true", "true");
+        with_second_message(&fixture);
+        let row = second_message(&fixture).await;
+        let before = logs_in(&fixture);
+        let failed = branch(&fixture, &fixture.session, &row).await.unwrap_err();
+        assert_eq!(failed.0, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(logs_in(&fixture), before);
+    }
 }

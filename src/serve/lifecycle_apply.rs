@@ -98,9 +98,10 @@ pub(super) fn apply_lifecycle(
             let common = lifecycle::common(project)
                 .ok_or_else(|| error(StatusCode::BAD_REQUEST, "not a Git project"))?;
             lifecycle::checked_path(&app.root, common, true).map_err(lifecycle_error)?;
-            shells::close_all(&p.workspace);
             lifecycle::check_git(common, &["worktree", "remove", "--", &p.workspace])
                 .map_err(lifecycle_error)?;
+            // A refused removal keeps the workspace, so its shells end only after the removal ran.
+            shells::close_all(&p.workspace);
             choices_store::update(&app.root, None, |owner, state| {
                 owner.pinned.remove(&p.workspace);
                 owner.archived.remove(&p.workspace);

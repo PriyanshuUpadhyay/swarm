@@ -38,13 +38,8 @@ pub(super) async fn new_chat(app: &App, body: NewChat) -> Result<Value, ApiError
             ));
         }
         lifecycle::checked_path(&snapshot_app.root, &allowed_cwd, true).map_err(lifecycle_error)?;
-        if workspace.is_some_and(|w| w.missing || w.removed)
-            || saved.owner.archived.contains(&allowed_cwd)
-        {
-            return Err(error(
-                StatusCode::CONFLICT,
-                "This workspace is read-only. Restore it to start a chat.",
-            ));
+        if is_read_only(&tree, &saved, &allowed_cwd) {
+            return Err(read_only("chat"));
         }
         Ok(())
     })
@@ -83,6 +78,29 @@ pub(super) async fn new_chat(app: &App, body: NewChat) -> Result<Value, ApiError
     let pane = first_line(&output)
         .ok_or_else(|| error(StatusCode::INTERNAL_SERVER_ERROR, "swarm returned no pane"))?;
     Ok(json!({"ok": true, "session": session, "agent": "orchestrator", "pane": pane}))
+}
+
+/// True when `cwd` is an archived, missing, or removed workspace.
+fn is_read_only(tree: &tree::Tree, saved: &choices_store::Saved, cwd: &str) -> bool {
+    tree.workspace(cwd)
+        .is_some_and(|(_, w)| w.missing || w.removed)
+        || saved.owner.archived.contains(cwd)
+}
+
+fn read_only(start: &str) -> ApiError {
+    error(
+        StatusCode::CONFLICT,
+        &format!("This workspace is read-only. Restore it to start a {start}."),
+    )
+}
+
+/// Refuses a new `start` (a chat, a shell) in an archived, missing, or removed workspace.
+pub(super) fn refuse_read_only(app: &App, cwd: &str, start: &str) -> Result<(), ApiError> {
+    let (tree, saved) = fresh_lifecycle_tree(app)?;
+    if is_read_only(&tree, &saved, cwd) {
+        return Err(read_only(start));
+    }
+    Ok(())
 }
 
 /// The first non-empty line of a CLI's output; `launch` prints the pane id there.

@@ -35,6 +35,19 @@ pub(super) struct Shell {
     pub(super) command: String,
 }
 
+/// How many shells one workspace may hold, since each is a login shell that keeps running.
+const MAX_SHELLS: usize = 8;
+
+fn check_room(shells: &[Shell]) -> Result<(), ApiError> {
+    if shells.len() >= MAX_SHELLS {
+        return Err(error(
+            StatusCode::CONFLICT,
+            &format!("A workspace can have {MAX_SHELLS} shells. Close one first."),
+        ));
+    }
+    Ok(())
+}
+
 /// An id the server made: `shell-` and 8 hex digits, so it is safe as a tmux target.
 pub(super) fn valid_id(id: &str) -> bool {
     id.strip_prefix("shell-")
@@ -45,14 +58,18 @@ pub(super) fn valid_id(id: &str) -> bool {
 /// which may hold one, comes last.
 const FORMAT: &str = "#{session_name}|#{session_created}|#{pane_current_command}|#{@swarm_cwd}";
 
-/// The shells of `cwd` in `list-sessions` output, oldest first.
+/// The shells in `list-sessions` output whose folder is `cwd` or inside it, oldest first.
 pub(super) fn parse(text: &str, cwd: &str) -> Vec<Shell> {
     let mut found: Vec<(i64, Shell)> = text
         .lines()
         .filter_map(|line| {
             let mut fields = line.splitn(4, '|');
             let (id, created, command) = (fields.next()?, fields.next()?, fields.next()?);
-            (valid_id(id) && fields.next() == Some(cwd)).then(|| {
+            (valid_id(id)
+                && fields
+                    .next()
+                    .is_some_and(|shell_cwd| tree::contains(shell_cwd, cwd)))
+            .then(|| {
                 let shell = Shell {
                     id: id.into(),
                     command: command.into(),
@@ -201,6 +218,9 @@ pub(super) async fn shells_create(
 ) -> Result<Json<Value>, ApiError> {
     let id = blocking(move || {
         let cwd = session_cwd(&app, &request.session)?;
+        refuse_read_only(&app, &cwd, "shell")?;
+        let shells = list(&cwd).map_err(|err| error(StatusCode::INTERNAL_SERVER_ERROR, &err))?;
+        check_room(&shells)?;
         create(&cwd).map_err(|err| error(StatusCode::INTERNAL_SERVER_ERROR, &err))
     })
     .await?;
@@ -250,6 +270,64 @@ mod tests {
         );
         assert!(!valid_id("shell-0000000"));
         assert!(!valid_id("=shell-0000000a"));
+    }
+
+    #[test]
+    fn a_workspace_lists_the_shells_of_the_folders_inside_it() {
+        let text = "shell-0000000a|1|zsh|/w/a/sub\n\
+                    shell-0000000b|2|zsh|/w/a\n\
+                    shell-0000000c|3|zsh|/w/ab\n";
+        let ids = |cwd| {
+            parse(text, cwd)
+                .into_iter()
+                .map(|s| s.id)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(ids("/w/a"), ["shell-0000000a", "shell-0000000b"]);
+        assert_eq!(ids("/w/a/sub"), ["shell-0000000a"]);
+    }
+
+    #[test]
+    fn a_ninth_shell_in_a_workspace_is_refused() {
+        let shells = |n: usize| {
+            (0..n)
+                .map(|i| Shell {
+                    id: format!("shell-{i:08x}"),
+                    command: "zsh".into(),
+                })
+                .collect::<Vec<_>>()
+        };
+        assert!(check_room(&shells(MAX_SHELLS - 1)).is_ok());
+        let full = check_room(&shells(MAX_SHELLS)).unwrap_err();
+        assert_eq!(full.0, StatusCode::CONFLICT);
+    }
+
+    #[tokio::test]
+    async fn an_archived_workspace_starts_no_shell() {
+        use crate::serve::test_support::Fixture;
+        let fixture = Fixture::new();
+        let cwd = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .to_string_lossy()
+            .into_owned();
+        choices_store::update(&fixture.app.root, None, |owner, _| {
+            owner.archived.insert(cwd);
+            Ok(())
+        })
+        .unwrap();
+        let request = ShellRequest {
+            session: fixture.session.clone(),
+            id: None,
+        };
+        let refused = shells_create(State(fixture.app.clone()), Json(request))
+            .await
+            .unwrap_err();
+        assert_eq!(refused.0, StatusCode::CONFLICT);
+        assert!(
+            refused.1.0["error"]
+                .as_str()
+                .unwrap()
+                .contains("start a shell")
+        );
     }
 
     #[test]
