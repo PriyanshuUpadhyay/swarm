@@ -202,7 +202,7 @@ pub(super) async fn branch_chat(
     }
     new.session = Some(session.clone());
     // A branch from the first message has no history, so its chat starts new.
-    let mut cut_file = None;
+    let mut cut_file: Option<CutFile> = None;
     let launched = async {
         let mut launch = vec!["launch", "orchestrator", "chat"];
         if first.as_deref() == Some(row.anchor_source_id.as_str()) {
@@ -215,13 +215,13 @@ pub(super) async fn branch_chat(
                 _ => uuid::Uuid::now_v7().to_string(),
             };
             let (path, id_for_file, cli) = (log.path.clone(), id.clone(), provider.clone());
-            cut_file = Some(
+            cut_file = Some(CutFile(Some(
                 tokio::task::spawn_blocking(move || write_cut(&path, offset, &cli, &id_for_file))
                     .await
                     .map_err(|_| {
                         error(StatusCode::INTERNAL_SERVER_ERROR, "branch task failed")
                     })??,
-            );
+            )));
             let chair_arg = format!("{provider}:{id}");
             run_cli(
                 &app,
@@ -246,15 +246,38 @@ pub(super) async fn branch_chat(
             .ok_or_else(|| error(StatusCode::INTERNAL_SERVER_ERROR, "swarm returned no pane"))
     }
     .await;
-    // The cut file is only the new chat's start; a chat that did not start leaves no file behind.
-    let pane = launched.inspect_err(|_| {
-        if let Some(path) = &cut_file {
-            let _ = std::fs::remove_file(path);
+    // The cut file is only the new chat's start. A chat that did not start leaves no file behind,
+    // but a launch that failed after its pane opened keeps the file that the pane resumes. A
+    // request dropped during the launch drops `cut_file`, which removes it.
+    let pane = match launched {
+        Ok(pane) => pane,
+        Err(err) => {
+            let live = chair_agent(&app, &new)
+                .await
+                .map_or(true, |chair| chair["alive"] == true);
+            if live && let Some(file) = &mut cut_file {
+                file.0 = None;
+            }
+            return Err(err);
         }
-    })?;
+    };
+    if let Some(file) = &mut cut_file {
+        file.0 = None;
+    }
     Ok(Json(
         json!({"ok": true, "session": session, "agent": "orchestrator", "pane": pane, "text": text}),
     ))
+}
+
+/// A cut file that is removed when it drops, unless the branch took it over (its path is taken out).
+struct CutFile(Option<PathBuf>);
+
+impl Drop for CutFile {
+    fn drop(&mut self) {
+        if let Some(path) = &self.0 {
+            let _ = std::fs::remove_file(path);
+        }
+    }
 }
 
 /// Writes the cut of the log at `path` next to it, as the file the CLI resumes for `id`.

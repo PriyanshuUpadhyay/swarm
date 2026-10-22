@@ -253,6 +253,11 @@ esac
 
     /// A stand-in CLI that logs every call and lets a test change what two verbs do.
     fn stand_in(fixture: &Fixture, branch: &str, launch: &str) {
+        stand_in_with(fixture, branch, launch, "false");
+    }
+
+    /// `new_alive` is what the new chat's chair reports for `alive` when its pane is read.
+    fn stand_in_with(fixture: &Fixture, branch: &str, launch: &str, new_alive: &str) {
         use std::os::unix::fs::PermissionsExt;
         let cli = &fixture.app.cli;
         std::fs::write(
@@ -261,7 +266,7 @@ esac
                 r#"#!/bin/sh
 printf '%s\n' "${{SWARM_ADAPTER-}}|$*" >> "$SWARM_HOME/actions"
 case "$1 $2" in
-  'agents --json') printf '%s\n' '{{"agents":[{{"id":"orchestrator"}}]}}' ;;
+  'agents --json') if [ "${{SWARM_SESSION_ID-}}" = 01a1650a-0000-7000-8000-000000000001 ]; then printf '%s\n' '{{"agents":[{{"id":"orchestrator","alive":{new_alive}}}]}}'; else printf '%s\n' '{{"agents":[{{"id":"orchestrator"}}]}}'; fi ;;
   'session new') printf '%s\n' 01a1650a-0000-7000-8000-000000000001 ;;
   'session branch') {branch} ;;
   'launch orchestrator') {launch} ;;
@@ -357,6 +362,35 @@ esac
         let before = logs_in(&fixture);
         let failed = branch(&fixture, &fixture.session, &row).await;
         assert!(failed.is_err());
+        assert_eq!(logs_in(&fixture), before);
+    }
+
+    #[tokio::test]
+    async fn a_failed_launch_keeps_the_cut_file_when_the_new_chat_has_a_live_pane() {
+        let fixture = action_fixture();
+        // The launch opened the pane, then failed (a timeout, say); the pane resumes the cut.
+        stand_in_with(&fixture, "true", "exit 1", "true");
+        with_second_message(&fixture);
+        let row = second_message(&fixture).await;
+        let before = logs_in(&fixture);
+        let failed = branch(&fixture, &fixture.session, &row).await;
+        assert!(failed.is_err());
+        assert_eq!(logs_in(&fixture), before + 1);
+    }
+
+    #[tokio::test]
+    async fn a_dropped_request_removes_the_cut_file() {
+        let fixture = action_fixture();
+        stand_in(&fixture, "true", "sleep 5");
+        with_second_message(&fixture);
+        let row = second_message(&fixture).await;
+        let before = logs_in(&fixture);
+        let dropped = tokio::time::timeout(
+            std::time::Duration::from_millis(1500),
+            branch(&fixture, &fixture.session, &row),
+        )
+        .await;
+        assert!(dropped.is_err(), "the launch should still be running");
         assert_eq!(logs_in(&fixture), before);
     }
 
