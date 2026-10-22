@@ -196,9 +196,10 @@ export class AppPanes {
     this.app.notify();
   }
 
-  /** The header's Stop: interrupts a child's turn. A failure throws the server's text. */
+  /** The header's Stop: the composer's Stop for that child, so a pi child's queue goes to its draft.
+   *  A failure shows in the child's composer banner. */
   stopPane(agent: string): Promise<void> {
-    return this.app.api.action("/api/chat/interrupt", { session: this.app.openId, agent });
+    return this.app.composing.interrupt(paneId(this.app.openId!, agent));
   }
 
   /** The header's Close agent: ends the child's pane. A failure throws the server's text. */

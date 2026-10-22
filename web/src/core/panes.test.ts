@@ -131,6 +131,8 @@ function harness(agents: Agent[] = [chair, agent("reviewer", { created_at: 1 }),
       return { page: { start_offset: 0, end_offset: 10 }, rows: [row(`${who}-first`, `${who} says hello`)], usage: null };
     },
     action: async (path: string, body: Record<string, unknown>) => void posts.push({ path, body }),
+    // The child's Stop is the composer's interrupt, which posts and reads the reply.
+    post: async (path: string, body: Record<string, unknown>) => void posts.push({ path, body }),
     subscribe: async (_stream: string, keys: SubscribeKey[]) => void subscriptions.push(keys.map((k) => k.key).sort()),
   } as unknown as Api;
   const app = new App(api);

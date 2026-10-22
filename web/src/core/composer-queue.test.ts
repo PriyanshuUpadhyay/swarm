@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Api, Row, RowPage, Snapshot } from "./api";
-import { App } from "./app";
+import { App, paneId } from "./app";
 import { chair, session } from "./chat-fixtures";
 import { harness, settle, user } from "./composer-harness";
 
@@ -73,6 +73,24 @@ describe("pi's queue back in the draft", () => {
     app.setDraft("chat", "");
     await app.send("chat", "steer five");
     await app.interrupt("chat");
+    expect(app.draft("chat")).toBe("");
+  });
+});
+
+describe("pi child's queue back in its draft", () => {
+  it("moves the child's Sent texts to the child's draft on the header Stop", async () => {
+    const { app, posts, snapshot } = harness(undefined, (path) => (path === "/api/chat/interrupt" ? { ok: true, box: "cleared", held: "steer one" } : null));
+    snapshot({ provider: "claude", state: "done" }, [{ id: "worker", role: "code.routine", state: "working", alive: true, pane: "%2", provider: "pi", log: "/logs/worker.jsonl" }]);
+    app.openChat("chat");
+    app.setPaneVisible("worker", true);
+    await settle();
+    const worker = paneId("chat", "worker");
+    await app.send(worker, "steer one");
+    expect(app.chats.get(worker)!.sent.length).toBe(1);
+    await app.stopPane("worker");
+    expect(posts.at(-1)).toEqual({ path: "/api/chat/interrupt", body: { session: "chat", agent: "worker" } });
+    expect(app.draft(worker)).toBe("steer one");
+    expect(app.chats.get(worker)!.sent.length).toBe(0);
     expect(app.draft("chat")).toBe("");
   });
 });

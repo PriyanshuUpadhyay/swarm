@@ -17,8 +17,8 @@ export function harness(fail?: (path: string) => string | null, reply: (path: st
   };
   const api = { rows: async () => page, action: post, post } as unknown as Api;
   const app = new App(api);
-  const snapshot = (agent: Partial<Agent> = {}) =>
-    (app as unknown as { applySnapshot(s: Snapshot): void }).applySnapshot({ version: 1, sessions: [session()], agents: { chat: [chair(agent)] } });
+  const snapshot = (agent: Partial<Agent> = {}, children: Agent[] = []) =>
+    (app as unknown as { applySnapshot(s: Snapshot): void }).applySnapshot({ version: 1, sessions: [session()], agents: { chat: [chair(agent), ...children] } });
   return { app, posts, snapshot };
 }
 
