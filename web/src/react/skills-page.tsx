@@ -203,7 +203,7 @@ function PresetView({ app, kit, preset, step, onStep }: { app: App; kit: Kit; pr
           </p>
         )}
         <div className="mb-3 flex flex-wrap items-center gap-1 text-xs text-muted-foreground" data-testid="skills-front">
-          <span className="mr-1">Plan first:</span>
+          <span className="mr-1">Before step 1 · plan</span>
           {kit.front.map((b, i) => (
             <span key={b} className="flex items-center gap-1">
               {i > 0 && <span aria-hidden>→</span>}
@@ -212,21 +212,20 @@ function PresetView({ app, kit, preset, step, onStep }: { app: App; kit: Kit; pr
               </button>
             </span>
           ))}
-          <span aria-hidden>→ step 1</span>
+          <span className="ml-1">picks blocks, checks, owner approves</span>
         </div>
         <SkillGraph steps={preset.steps} duty={duty} selected={step} onSelect={onStep} />
-        {preset.offers.length > 0 && (
-          <section aria-label="Offered blocks" className="mt-4 rounded-lg border border-dashed border-border p-3 text-xs" data-testid="skills-offered">
-            <h3 className="mb-2 font-medium text-muted-foreground">Offered · off by default; the planner adds one when the task needs it</h3>
-            <div className="flex flex-wrap gap-1">
+        <section aria-label="Offered blocks" className="mt-4 rounded-lg border border-dashed border-border p-3 text-xs" data-testid="skills-offered">
+          <h3 className="mb-2 font-medium text-muted-foreground">Offered · off by default; the planner adds one when the task needs it</h3>
+          {preset.offers.length === 0 && <p className="text-muted-foreground">No offered blocks.</p>}
+          <div className="flex flex-wrap gap-1">
               {preset.offers.map((b) => (
                 <button key={b} className="rounded border border-dashed border-border-strong px-1.5 py-0.5 font-mono text-muted-foreground hover:border-ring hover:text-foreground" data-block={b} onClick={() => open(b)}>
                   {b}
                 </button>
               ))}
-            </div>
-          </section>
-        )}
+          </div>
+        </section>
       </div>
       {chosen && (
         <aside className="grid w-72 shrink-0 content-start gap-3 overflow-y-auto border-l border-border p-4 text-sm" data-testid="skills-step">

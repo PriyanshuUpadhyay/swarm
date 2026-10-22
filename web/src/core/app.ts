@@ -145,6 +145,16 @@ export class App {
     if (location.pathname === "/setup") this.settings.show("setup");
     // Closing Setup & doctor gives the URL back to the open chat.
     abort.signal.addEventListener("abort", this.settings.subscribe(() => this.navigation.followUrl()));
+    // A change queued in a turn starts when a snapshot shows the turn ended.
+    abort.signal.addEventListener(
+      "abort",
+      this.subscribe(() =>
+        this.life.queue.run(
+          (old) => this.chair(old).running,
+          (old, c) => void this.life.switchModel(old, c.provider, c.model, c.account, c.effort, c.carry),
+        ),
+      ),
+    );
     void this.navigation.refreshSnapshot().then(() => {
       whenPainted(
         () => document.querySelector('[data-testid="sidebar"][data-loaded="true"]') !== null,

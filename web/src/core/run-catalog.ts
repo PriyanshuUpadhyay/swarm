@@ -4,7 +4,8 @@ import type { Api } from "./api";
 import type { ProviderInfo } from "./settings";
 
 /** One row of `GET /api/models`. */
-export type ModelInfo = { id: string; label: string; efforts?: string[] };
+/** `note` is a short line beside the name; `default_effort` the level the CLI picks for it. */
+export type ModelInfo = { id: string; label: string; efforts?: string[]; note?: string; default_effort?: string };
 
 export class RunCatalog {
   private reads = new Map<string, Promise<{ models: ModelInfo[] }>>();
@@ -27,7 +28,7 @@ export class RunCatalog {
     return read;
   }
 
-  accounts(provider: string): Promise<{ accounts: { name: string; email: string | null; auth_state?: string }[] }> {
+  accounts(provider: string): Promise<{ accounts: { name: string; email: string | null; auth_state?: string; summary?: string | null }[] }> {
     return this.api().get("/api/accounts", { provider });
   }
 }

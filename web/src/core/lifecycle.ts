@@ -6,6 +6,7 @@ import { ApiError, sleep } from "./api";
 import type { App } from "./app";
 import { isChair } from "./panes";
 import { RunCatalog } from "./run-catalog";
+import { RunQueue } from "./run-queue";
 import type { SwitchCarry } from "./composer";
 import {
   type NewOptions,
@@ -34,6 +35,8 @@ export class Lifecycle {
   private listeners = new Set<() => void>();
   /** The CLIs, models and accounts that the run chip and Switch model offer. */
   readonly runs: RunCatalog;
+  /** Changes that wait for their agent's turn to end. */
+  readonly queue = new RunQueue();
   private roles: Promise<Profile[]> | null = null;
   private confirmDone: (() => void) | null = null;
 
