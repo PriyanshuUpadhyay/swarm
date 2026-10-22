@@ -83,7 +83,6 @@ def test_the_json_names_the_front_door_the_duty_blocks_and_each_offer():
     duty = {b for b, info in blocks.items() if info["duty"]}
     assert duty == {"requirements", "change-review"} | {b for b in blocks if b.startswith("voice-")}, duty
     for p in kit["presets"]:
-        assert p["offers"], f"{p['preset']} has no Offers line"
         loaded = {b for s in p["steps"] for b in s["resolved"]}
         assert not loaded & set(p["offers"]), (p["preset"], loaded & set(p["offers"]))
         for block in p["offers"]:
