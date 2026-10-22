@@ -34,6 +34,7 @@ only the rules the global file does not state, public contracts among them.
 ## Preset
 
 Stop: owner
+Offers: call-tree
 
 | File | Needs | Holds | Block | Why |
 |---|---|---|---|---|

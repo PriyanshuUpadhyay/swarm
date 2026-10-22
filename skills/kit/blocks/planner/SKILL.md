@@ -17,6 +17,7 @@ metadata:
 - The kit's `references/plan-layout.md` owns how this file's schema fits the reply layout.
 - Make the run folder by the kit's `references/run-folder.md`, and write `plan.md` in it.
 - When a verb sent the task, start from that verb's preset, as `skills/plan/SKILL.md` defines it. Copy its table into `plan.md`, add the Writes column below, and write `Preset: <verb>` on the line under the title. Add a mode, as in `Preset: review walk`, only for a verb whose modes have their own presets. Add blocks or steps where the task needs them, but keep the steps and Needs of the implement preset, because `skills/implement/SKILL.md` says its `start` refuses any other. When you drop a preset step, add a line `Dropped steps: <step> (<reason>), ...` under the step table, so the owner sees it.
+- When the preset has an `Offers:` line, read each offered block's line. Add it to a step when the task needs it. For each offered block that no step loads, add an `Offered` row to `## Blocks considered` with why it stays off, so the owner can say "add Y".
 - List the blocks with `rg -N '^(name|description|  needs|  gives|  conflicts):' <kit root>/blocks/*/SKILL.md`. Pick from that list only. Read a block's full file only when its line does not settle the choice.
 - `plan.md` opens with `# Plan: <the task in one line>`, then `Done when: <the result in one short line>`. After it, one bullet per claim, then a line `Evidence:` and one bullet per proof. Choose that evidence by `blocks/requirements/SKILL.md`, and map results by `blocks/done-when-evidence/SKILL.md`. Write each claim and each proof as one short line, with no `(1) ... (2) ...` list inside a line.
 - Then one table with the header `| File | Needs | Holds | Writes | Block | Why |`. A plan that copies a `Stop: chat` preset with no change may keep the preset's header with no Writes.
@@ -29,12 +30,12 @@ metadata:
 - Each step with Needs `none` holds the `requirements` block.
 - Each step with Writes has a step with the `change-review` block that reaches it through Needs. An agent that took a writing step cannot take that review step.
 - The last step is the only step whose output no step uses. It holds a `voice-` block that fits the output: `voice-reply` for a reply to the owner, `voice-teach` when the owner wants to understand a subject, `voice-review` for review comments, and `voice-pr` for PR text.
-- After the step table, add `## Blocks considered` with the header `| Block | Status | Why |`. It holds one `Chosen` row for each block, each with one reason. `Chosen` is exactly the set of blocks that the steps load, after the parent and part expansion that `blocks/blocks.toml` sets. Sub-blocks are the parts of a parent block, as its `metadata.parts` names them. They have their own rows, and `plan-chart` shows them under their parent.
+- After the step table, add `## Blocks considered` with the header `| Block | Status | Why |`. It holds one `Chosen` row for each block, each with one reason, and one `Offered` row for each offered block that no step loads. `Chosen` is exactly the set of blocks that the steps load, after the parent and part expansion that `blocks/blocks.toml` sets. Sub-blocks are the parts of a parent block, as its `metadata.parts` names them. They have their own rows, and `plan-chart` shows them under their parent.
 - Two blocks that name each other in `conflicts` cannot both be in the plan. Keep one, and say why in its Why cell.
 - `Amend: <N>` on its own line after the step table lets a run add N steps that write `none` with `step_run.py amend`, with no new approval. Leave it out (N is 0) unless the owner sets it.
 - When no block fits a step, write the step with the nearest block and say what is missing in Why. Do not invent a block id.
 - Then run the `plan-chart` block, then the `plan-review` block. Work starts only after the owner approves.
-- The reply that shows the plan carries the `### Chosen` table that `plan-chart` prints, in full, before it asks for approval. The owner changes the plan with "drop X", "add Y", or "add sub-block Z". Change the step table and the blocks table to match, run `plan-chart` again, and show the new table. Never start work on a changed plan that the owner has not seen.
+- The reply that shows the plan carries the `### Chosen` table that `plan-chart` prints, and its `### Offered` table when it has one, in full, before it asks for approval. The owner changes the plan with "drop X", "add Y", or "add sub-block Z". Change the step table and the blocks table to match, run `plan-chart` again, and show the new table. Never start work on a changed plan that the owner has not seen.
 
 ## Example
 Initial state: the task is "add dark mode to the settings page" in a repo with a theme file.
@@ -74,7 +75,7 @@ Evidence:
 Result: 02-read and 03-tokens run in parallel, and 04-build waits for both. Only 03-tokens writes, so 02-read cannot change its files. The owner sees the Chosen blocks, and answers "add sub-block html-diagram" to change one.
 
 ## Check (script)
-- `python3 -I <kit root>/blocks/plan-chart/scripts/plan_chart.py <run>/plan.md` exits 0: `Done when:` has a bullet per claim and an `Evidence:` bullet list, every block exists, every Needs word names a step, the plan has no loop and one end, the end holds a `voice-` block, each step with Needs `none` holds `requirements`, each writing step is reached through Needs by a `change-review` step, no two parallel steps write the same path, and the blocks table lists each block once, as Chosen, equal to the blocks the steps use.
+- `python3 -I <kit root>/blocks/plan-chart/scripts/plan_chart.py <run>/plan.md` exits 0: `Done when:` has a bullet per claim and an `Evidence:` bullet list, every block exists, every Needs word names a step, the plan has no loop and one end, the end holds a `voice-` block, each step with Needs `none` holds `requirements`, each writing step is reached through Needs by a `change-review` step, no two parallel steps write the same path, and the blocks table lists each block once, its Chosen rows equal to the blocks the steps use, and any other row Offered.
 
 ## Check (judge)
 - Does any block the steps do not use hold a rule that the task needs? Quote the rule and the task text.

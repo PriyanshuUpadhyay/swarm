@@ -6,14 +6,18 @@ import SwiftUI
 struct AccountName: View {
     let account: UsageAccount
     let color: Color
+    /// A one-line row has no room for the resets line; the name's tooltip carries it.
+    var dense = false
 
     var body: some View {
-        // The group heading and the mark name the provider, so the name stands alone.
+        // The mark names the provider, so the name stands alone.
         VStack(alignment: .leading, spacing: 2) {
             Text(account.name).font(.system(size: 13, weight: .medium)).foregroundStyle(color)
-                .lineLimit(1).truncationMode(.middle).help(account.name)
+                .lineLimit(1).truncationMode(.middle)
+                .help(denseName)
+                .accessibilityLabel(denseName)
             // A Codex account's resets sit under its name, where the row has a free second line.
-            if let credits = account.resetCredits, let short = credits.short() {
+            if !dense, let credits = account.resetCredits, let short = credits.short() {
                 let full = credits.text() ?? short
                 Text(short).font(.system(size: 11)).foregroundStyle(Palette.tertiary).lineLimit(1)
                     .help("\(full)\nRedeem one in ChatGPT settings.")
@@ -22,13 +26,17 @@ struct AccountName: View {
         }
         .frame(width: Layout.nameColumn, alignment: .leading)
     }
+
+    /// A dense row's name also carries its resets, for the tooltip and VoiceOver.
+    private var denseName: String {
+        dense ? [account.name, account.resetCredits?.text()].compactMap { $0 }.joined(separator: ", ") : account.name
+    }
 }
 
 struct AccountRow: View {
     let account: UsageAccount
     let kinds: [WindowKind]
-    /// The widest group's column count; the rest of the row stays empty.
-    let columns: Int
+    let dense: Bool
     let theme: Theme
     let now: Date
     /// False when every row reads the same; the status line then says it once.
@@ -42,24 +50,26 @@ struct AccountRow: View {
         HStack(spacing: Layout.gap) {
             // The mark's label is the only place the row names its provider.
             ProviderMark(provider: account.provider, size: 16).frame(width: Layout.markColumn)
-            AccountName(account: account, color: Palette.primary)
+            AccountName(account: account, color: Palette.primary, dense: dense)
             if showsReading {
                 reading.font(.system(size: 11)).lineLimit(1).frame(width: Layout.readingColumn, alignment: .leading)
             }
             ForEach(kinds, id: \.self) { kind in
                 if let window = account.windows.first(where: { $0.kind == kind }) {
                     WindowCell(window: window, pace: pace(account: account, window: window, history: history, now: now),
-                               theme: theme, now: now)
+                               theme: theme, now: now, dense: dense)
                 } else {
+                    // The column is shared, so this provider may have no such limit, or its read
+                    // failed; "reading" is true for both.
                     Text("—").font(.system(size: 12)).foregroundStyle(Palette.tertiary)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .help("No \(kind.title) reading")
                         .accessibilityLabel("\(kind.title) no reading")
                 }
             }
-            ForEach(kinds.count..<columns, id: \.self) { _ in Color.clear.frame(maxWidth: .infinity) }
         }
         .accessibilityElement(children: .combine)
-        .frame(height: Layout.row)
+        .frame(height: Layout.row(dense: dense))
     }
 
     @ViewBuilder private var reading: some View {
@@ -88,6 +98,8 @@ struct WindowCell: View {
     let pace: Pace?
     let theme: Theme
     let now: Date
+    /// One line: a warning pace takes the reset's place.
+    let dense: Bool
 
     private var paceText: String? {
         switch pace {
@@ -102,10 +114,12 @@ struct WindowCell: View {
         VStack(alignment: .leading, spacing: 3) {
             usage
             // A blank line keeps the first line where it is in every row.
-            Text(paceText ?? " ")
-                .font(.system(size: 11).monospacedDigit())
-                .foregroundStyle(pace.map { $0 == .lasts ? Palette.tertiary : Palette.ink($0.severity(window: window)) } ?? Palette.tertiary)
-                .lineLimit(1)
+            if !dense {
+                Text(paceText ?? " ")
+                    .font(.system(size: 11).monospacedDigit())
+                    .foregroundStyle(paceColor)
+                    .lineLimit(1)
+            }
         }
         .frame(maxWidth: .infinity)
         .accessibilityElement(children: .ignore)
@@ -113,6 +127,16 @@ struct WindowCell: View {
             + (window.severity == .critical ? ", critical" : "")
             + (window.resetAt.map { ", resets in \(shortDuration(until: $0, now: now))" } ?? "")
             + (paceText.map { ", \($0)" } ?? ""))
+    }
+
+    private var paceColor: Color {
+        pace.map { $0 == .lasts ? Palette.tertiary : Palette.ink($0.severity(window: window)) } ?? Palette.tertiary
+    }
+
+    /// In a one-line row a pace that warns replaces the reset, as "full 3h".
+    private var densePace: String? {
+        guard dense, let pace, pace != .lasts, let text = paceText else { return nil }
+        return text.replacingOccurrences(of: "full in ", with: "full ")
     }
 
     private var usage: some View {
@@ -127,9 +151,9 @@ struct WindowCell: View {
                     }
                 }
                 .frame(width: Layout.valueColumn, alignment: .trailing)
-            Text(window.resetAt.map { shortDuration(until: $0, now: now) } ?? "—")
+            Text(densePace ?? window.resetAt.map { shortDuration(until: $0, now: now) } ?? "—")
                 .font(.system(size: 12).monospacedDigit())
-                .foregroundStyle(Palette.tertiary)
+                .foregroundStyle(densePace == nil ? Palette.tertiary : paceColor)
                 .lineLimit(1)
                 .frame(width: Layout.resetColumn, alignment: .trailing)
         }
@@ -157,37 +181,45 @@ struct UsageBar: View {
     }
 }
 
-struct SignedOutRow: View {
-    let account: UsageAccount
-    let renewing: Bool
+/// Every account with no reading on one line, so three expired tokens cost one row, not three.
+struct SignedOutLine: View {
+    let accounts: [UsageAccount]
+    let renewing: Set<String>
     let onRenew: (UsageAccount) -> Void
 
     var body: some View {
-        HStack(spacing: Layout.gap) {
-            ProviderMark(provider: account.provider, size: 16).frame(width: Layout.markColumn)
-            AccountName(account: account, color: Palette.secondary)
-            HStack(spacing: 6) {
-                Text(account.problem ?? "No reading").font(.system(size: 12)).foregroundStyle(Palette.secondary)
-                    .lineLimit(2).truncationMode(.tail).help(account.problem ?? "")
-                if account.renewalArguments != nil {
-                    if renewing {
-                        ProgressView().controlSize(.mini)
-                            .accessibilityLabel("Renewing this account's token")
-                    } else {
-                        Button("Renew") { onRenew(account) }
-                            .buttonStyle(.plain)
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(Palette.warn)
-                            .underline()
-                            .help("Run Claude on \(account.name) in the background to renew its token, then refresh")
-                            .accessibilityLabel("Renew this account's token")
-                            .fixedSize()
-                    }
+        let renewable = accounts.filter { $0.renewalArguments != nil }
+        let names = accounts.map(\.name).joined(separator: ", ")
+        HStack(spacing: 10) {
+            if Set(accounts.map(\.provider)).count == 1 { ProviderMark(provider: accounts[0].provider, size: 14) }
+            // An account that Renew cannot fix names its cause on the card, not only on hover.
+            Text(renewable.count == accounts.count
+                 ? "\(accounts.count) \(accounts.count == 1 ? "account needs" : "accounts need") sign-in: \(names)"
+                 : "No reading: " + accounts.map { account in
+                     account.renewalArguments == nil ? account.problem.map { "\(account.name) (\($0))" } ?? account.name : account.name
+                 }.joined(separator: ", "))
+                .lineLimit(1).truncationMode(.tail)
+                .help(accounts.map { "\($0.name): \($0.problem ?? "No reading")" }.joined(separator: "\n"))
+            if !renewable.isEmpty {
+                if renewable.contains(where: { renewing.contains($0.id) }) {
+                    ProgressView().controlSize(.mini).accessibilityLabel("Renewing tokens")
+                } else {
+                    Button(renewable.count == 1 ? "Renew" : "Renew all") { renewable.forEach(onRenew) }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Palette.warn)
+                        .underline()
+                        .help("Run Claude on \(renewable.map(\.name).joined(separator: ", ")) in the background to renew the tokens, then refresh")
+                        .fixedSize()
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            Spacer(minLength: 0)
         }
-        .accessibilityElement(children: .combine)
-        .frame(height: Layout.row)
+        .font(.system(size: 12))
+        .foregroundStyle(Palette.secondary)
+        .padding(.horizontal, 10)
+        .frame(height: Layout.needs - 8)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color(hex: 0x141416)))
+        .padding(.top, 8)
     }
 }

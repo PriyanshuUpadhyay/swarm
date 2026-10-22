@@ -175,8 +175,8 @@ function WorkspaceList({ app }: { app: App }) {
   );
 }
 
-/** Every listed chat across projects, newest activity first (jean's Recent list). j/k, arrows and
- *  Enter work here as in the tree. */
+/** Every listed chat across projects (jean's Recent list), in the order the user drags them to.
+ *  j/k, arrows and Enter work here as in the tree. */
 function RecentList({ app }: { app: App }) {
   const recent = useSyncExternalStore(app.subscribe, () => app.view.recent);
   const selected = useSyncExternalStore(app.subscribe, () => app.view.recentSelected);
@@ -187,15 +187,50 @@ function RecentList({ app }: { app: App }) {
     const session = (e.target as Element).closest<HTMLElement>('[data-testid="recent-row"]')?.dataset.session;
     if (session) app.clickRecent(session);
   };
+
+  // Drop a row on another row to move it there.
+  const dragged = useRef<string | null>(null);
+  const rowOf = (e: DragEvent) => (e.target as Element).closest<HTMLElement>('[data-testid="recent-row"]');
+  const clearMark = () => listRef.current?.querySelectorAll("[data-over]").forEach((n) => n.removeAttribute("data-over"));
+  const dragProps = {
+    onDragStart: (e: DragEvent) => {
+      const session = rowOf(e)?.dataset.session;
+      if (!session) return;
+      dragged.current = session;
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", session);
+    },
+    onDragOver: (e: DragEvent) => {
+      const el = rowOf(e);
+      if (!el || !dragged.current || el.dataset.session === dragged.current) return;
+      e.preventDefault();
+      if (!el.hasAttribute("data-over")) {
+        clearMark();
+        el.setAttribute("data-over", "true");
+      }
+    },
+    onDrop: (e: DragEvent) => {
+      const target = rowOf(e)?.dataset.session;
+      const session = dragged.current;
+      clearMark();
+      if (!target || !session || target === session) return;
+      e.preventDefault();
+      app.dropRecent(session, target);
+    },
+    onDragEnd: () => {
+      dragged.current = null;
+      clearMark();
+    },
+  };
   return (
     <>
       <ContextMenu>
         <ContextMenuTrigger asChild>
-          <div ref={listRef} role="listbox" aria-label="Recent chats" data-testid="recent" tabIndex={selected ? -1 : 0} className="min-h-0 flex-1 overflow-y-auto px-2 pt-1 pb-3 outline-none" onClick={onClick}>
+          <div ref={listRef} role="listbox" aria-label="Recent chats" data-testid="recent" tabIndex={selected ? -1 : 0} className="min-h-0 flex-1 overflow-y-auto px-2 pt-1 pb-3 outline-none" onClick={onClick} {...dragProps}>
             {recent.map((r) => (
               <RecentRow key={r.session} r={r} selected={r.session === selected} current={r.session === openId} />
             ))}
-            {loaded && recent.length === 0 && <SidebarNote title="No chats yet" body="Chats from every project show here, newest first." />}
+            {loaded && recent.length === 0 && <SidebarNote title="No chats yet" body="Chats from every project show here. Drag a chat to move it." />}
             <RowBar listRef={listRef} select='[data-testid="recent-row"]' target={recentTarget(app)} />
           </div>
         </ContextMenuTrigger>

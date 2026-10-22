@@ -17,7 +17,7 @@ function MeterLine({ meter, now }: { meter: Meter; now: number }) {
       </div>
     );
   const reset = meter.reset_time_seconds === null ? null : meter.reset_time_seconds - now / 1000;
-  const tone = left <= 5 ? "bg-failed" : left <= 20 ? "bg-waiting" : "bg-foreground/70";
+  const tone = meterTone(left);
   return (
     <div className="meter-line" data-testid="meter" data-state={meter.state} data-old={meter.state === "stale" || undefined}>
       <span className="meter-window">{meter.window ?? ""}</span>
@@ -30,10 +30,15 @@ function MeterLine({ meter, now }: { meter: Meter; now: number }) {
   );
 }
 
+/** The bar color for the percent left, the same in Settings and the run popover. */
+function meterTone(left: number) {
+  return left <= 5 ? "bg-failed" : left <= 20 ? "bg-waiting" : "bg-foreground/70";
+}
+
 /** When the next refresh of a provider is allowed, as text, or null when it is now. */
 function useWait(app: App, provider: string, now: number) {
   const next = useSettings(app, "nextRefresh")[provider] ?? 0;
   return next > now ? waitText(next - now) : null;
 }
 
-export { MeterLine, useWait };
+export { MeterLine, meterTone, useWait };

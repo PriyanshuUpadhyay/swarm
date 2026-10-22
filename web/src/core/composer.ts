@@ -2,6 +2,7 @@
 // SwarmSessionInteraction, ChatUsage). Pure, so vitest covers them.
 
 import type { Agent, Row, Session } from "./api";
+import type { Meter } from "./settings";
 
 /** `swarm agents --json` `prompt`: a question on the agent's screen (ADR 0029). */
 export type Prompt = { id: string; question: string; choices: string[]; details?: string[] };
@@ -102,7 +103,7 @@ export type AgentInput = {
 
 export const MISSING_ADAPTER = "This session does not record an adapter, so Swarm cannot reach its panes.";
 
-/** The providers whose chat can branch from a message (ADR 0114). */
+/** The providers whose chat can branch from a message. */
 const BRANCH_PROVIDERS = ["claude", "pi"];
 
 /** Esc Esc and Branch from here need the chair not working and of a CLI that can branch. */
@@ -145,12 +146,22 @@ export function agentInput(session: Session | undefined, agents: readonly Agent[
 /** `/api/rows` `usage` (view::ChatUsage). */
 export type Usage = { context?: { context_tokens?: number | null } | null; remaining_percent?: number | null } | null;
 
+const compact = (n: number) => new Intl.NumberFormat("en-US", { notation: "compact" }).format(n);
+
 /** The composer's context line (ChatUsage.contextMeter). */
 export function usageLabel(usage: Usage): string {
   const tokens = usage?.context?.context_tokens;
-  if (tokens == null) return "Usage";
-  if (usage?.remaining_percent != null) return `${usage.remaining_percent}% left`;
-  return new Intl.NumberFormat("en-US", { notation: "compact" }).format(tokens);
+  if (tokens == null) return "Context";
+  if (usage?.remaining_percent != null) return `Context ${usage.remaining_percent}% left`;
+  return `Context ${compact(tokens)}`;
+}
+
+/** The context line's tooltip, which says what its number measures. */
+export function usageTitle(usage: Usage): string {
+  const tokens = usage?.context?.context_tokens;
+  if (tokens == null) return "The context of this chat is not known yet.";
+  if (usage?.remaining_percent != null) return `Context of this chat: ${usage.remaining_percent}% of the window is left.`;
+  return `Context of this chat: ${compact(tokens)} tokens.`;
 }
 
 const CLI_NAMES: Record<string, string> = { claude: "Claude", codex: "Codex", agy: "AGY", pi: "Pi" };
@@ -164,6 +175,48 @@ export function cliName(id: string): string {
  *  name stands in. */
 export function runLabel(input: AgentInput): string {
   return [input.account ?? (input.provider ? cliName(input.provider) : null), input.model ?? "Default model", input.effort].filter(Boolean).join(" · ");
+}
+
+const LEVEL_WORDS: Record<string, string> = { minimal: "Minimal", low: "Low", medium: "Medium", high: "High", xhigh: "Extra high", max: "Max", ultra: "Ultra" };
+
+/** A thinking level in plain words; an id the app does not know shows as the CLI wrote it. */
+export function levelWord(id: string): string {
+  return Object.hasOwn(LEVEL_WORDS, id) ? LEVEL_WORDS[id] : id;
+}
+
+/** The chip's tooltip: the account and its email when known, then the model and level. */
+export function runTip(run: Run, email: string | null = null): string {
+  const who = run.account ? `${cliName(run.provider)} account: ${run.account}${email ? ` (${email})` : ""}` : `${cliName(run.provider)} login`;
+  return `${who}\n${[run.model ?? "Default model", run.effort && levelWord(run.effort)].filter(Boolean).join(" · ")}`;
+}
+
+// Eight hues at one lightness and chroma, so each dot reads the same on both themes.
+const ACCOUNT_HUES = [250, 150, 30, 300, 80, 200, 0, 120];
+
+/** One color per account name, the same on every load. */
+export function accountColor(name: string): string {
+  let h = 0;
+  for (const c of name) h = (h * 31 + c.codePointAt(0)!) >>> 0;
+  return `oklch(0.68 0.14 ${ACCOUNT_HUES[h % ACCOUNT_HUES.length]})`;
+}
+
+/** A meter window's short name: 5h, wk, or the window id. A named Codex limit (`<id>:<window>`)
+ *  keeps its id in front, so two limits of one account do not read the same. */
+function windowName(m: Meter): string {
+  // Claude's Fable week ("fb", src/usage/claude.rs) is a week as long as the plain one.
+  const limit = m.window === "fb" ? "Fable " : m.window?.includes(":") ? `${m.window.split(":")[0]} ` : "";
+  if (m.window_minutes === 10080 || m.window === "7d") return `${limit}wk`;
+  if (m.window_minutes && m.window_minutes % 60 === 0 && m.window_minutes < 1440) return `${limit}${m.window_minutes / 60}h`;
+  return m.window ?? m.label;
+}
+
+/** What is left in each limit window of one account ("5h 62% · wk 40%"), and the lowest for its
+ *  bar. With no meter read, the account list's summary stands in. */
+export function limitText(meters: readonly Meter[], provider: string, account: string, summary: string | null): { text: string; left: number | null } {
+  const mine = meters.filter((m) => m.provider === provider && m.account === account && m.used_pct !== null);
+  if (!mine.length) return { text: summary ?? "", left: null };
+  const left = mine.map((m) => 100 - m.used_pct!);
+  return { text: mine.map((m, i) => `${windowName(m)} ${left[i]}%`).join(" · "), left: Math.min(...left) };
 }
 
 /** One agent run: what the popover picks. */
@@ -197,16 +250,38 @@ export function switchOutcome(current: Run, draft: Run): Outcome {
   return current.provider === "codex" && current.account !== draft.account ? "handoff" : "resume";
 }
 
-/** The What happens line under the popover. */
-export function outcomeText(outcome: Outcome, draft: Run, carry: Carry): string {
-  const cli = cliName(draft.provider);
+const REREAD = "The next reply re-reads the whole chat once, so it costs more.";
+
+/** The What happens line under the popover (design A). `label` names the draft's model. */
+export function outcomeText(outcome: Outcome, current: Run, draft: Run, carry: Carry, label: string): string {
+  if (outcome === "none") return "Pick a change to see what will happen.";
+  const target = [label, draft.effort && levelWord(draft.effort)].filter(Boolean).join(" · ");
+  return outcome === "handoff" ? handoffLine(draft, target, carry) : outcome === "resume" ? resumeLine(current, draft, target) : (outcome satisfies never);
+}
+
+function handoffLine(draft: Run, target: string, carry: Carry): string {
+  return `Starts a new ${cliName(draft.provider)} chat on ${target} with ${carry === "summary" ? "a summary of" : "nothing from"} this one. This chat stays as it is.`;
+}
+
+function resumeLine(current: Run, draft: Run, target: string): string {
+  if (current.account !== draft.account) {
+    const on = current.model !== draft.model || current.effort !== draft.effort ? ` on ${target}` : "";
+    const who = draft.account ?? "the default account";
+    return `Restarts this chat${on} under ${who}. History stays. Usage now counts against ${who}. The next reply may re-read the chat once.`;
+  }
+  if (current.model !== draft.model) return `Restarts this chat on ${target}. History stays. ${REREAD}`;
+  return `Restarts this chat on ${draft.effort ? levelWord(draft.effort) : "the default"} thinking. History stays. ${REREAD}`;
+}
+
+/** Apply's label says what it does. */
+export function applyLabel(outcome: Outcome): string {
   switch (outcome) {
     case "none":
-      return "Nothing changes.";
-    case "resume":
-      return `${cli} restarts on the new settings. The chat keeps its history.`;
+      return "Apply";
     case "handoff":
-      return carry === "summary" ? `A new ${cli} chat starts and gets a summary of this one.` : `A new ${cli} chat starts with nothing from this one.`;
+      return "Start new chat";
+    case "resume":
+      return "Restart and apply";
   }
 }
 
@@ -223,13 +298,14 @@ export function modelLevels(cli: string[], model: string[] | undefined): string[
 }
 
 /** The draft after a pick of model `m` of CLI `cli`. The draft keeps its level when the model
- *  takes it, and its account while the CLI stays; back on the chat's own CLI, the chat's
+ *  takes it, else the model's default, else the CLI's, and its account while the CLI stays; back on the chat's own CLI, the chat's
  *  account comes back. */
-export function chooseModel(current: Run, draft: Run, cli: { id: string; efforts: string[]; default_effort: string }, m: { id: string; efforts?: string[] } | string): Run {
+export function chooseModel(current: Run, draft: Run, cli: { id: string; efforts: string[]; default_effort: string }, m: { id: string; efforts?: string[]; default_effort?: string } | string): Run {
   const model = typeof m === "string" ? m : m.id;
   // launch takes only the CLI's own levels, also when the model lists more.
   const allowed = modelLevels(cli.efforts, typeof m === "string" ? undefined : m.efforts);
-  const effort = draft.effort && allowed.includes(draft.effort) ? draft.effort : allowed.includes(cli.default_effort) ? cli.default_effort : (allowed[0] ?? null);
+  const own = typeof m === "string" ? undefined : m.default_effort;
+  const effort = [draft.effort, own, cli.default_effort].find((l) => l && allowed.includes(l)) ?? allowed[0] ?? null;
   const account = cli.id === draft.provider ? draft.account : cli.id === current.provider ? current.account : null;
   return { provider: cli.id, model, effort, account };
 }

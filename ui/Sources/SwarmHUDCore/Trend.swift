@@ -163,13 +163,16 @@ public func bestAccount(_ accounts: [UsageAccount], history: [HistorySample], no
 public struct WorkingSnapshot: Decodable, Equatable, Sendable {
     public var working: [String: Int]
     public var waiting: [String: Int]
+    /// The same agents one by one, waiting first; empty from a swarm before 0.0.34.
+    public var agents: [RunningAgent]
 
-    public init(working: [String: Int] = [:], waiting: [String: Int] = [:]) {
+    public init(working: [String: Int] = [:], waiting: [String: Int] = [:], agents: [RunningAgent] = []) {
         self.working = working
         self.waiting = waiting
+        self.agents = agents
     }
 
-    private enum CodingKeys: String, CodingKey { case schema, working, waiting }
+    private enum CodingKeys: String, CodingKey { case schema, working, waiting, agents }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -179,6 +182,8 @@ public struct WorkingSnapshot: Decodable, Equatable, Sendable {
         }
         working = try container.decode([String: Int].self, forKey: .working).filter { $0.value > 0 }
         waiting = try container.decodeIfPresent([String: Int].self, forKey: .waiting)?.filter { $0.value > 0 } ?? [:]
+        // A bad entry costs only that agent, never the counts.
+        agents = try container.decodeIfPresent([Lossy<RunningAgent>].self, forKey: .agents)?.compactMap(\.value) ?? []
     }
 
     /// Any failure or another schema reads as no agents; the mascot only falls idle.
@@ -187,6 +192,60 @@ public struct WorkingSnapshot: Decodable, Equatable, Sendable {
     }
 
     public var isActive: Bool { !working.isEmpty || !waiting.isEmpty }
+}
+
+/// An array element that decodes to nil instead of failing the whole array.
+struct Lossy<T: Decodable>: Decodable {
+    let value: T?
+    init(from decoder: Decoder) throws { value = try? T(from: decoder) }
+}
+
+/// One working or waiting agent from `swarm working --json`.
+public struct RunningAgent: Decodable, Equatable, Sendable {
+    public let id: String
+    public let session: String?
+    public let provider: String
+    public let model: String?
+    public let account: String?
+    /// Any state other than `waiting` reads as working.
+    public let waiting: Bool
+
+    public init(id: String, session: String? = nil, provider: String, model: String? = nil, account: String? = nil,
+                waiting: Bool = false) {
+        (self.id, self.session, self.provider, self.model, self.account, self.waiting)
+            = (id, session, provider, model, account, waiting)
+    }
+
+    /// An agent id repeats across sessions; the pair does not.
+    public var key: String { "\(session ?? "")/\(id)" }
+
+    private enum CodingKeys: String, CodingKey { case id, session, provider, model, account, state }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        session = try container.decodeIfPresent(String.self, forKey: .session)
+        provider = try container.decode(String.self, forKey: .provider)
+        model = try container.decodeIfPresent(String.self, forKey: .model)
+        account = try container.decodeIfPresent(String.self, forKey: .account)
+        waiting = try container.decodeIfPresent(String.self, forKey: .state) == "waiting"
+    }
+}
+
+/// A short tag for a model id: `claude-sonnet-5-5` is "sonnet", `gpt-6-luna` is "gpt-6",
+/// `openrouter/qwen3-coder` (pi) is "qwen3-coder", and an unset or `default` model is the provider's name.
+public func modelLabel(_ model: String?, provider: String) -> String {
+    guard var id = model?.lowercased(), !id.isEmpty, id != "default" else { return provider }
+    if let bracket = id.firstIndex(of: "[") { id = String(id[..<bracket]) }
+    // pi names the router first.
+    if let slash = id.lastIndex(of: "/") { id = String(id[id.index(after: slash)...]) }
+    if let claude = id.range(of: "claude-") {
+        // The family tells two Claude agents apart; the version sits before it (3-5-sonnet) or after it.
+        let family = id[claude.upperBound...].split(separator: "-").first { $0.allSatisfy(\.isLetter) }
+        return family.map(String.init) ?? provider
+    }
+    let label = id.split(separator: "-").prefix(2).joined(separator: "-")
+    return label.isEmpty ? provider : label
 }
 
 /// The providers with a mascot of their own, in tie-break order.
@@ -260,4 +319,44 @@ public func usageRing(_ best: BestAccount?, readFailed: Bool) -> UsageRing {
     guard let best else { return .none }
     return .reading(usedPct: best.fullest, severity: best.ringSeverity,
                     old: best.isOld(readFailed: readFailed))
+}
+
+/// The closed wings' words: beside the mascot the working count or "needs you", beside the ring
+/// up to two model tags, the waiting agent's name, or the used percent once the ring is red.
+public struct WingText: Equatable, Sendable {
+    public var left: String?
+    public var waiting = false
+    public var tags: [String] = []
+    public var number: String?
+
+    public init(left: String? = nil, waiting: Bool = false, tags: [String] = [], number: String? = nil) {
+        (self.left, self.waiting, self.tags, self.number) = (left, waiting, tags, number)
+    }
+}
+
+public func wingText(_ agents: WorkingSnapshot, best: BestAccount?) -> WingText {
+    var text = WingText()
+    let working = agents.working.values.reduce(0, +)
+    if !agents.waiting.isEmpty {
+        text = WingText(left: "needs you", waiting: true,
+                        tags: agents.agents.first(where: \.waiting).map { [String($0.id.prefix(12))] } ?? [])
+    } else if working > 0 {
+        // Each provider's first model, then the rest, so two Claude models do not hide Codex.
+        let running = agents.agents.filter { !$0.waiting }
+        var providers: [String] = []
+        for agent in running where !providers.contains(agent.provider) { providers.append(agent.provider) }
+        let ordered = providers.compactMap { provider in running.first { $0.provider == provider } } + running
+        var labels: [String] = []
+        for agent in ordered {
+            let label = String(modelLabel(agent.model, provider: agent.provider).prefix(8))
+            if !labels.contains(label) { labels.append(label) }
+        }
+        text = WingText(left: "\(working)", tags: Array(labels.prefix(2)))
+    }
+    // The ring turns red at this same bound.
+    if let best, Severity(pct: best.fullest) == .critical {
+        text.tags = []
+        text.number = "\(best.fullest)%"
+    }
+    return text
 }

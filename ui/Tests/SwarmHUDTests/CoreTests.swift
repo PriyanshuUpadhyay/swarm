@@ -200,19 +200,19 @@ func account(_ provider: String, _ name: String, _ windows: [UsageWindow]) -> Us
     #expect(bestAccount([both, room], history: [], now: now)?.account.name == "room")
 }
 
-@Test func columnsGroupByProviderClaudeFirst() {
+@Test func ledgerHasOneColumnPerKindClaudeFirstAndFoldsSignedOut() {
     let codexA = account("codex", "a", [window(.week, 1)])
     let claudeA = account("claude", "a", [window(.session, 1), window(.fable, 1)])
     let codexB = account("codex", "b", [window(.session, 1), window(.week, 1)])
     let claudeB = account("claude", "b", [window(.week, 1)])
     let signedOut = account("claude", "c", [])
-    let groups = providerGroups([codexA, claudeA, codexB, signedOut, claudeB])
-    #expect(groups.map(\.provider) == ["claude", "codex"])
-    #expect(groups[0].kinds == [.session, .week, .fable])
-    #expect(groups[0].accounts.map(\.name) == ["a", "c", "b"])
-    #expect(groups[1].kinds == [.session, .week])
-    #expect(groups[1].accounts.map(\.name) == ["a", "b"])
-    #expect(providerGroups([account("agy", "x", []), codexA]).map(\.provider) == ["codex", "agy"])
+    let table = ledger([codexA, claudeA, codexB, signedOut, claudeB])
+    #expect(table.kinds == [.session, .week, .fable])
+    #expect(table.rows.map(\.id) == ["claude/a", "claude/b", "codex/a", "codex/b"])
+    #expect(table.signedOut.map(\.id) == ["claude/c"])
+    // One Codex account: only its own kinds, so a Codex-only HUD has no empty Fable column.
+    #expect(ledger([codexA]).kinds == [.week])
+    #expect(ledger([account("agy", "x", [window(.week, 1)]), codexA]).rows.map(\.provider) == ["codex", "agy"])
 }
 
 @Test func codexMetersCarryResetCreditsToTheAccount() throws {

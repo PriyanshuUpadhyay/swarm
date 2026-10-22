@@ -23,6 +23,7 @@ run's chosen inputs.
 ## Preset
 
 Stop: owner
+Offers: decision-with-default, when-to-diagram, html-diagram, scratch-home
 
 | File | Needs | Holds | Block | Why |
 |---|---|---|---|---|

@@ -362,6 +362,7 @@
   box-shadow: 0 1px 3px rgb(0 0 0 / 0.15);
 }
 [data-testid="recent"]:focus-within .recent-row[aria-selected="true"],
+.recent-row[data-over="true"],
 .recent-row:focus-visible {
   box-shadow: inset 0 0 0 1px var(--ring);
 }

@@ -22,7 +22,7 @@ Intake
 - Screen widths replace duration and fps. Design at the check widths of the `web-ui-basics` block, plus any width the user names.
 - Record the page's drivers. Load and scroll follow the Drivers section of build's `skills/build/references/story-and-motion.md`, and a click that starts a page transition is a gate there. Hover, cursor, and any other click change a state, not a time, so list each state with the element it changes.
 - A screen recording is the best site reference. Record one full scroll at each width. Extract frames at each section's settled state, at each transition midpoint, and across the loader.
-- Research sources for sites: threeui.com (three.js site templates, some with their prompt), 21st.dev (components and page templates), and the GSAP showcase. A template's prompt is a `stated` source. Its rendered page is the `visible` one.
+- Choose research sources for sites from `blocks/reference-analysis/references/sources.md`.
 - The caller names the step file that holds the look. When the page borrows a component or effect from a repo, record its licence and its last release date there.
 Look
 - Apply `blocks/web-ui/SKILL.md`, the shared rules of the page blocks this file names.

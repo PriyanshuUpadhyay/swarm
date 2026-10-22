@@ -1,17 +1,18 @@
 // The run chip `account · model · thinking` and its popover, which changes the chat's run
 // (ADR 0110). Inside one CLI the session restarts on the new run; another CLI asks what to bring.
 
-import { CheckIcon, ChevronDownIcon, LoaderCircleIcon } from "lucide-react";
+import { ChevronDownIcon, LoaderCircleIcon } from "lucide-react";
 import { useEffect, useId, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
 import type { App } from "../core/app";
-import { applyBlock, CARRY_OPTIONS, chooseModel, modelLevels, cliName, outcomeText, runLabel, savedCarry, switchOutcome, type AgentInput, type Carry, type Run } from "../core/composer";
+import { accountColor, applyBlock, applyLabel, CARRY_OPTIONS, chooseModel, cliName, levelWord, limitText, modelLevels, outcomeText, runLabel, runTip, savedCarry, switchOutcome, type AgentInput, type Carry, type Run } from "../core/composer";
 import { isSettled } from "../core/lifecycle";
 import type { ModelInfo } from "../core/run-catalog";
-import type { ProviderInfo } from "../core/settings";
+import type { Account, ProviderInfo } from "../core/settings";
 import { Button } from "../components/ui/button";
 import { FIELD, message, useLife, ErrorLine } from "./lifecycle-shared";
 import { SwitchProgress } from "./lifecycle-switch-model";
 import { Segmented } from "./settings-shared";
+import { meterTone } from "./usage-meters";
 
 export function RunChip({ app, sessionId, chair }: { app: App; sessionId: string; chair: AgentInput }) {
   const chosen = useLife(app, "switchModel");
@@ -21,6 +22,7 @@ export function RunChip({ app, sessionId, chair }: { app: App; sessionId: string
   // An anchor name must be a CSS ident; useId gives characters outside one.
   const anchor = `--run-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
   const switching = handoff && !isSettled(handoff.phase) ? (handoff.carry === "resume" ? "Restarting…" : "Switching…") : null;
+  const run: Run = { provider: chair.provider ?? "claude", model: chair.model, effort: chair.effort, account: chair.account };
 
   useEffect(() => {
     const el = pop.current;
@@ -34,7 +36,7 @@ export function RunChip({ app, sessionId, chair }: { app: App; sessionId: string
   }, [open]);
   // A closed pane swaps the composer for Resume and Continue chat, which removes this chip with
   // no toggle event; the open state must not outlive it.
-  // A child's chip shares the chat's id and never opens, so only the chair's chip closes it.
+  // A child's chip never opens, so only the chair's chip closes it.
   const own = chair.who === null;
   useEffect(() => () => void (own && app.life.state.switchModel === sessionId && app.life.close("switchModel")), [app, sessionId, own]);
 
@@ -44,15 +46,26 @@ export function RunChip({ app, sessionId, chair }: { app: App; sessionId: string
         type="button"
         data-testid="model-chip"
         className="flex min-w-0 items-center gap-1 rounded-md px-1.5 py-1 hover:bg-hover disabled:pointer-events-none"
-        title={chair.who ? "Change the child from its parent agent." : "Change model, thinking, or account"}
+        title={chair.who ? "Change the child from its parent agent." : runTip(run, chair.account && app.life.runs.email(run.provider, chair.account))}
         disabled={chair.who !== null}
         aria-expanded={open}
         style={{ anchorName: anchor } as CSSProperties}
         onClick={() => (open ? app.life.close("switchModel") : app.life.openSwitchModel(sessionId))}
       >
-        <span className="truncate">{switching ?? runLabel(chair)}</span>
+        {chair.account && <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ background: accountColor(chair.account) }} />}
+        <span className="truncate" data-testid="model-chip-label">
+          {switching ?? runLabel(chair)}
+        </span>
         {!chair.who && <ChevronDownIcon className="size-3 shrink-0" />}
       </button>
+      {/* A button's children are presentational, so a running switch is announced from outside it.
+          The open popover has its own status. A child's chip never switches, and its composer keeps
+          one status for the prompt caption. */}
+      {!chair.who && (
+        <span role="status" className="sr-only" data-testid="run-chip-status">
+          {open ? "" : (switching ?? "")}
+        </span>
+      )}
       {!chair.who && (
         <div
           ref={pop}
@@ -81,11 +94,19 @@ function RunBody({ app, sessionId, chair }: { app: App; sessionId: string; chair
   const [carry, setCarry] = useState<Carry>(saved);
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [models, setModels] = useState<Record<string, ModelInfo[] | string>>({});
-  const [accounts, setAccounts] = useState<{ name: string; email: string | null }[]>([]);
+  const [accounts, setAccounts] = useState<Pick<Account, "name" | "email" | "summary">[]>([]);
+  const usage = useSyncExternalStore(app.settings.subscribe, () => app.settings.state.usage);
+  const meters = usage.state === "ready" ? usage.data.meters : [];
   const [query, setQuery] = useState("");
   const anchorId = `run-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
   const [error, setError] = useState<string | null>(null);
   const running = handoff !== undefined && !isSettled(handoff.phase);
+
+  // The meters are a cached read with no provider call; Settings may not have read them yet.
+  useEffect(() => {
+    // loadUsage keeps its own error in state.usage, so nothing waits for it.
+    if (app.settings.state.usage.state === "idle") void app.settings.loadUsage();
+  }, [app]);
 
   useEffect(() => {
     let live = true;
@@ -129,11 +150,13 @@ function RunBody({ app, sessionId, chair }: { app: App; sessionId: string; chair
   const list = models[draft.provider];
   const model = Array.isArray(list) ? list.find((m) => m.id === draft.model) : undefined;
   const levels = modelLevels(info?.efforts ?? [], model?.efforts);
+  const defaultLevel = model?.default_effort ?? info?.default_effort;
   const outcome = switchOutcome(current, draft);
   const q = query.trim().toLowerCase();
   const blocked = applyBlock(chair, draft);
   // A failed accounts read still shows the chat's own account, which Apply sends.
-  const accountRows = draft.account && !accounts.some((a) => a.name === draft.account) ? [{ name: draft.account, email: null }, ...accounts] : accounts;
+  const accountRows = draft.account && !accounts.some((a) => a.name === draft.account) ? [{ name: draft.account, email: null, summary: null }, ...accounts] : accounts;
+  const label = model?.label ?? draft.model ?? "";
 
   const choose = (provider: string, m: ModelInfo | string) => {
     const cli = providers.find((x) => x.id === provider) ?? { id: provider, efforts: [], default_effort: "" };
@@ -142,12 +165,14 @@ function RunBody({ app, sessionId, chair }: { app: App; sessionId: string; chair
 
   const apply = () => {
     if (!draft.model || outcome === "none") return;
-    void app.life.switchModel(sessionId, draft.provider, draft.model, draft.account, draft.effort, outcome === "resume" ? "resume" : carry);
+    const how = outcome === "resume" ? "resume" : carry;
+    // switchModel keeps its own failure in the handoff state, so nothing waits for it.
+    void app.life.switchModel(sessionId, draft.provider, draft.model, draft.account, draft.effort, how);
   };
 
   return (
     <div className="grid gap-3">
-      <fieldset disabled={running} className="grid grid-cols-[1fr_200px] gap-3">
+      <fieldset disabled={running} className="grid grid-cols-2 gap-3">
         <div className="grid min-w-0 gap-1">
           <input className={FIELD} data-testid="run-query" placeholder="Search or type a model id" aria-label="Model" spellCheck={false} autoComplete="off" value={query} onChange={(e) => setQuery(e.target.value)} />
           <div data-testid="run-models" className="max-h-[260px] overflow-y-auto">
@@ -158,8 +183,9 @@ function RunBody({ app, sessionId, chair }: { app: App; sessionId: string; chair
               const custom = q && ms !== undefined && !(Array.isArray(ms) && ms.some((m) => m.id.toLowerCase() === q)) ? query.trim() : null;
               return (
                 <div key={p.id} role="group" aria-labelledby={`${anchorId}-${p.id}`} data-provider={p.id}>
-                  <div id={`${anchorId}-${p.id}`} className="px-2 pt-2 pb-1 text-xs text-muted-foreground">
-                    {cliName(p.id)}
+                  <div id={`${anchorId}-${p.id}`} className="flex gap-2 px-2 pt-2 pb-1 text-xs text-muted-foreground">
+                    <span className="flex-1 font-medium">{cliName(p.id)}</span>
+                    {p.id !== current.provider && <span>{carry === "summary" ? "new chat + summary" : "new chat"}</span>}
                   </div>
                   {ms === undefined && <p className="px-2 py-1 text-xs text-muted-foreground">Reading models…</p>}
                   {Array.isArray(ms) && !ms.length && <p className="px-2 py-1 text-xs text-muted-foreground">No models listed. Type a model id.</p>}
@@ -172,9 +198,9 @@ function RunBody({ app, sessionId, chair }: { app: App; sessionId: string; chair
                     const on = draft.provider === p.id && draft.model === m.id;
                     return (
                       <button key={m.id} type="button" aria-pressed={on} className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-hover aria-pressed:bg-selected" onClick={() => choose(p.id, m)}>
-                        <span className="min-w-0 flex-1 truncate">{m.label}</span>
-                        {current.provider === p.id && current.model === m.id && <span className="text-xs text-muted-foreground">now</span>}
-                        {on && <CheckIcon className="size-3.5" />}
+                        <Radio on={on} />
+                        <span className="min-w-0 truncate">{m.label}</span>
+                        <span className="ml-auto max-w-[55%] truncate text-xs text-muted-foreground" title={m.note}>{[m.note, current.provider === p.id && current.model === m.id && "now"].filter(Boolean).join(" · ")}</span>
                       </button>
                     );
                   })}
@@ -189,34 +215,61 @@ function RunBody({ app, sessionId, chair }: { app: App; sessionId: string; chair
           </div>
         </div>
         <div className="grid content-start gap-3">
-          <div className="grid gap-1" role="group" aria-label="Thinking" data-testid="run-thinking">
-            <div className="text-xs text-muted-foreground">Thinking</div>
+          <div className="grid gap-1.5" role="group" aria-label="Thinking" data-testid="run-thinking">
+            <div className="flex gap-2 text-xs text-muted-foreground">
+              <span className="flex-1 font-medium">Thinking</span>
+              {levels.length > 0 && label && <span className="truncate">levels {label} allows</span>}
+            </div>
             {levels.length ? (
-              levels.map((l) => (
-                <button key={l} type="button" aria-pressed={draft.effort === l} className="flex items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-hover aria-pressed:bg-selected" onClick={() => setDraft({ ...draft, effort: l })}>
-                  <span className="flex-1">{l}</span>
-                  {draft.effort === l && <CheckIcon className="size-3.5" />}
-                </button>
-              ))
+              <div className="flex flex-wrap gap-1">
+                {levels.map((l) => (
+                  <button
+                    key={l}
+                    type="button"
+                    aria-pressed={draft.effort === l}
+                    className="flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs hover:bg-hover aria-pressed:border-foreground aria-pressed:bg-foreground aria-pressed:text-background"
+                    onClick={() => setDraft({ ...draft, effort: l })}
+                  >
+                    {levelWord(l)}
+                    {l === defaultLevel && <span className="text-[10px] opacity-70">default</span>}
+                  </button>
+                ))}
+              </div>
             ) : (
               <p className="text-xs text-muted-foreground">This model sets its own thinking.</p>
             )}
           </div>
-          <label className="grid gap-1 text-xs text-muted-foreground">
-            Account
+          <div className="grid gap-1" role="group" aria-label="Account" data-testid="run-account">
+            <div className="flex gap-2 text-xs text-muted-foreground">
+              <span className="flex-1 font-medium">Account</span>
+              {info?.accounts && <span>limit left</span>}
+            </div>
             {info?.accounts ? (
-              <select className={FIELD} data-testid="run-account" value={draft.account ?? ""} onChange={(e) => setDraft({ ...draft, account: e.target.value || null })}>
-                <option value="">Default</option>
-                {accountRows.map((a) => (
-                  <option key={a.name} value={a.name}>
-                    {a.email ? `${a.name} (${a.email})` : a.name}
-                  </option>
-                ))}
-              </select>
+              [{ name: null, email: null, summary: null }, ...accountRows].map((a) => {
+                const on = draft.account === a.name;
+                const limit = a.name ? limitText(meters, draft.provider, a.name, a.summary ?? null) : null;
+                return (
+                  <button key={a.name ?? ""} type="button" aria-pressed={on} title={[a.name && (a.email ? `${a.name} (${a.email})` : a.name), limit?.text].filter(Boolean).join("\n") || undefined} className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-hover aria-pressed:bg-selected" onClick={() => setDraft({ ...draft, account: a.name })}>
+                    <Radio on={on} />
+                    {a.name && <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ background: accountColor(a.name) }} />}
+                    <span className="min-w-0 truncate">{a.name ?? "CLI default"}</span>
+                    {limit?.text && (
+                      <span className="ml-auto flex min-w-0 max-w-[60%] items-center gap-1.5 text-xs text-muted-foreground tabular-nums">
+                        {limit.left !== null && (
+                          <span aria-hidden className="h-1 w-6 shrink-0 overflow-hidden rounded-full bg-border">
+                            <span className={`block h-full ${meterTone(limit.left)}`} style={{ width: `${limit.left}%` }} />
+                          </span>
+                        )}
+                        <span className="truncate">{limit.text}</span>
+                      </span>
+                    )}
+                  </button>
+                );
+              })
             ) : (
-              <span className="text-sm text-foreground">{cliName(draft.provider)} login</span>
+              <span className="px-2 text-sm">{cliName(draft.provider)} login</span>
             )}
-          </label>
+          </div>
         </div>
       </fieldset>
       {outcome === "handoff" && !running && (
@@ -239,24 +292,30 @@ function RunBody({ app, sessionId, chair }: { app: App; sessionId: string; chair
       )}
       {handoff && <SwitchProgress handoff={handoff} />}
       <ErrorLine text={handoff?.error ?? error} />
-      <div className="flex items-center gap-2">
-        <p className="min-w-0 flex-1 text-xs text-muted-foreground" data-testid="run-outcome" role="status">
-          {running ? "Switching…" : (blocked ?? outcomeText(outcome, draft, carry))}
-        </p>
+      <div className={`rounded-lg border px-3 py-2 text-xs ${outcome === "none" && !running ? "border-dashed border-border text-muted-foreground" : "border-border bg-hover"}`} role="status">
+        {outcome !== "none" && !running && !blocked && <b className="mr-1.5 font-medium text-foreground">What happens</b>}
+        <span data-testid="run-outcome">{running ? "Switching…" : (blocked ?? outcomeText(outcome, current, draft, carry, label))}</span>
+      </div>
+      <div className="flex items-center justify-end gap-2">
         {running ? (
           <Button type="button" variant="outline" size="sm" data-testid="run-cancel" disabled={!handoff?.canCancel} onClick={() => void app.life.cancelSwitch(sessionId)}>
             Cancel switch
           </Button>
         ) : (
           <Button type="button" variant="ghost" size="sm" onClick={() => app.life.close("switchModel")}>
-            Close
+            Cancel
           </Button>
         )}
         <Button type="button" size="sm" data-testid="run-apply" disabled={running || blocked !== null || outcome === "none"} onClick={apply}>
           {running && <LoaderCircleIcon className="animate-spin motion-reduce:animate-none" />}
-          Apply
+          {applyLabel(outcome)}
         </Button>
       </div>
     </div>
   );
+}
+
+/** A radio mark for a pick row; the row's aria-pressed carries the state. */
+function Radio({ on }: { on: boolean }) {
+  return <span aria-hidden className={`size-3 shrink-0 rounded-full border ${on ? "border-[4px] border-foreground" : "border-border-strong"}`} />;
 }

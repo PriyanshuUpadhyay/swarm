@@ -10,7 +10,7 @@ metadata:
   gives: "DESIGN.md tokens"
   conflicts: ""
   users: "implement, build, build-site"
-  source: "skills/ink/references/references.md (style grammar template); skills/ink/references/site.md (DESIGN.md; the file moved to blocks/build-site 2026-10-13); impeccable pack: plugin/skills/impeccable/SKILL.md:35-40 (modes); taste-skill pack: skills/taste-skill/SKILL.md:25-26, :38-39, :186, :217, :236, :531-535, :601, :687"
+  source: "skills/ink/references/references.md (style grammar template); skills/ink/references/site.md (DESIGN.md; the file moved to blocks/build-site 2026-10-13); impeccable pack: plugin/skills/impeccable/SKILL.md:35-40 (modes); Opus 5.5 defaults: platform.claude.com prompting-claude-opus-5-5#frontend-design-defaults (2026-10-22); taste-skill pack: skills/taste-skill/SKILL.md:25-26, :38-39, :186, :217, :236, :531-535, :601, :687"
 ---
 
 ## Rules
@@ -23,7 +23,7 @@ metadata:
 - Export page tokens for a `look` object with `npx @google/design.md export --format dtcg DESIGN.md`, which keeps typography. The `css-vars` format drops it.
 - In page chrome, color literals live only in the `:root` token block, which starts a line, and in one dark-mode `:root` that is all of `@media (prefers-color-scheme: dark)`. All other CSS and page code read the tokens as custom properties.
 - In page chrome, use one accent color with saturation below 80%, one corner-radius scale, and no pure black `#000000`. Drawn art follows `blocks/build-canvas/references/mark-making.md`, including its reference-based black exception.
-- Do not default to AI-purple gradients, a centered hero over a dark mesh, three equal feature cards, or Inter + slate-900.
+- Do not default to AI-purple gradients, a centered hero over a dark mesh, three equal feature cards, Inter + slate-900, a cream or off-white background, italic accent words in headlines, numbered "01/02/03" section labels, monospace labels, or pill-shaped buttons. When the first render shows another default, name it in the step file and avoid it too.
 - Design light and dark modes from the start. Respect `prefers-color-scheme`, and put the dark tokens in that second `:root`.
 - The hero fits the first viewport: headline 2 lines at most on desktop, subtext 20 words at most, the call to action visible with no scroll.
 - Zero em-dashes (`—`) and en-dash separators (`–`) in visible text.

@@ -2,8 +2,8 @@ import SwarmHUDCore
 import SwiftUI
 
 // Look 2, "Table", as reviewed in tmp/flow/2026-10-15-notch-hud/design/r3/review.md: a pure black
-// shape that grows out of the camera notch into one table with a row per account, no scroll and no
-// fold. The time of day changes only the row stripe, the calm bar fill and a small glyph; warning
+// shape that grows out of the camera notch into one table with a row per account; the rows scroll
+// only past the height cap. The time of day changes only the row stripe, the calm bar fill and a small glyph; warning
 // colours never change.
 
 extension Color {
@@ -24,6 +24,9 @@ enum Palette {
     /// Brighter than `track`: a 3 pt ring needs more contrast than a 6 pt bar.
     static let ringTrack = Color.white.opacity(0.18)
     static let rule = Color.white.opacity(0.08)
+    /// A running agent's chip; a waiting one's is warm.
+    static let chip = Color(hex: 0x17171A)
+    static let chipWaiting = Color(hex: 0x2A1D0D)
 
     /// Text colour for a reading. Calm text stays white, so the phase never changes text contrast.
     static func ink(_ severity: Severity) -> Color {
@@ -59,30 +62,44 @@ enum Layout {
     /// the 15 pt ring. Wide guests such as the crab shrink to the 40 pt.
     static let wing: CGFloat = 46
     static let closedMascot: CGFloat = 24
-    static let openMascot: CGFloat = 72
+    /// The open card's mascot, in the header beside the answer.
+    static let openMascot: CGFloat = 40
     /// The closed shape's concave top corners.
     static let closedEar: CGFloat = 6
+    /// The widest open card; fewer limit kinds make it narrower.
     static let openWidth: CGFloat = 1088
-    /// 11 accounts in two provider groups fit; the panel adds room for the shadow.
+    /// The narrowest: the header's two sides still fit beside the camera.
+    static let minOpenWidth: CGFloat = 820
+    /// About 15 accounts fit in the dense rows, then they scroll; the panel adds room for the shadow.
     static let maxOpenHeight: CGFloat = 660
     /// The open shape's concave top corners, which the content must clear.
     static let ear: CGFloat = 14
     static let inset: CGFloat = ear + 12
     static let rowPadding: CGFloat = 8
-    static let belowStatus: CGFloat = 12
+    static let belowStatus: CGFloat = 6
+    /// The header: the mascot and two lines of answer, never shorter than the notch.
+    static func header(notch: CGSize) -> CGFloat { max(notch.height, 56) }
+    /// The running-agents line, only while agents run.
+    static let running: CGFloat = 32
+    /// A card wider than `chipBreak` has room for `wideChips` running chips, else `narrowChips`.
+    static let chipBreak: CGFloat = 900
+    static let wideChips = 4
+    static let narrowChips = 2
     static let headings: CGFloat = 24
-    /// Two lines: use and reset, then the pace.
-    static let row: CGFloat = 42
-    /// The legend line, with the open mascot and its credit on the right.
-    static let legend: CGFloat = Layout.openMascot + 12
-    /// The least height of the last group that holds the mascot, its credit and the legend beside it.
-    static let besideHeight: CGFloat = 150
+    /// Two lines (use and reset, then the pace) up to `denseAfter` rows, then one line.
+    static func row(dense: Bool) -> CGFloat { dense ? 34 : 42 }
+    static let denseAfter = 5
+    /// The line for accounts with no reading, with its gap above.
+    static let needs: CGFloat = 40
     static let bottom: CGFloat = 10
     static let markColumn: CGFloat = 20
     static let nameColumn: CGFloat = 150
     static let readingColumn: CGFloat = 104
     static let valueColumn: CGFloat = 40
-    static let resetColumn: CGFloat = 64
+    /// Holds a reset ("6d 23h") or, in a one-line row, a warning pace ("full 16h 30m").
+    static let resetColumn: CGFloat = 84
+    /// A limit column's width when the card is not at its widest.
+    static let idealCell: CGFloat = 280
     static let gap: CGFloat = 12
 
     /// The mark, name and, when rows differ, Reading columns with the gap after each.
@@ -90,36 +107,45 @@ enum Layout {
         markColumn + nameColumn + gap * 2 + (reading ? readingColumn + gap : 0)
     }
 
-    /// One window column's width when `columns` share the row, so a narrower group lines up.
-    static func cell(columns: Int, reading: Bool) -> CGFloat {
-        let fixed = lead(reading: reading) + CGFloat(columns - 1) * gap
-        return (openWidth - 2 * inset - 2 * rowPadding - fixed) / CGFloat(max(columns, 1))
+    /// Wide enough for `kinds` columns of `idealCell`, so a Codex-only card has no 800 pt bar.
+    static func cardWidth(kinds: Int, reading: Bool) -> CGFloat {
+        let table = lead(reading: reading) + CGFloat(kinds) * idealCell + CGFloat(max(kinds - 1, 0)) * gap
+        return min(max(2 * inset + 2 * rowPadding + table, minOpenWidth), openWidth)
+    }
+    /// Between the items in a closed wing.
+    static let wingGap: CGFloat = 4
+    /// The closed wings' count, "needs you" and percent; the model tags are a size smaller.
+    static let wingFont: CGFloat = 11
+    static let tagFont: CGFloat = 10
+    static let tagPadding: CGFloat = 5
+
+    /// The width of a closed wing's words, in its semibold font, rounded up. `digits` measures
+    /// fixed-width digits, as the count and the percent draw.
+    static func textWidth(_ text: String, size: CGFloat, digits: Bool) -> CGFloat {
+        let font = digits ? NSFont.monospacedDigitSystemFont(ofSize: size, weight: .semibold)
+                          : NSFont.systemFont(ofSize: size, weight: .semibold)
+        return ceil((text as NSString).size(withAttributes: [.font: font]).width)
     }
 
-    /// The width of a group with `kinds` columns, its padding included, in a table of `columns`.
-    static func groupWidth(kinds: Int, columns: Int, reading: Bool) -> CGFloat {
-        2 * rowPadding + lead(reading: reading) + CGFloat(kinds) * cell(columns: columns, reading: reading)
-            + CGFloat(kinds - 1) * gap
+    /// How much each closed wing grows for `text`: the wider side, so the shape stays centred.
+    static func wingExtra(_ text: WingText) -> CGFloat {
+        let left = text.left.map { wingGap + textWidth($0, size: wingFont, digits: true) } ?? 0
+        let right = text.tags.reduce(0) { $0 + wingGap + textWidth($1, size: tagFont, digits: false) + 2 * tagPadding }
+            + (text.number.map { wingGap + textWidth($0, size: wingFont, digits: true) } ?? 0)
+        return max(left, right)
     }
+
+    /// Above `denseAfter` rows each row takes one line.
+    static func isDense(rows: Int) -> Bool { rows > denseAfter }
+
     /// The least notch height the HUD assumes, also the closed height on a Mac with no notch reading.
     static let minNotch: CGFloat = 37
-
-    /// The status line sits in the band beside the camera, as tall as the notch.
-    static func band(notch: CGSize) -> CGFloat { max(notch.height, minNotch) }
 }
 
 extension UsageModel {
+    /// The hover check reads this on every mouse move, so it is plain arithmetic on the cached wings.
     var closedSize: CGSize {
-        CGSize(width: max(notch.width, 32) + 2 * Layout.wing, height: notch.height)
-    }
-
-    /// The legend, credit and mascot fill the empty columns beside the last group when it has
-    /// fewer columns and is tall enough, so the card needs no band of its own for them.
-    var footerBeside: Bool {
-        let groups = providerGroups(accounts)
-        guard let last = groups.last, let widest = groups.map(\.kinds.count).max() else { return false }
-        return last.kinds.count < widest
-            && Layout.headings + CGFloat(last.accounts.count) * Layout.row >= Layout.besideHeight
+        CGSize(width: max(notch.width, 32) + 2 * (Layout.wing + wingExtra), height: notch.height)
     }
 
     /// The reading of every account with windows when all of them read the same, such as
@@ -131,10 +157,15 @@ extension UsageModel {
     }
 
     var openSize: CGSize {
-        let height = Layout.band(notch: notch) + Layout.belowStatus
-            + CGFloat(providerGroups(accounts).count) * Layout.headings
-            + CGFloat(accounts.count) * Layout.row + (footerBeside ? 0 : Layout.legend) + Layout.bottom
-        return CGSize(width: Layout.openWidth, height: min(height, Layout.maxOpenHeight))
+        let table = ledger(accounts)
+        var height = Layout.header(notch: notch) + Layout.belowStatus + Layout.bottom
+        if !agents.agents.isEmpty { height += Layout.running }
+        if !table.rows.isEmpty {
+            height += Layout.headings + CGFloat(table.rows.count) * Layout.row(dense: Layout.isDense(rows: table.rows.count))
+        }
+        if !table.signedOut.isEmpty { height += Layout.needs }
+        let width = Layout.cardWidth(kinds: table.kinds.count, reading: sharedReading(now: now ?? Date()) == nil)
+        return CGSize(width: width, height: min(height, Layout.maxOpenHeight))
     }
 }
 
@@ -197,6 +228,8 @@ struct HUDView: View {
             .clipShape(shape)
             .shadow(color: .black.opacity(open ? 0.46 : 0), radius: open ? 13 : 0, y: open ? 10 : 0)
             .animation(geometryAnimation, value: open)
+            // A new count or model tag widens the closed wings with the same spring, not a snap.
+            .animation(geometryAnimation, value: model.wingExtra)
             .animation(live && !reduceMotion ? .easeInOut(duration: 2) : nil, value: model.phase)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
@@ -252,14 +285,14 @@ func fillDuration(_ seconds: TimeInterval, now: Date) -> String {
 }
 
 extension BestAccount {
-    /// "2% used", "82% used · full in 3h 10m", "all full · resets in 2h": the used percent of the
+    /// "98% left", "18% left · full in 3h 10m", "all full · resets in 2h": the room left on the
     /// fullest limit, then a time only when one fills before its reset, so a HUD with no pace yet
     /// never claims that the account lasts.
     func paceText(now: Date) -> String {
-        let used = "\(fullest)% used"
+        let left = "\(100 - fullest)% left"
         switch outlook {
-        case .left(let seconds): return "\(used) · full in \(fillDuration(seconds, now: now))"
-        case .lasts: return used
+        case .left(let seconds): return "\(left) · full in \(fillDuration(seconds, now: now))"
+        case .lasts: return left
         case .allFull(let resetAt): return "all full" + (resetAt.map { " · resets in \(shortDuration(until: $0, now: now))" } ?? "")
         }
     }
@@ -271,95 +304,6 @@ extension BestAccount {
         case .lasts: return "Best account \(account.name), \(fullest) percent used"
         case .allFull(let resetAt):
             return "All accounts full" + (resetAt.map { ", \(account.name) resets in \(shortDuration(until: $0, now: now))" } ?? "")
-        }
-    }
-}
-
-/// "2 Claude agents working, Codex agent waiting for you", "No agent working".
-func agentsSpoken(_ agents: WorkingSnapshot) -> String {
-    func phrase(_ counts: [String: Int], _ verb: String) -> [String] {
-        mascotFamilies.compactMap { provider in
-            counts[provider].map { $0 == 1 ? "\(providerTitle(provider)) agent \(verb)" : "\($0) \(providerTitle(provider)) agents \(verb)" }
-        }
-    }
-    let parts = phrase(agents.working, "working") + phrase(agents.waiting, "waiting for you")
-    return parts.isEmpty ? "No agent working" : parts.joined(separator: ", ")
-}
-
-extension UsageModel {
-    func mascotTurn(now: Date) -> Int { fixedMascot ?? SwarmHUDCore.mascotTurn(at: now, count: MascotCast.count) }
-
-    /// The mascot that shows now, doing what the agents do; the closed wing and the open card both show it.
-    func mascot(now: Date, height: CGFloat, live: Bool) -> Mascot {
-        let best = bestAccount(accounts, history: history, now: now)
-        return Mascot(family: mascotFamily(agents, lastWorking: lastWorking, best: best),
-                      state: mascotState(agents, lastActive: lastActive, now: now),
-                      turn: mascotTurn(now: now), height: height, live: live, strained: best?.strained ?? false,
-                      crowd: agents.working.values.reduce(0, +))
-    }
-}
-
-/// Closed: a pixel mascot that shows what the agents do on the left, the best account's fullest
-/// limit as a ring on the right, nothing over the camera and no text.
-struct ClosedWings: View {
-    let model: UsageModel
-    let theme: Theme
-    let live: Bool
-    let now: Date
-
-    var body: some View {
-        let best = bestAccount(model.accounts, history: model.history, now: now)
-        HStack(spacing: 0) {
-            model.mascot(now: now, height: Layout.closedMascot, live: live)
-                .frame(width: Layout.wing - Layout.closedEar)
-                .padding(.leading, Layout.closedEar)
-            Spacer(minLength: 0)
-            UsageRingView(ring: usageRing(best, readFailed: model.readError != nil), theme: theme)
-                .overlay(alignment: .topTrailing) {
-                    // A reset would help now; the open card says how many and until when.
-                    if best?.offersReset == true {
-                        Circle().fill(Palette.warn).frame(width: 5, height: 5).offset(x: 3, y: -3)
-                    }
-                }
-                .frame(width: Layout.wing - Layout.closedEar)
-                .padding(.trailing, Layout.closedEar)
-        }
-        .frame(maxHeight: .infinity)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(agentsSpoken(model.agents) + ", " + (best.map { lowercasedFirst($0.spoken(now: now)) } ?? "no usage reading")
-                            + (best?.offersReset == true ? ", a Codex reset is available" : ""))
-        .accessibilityAddTraits(.isButton)
-        .accessibilityHint(model.hotKeyReady ? "Opens the usage card. Control Option Shift Command U also opens it." : "Opens the usage card.")
-        .accessibilityAction { model.toggleFromKeyboard?() }
-    }
-
-    private func lowercasedFirst(_ text: String) -> String { text.prefix(1).lowercased() + text.dropFirst() }
-}
-
-/// 15 pt across with a 3 pt line. Old numbers draw at half strength; no reading draws a dim empty ring.
-struct UsageRingView: View {
-    let ring: UsageRing
-    let theme: Theme
-
-    var body: some View {
-        ZStack {
-            Circle().stroke(Palette.ringTrack, lineWidth: 3)
-            if case .reading(let used, let severity, _) = ring, used > 0 {
-                Circle().trim(from: 0, to: Double(min(used, 100)) / 100)
-                    .stroke(theme.fill(severity), style: StrokeStyle(lineWidth: 3, lineCap: .round))
-                    .rotationEffect(.degrees(-90))
-            }
-        }
-        // The stroke straddles the path, so a 12 pt circle has a 15 pt outer edge.
-        .frame(width: 12, height: 12)
-        .padding(1.5)
-        .opacity(opacity)
-    }
-
-    private var opacity: Double {
-        switch ring {
-        case .none: return 0.6
-        case .reading(_, _, let old): return old ? 0.5 : 1
         }
     }
 }

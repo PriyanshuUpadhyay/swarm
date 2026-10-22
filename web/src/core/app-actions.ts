@@ -44,7 +44,7 @@ export class AppActions {
   }
 
   /** Branch from here: a new chat with the conversation before user row `row` of chat `session`,
-   *  and that message in its draft (ADR 0114). */
+   *  and that message in its draft. */
   branch(session: string, row: string) {
     this.setBranchPicker(false);
     return this.app.life.ask({

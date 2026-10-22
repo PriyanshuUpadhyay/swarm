@@ -8,16 +8,17 @@ import type { Load } from "./changes";
 import type { Command } from "./commands";
 
 export type UsedBy = { preset: string; step: string; named: boolean };
-export type Block = { id: string; kind: string; description: string; needs: string; gives: string; parent: string | null; parts: string[]; used_by: UsedBy[] };
+export type Block = { id: string; kind: string; description: string; needs: string; gives: string; parent: string | null; parts: string[]; used_by: UsedBy[]; offered_by: string[]; duty: boolean };
 /** `cells` is the table row as written; `blocks` are the ids it names, `resolved` what it loads. */
 export type Step = { file: string; needs: string; holds: string; why: string; cells: string[]; blocks: string[]; resolved: string[]; uses: string[]; stage: number };
-export type Preset = { preset: string; verb: string; mode: string | null; stop: "owner" | "chat"; start: string | null; steps: Step[] };
-export type Kit = { schema: string; version: string; blocks: Block[]; presets: Preset[] };
+export type Preset = { preset: string; verb: string; mode: string | null; stop: "owner" | "chat"; start: string | null; offers: string[]; steps: Step[] };
+/** `front` is the plan front door, which runs before step 1 of every preset. */
+export type Kit = { schema: string; version: string; front: string[]; blocks: Block[]; presets: Preset[] };
 export type Checked = { ok: true; preset: Preset } | { ok: false; defect: string };
 
 export type SkillsView = "catalog" | "graph" | "composer";
-/** A Composer draft. `from` names the preset it started from, or null for a new skill. */
-export type Draft = { from: string | null; name: string; description: string; stop: "owner" | "chat"; rows: string[][] };
+/** A Composer draft. `from` names the preset it started from, or null for a new skill. `offers` is the Offers line as typed. */
+export type Draft = { from: string | null; name: string; description: string; stop: "owner" | "chat"; offers: string; rows: string[][] };
 /** The last check, for the exact text it checked. */
 export type Check = { text: string; result: Checked } | { text: string; error: string };
 
@@ -37,18 +38,19 @@ const HEADER = "| File | Needs | Holds | Block | Why |\n|---|---|---|---|---|";
 const CHECK_DELAY_MS = 300;
 
 export function blankDraft(): Draft {
-  return { from: null, name: "my-skill", description: "Use when …", stop: "owner", rows: [["01-frame", "none", "", "requirements", ""]] };
+  return { from: null, name: "my-skill", description: "Use when …", stop: "owner", offers: "", rows: [["01-frame", "none", "", "requirements", ""]] };
 }
 
 /** A draft from a preset copies its rows as written, so its Copy is the preset's own table text. */
 export function presetDraft(preset: Preset): Draft {
-  return { from: preset.preset, name: preset.verb, description: "", stop: preset.stop, rows: preset.steps.map((s) => [...s.cells]) };
+  return { from: preset.preset, name: preset.verb, description: "", stop: preset.stop, offers: preset.offers.join(", "), rows: preset.steps.map((s) => [...s.cells]) };
 }
 
 /** The text that Copy gives: the `## Preset` section, inside a whole SKILL.md for a new skill. */
 export function draftText(draft: Draft): string {
   const rows = draft.rows.map((cells) => `| ${cells.map((c) => c.trim()).join(" | ")} |`).join("\n");
-  const section = `## Preset\n\nStop: ${draft.stop}\n\n${HEADER}\n${rows}\n`;
+  const offers = draft.offers.trim() ? `Offers: ${draft.offers.trim()}\n` : "";
+  const section = `## Preset\n\nStop: ${draft.stop}\n${offers}\n${HEADER}\n${rows}\n`;
   if (draft.from) return section;
   // A JSON string is a YAML double-quoted string, so a `: ` in the use line cannot break the front matter.
   return `---\nname: ${draft.name.trim()}\ndescription: ${JSON.stringify(draft.description.trim())}\n---\n\n# ${draft.name.trim()}\n\n${section}`;
@@ -74,13 +76,20 @@ const KIND_TITLES: [string, string][] = [
   ["pack", "Packs"],
 ];
 
-/** Parents with their parts under them, then the other blocks by kind; a filter keeps a parent whose part matches. */
+/** The Catalog tag of a block that no preset step loads: the plan front door, offered by a preset, or unused. */
+export function blockTag(kit: Kit, block: Block): "front door" | "offered" | "unused" | null {
+  if (kit.front.includes(block.id)) return "front door";
+  if (block.used_by.length) return null;
+  return block.offered_by.length ? "offered" : "unused";
+}
+
 /** How a step loads a block; a parent that a step did not name comes in for one of its named parts. */
 export function usedByLabel(block: Block, use: UsedBy) {
   if (use.named) return "named";
   return block.parent ? `through ${block.parent}` : "for a named part";
 }
 
+/** Parents with their parts under them, then the other blocks by kind; a filter keeps a parent whose part matches. */
 export function catalogGroups(kit: Kit, filter: string): CatalogGroup[] {
   const q = filter.trim().toLowerCase();
   const hit = (b: Block) => !q || [b.id, b.description, b.needs, b.gives].some((t) => t.toLowerCase().includes(q));
@@ -97,6 +106,16 @@ export function catalogGroups(kit: Kit, filter: string): CatalogGroup[] {
     if (items.length) groups.push({ title, items });
   }
   return groups;
+}
+
+/** A kit older than the app has no front door, duty, or offers; they are empty then, so the page still draws. */
+function withDefaults(kit: Kit): Kit {
+  return {
+    ...kit,
+    front: kit.front ?? [],
+    blocks: kit.blocks.map((b) => ({ ...b, offered_by: b.offered_by ?? [], duty: b.duty ?? false })),
+    presets: kit.presets.map((p) => ({ ...p, offers: p.offers ?? [] })),
+  };
 }
 
 export class Skills {
@@ -146,7 +165,7 @@ export class Skills {
     this.set({ kit: { state: "loading" } });
     const seq = ++this.loads;
     try {
-      const data = await this.app.api.get<Kit>("/api/kit");
+      const data = withDefaults(await this.app.api.get<Kit>("/api/kit"));
       if (seq !== this.loads) return;
       this.set({ kit: { state: "ready", data }, preset: this.state.preset ?? data.presets[0]?.preset ?? null });
       this.scheduleCheck(0);

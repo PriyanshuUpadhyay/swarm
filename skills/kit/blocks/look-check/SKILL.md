@@ -33,3 +33,4 @@ Result: the step file holds both score tables and the compare image paths. The b
 - Does each frame have its own `compare-*.png` in {{shots}}, so three or more for a page? Quote the paths.
 - Does the step file record two or more rounds, each with a score table, one row per grammar line, each with pixel evidence? Quote each round's table.
 - Does the last round have no `miss`, or does each remaining one have an `accepted miss:` line with the user's words? Quote them.
+- Does any frame show a default that `blocks/design-tokens/SKILL.md` names? Quote the frame and the default, or write "none".

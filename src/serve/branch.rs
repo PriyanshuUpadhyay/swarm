@@ -140,8 +140,8 @@ fn line_offset(source: &str) -> Option<usize> {
     source.strip_prefix("raw-")?.split('-').next()?.parse().ok()
 }
 
-/// Starts a new chat in the same folder from the chat's history before one of its user messages
-/// (ADR 0114). It returns the new chat and the message, which the app puts in the new draft.
+/// Starts a new chat in the same folder from the chat's history before one of its user messages.
+/// It returns the new chat and the message, which the app puts in the new draft.
 pub(super) async fn branch_chat(
     State(app): State<App>,
     body: Result<Json<BranchChat>, JsonRejection>,

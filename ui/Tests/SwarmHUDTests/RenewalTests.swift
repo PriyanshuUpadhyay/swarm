@@ -100,6 +100,40 @@ func renewalRunsOncePerAccountAndRefreshesDuringCooldown(renewed: Bool) async th
     #expect(model.refreshError == nil)
 }
 
+@Test @MainActor
+func refreshRenewsAnExpiredAccountAndFetchesEachProviderOnce() async throws {
+    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let script = directory.appending(path: "swarm")
+    let log = directory.appending(path: "log")
+    let meters = #"{"schema":"swarm.usage.v1","meters":[{"provider":"claude","account":"expired","label":"expired","state":"failed","reason":"Token expired","reason_code":"token_expired"},{"provider":"codex","account":"ok","label":"ok","state":"fresh","window":"week","used_pct":5}]}"#
+    try Data("""
+    #!/bin/sh
+    case "$1" in
+      run) printf 'renew:%s\\n' "$4" >> '\(log.path)' ;;
+      usage)
+        if test "$2" = '--refresh'; then printf 'refresh:%s\\n' "$4" >> '\(log.path)'; fi
+        printf '%s' '\(meters)'
+        ;;
+    esac
+    """.utf8).write(to: script)
+    try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: script.path)
+    let model = UsageModel(environment: ["SWARM_BIN": script.path], historyURL: directory.appending(path: "history.json"))
+    model.history = []
+    model.accounts = accounts(from: try UsageSnapshot.decode(Data(meters.utf8)).meters)
+    // Claude is in its cooldown; the expired account must still renew from the refresh button.
+    model.nextRefresh["claude"] = Date().addingTimeInterval(300)
+    #expect(model.canRefresh)
+    model.refresh()
+    for _ in 0..<300 {
+        if model.renewing.isEmpty && model.refreshing.isEmpty && model.readAt != nil { break }
+        try await Task.sleep(for: .milliseconds(10))
+    }
+    let lines = try String(contentsOf: log, encoding: .utf8).split(separator: "\n").map(String.init)
+    #expect(lines.sorted() == ["refresh:claude", "refresh:codex", "renew:expired"])
+}
+
 @Test func codexPetsLoadFromTheirFoldersAndABadOneIsLeftOut() throws {
     let home = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: home) }

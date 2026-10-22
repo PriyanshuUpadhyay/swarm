@@ -2,7 +2,7 @@ import { ArrowUpIcon, Maximize2Icon, Minimize2Icon, SquareIcon } from "lucide-re
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import type { App, Composer } from "../core/app";
 import { historyStep, type Browse } from "../core/history";
-import { canBranch, outgoing, sends, usageLabel } from "../core/composer";
+import { canBranch, outgoing, sends, usageLabel, usageTitle } from "../core/composer";
 import { editPicks, matches, menuAt, moved, offered, pick, picksAndSends, showsEmpty, skillFirst, skillNames, toSend, type CommandList, type MenuRow, type SkillPick } from "../core/slash";
 import { Button } from "../components/ui/button";
 import { ImageThumbs } from "./images";
@@ -370,7 +370,7 @@ export function ComposerBox({ app, composer }: { app: App; composer: Composer })
         </div>
         <div className="flex items-center gap-2 px-2 pb-2 text-xs text-muted-foreground">
           <RunChip app={app} sessionId={sessionId} chair={chair} />
-          <button type="button" data-testid="usage" className="rounded-md px-1.5 py-1 tabular-nums hover:bg-hover" title="Context, cache, and estimated cost for this agent session">
+          <button type="button" data-testid="usage" className="rounded-md px-1.5 py-1 tabular-nums hover:bg-hover" title={usageTitle(composer.usage)}>
             {usageLabel(composer.usage)}
           </button>
           {showStop && !chair.who && <span className="text-faint-foreground">⌘. stops</span>}

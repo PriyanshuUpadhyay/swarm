@@ -114,9 +114,9 @@ describe("chair input", () => {
   });
 
   it("shows the context left, else the token count", () => {
-    expect(usageLabel(null)).toBe("Usage");
-    expect(usageLabel({ context: { context_tokens: 41_200 }, remaining_percent: 79 })).toBe("79% left");
-    expect(usageLabel({ context: { context_tokens: 41_200 } })).toBe("41K");
+    expect(usageLabel(null)).toBe("Context");
+    expect(usageLabel({ context: { context_tokens: 41_200 }, remaining_percent: 79 })).toBe("Context 79% left");
+    expect(usageLabel({ context: { context_tokens: 41_200 } })).toBe("Context 41K");
   });
 });
 
@@ -333,10 +333,10 @@ describe("usage from the rows stream", () => {
       inner.flush();
     };
     frame({ usage: { context: { context_tokens: 41_200 }, remaining_percent: 20 } });
-    expect(usageLabel(app.view.composer!.usage)).toBe("20% left");
+    expect(usageLabel(app.view.composer!.usage)).toBe("Context 20% left");
     frame({ upsert: [user("more", "more", 15)] });
-    expect(usageLabel(app.view.composer!.usage)).toBe("20% left");
+    expect(usageLabel(app.view.composer!.usage)).toBe("Context 20% left");
     frame({ usage: null });
-    expect(usageLabel(app.view.composer!.usage)).toBe("Usage");
+    expect(usageLabel(app.view.composer!.usage)).toBe("Context");
   });
 });

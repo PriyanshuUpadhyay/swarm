@@ -211,6 +211,10 @@ export class App {
     return this.sidebar.clickRecent(session);
   }
 
+  dropRecent(session: string, target: string) {
+    return this.sidebar.dropRecent(session, target);
+  }
+
   pin(workspace: string) {
     return this.sidebar.pin(workspace);
   }
