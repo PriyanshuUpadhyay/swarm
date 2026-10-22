@@ -227,3 +227,41 @@ test("closing the open tab-only chat shows the other tab after archive confirmat
     }
   }
 });
+
+test("a workspace name with line breaks draws on one line", async ({ page: tab }, info) => {
+  const choicesPath = join(process.env.SWARM_E2E_HOME!, ".swarm/choices.json");
+  const before = readFileSync(choicesPath, "utf8");
+  try {
+    await tab.goto(`${server().origin}/${server().hash}`);
+    await tab.waitForFunction(() => window.__swarmReady === true);
+    const rows = tab.locator('[data-testid="tree-row"][data-kind="workspace"]');
+    const workspace = rows.filter({ hasText: "ws-tabs" });
+    const workspaceId = (await workspace.getAttribute("data-id"))!;
+    // WebKit breaks a nowrap line at U+2028, which the owner's saved name held.
+    await choose({ op: "rename_workspace", workspace: workspaceId, name: "Fix the\u2028sidebar\nand tabs" });
+    await tab.reload();
+    await tab.waitForFunction(() => window.__swarmReady === true);
+    const renamed = rows.filter({ hasText: "Fix the sidebar" });
+    await expect(renamed).toHaveCount(1);
+    // The text's own line boxes, because the row clips a second line.
+    const drawnLines = (el: Element) => {
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      return new Set([...range.getClientRects()].map((r) => Math.round(r.top))).size;
+    };
+    const label = renamed.locator(".label").first();
+    await expect(label).toHaveText("Fix the sidebar and tabs");
+    expect(await label.evaluate(drawnLines)).toBe(1);
+    await renamed.click();
+    const title = tab.locator(".tab-title");
+    await expect(title).toHaveText("Fix the sidebar and tabs");
+    expect(await title.evaluate(drawnLines)).toBe(1);
+  } finally {
+    try {
+      await tab.screenshot({ path: info.outputPath("one-line-name.png") });
+    } finally {
+      await tab.close();
+      writeFileSync(choicesPath, before);
+    }
+  }
+});

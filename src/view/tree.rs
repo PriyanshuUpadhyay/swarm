@@ -248,10 +248,12 @@ pub fn contains(path: &str, root: &str) -> bool {
             .strip_prefix(root)
             .is_some_and(|tail| tail.starts_with('/'))
 }
+/// A name on one line: a line break, U+2028 too, breaks a sidebar row or a tab in WebKit.
+pub fn one_line(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
 pub fn nonblank(text: Option<&str>) -> Option<String> {
-    text.map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(str::to_owned)
+    text.map(one_line).filter(|s| !s.is_empty())
 }
 pub fn age(timestamp: i64, now: i64) -> String {
     let seconds = now.saturating_sub(timestamp).max(0);
@@ -510,3 +512,15 @@ fn chats(sessions: Vec<Value>, snapshot: &Value, owner: &OwnerChoices) -> (Vec<C
 }
 
 pub use super::sidebar::{Section, Selection, SidebarRow, sections};
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn a_name_is_one_line() {
+        assert_eq!(
+            super::nonblank(Some(" Fix\u{2028}the\n\tsidebar ")).as_deref(),
+            Some("Fix the sidebar")
+        );
+        assert_eq!(super::nonblank(Some("\u{2028}\n")), None);
+    }
+}
