@@ -301,6 +301,8 @@ use snapshot::*;
 
 mod terminal;
 use terminal::*;
+mod shells;
+use shells::*;
 
 mod tool_output;
 use tool_output::*;

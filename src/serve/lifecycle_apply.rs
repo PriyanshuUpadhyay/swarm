@@ -75,6 +75,10 @@ pub(super) fn apply_lifecycle(
                 Ok(())
             })
             .map_err(choice_error)?;
+            // An archived workspace is read-only, so its shells end with it.
+            if archive {
+                shells::close_all(&p.workspace);
+            }
         }
         LifecycleAction::Delete(p) => {
             let (project, workspace) =
@@ -94,6 +98,7 @@ pub(super) fn apply_lifecycle(
             let common = lifecycle::common(project)
                 .ok_or_else(|| error(StatusCode::BAD_REQUEST, "not a Git project"))?;
             lifecycle::checked_path(&app.root, common, true).map_err(lifecycle_error)?;
+            shells::close_all(&p.workspace);
             lifecycle::check_git(common, &["worktree", "remove", "--", &p.workspace])
                 .map_err(lifecycle_error)?;
             choices_store::update(&app.root, None, |owner, state| {

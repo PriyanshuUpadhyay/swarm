@@ -179,6 +179,8 @@ pub(super) fn router(app: App) -> Router {
         .route("/api/tool-output", get(tool_output))
         .route("/api/background", get(background))
         .route("/api/terminal/ticket", post(terminal_ticket))
+        .route("/api/shells", get(shells_list).post(shells_create))
+        .route("/api/shells/close", post(shells_close))
         .route(SOCKET_PATH, get(terminal_socket))
         .route("/api/stream", get(stream))
         .route("/api/reload", post(reload))

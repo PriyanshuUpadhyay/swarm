@@ -98,3 +98,28 @@ test("clicking the row that is already shown gives its terminal the keys", async
   await row.click();
   await expect(panel.locator(".xterm-helper-textarea")).toBeFocused();
 });
+
+test("a workspace shell takes keys, outlives the panel, and closes on request", async ({ page: tab }, info) => {
+  await openChat(tab, info);
+  const panel = tab.getByTestId("background-panel").last();
+  await tab.keyboard.press("Meta+j");
+  await panel.getByTestId("new-shell").click();
+  const row = panel.getByRole("button", { name: /Shell 1/ });
+  await expect(row).toHaveAttribute("aria-current", "true");
+  const screen = panel.locator(".xterm-rows");
+  // The prompt's look is the owner's, so the check waits for the command's own output.
+  await expect(panel.locator(".xterm-helper-textarea")).toBeFocused();
+  await tab.keyboard.type("echo shell-$((6*7)) $SWARM_SESSION_ID.\n");
+  await expect(screen).toContainText("shell-42 .");
+  await tab.keyboard.press("Meta+j");
+  await expect(panel).toHaveCount(0);
+  await tab.keyboard.press("Meta+j");
+  await row.click();
+  await expect(screen).toContainText("shell-42 .");
+  try {
+    await info.attach("shell", { body: await tab.screenshot(), contentType: "image/png" });
+  } finally {
+    await panel.getByTestId("close-shell").click();
+  }
+  await expect(row).toHaveCount(0);
+});

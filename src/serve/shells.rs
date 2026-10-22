@@ -1,0 +1,252 @@
+//! Workspace shells for the Cmd+J panel. Each is a shell in a tmux session of its own on the
+//! `swarm-shell` socket, so it outlives the panel and a server restart, and the list is read from
+//! tmux, never from memory. A shell belongs to a chat's folder, which the server reads from the
+//! session, so the page never names a path.
+
+use super::*;
+use portable_pty::CommandBuilder;
+
+const SOCKET: &str = "swarm-shell";
+
+/// tmux on the shell socket, with no agent identity: the shell is the owner's, and an agent's
+/// SWARM_* or Claude variables in it would make a `swarm` call act as that agent.
+fn tmux() -> std::process::Command {
+    let mut command = std::process::Command::new("tmux");
+    command.args(["-L", SOCKET, "-f", "/dev/null"]);
+    // The first shell's locale is the tmux server's, and tmux mangles text outside UTF-8.
+    command.env("LANG", "en_US.UTF-8");
+    for (name, _) in std::env::vars_os() {
+        let key = name.to_string_lossy();
+        if ["SWARM_", "CLAUDE", "TMUX", "HERDR_"]
+            .iter()
+            .any(|prefix| key.starts_with(prefix))
+            || ["AI_AGENT", "SUPERSET_TERMINAL_ID", "REX_BLOCK"].contains(&key.as_ref())
+        {
+            command.env_remove(name);
+        }
+    }
+    command
+}
+
+#[derive(Debug, PartialEq, serde::Serialize)]
+pub(super) struct Shell {
+    pub(super) id: String,
+    /// What runs in the shell now, as tmux names it.
+    pub(super) command: String,
+}
+
+/// An id the server made: `shell-` and 8 hex digits, so it is safe as a tmux target.
+pub(super) fn valid_id(id: &str) -> bool {
+    id.strip_prefix("shell-")
+        .is_some_and(|hex| hex.len() == 8 && hex.bytes().all(|b| b.is_ascii_hexdigit()))
+}
+
+/// tmux prints a tab as `_` outside a UTF-8 locale, so the fields part on `|`, and the folder,
+/// which may hold one, comes last.
+const FORMAT: &str = "#{session_name}|#{session_created}|#{pane_current_command}|#{@swarm_cwd}";
+
+/// The shells of `cwd` in `list-sessions` output, oldest first.
+pub(super) fn parse(text: &str, cwd: &str) -> Vec<Shell> {
+    let mut found: Vec<(i64, Shell)> = text
+        .lines()
+        .filter_map(|line| {
+            let mut fields = line.splitn(4, '|');
+            let (id, created, command) = (fields.next()?, fields.next()?, fields.next()?);
+            (valid_id(id) && fields.next() == Some(cwd)).then(|| {
+                let shell = Shell {
+                    id: id.into(),
+                    command: command.into(),
+                };
+                (created.parse().unwrap_or(0), shell)
+            })
+        })
+        .collect();
+    found.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.id.cmp(&b.1.id)));
+    found.into_iter().map(|(_, shell)| shell).collect()
+}
+
+pub(super) fn list(cwd: &str) -> Result<Vec<Shell>, String> {
+    let output = tmux()
+        .args(["list-sessions", "-F", FORMAT])
+        .output()
+        .map_err(|err| format!("tmux did not run: {err}"))?;
+    if output.status.success() {
+        return Ok(parse(&String::from_utf8_lossy(&output.stdout), cwd));
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    // No shell yet: tmux starts its server with the first one.
+    if stderr.contains("no server running") || stderr.contains("error connecting") {
+        return Ok(Vec::new());
+    }
+    Err(stderr.trim().to_owned())
+}
+
+fn create(cwd: &str) -> Result<String, String> {
+    // The end of a v7 uuid is random.
+    let uuid = uuid::Uuid::now_v7().simple().to_string();
+    let id = format!("shell-{}", &uuid[uuid.len() - 8..]);
+    // set-option takes a pane target, where `=` names no session; the id is unique anyway.
+    let target = &id;
+    let output = tmux()
+        .args(["new-session", "-d", "-s", &id, "-c", cwd])
+        .args([";", "set-option", "-t", target, "status", "off"])
+        // The owner's keys go to the shell, as in a terminal.
+        .args([";", "set-option", "-t", target, "prefix", "None"])
+        .args([";", "set-option", "-t", target, "@swarm_cwd", cwd])
+        .output()
+        .map_err(|err| format!("tmux did not run: {err}"))?;
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).trim().to_owned());
+    }
+    Ok(id)
+}
+
+fn kill(id: &str) -> Result<(), String> {
+    let output = tmux()
+        .args(["kill-session", "-t", &format!("={id}")])
+        .output()
+        .map_err(|err| format!("tmux did not run: {err}"))?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(String::from_utf8_lossy(&output.stderr).trim().to_owned())
+    }
+}
+
+/// Ends every shell of `cwd`, for an archived workspace. A failure only warns, since the archive
+/// already ran.
+pub(super) fn close_all(cwd: &str) {
+    for shell in list(cwd).unwrap_or_default() {
+        if let Err(err) = kill(&shell.id) {
+            eprintln!("swarm: shell {} did not close: {err}", shell.id);
+        }
+    }
+}
+
+/// `tmux attach` for the terminal's PTY, with no agent identity and a terminal type xterm.js draws.
+pub(super) fn attach_command(id: &str) -> CommandBuilder {
+    let command = tmux();
+    let mut builder = CommandBuilder::new(command.get_program());
+    builder.args(command.get_args());
+    builder.args(["attach-session", "-t", &format!("={id}")]);
+    for (key, value) in command.get_envs() {
+        match value {
+            Some(value) => builder.env(key, value),
+            None => builder.env_remove(key),
+        }
+    }
+    builder.env("TERM", "xterm-256color");
+    builder.env("LANG", "en_US.UTF-8");
+    builder
+}
+
+/// The folder of `session`'s chat, where its shells start.
+pub(super) fn session_cwd(app: &Server, session: &str) -> Result<String, ApiError> {
+    let connection = read_connection(&app.root)
+        .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "database read failed"))?;
+    let cwd: String = connection
+        .query_row("SELECT cwd FROM session WHERE id = ?1", [session], |row| {
+            row.get(0)
+        })
+        .map_err(|_| error(StatusCode::NOT_FOUND, "unknown session"))?;
+    if !Path::new(&cwd).is_dir() {
+        return Err(error(StatusCode::CONFLICT, "this chat's folder is gone"));
+    }
+    Ok(cwd)
+}
+
+/// The shell `id` of `session`'s folder, or a 404.
+pub(super) fn owned(app: &Server, session: &str, id: &str) -> Result<String, ApiError> {
+    let cwd = session_cwd(app, session)?;
+    let shells = list(&cwd).map_err(|err| error(StatusCode::INTERNAL_SERVER_ERROR, &err))?;
+    shells
+        .into_iter()
+        .find(|shell| valid_id(id) && shell.id == id)
+        .map(|shell| shell.id)
+        .ok_or_else(|| error(StatusCode::NOT_FOUND, "unknown shell"))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct ShellRequest {
+    session: String,
+    id: Option<String>,
+}
+
+async fn blocking<T: Send + 'static>(
+    run: impl FnOnce() -> Result<T, ApiError> + Send + 'static,
+) -> Result<T, ApiError> {
+    tokio::task::spawn_blocking(run)
+        .await
+        .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "shell action failed"))?
+}
+
+pub(super) async fn shells_list(
+    State(app): State<App>,
+    Query(query): Query<BackgroundQuery>,
+) -> Result<Json<Value>, ApiError> {
+    let shells = blocking(move || {
+        let cwd = session_cwd(&app, &query.session)?;
+        list(&cwd).map_err(|err| error(StatusCode::INTERNAL_SERVER_ERROR, &err))
+    })
+    .await?;
+    Ok(Json(json!({ "shells": shells })))
+}
+
+pub(super) async fn shells_create(
+    State(app): State<App>,
+    Json(request): Json<ShellRequest>,
+) -> Result<Json<Value>, ApiError> {
+    let id = blocking(move || {
+        let cwd = session_cwd(&app, &request.session)?;
+        create(&cwd).map_err(|err| error(StatusCode::INTERNAL_SERVER_ERROR, &err))
+    })
+    .await?;
+    Ok(Json(json!({ "id": id })))
+}
+
+pub(super) async fn shells_close(
+    State(app): State<App>,
+    Json(request): Json<ShellRequest>,
+) -> Result<Json<Value>, ApiError> {
+    blocking(move || {
+        let id = owned(
+            &app,
+            &request.session,
+            request.id.as_deref().unwrap_or_default(),
+        )?;
+        kill(&id).map_err(|err| error(StatusCode::INTERNAL_SERVER_ERROR, &err))
+    })
+    .await?;
+    Ok(Json(json!({ "ok": true })))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_folder_lists_only_its_own_shells_oldest_first() {
+        let text = "shell-0000000b|20|vim|/w/a\n\
+                    shell-0000000a|10|zsh|/w/a\n\
+                    shell-0000000c|5|zsh|/w/b\n\
+                    shell-0000000d|5|zsh|/w/a|b\n\
+                    swarm_x_orchestrator|1|claude|/w/a\n\
+                    shell-../etc|1|zsh|/w/a\n";
+        assert_eq!(
+            parse(text, "/w/a"),
+            [
+                Shell {
+                    id: "shell-0000000a".into(),
+                    command: "zsh".into()
+                },
+                Shell {
+                    id: "shell-0000000b".into(),
+                    command: "vim".into()
+                },
+            ]
+        );
+        assert!(!valid_id("shell-0000000"));
+        assert!(!valid_id("=shell-0000000a"));
+    }
+}
