@@ -125,6 +125,30 @@ describe("which Sent rows pi's box held", () => {
     expect(app.chats.get("chat")!.sent.map((s) => s.row.text)).toEqual(["ok"]);
   });
 
+  it("does not take 'ok' for part of what the owner typed in pi's own box", async () => {
+    const { app, snapshot } = harness(undefined, (path) => (path === "/api/chat/interrupt" ? { ok: true, box: "cleared", held: "hook" } : null));
+    snapshot({ provider: "pi", state: "working" });
+    app.openChat("chat");
+    await settle();
+    await app.send("chat", "ok");
+    await app.interrupt("chat");
+    expect(app.draft("chat")).toBe("hook");
+    expect(app.chats.get("chat")!.sent.map((s) => s.row.text)).toEqual(["ok"]);
+  });
+
+  it("holds a wrapped URL and the short message after it together", async () => {
+    const url = `https://example.com/${"a".repeat(130)}`;
+    const { app, snapshot } = harness(undefined, (path) => (path === "/api/chat/interrupt" ? { ok: true, box: "cleared", held: `${url.slice(0, 75)} ${url.slice(75)} y` } : null));
+    snapshot({ provider: "pi", state: "working" });
+    app.openChat("chat");
+    await settle();
+    await app.send("chat", url);
+    await app.send("chat", "y");
+    await app.interrupt("chat");
+    expect(app.draft("chat")).toBe(`${url}\ny`);
+    expect(app.chats.get("chat")!.sent.length).toBe(0);
+  });
+
   it("matches a long message that pi's box wrapped, by the text without spaces", async () => {
     const url = `https://example.com/${"a".repeat(130)}`;
     const { app, snapshot } = harness(undefined, (path) => (path === "/api/chat/interrupt" ? { ok: true, box: "cleared", held: `${url.slice(0, 75)} ${url.slice(75)}` } : null));

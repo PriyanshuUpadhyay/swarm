@@ -229,11 +229,12 @@ export class AppComposer {
   }
 
   /** Puts the text pi's box `held` before the draft and drops the Sent rows it held from the chat.
-   *  pi takes the oldest queued message first, so the box holds the newest k Sent rows in order;
-   *  the largest k whose texts appear in the box as whole words wins, and a box that wrapped a
-   *  long word is matched again with all spaces removed. When the box held only those rows, their
-   *  exact texts come back, line breaks and all; otherwise the box text comes back as pi drew it,
-   *  for it also holds what the owner typed in pi. */
+   *  pi takes the oldest queued message first, so the box holds the newest k Sent rows in order.
+   *  For each k, largest first, the rows' texts must appear in the box as whole words; failing
+   *  that, rows with no spaces (a long URL that the box wrapped) must make up the whole box once
+   *  its spaces are removed. When the box held only those rows, their exact texts come back, line
+   *  breaks and all; otherwise the box text comes back as pi drew it, for it also holds what the
+   *  owner typed in pi. */
   private restoreSent(sessionId: string, sent: readonly Sent[], held: string) {
     const words = (text: string) => text.trim().split(/\s+/).join(" ");
     const squash = (text: string) => text.replace(/\s+/g, "");
@@ -241,15 +242,11 @@ export class AppComposer {
     const box = words(held);
     let back: Sent[] = [];
     let only = false;
-    for (const [fits, same] of [
-      [(tail: string) => ` ${box} `.includes(` ${tail} `), (tail: string) => tail === box],
-      [(tail: string) => squash(box).includes(squash(tail)), (tail: string) => squash(tail) === squash(box)],
-    ] as const) {
-      for (let k = sent.length; k > 0 && !back.length; k--) {
-        const tail = sent.slice(-k);
-        const joined = tail.map((s) => words(s.row.text)).join(" ");
-        if (fits(joined)) [back, only] = [tail, same(joined)];
-      }
+    for (let k = sent.length; k > 0; k--) {
+      const tail = sent.slice(-k);
+      const joined = tail.map((s) => words(s.row.text)).join(" ");
+      if (` ${box} `.includes(` ${joined} `)) [back, only] = [tail, joined === box];
+      else if (tail.every((s) => !/\s/.test(s.row.text.trim())) && squash(joined) === squash(box)) [back, only] = [tail, true];
       if (back.length) break;
     }
     const chat = this.app.chats.get(sessionId);

@@ -1,5 +1,6 @@
 import { useMemo, useState, useSyncExternalStore } from "react";
 import type { App } from "../core/app";
+import { whenPainted } from "../core/perf";
 import { paletteSections, type PaletteItem } from "../core/nav";
 import { Command, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandShortcut } from "../components/ui/command";
 import { Button } from "../components/ui/button";
@@ -14,16 +15,20 @@ export function BranchPicker({ app }: { app: App }) {
   const loaded = useSyncExternalStore(app.subscribe, () => app.openRows());
   const state = useSyncExternalStore(app.subscribe, () => app.view.chatState);
   const failure = useSyncExternalStore(app.subscribe, () => app.view.chatError);
-  const older = useSyncExternalStore(app.subscribe, () => app.hasOlderRows());
+  const older = useSyncExternalStore(app.subscribe, () => app.view.hasOlder);
   const rows = open ? app.branchRows(loaded) : [];
   return (
     <CommandDialog
       open={open}
       onOpenChange={(o) => app.setBranchPicker(o)}
       onCloseAutoFocus={(e) => {
-        // Esc gives the keys back to the text box, not to the page behind the dialog.
+        // Esc gives the keys back to the text box, not to the page behind the dialog. A picked row
+        // opens the Branch dialog, which keeps the keys until it is gone.
         e.preventDefault();
-        document.querySelector<HTMLElement>('[data-testid="composer"]')?.focus();
+        whenPainted(
+          () => !document.querySelector('[role="dialog"]'),
+          () => document.querySelector<HTMLElement>('[data-testid="composer"]')?.focus(),
+        );
       }}
       title="Branch from a message"
       description="A new chat starts from the conversation before the message."
@@ -35,7 +40,10 @@ export function BranchPicker({ app }: { app: App }) {
             {state === "loading" && <p role="status" className="px-3 py-4 text-sm text-muted-foreground">Loading messages…</p>}
             {state === "error" && (
               <div role="alert" className="flex items-center gap-2 px-3 py-4 text-sm text-destructive">
-                <span className="min-w-0 flex-1 break-words">{failure}</span>
+                <span className="min-w-0 flex-1">
+                  The messages did not load.
+                  <span className="block break-words text-xs">{failure}</span>
+                </span>
                 <Button variant="outline" size="sm" onClick={() => void app.reloadOpenRows()}>
                   Retry
                 </Button>

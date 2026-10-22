@@ -110,9 +110,22 @@ test("the picker says it is loading, shows a failed load with Retry, and says ol
   await expect(picker.getByText("No messages")).toHaveCount(0);
   mode = "fail";
   release();
+  await expect(picker.getByRole("alert")).toContainText("The messages did not load.");
   await expect(picker.getByRole("alert")).toContainText("rows are gone");
   mode = "older";
   await picker.getByRole("button", { name: "Retry" }).click();
   await expect(picker.getByRole("option").first()).toBeVisible();
   await expect(picker.getByText("Older messages are not listed. Scroll up to branch from one.")).toBeVisible();
+});
+
+test("picking a message leaves the cursor in the Branch dialog, not the text box", async ({ page: tab }) => {
+  const composer = await openLive(tab);
+  await composer.press("Escape");
+  await composer.press("Escape");
+  await tab.getByTestId("branch-picker").getByRole("option").first().click();
+  await expect(tab.getByTestId("confirm-body")).toContainText("Branches the conversation");
+  // The picker closed under the confirm dialog; the text box must not take the keys back.
+  await tab.waitForTimeout(300);
+  await expect(composer).not.toBeFocused();
+  expect(await tab.evaluate(() => !!document.activeElement?.closest('[role="alertdialog"], [role="dialog"]'))).toBe(true);
 });
