@@ -7,7 +7,7 @@ import type { App } from "../core/app";
 import { accountColor, applyBlock, waitsForTurn, applyLabel, CARRY_OPTIONS, chooseModel, cliName, levelWord, limitText, modelLevels, outcomeText, runLabel, runTip, savedCarry, switchOutcome, type AgentInput, type Carry, type Run } from "../core/composer";
 import { isSettled } from "../core/lifecycle";
 import type { ModelInfo } from "../core/run-catalog";
-import type { ProviderInfo } from "../core/settings";
+import type { Account, ProviderInfo } from "../core/settings";
 import { Button } from "../components/ui/button";
 import { FIELD, message, useLife, ErrorLine } from "./lifecycle-shared";
 import { SwitchProgress } from "./lifecycle-switch-model";
@@ -96,7 +96,7 @@ function RunBody({ app, sessionId, chair }: { app: App; sessionId: string; chair
   const [carry, setCarry] = useState<Carry>(saved);
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [models, setModels] = useState<Record<string, ModelInfo[] | string>>({});
-  const [accounts, setAccounts] = useState<{ name: string; email: string | null; summary?: string | null }[]>([]);
+  const [accounts, setAccounts] = useState<Pick<Account, "name" | "email" | "summary">[]>([]);
   const usage = useSyncExternalStore(app.settings.subscribe, () => app.settings.state.usage);
   const meters = usage.state === "ready" ? usage.data.meters : [];
   const [query, setQuery] = useState("");
@@ -159,7 +159,7 @@ function RunBody({ app, sessionId, chair }: { app: App; sessionId: string; chair
   const q = query.trim().toLowerCase();
   const blocked = applyBlock(chair, draft);
   // A failed accounts read still shows the chat's own account, which Apply sends.
-  const accountRows = draft.account && !accounts.some((a) => a.name === draft.account) ? [{ name: draft.account, email: null }, ...accounts] : accounts;
+  const accountRows = draft.account && !accounts.some((a) => a.name === draft.account) ? [{ name: draft.account, email: null, summary: null }, ...accounts] : accounts;
   const label = model?.label ?? draft.model ?? "";
 
   const choose = (provider: string, m: ModelInfo | string) => {

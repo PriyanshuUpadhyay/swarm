@@ -60,6 +60,8 @@ describe("run chip", () => {
     // A meter with no percent read shows the summary too.
     expect(limitText([meter("work", "fb", null, null)], "claude", "work", "38% left")).toEqual({ text: "38% left", left: null });
     expect(limitText([meter("work", "fb", null, null)], "claude", "work", null)).toEqual({ text: "", left: null });
+    // Claude's Fable week (src/usage/claude.rs "fb") is a week too, but not the plain weekly limit.
+    expect(limitText([meter("work", "5h", 300, 38), meter("work", "7d", 10080, 60), meter("work", "fb", 10080, 90)], "claude", "work", null).text).toBe("5h 62% · wk 40% · Fable wk 10%");
     // A named Codex limit keeps its id, so two limits do not read the same.
     const spark = { ...meter("work", "codex_spark:primary", 300, 10), provider: "codex" };
     expect(limitText([spark, { ...meter("work", "primary", 300, 40), provider: "codex" }], "codex", "work", null).text).toBe("codex_spark 5h 90% · 5h 60%");

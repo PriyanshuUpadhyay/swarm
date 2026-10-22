@@ -1,7 +1,7 @@
 // The CLIs, models and accounts a chat can run on, for the run chip and Switch model.
 
 import type { Api } from "./api";
-import type { ProviderInfo } from "./settings";
+import type { AccountList, ProviderInfo } from "./settings";
 
 /** One row of `GET /api/models`. `note` is a short line beside the name; `default_effort` the
  *  level the CLI picks for it. */
@@ -30,8 +30,8 @@ export class RunCatalog {
     return read;
   }
 
-  async accounts(provider: string): Promise<{ accounts: { name: string; email: string | null; auth_state?: string; summary?: string | null }[] }> {
-    const read = await this.api().get<{ accounts: { name: string; email: string | null; auth_state?: string; summary?: string | null }[] }>("/api/accounts", { provider });
+  async accounts(provider: string): Promise<AccountList> {
+    const read = await this.api().get<AccountList>("/api/accounts", { provider });
     for (const a of read.accounts) if (a.email) this.emails.set(`${provider}/${a.name}`, a.email);
     return read;
   }

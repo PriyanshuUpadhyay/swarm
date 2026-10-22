@@ -204,7 +204,8 @@ export function accountColor(name: string): string {
 /** A meter window's short name: 5h, wk, or the window id. A named Codex limit (`<id>:<window>`)
  *  keeps its id in front, so two limits of one account do not read the same. */
 function windowName(m: Meter): string {
-  const limit = m.window?.includes(":") ? `${m.window.split(":")[0]} ` : "";
+  // Claude's Fable week ("fb", src/usage/claude.rs) is a week as long as the plain one.
+  const limit = m.window === "fb" ? "Fable " : m.window?.includes(":") ? `${m.window.split(":")[0]} ` : "";
   if (m.window_minutes === 10080 || m.window === "7d") return `${limit}wk`;
   if (m.window_minutes && m.window_minutes % 60 === 0 && m.window_minutes < 1440) return `${limit}${m.window_minutes / 60}h`;
   return m.window ?? m.label;
