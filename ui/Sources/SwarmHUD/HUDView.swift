@@ -70,7 +70,7 @@ enum Layout {
     static let openWidth: CGFloat = 1088
     /// The narrowest: the header's two sides still fit beside the camera.
     static let minOpenWidth: CGFloat = 820
-    /// 11 accounts fit in the compact rows; the panel adds room for the shadow.
+    /// About 15 accounts fit in the dense rows, then they scroll; the panel adds room for the shadow.
     static let maxOpenHeight: CGFloat = 660
     /// The open shape's concave top corners, which the content must clear.
     static let ear: CGFloat = 14

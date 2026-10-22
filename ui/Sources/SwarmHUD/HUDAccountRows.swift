@@ -192,9 +192,12 @@ struct SignedOutLine: View {
         let names = accounts.map(\.name).joined(separator: ", ")
         HStack(spacing: 10) {
             if Set(accounts.map(\.provider)).count == 1 { ProviderMark(provider: accounts[0].provider, size: 14) }
+            // An account that Renew cannot fix names its cause on the card, not only on hover.
             Text(renewable.count == accounts.count
                  ? "\(accounts.count) \(accounts.count == 1 ? "account needs" : "accounts need") sign-in: \(names)"
-                 : "No reading: \(names)")
+                 : "No reading: " + accounts.map { account in
+                     account.renewalArguments == nil ? account.problem.map { "\(account.name) (\($0))" } ?? account.name : account.name
+                 }.joined(separator: ", "))
                 .lineLimit(1).truncationMode(.tail)
                 .help(accounts.map { "\($0.name): \($0.problem ?? "No reading")" }.joined(separator: "\n"))
             if !renewable.isEmpty {
