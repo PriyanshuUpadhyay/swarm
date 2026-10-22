@@ -109,6 +109,8 @@ def offers(file, rows, selected, text=None):
             raise SystemExit(f"Offers names {block} twice")
         if block not in catalog:
             raise SystemExit(f"Offers names {block}, which is not a kit block")
+        if plan_rules.is_duty(block):
+            raise SystemExit(f"Offers names {block}, a duty block that the plan check adds when it applies")
         if step := next((r[0] for r in rows if block in selected[r[0]]), None):
             raise SystemExit(f"Offers names {block}, which step {step} already loads")
     return ids

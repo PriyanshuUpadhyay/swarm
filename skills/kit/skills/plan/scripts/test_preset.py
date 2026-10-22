@@ -130,6 +130,9 @@ def test_an_offers_line_names_kit_blocks_that_no_step_loads():
     # A base block loads in every step, so a plan cannot list it as Offered.
     base = DRAFT.replace("Stop: chat\n", "Stop: chat\nOffers: base-rules\n")
     assert run("--check", text=base)["defect"] == "Offers names base-rules, which is not a kit block"
+    # A duty block is never off: the plan check needs it whenever its step applies.
+    duty = DRAFT.replace("Stop: chat\n", "Stop: chat\nOffers: change-review\n")
+    assert run("--check", text=duty)["defect"] == "Offers names change-review, a duty block that the plan check adds when it applies"
     again = DRAFT.replace("Stop: chat\n", "Stop: chat\nOffers: report, report\n")
     assert run("--check", text=again)["defect"] == "Offers names report twice"
     twice = DRAFT.replace("Stop: chat\n", "Stop: chat\nOffers: report\nOffers: link-check\n")
