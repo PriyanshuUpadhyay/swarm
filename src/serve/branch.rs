@@ -5,6 +5,7 @@
 use super::*;
 
 const UNREADABLE: &str = "The chat's log has a line that is not JSON, so it cannot be branched";
+const UNKNOWN_MESSAGE: &str = "unknown message";
 const NO_HISTORY: &str = "There is nothing before this message to branch";
 
 /// A Claude session file cut before `prefix` ends: every record moves to session `id`, the way
@@ -177,9 +178,9 @@ pub(super) async fn branch_chat(
     let first = users.clone().next().map(|row| row.anchor_source_id.clone());
     let row = users
         .find(|row| !anchor.is_empty() && row.anchor_source_id == anchor)
-        .ok_or_else(|| error(StatusCode::NOT_FOUND, "unknown message"))?;
+        .ok_or_else(|| error(StatusCode::NOT_FOUND, UNKNOWN_MESSAGE))?;
     let offset = line_offset(&row.anchor_source_id)
-        .ok_or_else(|| error(StatusCode::NOT_FOUND, "unknown message"))?;
+        .ok_or_else(|| error(StatusCode::NOT_FOUND, UNKNOWN_MESSAGE))?;
     let text = row.text.clone();
     let log = resolve_log(&app.root, old, "chair")?;
     let chair = chair_agent(&app, &call).await?;
@@ -321,9 +322,7 @@ fn write_cut(path: &Path, offset: usize, provider: &str, id: &str) -> Result<Pat
             format!("{time}_{id}.jsonl"),
         )
     } else {
-        let prefix = text
-            .get(..offset)
-            .ok_or_else(|| refused("unknown message"))?;
+        let prefix = text.get(..offset).ok_or_else(|| refused(UNKNOWN_MESSAGE))?;
         (
             cut_claude(prefix, id).map_err(refused)?,
             format!("{id}.jsonl"),

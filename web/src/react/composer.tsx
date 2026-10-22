@@ -9,6 +9,9 @@ import { ImageThumbs } from "./images";
 import { RunChip } from "./run-chip";
 import { cn } from "../lib/utils";
 
+/** Two Escapes within this many ms count as Esc Esc. */
+const DOUBLE_ESC_MS = 500;
+
 export function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
   const { id: sessionId, agent: chair, state, sendKey } = composer;
   // "the chair" means nothing to a new owner, so the chat's own agent is named.
@@ -223,7 +226,7 @@ export function ComposerBox({ app, composer }: { app: App; composer: Composer })
         app.setStash(sessionId, "");
         change(back);
         pickedCaret.current = back.length;
-      } else if (branchable && !e.repeat && e.timeStamp - lastEscape.current < 500) {
+      } else if (branchable && !e.repeat && e.timeStamp - lastEscape.current < DOUBLE_ESC_MS) {
         // Esc Esc in an empty, idle box picks a message to branch from, as Claude Code's rewind.
         app.setBranchPicker(true);
       }

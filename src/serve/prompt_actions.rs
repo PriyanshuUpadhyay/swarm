@@ -37,6 +37,9 @@ pub(super) fn interrupt_clears_box(app: &App, body: &ActionTarget) -> Result<boo
     Ok(queue::can_pull_back(provider.as_deref(), &call.adapter))
 }
 
+/// How long the CLI takes to redraw its box after a stop.
+const REDRAW_WAIT: Duration = Duration::from_millis(300);
+
 /// Claude puts a stopped prompt back in its input box, and the next message the app types would
 /// join it. So the box is cleared after the stop, with the presses that clear that prompt.
 pub(super) async fn interrupt_claude(app: &App, body: ActionTarget) -> Result<Value, ApiError> {
@@ -53,7 +56,7 @@ pub(super) async fn interrupt_claude(app: &App, body: ActionTarget) -> Result<Va
     };
     run_cli(app, call.args(&["interrupt", &agent]), None).await?;
     // Claude puts the prompt back a moment after the stop; a press on an empty box does nothing.
-    tokio::time::sleep(Duration::from_millis(300)).await;
+    tokio::time::sleep(REDRAW_WAIT).await;
     for index in 0..queue::clear_presses(&[prompt]) {
         if index > 0 {
             tokio::time::sleep(Duration::from_millis(50)).await;
@@ -68,7 +71,7 @@ pub(super) async fn interrupt_claude(app: &App, body: ActionTarget) -> Result<Va
 pub(super) async fn interrupt_pi(app: &App, body: ActionTarget) -> Result<Value, ApiError> {
     let (call, agent) = action_target(app, &body.session, &body.agent)?;
     run_cli(app, call.args(&["interrupt", &agent]), None).await?;
-    tokio::time::sleep(Duration::from_millis(300)).await;
+    tokio::time::sleep(REDRAW_WAIT).await;
     // The stop ran, so a box that cannot be read is not an error of the stop.
     let output = run_cli(app, call.args(&["clear-box", &agent]), None)
         .await

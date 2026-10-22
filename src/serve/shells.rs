@@ -47,6 +47,10 @@ pub(super) struct Shell {
     pub(super) command: String,
 }
 
+/// An id the server made is `shell-` and this many hex digits.
+const ID_PREFIX: &str = "shell-";
+const ID_HEX_LEN: usize = 8;
+
 /// How many shells one workspace may hold, since each is a login shell that keeps running.
 const MAX_SHELLS: usize = 8;
 
@@ -86,15 +90,17 @@ fn check_room(shells: &[Shell]) -> Result<(), ApiError> {
     Ok(())
 }
 
-/// An id the server made: `shell-` and 8 hex digits, so it is safe as a tmux target.
+/// An id the server made, so it is safe as a tmux target.
 pub(super) fn valid_id(id: &str) -> bool {
-    id.strip_prefix("shell-")
-        .is_some_and(|hex| hex.len() == 8 && hex.bytes().all(|b| b.is_ascii_hexdigit()))
+    id.strip_prefix(ID_PREFIX)
+        .is_some_and(|hex| hex.len() == ID_HEX_LEN && hex.bytes().all(|b| b.is_ascii_hexdigit()))
 }
 
 /// tmux prints a tab as `_` outside a UTF-8 locale, so the fields part on `|`, and the folder,
 /// which may hold one, comes last.
 const FORMAT: &str = "#{session_name}|#{session_created}|#{pane_current_command}|#{@swarm_cwd}";
+/// The number of fields in `FORMAT`; the folder, which may hold a `|`, is the last.
+const FORMAT_FIELDS: usize = 4;
 
 /// The shells in `list-sessions` output that belong to workspace `cwd`, oldest first. A shell
 /// belongs to the deepest workspace that holds its folder, so one inside a workspace in `nested`
@@ -103,7 +109,7 @@ pub(super) fn parse(text: &str, cwd: &str, nested: &[String]) -> Vec<Shell> {
     let mut found: Vec<(i64, Shell)> = text
         .lines()
         .filter_map(|line| {
-            let mut fields = line.splitn(4, '|');
+            let mut fields = line.splitn(FORMAT_FIELDS, '|');
             let (id, created, command) = (fields.next()?, fields.next()?, fields.next()?);
             (valid_id(id)
                 && fields.next().is_some_and(|shell_cwd| {
@@ -234,7 +240,7 @@ pub(super) fn list(app: &Server, folder: &str) -> Result<Vec<Shell>, String> {
 fn create(cwd: &str) -> Result<String, String> {
     // The end of a v7 uuid is random.
     let uuid = uuid::Uuid::now_v7().simple().to_string();
-    let id = format!("shell-{}", &uuid[uuid.len() - 8..]);
+    let id = format!("{ID_PREFIX}{}", &uuid[uuid.len() - ID_HEX_LEN..]);
     // set-option takes a pane target, where `=` names no session; the id is unique anyway.
     let target = &id;
     let mut call = tmux();

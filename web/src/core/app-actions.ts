@@ -6,6 +6,10 @@ import { chatRows, nextWaiting, paletteSources, recency, workspaceOf, workspaceR
 import { type Ask, SIDEBAR_VIEWS, PROMPT_JUMP, message } from "./app-types";
 import type { App } from "./app";
 
+/** A new chat waits up to LIST_POLLS * LIST_POLL_MS (5 s) for the server's tree to list it. */
+const LIST_POLLS = 20;
+const LIST_POLL_MS = 250;
+
 export class AppActions {
   constructor(private readonly app: App) {}
 
@@ -31,10 +35,10 @@ export class AppActions {
   /** The server's tree lists a new chat after its agent poll sees the chair's pane, about a second
    *  later, and opening the chat writes a tab that the server checks against that tree. */
   private async openNew(session: string, inTab = false) {
-    for (let i = 0; i < 20; i++) {
+    for (let i = 0; i < LIST_POLLS; i++) {
       await this.app.navigation.refreshSnapshot();
       if (this.app.listsChat(session)) break;
-      await sleep(250);
+      await sleep(LIST_POLL_MS);
     }
     this.app.navigation.openChat(session, undefined, { tabOnly: inTab });
   }

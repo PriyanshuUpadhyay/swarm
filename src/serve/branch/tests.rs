@@ -89,6 +89,9 @@ mod route {
     use super::*;
     use crate::serve::test_support::*;
 
+    /// What the stand-in CLI prints for `session new`.
+    const NEW_SESSION: &str = "01a1650a-0000-7000-8000-000000000001";
+
     async fn branch(fixture: &Fixture, session: &str, row: &str) -> Result<Value, ApiError> {
         let body = serde_json::from_value(json!({"session": session, "row": row})).unwrap();
         branch_chat(State(fixture.app.clone()), Ok(Json(body)))
@@ -103,14 +106,16 @@ mod route {
         let cli = &fixture.app.cli;
         std::fs::write(
             cli,
-            r#"#!/bin/sh
-printf '%s\n' "${SWARM_SESSION_ID-}|$*" >> "$SWARM_HOME/actions"
+            format!(
+                r#"#!/bin/sh
+printf '%s\n' "${{SWARM_SESSION_ID-}}|$*" >> "$SWARM_HOME/actions"
 case "$1 $2" in
-  'agents --json') printf '%s\n' '{"agents":[{"id":"orchestrator","model":"opus","account":"work"}]}' ;;
-  'session new') printf '%s\n' 01a1650a-0000-7000-8000-000000000001 ;;
+  'agents --json') printf '%s\n' '{{"agents":[{{"id":"orchestrator","model":"opus","account":"work"}}]}}' ;;
+  'session new') printf '%s\n' {NEW_SESSION} ;;
   'launch orchestrator') printf 'fixture-pane\n' ;;
 esac
-"#,
+"#
+            ),
         )
         .unwrap();
         std::fs::set_permissions(cli, std::fs::Permissions::from_mode(0o755)).unwrap();
@@ -132,7 +137,7 @@ esac
         let (first, second) = (users[0], users[1]);
         // The page sends the id the rows stream gives, which ends with `@<anchor>`.
         let page_id = |row: &view::Row| format!("{}@{}", row.id, row.anchor_source_id);
-        let new = "01a1650a-0000-7000-8000-000000000001";
+        let new = NEW_SESSION;
 
         let response = branch(&fixture, &fixture.session, &page_id(second))
             .await
@@ -194,14 +199,16 @@ esac
         let cli = &fixture.app.cli;
         std::fs::write(
             cli,
-            r#"#!/bin/sh
-printf '%s\n' "${SWARM_ADAPTER-}|$*" >> "$SWARM_HOME/actions"
+            format!(
+                r#"#!/bin/sh
+printf '%s\n' "${{SWARM_ADAPTER-}}|$*" >> "$SWARM_HOME/actions"
 case "$1 $2" in
-  'agents --json') printf '%s\n' '{"agents":[{"id":"orchestrator"}]}' ;;
-  'session new') printf '%s\n' 01a1650a-0000-7000-8000-000000000001 ;;
+  'agents --json') printf '%s\n' '{{"agents":[{{"id":"orchestrator"}}]}}' ;;
+  'session new') printf '%s\n' {NEW_SESSION} ;;
   'launch orchestrator') printf 'fixture-pane\n' ;;
 esac
-"#,
+"#
+            ),
         )
         .unwrap();
         std::fs::set_permissions(cli, std::fs::Permissions::from_mode(0o755)).unwrap();
@@ -230,14 +237,16 @@ esac
         let cli = &fixture.app.cli;
         std::fs::write(
             cli,
-            r#"#!/bin/sh
-printf '%s\n' "${SWARM_ADAPTER-}|$*" >> "$SWARM_HOME/actions"
+            format!(
+                r#"#!/bin/sh
+printf '%s\n' "${{SWARM_ADAPTER-}}|$*" >> "$SWARM_HOME/actions"
 case "$1 $2" in
-  'agents --json') printf '%s\n' '{"agents":[{"id":"orchestrator"}]}' ;;
-  'session new') printf '%s\n' 01a1650a-0000-7000-8000-000000000001 ;;
+  'agents --json') printf '%s\n' '{{"agents":[{{"id":"orchestrator"}}]}}' ;;
+  'session new') printf '%s\n' {NEW_SESSION} ;;
   'launch orchestrator') printf 'fixture-pane\n' ;;
 esac
-"#,
+"#
+            ),
         )
         .unwrap();
         std::fs::set_permissions(cli, std::fs::Permissions::from_mode(0o755)).unwrap();
@@ -266,8 +275,8 @@ esac
                 r#"#!/bin/sh
 printf '%s\n' "${{SWARM_ADAPTER-}}|$*" >> "$SWARM_HOME/actions"
 case "$1 $2" in
-  'agents --json') if [ "${{SWARM_SESSION_ID-}}" = 01a1650a-0000-7000-8000-000000000001 ]; then printf '%s\n' '{{"agents":[{{"id":"orchestrator","alive":{new_alive}}}]}}'; else printf '%s\n' '{{"agents":[{{"id":"orchestrator"}}]}}'; fi ;;
-  'session new') printf '%s\n' 01a1650a-0000-7000-8000-000000000001 ;;
+  'agents --json') if [ "${{SWARM_SESSION_ID-}}" = {NEW_SESSION} ]; then printf '%s\n' '{{"agents":[{{"id":"orchestrator","alive":{new_alive}}}]}}'; else printf '%s\n' '{{"agents":[{{"id":"orchestrator"}}]}}'; fi ;;
+  'session new') printf '%s\n' {NEW_SESSION} ;;
   'session branch') {branch_step} ;;
   'launch orchestrator') {launch_step} ;;
 esac

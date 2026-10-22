@@ -24,6 +24,8 @@ pub(crate) const RING_ENTER_RETRIES: usize = 3;
 /// ring cannot hold the caller for ever.
 pub(crate) const RING_TIMEOUT: std::time::Duration =
     std::time::Duration::from_secs(if cfg!(test) { 5 } else { 30 });
+/// How long one read of a pane (capture, screen, or status) may take.
+const PANE_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1);
 /// How often a ring reads the pane and the store for its proof.
 pub(crate) const RING_POLL: std::time::Duration = std::time::Duration::from_millis(500);
 /// How long `clear_box` waits for pi to show the messages that M-Up moved into its box.
@@ -106,7 +108,7 @@ pub(crate) fn ring_pane(
     let vars = [("pane", pane)];
     let read = || {
         adapter
-            .capture_within(&vars, std::time::Duration::from_secs(1))
+            .capture_within(&vars, PANE_READ_TIMEOUT)
             .unwrap_or_default()
     };
     if proof == Proof::Wait {
@@ -167,7 +169,7 @@ pub(crate) fn wait_for_record(adapter: &swarm::adapter::Adapter, pane: &str) {
     let ready = std::time::Instant::now() + RING_READY_TIMEOUT;
     while std::time::Instant::now() < ready {
         if adapter
-            .status(&[("pane", pane)], std::time::Duration::from_secs(1))
+            .status(&[("pane", pane)], PANE_READ_TIMEOUT)
             .is_some()
         {
             return;
@@ -248,7 +250,7 @@ pub(crate) fn type_text(
     let vars = [("pane", pane)];
     let read = || {
         adapter
-            .capture_within(&vars, std::time::Duration::from_secs(1))
+            .capture_within(&vars, PANE_READ_TIMEOUT)
             .unwrap_or_default()
     };
     let started = provider
@@ -293,7 +295,7 @@ pub(crate) fn clear_box(
     let mut first = None;
     for round in 0..=CLEAR_BOX_ROUNDS {
         let rows = adapter
-            .capture_within(&[("pane", pane)], std::time::Duration::from_secs(1))
+            .capture_within(&[("pane", pane)], PANE_READ_TIMEOUT)
             .unwrap_or_default();
         match swarm::screen::composer("pi", &rows) {
             None => return Err("swarm: pi's input box could not be read".into()),
@@ -321,7 +323,7 @@ pub(crate) fn screen_of(
     rows: &str,
 ) -> Option<String> {
     match adapter.screen {
-        Some(_) => adapter.screen(vars, std::time::Duration::from_secs(1)),
+        Some(_) => adapter.screen(vars, PANE_READ_TIMEOUT),
         None => Some(rows.to_string()),
     }
 }

@@ -64,7 +64,7 @@ fn a_shell_belongs_to_the_deepest_workspace_that_holds_its_folder() {
 fn two_creates_cannot_both_pass_the_cap() {
     use std::sync::atomic::{AtomicUsize, Ordering};
     static MADE: AtomicUsize = AtomicUsize::new(0);
-    let threads: Vec<_> = (0..16)
+    let threads: Vec<_> = (0..MAX_SHELLS * 2)
         .map(|_| {
             std::thread::spawn(|| {
                 create_with_room(

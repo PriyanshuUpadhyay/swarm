@@ -6,6 +6,10 @@ import { harness, settle, user } from "./composer-harness";
 
 const queued = (id: string, text: string): Row => ({ id, kind: "queued", text, order: [5, 0] });
 
+// A URL longer than pi's box is wide, which wraps it after WRAP_AT characters.
+const URL_TAIL = 130;
+const WRAP_AT = 75;
+
 describe("pull-back through the app", () => {
   it("asks the server to pull back and puts the returned text before what was typed", async () => {
     const posts: { path: string; body: Record<string, unknown> }[] = [];
@@ -137,8 +141,8 @@ describe("which Sent rows pi's box held", () => {
   });
 
   it("holds a wrapped URL and the short message after it together", async () => {
-    const url = `https://example.com/${"a".repeat(130)}`;
-    const { app, snapshot } = harness(undefined, (path) => (path === "/api/chat/interrupt" ? { ok: true, box: "cleared", held: `${url.slice(0, 75)} ${url.slice(75)} y` } : null));
+    const url = `https://example.com/${"a".repeat(URL_TAIL)}`;
+    const { app, snapshot } = harness(undefined, (path) => (path === "/api/chat/interrupt" ? { ok: true, box: "cleared", held: `${url.slice(0, WRAP_AT)} ${url.slice(WRAP_AT)} y` } : null));
     snapshot({ provider: "pi", state: "working" });
     app.openChat("chat");
     await settle();
@@ -150,8 +154,8 @@ describe("which Sent rows pi's box held", () => {
   });
 
   it("matches a long message that pi's box wrapped, by the text without spaces", async () => {
-    const url = `https://example.com/${"a".repeat(130)}`;
-    const { app, snapshot } = harness(undefined, (path) => (path === "/api/chat/interrupt" ? { ok: true, box: "cleared", held: `${url.slice(0, 75)} ${url.slice(75)}` } : null));
+    const url = `https://example.com/${"a".repeat(URL_TAIL)}`;
+    const { app, snapshot } = harness(undefined, (path) => (path === "/api/chat/interrupt" ? { ok: true, box: "cleared", held: `${url.slice(0, WRAP_AT)} ${url.slice(WRAP_AT)}` } : null));
     snapshot({ provider: "pi", state: "working" });
     app.openChat("chat");
     await settle();
