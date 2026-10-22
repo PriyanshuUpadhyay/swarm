@@ -281,6 +281,14 @@ impl Drop for KillOnDrop {
 
 #[test]
 fn close_all_ends_only_the_shells_of_the_folder_it_is_given() {
+    if std::process::Command::new("tmux")
+        .arg("-V")
+        .output()
+        .is_err()
+    {
+        eprintln!("skipped: no tmux");
+        return;
+    }
     use crate::serve::test_support::Fixture;
     let fixture = Fixture::new();
     let root = env!("CARGO_MANIFEST_DIR");
