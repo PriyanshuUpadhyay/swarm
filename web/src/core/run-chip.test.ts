@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from "vitest";
 import { chair, session } from "./chat-fixtures";
-import { accountColor, agentInput, applyBlock, applyLabel, chooseModel, cliName, levelWord, limitText, outcomeText, runLabel, runTip, switchOutcome, usageLabel, usageTitle } from "./composer";
+import { accountColor, agentInput, waitsForTurn, applyBlock, applyLabel, chooseModel, cliName, levelWord, limitText, outcomeText, runLabel, runTip, switchOutcome, usageLabel, usageTitle } from "./composer";
 import type { Meter } from "./settings";
 
 
@@ -33,7 +33,16 @@ describe("run chip", () => {
     expect(say(run("agy", "gemini", null))).toBe("Starts a new AGY chat on Sonnet 5.5 with a summary of this one. This chat stays as it is.");
     expect(say(run("agy", "gemini", null), "clean")).toBe("Starts a new AGY chat on Sonnet 5.5 with nothing from this one. This chat stays as it is.");
     expect(say(run("claude", "sonnet", "high", "work"), "summary", true)).toBe("Waits for the current turn to end. Then restarts this chat on Sonnet 5.5 · High. History stays. The next reply re-reads the whole chat once, so it costs more.");
-    expect([applyLabel("handoff", false), applyLabel("resume", true), applyLabel("resume", false), applyLabel("none", false)]).toEqual(["Start new chat", "Apply after this turn", "Restart and apply", "Apply"]);
+    expect([applyLabel("handoff", false), applyLabel("handoff", true), applyLabel("resume", true), applyLabel("resume", false), applyLabel("none", false)]).toEqual(["Start new chat", "Start new chat after this turn", "Apply after this turn", "Restart and apply", "Apply"]);
+  });
+
+  it("keeps a queued change while the agent works, waits on a question, or another switch of the chat runs", () => {
+    const idle = agentInput(session(), [chair({ provider: "claude", state: "done" })]);
+    expect(waitsForTurn(idle, undefined)).toBe(false);
+    expect(waitsForTurn(agentInput(session(), [chair({ provider: "claude", state: "working" })]), undefined)).toBe(true);
+    expect(waitsForTurn(agentInput(session(), [chair({ provider: "claude", state: "waiting" })]), undefined)).toBe(true);
+    expect(waitsForTurn(idle, { old: "s", phase: "summarizing", canCancel: true, error: null, carry: "summary" })).toBe(true);
+    expect(waitsForTurn(idle, { old: "s", phase: "failed", canCancel: false, error: "x", carry: "summary" })).toBe(false);
   });
 
   it("names each thinking level in plain words and keeps an unknown id as written", () => {
@@ -46,7 +55,12 @@ describe("run chip", () => {
     expect(limitText(meters, "claude", "work", null)).toEqual({ text: "5h 62% · wk 40%", left: 40 });
     expect(limitText(meters, "codex", "work", null)).toEqual({ text: "5h 99%", left: 99 });
     expect(limitText(meters, "claude", "other", "38% left")).toEqual({ text: "38% left", left: null });
+    // A meter with no percent read shows the summary too.
+    expect(limitText([meter("work", "fb", null, null)], "claude", "work", "38% left")).toEqual({ text: "38% left", left: null });
     expect(limitText([meter("work", "fb", null, null)], "claude", "work", null)).toEqual({ text: "", left: null });
+    // A named Codex limit keeps its id, so two limits do not read the same.
+    const spark = { ...meter("work", "codex_spark:primary", 300, 10), provider: "codex" };
+    expect(limitText([spark, { ...meter("work", "primary", 300, 40), provider: "codex" }], "codex", "work", null).text).toBe("codex_spark 5h 90% · 5h 60%");
   });
 
   it("gives an account the same color each time, and its name, model and level in the chip's tooltip", () => {
@@ -54,6 +68,7 @@ describe("run chip", () => {
     expect(accountColor("work")).toMatch(/^oklch\(/);
     expect(runTip({ provider: "claude", model: "claude-opus-5-5", effort: "xhigh", account: "work" })).toBe("Claude account: work\nclaude-opus-5-5 · Extra high");
     expect(runTip({ provider: "pi", model: null, effort: null, account: null })).toBe("Pi login\nDefault model");
+    expect(runTip({ provider: "claude", model: "opus", effort: null, account: "work" }, "me@example.com")).toBe("Claude account: work (me@example.com)\nopus");
   });
 
   it("names the meter Context and says what its number means", () => {

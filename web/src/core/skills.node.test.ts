@@ -145,6 +145,16 @@ describe("Skills", () => {
     expect(skills.state.kit.state).toBe("ready");
   });
 
+  it("reads a kit older than the app, which has no front door, duty, or offers", async () => {
+    const old = { ...kit, front: undefined, presets: kit.presets.map((p) => ({ ...p, offers: undefined })), blocks: kit.blocks.map((b) => ({ ...b, offered_by: undefined, duty: undefined })) };
+    const { skills } = model(async () => old);
+    await skills.load();
+    const data = skills.state.kit.state === "ready" ? skills.state.kit.data : null;
+    expect(data?.front).toEqual([]);
+    expect(data?.presets.every((p) => p.offers.length === 0)).toBe(true);
+    expect(data?.blocks.every((b) => b.offered_by.length === 0 && b.duty === false)).toBe(true);
+  });
+
   it("shows the server's error when the kit cannot be read", async () => {
     const { skills, calls } = model(async () => {
       throw new Error("swarm kit: python3 not found; the Skills page needs Python 3.11 or newer");

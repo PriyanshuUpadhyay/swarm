@@ -12,6 +12,7 @@ import { Button } from "../components/ui/button";
 import { FIELD, message, useLife, ErrorLine } from "./lifecycle-shared";
 import { SwitchProgress } from "./lifecycle-switch-model";
 import { Segmented } from "./settings-shared";
+import { meterTone } from "./usage-meters";
 
 export function RunChip({ app, sessionId, chair }: { app: App; sessionId: string; chair: AgentInput }) {
   const chosen = useLife(app, "switchModel");
@@ -46,18 +47,18 @@ export function RunChip({ app, sessionId, chair }: { app: App; sessionId: string
         type="button"
         data-testid="model-chip"
         className="flex min-w-0 items-center gap-1 rounded-md px-1.5 py-1 hover:bg-hover disabled:pointer-events-none"
-        title={chair.who ? "Change the child from its parent agent." : runTip(run)}
+        title={chair.who ? "Change the child from its parent agent." : runTip(run, chair.account && app.life.runs.email(run.provider, chair.account))}
         disabled={chair.who !== null}
         aria-expanded={open}
         style={{ anchorName: anchor } as CSSProperties}
         onClick={() => (open ? app.life.close("switchModel") : app.life.openSwitchModel(sessionId))}
       >
         {pending ? (
-          <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ background: "var(--status-waiting)" }} />
+          <span aria-hidden className="size-2 shrink-0 rounded-full bg-waiting" />
         ) : (
           chair.account && <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ background: accountColor(chair.account) }} />
         )}
-        <span className="truncate" data-testid="model-chip-label">
+        <span className="truncate" data-testid="model-chip-label" aria-live="polite">
           {switching ?? (pending ? `Pending: ${[pending.model, pending.effort && levelWord(pending.effort)].filter(Boolean).join(" · ")}` : runLabel(chair))}
         </span>
         {!chair.who && <ChevronDownIcon className="size-3 shrink-0" />}
@@ -105,6 +106,7 @@ function RunBody({ app, sessionId, chair }: { app: App; sessionId: string; chair
 
   // The meters are a cached read with no provider call; Settings may not have read them yet.
   useEffect(() => {
+    // loadUsage keeps its own error in state.usage, so nothing waits for it.
     if (app.settings.state.usage.state === "idle") void app.settings.loadUsage();
   }, [app]);
 
@@ -203,7 +205,7 @@ function RunBody({ app, sessionId, chair }: { app: App; sessionId: string; chair
                       <button key={m.id} type="button" aria-pressed={on} className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-hover aria-pressed:bg-selected" onClick={() => choose(p.id, m)}>
                         <Radio on={on} />
                         <span className="min-w-0 truncate">{m.label}</span>
-                        <span className="ml-auto shrink-0 text-xs text-muted-foreground">{[m.note, current.provider === p.id && current.model === m.id && "now"].filter(Boolean).join(" · ")}</span>
+                        <span className="ml-auto max-w-[55%] truncate text-xs text-muted-foreground">{[m.note, current.provider === p.id && current.model === m.id && "now"].filter(Boolean).join(" · ")}</span>
                       </button>
                     );
                   })}
@@ -252,18 +254,18 @@ function RunBody({ app, sessionId, chair }: { app: App; sessionId: string; chair
                 const on = draft.account === a.name;
                 const limit = a.name ? limitText(meters, draft.provider, a.name, a.summary ?? null) : null;
                 return (
-                  <button key={a.name ?? ""} type="button" aria-pressed={on} title={a.email ?? undefined} className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-hover aria-pressed:bg-selected" onClick={() => setDraft({ ...draft, account: a.name })}>
+                  <button key={a.name ?? ""} type="button" aria-pressed={on} title={a.name ? (a.email ? `${a.name} (${a.email})` : a.name) : undefined} className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-hover aria-pressed:bg-selected" onClick={() => setDraft({ ...draft, account: a.name })}>
                     <Radio on={on} />
                     {a.name && <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ background: accountColor(a.name) }} />}
                     <span className="min-w-0 truncate">{a.name ?? "CLI default"}</span>
                     {limit?.text && (
-                      <span className="ml-auto flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground tabular-nums">
+                      <span className="ml-auto flex min-w-0 max-w-[60%] items-center gap-1.5 text-xs text-muted-foreground tabular-nums">
                         {limit.left !== null && (
-                          <span aria-hidden className="h-1 w-6 overflow-hidden rounded-full bg-border">
-                            <span className={`block h-full ${limit.left < 25 ? "bg-failed" : "bg-muted-foreground"}`} style={{ width: `${limit.left}%` }} />
+                          <span aria-hidden className="h-1 w-6 shrink-0 overflow-hidden rounded-full bg-border">
+                            <span className={`block h-full ${meterTone(limit.left)}`} style={{ width: `${limit.left}%` }} />
                           </span>
                         )}
-                        {limit.text}
+                        <span className="truncate">{limit.text}</span>
                       </span>
                     )}
                   </button>

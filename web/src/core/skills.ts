@@ -108,6 +108,16 @@ export function catalogGroups(kit: Kit, filter: string): CatalogGroup[] {
   return groups;
 }
 
+/** A kit older than the app has no front door, duty, or offers; they are empty then, so the page still draws. */
+function withDefaults(kit: Kit): Kit {
+  return {
+    ...kit,
+    front: kit.front ?? [],
+    blocks: kit.blocks.map((b) => ({ ...b, offered_by: b.offered_by ?? [], duty: b.duty ?? false })),
+    presets: kit.presets.map((p) => ({ ...p, offers: p.offers ?? [] })),
+  };
+}
+
 export class Skills {
   state: SkillsState = { open: false, view: "catalog", kit: { state: "idle" }, preset: null, block: null, draft: blankDraft(), undo: null, check: null };
   private listeners = new Set<() => void>();
@@ -155,7 +165,7 @@ export class Skills {
     this.set({ kit: { state: "loading" } });
     const seq = ++this.loads;
     try {
-      const data = await this.app.api.get<Kit>("/api/kit");
+      const data = withDefaults(await this.app.api.get<Kit>("/api/kit"));
       if (seq !== this.loads) return;
       this.set({ kit: { state: "ready", data }, preset: this.state.preset ?? data.presets[0]?.preset ?? null });
       this.scheduleCheck(0);

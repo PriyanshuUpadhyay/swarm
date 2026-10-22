@@ -2,7 +2,7 @@
 
 import { Api, type RowFrame, type Snapshot } from "./api";
 import { installKeys, Registry } from "./commands";
-import { type AgentInput, type Prompt } from "./composer";
+import { waitsForTurn, type AgentInput, type Prompt } from "./composer";
 import { whenPainted } from "./perf";
 import { chatFromPath, resolveChat } from "./route";
 import { type Direction, type PaneCell } from "./panes";
@@ -145,12 +145,13 @@ export class App {
     if (location.pathname === "/setup") this.settings.show("setup");
     // Closing Setup & doctor gives the URL back to the open chat.
     abort.signal.addEventListener("abort", this.settings.subscribe(() => this.navigation.followUrl()));
-    // A change queued in a turn starts when a snapshot shows the turn ended.
+    // A change queued in a turn starts when a snapshot shows the turn ended. switchModel keeps
+    // its own failure in the handoff state and shows a notice, so nothing waits for it.
     abort.signal.addEventListener(
       "abort",
       this.subscribe(() =>
         this.life.queue.run(
-          (old) => this.chair(old).running,
+          (old) => waitsForTurn(this.chair(old), this.life.state.handoffs[old]),
           (old, c) => void this.life.switchModel(old, c.provider, c.model, c.account, c.effort, c.carry),
         ),
       ),

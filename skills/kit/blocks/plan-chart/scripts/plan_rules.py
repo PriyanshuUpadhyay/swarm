@@ -15,16 +15,21 @@ def blocks_toml():
 
 
 def is_duty(block):
-    """A block that every plan with Writes keeps, as the checks below require: `requirements` first,
+    """A block that every plan with Writes keeps, as plan_chart.check requires: `requirements` first,
     `change-review` after a writing step, and a `voice-` part at the end."""
     return block in ("requirements", "change-review") or block.startswith("voice-")
+
+
+def kit_catalog():
+    """The block ids a plan or a preset may name: each kit block folder, less the base blocks that load in every step."""
+    return {p.parent.name for p in (KIT / "blocks").glob("*/SKILL.md")} - set(blocks_toml().get("base", []))
 
 
 def check_ledger(rows, ledger):
     """The table lists exactly the blocks the steps use, each Chosen with a Why. A block that no step uses may
     have an Offered row with a Why, so the owner can ask to add it."""
     base = set(blocks_toml().get("base", []))
-    catalog = {p.parent.name for p in (KIT / "blocks").glob("*/SKILL.md")} - base
+    catalog = kit_catalog()
     if not ledger:
         raise SystemExit("no | Block | Status | Why | table; list each block the steps use as Chosen")
     if unknown := sorted(set(ledger) - catalog):

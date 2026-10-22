@@ -2,6 +2,7 @@
 // SwarmSessionInteraction, ChatUsage). Pure, so vitest covers them.
 
 import type { Agent, Row, Session } from "./api";
+import { isSettled, type Handoff } from "./lifecycle-state";
 import type { Meter } from "./settings";
 
 /** `swarm agents --json` `prompt`: a question on the agent's screen (ADR 0029). */
@@ -96,6 +97,8 @@ export type AgentInput = {
   /** An unreachable chair whose own CLI session can start again in this chat (ADR 0107). */
   resumable: boolean;
   running: boolean;
+  /** The agent paused on a question or a permission inside its turn. */
+  waiting: boolean;
   prompt: Prompt | null;
   /** Claude in tmux keeps a queue that Up pulls back (ADR 0038). */
   pullBack: boolean;
@@ -132,6 +135,7 @@ export function agentInput(session: Session | undefined, agents: readonly Agent[
     unreachable,
     resumable: unreachable && !child && provider !== null && typeof session?.chair_id === "string",
     running: agent?.state === "working",
+    waiting: agent?.state === "waiting",
     prompt: unreachable ? null : prompt,
     pullBack: provider === "claude" && (adapter === "tmux" || adapter === "tmux-swarm"),
   };
@@ -178,9 +182,9 @@ export function levelWord(id: string): string {
   return Object.hasOwn(LEVEL_WORDS, id) ? LEVEL_WORDS[id] : id;
 }
 
-/** The chip's tooltip: the account, then the model and level. */
-export function runTip(run: Run): string {
-  const who = run.account ? `${cliName(run.provider)} account: ${run.account}` : `${cliName(run.provider)} login`;
+/** The chip's tooltip: the account and its email when known, then the model and level. */
+export function runTip(run: Run, email: string | null = null): string {
+  const who = run.account ? `${cliName(run.provider)} account: ${run.account}${email ? ` (${email})` : ""}` : `${cliName(run.provider)} login`;
   return `${who}\n${[run.model ?? "Default model", run.effort && levelWord(run.effort)].filter(Boolean).join(" · ")}`;
 }
 
@@ -194,10 +198,12 @@ export function accountColor(name: string): string {
   return `oklch(0.68 0.14 ${ACCOUNT_HUES[h % ACCOUNT_HUES.length]})`;
 }
 
-/** A meter window's short name: 5h, wk, or the window id. */
+/** A meter window's short name: 5h, wk, or the window id. A named Codex limit (`<id>:<window>`)
+ *  keeps its id in front, so two limits of one account do not read the same. */
 function windowName(m: Meter): string {
-  if (m.window_minutes === 10080 || m.window === "7d") return "wk";
-  if (m.window_minutes && m.window_minutes % 60 === 0 && m.window_minutes < 1440) return `${m.window_minutes / 60}h`;
+  const limit = m.window?.includes(":") ? `${m.window.split(":")[0]} ` : "";
+  if (m.window_minutes === 10080 || m.window === "7d") return `${limit}wk`;
+  if (m.window_minutes && m.window_minutes % 60 === 0 && m.window_minutes < 1440) return `${limit}${m.window_minutes / 60}h`;
   return m.window ?? m.label;
 }
 
@@ -205,7 +211,7 @@ function windowName(m: Meter): string {
  *  bar. With no meter read, the account list's summary stands in. */
 export function limitText(meters: readonly Meter[], provider: string, account: string, summary: string | null): { text: string; left: number | null } {
   const mine = meters.filter((m) => m.provider === provider && m.account === account && m.used_pct !== null);
-  if (!mine.length) return { text: meters.some((m) => m.provider === provider && m.account === account) ? "" : (summary ?? ""), left: null };
+  if (!mine.length) return { text: summary ?? "", left: null };
   const left = mine.map((m) => 100 - m.used_pct!);
   return { text: mine.map((m, i) => `${windowName(m)} ${left[i]}%`).join(" · "), left: Math.min(...left) };
 }
@@ -248,22 +254,40 @@ const REREAD = "The next reply re-reads the whole chat once, so it costs more.";
 export function outcomeText(outcome: Outcome, current: Run, draft: Run, carry: Carry, { label, working }: { label: string; working: boolean }): string {
   if (outcome === "none") return "Pick a change to see what will happen.";
   const target = [label, draft.effort && levelWord(draft.effort)].filter(Boolean).join(" · ");
-  let line: string;
-  if (outcome === "handoff") line = `Starts a new ${cliName(draft.provider)} chat on ${target} with ${carry === "summary" ? "a summary of" : "nothing from"} this one. This chat stays as it is.`;
-  else if (current.account !== draft.account) {
+  const line = outcome === "handoff" ? handoffLine(draft, target, carry) : outcome === "resume" ? resumeLine(current, draft, target) : (outcome satisfies never);
+  return working ? `Waits for the current turn to end. Then ${line[0].toLowerCase()}${line.slice(1)}` : line;
+}
+
+function handoffLine(draft: Run, target: string, carry: Carry): string {
+  return `Starts a new ${cliName(draft.provider)} chat on ${target} with ${carry === "summary" ? "a summary of" : "nothing from"} this one. This chat stays as it is.`;
+}
+
+function resumeLine(current: Run, draft: Run, target: string): string {
+  if (current.account !== draft.account) {
     const on = current.model !== draft.model || current.effort !== draft.effort ? ` on ${target}` : "";
     const who = draft.account ?? "the default account";
-    line = `Restarts this chat${on} under ${who}. History stays. Usage now counts against ${who}. The next reply may re-read the chat once.`;
-  } else if (current.model !== draft.model) line = `Restarts this chat on ${target}. History stays. ${REREAD}`;
-  else line = `Restarts this chat on ${draft.effort ? levelWord(draft.effort) : "the default"} thinking. History stays. ${REREAD}`;
-  return working ? `Waits for the current turn to end. Then ${line[0].toLowerCase()}${line.slice(1)}` : line;
+    return `Restarts this chat${on} under ${who}. History stays. Usage now counts against ${who}. The next reply may re-read the chat once.`;
+  }
+  if (current.model !== draft.model) return `Restarts this chat on ${target}. History stays. ${REREAD}`;
+  return `Restarts this chat on ${draft.effort ? levelWord(draft.effort) : "the default"} thinking. History stays. ${REREAD}`;
 }
 
 /** Apply's label says what it does. */
 export function applyLabel(outcome: Outcome, working: boolean): string {
-  if (outcome === "none") return "Apply";
-  if (outcome === "handoff") return "Start new chat";
-  return working ? "Apply after this turn" : "Restart and apply";
+  switch (outcome) {
+    case "none":
+      return "Apply";
+    case "handoff":
+      return working ? "Start new chat after this turn" : "Start new chat";
+    case "resume":
+      return working ? "Apply after this turn" : "Restart and apply";
+  }
+}
+
+/** A queued change keeps waiting while the agent is in its turn (working, or paused on a question),
+ *  or while another switch of the same chat runs, which would refuse it. */
+export function waitsForTurn(chair: AgentInput, handoff: Handoff | undefined): boolean {
+  return chair.running || chair.waiting || (handoff !== undefined && !isSettled(handoff.phase));
 }
 
 /** Why Apply cannot run now, or null. A switch blocks only its own chat; while the agent works,

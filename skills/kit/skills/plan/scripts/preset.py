@@ -103,8 +103,10 @@ def offers(file, rows, selected, text=None):
     if len(lines) > 1:
         raise SystemExit(f"preset has {len(lines)} Offers lines; write one")
     ids = [b.strip() for b in lines[0].split(",") if b.strip()] if lines else []
-    catalog = {p.parent.name for p in (KIT / "blocks").glob("*/SKILL.md")}
+    catalog = plan_rules.kit_catalog()
     for block in ids:
+        if ids.count(block) > 1:
+            raise SystemExit(f"Offers names {block} twice")
         if block not in catalog:
             raise SystemExit(f"Offers names {block}, which is not a kit block")
         if step := next((r[0] for r in rows if block in selected[r[0]]), None):

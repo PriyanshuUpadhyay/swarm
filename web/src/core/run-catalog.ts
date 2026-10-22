@@ -9,6 +9,8 @@ export type ModelInfo = { id: string; label: string; efforts?: string[]; note?: 
 
 export class RunCatalog {
   private reads = new Map<string, Promise<{ models: ModelInfo[] }>>();
+  /** Each account's email from the last accounts read, by `provider/name`, for the chip's tooltip. */
+  private emails = new Map<string, string>();
 
   constructor(private readonly api: () => Api) {}
 
@@ -28,7 +30,14 @@ export class RunCatalog {
     return read;
   }
 
-  accounts(provider: string): Promise<{ accounts: { name: string; email: string | null; auth_state?: string; summary?: string | null }[] }> {
-    return this.api().get("/api/accounts", { provider });
+  async accounts(provider: string): Promise<{ accounts: { name: string; email: string | null; auth_state?: string; summary?: string | null }[] }> {
+    const read = await this.api().get<{ accounts: { name: string; email: string | null; auth_state?: string; summary?: string | null }[] }>("/api/accounts", { provider });
+    for (const a of read.accounts) if (a.email) this.emails.set(`${provider}/${a.name}`, a.email);
+    return read;
+  }
+
+  /** The account's email, once the popover read its CLI's accounts; else null. */
+  email(provider: string, account: string): string | null {
+    return this.emails.get(`${provider}/${account}`) ?? null;
   }
 }

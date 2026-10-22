@@ -127,6 +127,11 @@ def test_an_offers_line_names_kit_blocks_that_no_step_loads():
     assert run("--check", text=nope)["defect"] == "Offers names nope, which is not a kit block"
     loaded = DRAFT.replace("Stop: chat\n", "Stop: chat\nOffers: voice\n")
     assert run("--check", text=loaded)["defect"] == "Offers names voice, which step 03-reply already loads"
+    # A base block loads in every step, so a plan cannot list it as Offered.
+    base = DRAFT.replace("Stop: chat\n", "Stop: chat\nOffers: base-rules\n")
+    assert run("--check", text=base)["defect"] == "Offers names base-rules, which is not a kit block"
+    again = DRAFT.replace("Stop: chat\n", "Stop: chat\nOffers: report, report\n")
+    assert run("--check", text=again)["defect"] == "Offers names report twice"
     twice = DRAFT.replace("Stop: chat\n", "Stop: chat\nOffers: report\nOffers: link-check\n")
     assert run("--check", text=twice)["defect"] == "preset has 2 Offers lines; write one"
 
