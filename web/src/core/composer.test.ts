@@ -89,7 +89,7 @@ describe("chair input", () => {
   });
 
   it("offers Branch only on an idle chair of a CLI that can branch", () => {
-    const input = (extra: Parameters<typeof chair>[0], who?: string) => agentInput(session(), [chair({ provider: "claude", state: "done", ...extra })], who);
+    const input = (extra: Parameters<typeof chair>[0]) => agentInput(session(), [chair({ provider: "claude", state: "done", ...extra })]);
     expect(canBranch(input({}))).toBe(true);
     expect(canBranch(input({ provider: "pi" }))).toBe(true);
     expect(canBranch(input({ provider: "codex" }))).toBe(false);

@@ -103,7 +103,7 @@ export type AgentInput = {
 export const MISSING_ADAPTER = "This session does not record an adapter, so Swarm cannot reach its panes.";
 
 /** The providers whose chat can branch from a message (ADR 0114). */
-export const BRANCH_PROVIDERS = ["claude", "pi"];
+const BRANCH_PROVIDERS = ["claude", "pi"];
 
 /** Esc Esc and Branch from here need the chair idle and of a CLI that can branch. */
 export const canBranch = (agent: AgentInput) => agent.who === null && !agent.running && BRANCH_PROVIDERS.includes(agent.provider ?? "");
