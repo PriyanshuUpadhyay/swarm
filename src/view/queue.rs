@@ -41,6 +41,11 @@ pub fn can_pull_back(provider: Option<&str>, adapter: &str) -> bool {
     provider == Some("claude") && matches!(adapter, "tmux" | "tmux-swarm")
 }
 
+/// pi's queue comes back with `swarm clear-box`, which reads pi's box on the screen.
+pub fn pi_box(provider: Option<&str>, adapter: &str) -> bool {
+    provider == Some("pi") && matches!(adapter, "tmux" | "tmux-swarm")
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum PullBack {
     Pulled {

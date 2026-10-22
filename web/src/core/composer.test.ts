@@ -113,17 +113,16 @@ describe("chair input", () => {
 });
 
 /** An App on a fake server: rows for one chat, a snapshot, and a log of the action POSTs. */
-function harness(fail?: (path: string) => string | null) {
+function harness(fail?: (path: string) => string | null, reply: (path: string) => unknown = () => null) {
   const posts: { path: string; body: Record<string, unknown> }[] = [];
   const page: RowPage = { page: { start_offset: 0, end_offset: 10 }, rows: [user("hello", "hello", 1)], usage: null };
-  const api = {
-    rows: async () => page,
-    action: async (path: string, body: Record<string, unknown>) => {
-      posts.push({ path, body });
-      const err = fail?.(path);
-      if (err) throw new ApiError(409, err);
-    },
-  } as unknown as Api;
+  const post = async (path: string, body: Record<string, unknown>) => {
+    posts.push({ path, body });
+    const err = fail?.(path);
+    if (err) throw new ApiError(409, err);
+    return reply(path);
+  };
+  const api = { rows: async () => page, action: post, post } as unknown as Api;
   const app = new App(api);
   const snapshot = (agent: Partial<Agent> = {}) =>
     (app as unknown as { applySnapshot(s: Snapshot): void }).applySnapshot({ version: 1, sessions: [session()], agents: { chat: [chair(agent)] } });
@@ -359,6 +358,47 @@ describe("pull-back through the app", () => {
     await app.pullBack("chat");
     expect(app.draft("chat")).toBe("fix the typo\nand the docs");
     expect(app.view.composer!.state.banner?.text).toMatch(/Could not confirm/);
+  });
+});
+
+describe("pi's queue back in the draft", () => {
+  it("moves the app's own Sent texts to the draft on Up and after a stop", async () => {
+    let box = "cleared";
+    let held = "steer one steer two second line";
+    const { app, posts, snapshot } = harness(undefined, (path) =>
+      path === "/api/chat/pull-back" ? { outcome: box === "cleared" ? "pulled" : "alreadySent", text: null, held } : path === "/api/chat/interrupt" ? { ok: true, box, held } : null,
+    );
+    snapshot({ provider: "pi", state: "working" });
+    app.openChat("chat");
+    await settle();
+    expect(app.chair("chat").pullBack).toBe(true);
+    await app.send("chat", "steer one");
+    await app.send("chat", "steer two\nsecond line");
+    expect(app.chats.get("chat")!.sent.length).toBe(2);
+    app.setDraft("chat", "and the docs");
+    await app.pullBack("chat");
+    expect(posts.at(-1)).toEqual({ path: "/api/chat/pull-back", body: { session: "chat", agent: "chair" } });
+    expect(app.draft("chat")).toBe("steer one\nsteer two\nsecond line\nand the docs");
+    expect(app.chats.get("chat")!.sent.length).toBe(0);
+
+    // A stop: pi puts the queue back in its box, the server empties it, and the draft takes it.
+    // pi took "steer three" just before the stop, so only "steer four" was in the box.
+    app.setDraft("chat", "");
+    await app.send("chat", "steer three");
+    await app.send("chat", "steer four");
+    held = "steer four";
+    await app.interrupt("chat");
+    expect(app.draft("chat")).toBe("steer four");
+    expect(app.chats.get("chat")!.sent.map((s) => s.row.text)).toEqual(["steer three"]);
+    app.chats.get("chat")!.sent = [];
+    expect(app.chats.get("chat")!.sent.length).toBe(0);
+
+    // A box that was not emptied keeps its rows, so the text is never in two places.
+    box = "unknown";
+    app.setDraft("chat", "");
+    await app.send("chat", "steer five");
+    await app.interrupt("chat");
+    expect(app.draft("chat")).toBe("");
   });
 });
 

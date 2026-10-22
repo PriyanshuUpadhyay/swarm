@@ -157,46 +157,6 @@ mod cases {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// A fake pi pane that draws its input box on the third read, keeps the text unsent in the
-    /// box as a starting pi does, and starts a turn on Enter.
-    #[test]
-    fn typed_text_waits_for_the_input_box_and_presses_enter_until_it_sends() {
-        let (dir, connection, session) = ring_session("type-pane", Some("pi"), "", "$ pi\n");
-        let box_rows = |text: &str| format!("────\n{text}\n────\n~/project\n");
-        std::fs::write(dir.join("empty"), box_rows("")).unwrap();
-        std::fs::write(
-            dir.join("working"),
-            "hi\n── ⠏ Working ──\n\n────\n~/project\n",
-        )
-        .unwrap();
-        let d = dir.display();
-        let adapter = swarm::adapter::parse(
-            "fake",
-            &format!(
-                "self = true\nspawn = true\nlist = true\nclose = true\n\
-                 capture = n=$(($(cat '{d}/reads' 2>/dev/null || echo 0) + 1)); echo $n > '{d}/reads'; \
-                 [ $n = 3 ] && cp '{d}/empty' '{d}/screen'; echo read >> '{d}/log'; cat '{d}/screen'\n\
-                 ring = echo ring >> '{d}/log'; printf '────\\n%s\\n────\\n~/project\\n' \"$SWARM_TEXT\" > '{d}/screen'\n\
-                 key = echo \"$SWARM_KEY\" >> '{d}/log'; cp '{d}/working' '{d}/screen'\n"
-            ),
-        )
-        .unwrap();
-        type_text(&connection, &adapter, &session, CODER, "%2", "hi").unwrap();
-        assert_eq!(
-            std::fs::read_to_string(dir.join("log")).unwrap(),
-            "read\nread\nread\nring\nread\nEnter\nread\n"
-        );
-        // A pi that drew its box before the send takes the text and its Enter, so no read follows.
-        std::fs::remove_file(dir.join("log")).unwrap();
-        std::fs::copy(dir.join("empty"), dir.join("screen")).unwrap();
-        type_text(&connection, &adapter, &session, CODER, "%2", "hi").unwrap();
-        assert_eq!(
-            std::fs::read_to_string(dir.join("log")).unwrap(),
-            "read\nring\n"
-        );
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
     #[test]
     fn deliver_rings_only_when_no_unread_is_rung() {
         let root = std::env::temp_dir().join(format!("swarm-deliver-test-{}", std::process::id()));

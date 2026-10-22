@@ -1,6 +1,6 @@
 
 
-import { agentInput, confirmSent, outgoing, sentRow, submission, type AgentInput, type Prompt, type SendKey } from "./composer";
+import { agentInput, confirmSent, outgoing, sentRow, submission, type AgentInput, type Prompt, type SendKey, type Sent } from "./composer";
 import { recallOrder, recordSent, type HistoryEntry } from "./history";
 import { editPicks, fileRows, validPicks, type CommandList, type SkillPick } from "./slash";
 import {
@@ -21,7 +21,8 @@ export class AppComposer {
   constructor(private readonly app: App) {}
 
   composerView(chat: Chat, sendKey: SendKey): Composer {
-    let queued = 0;
+    // pi logs no queue, so its queued rows are the app's Sent rows.
+    let queued = chat.sent.length;
     for (let i = chat.rows.length - 1; i >= 0 && chat.rows[i].kind === "queued"; i--) queued++;
     return {
       id: chat.id,
@@ -206,16 +207,39 @@ export class AppComposer {
     return fileRows(files, note);
   }
 
-  /** ⌘. and Stop: interrupt the chair's turn. */
+  /** ⌘. and Stop: interrupt the chair's turn. pi puts its queue back in its box on a stop, and
+   *  the server empties it, so the Sent rows taken before the stop go to the draft. */
   async interrupt(sessionId: string) {
     if (this.input(sessionId).stopping || this.chair(sessionId).unreachable) return;
+    // The turn's end drops started Sent rows (settleSent), maybe before the reply comes.
+    const sent = this.app.chats.get(sessionId)?.sent ?? [];
+    const reply: { box?: string; held?: string | null } = {};
     await this.act(
       sessionId,
       { stopping: true },
       { stopping: false },
-      () => this.app.api.action("/api/chat/interrupt", this.target(sessionId)),
+      async () => {
+        Object.assign(reply, await this.app.api.post("/api/chat/interrupt", this.target(sessionId)));
+      },
       () => void this.interrupt(sessionId),
     );
+    if (reply.box === "cleared") this.restoreSent(sessionId, sent, reply.held ?? "");
+  }
+
+  /** Puts the texts of the Sent rows that pi's box `held` before the draft, and drops them from
+   *  the chat. A row that pi took before the box was read is not in it. */
+  private restoreSent(sessionId: string, sent: readonly Sent[], held: string) {
+    const squash = (text: string) => text.replace(/\s+/g, "");
+    const box = squash(held);
+    const back = sent.filter((s) => box.includes(squash(s.row.text)));
+    const chat = this.app.chats.get(sessionId);
+    if (chat) {
+      chat.sent = chat.sent.filter((s) => !back.includes(s));
+      this.app.reading.changed(chat);
+    }
+    const text = back.map((s) => s.row.text).join("\n");
+    const typed = this.draft(sessionId);
+    if (text) this.replaceDraft(sessionId, typed ? `${text}\n${typed}` : text);
   }
 
   /** Picks choice `choice` (zero-based); swarm refuses it when the question changed. */
@@ -243,16 +267,18 @@ export class AppComposer {
     const st = this.input(sessionId);
     const chair = this.chair(sessionId);
     if (!chat || !chair.pullBack || chair.disabled || st.pulling || st.sending) return;
-    if (!chat.rows.some((r) => r.kind === "queued")) return;
-    const result: { pulled: string | null } = { pulled: null };
+    if (!chat.sent.length && !chat.rows.some((r) => r.kind === "queued")) return;
+    // pi's reply holds no text, because its screen joins lines; the app's Sent rows are exact.
+    const sent = chat.sent;
+    const result: { pulled: string | null; held?: string | null } = { pulled: null };
     await this.act(
       sessionId,
       { pulling: true, alreadySent: false },
       { pulling: false },
       async () => {
-        const done = await this.app.api.post<{ outcome: "pulled" | "alreadySent" | "unconfirmed"; text: string | null }>("/api/chat/pull-back", this.target(sessionId));
+        const done = await this.app.api.post<{ outcome: "pulled" | "alreadySent" | "unconfirmed"; text: string | null; held?: string | null }>("/api/chat/pull-back", this.target(sessionId));
         if (done.outcome === "unconfirmed") throw new Error("Could not confirm the pull-back. Check the agent's input box.");
-        if (done.outcome === "pulled") result.pulled = done.text ?? "";
+        if (done.outcome === "pulled") Object.assign(result, { pulled: done.text ?? "", held: done.held });
       },
       () => void this.pullBack(sessionId),
     );
@@ -264,6 +290,7 @@ export class AppComposer {
       setTimeout(() => seq === this.app.alreadySentSeq && this.update(sessionId, { alreadySent: false }), 2000);
       return;
     }
+    if (chair.provider === "pi") return this.restoreSent(sessionId, sent, result.held ?? "");
     // Keep anything typed while the CLI let go of the text.
     const typed = this.draft(sessionId);
     const text = result.pulled;

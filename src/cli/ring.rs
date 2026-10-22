@@ -248,6 +248,13 @@ pub(crate) fn type_text(
     let started = provider
         .as_deref()
         .is_some_and(|provider| wait_for_input_box(provider, &read));
+    // pi puts its queued messages back in its box on a stop, and the text would join them. An
+    // unread box types as before.
+    if provider.as_deref() == Some("pi")
+        && swarm::screen::composer("pi", &read()).is_some_and(|held| !held.is_empty())
+    {
+        return Err("swarm: pi's input box holds text, and this send would join it".into());
+    }
     adapter.run("ring", &[("pane", pane), ("text", text)])?;
     let Some(provider) = provider.filter(|_| !started && adapter.key.is_some()) else {
         return Ok(());
@@ -260,6 +267,44 @@ pub(crate) fn type_text(
         adapter.run("key", &[("pane", pane), ("key", "Enter")])?;
     }
     Ok(())
+}
+
+/// Empty pi's input box in `pane`, for `swarm clear-box`. With `dequeue`, M-Up first puts pi's
+/// queued messages in the box, as pi's own Alt+Up does. Each round of C-e, C-u, and BSpace takes
+/// one line; Escape and C-c would stop pi's turn. The box is read before each round, so an unread
+/// box is never cleared blind. Returns "empty" when the box held nothing, else "cleared" and the
+/// text it held, which a message that pi took just before M-Up is not in.
+pub(crate) fn clear_box(
+    adapter: &swarm::adapter::Adapter,
+    pane: &str,
+    dequeue: bool,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let key = |key: &str| adapter.run("key", &[("pane", pane), ("key", key)]);
+    if dequeue {
+        key("M-Up")?;
+        std::thread::sleep(std::time::Duration::from_millis(300));
+    }
+    let mut first = None;
+    for round in 0..=40 {
+        let rows = adapter
+            .capture_within(&[("pane", pane)], std::time::Duration::from_secs(1))
+            .unwrap_or_default();
+        match swarm::screen::composer("pi", &rows) {
+            None => return Err("swarm: pi's input box could not be read".into()),
+            Some(held) if held.is_empty() => {
+                return Ok(first.map_or("empty".into(), |held| format!("cleared\n{held}")));
+            }
+            Some(_) if round == 40 => break,
+            Some(held) => {
+                first.get_or_insert(held);
+            }
+        }
+        for name in ["C-e", "C-u", "BSpace"] {
+            key(name)?;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    Err("swarm: pi's input box still holds text after 40 rounds".into())
 }
 
 /// The pane's screen for `ring_proof`: the `screen` verb's output, or the capture `rows` when the
@@ -354,3 +399,7 @@ mod tests_1;
 #[cfg(test)]
 #[path = "ring/tests_2.rs"]
 mod tests_2;
+
+#[cfg(test)]
+#[path = "ring/tests_type.rs"]
+mod tests_type;

@@ -132,7 +132,7 @@ export function agentInput(session: Session | undefined, agents: readonly Agent[
     resumable: unreachable && !child && provider !== null && typeof session?.chair_id === "string",
     running: agent?.state === "working",
     prompt: unreachable ? null : prompt,
-    pullBack: provider === "claude" && (adapter === "tmux" || adapter === "tmux-swarm"),
+    pullBack: (provider === "claude" || provider === "pi") && (adapter === "tmux" || adapter === "tmux-swarm"),
   };
 }
 
