@@ -131,20 +131,17 @@ pub fn require_pane(
 /// call, and an agent that died keeps its last report, so the usage HUD stops showing it after this.
 const WORKING_FOR_S: i64 = 600;
 
-/// The number of `running_agents` in `state` (`working` or `waiting`), by provider, so the counts
-/// and the list never disagree.
+/// The number of `agents` in `state` (`working` or `waiting`), by provider. Counting the one list
+/// that is also printed keeps the counts and the list from disagreeing.
 pub fn agents_by_provider(
-    connection: &Connection,
+    agents: &[RunningAgent],
     state: &str,
-) -> Result<std::collections::BTreeMap<String, i64>, Box<dyn std::error::Error>> {
+) -> std::collections::BTreeMap<String, i64> {
     let mut counts = std::collections::BTreeMap::new();
-    for agent in running_agents(connection)?
-        .into_iter()
-        .filter(|agent| agent.state == state)
-    {
-        *counts.entry(agent.provider).or_insert(0) += 1;
+    for agent in agents.iter().filter(|agent| agent.state == state) {
+        *counts.entry(agent.provider.clone()).or_insert(0) += 1;
     }
-    Ok(counts)
+    counts
 }
 
 /// One agent with a pane that reported `working` or `waiting` within `WORKING_FOR_S`. A chair with

@@ -71,8 +71,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            agents_by_provider(&connection, "waiting")
-                .unwrap()
+            agents_by_provider(&running_agents(&connection).unwrap(), "waiting")
                 .into_iter()
                 .collect::<Vec<_>>(),
             [("codex".to_string(), 1)]
@@ -88,7 +87,7 @@ mod tests {
             now - 601,
         )
         .unwrap();
-        let working = agents_by_provider(&connection, "working").unwrap();
+        let working = agents_by_provider(&running_agents(&connection).unwrap(), "working");
         assert_eq!(
             working.into_iter().collect::<Vec<_>>(),
             [("claude".to_string(), 2), ("pi".to_string(), 1)]

@@ -331,11 +331,12 @@ pub(crate) fn commands_info(args: &[String]) -> Result<Option<()>, Box<dyn std::
     {
         // The usage HUD polls this every few seconds, so it reads the store and no pane.
         let connection = swarm::store::open(&swarm::paths::sqlite_db()?)?;
+        let agents = swarm::store::running_agents(&connection)?;
         return print_json(&serde_json::json!({
             "schema": "swarm.working.v1",
-            "working": swarm::store::agents_by_provider(&connection, "working")?,
-            "waiting": swarm::store::agents_by_provider(&connection, "waiting")?,
-            "agents": swarm::store::running_agents(&connection)?,
+            "working": swarm::store::agents_by_provider(&agents, "working"),
+            "waiting": swarm::store::agents_by_provider(&agents, "waiting"),
+            "agents": agents,
         }))
         .map(Some);
     }
