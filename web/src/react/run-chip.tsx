@@ -217,7 +217,7 @@ function RunBody({ app, sessionId, chair }: { app: App; sessionId: string; chair
                       <button key={m.id} type="button" aria-pressed={on} className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-hover aria-pressed:bg-selected" onClick={() => choose(p.id, m)}>
                         <Radio on={on} />
                         <span className="min-w-0 truncate">{m.label}</span>
-                        <span className="ml-auto max-w-[55%] truncate text-xs text-muted-foreground">{[m.note, current.provider === p.id && current.model === m.id && "now"].filter(Boolean).join(" · ")}</span>
+                        <span className="ml-auto max-w-[55%] truncate text-xs text-muted-foreground" title={m.note}>{[m.note, current.provider === p.id && current.model === m.id && "now"].filter(Boolean).join(" · ")}</span>
                       </button>
                     );
                   })}
@@ -271,7 +271,7 @@ function RunBody({ app, sessionId, chair }: { app: App; sessionId: string; chair
                     {a.name && <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ background: accountColor(a.name) }} />}
                     <span className="min-w-0 truncate">{a.name ?? "CLI default"}</span>
                     {limit?.text && (
-                      <span className="ml-auto flex min-w-0 max-w-[60%] items-center gap-1.5 text-xs text-muted-foreground tabular-nums">
+                      <span className="ml-auto flex min-w-0 max-w-[60%] items-center gap-1.5 text-xs text-muted-foreground tabular-nums" title={limit.text}>
                         {limit.left !== null && (
                           <span aria-hidden className="h-1 w-6 shrink-0 overflow-hidden rounded-full bg-border">
                             <span className={`block h-full ${meterTone(limit.left)}`} style={{ width: `${limit.left}%` }} />
