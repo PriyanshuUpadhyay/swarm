@@ -198,11 +198,18 @@ def short(text, words=12):
 
 
 def ledger_rows(ledger):
-    """[("Chosen", [(label, why)])]: one row per block, each part right under its parent."""
+    """[("Chosen", [(label, why)]), ("Offered", ...)]: one row per block, each part right under its parent.
+    The Offered group shows only when the plan has an Offered row."""
     part_of = {part: parent for parent, parts in parents().items() for part in parts}
-    order = sorted(ledger, key=lambda b: (part_of.get(b, b), b in part_of, b))
-    rows = [(f"↳ {b}" if b in part_of else b, short(ledger[b][1])) for b in order]
-    return [("Chosen", rows)]
+    groups = []
+    for status in ("Chosen", "Offered"):
+        names = {b for b, (s, _) in ledger.items() if s == status}
+        # A part sits under its parent only when the parent is in the same group.
+        under = {b: part_of[b] for b in names if part_of.get(b) in names}
+        order = sorted(names, key=lambda b: (under.get(b, b), b in under, b))
+        if order or status == "Chosen":
+            groups.append((status, [(f"↳ {b}" if b in under else b, short(ledger[b][1])) for b in order]))
+    return groups
 
 
 def ledger_markdown(ledger):

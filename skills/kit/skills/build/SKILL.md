@@ -81,6 +81,7 @@ Each file holds the step's output, not a copy of it.
 ## Preset
 
 Stop: owner
+Offers: build-site, design-tokens, web-ui-basics, ui-motion, serve-local
 
 | File | Needs | Holds | Blocks | Why |
 |---|---|---|---|---|

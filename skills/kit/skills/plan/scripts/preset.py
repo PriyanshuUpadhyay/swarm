@@ -6,7 +6,8 @@
   preset.py --check            check a draft SKILL.md or `## Preset` section on stdin; print {"ok", "preset" or "defect"}
 
 A preset is a `## Preset` section with one `Stop: owner` or `Stop: chat` line, an optional
-`Start: <command>` line, and one table in the plan step-table shape (| File | Needs | Holds | Block | Why |).
+`Start: <command>` line, an optional `Offers: <block>, <block>` line, and one table in the plan step-table
+shape (| File | Needs | Holds | Block | Why |). Offers names kit blocks that the planner may add; no step loads them.
 """
 
 import json
@@ -18,6 +19,7 @@ from pathlib import Path
 KIT = Path(__file__).resolve().parents[3]
 sys.path[:0] = [str(KIT / "references"), str(KIT / "blocks" / "plan-chart" / "scripts")]  # python3 -I adds neither
 import plan_chart  # noqa: E402
+import plan_rules  # noqa: E402
 import step_run  # noqa: E402
 from block_resolver import resolve_blocks  # noqa: E402
 
@@ -34,12 +36,21 @@ def path(verb, mode=None):
     return file
 
 
-def section(file, text=None):
-    """(stop, start, rows) from the file's `## Preset` section; `text` replaces the file's text."""
+# The plan front door, in the order skills/plan/SKILL.md runs it before any preset step.
+FRONT = ["planner", "plan-chart", "plan-review"]
+
+
+def body_of(file, text=None):
+    """The text of the file's `## Preset` section; `text` replaces the file's text."""
     text = file.read_text(encoding="utf-8") if text is None else text
     if "\n## Preset\n" not in text:
         raise SystemExit(f"{file} has no ## Preset section")
-    body = text.split("\n## Preset\n", 1)[1].split("\n## ", 1)[0]
+    return text.split("\n## Preset\n", 1)[1].split("\n## ", 1)[0]
+
+
+def section(file, text=None):
+    """(stop, start, rows) from the file's `## Preset` section; `text` replaces the file's text."""
+    body = body_of(file, text)
     stop = re.search(r"^Stop: (owner|chat)$", body, re.M)
     if not stop:
         raise SystemExit(f"{file} preset needs one line `Stop: owner` or `Stop: chat`")
@@ -86,12 +97,27 @@ def same_steps(plan, file):
             and drawn == [r[:4] for r in theirs])
 
 
+def offers(file, rows, selected, text=None):
+    """The block ids of the `Offers:` line: kit blocks that no step loads, or SystemExit with the first defect."""
+    lines = re.findall(r"^Offers:(.*)$", body_of(file, text), re.M)
+    if len(lines) > 1:
+        raise SystemExit(f"preset has {len(lines)} Offers lines; write one")
+    ids = [b.strip() for b in lines[0].split(",") if b.strip()] if lines else []
+    catalog = {p.parent.name for p in (KIT / "blocks").glob("*/SKILL.md")}
+    for block in ids:
+        if block not in catalog:
+            raise SystemExit(f"Offers names {block}, which is not a kit block")
+        if step := next((r[0] for r in rows if block in selected[r[0]]), None):
+            raise SystemExit(f"Offers names {block}, which step {step} already loads")
+    return ids
+
+
 def check(file):
-    """Each step with its resolved blocks, or SystemExit with the first defect."""
+    """(stop, start, offers, each step with its resolved blocks), or SystemExit with the first defect."""
     stop, start, rows = section(file)
     plan_chart.check(file.name, "preset", rows)
     selected = resolve_blocks(None, {r[0]: r[3] for r in rows}, "default", blocks_dir=KIT / "blocks", pack=False)
-    return stop, start, [(name, need, selected[name]) for name, need, *_ in rows]
+    return stop, start, offers(file, rows, selected), [(name, need, selected[name]) for name, need, *_ in rows]
 
 
 def facts(file, verb, mode=None, text=None):
@@ -100,8 +126,8 @@ def facts(file, verb, mode=None, text=None):
     uses = plan_chart.check(file.name, "preset", rows)
     stage = {n: i for i, names in enumerate(plan_chart.stages(uses)) for n in names}
     selected = resolve_blocks(None, {r[0]: r[3] for r in rows}, "default", blocks_dir=KIT / "blocks", pack=False)
-    body = (file.read_text(encoding="utf-8") if text is None else text).split("\n## Preset\n", 1)[1]
-    lines = body.split("\n## ", 1)[0].splitlines()
+    offered = offers(file, rows, selected, text)
+    lines = body_of(file, text).splitlines()
     head = next(i for i, line in enumerate(lines) if plan_chart.HEAD.match(line))
     raw = []
     for line in lines[head + 1:]:  # the lines that read_plan takes as rows
@@ -115,7 +141,7 @@ def facts(file, verb, mode=None, text=None):
               "resolved": selected[name], "uses": uses[name], "stage": stage[name]}
              for (name, need, holds, blocks, why, *_), cells in zip(rows, raw, strict=True)]
     return {"preset": f"{verb} {mode}" if mode else verb, "verb": verb, "mode": mode, "stop": stop, "start": start,
-            "steps": steps}
+            "offers": offered, "steps": steps}
 
 
 def meta(path):
@@ -148,12 +174,16 @@ def kit_json():
             for block in step["resolved"]:
                 used.setdefault(block, []).append({"preset": p["preset"], "step": step["file"],
                                                    "named": block in step["blocks"]})
+    offered_by = {}
+    for p in presets:
+        for block in p["offers"]:
+            offered_by.setdefault(block, []).append(p["preset"])
     blocks = [{"id": name, "kind": m.get("kind", ""), "description": m.get("description", ""), "needs": m.get("needs", ""),
                "gives": m.get("gives", ""), "parent": parent_of.get(name), "parts": parents.get(name, []),
-               "used_by": used.get(name, [])}
+               "used_by": used.get(name, []), "offered_by": offered_by.get(name, []), "duty": plan_rules.is_duty(name)}
               for name, m in ((name, meta(path)) for name, path in files.items())]
     version = json.loads((KIT / "plugin.json").read_text(encoding="utf-8")).get("version", "")
-    return {"schema": "swarm.kit/1", "version": version, "blocks": blocks, "presets": presets}
+    return {"schema": "swarm.kit/1", "version": version, "front": FRONT, "blocks": blocks, "presets": presets}
 
 
 def front_matter_defect(text):
@@ -218,8 +248,8 @@ def main(argv):
         return None
     if not 1 <= len(argv) <= 2 or argv[0].startswith("-"):
         raise SystemExit(__doc__.strip().splitlines()[2].strip())
-    stop, start, steps = check(path(*argv))
-    print(f"Stop: {stop}" + (f"\nStart: {start}" if start else ""))
+    stop, start, offered, steps = check(path(*argv))
+    print(f"Stop: {stop}" + (f"\nStart: {start}" if start else "") + (f"\nOffers: {', '.join(offered)}" if offered else ""))
     for name, need, blocks in steps:
         print(f"{name} | needs {need} | {', '.join(blocks)}")
 

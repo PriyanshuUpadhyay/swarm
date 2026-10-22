@@ -14,8 +14,15 @@ def blocks_toml():
     return read_toml(KIT / "blocks" / "blocks.toml")
 
 
+def is_duty(block):
+    """A block that every plan with Writes keeps, as the checks below require: `requirements` first,
+    `change-review` after a writing step, and a `voice-` part at the end."""
+    return block in ("requirements", "change-review") or block.startswith("voice-")
+
+
 def check_ledger(rows, ledger):
-    """The table lists exactly the blocks the steps use, each Chosen with a Why."""
+    """The table lists exactly the blocks the steps use, each Chosen with a Why. A block that no step uses may
+    have an Offered row with a Why, so the owner can ask to add it."""
     base = set(blocks_toml().get("base", []))
     catalog = {p.parent.name for p in (KIT / "blocks").glob("*/SKILL.md")} - base
     if not ledger:
@@ -23,8 +30,9 @@ def check_ledger(rows, ledger):
     if unknown := sorted(set(ledger) - catalog):
         raise SystemExit(f"blocks table names {unknown[0]}, which is not in the kit catalog")
     for block, (status, why) in ledger.items():
-        if status != "Chosen" or not why:
-            raise SystemExit(f"block {block} needs Status Chosen and a Why; the table lists only the blocks the steps use")
+        if status not in ("Chosen", "Offered") or not why:
+            raise SystemExit(f"block {block} needs Status Chosen or Offered and a Why; the table lists the blocks "
+                             "the steps use, and Offered ones that no step uses")
     chosen = {b for b, (status, _) in ledger.items() if status == "Chosen"}
     selected = resolve_blocks(None, {r[0]: r[3] for r in rows}, "default", blocks_dir=KIT / "blocks", pack=False)
     used = {b for blocks in selected.values() for b in blocks} - base

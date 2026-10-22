@@ -99,7 +99,13 @@ def add(folder, row, before):
     import block_resolver
     resolved = block_resolver.resolve_blocks(None, {name: blocks}, "default", blocks_dir=KIT / "blocks", pack=False)[name]
     ledger = plan_chart.read_ledger(plan)
-    if add := [f"| {b} | Chosen | amended step {name} needs it |" for b in resolved if b not in ledger]:
+    # An Offered row of a block this step loads goes, and the block comes back as Chosen below.
+    offered = {b for b in resolved if ledger.get(b, ("",))[0] == "Offered"}
+    def offered_row(line):
+        cells = line.strip().strip("|").split("|")
+        return line.startswith("|") and len(cells) == 3 and cells[0].strip().strip("`") in offered
+    lines = [l for l in lines if not offered_row(l)]
+    if add := [f"| {b} | Chosen | amended step {name} needs it |" for b in resolved if b not in ledger or b in offered]:
         at = next((i for i, l in enumerate(lines) if plan_chart.LEDGER_HEAD.match(l)), None)
         if at is None:
             raise SystemExit("plan.md has no blocks table")
