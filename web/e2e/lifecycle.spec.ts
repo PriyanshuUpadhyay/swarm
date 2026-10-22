@@ -142,6 +142,8 @@ test("The run chip hands off to another CLI with a summary, and Cancel stops it 
   const progress = dialog.getByTestId("sm-progress");
   // The live chair was asked for a summary and does not answer, so the switch waits here.
   await expect(progress).toHaveAttribute("data-phase", "summarizing");
+  // A queued change starts with the popover closed, so the chip's own status says it too.
+  await expect(tab.getByTestId("run-chip-status")).toHaveText("Switching…");
   await shoot(tab, "switch-model", info.project.name);
   await dialog.getByTestId("run-cancel").click();
   await expect(progress).toHaveAttribute("data-phase", "cancelled");

@@ -67,9 +67,9 @@ export function RunChip({ app, sessionId, chair }: { app: App; sessionId: string
         </span>
         {!chair.who && <ChevronDownIcon className="size-3 shrink-0" />}
       </button>
-      {/* A button's children are presentational, so the queued change is announced from outside it. */}
-      <span role="status" className="sr-only">
-        {pending ? pendingText : ""}
+      {/* A button's children are presentational, so a queued change and a running switch are announced from outside it. */}
+      <span role="status" className="sr-only" data-testid="run-chip-status">
+        {switching ?? (pending ? pendingText : "")}
       </span>
       {pending && (
         <button type="button" className="icon-btn" aria-label="Cancel change" title="Cancel change" data-testid="run-pending-cancel" onClick={() => app.life.queue.cancel(sessionId)}>
