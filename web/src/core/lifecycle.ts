@@ -23,12 +23,13 @@ import {
   setupFrame,
   setupFailure,
   isSettled,
+  endConfirm,
+  plural,
 } from "./lifecycle-state";
+import { message } from "./app-types";
 
 export * from "./lifecycle-state";
 
-const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
-const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 export class Lifecycle {
   state: LifeState = { newWorkspace: null, create: null, project: null, importChoice: null, projectPath: "", existing: null, setupScript: null, switchModel: null, handoffs: {}, confirm: null, closed: false, imports: false };
@@ -243,6 +244,8 @@ export class Lifecycle {
     const live = sessions.map((session) => ({ session, agents: this.liveAgents(session) }));
     const agents = live.reduce((n, l) => n + l.agents.length, 0);
     const run = async () => {
+      // A change queued for the turn end would open a new chat after this one ends.
+      for (const session of sessions) this.queue.cancel(session);
       for (const { session, agents } of live) for (const agent of agents) await this.api.action("/api/agent/close", { session, agent });
       if (archive) {
         await this.api.action("/api/sessions/archive", { ids: sessions });
@@ -255,13 +258,7 @@ export class Lifecycle {
     if (!agents) return this.runAction(run);
     // An agent whose turn is over still has an open pane; only a working or waiting one is "running".
     const busy = sessions.flatMap((s) => this.app.agentsOf(s).agents).filter((a) => a.alive && (a.state === "working" || a.state === "waiting")).length;
-    const verb = archive ? "Archiving" : "Ending";
-    return this.ask({
-      title: `${archive ? "Archive" : "End"} ${many ? `${sessions.length} chats` : `“${this.app.chatTitle(sessions[0])}”`}?`,
-      body: `${busy ? `${plural(busy, "agent")} still working. ${verb} stops them.` : `${verb} closes ${many ? "their" : "its"} agent${agents > 1 ? "s" : ""}.`}${archive ? (many ? " The chats move to Archived." : " The chat moves to Archived.") : ""}`,
-      action: `${archive ? "Archive" : "End"} ${many ? `${sessions.length} Chats` : "Chat"}`,
-      run,
-    });
+    return this.ask({ ...endConfirm(sessions.length, this.app.chatTitle(sessions[0]), archive, agents, busy), run });
   }
 
   openSwitchModel(session: string) {

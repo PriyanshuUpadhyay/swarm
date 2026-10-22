@@ -108,9 +108,12 @@ describe("chats", () => {
     expect(idle.life.state.confirm).toMatchObject({ body: "Archiving closes its agent. The chat moves to Archived." });
 
     const busy = fakeApp(async () => ({}), [{ id: "orchestrator", alive: true, state: "working" }, { id: "reviewer", alive: true, state: "waiting" }]);
+    // A change queued for the chat's turn end must not open a new chat after the chat ends.
+    busy.life.queue.add("chat-1", { provider: "claude", model: "opus", account: null, effort: null, carry: "resume" });
     busy.life.endChat("chat-1", false);
     expect(busy.life.state.confirm).toMatchObject({ title: "End “Fix the sidebar”?", body: "2 agents still working. Ending stops them.", action: "End Chat" });
     expect(await busy.life.confirmed()).toBeNull();
+    expect(busy.life.queue.state).toEqual({});
     expect(busy.calls.filter((c) => c.startsWith("/api/agent/close"))).toEqual([
       '/api/agent/close {"session":"chat-1","agent":"reviewer"}',
       '/api/agent/close {"session":"chat-1","agent":"chair"}',

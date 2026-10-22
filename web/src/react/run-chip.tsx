@@ -41,6 +41,8 @@ export function RunChip({ app, sessionId, chair }: { app: App; sessionId: string
   const own = chair.who === null;
   useEffect(() => () => void (own && app.life.state.switchModel === sessionId && app.life.close("switchModel")), [app, sessionId, own]);
 
+  const pendingText = pending ? `Pending: ${[pending.model, pending.effort && levelWord(pending.effort)].filter(Boolean).join(" · ")}` : "";
+
   return (
     <>
       <button
@@ -58,11 +60,15 @@ export function RunChip({ app, sessionId, chair }: { app: App; sessionId: string
         ) : (
           chair.account && <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ background: accountColor(chair.account) }} />
         )}
-        <span className="truncate" data-testid="model-chip-label" aria-live="polite">
-          {switching ?? (pending ? `Pending: ${[pending.model, pending.effort && levelWord(pending.effort)].filter(Boolean).join(" · ")}` : runLabel(chair))}
+        <span className="truncate" data-testid="model-chip-label">
+          {switching ?? (pending ? pendingText : runLabel(chair))}
         </span>
         {!chair.who && <ChevronDownIcon className="size-3 shrink-0" />}
       </button>
+      {/* A button's children are presentational, so the queued change is announced from outside it. */}
+      <span role="status" className="sr-only">
+        {pending ? pendingText : ""}
+      </span>
       {pending && (
         <button type="button" className="icon-btn" aria-label="Cancel change" title="Cancel change" data-testid="run-pending-cancel" onClick={() => app.life.queue.cancel(sessionId)}>
           <XIcon className="size-3" />

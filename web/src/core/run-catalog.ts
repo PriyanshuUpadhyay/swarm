@@ -32,6 +32,7 @@ export class RunCatalog {
 
   async accounts(provider: string): Promise<AccountList> {
     const read = await this.api().get<AccountList>("/api/accounts", { provider });
+    for (const key of this.emails.keys()) if (key.startsWith(`${provider}/`)) this.emails.delete(key);
     for (const a of read.accounts) if (a.email) this.emails.set(`${provider}/${a.name}`, a.email);
     return read;
   }
