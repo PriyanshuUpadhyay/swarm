@@ -147,7 +147,9 @@ pub(super) async fn branch_chat(
 ) -> Result<Json<Value>, ApiError> {
     let Json(body) = body.map_err(|e| error(StatusCode::BAD_REQUEST, &e.body_text()))?;
     let old = body.session.as_str();
-    let call = action_session(&app, old)?;
+    let mut call = action_session(&app, old)?;
+    // An imported chat has no adapter until its first pane (new_chat.rs resume_chat).
+    call.adapter = "tmux-swarm".into();
     let provider: Option<String> = read_connection(&app.root)
         .and_then(|c| {
             c.query_row(
@@ -178,14 +180,7 @@ pub(super) async fn branch_chat(
         .ok_or_else(|| error(StatusCode::NOT_FOUND, "unknown message"))?;
     let text = row.text.clone();
     let log = resolve_log(&app.root, old, "chair")?;
-    let agents = run_cli(&app, call.args(&["agents", "--json"]), None).await?;
-    let agents: Value = serde_json::from_str(&agents)
-        .map_err(|_| error(StatusCode::BAD_GATEWAY, "invalid agents JSON from swarm"))?;
-    let chair = agents["agents"]
-        .as_array()
-        .and_then(|list| list.iter().find(|a| a["id"] == "orchestrator"))
-        .cloned()
-        .unwrap_or(Value::Null);
+    let chair = chair_agent(&app, &call).await?;
 
     let mut new = CliCall {
         args: Vec::new(),
@@ -238,11 +233,7 @@ pub(super) async fn branch_chat(
         }
     }
     let output = run_cli(&app, new.args(&launch), None).await?;
-    let pane = output
-        .lines()
-        .map(str::trim)
-        .find(|line| !line.is_empty())
-        .unwrap_or_default();
+    let pane = first_line(&output).unwrap_or_default();
     Ok(Json(
         json!({"ok": true, "session": session, "agent": "orchestrator", "pane": pane, "text": text}),
     ))

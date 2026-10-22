@@ -28,7 +28,8 @@ pub(super) fn action_provider(
 pub(super) fn interrupt_empties_pi(app: &App, body: &ActionTarget) -> Result<bool, ApiError> {
     let (call, agent) = action_target(app, &body.session, &body.agent)?;
     let provider = action_provider(app, &body.session, &agent)?;
-    Ok(queue::pi_box(provider.as_deref(), &call.adapter))
+    // Only the chair's page restores the held text; a child's Stop leaves pi's queue in pi.
+    Ok(agent == "orchestrator" && queue::pi_box(provider.as_deref(), &call.adapter))
 }
 
 pub(super) fn interrupt_clears_box(app: &App, body: &ActionTarget) -> Result<bool, ApiError> {

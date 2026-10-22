@@ -26,6 +26,12 @@ pub(crate) const RING_TIMEOUT: std::time::Duration =
     std::time::Duration::from_secs(if cfg!(test) { 5 } else { 30 });
 /// How often a ring reads the pane and the store for its proof.
 pub(crate) const RING_POLL: std::time::Duration = std::time::Duration::from_millis(500);
+/// How long `clear_box` waits for pi to show the messages that M-Up moved into its box.
+const CLEAR_BOX_DEQUEUE_WAIT: std::time::Duration = std::time::Duration::from_millis(300);
+/// How long `clear_box` waits after a round of keys for pi to redraw its box.
+const CLEAR_BOX_REDRAW_WAIT: std::time::Duration = std::time::Duration::from_millis(50);
+/// How many rounds of C-e, C-u, and BSpace `clear_box` tries before it gives up on the box.
+const CLEAR_BOX_ROUNDS: usize = 40;
 
 /// Now in unix seconds, the unit of `rung_at` and `state_at`.
 pub(crate) fn unix_now() -> Result<i64, std::time::SystemTimeError> {
@@ -282,10 +288,10 @@ pub(crate) fn clear_box(
     let key = |key: &str| adapter.run("key", &[("pane", pane), ("key", key)]);
     if dequeue {
         key("M-Up")?;
-        std::thread::sleep(std::time::Duration::from_millis(300));
+        std::thread::sleep(CLEAR_BOX_DEQUEUE_WAIT);
     }
     let mut first = None;
-    for round in 0..=40 {
+    for round in 0..=CLEAR_BOX_ROUNDS {
         let rows = adapter
             .capture_within(&[("pane", pane)], std::time::Duration::from_secs(1))
             .unwrap_or_default();
@@ -294,7 +300,7 @@ pub(crate) fn clear_box(
             Some(held) if held.is_empty() => {
                 return Ok(first.map_or("empty".into(), |held| format!("cleared\n{held}")));
             }
-            Some(_) if round == 40 => break,
+            Some(_) if round == CLEAR_BOX_ROUNDS => break,
             Some(held) => {
                 first.get_or_insert(held);
             }
@@ -302,9 +308,9 @@ pub(crate) fn clear_box(
         for name in ["C-e", "C-u", "BSpace"] {
             key(name)?;
         }
-        std::thread::sleep(std::time::Duration::from_millis(50));
+        std::thread::sleep(CLEAR_BOX_REDRAW_WAIT);
     }
-    Err("swarm: pi's input box still holds text after 40 rounds".into())
+    Err(format!("swarm: pi's input box still holds text after {CLEAR_BOX_ROUNDS} rounds").into())
 }
 
 /// The pane's screen for `ring_proof`: the `screen` verb's output, or the capture `rows` when the

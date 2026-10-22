@@ -116,7 +116,11 @@ fn kill(id: &str) -> Result<(), String> {
 /// Ends every shell of `cwd`, for an archived workspace. A failure only warns, since the archive
 /// already ran.
 pub(super) fn close_all(cwd: &str) {
-    for shell in list(cwd).unwrap_or_default() {
+    let shells = list(cwd).unwrap_or_else(|err| {
+        eprintln!("swarm: shells of {cwd} were not listed, so none closed: {err}");
+        Vec::new()
+    });
+    for shell in shells {
         if let Err(err) = kill(&shell.id) {
             eprintln!("swarm: shell {} did not close: {err}", shell.id);
         }
@@ -144,11 +148,9 @@ pub(super) fn attach_command(id: &str) -> CommandBuilder {
 pub(super) fn session_cwd(app: &Server, session: &str) -> Result<String, ApiError> {
     let connection = read_connection(&app.root)
         .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "database read failed"))?;
-    let cwd: String = connection
-        .query_row("SELECT cwd FROM session WHERE id = ?1", [session], |row| {
-            row.get(0)
-        })
-        .map_err(|_| error(StatusCode::NOT_FOUND, "unknown session"))?;
+    let cwd = swarm::store::session_cwd(&connection, session)
+        .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "database read failed"))?
+        .ok_or_else(|| error(StatusCode::NOT_FOUND, "unknown session"))?;
     if !Path::new(&cwd).is_dir() {
         return Err(error(StatusCode::CONFLICT, "this chat's folder is gone"));
     }
@@ -248,5 +250,19 @@ mod tests {
         );
         assert!(!valid_id("shell-0000000"));
         assert!(!valid_id("=shell-0000000a"));
+    }
+
+    #[test]
+    fn a_failed_read_is_not_an_unknown_session() {
+        use crate::serve::test_support::Fixture;
+        let fixture = Fixture::new();
+        let missing = session_cwd(&fixture.app, "no-such-session").unwrap_err();
+        assert_eq!(missing.0, StatusCode::NOT_FOUND);
+        swarm::store::open(&fixture.app.root.join("swarm.db"))
+            .unwrap()
+            .execute_batch("PRAGMA foreign_keys = OFF; ALTER TABLE session RENAME TO moved;")
+            .unwrap();
+        let failed = session_cwd(&fixture.app, &fixture.session).unwrap_err();
+        assert_eq!(failed.0, StatusCode::INTERNAL_SERVER_ERROR);
     }
 }

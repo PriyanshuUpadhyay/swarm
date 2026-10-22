@@ -178,4 +178,40 @@ esac
         let unknown = branch(&fixture, &fixture.session, "user@raw-999999-0").await;
         assert_eq!(unknown.unwrap_err().0, StatusCode::NOT_FOUND);
     }
+
+    #[tokio::test]
+    async fn a_chat_with_no_adapter_still_reads_its_chair_to_branch() {
+        use std::os::unix::fs::PermissionsExt;
+        let fixture = action_fixture();
+        // An imported chat has no adapter until its first pane (new_chat.rs resume_chat).
+        swarm::store::open(&fixture.app.root.join("swarm.db"))
+            .unwrap()
+            .execute(
+                "UPDATE session SET adapter = NULL WHERE id = ?1",
+                [&fixture.session],
+            )
+            .unwrap();
+        let cli = &fixture.app.cli;
+        std::fs::write(
+            cli,
+            r#"#!/bin/sh
+printf '%s\n' "${SWARM_ADAPTER-}|$*" >> "$SWARM_HOME/actions"
+case "$1 $2" in
+  'agents --json') printf '%s\n' '{"agents":[{"id":"orchestrator"}]}' ;;
+  'session new') printf '%s\n' 01a1650a-0000-7000-8000-000000000001 ;;
+  'launch orchestrator') printf 'fixture-pane\n' ;;
+esac
+"#,
+        )
+        .unwrap();
+        std::fs::set_permissions(cli, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let rows = handoff_rows(&fixture.app, &fixture.session).await.unwrap();
+        let first = rows.iter().find(|r| r.kind == view::RowKind::User).unwrap();
+        let page_id = format!("{}@{}", first.id, first.anchor_source_id);
+        branch(&fixture, &fixture.session, &page_id).await.unwrap();
+        assert_eq!(
+            action_calls(&fixture).lines().next(),
+            Some("tmux-swarm|agents --json")
+        );
+    }
 }

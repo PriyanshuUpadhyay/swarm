@@ -80,12 +80,14 @@ pub(super) async fn new_chat(app: &App, body: NewChat) -> Result<Value, ApiError
         }
     }
     let output = run_cli(app, call, None).await?;
-    let pane = output
-        .lines()
-        .map(str::trim)
-        .find(|line| !line.is_empty())
+    let pane = first_line(&output)
         .ok_or_else(|| error(StatusCode::INTERNAL_SERVER_ERROR, "swarm returned no pane"))?;
     Ok(json!({"ok": true, "session": session, "agent": "orchestrator", "pane": pane}))
+}
+
+/// The first non-empty line of a CLI's output; `launch` prints the pane id there.
+pub(super) fn first_line(output: &str) -> Option<&str> {
+    output.lines().map(str::trim).find(|line| !line.is_empty())
 }
 
 /// Start the chat's own CLI session again in the chat, with its whole context (ADR 0107).
@@ -97,10 +99,7 @@ pub(super) async fn resume_chat(app: &App, body: ResumeChat) -> Result<Value, Ap
         .map(String::from)
         .to_vec();
     let output = run_cli(app, call, None).await?;
-    let pane = output
-        .lines()
-        .map(str::trim)
-        .find(|line| !line.is_empty())
+    let pane = first_line(&output)
         .ok_or_else(|| error(StatusCode::INTERNAL_SERVER_ERROR, "swarm returned no pane"))?;
     Ok(json!({"ok": true, "session": body.session, "agent": "orchestrator", "pane": pane}))
 }

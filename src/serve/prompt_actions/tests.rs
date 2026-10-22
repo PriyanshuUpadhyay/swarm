@@ -207,3 +207,32 @@ async fn a_pi_pull_back_and_stop_empty_the_box_with_clear_box() {
         "{calls:?}"
     );
 }
+
+/// A pi child's Stop keeps pi's own queue: only the chair's box is emptied (the page restores it).
+#[tokio::test]
+async fn a_pi_child_stop_leaves_its_box_alone() {
+    let fixture = pull_back_fixture("", "");
+    let connection = swarm::store::open(&fixture.app.root.join("swarm.db")).unwrap();
+    connection
+        .execute(
+            "UPDATE agent SET provider = 'pi' WHERE session_id = ?1 AND id = 'worker'",
+            [&fixture.session],
+        )
+        .unwrap();
+    std::fs::write(
+        &fixture.app.cli,
+        "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$SWARM_HOME/actions\"\n",
+    )
+    .unwrap();
+    let Json(result) = call_action(
+        &fixture,
+        "/api/chat/interrupt",
+        json!({"session":fixture.session,"agent":"worker"}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(result, json!({"ok":true}));
+    let calls = action_calls(&fixture);
+    assert!(calls.contains("interrupt worker"), "{calls}");
+    assert!(!calls.contains("clear-box"), "{calls}");
+}
