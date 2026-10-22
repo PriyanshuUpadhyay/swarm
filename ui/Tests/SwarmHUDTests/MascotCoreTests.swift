@@ -98,3 +98,24 @@ import Testing
     }
 }
 
+
+@Test func workingReadsTheAgentListWhenPresent() {
+    let json = #"{"schema":"swarm.working.v1","working":{"claude":1},"waiting":{"codex":1},"agents":[{"id":"r","provider":"codex","model":"gpt-6-luna","account":"team","state":"waiting","since_seconds":1792662983},{"id":"o","provider":"claude","model":null,"account":null,"state":"working","since_seconds":1792662900},{"id":"x","provider":"pi","state":"thinking"}]}"#
+    let agents = WorkingSnapshot.read(Data(json.utf8)).agents
+    #expect(agents.map(\.id) == ["r", "o", "x"])
+    #expect(agents[0] == RunningAgent(id: "r", provider: "codex", model: "gpt-6-luna", account: "team", waiting: true,
+                                      since: Date(timeIntervalSince1970: 1792662983)))
+    // Another state reads as working (A4); a missing list is an older swarm.
+    #expect(!agents[2].waiting && agents[2].since == nil)
+    #expect(WorkingSnapshot.read(Data(#"{"schema":"swarm.working.v1","working":{}}"#.utf8)).agents.isEmpty)
+}
+
+@Test func modelLabelsAreShortFamilyNames() {
+    #expect(modelLabel("claude-sonnet-5-5", provider: "claude") == "sonnet")
+    #expect(modelLabel("claude-opus-5-5[1m]", provider: "claude") == "opus")
+    #expect(modelLabel("opus", provider: "claude") == "opus")
+    #expect(modelLabel("claude-fable-5-1", provider: "claude") == "fable")
+    #expect(modelLabel("gpt-6-luna", provider: "codex") == "gpt-6")
+    #expect(modelLabel("default", provider: "pi") == "pi")
+    #expect(modelLabel(nil, provider: "codex") == "codex")
+}

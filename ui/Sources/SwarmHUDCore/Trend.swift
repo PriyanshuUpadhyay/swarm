@@ -163,13 +163,16 @@ public func bestAccount(_ accounts: [UsageAccount], history: [HistorySample], no
 public struct WorkingSnapshot: Decodable, Equatable, Sendable {
     public var working: [String: Int]
     public var waiting: [String: Int]
+    /// The same agents one by one, waiting first; empty from a swarm before 0.0.34.
+    public var agents: [RunningAgent]
 
-    public init(working: [String: Int] = [:], waiting: [String: Int] = [:]) {
+    public init(working: [String: Int] = [:], waiting: [String: Int] = [:], agents: [RunningAgent] = []) {
         self.working = working
         self.waiting = waiting
+        self.agents = agents
     }
 
-    private enum CodingKeys: String, CodingKey { case schema, working, waiting }
+    private enum CodingKeys: String, CodingKey { case schema, working, waiting, agents }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -179,6 +182,7 @@ public struct WorkingSnapshot: Decodable, Equatable, Sendable {
         }
         working = try container.decode([String: Int].self, forKey: .working).filter { $0.value > 0 }
         waiting = try container.decodeIfPresent([String: Int].self, forKey: .waiting)?.filter { $0.value > 0 } ?? [:]
+        agents = try container.decodeIfPresent([RunningAgent].self, forKey: .agents) ?? []
     }
 
     /// Any failure or another schema reads as no agents; the mascot only falls idle.
@@ -187,6 +191,45 @@ public struct WorkingSnapshot: Decodable, Equatable, Sendable {
     }
 
     public var isActive: Bool { !working.isEmpty || !waiting.isEmpty }
+}
+
+/// One working or waiting agent from `swarm working --json`.
+public struct RunningAgent: Decodable, Equatable, Identifiable, Sendable {
+    public let id: String
+    public let provider: String
+    public let model: String?
+    public let account: String?
+    /// Any state other than `waiting` reads as working.
+    public let waiting: Bool
+    public let since: Date?
+
+    public init(id: String, provider: String, model: String? = nil, account: String? = nil, waiting: Bool = false, since: Date? = nil) {
+        (self.id, self.provider, self.model, self.account, self.waiting, self.since) = (id, provider, model, account, waiting, since)
+    }
+
+    private enum CodingKeys: String, CodingKey { case id, provider, model, account, state, sinceSeconds = "since_seconds" }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        provider = try container.decode(String.self, forKey: .provider)
+        model = try container.decodeIfPresent(String.self, forKey: .model)
+        account = try container.decodeIfPresent(String.self, forKey: .account)
+        waiting = try container.decodeIfPresent(String.self, forKey: .state) == "waiting"
+        since = try container.decodeIfPresent(Double.self, forKey: .sinceSeconds).map(Date.init(timeIntervalSince1970:))
+    }
+}
+
+/// A short tag for a model id: `claude-sonnet-5-5` is "sonnet", `gpt-6-luna` is "gpt-6", and an
+/// unset or `default` model is the provider's name.
+public func modelLabel(_ model: String?, provider: String) -> String {
+    guard var id = model?.lowercased(), !id.isEmpty, id != "default" else { return provider }
+    if let bracket = id.firstIndex(of: "[") { id = String(id[..<bracket]) }
+    if id.hasPrefix("claude-") {
+        // A Claude id ends in its version; the family name is what tells two agents apart.
+        return id.dropFirst(7).split(separator: "-").first.map(String.init) ?? provider
+    }
+    return id.split(separator: "-").prefix(2).joined(separator: "-")
 }
 
 /// The providers with a mascot of their own, in tie-break order.

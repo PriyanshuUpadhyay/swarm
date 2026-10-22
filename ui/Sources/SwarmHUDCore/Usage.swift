@@ -218,6 +218,25 @@ public func providerGroups(_ accounts: [UsageAccount]) -> [ProviderGroup] {
     }
 }
 
+/// The open card's one table: a column per limit kind any account has, so Week sits in one place
+/// for every provider, and a provider without a kind shows a dash there.
+public struct Ledger: Equatable, Sendable {
+    public let kinds: [WindowKind]
+    /// Accounts with a reading, Claude, then Codex, then any other provider.
+    public let rows: [UsageAccount]
+    /// Accounts with no reading, folded into one line.
+    public let signedOut: [UsageAccount]
+}
+
+public func ledger(_ accounts: [UsageAccount]) -> Ledger {
+    let known = ["claude", "codex"]
+    var providers = known
+    for account in accounts where !providers.contains(account.provider) { providers.append(account.provider) }
+    let ordered = providers.flatMap { provider in accounts.filter { $0.provider == provider } }
+    return Ledger(kinds: Set(accounts.flatMap { $0.windows.map(\.kind) }).sorted { $0.order < $1.order },
+                  rows: ordered.filter { !$0.windows.isEmpty }, signedOut: ordered.filter(\.windows.isEmpty))
+}
+
 /// "2h 44m", "3d 20h", "12m", "now": the two largest units, for a reset time.
 public func shortDuration(until date: Date, now: Date) -> String {
     let interval = date.timeIntervalSince(now)
