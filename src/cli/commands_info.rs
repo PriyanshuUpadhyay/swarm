@@ -335,6 +335,7 @@ pub(crate) fn commands_info(args: &[String]) -> Result<Option<()>, Box<dyn std::
             "schema": "swarm.working.v1",
             "working": swarm::store::agents_by_provider(&connection, "working")?,
             "waiting": swarm::store::agents_by_provider(&connection, "waiting")?,
+            "agents": swarm::store::running_agents(&connection)?,
         }))
         .map(Some);
     }

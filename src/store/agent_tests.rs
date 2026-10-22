@@ -93,6 +93,43 @@ mod tests {
             working.into_iter().collect::<Vec<_>>(),
             [("claude".to_string(), 2), ("pi".to_string(), 1)]
         );
+        set_state(
+            &connection,
+            &session,
+            "c",
+            "waiting",
+            "hook",
+            None,
+            Some("question"),
+            now - 5,
+        )
+        .unwrap();
+        connection
+            .execute(
+                "UPDATE agent SET model = 'opus', account = 'team' WHERE id = 'a'",
+                [],
+            )
+            .unwrap();
+        let running = running_agents(&connection).unwrap();
+        // Waiting first, then the newest report; the stale and closed agents are absent.
+        assert_eq!(
+            running
+                .iter()
+                .map(|a| (a.id.as_str(), a.provider.as_str(), a.state.as_str()))
+                .collect::<Vec<_>>()[0],
+            ("c", "codex", "waiting")
+        );
+        assert_eq!(running.len(), 4);
+        let a = running.iter().find(|a| a.id == "a").unwrap();
+        assert_eq!(
+            (a.model.as_deref(), a.account.as_deref()),
+            (Some("opus"), Some("team"))
+        );
+        let chair = running.iter().find(|a| a.id == "orchestrator").unwrap();
+        assert_eq!(
+            (chair.provider.as_str(), chair.model.as_deref()),
+            ("pi", None)
+        );
     }
 
     #[test]

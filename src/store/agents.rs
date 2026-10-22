@@ -151,6 +151,47 @@ pub fn agents_by_provider(
     Ok(rows.collect::<Result<_, _>>()?)
 }
 
+/// One agent the usage HUD shows as running: the rows `agents_by_provider` counts.
+#[derive(Debug, serde::Serialize)]
+pub struct RunningAgent {
+    pub id: String,
+    pub provider: String,
+    pub model: Option<String>,
+    pub account: Option<String>,
+    pub state: String,
+    pub since_seconds: i64,
+}
+
+/// The working and waiting agents, waiting first, then the newest report first.
+pub fn running_agents(
+    connection: &Connection,
+) -> Result<Vec<RunningAgent>, Box<dyn std::error::Error>> {
+    let mut statement = connection.prepare(
+        "SELECT * FROM (
+             SELECT agent.id,
+                    COALESCE(agent.provider,
+                             CASE WHEN agent.role = 'orchestrator' OR agent.id = 'orchestrator'
+                                  THEN session.chair_provider END) AS provider,
+                    agent.model, agent.account, agent.state, agent.state_at
+             FROM agent JOIN session ON session.id = agent.session_id
+             WHERE agent.pane_id IS NOT NULL AND agent.state IN ('working', 'waiting')
+               AND agent.state_at >= unixepoch() - ?1)
+         WHERE provider IS NOT NULL
+         ORDER BY state = 'waiting' DESC, state_at DESC, id",
+    )?;
+    let rows = statement.query_map([WORKING_FOR_S], |r| {
+        Ok(RunningAgent {
+            id: r.get(0)?,
+            provider: r.get(1)?,
+            model: r.get(2)?,
+            account: r.get(3)?,
+            state: r.get(4)?,
+            since_seconds: r.get(5)?,
+        })
+    })?;
+    Ok(rows.collect::<Result<_, _>>()?)
+}
+
 pub fn provider_of(
     connection: &Connection,
     session_id: &str,
