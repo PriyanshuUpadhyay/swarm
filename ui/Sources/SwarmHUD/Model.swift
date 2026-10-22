@@ -5,10 +5,14 @@ import SwarmHUDCore
 /// The HUD's data: the last good `swarm usage --json` read, its pace history, and refresh state.
 @MainActor @Observable
 final class UsageModel {
-    var accounts: [UsageAccount] = []
-    var history: [HistorySample] = []
+    var accounts: [UsageAccount] = [] { didSet { updateWings() } }
+    var history: [HistorySample] = [] { didSet { updateWings() } }
     /// Working and waiting swarm agents per provider, from `swarm working --json`; empty when none or unknown.
-    var agents = WorkingSnapshot()
+    var agents = WorkingSnapshot() { didSet { updateWings() } }
+    /// The closed wings' words and how much they widen each wing, kept with their inputs, because
+    /// the hover check reads the closed size on every mouse move.
+    private(set) var wings = WingText()
+    private(set) var wingExtra: CGFloat = 0
     /// When an agent last worked or waited; the mascot sleeps 5 minutes later. Launch counts, so a
     /// new HUD starts awake. Unobserved: the 30 s clock re-reads it, and polls would redraw every 3 s.
     @ObservationIgnored var lastActive = Date()
@@ -26,7 +30,7 @@ final class UsageModel {
 
     var isOpen = false
     /// A fixed clock for `--snapshot`; nil uses the real one.
-    var now: Date?
+    var now: Date? { didSet { updateWings() } }
     /// A fixed mascot turn for `--snapshot`; nil takes turns every 10 minutes.
     var fixedMascot: Int?
     var notch = CGSize(width: 200, height: Layout.minNotch)
@@ -54,6 +58,11 @@ final class UsageModel {
         pinnedPhase = UserDefaults.standard.string(forKey: "pinnedPhase").flatMap(DayPhase.init(rawValue:))
         // A missing or broken file only costs the pace until new samples come in.
         history = (try? JSONDecoder().decode([HistorySample].self, from: Data(contentsOf: self.historyURL))) ?? []
+    }
+
+    private func updateWings() {
+        let text = wingText(agents, best: bestAccount(accounts, history: history, now: now ?? Date()))
+        if text != wings { (wings, wingExtra) = (text, Layout.wingExtra(text)) }
     }
 
     func updatePhase(now: Date = Date()) {

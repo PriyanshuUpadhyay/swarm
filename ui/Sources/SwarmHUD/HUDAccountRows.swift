@@ -14,7 +14,8 @@ struct AccountName: View {
         VStack(alignment: .leading, spacing: 2) {
             Text(account.name).font(.system(size: 13, weight: .medium)).foregroundStyle(color)
                 .lineLimit(1).truncationMode(.middle)
-                .help(dense ? [account.name, account.resetCredits?.text()].compactMap { $0 }.joined(separator: "\n") : account.name)
+                .help(denseName)
+                .accessibilityLabel(denseName)
             // A Codex account's resets sit under its name, where the row has a free second line.
             if !dense, let credits = account.resetCredits, let short = credits.short() {
                 let full = credits.text() ?? short
@@ -24,6 +25,11 @@ struct AccountName: View {
             }
         }
         .frame(width: Layout.nameColumn, alignment: .leading)
+    }
+
+    /// A dense row's name also carries its resets, for the tooltip and VoiceOver.
+    private var denseName: String {
+        dense ? [account.name, account.resetCredits?.text()].compactMap { $0 }.joined(separator: ", ") : account.name
     }
 }
 

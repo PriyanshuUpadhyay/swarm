@@ -12,23 +12,31 @@ struct OpenContent: View {
     var body: some View {
         let table = ledger(model.accounts)
         let showsReading = model.sharedReading(now: now) == nil
-        let dense = table.rows.count > Layout.denseAfter
+        let dense = Layout.isDense(rows: table.rows.count)
         VStack(spacing: 0) {
             status.frame(height: Layout.header(notch: model.notch))
             if !model.agents.agents.isEmpty {
-                RunningLine(agents: model.agents.agents, theme: theme, shown: model.openSize.width > 900 ? 4 : 2).frame(height: Layout.running)
+                RunningLine(agents: model.agents.agents, theme: theme, shown: model.openSize.width > Layout.chipBreak ? Layout.wideChips : Layout.narrowChips).frame(height: Layout.running)
             }
             Spacer().frame(height: Layout.belowStatus)
             if !table.rows.isEmpty {
                 headings(table.kinds, showsReading: showsReading)
-                // Account order is the reader's inside a provider, so a sign-in never moves a row.
-                ForEach(Array(table.rows.enumerated()), id: \.element.id) { index, account in
-                    AccountRow(account: account, kinds: table.kinds, dense: dense, theme: theme, now: now,
-                               showsReading: showsReading,
-                               history: model.history, readFailed: model.readError != nil, readAt: model.readAt)
-                        .padding(.horizontal, Layout.rowPadding)
-                        .background(index.isMultiple(of: 2) ? Color.clear : theme.stripe)
-                        .overlay(alignment: .top) { Palette.rule.frame(height: 1) }
+                let rows = VStack(spacing: 0) {
+                    // Account order is the reader's inside a provider, so a sign-in never moves a row.
+                    ForEach(Array(table.rows.enumerated()), id: \.element.id) { index, account in
+                        AccountRow(account: account, kinds: table.kinds, dense: dense, theme: theme, now: now,
+                                   showsReading: showsReading,
+                                   history: model.history, readFailed: model.readError != nil, readAt: model.readAt)
+                            .padding(.horizontal, Layout.rowPadding)
+                            .background(index.isMultiple(of: 2) ? Color.clear : theme.stripe)
+                            .overlay(alignment: .top) { Palette.rule.frame(height: 1) }
+                    }
+                }
+                // The card stops at `maxOpenHeight`; past it the rows scroll. Only then, because
+                // `--snapshot`'s ImageRenderer draws a ScrollView empty.
+                ViewThatFits(in: .vertical) {
+                    rows
+                    ScrollView { rows }
                 }
             }
             if !table.signedOut.isEmpty {
@@ -152,7 +160,8 @@ struct OpenContent: View {
     /// The other provider's best account, since a limit on one provider leaves the other free.
     private func roomText(_ best: BestAccount) -> String {
         let others = model.accounts.filter { $0.provider != best.account.provider }
-        if let other = bestAccount(others, history: model.history, now: now), !other.account.windows.isEmpty {
+        // A full account is no room, so the line falls back to the count.
+        if let other = bestAccount(others, history: model.history, now: now), other.fullest < 100 {
             return "Room on \(providerTitle(other.account.provider)) \(other.account.name): \(100 - other.fullest)% left"
         }
         let read = model.accounts.filter { !$0.windows.isEmpty }.count
@@ -181,7 +190,7 @@ struct RunningLine: View {
             if agents.count > shown {
                 Text("+\(agents.count - shown)")
                     .padding(.horizontal, 9).padding(.vertical, 4)
-                    .background(Capsule().fill(Color(hex: 0x17171A)))
+                    .background(Capsule().fill(Palette.chip))
                     .help(agents.dropFirst(shown).map { "\($0.id) · \(modelLabel($0.model, provider: $0.provider))" }.joined(separator: "\n"))
             }
             Spacer(minLength: 0)
@@ -199,16 +208,18 @@ struct RunningLine: View {
             Text(agent.id.count > 18 ? agent.id.prefix(17) + "…" : agent.id).fontWeight(.medium)
                 .foregroundStyle(agent.waiting ? Palette.warn : Palette.primary)
                 .fixedSize()
-            Text(([modelLabel(agent.model, provider: agent.provider)] + [agent.account].compactMap { $0 }
-                  + (agent.waiting ? ["needs you"] : [])).joined(separator: " · "))
+            // "needs you" first, so a crowded chip cuts the model, not the call to act.
+            Text(((agent.waiting ? ["needs you"] : []) + [modelLabel(agent.model, provider: agent.provider)]
+                  + [agent.account].compactMap { $0 }).joined(separator: " · "))
                 .lineLimit(1)
                 .foregroundStyle(agent.waiting ? Palette.warn : Palette.secondary)
         }
         .padding(.horizontal, 9).padding(.vertical, 4)
-        .background(Capsule().fill(agent.waiting ? Color(hex: 0x2A1D0D) : Color(hex: 0x17171A)))
+        .background(Capsule().fill(agent.waiting ? Palette.chipWaiting : Palette.chip))
         // Chips take the line before the trailing spacer does.
         .layoutPriority(1)
-        .help(agent.model ?? providerTitle(agent.provider))
+        // The tooltip has the whole id, which the chip may cut.
+        .help("\(agent.id) · \(agent.model ?? providerTitle(agent.provider))")
         .accessibilityElement(children: .combine)
     }
 }
