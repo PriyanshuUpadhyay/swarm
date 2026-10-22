@@ -152,7 +152,7 @@ export class App {
       "abort",
       this.subscribe(() =>
         this.life.queue.run(
-          (old) => queueStep(this.chair(old), this.life.state.handoffs[old]),
+          (old) => queueStep(this.chair(old), this.life.state.handoffs[old], !!this.snapshot && !this.snapshot.sessions.some((s) => s.id === old)),
           (old, c) => void this.life.switchModel(old, c.provider, c.model, c.account, c.effort, c.carry),
           (_, c) => this.notice(`The chat's pane closed, so the queued change to ${c.model} did not start.`),
         ),
