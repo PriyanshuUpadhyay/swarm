@@ -7,12 +7,18 @@ use super::*;
 use portable_pty::CommandBuilder;
 
 const SOCKET: &str = "swarm-shell";
+/// Names another socket, so a test run never touches the owner's shells.
+const SOCKET_VAR: &str = "SWARM_SHELL_SOCKET";
+
+fn socket() -> String {
+    std::env::var(SOCKET_VAR).unwrap_or_else(|_| SOCKET.to_owned())
+}
 
 /// tmux on the shell socket, with no agent identity: the shell is the owner's, and an agent's
 /// SWARM_* or Claude variables in it would make a `swarm` call act as that agent.
 fn tmux() -> std::process::Command {
     let mut command = std::process::Command::new("tmux");
-    command.args(["-L", SOCKET, "-f", "/dev/null"]);
+    command.args(["-L", &socket(), "-f", "/dev/null"]);
     // The first shell's locale is the tmux server's, and tmux mangles text outside UTF-8.
     command.env("LANG", "en_US.UTF-8");
     for (name, _) in std::env::vars_os() {

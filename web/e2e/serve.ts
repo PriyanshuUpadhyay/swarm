@@ -145,6 +145,8 @@ export default async function setup() {
     SWARM_CLAUDE_USAGE_URL: "http://usage.invalid/",
     // A path that does not exist, so a notice never starts an installed helper.
     SWARM_NOTIFY_APP: join(dir, "no-notify-helper.app"),
+    // The shell tests run on a tmux socket of their own, not the owner's `swarm-shell`.
+    SWARM_SHELL_SOCKET: `swarm-shell-e2e-${process.pid}`,
   };
   const logs = join(home, ".claude/projects/e2e");
   mkdirSync(logs, { recursive: true });
@@ -307,6 +309,11 @@ export default async function setup() {
   process.env.SWARM_E2E_DIR = dir;
   return async () => {
     server?.kill();
+    try {
+      execFileSync("tmux", ["-L", env.SWARM_SHELL_SOCKET!, "kill-server"], { stdio: "ignore" });
+    } catch {
+      // No shell test ran, so no server started.
+    }
     rmSync(dir, { recursive: true, force: true });
   };
 }

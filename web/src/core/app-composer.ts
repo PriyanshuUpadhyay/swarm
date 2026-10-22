@@ -228,22 +228,29 @@ export class AppComposer {
     if (reply.box === "cleared") this.restoreSent(sessionId, sent, reply.held ?? "");
   }
 
-  /** Puts the text pi's box `held` before the draft, as pi drew it, and drops the Sent rows it
-   *  held from the chat. The box also holds what the owner typed in pi itself. A row that pi took
-   *  before the box was read is not in it, and "ok" is not held by a box that holds "hook". */
+  /** Puts the text pi's box `held` before the draft and drops the Sent rows it held from the chat.
+   *  When the box held only those rows, their exact texts come back, line breaks and all; the
+   *  box joins lines with spaces, so a box that also holds the owner's own note comes back as pi
+   *  drew it. A row that pi took before the box was read is not in it, and "ok" is not held by a
+   *  box that holds "hook". */
   private restoreSent(sessionId: string, sent: readonly Sent[], held: string) {
     const words = (text: string) => text.trim().split(/\s+/).join(" ");
-    const text = held.trim();
-    if (!text) return;
-    const box = ` ${words(held)} `;
-    const back = sent.filter((s) => box.includes(` ${words(s.row.text)} `));
+    if (!held.trim()) return;
+    let rest = ` ${words(held)} `;
+    const back = sent.filter((s) => {
+      const at = rest.indexOf(` ${words(s.row.text)} `);
+      if (at < 0) return false;
+      rest = rest.slice(0, at) + rest.slice(at + words(s.row.text).length + 1);
+      return true;
+    });
     const chat = this.app.chats.get(sessionId);
     if (chat) {
       chat.sent = chat.sent.filter((s) => !back.includes(s));
       this.app.reading.changed(chat);
     }
+    const text = rest.trim() ? held.trim() : back.map((s) => s.row.text).join("\n");
     const typed = this.draft(sessionId);
-    this.replaceDraft(sessionId, typed ? `${text}\n${typed}` : text);
+    if (text) this.replaceDraft(sessionId, typed ? `${text}\n${typed}` : text);
   }
 
   /** Picks choice `choice` (zero-based); swarm refuses it when the question changed. */

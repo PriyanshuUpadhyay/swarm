@@ -84,27 +84,32 @@ export function BackgroundPanel({ app, session }: { app: App; session: string })
       await refreshShells();
       choose(`shell:${id}`);
     } catch (err) {
-      setShellError(message(err));
+      setShellError(message(err) || "The shell did not start.");
     } finally {
       setBusy(false);
     }
   };
-  // The dialog shows a failed close, so only the busy flag needs the finally.
+  // The dialog shows a failed close. The list read after it is not part of the close, so a failed
+  // read leaves the dialog shut and the next poll brings the list up to date.
   const closeShell = (id: string) =>
-    app.life.ask({
-      title: "Close this shell?",
-      body: "The shell and everything running in it ends.",
-      action: "Close shell",
-      run: async () => {
-        setBusy(true);
-        try {
-          await app.api.post("/api/shells/close", { session, id });
-          await refreshShells();
-        } finally {
-          setBusy(false);
-        }
-      },
-    });
+    app.life
+      .ask({
+        title: "Close this shell?",
+        body: "The shell and everything running in it ends.",
+        action: "Close shell",
+        run: async () => {
+          setBusy(true);
+          try {
+            await app.api.post("/api/shells/close", { session, id });
+          } catch (err) {
+            throw new Error(message(err) || "The shell did not close.");
+          } finally {
+            setBusy(false);
+          }
+        },
+      })
+      .then(() => refreshShells())
+      .catch(() => undefined);
 
   return (
     <div className="flex h-full min-h-0 border-t bg-background" data-testid="background-panel">

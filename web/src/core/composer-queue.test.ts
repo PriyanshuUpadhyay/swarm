@@ -53,8 +53,8 @@ describe("pi's queue back in the draft", () => {
     app.setDraft("chat", "and the docs");
     await app.pullBack("chat");
     expect(posts.at(-1)).toEqual({ path: "/api/chat/pull-back", body: { session: "chat", agent: "chair" } });
-    // pi's box held the owner's text too, so the draft takes the whole box as pi drew it.
-    expect(app.draft("chat")).toBe("steer one steer two second line\nand the docs");
+    // The box held only the Sent rows, so their exact texts come back, line breaks and all.
+    expect(app.draft("chat")).toBe("steer one\nsteer two\nsecond line\nand the docs");
     expect(app.chats.get("chat")!.sent.length).toBe(0);
 
     // A stop: pi puts the queue back in its box, the server empties it, and the draft takes it.
