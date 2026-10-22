@@ -48,6 +48,7 @@ struct ClosedWings: View {
     var body: some View {
         let best = bestAccount(model.accounts, history: model.history, now: now)
         let text = model.wings
+        let label = spokenLabel(best: best, text: text)
         HStack(spacing: Layout.wingGap) {
             model.mascot(now: now, height: Layout.closedMascot, live: live)
                 .frame(width: Layout.wing - Layout.closedEar)
@@ -79,12 +80,23 @@ struct ClosedWings: View {
         }
         .frame(maxHeight: .infinity)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(agentsSpoken(model.agents) + (text.tags.isEmpty || text.waiting ? "" : ", " + modelsSpoken(model.agents.agents))
-                            + ", " + (best.map { lowercasedFirst($0.spoken(now: now)) } ?? "no usage reading")
-                            + (best?.offersReset == true ? ", a Codex reset is available" : ""))
+        .accessibilityLabel(label)
         .accessibilityAddTraits(.isButton)
         .accessibilityHint(model.hotKeyReady ? "Opens the usage card. Control Option Shift Command U also opens it." : "Opens the usage card.")
         .accessibilityAction { model.toggleFromKeyboard?() }
+    }
+
+    // One long `+` chain with `?:` parts made the CI compiler give up on type-checking `body`.
+    private func spokenLabel(best: BestAccount?, text: WingText) -> String {
+        var label = agentsSpoken(model.agents)
+        if !text.tags.isEmpty && !text.waiting {
+            label += ", " + modelsSpoken(model.agents.agents)
+        }
+        label += ", " + (best.map { lowercasedFirst($0.spoken(now: now)) } ?? "no usage reading")
+        if best?.offersReset == true {
+            label += ", a Codex reset is available"
+        }
+        return label
     }
 
     private func lowercasedFirst(_ text: String) -> String { text.prefix(1).lowercased() + text.dropFirst() }
