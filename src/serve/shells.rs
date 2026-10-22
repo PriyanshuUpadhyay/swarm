@@ -278,8 +278,8 @@ fn kill(id: &str) -> Result<(), String> {
     }
 }
 
-/// Ends every shell of the workspace at exactly `cwd`, for an archived or deleted one. A failure only warns, since the archive
-/// already ran.
+/// Ends every shell of the workspace at exactly `cwd`. A failure only warns, since the archive or
+/// the removal already ran.
 pub(super) fn close_all(app: &Server, cwd: &str) {
     let _held = lock_shells();
     let shells = loaded_tree(app)

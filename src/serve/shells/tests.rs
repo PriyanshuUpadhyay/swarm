@@ -267,3 +267,37 @@ fn a_close_of_a_dropped_workspace_ends_only_its_own_shells() {
         ["shell-0000000a", "shell-0000000b"]
     );
 }
+
+/// Kills its shells when it drops, so a failed assert leaves none on the test socket.
+struct KillOnDrop(Vec<String>);
+
+impl Drop for KillOnDrop {
+    fn drop(&mut self) {
+        for id in &self.0 {
+            let _ = kill(id);
+        }
+    }
+}
+
+#[test]
+fn close_all_ends_only_the_shells_of_the_folder_it_is_given() {
+    use crate::serve::test_support::Fixture;
+    let fixture = Fixture::new();
+    let root = env!("CARGO_MANIFEST_DIR");
+    // The tree holds the crate root as a workspace and no workspace for `src`.
+    let src = format!("{root}/src");
+    let mut shells = KillOnDrop(Vec::new());
+    let in_root = create(root).unwrap();
+    shells.0.push(in_root.clone());
+    let in_src = create(&src).unwrap();
+    shells.0.push(in_src.clone());
+    close_all(&fixture.app, &src);
+    // Other tests share the socket, so this looks for its own ids.
+    let left: Vec<String> = list_in(root, &[])
+        .unwrap()
+        .into_iter()
+        .map(|shell| shell.id)
+        .collect();
+    assert!(left.contains(&in_root), "the root shell ended: {left:?}");
+    assert!(!left.contains(&in_src), "the src shell is alive: {left:?}");
+}
