@@ -31,7 +31,7 @@ async fn a_switch_of_a_chat_with_no_adapter_reads_its_chair_on_the_apps_adapter(
         .unwrap()
     };
     register_continue(&fixture.app, &body()).unwrap();
-    // The switch may stop later (no chair session id); only its first read matters here.
+    // The switch goes on to launch after that read and its result is dropped; only the first read matters here.
     let _ = execute_continue(&fixture.app, body()).await;
     assert_eq!(
         action_calls(&fixture).lines().next(),

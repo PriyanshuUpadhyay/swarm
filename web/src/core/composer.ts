@@ -96,7 +96,7 @@ export type AgentInput = {
   resumable: boolean;
   running: boolean;
   prompt: Prompt | null;
-  /** Claude in tmux keeps a queue that Up pulls back (ADR 0038). */
+  /** Claude in tmux keeps a queue, and pi's Sent rows act as one, that Up pulls back (ADR 0038). */
   pullBack: boolean;
 };
 
@@ -105,7 +105,7 @@ export const MISSING_ADAPTER = "This session does not record an adapter, so Swar
 /** The providers whose chat can branch from a message (ADR 0114). */
 const BRANCH_PROVIDERS = ["claude", "pi"];
 
-/** Esc Esc and Branch from here need the chair idle and of a CLI that can branch. */
+/** Esc Esc and Branch from here need the chair not working and of a CLI that can branch. */
 export const canBranch = (agent: AgentInput) => agent.who === null && !agent.running && BRANCH_PROVIDERS.includes(agent.provider ?? "");
 
 /** The chair's input, or the input of the child agent `child` (ChildColumnView). */

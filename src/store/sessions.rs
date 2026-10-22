@@ -41,7 +41,9 @@ pub fn continue_session(
 }
 
 /// Links new session `new_id` as a branch of `old_id` in the same folder, with the chair session
-/// cut from the old one. A chat that already has a chair, a link, or an archive is refused.
+/// cut from the old one. A chat that already has a chair, a link, or an archive is refused, and so
+/// is a parent that is archived, in another folder, or not older. Ids are UUID v7, so `old.id <
+/// session.id` keeps a branch younger than its parent and stops a self-link or a cycle.
 pub fn branch_session(
     connection: &Connection,
     new_id: &str,

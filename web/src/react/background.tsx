@@ -76,6 +76,7 @@ export function BackgroundPanel({ app, session }: { app: App; session: string })
   const row: BackgroundRow | undefined = rows.find((r) => r.key === picked) ?? rows[0];
   const pickAgent = (agent: string) => choose(`agent:${agent}`);
   const refreshShells = () => readShells(app, session).then((r) => setShells(r.shells));
+  // Every error lands in `shellError`, so the `void` at the click handler loses nothing.
   const newShell = async () => {
     setShellError(null);
     setBusy(true);
@@ -89,8 +90,9 @@ export function BackgroundPanel({ app, session }: { app: App; session: string })
       setBusy(false);
     }
   };
-  // The dialog shows a failed close. The list read after it is not part of the close, so a failed
-  // read leaves the dialog shut and the next poll brings the list up to date.
+  // The dialog shows a failed close. The list read after the dialog ends (a close, a Cancel, or
+  // another dialog) is not part of the close, so a failed read leaves the dialog shut and the next
+  // poll brings the list up to date.
   const closeShell = (id: string) =>
     app.life
       .ask({
