@@ -120,6 +120,7 @@ mod tests {
             ("c", "codex", "waiting")
         );
         assert_eq!(running.len(), 4);
+        assert!(running.iter().all(|a| a.session == session));
         let a = running.iter().find(|a| a.id == "a").unwrap();
         assert_eq!(
             (a.model.as_deref(), a.account.as_deref()),

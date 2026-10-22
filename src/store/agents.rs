@@ -155,6 +155,8 @@ pub fn agents_by_provider(
 #[derive(Debug, serde::Serialize)]
 pub struct RunningAgent {
     pub id: String,
+    /// An agent id is unique only inside its session.
+    pub session: String,
     pub provider: String,
     pub model: Option<String>,
     pub account: Option<String>,
@@ -168,7 +170,7 @@ pub fn running_agents(
 ) -> Result<Vec<RunningAgent>, Box<dyn std::error::Error>> {
     let mut statement = connection.prepare(
         "SELECT * FROM (
-             SELECT agent.id,
+             SELECT agent.id, agent.session_id,
                     COALESCE(agent.provider,
                              CASE WHEN agent.role = 'orchestrator' OR agent.id = 'orchestrator'
                                   THEN session.chair_provider END) AS provider,
@@ -182,11 +184,12 @@ pub fn running_agents(
     let rows = statement.query_map([WORKING_FOR_S], |r| {
         Ok(RunningAgent {
             id: r.get(0)?,
-            provider: r.get(1)?,
-            model: r.get(2)?,
-            account: r.get(3)?,
-            state: r.get(4)?,
-            since_seconds: r.get(5)?,
+            session: r.get(1)?,
+            provider: r.get(2)?,
+            model: r.get(3)?,
+            account: r.get(4)?,
+            state: r.get(5)?,
+            since_seconds: r.get(6)?,
         })
     })?;
     Ok(rows.collect::<Result<_, _>>()?)
