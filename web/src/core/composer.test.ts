@@ -111,8 +111,6 @@ describe("chair input", () => {
   });
 });
 
-/** An App on a fake server: rows for one chat, a snapshot, and a log of the action POSTs. */
-
 describe("draft skill picks", () => {
   it("keeps each chat's picks with its draft across a switch and a reload", () => {
     const saved = new Map<string, string>();

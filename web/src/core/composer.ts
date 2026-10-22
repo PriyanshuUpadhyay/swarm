@@ -102,6 +102,9 @@ export type AgentInput = {
 
 export const MISSING_ADAPTER = "This session does not record an adapter, so Swarm cannot reach its panes.";
 
+/** The providers whose chat can branch from a message (ADR 0114). */
+export const BRANCH_PROVIDERS = ["claude", "pi"];
+
 /** The chair's input, or the input of the child agent `child` (ChildColumnView). */
 export function agentInput(session: Session | undefined, agents: readonly Agent[] | undefined, child: string | null = null): AgentInput {
   const agent = agents?.find((a) => a.id === (child ?? "orchestrator"));

@@ -2,7 +2,7 @@ import { ArrowUpIcon, Maximize2Icon, Minimize2Icon, SquareIcon } from "lucide-re
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import type { App, Composer } from "../core/app";
 import { historyStep, type Browse } from "../core/history";
-import { outgoing, sends, usageLabel } from "../core/composer";
+import { BRANCH_PROVIDERS, outgoing, sends, usageLabel } from "../core/composer";
 import { editPicks, matches, menuAt, moved, offered, pick, picksAndSends, showsEmpty, skillFirst, skillNames, toSend, type CommandList, type MenuRow, type SkillPick } from "../core/slash";
 import { Button } from "../components/ui/button";
 import { ImageThumbs } from "./images";
@@ -111,7 +111,7 @@ export function ComposerBox({ app, composer }: { app: App; composer: Composer })
   const [listing, setListing] = useState(false);
   const canSend = outgoing(text) !== null && !state.sending && !listing && !state.pulling && !chair.disabled;
   const canPullBack = chair.pullBack && !chair.disabled && composer.queued > 0;
-  const canBranch = chair.who === null && !chair.running && ["claude", "pi"].includes(chair.provider ?? "");
+  const canBranch = chair.who === null && !chair.running && BRANCH_PROVIDERS.includes(chair.provider ?? "");
   const lastEscape = useRef(-Infinity);
   const skills = skillNames(list);
   const loadingSkills = useRef(false);

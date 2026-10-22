@@ -2,6 +2,7 @@ import { ArrowDownIcon, ChevronDownIcon, ChevronUpIcon, MessageSquareDashedIcon,
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Virtualizer, type VirtualizerHandle } from "virtua";
 import { PROMPT_JUMP, type App, type Pane, type Reader } from "../core/app";
+import { BRANCH_PROVIDERS } from "../core/composer";
 import { promptIndex, type Line } from "../core/transcript";
 import { ContextMenu, ContextMenuTrigger } from "../components/ui/context-menu";
 import { Kbd } from "../components/ui/kbd";
@@ -10,9 +11,6 @@ import { copyText } from "./copy";
 import { SourcePopover, TranscriptMenu, type Source } from "./transcript-overlays";
 import { setSplit } from "./transcript-output";
 import { LineView } from "./transcript-row";
-
-/** The CLIs whose session a branch can cut (ADR 0114). */
-const BRANCHES = ["claude", "pi"];
 
 export { StatusGlyph } from "./transcript-tool";
 
@@ -170,7 +168,7 @@ function Transcript({ app, view, testid = "transcript", empty }: { app: Reader; 
                       full={view.full}
                       // An unreachable agent shows no text box, so its rows offer no Reuse.
                       composerId={view.composer && !view.composer.agent.unreachable ? view.composer.id : undefined}
-                      branches={BRANCHES.includes(view.composer?.agent.provider ?? "")}
+                      branches={BRANCH_PROVIDERS.includes(view.composer?.agent.provider ?? "")}
                       match={line.id === current ? "current" : undefined}
                     />
                   )}
