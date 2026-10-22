@@ -286,9 +286,10 @@ export class Lifecycle {
         ...(account ? { account } : {}),
         ...(effort ? { effort } : {}),
       });
+      // The switch ends after the list shows the new pane, so a queued change never reads the old one.
+      await this.app.refresh();
       const { [old]: _, ...rest } = this.state.handoffs;
       this.set({ handoffs: rest, ...(this.state.switchModel === old ? { switchModel: null } : {}) });
-      await this.app.refresh();
       // The owner may have moved to another chat, also during the refresh; it stays open.
       if (this.state.switchModel === null && this.app.openId === old) this.app.openChat(done.session);
     } catch (err) {

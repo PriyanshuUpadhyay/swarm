@@ -303,8 +303,8 @@ export function waitsForTurn(chair: AgentInput, handoff: Handoff | undefined): b
 export function queueStep(chair: AgentInput, handoff: Handoff | undefined, gone = false): "wait" | "drop" | "start" {
   if (gone) return "drop";
   if (!chair.listed || (handoff !== undefined && !isSettled(handoff.phase))) return "wait";
-  // A switch that just completed may still show its old, closed pane, so the change waits for the new
-  // one. A pane that dies after such a switch keeps the change pending, and its chip can cancel it.
+  // A completed switch stays only until the list shows its new pane (Lifecycle.switchModel), so a
+  // closed pane in that time is the old one, and the change waits for the new one.
   if (chair.unreachable) return handoff?.phase === "completed" ? "wait" : "drop";
   return waitsForTurn(chair, handoff) ? "wait" : "start";
 }

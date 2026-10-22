@@ -199,6 +199,16 @@ describe("chats", () => {
     expect(calls).not.toContain("open chat-1");
   });
 
+  it("keeps the switch until the list shows the new pane, so a queued change cannot read the old one", async () => {
+    const { life } = fakeApp(async () => ({ session: "chat-1" }));
+    const app = (life as unknown as { app: { refresh: () => Promise<void> } }).app;
+    let during: unknown = "not read";
+    app.refresh = async () => void (during = life.state.handoffs["chat-1"]);
+    await life.switchModel("chat-1", "claude", "sonnet", null, null, "resume");
+    expect(during).toBeDefined();
+    expect(life.state.handoffs["chat-1"]).toBeUndefined();
+  });
+
   it("records the carry, so the progress lists only the steps that run", () => {
     const { life } = fakeApp(() => new Promise(() => {}));
     void life.switchModel("chat-1", "codex", "gpt-5", null, null, "clean");
