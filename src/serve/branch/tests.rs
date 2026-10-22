@@ -130,9 +130,11 @@ esac
             .filter(|r| r.kind == view::RowKind::User)
             .collect();
         let (first, second) = (users[0], users[1]);
+        // The page sends the id the rows stream gives, which ends with `@<anchor>`.
+        let page_id = |row: &view::Row| format!("{}@{}", row.id, row.anchor_source_id);
         let new = "01a1650a-0000-7000-8000-000000000001";
 
-        let response = branch(&fixture, &fixture.session, &second.id)
+        let response = branch(&fixture, &fixture.session, &page_id(second))
             .await
             .unwrap();
         assert_eq!(response["session"], new);
@@ -164,14 +166,16 @@ esac
 
         // The first message has nothing before it, so its branch starts new.
         std::fs::remove_file(fixture.app.root.parent().unwrap().join("actions")).unwrap();
-        branch(&fixture, &fixture.session, &first.id).await.unwrap();
+        branch(&fixture, &fixture.session, &page_id(first))
+            .await
+            .unwrap();
         let calls = action_calls(&fixture);
         assert!(calls.contains(&format!("{new}|session branch {new} {}\n", fixture.session)));
         assert!(calls.contains(&format!(
             "{new}|launch orchestrator chat --provider claude --model opus --account work\n"
         )));
 
-        let unknown = branch(&fixture, &fixture.session, "assistant@raw-0-0").await;
+        let unknown = branch(&fixture, &fixture.session, "user@raw-999999-0").await;
         assert_eq!(unknown.unwrap_err().0, StatusCode::NOT_FOUND);
     }
 }

@@ -167,10 +167,12 @@ pub(super) async fn branch_chat(
         }
     };
     let rows = handoff_rows(&app, old).await?;
+    // The page's row id ends with `@<anchor>`, which the rows stream adds (view_rows_with_context).
+    let anchor = body.row.rsplit_once('@').map_or("", |(_, anchor)| anchor);
     let mut users = rows.iter().filter(|row| row.kind == view::RowKind::User);
-    let first = users.clone().next().map(|row| row.id.clone());
+    let first = users.clone().next().map(|row| row.anchor_source_id.clone());
     let row = users
-        .find(|row| row.id == body.row)
+        .find(|row| !anchor.is_empty() && row.anchor_source_id == anchor)
         .ok_or_else(|| error(StatusCode::NOT_FOUND, "unknown message"))?;
     let offset = line_offset(&row.anchor_source_id)
         .ok_or_else(|| error(StatusCode::NOT_FOUND, "unknown message"))?;
@@ -204,7 +206,7 @@ pub(super) async fn branch_chat(
     new.session = Some(session.clone());
     // A branch from the first message has no history, so its chat starts new.
     let mut launch = vec!["launch", "orchestrator", "chat"];
-    if first.as_deref() == Some(row.id.as_str()) {
+    if first.as_deref() == Some(row.anchor_source_id.as_str()) {
         run_cli(&app, new.args(&["session", "branch", &session, old]), None).await?;
         launch.extend(["--provider", &provider]);
     } else {
