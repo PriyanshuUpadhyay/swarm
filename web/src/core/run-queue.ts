@@ -8,7 +8,7 @@ export type PendingSwitch = { provider: string; model: string; account: string |
 
 export class RunQueue {
   /** Each chat's waiting change, by its session; a new object after each change. */
-  state: Record<string, PendingSwitch> = {};
+  state: Partial<Record<string, PendingSwitch>> = {};
   private listeners = new Set<() => void>();
 
   subscribe = (fn: () => void) => {
@@ -16,7 +16,7 @@ export class RunQueue {
     return () => this.listeners.delete(fn);
   };
 
-  private set(state: Record<string, PendingSwitch>) {
+  private set(state: Partial<Record<string, PendingSwitch>>) {
     this.state = state;
     for (const fn of this.listeners) fn();
   }
@@ -33,7 +33,7 @@ export class RunQueue {
   /** Starts each change whose agent is out of its turn. */
   run(working: (old: string) => boolean, start: (old: string, change: PendingSwitch) => void) {
     for (const [old, change] of Object.entries(this.state)) {
-      if (working(old)) continue;
+      if (!change || working(old)) continue;
       // The entry goes first, so a change seen again during the switch cannot start it twice.
       this.cancel(old);
       start(old, change);

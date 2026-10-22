@@ -82,7 +82,7 @@ export function Composer({ app, kit }: { app: App; kit: Kit }) {
         )}
         <label className="grid gap-1">
           <span className="text-xs text-muted-foreground">Offers (blocks the planner may add; off by default)</span>
-          <input className={`${FIELD} font-mono`} autoComplete="off" spellCheck={false} placeholder="html-diagram, headless-shot" data-testid="draft-offers" value={draft.offers} onChange={(e) => set({ offers: e.target.value })} />
+          <input className={`${FIELD} font-mono`} name="skill-offers" autoComplete="off" spellCheck={false} placeholder="html-diagram, headless-shot…" data-testid="draft-offers" value={draft.offers} onChange={(e) => set({ offers: e.target.value })} />
         </label>
         <div className="grid gap-2">
           {draft.rows.map((row, i) => (

@@ -3,8 +3,8 @@
 import type { Api } from "./api";
 import type { ProviderInfo } from "./settings";
 
-/** One row of `GET /api/models`. */
-/** `note` is a short line beside the name; `default_effort` the level the CLI picks for it. */
+/** One row of `GET /api/models`. `note` is a short line beside the name; `default_effort` the
+ *  level the CLI picks for it. */
 export type ModelInfo = { id: string; label: string; efforts?: string[]; note?: string; default_effort?: string };
 
 export class RunCatalog {

@@ -172,7 +172,10 @@ function RunBody({ app, sessionId, chair }: { app: App; sessionId: string; chair
     if (working) {
       app.life.queue.add(sessionId, { provider: draft.provider, model: draft.model, account: draft.account, effort: draft.effort, carry: how });
       app.life.close("switchModel");
-    } else void app.life.switchModel(sessionId, draft.provider, draft.model, draft.account, draft.effort, how);
+    } else {
+      // switchModel keeps its own failure in the handoff state, so nothing waits for it.
+      void app.life.switchModel(sessionId, draft.provider, draft.model, draft.account, draft.effort, how);
+    }
   };
 
   return (
