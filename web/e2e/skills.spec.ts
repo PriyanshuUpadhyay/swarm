@@ -82,6 +82,9 @@ for (const [name, width] of [
     await expect(page.locator('[data-step="06-review"] [data-duty]')).toHaveText(/change-review/);
     await expect(page.locator('[data-step="05-build"] [data-duty]')).toHaveCount(0);
     await expect(page.getByTestId("skills-offered").locator('[data-block="html-diagram"]')).toBeVisible();
+    await shoot(page, `graph-implement-${name}`, info.project.name);
+    await page.getByTestId("skills-offered").scrollIntoViewIfNeeded();
+    await shoot(page, `graph-implement-offered-${name}`, info.project.name);
     await page.locator('[data-step="05-build"]').click();
     await expect(page.getByTestId("skills-step")).toContainText("checked-units");
     await shoot(page, `graph-${name}`, info.project.name);
