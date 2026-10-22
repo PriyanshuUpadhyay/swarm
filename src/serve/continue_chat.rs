@@ -157,7 +157,13 @@ pub(super) async fn handoff_rows(app: &App, old: &str) -> Result<Vec<Row>, ApiEr
 
 /// The chair's row of `swarm agents --json` for the chat `call` names, or null when it has none.
 pub(super) async fn chair_agent(app: &App, call: &CliCall) -> Result<Value, ApiError> {
-    let output = run_cli(app, call.args(&["agents", "--json"]), None).await?;
+    let mut read = call.args(&["agents", "--json"]);
+    // An imported chat has no adapter until its first pane. A chat on another adapter keeps it, so
+    // the read lists that adapter's panes and not the app's own tmux server.
+    if read.adapter.is_empty() {
+        read.adapter = "tmux-swarm".into();
+    }
+    let output = run_cli(app, read, None).await?;
     let agents: Value = serde_json::from_str(&output)
         .map_err(|_| error(StatusCode::BAD_GATEWAY, "invalid agents JSON from swarm"))?;
     Ok(agents["agents"]
@@ -408,3 +414,7 @@ pub(super) async fn execute_continue_timed(
     app.handoffs.lock().unwrap().remove(old);
     result
 }
+
+#[cfg(test)]
+#[path = "continue_chat/tests.rs"]
+mod tests;

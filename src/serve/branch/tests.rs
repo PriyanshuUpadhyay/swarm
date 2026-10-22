@@ -214,4 +214,40 @@ esac
             Some("tmux-swarm|agents --json")
         );
     }
+
+    #[tokio::test]
+    async fn a_chat_on_another_adapter_reads_its_chair_there() {
+        use std::os::unix::fs::PermissionsExt;
+        let fixture = action_fixture();
+        // The owner's own tmux: another server than the app's `tmux-swarm`, with other pane ids.
+        swarm::store::open(&fixture.app.root.join("swarm.db"))
+            .unwrap()
+            .execute(
+                "UPDATE session SET adapter = 'tmux' WHERE id = ?1",
+                [&fixture.session],
+            )
+            .unwrap();
+        let cli = &fixture.app.cli;
+        std::fs::write(
+            cli,
+            r#"#!/bin/sh
+printf '%s\n' "${SWARM_ADAPTER-}|$*" >> "$SWARM_HOME/actions"
+case "$1 $2" in
+  'agents --json') printf '%s\n' '{"agents":[{"id":"orchestrator"}]}' ;;
+  'session new') printf '%s\n' 01a1650a-0000-7000-8000-000000000001 ;;
+  'launch orchestrator') printf 'fixture-pane\n' ;;
+esac
+"#,
+        )
+        .unwrap();
+        std::fs::set_permissions(cli, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let rows = handoff_rows(&fixture.app, &fixture.session).await.unwrap();
+        let first = rows.iter().find(|r| r.kind == view::RowKind::User).unwrap();
+        let page_id = format!("{}@{}", first.id, first.anchor_source_id);
+        branch(&fixture, &fixture.session, &page_id).await.unwrap();
+        assert_eq!(
+            action_calls(&fixture).lines().next(),
+            Some("tmux|agents --json")
+        );
+    }
 }

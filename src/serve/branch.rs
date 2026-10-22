@@ -147,9 +147,7 @@ pub(super) async fn branch_chat(
 ) -> Result<Json<Value>, ApiError> {
     let Json(body) = body.map_err(|e| error(StatusCode::BAD_REQUEST, &e.body_text()))?;
     let old = body.session.as_str();
-    let mut call = action_session(&app, old)?;
-    // An imported chat has no adapter until its first pane (new_chat.rs resume_chat).
-    call.adapter = "tmux-swarm".into();
+    let call = action_session(&app, old)?;
     let provider: Option<String> = read_connection(&app.root)
         .and_then(|c| {
             c.query_row(
