@@ -21,12 +21,14 @@ export class AppComposer {
   constructor(private readonly app: App) {}
 
   composerView(chat: Chat, sendKey: SendKey): Composer {
-    // pi logs no queue, so its queued rows are the app's Sent rows.
-    let queued = chat.sent.length;
+    const agent = this.chair(chat.id);
+    // pi logs no queue, so its queued rows are the app's Sent rows. Claude logs its queue, and a
+    // Sent row there is a message on its way to the log.
+    let queued = agent.provider === "pi" ? chat.sent.length : 0;
     for (let i = chat.rows.length - 1; i >= 0 && chat.rows[i].kind === "queued"; i--) queued++;
     return {
       id: chat.id,
-      agent: this.chair(chat.id),
+      agent,
       state: { ...this.input(chat.id) },
       queued,
       usage: chat.usage,
@@ -267,7 +269,7 @@ export class AppComposer {
     const st = this.input(sessionId);
     const chair = this.chair(sessionId);
     if (!chat || !chair.pullBack || chair.disabled || st.pulling || st.sending) return;
-    if (!chat.sent.length && !chat.rows.some((r) => r.kind === "queued")) return;
+    if (!(chair.provider === "pi" && chat.sent.length) && !chat.rows.some((r) => r.kind === "queued")) return;
     // pi's reply holds no text, because its screen joins lines; the app's Sent rows are exact.
     const sent = chat.sent;
     const result: { pulled: string | null; held?: string | null } = { pulled: null };
