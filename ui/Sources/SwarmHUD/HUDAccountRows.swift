@@ -59,11 +59,12 @@ struct AccountRow: View {
                     WindowCell(window: window, pace: pace(account: account, window: window, history: history, now: now),
                                theme: theme, now: now, dense: dense)
                 } else {
-                    // The column is shared, so this provider or account has no such limit.
+                    // The column is shared, so this provider may have no such limit, or its read
+                    // failed; "reading" is true for both.
                     Text("—").font(.system(size: 12)).foregroundStyle(Palette.tertiary)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .help("No \(kind.title) limit")
-                        .accessibilityLabel("\(kind.title) no limit")
+                        .help("No \(kind.title) reading")
+                        .accessibilityLabel("\(kind.title) no reading")
                 }
             }
         }

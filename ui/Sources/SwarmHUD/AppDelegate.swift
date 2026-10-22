@@ -116,8 +116,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         view.activeRect = { [weak self] in self?.visibleRectInScreen() ?? .zero }
         view.makeMenu = { [weak self] in self?.contextMenu() }
         model.toggleFromKeyboard = { [weak self] in self?.toggleFromKeyboard() }
-        // Hover and click-through follow the new width, as after `setOpen`.
-        model.wingsChanged = { [weak self] in self?.mouseMoved() }
+        // Clicks follow the new width; opening still waits for a real mouse move, so wings that
+        // grow under a resting cursor do not open the card.
+        model.wingsChanged = { [weak self] in
+            guard let self, self.panel.isVisible else { return }
+            self.setClickThrough(!self.hoverRectInScreen().contains(NSEvent.mouseLocation))
+        }
         panel.contentView = view
     }
 

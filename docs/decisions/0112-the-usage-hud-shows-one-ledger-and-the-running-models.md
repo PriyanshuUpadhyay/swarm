@@ -31,8 +31,8 @@ which models swarm runs.
 ## Decision Outcome
 
 - The open card is one table with one column per limit kind any account has, in the order
-  Session · 5h, Week, Fable week. A provider without a kind shows a dim dash, with "No Week limit"
-  on hover. A provider mark starts each row; Claude rows come first.
+  Session · 5h, Week, Fable week. A provider without a kind shows a dim dash, with "No Week reading"
+  on hover, because a failed read of one window looks the same. A provider mark starts each row; Claude rows come first.
 - Above 5 rows each row drops to one line, 34 pt, and a warning pace takes the reset's place. A
   Codex row's resets then move to the name's tooltip and spoken label. Past the 660 pt cap, from
   about 15 accounts, the rows scroll.
