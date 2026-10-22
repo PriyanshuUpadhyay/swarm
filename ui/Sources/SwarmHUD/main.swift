@@ -158,6 +158,13 @@ func snapshot(to directory: URL, arguments: [String]) {
     }
     model.readError = nil
 
+    // The wings' words from `--working`: models while agents work, the number once the ring is red.
+    model.accounts = closedAccounts
+    model.agents = WorkingSnapshot(working: fileAgents.working, agents: fileAgents.agents.filter { !$0.waiting })
+    render("closed-models", open: false)
+    model.accounts = at(96)
+    render("closed-models-full", open: false)
+
     // Every own frame at the closed size, a row per family, for judging the art.
     let ticks: [MascotState: [Int]] = [.working: [0, 1], .waiting: [0, 1], .idle: [0, 13], .sleeping: [0, 1, 2]]
     write(VStack(spacing: 4) {

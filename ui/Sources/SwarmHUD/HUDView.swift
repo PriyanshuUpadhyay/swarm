@@ -105,13 +105,31 @@ enum Layout {
         let table = lead(reading: reading) + CGFloat(kinds) * idealCell + CGFloat(max(kinds - 1, 0)) * gap
         return min(max(2 * inset + 2 * rowPadding + table, minOpenWidth), openWidth)
     }
+    /// Between the items in a closed wing.
+    static let wingGap: CGFloat = 4
+
+    /// The width of a closed wing's words, in its semibold font, rounded up.
+    static func textWidth(_ text: String, size: CGFloat) -> CGFloat {
+        ceil((text as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: size, weight: .semibold)]).width)
+    }
+
     /// The least notch height the HUD assumes, also the closed height on a Mac with no notch reading.
     static let minNotch: CGFloat = 37
 }
 
 extension UsageModel {
+    /// The words the closed wings show now.
+    func wingText(now: Date) -> WingText {
+        SwarmHUDCore.wingText(agents, best: bestAccount(accounts, history: history, now: now))
+    }
+
+    /// Both wings grow by the wider one's words, so the shape stays centred on the camera.
     var closedSize: CGSize {
-        CGSize(width: max(notch.width, 32) + 2 * Layout.wing, height: notch.height)
+        let text = wingText(now: now ?? Date())
+        let left = text.left.map { Layout.wingGap + Layout.textWidth($0, size: 11) } ?? 0
+        let right = text.tags.reduce(0) { $0 + Layout.wingGap + Layout.textWidth($1, size: 10) + 10 }
+            + (text.number.map { Layout.wingGap + Layout.textWidth($0, size: 11) } ?? 0)
+        return CGSize(width: max(notch.width, 32) + 2 * (Layout.wing + max(left, right)), height: notch.height)
     }
 
     /// The reading of every account with windows when all of them read the same, such as
@@ -297,7 +315,8 @@ extension UsageModel {
 }
 
 /// Closed: a pixel mascot that shows what the agents do on the left, the best account's fullest
-/// limit as a ring on the right, nothing over the camera and no text.
+/// limit as a ring on the right, and nothing over the camera. While agents run, the wings grow to
+/// say how many and which models, or that one needs the owner; at 95% the ring says its number.
 struct ClosedWings: View {
     let model: UsageModel
     let theme: Theme
@@ -306,11 +325,26 @@ struct ClosedWings: View {
 
     var body: some View {
         let best = bestAccount(model.accounts, history: model.history, now: now)
-        HStack(spacing: 0) {
+        let text = model.wingText(now: now)
+        HStack(spacing: Layout.wingGap) {
             model.mascot(now: now, height: Layout.closedMascot, live: live)
                 .frame(width: Layout.wing - Layout.closedEar)
                 .padding(.leading, Layout.closedEar)
+            if let left = text.left {
+                Text(left).font(.system(size: 11, weight: .semibold).monospacedDigit())
+                    .foregroundStyle(text.waiting ? Palette.warn : Palette.secondary)
+                    .fixedSize()
+            }
             Spacer(minLength: 0)
+            ForEach(text.tags, id: \.self) { tag in
+                Text(tag).font(.system(size: 10, weight: .semibold)).foregroundStyle(text.waiting ? Palette.warn : Palette.secondary)
+                    .fixedSize()
+                    .padding(.horizontal, 5).padding(.vertical, 2)
+                    .background(Capsule().fill(Color.white.opacity(0.12)))
+            }
+            if let number = text.number {
+                Text(number).font(.system(size: 11, weight: .semibold).monospacedDigit()).foregroundStyle(Palette.critical).fixedSize()
+            }
             UsageRingView(ring: usageRing(best, readFailed: model.readError != nil), theme: theme)
                 .overlay(alignment: .topTrailing) {
                     // A reset would help now; the open card says how many and until when.
@@ -323,7 +357,7 @@ struct ClosedWings: View {
         }
         .frame(maxHeight: .infinity)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(agentsSpoken(model.agents) + ", " + (best.map { lowercasedFirst($0.spoken(now: now)) } ?? "no usage reading")
+        .accessibilityLabel(agentsSpoken(model.agents) + (text.tags.isEmpty || text.waiting ? "" : " on " + text.tags.joined(separator: " and ")) + ", " + (best.map { lowercasedFirst($0.spoken(now: now)) } ?? "no usage reading")
                             + (best?.offersReset == true ? ", a Codex reset is available" : ""))
         .accessibilityAddTraits(.isButton)
         .accessibilityHint(model.hotKeyReady ? "Opens the usage card. Control Option Shift Command U also opens it." : "Opens the usage card.")

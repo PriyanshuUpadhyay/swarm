@@ -311,3 +311,42 @@ public func usageRing(_ best: BestAccount?, readFailed: Bool) -> UsageRing {
     return .reading(usedPct: best.fullest, severity: best.ringSeverity,
                     old: best.isOld(readFailed: readFailed))
 }
+
+/// The closed wings' words: beside the mascot the working count or "needs you", beside the ring
+/// up to two model tags, the waiting agent's name, or the used percent once the ring is red.
+public struct WingText: Equatable, Sendable {
+    public var left: String?
+    public var waiting = false
+    public var tags: [String] = []
+    public var number: String?
+
+    public init(left: String? = nil, waiting: Bool = false, tags: [String] = [], number: String? = nil) {
+        (self.left, self.waiting, self.tags, self.number) = (left, waiting, tags, number)
+    }
+}
+
+public func wingText(_ agents: WorkingSnapshot, best: BestAccount?) -> WingText {
+    var text = WingText()
+    let working = agents.working.values.reduce(0, +)
+    if !agents.waiting.isEmpty {
+        text = WingText(left: "needs you", waiting: true,
+                        tags: agents.agents.first(where: \.waiting).map { [String($0.id.prefix(12))] } ?? [])
+    } else if working > 0 {
+        // Each provider's first model, then the rest, so two Claude models do not hide Codex.
+        let running = agents.agents.filter { !$0.waiting }
+        var providers: [String] = []
+        for agent in running where !providers.contains(agent.provider) { providers.append(agent.provider) }
+        let ordered = providers.compactMap { provider in running.first { $0.provider == provider } } + running
+        var labels: [String] = []
+        for agent in ordered {
+            let label = String(modelLabel(agent.model, provider: agent.provider).prefix(8))
+            if !labels.contains(label) { labels.append(label) }
+        }
+        text = WingText(left: "\(working)", tags: Array(labels.prefix(2)))
+    }
+    if let best, best.fullest >= 95 {
+        text.tags = []
+        text.number = "\(best.fullest)%"
+    }
+    return text
+}

@@ -120,3 +120,27 @@ import Testing
     #expect(modelLabel("default", provider: "pi") == "pi")
     #expect(modelLabel(nil, provider: "codex") == "codex")
 }
+
+@Test func closedWingsShowNeedsYouThenCountAndModelsAndANumberAtNinetyFive() {
+    let calm = BestAccount(account: account("claude", "a", [window(.week, 40)]), outlook: .lasts)
+    let near = BestAccount(account: account("claude", "a", [window(.week, 96)]), outlook: .lasts)
+    let working = WorkingSnapshot(working: ["claude": 3], agents: [
+        RunningAgent(id: "o", provider: "claude", model: "claude-opus-5-5[1m]"),
+        RunningAgent(id: "b", provider: "claude", model: "opus"),
+        RunningAgent(id: "t", provider: "codex", model: "gpt-6-luna"),
+        RunningAgent(id: "s", provider: "claude", model: "claude-sonnet-5-5")])
+    #expect(wingText(WorkingSnapshot(), best: calm) == WingText())
+    #expect(wingText(working, best: calm) == WingText(left: "3", tags: ["opus", "gpt-6"]))
+    // One tag per provider first, so a working Codex agent is not hidden by two Claude models.
+    let mixed = WorkingSnapshot(working: ["claude": 2, "codex": 1], agents: [
+        RunningAgent(id: "o", provider: "claude", model: "opus"), RunningAgent(id: "s", provider: "claude", model: "claude-sonnet-5-5"),
+        RunningAgent(id: "t", provider: "codex", model: "gpt-6-luna")])
+    #expect(wingText(mixed, best: calm).tags == ["opus", "gpt-6"])
+    // Usage wins over the model tags once the ring is red.
+    #expect(wingText(working, best: near) == WingText(left: "3", number: "96%"))
+    let waiting = WorkingSnapshot(working: ["claude": 1], waiting: ["codex": 1],
+                                  agents: [RunningAgent(id: "reviewer", provider: "codex", waiting: true)] + working.agents)
+    #expect(wingText(waiting, best: calm) == WingText(left: "needs you", waiting: true, tags: ["reviewer"]))
+    // An older swarm sends counts only.
+    #expect(wingText(WorkingSnapshot(waiting: ["codex": 1]), best: nil) == WingText(left: "needs you", waiting: true))
+}
