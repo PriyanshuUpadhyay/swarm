@@ -6,7 +6,11 @@
 use super::*;
 use portable_pty::CommandBuilder;
 
+#[cfg(not(test))]
 const SOCKET: &str = "swarm-shell";
+/// A cargo test that reaches tmux never touches the owner's shells.
+#[cfg(test)]
+const SOCKET: &str = "swarm-shell-test";
 /// Names another socket, so a test run never touches the owner's shells.
 const SOCKET_VAR: &str = "SWARM_SHELL_SOCKET";
 
@@ -44,6 +48,28 @@ pub(super) struct Shell {
 /// How many shells one workspace may hold, since each is a login shell that keeps running.
 const MAX_SHELLS: usize = 8;
 
+/// Held while shells are counted, made, or closed, so two creates cannot both pass the cap and a
+/// create cannot slip in after an archive closed a workspace's shells.
+// ponytail: one lock for all folders; per-folder locks if shells start often.
+static SHELLS: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn locked() -> std::sync::MutexGuard<'static, ()> {
+    SHELLS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// Counts the workspace's shells and creates one, if there is room.
+fn create_with_room(
+    list: impl FnOnce() -> Result<Vec<Shell>, String>,
+    create: impl FnOnce() -> Result<String, String>,
+) -> Result<String, ApiError> {
+    let _held = locked();
+    let shells = list().map_err(|err| error(StatusCode::INTERNAL_SERVER_ERROR, &err))?;
+    check_room(&shells)?;
+    create().map_err(|err| error(StatusCode::INTERNAL_SERVER_ERROR, &err))
+}
+
 fn check_room(shells: &[Shell]) -> Result<(), ApiError> {
     if shells.len() >= MAX_SHELLS {
         return Err(error(
@@ -64,17 +90,20 @@ pub(super) fn valid_id(id: &str) -> bool {
 /// which may hold one, comes last.
 const FORMAT: &str = "#{session_name}|#{session_created}|#{pane_current_command}|#{@swarm_cwd}";
 
-/// The shells in `list-sessions` output whose folder is `cwd` or inside it, oldest first.
-pub(super) fn parse(text: &str, cwd: &str) -> Vec<Shell> {
+/// The shells in `list-sessions` output that belong to workspace `cwd`, oldest first. A shell
+/// belongs to the deepest workspace that holds its folder, so one inside a workspace in `nested`
+/// is not `cwd`'s.
+pub(super) fn parse(text: &str, cwd: &str, nested: &[String]) -> Vec<Shell> {
     let mut found: Vec<(i64, Shell)> = text
         .lines()
         .filter_map(|line| {
             let mut fields = line.splitn(4, '|');
             let (id, created, command) = (fields.next()?, fields.next()?, fields.next()?);
             (valid_id(id)
-                && fields
-                    .next()
-                    .is_some_and(|shell_cwd| tree::contains(shell_cwd, cwd)))
+                && fields.next().is_some_and(|shell_cwd| {
+                    tree::contains(shell_cwd, cwd)
+                        && !nested.iter().any(|inner| tree::contains(shell_cwd, inner))
+                }))
             .then(|| {
                 let shell = Shell {
                     id: id.into(),
@@ -88,13 +117,33 @@ pub(super) fn parse(text: &str, cwd: &str) -> Vec<Shell> {
     found.into_iter().map(|(_, shell)| shell).collect()
 }
 
-pub(super) fn list(cwd: &str) -> Result<Vec<Shell>, String> {
+/// The workspaces of `tree` strictly inside workspace `cwd`.
+pub(super) fn nested(tree: &tree::Tree, cwd: &str) -> Vec<String> {
+    tree.projects
+        .iter()
+        .flat_map(|p| &p.workspaces)
+        .filter(|w| w.path != cwd && tree::contains(&w.path, cwd))
+        .map(|w| w.path.clone())
+        .collect()
+}
+
+pub(super) fn list(app: &Server, cwd: &str) -> Result<Vec<Shell>, String> {
+    let nested = nested(
+        &loaded_tree(app)
+            .map_err(|err| err.1.0["error"].to_string())?
+            .0,
+        cwd,
+    );
     let output = tmux()
         .args(["list-sessions", "-F", FORMAT])
         .output()
         .map_err(|err| format!("tmux did not run: {err}"))?;
     if output.status.success() {
-        return Ok(parse(&String::from_utf8_lossy(&output.stdout), cwd));
+        return Ok(parse(
+            &String::from_utf8_lossy(&output.stdout),
+            cwd,
+            &nested,
+        ));
     }
     let stderr = String::from_utf8_lossy(&output.stderr);
     // No shell yet: tmux starts its server with the first one.
@@ -138,8 +187,9 @@ fn kill(id: &str) -> Result<(), String> {
 
 /// Ends every shell of `cwd`, for an archived workspace. A failure only warns, since the archive
 /// already ran.
-pub(super) fn close_all(cwd: &str) {
-    let shells = list(cwd).unwrap_or_else(|err| {
+pub(super) fn close_all(app: &Server, cwd: &str) {
+    let _held = locked();
+    let shells = list(app, cwd).unwrap_or_else(|err| {
         eprintln!("swarm: shells of {cwd} were not listed, so none closed: {err}");
         Vec::new()
     });
@@ -183,7 +233,7 @@ pub(super) fn session_cwd(app: &Server, session: &str) -> Result<String, ApiErro
 /// The shell `id` of `session`'s folder, or a 404.
 pub(super) fn owned(app: &Server, session: &str, id: &str) -> Result<String, ApiError> {
     let cwd = session_cwd(app, session)?;
-    let shells = list(&cwd).map_err(|err| error(StatusCode::INTERNAL_SERVER_ERROR, &err))?;
+    let shells = list(app, &cwd).map_err(|err| error(StatusCode::INTERNAL_SERVER_ERROR, &err))?;
     shells
         .into_iter()
         .find(|shell| valid_id(id) && shell.id == id)
@@ -212,7 +262,7 @@ pub(super) async fn shells_list(
 ) -> Result<Json<Value>, ApiError> {
     let shells = blocking(move || {
         let cwd = session_cwd(&app, &query.session)?;
-        list(&cwd).map_err(|err| error(StatusCode::INTERNAL_SERVER_ERROR, &err))
+        list(&app, &cwd).map_err(|err| error(StatusCode::INTERNAL_SERVER_ERROR, &err))
     })
     .await?;
     Ok(Json(json!({ "shells": shells })))
@@ -225,9 +275,7 @@ pub(super) async fn shells_create(
     let id = blocking(move || {
         let cwd = session_cwd(&app, &request.session)?;
         refuse_read_only(&app, &cwd, "shell")?;
-        let shells = list(&cwd).map_err(|err| error(StatusCode::INTERNAL_SERVER_ERROR, &err))?;
-        check_room(&shells)?;
-        create(&cwd).map_err(|err| error(StatusCode::INTERNAL_SERVER_ERROR, &err))
+        create_with_room(|| list(&app, &cwd), || create(&cwd))
     })
     .await?;
     Ok(Json(json!({ "id": id })))
@@ -262,7 +310,7 @@ mod tests {
                     swarm_x_orchestrator|1|claude|/w/a\n\
                     shell-../etc|1|zsh|/w/a\n";
         assert_eq!(
-            parse(text, "/w/a"),
+            parse(text, "/w/a", &[]),
             [
                 Shell {
                     id: "shell-0000000a".into(),
@@ -284,13 +332,69 @@ mod tests {
                     shell-0000000b|2|zsh|/w/a\n\
                     shell-0000000c|3|zsh|/w/ab\n";
         let ids = |cwd| {
-            parse(text, cwd)
+            parse(text, cwd, &[])
                 .into_iter()
                 .map(|s| s.id)
                 .collect::<Vec<_>>()
         };
         assert_eq!(ids("/w/a"), ["shell-0000000a", "shell-0000000b"]);
         assert_eq!(ids("/w/a/sub"), ["shell-0000000a"]);
+    }
+
+    #[test]
+    fn a_shell_belongs_to_the_deepest_workspace_that_holds_its_folder() {
+        let text = "shell-0000000a|1|zsh|/w/a/wt/x\n\
+                    shell-0000000b|2|zsh|/w/a/wt/x/deep\n\
+                    shell-0000000c|3|zsh|/w/a\n\
+                    shell-0000000d|4|zsh|/w/a/other\n";
+        let ids = |cwd: &str, nested: &[&str]| {
+            let nested: Vec<String> = nested.iter().map(|n| n.to_string()).collect();
+            parse(text, cwd, &nested)
+                .into_iter()
+                .map(|s| s.id)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            ids("/w/a", &["/w/a/wt/x"]),
+            ["shell-0000000c", "shell-0000000d"]
+        );
+        assert_eq!(ids("/w/a/wt/x", &[]), ["shell-0000000a", "shell-0000000b"]);
+    }
+
+    #[test]
+    fn two_creates_cannot_both_pass_the_cap() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static MADE: AtomicUsize = AtomicUsize::new(0);
+        let threads: Vec<_> = (0..16)
+            .map(|_| {
+                std::thread::spawn(|| {
+                    create_with_room(
+                        || {
+                            Ok((0..MADE.load(Ordering::SeqCst))
+                                .map(|i| Shell {
+                                    id: format!("shell-{i:08x}"),
+                                    command: "zsh".into(),
+                                })
+                                .collect())
+                        },
+                        || {
+                            // A real create takes time, so a second request counts before it ends.
+                            std::thread::sleep(std::time::Duration::from_millis(20));
+                            MADE.fetch_add(1, Ordering::SeqCst);
+                            Ok("shell-00000000".into())
+                        },
+                    )
+                    .is_ok()
+                })
+            })
+            .collect();
+        let passed = threads
+            .into_iter()
+            .map(|t| t.join().unwrap())
+            .filter(|ok| *ok)
+            .count();
+        assert_eq!(passed, MAX_SHELLS);
+        assert_eq!(MADE.load(Ordering::SeqCst), MAX_SHELLS);
     }
 
     #[test]
@@ -306,6 +410,34 @@ mod tests {
         assert!(check_room(&shells(MAX_SHELLS - 1)).is_ok());
         let full = check_room(&shells(MAX_SHELLS)).unwrap_err();
         assert_eq!(full.0, StatusCode::CONFLICT);
+    }
+
+    #[tokio::test]
+    async fn a_chat_in_a_folder_of_an_archived_workspace_starts_no_shell() {
+        use crate::serve::test_support::Fixture;
+        let fixture = Fixture::new();
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let inner = swarm::store::create_session(
+            &swarm::store::open(&fixture.app.root.join("swarm.db")).unwrap(),
+            "lane",
+            &root.join("src"),
+            Some(("claude", "inner")),
+            Some("tmux-swarm"),
+        )
+        .unwrap();
+        choices_store::update(&fixture.app.root, None, |owner, _| {
+            owner.archived.insert(root.to_string_lossy().into_owned());
+            Ok(())
+        })
+        .unwrap();
+        let request = ShellRequest {
+            session: inner,
+            id: None,
+        };
+        let refused = shells_create(State(fixture.app.clone()), Json(request))
+            .await
+            .unwrap_err();
+        assert_eq!(refused.0, StatusCode::CONFLICT);
     }
 
     #[tokio::test]

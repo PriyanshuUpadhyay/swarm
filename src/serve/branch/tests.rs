@@ -327,6 +327,28 @@ esac
     }
 
     #[tokio::test]
+    async fn a_chat_in_a_folder_of_an_archived_workspace_cannot_branch() {
+        let fixture = action_fixture();
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let inner = swarm::store::create_session(
+            &swarm::store::open(&fixture.app.root.join("swarm.db")).unwrap(),
+            "lane",
+            &root.join("src"),
+            Some(("claude", "inner")),
+            Some("tmux-swarm"),
+        )
+        .unwrap();
+        choices_store::update(&fixture.app.root, None, |owner, _| {
+            owner.archived.insert(root.to_string_lossy().into_owned());
+            Ok(())
+        })
+        .unwrap();
+        let refused = branch(&fixture, &inner, "user@raw-0-0").await.unwrap_err();
+        assert_eq!(refused.0, StatusCode::CONFLICT);
+        assert!(refused.1.0["error"].as_str().unwrap().contains("read-only"));
+    }
+
+    #[tokio::test]
     async fn a_failed_step_after_the_cut_removes_the_cut_file() {
         let fixture = action_fixture();
         stand_in(&fixture, "exit 1", "echo pane");

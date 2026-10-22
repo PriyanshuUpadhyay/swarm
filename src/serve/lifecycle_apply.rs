@@ -77,7 +77,7 @@ pub(super) fn apply_lifecycle(
             .map_err(choice_error)?;
             // An archived workspace is read-only, so its shells end with it.
             if archive {
-                shells::close_all(&p.workspace);
+                shells::close_all(app, &p.workspace);
             }
         }
         LifecycleAction::Delete(p) => {
@@ -101,7 +101,7 @@ pub(super) fn apply_lifecycle(
             lifecycle::check_git(common, &["worktree", "remove", "--", &p.workspace])
                 .map_err(lifecycle_error)?;
             // A refused removal keeps the workspace, so its shells end only after the removal ran.
-            shells::close_all(&p.workspace);
+            shells::close_all(app, &p.workspace);
             choices_store::update(&app.root, None, |owner, state| {
                 owner.pinned.remove(&p.workspace);
                 owner.archived.remove(&p.workspace);
