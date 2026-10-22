@@ -37,7 +37,6 @@ export type SetupRun = {
 
 export type Create = { state: "working" | "failed" | "kept"; error: string | null; workspace: string | null; setup: SetupRun | null };
 
-/** A switch phase after which nothing more runs. */
 export const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 /** The End or Archive dialog's words for `chats` chats (`title` names the first) with `agents` open
@@ -52,6 +51,7 @@ export function endConfirm(chats: number, title: string, archive: boolean, agent
   };
 }
 
+/** A switch phase after which nothing more runs. */
 export function isSettled(phase: string): boolean {
   return phase === "completed" || phase === "failed" || phase === "cancelled";
 }
