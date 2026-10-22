@@ -22,7 +22,9 @@ export function RunChip({ app, sessionId, chair }: { app: App; sessionId: string
   // An anchor name must be a CSS ident; useId gives characters outside one.
   const anchor = `--run-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
   const switching = handoff && !isSettled(handoff.phase) ? (handoff.carry === "resume" ? "Restarting…" : "Switching…") : null;
-  const pending = useSyncExternalStore(app.life.queue.subscribe, () => app.life.queue.state[sessionId]);
+  // The queue holds the chair's change; a child's chip shares the chat id but not that change.
+  const queued = useSyncExternalStore(app.life.queue.subscribe, () => app.life.queue.state[sessionId]);
+  const pending = chair.who ? undefined : queued;
   const run: Run = { provider: chair.provider ?? "claude", model: chair.model, effort: chair.effort, account: chair.account };
 
   useEffect(() => {
