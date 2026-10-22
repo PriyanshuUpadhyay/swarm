@@ -1,0 +1,61 @@
+{
+ "schema": "swarm.usage.v1",
+ "meters": [
+  {
+   "provider": "claude",
+   "account": "lab",
+   "label": "lab",
+   "window": "5h",
+   "window_minutes": 300,
+   "used_pct": 34,
+   "reset_time_seconds": 1792060199,
+   "state": "fresh",
+   "source": "claude_api",
+   "reason": null,
+   "reason_code": null,
+   "as_of_seconds": 1792050000
+  },
+  {
+   "provider": "claude",
+   "account": "lab",
+   "label": "lab",
+   "window": "7d",
+   "window_minutes": 10080,
+   "used_pct": 23,
+   "reset_time_seconds": 1792425599,
+   "state": "fresh",
+   "source": "claude_api",
+   "reason": null,
+   "reason_code": null,
+   "as_of_seconds": 1792050000
+  },
+  {
+   "provider": "claude",
+   "account": "lab",
+   "label": "lab",
+   "window": "fb",
+   "window_minutes": 10080,
+   "used_pct": 9,
+   "reset_time_seconds": 1792425599,
+   "state": "fresh",
+   "source": "claude_api",
+   "reason": null,
+   "reason_code": null,
+   "as_of_seconds": 1792050000
+  },
+  {
+   "provider": "codex",
+   "account": "team",
+   "label": "team",
+   "window": "codex:primary",
+   "window_minutes": 10080,
+   "used_pct": 0,
+   "reset_time_seconds": 1792655260,
+   "state": "fresh",
+   "source": "codex_app_server",
+   "reason": null,
+   "reason_code": null,
+   "as_of_seconds": 1792050000
+  }
+ ]
+}

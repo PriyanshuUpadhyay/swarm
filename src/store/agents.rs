@@ -131,23 +131,60 @@ pub fn require_pane(
 /// call, and an agent that died keeps its last report, so the usage HUD stops showing it after this.
 const WORKING_FOR_S: i64 = 600;
 
-/// The number of agents with a pane that report `state` (`working` or `waiting`), by provider; a
-/// chair with no provider of its own counts under its session's chair provider.
+/// The number of `agents` in `state` (`working` or `waiting`), by provider. Counting the one list
+/// that is also printed keeps the counts and the list from disagreeing.
 pub fn agents_by_provider(
-    connection: &Connection,
+    agents: &[RunningAgent],
     state: &str,
-) -> Result<std::collections::BTreeMap<String, i64>, Box<dyn std::error::Error>> {
+) -> std::collections::BTreeMap<String, i64> {
+    let mut counts = std::collections::BTreeMap::new();
+    for agent in agents.iter().filter(|agent| agent.state == state) {
+        *counts.entry(agent.provider.clone()).or_insert(0) += 1;
+    }
+    counts
+}
+
+/// One agent with a pane that reported `working` or `waiting` within `WORKING_FOR_S`. A chair with
+/// no provider of its own runs under its session's chair provider.
+#[derive(Debug, serde::Serialize)]
+pub struct RunningAgent {
+    pub id: String,
+    /// An agent id is unique only inside its session.
+    pub session: String,
+    pub provider: String,
+    pub model: Option<String>,
+    pub account: Option<String>,
+    pub state: String,
+}
+
+/// Waiting first, then by session and id. Not by report time: each tool call reports, so the HUD's
+/// model tags and chips would reshuffle on every poll.
+pub fn running_agents(
+    connection: &Connection,
+) -> Result<Vec<RunningAgent>, Box<dyn std::error::Error>> {
     let mut statement = connection.prepare(
-        "SELECT provider, COUNT(*) FROM (
-             SELECT COALESCE(agent.provider,
+        "SELECT * FROM (
+             SELECT agent.id, agent.session_id,
+                    COALESCE(agent.provider,
                              CASE WHEN agent.role = 'orchestrator' OR agent.id = 'orchestrator'
-                                  THEN session.chair_provider END) AS provider
+                                  THEN session.chair_provider END) AS provider,
+                    agent.model, agent.account, agent.state
              FROM agent JOIN session ON session.id = agent.session_id
-             WHERE agent.pane_id IS NOT NULL AND agent.state = ?2
+             WHERE agent.pane_id IS NOT NULL AND agent.state IN ('working', 'waiting')
                AND agent.state_at >= unixepoch() - ?1)
-         WHERE provider IS NOT NULL GROUP BY provider",
+         WHERE provider IS NOT NULL
+         ORDER BY state = 'waiting' DESC, session_id, id",
     )?;
-    let rows = statement.query_map((WORKING_FOR_S, state), |r| Ok((r.get(0)?, r.get(1)?)))?;
+    let rows = statement.query_map([WORKING_FOR_S], |r| {
+        Ok(RunningAgent {
+            id: r.get(0)?,
+            session: r.get(1)?,
+            provider: r.get(2)?,
+            model: r.get(3)?,
+            account: r.get(4)?,
+            state: r.get(5)?,
+        })
+    })?;
     Ok(rows.collect::<Result<_, _>>()?)
 }
 

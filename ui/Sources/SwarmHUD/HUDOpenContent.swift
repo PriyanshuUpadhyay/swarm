@@ -1,4 +1,5 @@
-// The open usage card, its provider tables, status line and mascot credit.
+// The open usage card: a header with the mascot and the answer, the running agents, one ledger
+// table with a column per limit kind, and one line for accounts with no reading.
 import SwarmHUDCore
 import SwiftUI
 
@@ -9,136 +10,116 @@ struct OpenContent: View {
     let now: Date
 
     var body: some View {
-        let groups = providerGroups(model.accounts)
-        // Every group draws as many columns as the widest one, so a column is as wide in each group.
-        let columns = groups.map(\.kinds.count).max() ?? 0
+        let table = ledger(model.accounts)
+        let showsReading = model.sharedReading(now: now) == nil
+        let dense = Layout.isDense(rows: table.rows.count)
         VStack(spacing: 0) {
-            status.frame(height: Layout.band(notch: model.notch))
+            status.frame(height: Layout.header(notch: model.notch))
+            if !model.agents.agents.isEmpty {
+                RunningLine(agents: model.agents.agents, theme: theme, shown: model.openSize.width > Layout.chipBreak ? Layout.wideChips : Layout.narrowChips).frame(height: Layout.running)
+            }
             Spacer().frame(height: Layout.belowStatus)
-            ForEach(groups) { group in
-                if model.footerBeside && group.id == groups.last?.id {
-                    HStack(alignment: .top, spacing: 0) {
-                        table(group, columns: group.kinds.count)
-                            .frame(width: Layout.groupWidth(kinds: group.kinds.count, columns: columns,
-                                                            reading: model.sharedReading(now: now) == nil))
-                        VStack(alignment: .trailing, spacing: 6) {
-                            Spacer(minLength: 0)
-                            HStack(alignment: .bottom, spacing: 12) { credit; mascot }
-                            legend.multilineTextAlignment(.trailing)
-                        }
-                        .font(.system(size: 11))
-                        .foregroundStyle(Palette.tertiary)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
-                        .padding(.leading, Layout.gap)
-                        .padding(.horizontal, Layout.rowPadding)
-                        .padding(.bottom, 6)
+            if !table.rows.isEmpty {
+                headings(table.kinds, showsReading: showsReading)
+                let rows = VStack(spacing: 0) {
+                    // Account order is the reader's inside a provider, so a sign-in never moves a row.
+                    ForEach(Array(table.rows.enumerated()), id: \.element.id) { index, account in
+                        AccountRow(account: account, kinds: table.kinds, dense: dense, theme: theme, now: now,
+                                   showsReading: showsReading,
+                                   history: model.history, readFailed: model.readError != nil, readAt: model.readAt)
+                            .padding(.horizontal, Layout.rowPadding)
+                            .background(index.isMultiple(of: 2) ? Color.clear : theme.stripe)
+                            .overlay(alignment: .top) { Palette.rule.frame(height: 1) }
                     }
-                    .fixedSize(horizontal: false, vertical: true)
-                } else {
-                    table(group, columns: columns)
+                }
+                // The card stops at `maxOpenHeight`; past it the rows scroll. Only then, because
+                // `--snapshot`'s ImageRenderer draws a ScrollView empty.
+                ViewThatFits(in: .vertical) {
+                    rows
+                    ScrollView { rows }
                 }
             }
-            if !model.footerBeside {
-                HStack(spacing: 12) {
-                    legend.frame(maxWidth: .infinity, alignment: .leading)
-                    credit
-                    mascot
-                }
-                .font(.system(size: 11))
-                .foregroundStyle(Palette.tertiary)
-                .frame(height: Layout.legend)
-                .padding(.horizontal, Layout.rowPadding)
+            if !table.signedOut.isEmpty {
+                SignedOutLine(accounts: table.signedOut, renewing: model.renewing, onRenew: model.renew)
             }
             Spacer(minLength: 0)
         }
         .padding(.horizontal, Layout.inset)
     }
 
-    /// One provider's heading and rows, drawn `columns` wide so each column lines up across groups.
-    private func table(_ group: ProviderGroup, columns: Int) -> some View {
-        VStack(spacing: 0) {
-            HStack(spacing: Layout.gap) {
-                Spacer().frame(width: Layout.markColumn)
-                Text(providerTitle(group.provider)).frame(width: Layout.nameColumn, alignment: .leading)
-                if model.sharedReading(now: now) == nil {
-                    Text("Reading").frame(width: Layout.readingColumn, alignment: .leading)
-                }
-                ForEach(group.kinds, id: \.self) { kind in
-                    Text(kind.title).frame(maxWidth: .infinity, alignment: .leading)
-                }
-                ForEach(group.kinds.count..<columns, id: \.self) { _ in Color.clear.frame(maxWidth: .infinity) }
+    /// One heading per limit kind, the same for every provider, so Week sits in one column.
+    private func headings(_ kinds: [WindowKind], showsReading: Bool) -> some View {
+        HStack(spacing: Layout.gap) {
+            Spacer().frame(width: Layout.markColumn)
+            Text("Account").frame(width: Layout.nameColumn, alignment: .leading)
+            if showsReading {
+                Text("Reading").frame(width: Layout.readingColumn, alignment: .leading)
             }
-            .font(.system(size: 11, weight: .medium))
-            .foregroundStyle(Palette.tertiary)
-            .padding(.horizontal, Layout.rowPadding)
-            .frame(height: Layout.headings)
-            // Each row's label names its windows, so VoiceOver reads only the group name here.
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(providerTitle(group.provider))
-            .accessibilityAddTraits(.isHeader)
-            // Account order is the reader's, so a sign-in never moves a row.
-            ForEach(Array(group.accounts.enumerated()), id: \.element.id) { index, account in
-                Group {
-                    if account.windows.isEmpty {
-                        SignedOutRow(account: account, renewing: model.renewing.contains(account.id), onRenew: model.renew)
-                    } else {
-                        AccountRow(account: account, kinds: group.kinds, columns: columns, theme: theme, now: now,
-                                   showsReading: model.sharedReading(now: now) == nil,
-                                   history: model.history, readFailed: model.readError != nil, readAt: model.readAt)
-                    }
-                }
-                .padding(.horizontal, Layout.rowPadding)
-                .background(index.isMultiple(of: 2) ? Color.clear : theme.stripe)
-                .overlay(alignment: .top) { Palette.rule.frame(height: 1) }
+            ForEach(kinds, id: \.self) { kind in
+                Text(columnTitle(kind)).frame(maxWidth: .infinity, alignment: .leading)
             }
+        }
+        .font(.system(size: 11, weight: .medium))
+        .foregroundStyle(Palette.tertiary)
+        .padding(.horizontal, Layout.rowPadding)
+        .frame(height: Layout.headings)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
+    }
+
+    private func columnTitle(_ kind: WindowKind) -> String {
+        switch kind {
+        case .session: return "Session · 5h"
+        case .week: return "Week"
+        case .fable: return "Fable week"
         }
     }
 
-    private var legend: some View {
-        Text("Each limit shows used % · resets in; the line below says when it fills at this pace. A dash means no reading.")
-    }
-
+    /// The closed wing shows it on the left, so it stays on the left when the card opens. Who it is
+    /// and who drew it shows on hover; the guests' licences ask for that credit.
     private var mascot: some View {
-        model.mascot(now: now, height: Layout.openMascot, live: live)
-            .frame(width: 2 * Layout.openMascot, height: Layout.openMascot)
-    }
-
-    /// Who the mascot is and who drew it; the credit is also what the guests' licences ask for.
-    private var credit: some View {
         let turn = model.mascotTurn(now: now)
-        return VStack(alignment: .trailing, spacing: 2) {
-            Text(MascotCast.name(turn)).foregroundStyle(Palette.secondary)
-            Text(MascotCast.guest(turn)?.credit ?? "swarm's own art")
-        }
-        .multilineTextAlignment(.trailing)
-        .frame(maxWidth: 260, alignment: .trailing)
+        return model.mascot(now: now, height: Layout.openMascot, live: live)
+            .frame(width: 1.6 * Layout.openMascot, height: Layout.openMascot)
+            .help("\(MascotCast.name(turn)) · \(MascotCast.guest(turn)?.credit ?? "swarm's own art")")
     }
 
-    /// The best account and its pace left of the camera, the phase and read age right of it.
+    /// The mascot and which account to use next left of the camera, the phase and read age right of it.
     private var status: some View {
-        let wing = max((Layout.openWidth - 2 * Layout.inset - model.notch.width) / 2 - 12, 0)
+        let wing = max((model.openSize.width - 2 * Layout.inset - model.notch.width) / 2 - 12, 0)
+        let best = bestAccount(model.accounts, history: model.history, now: now)
         return HStack(spacing: 0) {
-            HStack(spacing: 8) {
-                if let best = bestAccount(model.accounts, history: model.history, now: now) {
-                    Circle().fill(theme.fill(best.severity)).frame(width: 7, height: 7)
-                    // A long name gives way; the pace always shows.
-                    HStack(spacing: 0) {
-                        Text("Best ").foregroundStyle(Palette.tertiary).fixedSize()
-                        if best.isOld(readFailed: model.readError != nil) { Text("~").fixedSize() }
-                        Text(best.account.name).lineLimit(1).truncationMode(.middle)
-                        Text(" · \(providerTitle(best.account.provider)) · ").fixedSize()
-                        Text(best.paceText(now: now)).fixedSize()
-                            .foregroundStyle(best.severity == .calm ? Palette.primary : Palette.ink(best.severity))
+            HStack(spacing: 10) {
+                mascot
+                VStack(alignment: .leading, spacing: 3) {
+                    if let best {
+                        // A long name gives way; the room left always shows.
+                        HStack(spacing: 0) {
+                            Circle().fill(theme.fill(best.severity)).frame(width: 7, height: 7).padding(.trailing, 7)
+                            Text("Use next ").foregroundStyle(Palette.tertiary).fixedSize()
+                            if best.isOld(readFailed: model.readError != nil) { Text("~").fixedSize() }
+                            // The mark names the provider, so a narrow card keeps room for the name.
+                            ProviderMark(provider: best.account.provider, size: 12).padding(.trailing, 4)
+                            Text(best.account.name).fontWeight(.semibold).lineLimit(1).truncationMode(.middle)
+                                .layoutPriority(1)
+                            Text(" · ").fixedSize()
+                            Text(best.paceText(now: now)).fixedSize()
+                                .foregroundStyle(best.severity == .calm ? Palette.primary : Palette.ink(best.severity))
+                        }
+                        .foregroundStyle(Palette.primary)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(best.spoken(now: now))
+                        Text(roomText(best))
+                            .font(.system(size: 11))
+                            .foregroundStyle(Palette.tertiary)
+                            .lineLimit(1).truncationMode(.tail)
+                    } else {
+                        // The cause names the fix (for example "swarm not found; set SWARM_BIN").
+                        Text(model.readError.map { "\($0) · retries each minute" } ?? "No usage reading")
+                            .foregroundStyle(Palette.secondary)
+                            .lineLimit(1).truncationMode(.tail)
+                            .help(model.readError ?? "")
                     }
-                    .foregroundStyle(Palette.primary)
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel(best.spoken(now: now))
-                } else {
-                    // The cause names the fix (for example "swarm not found; set SWARM_BIN").
-                    Text(model.readError.map { "\($0) · retries each minute" } ?? "No usage reading")
-                        .foregroundStyle(Palette.secondary)
-                        .lineLimit(1).truncationMode(.tail)
-                        .help(model.readError ?? "")
                 }
             }
             .frame(width: wing, alignment: .leading)
@@ -176,6 +157,17 @@ struct OpenContent: View {
         .font(.system(size: 12, weight: .medium))
     }
 
+    /// The other provider's best account, since a limit on one provider leaves the other free.
+    private func roomText(_ best: BestAccount) -> String {
+        let others = model.accounts.filter { $0.provider != best.account.provider }
+        // A full account is no room, so the line falls back to the count.
+        if let other = bestAccount(others, history: model.history, now: now), other.fullest < 100 {
+            return "Room on \(providerTitle(other.account.provider)) \(other.account.name): \(100 - other.fullest)% left"
+        }
+        let read = model.accounts.filter { !$0.windows.isEmpty }.count
+        return "\(read) \(read == 1 ? "account" : "accounts") read"
+    }
+
     private var age: String {
         if model.readError != nil { return "read failed" }
         guard let readAt = model.readAt else { return "reading…" }
@@ -184,3 +176,50 @@ struct OpenContent: View {
     }
 }
 
+
+/// The agents swarm runs now, waiting ones first: `shown` chips, then "+N".
+struct RunningLine: View {
+    let agents: [RunningAgent]
+    let theme: Theme
+    let shown: Int
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text("Running now").foregroundStyle(Palette.tertiary)
+            ForEach(agents.prefix(shown), id: \.key) { agent in chip(agent) }
+            if agents.count > shown {
+                Text("+\(agents.count - shown)")
+                    .padding(.horizontal, 9).padding(.vertical, 4)
+                    .background(Capsule().fill(Palette.chip))
+                    .help(agents.dropFirst(shown).map { "\($0.id) · \(modelLabel($0.model, provider: $0.provider))" }.joined(separator: "\n"))
+            }
+            Spacer(minLength: 0)
+        }
+        .font(.system(size: 12))
+        .foregroundStyle(Palette.secondary)
+        .padding(.horizontal, Layout.rowPadding)
+    }
+
+    private func chip(_ agent: RunningAgent) -> some View {
+        HStack(spacing: 6) {
+            Circle().fill(agent.waiting ? Palette.warn : theme.calm).frame(width: 6, height: 6)
+            ProviderMark(provider: agent.provider, size: 12)
+            // The name keeps its width; the model and account give way.
+            Text(agent.id.count > 18 ? agent.id.prefix(17) + "…" : agent.id).fontWeight(.medium)
+                .foregroundStyle(agent.waiting ? Palette.warn : Palette.primary)
+                .fixedSize()
+            // "needs you" first, so a crowded chip cuts the model, not the call to act.
+            Text(((agent.waiting ? ["needs you"] : []) + [modelLabel(agent.model, provider: agent.provider)]
+                  + [agent.account].compactMap { $0 }).joined(separator: " · "))
+                .lineLimit(1)
+                .foregroundStyle(agent.waiting ? Palette.warn : Palette.secondary)
+        }
+        .padding(.horizontal, 9).padding(.vertical, 4)
+        .background(Capsule().fill(agent.waiting ? Palette.chipWaiting : Palette.chip))
+        // Chips take the line before the trailing spacer does.
+        .layoutPriority(1)
+        // The tooltip has the whole id, which the chip may cut.
+        .help("\(agent.id) · \(agent.model ?? providerTitle(agent.provider))")
+        .accessibilityElement(children: .combine)
+    }
+}

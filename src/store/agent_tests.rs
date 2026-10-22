@@ -71,8 +71,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            agents_by_provider(&connection, "waiting")
-                .unwrap()
+            agents_by_provider(&running_agents(&connection).unwrap(), "waiting")
                 .into_iter()
                 .collect::<Vec<_>>(),
             [("codex".to_string(), 1)]
@@ -88,10 +87,72 @@ mod tests {
             now - 601,
         )
         .unwrap();
-        let working = agents_by_provider(&connection, "working").unwrap();
+        let working = agents_by_provider(&running_agents(&connection).unwrap(), "working");
         assert_eq!(
             working.into_iter().collect::<Vec<_>>(),
             [("claude".to_string(), 2), ("pi".to_string(), 1)]
+        );
+        set_state(
+            &connection,
+            &session,
+            "c",
+            "waiting",
+            "hook",
+            None,
+            Some("question"),
+            now - 5,
+        )
+        .unwrap();
+        connection
+            .execute(
+                "UPDATE agent SET model = 'opus', account = 'team' WHERE id = 'a'",
+                [],
+            )
+            .unwrap();
+        // An older report must not move `a`: each tool call bumps `state_at`, and the HUD's tags
+        // and chips would reshuffle on every poll.
+        set_state(
+            &connection,
+            &session,
+            "a",
+            "working",
+            "hook",
+            None,
+            None,
+            now - 10,
+        )
+        .unwrap();
+        let running = running_agents(&connection).unwrap();
+        // Waiting first, then by session and id; the stale and closed agents are absent.
+        assert_eq!(
+            running
+                .iter()
+                .map(|agent| (
+                    agent.id.as_str(),
+                    agent.provider.as_str(),
+                    agent.state.as_str()
+                ))
+                .collect::<Vec<_>>(),
+            [
+                ("c", "codex", "waiting"),
+                ("a", "claude", "working"),
+                ("b", "claude", "working"),
+                ("orchestrator", "pi", "working")
+            ]
+        );
+        assert!(running.iter().all(|a| a.session == session));
+        let claude_agent = running.iter().find(|agent| agent.id == "a").unwrap();
+        assert_eq!(
+            (
+                claude_agent.model.as_deref(),
+                claude_agent.account.as_deref()
+            ),
+            (Some("opus"), Some("team"))
+        );
+        let chair = running.iter().find(|a| a.id == "orchestrator").unwrap();
+        assert_eq!(
+            (chair.provider.as_str(), chair.model.as_deref()),
+            ("pi", None)
         );
     }
 

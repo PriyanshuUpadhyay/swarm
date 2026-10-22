@@ -1,0 +1,41 @@
+{
+ "schema": "swarm.usage.v1",
+ "meters": [
+  {
+   "provider": "codex",
+   "account": "default",
+   "label": "default",
+   "window": "codex:primary",
+   "window_minutes": 10080,
+   "used_pct": 2,
+   "reset_time_seconds": 1792651486,
+   "state": "fresh",
+   "source": "codex_app_server",
+   "reason": null,
+   "reason_code": null,
+   "as_of_seconds": 1792050000,
+   "reset_credits": {
+    "available": 3,
+    "expiry_time_seconds": [
+     1792703000,
+     1793301126,
+     null
+    ]
+   }
+  },
+  {
+   "provider": "codex",
+   "account": "team",
+   "label": "team",
+   "window": "codex:primary",
+   "window_minutes": 10080,
+   "used_pct": 0,
+   "reset_time_seconds": 1792655260,
+   "state": "fresh",
+   "source": "codex_app_server",
+   "reason": null,
+   "reason_code": null,
+   "as_of_seconds": 1792050000
+  }
+ ]
+}

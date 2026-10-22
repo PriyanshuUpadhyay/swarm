@@ -98,3 +98,60 @@ import Testing
     }
 }
 
+
+@Test func workingReadsTheAgentListWhenPresent() {
+    let json = #"{"schema":"swarm.working.v1","working":{"claude":1},"waiting":{"codex":1},"agents":[{"id":"reviewer","session":"s1","provider":"codex","model":"gpt-6-luna","account":"team","state":"waiting","since_seconds":1792662983},{"id":"orchestrator","provider":"claude","model":null,"account":null,"state":"working","since_seconds":1792662900},{"id":"thinker","provider":"pi","state":"thinking"}]}"#
+    let agents = WorkingSnapshot.read(Data(json.utf8)).agents
+    #expect(agents.map(\.id) == ["reviewer", "orchestrator", "thinker"])
+    #expect(agents.first == RunningAgent(id: "reviewer", session: "s1", provider: "codex", model: "gpt-6-luna", account: "team", waiting: true))
+    // Another state reads as working (A4); a missing list is an older swarm.
+    #expect(agents.last?.waiting == false)
+    #expect(agents.map(\.key) == ["s1/reviewer", "/orchestrator", "/thinker"])
+    // A bad entry is skipped; the counts and the other agents stay.
+    let bad = WorkingSnapshot.read(Data(#"{"schema":"swarm.working.v1","working":{"claude":2},"agents":[{"id":"thinker"},{"id":"orchestrator","provider":"claude"}]}"#.utf8))
+    #expect(bad.working == ["claude": 2] && bad.agents.map(\.id) == ["orchestrator"])
+    #expect(WorkingSnapshot.read(Data(#"{"schema":"swarm.working.v1","working":{}}"#.utf8)).agents.isEmpty)
+}
+
+@Test func modelLabelsAreShortFamilyNames() {
+    #expect(modelLabel("claude-sonnet-5-5", provider: "claude") == "sonnet")
+    #expect(modelLabel("claude-opus-5-5[1m]", provider: "claude") == "opus")
+    #expect(modelLabel("opus", provider: "claude") == "opus")
+    #expect(modelLabel("claude-fable-5-1", provider: "claude") == "fable")
+    #expect(modelLabel("gpt-6-luna", provider: "codex") == "gpt-6")
+    #expect(modelLabel("default", provider: "pi") == "pi")
+    #expect(modelLabel(nil, provider: "codex") == "codex")
+    // Older Claude ids put the version first; Bedrock ids add a prefix; pi ids name the router.
+    #expect(modelLabel("claude-3-5-sonnet-20241022", provider: "claude") == "sonnet")
+    #expect(modelLabel("us.anthropic.claude-haiku-4-5-v1:0", provider: "claude") == "haiku")
+    #expect(modelLabel("openrouter/qwen3-coder", provider: "pi") == "qwen3-coder")
+    #expect(modelLabel("anthropic/claude-opus-5-5", provider: "pi") == "opus")
+    // An id that strips to nothing names the provider, never an empty tag.
+    #expect(modelLabel("openrouter/", provider: "pi") == "pi")
+    #expect(modelLabel("[1m]", provider: "pi") == "pi")
+    #expect(modelLabel("-", provider: "pi") == "pi")
+}
+
+@Test func closedWingsShowNeedsYouThenCountAndModelsAndANumberAtNinetyFive() {
+    let calm = BestAccount(account: account("claude", "a", [window(.week, 40)]), outlook: .lasts)
+    let near = BestAccount(account: account("claude", "a", [window(.week, 96)]), outlook: .lasts)
+    let working = WorkingSnapshot(working: ["claude": 3, "codex": 1], agents: [
+        RunningAgent(id: "orchestrator", provider: "claude", model: "claude-opus-5-5[1m]"),
+        RunningAgent(id: "builder", provider: "claude", model: "opus"),
+        RunningAgent(id: "tester", provider: "codex", model: "gpt-6-luna"),
+        RunningAgent(id: "scout", provider: "claude", model: "claude-sonnet-5-5")])
+    #expect(wingText(WorkingSnapshot(), best: calm) == WingText())
+    #expect(wingText(working, best: calm) == WingText(left: "4", tags: ["opus", "gpt-6"]))
+    // One tag per provider first, so a working Codex agent is not hidden by two Claude models.
+    let mixed = WorkingSnapshot(working: ["claude": 2, "codex": 1], agents: [
+        RunningAgent(id: "orchestrator", provider: "claude", model: "opus"), RunningAgent(id: "scout", provider: "claude", model: "claude-sonnet-5-5"),
+        RunningAgent(id: "tester", provider: "codex", model: "gpt-6-luna")])
+    #expect(wingText(mixed, best: calm).tags == ["opus", "gpt-6"])
+    // Usage wins over the model tags once the ring is red.
+    #expect(wingText(working, best: near) == WingText(left: "4", number: "96%"))
+    let waiting = WorkingSnapshot(working: ["claude": 1], waiting: ["codex": 1],
+                                  agents: [RunningAgent(id: "reviewer", provider: "codex", waiting: true)] + working.agents)
+    #expect(wingText(waiting, best: calm) == WingText(left: "needs you", waiting: true, tags: ["reviewer"]))
+    // An older swarm sends counts only.
+    #expect(wingText(WorkingSnapshot(waiting: ["codex": 1]), best: nil) == WingText(left: "needs you", waiting: true))
+}
