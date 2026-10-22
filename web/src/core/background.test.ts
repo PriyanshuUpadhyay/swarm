@@ -24,10 +24,11 @@ describe("background rows", () => {
       { id: "shell-0000000a", command: "zsh" },
       { id: "shell-0000000b", command: "vim" },
     ];
-    expect(backgroundRows(session, [agent("orchestrator", { role: "orchestrator" })], [], shells).map((r) => [r.key, r.type === "shell" ? r.title : null])).toEqual([
-      ["agent:orchestrator", null],
-      ["shell:shell-0000000a", "Shell 1"],
-      ["shell:shell-0000000b", "Shell 2"],
+    expect(backgroundRows(session, [agent("orchestrator", { role: "orchestrator" })], [], shells).map((r) => [r.key, r.type === "shell" ? r.title : null, r.type === "shell" ? r.status : null])).toEqual([
+      ["agent:orchestrator", null, null],
+      // A shell at its prompt is ended; one that runs a program is working.
+      ["shell:shell-0000000a", "Shell 1", "ended"],
+      ["shell:shell-0000000b", "Shell 2", "working"],
     ]);
   });
 

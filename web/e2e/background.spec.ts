@@ -120,12 +120,14 @@ test("a workspace shell takes keys, outlives the panel, and closes on request", 
   await expect(screen).toContainText("shell-42 .");
   try {
     await info.attach("shell", { body: await tab.screenshot(), contentType: "image/png" });
-  } finally {
     await panel.getByTestId("close-shell").click();
     // Closing ends what runs in the shell, so it asks first and a stray click changes nothing.
     await expect(tab.getByTestId("confirm-body")).toContainText("ends");
     await tab.keyboard.press("Escape");
     await expect(row).toHaveCount(1);
+  } finally {
+    // Cleanup holds no assertion, so a failure above still closes the real shell.
+    await tab.keyboard.press("Escape");
     await panel.getByTestId("close-shell").click();
     await tab.getByTestId("confirm-action").click();
   }
@@ -137,10 +139,8 @@ test("a shell that fails with no text says so, and a close whose refresh fails s
   const panel = tab.getByTestId("background-panel").last();
   await tab.keyboard.press("Meta+j");
   // A refusal that names no reason.
-  await tab.route("**/api/shells", async (route) => {
-    if (route.request().method() === "POST") await route.fulfill({ status: 500, json: { error: "" } });
-    else await route.continue();
-  });
+  // The glob has no query, so the page's list reads pass; only the create is refused.
+  await tab.route("**/api/shells", (route) => route.fulfill({ status: 500, json: { error: "" } }));
   await panel.getByTestId("new-shell").click();
   await expect(panel.getByRole("alert")).toHaveText("The shell did not start.");
   await tab.unroute("**/api/shells");

@@ -25,7 +25,7 @@ mod tests {
     }
 
     #[test]
-    fn migration_adds_chat_continuations_to_existing_databases() {
+    fn migration_adds_chat_continuations_and_branches_to_existing_databases() {
         let mut connection = Connection::open_in_memory().unwrap();
         connection.execute_batch(MIGRATIONS[0]).unwrap();
         connection.pragma_update(None, "user_version", 1).unwrap();

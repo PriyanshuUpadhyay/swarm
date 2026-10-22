@@ -71,7 +71,6 @@ describe("pi's queue back in the draft", () => {
     expect(app.draft("chat")).toBe("steer four");
     expect(app.chats.get("chat")!.sent.map((s) => s.row.text)).toEqual(["steer three"]);
     app.chats.get("chat")!.sent = [];
-    expect(app.chats.get("chat")!.sent.length).toBe(0);
 
     // A box that was not emptied keeps its rows, so the text is never in two places.
     box = "unknown";

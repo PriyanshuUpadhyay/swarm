@@ -119,16 +119,7 @@ esac
         )
         .unwrap();
         std::fs::set_permissions(cli, std::fs::Permissions::from_mode(0o755)).unwrap();
-        let mut log = std::fs::OpenOptions::new()
-            .append(true)
-            .open(&fixture.log)
-            .unwrap();
-        std::io::Write::write_all(
-            &mut log,
-            br#"{"type":"user","sessionId":"synthetic","uuid":"u9","parentUuid":null,"timestamp":"2026-10-22T10:00:00Z","message":{"role":"user","content":"Now tidy the tests"}}
-"#,
-        )
-        .unwrap();
+        with_second_message(&fixture);
         let rows = handoff_rows(&fixture.app, &fixture.session).await.unwrap();
         let users: Vec<_> = rows
             .iter()
@@ -186,7 +177,6 @@ esac
 
     #[tokio::test]
     async fn a_chat_with_no_adapter_still_reads_its_chair_to_branch() {
-        use std::os::unix::fs::PermissionsExt;
         let fixture = action_fixture();
         // An imported chat has no adapter until its first pane (new_chat.rs resume_chat).
         swarm::store::open(&fixture.app.root.join("swarm.db"))
@@ -196,35 +186,15 @@ esac
                 [&fixture.session],
             )
             .unwrap();
-        let cli = &fixture.app.cli;
-        std::fs::write(
-            cli,
-            format!(
-                r#"#!/bin/sh
-printf '%s\n' "${{SWARM_ADAPTER-}}|$*" >> "$SWARM_HOME/actions"
-case "$1 $2" in
-  'agents --json') printf '%s\n' '{{"agents":[{{"id":"orchestrator"}}]}}' ;;
-  'session new') printf '%s\n' {NEW_SESSION} ;;
-  'launch orchestrator') printf 'fixture-pane\n' ;;
-esac
-"#
-            ),
-        )
-        .unwrap();
-        std::fs::set_permissions(cli, std::fs::Permissions::from_mode(0o755)).unwrap();
-        let rows = handoff_rows(&fixture.app, &fixture.session).await.unwrap();
-        let first = rows.iter().find(|r| r.kind == view::RowKind::User).unwrap();
-        let page_id = format!("{}@{}", first.id, first.anchor_source_id);
-        branch(&fixture, &fixture.session, &page_id).await.unwrap();
+        stand_in(&fixture, "true", "printf 'fixture-pane\\n'");
         assert_eq!(
-            action_calls(&fixture).lines().next(),
-            Some("tmux-swarm|agents --json")
+            first_call_of_first_branch(&fixture).await,
+            "tmux-swarm|agents --json"
         );
     }
 
     #[tokio::test]
     async fn a_chat_on_another_adapter_reads_its_chair_there() {
-        use std::os::unix::fs::PermissionsExt;
         let fixture = action_fixture();
         // The owner's own tmux: another server than the app's `tmux-swarm`, with other pane ids.
         swarm::store::open(&fixture.app.root.join("swarm.db"))
@@ -234,29 +204,10 @@ esac
                 [&fixture.session],
             )
             .unwrap();
-        let cli = &fixture.app.cli;
-        std::fs::write(
-            cli,
-            format!(
-                r#"#!/bin/sh
-printf '%s\n' "${{SWARM_ADAPTER-}}|$*" >> "$SWARM_HOME/actions"
-case "$1 $2" in
-  'agents --json') printf '%s\n' '{{"agents":[{{"id":"orchestrator"}}]}}' ;;
-  'session new') printf '%s\n' {NEW_SESSION} ;;
-  'launch orchestrator') printf 'fixture-pane\n' ;;
-esac
-"#
-            ),
-        )
-        .unwrap();
-        std::fs::set_permissions(cli, std::fs::Permissions::from_mode(0o755)).unwrap();
-        let rows = handoff_rows(&fixture.app, &fixture.session).await.unwrap();
-        let first = rows.iter().find(|r| r.kind == view::RowKind::User).unwrap();
-        let page_id = format!("{}@{}", first.id, first.anchor_source_id);
-        branch(&fixture, &fixture.session, &page_id).await.unwrap();
+        stand_in(&fixture, "true", "printf 'fixture-pane\\n'");
         assert_eq!(
-            action_calls(&fixture).lines().next(),
-            Some("tmux|agents --json")
+            first_call_of_first_branch(&fixture).await,
+            "tmux|agents --json"
         );
     }
 
@@ -292,6 +243,15 @@ esac
         let mut users = rows.iter().filter(|r| r.kind == view::RowKind::User);
         let row = users.nth(1).unwrap();
         format!("{}@{}", row.id, row.anchor_source_id)
+    }
+
+    /// Branches from the first message and returns the first CLI call the stand-in logged.
+    async fn first_call_of_first_branch(fixture: &Fixture) -> String {
+        let rows = handoff_rows(&fixture.app, &fixture.session).await.unwrap();
+        let first = rows.iter().find(|r| r.kind == view::RowKind::User).unwrap();
+        let page_id = format!("{}@{}", first.id, first.anchor_source_id);
+        branch(fixture, &fixture.session, &page_id).await.unwrap();
+        action_calls(fixture).lines().next().unwrap().to_owned()
     }
 
     fn logs_in(fixture: &Fixture) -> usize {
@@ -343,20 +303,7 @@ esac
     #[tokio::test]
     async fn a_chat_in_a_folder_of_an_archived_workspace_cannot_branch() {
         let fixture = action_fixture();
-        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-        let inner = swarm::store::create_session(
-            &swarm::store::open(&fixture.app.root.join("swarm.db")).unwrap(),
-            "lane",
-            &root.join("src"),
-            Some(("claude", "inner")),
-            Some("tmux-swarm"),
-        )
-        .unwrap();
-        choices_store::update(&fixture.app.root, None, |owner, _| {
-            owner.archived.insert(root.to_string_lossy().into_owned());
-            Ok(())
-        })
-        .unwrap();
+        let inner = fixture.chat_in_archived_workspace();
         let refused = branch(&fixture, &inner, "user@raw-0-0").await.unwrap_err();
         assert_eq!(refused.0, StatusCode::CONFLICT);
         assert!(refused.1.0["error"].as_str().unwrap().contains("read-only"));
@@ -371,6 +318,8 @@ esac
         let before = logs_in(&fixture);
         let failed = branch(&fixture, &fixture.session, &row).await;
         assert!(failed.is_err());
+        // The flow reached the link step after the cut, so the removal is what the count shows.
+        assert!(action_calls(&fixture).contains("session branch"));
         assert_eq!(logs_in(&fixture), before);
     }
 
@@ -400,6 +349,8 @@ esac
         )
         .await;
         assert!(dropped.is_err(), "the launch should still be running");
+        // The launch started, so the cut was written before the drop and then removed.
+        assert!(action_calls(&fixture).contains("launch orchestrator"));
         assert_eq!(logs_in(&fixture), before);
     }
 

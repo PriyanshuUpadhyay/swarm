@@ -125,14 +125,15 @@ function harness(agents: Agent[] = [chair, agent("reviewer", { created_at: 1 }),
   const posts: { path: string; body: Record<string, unknown> }[] = [];
   const subscriptions: string[][] = [];
   const row = (id: string, text: string): Row => ({ id, kind: "assistant", text, order: [1, 0] });
+  const log = async (path: string, body: Record<string, unknown>) => void posts.push({ path, body });
   const api = {
     rows: async (_session: string, who: string): Promise<RowPage> => {
       rowCalls.push(who);
       return { page: { start_offset: 0, end_offset: 10 }, rows: [row(`${who}-first`, `${who} says hello`)], usage: null };
     },
-    action: async (path: string, body: Record<string, unknown>) => void posts.push({ path, body }),
+    action: log,
     // The child's Stop is the composer's interrupt, which posts and reads the reply.
-    post: async (path: string, body: Record<string, unknown>) => void posts.push({ path, body }),
+    post: log,
     subscribe: async (_stream: string, keys: SubscribeKey[]) => void subscriptions.push(keys.map((k) => k.key).sort()),
   } as unknown as Api;
   const app = new App(api);

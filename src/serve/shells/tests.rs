@@ -1,15 +1,34 @@
 use super::*;
 
+/// The ids `parse` finds for workspace `cwd`, which holds the workspaces `nested`.
+fn ids(text: &str, cwd: &str, nested: &[&str]) -> Vec<String> {
+    let nested: Vec<String> = nested.iter().map(|n| n.to_string()).collect();
+    parse(text, cwd, &nested)
+        .into_iter()
+        .map(|shell| shell.id)
+        .collect()
+}
+
+/// `n` shells that run `zsh`.
+fn shells(n: usize) -> Vec<Shell> {
+    (0..n)
+        .map(|i| Shell {
+            id: format!("shell-{i:08x}"),
+            command: "zsh".into(),
+        })
+        .collect()
+}
+
 #[test]
 fn a_folder_lists_only_its_own_shells_oldest_first() {
-    let text = "shell-0000000b|20|vim|/w/a\n\
-                shell-0000000a|10|zsh|/w/a\n\
-                shell-0000000c|5|zsh|/w/b\n\
-                shell-0000000d|5|zsh|/w/a|b\n\
-                swarm_x_orchestrator|1|claude|/w/a\n\
-                shell-../etc|1|zsh|/w/a\n";
+    let text = "shell-0000000b|20|vim|/w/this\n\
+                shell-0000000a|10|zsh|/w/this\n\
+                shell-0000000c|5|zsh|/w/other\n\
+                shell-0000000d|5|zsh|/w/this|b\n\
+                swarm_x_orchestrator|1|claude|/w/this\n\
+                shell-../etc|1|zsh|/w/this\n";
     assert_eq!(
-        parse(text, "/w/a", &[]),
+        parse(text, "/w/this", &[]),
         [
             Shell {
                 id: "shell-0000000a".into(),
@@ -27,37 +46,30 @@ fn a_folder_lists_only_its_own_shells_oldest_first() {
 
 #[test]
 fn a_workspace_lists_the_shells_of_the_folders_inside_it() {
-    let text = "shell-0000000a|1|zsh|/w/a/sub\n\
-                shell-0000000b|2|zsh|/w/a\n\
-                shell-0000000c|3|zsh|/w/ab\n";
-    let ids = |cwd| {
-        parse(text, cwd, &[])
-            .into_iter()
-            .map(|s| s.id)
-            .collect::<Vec<_>>()
-    };
-    assert_eq!(ids("/w/a"), ["shell-0000000a", "shell-0000000b"]);
-    assert_eq!(ids("/w/a/sub"), ["shell-0000000a"]);
+    let text = "shell-0000000a|1|zsh|/w/repo/sub\n\
+                shell-0000000b|2|zsh|/w/repo\n\
+                shell-0000000c|3|zsh|/w/repo-two\n";
+    assert_eq!(
+        ids(text, "/w/repo", &[]),
+        ["shell-0000000a", "shell-0000000b"]
+    );
+    assert_eq!(ids(text, "/w/repo/sub", &[]), ["shell-0000000a"]);
 }
 
 #[test]
 fn a_shell_belongs_to_the_deepest_workspace_that_holds_its_folder() {
-    let text = "shell-0000000a|1|zsh|/w/a/wt/x\n\
-                shell-0000000b|2|zsh|/w/a/wt/x/deep\n\
-                shell-0000000c|3|zsh|/w/a\n\
-                shell-0000000d|4|zsh|/w/a/other\n";
-    let ids = |cwd: &str, nested: &[&str]| {
-        let nested: Vec<String> = nested.iter().map(|n| n.to_string()).collect();
-        parse(text, cwd, &nested)
-            .into_iter()
-            .map(|s| s.id)
-            .collect::<Vec<_>>()
-    };
+    let text = "shell-0000000a|1|zsh|/w/repo/wt/feature\n\
+                shell-0000000b|2|zsh|/w/repo/wt/feature/deep\n\
+                shell-0000000c|3|zsh|/w/repo\n\
+                shell-0000000d|4|zsh|/w/repo/other\n";
     assert_eq!(
-        ids("/w/a", &["/w/a/wt/x"]),
+        ids(text, "/w/repo", &["/w/repo/wt/feature"]),
         ["shell-0000000c", "shell-0000000d"]
     );
-    assert_eq!(ids("/w/a/wt/x", &[]), ["shell-0000000a", "shell-0000000b"]);
+    assert_eq!(
+        ids(text, "/w/repo/wt/feature", &[]),
+        ["shell-0000000a", "shell-0000000b"]
+    );
 }
 
 #[test]
@@ -69,14 +81,7 @@ fn two_creates_cannot_both_pass_the_cap() {
             std::thread::spawn(|| {
                 create_with_room(
                     || Ok(()),
-                    || {
-                        Ok((0..MADE.load(Ordering::SeqCst))
-                            .map(|i| Shell {
-                                id: format!("shell-{i:08x}"),
-                                command: "zsh".into(),
-                            })
-                            .collect())
-                    },
+                    || Ok(shells(MADE.load(Ordering::SeqCst))),
                     || {
                         // A real create takes time, so a second request counts before it ends.
                         std::thread::sleep(std::time::Duration::from_millis(20));
@@ -99,14 +104,6 @@ fn two_creates_cannot_both_pass_the_cap() {
 
 #[test]
 fn a_ninth_shell_in_a_workspace_is_refused() {
-    let shells = |n: usize| {
-        (0..n)
-            .map(|i| Shell {
-                id: format!("shell-{i:08x}"),
-                command: "zsh".into(),
-            })
-            .collect::<Vec<_>>()
-    };
     assert!(check_room(&shells(MAX_SHELLS - 1)).is_ok());
     let full = check_room(&shells(MAX_SHELLS)).unwrap_err();
     assert_eq!(full.0, StatusCode::CONFLICT);
@@ -116,20 +113,7 @@ fn a_ninth_shell_in_a_workspace_is_refused() {
 async fn a_chat_in_a_folder_of_an_archived_workspace_starts_no_shell() {
     use crate::serve::test_support::Fixture;
     let fixture = Fixture::new();
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let inner = swarm::store::create_session(
-        &swarm::store::open(&fixture.app.root.join("swarm.db")).unwrap(),
-        "lane",
-        &root.join("src"),
-        Some(("claude", "inner")),
-        Some("tmux-swarm"),
-    )
-    .unwrap();
-    choices_store::update(&fixture.app.root, None, |owner, _| {
-        owner.archived.insert(root.to_string_lossy().into_owned());
-        Ok(())
-    })
-    .unwrap();
+    let inner = fixture.chat_in_archived_workspace();
     let request = ShellRequest {
         session: inner,
         id: None,
@@ -138,6 +122,12 @@ async fn a_chat_in_a_folder_of_an_archived_workspace_starts_no_shell() {
         .await
         .unwrap_err();
     assert_eq!(refused.0, StatusCode::CONFLICT);
+    assert!(
+        refused.1.0["error"]
+            .as_str()
+            .unwrap()
+            .contains("start a shell")
+    );
 }
 
 #[tokio::test]

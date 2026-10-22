@@ -22,4 +22,7 @@ export function harness(fail?: (path: string) => string | null, reply: (path: st
   return { app, posts, snapshot };
 }
 
-export const settle = () => new Promise((r) => setTimeout(r, 0));
+export const settle = () =>
+  new Promise((r) => {
+    setTimeout(r, 0);
+  });
