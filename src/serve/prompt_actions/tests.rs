@@ -145,3 +145,101 @@ async fn pull_back_route_refuses_agent_queue_and_unsupported_targets_without_up(
     );
     assert!(action_calls(&fixture).is_empty());
 }
+
+/// pi: the pull-back and the stop empty pi's box with `swarm clear-box`, and the app takes the
+/// text from its own Sent rows, so the reply holds none.
+#[tokio::test]
+async fn a_pi_pull_back_and_stop_empty_the_box_with_clear_box() {
+    let fixture = pull_back_fixture("", "");
+    let connection = swarm::store::open(&fixture.app.root.join("swarm.db")).unwrap();
+    connection
+        .execute(
+            "UPDATE session SET chair_provider = 'pi' WHERE id = ?1",
+            [&fixture.session],
+        )
+        .unwrap();
+    let home = fixture.app.root.parent().unwrap().to_owned();
+    std::fs::write(
+        &fixture.app.cli,
+        "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$SWARM_HOME/actions\"\n\
+         if [ \"$1\" = clear-box ]; then cat \"$SWARM_HOME/box\"; fi\n",
+    )
+    .unwrap();
+    for (box_state, outcome, held) in [
+        ("cleared\nsteer two", "pulled", json!("steer two")),
+        ("empty\n", "alreadySent", Value::Null),
+    ] {
+        std::fs::write(home.join("box"), box_state).unwrap();
+        let Json(result) = call_action(
+            &fixture,
+            "/api/chat/pull-back",
+            json!({"session":fixture.session,"agent":"chair"}),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            result,
+            json!({"ok":true,"outcome":outcome,"text":null,"held":held})
+        );
+    }
+    std::fs::write(home.join("box"), "cleared\nsteer two\n").unwrap();
+    let Json(result) = call_action(
+        &fixture,
+        "/api/chat/interrupt",
+        json!({"session":fixture.session,"agent":"chair"}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        result,
+        json!({"ok":true,"box":"cleared","held":"steer two"})
+    );
+    let calls = action_calls(&fixture);
+    let calls: Vec<_> = calls.lines().collect();
+    assert!(
+        calls[0].ends_with("clear-box orchestrator --dequeue"),
+        "{calls:?}"
+    );
+    assert!(calls[2].ends_with("interrupt orchestrator"), "{calls:?}");
+    assert!(calls[3].ends_with("clear-box orchestrator"), "{calls:?}");
+    assert!(
+        !calls.iter().any(|line| line.contains(" key ")),
+        "{calls:?}"
+    );
+}
+
+/// A pi child's Stop empties its box too, so the page restores the child's Sent rows.
+#[tokio::test]
+async fn a_pi_child_stop_empties_its_box_with_clear_box() {
+    let fixture = pull_back_fixture("", "");
+    let connection = swarm::store::open(&fixture.app.root.join("swarm.db")).unwrap();
+    connection
+        .execute(
+            "UPDATE agent SET provider = 'pi' WHERE session_id = ?1 AND id = 'worker'",
+            [&fixture.session],
+        )
+        .unwrap();
+    let home = fixture.app.root.parent().unwrap().to_owned();
+    std::fs::write(home.join("box"), "cleared\nsteer two\n").unwrap();
+    std::fs::write(
+        &fixture.app.cli,
+        "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$SWARM_HOME/actions\"\n\
+         if [ \"$1\" = clear-box ]; then cat \"$SWARM_HOME/box\"; fi\n",
+    )
+    .unwrap();
+    let Json(result) = call_action(
+        &fixture,
+        "/api/chat/interrupt",
+        json!({"session":fixture.session,"agent":"worker"}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        result,
+        json!({"ok":true,"box":"cleared","held":"steer two"})
+    );
+    let calls = action_calls(&fixture);
+    let calls: Vec<_> = calls.lines().collect();
+    assert!(calls[0].ends_with("interrupt worker"), "{calls:?}");
+    assert!(calls[1].ends_with("clear-box worker"), "{calls:?}");
+}

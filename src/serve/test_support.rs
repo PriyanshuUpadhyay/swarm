@@ -22,6 +22,24 @@ pub(super) struct Fixture {
 }
 
 impl Fixture {
+    /// A new chat in `src`, a folder of the workspace that the owner archived (the crate root).
+    pub(super) fn chat_in_archived_workspace(&self) -> String {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let chat = swarm::store::create_session(
+            &swarm::store::open(&self.app.root.join("swarm.db")).unwrap(),
+            "lane",
+            &root.join("src"),
+            Some(("claude", "inner")),
+            Some("tmux-swarm"),
+        )
+        .unwrap();
+        choices_store::update(&self.app.root, None, |owner, _| {
+            owner.archived.insert(root.to_string_lossy().into_owned());
+            Ok(())
+        })
+        .unwrap();
+        chat
+    }
     pub(super) fn new() -> Self {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("tmp/web-pilot")

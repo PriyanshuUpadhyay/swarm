@@ -37,8 +37,18 @@ pub fn replay<'a>(events: impl IntoIterator<Item = &'a Value>) -> Vec<String> {
     queue.into_iter().map(|(text, _)| text).collect()
 }
 
+/// The adapters whose panes the server can type into and read, as a queue needs.
+fn tmux_adapter(adapter: &str) -> bool {
+    matches!(adapter, "tmux" | "tmux-swarm")
+}
+
 pub fn can_pull_back(provider: Option<&str>, adapter: &str) -> bool {
-    provider == Some("claude") && matches!(adapter, "tmux" | "tmux-swarm")
+    provider == Some("claude") && tmux_adapter(adapter)
+}
+
+/// pi's queue comes back with `swarm clear-box`, which reads pi's box on the screen.
+pub fn can_clear_pi_box(provider: Option<&str>, adapter: &str) -> bool {
+    provider == Some("pi") && tmux_adapter(adapter)
 }
 
 #[derive(Debug, PartialEq, Eq)]

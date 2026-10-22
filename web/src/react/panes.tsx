@@ -126,7 +126,8 @@ export function PaneStrip({ app }: { app: App }) {
   const actions = (cell: PaneCell): Action[] => {
     const zoomed = strip.zoomed === cell.id;
     const list: Action[] = [
-      { title: "Stop", label: `Stop ${cell.id}`, icon: <SquareIcon className="fill-current" />, disabled: !midTurn(cell.status), run: () => void app.stopPane(cell.id).catch(failed) },
+      // stopPane never rejects: a failure shows in the child's banner.
+      { title: "Stop", label: `Stop ${cell.id}`, icon: <SquareIcon className="fill-current" />, disabled: !midTurn(cell.status), run: () => void app.stopPane(cell.id) },
       {
         title: "Close agent…",
         label: `Close agent ${cell.id}`,

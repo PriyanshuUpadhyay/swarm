@@ -463,3 +463,29 @@ fn urgent_collapsed_headers_and_counts() {
 mod archive;
 #[path = "view_tree/workspace_navigation.rs"]
 mod workspace_navigation;
+#[test]
+fn a_branch_is_its_own_chat_and_its_tooltip_names_the_parent() {
+    let mut old = session("older", "/repo", 1);
+    old["title"] = json!("Fix menu");
+    let mut branch = session("branch", "/repo", 2);
+    branch["title"] = json!("Fix menu again");
+    branch["branch_of"] = json!("older");
+    let snap = folder_snapshot(
+        vec![old, branch],
+        json!({"older":[agent("orchestrator","done")],"branch":[agent("orchestrator","done")]}),
+    );
+    let rows = sections(
+        &snap,
+        &OwnerChoices::default(),
+        &ViewState::default(),
+        false,
+    )
+    .remove(0)
+    .rows;
+    let help = |id: &str| rows.iter().find(|r| r.id == id).unwrap().help.clone();
+    assert_eq!(
+        help("chat:branch"),
+        "Fix menu again\nBranched from Fix menu\n/repo"
+    );
+    assert_eq!(help("chat:older"), "Fix menu\n/repo");
+}

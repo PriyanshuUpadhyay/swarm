@@ -40,6 +40,33 @@ pub fn continue_session(
     Ok(())
 }
 
+/// Links new session `new_id` as a branch of `old_id` in the same folder, with the chair session
+/// cut from the old one. A chat that already has a chair, a link, or an archive is refused, and so
+/// is a parent that is archived, in another folder, or not older. Ids are UUID v7, so `old.id <
+/// session.id` keeps a branch younger than its parent and stops a self-link or a cycle.
+pub fn branch_session(
+    connection: &Connection,
+    new_id: &str,
+    old_id: &str,
+    chair: Option<(&str, &str)>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let (provider, id) = chair.unzip();
+    let changed = connection.execute(
+        "UPDATE session SET branch_of = ?2, chair_provider = coalesce(?3, chair_provider),
+                            chair_id = ?4
+         WHERE id = ?1 AND branch_of IS NULL AND continuation_of IS NULL
+           AND chair_id IS NULL AND archived_at IS NULL
+           AND EXISTS (SELECT 1 FROM session AS old
+                       WHERE old.id = ?2 AND old.archived_at IS NULL
+                         AND old.cwd = session.cwd AND old.id < session.id)",
+        (new_id, old_id, provider, id),
+    )?;
+    if changed != 1 {
+        return Err("swarm: the chat cannot be a branch of that chat".into());
+    }
+    Ok(())
+}
+
 /// Names the chair's session. A new one has a new log; a resumed one keeps its log, which a hook
 /// that runs beside this one may have just recorded (ADR 0107).
 pub fn set_chair(
@@ -185,6 +212,7 @@ pub struct SessionRow {
     pub chair_id: Option<String>,
     pub chair_log: Option<String>,
     pub continuation_of: Option<String>,
+    pub branch_of: Option<String>,
     pub chair_days: [String; 3],
     pub agents: i64,
     pub messages: i64,
@@ -212,7 +240,7 @@ pub fn sessions_with_archived(
                 (SELECT count(*) FROM agent WHERE session_id = session.id),
                 (SELECT count(*) FROM message WHERE session_id = session.id),
                 (SELECT max(created_at) FROM message WHERE session_id = session.id),
-                archived_at
+                archived_at, branch_of
          FROM session
          WHERE archived_at IS NULL OR (?1 AND session.id IN (
              SELECT id FROM session WHERE archived_at IS NOT NULL
@@ -237,6 +265,7 @@ pub fn sessions_with_archived(
             messages: row.get(13)?,
             last_message_at: row.get(14)?,
             archived_at: row.get(15)?,
+            branch_of: row.get(16)?,
         })
     })?;
     Ok(rows.collect::<Result<_, _>>()?)

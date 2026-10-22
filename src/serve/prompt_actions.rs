@@ -25,11 +25,20 @@ pub(super) fn action_provider(
     result.map_err(|err| error(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()))
 }
 
+pub(super) fn interrupt_empties_pi(app: &App, body: &ActionTarget) -> Result<bool, ApiError> {
+    let (call, agent) = action_target(app, &body.session, &body.agent)?;
+    let provider = action_provider(app, &body.session, &agent)?;
+    Ok(queue::can_clear_pi_box(provider.as_deref(), &call.adapter))
+}
+
 pub(super) fn interrupt_clears_box(app: &App, body: &ActionTarget) -> Result<bool, ApiError> {
     let (call, agent) = action_target(app, &body.session, &body.agent)?;
     let provider = action_provider(app, &body.session, &agent)?;
     Ok(queue::can_pull_back(provider.as_deref(), &call.adapter))
 }
+
+/// How long the CLI takes to redraw its box after a stop.
+const REDRAW_WAIT: Duration = Duration::from_millis(300);
 
 /// Claude puts a stopped prompt back in its input box, and the next message the app types would
 /// join it. So the box is cleared after the stop, with the presses that clear that prompt.
@@ -47,7 +56,7 @@ pub(super) async fn interrupt_claude(app: &App, body: ActionTarget) -> Result<Va
     };
     run_cli(app, call.args(&["interrupt", &agent]), None).await?;
     // Claude puts the prompt back a moment after the stop; a press on an empty box does nothing.
-    tokio::time::sleep(Duration::from_millis(300)).await;
+    tokio::time::sleep(REDRAW_WAIT).await;
     for index in 0..queue::clear_presses(&[prompt]) {
         if index > 0 {
             tokio::time::sleep(Duration::from_millis(50)).await;
@@ -55,6 +64,30 @@ pub(super) async fn interrupt_claude(app: &App, body: ActionTarget) -> Result<Va
         run_cli(app, call.args(&["key", &agent, "C-u"]), None).await?;
     }
     Ok(json!({"ok": true}))
+}
+
+/// pi puts its queued messages back in its box on a stop. The app's Sent rows hold their exact
+/// text, so the box is only emptied here, and the app moves the rows to the draft on "cleared".
+pub(super) async fn interrupt_pi(app: &App, body: ActionTarget) -> Result<Value, ApiError> {
+    let (call, agent) = action_target(app, &body.session, &body.agent)?;
+    run_cli(app, call.args(&["interrupt", &agent]), None).await?;
+    tokio::time::sleep(REDRAW_WAIT).await;
+    // The stop ran, so a box that cannot be read is not an error of the stop.
+    let output = run_cli(app, call.args(&["clear-box", &agent]), None)
+        .await
+        .unwrap_or_default();
+    let (state, held) = cleared_box(&output);
+    Ok(json!({"ok": true, "box": state, "held": held}))
+}
+
+/// `swarm clear-box` prints "empty", or "cleared" and the text the box held, which the screen
+/// joins with spaces. The app restores the Sent rows that this text holds.
+fn cleared_box(output: &str) -> (&'static str, Option<&str>) {
+    match output.split_once('\n') {
+        Some(("cleared", held)) => ("cleared", Some(held.trim())),
+        _ if output.trim() == "empty" => ("empty", None),
+        _ => ("unknown", None),
+    }
 }
 
 pub(super) async fn last_prompt(app: &App, log: &Log) -> Result<String, ApiError> {
@@ -74,10 +107,21 @@ pub(super) async fn last_prompt(app: &App, log: &Log) -> Result<String, ApiError
 pub(super) async fn pull_back(app: &App, body: ActionTarget) -> Result<Value, ApiError> {
     let (call, agent) = action_target(app, &body.session, &body.agent)?;
     let provider = action_provider(app, &body.session, &agent)?;
+    if queue::can_clear_pi_box(provider.as_deref(), &call.adapter) {
+        // The text is the app's own Sent rows; the screen joins pi's lines with spaces.
+        let output = run_cli(app, call.args(&["clear-box", &agent, "--dequeue"]), None).await?;
+        let (state, held) = cleared_box(&output);
+        let outcome = if state == "cleared" {
+            "pulled"
+        } else {
+            "alreadySent"
+        };
+        return Ok(json!({"ok":true,"outcome":outcome,"text":null,"held":held}));
+    }
     if !queue::can_pull_back(provider.as_deref(), &call.adapter) {
         return Err(error(
             StatusCode::CONFLICT,
-            "Pull-back needs Claude and a tmux adapter.",
+            "Pull-back needs Claude or pi and a tmux adapter.",
         ));
     }
     let log_agent = if agent == "orchestrator" {

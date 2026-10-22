@@ -2,12 +2,15 @@ import { ArrowUpIcon, Maximize2Icon, Minimize2Icon, SquareIcon } from "lucide-re
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import type { App, Composer } from "../core/app";
 import { historyStep, type Browse } from "../core/history";
-import { outgoing, sends, usageLabel, usageTitle } from "../core/composer";
+import { canBranch, outgoing, sends, usageLabel, usageTitle } from "../core/composer";
 import { editPicks, matches, menuAt, moved, offered, pick, picksAndSends, showsEmpty, skillFirst, skillNames, toSend, type CommandList, type MenuRow, type SkillPick } from "../core/slash";
 import { Button } from "../components/ui/button";
 import { ImageThumbs } from "./images";
 import { RunChip } from "./run-chip";
 import { cn } from "../lib/utils";
+
+/** Two Escapes within this many ms count as Esc Esc. */
+const DOUBLE_ESC_MS = 500;
 
 export function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
   const { id: sessionId, agent: chair, state, sendKey } = composer;
@@ -111,6 +114,8 @@ export function ComposerBox({ app, composer }: { app: App; composer: Composer })
   const [listing, setListing] = useState(false);
   const canSend = outgoing(text) !== null && !state.sending && !listing && !state.pulling && !chair.disabled;
   const canPullBack = chair.pullBack && !chair.disabled && composer.queued > 0;
+  const branchable = canBranch(chair);
+  const lastEscape = useRef(-Infinity);
   const skills = skillNames(list);
   const loadingSkills = useRef(false);
   /** pi runs a skill only at the message's start, so the draft shows the moved text it sends. */
@@ -221,7 +226,11 @@ export function ComposerBox({ app, composer }: { app: App; composer: Composer })
         app.setStash(sessionId, "");
         change(back);
         pickedCaret.current = back.length;
+      } else if (branchable && !e.repeat && e.timeStamp - lastEscape.current < DOUBLE_ESC_MS) {
+        // Esc Esc in an empty, idle box picks a message to branch from, as Claude Code's rewind.
+        app.setBranchPicker(true);
       }
+      lastEscape.current = e.timeStamp;
     } else if (e.key === "ArrowUp" && text === "" && canPullBack) {
       // The CLI's queue comes back before the history, as in Claude Code (ADR 0038).
       e.preventDefault();

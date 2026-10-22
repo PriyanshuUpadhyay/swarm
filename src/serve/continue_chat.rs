@@ -155,19 +155,30 @@ pub(super) async fn handoff_rows(app: &App, old: &str) -> Result<Vec<Row>, ApiEr
     ))
 }
 
+/// The chair's row of `swarm agents --json` for the chat `call` names, or null when it has none.
+pub(super) async fn chair_agent(app: &App, call: &CliCall) -> Result<Value, ApiError> {
+    let mut read = call.args(&["agents", "--json"]);
+    // An imported chat has no adapter until its first pane. A chat on another adapter keeps it, so
+    // the read lists that adapter's panes and not the app's own tmux server.
+    if read.adapter.is_empty() {
+        read.adapter = "tmux-swarm".into();
+    }
+    let output = run_cli(app, read, None).await?;
+    let agents: Value = serde_json::from_str(&output)
+        .map_err(|_| error(StatusCode::BAD_GATEWAY, "invalid agents JSON from swarm"))?;
+    Ok(agents["agents"]
+        .as_array()
+        .and_then(|list| list.iter().find(|a| a["id"] == "orchestrator"))
+        .cloned()
+        .unwrap_or(Value::Null))
+}
+
 /// Same CLI: stop the chair and start its own session again on the new run (ADR 0110).
 async fn resume_switch(app: &App, body: &ContinueChat) -> Result<Value, ApiError> {
     let old = &body.old_session;
     continue_phase(app, old, "preparing")?;
     let call = action_session(app, old)?;
-    let output = run_cli(app, call.args(&["agents", "--json"]), None).await?;
-    let agents: Value = serde_json::from_str(&output)
-        .map_err(|_| error(StatusCode::BAD_GATEWAY, "invalid agents JSON from swarm"))?;
-    let chair = agents["agents"]
-        .as_array()
-        .and_then(|list| list.iter().find(|a| a["id"] == "orchestrator"))
-        .cloned()
-        .unwrap_or(Value::Null);
+    let chair = chair_agent(app, &call).await?;
     let (provider, chair_id): (Option<String>, Option<String>) = read_connection(&app.root)
         .and_then(|connection| {
             connection.query_row(
@@ -403,3 +414,7 @@ pub(super) async fn execute_continue_timed(
     app.handoffs.lock().unwrap().remove(old);
     result
 }
+
+#[cfg(test)]
+#[path = "continue_chat/tests.rs"]
+mod tests;

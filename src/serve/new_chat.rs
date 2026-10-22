@@ -38,13 +38,8 @@ pub(super) async fn new_chat(app: &App, body: NewChat) -> Result<Value, ApiError
             ));
         }
         lifecycle::checked_path(&snapshot_app.root, &allowed_cwd, true).map_err(lifecycle_error)?;
-        if workspace.is_some_and(|w| w.missing || w.removed)
-            || saved.owner.archived.contains(&allowed_cwd)
-        {
-            return Err(error(
-                StatusCode::CONFLICT,
-                "This workspace is read-only. Restore it to start a chat.",
-            ));
+        if is_read_only(&tree, &saved, &allowed_cwd) {
+            return Err(read_only_error("chat"));
         }
         Ok(())
     })
@@ -80,12 +75,40 @@ pub(super) async fn new_chat(app: &App, body: NewChat) -> Result<Value, ApiError
         }
     }
     let output = run_cli(app, call, None).await?;
-    let pane = output
-        .lines()
-        .map(str::trim)
-        .find(|line| !line.is_empty())
+    let pane = first_line(&output)
         .ok_or_else(|| error(StatusCode::INTERNAL_SERVER_ERROR, "swarm returned no pane"))?;
     Ok(json!({"ok": true, "session": session, "agent": "orchestrator", "pane": pane}))
+}
+
+/// True when the workspace that holds `cwd` is archived, missing, or removed. That is the deepest
+/// workspace of the tree whose folder contains `cwd`, as the sidebar files a chat; a chat in a
+/// subfolder of an archived workspace is read-only too.
+fn is_read_only(tree: &tree::Tree, saved: &choices_store::Saved, cwd: &str) -> bool {
+    match tree.workspace_containing(cwd) {
+        Some((_, w)) => w.missing || w.removed || saved.owner.archived.contains(&w.path),
+        None => saved.owner.archived.contains(cwd),
+    }
+}
+
+fn read_only_error(what: &str) -> ApiError {
+    error(
+        StatusCode::CONFLICT,
+        &format!("This workspace is read-only. Restore it to start a {what}."),
+    )
+}
+
+/// Refuses a new `what` (a chat, a shell) in an archived, missing, or removed workspace.
+pub(super) fn refuse_read_only_workspace(app: &App, cwd: &str, what: &str) -> Result<(), ApiError> {
+    let (tree, saved) = fresh_lifecycle_tree(app)?;
+    if is_read_only(&tree, &saved, cwd) {
+        return Err(read_only_error(what));
+    }
+    Ok(())
+}
+
+/// The first non-empty line of a CLI's output; `launch` prints the pane id there.
+pub(super) fn first_line(output: &str) -> Option<&str> {
+    output.lines().map(str::trim).find(|line| !line.is_empty())
 }
 
 /// Start the chat's own CLI session again in the chat, with its whole context (ADR 0107).
@@ -97,10 +120,7 @@ pub(super) async fn resume_chat(app: &App, body: ResumeChat) -> Result<Value, Ap
         .map(String::from)
         .to_vec();
     let output = run_cli(app, call, None).await?;
-    let pane = output
-        .lines()
-        .map(str::trim)
-        .find(|line| !line.is_empty())
+    let pane = first_line(&output)
         .ok_or_else(|| error(StatusCode::INTERNAL_SERVER_ERROR, "swarm returned no pane"))?;
     Ok(json!({"ok": true, "session": body.session, "agent": "orchestrator", "pane": pane}))
 }

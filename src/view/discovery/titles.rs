@@ -8,7 +8,7 @@ pub(super) fn read_title(path: &str) -> Option<String> {
     agent_title(path)
         .or_else(|| codex_thread_name(path))
         .or_else(|| first_message(path))
-        .map(|title| short(&title))
+        .map(|title| short(&tree::one_line(&title)))
 }
 
 fn short(title: &str) -> String {
@@ -94,7 +94,8 @@ fn first_message(path: &str) -> Option<String> {
         } else {
             None
         };
-        let Some(text) = text.and_then(|s| tree::nonblank(Some(&s))) else {
+        // The lines stay, so the title is the first line with words.
+        let Some(text) = text.map(|s| s.trim().to_owned()).filter(|s| !s.is_empty()) else {
             continue;
         };
         if text.starts_with('<') || text.starts_with("# AGENTS.md") {
@@ -184,6 +185,12 @@ mod tests {
             ],
         );
         assert_eq!(read_title(&renamed).as_deref(), Some("Build"));
+        // A line break in a name breaks the sidebar row in WebKit, U+2028 too.
+        let broken = log(
+            "claude-broken.jsonl",
+            &[r#"{"type":"custom-title","customTitle":"Build\u2028the\n  app"}"#],
+        );
+        assert_eq!(read_title(&broken).as_deref(), Some("Build the app"));
     }
 
     #[test]

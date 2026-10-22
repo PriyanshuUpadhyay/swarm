@@ -120,6 +120,7 @@ export type View = Pane & {
   recent: RecentChat[];
   recentSelected: string | null;
   paletteOpen: boolean;
+  branchPicking: boolean;
   asking: Ask | null;
   strip: Strip;
 };
@@ -137,6 +138,8 @@ export type Reader = {
   closeFind(): void;
   /** Reuse on a sent prompt: puts its text in the composer `composerId`. */
   reuse(composerId: string, text: string): void;
+  /** Branch from here on a user row; only the open chat's chair transcript has it. */
+  branch?(row: string): void;
 };
 
 /** A name the owner types: a rename. */

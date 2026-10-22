@@ -98,3 +98,61 @@ test("clicking the row that is already shown gives its terminal the keys", async
   await row.click();
   await expect(panel.locator(".xterm-helper-textarea")).toBeFocused();
 });
+
+test("a workspace shell takes keys, outlives the panel, and closes on request", async ({ page: tab }, info) => {
+  await openChat(tab, info);
+  const panel = tab.getByTestId("background-panel").last();
+  await tab.keyboard.press("Meta+j");
+  // A second click inside the round trip must not make a second shell.
+  await panel.getByTestId("new-shell").dblclick();
+  const row = panel.getByRole("button", { name: /Shell 1/ });
+  await expect(row).toHaveAttribute("aria-current", "true");
+  await expect(panel.getByRole("button", { name: /Shell 2/ })).toHaveCount(0);
+  const screen = panel.locator(".xterm-rows");
+  // The prompt's look is the owner's, so the check waits for the command's own output.
+  await expect(panel.locator(".xterm-helper-textarea")).toBeFocused();
+  await tab.keyboard.type("echo shell-$((6*7)) $SWARM_SESSION_ID.\n");
+  await expect(screen).toContainText("shell-42 .");
+  await tab.keyboard.press("Meta+j");
+  await expect(panel).toHaveCount(0);
+  await tab.keyboard.press("Meta+j");
+  await row.click();
+  await expect(screen).toContainText("shell-42 .");
+  try {
+    await info.attach("shell", { body: await tab.screenshot(), contentType: "image/png" });
+    await panel.getByTestId("close-shell").click();
+    // Closing ends what runs in the shell, so it asks first and a stray click changes nothing.
+    await expect(tab.getByTestId("confirm-body")).toContainText("ends");
+    await tab.keyboard.press("Escape");
+    await expect(row).toHaveCount(1);
+  } finally {
+    // Cleanup holds no assertion, so a failure above still closes the real shell.
+    await tab.keyboard.press("Escape");
+    await panel.getByTestId("close-shell").click();
+    await tab.getByTestId("confirm-action").click();
+  }
+  await expect(row).toHaveCount(0);
+});
+
+test("a shell that fails with no text says so, and a close whose refresh fails still closes", async ({ page: tab }, info) => {
+  await openChat(tab, info);
+  const panel = tab.getByTestId("background-panel").last();
+  await tab.keyboard.press("Meta+j");
+  // A refusal that names no reason.
+  // The glob has no query, so the page's list reads pass; only the create is refused.
+  await tab.route("**/api/shells", (route) => route.fulfill({ status: 500, json: { error: "" } }));
+  await panel.getByTestId("new-shell").click();
+  await expect(panel.getByRole("alert")).toHaveText("The shell did not start.");
+  await tab.unroute("**/api/shells");
+
+  await panel.getByTestId("new-shell").click();
+  const row = panel.getByRole("button", { name: /Shell 1/ });
+  await expect(row).toHaveAttribute("aria-current", "true");
+  // The list read after the close fails; the close itself worked.
+  await tab.route("**/api/shells?**", (route) => route.abort());
+  await panel.getByTestId("close-shell").click();
+  await tab.getByTestId("confirm-action").click();
+  await expect(tab.getByTestId("confirm")).toHaveCount(0);
+  await tab.unroute("**/api/shells?**");
+  await expect(row).toHaveCount(0);
+});

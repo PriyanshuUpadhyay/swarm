@@ -2,6 +2,7 @@ import { ArrowDownIcon, ChevronDownIcon, ChevronUpIcon, MessageSquareDashedIcon,
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Virtualizer, type VirtualizerHandle } from "virtua";
 import { PROMPT_JUMP, type App, type Pane, type Reader } from "../core/app";
+import { canBranch } from "../core/composer";
 import { promptIndex, type Line } from "../core/transcript";
 import { ContextMenu, ContextMenuTrigger } from "../components/ui/context-menu";
 import { Kbd } from "../components/ui/kbd";
@@ -167,6 +168,7 @@ function Transcript({ app, view, testid = "transcript", empty }: { app: Reader; 
                       full={view.full}
                       // An unreachable agent shows no text box, so its rows offer no Reuse.
                       composerId={view.composer && !view.composer.agent.unreachable ? view.composer.id : undefined}
+                      branches={!!view.composer && canBranch(view.composer.agent)}
                       match={line.id === current ? "current" : undefined}
                     />
                   )}

@@ -76,6 +76,28 @@ pub(crate) fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             .run("key", &[("pane", &pane), ("key", key)])?;
         return Ok(());
     }
+    if let [cmd, agent_id, rest @ ..] = args
+        && cmd == "clear-box"
+    {
+        if in_agent_pane() {
+            return Err(
+                "swarm: only the owner clears an agent's input box; the Swarm app does it".into(),
+            );
+        }
+        let dequeue = match rest {
+            [] => false,
+            [flag] if flag == "--dequeue" => true,
+            _ => return Err("swarm: usage: swarm clear-box <agent> [--dequeue]".into()),
+        };
+        let session_id = session_id()?;
+        if swarm::store::provider_of(&connection, &session_id, agent_id)?.as_deref() != Some("pi") {
+            return Err("swarm: clear-box reads only pi's input box".into());
+        }
+        let pane = swarm::store::require_pane(&connection, &session_id, agent_id)?;
+        let adapter = swarm::adapter::load(&root, &adapter_name())?;
+        println!("{}", clear_box(&adapter, &pane, dequeue)?);
+        return Ok(());
+    }
     let (session_id, agent_id) = identity()?;
     match args {
         [cmd, recipient, kind] if cmd == "send" => {

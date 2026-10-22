@@ -26,8 +26,13 @@ const HANG_UP_GRACE: Duration = Duration::from_secs(3);
 
 #[derive(Clone, Debug, PartialEq)]
 pub(super) enum Target {
-    Attach { adapter: String, pane: String },
+    Attach {
+        adapter: String,
+        pane: String,
+    },
     File(PathBuf),
+    /// A workspace shell, by the id the server made (shells.rs).
+    Shell(String),
 }
 
 static TICKETS: Mutex<Vec<(String, Instant, Target)>> = Mutex::new(Vec::new());
@@ -67,8 +72,10 @@ fn redeem(ticket: &str) -> Option<Target> {
 #[serde(deny_unknown_fields)]
 pub(super) struct TicketRequest {
     session: String,
+    #[serde(default)]
     agent: String,
     task: Option<String>,
+    shell: Option<String>,
 }
 
 pub(super) async fn terminal_ticket(
@@ -88,6 +95,9 @@ pub(super) async fn terminal_ticket(
 }
 
 fn target(app: &Server, request: &TicketRequest) -> Result<Target, ApiError> {
+    if let Some(shell) = &request.shell {
+        return shells::owned(app, &request.session, shell).map(Target::Shell);
+    }
     if let Some(task) = &request.task {
         let path = session_tasks(app, &request.session)
             .into_iter()
@@ -166,8 +176,12 @@ pub(super) async fn terminal_socket(
     upgrade.on_upgrade(move |socket| async move {
         let _slot = slot;
         match target {
-            Target::Attach { adapter, pane } => attach(&app.root, &adapter, &pane, socket).await,
+            Target::Attach { adapter, pane } => {
+                let command = attach_command(&app.root, &adapter, &pane);
+                attach(command.map_err(|err| err.to_string()), socket).await
+            }
             Target::File(path) => follow_file(&app.root, &path, socket).await,
+            Target::Shell(id) => attach(Ok(shells::attach_command(&id)), socket).await,
         }
     })
 }
@@ -192,14 +206,8 @@ impl Drop for Slot {
     }
 }
 
-/// The adapter's `attach` for `pane`, ready for a PTY: a terminal type xterm.js draws, UTF-8, and
-/// no `TMUX`, since a server started from tmux would make tmux refuse to nest.
-pub(super) fn attach_command(
-    root: &Path,
-    adapter: &str,
-    pane: &str,
-) -> Result<CommandBuilder, Box<dyn std::error::Error>> {
-    let command = swarm::adapter::load(root, adapter)?.attach_command(&[("pane", pane)])?;
+/// A PTY command with the program, arguments, and environment edits of `command`.
+pub(super) fn pty_command(command: &std::process::Command) -> CommandBuilder {
     let mut builder = CommandBuilder::new(command.get_program());
     builder.args(command.get_args());
     for (key, value) in command.get_envs() {
@@ -208,6 +216,18 @@ pub(super) fn attach_command(
             None => builder.env_remove(key),
         }
     }
+    builder
+}
+
+/// The adapter's `attach` for `pane`, ready for a PTY: a terminal type xterm.js draws, UTF-8, and
+/// no `TMUX`, since a server started from tmux would make tmux refuse to nest.
+pub(super) fn attach_command(
+    root: &Path,
+    adapter: &str,
+    pane: &str,
+) -> Result<CommandBuilder, Box<dyn std::error::Error>> {
+    let command = swarm::adapter::load(root, adapter)?.attach_command(&[("pane", pane)])?;
+    let mut builder = pty_command(&command);
     builder.env_remove("TMUX");
     builder.env_remove("TMUX_PANE");
     builder.env("TERM", "xterm-256color");
@@ -241,10 +261,11 @@ fn pty_writer(
     Ok(owned.into())
 }
 
-/// Bytes both ways between the socket and a PTY that runs the adapter's `attach`. Leaving closes
-/// the PTY, which ends only the tmux client; the agent's session stays.
-async fn attach(root: &Path, adapter: &str, pane: &str, mut socket: WebSocket) {
-    let started = attach_command(root, adapter, pane)
+/// Bytes both ways between the socket and a PTY that runs a tmux `attach`. Leaving closes the
+/// PTY, which ends only the tmux client; the agent's or the shell's session stays.
+async fn attach(command: Result<CommandBuilder, String>, mut socket: WebSocket) {
+    let started = command
+        .map_err(Box::<dyn std::error::Error>::from)
         .and_then(|command| {
             let pair = native_pty_system().openpty(size(80, 24))?;
             let child = pair.slave.spawn_command(command)?;

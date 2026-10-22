@@ -17,9 +17,14 @@ export type BackgroundTask = {
   output: boolean;
 };
 
+/** One workspace shell, as `/api/shells` sends it: a shell in the chat's folder that the owner
+ *  opened, which lives on after the panel closes. */
+export type WorkspaceShell = { id: string; command: string };
+
 export type BackgroundRow =
   | { key: string; type: "agent"; agent: string; title: string; detail: string; status: PaneStatus }
-  | { key: string; type: "task"; agent: string; task: BackgroundTask; status: PaneStatus };
+  | { key: string; type: "task"; agent: string; task: BackgroundTask; status: PaneStatus }
+  | { key: string; type: "shell"; shell: WorkspaceShell; title: string; status: PaneStatus };
 
 /** A task's status as the glyph every list shows. */
 export function taskStatus(status: string): PaneStatus {
@@ -29,9 +34,9 @@ export function taskStatus(status: string): PaneStatus {
   return "ended";
 }
 
-/** The chair, then the live children oldest first, each followed by its tasks, running ones first.
- *  An ended agent shows nowhere (ADR 0083). */
-export function backgroundRows(session: Session | undefined, agents: readonly Agent[] | undefined, tasks: readonly BackgroundTask[]): BackgroundRow[] {
+/** The chair, then the live children oldest first, each followed by its tasks, running ones first,
+ *  then the folder's shells. An ended agent shows nowhere (ADR 0083). */
+export function backgroundRows(session: Session | undefined, agents: readonly Agent[] | undefined, tasks: readonly BackgroundTask[], shells: readonly WorkspaceShell[] = []): BackgroundRow[] {
   if (!session || !agents) return [];
   const created = (a: Agent) => (typeof a.created_at === "number" ? a.created_at : Infinity);
   const live = agents
@@ -45,6 +50,9 @@ export function backgroundRows(session: Session | undefined, agents: readonly Ag
     for (const t of [...own.filter((t) => t.status === "running"), ...own.filter((t) => t.status !== "running")])
       rows.push({ key: `task:${a.id}:${t.id}`, type: "task", agent: a.id, task: t, status: taskStatus(t.status) });
   }
+  // A shell that waits at its prompt is a plain circle; a program in it spins.
+  const idle = (command: string) => /^-?(zsh|bash|fish|sh|dash|ksh|tcsh|nu)$/.test(command);
+  shells.forEach((shell, i) => rows.push({ key: `shell:${shell.id}`, type: "shell", shell, title: `Shell ${i + 1}`, status: idle(shell.command) ? "ended" : "working" }));
   return rows;
 }
 

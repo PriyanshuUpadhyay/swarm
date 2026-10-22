@@ -1,11 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { ApiError, type Agent, type Api, type Row, type RowFrame, type RowPage, type Snapshot } from "./api";
+import { type Agent, type Api, type Row, type RowFrame, type RowPage, type Snapshot } from "./api";
 import { App } from "./app";
 import { chair, session } from "./chat-fixtures";
-import { agentInput, confirmSent, MISSING_ADAPTER, sends, sentRow, settleSent, submission, usageLabel } from "./composer";
+import { harness, settle, user } from "./composer-harness";
+import { agentInput, canBranch, confirmSent, MISSING_ADAPTER, sends, sentRow, settleSent, submission, usageLabel } from "./composer";
 
-const user = (id: string, text: string, offset = 10): Row => ({ id, kind: "user", text, order: [offset, 0] });
-const queued = (id: string, text: string): Row => ({ id, kind: "queued", text, order: [5, 0] });
 const waitingPrompt = { id: "prompt-hash", question: "Do you want to proceed?", choices: ["Yes", "No"] };
 
 describe("send key", () => {
@@ -89,6 +88,15 @@ describe("chair input", () => {
     expect(agentInput(session(), [chair({ state: "waiting" })]).disabled).toBe("The agent is asking a question. Answer it first in its pane.");
   });
 
+  it("offers Branch only on an idle chair of a CLI that can branch", () => {
+    const input = (extra: Parameters<typeof chair>[0]) => agentInput(session(), [chair({ provider: "claude", state: "done", ...extra })]);
+    expect(canBranch(input({}))).toBe(true);
+    expect(canBranch(input({ provider: "pi" }))).toBe(true);
+    expect(canBranch(input({ provider: "codex" }))).toBe(false);
+    expect(canBranch(input({ state: "working" }))).toBe(false);
+    expect(canBranch(agentInput(session(), [chair({ provider: "claude" }), chair({ id: "coder", provider: "claude" })], "coder"))).toBe(false);
+  });
+
   it("offers Resume only for an ended chair with a session id", () => {
     const ended = [chair({ alive: false, pane: null })];
     expect(agentInput(session({ chair_id: "id" }), ended).resumable).toBe(true);
@@ -111,26 +119,6 @@ describe("chair input", () => {
     expect(usageLabel({ context: { context_tokens: 41_200 } })).toBe("Context 41K");
   });
 });
-
-/** An App on a fake server: rows for one chat, a snapshot, and a log of the action POSTs. */
-function harness(fail?: (path: string) => string | null) {
-  const posts: { path: string; body: Record<string, unknown> }[] = [];
-  const page: RowPage = { page: { start_offset: 0, end_offset: 10 }, rows: [user("hello", "hello", 1)], usage: null };
-  const api = {
-    rows: async () => page,
-    action: async (path: string, body: Record<string, unknown>) => {
-      posts.push({ path, body });
-      const err = fail?.(path);
-      if (err) throw new ApiError(409, err);
-    },
-  } as unknown as Api;
-  const app = new App(api);
-  const snapshot = (agent: Partial<Agent> = {}) =>
-    (app as unknown as { applySnapshot(s: Snapshot): void }).applySnapshot({ version: 1, sessions: [session()], agents: { chat: [chair(agent)] } });
-  return { app, posts, snapshot };
-}
-
-const settle = () => new Promise((r) => setTimeout(r, 0));
 
 describe("draft skill picks", () => {
   it("keeps each chat's picks with its draft across a switch and a reload", () => {
@@ -329,36 +317,6 @@ describe("chat actions", () => {
     claude({ state: "done" });
     app.openChat("chat");
     expect(kinds()).toEqual([["user", "hello"]]);
-  });
-});
-
-describe("pull-back through the app", () => {
-  it("asks the server to pull back and puts the returned text before what was typed", async () => {
-    const posts: { path: string; body: Record<string, unknown> }[] = [];
-    let outcome: { outcome: string; text: string | null } = { outcome: "pulled", text: "fix the typo" };
-    const api = {
-      rows: async (): Promise<RowPage> => ({ page: { start_offset: 0, end_offset: 10 }, rows: [user("hello", "hello", 1), queued("q-1", "fix the typo")], usage: null }),
-      post: async (path: string, body: Record<string, unknown>) => {
-        posts.push({ path, body });
-        return outcome;
-      },
-    } as unknown as Api;
-    const app = new App(api);
-    (app as unknown as { applySnapshot(s: Snapshot): void }).applySnapshot({ version: 1, sessions: [session()], agents: { chat: [chair({ state: "working" })] } });
-    app.openChat("chat");
-    await settle();
-    expect(app.view.composer!.queued).toBe(1);
-    app.setDraft("chat", "and the docs");
-    await app.pullBack("chat");
-    expect(posts).toEqual([{ path: "/api/chat/pull-back", body: { session: "chat", agent: "chair" } }]);
-    expect(app.draft("chat")).toBe("fix the typo\nand the docs");
-    expect(app.view.composer!.state.banner).toBeNull();
-
-    // A box the server could not confirm keeps the draft and shows why.
-    outcome = { outcome: "unconfirmed", text: null };
-    await app.pullBack("chat");
-    expect(app.draft("chat")).toBe("fix the typo\nand the docs");
-    expect(app.view.composer!.state.banner?.text).toMatch(/Could not confirm/);
   });
 });
 

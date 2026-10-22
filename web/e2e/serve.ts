@@ -145,6 +145,8 @@ export default async function setup() {
     SWARM_CLAUDE_USAGE_URL: "http://usage.invalid/",
     // A path that does not exist, so a notice never starts an installed helper.
     SWARM_NOTIFY_APP: join(dir, "no-notify-helper.app"),
+    // The shell tests run on a tmux socket of their own, not the owner's `swarm-shell`.
+    SWARM_SHELL_SOCKET: `swarm-shell-e2e-${process.pid}`,
   };
   const logs = join(home, ".claude/projects/e2e");
   mkdirSync(logs, { recursive: true });
@@ -188,10 +190,13 @@ export default async function setup() {
   const tabsDir = join(dir, "ws-tabs");
   mkdirSync(tabsDir);
   for (const [i, pane] of TAB_PANES.entries()) {
+    const chairRun = i > 0;
     const chairLog = randomUUID();
-    copyFileSync(join(fixtures, i ? "claude-chair-run.jsonl" : "claude-edit.jsonl"), join(logs, `${chairLog}.jsonl`));
+    copyFileSync(join(fixtures, chairRun ? "claude-chair-run.jsonl" : "claude-edit.jsonl"), join(logs, `${chairLog}.jsonl`));
     const session = execFileSync(swarm, ["session", "new", "lane", "--chair", `claude:${chairLog}`], { cwd: tabsDir, env: liveEnv, stdio: "pipe" }).toString().trim().split("\n").pop()!;
     execFileSync(swarm, ["agent", "add", "orchestrator", "orchestrator"], { env: { ...liveEnv, SWARM_SESSION_ID: session, FIXTURE_PANE: pane }, stdio: "pipe" });
+    // The live chat whose log holds a message the owner typed, for Branch from here.
+    if (chairRun) process.env.SWARM_E2E_TYPED_CHAT = session;
   }
   const gitDir = join(dir, "ws-git");
   mkdirSync(gitDir);
@@ -305,6 +310,11 @@ export default async function setup() {
   process.env.SWARM_E2E_DIR = dir;
   return async () => {
     server?.kill();
+    try {
+      execFileSync("tmux", ["-L", env.SWARM_SHELL_SOCKET!, "kill-server"], { stdio: "ignore" });
+    } catch {
+      // No shell test ran, so no server started.
+    }
     rmSync(dir, { recursive: true, force: true });
   };
 }

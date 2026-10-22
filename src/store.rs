@@ -57,6 +57,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0011.sql"),
     include_str!("../migrations/0012.sql"),
     include_str!("../migrations/0013.sql"),
+    include_str!("../migrations/0014.sql"),
 ];
 
 #[derive(serde::Serialize)]
@@ -238,6 +239,11 @@ fn migrate_locked(connection: &mut Connection) -> Result<(), Box<dyn std::error:
     if version < 13 {
         tx.execute_batch(MIGRATIONS[12])?;
         tx.pragma_update(None, "user_version", 13)?;
+    }
+
+    if version < 14 {
+        tx.execute_batch(MIGRATIONS[13])?;
+        tx.pragma_update(None, "user_version", 14)?;
     }
 
     let added = broken(&tx)? - broken_before;

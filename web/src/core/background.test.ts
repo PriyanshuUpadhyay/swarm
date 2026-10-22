@@ -19,6 +19,19 @@ describe("background rows", () => {
     ]);
   });
 
+  it("lists the folder's shells after the agents, oldest first, as Shell 1, Shell 2", () => {
+    const shells = [
+      { id: "shell-0000000a", command: "zsh" },
+      { id: "shell-0000000b", command: "vim" },
+    ];
+    expect(backgroundRows(session, [agent("orchestrator", { role: "orchestrator" })], [], shells).map((r) => [r.key, r.type === "shell" ? r.title : null, r.type === "shell" ? r.status : null])).toEqual([
+      ["agent:orchestrator", null, null],
+      // A shell at its prompt is ended; one that runs a program is working.
+      ["shell:shell-0000000a", "Shell 1", "ended"],
+      ["shell:shell-0000000b", "Shell 2", "working"],
+    ]);
+  });
+
   it("shows an unknown or a new end state as ended", () => {
     expect(["running", "completed", "killed", "unknown", "paused"].map(taskStatus)).toEqual(["working", "done", "failed", "ended", "ended"]);
   });

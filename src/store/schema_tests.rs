@@ -25,7 +25,7 @@ mod tests {
     }
 
     #[test]
-    fn migration_adds_chat_continuations_to_existing_databases() {
+    fn migration_adds_chat_continuations_and_branches_to_existing_databases() {
         let mut connection = Connection::open_in_memory().unwrap();
         connection.execute_batch(MIGRATIONS[0]).unwrap();
         connection.pragma_update(None, "user_version", 1).unwrap();
@@ -42,6 +42,13 @@ mod tests {
             Some(old.as_str())
         );
         assert!(continue_session(&connection, &old, &new).is_err());
+        let branch = create_session(&connection, "lane", Path::new("/work"), None, None).unwrap();
+        branch_session(&connection, &branch, &old, Some(("pi", "b-orchestrator"))).unwrap();
+        let row = sessions(&connection).unwrap().remove(0);
+        assert_eq!(row.branch_of.as_deref(), Some(old.as_str()));
+        assert_eq!(row.chair_id.as_deref(), Some("b-orchestrator"));
+        assert_eq!(row.continuation_of, None);
+        assert!(branch_session(&connection, &branch, &old, None).is_err());
     }
 
     #[test]
@@ -130,7 +137,7 @@ mod tests {
         let version: i64 = connection
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 13);
+        assert_eq!(version, MIGRATIONS.len() as i64);
         type Row = (
             String,
             Option<String>,

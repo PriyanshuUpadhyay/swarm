@@ -19,7 +19,7 @@ import { LifecycleDialogs } from "./lifecycle";
 import { SettingsDialog } from "./settings";
 import { LoadFailed } from "./load-failed";
 import { SkillsDialog } from "./skills";
-import { Palette } from "./palette";
+import { BranchPicker, Palette } from "./palette";
 import { PaneStrip } from "./panes";
 import { Sidebar } from "./sidebar";
 import { store } from "./store";
@@ -83,6 +83,7 @@ function Root({ app, changes }: { app: App; changes: Changes }) {
         {side === "left" ? [side_, <ResizableHandle key="h" />, main] : [main, <ResizableHandle key="h" />, side_]}
       </ResizablePanelGroup>
       <Palette app={app} />
+      <BranchPicker app={app} />
       <AskDialog app={app} />
       <LifecycleDialogs app={app} />
       <SettingsDialog app={app} />

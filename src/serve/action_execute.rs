@@ -65,6 +65,9 @@ pub(super) async fn execute_action(app: &App, action: Action) -> Result<Value, A
         Action::Interrupt(body) if interrupt_clears_box(app, &body)? => {
             return interrupt_claude(app, body).await;
         }
+        Action::Interrupt(body) if interrupt_empties_pi(app, &body)? => {
+            return interrupt_pi(app, body).await;
+        }
         Action::Interrupt(body) | Action::Close(body) => {
             let (call, agent) = action_target(app, &body.session, &body.agent)?;
             if interrupt {

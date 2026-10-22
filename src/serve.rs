@@ -301,6 +301,10 @@ use snapshot::*;
 
 mod terminal;
 use terminal::*;
+mod shells;
+use shells::{shells_close, shells_create, shells_list};
+mod branch;
+use branch::*;
 
 mod tool_output;
 use tool_output::*;

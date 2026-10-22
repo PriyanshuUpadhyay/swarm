@@ -41,6 +41,7 @@ pub(super) fn snapshot_value(app: &Server) -> Result<Value, Box<dyn std::error::
             chair_id: row.chair_id,
             chair_log: row.chair_log,
             continuation_of: row.continuation_of,
+            branch_of: row.branch_of,
             agents: row.agents,
             messages: row.messages,
             last_message_at: row.last_message_at,

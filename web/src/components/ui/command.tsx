@@ -13,11 +13,12 @@ function CommandDialog({
   description = "Search for a command or a chat",
   children,
   className,
+  onCloseAutoFocus,
   ...props
-}: React.ComponentProps<typeof Dialog> & { title?: string; description?: string; className?: string } & Pick<React.ComponentProps<"div">, "children">) {
+}: React.ComponentProps<typeof Dialog> & { title?: string; description?: string; className?: string } & Pick<React.ComponentProps<"div">, "children"> & Pick<React.ComponentProps<typeof DialogContent>, "onCloseAutoFocus">) {
   return (
     <Dialog {...props}>
-      <DialogContent className={className} aria-describedby={undefined}>
+      <DialogContent className={className} aria-describedby={undefined} onCloseAutoFocus={onCloseAutoFocus}>
         <DialogTitle className="sr-only">{title}</DialogTitle>
         <DialogDescription className="sr-only">{description}</DialogDescription>
         {children}
