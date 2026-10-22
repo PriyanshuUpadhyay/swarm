@@ -31,34 +31,6 @@ fn standin_git_and_gh_refresh_titles_catalog_and_requested_fields() {
     let home = ChoicesHome::new();
     let bin = home.root.join("bin");
     fs::create_dir(&bin).unwrap();
-    let git = r#"#!/bin/sh
-printf '%s\n' "$*" >> "$HOME/git-calls"
-shift 2
-case "$*" in
-'rev-parse --path-format=absolute --git-common-dir') printf '%s\n' "$HOME/repo/.git" ;;
-'worktree list --porcelain -z') printf 'worktree %s\000branch refs/heads/feature\000\000' "$HOME/repo" ;;
-'symbolic-ref --quiet --short HEAD') printf 'feature\n' ;;
-'rev-parse HEAD') printf 'abc\n' ;;
-'remote') printf 'origin\n' ;;
-'remote get-url --push --all -- origin'|'remote get-url -- origin') printf 'git@github.com:owner/repo.git\n' ;;
-'status --porcelain=v1 -z') printf ' M changed\000' ;;
-*) exit 1 ;;
-esac
-"#;
-    let gh = r#"#!/bin/sh
-printf '%s\n' "$*" >> "$HOME/gh-calls"
-case "$1 $2" in
-'repo view') printf '{"nameWithOwner":"owner/repo","parent":null}\n' ;;
-'pr list') if [ -f "$HOME/fail" ]; then exit 1; fi
-printf '[{"number":7,"state":"OPEN","baseRefOid":"def","headRefOid":"abc","headRefName":"feature","headRepository":{"nameWithOwner":"owner/repo"},"url":"https://github.com/owner/repo/pull/7","statusCheckRollup":[{"state":"SUCCESS"}]}]\n' ;;
-*) exit 1 ;;
-esac
-"#;
-    use std::os::unix::fs::PermissionsExt;
-    for (name, body) in [("git", git), ("gh", gh)] {
-        fs::write(bin.join(name), body).unwrap();
-        fs::set_permissions(bin.join(name), fs::Permissions::from_mode(0o755)).unwrap();
-    }
     fs::create_dir(home.root.join("repo")).unwrap();
     fs::write(
         home.root.join("chair.jsonl"),
@@ -86,6 +58,40 @@ fn discovery_standin_child() {
         return;
     }
     let home = std::env::var("HOME").unwrap();
+    // The stand-ins are written here, in a process with no other test thread. A parallel test that
+    // forks while the parent holds a script open for writing makes Linux exec fail with ETXTBSY.
+    let git = r#"#!/bin/sh
+printf '%s\n' "$*" >> "$HOME/git-calls"
+shift 2
+case "$*" in
+'rev-parse --path-format=absolute --git-common-dir') printf '%s\n' "$HOME/repo/.git" ;;
+'worktree list --porcelain -z') printf 'worktree %s\000branch refs/heads/feature\000\000' "$HOME/repo" ;;
+'symbolic-ref --quiet --short HEAD') printf 'feature\n' ;;
+'rev-parse HEAD') printf 'abc\n' ;;
+'remote') printf 'origin\n' ;;
+'remote get-url --push --all -- origin'|'remote get-url -- origin') printf 'git@github.com:owner/repo.git\n' ;;
+'status --porcelain=v1 -z') printf ' M changed\000' ;;
+*) exit 1 ;;
+esac
+"#;
+    let gh = r#"#!/bin/sh
+printf '%s\n' "$*" >> "$HOME/gh-calls"
+case "$1 $2" in
+'repo view') printf '{"nameWithOwner":"owner/repo","parent":null}\n' ;;
+'pr list') if [ -f "$HOME/fail" ]; then exit 1; fi
+printf '[{"number":7,"state":"OPEN","baseRefOid":"def","headRefOid":"abc","headRefName":"feature","headRepository":{"nameWithOwner":"owner/repo"},"url":"https://github.com/owner/repo/pull/7","statusCheckRollup":[{"state":"SUCCESS"}]}]\n' ;;
+*) exit 1 ;;
+esac
+"#;
+    use std::os::unix::fs::PermissionsExt;
+    for (name, body) in [("git", git), ("gh", gh)] {
+        fs::write(format!("{home}/bin/{name}"), body).unwrap();
+        fs::set_permissions(
+            format!("{home}/bin/{name}"),
+            fs::Permissions::from_mode(0o755),
+        )
+        .unwrap();
+    }
     let cwd = format!("{home}/repo");
     let log = format!("{home}/chair.jsonl");
     let mut snapshot = json!({"sessions":[{"id":"chat","cwd":cwd,"chair_log":log,"agents":1,"chair_provider":"codex","created_at":1}],"agents":{"chat":[{"id":"orchestrator","alive":true,"pane":"fixture","state":"working"}]}});
