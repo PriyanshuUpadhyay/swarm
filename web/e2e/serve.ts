@@ -192,6 +192,8 @@ export default async function setup() {
     copyFileSync(join(fixtures, i ? "claude-chair-run.jsonl" : "claude-edit.jsonl"), join(logs, `${chairLog}.jsonl`));
     const session = execFileSync(swarm, ["session", "new", "lane", "--chair", `claude:${chairLog}`], { cwd: tabsDir, env: liveEnv, stdio: "pipe" }).toString().trim().split("\n").pop()!;
     execFileSync(swarm, ["agent", "add", "orchestrator", "orchestrator"], { env: { ...liveEnv, SWARM_SESSION_ID: session, FIXTURE_PANE: pane }, stdio: "pipe" });
+    // The live chat whose log holds a message the owner typed, for Branch from here.
+    if (i) process.env.SWARM_E2E_TYPED = session;
   }
   const gitDir = join(dir, "ws-git");
   mkdirSync(gitDir);

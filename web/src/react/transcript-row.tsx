@@ -1,5 +1,5 @@
 // Transcript rows, message bubbles, and disclosures.
-import { CheckIcon, ChevronDownIcon, ChevronRightIcon, CircleStopIcon, CopyIcon, FileCodeIcon, LoaderCircleIcon, MailIcon, PencilIcon } from "lucide-react";
+import { CheckIcon, ChevronDownIcon, ChevronRightIcon, CircleStopIcon, CopyIcon, FileCodeIcon, GitBranchIcon, LoaderCircleIcon, MailIcon, PencilIcon } from "lucide-react";
 import type { Row, TextPreview } from "../core/api";
 import type { FullText, Reader } from "../core/app";
 import type { MarkdownCache } from "../core/markdown";
@@ -9,9 +9,9 @@ import { ImageThumbs } from "./images";
 import { DiffView, OutputBox } from "./transcript-output";
 import { ShellRow, StatusGlyph, ToolCard } from "./transcript-tool";
 
-type Ctx = { app: Reader; line: Line; md: MarkdownCache; full: ReadonlyMap<string, FullText>; composerId?: string };
+type Ctx = { app: Reader; line: Line; md: MarkdownCache; full: ReadonlyMap<string, FullText>; composerId?: string; branches?: boolean };
 
-function LineView({ app, line, index, md, full, match, composerId }: Ctx & { index: number; match?: string }) {
+function LineView({ app, line, index, md, full, match, composerId, branches }: Ctx & { index: number; match?: string }) {
   const { row } = line;
   return (
     <div
@@ -22,7 +22,7 @@ function LineView({ app, line, index, md, full, match, composerId }: Ctx & { ind
       data-match={match}
       className={`line${line.fold ? " step" : ""}`}
     >
-      <RowBody app={app} line={line} md={md} full={full} composerId={composerId} />
+      <RowBody app={app} line={line} md={md} full={full} composerId={composerId} branches={branches} />
     </div>
   );
 }
@@ -87,6 +87,7 @@ function RowBody(ctx: Ctx) {
         row={row}
         queued={row.kind === "queued" || row.system_kind === "queued_prompt"}
         reuse={row.kind === "user" && composerId ? () => app.reuse(composerId, row.text) : undefined}
+        branch={row.kind === "user" && ctx.branches && app.branch ? () => app.branch?.(row.id) : undefined}
       >
         <div className="md" dangerouslySetInnerHTML={{ __html: md.html(row.id, row.text, true) }} />
         <ImageThumbs text={row.text} load={app.imageUrl} />
@@ -160,10 +161,15 @@ function RowBody(ctx: Ctx) {
 /** A row with only text: its own preview, so Show full output still works without a server id. */
 const textPreview = (row: Row): TextPreview => ({ id: "", text: row.text, full_lines: 0, full_bytes: 0, hidden_lines: 0 });
 
-function Bubble({ row, queued, reuse, children }: { row: Row; queued?: boolean; reuse?: () => void; children: React.ReactNode }) {
+function Bubble({ row, queued, reuse, branch, children }: { row: Row; queued?: boolean; reuse?: () => void; branch?: () => void; children: React.ReactNode }) {
   return (
     <div className="bubble-row">
       <CopyMessage row={row} />
+      {branch && (
+        <button type="button" className="copy-msg icon-btn" data-testid="branch-here" aria-label="Branch from here" title="Branch from here: a new chat from before this message" onClick={branch}>
+          <GitBranchIcon />
+        </button>
+      )}
       {reuse && (
         <button
           type="button"

@@ -126,7 +126,7 @@ mod tests {
         let db = root.join("swarm.db");
         let connection = Connection::open(&db).unwrap();
         connection
-            .execute_batch("PRAGMA user_version = 14")
+            .execute_batch("PRAGMA user_version = 15")
             .unwrap();
         drop(connection);
 

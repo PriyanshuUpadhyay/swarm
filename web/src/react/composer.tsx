@@ -111,6 +111,8 @@ export function ComposerBox({ app, composer }: { app: App; composer: Composer })
   const [listing, setListing] = useState(false);
   const canSend = outgoing(text) !== null && !state.sending && !listing && !state.pulling && !chair.disabled;
   const canPullBack = chair.pullBack && !chair.disabled && composer.queued > 0;
+  const canBranch = chair.who === null && !chair.running && ["claude", "pi"].includes(chair.provider ?? "");
+  const lastEscape = useRef(-Infinity);
   const skills = skillNames(list);
   const loadingSkills = useRef(false);
   /** pi runs a skill only at the message's start, so the draft shows the moved text it sends. */
@@ -221,7 +223,11 @@ export function ComposerBox({ app, composer }: { app: App; composer: Composer })
         app.setStash(sessionId, "");
         change(back);
         pickedCaret.current = back.length;
+      } else if (canBranch && e.timeStamp - lastEscape.current < 500) {
+        // Esc Esc in an empty, idle box picks a message to branch from, as Claude Code's rewind.
+        app.setBranchPicker(true);
       }
+      lastEscape.current = e.timeStamp;
     } else if (e.key === "ArrowUp" && text === "" && canPullBack) {
       // The CLI's queue comes back before the history, as in Claude Code (ADR 0038).
       e.preventDefault();

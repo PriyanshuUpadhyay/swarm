@@ -303,6 +303,8 @@ mod terminal;
 use terminal::*;
 mod shells;
 use shells::*;
+mod branch;
+use branch::*;
 
 mod tool_output;
 use tool_output::*;

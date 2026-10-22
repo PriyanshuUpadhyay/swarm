@@ -308,7 +308,18 @@ fn rows(
             status,
             counts: chat.counts.clone(),
             age: Some(age(chat.last_activity, now)),
-            help: format!("{}\n{}", chat.title, workspace.path),
+            help: match chat
+                .sessions
+                .iter()
+                .find_map(|s| s["branch_of"].as_str())
+                .and_then(|parent| workspace.chats.iter().find(|c| c.contains(parent)))
+            {
+                Some(parent) => format!(
+                    "{}\nBranched from {}\n{}",
+                    chat.title, parent.title, workspace.path
+                ),
+                None => format!("{}\n{}", chat.title, workspace.path),
+            },
             pinned,
             archived,
             missing: false,

@@ -37,6 +37,7 @@ export class AppPanes {
       recent: this.app.sidebar.recentList(),
       recentSelected: this.app.recentSelected,
       paletteOpen: this.app.paletteOpen,
+      branchPicking: this.app.branchPicking,
       asking: this.app.asking,
       strip: this.stripView(cells, sendKey),
     };

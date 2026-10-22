@@ -163,6 +163,7 @@ pub(super) fn router(app: App) -> Router {
         .route("/api/accounts/login", post(owner_write))
         .route("/api/accounts/reset", post(owner_write))
         .route("/api/chat/continue", post(continue_chat))
+        .route("/api/chat/branch", post(branch_chat))
         .route("/api/chat/continue/cancel", post(cancel_continue))
         .route("/api/workspace/new-options", get(lifecycle_read))
         .route("/api/workspace/impact", get(lifecycle_read))

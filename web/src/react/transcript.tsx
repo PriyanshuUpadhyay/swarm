@@ -11,6 +11,9 @@ import { SourcePopover, TranscriptMenu, type Source } from "./transcript-overlay
 import { setSplit } from "./transcript-output";
 import { LineView } from "./transcript-row";
 
+/** The CLIs whose session a branch can cut (ADR 0114). */
+const BRANCHES = ["claude", "pi"];
+
 export { StatusGlyph } from "./transcript-tool";
 
 /** The chat column: transcript, its empty, loading and error states, and the composer. */
@@ -167,6 +170,7 @@ function Transcript({ app, view, testid = "transcript", empty }: { app: Reader; 
                       full={view.full}
                       // An unreachable agent shows no text box, so its rows offer no Reuse.
                       composerId={view.composer && !view.composer.agent.unreachable ? view.composer.id : undefined}
+                      branches={BRANCHES.includes(view.composer?.agent.provider ?? "")}
                       match={line.id === current ? "current" : undefined}
                     />
                   )}

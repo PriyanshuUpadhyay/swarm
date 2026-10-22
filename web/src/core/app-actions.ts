@@ -20,19 +20,45 @@ export class AppActions {
     try {
       const started = await this.app.api.post<{ session: string }>("/api/chat/new", { cwd: workspace, ...launch });
       if (draft) this.app.composing.setDraft(started.session, draft);
-      // The server's tree lists a new chat after its agent poll sees the chair's pane, about a
-      // second later, and opening the chat writes a tab that the server checks against that tree.
-      for (let i = 0; i < 20; i++) {
-        await this.app.navigation.refreshSnapshot();
-        if (this.app.listsChat(started.session)) break;
-        await sleep(250);
-      }
-      this.app.navigation.openChat(started.session, undefined, { tabOnly: inTab });
+      await this.openNew(started.session, inTab);
     } catch (err) {
       this.app.notice(message(err), true);
     } finally {
       this.app.starting = false;
     }
+  }
+
+  /** The server's tree lists a new chat after its agent poll sees the chair's pane, about a second
+   *  later, and opening the chat writes a tab that the server checks against that tree. */
+  private async openNew(session: string, inTab = false) {
+    for (let i = 0; i < 20; i++) {
+      await this.app.navigation.refreshSnapshot();
+      if (this.app.listsChat(session)) break;
+      await sleep(250);
+    }
+    this.app.navigation.openChat(session, undefined, { tabOnly: inTab });
+  }
+
+  /** Branch from here: a new chat with the conversation before user row `row` of chat `session`,
+   *  and that message in its draft (ADR 0114). */
+  branch(session: string, row: string) {
+    this.setBranchPicker(false);
+    return this.app.life.ask({
+      title: "Branch from this message?",
+      body: "A new chat starts with the conversation before this message, and the message goes in its text box. Branches the conversation, not the files.",
+      action: "Branch",
+      run: async () => {
+        const branched = await this.app.api.post<{ session: string; text: string }>("/api/chat/branch", { session, row });
+        this.app.composing.setDraft(branched.session, branched.text);
+        await this.openNew(branched.session);
+      },
+    });
+  }
+
+  setBranchPicker(open: boolean) {
+    if (this.app.branchPicking === open) return;
+    this.app.branchPicking = open;
+    this.app.notify();
   }
 
   /** ⌃⌘W opens the next chat whose chair or child waits for the owner. */

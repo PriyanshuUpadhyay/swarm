@@ -71,6 +71,18 @@ pub(crate) fn commands_session(
     {
         return swarm::store::continue_session(connection, new_id, old_id).map(Some);
     }
+    if let [cmd, sub, new_id, old_id, chair @ ..] = args
+        && cmd == "session"
+        && sub == "branch"
+        && chair.len() <= 1
+    {
+        let chair = match chair.first() {
+            Some(value) => Some(parse_chair(value)?.ok_or(USAGE)?),
+            None => None,
+        };
+        swarm::store::branch_session(connection, new_id, old_id, chair)?;
+        return record_pi_log(connection, new_id, chair).map(Some);
+    }
     if let [cmd, sub, ids @ ..] = args
         && cmd == "session"
         && matches!(sub.as_str(), "archive" | "unarchive")
@@ -117,6 +129,7 @@ pub(crate) fn commands_session(
                 chair_id: row.chair_id,
                 chair_log: chair_log.map(|path| path.to_string_lossy().into_owned()),
                 continuation_of: row.continuation_of,
+                branch_of: row.branch_of,
                 agents: row.agents,
                 messages: row.messages,
                 last_message_at: row.last_message_at,

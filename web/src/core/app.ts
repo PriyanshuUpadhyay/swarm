@@ -1,6 +1,6 @@
 // Framework-free app state. Each view layer reads `view`, which is a new object after every change.
 
-import { Api, type RowFrame, type Snapshot } from "./api";
+import { Api, type Row, type RowFrame, type Snapshot } from "./api";
 import { installKeys, Registry } from "./commands";
 import { type AgentInput, type Prompt } from "./composer";
 import { whenPainted } from "./perf";
@@ -73,6 +73,7 @@ export class App {
   navSeq = 0;
   starting = false;
   paletteOpen = false;
+  branchPicking = false;
   asking: Ask | null = null;
   error: string | null = null;
   chats = new Map<string, Chat>();
@@ -403,6 +404,21 @@ export class App {
 
   closePane(agent: string): Promise<void> {
     return this.panes.closePane(agent);
+  }
+
+  /** Branch from here on a user row of the open chat. */
+  branch(row: string) {
+    if (this.openId) void this.actions.branch(this.openId, row);
+  }
+
+  /** The Esc Esc picker of the open chat's messages to branch from. */
+  setBranchPicker(open: boolean) {
+    return this.actions.setBranchPicker(open);
+  }
+
+  /** The open chat's loaded user rows, newest first. */
+  branchRows(): Row[] {
+    return (this.reading.chat()?.rows ?? []).filter((r) => r.kind === "user").reverse();
   }
 
   setPalette(open: boolean) {

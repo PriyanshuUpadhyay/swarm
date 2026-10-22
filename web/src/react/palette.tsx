@@ -6,6 +6,28 @@ import { Kbd } from "../components/ui/kbd";
 import { chordLabel } from "./chord";
 import { StatusGlyph } from "./status";
 
+/** Esc Esc in an empty box: the open chat's messages, newest first; one starts a branch. */
+export function BranchPicker({ app }: { app: App }) {
+  const open = useSyncExternalStore(app.subscribe, () => app.view.branchPicking);
+  return (
+    <CommandDialog open={open} onOpenChange={(o) => app.setBranchPicker(o)} title="Branch from a message" description="A new chat starts from the conversation before the message.">
+      {open && (
+        <Command loop label="Branch from a message" data-testid="branch-picker">
+          <CommandInput autoFocus placeholder="Branch from which message?" />
+          <CommandList>
+            <CommandEmpty>No messages</CommandEmpty>
+            {app.branchRows().map((row) => (
+              <CommandItem key={row.id} value={row.id} keywords={[row.text]} onSelect={() => app.branch(row.id)}>
+                <span className="truncate">{row.text.replace(/\s+/g, " ")}</span>
+              </CommandItem>
+            ))}
+          </CommandList>
+        </Command>
+      )}
+    </CommandDialog>
+  );
+}
+
 /** ⌘K. The app owns open state and the items; jean's fuzzy search ranks them (`rankPalette`);
  *  cmdk only draws the list and moves the selection. */
 export function Palette({ app }: { app: App }) {

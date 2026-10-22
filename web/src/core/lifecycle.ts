@@ -445,7 +445,7 @@ export class Lifecycle {
 
   // ---- confirm ----
 
-  private ask(confirm: Confirm): Promise<void> {
+  ask(confirm: Confirm): Promise<void> {
     this.confirmDone?.();
     return new Promise((resolve) => {
       this.confirmDone = resolve;
