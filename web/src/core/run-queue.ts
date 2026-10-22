@@ -30,13 +30,15 @@ export class RunQueue {
     this.set(rest);
   }
 
-  /** Starts each change whose agent is out of its turn. */
-  run(working: (old: string) => boolean, start: (old: string, change: PendingSwitch) => void) {
+  /** Starts each change whose agent is out of its turn, and drops each one whose chat cannot take it. */
+  run(step: (old: string) => "wait" | "drop" | "start", start: (old: string, change: PendingSwitch) => void, drop: (old: string, change: PendingSwitch) => void) {
     for (const [old, change] of Object.entries(this.state)) {
-      if (!change || working(old)) continue;
+      const now = change && step(old);
+      if (!change || now === "wait") continue;
       // The entry goes first, so a change seen again during the switch cannot start it twice.
       this.cancel(old);
-      start(old, change);
+      if (now === "start") start(old, change);
+      else drop(old, change);
     }
   }
 }

@@ -295,6 +295,13 @@ export function waitsForTurn(chair: AgentInput, handoff: Handoff | undefined): b
   return !chair.listed || chair.running || chair.waiting || (handoff !== undefined && !isSettled(handoff.phase));
 }
 
+/** What the queue does with a chat's change now: wait for the turn, drop it because the chat's pane
+ *  closed (End, Archive, a workspace archive or delete), or start it. */
+export function queueStep(chair: AgentInput, handoff: Handoff | undefined): "wait" | "drop" | "start" {
+  if (waitsForTurn(chair, handoff)) return "wait";
+  return chair.unreachable ? "drop" : "start";
+}
+
 /** Why Apply cannot run now, or null. A switch blocks only its own chat; while the agent works,
  *  Apply waits for the turn to end. */
 export function applyBlock(chair: AgentInput, draft: Run): string | null {

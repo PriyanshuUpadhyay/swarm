@@ -2,7 +2,7 @@
 
 import { Api, type RowFrame, type Snapshot } from "./api";
 import { installKeys, Registry } from "./commands";
-import { waitsForTurn, type AgentInput, type Prompt } from "./composer";
+import { queueStep, type AgentInput, type Prompt } from "./composer";
 import { whenPainted } from "./perf";
 import { chatFromPath, resolveChat } from "./route";
 import { type Direction, type PaneCell } from "./panes";
@@ -145,15 +145,16 @@ export class App {
     if (location.pathname === "/setup") this.settings.show("setup");
     // Closing Setup & doctor gives the URL back to the open chat.
     abort.signal.addEventListener("abort", this.settings.subscribe(() => this.navigation.followUrl()));
-    // A change queued in a turn starts when a snapshot shows the turn ended. A chat whose pane
-    // closed (End, Archive, a workspace archive or delete) drops it, because run() removed it
-    // first. switchModel keeps its own failure in the handoff state and shows a notice.
+    // A change queued in a turn starts when a snapshot shows the turn ended, and is dropped with a
+    // notice when the chat's pane closed (queueStep). switchModel keeps its own failure in the
+    // handoff state and shows a notice.
     abort.signal.addEventListener(
       "abort",
       this.subscribe(() =>
         this.life.queue.run(
-          (old) => waitsForTurn(this.chair(old), this.life.state.handoffs[old]),
-          (old, c) => void (this.chair(old).unreachable || this.life.switchModel(old, c.provider, c.model, c.account, c.effort, c.carry)),
+          (old) => queueStep(this.chair(old), this.life.state.handoffs[old]),
+          (old, c) => void this.life.switchModel(old, c.provider, c.model, c.account, c.effort, c.carry),
+          (_, c) => this.notice(`The chat's pane closed, so the queued change to ${c.model} did not start.`),
         ),
       ),
     );

@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from "vitest";
 import { chair, session } from "./chat-fixtures";
-import { accountColor, agentInput, waitsForTurn, applyBlock, applyLabel, chooseModel, cliName, levelWord, limitText, outcomeText, runLabel, runTip, switchOutcome, usageLabel, usageTitle } from "./composer";
+import { accountColor, agentInput, queueStep, waitsForTurn, applyBlock, applyLabel, chooseModel, cliName, levelWord, limitText, outcomeText, runLabel, runTip, switchOutcome, usageLabel, usageTitle } from "./composer";
 import type { Meter } from "./settings";
 
 
@@ -45,6 +45,10 @@ describe("run chip", () => {
     expect(waitsForTurn(idle, { old: "s", phase: "failed", canCancel: false, error: "x", carry: "summary" })).toBe(false);
     // A snapshot with no row for the chat says nothing about its turn, so the change keeps waiting.
     expect(waitsForTurn(agentInput(session(), []), undefined)).toBe(true);
+    // A chair whose pane closed (End, Archive, a workspace archive or delete) cannot take the change.
+    expect(queueStep(agentInput(session(), [chair({ provider: "claude", state: "done", alive: false })]), undefined)).toBe("drop");
+    expect(queueStep(idle, undefined)).toBe("start");
+    expect(queueStep(agentInput(session(), [chair({ provider: "claude", state: "working" })]), undefined)).toBe("wait");
   });
 
   it("names each thinking level in plain words and keeps an unknown id as written", () => {

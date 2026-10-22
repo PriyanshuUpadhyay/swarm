@@ -67,9 +67,10 @@ export function RunChip({ app, sessionId, chair }: { app: App; sessionId: string
         </span>
         {!chair.who && <ChevronDownIcon className="size-3 shrink-0" />}
       </button>
-      {/* A button's children are presentational, so a queued change and a running switch are announced from outside it. */}
+      {/* A button's children are presentational, so a queued change and a running switch are announced from outside it.
+          The open popover has its own status, and a child's chip does not speak for the chair. */}
       <span role="status" className="sr-only" data-testid="run-chip-status">
-        {switching ?? (pending ? pendingText : "")}
+        {open || chair.who ? "" : (switching ?? (pending ? pendingText : ""))}
       </span>
       {pending && (
         <button type="button" className="icon-btn" aria-label="Cancel change" title="Cancel change" data-testid="run-pending-cancel" onClick={() => app.life.queue.cancel(sessionId)}>
@@ -266,12 +267,12 @@ function RunBody({ app, sessionId, chair }: { app: App; sessionId: string; chair
                 const on = draft.account === a.name;
                 const limit = a.name ? limitText(meters, draft.provider, a.name, a.summary ?? null) : null;
                 return (
-                  <button key={a.name ?? ""} type="button" aria-pressed={on} title={a.name ? (a.email ? `${a.name} (${a.email})` : a.name) : undefined} className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-hover aria-pressed:bg-selected" onClick={() => setDraft({ ...draft, account: a.name })}>
+                  <button key={a.name ?? ""} type="button" aria-pressed={on} title={[a.name && (a.email ? `${a.name} (${a.email})` : a.name), limit?.text].filter(Boolean).join("\n") || undefined} className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-hover aria-pressed:bg-selected" onClick={() => setDraft({ ...draft, account: a.name })}>
                     <Radio on={on} />
                     {a.name && <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ background: accountColor(a.name) }} />}
                     <span className="min-w-0 truncate">{a.name ?? "CLI default"}</span>
                     {limit?.text && (
-                      <span className="ml-auto flex min-w-0 max-w-[60%] items-center gap-1.5 text-xs text-muted-foreground tabular-nums" title={limit.text}>
+                      <span className="ml-auto flex min-w-0 max-w-[60%] items-center gap-1.5 text-xs text-muted-foreground tabular-nums">
                         {limit.left !== null && (
                           <span aria-hidden className="h-1 w-6 shrink-0 overflow-hidden rounded-full bg-border">
                             <span className={`block h-full ${meterTone(limit.left)}`} style={{ width: `${limit.left}%` }} />
