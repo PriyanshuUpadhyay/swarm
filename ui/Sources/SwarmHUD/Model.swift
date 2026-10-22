@@ -13,6 +13,8 @@ final class UsageModel {
     /// the hover check reads the closed size on every mouse move.
     private(set) var wings = WingText()
     private(set) var wingExtra: CGFloat = 0
+    /// Set by the app delegate: the closed shape changed width under a cursor that may not move.
+    @ObservationIgnored var wingsChanged: (() -> Void)?
     /// When an agent last worked or waited; the mascot sleeps 5 minutes later. Launch counts, so a
     /// new HUD starts awake. Unobserved: the 30 s clock re-reads it, and polls would redraw every 3 s.
     @ObservationIgnored var lastActive = Date()
@@ -62,7 +64,9 @@ final class UsageModel {
 
     private func updateWings() {
         let text = wingText(agents, best: bestAccount(accounts, history: history, now: now ?? Date()))
-        if text != wings { (wings, wingExtra) = (text, Layout.wingExtra(text)) }
+        guard text != wings else { return }
+        (wings, wingExtra) = (text, Layout.wingExtra(text))
+        wingsChanged?()
     }
 
     func updatePhase(now: Date = Date()) {

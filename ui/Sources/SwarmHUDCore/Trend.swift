@@ -244,7 +244,8 @@ public func modelLabel(_ model: String?, provider: String) -> String {
         let family = id[claude.upperBound...].split(separator: "-").first { $0.allSatisfy(\.isLetter) }
         return family.map(String.init) ?? provider
     }
-    return id.split(separator: "-").prefix(2).joined(separator: "-")
+    let label = id.split(separator: "-").prefix(2).joined(separator: "-")
+    return label.isEmpty ? provider : label
 }
 
 /// The providers with a mascot of their own, in tie-break order.

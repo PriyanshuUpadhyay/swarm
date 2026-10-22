@@ -228,6 +228,8 @@ struct HUDView: View {
             .clipShape(shape)
             .shadow(color: .black.opacity(open ? 0.46 : 0), radius: open ? 13 : 0, y: open ? 10 : 0)
             .animation(geometryAnimation, value: open)
+            // A new count or model tag widens the closed wings with the same spring, not a snap.
+            .animation(geometryAnimation, value: model.wingExtra)
             .animation(live && !reduceMotion ? .easeInOut(duration: 2) : nil, value: model.phase)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
