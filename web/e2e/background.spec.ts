@@ -103,9 +103,11 @@ test("a workspace shell takes keys, outlives the panel, and closes on request", 
   await openChat(tab, info);
   const panel = tab.getByTestId("background-panel").last();
   await tab.keyboard.press("Meta+j");
-  await panel.getByTestId("new-shell").click();
+  // A second click inside the round trip must not make a second shell.
+  await panel.getByTestId("new-shell").dblclick();
   const row = panel.getByRole("button", { name: /Shell 1/ });
   await expect(row).toHaveAttribute("aria-current", "true");
+  await expect(panel.getByRole("button", { name: /Shell 2/ })).toHaveCount(0);
   const screen = panel.locator(".xterm-rows");
   // The prompt's look is the owner's, so the check waits for the command's own output.
   await expect(panel.locator(".xterm-helper-textarea")).toBeFocused();
@@ -120,6 +122,12 @@ test("a workspace shell takes keys, outlives the panel, and closes on request", 
     await info.attach("shell", { body: await tab.screenshot(), contentType: "image/png" });
   } finally {
     await panel.getByTestId("close-shell").click();
+    // Closing ends what runs in the shell, so it asks first and a stray click changes nothing.
+    await expect(tab.getByTestId("confirm-body")).toContainText("ends");
+    await tab.keyboard.press("Escape");
+    await expect(row).toHaveCount(1);
+    await panel.getByTestId("close-shell").click();
+    await tab.getByTestId("confirm-action").click();
   }
   await expect(row).toHaveCount(0);
 });

@@ -9,6 +9,7 @@ import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } from "react";
 import type { App } from "../core/app";
+import { message } from "../core/app-types";
 import { backgroundRows, poll, type BackgroundRow, type BackgroundTask, type WorkspaceShell } from "../core/background";
 import { Button } from "../components/ui/button";
 import { StatusGlyph } from "./status";
@@ -16,11 +17,15 @@ import { useTheme } from "./appearance";
 
 const POLL_MS = 3000;
 
+const readShells = (app: App, session: string) => app.api.get<{ shells: WorkspaceShell[] }>("/api/shells", { session });
+
 export function BackgroundPanel({ app, session }: { app: App; session: string }) {
   const snapshot = useSyncExternalStore(app.subscribe, () => app.snapshot);
   const [tasks, setTasks] = useState<BackgroundTask[]>([]);
   const [shells, setShells] = useState<WorkspaceShell[]>([]);
   const [shellError, setShellError] = useState<string | null>(null);
+  // A shell request in flight: a second click would make a second shell, or close one twice.
+  const [busy, setBusy] = useState(false);
   const [picked, setPicked] = useState<string | null>(null);
   // A click asks for focus once: the shown terminal takes it now, a new one when its socket opens.
   // Nothing else focuses, so a panel that opens with the chat, or a row that comes back, leaves
@@ -51,7 +56,7 @@ export function BackgroundPanel({ app, session }: { app: App; session: string })
       () =>
         Promise.all([
           app.api.get<{ tasks: BackgroundTask[] }>("/api/background", { session }).then((r) => !stop && setTasks(r.tasks)),
-          app.api.get<{ shells: WorkspaceShell[] }>("/api/shells", { session }).then((r) => !stop && setShells(r.shells)),
+          readShells(app, session).then((r) => !stop && setShells(r.shells)),
         ]),
       POLL_MS,
       () => document.hidden,
@@ -70,26 +75,36 @@ export function BackgroundPanel({ app, session }: { app: App; session: string })
   );
   const row: BackgroundRow | undefined = rows.find((r) => r.key === picked) ?? rows[0];
   const pickAgent = (agent: string) => choose(`agent:${agent}`);
-  const refreshShells = () => app.api.get<{ shells: WorkspaceShell[] }>("/api/shells", { session }).then((r) => setShells(r.shells));
+  const refreshShells = () => readShells(app, session).then((r) => setShells(r.shells));
   const newShell = async () => {
     setShellError(null);
+    setBusy(true);
     try {
       const { id } = await app.api.post<{ id: string }>("/api/shells", { session });
       await refreshShells();
       choose(`shell:${id}`);
     } catch (err) {
-      setShellError(err instanceof Error ? err.message : String(err));
+      setShellError(message(err));
+    } finally {
+      setBusy(false);
     }
   };
-  const closeShell = async (id: string) => {
-    setShellError(null);
-    try {
-      await app.api.post("/api/shells/close", { session, id });
-      await refreshShells();
-    } catch (err) {
-      setShellError(err instanceof Error ? err.message : String(err));
-    }
-  };
+  // The dialog shows a failed close, so only the busy flag needs the finally.
+  const closeShell = (id: string) =>
+    app.life.ask({
+      title: "Close this shell?",
+      body: "The shell and everything running in it ends.",
+      action: "Close shell",
+      run: async () => {
+        setBusy(true);
+        try {
+          await app.api.post("/api/shells/close", { session, id });
+          await refreshShells();
+        } finally {
+          setBusy(false);
+        }
+      },
+    });
 
   return (
     <div className="flex h-full min-h-0 border-t bg-background" data-testid="background-panel">
@@ -110,27 +125,27 @@ export function BackgroundPanel({ app, session }: { app: App; session: string })
         ))}
         {!rows.length && <li className="px-2 py-1 text-muted-foreground">No live agents.</li>}
         <li className="px-2 pt-1">
-          <Button variant="ghost" size="sm" data-testid="new-shell" title="A shell in this chat's folder; it keeps running when the panel closes" onClick={() => void newShell()}>
+          <Button variant="ghost" size="sm" data-testid="new-shell" title="A shell in this chat's folder; it keeps running when the panel closes" disabled={busy} onClick={() => void newShell()}>
             New shell
           </Button>
-          {shellError && <p className="py-1 text-xs text-destructive">{shellError}</p>}
+          {shellError && <p role="alert" className="py-1 text-xs text-destructive">{shellError}</p>}
         </li>
       </ul>
-      <div className="flex min-w-0 flex-1 flex-col">{row && <Detail key={row.key} app={app} session={session} row={row} onReady={ready(row.key)} onOwner={pickAgent} onClose={closeShell} />}</div>
+      <div className="flex min-w-0 flex-1 flex-col">{row && <Detail key={row.key} app={app} session={session} row={row} busy={busy} onReady={ready(row.key)} onOwner={pickAgent} onClose={closeShell} />}</div>
     </div>
   );
 }
 
 type Ready = (focus: () => void) => () => void;
 
-function Detail({ app, session, row, onReady, onOwner, onClose }: { app: App; session: string; row: BackgroundRow; onReady: Ready; onOwner: (agent: string) => void; onClose: (id: string) => void }) {
+function Detail({ app, session, row, busy, onReady, onOwner, onClose }: { app: App; session: string; row: BackgroundRow; busy: boolean; onReady: Ready; onOwner: (agent: string) => void; onClose: (id: string) => unknown }) {
   if (row.type === "agent") return <Term app={app} session={session} agent={row.agent} onReady={onReady} />;
   if (row.type === "shell")
     return (
       <>
         <div className="flex items-center gap-2 border-b px-2 py-1 text-xs text-muted-foreground">
           <span className="min-w-0 flex-1 truncate">{row.title} · keeps running when the panel closes</span>
-          <Button variant="ghost" size="sm" data-testid="close-shell" onClick={() => onClose(row.shell.id)}>
+          <Button variant="ghost" size="sm" data-testid="close-shell" disabled={busy} onClick={() => onClose(row.shell.id)}>
             Close shell
           </Button>
         </div>
@@ -170,7 +185,7 @@ const colors = () => ({ background: css("--background"), foreground: css("--fore
  *  file; `shell` attaches to a workspace shell. A terminal that takes keys hands `onReady` its
  *  focus when it mounts; a focus asked before the socket opens waits for the open. */
 function Term({ app, session, agent = "", task, shell: shellId, onReady }: { app: App; session: string; agent?: string; task?: string; shell?: string; onReady?: Ready }) {
-  const shell = task !== undefined;
+  const readOnly = task !== undefined;
   const host = useRef<HTMLDivElement>(null);
   const live = useRef<Terminal | null>(null);
   const register = useEffectEvent((focus: () => void) => onReady?.(focus));
@@ -190,9 +205,9 @@ function Term({ app, session, agent = "", task, shell: shellId, onReady }: { app
     const term = new Terminal({
       fontFamily: css("--font-mono"),
       fontSize: 12,
-      convertEol: shell,
-      disableStdin: shell,
-      cursorBlink: !shell,
+      convertEol: readOnly,
+      disableStdin: readOnly,
+      cursorBlink: !readOnly,
       theme: colors(),
     });
     live.current = term;
@@ -209,7 +224,7 @@ function Term({ app, session, agent = "", task, shell: shellId, onReady }: { app
     const send = (data: string | Uint8Array) => ws?.readyState === WebSocket.OPEN && ws.send(data);
     const resize = () => send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }));
     app.api
-      .post<{ ticket: string }>("/api/terminal/ticket", { session, agent, ...(shell ? { task } : {}), ...(shellId ? { shell: shellId } : {}) })
+      .post<{ ticket: string }>("/api/terminal/ticket", { session, agent, ...(readOnly ? { task } : {}), ...(shellId ? { shell: shellId } : {}) })
       .then(({ ticket }) => {
         if (gone) return;
         ws = new WebSocket(`${location.origin.replace(/^http/, "ws")}/api/terminal?ticket=${encodeURIComponent(ticket)}`);
@@ -223,7 +238,7 @@ function Term({ app, session, agent = "", task, shell: shellId, onReady }: { app
         ws.onmessage = (m) => term.write(typeof m.data === "string" ? m.data : new Uint8Array(m.data as ArrayBuffer));
         ws.onclose = () => !gone && term.write("\r\n\x1b[2m[closed]\x1b[0m\r\n");
       })
-      .catch((err: unknown) => !gone && term.write(`${err instanceof Error ? err.message : String(err)}\r\n`));
+      .catch((err: unknown) => !gone && term.write(`${message(err)}\r\n`));
     const encoder = new TextEncoder();
     const subs = [
       term.onData((d) => send(encoder.encode(d))),
