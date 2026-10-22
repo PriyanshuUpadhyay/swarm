@@ -48,6 +48,9 @@ describe("run chip", () => {
     // A chair whose pane closed (End, Archive, a workspace archive or delete) cannot take the change.
     expect(queueStep(agentInput(session(), [chair({ provider: "claude", state: "done", alive: false })]), undefined)).toBe("drop");
     expect(queueStep(idle, undefined)).toBe("start");
+    // A pane that closed in its turn may keep its last state; the change is still dropped.
+    expect(queueStep(agentInput(session(), [chair({ provider: "claude", state: "working", alive: false })]), undefined)).toBe("drop");
+    expect(queueStep(agentInput(session(), [chair({ provider: "claude", state: "done", alive: false })]), { old: "s", phase: "restarting", canCancel: false, error: null, carry: "resume" })).toBe("wait");
     expect(queueStep(agentInput(session(), [chair({ provider: "claude", state: "working" })]), undefined)).toBe("wait");
   });
 

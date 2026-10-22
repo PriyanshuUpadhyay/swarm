@@ -22,9 +22,7 @@ export function RunChip({ app, sessionId, chair }: { app: App; sessionId: string
   // An anchor name must be a CSS ident; useId gives characters outside one.
   const anchor = `--run-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
   const switching = handoff && !isSettled(handoff.phase) ? (handoff.carry === "resume" ? "Restarting…" : "Switching…") : null;
-  // The queue holds the chair's change; a child's chip shares the chat id but not that change.
-  const queued = useSyncExternalStore(app.life.queue.subscribe, () => app.life.queue.state[sessionId]);
-  const pending = chair.who ? undefined : queued;
+  const pending = useSyncExternalStore(app.life.queue.subscribe, () => app.life.queue.state[sessionId]);
   const run: Run = { provider: chair.provider ?? "claude", model: chair.model, effort: chair.effort, account: chair.account };
 
   useEffect(() => {
@@ -68,9 +66,9 @@ export function RunChip({ app, sessionId, chair }: { app: App; sessionId: string
         {!chair.who && <ChevronDownIcon className="size-3 shrink-0" />}
       </button>
       {/* A button's children are presentational, so a queued change and a running switch are announced from outside it.
-          The open popover has its own status, and a child's chip does not speak for the chair. */}
+          The open popover has its own status. */}
       <span role="status" className="sr-only" data-testid="run-chip-status">
-        {open || chair.who ? "" : (switching ?? (pending ? pendingText : ""))}
+        {open ? "" : (switching ?? (pending ? pendingText : ""))}
       </span>
       {pending && (
         <button type="button" className="icon-btn" aria-label="Cancel change" title="Cancel change" data-testid="run-pending-cancel" onClick={() => app.life.queue.cancel(sessionId)}>
