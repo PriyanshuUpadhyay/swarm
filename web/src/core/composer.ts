@@ -296,7 +296,8 @@ export function waitsForTurn(chair: AgentInput, handoff: Handoff | undefined): b
 }
 
 /** What the queue does with a chat's change now: wait for the turn, drop it because the chat's pane
- *  closed (End, Archive, a workspace archive or delete), or start it. A running switch of the chat
+ *  closed while its row stays in the snapshot (as after End or Archive), or start it. A chat that
+ *  leaves the snapshot keeps its change pending, and its chip can cancel it. A running switch of the chat
  *  restarts its pane, so the change waits through that closed pane. A pane that closed in its turn
  *  may keep its last state, so a closed pane drops the change before the turn state is read. */
 export function queueStep(chair: AgentInput, handoff: Handoff | undefined): "wait" | "drop" | "start" {
