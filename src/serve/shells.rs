@@ -148,11 +148,21 @@ fn api_text(err: &ApiError) -> String {
 /// inside it, whose shells are theirs.
 fn workspace(app: &Server, folder: &str) -> Result<(String, Vec<String>), String> {
     let tree = loaded_tree(app).map_err(|err| api_text(&err))?.0;
+    Ok(workspace_in(&tree, folder))
+}
+
+fn workspace_in(tree: &tree::Tree, folder: &str) -> (String, Vec<String>) {
     let path = tree
         .workspace_containing(folder)
         .map_or_else(|| folder.to_owned(), |(_, w)| w.path.clone());
-    let inner = nested(&tree, &path);
-    Ok((path, inner))
+    let inner = nested(tree, &path);
+    (path, inner)
+}
+
+/// What a close of `cwd` ends. A workspace that the tree already dropped must not widen to its
+/// parent, or the close would end the parent's shells.
+fn close_scope(tree: &tree::Tree, cwd: &str) -> (String, Vec<String>) {
+    (cwd.to_owned(), nested(tree, cwd))
 }
 
 /// How long one tmux call may take. The calls run under the shell lock, and a hung tmux server
@@ -219,15 +229,16 @@ fn run(
 /// The shells of the workspace that holds `folder`.
 pub(super) fn list(app: &Server, folder: &str) -> Result<Vec<Shell>, String> {
     let (cwd, inner) = workspace(app, folder)?;
+    list_in(&cwd, &inner)
+}
+
+/// The shells of folder `cwd`, less those of the workspaces `inner` inside it.
+fn list_in(cwd: &str, inner: &[String]) -> Result<Vec<Shell>, String> {
     let mut call = tmux();
     call.args(["list-sessions", "-F", FORMAT]);
     let output = run(call, TMUX_LIMIT)?;
     if output.status.success() {
-        return Ok(parse(
-            &String::from_utf8_lossy(&output.stdout),
-            &cwd,
-            &inner,
-        ));
+        return Ok(parse(&String::from_utf8_lossy(&output.stdout), cwd, inner));
     }
     let stderr = String::from_utf8_lossy(&output.stderr);
     // No shell yet: tmux starts its server with the first one.
@@ -267,14 +278,20 @@ fn kill(id: &str) -> Result<(), String> {
     }
 }
 
-/// Ends every shell of `cwd`, for an archived workspace. A failure only warns, since the archive
+/// Ends every shell of the workspace at exactly `cwd`, for an archived or deleted one. A failure only warns, since the archive
 /// already ran.
 pub(super) fn close_all(app: &Server, cwd: &str) {
     let _held = lock_shells();
-    let shells = list(app, cwd).unwrap_or_else(|err| {
-        eprintln!("swarm: shells of {cwd} were not listed, so none closed: {err}");
-        Vec::new()
-    });
+    let shells = loaded_tree(app)
+        .map_err(|err| api_text(&err))
+        .and_then(|tree| {
+            let (path, inner) = close_scope(&tree.0, cwd);
+            list_in(&path, &inner)
+        })
+        .unwrap_or_else(|err| {
+            eprintln!("swarm: shells of {cwd} were not listed, so none closed: {err}");
+            Vec::new()
+        });
     for shell in shells {
         if let Err(err) = kill(&shell.id) {
             eprintln!("swarm: shell {} did not close: {err}", shell.id);

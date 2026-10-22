@@ -228,3 +228,42 @@ fn an_error_reads_as_its_text_without_quote_marks() {
     let err = error(StatusCode::INTERNAL_SERVER_ERROR, "database read failed");
     assert_eq!(api_text(&err), "database read failed");
 }
+
+#[test]
+fn a_close_of_a_dropped_workspace_ends_only_its_own_shells() {
+    let workspace = |path: &str| tree::Workspace {
+        path: path.into(),
+        name: path.into(),
+        branch: None,
+        missing: false,
+        mark: None,
+        removed: false,
+        chats: Vec::new(),
+        unlisted: Vec::new(),
+        archived: Vec::new(),
+    };
+    // The worktree /w/repo/wt/feature is already gone from the tree; its parent is left.
+    let tree = tree::Tree {
+        projects: vec![tree::Project {
+            id: "p".into(),
+            path: "/w/repo".into(),
+            name: "repo".into(),
+            main_path: None,
+            launch_directory: "/w/repo".into(),
+            workspaces: vec![workspace("/w/repo")],
+        }],
+        importable: Vec::new(),
+    };
+    let text = "shell-0000000a|1|zsh|/w/repo/wt/feature\n\
+                shell-0000000b|2|zsh|/w/repo\n";
+    let (cwd, inner) = close_scope(&tree, "/w/repo/wt/feature");
+    let inner: Vec<&str> = inner.iter().map(String::as_str).collect();
+    assert_eq!(ids(text, &cwd, &inner), ["shell-0000000a"]);
+    // A chat's list keeps the widening: the folder belongs to the deepest workspace that holds it.
+    let (cwd, inner) = workspace_in(&tree, "/w/repo/wt/feature");
+    let inner: Vec<&str> = inner.iter().map(String::as_str).collect();
+    assert_eq!(
+        ids(text, &cwd, &inner),
+        ["shell-0000000a", "shell-0000000b"]
+    );
+}
