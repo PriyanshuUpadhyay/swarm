@@ -395,6 +395,50 @@ esac
     }
 
     #[tokio::test]
+    async fn a_request_dropped_during_the_cut_write_removes_the_file() {
+        let fixture = action_fixture();
+        with_second_message(&fixture);
+        let rows = handoff_rows(&fixture.app, &fixture.session).await.unwrap();
+        let second = rows
+            .iter()
+            .filter(|r| r.kind == view::RowKind::User)
+            .nth(1)
+            .unwrap();
+        let offset = line_offset(&second.anchor_source_id).unwrap();
+        let log = resolve_log(&fixture.app.root, &fixture.session, "chair").unwrap();
+        let before = logs_in(&fixture);
+        // One poll starts the write on the blocking pool; the drop leaves it to finish alone.
+        let mut write = Box::pin(cut_guarded(
+            log.path.clone(),
+            offset,
+            "claude".into(),
+            "dropped-cut".into(),
+        ));
+        let mut cx = std::task::Context::from_waker(std::task::Waker::noop());
+        assert!(write.as_mut().poll(&mut cx).is_pending());
+        drop(write);
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        assert_eq!(logs_in(&fixture), before);
+    }
+
+    #[tokio::test]
+    async fn a_failed_branch_from_the_first_message_reads_no_new_chair() {
+        let fixture = action_fixture();
+        // No cut file exists for the first message, so there is nothing to keep or remove.
+        stand_in(&fixture, "true", "exit 1");
+        let rows = handoff_rows(&fixture.app, &fixture.session).await.unwrap();
+        let first = rows.iter().find(|r| r.kind == view::RowKind::User).unwrap();
+        let page_id = format!("{}@{}", first.id, first.anchor_source_id);
+        let failed = branch(&fixture, &fixture.session, &page_id).await;
+        assert!(failed.is_err());
+        let reads = action_calls(&fixture)
+            .lines()
+            .filter(|l| l.contains("agents --json"))
+            .count();
+        assert_eq!(reads, 1);
+    }
+
+    #[tokio::test]
     async fn a_launch_that_prints_no_pane_is_an_error() {
         let fixture = action_fixture();
         stand_in(&fixture, "true", "true");

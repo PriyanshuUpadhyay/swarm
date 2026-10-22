@@ -1,7 +1,8 @@
 //! Workspace shells for the Cmd+J panel. Each is a shell in a tmux session of its own on the
 //! `swarm-shell` socket, so it outlives the panel and a server restart, and the list is read from
-//! tmux, never from memory. A shell belongs to a chat's folder, which the server reads from the
-//! session, so the page never names a path.
+//! tmux, never from memory. A shell starts in a chat's folder, which the server reads from the
+//! session, so the page never names a path, and belongs to the workspace that holds that folder,
+//! so every chat of a workspace lists and counts the same shells.
 
 use super::*;
 use portable_pty::CommandBuilder;
@@ -48,8 +49,10 @@ pub(super) struct Shell {
 /// How many shells one workspace may hold, since each is a login shell that keeps running.
 const MAX_SHELLS: usize = 8;
 
-/// Held while shells are counted, made, or closed, so two creates cannot both pass the cap and a
-/// create cannot slip in after an archive closed a workspace's shells.
+/// Held while a create checks that its workspace is writable, counts its shells, and makes one,
+/// and while an archive or delete closes a workspace's shells. So two creates cannot both pass
+/// the cap, and a create cannot pass the check before an archive and start its shell after the
+/// archive closed the others.
 // ponytail: one lock for all folders; per-folder locks if shells start often.
 static SHELLS: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
@@ -59,12 +62,14 @@ fn locked() -> std::sync::MutexGuard<'static, ()> {
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
-/// Counts the workspace's shells and creates one, if there is room.
+/// Refuses, counts the workspace's shells, and creates one if there is room, all under the lock.
 fn create_with_room(
+    refuse: impl FnOnce() -> Result<(), ApiError>,
     list: impl FnOnce() -> Result<Vec<Shell>, String>,
     create: impl FnOnce() -> Result<String, String>,
 ) -> Result<String, ApiError> {
     let _held = locked();
+    refuse()?;
     let shells = list().map_err(|err| error(StatusCode::INTERNAL_SERVER_ERROR, &err))?;
     check_room(&shells)?;
     create().map_err(|err| error(StatusCode::INTERNAL_SERVER_ERROR, &err))
@@ -127,21 +132,91 @@ pub(super) fn nested(tree: &tree::Tree, cwd: &str) -> Vec<String> {
         .collect()
 }
 
-pub(super) fn list(app: &Server, cwd: &str) -> Result<Vec<Shell>, String> {
-    let nested = nested(
-        &loaded_tree(app)
-            .map_err(|err| err.1.0["error"].to_string())?
-            .0,
-        cwd,
-    );
-    let output = tmux()
-        .args(["list-sessions", "-F", FORMAT])
-        .output()
+/// An error's text, as the page shows it.
+fn api_text(err: &ApiError) -> String {
+    err.1.0["error"].as_str().unwrap_or_default().to_owned()
+}
+
+/// The workspace that holds `folder` (the folder itself when none does), and the workspaces
+/// inside it, whose shells are theirs.
+fn workspace(app: &Server, folder: &str) -> Result<(String, Vec<String>), String> {
+    let tree = loaded_tree(app).map_err(|err| api_text(&err))?.0;
+    let path = holder(&tree, folder).map_or_else(|| folder.to_owned(), |w| w.path.clone());
+    let inner = nested(&tree, &path);
+    Ok((path, inner))
+}
+
+/// How long one tmux call may take. The calls run under the shell lock, and a hung tmux server
+/// must not hold it for ever.
+const TMUX_LIMIT: Duration = Duration::from_secs(5);
+
+/// Runs `command` and collects its output, or kills it when it outlasts `limit`.
+fn run(
+    mut command: std::process::Command,
+    limit: Duration,
+) -> Result<std::process::Output, String> {
+    use std::io::Read;
+    use std::process::Stdio;
+    let mut child = command
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
         .map_err(|err| format!("tmux did not run: {err}"))?;
+    let drain = |pipe: Option<Box<dyn Read + Send>>| {
+        std::thread::spawn(move || {
+            let mut bytes = Vec::new();
+            if let Some(mut pipe) = pipe {
+                let _ = pipe.read_to_end(&mut bytes);
+            }
+            bytes
+        })
+    };
+    let out = drain(
+        child
+            .stdout
+            .take()
+            .map(|p| Box::new(p) as Box<dyn Read + Send>),
+    );
+    let err = drain(
+        child
+            .stderr
+            .take()
+            .map(|p| Box::new(p) as Box<dyn Read + Send>),
+    );
+    let deadline = std::time::Instant::now() + limit;
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) if std::time::Instant::now() >= deadline => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!(
+                    "tmux did not answer in {} s",
+                    limit.as_secs().max(1)
+                ));
+            }
+            Ok(None) => std::thread::sleep(Duration::from_millis(10)),
+            Err(err) => return Err(format!("tmux did not run: {err}")),
+        }
+    };
+    Ok(std::process::Output {
+        status,
+        stdout: out.join().unwrap_or_default(),
+        stderr: err.join().unwrap_or_default(),
+    })
+}
+
+/// The shells of the workspace that holds `folder`.
+pub(super) fn list(app: &Server, folder: &str) -> Result<Vec<Shell>, String> {
+    let (cwd, nested) = workspace(app, folder)?;
+    let mut call = tmux();
+    call.args(["list-sessions", "-F", FORMAT]);
+    let output = run(call, TMUX_LIMIT)?;
     if output.status.success() {
         return Ok(parse(
             &String::from_utf8_lossy(&output.stdout),
-            cwd,
+            &cwd,
             &nested,
         ));
     }
@@ -159,14 +234,13 @@ fn create(cwd: &str) -> Result<String, String> {
     let id = format!("shell-{}", &uuid[uuid.len() - 8..]);
     // set-option takes a pane target, where `=` names no session; the id is unique anyway.
     let target = &id;
-    let output = tmux()
-        .args(["new-session", "-d", "-s", &id, "-c", cwd])
+    let mut call = tmux();
+    call.args(["new-session", "-d", "-s", &id, "-c", cwd])
         .args([";", "set-option", "-t", target, "status", "off"])
         // The owner's keys go to the shell, as in a terminal.
         .args([";", "set-option", "-t", target, "prefix", "None"])
-        .args([";", "set-option", "-t", target, "@swarm_cwd", cwd])
-        .output()
-        .map_err(|err| format!("tmux did not run: {err}"))?;
+        .args([";", "set-option", "-t", target, "@swarm_cwd", cwd]);
+    let output = run(call, TMUX_LIMIT)?;
     if !output.status.success() {
         return Err(String::from_utf8_lossy(&output.stderr).trim().to_owned());
     }
@@ -174,10 +248,9 @@ fn create(cwd: &str) -> Result<String, String> {
 }
 
 fn kill(id: &str) -> Result<(), String> {
-    let output = tmux()
-        .args(["kill-session", "-t", &format!("={id}")])
-        .output()
-        .map_err(|err| format!("tmux did not run: {err}"))?;
+    let mut call = tmux();
+    call.args(["kill-session", "-t", &format!("={id}")]);
+    let output = run(call, TMUX_LIMIT)?;
     if output.status.success() {
         Ok(())
     } else {
@@ -217,7 +290,8 @@ pub(super) fn attach_command(id: &str) -> CommandBuilder {
     builder
 }
 
-/// The folder of `session`'s chat, where its shells start.
+/// The folder of `session`'s chat, where its shells start. The page lists the shells of the
+/// workspace that holds it.
 pub(super) fn session_cwd(app: &Server, session: &str) -> Result<String, ApiError> {
     let connection = read_connection(&app.root)
         .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "database read failed"))?;
@@ -230,7 +304,7 @@ pub(super) fn session_cwd(app: &Server, session: &str) -> Result<String, ApiErro
     Ok(cwd)
 }
 
-/// The shell `id` of `session`'s folder, or a 404.
+/// The shell `id` of the workspace that holds `session`'s folder, or a 404.
 pub(super) fn owned(app: &Server, session: &str, id: &str) -> Result<String, ApiError> {
     let cwd = session_cwd(app, session)?;
     let shells = list(app, &cwd).map_err(|err| error(StatusCode::INTERNAL_SERVER_ERROR, &err))?;
@@ -274,8 +348,11 @@ pub(super) async fn shells_create(
 ) -> Result<Json<Value>, ApiError> {
     let id = blocking(move || {
         let cwd = session_cwd(&app, &request.session)?;
-        refuse_read_only(&app, &cwd, "shell")?;
-        create_with_room(|| list(&app, &cwd), || create(&cwd))
+        create_with_room(
+            || refuse_read_only(&app, &cwd, "shell"),
+            || list(&app, &cwd),
+            || create(&cwd),
+        )
     })
     .await?;
     Ok(Json(json!({ "id": id })))
@@ -298,187 +375,5 @@ pub(super) async fn shells_close(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_folder_lists_only_its_own_shells_oldest_first() {
-        let text = "shell-0000000b|20|vim|/w/a\n\
-                    shell-0000000a|10|zsh|/w/a\n\
-                    shell-0000000c|5|zsh|/w/b\n\
-                    shell-0000000d|5|zsh|/w/a|b\n\
-                    swarm_x_orchestrator|1|claude|/w/a\n\
-                    shell-../etc|1|zsh|/w/a\n";
-        assert_eq!(
-            parse(text, "/w/a", &[]),
-            [
-                Shell {
-                    id: "shell-0000000a".into(),
-                    command: "zsh".into()
-                },
-                Shell {
-                    id: "shell-0000000b".into(),
-                    command: "vim".into()
-                },
-            ]
-        );
-        assert!(!valid_id("shell-0000000"));
-        assert!(!valid_id("=shell-0000000a"));
-    }
-
-    #[test]
-    fn a_workspace_lists_the_shells_of_the_folders_inside_it() {
-        let text = "shell-0000000a|1|zsh|/w/a/sub\n\
-                    shell-0000000b|2|zsh|/w/a\n\
-                    shell-0000000c|3|zsh|/w/ab\n";
-        let ids = |cwd| {
-            parse(text, cwd, &[])
-                .into_iter()
-                .map(|s| s.id)
-                .collect::<Vec<_>>()
-        };
-        assert_eq!(ids("/w/a"), ["shell-0000000a", "shell-0000000b"]);
-        assert_eq!(ids("/w/a/sub"), ["shell-0000000a"]);
-    }
-
-    #[test]
-    fn a_shell_belongs_to_the_deepest_workspace_that_holds_its_folder() {
-        let text = "shell-0000000a|1|zsh|/w/a/wt/x\n\
-                    shell-0000000b|2|zsh|/w/a/wt/x/deep\n\
-                    shell-0000000c|3|zsh|/w/a\n\
-                    shell-0000000d|4|zsh|/w/a/other\n";
-        let ids = |cwd: &str, nested: &[&str]| {
-            let nested: Vec<String> = nested.iter().map(|n| n.to_string()).collect();
-            parse(text, cwd, &nested)
-                .into_iter()
-                .map(|s| s.id)
-                .collect::<Vec<_>>()
-        };
-        assert_eq!(
-            ids("/w/a", &["/w/a/wt/x"]),
-            ["shell-0000000c", "shell-0000000d"]
-        );
-        assert_eq!(ids("/w/a/wt/x", &[]), ["shell-0000000a", "shell-0000000b"]);
-    }
-
-    #[test]
-    fn two_creates_cannot_both_pass_the_cap() {
-        use std::sync::atomic::{AtomicUsize, Ordering};
-        static MADE: AtomicUsize = AtomicUsize::new(0);
-        let threads: Vec<_> = (0..16)
-            .map(|_| {
-                std::thread::spawn(|| {
-                    create_with_room(
-                        || {
-                            Ok((0..MADE.load(Ordering::SeqCst))
-                                .map(|i| Shell {
-                                    id: format!("shell-{i:08x}"),
-                                    command: "zsh".into(),
-                                })
-                                .collect())
-                        },
-                        || {
-                            // A real create takes time, so a second request counts before it ends.
-                            std::thread::sleep(std::time::Duration::from_millis(20));
-                            MADE.fetch_add(1, Ordering::SeqCst);
-                            Ok("shell-00000000".into())
-                        },
-                    )
-                    .is_ok()
-                })
-            })
-            .collect();
-        let passed = threads
-            .into_iter()
-            .map(|t| t.join().unwrap())
-            .filter(|ok| *ok)
-            .count();
-        assert_eq!(passed, MAX_SHELLS);
-        assert_eq!(MADE.load(Ordering::SeqCst), MAX_SHELLS);
-    }
-
-    #[test]
-    fn a_ninth_shell_in_a_workspace_is_refused() {
-        let shells = |n: usize| {
-            (0..n)
-                .map(|i| Shell {
-                    id: format!("shell-{i:08x}"),
-                    command: "zsh".into(),
-                })
-                .collect::<Vec<_>>()
-        };
-        assert!(check_room(&shells(MAX_SHELLS - 1)).is_ok());
-        let full = check_room(&shells(MAX_SHELLS)).unwrap_err();
-        assert_eq!(full.0, StatusCode::CONFLICT);
-    }
-
-    #[tokio::test]
-    async fn a_chat_in_a_folder_of_an_archived_workspace_starts_no_shell() {
-        use crate::serve::test_support::Fixture;
-        let fixture = Fixture::new();
-        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-        let inner = swarm::store::create_session(
-            &swarm::store::open(&fixture.app.root.join("swarm.db")).unwrap(),
-            "lane",
-            &root.join("src"),
-            Some(("claude", "inner")),
-            Some("tmux-swarm"),
-        )
-        .unwrap();
-        choices_store::update(&fixture.app.root, None, |owner, _| {
-            owner.archived.insert(root.to_string_lossy().into_owned());
-            Ok(())
-        })
-        .unwrap();
-        let request = ShellRequest {
-            session: inner,
-            id: None,
-        };
-        let refused = shells_create(State(fixture.app.clone()), Json(request))
-            .await
-            .unwrap_err();
-        assert_eq!(refused.0, StatusCode::CONFLICT);
-    }
-
-    #[tokio::test]
-    async fn an_archived_workspace_starts_no_shell() {
-        use crate::serve::test_support::Fixture;
-        let fixture = Fixture::new();
-        let cwd = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .to_string_lossy()
-            .into_owned();
-        choices_store::update(&fixture.app.root, None, |owner, _| {
-            owner.archived.insert(cwd);
-            Ok(())
-        })
-        .unwrap();
-        let request = ShellRequest {
-            session: fixture.session.clone(),
-            id: None,
-        };
-        let refused = shells_create(State(fixture.app.clone()), Json(request))
-            .await
-            .unwrap_err();
-        assert_eq!(refused.0, StatusCode::CONFLICT);
-        assert!(
-            refused.1.0["error"]
-                .as_str()
-                .unwrap()
-                .contains("start a shell")
-        );
-    }
-
-    #[test]
-    fn a_failed_read_is_not_an_unknown_session() {
-        use crate::serve::test_support::Fixture;
-        let fixture = Fixture::new();
-        let missing = session_cwd(&fixture.app, "no-such-session").unwrap_err();
-        assert_eq!(missing.0, StatusCode::NOT_FOUND);
-        swarm::store::open(&fixture.app.root.join("swarm.db"))
-            .unwrap()
-            .execute_batch("PRAGMA foreign_keys = OFF; ALTER TABLE session RENAME TO moved;")
-            .unwrap();
-        let failed = session_cwd(&fixture.app, &fixture.session).unwrap_err();
-        assert_eq!(failed.0, StatusCode::INTERNAL_SERVER_ERROR);
-    }
-}
+#[path = "shells/tests.rs"]
+mod tests;

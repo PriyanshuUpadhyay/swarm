@@ -80,17 +80,20 @@ pub(super) async fn new_chat(app: &App, body: NewChat) -> Result<Value, ApiError
     Ok(json!({"ok": true, "session": session, "agent": "orchestrator", "pane": pane}))
 }
 
+/// The deepest workspace of the tree whose folder contains `cwd`.
+pub(super) fn holder<'a>(tree: &'a tree::Tree, cwd: &str) -> Option<&'a tree::Workspace> {
+    tree.projects
+        .iter()
+        .flat_map(|p| &p.workspaces)
+        .filter(|w| tree::contains(cwd, &w.path))
+        .max_by_key(|w| w.path.len())
+}
+
 /// True when the workspace that holds `cwd` is archived, missing, or removed. That is the deepest
 /// workspace of the tree whose folder contains `cwd`, as the sidebar files a chat; a chat in a
 /// subfolder of an archived workspace is read-only too.
 fn is_read_only(tree: &tree::Tree, saved: &choices_store::Saved, cwd: &str) -> bool {
-    let holder = tree
-        .projects
-        .iter()
-        .flat_map(|p| &p.workspaces)
-        .filter(|w| tree::contains(cwd, &w.path))
-        .max_by_key(|w| w.path.len());
-    match holder {
+    match holder(tree, cwd) {
         Some(w) => w.missing || w.removed || saved.owner.archived.contains(&w.path),
         None => saved.owner.archived.contains(cwd),
     }

@@ -214,14 +214,8 @@ pub(super) async fn branch_chat(
                 "pi" => format!("{session}-orchestrator"),
                 _ => uuid::Uuid::now_v7().to_string(),
             };
-            let (path, id_for_file, cli) = (log.path.clone(), id.clone(), provider.clone());
-            cut_file = Some(CutFile(Some(
-                tokio::task::spawn_blocking(move || write_cut(&path, offset, &cli, &id_for_file))
-                    .await
-                    .map_err(|_| {
-                        error(StatusCode::INTERNAL_SERVER_ERROR, "branch task failed")
-                    })??,
-            )));
+            cut_file =
+                Some(cut_guarded(log.path.clone(), offset, provider.clone(), id.clone()).await?);
             let chair_arg = format!("{provider}:{id}");
             run_cli(
                 &app,
@@ -248,29 +242,54 @@ pub(super) async fn branch_chat(
     .await;
     // The cut file is only the new chat's start. A chat that did not start leaves no file behind,
     // but a launch that failed after its pane opened keeps the file that the pane resumes. A
-    // request dropped during the launch drops `cut_file`, which removes it.
+    // request dropped during the write or the launch drops `cut_file`, which removes it.
     let pane = match launched {
         Ok(pane) => pane,
         Err(err) => {
-            let live = chair_agent(&app, &new)
-                .await
-                .map_or(true, |chair| chair["alive"] == true);
-            if live && let Some(file) = &mut cut_file {
-                file.0 = None;
+            if let Some(file) = &mut cut_file {
+                // If the pane cannot be read either, the file stays: a lost history is worse
+                // than a stray file.
+                let live = chair_agent(&app, &new)
+                    .await
+                    .map_or(true, |chair| chair["alive"] == true);
+                if live {
+                    file.keep();
+                }
             }
             return Err(err);
         }
     };
     if let Some(file) = &mut cut_file {
-        file.0 = None;
+        file.keep();
     }
     Ok(Json(
         json!({"ok": true, "session": session, "agent": "orchestrator", "pane": pane, "text": text}),
     ))
 }
 
-/// A cut file that is removed when it drops, unless the branch took it over (its path is taken out).
+/// A cut file that is removed when it drops, unless the branch keeps it.
 struct CutFile(Option<PathBuf>);
+
+impl CutFile {
+    fn keep(&mut self) {
+        self.0 = None;
+    }
+}
+
+/// Writes the cut on the blocking pool and returns its guard from there, so a request dropped
+/// during the write still drops the file.
+async fn cut_guarded(
+    path: PathBuf,
+    offset: usize,
+    provider: String,
+    id: String,
+) -> Result<CutFile, ApiError> {
+    tokio::task::spawn_blocking(move || {
+        write_cut(&path, offset, &provider, &id).map(|file| CutFile(Some(file)))
+    })
+    .await
+    .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "branch task failed"))?
+}
 
 impl Drop for CutFile {
     fn drop(&mut self) {
