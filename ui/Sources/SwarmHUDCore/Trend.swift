@@ -194,8 +194,9 @@ public struct WorkingSnapshot: Decodable, Equatable, Sendable {
 }
 
 /// One working or waiting agent from `swarm working --json`.
-public struct RunningAgent: Decodable, Equatable, Identifiable, Sendable {
+public struct RunningAgent: Decodable, Equatable, Sendable {
     public let id: String
+    public let session: String?
     public let provider: String
     public let model: String?
     public let account: String?
@@ -203,15 +204,21 @@ public struct RunningAgent: Decodable, Equatable, Identifiable, Sendable {
     public let waiting: Bool
     public let since: Date?
 
-    public init(id: String, provider: String, model: String? = nil, account: String? = nil, waiting: Bool = false, since: Date? = nil) {
-        (self.id, self.provider, self.model, self.account, self.waiting, self.since) = (id, provider, model, account, waiting, since)
+    public init(id: String, session: String? = nil, provider: String, model: String? = nil, account: String? = nil,
+                waiting: Bool = false, since: Date? = nil) {
+        (self.id, self.session, self.provider, self.model, self.account, self.waiting, self.since)
+            = (id, session, provider, model, account, waiting, since)
     }
 
-    private enum CodingKeys: String, CodingKey { case id, provider, model, account, state, sinceSeconds = "since_seconds" }
+    /// An agent id repeats across sessions; the pair does not.
+    public var key: String { "\(session ?? "")/\(id)" }
+
+    private enum CodingKeys: String, CodingKey { case id, session, provider, model, account, state, sinceSeconds = "since_seconds" }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(String.self, forKey: .id)
+        session = try container.decodeIfPresent(String.self, forKey: .session)
         provider = try container.decode(String.self, forKey: .provider)
         model = try container.decodeIfPresent(String.self, forKey: .model)
         account = try container.decodeIfPresent(String.self, forKey: .account)

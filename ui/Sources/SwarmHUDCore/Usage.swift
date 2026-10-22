@@ -196,28 +196,6 @@ public func accounts(from meters: [UsageMeter]) -> [UsageAccount] {
     }
 }
 
-/// One block of the open table: a provider's accounts under its own column titles.
-public struct ProviderGroup: Equatable, Identifiable, Sendable {
-    public let provider: String
-    /// Only the windows some account of this provider has, in column order.
-    public let kinds: [WindowKind]
-    public let accounts: [UsageAccount]
-
-    public var id: String { provider }
-}
-
-/// Claude, then Codex, then any other provider; accounts keep the reader's order inside a group.
-public func providerGroups(_ accounts: [UsageAccount]) -> [ProviderGroup] {
-    var providers: [String] = []
-    for account in accounts where !providers.contains(account.provider) { providers.append(account.provider) }
-    let known = ["claude", "codex"]
-    return (known.filter(providers.contains) + providers.filter { !known.contains($0) }).map { provider in
-        let members = accounts.filter { $0.provider == provider }
-        let kinds = Set(members.flatMap { $0.windows.map(\.kind) }).sorted { $0.order < $1.order }
-        return ProviderGroup(provider: provider, kinds: kinds, accounts: members)
-    }
-}
-
 /// The open card's one table: a column per limit kind any account has, so Week sits in one place
 /// for every provider, and a provider without a kind shows a dash there.
 public struct Ledger: Equatable, Sendable {

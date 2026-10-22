@@ -1,0 +1,57 @@
+{
+ "schema": "swarm.working.v1",
+ "working": {
+  "claude": 3,
+  "codex": 1
+ },
+ "waiting": {
+  "codex": 1
+ },
+ "agents": [
+  {
+   "id": "reviewer",
+   "session": "s1",
+   "provider": "codex",
+   "model": "gpt-6-luna",
+   "account": "team",
+   "state": "waiting",
+   "since_seconds": 1792050100
+  },
+  {
+   "id": "orchestrator",
+   "session": "s1",
+   "provider": "claude",
+   "model": "claude-opus-5-5[1m]",
+   "account": "work",
+   "state": "working",
+   "since_seconds": 1792050090
+  },
+  {
+   "id": "builder",
+   "session": "s1",
+   "provider": "claude",
+   "model": "claude-sonnet-5-5",
+   "account": "lab",
+   "state": "working",
+   "since_seconds": 1792050080
+  },
+  {
+   "id": "tester",
+   "session": "s2",
+   "provider": "codex",
+   "model": "gpt-6-luna",
+   "account": "default",
+   "state": "working",
+   "since_seconds": 1792050070
+  },
+  {
+   "id": "orchestrator",
+   "session": "s2",
+   "provider": "claude",
+   "model": "opus",
+   "account": null,
+   "state": "working",
+   "since_seconds": 1792050060
+  }
+ ]
+}

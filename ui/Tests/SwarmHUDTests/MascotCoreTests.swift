@@ -100,13 +100,14 @@ import Testing
 
 
 @Test func workingReadsTheAgentListWhenPresent() {
-    let json = #"{"schema":"swarm.working.v1","working":{"claude":1},"waiting":{"codex":1},"agents":[{"id":"r","provider":"codex","model":"gpt-6-luna","account":"team","state":"waiting","since_seconds":1792662983},{"id":"o","provider":"claude","model":null,"account":null,"state":"working","since_seconds":1792662900},{"id":"x","provider":"pi","state":"thinking"}]}"#
+    let json = #"{"schema":"swarm.working.v1","working":{"claude":1},"waiting":{"codex":1},"agents":[{"id":"r","session":"s1","provider":"codex","model":"gpt-6-luna","account":"team","state":"waiting","since_seconds":1792662983},{"id":"o","provider":"claude","model":null,"account":null,"state":"working","since_seconds":1792662900},{"id":"x","provider":"pi","state":"thinking"}]}"#
     let agents = WorkingSnapshot.read(Data(json.utf8)).agents
     #expect(agents.map(\.id) == ["r", "o", "x"])
-    #expect(agents[0] == RunningAgent(id: "r", provider: "codex", model: "gpt-6-luna", account: "team", waiting: true,
+    #expect(agents[0] == RunningAgent(id: "r", session: "s1", provider: "codex", model: "gpt-6-luna", account: "team", waiting: true,
                                       since: Date(timeIntervalSince1970: 1792662983)))
     // Another state reads as working (A4); a missing list is an older swarm.
     #expect(!agents[2].waiting && agents[2].since == nil)
+    #expect(agents[0].key == "s1/r" && agents[1].key == "/o")
     #expect(WorkingSnapshot.read(Data(#"{"schema":"swarm.working.v1","working":{}}"#.utf8)).agents.isEmpty)
 }
 

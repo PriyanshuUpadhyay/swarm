@@ -59,30 +59,40 @@ enum Layout {
     /// the 15 pt ring. Wide guests such as the crab shrink to the 40 pt.
     static let wing: CGFloat = 46
     static let closedMascot: CGFloat = 24
-    static let openMascot: CGFloat = 72
+    /// The open card's mascot, in the header beside the answer.
+    static let openMascot: CGFloat = 40
     /// The closed shape's concave top corners.
     static let closedEar: CGFloat = 6
+    /// The widest open card; fewer limit kinds make it narrower.
     static let openWidth: CGFloat = 1088
-    /// 11 accounts in two provider groups fit; the panel adds room for the shadow.
+    /// The narrowest: the header's two sides still fit beside the camera.
+    static let minOpenWidth: CGFloat = 820
+    /// 11 accounts fit in the compact rows; the panel adds room for the shadow.
     static let maxOpenHeight: CGFloat = 660
     /// The open shape's concave top corners, which the content must clear.
     static let ear: CGFloat = 14
     static let inset: CGFloat = ear + 12
     static let rowPadding: CGFloat = 8
-    static let belowStatus: CGFloat = 12
+    static let belowStatus: CGFloat = 6
+    /// The header: the mascot and two lines of answer, never shorter than the notch.
+    static func header(notch: CGSize) -> CGFloat { max(notch.height, 56) }
+    /// The running-agents line, only while agents run.
+    static let running: CGFloat = 32
     static let headings: CGFloat = 24
-    /// Two lines: use and reset, then the pace.
-    static let row: CGFloat = 42
-    /// The legend line, with the open mascot and its credit on the right.
-    static let legend: CGFloat = Layout.openMascot + 12
-    /// The least height of the last group that holds the mascot, its credit and the legend beside it.
-    static let besideHeight: CGFloat = 150
+    /// Two lines (use and reset, then the pace) up to `denseAfter` rows, then one line.
+    static func row(dense: Bool) -> CGFloat { dense ? 34 : 42 }
+    static let denseAfter = 5
+    /// The line for accounts with no reading, with its gap above.
+    static let needs: CGFloat = 40
     static let bottom: CGFloat = 10
     static let markColumn: CGFloat = 20
     static let nameColumn: CGFloat = 150
     static let readingColumn: CGFloat = 104
     static let valueColumn: CGFloat = 40
-    static let resetColumn: CGFloat = 64
+    /// Holds a reset ("6d 23h") or, in a one-line row, a warning pace ("full 16h 30m").
+    static let resetColumn: CGFloat = 84
+    /// A limit column's width when the card is not at its widest.
+    static let idealCell: CGFloat = 280
     static let gap: CGFloat = 12
 
     /// The mark, name and, when rows differ, Reading columns with the gap after each.
@@ -90,36 +100,18 @@ enum Layout {
         markColumn + nameColumn + gap * 2 + (reading ? readingColumn + gap : 0)
     }
 
-    /// One window column's width when `columns` share the row, so a narrower group lines up.
-    static func cell(columns: Int, reading: Bool) -> CGFloat {
-        let fixed = lead(reading: reading) + CGFloat(columns - 1) * gap
-        return (openWidth - 2 * inset - 2 * rowPadding - fixed) / CGFloat(max(columns, 1))
-    }
-
-    /// The width of a group with `kinds` columns, its padding included, in a table of `columns`.
-    static func groupWidth(kinds: Int, columns: Int, reading: Bool) -> CGFloat {
-        2 * rowPadding + lead(reading: reading) + CGFloat(kinds) * cell(columns: columns, reading: reading)
-            + CGFloat(kinds - 1) * gap
+    /// Wide enough for `kinds` columns of `idealCell`, so a Codex-only card has no 800 pt bar.
+    static func cardWidth(kinds: Int, reading: Bool) -> CGFloat {
+        let table = lead(reading: reading) + CGFloat(kinds) * idealCell + CGFloat(max(kinds - 1, 0)) * gap
+        return min(max(2 * inset + 2 * rowPadding + table, minOpenWidth), openWidth)
     }
     /// The least notch height the HUD assumes, also the closed height on a Mac with no notch reading.
     static let minNotch: CGFloat = 37
-
-    /// The status line sits in the band beside the camera, as tall as the notch.
-    static func band(notch: CGSize) -> CGFloat { max(notch.height, minNotch) }
 }
 
 extension UsageModel {
     var closedSize: CGSize {
         CGSize(width: max(notch.width, 32) + 2 * Layout.wing, height: notch.height)
-    }
-
-    /// The legend, credit and mascot fill the empty columns beside the last group when it has
-    /// fewer columns and is tall enough, so the card needs no band of its own for them.
-    var footerBeside: Bool {
-        let groups = providerGroups(accounts)
-        guard let last = groups.last, let widest = groups.map(\.kinds.count).max() else { return false }
-        return last.kinds.count < widest
-            && Layout.headings + CGFloat(last.accounts.count) * Layout.row >= Layout.besideHeight
     }
 
     /// The reading of every account with windows when all of them read the same, such as
@@ -131,10 +123,15 @@ extension UsageModel {
     }
 
     var openSize: CGSize {
-        let height = Layout.band(notch: notch) + Layout.belowStatus
-            + CGFloat(providerGroups(accounts).count) * Layout.headings
-            + CGFloat(accounts.count) * Layout.row + (footerBeside ? 0 : Layout.legend) + Layout.bottom
-        return CGSize(width: Layout.openWidth, height: min(height, Layout.maxOpenHeight))
+        let table = ledger(accounts)
+        var height = Layout.header(notch: notch) + Layout.belowStatus + Layout.bottom
+        if !agents.agents.isEmpty { height += Layout.running }
+        if !table.rows.isEmpty {
+            height += Layout.headings + CGFloat(table.rows.count) * Layout.row(dense: table.rows.count > Layout.denseAfter)
+        }
+        if !table.signedOut.isEmpty { height += Layout.needs }
+        let width = Layout.cardWidth(kinds: table.kinds.count, reading: sharedReading(now: now ?? Date()) == nil)
+        return CGSize(width: width, height: min(height, Layout.maxOpenHeight))
     }
 }
 
@@ -252,14 +249,14 @@ func fillDuration(_ seconds: TimeInterval, now: Date) -> String {
 }
 
 extension BestAccount {
-    /// "2% used", "82% used · full in 3h 10m", "all full · resets in 2h": the used percent of the
+    /// "98% left", "18% left · full in 3h 10m", "all full · resets in 2h": the room left on the
     /// fullest limit, then a time only when one fills before its reset, so a HUD with no pace yet
     /// never claims that the account lasts.
     func paceText(now: Date) -> String {
-        let used = "\(fullest)% used"
+        let left = "\(100 - fullest)% left"
         switch outlook {
-        case .left(let seconds): return "\(used) · full in \(fillDuration(seconds, now: now))"
-        case .lasts: return used
+        case .left(let seconds): return "\(left) · full in \(fillDuration(seconds, now: now))"
+        case .lasts: return left
         case .allFull(let resetAt): return "all full" + (resetAt.map { " · resets in \(shortDuration(until: $0, now: now))" } ?? "")
         }
     }
