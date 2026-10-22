@@ -29,7 +29,7 @@ def test_each_preset_resolves_with_its_stop():
     found = presets()
     assert set(found) == set(STOPS), sorted(set(found) ^ set(STOPS))
     for name, file in found.items():
-        stop, _, steps = preset.check(file)
+        stop, _, _, steps = preset.check(file)
         assert STOPS.get(name) == stop, (name, stop)
         assert steps and all(blocks for _, _, blocks in steps), name
 
@@ -75,6 +75,21 @@ def test_the_json_gives_each_step_its_stage_and_each_block_its_users():
     assert any(not b["used_by"] for b in blocks.values()), "some block is used by no default preset"
 
 
+def test_the_json_names_the_front_door_the_duty_blocks_and_each_offer():
+    kit = run("--json")
+    assert kit["front"] == ["planner", "plan-chart", "plan-review"]
+    blocks = {b["id"]: b for b in kit["blocks"]}
+    assert all(f in blocks for f in kit["front"])
+    duty = {b for b, info in blocks.items() if info["duty"]}
+    assert duty == {"requirements", "change-review"} | {b for b in blocks if b.startswith("voice-")}, duty
+    for p in kit["presets"]:
+        loaded = {b for s in p["steps"] for b in s["resolved"]}
+        assert not loaded & set(p["offers"]), (p["preset"], loaded & set(p["offers"]))
+        for block in p["offers"]:
+            assert p["preset"] in blocks[block]["offered_by"], (p["preset"], block)
+    assert all(set(b["offered_by"]) <= {p["preset"] for p in kit["presets"]} for b in blocks.values())
+
+
 DRAFT = """## Preset
 
 Stop: chat
@@ -101,6 +116,26 @@ def test_a_draft_defect_is_the_first_one_python_finds():
                                           "| 02-web | read | what the web | says | deep-search | the web adds what is not local |"}
     assert run("--check", text=DRAFT.replace("| read, web |", "| read, nope |"))["defect"] == "step 03-reply needs 'nope', which no step gives"
     assert run("--check", text="# no preset")["defect"].endswith("has no ## Preset section")
+
+
+def test_an_offers_line_names_kit_blocks_that_no_step_loads():
+    offered = DRAFT.replace("Stop: chat\n", "Stop: chat\nOffers: html-diagram, headless-shot\n")
+    assert run("--check", text=offered)["preset"]["offers"] == ["html-diagram", "headless-shot"]
+    assert run("--check", text=DRAFT)["preset"]["offers"] == []
+    nope = DRAFT.replace("Stop: chat\n", "Stop: chat\nOffers: nope\n")
+    assert run("--check", text=nope)["defect"] == "Offers names nope, which is not a kit block"
+    loaded = DRAFT.replace("Stop: chat\n", "Stop: chat\nOffers: voice\n")
+    assert run("--check", text=loaded)["defect"] == "Offers names voice, which step 03-reply already loads"
+    # A base block loads in every step, so a plan cannot list it as Offered.
+    base = DRAFT.replace("Stop: chat\n", "Stop: chat\nOffers: base-rules\n")
+    assert run("--check", text=base)["defect"] == "Offers names base-rules, which is not a kit block"
+    # A duty block is never off: the plan check needs it whenever its step applies.
+    duty = DRAFT.replace("Stop: chat\n", "Stop: chat\nOffers: change-review\n")
+    assert run("--check", text=duty)["defect"] == "Offers names change-review, a duty block that the plan check adds when it applies"
+    again = DRAFT.replace("Stop: chat\n", "Stop: chat\nOffers: report, report\n")
+    assert run("--check", text=again)["defect"] == "Offers names report twice"
+    twice = DRAFT.replace("Stop: chat\n", "Stop: chat\nOffers: report\nOffers: link-check\n")
+    assert run("--check", text=twice)["defect"] == "preset has 2 Offers lines; write one"
 
 
 def test_cells_are_the_rows_that_a_run_reads():
@@ -168,6 +203,8 @@ if __name__ == "__main__":
     test_the_json_gives_each_step_its_stage_and_each_block_its_users()
     test_a_draft_section_or_skill_passes_with_its_stages()
     test_a_draft_defect_is_the_first_one_python_finds()
+    test_the_json_names_the_front_door_the_duty_blocks_and_each_offer()
+    test_an_offers_line_names_kit_blocks_that_no_step_loads()
     test_cells_are_the_rows_that_a_run_reads()
     test_a_new_skill_needs_a_name_and_a_description_that_yaml_reads()
     test_a_draft_that_is_not_utf8_is_a_defect()

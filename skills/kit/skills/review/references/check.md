@@ -14,6 +14,7 @@ helper that already does that math.
 ## Preset
 
 Stop: owner
+Offers: prove-it-works, call-tree, headless-shot
 
 | File | Needs | Holds | Block | Why |
 |---|---|---|---|---|
