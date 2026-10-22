@@ -33,23 +33,27 @@ which models swarm runs.
 - The open card is one table with one column per limit kind any account has, in the order
   Session · 5h, Week, Fable week. A provider without a kind shows a dim dash, with "No Week limit"
   on hover. A provider mark starts each row; Claude rows come first.
-- Above 5 rows each row drops to one line, 34 pt, and a warning pace takes the reset's place.
+- Above 5 rows each row drops to one line, 34 pt, and a warning pace takes the reset's place. A
+  Codex row's resets then move to the name's tooltip and spoken label. Past the 660 pt cap, from
+  about 15 accounts, the rows scroll.
 - Accounts with no reading fold into one line, such as "3 accounts need sign-in: default,
   personal, spare", with one "Renew all".
 - The card is as wide as its columns need, from 820 pt to 1088 pt, so a Codex-only card has no
   800 pt bar. The legend band goes.
 - The header shows the mascot top left, on the same side as the closed wing, with its credit on
   hover. Beside it: "Use next <account> · N% left" and a second line naming the other provider's
-  best account ("Room on Claude lab: 66% left").
-- A "Running now" line lists the running agents, waiting ones first: name, model, account and
-  "needs you", up to 4 chips (2 on a narrow card), then "+N".
+  best account ("Room on Claude lab: 66% left"), or the count of accounts read when that one is full.
+- A "Running now" line lists the running agents, waiting ones first: name, then "needs you",
+  model and account, up to 4 chips (2 on a narrow card), then "+N". Inside each group the order is
+  session and id, not the last report, so the chips and tags do not move on each tool call.
 - This amends 0089's "the wings carry no text". While agents work, the left wing adds the working
   count and the right wing up to two model tags, one per provider first. When an agent waits, the
   left wing says "needs you" in amber and the right wing names the agent. At 95% or more the ring is
   red and its number shows in place of the tags. Both wings grow by the wider side, so the shape
   stays centred on the camera.
 - `swarm working --json` keeps the schema `swarm.working.v1` and adds `agents`: id, session,
-  provider, model, account, state, since_seconds. A HUD from before this change ignores the field.
+  provider, model, account, state. The counts come from the same list. A HUD from before this
+  change ignores the field, and this HUD skips an entry it cannot read.
 
 ### Consequences
 

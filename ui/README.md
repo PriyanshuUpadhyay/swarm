@@ -19,7 +19,8 @@ at login. Closed, it shows a pixel mascot that works, waits or sleeps with the s
 ring for the best account's fullest limit; while agents run, the wings add the working count and
 model tags or "needs you", and at 95% the ring's number (ADR 0112). The open card shows the same
 mascot top left with its credit on hover, the running agents, and one table with a column per limit
-kind. A Codex account row shows its usage limit resets under its name. Swarm's own mascot, its
+kind. A Codex account row shows its usage limit resets under its name, or in the name's tooltip when
+more than 5 rows make each row one line; past the 660 pt cap the rows scroll. Swarm's own mascot, its
 bee, 17 open-licence guests and any pets installed for Codex (`$CODEX_HOME/pets`, by default
 `~/.codex/pets`, read once at launch) take turns every 10 minutes. `python3 -I Tools/mascots.py`
 rebuilds the guests' sheets from pinned commits, and `MASCOT-NOTICE` holds
