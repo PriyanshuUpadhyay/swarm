@@ -43,6 +43,8 @@ describe("run chip", () => {
     expect(waitsForTurn(agentInput(session(), [chair({ provider: "claude", state: "waiting" })]), undefined)).toBe(true);
     expect(waitsForTurn(idle, { old: "s", phase: "summarizing", canCancel: true, error: null, carry: "summary" })).toBe(true);
     expect(waitsForTurn(idle, { old: "s", phase: "failed", canCancel: false, error: "x", carry: "summary" })).toBe(false);
+    // A snapshot with no row for the chat says nothing about its turn, so the change keeps waiting.
+    expect(waitsForTurn(agentInput(session(), []), undefined)).toBe(true);
   });
 
   it("names each thinking level in plain words and keeps an unknown id as written", () => {

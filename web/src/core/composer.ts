@@ -96,6 +96,8 @@ export type AgentInput = {
   unreachable: boolean;
   /** An unreachable chair whose own CLI session can start again in this chat (ADR 0107). */
   resumable: boolean;
+  /** The snapshot has a row for this agent; without one its turn is unknown. */
+  listed: boolean;
   running: boolean;
   /** The agent paused on a question or a permission inside its turn. */
   waiting: boolean;
@@ -134,6 +136,7 @@ export function agentInput(session: Session | undefined, agents: readonly Agent[
     disabled,
     unreachable,
     resumable: unreachable && !child && provider !== null && typeof session?.chair_id === "string",
+    listed: agent !== undefined,
     running: agent?.state === "working",
     waiting: agent?.state === "waiting",
     prompt: unreachable ? null : prompt,
@@ -285,9 +288,10 @@ export function applyLabel(outcome: Outcome, working: boolean): string {
 }
 
 /** A queued change keeps waiting while the agent is in its turn (working, or paused on a question),
- *  or while another switch of the same chat runs, which would refuse it. */
+ *  while the snapshot has no row to tell, or while another switch of the same chat runs, which
+ *  would refuse it. */
 export function waitsForTurn(chair: AgentInput, handoff: Handoff | undefined): boolean {
-  return chair.running || chair.waiting || (handoff !== undefined && !isSettled(handoff.phase));
+  return !chair.listed || chair.running || chair.waiting || (handoff !== undefined && !isSettled(handoff.phase));
 }
 
 /** Why Apply cannot run now, or null. A switch blocks only its own chat; while the agent works,

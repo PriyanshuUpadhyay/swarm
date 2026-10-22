@@ -4,7 +4,7 @@
 import { ChevronDownIcon, LoaderCircleIcon, XIcon } from "lucide-react";
 import { useEffect, useId, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
 import type { App } from "../core/app";
-import { accountColor, applyBlock, applyLabel, CARRY_OPTIONS, chooseModel, cliName, levelWord, limitText, modelLevels, outcomeText, runLabel, runTip, savedCarry, switchOutcome, type AgentInput, type Carry, type Run } from "../core/composer";
+import { accountColor, applyBlock, waitsForTurn, applyLabel, CARRY_OPTIONS, chooseModel, cliName, levelWord, limitText, modelLevels, outcomeText, runLabel, runTip, savedCarry, switchOutcome, type AgentInput, type Carry, type Run } from "../core/composer";
 import { isSettled } from "../core/lifecycle";
 import type { ModelInfo } from "../core/run-catalog";
 import type { ProviderInfo } from "../core/settings";
@@ -154,7 +154,8 @@ function RunBody({ app, sessionId, chair }: { app: App; sessionId: string; chair
   const levels = modelLevels(info?.efforts ?? [], model?.efforts);
   const defaultLevel = model?.default_effort ?? info?.default_effort;
   const outcome = switchOutcome(current, draft);
-  const working = chair.running;
+  // Apply queues whenever the queue would wait, so a direct switch never leaves an older queued one behind.
+  const working = waitsForTurn(chair, app.life.state.handoffs[sessionId]);
   const q = query.trim().toLowerCase();
   const blocked = applyBlock(chair, draft);
   // A failed accounts read still shows the chat's own account, which Apply sends.
