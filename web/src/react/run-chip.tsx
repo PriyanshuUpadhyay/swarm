@@ -1,10 +1,10 @@
 // The run chip `account · model · thinking` and its popover, which changes the chat's run
 // (ADR 0110). Inside one CLI the session restarts on the new run; another CLI asks what to bring.
 
-import { ChevronDownIcon, LoaderCircleIcon, XIcon } from "lucide-react";
+import { ChevronDownIcon, LoaderCircleIcon } from "lucide-react";
 import { useEffect, useId, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
 import type { App } from "../core/app";
-import { accountColor, applyBlock, waitsForTurn, applyLabel, CARRY_OPTIONS, chooseModel, cliName, levelWord, limitText, modelLevels, outcomeText, runLabel, runTip, savedCarry, switchOutcome, type AgentInput, type Carry, type Run } from "../core/composer";
+import { accountColor, applyBlock, applyLabel, CARRY_OPTIONS, chooseModel, cliName, levelWord, limitText, modelLevels, outcomeText, runLabel, runTip, savedCarry, switchOutcome, type AgentInput, type Carry, type Run } from "../core/composer";
 import { isSettled } from "../core/lifecycle";
 import type { ModelInfo } from "../core/run-catalog";
 import type { Account, ProviderInfo } from "../core/settings";
@@ -22,7 +22,6 @@ export function RunChip({ app, sessionId, chair }: { app: App; sessionId: string
   // An anchor name must be a CSS ident; useId gives characters outside one.
   const anchor = `--run-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
   const switching = handoff && !isSettled(handoff.phase) ? (handoff.carry === "resume" ? "Restarting…" : "Switching…") : null;
-  const pending = useSyncExternalStore(app.life.queue.subscribe, () => app.life.queue.state[sessionId]);
   const run: Run = { provider: chair.provider ?? "claude", model: chair.model, effort: chair.effort, account: chair.account };
 
   useEffect(() => {
@@ -41,8 +40,6 @@ export function RunChip({ app, sessionId, chair }: { app: App; sessionId: string
   const own = chair.who === null;
   useEffect(() => () => void (own && app.life.state.switchModel === sessionId && app.life.close("switchModel")), [app, sessionId, own]);
 
-  const pendingText = pending ? `Pending: ${[pending.model, pending.effort && levelWord(pending.effort)].filter(Boolean).join(" · ")}` : "";
-
   return (
     <>
       <button
@@ -55,26 +52,17 @@ export function RunChip({ app, sessionId, chair }: { app: App; sessionId: string
         style={{ anchorName: anchor } as CSSProperties}
         onClick={() => (open ? app.life.close("switchModel") : app.life.openSwitchModel(sessionId))}
       >
-        {pending ? (
-          <span aria-hidden className="size-2 shrink-0 rounded-full bg-waiting" />
-        ) : (
-          chair.account && <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ background: accountColor(chair.account) }} />
-        )}
+        {chair.account && <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ background: accountColor(chair.account) }} />}
         <span className="truncate" data-testid="model-chip-label">
-          {switching ?? (pending ? pendingText : runLabel(chair))}
+          {switching ?? runLabel(chair)}
         </span>
         {!chair.who && <ChevronDownIcon className="size-3 shrink-0" />}
       </button>
-      {/* A button's children are presentational, so a queued change and a running switch are announced from outside it.
+      {/* A button's children are presentational, so a running switch is announced from outside it.
           The open popover has its own status. */}
       <span role="status" className="sr-only" data-testid="run-chip-status">
-        {open ? "" : (switching ?? (pending ? pendingText : ""))}
+        {open ? "" : (switching ?? "")}
       </span>
-      {pending && (
-        <button type="button" className="icon-btn" aria-label="Cancel change" title="Cancel change" data-testid="run-pending-cancel" onClick={() => app.life.queue.cancel(sessionId)}>
-          <XIcon className="size-3" />
-        </button>
-      )}
       {!chair.who && (
         <div
           ref={pop}
@@ -161,8 +149,6 @@ function RunBody({ app, sessionId, chair }: { app: App; sessionId: string; chair
   const levels = modelLevels(info?.efforts ?? [], model?.efforts);
   const defaultLevel = model?.default_effort ?? info?.default_effort;
   const outcome = switchOutcome(current, draft);
-  // Apply queues whenever the queue would wait, so a direct switch never leaves an older queued one behind.
-  const working = waitsForTurn(chair, app.life.state.handoffs[sessionId]);
   const q = query.trim().toLowerCase();
   const blocked = applyBlock(chair, draft);
   // A failed accounts read still shows the chat's own account, which Apply sends.
@@ -177,13 +163,8 @@ function RunBody({ app, sessionId, chair }: { app: App; sessionId: string; chair
   const apply = () => {
     if (!draft.model || outcome === "none") return;
     const how = outcome === "resume" ? "resume" : carry;
-    if (working) {
-      app.life.queue.add(sessionId, { provider: draft.provider, model: draft.model, account: draft.account, effort: draft.effort, carry: how });
-      app.life.close("switchModel");
-    } else {
-      // switchModel keeps its own failure in the handoff state, so nothing waits for it.
-      void app.life.switchModel(sessionId, draft.provider, draft.model, draft.account, draft.effort, how);
-    }
+    // switchModel keeps its own failure in the handoff state, so nothing waits for it.
+    void app.life.switchModel(sessionId, draft.provider, draft.model, draft.account, draft.effort, how);
   };
 
   return (
@@ -310,7 +291,7 @@ function RunBody({ app, sessionId, chair }: { app: App; sessionId: string; chair
       <ErrorLine text={handoff?.error ?? error} />
       <div className={`rounded-lg border px-3 py-2 text-xs ${outcome === "none" && !running ? "border-dashed border-border text-muted-foreground" : "border-border bg-hover"}`} role="status">
         {outcome !== "none" && !running && !blocked && <b className="mr-1.5 font-medium text-foreground">What happens</b>}
-        <span data-testid="run-outcome">{running ? "Switching…" : (blocked ?? outcomeText(outcome, current, draft, carry, { label, working }))}</span>
+        <span data-testid="run-outcome">{running ? "Switching…" : (blocked ?? outcomeText(outcome, current, draft, carry, label))}</span>
       </div>
       <div className="flex items-center justify-end gap-2">
         {running ? (
@@ -324,7 +305,7 @@ function RunBody({ app, sessionId, chair }: { app: App; sessionId: string; chair
         )}
         <Button type="button" size="sm" data-testid="run-apply" disabled={running || blocked !== null || outcome === "none"} onClick={apply}>
           {running && <LoaderCircleIcon className="animate-spin motion-reduce:animate-none" />}
-          {applyLabel(outcome, working)}
+          {applyLabel(outcome)}
         </Button>
       </div>
     </div>

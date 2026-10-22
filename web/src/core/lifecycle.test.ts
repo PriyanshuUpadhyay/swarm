@@ -108,12 +108,9 @@ describe("chats", () => {
     expect(idle.life.state.confirm).toMatchObject({ body: "Archiving closes its agent. The chat moves to Archived." });
 
     const busy = fakeApp(async () => ({}), [{ id: "orchestrator", alive: true, state: "working" }, { id: "reviewer", alive: true, state: "waiting" }]);
-    // A change queued for the chat's turn end must not open a new chat after the chat ends.
-    busy.life.queue.add("chat-1", { provider: "claude", model: "opus", account: null, effort: null, carry: "resume" });
     busy.life.endChat("chat-1", false);
     expect(busy.life.state.confirm).toMatchObject({ title: "End “Fix the sidebar”?", body: "2 agents still working. Ending stops them.", action: "End Chat" });
     expect(await busy.life.confirmed()).toBeNull();
-    expect(busy.life.queue.state).toEqual({});
     expect(busy.calls.filter((c) => c.startsWith("/api/agent/close"))).toEqual([
       '/api/agent/close {"session":"chat-1","agent":"reviewer"}',
       '/api/agent/close {"session":"chat-1","agent":"chair"}',
@@ -197,16 +194,6 @@ describe("chats", () => {
     done({ session: "chat-1" });
     await run;
     expect(calls).not.toContain("open chat-1");
-  });
-
-  it("keeps the switch until the list shows the new pane, so a queued change cannot read the old one", async () => {
-    const { life } = fakeApp(async () => ({ session: "chat-1" }));
-    const app = (life as unknown as { app: { refresh: () => Promise<void> } }).app;
-    let during: unknown = "not read";
-    app.refresh = async () => void (during = life.state.handoffs["chat-1"]);
-    await life.switchModel("chat-1", "claude", "sonnet", null, null, "resume");
-    expect(during).toBeDefined();
-    expect(life.state.handoffs["chat-1"]).toBeUndefined();
   });
 
   it("records the carry, so the progress lists only the steps that run", () => {

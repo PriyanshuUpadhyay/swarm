@@ -2,7 +2,6 @@
 // SwarmSessionInteraction, ChatUsage). Pure, so vitest covers them.
 
 import type { Agent, Row, Session } from "./api";
-import { isSettled, type Handoff } from "./lifecycle-state";
 import type { Meter } from "./settings";
 
 /** `swarm agents --json` `prompt`: a question on the agent's screen (ADR 0029). */
@@ -96,11 +95,7 @@ export type AgentInput = {
   unreachable: boolean;
   /** An unreachable chair whose own CLI session can start again in this chat (ADR 0107). */
   resumable: boolean;
-  /** The snapshot has a row for this agent; without one its turn is unknown. */
-  listed: boolean;
   running: boolean;
-  /** The agent paused on a question or a permission inside its turn. */
-  waiting: boolean;
   prompt: Prompt | null;
   /** Claude in tmux keeps a queue that Up pulls back (ADR 0038). */
   pullBack: boolean;
@@ -136,9 +131,7 @@ export function agentInput(session: Session | undefined, agents: readonly Agent[
     disabled,
     unreachable,
     resumable: unreachable && !child && provider !== null && typeof session?.chair_id === "string",
-    listed: agent !== undefined,
     running: agent?.state === "working",
-    waiting: agent?.state === "waiting",
     prompt: unreachable ? null : prompt,
     pullBack: provider === "claude" && (adapter === "tmux" || adapter === "tmux-swarm"),
   };
@@ -253,13 +246,11 @@ export function switchOutcome(current: Run, draft: Run): Outcome {
 
 const REREAD = "The next reply re-reads the whole chat once, so it costs more.";
 
-/** The What happens line under the popover (design A). `label` names the draft's model; while the
- *  agent works, the change waits for the turn to end. */
-export function outcomeText(outcome: Outcome, current: Run, draft: Run, carry: Carry, { label, working }: { label: string; working: boolean }): string {
+/** The What happens line under the popover (design A). `label` names the draft's model. */
+export function outcomeText(outcome: Outcome, current: Run, draft: Run, carry: Carry, label: string): string {
   if (outcome === "none") return "Pick a change to see what will happen.";
   const target = [label, draft.effort && levelWord(draft.effort)].filter(Boolean).join(" · ");
-  const line = outcome === "handoff" ? handoffLine(draft, target, carry) : outcome === "resume" ? resumeLine(current, draft, target) : (outcome satisfies never);
-  return working ? `Waits for the current turn to end. Then ${line[0].toLowerCase()}${line.slice(1)}` : line;
+  return outcome === "handoff" ? handoffLine(draft, target, carry) : outcome === "resume" ? resumeLine(current, draft, target) : (outcome satisfies never);
 }
 
 function handoffLine(draft: Run, target: string, carry: Carry): string {
@@ -277,42 +268,21 @@ function resumeLine(current: Run, draft: Run, target: string): string {
 }
 
 /** Apply's label says what it does. */
-export function applyLabel(outcome: Outcome, working: boolean): string {
+export function applyLabel(outcome: Outcome): string {
   switch (outcome) {
     case "none":
       return "Apply";
     case "handoff":
-      return working ? "Start new chat after this turn" : "Start new chat";
+      return "Start new chat";
     case "resume":
-      return working ? "Apply after this turn" : "Restart and apply";
+      return "Restart and apply";
   }
 }
 
-/** A queued change keeps waiting while the agent is in its turn (working, or paused on a question),
- *  while the snapshot has no row to tell, or while another switch of the same chat runs, which
- *  would refuse it. */
-export function waitsForTurn(chair: AgentInput, handoff: Handoff | undefined): boolean {
-  return !chair.listed || chair.running || chair.waiting || (handoff !== undefined && !isSettled(handoff.phase));
-}
-
-/** What the queue does with a chat's change now: wait for the turn, drop it because the chat's pane
- *  closed or the chat left a read snapshot (`gone`; an archive from the CLI or another window), or
- *  start it. A running switch of the chat
- *  restarts its pane, so the change waits through that closed pane. A pane that closed in its turn
- *  may keep its last state, so a closed pane drops the change before the turn state is read. */
-export function queueStep(chair: AgentInput, handoff: Handoff | undefined, gone = false): "wait" | "drop" | "start" {
-  if (gone) return "drop";
-  if (!chair.listed || (handoff !== undefined && !isSettled(handoff.phase))) return "wait";
-  // A completed switch stays only until the list shows its new pane (Lifecycle.switchModel), so a
-  // closed pane in that time is the old one, and the change waits for the new one.
-  if (chair.unreachable) return handoff?.phase === "completed" ? "wait" : "drop";
-  return waitsForTurn(chair, handoff) ? "wait" : "start";
-}
-
-/** Why Apply cannot run now, or null. A switch blocks only its own chat; while the agent works,
- *  Apply waits for the turn to end. */
+/** Why Apply cannot run now, or null. A switch blocks only its own chat. */
 export function applyBlock(chair: AgentInput, draft: Run): string | null {
   if (!chair.provider) return "This chat does not record its CLI, so it cannot switch.";
+  if (chair.running) return "Wait for this turn to end, or stop it.";
   return draft.model ? null : "Pick a model.";
 }
 

@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from "vitest";
 import { chair, session } from "./chat-fixtures";
-import { accountColor, agentInput, queueStep, waitsForTurn, applyBlock, applyLabel, chooseModel, cliName, levelWord, limitText, outcomeText, runLabel, runTip, switchOutcome, usageLabel, usageTitle } from "./composer";
+import { accountColor, agentInput, applyBlock, applyLabel, chooseModel, cliName, levelWord, limitText, outcomeText, runLabel, runTip, switchOutcome, usageLabel, usageTitle } from "./composer";
 import type { Meter } from "./settings";
 
 
@@ -23,40 +23,16 @@ describe("run chip", () => {
     expect(switchOutcome(run("claude", "a"), run("agy", "a"))).toBe("handoff");
   });
 
-  it("says what Apply does in the words of design A, and waits for the turn while the agent works", () => {
+  it("says what Apply does in the words of design A", () => {
     const now = run("claude", "opus", "high", "work");
-    const say = (to: ReturnType<typeof run>, carry: "summary" | "clean" = "summary", working = false) => outcomeText(switchOutcome(now, to), now, to, carry, { label: "Sonnet 5.5", working });
+    const say = (to: ReturnType<typeof run>, carry: "summary" | "clean" = "summary") => outcomeText(switchOutcome(now, to), now, to, carry, "Sonnet 5.5");
     expect(say(now)).toBe("Pick a change to see what will happen.");
     expect(say(run("claude", "sonnet", "high", "work"))).toBe("Restarts this chat on Sonnet 5.5 · High. History stays. The next reply re-reads the whole chat once, so it costs more.");
     expect(say(run("claude", "opus", "xhigh", "work"))).toBe("Restarts this chat on Extra high thinking. History stays. The next reply re-reads the whole chat once, so it costs more.");
     expect(say(run("claude", "opus", "high", "home"))).toBe("Restarts this chat under home. History stays. Usage now counts against home. The next reply may re-read the chat once.");
     expect(say(run("agy", "gemini", null))).toBe("Starts a new AGY chat on Sonnet 5.5 with a summary of this one. This chat stays as it is.");
     expect(say(run("agy", "gemini", null), "clean")).toBe("Starts a new AGY chat on Sonnet 5.5 with nothing from this one. This chat stays as it is.");
-    expect(say(run("claude", "sonnet", "high", "work"), "summary", true)).toBe("Waits for the current turn to end. Then restarts this chat on Sonnet 5.5 · High. History stays. The next reply re-reads the whole chat once, so it costs more.");
-    expect([applyLabel("handoff", false), applyLabel("handoff", true), applyLabel("resume", true), applyLabel("resume", false), applyLabel("none", false)]).toEqual(["Start new chat", "Start new chat after this turn", "Apply after this turn", "Restart and apply", "Apply"]);
-  });
-
-  it("keeps a queued change while the agent works, waits on a question, or another switch of the chat runs", () => {
-    const idle = agentInput(session(), [chair({ provider: "claude", state: "done" })]);
-    expect(waitsForTurn(idle, undefined)).toBe(false);
-    expect(waitsForTurn(agentInput(session(), [chair({ provider: "claude", state: "working" })]), undefined)).toBe(true);
-    expect(waitsForTurn(agentInput(session(), [chair({ provider: "claude", state: "waiting" })]), undefined)).toBe(true);
-    expect(waitsForTurn(idle, { old: "s", phase: "summarizing", canCancel: true, error: null, carry: "summary" })).toBe(true);
-    expect(waitsForTurn(idle, { old: "s", phase: "failed", canCancel: false, error: "x", carry: "summary" })).toBe(false);
-    // A snapshot with no row for the chat says nothing about its turn, so the change keeps waiting.
-    expect(waitsForTurn(agentInput(session(), []), undefined)).toBe(true);
-    // A chair whose pane closed (End, Archive, a workspace archive or delete) cannot take the change.
-    expect(queueStep(agentInput(session(), [chair({ provider: "claude", state: "done", alive: false })]), undefined)).toBe("drop");
-    expect(queueStep(idle, undefined)).toBe("start");
-    // A pane that closed in its turn may keep its last state; the change is still dropped.
-    expect(queueStep(agentInput(session(), [chair({ provider: "claude", state: "working", alive: false })]), undefined)).toBe("drop");
-    expect(queueStep(agentInput(session(), [chair({ provider: "claude", state: "done", alive: false })]), { old: "s", phase: "restarting", canCancel: false, error: null, carry: "resume" })).toBe("wait");
-    // A chat that left a read snapshot (archived from the CLI or another window) drops its change.
-    expect(queueStep(agentInput(undefined, []), undefined, true)).toBe("drop");
-    expect(queueStep(agentInput(undefined, []), undefined, false)).toBe("wait");
-    // A switch that just completed may still show its old pane as closed in the next snapshot.
-    expect(queueStep(agentInput(session(), [chair({ provider: "claude", state: "done", alive: false })]), { old: "s", phase: "completed", canCancel: false, error: null, carry: "resume" })).toBe("wait");
-    expect(queueStep(agentInput(session(), [chair({ provider: "claude", state: "working" })]), undefined)).toBe("wait");
+    expect([applyLabel("handoff"), applyLabel("resume"), applyLabel("none")]).toEqual(["Start new chat", "Restart and apply", "Apply"]);
   });
 
   it("names each thinking level in plain words and keeps an unknown id as written", () => {
@@ -99,11 +75,10 @@ describe("run chip", () => {
     expect(runLabel(agentInput(session({ chair_provider: "agy" }), [chair({ provider: "agy" })]))).toBe("AGY · Default model");
   });
 
-  it("blocks Apply with no model or with no known CLI, but not while the agent works", () => {
+  it("blocks Apply with no model, with no known CLI, or while the agent works", () => {
     const idle = agentInput(session(), [chair({ provider: "claude" })]);
     expect(applyBlock(idle, run("claude", "b"))).toBeNull();
-    // A change while the agent works waits for the turn to end (design A).
-    expect(applyBlock({ ...idle, running: true }, run("claude", "b"))).toBeNull();
+    expect(applyBlock({ ...idle, running: true }, run("claude", "b"))).toBe("Wait for this turn to end, or stop it.");
     expect(applyBlock(idle, run("claude", null))).toBe("Pick a model.");
     expect(applyBlock({ ...idle, provider: null }, run("claude", "b"))).toBe("This chat does not record its CLI, so it cannot switch.");
   });

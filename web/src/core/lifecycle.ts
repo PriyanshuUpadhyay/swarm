@@ -6,7 +6,6 @@ import { ApiError, sleep } from "./api";
 import type { App } from "./app";
 import { isChair } from "./panes";
 import { RunCatalog } from "./run-catalog";
-import { RunQueue } from "./run-queue";
 import type { SwitchCarry } from "./composer";
 import {
   type NewOptions,
@@ -36,8 +35,6 @@ export class Lifecycle {
   private listeners = new Set<() => void>();
   /** The CLIs, models and accounts that the run chip and Switch model offer. */
   readonly runs: RunCatalog;
-  /** Changes that wait for their agent's turn to end. */
-  readonly queue = new RunQueue();
   private roles: Promise<Profile[]> | null = null;
   private confirmDone: (() => void) | null = null;
 
@@ -244,8 +241,6 @@ export class Lifecycle {
     const live = sessions.map((session) => ({ session, agents: this.liveAgents(session) }));
     const agents = live.reduce((n, l) => n + l.agents.length, 0);
     const run = async () => {
-      // A change queued for the turn end would open a new chat after this one ends.
-      for (const session of sessions) this.queue.cancel(session);
       for (const { session, agents } of live) for (const agent of agents) await this.api.action("/api/agent/close", { session, agent });
       if (archive) {
         await this.api.action("/api/sessions/archive", { ids: sessions });
@@ -286,10 +281,9 @@ export class Lifecycle {
         ...(account ? { account } : {}),
         ...(effort ? { effort } : {}),
       });
-      // The switch ends after the list shows the new pane, so a queued change never reads the old one.
-      await this.app.refresh();
       const { [old]: _, ...rest } = this.state.handoffs;
       this.set({ handoffs: rest, ...(this.state.switchModel === old ? { switchModel: null } : {}) });
+      await this.app.refresh();
       // The owner may have moved to another chat, also during the refresh; it stays open.
       if (this.state.switchModel === null && this.app.openId === old) this.app.openChat(done.session);
     } catch (err) {
