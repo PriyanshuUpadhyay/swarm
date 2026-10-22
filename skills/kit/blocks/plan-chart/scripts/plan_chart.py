@@ -10,8 +10,9 @@ paths a step may change; two steps that no Needs path orders may not write the s
 `(optional)`, the only rows `skip` takes. Only a plan that equals its `Stop: chat` preset may leave Writes out.
 A plan with Writes keeps its duty blocks: `requirements` in each first step, `change-review` after each writing step,
 and a `voice-` block at the end.
-A second table, | Block | Status | Why |, lists each block the steps use as Chosen. The script checks it against the
-step table, draws it under the chart, and prints it for the plan reply.
+A second table, | Block | Status | Why |, lists each block the steps use as Chosen, and may list a block that no
+step uses as Offered. The script checks it against the step table, draws it under the chart, and prints it for
+the plan reply.
 The Mermaid chart goes into plan.md between the START and END markers, so the approved plan.md
 holds the chart the owner saw, and plan.html draws the same text with the pinned Pele build in ../assets.
 """
