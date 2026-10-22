@@ -59,10 +59,13 @@ export function RunChip({ app, sessionId, chair }: { app: App; sessionId: string
         {!chair.who && <ChevronDownIcon className="size-3 shrink-0" />}
       </button>
       {/* A button's children are presentational, so a running switch is announced from outside it.
-          The open popover has its own status. */}
-      <span role="status" className="sr-only" data-testid="run-chip-status">
-        {open ? "" : (switching ?? "")}
-      </span>
+          The open popover has its own status. A child's chip never switches, and its composer keeps
+          one status for the prompt caption. */}
+      {!chair.who && (
+        <span role="status" className="sr-only" data-testid="run-chip-status">
+          {open ? "" : (switching ?? "")}
+        </span>
+      )}
       {!chair.who && (
         <div
           ref={pop}
