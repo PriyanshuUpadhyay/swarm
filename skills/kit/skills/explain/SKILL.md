@@ -18,6 +18,7 @@ Run the front door in `skills/plan/SKILL.md` with the preset below.
 ## Preset
 
 Stop: chat
+Offers: when-to-diagram, html-diagram, deep-search, primary-sources, cite-sources
 
 | File | Needs | Holds | Block | Why |
 |---|---|---|---|---|

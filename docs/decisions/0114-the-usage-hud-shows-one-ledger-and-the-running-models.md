@@ -12,7 +12,7 @@ informed-by:
   - "Notchmeter (notchmeter.com): the room-on-the-other-provider line, idea only"
 ---
 
-# 0112. The usage HUD shows one ledger table and the running models
+# 0114. The usage HUD shows one ledger table and the running models
 
 ## Context and Problem Statement
 

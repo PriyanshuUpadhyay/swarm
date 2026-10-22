@@ -72,6 +72,15 @@ def test_good_plan():
     assert (folder / "run" / "02-read.md").read_text(encoding="utf-8").splitlines()[2] == "Writes: none"
 
 
+def test_an_offered_block_that_no_step_loads_is_listed_apart():
+    out, folder = chart(PLAN + "| html-diagram | Offered | a drawn flow may help the owner later |\n")
+    assert out.returncode == 0, out.stderr
+    page = (folder / "plan.html").read_text(encoding="utf-8")
+    assert "<h3>Chosen (9)</h3>" in page and "<h3>Offered (1)</h3>" in page, page
+    assert page.index("<h3>Offered (1)</h3>") < page.index("<code>html-diagram</code>"), page
+    assert "### Chosen (9)" in out.stdout and "### Offered (1)" in out.stdout, out.stdout
+
+
 def test_page_is_readable():
     out, folder = chart(PLAN)
     assert out.returncode == 0, out.stderr
@@ -189,12 +198,14 @@ def test_defects_stop():
         (PLAN.replace("- the theme follows", "  - nested\n- the theme follows"), "each line is a `- ` bullet"),
         (PLAN.replace("Evidence:\n", ""), "needs a bullet per claim"),
         (PLAN.split("\n## Blocks considered")[0], "no | Block | Status | Why | table"),
-        (PLAN.replace("| voice | Chosen |", "| voice | Maybe |"), "block voice needs Status Chosen and a Why"),
+        (PLAN.replace("| voice | Chosen |", "| voice | Maybe |"), "block voice needs Status Chosen or Offered and a Why"),
         (PLAN + "| html-diagram-x | Chosen | no |\n", "names html-diagram-x, which is not in the kit catalog"),
         (PLAN + "| report | Chosen | x |\n", "block report is Chosen but no step uses it"),
-        (PLAN.replace("| web-ui-basics | Chosen |", "| web-ui-basics | Rejected |"), "block web-ui-basics needs Status Chosen and a Why"),
+        (PLAN + "| report | Offered |  |\n", "block report needs Status Chosen or Offered and a Why"),
+        (PLAN.replace("| web-ui-basics | Chosen |", "| web-ui-basics | Offered |"), "block web-ui-basics is used by a step but not Chosen"),
+        (PLAN.replace("| web-ui-basics | Chosen |", "| web-ui-basics | Rejected |"), "block web-ui-basics needs Status Chosen or Offered and a Why"),
         # C4: no census; the table lists only the blocks the steps use.
-        (PLAN + "| html-diagram | Rejected | no use |\n", "block html-diagram needs Status Chosen and a Why"),
+        (PLAN + "| html-diagram | Rejected | no use |\n", "block html-diagram needs Status Chosen or Offered and a Why"),
         # C4: the duty blocks of a plan with Writes.
         (PLAN.replace("| none | requirements |", "| none | local-research |").replace("| requirements | Chosen | the task needs it |\n", ""),
          "the first step 01-frame has no requirements block"),

@@ -11,7 +11,8 @@ const CARD = "w-[220px] rounded-lg border bg-background p-2.5 text-left text-xs 
 /** A step with only the fields the graph draws, so the Composer can pass rows that Python checked. */
 export type GraphStep = Pick<Step, "file" | "holds" | "resolved" | "blocks" | "uses" | "stage">;
 
-export function SkillGraph({ steps, selected, onSelect }: { steps: GraphStep[]; selected?: string | null; onSelect?: (file: string) => void }) {
+/** `duty` names the blocks that the plan check needs, so their chips carry a mark. */
+export function SkillGraph({ steps, duty, selected, onSelect }: { steps: GraphStep[]; duty: Set<string>; selected?: string | null; onSelect?: (file: string) => void }) {
   const measure = useRef<HTMLDivElement>(null);
   const arrow = useId();
   const [sizes, setSizes] = useState<Size[] | null>(null);
@@ -25,7 +26,7 @@ export function SkillGraph({ steps, selected, onSelect }: { steps: GraphStep[]; 
       {/* h-0 keeps the measure copy out of the scroll area; its cards keep their own size. */}
       <div ref={measure} aria-hidden className="invisible absolute h-0 overflow-hidden">
         {steps.map((s) => (
-          <Card key={s.file} step={s} />
+          <Card key={s.file} step={s} duty={duty} />
         ))}
       </div>
       {laid && (
@@ -49,7 +50,7 @@ export function SkillGraph({ steps, selected, onSelect }: { steps: GraphStep[]; 
             ))}
           </svg>
           {laid.boxes.map((b, i) => (
-            <Card key={b.file} step={steps[i]} at={{ left: b.x + PAD, top: b.y + PAD }} selected={selected === b.file} onSelect={onSelect} />
+            <Card key={b.file} step={steps[i]} duty={duty} at={{ left: b.x + PAD, top: b.y + PAD }} selected={selected === b.file} onSelect={onSelect} />
           ))}
         </>
       )}
@@ -57,15 +58,16 @@ export function SkillGraph({ steps, selected, onSelect }: { steps: GraphStep[]; 
   );
 }
 
-function Card({ step, at, selected, onSelect }: { step: GraphStep; at?: { left: number; top: number }; selected?: boolean; onSelect?: (file: string) => void }) {
+function Card({ step, duty, at, selected, onSelect }: { step: GraphStep; duty: Set<string>; at?: { left: number; top: number }; selected?: boolean; onSelect?: (file: string) => void }) {
   const body = (
     <>
       <span className="block font-mono font-medium [overflow-wrap:anywhere] text-foreground">{step.file}</span>
       <span className="mt-1 block [overflow-wrap:anywhere] text-muted-foreground">{step.holds}</span>
       <span className="mt-1.5 flex flex-wrap gap-1">
         {step.blocks.map((b, i) => (
-          <span key={i} className="rounded bg-code px-1 font-mono text-[11px] text-foreground">
+          <span key={i} className="rounded bg-code px-1 font-mono text-[11px] text-foreground" data-duty={duty.has(b) || undefined} title={duty.has(b) ? "duty: the plan check refuses a plan without it" : undefined}>
             {b}
+            {duty.has(b) && <span className="ml-1 font-sans text-muted-foreground">duty</span>}
           </span>
         ))}
       </span>

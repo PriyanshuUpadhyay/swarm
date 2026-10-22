@@ -53,7 +53,7 @@ for gate in (test_done_needs_the_current_claim, test_done_refuses_a_stale_input,
              test_scope_counts_a_step_done_while_take_reads_the_tree,
              test_scope_fails_closed_in_a_repo,
              test_done_takes_blocks_from_the_plan, test_writer_does_not_take_its_review,
-             test_amend_within_the_owner_budget, test_plan_blocks_follow_the_repo_off_table,
+             test_amend_within_the_owner_budget, test_amend_turns_an_offered_block_chosen, test_plan_blocks_follow_the_repo_off_table,
              test_amend_refuses_odd_rows):
     with tempfile.TemporaryDirectory() as tmp:
         gate(tmp)

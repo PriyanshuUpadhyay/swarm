@@ -119,7 +119,8 @@ test("The run chip hands off to another CLI with a summary, and Cancel stops it 
   await dialog.getByTestId("run-query").fill("gpt-e2e");
   // The same CLI restarts its own session and asks nothing.
   await dialog.getByTestId("run-custom-claude").click();
-  await expect(dialog.getByTestId("run-outcome")).toHaveText("Claude restarts on the new settings. The chat keeps its history.");
+  await expect(dialog.getByTestId("run-outcome")).toHaveText(/^Restarts this chat on gpt-e2e\b.* History stays\. The next reply re-reads the whole chat once, so it costs more\.$/);
+  await expect(dialog.getByTestId("run-apply")).toHaveText("Restart and apply");
   await expect(dialog.getByTestId("run-carry")).toHaveCount(0);
   await dialog.getByTestId("run-custom-codex").click();
   // Another CLI asks what to bring, with Summary as the default.
@@ -129,16 +130,25 @@ test("The run chip hands off to another CLI with a summary, and Cancel stops it 
   await summary.focus();
   await tab.keyboard.press("ArrowRight");
   await expect(dialog.getByTestId("run-carry-choice").getByRole("radio", { name: "Start clean" })).toBeFocused();
-  await expect(dialog.getByTestId("run-outcome")).toHaveText("A new Codex chat starts with nothing from this one.");
+  await expect(dialog.getByTestId("run-outcome")).toHaveText(/^Starts a new Codex chat on gpt-e2e\b.* with nothing from this one\. This chat stays as it is\.$/);
+  await expect(dialog.locator('[data-provider="codex"]')).toContainText("new chat");
   await tab.keyboard.press("ArrowLeft");
   await expect(summary).toHaveAttribute("aria-checked", "true");
-  await expect(dialog.getByTestId("run-outcome")).toHaveText("A new Codex chat starts and gets a summary of this one.");
+  await expect(dialog.getByTestId("run-outcome")).toHaveText(/^Starts a new Codex chat on gpt-e2e\b.* with a summary of this one\. This chat stays as it is\.$/);
+  await expect(dialog.locator('[data-provider="codex"]')).toContainText("new chat + summary");
+  await expect(dialog.getByTestId("run-apply")).toHaveText("Start new chat");
   await shoot(tab, "run-popover", info.project.name);
   await dialog.getByTestId("run-apply").click();
   const progress = dialog.getByTestId("sm-progress");
   // The live chair was asked for a summary and does not answer, so the switch waits here.
   await expect(progress).toHaveAttribute("data-phase", "summarizing");
+  // The open popover says the switch runs, so the chip's own status stays quiet until it closes.
+  await expect(tab.getByTestId("run-chip-status")).toHaveText("");
   await shoot(tab, "switch-model", info.project.name);
+  await tab.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect(tab.getByTestId("run-chip-status")).toHaveText("Switching…");
+  await tab.getByTestId("model-chip").click();
   await dialog.getByTestId("run-cancel").click();
   await expect(progress).toHaveAttribute("data-phase", "cancelled");
   await expect(progress).toContainText("Cancelled. This chat is unchanged.");

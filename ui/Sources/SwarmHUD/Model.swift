@@ -131,8 +131,11 @@ final class UsageModel {
     }
 
     /// A provider call per provider with a meter, never automatic, at most once in 300 s each.
+    /// An expired account is renewed first; its renewal fetches its provider, so that one is skipped here.
     func refresh(now: Date = Date()) {
+        accounts.filter { $0.renewalArguments != nil }.forEach(renew)
         let providers = Set(accounts.map(\.provider)).intersection(["claude", "codex"])
+            .subtracting(accounts.filter { renewing.contains($0.id) }.map(\.provider))
             .filter { !refreshing.contains($0) && (nextRefresh[$0] ?? .distantPast) <= now }
         guard !providers.isEmpty else { return }
         refreshError = nil
@@ -171,7 +174,8 @@ final class UsageModel {
 
     var canRefresh: Bool {
         let now = Date()
-        return accounts.contains { ["claude", "codex"].contains($0.provider) && (nextRefresh[$0.provider] ?? .distantPast) <= now }
+        let renewable = accounts.contains { $0.renewalArguments != nil && !renewing.contains($0.id) }
+        return (renewable || accounts.contains { ["claude", "codex"].contains($0.provider) && (nextRefresh[$0.provider] ?? .distantPast) <= now })
             && refreshing.isEmpty
     }
 }

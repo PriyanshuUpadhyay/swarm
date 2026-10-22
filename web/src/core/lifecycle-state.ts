@@ -37,6 +37,20 @@ export type SetupRun = {
 
 export type Create = { state: "working" | "failed" | "kept"; error: string | null; workspace: string | null; setup: SetupRun | null };
 
+export const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+/** The End or Archive dialog's words for `chats` chats (`title` names the first) with `agents` open
+ *  panes, `busy` of them in a turn. */
+export function endConfirm(chats: number, title: string, archive: boolean, agents: number, busy: number): Omit<Confirm, "run"> {
+  const many = chats > 1;
+  const verb = archive ? "Archiving" : "Ending";
+  return {
+    title: `${archive ? "Archive" : "End"} ${many ? `${chats} chats` : `“${title}”`}?`,
+    body: `${busy ? `${plural(busy, "agent")} still working. ${verb} stops them.` : `${verb} closes ${many ? "their" : "its"} agent${agents > 1 ? "s" : ""}.`}${archive ? (many ? " The chats move to Archived." : " The chat moves to Archived.") : ""}`,
+    action: `${archive ? "Archive" : "End"} ${many ? `${chats} Chats` : "Chat"}`,
+  };
+}
+
 /** A switch phase after which nothing more runs. */
 export function isSettled(phase: string): boolean {
   return phase === "completed" || phase === "failed" || phase === "cancelled";

@@ -71,6 +71,21 @@ def test_amend_within_the_owner_budget(tmp):
     assert out.returncode == 1 and "no Amend budget left (1 of 1 spent)" in out.stderr, out
 
 
+def test_amend_turns_an_offered_block_chosen(tmp):
+    folder = Path(tmp, "run")
+    folder.mkdir()
+    plan = folder / "plan.md"
+    text = chart_plan().replace("\n## Blocks considered", "\nAmend: 1\n\n## Blocks considered", 1)
+    # A 3-cell row of another table that names the block stays.
+    plan.write_text(text + "| report | Offered | a written report may help later |\n\n## Notes\n\n| Block | Note | When |\n|---|---|---|\n| report | keep short | later |\n",
+                    encoding="utf-8")
+    assert run("start", folder, plan).returncode == 0
+    out = run("amend", folder, "| 06-report | build | a report | none | report | the owner asked for one |", "--before", "05-reply")
+    assert out.returncode == 0, out
+    rows = [l for l in plan.read_text(encoding="utf-8").splitlines() if l.startswith("| report |")]
+    assert rows == ["| report | Chosen | amended step 06-report needs it |", "| report | keep short | later |"], rows
+
+
 def test_plan_blocks_follow_the_repo_off_table(tmp):
     # start leaves out a block that the repo's .blocks.toml turns off, so done must not ask for its todo.
     repo = Path(tmp, "repo")

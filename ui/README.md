@@ -17,7 +17,7 @@ front. `SWARM_APP` points `swarm ui` at another build of the app. Its icon is th
 for the pace in `~/Library/Application Support/SwarmHUD/history.json`. `swarm hud install` starts it
 at login. Closed, it shows a pixel mascot that works, waits or sleeps with the swarm agents, and a
 ring for the best account's fullest limit; while agents run, the wings add the working count and
-model tags or "needs you", and at 95% the ring's number (ADR 0112). The open card shows the same
+model tags or "needs you", and at 95% the ring's number (ADR 0114). The open card shows the same
 mascot top left with its credit on hover, the running agents, and one table with a column per limit
 kind. A Codex account row shows its usage limit resets under its name, or in the name's tooltip when
 more than 5 rows make each row one line; past the 660 pt cap the rows scroll. Swarm's own mascot, its

@@ -25,6 +25,7 @@ front door in `skills/plan/SKILL.md` and the preset below, and close each step w
 ## Preset
 
 Stop: chat
+Offers: local-research, deep-search, primary-sources, cite-sources
 
 | File | Needs | Holds | Block | Why |
 |---|---|---|---|---|

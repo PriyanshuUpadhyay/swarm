@@ -48,6 +48,12 @@ pub struct Model {
     /// The efforts this model takes, when the CLI says; else the provider's list applies.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub efforts: Option<Vec<String>>,
+    /// A short line on what the model is for, when the CLI or the alias list gives one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+    /// The level the CLI picks for this model, when it says.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_effort: Option<String>,
 }
 
 #[derive(Debug, PartialEq, Serialize)]
@@ -316,21 +322,23 @@ pub fn info_list() -> InfoList {
 
 fn claude_models() -> Vec<Model> {
     [
-        "default",
-        "sonnet",
-        "opus",
-        "haiku",
-        "fable",
-        "best",
-        "sonnet[1m]",
-        "opus[1m]",
-        "opusplan",
+        ("default", "the account's default"),
+        ("sonnet", "fast, most work"),
+        ("opus", "deepest"),
+        ("haiku", "quickest"),
+        ("fable", "own usage limit"),
+        ("best", "most capable, now Fable"),
+        ("sonnet[1m]", "Sonnet, 1M context"),
+        ("opus[1m]", "Opus, 1M context"),
+        ("opusplan", "Opus plans, Sonnet builds"),
     ]
     .into_iter()
-    .map(|id| Model {
+    .map(|(id, note)| Model {
         id: id.into(),
         label: id.into(),
         efforts: None,
+        note: Some(note.into()),
+        default_effort: None,
     })
     .collect()
 }
@@ -355,10 +363,20 @@ fn codex_models(json: &[u8]) -> Result<Vec<Model>, String> {
                     .filter_map(|level| level["effort"].as_str().map(str::to_string))
                     .collect()
             });
+            // An empty string is no value, so the field stays absent.
+            let text = |key: &str| {
+                row[key]
+                    .as_str()
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string)
+            };
             Some(Model {
                 id: id.into(),
                 label: label.into(),
                 efforts,
+                note: text("description"),
+                default_effort: text("default_reasoning_level"),
             })
         })
         .collect())
@@ -373,6 +391,8 @@ fn agy_models(output: &str) -> Vec<Model> {
                 id: id.into(),
                 label: label.into(),
                 efforts: (!crate::bus::agy_takes_effort(Some(id))).then(Vec::new),
+                note: None,
+                default_effort: None,
             })
         })
         .collect()
@@ -391,130 +411,12 @@ fn pi_models(output: &str) -> Vec<Model> {
                 id: format!("{provider}/{model}"),
                 label: format!("{model} ({provider})"),
                 efforts: None,
+                note: None,
+                default_effort: None,
             })
         })
         .collect()
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn every_provider_parses_from_its_own_id_and_nothing_else_does() {
-        for provider in Provider::ALL {
-            assert_eq!(Provider::parse(provider.id()), Some(provider));
-        }
-        assert_eq!(Provider::parse("Claude"), None);
-        assert_eq!(Provider::parse("opencode"), None);
-    }
-
-    #[test]
-    fn each_field_default_is_one_of_its_listed_values() {
-        for info in info_list().providers {
-            assert!(info.efforts.contains(&info.default_effort), "{}", info.id);
-            for field in info.fields {
-                assert!(field.values.contains(&field.default), "{}", field.name);
-            }
-        }
-    }
-
-    #[test]
-    fn catalogs_show_listed_codex_models_and_agy_models() {
-        let codex = br#"{"models":[{"slug":"gpt-6-sol","display_name":"GPT-6-Sol","visibility":"list","supported_reasoning_levels":[{"effort":"low"},{"effort":"ultra"}]},{"slug":"gpt-old","visibility":"list"},{"slug":"internal","visibility":"hide"}]}"#;
-        assert_eq!(
-            codex_models(codex).unwrap(),
-            vec![
-                Model {
-                    id: "gpt-6-sol".into(),
-                    label: "GPT-6-Sol".into(),
-                    efforts: Some(vec!["low".into(), "ultra".into()]),
-                },
-                Model {
-                    id: "gpt-old".into(),
-                    label: "gpt-old".into(),
-                    efforts: None,
-                },
-            ]
-        );
-        assert!(codex_models(b"not json").is_err());
-        assert_eq!(
-            agy_models(
-                "Fetching...\ngemini-3.8-flash\tGemini 3.8 Flash\nclaude-sonnet-4-6\tClaude Sonnet 4.6\n"
-            ),
-            vec![
-                Model {
-                    id: "gemini-3.8-flash".into(),
-                    label: "Gemini 3.8 Flash".into(),
-                    efforts: None,
-                },
-                // AGY refuses --effort for this model, so it lists no level.
-                Model {
-                    id: "claude-sonnet-4-6".into(),
-                    label: "Claude Sonnet 4.6".into(),
-                    efforts: Some(vec![]),
-                },
-            ]
-        );
-    }
-
-    #[test]
-    fn pi_lists_its_models_as_provider_slash_id() {
-        let listed = "provider       model            context  max-out  thinking  images\nanthropic      claude-haiku-5-5 1M       128K     yes       yes\nopenai-codex   gpt-6-sol        272K     128K     yes       yes\n\n";
-        assert_eq!(
-            pi_models(listed),
-            vec![
-                Model {
-                    id: "anthropic/claude-haiku-5-5".into(),
-                    label: "claude-haiku-5-5 (anthropic)".into(),
-                    efforts: None,
-                },
-                Model {
-                    id: "openai-codex/gpt-6-sol".into(),
-                    label: "gpt-6-sol (openai-codex)".into(),
-                    efforts: None,
-                },
-            ]
-        );
-        assert!(pi_models("No models available.\n").is_empty());
-        assert!(!Provider::Pi.has_accounts());
-        assert!(Provider::Pi.info().efforts.contains(&"off"));
-    }
-
-    #[test]
-    fn claude_current_hashes_its_config_home_and_launch_shares_chats() {
-        let launch = Provider::Claude.launch_env("current", "/private/config");
-        assert_eq!(launch["CLAUDE_SECURESTORAGE_CONFIG_DIR"], "/private/config");
-        assert!(!launch.contains_key("CLAUDE_CONFIG_DIR"));
-        assert_eq!(
-            Provider::Claude.identity_env("current", "/private/config")["CLAUDE_CONFIG_DIR"],
-            "/private/config"
-        );
-    }
-
-    #[test]
-    fn claude_default_uses_the_native_store_without_profile_overrides() {
-        assert!(
-            Provider::Claude
-                .launch_env("default", "/native-home/.claude")
-                .is_empty()
-        );
-        assert!(
-            Provider::Claude
-                .identity_env("default", "/native-home/.claude")
-                .is_empty()
-        );
-    }
-
-    #[test]
-    fn a_model_is_checked_against_the_catalog() {
-        let binary = br#"aliases:{opus:{default:"claude-opus-5-5"}},x="opus""#;
-        assert!(Provider::Claude.model_known(binary, "claude-opus-5-5"));
-        assert!(Provider::Claude.model_known(binary, "opus"));
-        assert!(!Provider::Claude.model_known(binary, "claude-opus-5"));
-        let codex = br#"{"models":[{"slug":"gpt-6-sol"},{"slug":"gpt-6-luna"}]}"#;
-        assert!(Provider::Codex.model_known(codex, "gpt-6-sol"));
-        assert!(!Provider::Codex.model_known(codex, "gpt-5.6-sol"));
-        assert!(!Provider::Codex.model_known(b"not json", "gpt-6-sol"));
-    }
-}
+mod tests;

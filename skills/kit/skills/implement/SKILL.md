@@ -93,6 +93,7 @@ the script reads. The revision of `05-build` is `HEAD`, so a new commit makes `0
 
 Stop: owner
 Start: python3 <skill-dir>/scripts/implement_run.py start --plan <run> [--domains <a,b>]
+Offers: local-research, tool-trial, when-to-diagram, html-diagram, diagram-check, design-tokens, web-ui-basics, headless-shot, look-check, when-to-extract
 
 `02-design` and `03-contracts` need only frame, so both run by the pick-up rule in
 `references/step-run.md`; the frame names their shared assumptions.
