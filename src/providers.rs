@@ -48,6 +48,12 @@ pub struct Model {
     /// The efforts this model takes, when the CLI says; else the provider's list applies.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub efforts: Option<Vec<String>>,
+    /// A short line on what the model is for, when the CLI or the alias list gives one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+    /// The level the CLI picks for this model, when it says.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_effort: Option<String>,
 }
 
 #[derive(Debug, PartialEq, Serialize)]
@@ -316,21 +322,23 @@ pub fn info_list() -> InfoList {
 
 fn claude_models() -> Vec<Model> {
     [
-        "default",
-        "sonnet",
-        "opus",
-        "haiku",
-        "fable",
-        "best",
-        "sonnet[1m]",
-        "opus[1m]",
-        "opusplan",
+        ("default", "the account's default"),
+        ("sonnet", "fast, most work"),
+        ("opus", "deepest"),
+        ("haiku", "quickest"),
+        ("fable", "own usage limit"),
+        ("best", "most capable, now Fable"),
+        ("sonnet[1m]", "Sonnet, 1M context"),
+        ("opus[1m]", "Opus, 1M context"),
+        ("opusplan", "Opus plans, Sonnet builds"),
     ]
     .into_iter()
-    .map(|id| Model {
+    .map(|(id, note)| Model {
         id: id.into(),
         label: id.into(),
         efforts: None,
+        note: Some(note.into()),
+        default_effort: None,
     })
     .collect()
 }
@@ -359,6 +367,8 @@ fn codex_models(json: &[u8]) -> Result<Vec<Model>, String> {
                 id: id.into(),
                 label: label.into(),
                 efforts,
+                note: row["description"].as_str().map(str::to_string),
+                default_effort: row["default_reasoning_level"].as_str().map(str::to_string),
             })
         })
         .collect())
@@ -373,6 +383,8 @@ fn agy_models(output: &str) -> Vec<Model> {
                 id: id.into(),
                 label: label.into(),
                 efforts: (!crate::bus::agy_takes_effort(Some(id))).then(Vec::new),
+                note: None,
+                default_effort: None,
             })
         })
         .collect()
@@ -391,6 +403,8 @@ fn pi_models(output: &str) -> Vec<Model> {
                 id: format!("{provider}/{model}"),
                 label: format!("{model} ({provider})"),
                 efforts: None,
+                note: None,
+                default_effort: None,
             })
         })
         .collect()
@@ -429,11 +443,15 @@ mod tests {
                     id: "gpt-6-sol".into(),
                     label: "GPT-6-Sol".into(),
                     efforts: Some(vec!["low".into(), "ultra".into()]),
+                    note: None,
+                    default_effort: None,
                 },
                 Model {
                     id: "gpt-old".into(),
                     label: "gpt-old".into(),
                     efforts: None,
+                    note: None,
+                    default_effort: None,
                 },
             ]
         );
@@ -447,15 +465,34 @@ mod tests {
                     id: "gemini-3.8-flash".into(),
                     label: "Gemini 3.8 Flash".into(),
                     efforts: None,
+                    note: None,
+                    default_effort: None,
                 },
                 // AGY refuses --effort for this model, so it lists no level.
                 Model {
                     id: "claude-sonnet-4-6".into(),
                     label: "Claude Sonnet 4.6".into(),
                     efforts: Some(vec![]),
+                    note: None,
+                    default_effort: None,
                 },
             ]
         );
+    }
+
+    #[test]
+    fn models_carry_a_note_and_the_cli_default_level() {
+        let codex = br#"{"models":[{"slug":"gpt-6-luna","display_name":"GPT-6-Luna","visibility":"list","description":"Fast and affordable model.","default_reasoning_level":"medium"}]}"#;
+        let luna = &codex_models(codex).unwrap()[0];
+        assert_eq!(luna.note.as_deref(), Some("Fast and affordable model."));
+        assert_eq!(luna.default_effort.as_deref(), Some("medium"));
+        let claude = claude_models();
+        let opus = claude.iter().find(|m| m.id == "opus").unwrap();
+        assert_eq!(opus.note.as_deref(), Some("deepest"));
+        assert!(claude.iter().all(|m| m.note.is_some()));
+        // An absent note is absent in the JSON, never null.
+        let json = serde_json::to_value(&agy_models("g\tG\n")[0]).unwrap();
+        assert!(json.get("note").is_none() && json.get("default_effort").is_none());
     }
 
     #[test]
@@ -468,11 +505,15 @@ mod tests {
                     id: "anthropic/claude-haiku-5-5".into(),
                     label: "claude-haiku-5-5 (anthropic)".into(),
                     efforts: None,
+                    note: None,
+                    default_effort: None,
                 },
                 Model {
                     id: "openai-codex/gpt-6-sol".into(),
                     label: "gpt-6-sol (openai-codex)".into(),
                     efforts: None,
+                    note: None,
+                    default_effort: None,
                 },
             ]
         );
