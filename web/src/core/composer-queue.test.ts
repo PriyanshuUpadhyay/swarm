@@ -53,7 +53,8 @@ describe("pi's queue back in the draft", () => {
     app.setDraft("chat", "and the docs");
     await app.pullBack("chat");
     expect(posts.at(-1)).toEqual({ path: "/api/chat/pull-back", body: { session: "chat", agent: "chair" } });
-    expect(app.draft("chat")).toBe("steer one\nsteer two\nsecond line\nand the docs");
+    // pi's box held the owner's text too, so the draft takes the whole box as pi drew it.
+    expect(app.draft("chat")).toBe("steer one steer two second line\nand the docs");
     expect(app.chats.get("chat")!.sent.length).toBe(0);
 
     // A stop: pi puts the queue back in its box, the server empties it, and the draft takes it.
@@ -74,6 +75,39 @@ describe("pi's queue back in the draft", () => {
     await app.send("chat", "steer five");
     await app.interrupt("chat");
     expect(app.draft("chat")).toBe("");
+  });
+});
+
+describe("what pi's box held goes to the draft", () => {
+  it("drops only the Sent rows the box held as whole messages, and keeps the owner's own note", async () => {
+    let held = "hook";
+    const { app, snapshot } = harness(undefined, (path) => (path === "/api/chat/interrupt" ? { ok: true, box: "cleared", held } : null));
+    snapshot({ provider: "pi", state: "working" });
+    app.openChat("chat");
+    await settle();
+    // "ok" is inside "hook" but is not a message the box held.
+    await app.send("chat", "ok");
+    await app.send("chat", "hook");
+    await app.interrupt("chat");
+    expect(app.chats.get("chat")!.sent.map((s) => s.row.text)).toEqual(["ok"]);
+    expect(app.draft("chat")).toBe("hook");
+
+    // A note typed in pi's own box comes back with the queue.
+    app.chats.get("chat")!.sent = [];
+    app.setDraft("chat", "");
+    await app.send("chat", "steer one");
+    held = "my note steer one";
+    await app.interrupt("chat");
+    expect(app.draft("chat")).toBe("my note steer one");
+    expect(app.chats.get("chat")!.sent.length).toBe(0);
+
+    // Whitespace alone is nothing to restore.
+    app.setDraft("chat", "");
+    await app.send("chat", "steer two");
+    held = "  \n ";
+    await app.interrupt("chat");
+    expect(app.draft("chat")).toBe("");
+    expect(app.chats.get("chat")!.sent.length).toBe(1);
   });
 });
 

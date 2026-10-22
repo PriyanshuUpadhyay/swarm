@@ -105,6 +105,9 @@ export const MISSING_ADAPTER = "This session does not record an adapter, so Swar
 /** The providers whose chat can branch from a message (ADR 0114). */
 export const BRANCH_PROVIDERS = ["claude", "pi"];
 
+/** Esc Esc and Branch from here need the chair idle and of a CLI that can branch. */
+export const canBranch = (agent: AgentInput) => agent.who === null && !agent.running && BRANCH_PROVIDERS.includes(agent.provider ?? "");
+
 /** The chair's input, or the input of the child agent `child` (ChildColumnView). */
 export function agentInput(session: Session | undefined, agents: readonly Agent[] | undefined, child: string | null = null): AgentInput {
   const agent = agents?.find((a) => a.id === (child ?? "orchestrator"));

@@ -3,7 +3,7 @@ import { type Agent, type Api, type Row, type RowFrame, type RowPage, type Snaps
 import { App } from "./app";
 import { chair, session } from "./chat-fixtures";
 import { harness, settle, user } from "./composer-harness";
-import { agentInput, confirmSent, MISSING_ADAPTER, sends, sentRow, settleSent, submission, usageLabel } from "./composer";
+import { agentInput, canBranch, confirmSent, MISSING_ADAPTER, sends, sentRow, settleSent, submission, usageLabel } from "./composer";
 
 const waitingPrompt = { id: "prompt-hash", question: "Do you want to proceed?", choices: ["Yes", "No"] };
 
@@ -86,6 +86,15 @@ describe("chair input", () => {
     expect(asking.unreachable).toBe(false);
     expect(asking.prompt).toEqual(waitingPrompt);
     expect(agentInput(session(), [chair({ state: "waiting" })]).disabled).toBe("The agent is asking a question. Answer it first in its pane.");
+  });
+
+  it("offers Branch only on an idle chair of a CLI that can branch", () => {
+    const input = (extra: Parameters<typeof chair>[0], who?: string) => agentInput(session(), [chair({ provider: "claude", state: "done", ...extra })], who);
+    expect(canBranch(input({}))).toBe(true);
+    expect(canBranch(input({ provider: "pi" }))).toBe(true);
+    expect(canBranch(input({ provider: "codex" }))).toBe(false);
+    expect(canBranch(input({ state: "working" }))).toBe(false);
+    expect(canBranch(agentInput(session(), [chair({ provider: "claude" }), chair({ id: "coder", provider: "claude" })], "coder"))).toBe(false);
   });
 
   it("offers Resume only for an ended chair with a session id", () => {

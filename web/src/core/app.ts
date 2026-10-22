@@ -416,9 +416,14 @@ export class App {
     return this.actions.setBranchPicker(open);
   }
 
-  /** The open chat's loaded user rows, newest first. */
-  branchRows(): Row[] {
-    return (this.reading.chat()?.rows ?? []).filter((r) => r.kind === "user").reverse();
+  /** The open chat's loaded rows; the array is new whenever they change. */
+  openRows(): readonly Row[] | undefined {
+    return this.reading.chat()?.rows;
+  }
+
+  /** The user rows of `rows` (the open chat's by default), newest first. */
+  branchRows(rows: readonly Row[] = this.openRows() ?? []): Row[] {
+    return rows.filter((r) => r.kind === "user").reverse();
   }
 
   setPalette(open: boolean) {

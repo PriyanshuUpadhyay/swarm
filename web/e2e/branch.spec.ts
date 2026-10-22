@@ -35,3 +35,40 @@ test("Branch from here and Esc Esc start a chat from an earlier message", async 
   expect(asked).toEqual([{ session: live, row: expect.stringMatching(/@raw-\d+-\d+$/) }]);
   await composer.fill("");
 });
+
+async function openLive(tab: import("@playwright/test").Page) {
+  const url = new URL(process.env.SWARM_SERVE_URL!);
+  await tab.goto(`${url.origin}/${url.hash}`);
+  await tab.waitForFunction(() => window.__swarmReady === true);
+  await tab.locator(`[data-testid="tree-row"][data-session="${process.env.SWARM_E2E_TYPED!}"]`).click();
+  const composer = tab.getByTestId("composer");
+  await expect(composer).toBeEnabled();
+  return composer;
+}
+
+test("a picker opened before the rows load lists them when they arrive", async ({ page: tab }) => {
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await tab.route("**/api/rows?**", async (route) => {
+    await held;
+    await route.continue();
+  });
+  const composer = await openLive(tab);
+  await composer.press("Escape");
+  await composer.press("Escape");
+  const picker = tab.getByTestId("branch-picker");
+  await expect(picker).toBeVisible();
+  await expect(picker.getByRole("option")).toHaveCount(0);
+  release();
+  await expect(picker.getByRole("option").first()).toBeVisible();
+});
+
+test("a held Esc does not open the picker", async ({ page: tab }) => {
+  const composer = await openLive(tab);
+  await composer.focus();
+  // The second keydown of a held key is an auto-repeat.
+  await tab.keyboard.down("Escape");
+  await tab.keyboard.down("Escape");
+  await tab.keyboard.up("Escape");
+  await expect(tab.getByTestId("branch-picker")).toHaveCount(0);
+});

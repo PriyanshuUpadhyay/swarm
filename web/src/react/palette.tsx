@@ -9,6 +9,9 @@ import { StatusGlyph } from "./status";
 /** Esc Esc in an empty box: the open chat's messages, newest first; one starts a branch. */
 export function BranchPicker({ app }: { app: App }) {
   const open = useSyncExternalStore(app.subscribe, () => app.view.branchPicking);
+  // The rows load and grow while the picker is open, so the list follows the chat's row array.
+  const loaded = useSyncExternalStore(app.subscribe, () => app.openRows());
+  const rows = open ? app.branchRows(loaded) : [];
   return (
     <CommandDialog open={open} onOpenChange={(o) => app.setBranchPicker(o)} title="Branch from a message" description="A new chat starts from the conversation before the message.">
       {open && (
@@ -16,7 +19,7 @@ export function BranchPicker({ app }: { app: App }) {
           <CommandInput autoFocus placeholder="Branch from which message?" />
           <CommandList>
             <CommandEmpty>No messages</CommandEmpty>
-            {app.branchRows().map((row) => (
+            {rows.map((row) => (
               <CommandItem key={row.id} value={row.id} keywords={[row.text]} onSelect={() => app.branch(row.id)}>
                 <span className="truncate">{row.text.replace(/\s+/g, " ")}</span>
               </CommandItem>
