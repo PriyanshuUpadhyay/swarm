@@ -102,7 +102,7 @@ export function BackgroundPanel({ app, session }: { app: App; session: string })
           try {
             await app.api.post("/api/shells/close", { session, id });
           } catch (err) {
-            throw new Error(message(err) || "The shell did not close.");
+            throw new Error(message(err) || "The shell did not close.", { cause: err });
           } finally {
             setBusy(false);
           }

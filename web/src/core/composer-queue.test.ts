@@ -111,6 +111,33 @@ describe("what pi's box held goes to the draft", () => {
   });
 });
 
+describe("which Sent rows pi's box held", () => {
+  it("takes the newest rows, so 'ok' taken by pi is not mistaken for part of 'ok then'", async () => {
+    const { app, snapshot } = harness(undefined, (path) => (path === "/api/chat/interrupt" ? { ok: true, box: "cleared", held: "ok then" } : null));
+    snapshot({ provider: "pi", state: "working" });
+    app.openChat("chat");
+    await settle();
+    await app.send("chat", "ok");
+    await app.send("chat", "ok then");
+    await app.interrupt("chat");
+    // pi took "ok" before the stop; the log shows it later. Only "ok then" came back, once.
+    expect(app.draft("chat")).toBe("ok then");
+    expect(app.chats.get("chat")!.sent.map((s) => s.row.text)).toEqual(["ok"]);
+  });
+
+  it("matches a long message that pi's box wrapped, by the text without spaces", async () => {
+    const url = `https://example.com/${"a".repeat(130)}`;
+    const { app, snapshot } = harness(undefined, (path) => (path === "/api/chat/interrupt" ? { ok: true, box: "cleared", held: `${url.slice(0, 75)} ${url.slice(75)}` } : null));
+    snapshot({ provider: "pi", state: "working" });
+    app.openChat("chat");
+    await settle();
+    await app.send("chat", url);
+    await app.interrupt("chat");
+    expect(app.draft("chat")).toBe(url);
+    expect(app.chats.get("chat")!.sent.length).toBe(0);
+  });
+});
+
 describe("pi child's queue back in its draft", () => {
   it("moves the child's Sent texts to the child's draft on the header Stop", async () => {
     const { app, posts, snapshot } = harness(undefined, (path) => (path === "/api/chat/interrupt" ? { ok: true, box: "cleared", held: "steer one" } : null));

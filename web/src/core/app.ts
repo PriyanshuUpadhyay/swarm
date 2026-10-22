@@ -421,6 +421,22 @@ export class App {
     return this.reading.chat()?.rows;
   }
 
+  /** True when the open chat has older rows that are not loaded. */
+  hasOlderRows(): boolean {
+    return (this.reading.chat()?.older ?? 0) > 0;
+  }
+
+  /** Loads the open chat's rows again, for a picker whose load failed. */
+  async reloadOpenRows() {
+    const chat = this.reading.chat();
+    if (!chat) return;
+    chat.state = "loading";
+    this.notify();
+    await this.reading.loadTail(chat);
+    this.streaming.syncSubscriptions();
+    this.notify();
+  }
+
   /** The user rows of `rows` (the open chat's by default), newest first. */
   branchRows(rows: readonly Row[] = this.openRows() ?? []): Row[] {
     return rows.filter((r) => r.kind === "user").reverse();

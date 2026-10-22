@@ -229,26 +229,35 @@ export class AppComposer {
   }
 
   /** Puts the text pi's box `held` before the draft and drops the Sent rows it held from the chat.
-   *  When the box held only those rows, their exact texts come back, line breaks and all; the
-   *  box joins lines with spaces, so a box that also holds the owner's own note comes back as pi
-   *  drew it. A row that pi took before the box was read is not in it, and "ok" is not held by a
-   *  box that holds "hook". */
+   *  pi takes the oldest queued message first, so the box holds the newest k Sent rows in order;
+   *  the largest k whose texts appear in the box as whole words wins, and a box that wrapped a
+   *  long word is matched again with all spaces removed. When the box held only those rows, their
+   *  exact texts come back, line breaks and all; otherwise the box text comes back as pi drew it,
+   *  for it also holds what the owner typed in pi. */
   private restoreSent(sessionId: string, sent: readonly Sent[], held: string) {
     const words = (text: string) => text.trim().split(/\s+/).join(" ");
+    const squash = (text: string) => text.replace(/\s+/g, "");
     if (!held.trim()) return;
-    let rest = ` ${words(held)} `;
-    const back = sent.filter((s) => {
-      const at = rest.indexOf(` ${words(s.row.text)} `);
-      if (at < 0) return false;
-      rest = rest.slice(0, at) + rest.slice(at + words(s.row.text).length + 1);
-      return true;
-    });
+    const box = words(held);
+    let back: Sent[] = [];
+    let only = false;
+    for (const [fits, same] of [
+      [(tail: string) => ` ${box} `.includes(` ${tail} `), (tail: string) => tail === box],
+      [(tail: string) => squash(box).includes(squash(tail)), (tail: string) => squash(tail) === squash(box)],
+    ] as const) {
+      for (let k = sent.length; k > 0 && !back.length; k--) {
+        const tail = sent.slice(-k);
+        const joined = tail.map((s) => words(s.row.text)).join(" ");
+        if (fits(joined)) [back, only] = [tail, same(joined)];
+      }
+      if (back.length) break;
+    }
     const chat = this.app.chats.get(sessionId);
     if (chat) {
       chat.sent = chat.sent.filter((s) => !back.includes(s));
       this.app.reading.changed(chat);
     }
-    const text = rest.trim() ? held.trim() : back.map((s) => s.row.text).join("\n");
+    const text = only ? back.map((s) => s.row.text).join("\n") : held.trim();
     const typed = this.draft(sessionId);
     if (text) this.replaceDraft(sessionId, typed ? `${text}\n${typed}` : text);
   }

@@ -72,3 +72,47 @@ test("a held Esc does not open the picker", async ({ page: tab }) => {
   await tab.keyboard.up("Escape");
   await expect(tab.getByTestId("branch-picker")).toHaveCount(0);
 });
+
+test("Esc closes the picker and the keys go back to the text box", async ({ page: tab }) => {
+  const composer = await openLive(tab);
+  await composer.press("Escape");
+  await composer.press("Escape");
+  await expect(tab.getByTestId("branch-picker")).toBeVisible();
+  await tab.keyboard.press("Escape");
+  await expect(tab.getByTestId("branch-picker")).toHaveCount(0);
+  await expect(composer).toBeFocused();
+  await tab.keyboard.type("typed after");
+  await expect(composer).toHaveValue("typed after");
+});
+
+test("the picker says it is loading, shows a failed load with Retry, and says older messages are not listed", async ({ page: tab }) => {
+  let mode: "hold" | "fail" | "older" = "hold";
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await tab.route("**/api/rows?**", async (route) => {
+    if (mode === "hold") await held;
+    // The mode is read again after the wait, so the held request can fail.
+    if (mode === "hold") {
+      await route.continue();
+    } else if (mode === "fail") {
+      await route.fulfill({ status: 500, json: { error: "rows are gone" } });
+    } else {
+      const page = await (await route.fetch()).json();
+      page.page.start_offset = 5;
+      await route.fulfill({ json: page });
+    }
+  });
+  const composer = await openLive(tab);
+  await composer.press("Escape");
+  await composer.press("Escape");
+  const picker = tab.getByTestId("branch-picker");
+  await expect(picker.getByText("Loading messages…")).toBeVisible();
+  await expect(picker.getByText("No messages")).toHaveCount(0);
+  mode = "fail";
+  release();
+  await expect(picker.getByRole("alert")).toContainText("rows are gone");
+  mode = "older";
+  await picker.getByRole("button", { name: "Retry" }).click();
+  await expect(picker.getByRole("option").first()).toBeVisible();
+  await expect(picker.getByText("Older messages are not listed. Scroll up to branch from one.")).toBeVisible();
+});
