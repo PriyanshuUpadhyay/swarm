@@ -252,12 +252,12 @@ esac
     }
 
     /// A stand-in CLI that logs every call and lets a test change what two verbs do.
-    fn stand_in(fixture: &Fixture, branch: &str, launch: &str) {
-        stand_in_with(fixture, branch, launch, "false");
+    fn stand_in(fixture: &Fixture, branch_step: &str, launch_step: &str) {
+        stand_in_with(fixture, branch_step, launch_step, "false");
     }
 
     /// `new_alive` is what the new chat's chair reports for `alive` when its pane is read.
-    fn stand_in_with(fixture: &Fixture, branch: &str, launch: &str, new_alive: &str) {
+    fn stand_in_with(fixture: &Fixture, branch_step: &str, launch_step: &str, new_alive: &str) {
         use std::os::unix::fs::PermissionsExt;
         let cli = &fixture.app.cli;
         std::fs::write(
@@ -268,8 +268,8 @@ printf '%s\n' "${{SWARM_ADAPTER-}}|$*" >> "$SWARM_HOME/actions"
 case "$1 $2" in
   'agents --json') if [ "${{SWARM_SESSION_ID-}}" = 01a1650a-0000-7000-8000-000000000001 ]; then printf '%s\n' '{{"agents":[{{"id":"orchestrator","alive":{new_alive}}}]}}'; else printf '%s\n' '{{"agents":[{{"id":"orchestrator"}}]}}'; fi ;;
   'session new') printf '%s\n' 01a1650a-0000-7000-8000-000000000001 ;;
-  'session branch') {branch} ;;
-  'launch orchestrator') {launch} ;;
+  'session branch') {branch_step} ;;
+  'launch orchestrator') {launch_step} ;;
 esac
 "#
             ),

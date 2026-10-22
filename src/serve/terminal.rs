@@ -206,14 +206,8 @@ impl Drop for Slot {
     }
 }
 
-/// The adapter's `attach` for `pane`, ready for a PTY: a terminal type xterm.js draws, UTF-8, and
-/// no `TMUX`, since a server started from tmux would make tmux refuse to nest.
-pub(super) fn attach_command(
-    root: &Path,
-    adapter: &str,
-    pane: &str,
-) -> Result<CommandBuilder, Box<dyn std::error::Error>> {
-    let command = swarm::adapter::load(root, adapter)?.attach_command(&[("pane", pane)])?;
+/// A PTY command with the program, arguments, and environment edits of `command`.
+pub(super) fn pty_command(command: &std::process::Command) -> CommandBuilder {
     let mut builder = CommandBuilder::new(command.get_program());
     builder.args(command.get_args());
     for (key, value) in command.get_envs() {
@@ -222,6 +216,18 @@ pub(super) fn attach_command(
             None => builder.env_remove(key),
         }
     }
+    builder
+}
+
+/// The adapter's `attach` for `pane`, ready for a PTY: a terminal type xterm.js draws, UTF-8, and
+/// no `TMUX`, since a server started from tmux would make tmux refuse to nest.
+pub(super) fn attach_command(
+    root: &Path,
+    adapter: &str,
+    pane: &str,
+) -> Result<CommandBuilder, Box<dyn std::error::Error>> {
+    let command = swarm::adapter::load(root, adapter)?.attach_command(&[("pane", pane)])?;
+    let mut builder = pty_command(&command);
     builder.env_remove("TMUX");
     builder.env_remove("TMUX_PANE");
     builder.env("TERM", "xterm-256color");

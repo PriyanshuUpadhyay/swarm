@@ -150,6 +150,11 @@ export class AppComposer {
     this.replaceDraft(sessionId, text);
   }
 
+  private prependDraft(sessionId: string, text: string) {
+    const typed = this.draft(sessionId);
+    this.replaceDraft(sessionId, typed ? `${text}\n${typed}` : text);
+  }
+
   replaceDraft(sessionId: string, text: string) {
     this.setDraft(sessionId, text);
     this.update(sessionId, { draftRev: this.input(sessionId).draftRev + 1 });
@@ -236,27 +241,15 @@ export class AppComposer {
    *  breaks and all; otherwise the box text comes back as pi drew it, for it also holds what the
    *  owner typed in pi. */
   private restoreSent(sessionId: string, sent: readonly Sent[], held: string) {
-    const words = (text: string) => text.trim().split(/\s+/).join(" ");
-    const squash = (text: string) => text.replace(/\s+/g, "");
     if (!held.trim()) return;
-    const box = words(held);
-    let back: Sent[] = [];
-    let only = false;
-    for (let k = sent.length; k > 0; k--) {
-      const tail = sent.slice(-k);
-      const joined = tail.map((s) => words(s.row.text)).join(" ");
-      if (` ${box} `.includes(` ${joined} `)) [back, only] = [tail, joined === box];
-      else if (tail.every((s) => !/\s/.test(s.row.text.trim())) && squash(joined) === squash(box)) [back, only] = [tail, true];
-      if (back.length) break;
-    }
+    const { back, only } = heldRows(sent, held);
     const chat = this.app.chats.get(sessionId);
     if (chat) {
       chat.sent = chat.sent.filter((s) => !back.includes(s));
       this.app.reading.changed(chat);
     }
     const text = only ? back.map((s) => s.row.text).join("\n") : held.trim();
-    const typed = this.draft(sessionId);
-    if (text) this.replaceDraft(sessionId, typed ? `${text}\n${typed}` : text);
+    if (text) this.prependDraft(sessionId, text);
   }
 
   /** Picks choice `choice` (zero-based); swarm refuses it when the question changed. */
@@ -309,8 +302,20 @@ export class AppComposer {
     }
     if (chair.provider === "pi") return this.restoreSent(sessionId, sent, result.held ?? "");
     // Keep anything typed while the CLI let go of the text.
-    const typed = this.draft(sessionId);
-    const text = result.pulled;
-    this.replaceDraft(sessionId, typed ? `${text}\n${typed}` : text);
+    this.prependDraft(sessionId, result.pulled);
   }
+}
+
+/** The newest Sent rows that pi's box `held` still shows, and whether the box held only them. */
+function heldRows(sent: readonly Sent[], held: string): { back: Sent[]; only: boolean } {
+  const words = (text: string) => text.trim().split(/\s+/).join(" ");
+  const squash = (text: string) => text.replace(/\s+/g, "");
+  const box = words(held);
+  for (let k = sent.length; k > 0; k--) {
+    const tail = sent.slice(-k);
+    const joined = tail.map((s) => words(s.row.text)).join(" ");
+    if (` ${box} `.includes(` ${joined} `)) return { back: tail, only: joined === box };
+    if (tail.every((s) => !/\s/.test(s.row.text.trim())) && squash(joined) === squash(box)) return { back: tail, only: true };
+  }
+  return { back: [], only: false };
 }

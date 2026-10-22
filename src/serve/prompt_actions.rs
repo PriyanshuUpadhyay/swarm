@@ -28,7 +28,7 @@ pub(super) fn action_provider(
 pub(super) fn interrupt_empties_pi(app: &App, body: &ActionTarget) -> Result<bool, ApiError> {
     let (call, agent) = action_target(app, &body.session, &body.agent)?;
     let provider = action_provider(app, &body.session, &agent)?;
-    Ok(queue::pi_box(provider.as_deref(), &call.adapter))
+    Ok(queue::can_clear_pi_box(provider.as_deref(), &call.adapter))
 }
 
 pub(super) fn interrupt_clears_box(app: &App, body: &ActionTarget) -> Result<bool, ApiError> {
@@ -104,7 +104,7 @@ pub(super) async fn last_prompt(app: &App, log: &Log) -> Result<String, ApiError
 pub(super) async fn pull_back(app: &App, body: ActionTarget) -> Result<Value, ApiError> {
     let (call, agent) = action_target(app, &body.session, &body.agent)?;
     let provider = action_provider(app, &body.session, &agent)?;
-    if queue::pi_box(provider.as_deref(), &call.adapter) {
+    if queue::can_clear_pi_box(provider.as_deref(), &call.adapter) {
         // The text is the app's own Sent rows; the screen joins pi's lines with spaces.
         let output = run_cli(app, call.args(&["clear-box", &agent, "--dequeue"]), None).await?;
         let (state, held) = cleared_box(&output);

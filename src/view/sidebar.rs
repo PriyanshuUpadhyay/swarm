@@ -295,6 +295,11 @@ fn rows(
         if let Some(text) = &summary {
             context.text.insert("children".into(), text.clone());
         }
+        let parent = chat
+            .sessions
+            .iter()
+            .find_map(|s| s["branch_of"].as_str())
+            .and_then(|parent| workspace.chats.iter().find(|c| c.contains(parent)));
         result.push(SidebarRow {
             id: id.clone(),
             kind: "chat",
@@ -308,12 +313,7 @@ fn rows(
             status,
             counts: chat.counts.clone(),
             age: Some(age(chat.last_activity, now)),
-            help: match chat
-                .sessions
-                .iter()
-                .find_map(|s| s["branch_of"].as_str())
-                .and_then(|parent| workspace.chats.iter().find(|c| c.contains(parent)))
-            {
+            help: match parent {
                 Some(parent) => format!(
                     "{}\nBranched from {}\n{}",
                     chat.title, parent.title, workspace.path

@@ -15,7 +15,7 @@ function CommandDialog({
   className,
   onCloseAutoFocus,
   ...props
-}: React.ComponentProps<typeof Dialog> & { title?: string; description?: string; className?: string; onCloseAutoFocus?: (event: Event) => void } & Pick<React.ComponentProps<"div">, "children">) {
+}: React.ComponentProps<typeof Dialog> & { title?: string; description?: string; className?: string } & Pick<React.ComponentProps<"div">, "children"> & Pick<React.ComponentProps<typeof DialogContent>, "onCloseAutoFocus">) {
   return (
     <Dialog {...props}>
       <DialogContent className={className} aria-describedby={undefined} onCloseAutoFocus={onCloseAutoFocus}>

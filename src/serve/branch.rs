@@ -13,7 +13,7 @@ const NO_HISTORY: &str = "There is nothing before this message to branch";
 /// Claude's API refuses, so it is refused here.
 pub(super) fn cut_claude(prefix: &str, id: &str) -> Result<String, &'static str> {
     let mut open = std::collections::HashSet::new();
-    let mut messages = false;
+    let mut has_message = false;
     let mut out = String::new();
     for line in prefix.lines().filter(|line| !line.trim().is_empty()) {
         let mut record: Value = serde_json::from_str(line).map_err(|_| UNREADABLE)?;
@@ -32,14 +32,14 @@ pub(super) fn cut_claude(prefix: &str, id: &str) -> Result<String, &'static str>
                 _ => {}
             }
         }
-        messages |= record["message"].is_object();
+        has_message |= record["message"].is_object();
         if record.get("sessionId").is_some() {
             record["sessionId"] = id.into();
         }
         out.push_str(&record.to_string());
         out.push('\n');
     }
-    if !messages {
+    if !has_message {
         return Err(NO_HISTORY);
     }
     if !open.is_empty() {
@@ -149,7 +149,7 @@ pub(super) async fn branch_chat(
     let old = body.session.as_str();
     let call = action_session(&app, old)?;
     let (checking, cwd) = (app.clone(), call.cwd.to_string_lossy().into_owned());
-    tokio::task::spawn_blocking(move || refuse_read_only(&checking, &cwd, "chat"))
+    tokio::task::spawn_blocking(move || refuse_read_only_workspace(&checking, &cwd, "chat"))
         .await
         .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "workspace check failed"))??;
     let provider: Option<String> = read_connection(&app.root)

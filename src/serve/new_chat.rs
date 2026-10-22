@@ -39,7 +39,7 @@ pub(super) async fn new_chat(app: &App, body: NewChat) -> Result<Value, ApiError
         }
         lifecycle::checked_path(&snapshot_app.root, &allowed_cwd, true).map_err(lifecycle_error)?;
         if is_read_only(&tree, &saved, &allowed_cwd) {
-            return Err(read_only("chat"));
+            return Err(read_only_error("chat"));
         }
         Ok(())
     })
@@ -80,37 +80,28 @@ pub(super) async fn new_chat(app: &App, body: NewChat) -> Result<Value, ApiError
     Ok(json!({"ok": true, "session": session, "agent": "orchestrator", "pane": pane}))
 }
 
-/// The deepest workspace of the tree whose folder contains `cwd`.
-pub(super) fn holder<'a>(tree: &'a tree::Tree, cwd: &str) -> Option<&'a tree::Workspace> {
-    tree.projects
-        .iter()
-        .flat_map(|p| &p.workspaces)
-        .filter(|w| tree::contains(cwd, &w.path))
-        .max_by_key(|w| w.path.len())
-}
-
 /// True when the workspace that holds `cwd` is archived, missing, or removed. That is the deepest
 /// workspace of the tree whose folder contains `cwd`, as the sidebar files a chat; a chat in a
 /// subfolder of an archived workspace is read-only too.
 fn is_read_only(tree: &tree::Tree, saved: &choices_store::Saved, cwd: &str) -> bool {
-    match holder(tree, cwd) {
-        Some(w) => w.missing || w.removed || saved.owner.archived.contains(&w.path),
+    match tree.workspace_containing(cwd) {
+        Some((_, w)) => w.missing || w.removed || saved.owner.archived.contains(&w.path),
         None => saved.owner.archived.contains(cwd),
     }
 }
 
-fn read_only(start: &str) -> ApiError {
+fn read_only_error(what: &str) -> ApiError {
     error(
         StatusCode::CONFLICT,
-        &format!("This workspace is read-only. Restore it to start a {start}."),
+        &format!("This workspace is read-only. Restore it to start a {what}."),
     )
 }
 
-/// Refuses a new `start` (a chat, a shell) in an archived, missing, or removed workspace.
-pub(super) fn refuse_read_only(app: &App, cwd: &str, start: &str) -> Result<(), ApiError> {
+/// Refuses a new `what` (a chat, a shell) in an archived, missing, or removed workspace.
+pub(super) fn refuse_read_only_workspace(app: &App, cwd: &str, what: &str) -> Result<(), ApiError> {
     let (tree, saved) = fresh_lifecycle_tree(app)?;
     if is_read_only(&tree, &saved, cwd) {
-        return Err(read_only(start));
+        return Err(read_only_error(what));
     }
     Ok(())
 }

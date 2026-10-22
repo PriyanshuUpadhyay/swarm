@@ -4,6 +4,7 @@
 //! session, so the page never names a path, and belongs to the workspace that holds that folder,
 //! so every chat of a workspace lists and counts the same shells.
 
+use super::terminal::pty_command;
 use super::*;
 use portable_pty::CommandBuilder;
 
@@ -56,7 +57,7 @@ const MAX_SHELLS: usize = 8;
 // ponytail: one lock for all folders; per-folder locks if shells start often.
 static SHELLS: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-fn locked() -> std::sync::MutexGuard<'static, ()> {
+fn lock_shells() -> std::sync::MutexGuard<'static, ()> {
     SHELLS
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -68,11 +69,11 @@ fn create_with_room(
     list: impl FnOnce() -> Result<Vec<Shell>, String>,
     create: impl FnOnce() -> Result<String, String>,
 ) -> Result<String, ApiError> {
-    let _held = locked();
+    let _held = lock_shells();
     refuse()?;
-    let shells = list().map_err(|err| error(StatusCode::INTERNAL_SERVER_ERROR, &err))?;
+    let shells = list().map_err(internal)?;
     check_room(&shells)?;
-    create().map_err(|err| error(StatusCode::INTERNAL_SERVER_ERROR, &err))
+    create().map_err(internal)
 }
 
 fn check_room(shells: &[Shell]) -> Result<(), ApiError> {
@@ -141,7 +142,9 @@ fn api_text(err: &ApiError) -> String {
 /// inside it, whose shells are theirs.
 fn workspace(app: &Server, folder: &str) -> Result<(String, Vec<String>), String> {
     let tree = loaded_tree(app).map_err(|err| api_text(&err))?.0;
-    let path = holder(&tree, folder).map_or_else(|| folder.to_owned(), |w| w.path.clone());
+    let path = tree
+        .workspace_containing(folder)
+        .map_or_else(|| folder.to_owned(), |(_, w)| w.path.clone());
     let inner = nested(&tree, &path);
     Ok((path, inner))
 }
@@ -209,7 +212,7 @@ fn run(
 
 /// The shells of the workspace that holds `folder`.
 pub(super) fn list(app: &Server, folder: &str) -> Result<Vec<Shell>, String> {
-    let (cwd, nested) = workspace(app, folder)?;
+    let (cwd, inner) = workspace(app, folder)?;
     let mut call = tmux();
     call.args(["list-sessions", "-F", FORMAT]);
     let output = run(call, TMUX_LIMIT)?;
@@ -217,7 +220,7 @@ pub(super) fn list(app: &Server, folder: &str) -> Result<Vec<Shell>, String> {
         return Ok(parse(
             &String::from_utf8_lossy(&output.stdout),
             &cwd,
-            &nested,
+            &inner,
         ));
     }
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -261,7 +264,7 @@ fn kill(id: &str) -> Result<(), String> {
 /// Ends every shell of `cwd`, for an archived workspace. A failure only warns, since the archive
 /// already ran.
 pub(super) fn close_all(app: &Server, cwd: &str) {
-    let _held = locked();
+    let _held = lock_shells();
     let shells = list(app, cwd).unwrap_or_else(|err| {
         eprintln!("swarm: shells of {cwd} were not listed, so none closed: {err}");
         Vec::new()
@@ -273,18 +276,15 @@ pub(super) fn close_all(app: &Server, cwd: &str) {
     }
 }
 
+fn internal(err: String) -> ApiError {
+    error(StatusCode::INTERNAL_SERVER_ERROR, &err)
+}
+
 /// `tmux attach` for the terminal's PTY, with no agent identity and a terminal type xterm.js draws.
 pub(super) fn attach_command(id: &str) -> CommandBuilder {
     let command = tmux();
-    let mut builder = CommandBuilder::new(command.get_program());
-    builder.args(command.get_args());
+    let mut builder = pty_command(&command);
     builder.args(["attach-session", "-t", &format!("={id}")]);
-    for (key, value) in command.get_envs() {
-        match value {
-            Some(value) => builder.env(key, value),
-            None => builder.env_remove(key),
-        }
-    }
     builder.env("TERM", "xterm-256color");
     builder.env("LANG", "en_US.UTF-8");
     builder
@@ -307,7 +307,7 @@ pub(super) fn session_cwd(app: &Server, session: &str) -> Result<String, ApiErro
 /// The shell `id` of the workspace that holds `session`'s folder, or a 404.
 pub(super) fn owned(app: &Server, session: &str, id: &str) -> Result<String, ApiError> {
     let cwd = session_cwd(app, session)?;
-    let shells = list(app, &cwd).map_err(|err| error(StatusCode::INTERNAL_SERVER_ERROR, &err))?;
+    let shells = list(app, &cwd).map_err(internal)?;
     shells
         .into_iter()
         .find(|shell| valid_id(id) && shell.id == id)
@@ -336,7 +336,7 @@ pub(super) async fn shells_list(
 ) -> Result<Json<Value>, ApiError> {
     let shells = blocking(move || {
         let cwd = session_cwd(&app, &query.session)?;
-        list(&app, &cwd).map_err(|err| error(StatusCode::INTERNAL_SERVER_ERROR, &err))
+        list(&app, &cwd).map_err(internal)
     })
     .await?;
     Ok(Json(json!({ "shells": shells })))
@@ -349,7 +349,7 @@ pub(super) async fn shells_create(
     let id = blocking(move || {
         let cwd = session_cwd(&app, &request.session)?;
         create_with_room(
-            || refuse_read_only(&app, &cwd, "shell"),
+            || refuse_read_only_workspace(&app, &cwd, "shell"),
             || list(&app, &cwd),
             || create(&cwd),
         )
@@ -368,7 +368,7 @@ pub(super) async fn shells_close(
             &request.session,
             request.id.as_deref().unwrap_or_default(),
         )?;
-        kill(&id).map_err(|err| error(StatusCode::INTERNAL_SERVER_ERROR, &err))
+        kill(&id).map_err(internal)
     })
     .await?;
     Ok(Json(json!({ "ok": true })))

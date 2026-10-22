@@ -225,12 +225,16 @@ impl Tree {
             .iter()
             .flat_map(|p| p.workspaces.iter().flat_map(|w| &w.chats))
     }
-    pub fn project_containing(&self, path: &str) -> Option<&Project> {
+    /// The deepest workspace whose folder contains `path`, with its project.
+    pub fn workspace_containing(&self, path: &str) -> Option<(&Project, &Workspace)> {
         self.projects
             .iter()
             .flat_map(|p| p.workspaces.iter().map(move |w| (p, w)))
             .filter(|(_, w)| contains(path, &w.path))
             .max_by_key(|(_, w)| w.path.len())
+    }
+    pub fn project_containing(&self, path: &str) -> Option<&Project> {
+        self.workspace_containing(path)
             .map(|(p, _)| p)
             .or_else(|| self.projects.iter().find(|p| p.path == path))
     }

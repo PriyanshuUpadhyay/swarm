@@ -124,9 +124,10 @@ mod tests {
         let root = temp_root("foreign-version");
         std::fs::create_dir_all(&root).unwrap();
         let db = root.join("swarm.db");
+        let another_build = MIGRATIONS.len() + 1;
         let connection = Connection::open(&db).unwrap();
         connection
-            .execute_batch(&format!("PRAGMA user_version = {}", MIGRATIONS.len() + 1))
+            .execute_batch(&format!("PRAGMA user_version = {another_build}"))
             .unwrap();
         drop(connection);
 
@@ -136,7 +137,7 @@ mod tests {
         );
         Connection::open(&db)
             .unwrap()
-            .pragma_update(None, "user_version", MIGRATIONS.len() + 1)
+            .pragma_update(None, "user_version", another_build)
             .unwrap();
         assert!(open(&db).is_err());
     }
