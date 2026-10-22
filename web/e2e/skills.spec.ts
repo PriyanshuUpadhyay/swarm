@@ -51,6 +51,10 @@ test("the Catalog shows each block's users, and an unused block says so", async 
   const unused = dialog.locator("[data-block]").filter({ hasText: "unused" }).first();
   await unused.click();
   await expect(page.getByTestId("skills-unused")).toHaveText("not used by a default preset");
+  // An offered block names the skills that offer it, and opens their graph.
+  await page.getByTestId("skills-filter").fill("html-diagram");
+  await dialog.locator('[data-block="html-diagram"]').click();
+  await expect(page.getByTestId("skills-offered-by")).toContainText("implement");
   await shoot(page, "catalog", info.project.name);
   expect(errors).toEqual([]);
 });
@@ -73,6 +77,11 @@ for (const [name, width] of [
       expect(crossings(await drawn(page)), await preset.innerText()).toEqual([]);
     }
     await page.locator('[data-preset="implement"]').click();
+    // The plan front door runs before step 1, the duty blocks are marked, and offered blocks are off.
+    await expect(page.getByTestId("skills-front").locator("[data-block]")).toHaveText(["planner", "plan-chart", "plan-review"]);
+    await expect(page.locator('[data-step="06-review"] [data-duty]')).toHaveText(/change-review/);
+    await expect(page.locator('[data-step="05-build"] [data-duty]')).toHaveCount(0);
+    await expect(page.getByTestId("skills-offered").locator('[data-block="html-diagram"]')).toBeVisible();
     await page.locator('[data-step="05-build"]').click();
     await expect(page.getByTestId("skills-step")).toContainText("checked-units");
     await shoot(page, `graph-${name}`, info.project.name);

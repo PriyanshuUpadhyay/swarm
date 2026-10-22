@@ -3,7 +3,7 @@
 
 import { useState } from "react";
 import type { App } from "../core/app";
-import { catalogGroups, usedByLabel, type Block, type Kit, type Preset, type SkillsView } from "../core/skills";
+import { blockTag, catalogGroups, usedByLabel, type Block, type Kit, type Preset, type SkillsView } from "../core/skills";
 import { Button } from "../components/ui/button";
 import { FIELD } from "./settings-shared";
 import { SkillGraph } from "./skill-graph";
@@ -76,7 +76,7 @@ function Catalog({ app, kit }: { app: App; kit: Kit }) {
                   onClick={() => app.skills.selectBlock(b.id)}
                 >
                   <span className="min-w-0 flex-1 truncate">{b.id}</span>
-                  {b.used_by.length === 0 && <span className="font-sans text-[11px] text-muted-foreground">unused</span>}
+                  {blockTag(kit, b) && <span className="font-sans text-[11px] text-muted-foreground">{blockTag(kit, b)}</span>}
                 </button>
               ))}
             </section>
@@ -84,13 +84,17 @@ function Catalog({ app, kit }: { app: App; kit: Kit }) {
         </div>
       </div>
       <div className="min-w-0 flex-1 overflow-y-auto p-5" data-testid="skills-detail">
-        {block ? <BlockDetail app={app} block={block} /> : <p className="text-sm text-muted-foreground">Pick a block to see what it needs, what it gives, and which skills use it.</p>}
+        {block ? <BlockDetail app={app} kit={kit} block={block} /> : <p className="text-sm text-muted-foreground">Pick a block to see what it needs, what it gives, and which skills use it.</p>}
       </div>
     </div>
   );
 }
 
-function BlockDetail({ app, block }: { app: App; block: Block }) {
+function BlockDetail({ app, kit, block }: { app: App; kit: Kit; block: Block }) {
+  const graph = (preset: string) => {
+    app.skills.selectPreset(preset);
+    app.skills.setView("graph");
+  };
   return (
     <div className="grid max-w-2xl gap-4 text-sm">
       <div>
@@ -108,19 +112,13 @@ function BlockDetail({ app, block }: { app: App; block: Block }) {
         <h4 className="text-xs font-medium text-muted-foreground">Used by</h4>
         {block.used_by.length === 0 ? (
           <p className="mt-1" data-testid="skills-unused">
-            not used by a default preset
+            {kit.front.includes(block.id) ? "the plan front door, before step 1 of every skill" : "not used by a default preset"}
           </p>
         ) : (
           <ul className="mt-1 grid" data-testid="skills-used-by">
             {block.used_by.map((u) => (
               <li key={`${u.preset}/${u.step}`}>
-                <button
-                  className="py-1 font-mono text-xs underline-offset-2 hover:underline"
-                  onClick={() => {
-                    app.skills.selectPreset(u.preset);
-                    app.skills.setView("graph");
-                  }}
-                >
+                <button className="py-1 font-mono text-xs underline-offset-2 hover:underline" onClick={() => graph(u.preset)}>
                   {u.preset} · {u.step}
                 </button>
                 <span className="ml-2 text-xs text-muted-foreground">{usedByLabel(block, u)}</span>
@@ -129,6 +127,20 @@ function BlockDetail({ app, block }: { app: App; block: Block }) {
           </ul>
         )}
       </div>
+      {block.offered_by.length > 0 && (
+        <div>
+          <h4 className="text-xs font-medium text-muted-foreground">Offered by (off until the planner adds it)</h4>
+          <ul className="mt-1 grid" data-testid="skills-offered-by">
+            {block.offered_by.map((p) => (
+              <li key={p}>
+                <button className="py-1 font-mono text-xs underline-offset-2 hover:underline" onClick={() => graph(p)}>
+                  {p}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }
@@ -166,13 +178,18 @@ function Graphs({ app, kit }: { app: App; kit: Kit }) {
           </button>
         ))}
       </nav>
-      {preset && <PresetView key={preset.preset} preset={preset} step={step} onStep={setStep} />}
+      {preset && <PresetView key={preset.preset} app={app} kit={kit} preset={preset} step={step} onStep={setStep} />}
     </div>
   );
 }
 
-function PresetView({ preset, step, onStep }: { preset: Preset; step: string | null; onStep: (file: string) => void }) {
+function PresetView({ app, kit, preset, step, onStep }: { app: App; kit: Kit; preset: Preset; step: string | null; onStep: (file: string) => void }) {
   const chosen = preset.steps.find((s) => s.file === step) ?? null;
+  const duty = new Set(kit.blocks.filter((b) => b.duty).map((b) => b.id));
+  const open = (block: string) => {
+    app.skills.selectBlock(block);
+    app.skills.setView("catalog");
+  };
   return (
     <div className="flex min-h-0 flex-1">
       <div className="min-w-0 flex-1 overflow-auto p-4">
@@ -185,7 +202,31 @@ function PresetView({ preset, step, onStep }: { preset: Preset; step: string | n
             View only: this skill starts its own run.
           </p>
         )}
-        <SkillGraph steps={preset.steps} selected={step} onSelect={onStep} />
+        <div className="mb-3 flex flex-wrap items-center gap-1 text-xs text-muted-foreground" data-testid="skills-front">
+          <span className="mr-1">Plan first:</span>
+          {kit.front.map((b, i) => (
+            <span key={b} className="flex items-center gap-1">
+              {i > 0 && <span aria-hidden>→</span>}
+              <button className="rounded border border-border-strong px-1.5 py-0.5 font-mono text-foreground hover:border-ring" data-block={b} onClick={() => open(b)}>
+                {b}
+              </button>
+            </span>
+          ))}
+          <span aria-hidden>→ step 1</span>
+        </div>
+        <SkillGraph steps={preset.steps} duty={duty} selected={step} onSelect={onStep} />
+        {preset.offers.length > 0 && (
+          <section aria-label="Offered blocks" className="mt-4 rounded-lg border border-dashed border-border p-3 text-xs" data-testid="skills-offered">
+            <h3 className="mb-2 font-medium text-muted-foreground">Offered · off by default; the planner adds one when the task needs it</h3>
+            <div className="flex flex-wrap gap-1">
+              {preset.offers.map((b) => (
+                <button key={b} className="rounded border border-dashed border-border-strong px-1.5 py-0.5 font-mono text-muted-foreground hover:border-ring hover:text-foreground" data-block={b} onClick={() => open(b)}>
+                  {b}
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
       </div>
       {chosen && (
         <aside className="grid w-72 shrink-0 content-start gap-3 overflow-y-auto border-l border-border p-4 text-sm" data-testid="skills-step">

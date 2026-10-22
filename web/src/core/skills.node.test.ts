@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { App } from "./app";
-import { blankDraft, catalogGroups, usedByLabel, composable, copyable, draftText, presetDraft, Skills, type Checked, type Kit } from "./skills";
+import { blankDraft, blockTag, catalogGroups, usedByLabel, composable, copyable, draftText, presetDraft, Skills, type Checked, type Kit } from "./skills";
 
 const script = fileURLToPath(new URL("../../../skills/kit/skills/plan/scripts/preset.py", import.meta.url));
 const python = (args: string[], input = "") => JSON.parse(execFileSync("python3", ["-I", "-B", script, ...args], { encoding: "utf8", input }));
@@ -17,7 +17,14 @@ describe("draftText", () => {
       const out = check(draftText(presetDraft(preset)));
       expect(out.ok, preset.preset).toBe(true);
       if (out.ok) expect(out.preset.steps.map((s) => [s.file, s.stage, s.resolved])).toEqual(preset.steps.map((s) => [s.file, s.stage, s.resolved]));
+      if (out.ok) expect(out.preset.offers, preset.preset).toEqual(preset.offers);
     }
+  });
+
+  it("writes an Offers line only when the draft offers a block", () => {
+    expect(draftText(blankDraft())).not.toContain("Offers:");
+    const text = draftText({ ...blankDraft(), stop: "chat", offers: " html-diagram, headless-shot " });
+    expect(text).toContain("Stop: chat\nOffers: html-diagram, headless-shot\n");
   });
 
   it("gives a new skill a whole SKILL.md with its name, use line, and section", () => {
@@ -67,6 +74,18 @@ function model(answer: (path: string, body?: Record<string, unknown>) => Promise
   };
   return { skills: new Skills(app as unknown as App), calls };
 }
+
+describe("blockTag", () => {
+  it("names the front door, and says unused only for a block no preset uses or offers", () => {
+    const blocks = new Map(kit.blocks.map((b) => [b.id, b]));
+    expect(blockTag(kit, blocks.get("planner")!)).toBe("front door");
+    expect(blockTag(kit, blocks.get("change-review")!)).toBe(null);
+    const offeredOnly = kit.blocks.find((b) => !b.used_by.length && b.offered_by.length && !kit.front.includes(b.id))!;
+    expect(blockTag(kit, offeredOnly)).toBe("offered");
+    const none = kit.blocks.find((b) => !b.used_by.length && !b.offered_by.length && !kit.front.includes(b.id))!;
+    expect(blockTag(kit, none)).toBe("unused");
+  });
+});
 
 describe("usedByLabel", () => {
   it("says a parent comes in for a named part, and a part through its parent", () => {

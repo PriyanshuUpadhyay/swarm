@@ -21,6 +21,7 @@ export function Composer({ app, kit }: { app: App; kit: Kit }) {
   const set = (change: Partial<Draft>) => app.skills.setDraft({ ...draft, ...change });
   const setCell = (row: number, col: number, value: string) => set({ rows: draft.rows.map((r, i) => (i === row ? r.map((c, j) => (j === col ? value : c)) : r)) });
   const presets = composable(kit);
+  const duty = new Set(kit.blocks.filter((b) => b.duty).map((b) => b.id));
   const origin = presets.find((p) => p.preset === draft.from);
   // A draft that differs from where it started holds the owner's edits, which a new start would drop.
   const edited = text !== draftText(origin ? presetDraft(origin) : blankDraft());
@@ -79,6 +80,10 @@ export function Composer({ app, kit }: { app: App; kit: Kit }) {
             </label>
           </div>
         )}
+        <label className="grid gap-1">
+          <span className="text-xs text-muted-foreground">Offers (blocks the planner may add; off by default)</span>
+          <input className={`${FIELD} font-mono`} autoComplete="off" spellCheck={false} placeholder="html-diagram, headless-shot" data-testid="draft-offers" value={draft.offers} onChange={(e) => set({ offers: e.target.value })} />
+        </label>
         <div className="grid gap-2">
           {draft.rows.map((row, i) => (
             <fieldset key={i} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-2 rounded-lg border border-border p-2.5" data-testid="draft-row">
@@ -117,7 +122,7 @@ export function Composer({ app, kit }: { app: App; kit: Kit }) {
       <div className="grid min-h-0 grid-rows-[minmax(0,1fr)_auto_minmax(0,1fr)]">
         <div className="min-h-0 overflow-auto p-4" data-testid="draft-graph">
           {fresh && "result" in fresh && fresh.result.ok ? (
-            <SkillGraph steps={fresh.result.preset.steps} />
+            <SkillGraph steps={fresh.result.preset.steps} duty={duty} />
           ) : (
             <p className="text-sm text-muted-foreground">The graph shows when the draft passes.</p>
           )}
