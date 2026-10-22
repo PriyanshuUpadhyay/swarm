@@ -131,27 +131,24 @@ pub fn require_pane(
 /// call, and an agent that died keeps its last report, so the usage HUD stops showing it after this.
 const WORKING_FOR_S: i64 = 600;
 
-/// The number of agents with a pane that report `state` (`working` or `waiting`), by provider; a
-/// chair with no provider of its own counts under its session's chair provider.
+/// The number of `running_agents` in `state` (`working` or `waiting`), by provider, so the counts
+/// and the list never disagree.
 pub fn agents_by_provider(
     connection: &Connection,
     state: &str,
 ) -> Result<std::collections::BTreeMap<String, i64>, Box<dyn std::error::Error>> {
-    let mut statement = connection.prepare(
-        "SELECT provider, COUNT(*) FROM (
-             SELECT COALESCE(agent.provider,
-                             CASE WHEN agent.role = 'orchestrator' OR agent.id = 'orchestrator'
-                                  THEN session.chair_provider END) AS provider
-             FROM agent JOIN session ON session.id = agent.session_id
-             WHERE agent.pane_id IS NOT NULL AND agent.state = ?2
-               AND agent.state_at >= unixepoch() - ?1)
-         WHERE provider IS NOT NULL GROUP BY provider",
-    )?;
-    let rows = statement.query_map((WORKING_FOR_S, state), |r| Ok((r.get(0)?, r.get(1)?)))?;
-    Ok(rows.collect::<Result<_, _>>()?)
+    let mut counts = std::collections::BTreeMap::new();
+    for agent in running_agents(connection)?
+        .into_iter()
+        .filter(|agent| agent.state == state)
+    {
+        *counts.entry(agent.provider).or_insert(0) += 1;
+    }
+    Ok(counts)
 }
 
-/// One agent the usage HUD shows as running: the rows `agents_by_provider` counts.
+/// One agent with a pane that reported `working` or `waiting` within `WORKING_FOR_S`. A chair with
+/// no provider of its own runs under its session's chair provider.
 #[derive(Debug, serde::Serialize)]
 pub struct RunningAgent {
     pub id: String,
@@ -161,10 +158,10 @@ pub struct RunningAgent {
     pub model: Option<String>,
     pub account: Option<String>,
     pub state: String,
-    pub since_seconds: i64,
 }
 
-/// The working and waiting agents, waiting first, then the newest report first.
+/// Waiting first, then by session and id. Not by report time: each tool call reports, so the HUD's
+/// model tags and chips would reshuffle on every poll.
 pub fn running_agents(
     connection: &Connection,
 ) -> Result<Vec<RunningAgent>, Box<dyn std::error::Error>> {
@@ -174,12 +171,12 @@ pub fn running_agents(
                     COALESCE(agent.provider,
                              CASE WHEN agent.role = 'orchestrator' OR agent.id = 'orchestrator'
                                   THEN session.chair_provider END) AS provider,
-                    agent.model, agent.account, agent.state, agent.state_at
+                    agent.model, agent.account, agent.state
              FROM agent JOIN session ON session.id = agent.session_id
              WHERE agent.pane_id IS NOT NULL AND agent.state IN ('working', 'waiting')
                AND agent.state_at >= unixepoch() - ?1)
          WHERE provider IS NOT NULL
-         ORDER BY state = 'waiting' DESC, state_at DESC, id",
+         ORDER BY state = 'waiting' DESC, session_id, id",
     )?;
     let rows = statement.query_map([WORKING_FOR_S], |r| {
         Ok(RunningAgent {
@@ -189,7 +186,6 @@ pub fn running_agents(
             model: r.get(3)?,
             account: r.get(4)?,
             state: r.get(5)?,
-            since_seconds: r.get(6)?,
         })
     })?;
     Ok(rows.collect::<Result<_, _>>()?)

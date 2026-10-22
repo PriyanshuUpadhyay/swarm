@@ -110,20 +110,44 @@ mod tests {
                 [],
             )
             .unwrap();
+        // An older report must not move `a`: each tool call bumps `state_at`, and the HUD's tags
+        // and chips would reshuffle on every poll.
+        set_state(
+            &connection,
+            &session,
+            "a",
+            "working",
+            "hook",
+            None,
+            None,
+            now - 10,
+        )
+        .unwrap();
         let running = running_agents(&connection).unwrap();
-        // Waiting first, then the newest report; the stale and closed agents are absent.
+        // Waiting first, then by session and id; the stale and closed agents are absent.
         assert_eq!(
             running
                 .iter()
-                .map(|a| (a.id.as_str(), a.provider.as_str(), a.state.as_str()))
-                .collect::<Vec<_>>()[0],
-            ("c", "codex", "waiting")
+                .map(|agent| (
+                    agent.id.as_str(),
+                    agent.provider.as_str(),
+                    agent.state.as_str()
+                ))
+                .collect::<Vec<_>>(),
+            [
+                ("c", "codex", "waiting"),
+                ("a", "claude", "working"),
+                ("b", "claude", "working"),
+                ("orchestrator", "pi", "working")
+            ]
         );
-        assert_eq!(running.len(), 4);
         assert!(running.iter().all(|a| a.session == session));
-        let a = running.iter().find(|a| a.id == "a").unwrap();
+        let claude_agent = running.iter().find(|agent| agent.id == "a").unwrap();
         assert_eq!(
-            (a.model.as_deref(), a.account.as_deref()),
+            (
+                claude_agent.model.as_deref(),
+                claude_agent.account.as_deref()
+            ),
             (Some("opus"), Some("team"))
         );
         let chair = running.iter().find(|a| a.id == "orchestrator").unwrap();
