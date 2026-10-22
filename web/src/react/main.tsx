@@ -1,4 +1,4 @@
-import { Component, lazy, Suspense, useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useState, useSyncExternalStore } from "react";
 import { createRoot } from "react-dom/client";
 import { usePanelRef, useDefaultLayout } from "react-resizable-panels";
 import { toast } from "sonner";
@@ -17,6 +17,8 @@ import { PanelToggles, WorkspacePanel } from "./changes";
 import { AskDialog, Home, WorkspaceLanding } from "./home";
 import { LifecycleDialogs } from "./lifecycle";
 import { SettingsDialog } from "./settings";
+import { LoadFailed } from "./load-failed";
+import { SkillsDialog } from "./skills";
 import { Palette } from "./palette";
 import { PaneStrip } from "./panes";
 import { Sidebar } from "./sidebar";
@@ -84,6 +86,7 @@ function Root({ app, changes }: { app: App; changes: Changes }) {
       <AskDialog app={app} />
       <LifecycleDialogs app={app} />
       <SettingsDialog app={app} />
+      <SkillsDialog app={app} />
       <Toaster theme={theme} position="bottom-right" />
     </TooltipProvider>
   );
@@ -108,24 +111,6 @@ function Main({ app, changes }: { app: App; changes: Changes }) {
       </div>
     </div>
   );
-}
-
-/** Catches a failed load or render of the lazy panel, so the rest of the page stays. Keyed by
- *  chat, so the next chat starts clean. */
-class LoadFailed extends Component<{ children: ReactNode }, { failed: boolean }> {
-  state = { failed: false };
-  static getDerivedStateFromError() {
-    return { failed: true };
-  }
-  render() {
-    return this.state.failed ? (
-      <p role="alert" className="p-3 text-sm text-muted-foreground">
-        The background panel failed. Reload the page to try again.
-      </p>
-    ) : (
-      this.props.children
-    );
-  }
 }
 
 /** The open chat over the ⌘J panel of its agents and background tasks (ADR 0104). */
@@ -153,7 +138,7 @@ function ChatColumn({ app, openId }: { app: App; openId: string }) {
       {open && <ResizableHandle className="h-px w-full after:inset-x-0 after:inset-y-auto after:top-1/2 after:left-0 after:h-[7px] after:w-full after:translate-x-0 after:-translate-y-1/2" />}
       {open && (
         <ResizablePanel id="background-panel" defaultSize="280px" minSize="120px">
-          <LoadFailed key={openId}>
+          <LoadFailed key={openId} what="background panel">
             <Suspense fallback={<p role="status" className="p-3 text-sm text-muted-foreground">Loading…</p>}>
               <BackgroundPanel app={app} session={openId} />
             </Suspense>

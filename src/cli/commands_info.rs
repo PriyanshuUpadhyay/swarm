@@ -53,6 +53,12 @@ pub(crate) fn commands_info(args: &[String]) -> Result<Option<()>, Box<dyn std::
     if args.first().map(String::as_str) == Some("doctor") {
         return doctor(&args[1..]).map(Some);
     }
+    if let [cmd, mode] = args
+        && cmd == "kit"
+        && (mode == "--json" || mode == "check")
+    {
+        return kit(mode).map(Some);
+    }
     if args.first().map(String::as_str) == Some("hooks") {
         return hooks(&args[1..]).map(Some);
     }
@@ -381,4 +387,28 @@ pub(crate) fn commands_info(args: &[String]) -> Result<Option<()>, Box<dyn std::
         .map(Some);
     }
     Ok(None)
+}
+
+/// `swarm kit --json | check`: the installed kit's own script gives every fact the Skills page
+/// shows, so the page cannot draw a skill that the kit would run another way (ADR 0111).
+fn kit(mode: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let script = swarm::paths::root_dir()?.join("kit/skills/plan/scripts/preset.py");
+    // -I keeps the owner's site packages and cwd out; -B writes no bytecode into the kit.
+    let status = std::process::Command::new("python3")
+        .arg("-I")
+        .arg("-B")
+        .arg(&script)
+        .arg(if mode == "check" { "--check" } else { "--json" })
+        .status()
+        .map_err(|error| match error.kind() {
+            std::io::ErrorKind::NotFound => {
+                "swarm kit: python3 not found; the Skills page needs Python 3.11 or newer"
+                    .to_string()
+            }
+            _ => format!("swarm kit: {error}"),
+        })?;
+    if !status.success() {
+        std::process::exit(status.code().unwrap_or(1));
+    }
+    Ok(())
 }

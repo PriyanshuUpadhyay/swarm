@@ -11,6 +11,7 @@ import { type Line } from "./transcript";
 import { Lifecycle } from "./lifecycle";
 import { type CommandList, type SkillPick } from "./slash";
 import { Settings } from "./settings";
+import { Skills } from "./skills";
 import { Notices } from "./notices";
 import { chatRows, type ChoiceOp, type NavRow, type PaletteItem, type RecentChat, type Tabs, type TreeName, type TreeView } from "./nav";
 import { type Chat, type Input, type Find, type Strip, type View, type Reader, type Ask, NO_FIND, NO_CELLS } from "./app-types";
@@ -38,6 +39,8 @@ export class App {
   readonly life = new Lifecycle(this);
   /** Usage meters and Settings (S5). */
   readonly settings = new Settings(this);
+  /** The kit's blocks and skills (ADR 0111). */
+  readonly skills = new Skills(this);
   /** Whether macOS lets swarm's notices through (ADR 0102). */
   readonly notices = new Notices(this);
   view: View;
@@ -110,7 +113,7 @@ export class App {
     readonly liveAll = false,
   ) {
     this.view = this.panes.makeView();
-    this.registry.add(...this.actions.commands(), ...this.settings.commands());
+    this.registry.add(...this.actions.commands(), ...this.settings.commands(), ...this.skills.commands());
   }
 
   subscribe = (fn: () => void) => {

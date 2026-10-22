@@ -195,7 +195,7 @@ key = printf 'key %s %s\n' "$SWARM_PANE" "$SWARM_KEY" >> "$HOME/actions"
         auth: bool,
     ) -> (u16, String, String) {
         let mut stream = self.connection();
-        if path == "/api/chat/continue" {
+        if path == "/api/chat/continue" || path.starts_with("/api/kit") {
             stream
                 .set_read_timeout(Some(Duration::from_secs(20)))
                 .unwrap();
@@ -402,6 +402,8 @@ mod choices;
 mod guards;
 #[path = "serve/handoff.rs"]
 mod handoff;
+#[path = "serve/kit.rs"]
+mod kit;
 #[path = "serve/transcripts.rs"]
 mod transcripts;
 #[path = "serve/workspace.rs"]
