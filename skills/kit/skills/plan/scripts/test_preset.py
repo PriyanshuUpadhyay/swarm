@@ -146,6 +146,13 @@ def test_json_into_a_closed_pipe_exits_quietly():
     assert reader.wait() == 0 and b"Traceback" not in reader.stderr.read()
 
 
+def test_a_block_with_a_yaml_only_escape_keeps_its_text():
+    with tempfile.TemporaryDirectory() as tmp:
+        block = Path(tmp) / "SKILL.md"
+        block.write_text('---\ndescription: "a \\e b"\nmetadata:\n  kind: step\n---\n', encoding="utf-8")
+        assert preset.meta(block) == {"description": '"a \\e b"', "kind": "step"}
+
+
 def test_an_older_python_can_still_import_preset():
     old = Path("/usr/bin/python3")
     if not old.is_file():
@@ -165,5 +172,6 @@ if __name__ == "__main__":
     test_a_new_skill_needs_a_name_and_a_description_that_yaml_reads()
     test_a_draft_that_is_not_utf8_is_a_defect()
     test_json_into_a_closed_pipe_exits_quietly()
+    test_a_block_with_a_yaml_only_escape_keeps_its_text()
     test_an_older_python_can_still_import_preset()
     print("ok")

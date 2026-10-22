@@ -76,6 +76,6 @@ fn the_kit_routes_give_python_facts_and_checks_and_keep_the_guard() {
     // A script that fails shows its own stderr, so the owner sees why.
     fs::remove_file(server.dir.join("home/.swarm/kit")).unwrap();
     let (status, _, body) = server.request("GET", "/api/kit", "", "", true);
-    assert_eq!(status, 409, "{body}");
+    assert_eq!(status, 500, "{body}");
     assert!(body.contains("preset.py"), "{body}");
 }

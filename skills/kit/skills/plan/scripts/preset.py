@@ -125,7 +125,10 @@ def meta(path):
     found = {}
     for key, value in re.findall(r"^(description|  kind|  needs|  gives): (.*)$", head, re.M):
         value = value.strip()
-        found[key.strip()] = json.loads(value) if value.startswith('"') else value
+        try:
+            found[key.strip()] = json.loads(value) if value.startswith('"') else value
+        except ValueError:  # a YAML-only escape such as \e; the page shows the value as written
+            found[key.strip()] = value
     return found
 
 

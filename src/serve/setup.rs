@@ -178,7 +178,7 @@ pub(super) async fn setup_plan(
 }
 /// The Skills page's facts, from the installed kit's own script (ADR 0111).
 pub(super) async fn kit_read(State(app): State<App>) -> Result<Json<Value>, ApiError> {
-    kit_output(run_cli(&app, home_call(&app, &["kit", "--json"]), None).await?)
+    kit_output(run_cli(&app, home_call(&app, &["kit", "--json"]), None).await)
 }
 #[derive(Deserialize)]
 pub(super) struct KitDraft {
@@ -190,9 +190,14 @@ pub(super) async fn kit_check(
     body: Result<Json<KitDraft>, JsonRejection>,
 ) -> Result<Json<Value>, ApiError> {
     let Json(body) = body.map_err(|e| error(e.status(), &e.body_text()))?;
-    kit_output(run_cli(&app, home_call(&app, &["kit", "check"]), Some(body.text)).await?)
+    kit_output(run_cli(&app, home_call(&app, &["kit", "check"]), Some(body.text)).await)
 }
-fn kit_output(output: String) -> Result<Json<Value>, ApiError> {
+/// A draft's defect is a 200 reply, so a failed script (no python3, no kit) is the server's fault.
+fn kit_output(output: Result<String, ApiError>) -> Result<Json<Value>, ApiError> {
+    let output = output.map_err(|(status, body)| match status {
+        StatusCode::CONFLICT => (StatusCode::INTERNAL_SERVER_ERROR, body),
+        _ => (status, body),
+    })?;
     serde_json::from_str::<Value>(&output)
         .ok()
         .filter(|value| value["schema"] == "swarm.kit/1" || value["ok"].is_boolean())
