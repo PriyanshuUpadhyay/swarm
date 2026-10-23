@@ -358,7 +358,9 @@ fn read(
     cwd: &str,
     flags: &Flags,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let posts = swarm::store::posts(connection, project)?;
+    let reader = identity().ok();
+    let reader = reader.as_ref().map(|(s, a)| (s.as_str(), a.as_str()));
+    let posts = swarm::store::posts_for(connection, project, reader)?;
     let claims = swarm::store::claims(connection, project)?;
     if flags.json {
         println!(

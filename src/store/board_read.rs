@@ -2,19 +2,59 @@
 
 use super::*;
 
+/// The role whose posts a worker does not read: the checker's tests stay out of the coder's view.
+pub const CHECKER_ROLE: &str = "checker";
+
+/// The posts that `reader` (session, agent) may read; None is the owner at a plain terminal. A
+/// worker does not get the checker's posts, except one sent to it and an answer to its own ask,
+/// so a ping never points at a post it cannot read. Best effort: the body files stay readable.
+pub fn posts_for(
+    connection: &Connection,
+    project_id: &str,
+    reader: Option<(&str, &str)>,
+) -> Result<Vec<Post>, Box<dyn std::error::Error>> {
+    let mut all = posts(connection, project_id)?;
+    let Some((session, agent)) = reader else {
+        return Ok(all);
+    };
+    let role: Option<String> = connection
+        .query_row(
+            "SELECT role FROM agent WHERE session_id = ?1 AND id = ?2",
+            (session, agent),
+            |r| r.get(0),
+        )
+        .optional()?;
+    if role.as_deref() == Some(CHECKER_ROLE) || is_lead(connection, session, agent)? {
+        return Ok(all);
+    }
+    let mine = |p: &Post| p.session_id == session && p.author == agent;
+    let asked: Vec<i64> = all
+        .iter()
+        .filter(|p| p.kind == "ask" && mine(p))
+        .map(|p| p.n)
+        .collect();
+    all.retain(|p| {
+        p.author_role != CHECKER_ROLE
+            || (p.to_session.as_deref() == Some(session) && p.to_agent.as_deref() == Some(agent))
+            || (p.kind == "answer" && p.reply_to.is_some_and(|n| asked.contains(&n)))
+    });
+    Ok(all)
+}
+
 pub fn posts(
     connection: &Connection,
     project_id: &str,
 ) -> Result<Vec<Post>, Box<dyn std::error::Error>> {
     let mut statement = connection.prepare(
         "SELECT p.n, p.kind, p.session_id, p.author, p.author_role, p.to_agent, p.reply_to, p.supersedes,
+                p.to_session,
                 (SELECT s.n FROM post s WHERE s.project_id = p.project_id AND s.supersedes = p.n),
                 p.work_key, p.generation, p.depth, p.needs_owner, p.relayed, p.sources, p.subject,
                 p.body_path, p.created_at
          FROM post p WHERE p.project_id = ?1 ORDER BY p.n",
     )?;
     let rows = statement.query_map([project_id], |r| {
-        let sources: String = r.get(14)?;
+        let sources: String = r.get(15)?;
         Ok(Post {
             n: r.get(0)?,
             kind: r.get(1)?,
@@ -24,16 +64,17 @@ pub fn posts(
             to_agent: r.get(5)?,
             reply_to: r.get(6)?,
             supersedes: r.get(7)?,
-            superseded_by: r.get(8)?,
-            work_key: r.get(9)?,
-            generation: r.get(10)?,
-            depth: r.get(11)?,
-            needs_owner: r.get(12)?,
-            relayed: r.get(13)?,
+            to_session: r.get(8)?,
+            superseded_by: r.get(9)?,
+            work_key: r.get(10)?,
+            generation: r.get(11)?,
+            depth: r.get(12)?,
+            needs_owner: r.get(13)?,
+            relayed: r.get(14)?,
             sources: serde_json::from_str(&sources).unwrap_or_default(),
-            subject: r.get(15)?,
-            body_path: r.get(16)?,
-            created_at: r.get(17)?,
+            subject: r.get(16)?,
+            body_path: r.get(17)?,
+            created_at: r.get(18)?,
         })
     })?;
     Ok(rows.collect::<Result<_, _>>()?)

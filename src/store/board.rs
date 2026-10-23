@@ -52,6 +52,8 @@ pub struct Post {
     pub session_id: String,
     pub author: String,
     pub author_role: String,
+    #[serde(skip)]
+    pub to_session: Option<String>,
     pub to_agent: Option<String>,
     pub reply_to: Option<i64>,
     pub supersedes: Option<i64>,
@@ -104,7 +106,7 @@ pub fn body_path(project_id: &str, n: i64) -> String {
     format!("boards/{hex}/{n}.md")
 }
 
-fn is_lead(
+pub(super) fn is_lead(
     tx: &Connection,
     session_id: &str,
     agent_id: &str,

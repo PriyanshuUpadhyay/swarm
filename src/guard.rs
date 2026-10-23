@@ -120,6 +120,20 @@ pub fn decide(
 mod runner;
 use runner::{Outcome, run};
 
+/// ADR 0115: a worker reads the board through `swarm board read`, which withholds the checker's
+/// posts, so a worker's tool call that names the board's files is denied. Best effort: a path
+/// that the call builds at run time passes.
+pub fn board_wall(provider: Provider, event: &str, payload: &str) -> Option<Verdict> {
+    let payload: serde_json::Value = serde_json::from_str(payload).ok()?;
+    let input = normalize(provider, event, &payload)["input"].to_string();
+    input.contains(".swarm/boards").then(|| {
+        Verdict::Deny(
+            "swarm guard: board files are read with `swarm board read`, so the call is blocked"
+                .into(),
+        )
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -147,6 +161,23 @@ mod tests {
             "/h",
             Instant::now() + DEADLINE,
         )
+    }
+
+    #[test]
+    fn a_call_that_names_the_board_files_is_walled() {
+        let read =
+            r#"{"tool_name":"Read","tool_input":{"file_path":"/Users/u/.swarm/boards/ab12/7.md"}}"#;
+        let shell = r#"{"tool_name":"Bash","tool_input":{"command":"cat ~/.swarm/boards/*/7.md"}}"#;
+        for payload in [read, shell] {
+            assert!(matches!(
+                board_wall(Provider::Claude, "PreToolUse", payload),
+                Some(Verdict::Deny(_))
+            ));
+        }
+        assert_eq!(
+            board_wall(Provider::Claude, "PreToolUse", CLAUDE_BASH),
+            None
+        );
     }
 
     #[test]

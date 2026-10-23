@@ -94,3 +94,24 @@ pub(super) fn ring(
 ) -> (String, String, String, String) {
     (session.into(), to.into(), kind.into(), body.into())
 }
+
+pub(super) const CHECKER: &str = "checker";
+
+/// Adds the checker seat, once, and its test finding for `work`.
+pub(super) fn checker_test(connection: &mut Connection, root: &Path, work: &str) -> i64 {
+    connection
+        .execute(
+            "INSERT OR IGNORE INTO agent (id, session_id, role) VALUES (?1, ?2, ?1)",
+            (CHECKER, SESSION),
+        )
+        .unwrap();
+    n(put(
+        connection,
+        root,
+        CHECKER,
+        NewPost {
+            work_key: Some(work),
+            ..finding("failing test for the work")
+        },
+    ))
+}

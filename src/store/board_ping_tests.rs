@@ -109,6 +109,8 @@ mod tests {
     #[test]
     fn only_an_addressed_handoff_rings() {
         let (mut c, root) = fixture("ring-handoff");
+        checker_test(&mut c, &root, "a");
+        checker_test(&mut c, &root, "b");
         n(put(&mut c, &root, CODER, claim("a", None)));
         n(put(&mut c, &root, CODER, handoff("a", 1)));
         n(put(&mut c, &root, CODER, claim("b", None)));
@@ -127,7 +129,7 @@ mod tests {
                 SESSION,
                 ORCHESTRATOR,
                 "board:handoff",
-                "board post B-4: handoff from coder. Run swarm board read B-4."
+                "board post B-6: handoff from coder. Run swarm board read B-6."
             )]
         );
     }

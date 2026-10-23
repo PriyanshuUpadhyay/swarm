@@ -104,6 +104,24 @@ pub(super) fn claim_fence(
             if c.session_id != session_id || c.holder != author || c.released_at.is_some() {
                 return Err(format!("swarm: you do not hold {work}").into());
             }
+            // The checker records its test before a worker's work counts as handed off (ADR 0115).
+            let role: String = tx.query_row(
+                "SELECT role FROM agent WHERE session_id = ?1 AND id = ?2",
+                (session_id, author),
+                |r| r.get(0),
+            )?;
+            let tested: bool = tx.query_row(
+                "SELECT EXISTS (SELECT 1 FROM post WHERE project_id = ?1 AND work_key = ?2
+                                AND kind = 'finding' AND author_role = ?3)",
+                (project_id, work, CHECKER_ROLE),
+                |r| r.get(0),
+            )?;
+            if !tested && role != CHECKER_ROLE && !is_lead(tx, session_id, author)? {
+                return Err(format!(
+                    "swarm: no checker test recorded for {work}; the checker posts a finding with --work {work} first"
+                )
+                .into());
+            }
             tx.execute(
                 "UPDATE claim SET released_at = ?3 WHERE project_id = ?1 AND work_key = ?2",
                 (project_id, work, now),

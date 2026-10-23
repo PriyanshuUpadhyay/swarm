@@ -364,6 +364,12 @@ pub(crate) fn guard(args: &[String]) -> (String, String, i32) {
                         "swarm guard: cannot read {path}: {error}, so the call is blocked"
                     ))
                 }
+                (_, Some(payload))
+                    if swarm::host::is_worker(|name| env::var(name).ok())
+                        && let Some(wall) = swarm::guard::board_wall(provider, event, &payload) =>
+                {
+                    wall
+                }
                 (list, Some(payload)) => swarm::guard::decide(
                     list.ok().as_deref(),
                     &path,

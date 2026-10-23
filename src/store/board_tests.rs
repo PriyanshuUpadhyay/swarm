@@ -364,4 +364,67 @@ mod tests {
             .to_string();
         assert!(none.contains("no board at"), "{none}");
     }
+
+    #[test]
+    fn a_worker_reads_no_checker_post_but_one_sent_to_it() {
+        let (mut c, root) = fixture("withheld");
+        let test = checker_test(&mut c, &root, "auth");
+        let ask = n(put(
+            &mut c,
+            &root,
+            CODER,
+            NewPost {
+                kind: "ask",
+                to: Some((SESSION, CHECKER)),
+                subject: "q",
+                ..Default::default()
+            },
+        ));
+        let answer = n(put(
+            &mut c,
+            &root,
+            CHECKER,
+            NewPost {
+                kind: "answer",
+                reply_to: Some(ask),
+                sources: vec![SRC.into()],
+                subject: "a",
+                ..Default::default()
+            },
+        ));
+        let sent = n(put(
+            &mut c,
+            &root,
+            CHECKER,
+            NewPost {
+                kind: "ask",
+                to: Some((SESSION, CODER)),
+                subject: "h",
+                ..Default::default()
+            },
+        ));
+        let to_lead = n(put(
+            &mut c,
+            &root,
+            CHECKER,
+            NewPost {
+                kind: "ask",
+                to: Some((SESSION, ORCHESTRATOR)),
+                subject: "x",
+                ..Default::default()
+            },
+        ));
+        let seen = |reader| -> Vec<i64> {
+            posts_for(&c, PROJECT, reader)
+                .unwrap()
+                .iter()
+                .map(|p| p.n)
+                .collect()
+        };
+        assert_eq!(seen(Some((SESSION, CODER))), [ask, answer, sent]);
+        let all = vec![test, ask, answer, sent, to_lead];
+        assert_eq!(seen(Some((SESSION, ORCHESTRATOR))), all);
+        assert_eq!(seen(Some((SESSION, CHECKER))), all);
+        assert_eq!(seen(None), all);
+    }
 }

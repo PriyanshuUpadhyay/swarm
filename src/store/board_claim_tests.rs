@@ -175,4 +175,21 @@ mod tests {
             "nobody claimed auth",
         );
     }
+
+    #[test]
+    fn a_worker_hands_off_only_after_the_checker_records_a_test() {
+        let (mut c, root) = fixture("checker-test");
+        n(put(&mut c, &root, CODER, claim("auth", None)));
+        refused(
+            put(&mut c, &root, CODER, handoff("auth", 1)),
+            "no checker test recorded for auth",
+        );
+        checker_test(&mut c, &root, "other");
+        refused(
+            put(&mut c, &root, CODER, handoff("auth", 1)),
+            "no checker test recorded for auth",
+        );
+        checker_test(&mut c, &root, "auth");
+        n(put(&mut c, &root, CODER, handoff("auth", 1)));
+    }
 }
