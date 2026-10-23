@@ -46,9 +46,9 @@ test("New workspace makes a new branch, an existing branch and a pull request wo
   expect(errors).toEqual([]);
 });
 
-test("a workspace from an issue is named after it and starts a chat with the issue as its draft", async ({ page: tab }, info) => {
+test("a workspace from an issue is named after it and starts a chat with the issue as its draft", async ({ page: tab }) => {
   const errors = await open(tab);
-  const issue = ISSUES[info.project.name === "chromium" ? 0 : 1];
+  const issue = ISSUES[0];
   const live = process.env.SWARM_E2E_LIVE!;
   // `swarm launch` needs a provider; the stand-in answers with the live chat.
   await tab.route("**/api/chat/new", (route) => route.fulfill({ json: { ok: true, session: live, agent: "orchestrator", pane: "fixture-chair" } }));

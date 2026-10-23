@@ -263,9 +263,8 @@ test("Tab reaches an agent pane's header buttons", async ({ page: tab }, info) =
   const inHeader = () => tab.evaluate(() => document.activeElement?.closest(".pane-head") != null && document.activeElement?.tagName === "BUTTON");
   let reached = false;
   // WebKit moves Tab to buttons only with Option held, as Safari does by default.
-  const key = info.project.name === "webkit" ? "Alt+Tab" : "Tab";
   for (let i = 0; i < 40 && !reached; i++) {
-    await tab.keyboard.press(key);
+    await tab.keyboard.press("Alt+Tab");
     reached = await inHeader();
   }
   expect(reached).toBe(true);

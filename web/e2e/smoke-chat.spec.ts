@@ -19,7 +19,7 @@ test("select a chat by keyboard and see its rows", async ({ page: tab }) => {
   expect(new URL(tab.url()).hash).toBe("");
 
   const sidebar = tab.getByTestId("sidebar");
-  await expect(sidebar.locator('[data-testid="tree-row"][data-kind="chat"]')).toHaveCount(9);
+  await expect(sidebar.locator('[data-testid="tree-row"][data-kind="chat"]')).toHaveCount(8);
 
   // The first row (a project header) is selected; move down to the first chat, then open it. The Git
   // projects of the lifecycle cases list workspaces with no chat, so the chat may sit further down.

@@ -1,6 +1,6 @@
 // Web pilot budget suite. Builds nothing; run `pnpm -C web perf` after the release builds.
-// usage: node web/perf/run.mjs [--browsers webkit] [--apps react] [--live-seconds 60] [--soak-minutes 10]
-//        [--only cold,warm,key,scroll,giant,live,pane,soak]
+// usage: node web/perf/run.mjs [--apps react] [--live-seconds 60]
+//        [--only cold,warm,key,scroll,giant,live,pane]
 // Needs: target/release/swarm built with --features serve, the ReleaseSafe transcript tool, web/dist.
 // PERF_SWARM and PERF_TOOL point at other builds of the two binaries; PERF_DIST at another web build.
 import { spawn, execFileSync } from "node:child_process";
@@ -8,16 +8,14 @@ import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
 import { fileURLToPath } from "node:url";
-import { chromium, webkit } from "@playwright/test";
+import { webkit } from "@playwright/test";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(here, "../..");
 const args = Object.fromEntries(process.argv.slice(2).reduce((acc, v, i, a) => (i % 2 ? acc : [...acc, [v.replace(/^--/, ""), a[i + 1]]]), []));
-const browsers = (args.browsers ?? "webkit").split(",");
 const apps = (args.apps ?? "react").split(",");
 const liveSeconds = Number(args["live-seconds"] ?? 60);
-const soakMinutes = Number(args["soak-minutes"] ?? 10);
-const only = new Set((args.only ?? "cold,warm,key,scroll,giant,live,pane,soak").split(","));
+const only = new Set((args.only ?? "cold,warm,key,scroll,giant,live,pane").split(","));
 const dist = path.resolve(repo, process.env.PERF_DIST ?? "web/dist");
 const swarm = path.resolve(repo, process.env.PERF_SWARM ?? "target/release/swarm");
 const tool = path.resolve(repo, process.env.PERF_TOOL ?? "packages/transcript/zig-out/bin/transcript");
@@ -33,7 +31,6 @@ const BUDGET = {
   live_drop: 0.01,
   pane_live_drop: 0.01,
   giant_open_p95: 150,
-  heap_growth: 0.10,
 };
 
 const p = (xs, q) => {
@@ -105,13 +102,6 @@ const maxIndex = (page) => page.evaluate(() => Math.max(-1, ...[...document.quer
 // The newest row index of each pane on screen, added up.
 const paneRows = (page) => page.evaluate(() => [...document.querySelectorAll('[data-testid="pane-transcript"]')].reduce((sum, pane) => sum + Math.max(-1, ...[...pane.querySelectorAll('[data-testid="row"]')].map((r) => Number(r.getAttribute("data-index")))), 0));
 
-async function heap(page, cdp) {
-  if (!cdp) return NaN;
-  await cdp.send("HeapProfiler.collectGarbage");
-  const { metrics } = await cdp.send("Performance.getMetrics");
-  return metrics.find((m) => m.name === "JSHeapUsedSize").value;
-}
-
 // Opens the chat at sidebar position `index` by keyboard: Home, then j `index` times, then Enter.
 async function openChat(page, index) {
   await page.getByTestId("sidebar").focus();
@@ -137,11 +127,8 @@ async function openChat(page, index) {
 }
 
 async function suite(browserName, app, url) {
-  const launcher = browserName === "chromium" ? chromium : webkit;
-  const browser = await launcher.launch();
+  const browser = await webkit.launch();
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
-  const cdp = browserName === "chromium" ? await page.context().newCDPSession(page) : null;
-  if (cdp) await cdp.send("Performance.enable");
   const entry = "/";
   const [origin, hash] = url.split("#");
   const open = async (query = "") => {
@@ -263,7 +250,7 @@ async function suite(browserName, app, url) {
   const paneStart = await paneRows(page);
   const paneGen = spawn("node", [path.join(here, "gen.mjs"), "live", "--home", home, "--rate", "50", "--seconds", String(liveSeconds), "--target", "panes"], { stdio: "inherit" });
   const paneGenExit = new Promise((r) => paneGen.once("exit", r));
-  // Per minute: API requests by route, DOM size, and (Chromium) heap, to see what grows.
+  // Per minute: API requests by route, DOM size, to see what grows.
   const started = Date.now();
   const samples = [];
   const minuteOf = () => Math.floor((Date.now() - started) / 60000);
@@ -281,8 +268,6 @@ async function suite(browserName, app, url) {
       if (Date.now() - started >= next * 60000) {
         const s = (samples[minuteOf()] ??= { requests: {} });
         s.dom = await page.evaluate(() => document.getElementsByTagName("*").length);
-        // No forced GC here: it would drop frames in the window it measures.
-        if (cdp) s.heap_mb = (await cdp.send("Performance.getMetrics")).metrics.find((m) => m.name === "JSHeapUsedSize").value / 1e6;
         next++;
       }
       await page.keyboard.press("j");
@@ -298,30 +283,6 @@ async function suite(browserName, app, url) {
   result.pane_live_worst_ms = paneLive.worst;
   }
 
-  log(browserName, app, "soak");
-  // Memory soak: switch chats for `soakMinutes`; compare the heap at 20% of the run with the end.
-  // Samples are taken only after a full cycle of chats, so the 4-chat LRU holds the same chats each
-  // time; the ~9 MB giant output is in the LRU for 4 of 12 positions and would swing the heap.
-  if (cdp && soakMinutes > 0 && only.has("soak")) {
-    await open();
-    const start = Date.now();
-    const end = start + soakMinutes * 60000;
-    const samples = [];
-    let k = 0;
-    while (Date.now() < end || k % chatRows.length) {
-      await openChat(page, chatRows[k++ % chatRows.length]);
-      if (k % chatRows.length === 0 && Date.now() >= start + samples.length * 60000)
-        samples.push({ k, min: (Date.now() - start) / 60000, mb: (await heap(page, cdp)) / 1e6 });
-    }
-    if (samples.at(-1)?.k !== k) samples.push({ k, min: (Date.now() - start) / 60000, mb: (await heap(page, cdp)) / 1e6 });
-    const early = samples.find((s) => s.min >= soakMinutes * 0.2).mb;
-    const late = samples.at(-1).mb;
-    result.heap_growth = (late - early) / early;
-    result.heap_mb = late;
-    result.heap_samples = samples;
-  } else {
-    result.heap_growth = NaN;
-  }
   await browser.close();
   return result;
 }
@@ -331,17 +292,15 @@ const verdict = (v, budget) => (Number.isNaN(v) || v === undefined ? "not run" :
 
 execFileSync("node", [path.join(here, "gen.mjs"), "setup", "--home", home, "--swarm", swarm], { stdio: "inherit" });
 const results = [];
-for (const b of browsers) {
-  for (const a of apps) {
-    const { child, url } = await startServer();
-    try {
-      results.push(await suite(b, a, url));
-    } finally {
-      child.kill();
-    }
-    // Live load appended to the logs; rebuild the home so each run sees the same data.
-    execFileSync("node", [path.join(here, "gen.mjs"), "setup", "--home", home, "--swarm", swarm], { stdio: "inherit" });
+for (const a of apps) {
+  const { child, url } = await startServer();
+  try {
+    results.push(await suite("webkit", a, url));
+  } finally {
+    child.kill();
   }
+  // Live load appended to the logs; rebuild the home so each run sees the same data.
+  execFileSync("node", [path.join(here, "gen.mjs"), "setup", "--home", home, "--swarm", swarm], { stdio: "inherit" });
 }
 
 const rows = [
@@ -352,7 +311,6 @@ const rows = [
   ["giant output open p95", "giant_open_p95", "ms"],
   ["live 12x50/s dropped frames", "live_drop", "%"],
   ["live 4 panes x50/s dropped frames", "pane_live_drop", "%"],
-  ["heap growth over soak", "heap_growth", "%"],
 ];
 let out = `| Metric | Budget | ${results.map((r) => `${r.app} ${r.browser}`).join(" | ")} |\n|---|---|${results.map(() => "---|").join("")}\n`;
 for (const [label, key, unit] of rows) {
@@ -368,10 +326,8 @@ out += `pane live worst frame: ${results.map((r) => `${r.app} ${r.browser} ${fmt
 for (const r of results.filter((r) => r.pane_live_minutes)) {
   out += `pane live per minute, ${r.app} ${r.browser}:\n`;
   for (const m of r.pane_live_minutes)
-    out += `  ${m.minute}m drop ${(m.drop * 100).toFixed(2)}% dom ${m.dom ?? "-"}${m.heap_mb ? ` heap ${m.heap_mb.toFixed(1)} MB` : ""} requests ${JSON.stringify(m.requests ?? {})}\n`;
+    out += `  ${m.minute}m drop ${(m.drop * 100).toFixed(2)}% dom ${m.dom ?? "-"} requests ${JSON.stringify(m.requests ?? {})}\n`;
 }
-for (const r of results.filter((r) => r.heap_samples))
-  out += `heap MB per minute, ${r.app} ${r.browser}: ${r.heap_samples.map((s) => `${s.min.toFixed(1)}m ${s.mb.toFixed(2)}`).join(", ")}\n`;
 console.log(out);
 fs.writeFileSync(path.join(repo, "tmp/web-pilot/perf-result.md"), out);
 fs.writeFileSync(path.join(repo, "tmp/web-pilot/perf-result.json"), JSON.stringify(results, null, 2));

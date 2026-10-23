@@ -60,7 +60,7 @@ fn every_chat_shows_in_the_sidebar_whether_or_not_its_tab_is_open() {
     let before = rows(&owner, &state);
     assert!(before.contains(&"chat:design".to_owned()));
     assert!(before.contains(&"chat:review".to_owned()));
-    // Opening, moving or closing a tab does not change the sidebar (ADR 0099).
+    // Opening, moving or closing a tab does not change the sidebar (ADR 0115).
     for chat in ["review", "design"] {
         let op = ChoiceOp::OpenTab {
             workspace: "/repo/wt/main".into(),

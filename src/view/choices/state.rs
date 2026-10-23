@@ -112,7 +112,6 @@ pub struct ViewState {
     pub selected_workspace: Option<String>,
     pub selected_chats: BTreeMap<String, String>,
     pub tab_history: BTreeMap<String, Vec<String>>,
-    pub dismissed_children: BTreeMap<String, Vec<String>>,
     pub collapsed: BTreeSet<String>,
     pub last_seen: BTreeMap<String, i64>,
     pub expanded_lists: BTreeSet<String>,
@@ -167,7 +166,6 @@ impl ViewState {
             .map(|c| (c.key.clone(), c.last_activity))
             .collect();
         self.last_seen.retain(|k, _| chats.contains_key(k));
-        self.dismissed_children.retain(|k, _| chats.contains_key(k));
         for (key, at) in chats {
             self.last_seen.entry(key).or_insert(at);
         }

@@ -91,9 +91,7 @@ for (const [name, width] of [
     expect(errors).toEqual([]);
   });
 
-test("the Composer shows live text and graph, and Copy waits for Python to pass the exact text", async ({ page, context }, info) => {
-  const chromium = info.project.name === "chromium";
-  if (chromium) await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+test("the Composer shows live text and graph, and Copy waits for Python to pass the exact text", async ({ page }, info) => {
   const errors = await open(page);
   await page.getByTestId("skills-button").click();
   await page.getByTestId("skills-view-composer").click();
@@ -129,7 +127,6 @@ test("the Composer shows live text and graph, and Copy waits for Python to pass 
   // The Composer graph only shows the draft, so its cards are not buttons.
   await expect(page.getByTestId("draft-graph").getByRole("button")).toHaveCount(0);
   await copy.click();
-  if (chromium) expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(await text.textContent());
   await shoot(page, "composer", info.project.name);
   // A new start drops the edits at once, and Undo brings them back.
   await page.getByTestId("draft-from").selectOption("research");

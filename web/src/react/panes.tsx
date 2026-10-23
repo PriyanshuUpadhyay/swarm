@@ -1,7 +1,7 @@
 // The chat page, then columns of child agent panes that scroll in from the right with no snap
 // (ADR 0030). The owner drags a column's edge to size every column and the line in a two-pane
-// column to split it; a double-click resets (ADR 0026). A finished child stays dimmed until it is
-// dismissed (ADR 0056). One context menu serves every pane header (decision 3).
+// column to split it; a double-click resets (ADR 0026). One context menu serves every pane header
+// (decision 3).
 
 import { CopyIcon, Maximize2Icon, Minimize2Icon, PowerIcon, SquareIcon, TerminalIcon } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
