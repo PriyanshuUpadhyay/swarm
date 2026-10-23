@@ -5,6 +5,9 @@ use rusqlite::{Connection, OptionalExtension, TransactionBehavior};
 mod agent_state;
 mod agents;
 mod board;
+mod board_claims;
+mod board_ping;
+mod board_read;
 mod delivery;
 mod messages;
 mod sessions;
@@ -12,6 +15,9 @@ mod usage;
 pub use agent_state::*;
 pub use agents::*;
 pub use board::*;
+pub use board_claims::*;
+pub use board_ping::*;
+pub use board_read::*;
 pub use delivery::*;
 pub use messages::*;
 pub use sessions::*;
@@ -26,8 +32,20 @@ mod agent_tests;
 mod delivery_tests;
 
 #[cfg(test)]
+#[path = "store/board_test_support.rs"]
+mod board_test_support;
+
+#[cfg(test)]
 #[path = "store/board_tests.rs"]
 mod board_tests;
+
+#[cfg(test)]
+#[path = "store/board_claim_tests.rs"]
+mod board_claim_tests;
+
+#[cfg(test)]
+#[path = "store/board_ping_tests.rs"]
+mod board_ping_tests;
 
 #[cfg(test)]
 #[path = "store/schema_tests.rs"]

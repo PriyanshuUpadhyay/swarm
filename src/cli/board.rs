@@ -271,8 +271,31 @@ fn write(
         idem: flags.idem.as_deref(),
     };
     let now = unix_now()?;
-    match swarm::store::post(connection, root, &project, &session, &agent, now, &new)? {
-        Posted::New(n) | Posted::Again(n) => match kind {
+    let posted = swarm::store::post(connection, root, &project, &session, &agent, now, &new)?;
+    if let Posted::New(_, pings) = &posted {
+        let adapter = adapter_name();
+        // A ping to a seat with no pane stays stored, and its inbox shows it when the seat returns.
+        for ping in pings {
+            if let Some(pane) = swarm::store::pane_of(connection, &ping.session_id, &ping.agent_id)?
+            {
+                ring_stored(
+                    connection,
+                    root,
+                    &adapter,
+                    &ping.session_id,
+                    &ping.agent_id,
+                    &pane,
+                    ping.seq,
+                    Proof::Wait,
+                );
+            }
+        }
+        if new.needs_owner {
+            start_notify_helper();
+        }
+    }
+    match posted {
+        Posted::New(n, _) | Posted::Again(n) => match kind {
             "claim" => {
                 let claim = swarm::store::claims(connection, &project)?
                     .into_iter()

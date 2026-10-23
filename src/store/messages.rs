@@ -19,6 +19,21 @@ pub fn send_message(
     body: &str,
 ) -> Result<i64, Box<dyn std::error::Error>> {
     let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let seq = insert_message(&tx, root, session_id, sender_id, recipient_id, kind, body)?;
+    tx.commit()?;
+    Ok(seq)
+}
+
+/// Stores one message inside the caller's transaction, so a board post and its ping commit together.
+pub fn insert_message(
+    tx: &Connection,
+    root: &Path,
+    session_id: &str,
+    sender_id: &str,
+    recipient_id: &str,
+    kind: &str,
+    body: &str,
+) -> Result<i64, Box<dyn std::error::Error>> {
     let seq: i64 = tx.query_row(
         "SELECT COALESCE(MAX(seq), -1) + 1 FROM message WHERE session_id = ?1",
         [session_id],
@@ -38,7 +53,6 @@ pub fn send_message(
     let file = root.join(&body_path);
     std::fs::create_dir_all(file.parent().ok_or("body path has no parent")?)?;
     write_atomic(&file, body)?;
-    tx.commit()?;
     Ok(seq)
 }
 

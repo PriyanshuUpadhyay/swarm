@@ -2,11 +2,9 @@
 //! is a refusal here, so a skill only names the commands.
 
 use super::*;
+use std::ops::ControlFlow;
 
 pub const KINDS: [&str; 6] = ["ask", "answer", "finding", "decision", "claim", "handoff"];
-/// After this many holders, a work key parks for the owner instead of taking another claim.
-const MAX_ATTEMPTS: i64 = 3;
-const MAX_LEASE_SECS: i64 = 86_400;
 const MAX_SUBJECT_CHARS: usize = 200;
 
 #[derive(Default)]
@@ -27,9 +25,17 @@ pub struct NewPost<'a> {
     pub idem: Option<&'a str>,
 }
 
+/// A stored board message that the caller rings after the commit.
+#[derive(Debug, PartialEq)]
+pub struct Ping {
+    pub session_id: String,
+    pub agent_id: String,
+    pub seq: i64,
+}
+
 #[derive(Debug, PartialEq)]
 pub enum Posted {
-    New(i64),
+    New(i64, Vec<Ping>),
     /// The same `--idem` key was posted before; nothing was written.
     Again(i64),
     /// The holder renewed its lease; a renewal adds no post and no attempt.
@@ -106,7 +112,7 @@ fn is_lead(
     Ok(orchestrator_of(tx, session_id).is_ok_and(|lead| lead == agent_id))
 }
 
-fn kind_of(
+pub(super) fn kind_of(
     tx: &Connection,
     project_id: &str,
     n: i64,
@@ -228,102 +234,13 @@ pub fn post(
         }
     }
 
-    let mut generation = None;
-    match new.kind {
-        "claim" => {
-            let work = new.work_key.ok_or("swarm: a claim needs --work <key>")?;
-            let lease = new
-                .lease_secs
-                .ok_or("swarm: a claim needs --lease <seconds>")?;
-            if !(1..=MAX_LEASE_SECS).contains(&lease) {
-                return Err(format!("swarm: --lease is 1 to {MAX_LEASE_SECS} seconds").into());
-            }
-            let current = claim_row(&tx, project_id, work)?;
-            match current {
-                None => {
-                    tx.execute(
-                        "INSERT INTO claim (project_id, work_key, session_id, holder, generation, attempts, lease_until)
-                         VALUES (?1, ?2, ?3, ?4, 1, 1, ?5)",
-                        (project_id, work, session_id, author, now + lease),
-                    )?;
-                    generation = Some(1);
-                }
-                Some(c) => {
-                    let holds =
-                        c.session_id == session_id && c.holder == author && c.released_at.is_none();
-                    if holds {
-                        return match new.generation {
-                            Some(g) if g == c.generation => {
-                                tx.execute(
-                                    "UPDATE claim SET lease_until = ?3 WHERE project_id = ?1 AND work_key = ?2",
-                                    (project_id, work, now + lease),
-                                )?;
-                                tx.commit()?;
-                                Ok(Posted::Renewed {
-                                    generation: g,
-                                    lease_until: now + lease,
-                                })
-                            }
-                            Some(g) => Err(format!(
-                                "swarm: stale generation {g}; current is {}",
-                                c.generation
-                            )
-                            .into()),
-                            None => Err(format!(
-                                "swarm: you hold {work}, generation {}; renew with --generation {}",
-                                c.generation, c.generation
-                            )
-                            .into()),
-                        };
-                    }
-                    if c.released_at.is_none() && c.lease_until > now {
-                        return Err(format!(
-                            "swarm: held by {} for {} s more, generation {}",
-                            c.holder,
-                            c.lease_until - now,
-                            c.generation
-                        )
-                        .into());
-                    }
-                    if c.attempts >= MAX_ATTEMPTS {
-                        return Err(format!(
-                            "swarm: {MAX_ATTEMPTS} attempts used on {work}; parked for owner"
-                        )
-                        .into());
-                    }
-                    tx.execute(
-                        "UPDATE claim SET session_id = ?3, holder = ?4, generation = generation + 1,
-                                attempts = attempts + 1, lease_until = ?5, released_at = NULL
-                         WHERE project_id = ?1 AND work_key = ?2",
-                        (project_id, work, session_id, author, now + lease),
-                    )?;
-                    generation = Some(c.generation + 1);
-                }
-            }
+    let generation = match claim_fence(&tx, project_id, session_id, author, now, new)? {
+        ControlFlow::Break(renewed) => {
+            tx.commit()?;
+            return Ok(renewed);
         }
-        "handoff" => {
-            let work = new.work_key.ok_or("swarm: a handoff needs --work <key>")?;
-            let g = new
-                .generation
-                .ok_or("swarm: a handoff needs --generation <n> from your claim")?;
-            let c = claim_row(&tx, project_id, work)?
-                .ok_or_else(|| format!("swarm: nobody claimed {work}"))?;
-            if c.generation != g {
-                return Err(
-                    format!("swarm: stale generation {g}; current is {}", c.generation).into(),
-                );
-            }
-            if c.session_id != session_id || c.holder != author || c.released_at.is_some() {
-                return Err(format!("swarm: you do not hold {work}").into());
-            }
-            tx.execute(
-                "UPDATE claim SET released_at = ?3 WHERE project_id = ?1 AND work_key = ?2",
-                (project_id, work, now),
-            )?;
-            generation = Some(g);
-        }
-        _ => {}
-    }
+        ControlFlow::Continue(generation) => generation,
+    };
 
     let n: i64 = tx.query_row(
         "SELECT COALESCE(MAX(n), 0) + 1 FROM post WHERE project_id = ?1",
@@ -359,127 +276,10 @@ pub fn post(
             now,
         ],
     )?;
+    let pings = board_pings(&tx, root, project_id, session_id, author, n, new, depth)?;
     let file = root.join(&path);
     std::fs::create_dir_all(file.parent().ok_or("body path has no parent")?)?;
     write_atomic(&file, new.body)?;
     tx.commit()?;
-    Ok(Posted::New(n))
-}
-
-fn claim_row(tx: &Connection, project_id: &str, work: &str) -> rusqlite::Result<Option<Claim>> {
-    tx.query_row(
-        "SELECT work_key, session_id, holder, generation, attempts, lease_until, released_at
-         FROM claim WHERE project_id = ?1 AND work_key = ?2",
-        (project_id, work),
-        claim_from,
-    )
-    .optional()
-}
-
-fn claim_from(r: &rusqlite::Row) -> rusqlite::Result<Claim> {
-    Ok(Claim {
-        work_key: r.get(0)?,
-        session_id: r.get(1)?,
-        holder: r.get(2)?,
-        generation: r.get(3)?,
-        attempts: r.get(4)?,
-        lease_until: r.get(5)?,
-        released_at: r.get(6)?,
-    })
-}
-
-pub fn posts(
-    connection: &Connection,
-    project_id: &str,
-) -> Result<Vec<Post>, Box<dyn std::error::Error>> {
-    let mut statement = connection.prepare(
-        "SELECT p.n, p.kind, p.session_id, p.author, p.author_role, p.to_agent, p.reply_to, p.supersedes,
-                (SELECT s.n FROM post s WHERE s.project_id = p.project_id AND s.supersedes = p.n),
-                p.work_key, p.generation, p.depth, p.needs_owner, p.relayed, p.sources, p.subject,
-                p.body_path, p.created_at
-         FROM post p WHERE p.project_id = ?1 ORDER BY p.n",
-    )?;
-    let rows = statement.query_map([project_id], |r| {
-        let sources: String = r.get(14)?;
-        Ok(Post {
-            n: r.get(0)?,
-            kind: r.get(1)?,
-            session_id: r.get(2)?,
-            author: r.get(3)?,
-            author_role: r.get(4)?,
-            to_agent: r.get(5)?,
-            reply_to: r.get(6)?,
-            supersedes: r.get(7)?,
-            superseded_by: r.get(8)?,
-            work_key: r.get(9)?,
-            generation: r.get(10)?,
-            depth: r.get(11)?,
-            needs_owner: r.get(12)?,
-            relayed: r.get(13)?,
-            sources: serde_json::from_str(&sources).unwrap_or_default(),
-            subject: r.get(15)?,
-            body_path: r.get(16)?,
-            created_at: r.get(17)?,
-        })
-    })?;
-    Ok(rows.collect::<Result<_, _>>()?)
-}
-
-pub fn claims(
-    connection: &Connection,
-    project_id: &str,
-) -> Result<Vec<Claim>, Box<dyn std::error::Error>> {
-    let mut statement = connection.prepare(
-        "SELECT work_key, session_id, holder, generation, attempts, lease_until, released_at
-         FROM claim WHERE project_id = ?1 ORDER BY work_key",
-    )?;
-    let rows = statement.query_map([project_id], claim_from)?;
-    Ok(rows.collect::<Result<_, _>>()?)
-}
-
-/// Copies a moved repository's board to its new id. The old rows stay, because posts are
-/// append-only. Only an empty board takes a copy, so post numbers and links keep their meaning.
-pub fn relink(
-    connection: &mut Connection,
-    from: &str,
-    to: &str,
-) -> Result<usize, Box<dyn std::error::Error>> {
-    let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
-    let count = |id: &str| -> rusqlite::Result<i64> {
-        tx.query_row(
-            "SELECT count(*) FROM post WHERE project_id = ?1",
-            [id],
-            |r| r.get(0),
-        )
-    };
-    if from == to {
-        return Err("swarm: the board is already at this id".into());
-    }
-    if count(from)? == 0 {
-        return Err(format!("swarm: no board at {from}").into());
-    }
-    if count(to)? > 0 {
-        return Err(format!(
-            "swarm: board {to} already has posts; relink copies only into an empty board"
-        )
-        .into());
-    }
-    let copied = tx.execute(
-        "INSERT INTO post (project_id, n, kind, session_id, author, author_role, to_session, to_agent,
-                           reply_to, supersedes, work_key, generation, depth, needs_owner, relayed,
-                           sources, subject, body_path, idem, created_at)
-         SELECT ?2, n, kind, session_id, author, author_role, to_session, to_agent, reply_to,
-                supersedes, work_key, generation, depth, needs_owner, relayed, sources, subject,
-                body_path, idem, created_at
-         FROM post WHERE project_id = ?1 ORDER BY n",
-        (from, to),
-    )?;
-    tx.execute(
-        "INSERT INTO claim (project_id, work_key, session_id, holder, generation, attempts, lease_until, released_at)
-         SELECT ?2, work_key, session_id, holder, generation, attempts, lease_until, released_at
-         FROM claim WHERE project_id = ?1",
-        (from, to),
-    )?;
-    tx.commit()?;
-    Ok(copied)
+    Ok(Posted::New(n, pings))
 }

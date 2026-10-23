@@ -270,6 +270,7 @@ pub fn set_log(
     Ok(())
 }
 
+/// The session's seats. The board's paneless sender is not a seat, so the app shows no column for it.
 pub fn agents(
     connection: &Connection,
     session_id: &str,
@@ -277,7 +278,7 @@ pub fn agents(
     let mut statement = connection.prepare(
         "SELECT id, role, pane_id, provider, created_at, state, state_at, state_source, state_detail, state_kind,
                 log, profile, runner, model, effort, account, cost_usd, tokens, sent_at
-         FROM agent WHERE session_id = ?1 ORDER BY id",
+         FROM agent WHERE session_id = ?1 AND role != 'board' ORDER BY id",
     )?;
     let rows = statement.query_map([session_id], |row| {
         Ok(AgentRow {
