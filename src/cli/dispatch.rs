@@ -98,6 +98,11 @@ pub(crate) fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         println!("{}", clear_box(&adapter, &pane, dequeue)?);
         return Ok(());
     }
+    if let [cmd, rest @ ..] = args
+        && cmd == "board"
+    {
+        return board(rest, &root, &mut connection);
+    }
     let (session_id, agent_id) = identity()?;
     match args {
         [cmd, recipient, kind] if cmd == "send" => {

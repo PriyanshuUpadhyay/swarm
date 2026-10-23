@@ -12,6 +12,9 @@ pub(crate) use accounts::*;
 mod answer;
 pub(crate) use answer::*;
 
+mod board;
+pub(crate) use board::*;
+
 mod chair_idle;
 pub(crate) use chair_idle::*;
 
