@@ -161,6 +161,11 @@ pub fn kickstart() -> std::io::Result<std::process::Output> {
     launchctl(&["kickstart", &format!("{}/{LABEL}", domain())])
 }
 
+/// Stops the running login item and starts it again, so it runs the app that `opt` names now.
+pub fn restart() -> std::io::Result<std::process::Output> {
+    launchctl(&["kickstart", "-k", &format!("{}/{LABEL}", domain())])
+}
+
 pub fn status(home: &Path) -> Status {
     let print = launchctl(&["print", &format!("{}/{LABEL}", domain())])
         .map(|output| String::from_utf8_lossy(&output.stdout).into_owned())

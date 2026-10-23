@@ -1,5 +1,6 @@
-// The update notice: when the Homebrew tap has a newer swarm, one toast asks to upgrade, then asks
-// to restart the `swarm ui` server on the new binary. The page reloads when the new server answers.
+// The update notice (ADR 0118): when the Homebrew tap has a newer swarm, one toast asks to upgrade,
+// then asks to restart the `swarm ui` server, and the HUD when the upgrade changed it. The page
+// reloads when the new server answers.
 
 import { toast } from "sonner";
 import { ApiError } from "../core/api";
@@ -50,29 +51,35 @@ function offer(app: App, latest: string) {
 async function upgrade(app: App, latest: string) {
   toast.loading(`Upgrading to swarm ${latest}…`, { id: ID, duration: Infinity, description: "brew update and brew upgrade swarm can take a few minutes." });
   try {
-    const { version } = await app.api.post<{ version: string }>("/api/update", {});
-    toast.success(`Swarm ${version} is installed`, {
-      id: ID,
-      duration: Infinity,
-      description: "The swarm ui server still runs the old version. Restart it to use the new one.",
-      action: { label: "Restart server", onClick: keep(() => void restart(app)) },
-      cancel: { label: "Later", onClick: () => {} },
-    });
+    const { version, hud } = await app.api.post<{ version: string; hud: boolean }>("/api/update", {});
+    installed(app, version, hud);
   } catch (err) {
     toast.dismiss(ID);
     showError(`Upgrade: ${message(err)}`);
   }
 }
 
-async function restart(app: App) {
-  toast.loading("Restarting the swarm ui server…", { id: ID, duration: Infinity, description: "The page reloads when the new server answers." });
+function installed(app: App, version: string, hud: boolean) {
+  const what = hud ? "The swarm ui server and the HUD still run" : "The swarm ui server still runs";
+  toast.success(`Swarm ${version} is installed`, {
+    id: ID,
+    duration: Infinity,
+    description: `${what} the old version. Restart to use the new one.`,
+    action: { label: "Restart server", onClick: keep(() => void restart(app, version, hud)) },
+    cancel: { label: "Later", onClick: () => {} },
+  });
+}
+
+async function restart(app: App, version: string, hud: boolean) {
+  toast.loading(hud ? "Restarting the HUD and the swarm ui server…" : "Restarting the swarm ui server…", { id: ID, duration: Infinity, description: "The page reloads when the new server answers." });
   try {
     await app.api.post("/api/update/restart", {});
   } catch (err) {
-    // The old server stops during this call, so only a refusal it sent is a failure.
+    // The old server stops during this call, so only a refusal it sent is a failure. It refuses
+    // before it stops, so the owner can press Restart server again.
     if (err instanceof ApiError) {
-      toast.dismiss(ID);
-      return showError(`Restart: ${message(err)}`);
+      showError(`Restart: ${message(err)}`);
+      return installed(app, version, hud);
     }
   }
   // The stream's hello frame reloads the page on the new build, which ends this timer.

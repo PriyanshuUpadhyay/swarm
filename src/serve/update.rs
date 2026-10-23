@@ -1,5 +1,6 @@
 //! Server update: the page tells the owner about a newer swarm, upgrades it with Homebrew on one
-//! press, and restarts `swarm ui` on the new binary on a second press.
+//! press, and restarts `swarm ui` on the new binary on a second press (ADR 0118). The second press
+//! also restarts the HUD login item when the upgrade changed the HUD app.
 
 use super::*;
 
@@ -13,6 +14,26 @@ const CHECK_TTL: Duration = Duration::from_secs(3600);
 
 static LATEST: Mutex<Option<(std::time::Instant, String)>> = Mutex::new(None);
 static UPGRADE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+/// Set by an upgrade that changed the HUD of a set-up login item; the restart takes it.
+static HUD_CHANGED: AtomicBool = AtomicBool::new(false);
+
+/// The SHA-256 of the HUD executable that the login item runs through `opt`, or None without one.
+// ponytail: the executable only; a change to the bundle's resources alone does not restart it.
+fn hud_hash(prefix: &Path) -> Option<[u8; 32]> {
+    use sha2::Digest;
+    let path = prefix.join("opt/swarm/libexec/SwarmHUD.app/Contents/MacOS/SwarmHUD");
+    Some(sha2::Sha256::digest(std::fs::read(path).ok()?).into())
+}
+
+/// Whether the upgrade brought a different HUD. With no HUD after it, there is nothing to start.
+pub(super) fn hud_changed(before: Option<[u8; 32]>, after: Option<[u8; 32]>) -> bool {
+    after.is_some() && before != after
+}
+
+/// Whether the owner set up the HUD login item (ADR 0087).
+fn hud_set_up() -> bool {
+    std::env::var_os("HOME").is_some_and(|home| swarm::hud::plist_path(Path::new(&home)).exists())
+}
 
 /// `<prefix>` when `exe` is `<prefix>/Cellar/swarm/<version>/...`, else None: brew cannot
 /// upgrade a cargo or checkout build.
@@ -146,13 +167,18 @@ pub(super) async fn update_write() -> Result<Json<Value>, ApiError> {
         .map_err(|_| error(StatusCode::CONFLICT, "an upgrade is already running"))?;
     // Its own task, so a closed page does not drop the request and kill brew half way.
     let upgrade = tokio::spawn(async move {
+        let hud = hud_set_up().then(|| hud_hash(prefix));
         let brew = prefix.join("bin/brew");
         run(&brew, &["update", "--quiet"], Duration::from_secs(300)).await?;
         run(&brew, &["upgrade", "swarm"], Duration::from_secs(900)).await?;
+        let hud = hud.is_some_and(|before| hud_changed(before, hud_hash(prefix)));
         let swarm = prefix.join("opt/swarm/bin/swarm");
-        run(&swarm, &["--version"], Duration::from_secs(10)).await
+        Ok::<_, ApiError>((
+            run(&swarm, &["--version"], Duration::from_secs(10)).await?,
+            hud,
+        ))
     });
-    let printed = upgrade
+    let (printed, hud) = upgrade
         .await
         .map_err(|err| error(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()))??;
     // `swarm 0.0.38 abc1234 branch`
@@ -169,11 +195,13 @@ pub(super) async fn update_write() -> Result<Json<Value>, ApiError> {
         return Err(error(StatusCode::CONFLICT, &message));
     }
     *LATEST.lock().unwrap() = None;
-    Ok(Json(json!({"version": version})))
+    HUD_CHANGED.store(hud, Ordering::SeqCst);
+    Ok(Json(json!({"version": version, "hud": hud})))
 }
 
-/// Step two: start `swarm ui` of the installed version on this port. It finds this server of an
-/// older build, stops it, and starts its own, and the open pages reload on the new build.
+/// Step two: restart the HUD login item when the upgrade changed it, then start `swarm ui` of the
+/// installed version on this port. That finds this server of an older build, stops it, and starts
+/// its own, and the open pages reload on the new build.
 pub(super) async fn update_restart(State(app): State<App>) -> Result<Json<Value>, ApiError> {
     use std::os::unix::fs::OpenOptionsExt;
     use std::os::unix::process::CommandExt;
@@ -184,6 +212,34 @@ pub(super) async fn update_restart(State(app): State<App>) -> Result<Json<Value>
         )
     })?;
     let fail = |err: std::io::Error| error(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string());
+    let hud = HUD_CHANGED.load(Ordering::SeqCst);
+    if hud {
+        // A login item that is not running starts the new app through `opt` when it next starts.
+        let restarted = tokio::task::spawn_blocking(|| {
+            let home = std::env::var_os("HOME").unwrap_or_default();
+            if !swarm::hud::status(Path::new(&home)).running {
+                return Ok(());
+            }
+            let output = swarm::hud::restart()?;
+            if output.status.success() {
+                Ok(())
+            } else {
+                Err(std::io::Error::other(
+                    String::from_utf8_lossy(&output.stderr).trim().to_string(),
+                ))
+            }
+        })
+        .await
+        .map_err(|err| error(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()))?;
+        // One try only: the server is not touched yet, and the next press restarts it alone.
+        HUD_CHANGED.store(false, Ordering::SeqCst);
+        restarted.map_err(|err| {
+            let message = format!(
+                "the HUD did not restart: {err}; press Restart server again to restart only the server"
+            );
+            error(StatusCode::BAD_GATEWAY, &message)
+        })?;
+    }
     // The server writes its URL with the token there, so only the owner may read the log.
     let log = std::fs::OpenOptions::new()
         .create(true)
@@ -201,7 +257,7 @@ pub(super) async fn update_restart(State(app): State<App>) -> Result<Json<Value>
         .process_group(0)
         .spawn()
         .map_err(fail)?;
-    Ok(Json(json!({"ok": true})))
+    Ok(Json(json!({"ok": true, "hud": hud})))
 }
 
 #[cfg(test)]
@@ -227,6 +283,16 @@ mod tests {
         assert!(!newer("0.0.37", "0.0.37"));
         assert!(!newer("0.0.36", "0.0.37"));
         assert!(!newer("", "0.0.37"));
+    }
+
+    #[test]
+    fn a_hud_changed_only_when_its_new_executable_differs() {
+        let (old, new) = (Some([1u8; 32]), Some([2u8; 32]));
+        assert!(hud_changed(old, new));
+        assert!(!hud_changed(old, old));
+        assert!(hud_changed(None, new));
+        assert!(!hud_changed(old, None));
+        assert!(!hud_changed(None, None));
     }
 
     #[test]
