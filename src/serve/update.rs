@@ -162,48 +162,47 @@ pub(super) async fn update_write() -> Result<Json<Value>, ApiError> {
             "this swarm is not a Homebrew install; rebuild it from its checkout",
         )
     })?;
-    let _running = UPGRADE
+    let running = UPGRADE
         .try_lock()
         .map_err(|_| error(StatusCode::CONFLICT, "an upgrade is already running"))?;
-    // Its own task, so a closed page does not drop the request and kill brew half way.
+    // The lock, brew, and the results all live in this task, so a closed page that drops the
+    // request neither frees the lock while brew runs nor loses the HUD mark.
     let upgrade = tokio::spawn(async move {
-        let hud = hud_set_up().then(|| hud_hash(prefix));
+        let _running = running;
+        let before = hud_set_up().then(|| hud_hash(prefix));
         let brew = prefix.join("bin/brew");
         run(&brew, &["update", "--quiet"], Duration::from_secs(300)).await?;
         run(&brew, &["upgrade", "swarm"], Duration::from_secs(900)).await?;
-        let hud = hud.is_some_and(|before| hud_changed(before, hud_hash(prefix)));
+        let hud = before.is_some_and(|before| hud_changed(before, hud_hash(prefix)));
         let swarm = prefix.join("opt/swarm/bin/swarm");
-        Ok::<_, ApiError>((
-            run(&swarm, &["--version"], Duration::from_secs(10)).await?,
-            hud,
-        ))
+        let printed = run(&swarm, &["--version"], Duration::from_secs(10)).await?;
+        // `swarm 0.0.38 abc1234 branch`
+        let version = printed
+            .split_whitespace()
+            .nth(1)
+            .unwrap_or_default()
+            .to_string();
+        if !newer(&version, env!("CARGO_PKG_VERSION")) {
+            // A local build sorts above the release of its tag, so brew keeps it.
+            let message = format!(
+                "brew left swarm at {version}; run `brew reinstall --formula priyanshuupadhyay/tap/swarm`"
+            );
+            return Err(error(StatusCode::CONFLICT, &message));
+        }
+        *LATEST.lock().unwrap() = None;
+        HUD_CHANGED.store(hud, Ordering::SeqCst);
+        Ok(Json(json!({"version": version, "hud": hud})))
     });
-    let (printed, hud) = upgrade
+    upgrade
         .await
-        .map_err(|err| error(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()))??;
-    // `swarm 0.0.38 abc1234 branch`
-    let version = printed
-        .split_whitespace()
-        .nth(1)
-        .unwrap_or_default()
-        .to_string();
-    if !newer(&version, env!("CARGO_PKG_VERSION")) {
-        // A local build sorts above the release of its tag, so brew keeps it.
-        let message = format!(
-            "brew left swarm at {version}; run `brew reinstall --formula priyanshuupadhyay/tap/swarm`"
-        );
-        return Err(error(StatusCode::CONFLICT, &message));
-    }
-    *LATEST.lock().unwrap() = None;
-    HUD_CHANGED.store(hud, Ordering::SeqCst);
-    Ok(Json(json!({"version": version, "hud": hud})))
+        .map_err(|err| error(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()))?
 }
 
 /// Step two: restart the HUD login item when the upgrade changed it, then start `swarm ui` of the
 /// installed version on this port. That finds this server of an older build, stops it, and starts
 /// its own, and the open pages reload on the new build.
 pub(super) async fn update_restart(State(app): State<App>) -> Result<Json<Value>, ApiError> {
-    use std::os::unix::fs::OpenOptionsExt;
+    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
     use std::os::unix::process::CommandExt;
     let prefix = brew_prefix().ok_or_else(|| {
         error(
@@ -246,6 +245,9 @@ pub(super) async fn update_restart(State(app): State<App>) -> Result<Json<Value>
         .append(true)
         .mode(0o600)
         .open(app.root.join("ui.log"))
+        .map_err(fail)?;
+    // `mode` applies only to a new file; an older log may be wider, as `spawn_ui` also fixes.
+    log.set_permissions(std::fs::Permissions::from_mode(0o600))
         .map_err(fail)?;
     std::process::Command::new(prefix.join("opt/swarm/bin/swarm"))
         .args(["ui", "--port", &app.port.to_string()])

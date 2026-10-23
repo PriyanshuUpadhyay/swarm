@@ -5,6 +5,7 @@
 import { toast } from "sonner";
 import { ApiError } from "../core/api";
 import type { App } from "../core/app";
+import { message } from "../core/app-types";
 import { showError } from "./errors";
 
 type Update = { current: string; latest: string | null; available: boolean };
@@ -12,8 +13,9 @@ type Update = { current: string; latest: string | null; available: boolean };
 const ID = "swarm-update";
 const CHECK_MS = 6 * 3600_000;
 const RESTART_MS = 30_000;
-const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
 // Sonner closes a toast after its action runs; the next step reuses the toast, so it stays.
+// A reused toast keeps the options it is not given, so each progress step clears the buttons.
+const NO_BUTTONS = { action: undefined, cancel: undefined };
 const keep = (step: () => void) => (event: { preventDefault: () => void }) => {
   event.preventDefault();
   step();
@@ -49,7 +51,7 @@ function offer(app: App, latest: string) {
 }
 
 async function upgrade(app: App, latest: string) {
-  toast.loading(`Upgrading to swarm ${latest}…`, { id: ID, duration: Infinity, description: "brew update and brew upgrade swarm can take a few minutes." });
+  toast.loading(`Upgrading to swarm ${latest}…`, { id: ID, duration: Infinity, description: "brew update and brew upgrade swarm can take a few minutes.", ...NO_BUTTONS });
   try {
     const { version, hud } = await app.api.post<{ version: string; hud: boolean }>("/api/update", {});
     installed(app, version, hud);
@@ -71,15 +73,16 @@ function installed(app: App, version: string, hud: boolean) {
 }
 
 async function restart(app: App, version: string, hud: boolean) {
-  toast.loading(hud ? "Restarting the HUD and the swarm ui server…" : "Restarting the swarm ui server…", { id: ID, duration: Infinity, description: "The page reloads when the new server answers." });
+  toast.loading(hud ? "Restarting the HUD and the swarm ui server…" : "Restarting the swarm ui server…", { id: ID, duration: Infinity, description: "The page reloads when the new server answers.", ...NO_BUTTONS });
   try {
     await app.api.post("/api/update/restart", {});
   } catch (err) {
     // The old server stops during this call, so only a refusal it sent is a failure. It refuses
-    // before it stops, so the owner can press Restart server again.
+    // before it stops, so the owner can press Restart server again. The server tries the HUD
+    // once, so the next press restarts only the server.
     if (err instanceof ApiError) {
       showError(`Restart: ${message(err)}`);
-      return installed(app, version, hud);
+      return installed(app, version, false);
     }
   }
   // The stream's hello frame reloads the page on the new build, which ends this timer.
