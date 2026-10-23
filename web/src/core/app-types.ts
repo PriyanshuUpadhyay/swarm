@@ -155,6 +155,8 @@ export const paneId = (sessionId: string, agent: string) => `${sessionId}:${agen
 export const DRAFT_PREFIX = "composer.draft.";
 /** The window event that moves the chat's transcript to the owner's previous (-1) or next (1) prompt. */
 export const PROMPT_JUMP = "swarm:prompt-jump";
+/** The window event of a send from a composer; its detail is the chat id, whose transcript moves to the end. */
+export const SENT = "swarm:sent";
 export const PICKS_PREFIX = "composer.skills.";
 export const HISTORY_PREFIX = "composer.history.";
 export const STASH_PREFIX = "composer.stash.";

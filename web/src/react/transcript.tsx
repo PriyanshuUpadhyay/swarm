@@ -1,13 +1,14 @@
 import { ArrowDownIcon, ChevronDownIcon, ChevronUpIcon, MessageSquareDashedIcon, TriangleAlertIcon, XIcon } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Virtualizer, type VirtualizerHandle } from "virtua";
-import { PROMPT_JUMP, type App, type Pane, type Reader } from "../core/app";
+import { PROMPT_JUMP, SENT, type App, type Pane, type Reader } from "../core/app";
 import { canBranch } from "../core/composer";
 import { promptIndex, type Line } from "../core/transcript";
 import { ContextMenu, ContextMenuTrigger } from "../components/ui/context-menu";
 import { Kbd } from "../components/ui/kbd";
 import { ChatInput } from "./chat-input";
 import { copyText } from "./copy";
+import { focusInputOf } from "../core/focus";
 import { SourcePopover, TranscriptMenu, type Source } from "./transcript-overlays";
 import { setSplit } from "./transcript-output";
 import { LineView } from "./transcript-row";
@@ -105,6 +106,13 @@ function Transcript({ app, view, testid = "transcript", empty }: { app: Reader; 
     handle.current?.scrollToIndex(lines.length - 1, { align: "end" });
   };
 
+  // A send from this chat's composer follows the new message, also when the owner had scrolled up.
+  useEffect(() => {
+    const onSent = (e: Event) => (e as CustomEvent<string>).detail === openId && lines.length && jump();
+    window.addEventListener(SENT, onSent);
+    return () => window.removeEventListener(SENT, onSent);
+  });
+
   // Copy buttons inside markdown HTML: one listener for the whole list.
   const onClick = (e: React.MouseEvent) => {
     const layout = (e.target as Element).closest<HTMLElement>("[data-diff-layout]");
@@ -112,8 +120,8 @@ function Transcript({ app, view, testid = "transcript", empty }: { app: Reader; 
     const button = (e.target as Element).closest<HTMLElement>("[data-copy]");
     if (!button) return;
     const code = button.closest<HTMLElement>(".md-code");
-    if (button.dataset.copy === "code") copyText(code?.dataset.raw ?? code?.querySelector("pre")?.textContent ?? "", "code");
-    else if (button.dataset.copy === "table") copyText(button.closest<HTMLElement>(".md-table")?.dataset.raw ?? "", "table");
+    if (button.dataset.copy === "code") copyText(code?.dataset.raw ?? code?.querySelector("pre")?.textContent ?? "", "code", button);
+    else if (button.dataset.copy === "table") copyText(button.closest<HTMLElement>(".md-table")?.dataset.raw ?? "", "table", button);
   };
 
   return (
@@ -214,7 +222,7 @@ function FindBar({ app, view, listRef }: { app: Reader; view: Pane; listRef: Rea
     } else if (e.key === "Escape") {
       e.preventDefault();
       app.closeFind();
-      listRef.current?.focus();
+      focusInputOf(listRef.current);
     }
   };
   return (
