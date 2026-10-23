@@ -284,3 +284,49 @@ fn a_plain_resume_runs_the_profile_runner_when_it_has_one() {
         assert!(command.contains("'--resume' 'abc'"), "{role}: {command}");
     }
 }
+
+/// A chair pane that ended with its host keeps its id, so Resume asks the adapter's listing.
+#[test]
+fn a_resume_takes_back_a_pane_the_host_lost_but_not_a_live_one() {
+    let home = scratch("resume-lost-pane");
+    tool(&home, "claude", "true");
+    std::fs::create_dir_all(home.join(".swarm/adapters")).unwrap();
+    std::fs::write(
+        home.join(".swarm/adapters/fake.conf"),
+        "self = printf chair\nspawn = printf new\nring = true\nlist = printf new\nclose = true\ncapture = true\n",
+    )
+    .unwrap();
+    let cwd = home.join("repo");
+    std::fs::create_dir_all(&cwd).unwrap();
+    let cwd = cwd.to_string_lossy().into_owned();
+    let fake = [("SWARM_ADAPTER", "fake")];
+    let session = swarm(
+        &home,
+        &fake,
+        &["session", "new", "lane", "--chair", "claude:abc"],
+    );
+    assert!(session.status.success(), "{}", stderr(&session));
+    let session = String::from_utf8(session.stdout)
+        .unwrap()
+        .trim()
+        .to_string();
+    {
+        let connection = swarm::store::open(&home.join(".swarm/swarm.db")).unwrap();
+        swarm::store::add_agent(&connection, &session, "orchestrator", "orchestrator").unwrap();
+        swarm::store::set_pane(&connection, &session, "orchestrator", "gone").unwrap();
+    }
+    let env = [
+        ("SWARM_ADAPTER", "fake"),
+        ("SWARM_SESSION_ID", session.as_str()),
+    ];
+    let resume = ["launch", "orchestrator", "chat", "--resume", "--cwd", &cwd];
+    let resumed = swarm(&home, &env, &resume);
+    assert!(resumed.status.success(), "{}", stderr(&resumed));
+    // The listing now shows the new pane, so a second Resume finds the chair running.
+    let again = swarm(&home, &env, &resume);
+    assert!(
+        stderr(&again).contains("still running"),
+        "{}",
+        stderr(&again)
+    );
+}

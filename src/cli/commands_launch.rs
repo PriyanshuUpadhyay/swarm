@@ -58,7 +58,21 @@ pub(crate) fn commands_launch(
                         .into(),
                 );
             }
-            true => Some(resume_target(connection, &session_id()?)?),
+            true => {
+                let session = session_id()?;
+                // A pane that ended with its host, such as a stopped tmux server, ran no exit
+                // hook, so its id stays on the chair. The adapter's listing is the truth.
+                let pane = swarm::store::agents(connection, &session)?
+                    .into_iter()
+                    .find(|agent| agent.id == "orchestrator")
+                    .and_then(|agent| agent.pane);
+                if let Some(pane) = pane
+                    && !swarm::adapter::load(root, &adapter_name())?.has_pane(&pane)?
+                {
+                    swarm::store::clear_pane(connection, &session, "orchestrator")?;
+                }
+                Some(resume_target(connection, &session)?)
+            }
         };
         // A plain Resume runs the role's runner (ADR 0107). Only a chat whose profile has no
         // runner for its CLI, such as pi or AGY, runs its last model and level (ADR 0110). The
