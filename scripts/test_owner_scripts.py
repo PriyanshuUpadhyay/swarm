@@ -98,6 +98,8 @@ elif name == 'make':
     out = tree / 'ui/.build/release/swarm-0.0.19-macos-arm64.tar.gz'
     out.parent.mkdir(parents=True, exist_ok=True); out.write_bytes(b'fake package')
 elif name == 'swarm':
+    if a == ['__prune-stale-trust', 'schedule-upgrade']:
+        sys.exit(1 if scenario == 'cleanup-error' else 0)
     if scenario == 'version-error': fail()
     print('swarm 0.0.20 ' + ('' if scenario == 'empty-hash' else 'deadbee' if scenario == 'wrong-hash' else head[:int(os.environ.get('HASH_LENGTH', '7'))]))
 elif name == 'launchctl':
@@ -176,6 +178,12 @@ class OwnerScripts(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertNotIn('local install failed', result.stderr)
         self.assertTrue(self.state['published'])
+        self.assertIn('swarm __prune-stale-trust schedule-upgrade', self.calls())
+
+    def test_cleanup_failure_does_not_stop_release(self):
+        result = self.run_script(scenario='cleanup-error')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('could not schedule trust cleanup', result.stderr)
 
     def test_poll_error_retries(self):
         result = self.run_script(scenario='poll-error')
@@ -241,6 +249,13 @@ class OwnerScripts(unittest.TestCase):
         result = self.run_script('install-local.sh', ('HEAD',))
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('0.0.19.local.', self.state['formula'])
+        self.assertIn('swarm __prune-stale-trust schedule-upgrade', self.calls())
+
+    def test_cleanup_failure_does_not_stop_install(self):
+        self.install_fixture()
+        result = self.run_script('install-local.sh', ('HEAD',), scenario='cleanup-error')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('could not schedule trust cleanup', result.stderr)
 
     def test_local_accepts_short_commit(self):
         self.install_fixture()

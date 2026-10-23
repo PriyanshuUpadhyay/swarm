@@ -10,8 +10,8 @@ async fn profile_and_account_writes_run_their_owner_and_only_a_stale_revision_is
         &fixture.app.cli,
         r#"#!/bin/sh
 printf '%s|%s|%s\n' "$SWARM_ADAPTER" "$PWD" "$*" >> "$SWARM_HOME/actions"
-case "$*" in
-  *stale*) printf 'swarm: profiles changed on disk; reload and try again' >&2; exit 1 ;;
+case " $* " in
+  *" --revision stale "*) printf 'swarm: profiles changed on disk; reload and try again' >&2; exit 1 ;;
   *refused*) printf 'swarm: Invalid account name' >&2; exit 1 ;;
 esac
 printf '{"revision":"next"}\n'

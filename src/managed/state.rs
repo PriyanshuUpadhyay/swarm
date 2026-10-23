@@ -170,15 +170,41 @@ impl Entry {
 /// Each recorded item with its live state, then each of `found` that equals swarm's text in its
 /// file and has no row. `found` is every item swarm's writers own today; list writes no row.
 pub fn list(store: &rusqlite::Connection, found: &[Edit]) -> Result<Vec<Entry>, String> {
+    let mut entries = recorded(store, false)?;
+    let mut ids: std::collections::HashSet<String> =
+        entries.iter().map(|entry| entry.edit.id()).collect();
+    for edit in found {
+        if edit.kind != Kind::Symlink
+            && state(edit, false) == State::Present
+            && ids.insert(edit.id())
+        {
+            entries.push(Entry {
+                edit: edit.clone(),
+                state: State::Present,
+                recorded: false,
+                at_s: None,
+            });
+        }
+    }
+    Ok(entries)
+}
+
+/// Background pruning reads only active trust records, never found items or reverted rows.
+pub(super) fn recorded(
+    store: &rusqlite::Connection,
+    active_trust_only: bool,
+) -> Result<Vec<Entry>, String> {
     let failed = |error: rusqlite::Error| format!("swarm: cannot read managed edits: {error}");
     let mut query = store
         .prepare(
             "SELECT writer, file, kind, path, wrote, before, created, with_id, at_s, off
-             FROM managed_edit ORDER BY file, path",
+             FROM managed_edit
+             WHERE NOT ?1 OR (writer = 'launch.trust' AND off = 0)
+             ORDER BY file, path",
         )
         .map_err(failed)?;
     let rows = query
-        .query_map([], |row| {
+        .query_map([active_trust_only], |row| {
             Ok((
                 [
                     row.get::<_, String>(0)?,
@@ -236,21 +262,6 @@ pub fn list(store: &rusqlite::Connection, found: &[Edit]) -> Result<Vec<Entry>, 
             recorded: true,
             at_s: Some(at_s),
         });
-    }
-    let mut ids: std::collections::HashSet<String> =
-        entries.iter().map(|entry| entry.edit.id()).collect();
-    for edit in found {
-        if edit.kind != Kind::Symlink
-            && state(edit, false) == State::Present
-            && ids.insert(edit.id())
-        {
-            entries.push(Entry {
-                edit: edit.clone(),
-                state: State::Present,
-                recorded: false,
-                at_s: None,
-            });
-        }
     }
     Ok(entries)
 }

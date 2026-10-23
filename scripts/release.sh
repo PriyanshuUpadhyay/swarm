@@ -75,7 +75,8 @@ if "$dry"; then
         'Wait up to 30 minutes for Tap, using the saved publication time.' \
         'Run brew update, then brew upgrade swarm; reinstall if a .local build remains.' \
         'Restart the HUD if its LaunchAgent plist exists.' \
-        'Print swarm --version and check the printed commit as a prefix of the full release hash.'
+        'Print swarm --version and check the printed commit as a prefix of the full release hash.' \
+        'Run swarm __prune-stale-trust schedule-upgrade; log scheduling errors and continue.'
     exit 0
 fi
 
@@ -235,3 +236,6 @@ printf '%s\n' "$installed"
 printed=$(printf '%s\n' "$installed" | awk 'NR == 1 {print $3}')
 case "$printed" in ''|*[!0-9a-f]*) die 'swarm --version did not print a commit hash' ;; esac
 case "$head" in "$printed"*) ;; *) die "PATH does not run release commit $head" ;; esac
+
+# Cleanup runs in a detached child and never fails the install.
+swarm __prune-stale-trust schedule-upgrade || printf '%s\n' 'swarm: could not schedule trust cleanup' >&2

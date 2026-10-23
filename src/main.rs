@@ -9,6 +9,9 @@ use cli::*;
 
 fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
+    if trust_maintenance(&args) {
+        return;
+    }
     if let [cmd, rest @ ..] = args.as_slice()
         && cmd == "guard"
     {

@@ -5,6 +5,7 @@ mod commit;
 mod filesystem;
 mod links;
 mod output;
+mod prune;
 mod removal;
 mod state;
 
@@ -18,6 +19,7 @@ pub(crate) use filesystem::{
 use links::{LinkLeaf, link_leaf, link_removal, validate_link, write_link};
 use output::link_text;
 pub use output::{conflicts_text, diff, plan_json, plan_text};
+pub use prune::prune_stale_trust;
 pub use removal::{Target, revert_plan};
 use state::state_in;
 pub use state::{Entry, State, list, state};

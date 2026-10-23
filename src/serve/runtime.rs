@@ -108,7 +108,14 @@ pub(super) fn start(
             .write_all(format!("{url}\n{}\n{BUILD}\n", std::process::id()).as_bytes())?;
     }
     let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(async {
+    // A plain Homebrew upgrade has no owner-side install script. Its first UI start is the hook.
+    crate::cli::schedule_upgrade_cleanup();
+    let result = runtime.block_on(async {
+        // Install both handlers before serving, including the SIGTERM sent by `swarm ui stop`.
+        let mut terminate =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
+        let mut interrupt =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;
         start_coordinator(&app, action_queue);
         let listener = tokio::net::TcpListener::from_std(listener)?;
         let ping_app = Arc::downgrade(&app);
@@ -125,9 +132,16 @@ pub(super) fn start(
                 }
             }
         });
-        axum::serve(listener, router(app.clone())).await
-    })?;
+        use std::future::IntoFuture;
+        tokio::select! {
+            result = axum::serve(listener, router(app.clone())).into_future() => result,
+            _ = terminate.recv() => Ok(()),
+            _ = interrupt.recv() => Ok(()),
+        }
+    });
     app.stopped.store(true, Ordering::Relaxed);
+    crate::cli::spawn_trust_cleanup(&app.root, "ui-exit");
+    result?;
     Ok(())
 }
 

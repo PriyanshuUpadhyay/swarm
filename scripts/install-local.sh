@@ -35,6 +35,7 @@ if "$dry"; then
         'Restore the tap formula, also on failure; the install receipt keeps the real tap.' \
         "If $plist exists, run launchctl kickstart -k gui/$(id -u)/io.github.priyanshuupadhyay.swarm.hud." \
         "Print swarm --version and check its commit prefix against $commit." \
+        'Run swarm __prune-stale-trust schedule-upgrade; log scheduling errors and continue.' \
         'Remove the temporary worktree and build files, also on failure.'
     exit 0
 fi
@@ -141,3 +142,6 @@ printf '%s\n' "$installed"
 printed=$(printf '%s\n' "$installed" | awk 'NR == 1 {print $3}')
 case "$printed" in ''|*[!0-9a-f]*) die 'swarm --version did not print a commit hash' ;; esac
 case "$commit" in "$printed"*) ;; *) die "PATH does not run commit $commit" ;; esac
+
+# Cleanup runs in a detached child and never fails the install.
+swarm __prune-stale-trust schedule-upgrade || printf '%s\n' 'swarm: could not schedule trust cleanup' >&2
