@@ -46,7 +46,12 @@ elif name == 'gh':
         key = 'poll_' + workflow
         s[key] = s.get(key, 0) + 1
         save()
-        if workflow == 'ci.yml': print('[{"status":"completed","conclusion":"success"}]')
+        if workflow == 'ci.yml':
+            status = 'in_progress' if scenario == 'ci-running' and s[key] == 1 else 'completed'
+            conclusion = 'failure' if scenario == 'ci-failure' else 'success'
+            print(json.dumps([dict(databaseId=41, status=status, conclusion=conclusion, createdAt='2026-01-01T00:00:00Z')]))
+        elif workflow == 'background.yml':
+            if scenario == 'background-failure': print('https://github.com/example/swarm/actions/runs/7')
         elif scenario == 'poll-error' and s[key] == 1: fail()
         elif scenario == 'timeout' or scenario == 'poll-errors':
             if scenario == 'poll-errors': fail()
@@ -184,6 +189,25 @@ class OwnerScripts(unittest.TestCase):
         result = self.run_script(scenario='cleanup-error')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('could not schedule trust cleanup', result.stderr)
+
+    def test_release_waits_for_a_running_ci(self):
+        result = self.run_script(scenario='ci-running')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.state['poll_ci.yml'], 2)
+        self.assertTrue(self.state['published'])
+
+    def test_failed_ci_stops_before_the_bump(self):
+        result = self.run_script(scenario='ci-failure')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('ci.yml run 41 ended with failure', result.stderr)
+        self.assertNotIn('commits', self.state)
+        self.assertNotIn('pushes', self.state)
+
+    def test_failed_background_run_warns_and_releases(self):
+        result = self.run_script(scenario='background-failure')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('warning: the last background run on main failed: https://github.com/example/swarm/actions/runs/7', result.stderr)
+        self.assertTrue(self.state['published'])
 
     def test_poll_error_retries(self):
         result = self.run_script(scenario='poll-error')
