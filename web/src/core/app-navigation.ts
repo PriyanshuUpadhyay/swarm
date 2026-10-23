@@ -202,7 +202,7 @@ export class AppNavigation {
 
   /** A chat's title as the tree lists it. */
   chatTitle(session: string): string {
-    // A chat started in a tab has no sidebar row, so its tab names it.
+    // A chat under a folded row or "… N more" has no sidebar row, so its tab names it.
     return chatRows(this.app.tree).find((r) => r.selection?.chat === session)?.title ?? this.app.tabs?.tabs.find((t) => t.session === session)?.title ?? shortId(session, this.app.chatIds());
   }
 
@@ -228,8 +228,8 @@ export class AppNavigation {
     if (tabs[next].session !== this.app.openId) this.openChat(tabs[next].session, e);
   }
 
-  /** ⇧⌘T reopens the last closed tab, as a browser does. A tab-only chat was archived when its tab
-   *  closed, so it is unarchived. With no closed tab, the archived chats list opens. */
+  /** ⇧⌘T reopens the last closed tab, as a browser does. A chat archived since its tab closed
+   *  is unarchived. With no closed tab, the archived chats list opens. */
   reopenTab() {
     const session = this.app.closedTabs.pop();
     if (!session) return this.app.life.openClosed();
@@ -246,8 +246,7 @@ export class AppNavigation {
     if (tab && tab.session !== this.app.openId) this.openChat(tab.session, e, { history: false });
   }
 
-  /** ⌘W and a tab's ×. Closing the open tab shows the chat the server picks, else the landing. A
-   *  chat started in a tab is in no sidebar, so closing its tab archives it to Archived chats. */
+  /** ⌘W and a tab's ×. Closing the open tab shows the chat the server picks, else the landing. */
   closeTab(key?: string): Promise<void> {
     if (this.app.life.state.confirm) return Promise.resolve();
     const run = this.closes.then(() => this.closeTabNow(key));
@@ -260,10 +259,6 @@ export class AppNavigation {
     const tab = this.stripTabs().find((t) => (key ? t.id === key : t.session === this.app.openId));
     if (!workspace || !tab?.canHide) return;
     const closed = () => { this.app.closedTabs = [...this.app.closedTabs.filter((s) => s !== tab.session), tab.session]; };
-    if (tab.tabOnly) {
-      await this.app.life.endChat(tab.session, true, closed);
-      return;
-    }
     const wasOpen = tab.session === this.app.openId;
     const seq = wasOpen ? ++this.app.navSeq : this.app.navSeq;
     if (!(await this.choose({ op: "close_tab", workspace, chat: tab.id }))) return;
@@ -292,7 +287,7 @@ export class AppNavigation {
 
   /** Opens a chat: its tab, the owner's selected chat, and its transcript. `write: false` only
    *  shows it (a restore at start); `history: false` keeps the tab history order (⌃Tab). */
-  openChat(sessionId: string, e?: KeyboardEvent, opts: { write?: boolean; history?: boolean; tabOnly?: boolean } = {}) {
+  openChat(sessionId: string, e?: KeyboardEvent, opts: { write?: boolean; history?: boolean } = {}) {
     if (this.leftChat === sessionId) this.leftChat = null;
     this.app.navSeq++;
     const kind: PerfKind = this.app.lru.includes(sessionId) ? "switch" : "open";
@@ -314,7 +309,7 @@ export class AppNavigation {
       // Swift's select: open the tab, then select; only a move to another workspace opens its project.
       const section = this.app.tree?.sections.find((s) => s.rows.some((r) => r.selection?.chat === sessionId));
       if (moved && section && !section.expanded) void this.choose({ op: "expand", id: section.collapseId });
-      void this.choose({ op: "open_tab", workspace, chat: sessionId, ...(opts.tabOnly && { tab_only: true }) });
+      void this.choose({ op: "open_tab", workspace, chat: sessionId });
       void this.choose({ op: "selected_chat", workspace, chat: sessionId, recording_history: opts.history !== false });
     } else if (moved) void this.refreshSnapshot();
     this.app.reading.touch(sessionId);

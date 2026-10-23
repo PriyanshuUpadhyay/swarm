@@ -53,9 +53,6 @@ pub enum ChoiceOp {
     OpenTab {
         workspace: String,
         chat: String,
-        /// A chat started in a tab: it stays out of the sidebar.
-        #[serde(default)]
-        tab_only: bool,
     },
     ImportChat {
         workspace: String,
@@ -271,7 +268,6 @@ pub fn apply(
                 && old.is_running == Some(false)
                 // Unknown liveness keeps the tab; is_running alone treats it as ended (ADR 0098).
                 && old.agents.iter().all(|agent| agent["alive"] == false)
-                && !owner.tab_chats.contains(&old.key)
                 && chat
                     .as_deref()
                     .and_then(|id| tree.chat_in(&workspace, id))

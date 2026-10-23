@@ -247,21 +247,17 @@ pub fn chat_context(
 pub fn workspace_context(
     workspaces: &[Workspace],
     title: &str,
-    owner: &super::choices::OwnerChoices,
     state: &ViewState,
     now: i64,
     cache: &BTreeMap<String, WorkspaceFields>,
 ) -> Context {
-    let chats: Vec<_> = workspaces
-        .iter()
-        .flat_map(|w| w.listed_chats(owner))
-        .collect();
+    let chats: Vec<_> = workspaces.iter().flat_map(|w| &w.chats).collect();
     let contexts: Vec<_> = chats
         .iter()
         .map(|c| chat_context(c, state, now, None, None))
         .collect();
     let mut context = Context {
-        status: AgentStatus::aggregate(workspaces.iter().filter_map(|w| w.status(owner))),
+        status: AgentStatus::aggregate(workspaces.iter().filter_map(|w| w.status())),
         unread: chats
             .iter()
             .any(|c| state.is_unread(&c.key, c.last_activity)),
@@ -284,13 +280,7 @@ pub fn workspace_context(
     );
     context.text.insert(
         "children".into(),
-        count_text(
-            workspaces
-                .iter()
-                .flat_map(|w| w.listed_chats(owner))
-                .count(),
-            "chat",
-        ),
+        count_text(workspaces.iter().flat_map(|w| &w.chats).count(), "chat"),
     );
     if let Some(latest) = chats.iter().map(|c| c.last_activity).max() {
         context.text.insert("age".into(), age(latest, now));

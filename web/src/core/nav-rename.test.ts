@@ -11,8 +11,8 @@ const snapshot: Snapshot = {
 };
 const tabs: Tabs = {
   workspace, selectedChat: session, history: [], previousRecent: null, nextRecent: null, stepTargets: {},
-  tabs: [{ id: session, session, title: "Fix the tab-only chat", status: null, badge: null, canClose: true,
-    canHide: true, pending: null, fields: [], children: null, tabOnly: true }],
+  tabs: [{ id: session, session, title: "Fix the hidden chat", status: null, badge: null, canClose: true,
+    canHide: true, pending: null, fields: [], children: null }],
 };
 const row: SidebarRow = {
   id: `chat:${session}`, kind: "chat", depth: 1, parentId: workspace, expanded: false, hasChildren: false,
@@ -23,7 +23,7 @@ const row: SidebarRow = {
 const tree: TreeView = {
   version: 1, revision: "rev-1", view: "workspaces", selectedRow: null, archivedStatus: null,
   choicesError: null, prefs: {},
-  sections: [{ id: "/r", kind: "project", path: "/r", collapseId: "project:/r", expanded: true,
+  sections: [{ id: "/r", kind: "project", path: "/r", folder: false, collapseId: "project:/r", expanded: true,
     title: "r", status: null, fields: [], rows: [row] }],
 };
 
@@ -42,10 +42,10 @@ function harness() {
 }
 
 describe("Rename chat prefill", () => {
-  it("uses the tab title when a tab-only chat has no sidebar row", () => {
+  it("uses the tab title when a chat has no sidebar row", () => {
     const { app } = harness();
     app.renameChat(session);
-    expect(app.view.asking?.value).toBe("Fix the tab-only chat");
+    expect(app.view.asking?.value).toBe("Fix the hidden chat");
   });
 
   it("keeps the sidebar title ahead of the tab title", () => {
@@ -62,7 +62,7 @@ describe("Rename chat prefill", () => {
     expect(app.view.asking?.value).toBe("12345678");
   });
 
-  it("keeps the rename write and empty-name clear for a tab-only chat", async () => {
+  it("keeps the rename write and empty-name clear for a chat with no sidebar row", async () => {
     const { app, writes } = harness();
     app.renameChat(session);
     app.view.asking!.save("");

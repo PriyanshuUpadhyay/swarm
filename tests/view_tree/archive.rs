@@ -36,15 +36,14 @@ fn a_chat_from_another_adapter_with_a_log_can_be_imported() {
 
     // Once the chat is archived, the owner's choices forget its key; a chat still there keeps it.
     let key = tree.importable[0].1.key.clone();
-    owner.tab_chats.insert(key.clone());
     let listed = swarm::view::tree::build(&snap, &owner);
     assert!(!owner.forget_gone_chats(&listed));
-    assert!(owner.imported.contains(&key) && owner.tab_chats.contains(&key));
+    assert!(owner.imported.contains(&key));
     let mut archived = snap.clone();
     archived["sessions"][0]["archivedAt"] = json!(42);
     let gone = swarm::view::tree::build(&archived, &owner);
     assert!(owner.forget_gone_chats(&gone));
-    assert!(owner.imported.is_empty() && owner.tab_chats.is_empty());
+    assert!(owner.imported.is_empty());
 }
 #[test]
 fn archived_chats_fold_in_the_last_row_of_their_project() {
@@ -69,6 +68,8 @@ fn archived_chats_fold_in_the_last_row_of_their_project() {
         ("archived", "Archived · 2")
     );
     assert!(!fold.expanded && fold.has_children && fold.selection.is_none());
+    // A folder project's workspace row stands for the project, so the fold sits under it.
+    assert_eq!((fold.depth, fold.parent_id.as_deref()), (1, Some("/repo")));
     let tree = tree::build(&snap, &owner);
     let expand = |id: &str| ChoiceOp::Expand { id: id.into() };
     assert!(
@@ -102,7 +103,7 @@ fn archived_chats_fold_in_the_last_row_of_their_project() {
             ("archived-chat:old-chat-1", "Skills work")
         ]
     );
-    assert!(archived.iter().all(|r| r.depth == 1
+    assert!(archived.iter().all(|r| r.depth == 2
         && r.dimmed
         && r.parent_id.as_deref() == Some("archived:project:/repo")));
 }
@@ -192,5 +193,40 @@ fn two_chats_from_the_same_minute_get_ids_long_enough_to_differ() {
     assert_eq!(
         swarm::view::tree::short_id("01a14393-0000-7000", &snapshot),
         "01a14393"
+    );
+}
+#[test]
+fn only_a_plain_folder_with_its_workspace_listed_is_a_folder_section() {
+    let snap = folder_snapshot(
+        vec![session("notes", "/repo", 1)],
+        json!({"notes":[agent("orchestrator","done")]}),
+    );
+    let state = ViewState::default();
+    let mut owner = OwnerChoices::default();
+    let section = sections(&snap, &owner, &state, false).remove(0);
+    assert!(section.folder);
+    let ids: Vec<_> = section.rows.iter().map(|r| r.id.as_str()).collect();
+    assert_eq!(ids, ["/repo", "chat:notes"]);
+    // The archive view keeps the header, and so does a folder whose workspace is pinned.
+    assert!(
+        !sections(&snap, &owner, &state, true)
+            .iter()
+            .any(|s| s.folder)
+    );
+    owner.pinned.insert("/repo".into());
+    assert!(
+        !sections(&snap, &owner, &state, false)
+            .iter()
+            .any(|s| s.folder)
+    );
+    // A Git project is never a folder.
+    let git = snapshot(
+        vec![session("x", "/repo/wt/main", 1)],
+        json!({"x":[agent("orchestrator","done")]}),
+    );
+    assert!(
+        !sections(&git, &super::owner(), &state, false)
+            .iter()
+            .any(|s| s.folder)
     );
 }

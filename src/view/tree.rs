@@ -154,21 +154,6 @@ pub struct ArchivedChat {
     pub archived_at: i64,
 }
 impl Workspace {
-    /// The chats the sidebar lists: a chat started in a tab shows only as a tab (ADR 0085)
-    /// while its tab is open, so a live chat that lost its tab still shows (ADR 0093). The first
-    /// open tab always shows, so a workspace with only tab chats still has a row (ADR 0096).
-    pub fn listed_chats<'a>(&'a self, owner: &'a OwnerChoices) -> impl Iterator<Item = &'a Chat> {
-        let open = owner
-            .tabs
-            .get(&self.path)
-            .cloned()
-            .unwrap_or_else(|| self.seed_tabs())
-            .open;
-        self.chats.iter().filter(move |c| {
-            open.first() == Some(&c.key)
-                || !(owner.tab_chats.contains(&c.key) && open.contains(&c.key))
-        })
-    }
     pub fn chat(&self, id: &str) -> Option<&Chat> {
         self.chats
             .iter()
@@ -186,10 +171,11 @@ impl Workspace {
             groups: Vec::new(),
         }
     }
-    pub fn status(&self, owner: &OwnerChoices) -> Option<AgentStatus> {
+    pub fn status(&self) -> Option<AgentStatus> {
         AgentStatus::aggregate(
-            self.listed_chats(owner).filter_map(|c| c.status).chain(
-                self.listed_chats(owner)
+            self.chats.iter().filter_map(|c| c.status).chain(
+                self.chats
+                    .iter()
                     .flat_map(|c| c.agents.iter().map(AgentStatus::agent)),
             ),
         )

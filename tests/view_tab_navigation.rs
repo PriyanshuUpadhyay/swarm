@@ -33,7 +33,6 @@ fn open_hide_move_and_cross_workspace_guards() {
         ChoiceOp::OpenTab {
             workspace: "/repo/wt/main".into(),
             chat: "ended".into(),
-            tab_only: false,
         },
         1,
     )
@@ -77,7 +76,6 @@ fn open_hide_move_and_cross_workspace_guards() {
             ChoiceOp::OpenTab {
                 workspace: "/missing".into(),
                 chat: "review".into(),
-                tab_only: false
             },
             1
         )
@@ -177,7 +175,6 @@ fn ended_tabs_hide_when_leaving() {
         ChoiceOp::OpenTab {
             workspace: "/repo/wt/main".into(),
             chat: "ended".into(),
-            tab_only: false,
         },
         1,
     )
@@ -249,48 +246,6 @@ fn unknown_agent_liveness_keeps_the_tab_when_leaving() {
     assert_eq!(owner.tabs["/repo/wt/main"].open, ["design", "review"]);
     assert_eq!(state.selected_chats["/repo/wt/main"], "review");
     assert_eq!(state.tab_history["/repo/wt/main"], ["design", "review"]);
-}
-#[test]
-fn ended_tab_only_chat_keeps_the_tab_when_leaving() {
-    let tree = tree();
-    let mut owner = owner();
-    owner
-        .tabs
-        .insert("/repo/wt/main".into(), strip(&["design", "review"]));
-    let mut state = ViewState::default();
-    choices::apply(
-        &mut owner,
-        &mut state,
-        &tree,
-        ChoiceOp::OpenTab {
-            workspace: "/repo/wt/main".into(),
-            chat: "ended".into(),
-            tab_only: true,
-        },
-        1,
-    )
-    .unwrap();
-    for chat in ["ended", "review"] {
-        choices::apply(
-            &mut owner,
-            &mut state,
-            &tree,
-            ChoiceOp::SelectedChat {
-                workspace: "/repo/wt/main".into(),
-                chat: Some(chat.into()),
-                recording_history: true,
-            },
-            1,
-        )
-        .unwrap();
-    }
-    assert_eq!(
-        owner.tabs["/repo/wt/main"].open,
-        ["design", "review", "ended"]
-    );
-    assert!(owner.tab_chats.contains("ended"));
-    assert_eq!(state.selected_chats["/repo/wt/main"], "review");
-    assert_eq!(state.tab_history["/repo/wt/main"], ["ended", "review"]);
 }
 #[test]
 fn recent_cycle_keeps_history_and_workspace_selection() {

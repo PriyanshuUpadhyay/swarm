@@ -36,6 +36,8 @@ export type Section = {
   id: string;
   kind: "pinned" | "project";
   path: string | null;
+  /** A plain folder project: it has no header, and its one workspace row stands for it. */
+  folder: boolean;
   collapseId: string;
   expanded: boolean;
   title: string;
@@ -82,8 +84,6 @@ export type Tab = {
   pending: "starting" | "failed" | "closing" | null;
   fields: Field[];
   children: { count: number; waiting: number; firstWaiting: string | null; text: string } | null;
-  /** A chat started in a tab: it is not in the sidebar, and closing its tab archives it. */
-  tabOnly: boolean;
 };
 
 /** A workspace's tab strip. Tab groups are not shown (ADR 0076), so `tabs` is the owner's order. */
@@ -108,7 +108,7 @@ export type ChoiceOp =
   | { op: "rename_workspace"; workspace: string; name: string }
   | { op: "rename_chat"; workspace: string; chat: string; name: string }
   | { op: "rename_project"; project: string; name: string }
-  | { op: "open_tab"; workspace: string; chat: string; tab_only?: boolean }
+  | { op: "open_tab"; workspace: string; chat: string }
   | { op: "close_tab" | "import_chat"; workspace: string; chat: string }
   | { op: "move_tab" | "step_tab"; workspace: string; chat: string; target: string }
   | { op: "selected_chat"; workspace: string; chat: string | null; recording_history?: boolean }
@@ -160,8 +160,8 @@ export function navRows(tree: TreeView | null, folds: ReadonlyMap<string, boolea
   const archive = tree.view === "archived";
   const out: NavRow[] = [];
   for (const section of tree.sections) {
-    const expanded = archive ? true : (folds.get(section.collapseId) ?? section.expanded);
-    out.push({ id: section.id, kind: section.kind, level: 1, expanded: archive ? null : expanded, parentId: null, section, row: null });
+    const expanded = archive || section.folder ? true : (folds.get(section.collapseId) ?? section.expanded);
+    if (!section.folder) out.push({ id: section.id, kind: section.kind, level: 1, expanded: archive ? null : expanded, parentId: null, section, row: null });
     if (!expanded) continue;
     // Rows under a folded row are skipped until the depth comes back up.
     let hideBelow = Infinity;
@@ -170,7 +170,9 @@ export function navRows(tree: TreeView | null, folds: ReadonlyMap<string, boolea
       hideBelow = Infinity;
       const open = row.hasChildren ? (folds.get(row.id) ?? row.expanded) : null;
       if (open === false) hideBelow = row.depth;
-      out.push({ id: row.id, kind: row.kind, level: row.depth + 2, expanded: open, parentId: row.parentId ?? section.id, section, row });
+      // A folder has no header, so its rows move up one level.
+      const parentId = row.parentId ?? (section.folder ? null : section.id);
+      out.push({ id: row.id, kind: row.kind, level: row.depth + (section.folder ? 1 : 2), expanded: open, parentId, section, row });
     }
   }
   return out;

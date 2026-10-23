@@ -63,22 +63,33 @@ export const RowView = memo(function RowView({ row, selected, marked, current, a
   }
   if (!r.fields.length) lines[0].push({ field: "title", text: r.title });
   const canNew = r.kind === "workspace" && r.newChatEnabled && !r.archived;
+  // A folder's workspace row stands in for the project header, so it takes the header's look.
+  const head = row.section.folder && r.kind === "workspace";
   return (
     <div
       {...common}
-      className="trow"
+      className={head ? "trow head" : "trow"}
       data-session={r.kind === "chat" ? (r.selection?.chat ?? undefined) : undefined}
       data-dimmed={r.dimmed || undefined}
       data-marked={marked || undefined}
       draggable={r.kind === "workspace" && !r.archived && !archive ? true : undefined}
-      style={{ paddingLeft: 12 + r.depth * 14 }}
+      style={head ? undefined : { paddingLeft: 12 + r.depth * 14 }}
     >
       {lines.map((fields, i) => (
         <div key={i} className={i ? "tline sub" : "tline"}>
-          {i === 0 && (r.kind === "workspace" || r.kind === "chat" || r.kind === "archived") && r.hasChildren ? chev() : <span className="chev" />}
+          {i === 0 && head ? (
+            <span className="avatar" aria-hidden>
+              {row.section.title.slice(0, 1)}
+            </span>
+          ) : i === 0 && (r.kind === "workspace" || r.kind === "chat" || r.kind === "archived") && r.hasChildren ? (
+            chev()
+          ) : (
+            <span className="chev" />
+          )}
           {fields.map((f, j) => (
             <FieldView key={j} f={f} row={r} />
           ))}
+          {i === 0 && head && r.hasChildren && chev()}
           <span className="flex-1" />
           {i === 0 && r.kind === "workspace" && !r.archived && !archive && <GripVerticalIcon className="grip" aria-hidden data-tip="Drag to reorder or pin workspace" />}
           {i === 0 && r.kind === "archived-chat" && (

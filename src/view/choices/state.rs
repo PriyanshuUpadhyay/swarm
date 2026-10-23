@@ -36,9 +36,6 @@ pub struct OwnerChoices {
     pub workspace_order: BTreeMap<String, Vec<String>>,
     #[serde(deserialize_with = "null_default")]
     pub tabs: BTreeMap<String, TabStrip>,
-    /// Chat keys started in a tab. They show only as tabs, not in the sidebar (ADR 0085).
-    #[serde(deserialize_with = "null_default")]
-    pub tab_chats: BTreeSet<String>,
     /// Chat keys from another adapter that the owner imported, so the app lists them (ADR 0085).
     #[serde(deserialize_with = "null_default")]
     pub imported: BTreeSet<String>,
@@ -67,7 +64,6 @@ impl Default for OwnerChoices {
             project_defaults: Default::default(),
             workspace_order: Default::default(),
             tabs: Default::default(),
-            tab_chats: Default::default(),
             imported: Default::default(),
             fields: Default::default(),
             prefs: object(),
@@ -77,7 +73,7 @@ impl Default for OwnerChoices {
 }
 
 impl OwnerChoices {
-    /// Drops the imported and tab-only keys of chats that are gone from the tree, such as an
+    /// Drops the imported keys of chats that are gone from the tree, such as an
     /// archived chat. Returns whether a key was dropped.
     pub fn forget_gone_chats(&mut self, tree: &Tree) -> bool {
         let known: BTreeSet<&str> = tree
@@ -88,10 +84,9 @@ impl OwnerChoices {
             .chain(tree.importable.iter().map(|(_, c)| c))
             .map(|c| c.key.as_str())
             .collect();
-        let before = self.imported.len() + self.tab_chats.len();
+        let before = self.imported.len();
         self.imported.retain(|k| known.contains(k.as_str()));
-        self.tab_chats.retain(|k| known.contains(k.as_str()));
-        before != self.imported.len() + self.tab_chats.len()
+        before != self.imported.len()
     }
 
     pub fn remove_project(&mut self, path: &str, workspaces: &[String]) {

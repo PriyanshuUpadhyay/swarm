@@ -62,6 +62,8 @@ export function rowActions(app: App, row: NavRow): (RowAction | typeof SEP)[] {
       { label: "Archive workspace", icon: ArchiveIcon, run: () => void app.life.archiveWorkspace(r.id) },
       { label: "Delete workspace…", icon: Trash2Icon, run: () => void app.life.deleteWorkspace(r.id) },
       r.missing && { label: "Prune worktree…", run: () => void app.life.pruneWorkspace(r.id, row.section.title) },
+      // A folder has no header, so its project menu item is here.
+      row.section.folder && { label: "Remove Project…", icon: FolderMinusIcon, run: () => app.life.removeProject(row.section.path ?? "", row.section.title) },
       SEP,
       fold,
       { label: "Copy path", icon: CopyIcon, run: () => void copy(r.id, "path") },

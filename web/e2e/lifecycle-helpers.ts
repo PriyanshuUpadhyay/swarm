@@ -29,11 +29,12 @@ async function open(tab: Page) {
 }
 
 const header = (tab: Page, project: string) => tab.locator('[data-testid="tree-row"][data-kind="project"]').filter({ hasText: project });
-const workspace = (tab: Page, title: string) => tab.locator('[data-testid="tree-row"][data-kind="workspace"]').filter({ hasText: new RegExp(`^${title}`) });
+// The label, because a plain folder's row starts with the project's letter avatar.
+const workspace = (tab: Page, title: string) => tab.locator('[data-testid="tree-row"][data-kind="workspace"]').filter({ has: tab.locator(".label", { hasText: new RegExp(`^${title}`) }) });
 
-/** Screenshots for the result, in both themes, only when E2E_SHOTS is set and in Chromium. */
+/** Screenshots for the result, in both themes, only when E2E_SHOTS is set and in WebKit. */
 async function shoot(tab: Page, name: string, browser: string) {
-  if (!process.env.E2E_SHOTS || browser !== "chromium") return;
+  if (!process.env.E2E_SHOTS || browser !== "webkit") return;
   for (const theme of ["dark", "light"])
     await tab.evaluate((t) => (document.documentElement.dataset.theme = t), theme).then(() => tab.screenshot({ path: join(SHOTS, `s3-${name}-${theme}.png`) }));
   await tab.evaluate(() => delete document.documentElement.dataset.theme);

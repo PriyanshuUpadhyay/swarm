@@ -239,8 +239,8 @@ export class App {
     return this.navigation.selectWorkspace(path, e);
   }
 
-  startChat(workspace = this.workspace, launch: { role?: string } = {}, draft = "", inTab = false) {
-    return this.actions.startChat(workspace, launch, draft, inTab);
+  startChat(workspace = this.workspace, launch: { role?: string } = {}, draft = "") {
+    return this.actions.startChat(workspace, launch, draft);
   }
 
   markedChats(): string[] {
@@ -278,7 +278,7 @@ export class App {
     return this.navigation.closeTab(key);
   }
 
-  openChat(sessionId: string, e?: KeyboardEvent, opts: { write?: boolean; history?: boolean; tabOnly?: boolean } = {}) {
+  openChat(sessionId: string, e?: KeyboardEvent, opts: { write?: boolean; history?: boolean } = {}) {
     return this.navigation.openChat(sessionId, e, opts);
   }
 

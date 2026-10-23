@@ -35,7 +35,7 @@ const chat = (session: string, workspace: string, extra: Partial<SidebarRow> = {
   row(`chat:${session}`, "chat", 1, { parentId: workspace, selection: sel(workspace, session), ...extra });
 
 function section(id: string, kind: Section["kind"], rows: SidebarRow[], extra: Partial<Section> = {}): Section {
-  return { id, kind, path: kind === "project" ? id : null, collapseId: kind === "project" ? `project:${id}` : "pinned", expanded: true, title: id.split("/").pop()!, status: null, fields: [], rows, ...extra };
+  return { id, kind, path: kind === "project" ? id : null, folder: false, collapseId: kind === "project" ? `project:${id}` : "pinned", expanded: true, title: id.split("/").pop()!, status: null, fields: [], rows, ...extra };
 }
 
 const tree = (sections: Section[], view: TreeView["view"] = "workspaces"): TreeView => ({
@@ -60,10 +60,10 @@ const webChat = chat("site", "/r/web");
 const sample = tree([section("pinned", "pinned", [web, webChat]), section("/r/app", "project", [appMain, fixRows, fixChild, docs, appFeature])]);
 
 describe("current sidebar row", () => {
-  it("uses the visible chat, then its workspace for a tab-only chat or no open chat", () => {
+  it("uses the visible chat, then its workspace for a chat with no sidebar row or no open chat", () => {
     const rows = navRows(sample);
     expect(currentRow(rows, "docs", "/r/app")).toBe("chat:docs");
-    expect(currentRow(rows, "tab-only", "/r/app")).toBe("/r/app");
+    expect(currentRow(rows, "hidden", "/r/app")).toBe("/r/app");
     expect(currentRow(rows, null, "/r/app")).toBe("/r/app");
   });
 
@@ -76,7 +76,7 @@ describe("current sidebar row", () => {
   it("uses the first section header that contains the hidden workspace", () => {
     const rows = navRows(sample, new Map([["pinned", false], ["project:/r/app", false]]));
     expect(currentRow(rows, "docs", "/r/app")).toBe("/r/app");
-    expect(currentRow(rows, "tab-only", "/r/web")).toBe("pinned");
+    expect(currentRow(rows, "hidden", "/r/web")).toBe("pinned");
     const duplicate = tree([section("pinned", "pinned", [web]), section("/r/web", "project", [web])]);
     expect(currentRow(navRows(duplicate, new Map([["pinned", false], ["project:/r/web", false]])), "site", "/r/web")).toBe("pinned");
   });
@@ -92,7 +92,7 @@ describe("the sidebar keyboard row", () => {
   function harness(initial = sample) {
     let current = initial;
     const api = {
-      snapshot: async (): Promise<Snapshot> => ({ version: 1, sessions: ["docs", "tab-only"].map((id) => ({ id, cwd: "/r/app", workspace: "/r/app", project: "/r/app", created_at: 1, chair_provider: null, adapter: null })), agents: {} }),
+      snapshot: async (): Promise<Snapshot> => ({ version: 1, sessions: ["docs", "hidden"].map((id) => ({ id, cwd: "/r/app", workspace: "/r/app", project: "/r/app", created_at: 1, chair_provider: null, adapter: null })), agents: {} }),
       tree: async () => current,
       tabs: async () => { throw new ApiError(404, "unknown workspace"); },
       rows: async () => ({ page: { start_offset: 0, end_offset: 0 }, rows: [], usage: null }),
@@ -103,10 +103,10 @@ describe("the sidebar keyboard row", () => {
     return { app, refresh, setTree: (next: TreeView) => { current = next; } };
   }
 
-  it("follows a tab-only chat to its workspace on open and refresh", async () => {
+  it("follows a chat with no sidebar row to its workspace on open and refresh", async () => {
     const { app, refresh } = harness();
     await refresh();
-    app.openChat("tab-only");
+    app.openChat("hidden");
     expect(app.view.selected).toBe("/r/app");
     await refresh();
     expect(app.view.selected).toBe("/r/app");

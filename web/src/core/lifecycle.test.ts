@@ -45,6 +45,22 @@ describe("reopen", () => {
 });
 
 describe("new workspace", () => {
+  it("offers only Git projects, so a plain folder never opens the dialog", () => {
+    const section = (path: string, folder: boolean) => ({ id: path, kind: "project", path, folder, title: path.slice(1), rows: [{ kind: "workspace", id: path }] });
+    const { life, calls } = fakeApp(async () => ({}));
+    const view = (life as unknown as { app: { view: { tree: unknown; workspace: string | null } } }).app.view;
+    view.tree = { sections: [section("/notes", true), section("/repo", false)] };
+    view.workspace = "/notes";
+    expect(life.projects().map((p) => p.path)).toEqual(["/repo"]);
+    life.newWorkspace();
+    expect(life.state.newWorkspace).toEqual({ project: "/repo" });
+    view.tree = { sections: [section("/notes", true)] };
+    life.state = { ...life.state, newWorkspace: null };
+    life.newWorkspace();
+    expect(life.state.newWorkspace).toBeNull();
+    expect(calls).toEqual(["notice New Workspace needs a Git project. Import or create one first."]);
+  });
+
   it("keeps the dialog on a failed setup, with the streamed output and the reply's exit code", async () => {
     let reply!: (value: unknown) => void;
     const { life, calls } = fakeApp(() => new Promise((ok) => (reply = ok)));

@@ -346,8 +346,6 @@ pub struct ChatTab {
     pub fields: Vec<super::fields::FieldValue>,
     pub group: Option<TabGroup>,
     pub children: Option<ChildCount>,
-    /// A chat started in a tab. Closing its tab archives it to Recently closed.
-    pub tab_only: bool,
 }
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -427,7 +425,6 @@ pub fn view(
             fields: Vec::new(),
             group: None,
             children: None,
-            tab_only: false,
         })
         .collect();
     for key in &strip.open {
@@ -482,7 +479,6 @@ pub fn view(
                     }
                 ),
             }),
-            tab_only: owner.tab_chats.contains(key),
         });
     }
     let mut runs: Vec<TabRun> = Vec::new();

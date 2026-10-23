@@ -86,10 +86,7 @@ pub fn workspace_detail(
     {
         parts.push(branch.clone());
     }
-    parts.push(super::fields::count_text(
-        workspace.listed_chats(owner).count(),
-        "chat",
-    ));
+    parts.push(super::fields::count_text(workspace.chats.len(), "chat"));
     parts.join(" · ")
 }
 pub fn selected_chat<'a>(
