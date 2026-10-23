@@ -309,4 +309,4 @@ swarm close --now coder  # closes at once; my-agent is no swarm voice, so it wou
 ## Performance profiling
 
 `node web/perf/run.mjs` runs the web UI's speed budgets (key to paint,
-chat switch, cold open, scroll, live load, giant tool output, memory soak) in Playwright (ADR 0075).
+chat switch, cold open, scroll, live load, giant tool output) in Playwright WebKit (ADR 0075).

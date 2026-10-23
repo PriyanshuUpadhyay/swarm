@@ -29,7 +29,7 @@ function giantLog(session: string, lines: number): string {
 export const GIANT_LINES = 20_000;
 
 /** The browsers that run the pane case. Each gets its own chat, because the case closes an agent. */
-export const PANE_PROJECTS = ["chromium", "webkit"];
+export const PANE_PROJECTS = ["webkit"];
 const paneOf = (project: string, agent: string) => `fixture-${project}-${agent}`;
 /** Two live chats in one workspace, for the tab strip cases. */
 const TAB_PANES = ["fixture-tabs-1", "fixture-tabs-2"];
@@ -56,11 +56,8 @@ capture = cat "$HOME/screen-$SWARM_PANE" 2>/dev/null || cat "$HOME/screen"
 screen = cat "$HOME/screen-$SWARM_PANE" 2>/dev/null || cat "$HOME/screen"
 `;
 
-/** Issues that the stand-in `gh` lists: one per browser, so each makes its own workspace. */
-export const ISSUES = [
-  { number: 7, title: "Fix Sidebar", body: "Use less space in the sidebar." },
-  { number: 8, title: "Tidy Tabs", body: "Close a tab when its chat is archived." },
-];
+/** The issue that the stand-in `gh` lists. */
+export const ISSUES = [{ number: 7, title: "Fix Sidebar", body: "Use less space in the sidebar." }];
 
 const issueJson = (i: (typeof ISSUES)[number]) => ({ ...i, url: `https://github.com/acme/demo/issues/${i.number}`, state: "OPEN" });
 /** A stand-in `gh`. The PR panel cases write $HOME/pr-list and $HOME/pr-view; the lifecycle cases

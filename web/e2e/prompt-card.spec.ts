@@ -3,7 +3,6 @@ import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { Snapshot } from "../src/core/api";
 import type { Prompt } from "../src/core/composer";
-import { PANE_PROJECTS } from "./serve";
 
 const screens = resolve(import.meta.dirname, "../../tests/fixtures/screens");
 const idle = readFileSync(join(screens, "claude-idle.txt"), "utf8");
@@ -150,7 +149,6 @@ test("a long question path wraps inside its labelled group", async ({ page: tab 
 });
 
 test("a child question updates one mounted polite status without taking focus", async ({ page: tab }, info) => {
-  test.skip(!PANE_PROJECTS.includes(info.project.name), "The browser needs a child pane fixture.");
   const home = process.env.SWARM_E2E_HOME!;
   const screen = join(home, `screen-fixture-${info.project.name}-reviewer`);
   writeFileSync(screen, idle);

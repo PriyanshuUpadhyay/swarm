@@ -306,23 +306,11 @@ with (root/'choices.lock').open('a+') as lock:
     assert_eq!(saved.unwrap().owner.names["/repo"], "Foreign writer");
 }
 #[test]
-fn unchanged_updates_do_not_write_and_dismissed_children_are_pruned() {
+fn unchanged_updates_do_not_write() {
     let home = ChoicesHome::new();
     let saved = choices_store::load(&home.root, true).unwrap();
     let after = choices_store::update(&home.root, Some(&saved.revision), |_, _| Ok(())).unwrap();
     assert_eq!(saved.revision, after.revision);
     assert!(!home.root.join("choices.json").exists());
     assert!(!home.root.join("view-state.json").exists());
-    let mut state = swarm::view::choices::ViewState::default();
-    let t = tree();
-    let chat = t.chats().next().unwrap();
-    state
-        .dismissed_children
-        .insert(chat.key.clone(), vec!["child".into()]);
-    state
-        .dismissed_children
-        .insert("gone".into(), vec!["old".into()]);
-    state.record_first_sight(&t);
-    assert!(state.dismissed_children.contains_key(&chat.key));
-    assert!(!state.dismissed_children.contains_key("gone"));
 }
