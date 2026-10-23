@@ -35,7 +35,7 @@ const chat = (session: string, workspace: string, extra: Partial<SidebarRow> = {
   row(`chat:${session}`, "chat", 1, { parentId: workspace, selection: sel(workspace, session), ...extra });
 
 function section(id: string, kind: Section["kind"], rows: SidebarRow[], extra: Partial<Section> = {}): Section {
-  return { id, kind, path: kind === "project" ? id : null, collapseId: kind === "project" ? `project:${id}` : "pinned", expanded: true, title: id.split("/").pop()!, status: null, fields: [], rows, ...extra };
+  return { id, kind, path: kind === "project" ? id : null, folder: false, collapseId: kind === "project" ? `project:${id}` : "pinned", expanded: true, title: id.split("/").pop()!, status: null, fields: [], rows, ...extra };
 }
 
 const tree = (sections: Section[], view: TreeView["view"] = "workspaces"): TreeView => ({
@@ -90,6 +90,18 @@ describe("sidebar lines", () => {
     expect(navRows(archived).map((r) => [r.id, r.expanded])).toEqual([
       ["/r/app", null],
       ["/r/app", true],
+    ]);
+  });
+
+  it("drops a folder project's header, so its workspace row is the top line", () => {
+    const notes = row("/r/notes", "workspace", 0, { hasChildren: true });
+    const chats = [chat("a", "/r/notes", { hasChildren: true, expanded: true }), row("a/coder", "child", 2, { parentId: "chat:a" })];
+    // A fold saved on the hidden header must not hide the rows.
+    const folder = tree([section("/r/notes", "project", [notes, ...chats], { folder: true, expanded: false })]);
+    expect(navRows(folder).map((r) => `${r.level}:${r.kind}:${r.id}:${r.parentId}`)).toEqual([
+      "1:workspace:/r/notes:null",
+      "2:chat:chat:a:/r/notes",
+      "3:child:a/coder:chat:a",
     ]);
   });
 });
@@ -244,12 +256,12 @@ describe("a new chat", () => {
   });
 });
 
-describe("a chat started in a tab", () => {
-  it("opens as a tab only, and closing its tab archives it to Archived chats", async () => {
+describe("a chat started from the tab strip", () => {
+  it("is a plain tab: closing its tab keeps the chat, and ⇧⌘T opens it again", async () => {
     const writes: Record<string, unknown>[] = [];
     const actions: { path: string; body: unknown }[] = [];
     const withNew = tree([section("/r/app", "project", [appMain, chat("new", "/r/app")])]);
-    const tab = { id: "new", session: "new", title: "new", status: null, badge: null, canClose: true, canHide: true, pending: null, fields: [], children: null, tabOnly: true };
+    const tab = { id: "new", session: "new", title: "new", status: null, badge: null, canClose: true, canHide: true, pending: null, fields: [], children: null };
     const api = {
       snapshot: async (): Promise<Snapshot> => ({ version: 1, sessions: [], agents: {} }),
       tree: async () => withNew,
@@ -264,13 +276,13 @@ describe("a chat started in a tab", () => {
     const app = new App(api);
     app.notice = () => {};
     await (app as unknown as { refreshSnapshot(): Promise<void> }).refreshSnapshot();
-    await app.startChat("/r/app", {}, "", true);
-    expect(writes.find((w) => w.op === "open_tab")).toMatchObject({ chat: "new", tab_only: true });
+    await app.startChat("/r/app");
+    expect(writes.find((w) => w.op === "open_tab")).toEqual({ op: "open_tab", workspace: "/r/app", chat: "new" });
     await (app as unknown as { refreshSnapshot(): Promise<void> }).refreshSnapshot();
     await app.closeTab("new");
     await new Promise((r) => setTimeout(r, 0));
-    expect(actions).toEqual([{ path: "/api/sessions/archive", body: { ids: ["new"] } }]);
-    expect(writes.some((w) => w.op === "close_tab")).toBe(false);
+    expect(actions).toEqual([]);
+    expect(writes.find((w) => w.op === "close_tab")).toMatchObject({ chat: "new" });
 
     // ⇧⌘T brings the closed tab back. The chat is still listed here, so it only opens.
     writes.length = 0;

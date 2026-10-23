@@ -14,9 +14,8 @@ export class AppActions {
   constructor(private readonly app: App) {}
 
   /** ⌘T, a "+" and New chat: starts a profile (the default one unless `launch` names it) in the
-   *  workspace. A notice shows while `swarm launch` runs; `draft` goes into the new chat's composer.
-   *  `inTab` (⌘T and the strip's "+") keeps the chat out of the sidebar. */
-  async startChat(workspace = this.app.workspace, launch: { role?: string } = {}, draft = "", inTab = false) {
+   *  workspace. A notice shows while `swarm launch` runs; `draft` goes into the new chat's composer. */
+  async startChat(workspace = this.app.workspace, launch: { role?: string } = {}, draft = "") {
     const row = workspaceRow(this.app.tree, workspace);
     if (!workspace || this.app.starting || (row && !row.newChatEnabled)) return;
     this.app.starting = true;
@@ -24,7 +23,7 @@ export class AppActions {
     try {
       const started = await this.app.api.post<{ session: string }>("/api/chat/new", { cwd: workspace, ...launch });
       if (draft) this.app.composing.setDraft(started.session, draft);
-      await this.openNew(started.session, inTab);
+      await this.openNew(started.session);
     } catch (err) {
       this.app.notice(message(err), true);
     } finally {
@@ -34,13 +33,13 @@ export class AppActions {
 
   /** The server's tree lists a new chat after its agent poll sees the chair's pane, about a second
    *  later, and opening the chat writes a tab that the server checks against that tree. */
-  private async openNew(session: string, inTab = false) {
+  private async openNew(session: string) {
     for (let i = 0; i < LIST_POLLS; i++) {
       await this.app.navigation.refreshSnapshot();
       if (this.app.listsChat(session)) break;
       await sleep(LIST_POLL_MS);
     }
-    this.app.navigation.openChat(session, undefined, { tabOnly: inTab });
+    this.app.navigation.openChat(session);
   }
 
   /** Branch from here: a new chat with the conversation before user row `row` of chat `session`,
@@ -202,7 +201,7 @@ export class AppActions {
         chord: "Meta+T",
         when: () => this.app.workspace !== null,
         // A held key must not start one chat per repeat.
-        run: (e) => void (e?.repeat || this.startChat(undefined, {}, "", true)),
+        run: (e) => void (e?.repeat || this.startChat()),
       },
       { id: "project.new", title: "New Project…", chord: "Shift+Meta+N", run: () => this.app.life.openProject("create") },
       { id: "workspace.next", title: "Next Workspace", chord: "Ctrl+Meta+ArrowDown", run: (e) => this.app.navigation.stepWorkspace(1, e) },

@@ -7,9 +7,9 @@ import { crossings } from "../src/core/skill-crossings";
 const server = () => new URL(process.env.SWARM_SERVE_URL!);
 const SHOTS = resolve(import.meta.dirname, "../../tmp/skills-shots");
 
-/** A screenshot for the result, only when E2E_SHOTS is set and in Chromium. */
+/** A screenshot for the result, only when E2E_SHOTS is set and in WebKit. */
 async function shoot(page: Page, name: string, browser: string) {
-  if (process.env.E2E_SHOTS && browser === "chromium") await page.screenshot({ path: `${SHOTS}/${name}.png` });
+  if (process.env.E2E_SHOTS && browser === "webkit") await page.screenshot({ path: `${SHOTS}/${name}.png` });
 }
 
 async function open(tab: Page) {

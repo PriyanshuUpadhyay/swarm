@@ -97,8 +97,7 @@ export function RowMenu({ app, listRef }: { app: App; listRef: RefObject<HTMLDiv
   );
 }
 
-/** `inTab` keeps the new chat out of the sidebar, as the tab strip's "+" does (ADR 0085). */
-export type NewChatAnchor = { rect: DOMRect; workspace: SidebarRow; inTab?: boolean };
+export type NewChatAnchor = { rect: DOMRect; workspace: SidebarRow };
 
 /** The list's one "+" menu (NewChatProfileMenu): the default profile, then each saved profile. */
 export function NewChatMenu({ app, open }: { app: App; open: RefObject<((anchor: NewChatAnchor) => void) | null> }) {
@@ -119,14 +118,14 @@ export function NewChatMenu({ app, open }: { app: App; open: RefObject<((anchor:
       {anchor && (
         <DropdownMenuContent align="start" data-testid="new-chat-menu">
           <DropdownMenuLabel className="max-w-[240px] truncate normal-case">New chat in {anchor.workspace.title}</DropdownMenuLabel>
-          <DropdownMenuItem onSelect={() => void app.startChat(anchor.workspace.id, {}, "", anchor.inTab)}>
+          <DropdownMenuItem onSelect={() => void app.startChat(anchor.workspace.id, {})}>
             <PlusIcon /> Default profile
           </DropdownMenuItem>
           {profiles === null && <DropdownMenuItem disabled>Reading profiles…</DropdownMenuItem>}
           {typeof profiles === "string" && <DropdownMenuItem disabled>Profiles unavailable: {profiles}</DropdownMenuItem>}
           {Array.isArray(profiles) &&
             profiles.map((p) => (
-              <DropdownMenuItem key={p.name} data-testid="profile-item" onSelect={() => void app.startChat(anchor.workspace.id, { role: p.name }, "", anchor.inTab)}>
+              <DropdownMenuItem key={p.name} data-testid="profile-item" onSelect={() => void app.startChat(anchor.workspace.id, { role: p.name })}>
                 <span className="flex-1">{p.name}</span>
                 {p.runners[0] && <span className="text-xs text-faint-foreground">{[p.runners[0].provider, p.runners[0].model].filter(Boolean).join(" ")}</span>}
               </DropdownMenuItem>

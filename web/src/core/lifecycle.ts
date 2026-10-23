@@ -88,8 +88,9 @@ export class Lifecycle {
   // ---- projects ----
 
   /** Project sections of the tree, for the project picker. */
+  /** The projects that New Workspace can use: a plain folder has no Git branches. */
   projects(): { path: string; title: string }[] {
-    return (this.app.view.tree?.sections ?? []).filter((s) => s.kind === "project" && s.path).map((s) => ({ path: s.path!, title: s.title }));
+    return (this.app.view.tree?.sections ?? []).filter((s) => s.kind === "project" && s.path && !s.folder).map((s) => ({ path: s.path!, title: s.title }));
   }
 
   /** The project of a workspace: the section that lists it. */
@@ -147,8 +148,9 @@ export class Lifecycle {
 
   /** ⌘N, a project's "+" and New Workspace…: the dialog on this project, else the current one. */
   newWorkspace(project?: string) {
-    const target = project ?? this.projectOf(this.app.view.workspace) ?? this.projects()[0]?.path;
-    if (!target) return this.app.notice("Import or create a project first.");
+    const repos = this.projects().map((p) => p.path);
+    const target = [project, this.projectOf(this.app.view.workspace)].find((p) => p && repos.includes(p)) ?? repos[0];
+    if (!target) return this.app.notice("New Workspace needs a Git project. Import or create one first.");
     // A create still running keeps its progress, so the dialog shows it again.
     this.set({ newWorkspace: { project: target }, create: this.state.create?.state === "working" ? this.state.create : null });
   }
@@ -232,12 +234,12 @@ export class Lifecycle {
 
   /** End chat… and Archive chat. Live agents ask first (SwarmSessionCloser); Archive then moves the
    *  chat to Archived chats. */
-  endChat(session: string, archive: boolean, done?: () => void) {
-    return this.endChats([session], archive, done);
+  endChat(session: string, archive: boolean) {
+    return this.endChats([session], archive);
   }
 
   /** End or Archive for the sidebar's selected chats, with one confirm for all of them. */
-  async endChats(sessions: string[], archive: boolean, done?: () => void): Promise<void> {
+  async endChats(sessions: string[], archive: boolean): Promise<void> {
     const live = sessions.map((session) => ({ session, agents: this.liveAgents(session) }));
     const agents = live.reduce((n, l) => n + l.agents.length, 0);
     const run = async () => {
@@ -246,7 +248,6 @@ export class Lifecycle {
         await this.api.action("/api/sessions/archive", { ids: sessions });
         for (const session of sessions) this.app.leaveChat(session);
       }
-      done?.();
     };
     const many = sessions.length > 1;
     if (!agents && !archive) return this.app.notice(many ? "These chats have already ended." : "This chat has already ended.");

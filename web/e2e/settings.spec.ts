@@ -43,9 +43,9 @@ async function settings(tab: Page, page: "appearance" | "notifications" | "profi
   return dialog;
 }
 
-/** Each theme of the open page, for the result, only when E2E_SHOTS is set and in Chromium. */
+/** Each theme of the open page, for the result, only when E2E_SHOTS is set and in WebKit. */
 async function shoot(tab: Page, target: Locator | Page, name: string, browser: string) {
-  if (!process.env.E2E_SHOTS || browser !== "chromium") return;
+  if (!process.env.E2E_SHOTS || browser !== "webkit") return;
   for (const theme of ["dark", "light"]) {
     await tab.evaluate((t) => (document.documentElement.dataset.theme = t), theme);
     await target.screenshot({ path: join(SHOTS, `s5-${name}-${theme}.png`) });

@@ -43,7 +43,7 @@ async function chooseOutside(op: Record<string, unknown>) {
   expect(response.status).toBe(200);
 }
 
-async function selectTabOnlyOutside(tab: Page) {
+async function selectTabOutside(tab: Page) {
   const workspace = workspaceRow(tab, "ws-tabs");
   const selected = tab.waitForResponse((r) => r.url().endsWith("/api/choices") && r.request().postDataJSON().op === "selected_chat" && r.request().postDataJSON().chat !== null);
   await workspace.click();
@@ -53,7 +53,6 @@ async function selectTabOnlyOutside(tab: Page) {
   const workspaceId = (await workspace.getAttribute("data-id"))!;
   const session = (await tabs.nth(1).getAttribute("data-session"))!;
   const key = (await tabs.nth(1).getAttribute("data-id"))!;
-  await chooseOutside({ op: "open_tab", workspace: workspaceId, chat: session, tab_only: true });
   await chooseOutside({ op: "selected_chat", workspace: workspaceId, chat: session });
   return { workspaceId, session, key };
 }
@@ -215,62 +214,21 @@ test("Recent lists chats across projects and opens one in another project from t
   expect(errors).toEqual([]);
 });
 
-test("clicking a tab-only chat marks its workspace as current", async ({ page: tab }, info) => {
-  const errors = await open(tab);
-  const workspace = workspaceRow(tab, "ws-tabs");
-  await workspace.click();
-  const tabs = tab.getByTestId("tab");
-  await expect(tabs).toHaveCount(2);
-  const workspaceId = (await workspace.getAttribute("data-id"))!;
-  const session = (await tabs.nth(1).getAttribute("data-session"))!;
-  const choicesPath = join(process.env.SWARM_E2E_HOME!, ".swarm/choices.json");
-  const before = readFileSync(choicesPath, "utf8");
-  try {
-    const { revision } = await readTree();
-    const response = await fetch(`${server().origin}/api/choices`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token()}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ revision, op: "open_tab", workspace: workspaceId, chat: session, tab_only: true }),
-    });
-    expect(response.status).toBe(200);
-    await tab.reload();
-    await tab.waitForFunction(() => window.__swarmReady === true);
-    await workspace.click();
-    await expect(tab.locator(`[data-testid="tree-row"][data-session="${session}"]`)).toHaveCount(0);
-    await tabs.first().click();
-    const selected = tab.waitForResponse((r) => r.url().endsWith("/api/choices") && r.request().postDataJSON().op === "selected_chat" && r.request().postDataJSON().chat === session);
-    await tab.locator(`[data-testid="tab"][data-session="${session}"]`).click();
-    expect((await selected).status()).toBe(200);
-    await expect(tab.locator(`[data-testid="tab"][data-session="${session}"]`)).toHaveAttribute("aria-selected", "true");
-    await expect(workspace).toHaveAttribute("aria-current", "true");
-    await expect(workspace).toHaveAttribute("aria-selected", "true");
-    expect(errors).toEqual([]);
-  } finally {
-    try {
-      await tab.screenshot({ path: info.outputPath("tab-only-current.png") });
-    } finally {
-      await tab.close();
-      writeFileSync(choicesPath, before);
-    }
-  }
-});
-
-test("reloading at / restores the selected tab-only chat", async ({ page: tab }, info) => {
+test("reloading at / restores the selected chat", async ({ page: tab }, info) => {
   const errors = await open(tab);
   const choicesPath = join(process.env.SWARM_E2E_HOME!, ".swarm/choices.json");
   const before = readFileSync(choicesPath, "utf8");
   try {
-    const { session } = await selectTabOnlyOutside(tab);
+    const { session } = await selectTabOutside(tab);
     await tab.evaluate(() => history.replaceState(null, "", "/"));
     await tab.reload();
     await tab.waitForFunction(() => window.__swarmReady === true);
-    await expect(tab.locator(`[data-testid="tree-row"][data-session="${session}"]`)).toHaveCount(0);
     await expect(tab.locator(`[data-testid="tab"][data-session="${session}"]`)).toHaveAttribute("aria-selected", "true");
     await expect(tab.getByTestId("workspace-landing")).toHaveCount(0);
     expect(errors).toEqual([]);
   } finally {
     try {
-      await tab.screenshot({ path: info.outputPath("tab-only-reload.png") });
+      await tab.screenshot({ path: info.outputPath("selected-reload.png") });
     } finally {
       await tab.close();
       writeFileSync(choicesPath, before);
@@ -283,7 +241,7 @@ test("refresh after an external close shows the strip selected chat", async ({ p
   const choicesPath = join(process.env.SWARM_E2E_HOME!, ".swarm/choices.json");
   const before = readFileSync(choicesPath, "utf8");
   try {
-    const { workspaceId, session, key } = await selectTabOnlyOutside(tab);
+    const { workspaceId, session, key } = await selectTabOutside(tab);
     await tab.evaluate(() => history.replaceState(null, "", "/"));
     await tab.reload();
     await tab.waitForFunction(() => window.__swarmReady === true);

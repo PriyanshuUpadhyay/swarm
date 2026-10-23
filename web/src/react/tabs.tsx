@@ -130,7 +130,7 @@ export function TabStrip({ app }: { app: App }) {
         aria-label="New chat in this workspace"
         title="New chat in this workspace"
         disabled={ws ? !ws.newChatEnabled : true}
-        onClick={(e) => ws && newChat.current?.({ rect: e.currentTarget.getBoundingClientRect(), workspace: ws, inTab: true })}
+        onClick={(e) => ws && newChat.current?.({ rect: e.currentTarget.getBoundingClientRect(), workspace: ws })}
       >
         <PlusIcon />
       </button>

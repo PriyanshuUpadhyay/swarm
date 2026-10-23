@@ -189,8 +189,10 @@ test("Create Project on an existing folder offers Import, Import asks about a pl
   await expect(dialog.getByTestId("import-choice")).toContainText("not a Git repository");
   await dialog.getByRole("button", { name: "Use as a plain folder" }).click();
   await expect(dialog).toBeHidden();
-  const project = header(tab, `plain-${info.project.name}`);
+  // A plain folder has no header: its one workspace row stands for the project.
+  const project = workspace(tab, `plain-${info.project.name}`);
   await expect(project).toBeVisible();
+  await expect(header(tab, `plain-${info.project.name}`)).toHaveCount(0);
 
   await project.click({ button: "right" });
   await tab.getByRole("menuitem", { name: "Remove Project…" }).click();

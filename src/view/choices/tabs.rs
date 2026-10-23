@@ -39,10 +39,7 @@ pub(super) fn apply_tab(
         Ok(k)
     };
     *strip = match op {
-        ChoiceOp::OpenTab { chat, tab_only, .. } => {
-            if tab_only {
-                owner.tab_chats.insert(key(&chat)?);
-            }
+        ChoiceOp::OpenTab { chat, .. } => {
             let current = state
                 .selected_chats
                 .get(&workspace)

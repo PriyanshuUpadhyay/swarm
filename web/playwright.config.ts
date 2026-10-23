@@ -5,8 +5,6 @@ export default defineConfig({
   testDir: "e2e",
   globalSetup: "./e2e/serve.ts",
   workers: 1,
-  projects: [
-    { name: "chromium", use: { ...devices["Desktop Chrome"] } },
-    { name: "webkit", use: { ...devices["Desktop Safari"] } },
-  ],
+  // The app ships only in WebKit (the Swarm app and Safari).
+  projects: [{ name: "webkit", use: { ...devices["Desktop Safari"] } }],
 });

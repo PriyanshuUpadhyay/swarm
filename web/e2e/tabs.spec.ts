@@ -52,40 +52,6 @@ for (const pending of ["empty", null, "starting", "failed", "closing"] as const)
   });
 }
 
-test("Rename chat prefills the title of a tab-only chat", async ({ page: tab }, info) => {
-  const choicesPath = join(process.env.SWARM_E2E_HOME!, ".swarm/choices.json");
-  const before = readFileSync(choicesPath, "utf8");
-  try {
-    await tab.goto(`${server().origin}/${server().hash}`);
-    await tab.waitForFunction(() => window.__swarmReady === true);
-    const workspace = tab.locator('[data-testid="tree-row"][data-kind="workspace"]').filter({ hasText: "ws-tabs" });
-    const selected = tab.waitForResponse((r) => r.url().endsWith("/api/choices") && r.request().postDataJSON().op === "selected_chat" && r.request().postDataJSON().chat !== null);
-    await workspace.click();
-    expect((await selected).status()).toBe(200);
-    await expect(tab.getByTestId("tab")).toHaveCount(2);
-    const workspaceId = (await workspace.getAttribute("data-id"))!;
-    const session = (await tab.getByTestId("tab").nth(1).getAttribute("data-session"))!;
-    await choose({ op: "open_tab", workspace: workspaceId, chat: session, tab_only: true });
-    await choose({ op: "selected_chat", workspace: workspaceId, chat: session });
-    const strip = await api<TabsView>(`/api/tabs?${new URLSearchParams({ workspace: workspaceId })}`);
-    const title = strip.view.tabs.find((item) => item.session === session)!.title;
-    expect(title).not.toBe("");
-    await tab.reload();
-    await tab.waitForFunction(() => window.__swarmReady === true);
-    await expect(tab.locator(`[data-testid="tree-row"][data-session="${session}"]`)).toHaveCount(0);
-    await tab.locator(`[data-testid="tab"][data-session="${session}"]`).click({ button: "right" });
-    await tab.getByRole("menuitem", { name: "Rename chat…" }).click();
-    await expect(tab.getByTestId("ask-name")).toHaveValue(title);
-  } finally {
-    try {
-      await tab.screenshot({ path: info.outputPath("tab-only-rename.png") });
-    } finally {
-      await tab.close();
-      writeFileSync(choicesPath, before);
-    }
-  }
-});
-
 test("archiving the last open sidebar chat shows the workspace landing", async ({ page: tab }, info) => {
   const fixtureHome = process.env.SWARM_E2E_HOME!;
   const choicesPath = join(fixtureHome, ".swarm/choices.json");
@@ -163,11 +129,9 @@ test("archiving the last open sidebar chat shows the workspace landing", async (
   }
 });
 
-test("closing the open tab-only chat shows the other tab after archive confirmation", async ({ page: tab }, info) => {
-  const fixtureHome = process.env.SWARM_E2E_HOME!;
-  const choicesPath = join(fixtureHome, ".swarm/choices.json");
+test("closing a tab keeps its chat in the sidebar and does not archive it", async ({ page: tab }, info) => {
+  const choicesPath = join(process.env.SWARM_E2E_HOME!, ".swarm/choices.json");
   const before = readFileSync(choicesPath, "utf8");
-  let restore: { session: string; pane: string } | undefined;
   try {
     await tab.goto(`${server().origin}/${server().hash}`);
     await tab.waitForFunction(() => window.__swarmReady === true);
@@ -177,53 +141,23 @@ test("closing the open tab-only chat shows the other tab after archive confirmat
     expect((await selected).status()).toBe(200);
     const tabs = tab.getByTestId("tab");
     await expect(tabs).toHaveCount(2);
-    const workspaceId = (await workspace.getAttribute("data-id"))!;
     const session = (await tabs.nth(1).getAttribute("data-session"))!;
     const other = (await tabs.first().getAttribute("data-session"))!;
-    const snapshot = await api<{ agents: Record<string, { id: string; pane: string }[]> }>("/api/snapshot");
-    const pane = snapshot.agents[session].find((agent) => agent.id === "orchestrator")?.pane;
-    expect(["fixture-tabs-1", "fixture-tabs-2"]).toContain(pane);
-    restore = { session, pane: pane! };
-    await choose({ op: "open_tab", workspace: workspaceId, chat: session, tab_only: true });
-    await choose({ op: "selected_chat", workspace: workspaceId, chat: session });
-    await tab.reload();
-    await tab.waitForFunction(() => window.__swarmReady === true);
     const closing = tab.locator(`[data-testid="tab"][data-session="${session}"]`);
     await closing.click();
     await expect(closing).toHaveAttribute("aria-selected", "true");
-    await expect(tab.locator(`[data-testid="tree-row"][data-session="${session}"]`)).toHaveCount(0);
+    await expect(tab.locator(`[data-testid="tree-row"][data-session="${session}"]`)).toHaveCount(1);
     await closing.locator('[data-action="close"]').click();
-    const confirm = tab.getByTestId("confirm");
-    await expect(confirm).toBeVisible();
-    await expect(confirm.getByTestId("confirm-action")).toHaveText("Archive Chat");
-    await confirm.getByTestId("confirm-action").click();
-    await expect(confirm).toBeHidden();
     await expect(closing).toHaveCount(0);
+    await expect(tab.getByTestId("confirm")).toHaveCount(0);
     await expect(tab.locator(`[data-testid="tab"][data-session="${other}"]`)).toHaveAttribute("aria-selected", "true");
-    await expect(tab.getByTestId("workspace-landing")).toHaveCount(0);
+    await expect(tab.locator(`[data-testid="tree-row"][data-session="${session}"]`)).toHaveCount(1);
   } finally {
     try {
-      await tab.screenshot({ path: info.outputPath("tab-only-archive-close.png") });
+      await tab.screenshot({ path: info.outputPath("tab-close-keeps-chat.png") });
     } finally {
       await tab.close();
-      try {
-        if (restore) {
-          const { session, pane } = restore;
-          await api("/api/sessions/unarchive", { ids: [session] });
-          rmSync(join(fixtureHome, `closed-${pane}`), { force: true });
-          // Closing clears the stored pane too; a chair rejoin restores it without a new chat.
-          execFileSync(process.env.SWARM_E2E_SWARM!, ["agent", "add", "orchestrator", "orchestrator"], {
-            env: {
-              PATH: process.env.PATH, USER: "e2e", HOME: fixtureHome, SWARM_HOME: fixtureHome,
-              CLAUDE_CONFIG_DIR: join(fixtureHome, ".claude"), CODEX_HOME: join(fixtureHome, ".codex"),
-              SWARM_ADAPTER: "tmux-swarm", SWARM_SESSION_ID: session, FIXTURE_PANE: pane,
-            },
-            stdio: "pipe",
-          });
-        }
-      } finally {
-        writeFileSync(choicesPath, before);
-      }
+      writeFileSync(choicesPath, before);
     }
   }
 });

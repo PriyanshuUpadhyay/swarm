@@ -13,7 +13,7 @@ const row: SidebarRow = {
 const tree: TreeView = {
   version: 1, revision: "rev-1", view: "workspaces", selectedRow: null, archivedStatus: null,
   choicesError: null, prefs: {},
-  sections: [{ id: "/r", kind: "project", path: "/r", collapseId: "project:/r", expanded: true,
+  sections: [{ id: "/r", kind: "project", path: "/r", folder: false, collapseId: "project:/r", expanded: true,
     title: "r", status: null, fields: [], rows: [row] }],
 };
 const snapshot: Snapshot = {
@@ -22,7 +22,7 @@ const snapshot: Snapshot = {
 };
 const tab = (session: string, pending: Tab["pending"] = null): Tab => ({
   id: session, session, title: session, status: null, badge: null, canClose: true, canHide: true,
-  pending, fields: [], children: null, tabOnly: true,
+  pending, fields: [], children: null,
 });
 const strip = (tabs = [tab("next")], selectedChat: string | null = "next"): Tabs => ({
   workspace, tabs, history: [], selectedChat, previousRecent: null, nextRecent: null, stepTargets: {},
@@ -55,14 +55,14 @@ function harness(options: { tree?: TreeView; tabs?: () => Promise<TabsView>; sna
 }
 
 describe("sync after a fresh strip read", () => {
-  it("opens the selected tab-only chat from a workspace landing without writing choices", async () => {
+  it("opens the selected chat with no sidebar row from a workspace landing without writing choices", async () => {
     const { app, writes } = harness();
     await app.refresh();
     expect(app.view.openId).toBe("next");
     expect(writes).toEqual([]);
   });
 
-  it("restores a tab-only selection through the first tree's workspace fallback", async () => {
+  it("restores a selection with no sidebar row through the first tree's workspace fallback", async () => {
     const { app, writes } = harness({ tree: { ...tree, selectedRow: workspace } });
     app.restored = false;
     app.workspace = null;

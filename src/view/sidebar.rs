@@ -44,6 +44,9 @@ pub struct Section {
     pub id: String,
     pub kind: &'static str,
     pub path: Option<String>,
+    /// A plain folder project whose one workspace row is listed here. It has no branches, so the
+    /// app hides the header and that workspace row stands for the project (ADR 0116).
+    pub folder: bool,
     pub collapse_id: String,
     pub expanded: bool,
     pub title: String,
@@ -87,6 +90,7 @@ pub fn sections(
                 id: "pinned".into(),
                 kind: "pinned",
                 path: None,
+                folder: false,
                 collapse_id: "pinned".into(),
                 expanded: !state.is_collapsed("pinned"),
                 title: "Pinned".into(),
@@ -126,10 +130,15 @@ pub fn sections(
             }
         }
         archived_chats.sort_by_key(|(c, _)| std::cmp::Reverse(c.archived_at));
+        // A pinned workspace is listed under Pinned, so its project keeps the header.
+        let folder = !archive
+            && is_folder(project)
+            && project_rows.first().is_some_and(|r| r.kind == "workspace");
+        // In a folder the workspace row stands for the project, so the fold goes under it.
         project_rows.extend(archived_fold(
             format!("archived:project:{}", project.path),
-            None,
-            0,
+            folder.then(|| project.workspaces[0].path.clone()),
+            u8::from(folder),
             &archived_chats,
             state,
             now,
@@ -149,13 +158,13 @@ pub fn sections(
             name
         };
         let status = AgentStatus::aggregate(project_rows.iter().filter_map(|r| r.status));
-        let context =
-            fields::workspace_context(&project.workspaces, &title, owner, state, now, cache);
+        let context = fields::workspace_context(&project.workspaces, &title, state, now, cache);
         let collapse_id = format!("project:{}", project.path);
         sections.push(Section {
             id: format!("project:{}", project.id),
             kind: "project",
             path: Some(project.path.clone()),
+            folder,
             expanded: !state.is_collapsed(&collapse_id),
             collapse_id,
             title,
@@ -165,6 +174,11 @@ pub fn sections(
         });
     }
     sections
+}
+
+/// A project that is not a Git repository: its one workspace is the folder itself.
+fn is_folder(project: &Project) -> bool {
+    super::lifecycle::common(project).is_none() && project.workspaces.len() == 1
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -180,10 +194,17 @@ fn rows(
 ) -> Vec<SidebarRow> {
     let pinned = owner.pinned.contains(&workspace.path);
     let archived = owner.archived.contains(&workspace.path);
+    let collapsed = state.is_collapsed(&workspace.path);
     let title = if workspace.removed {
         workspace.name.clone()
     } else {
-        super::navigation::workspace_title(project, workspace, owner, in_project)
+        // A folder row stands for its project, so it takes the project's name, as a pinned row does.
+        super::navigation::workspace_title(
+            project,
+            workspace,
+            owner,
+            in_project && !is_folder(project),
+        )
     };
     let mut detail =
         super::navigation::workspace_detail(project, workspace, owner, in_project, ids);
@@ -193,17 +214,11 @@ fn rows(
     if let Some(mark) = &workspace.mark {
         detail.push_str(&format!(" · {mark}"));
     }
-    let status = workspace.status(owner);
-    let mut context = fields::workspace_context(
-        std::slice::from_ref(workspace),
-        &title,
-        owner,
-        state,
-        now,
-        cache,
-    );
+    let status = workspace.status();
+    let mut context =
+        fields::workspace_context(std::slice::from_ref(workspace), &title, state, now, cache);
     if owner.fields.workspace.iter().any(|f| f == "title") {
-        let suffix = fields::count_text(workspace.listed_chats(owner).count(), "chat");
+        let suffix = fields::count_text(workspace.chats.len(), "chat");
         context.text.insert(
             "branch".into(),
             detail
@@ -218,8 +233,8 @@ fn rows(
         kind: "workspace",
         depth: 0,
         parent_id: None,
-        expanded: !state.is_collapsed(&workspace.path),
-        has_children: workspace.listed_chats(owner).next().is_some()
+        expanded: !collapsed,
+        has_children: !workspace.chats.is_empty()
             || (!in_project && !workspace.archived.is_empty()),
         children_summary: None,
         title,
@@ -227,11 +242,13 @@ fn rows(
         status,
         counts: status_counts(
             workspace
-                .listed_chats(owner)
+                .chats
+                .iter()
                 .flat_map(|c| c.agents.iter().map(AgentStatus::agent)),
         ),
         age: workspace
-            .listed_chats(owner)
+            .chats
+            .iter()
             .map(|c| c.last_activity)
             .max()
             .map(|at| age(at, now)),
@@ -254,10 +271,10 @@ fn rows(
             agent: None,
         }),
     }];
-    if state.is_collapsed(&workspace.path) {
+    if collapsed {
         return result;
     }
-    let mut chats: Vec<_> = workspace.listed_chats(owner).collect();
+    let mut chats: Vec<_> = workspace.chats.iter().collect();
     chats.sort_by(|a, b| {
         b.last_activity
             .cmp(&a.last_activity)

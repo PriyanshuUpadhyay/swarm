@@ -1,5 +1,5 @@
 // Web pilot budget suite. Builds nothing; run `pnpm -C web perf` after the release builds.
-// usage: node web/perf/run.mjs [--browsers chromium,webkit] [--apps react] [--live-seconds 60] [--soak-minutes 10]
+// usage: node web/perf/run.mjs [--browsers webkit] [--apps react] [--live-seconds 60] [--soak-minutes 10]
 //        [--only cold,warm,key,scroll,giant,live,pane,soak]
 // Needs: target/release/swarm built with --features serve, the ReleaseSafe transcript tool, web/dist.
 // PERF_SWARM and PERF_TOOL point at other builds of the two binaries; PERF_DIST at another web build.
@@ -13,7 +13,7 @@ import { chromium, webkit } from "@playwright/test";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(here, "../..");
 const args = Object.fromEntries(process.argv.slice(2).reduce((acc, v, i, a) => (i % 2 ? acc : [...acc, [v.replace(/^--/, ""), a[i + 1]]]), []));
-const browsers = (args.browsers ?? "chromium,webkit").split(",");
+const browsers = (args.browsers ?? "webkit").split(",");
 const apps = (args.apps ?? "react").split(",");
 const liveSeconds = Number(args["live-seconds"] ?? 60);
 const soakMinutes = Number(args["soak-minutes"] ?? 10);
