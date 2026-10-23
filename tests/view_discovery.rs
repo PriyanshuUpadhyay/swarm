@@ -159,3 +159,52 @@ fn subprocess_failure_and_deadline_are_bounded_and_reaped() {
     assert!(discovery::run("/bin/sh", &["-c", "sleep 5 &"], 1).is_none());
     assert!(before.elapsed().as_secs_f64() < 2.0);
 }
+
+#[test]
+fn project_id_is_shared_by_worktrees_and_falls_back_to_the_folder() {
+    let root = std::env::temp_dir().join(format!("swarm-project-id-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    let root = fs::canonicalize(root).unwrap();
+    let git = |args: &[&str]| {
+        assert!(Command::new("git").args(args).status().unwrap().success());
+    };
+    let hub = root.join("hub");
+    git(&["init", "-q", "--bare", hub.join(".bare").to_str().unwrap()]);
+    let bare = hub.join(".bare");
+    git(&[
+        "-C",
+        bare.to_str().unwrap(),
+        "worktree",
+        "add",
+        "-q",
+        "--orphan",
+        "-b",
+        "main",
+        hub.join("main").to_str().unwrap(),
+    ]);
+    git(&[
+        "-C",
+        bare.to_str().unwrap(),
+        "worktree",
+        "add",
+        "-q",
+        "--orphan",
+        "-b",
+        "side",
+        hub.join("side").to_str().unwrap(),
+    ]);
+    let workers = hub.join("main/.herdr/workers");
+    fs::create_dir_all(&workers).unwrap();
+    let expected = format!("repository:{}", bare.display());
+    for path in [hub.join("main"), hub.join("side"), workers] {
+        assert_eq!(discovery::project_id(path.to_str().unwrap()), expected);
+    }
+    let plain = root.join("plain");
+    fs::create_dir(&plain).unwrap();
+    assert_eq!(
+        discovery::project_id(plain.to_str().unwrap()),
+        format!("folder:{}", plain.display())
+    );
+    fs::remove_dir_all(&root).unwrap();
+}
