@@ -21,6 +21,12 @@ You are one child agent. The orchestrator spawned your pane. `swarm` is on PATH.
 4. Run `swarm ack <seq>` for each message you handled.
 5. End your turn. The next message rings you again; do not poll in a loop.
 
+## Project board
+
+The project keeps a board that outlives this session. Use `swarm board read` before you start,
+`swarm board post <kind>` to add a post, and `swarm board answer B-n` to answer an ask. Run
+`swarm board` for the flags; a refused post prints how to fix it.
+
 ## Rules
 
 - Follow the worker contract in `blocks/worker-brief/SKILL.md` and the active host contract.

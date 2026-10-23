@@ -120,7 +120,7 @@ pub fn decide(
 mod runner;
 use runner::{Outcome, run};
 
-/// ADR 0115: a worker reads the board through `swarm board read`, which withholds the checker's
+/// ADR 0118: a worker reads the board through `swarm board read`, which withholds the checker's
 /// posts, so a worker's tool call that names the board's files is denied. Best effort: a path
 /// that the call builds at run time passes.
 pub fn board_wall(provider: Provider, event: &str, payload: &str) -> Option<Verdict> {

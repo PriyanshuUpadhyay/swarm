@@ -1,4 +1,4 @@
-//! The project board (ADR 0115): typed append-only posts and fenced claims per project. Each rule
+//! The project board (ADR 0118): typed append-only posts and fenced claims per project. Each rule
 //! is a refusal here, so a skill only names the commands.
 
 use super::*;

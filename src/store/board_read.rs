@@ -1,4 +1,4 @@
-//! Board reads and relink (ADR 0115).
+//! Board reads and relink (ADR 0118).
 
 use super::*;
 

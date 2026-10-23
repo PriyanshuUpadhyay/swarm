@@ -1,4 +1,4 @@
-//! CLI board: `swarm board post|answer|read|relink` (ADR 0115). The store owns the rules; this
+//! CLI board: `swarm board post|answer|read|relink` (ADR 0118). The store owns the rules; this
 //! layer finds the project, the recipient, and each file source's git blob.
 
 use super::*;
