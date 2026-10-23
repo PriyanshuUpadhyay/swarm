@@ -18,6 +18,25 @@ pub fn with_lock<T>(
     with_lock_within(lock, LOCK_WAIT, change)
 }
 
+/// Background maintenance yields to an active writer instead of waiting or reporting a failure.
+pub(super) fn try_with_lock<T>(
+    lock: &std::path::Path,
+    change: impl FnOnce() -> Result<T, String>,
+) -> Result<Option<T>, String> {
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(lock)
+        .map_err(|error| format!("swarm: cannot open {}: {error}", lock.display()))?;
+    match file.try_lock() {
+        Ok(()) => change().map(Some),
+        Err(std::fs::TryLockError::WouldBlock) => Ok(None),
+        Err(std::fs::TryLockError::Error(error)) => {
+            Err(format!("swarm: cannot lock {}: {error}", lock.display()))
+        }
+    }
+}
+
 /// `with_lock` that gives up after `wait` with an error that names the lock.
 pub(super) fn with_lock_within<T>(
     lock: &std::path::Path,

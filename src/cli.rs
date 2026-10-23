@@ -54,6 +54,9 @@ pub(crate) use listing::*;
 mod logs;
 pub(crate) use logs::*;
 
+mod maintenance;
+pub(crate) use maintenance::*;
+
 mod managed_hooks;
 pub(crate) use managed_hooks::*;
 

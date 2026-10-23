@@ -103,13 +103,18 @@ pub fn codex_accounts_dir() -> Result<std::path::PathBuf, Box<dyn std::error::Er
     ))
 }
 
+/// Check the existing ownership marker without claiming or creating a home (ADR 0036).
+pub fn is_claimed(root: &std::path::Path) -> bool {
+    root.join(MARKER).is_file()
+}
+
 /// Prove that swarm owns `root` before anything writes there (ADR 0036). A missing or empty
 /// folder is claimed with the marker before any other write. A folder with no marker is adopted
 /// only when it holds a db that an older swarm made. Any other folder is refused with no write.
 /// A linked folder is judged by its target, because each read follows the link.
 fn claim(root: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
     let marker = root.join(MARKER);
-    if marker.is_file() {
+    if is_claimed(root) {
         return Ok(());
     }
     // The Mac-wide files (ADR 0040, 0043) can arrive before this build first runs: the owner's
@@ -168,9 +173,14 @@ pub fn consent_file() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> 
 /// `~/.swarm/trust.lock`, made with its folder, so two builds with two homes take one lock on the
 /// files they share (C6).
 pub fn trust_lock() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
-    let dir = mac_dir()?;
-    std::fs::create_dir_all(&dir)?;
-    Ok(dir.join(TRUST_LOCK))
+    let path = trust_lock_path()?;
+    std::fs::create_dir_all(path.parent().expect("trust lock has a parent"))?;
+    Ok(path)
+}
+
+/// The shared lock's path without creating a home that may have been removed during cleanup.
+pub fn trust_lock_path() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
+    Ok(mac_dir()?.join(TRUST_LOCK))
 }
 
 pub fn runs_dir() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {

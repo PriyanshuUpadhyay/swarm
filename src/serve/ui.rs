@@ -205,6 +205,9 @@ pub(super) fn stop_ui(record: &Path) -> Result<(), Box<dyn std::error::Error>> {
     const SIGTERM: i32 = 15;
     let Some((url, Some(pid), _)) = recorded(record).filter(|(url, ..)| answers(url)) else {
         let _ = std::fs::remove_file(record);
+        if let Some(root) = record.parent() {
+            crate::cli::spawn_trust_cleanup(root, "ui-exit");
+        }
         println!("swarm ui: no server of this home is running");
         return Ok(());
     };
@@ -224,6 +227,9 @@ pub(super) fn stop_ui(record: &Path) -> Result<(), Box<dyn std::error::Error>> {
         std::thread::sleep(Duration::from_millis(100));
     }
     let _ = std::fs::remove_file(record);
+    if let Some(root) = record.parent() {
+        crate::cli::spawn_trust_cleanup(root, "ui-exit");
+    }
     println!("swarm ui: stopped the server at {}", page_base(&url));
     Ok(())
 }
