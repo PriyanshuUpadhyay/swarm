@@ -48,6 +48,7 @@ its inbox message from the named seat. The kit root is two folders up from this 
 
 A child ends its turn after it answers. Ring it by sending; do not poll its pane.
 A child's `finish` or `send` rings your own pane with `swarm: new message`; on that prompt run `swarm inbox`, read the message, and `ack` it.
+After a send, end your turn. Do not wait with `sleep`, and do not loop on `swarm inbox` or a pane read; the ring starts your next turn, and the sweep below reports a seat that went quiet.
 When running rounds, put `round: N` on the first line of every ask and discard a summary whose first line does not match the current round.
 In lane mode children cannot message each other. In relay mode you receive their child-to-child
 messages as kind `relay:<recipient>` and forward them yourself.
