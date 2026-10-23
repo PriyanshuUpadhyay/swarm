@@ -318,6 +318,9 @@ use tree_routes::*;
 mod ui;
 use ui::*;
 
+mod update;
+use update::*;
+
 mod usage;
 use usage::*;
 
