@@ -24,7 +24,7 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - run: cargo clippy --all-targets --features serve -- -D warnings
       # Shared runners cannot measure the owner's Mac speed or process-wide heap budgets.
-      - run: cargo test --features serve -- --include-ignored --skip serve::live_delta::performance_tests::
+      - run: 'cargo test --features serve -- --include-ignored --skip serve::live_delta::performance_tests::'
 
   e2e:
     runs-on: macos-26
