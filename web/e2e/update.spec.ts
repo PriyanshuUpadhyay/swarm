@@ -1,7 +1,8 @@
 import { expect, test } from "@playwright/test";
 
 // ADR 0118: a newer swarm in the tap shows one toast that upgrades on the first press and
-// restarts the server, and a changed HUD, on the second. A refused restart can be pressed again.
+// restarts the server, and a changed HUD, on the second. A failed upgrade and a refused restart
+// can each be pressed again.
 
 const server = () => new URL(process.env.SWARM_SERVE_URL!);
 
@@ -9,9 +10,14 @@ test("an update upgrades, then restarts the server and the HUD, in two asks", as
   const errors: string[] = [];
   tab.on("pageerror", (e) => errors.push(e.message));
   const calls: string[] = [];
+  let upgrades = 0;
   await tab.route("**/api/update", (route) => {
     calls.push(`${route.request().method()} /api/update`);
-    return route.fulfill({ json: route.request().method() === "GET" ? { current: "0.0.37", latest: "0.0.38", available: true } : { version: "0.0.38", hud: true } });
+    if (route.request().method() === "GET") return route.fulfill({ json: { current: "0.0.37", latest: "0.0.38", available: true } });
+    // The first upgrade fails, as a brew that cannot reach the tap does.
+    return upgrades++ === 0
+      ? route.fulfill({ status: 500, json: { error: "brew update failed" } })
+      : route.fulfill({ json: { version: "0.0.38", hud: true } });
   });
   let restarts = 0;
   await tab.route("**/api/update/restart", (route) => {
@@ -24,6 +30,9 @@ test("an update upgrades, then restarts the server and the HUD, in two asks", as
   await tab.goto(`${server().origin}/${server().hash}`);
   await tab.waitForFunction(() => window.__swarmReady === true);
   const toast = tab.locator("[data-sonner-toast]").filter({ hasText: "Swarm 0.0.38" });
+  await expect(toast).toContainText("Swarm 0.0.38 is available");
+  await toast.getByRole("button", { name: "Upgrade" }).click();
+  await expect(tab.locator("[data-sonner-toast]").filter({ hasText: "brew update failed" })).toBeVisible();
   await expect(toast).toContainText("Swarm 0.0.38 is available");
   await toast.getByRole("button", { name: "Upgrade" }).click();
   await expect(toast).toContainText("Swarm 0.0.38 is installed");
@@ -39,7 +48,7 @@ test("an update upgrades, then restarts the server and the HUD, in two asks", as
   await expect(restarting).toBeVisible();
   await expect(restarting.getByRole("button")).toHaveCount(0);
   // The toast shows before the POST is sent, so wait for the route to see it.
-  await expect.poll(() => calls.length).toBe(4);
-  expect(calls).toEqual(["GET /api/update", "POST /api/update", "POST /api/update/restart", "POST /api/update/restart"]);
+  await expect.poll(() => calls.length).toBe(5);
+  expect(calls).toEqual(["GET /api/update", "POST /api/update", "POST /api/update", "POST /api/update/restart", "POST /api/update/restart"]);
   expect(errors).toEqual([]);
 });

@@ -190,7 +190,8 @@ pub(super) async fn update_write() -> Result<Json<Value>, ApiError> {
             return Err(error(StatusCode::CONFLICT, &message));
         }
         *LATEST.lock().unwrap() = None;
-        HUD_CHANGED.store(hud, Ordering::SeqCst);
+        // A repeat upgrade that finds the HUD unchanged keeps the mark of the one before it.
+        let hud = HUD_CHANGED.fetch_or(hud, Ordering::SeqCst) || hud;
         Ok(Json(json!({"version": version, "hud": hud})))
     });
     upgrade
@@ -208,6 +209,19 @@ pub(super) async fn update_restart(State(app): State<App>) -> Result<Json<Value>
         error(
             StatusCode::CONFLICT,
             "this swarm is not a Homebrew install; run `swarm ui` again",
+        )
+    })?;
+    if !app.ui {
+        // The new `swarm ui` would stop the recorded `swarm ui` server, not this one.
+        return Err(error(
+            StatusCode::CONFLICT,
+            "this server is `swarm serve`; stop it and run `swarm serve` again",
+        ));
+    }
+    let running = UPGRADE.try_lock().map_err(|_| {
+        error(
+            StatusCode::CONFLICT,
+            "an upgrade or a restart is already running",
         )
     })?;
     let fail = |err: std::io::Error| error(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string());
@@ -259,6 +273,9 @@ pub(super) async fn update_restart(State(app): State<App>) -> Result<Json<Value>
         .process_group(0)
         .spawn()
         .map_err(fail)?;
+    // The new server stops this one, so the lock stays held and a second page cannot start a
+    // second `swarm ui`. If it never stops this one, `swarm ui` in a terminal does.
+    std::mem::forget(running);
     Ok(Json(json!({"ok": true, "hud": hud})))
 }
 

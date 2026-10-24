@@ -74,6 +74,7 @@ pub(super) fn start(
         root,
         tool,
         port,
+        ui: record.is_some(),
         token,
         assets,
         dev_origin,

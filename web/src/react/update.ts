@@ -56,8 +56,9 @@ async function upgrade(app: App, latest: string) {
     const { version, hud } = await app.api.post<{ version: string; hud: boolean }>("/api/update", {});
     installed(app, version, hud);
   } catch (err) {
-    toast.dismiss(ID);
+    // The error shows in its own toast and is recorded; this one offers the upgrade again.
     showError(`Upgrade: ${message(err)}`);
+    offer(app, latest);
   }
 }
 
