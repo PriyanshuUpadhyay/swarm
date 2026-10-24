@@ -256,8 +256,7 @@ export default async function setup() {
   // `sessions --json` resolves each chair log and stores its path, which serve reads.
   execFileSync(swarm, ["sessions", "--json"], { env, stdio: "pipe" });
 
-  // Two Git projects for the lifecycle cases. proj-gh has a GitHub origin, for issues, and a free
-  // branch per browser. proj-pr has a local origin that holds pull request 7, since `git fetch`
+  // Two Git projects for the lifecycle cases. proj-gh has a GitHub origin, for issues. proj-pr has a local origin that holds pull request 7, since `git fetch`
   // cannot reach github.com here. The server finds `gh` first on its PATH.
   const gitEnv = { ...env, GIT_CEILING_DIRECTORIES: dir };
   const git = (cwd: string, ...args: string[]) => execFileSync("git", ["-c", "user.name=E2E", "-c", "user.email=e2e@example.invalid", ...args], { cwd, env: gitEnv, stdio: "pipe" });
@@ -269,7 +268,6 @@ export default async function setup() {
   writeFileSync(join(ghProject, "README.md"), "demo\n");
   git(ghProject, "add", "README.md");
   git(ghProject, "commit", "-q", "-m", "first");
-  for (const project of PANE_PROJECTS) git(ghProject, "branch", `topic-${project}`);
   git(ghProject, "checkout", "-q", "-b", "pr-7");
   writeFileSync(join(ghProject, "review.md"), "the change under review\n");
   git(ghProject, "add", "review.md");
@@ -301,6 +299,7 @@ export default async function setup() {
     if (!res.ok) throw new Error(`import ${path}: ${res.status} ${await res.text()}`);
   }
   process.env.SWARM_E2E_HOME = home;
+  process.env.SWARM_E2E_DB = db;
   process.env.SWARM_E2E_SWARM = swarm;
   process.env.SWARM_E2E_NOTIFY_APP = env.SWARM_NOTIFY_APP;
   process.env.SWARM_E2E_LIVE = liveSession;
