@@ -45,6 +45,8 @@ for (const pending of ["empty", null, "starting", "failed", "closing"] as const)
       try {
         await tab.screenshot({ path: info.outputPath("workspace-landing.png") });
       } finally {
+        // The page polls the strip, so a read can be in the route when the case ends.
+        await tab.unrouteAll({ behavior: "ignoreErrors" });
         await tab.close();
         writeFileSync(choicesPath, before);
       }

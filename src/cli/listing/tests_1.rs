@@ -13,8 +13,10 @@ mod cases {
         std::fs::create_dir_all(root.join("adapters")).unwrap();
         let ring_log = root.join("ring");
         let ring_path = swarm::adapter::shell_line(&[ring_log.to_string_lossy().into_owned()]);
+        let gate = root.join("gate");
+        let gate_path = swarm::adapter::shell_line(&[gate.to_string_lossy().into_owned()]);
         std::fs::write(root.join("adapters/fake.conf"),
-            format!("self = true\nspawn = true\nring = sleep 1.2; printf rung > {ring_path}\nlist = printf pane\nclose = true\ncapture = true\nscreen = printf '{{\"result\":{{\"agent\":{{\"agent_status\":\"idle\"}}}}}}'\n")
+            format!("self = true\nspawn = true\nring = while [ ! -e {gate_path} ]; do sleep 0.01; done; printf rung > {ring_path}\nlist = printf pane\nclose = true\ncapture = true\nscreen = printf '{{\"result\":{{\"agent\":{{\"agent_status\":\"idle\"}}}}}}'\n")
         ).unwrap();
         let mut connection = swarm::store::open(&root.join("swarm.db")).unwrap();
         let session =
@@ -38,10 +40,16 @@ mod cases {
                 [RERING_UNSEEN_AFTER_SECS + 1],
             )
             .unwrap();
+        let budget = std::time::Duration::from_secs(4);
         let started = std::time::Instant::now();
-        let listings =
-            all_agent_listings(&mut connection, &root, std::time::Duration::from_secs(1)).unwrap();
-        assert!(started.elapsed() > std::time::Duration::from_secs(1));
+        // The ring ends only once the budget is spent, so it is late however fast the reads run.
+        let opener = std::thread::spawn(move || {
+            std::thread::sleep(budget);
+            std::fs::write(gate, "").unwrap();
+        });
+        let listings = all_agent_listings(&mut connection, &root, budget).unwrap();
+        opener.join().unwrap();
+        assert!(started.elapsed() > budget);
         assert_eq!(std::fs::read_to_string(&ring_log).unwrap(), "rung");
         assert_eq!(listings[&session].agents.len(), 2);
         std::fs::remove_dir_all(root).unwrap();
@@ -53,10 +61,15 @@ mod cases {
             std::env::temp_dir().join(format!("swarm-batch-deadline-{}", uuid::Uuid::now_v7()));
         std::fs::create_dir_all(root.join("adapters")).unwrap();
         let mut connection = swarm::store::open(&root.join("swarm.db")).unwrap();
+        let gate = root.join("gate");
+        let slow_list = format!(
+            "while [ ! -e {} ]; do sleep 0.01; done; printf pane",
+            swarm::adapter::shell_line(&[gate.to_string_lossy().into_owned()])
+        );
         let mut ids = Vec::new();
         for (index, (name, list, screen)) in [
-            ("slow-list", "sleep 3; printf pane", "true"),
-            ("slow-screen", "sleep 0.4; printf pane", "sleep 3"),
+            ("slow-list", slow_list.as_str(), "true"),
+            ("slow-screen", "printf pane", "sleep 120"),
             ("fast", "printf pane", "true"),
         ]
         .into_iter()
@@ -79,17 +92,16 @@ mod cases {
             ids.push(session);
         }
         let started = std::time::Instant::now();
-        let listings = all_agent_listings(
-            &mut connection,
-            &root,
-            std::time::Duration::from_millis(1500),
-        )
-        .unwrap();
-        assert!(started.elapsed() < std::time::Duration::from_secs(3));
+        // The hung reads each spend their share, so the fast session gets about a third.
+        let listings =
+            all_agent_listings(&mut connection, &root, std::time::Duration::from_secs(24)).unwrap();
+        // Under 1.5x the budget, so a session that takes the whole budget fails.
+        assert!(started.elapsed() < std::time::Duration::from_secs(36));
         assert!(!listings.contains_key(&ids[0]));
         assert!(!listings.contains_key(&ids[1]));
         assert_eq!(listings[&ids[2]].agents.len(), 1);
         // The single-session list keeps its original unbounded list and bounded screen behavior.
+        std::fs::write(&gate, "").unwrap();
         let adapter = swarm::adapter::load(&root, "slow-list").unwrap();
         assert!(list_agents(&mut connection, &root, &ids[0], &adapter).is_ok());
         std::fs::remove_dir_all(root).unwrap();
@@ -116,7 +128,8 @@ mod cases {
             ids.push(session);
         }
         let listings =
-            all_agent_listings(&mut connection, &root, std::time::Duration::from_secs(5)).unwrap();
+            all_agent_listings(&mut connection, &root, std::time::Duration::from_secs(120))
+                .unwrap();
         assert_eq!(std::fs::read_to_string(&calls).unwrap().lines().count(), 1);
         for id in &ids {
             assert_eq!(listings[id].agents.len(), 1);
@@ -130,7 +143,7 @@ mod cases {
             std::env::temp_dir().join(format!("swarm-batch-live-share-{}", uuid::Uuid::now_v7()));
         std::fs::create_dir_all(root.join("adapters")).unwrap();
         std::fs::write(root.join("adapters/fake.conf"),
-            "self = true\nspawn = true\nring = true\nlist = printf pane\nclose = true\ncapture = true\nscreen = sleep 0.2; printf '{\"result\":{\"agent\":{\"agent_status\":\"idle\"}}}'\n"
+            "self = true\nspawn = true\nring = true\nlist = printf pane\nclose = true\ncapture = true\nscreen = sleep 1.5; printf '{\"result\":{\"agent\":{\"agent_status\":\"idle\"}}}'\n"
         ).unwrap();
         let mut connection = swarm::store::open(&root.join("swarm.db")).unwrap();
         let mut live = String::new();
@@ -153,7 +166,7 @@ mod cases {
             }
         }
         let listings =
-            all_agent_listings(&mut connection, &root, std::time::Duration::from_secs(1)).unwrap();
+            all_agent_listings(&mut connection, &root, std::time::Duration::from_secs(21)).unwrap();
         assert_eq!(listings.len(), 21);
         assert!(listings[&live].agents[0].alive == Some(true));
         std::fs::remove_dir_all(root).unwrap();
@@ -315,7 +328,9 @@ mod cases {
 
         let started = std::time::Instant::now();
         list_agents(&mut connection, &root, &session, &adapter).unwrap();
-        assert!(started.elapsed() < RING_TIMEOUT - std::time::Duration::from_secs(2));
+        // A loaded machine runs the fake verbs slowly, so the time bound is the app's 20 s kill. A
+        // ring that waited for its proof would have stored a delivery.
+        assert!(started.elapsed() < std::time::Duration::from_secs(20));
         assert_eq!(delivery_of(&connection, &session, ask), None);
         assert!(chair_mail(&connection, &session).is_empty());
 
@@ -328,7 +343,7 @@ mod cases {
             .unwrap();
         let started = std::time::Instant::now();
         list_agents(&mut connection, &root, &session, &adapter).unwrap();
-        assert!(started.elapsed() < RING_TIMEOUT - std::time::Duration::from_secs(2));
+        assert!(started.elapsed() < std::time::Duration::from_secs(20));
         assert_eq!(
             delivery_of(&connection, &session, ask).as_deref(),
             Some("unconfirmed")

@@ -1,12 +1,20 @@
 import { expect, test } from "@playwright/test";
+import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { ISSUES } from "./serve";
-import { header, newWorkspace, open, shoot, workspace } from "./lifecycle-helpers";
+import { header, holdChatStart, newWorkspace, open, shoot, workspace } from "./lifecycle-helpers";
+
+// The cases share one server home with every spec, and a repeat finds the workspaces of the run
+// before, so each name carries the browser and the repeat.
+const runName = (info: { project: { name: string }; repeatEachIndex: number }) => `${info.project.name}-${info.repeatEachIndex}`;
+const ghProject = () => join(process.env.SWARM_E2E_DIR!, "proj-gh");
 
 test("New workspace makes a new branch, an existing branch and a pull request workspace", async ({ page: tab }, info) => {
   const errors = await open(tab);
-  const b = info.project.name;
+  await holdChatStart(tab);
+  const b = runName(info);
+  execFileSync("git", ["-C", ghProject(), "branch", `topic-${b}`]);
   const dialog = tab.getByTestId("new-workspace");
 
   await newWorkspace(tab, "proj-gh", async () => {
@@ -59,16 +67,27 @@ test("a workspace from an issue is named after it and starts a chat with the iss
     await expect(tab.getByTestId("nw-issue-body")).toContainText(issue.body);
   });
   await expect(dialog).toBeHidden();
-  await expect(workspace(tab, `${issue.number}-${issue.title}`)).toBeVisible();
-  await expect(tab.locator(`[data-testid="transcript"][data-chat="${live}"]`)).toBeVisible();
-  await expect(tab.getByTestId("composer")).toHaveValue(`Issue #${issue.number}: ${issue.title}\n\n${issue.body}`);
-  await tab.getByTestId("composer").fill("");
+  const made = workspace(tab, `${issue.number}-${issue.title}`);
+  await expect(made).toBeVisible();
+  try {
+    await expect(tab.locator(`[data-testid="transcript"][data-chat="${live}"]`)).toBeVisible();
+    await expect(tab.getByTestId("composer")).toHaveValue(`Issue #${issue.number}: ${issue.title}\n\n${issue.body}`);
+    await tab.getByTestId("composer").fill("");
+  } finally {
+    // The issue names the workspace, so a repeat needs its folder and branch gone. Delete refuses
+    // here, because proj-gh's origin has no remote refs and so every commit counts as unpushed.
+    const path = (await made.getAttribute("data-id"))!;
+    const branch = execFileSync("git", ["-C", path, "branch", "--show-current"], { encoding: "utf8" }).trim();
+    execFileSync("git", ["-C", ghProject(), "worktree", "remove", "--force", path]);
+    execFileSync("git", ["-C", ghProject(), "branch", "-D", branch]);
+  }
   expect(errors).toEqual([]);
 });
 
 test("the setup script streams its output; a failure keeps the workspace and says so", async ({ page: tab }, info) => {
   const errors = await open(tab);
-  const b = info.project.name;
+  await holdChatStart(tab);
+  const b = runName(info);
   const setScript = async (script: string) => {
     await header(tab, "proj-gh").click({ button: "right" });
     await tab.getByRole("menuitem", { name: "Setup script…" }).click();
@@ -116,7 +135,8 @@ test("the setup script streams its output; a failure keeps the workspace and say
 
 test("archive asks while agents run and restores; delete asks and removes the folder", async ({ page: tab }, info) => {
   const errors = await open(tab);
-  const b = info.project.name;
+  await holdChatStart(tab);
+  const b = runName(info);
   // proj-pr's main is on its origin, so a fresh branch there has nothing unpushed and may be deleted.
   await newWorkspace(tab, "proj-pr", async () => {
     await tab.getByTestId("nw-name").fill(`arch-${b}`);

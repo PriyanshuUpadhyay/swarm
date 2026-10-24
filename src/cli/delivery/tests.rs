@@ -19,6 +19,10 @@ mod cases {
         ]
         .map(|(provider, held)| {
             std::thread::spawn(move || {
+                // AGY's ring proves nothing, so it waits out the short deadline.
+                if provider != "agy" {
+                    patient_rings();
+                }
                 let (root, mut connection, session) = ring_session(
                     "lost-enter",
                     Some(provider),
@@ -179,6 +183,7 @@ mod cases {
 
     #[test]
     fn a_routing_role_chair_receives_a_child_finish() {
+        patient_rings();
         let root =
             std::env::temp_dir().join(format!("swarm-routing-chair-test-{}", std::process::id()));
         let adapters = root.join("adapters");

@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 test("a chat with two children shows their panes; keys move focus and zoom; a pane types, asks and closes", async ({ page: tab }, info) => {
@@ -11,6 +12,9 @@ test("a chat with two children shows their panes; keys move focus and zoom; a pa
   const home = process.env.SWARM_E2E_HOME!;
   const project = info.project.name;
   const read = (name: string) => (existsSync(join(home, name)) ? readFileSync(join(home, name), "utf8") : "");
+  // Other cases and a repeat write the same logs, so only what this case wrote counts.
+  const typedBefore = read("typed").length;
+  const actionsBefore = read("actions").length;
   const testerScreen = join(home, `screen-fixture-${project}-tester`);
   const screens = resolve(import.meta.dirname, "../../tests/fixtures/screens");
   const waiting = readFileSync(join(screens, "claude-waiting.txt"), "utf8");
@@ -58,7 +62,7 @@ test("a chat with two children shows their panes; keys move focus and zoom; a pa
     const hello = `hello tester from ${project}`;
     await tab.keyboard.type(hello);
     await tab.keyboard.press("Enter");
-    await expect.poll(() => read("typed")).toContain(hello);
+    await expect.poll(() => read("typed").slice(typedBefore)).toContain(hello);
     await expect(tester.getByTestId("composer")).toHaveValue("");
 
     // ⇧⌘↩ zooms the focused pane over the strip, and the same key returns it.
@@ -146,12 +150,17 @@ test("a chat with two children shows their panes; keys move focus and zoom; a pa
     const closed = tab.waitForRequest((r) => r.url().endsWith("/api/agent/close") && r.method() === "POST");
     await dialog.getByRole("button", { name: "Close Agent" }).click();
     expect((await closed).postDataJSON()).toMatchObject({ agent: "tester" });
-    await expect.poll(() => read("actions")).toContain(`close fixture-${project}-tester`);
+    await expect.poll(() => read("actions").slice(actionsBefore)).toContain(`close fixture-${project}-tester`);
 
     // An ended child leaves the strip at once (ADR 0083).
     await expect(panes).toHaveCount(1);
   } finally {
     writeFileSync(testerScreen, readFileSync(join(screens, "claude-idle.txt"), "utf8"));
+    // Later cases and a repeat need the tester again: its pane is listed, and the store has it.
+    const pane = `fixture-${project}-tester`;
+    rmSync(join(home, `closed-${pane}`), { force: true });
+    const session = process.env[`SWARM_E2E_PANES_${project}`]!.replaceAll("'", "''");
+    execFileSync("sqlite3", [process.env.SWARM_E2E_DB!, `UPDATE agent SET pane_id = '${pane}' WHERE session_id = '${session}' AND id = 'tester';`]);
   }
   expect(errors).toEqual([]);
 });

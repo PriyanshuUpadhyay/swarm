@@ -130,7 +130,7 @@ pub(crate) fn run_cli(args: &[String]) -> Result<(), Box<dyn std::error::Error>>
         .ok_or("swarm: run requires claude or codex")?;
     let accounts = pick_accounts(
         provider,
-        swarm::profiles::native::deadline(ACCOUNT_PICK_TIMEOUT_SECONDS),
+        account_pick_deadline(),
         matches!(requested, "auto" | "menu"),
     );
     let chosen;
@@ -213,7 +213,7 @@ pub(crate) fn account_pick(args: &[String]) -> Result<(), Box<dyn std::error::Er
         .to_string();
     let accounts = pick_accounts(
         provider,
-        swarm::profiles::native::deadline(ACCOUNT_PICK_TIMEOUT_SECONDS),
+        account_pick_deadline(),
         matches!(requested.as_str(), "auto" | "menu") && session.is_none(),
     );
     if requested == "menu" {

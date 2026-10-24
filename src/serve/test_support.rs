@@ -175,6 +175,25 @@ pub(super) fn action_calls(fixture: &Fixture) -> String {
     std::fs::read_to_string(fixture.app.root.parent().unwrap().join("actions")).unwrap_or_default()
 }
 
+/// Waits until a SIGKILL'd process is gone; it stays visible to `kill -0` until it is reaped.
+pub(super) async fn until_dead(pid: &str) {
+    let alive = || {
+        std::process::Command::new("/bin/kill")
+            .args(["-0", pid])
+            .stderr(std::process::Stdio::null())
+            .status()
+            .unwrap()
+            .success()
+    };
+    tokio::time::timeout(Duration::from_secs(30), async {
+        while alive() {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .unwrap_or_else(|_| panic!("process {pid} still runs"));
+}
+
 pub(super) async fn until_cursor(app: &App, id: &str, key: &str, end: u64) {
     tokio::time::timeout(Duration::from_secs(3), async {
         loop {

@@ -7,13 +7,9 @@ on:
 permissions:
   contents: read
 
+# scripts/release.sh tags only a commit whose ci run passed, and the release commit changes only
+# the version, so this workflow does not run the checks again.
 jobs:
-  checks:
-    uses: ./.github/workflows/ci.yml
-    secrets: inherit
-
-  # The draft and its tarball build beside the checks. The owner publishes the draft only after
-  # the whole run passes, so the checks still gate the release.
   source:
     runs-on: ubuntu-latest
     permissions:

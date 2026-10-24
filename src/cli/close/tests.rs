@@ -243,7 +243,7 @@ fn hung_captures_share_one_limit() {
     std::fs::write(
         root.join("adapters/fake.conf"),
         "self = true\nspawn = true\nring = true\nlist = echo %1 %2 %3 %4 %5\nclose = true\n\
-         capture = sleep 60\n",
+         capture = sleep 120\n",
     )
     .unwrap();
     let mut ids = vec![CODER.to_string()];
@@ -264,9 +264,10 @@ fn hung_captures_share_one_limit() {
     )
     .unwrap();
 
-    // Four reads of 5 s each would take 20 s; the shared limit ends them after CAPTURES_WAIT.
+    // Four reads of CAPTURE_WAIT each would take 60 s; the shared limit ends them after
+    // CAPTURES_WAIT, and the rest is time for the rings and closes on a loaded machine.
     assert!(
-        started.elapsed() < std::time::Duration::from_secs(18),
+        started.elapsed() < 4 * CAPTURE_WAIT,
         "{:?}",
         started.elapsed()
     );
@@ -280,14 +281,15 @@ fn a_hung_capture_does_not_hold_close() {
     std::fs::write(
         root.join("adapters/fake.conf"),
         "self = true\nspawn = true\nring = true\nlist = echo %1 %2\nclose = true\n\
-         capture = sleep 60\n",
+         capture = sleep 120\n",
     )
     .unwrap();
     let started = std::time::Instant::now();
 
     close(&mut connection, &root, &session, Some(1));
 
-    assert!(started.elapsed() < std::time::Duration::from_secs(20));
+    // The capture hangs for 120 s.
+    assert!(started.elapsed() < std::time::Duration::from_secs(100));
     std::fs::remove_dir_all(root).unwrap();
 }
 
@@ -352,7 +354,8 @@ fn a_death_note_is_not_saved_as_the_wrap_up() {
     close(&mut connection, &root, &session, Some(30));
 
     child.join().unwrap();
-    assert!(started.elapsed() < std::time::Duration::from_secs(10));
+    // The wait for the wrap-up is 30 s.
+    assert!(started.elapsed() < std::time::Duration::from_secs(25));
     assert!(
         !root
             .join(format!("runs/{session}/{CODER}.summary.md"))

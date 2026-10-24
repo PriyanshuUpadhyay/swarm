@@ -4,9 +4,9 @@
 
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
 
 const repo = resolve(import.meta.dirname, "../..");
@@ -209,7 +209,7 @@ export default async function setup() {
   for (const pane of PANES.slice(1)) copyFileSync(join(repo, "tests/fixtures/screens/claude-idle.txt"), join(home, `screen-${pane}`));
   // One chat per browser with a chair and two children, each on its own stand-in pane. `swarm
   // spawn` gives a child its pane and its hooks report its log; here the store gets both directly.
-  const db = execFileSync("fd", ["-HI", "-t", "f", "^swarm.db$", home], { encoding: "utf8" }).trim().split("\n")[0];
+  const db = join(home, readdirSync(home, { recursive: true, encoding: "utf8" }).find((path) => basename(path) === "swarm.db")!);
   const sql = (text: string) => `'${text.replaceAll("'", "''")}'`;
   for (const { session, log } of plain) {
     execFileSync("sqlite3", [db, `UPDATE session SET adapter = 'tmux-swarm' WHERE id = ${sql(session)};`]);
@@ -256,8 +256,7 @@ export default async function setup() {
   // `sessions --json` resolves each chair log and stores its path, which serve reads.
   execFileSync(swarm, ["sessions", "--json"], { env, stdio: "pipe" });
 
-  // Two Git projects for the lifecycle cases. proj-gh has a GitHub origin, for issues, and a free
-  // branch per browser. proj-pr has a local origin that holds pull request 7, since `git fetch`
+  // Two Git projects for the lifecycle cases. proj-gh has a GitHub origin, for issues. proj-pr has a local origin that holds pull request 7, since `git fetch`
   // cannot reach github.com here. The server finds `gh` first on its PATH.
   const gitEnv = { ...env, GIT_CEILING_DIRECTORIES: dir };
   const git = (cwd: string, ...args: string[]) => execFileSync("git", ["-c", "user.name=E2E", "-c", "user.email=e2e@example.invalid", ...args], { cwd, env: gitEnv, stdio: "pipe" });
@@ -269,7 +268,6 @@ export default async function setup() {
   writeFileSync(join(ghProject, "README.md"), "demo\n");
   git(ghProject, "add", "README.md");
   git(ghProject, "commit", "-q", "-m", "first");
-  for (const project of PANE_PROJECTS) git(ghProject, "branch", `topic-${project}`);
   git(ghProject, "checkout", "-q", "-b", "pr-7");
   writeFileSync(join(ghProject, "review.md"), "the change under review\n");
   git(ghProject, "add", "review.md");
@@ -301,6 +299,7 @@ export default async function setup() {
     if (!res.ok) throw new Error(`import ${path}: ${res.status} ${await res.text()}`);
   }
   process.env.SWARM_E2E_HOME = home;
+  process.env.SWARM_E2E_DB = db;
   process.env.SWARM_E2E_SWARM = swarm;
   process.env.SWARM_E2E_NOTIFY_APP = env.SWARM_NOTIFY_APP;
   process.env.SWARM_E2E_LIVE = liveSession;

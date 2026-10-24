@@ -365,7 +365,7 @@ pub(crate) fn commands_launch(
             agent_id,
             role,
             options,
-            swarm::profiles::native::deadline(ACCOUNT_PICK_TIMEOUT_SECONDS),
+            account_pick_deadline(),
         )
         .map(Some);
     }

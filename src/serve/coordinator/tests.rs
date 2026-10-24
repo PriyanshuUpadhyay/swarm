@@ -47,7 +47,7 @@ fn a_missing_listing_keeps_the_last_live_prompt_until_a_new_listing() {
     )
     .unwrap();
     let mut previous = BTreeMap::new();
-    let listings = all_agent_listings(&mut connection, root, Duration::from_secs(2)).unwrap();
+    let listings = all_agent_listings(&mut connection, root, Duration::from_secs(30)).unwrap();
     let first = agent_snapshot(&connection, &listings, &mut previous);
     assert_eq!(first[&fixture.session][0]["alive"], true);
     assert_eq!(first[&fixture.session][0]["state"], "working");
@@ -64,7 +64,7 @@ fn a_missing_listing_keeps_the_last_live_prompt_until_a_new_listing() {
     assert_eq!(failed, first);
 
     adapter("true");
-    let listings = all_agent_listings(&mut connection, root, Duration::from_secs(2)).unwrap();
+    let listings = all_agent_listings(&mut connection, root, Duration::from_secs(30)).unwrap();
     let recovered = agent_snapshot(&connection, &listings, &mut previous);
     assert_eq!(recovered[&fixture.session][0]["alive"], false);
     assert!(recovered[&fixture.session][0]["prompt"].is_null());

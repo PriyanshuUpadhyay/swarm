@@ -101,13 +101,14 @@ fn notify_starts_the_helper_and_does_not_wait() {
     let env = [("SWARM_NOTIFY_APP", helper.to_str().unwrap())];
     std::fs::write(
         home.join("bin/open"),
-        "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$HOME/opened\"\nsleep 2\n",
+        "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$HOME/opened\"\nsleep 30\n",
     )
     .unwrap();
     let started = std::time::Instant::now();
     assert!(swarm(&home, &env, &["notify", "Done"], "").status.success());
-    assert!(started.elapsed() < std::time::Duration::from_secs(1));
-    assert_eq!(opened(&home).unwrap(), helper_start(&home, &helper));
+    // A hang guard: notify that waited for `open` would take its whole 30 s.
+    assert!(started.elapsed() < std::time::Duration::from_secs(20));
+    assert_eq!(opened(&home, 1).unwrap(), helper_start(&home, &helper));
     std::fs::remove_dir_all(home).unwrap();
 }
 
@@ -123,7 +124,8 @@ fn notify_starts_nothing_when_the_helper_is_missing() {
     let env = [("SWARM_NOTIFY_APP", missing.to_str().unwrap())];
     assert!(swarm(&home, &env, &["notify", "Done"], "").status.success());
     // No `open -b` fallback: LaunchServices could start any dev build of the full app.
-    assert_eq!(opened(&home), None);
+    std::thread::sleep(std::time::Duration::from_secs(1));
+    assert!(!home.join("opened").exists());
     std::fs::remove_dir_all(home).unwrap();
 }
 
@@ -172,14 +174,8 @@ fn a_change_to_waiting_stores_one_notice_and_starts_the_helper_not_the_app() {
         assert_eq!(stdout(&reported), "{}\n", "{reported:?}");
     }
     assert_eq!(coder_state(&home, &session)["state"], "waiting");
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
-    while opened(&home).unwrap_or_default().lines().count() < 2
-        && std::time::Instant::now() < deadline
-    {
-        std::thread::sleep(std::time::Duration::from_millis(10));
-    }
     assert_eq!(
-        opened(&home).unwrap(),
+        opened(&home, 2).unwrap(),
         helper_start(&home, &helper).repeat(2)
     );
     let rows: serde_json::Value =

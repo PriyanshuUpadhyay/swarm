@@ -152,15 +152,15 @@ pub(super) async fn pull_back(app: &App, body: ActionTarget) -> Result<Value, Ap
         if next < end {
             break queue::PullBack::Unconfirmed;
         }
+        // Records that landed before the deadline are read to the end, even on a slow Mac;
+        // the deadline only limits the wait for new records.
         if next > end {
-            match tokio::time::timeout_at(deadline, read_row_window(&app.tool, &log, end, next))
-                .await
-            {
-                Ok(Ok(state)) => {
+            match read_row_window(&app.tool, &log, end, next).await {
+                Ok(state) => {
                     after.extend(state.records.into_values().map(|record| record.event));
                     end = next;
                 }
-                _ => break queue::PullBack::Unconfirmed,
+                Err(_) => break queue::PullBack::Unconfirmed,
             }
         }
         let decision =

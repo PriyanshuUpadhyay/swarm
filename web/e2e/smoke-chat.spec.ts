@@ -100,6 +100,9 @@ test("the composer types into the chair, ⌘. interrupts, errors show in a banne
   tab.on("console", (m) => m.type() === "error" && !m.text().includes("409") && errors.push(m.text()));
   const home = process.env.SWARM_E2E_HOME!;
   const read = (name: string) => (existsSync(join(home, name)) ? readFileSync(join(home, name), "utf8") : "");
+  // Other cases and a repeat type into the same file, so only what this case typed counts.
+  const typedBefore = read("typed").length;
+  const typed = () => read("typed").slice(typedBefore);
   const screen = join(home, "screen");
   // An empty screen leaves the last screen state; the idle capture ends the question.
   const screens = resolve(import.meta.dirname, "../../tests/fixtures/screens");
@@ -121,7 +124,7 @@ test("the composer types into the chair, ⌘. interrupts, errors show in a banne
     await tab.keyboard.type("second line");
     await expect(composer).toHaveValue(`${first}\nsecond line`);
     await tab.keyboard.press("Enter");
-    await expect.poll(() => read("typed")).toContain(`${first}\nsecond line\n`);
+    await expect.poll(typed).toContain(`${first}\nsecond line\n`);
     await expect(composer).toHaveValue("");
 
     // Esc clears the draft.
@@ -144,10 +147,10 @@ test("the composer types into the chair, ⌘. interrupts, errors show in a banne
     const banner = tab.getByTestId("chat-banner");
     await expect(banner).toContainText("pane is busy in the stand-in adapter");
     await expect(composer).toHaveValue(retried);
-    expect(read("typed")).not.toContain(retried);
+    expect(typed()).not.toContain(retried);
     rmSync(join(home, "fail"));
     await banner.getByRole("button", { name: "Retry" }).click();
-    await expect.poll(() => read("typed")).toContain(retried);
+    await expect.poll(typed).toContain(retried);
     await expect(banner).toBeHidden();
     await expect(composer).toHaveValue("");
 

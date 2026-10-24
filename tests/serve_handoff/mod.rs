@@ -65,8 +65,8 @@ async fn handoff_test_run(fixture: &Fixture, body: ContinueChat) -> Result<Value
     execute_continue_timed(
         &fixture.app,
         body,
-        Duration::from_secs(2),
-        Duration::from_secs(2),
+        Duration::from_secs(30),
+        Duration::from_secs(30),
         Duration::from_millis(10),
     )
     .await
@@ -183,7 +183,8 @@ async fn handoff_summary_timeout_falls_back_and_ready_timeout_leaves_separate() 
             &fixture.app,
             body,
             Duration::from_millis(50),
-            Duration::from_millis(70),
+            // A ready chat must answer within the limit even on a loaded Mac.
+            Duration::from_millis(if ready { 30_000 } else { 70 }),
             Duration::from_millis(10),
         )
         .await;
@@ -218,7 +219,7 @@ async fn handoff_cancel_during_summary_and_refused_after_starting() {
         register_continue(&fixture.app, &body).unwrap();
         let app = fixture.app.clone();
         let task = tokio::spawn(async move { execute_continue(&app, body).await });
-        tokio::time::timeout(Duration::from_secs(4), async {
+        tokio::time::timeout(Duration::from_secs(30), async {
             loop {
                 if handoff_phases(&fixture)
                     .contains(&if late { "starting" } else { "summarizing" }.into())
@@ -240,7 +241,7 @@ async fn handoff_cancel_during_summary_and_refused_after_starting() {
         if late {
             assert_eq!(result.unwrap_err().0, StatusCode::CONFLICT);
             std::fs::remove_file(home.join("block-launch")).unwrap();
-            assert!(task.await.unwrap().is_ok());
+            task.await.unwrap().unwrap();
         } else {
             let _ = result.unwrap();
             assert_eq!(

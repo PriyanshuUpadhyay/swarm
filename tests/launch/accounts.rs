@@ -46,6 +46,7 @@ fn named_launch_reuses_the_role_probe_deadline() {
             ("SWARM_ADAPTER", "fake"),
             ("SWARM_SESSION_ID", &session),
             ("SWARM_AGENT_ID", "orchestrator"),
+            ("SWARM_TEST_ACCOUNT_PICK_MS", "5000"),
         ],
         &[
             "launch",
@@ -63,12 +64,14 @@ fn named_launch_reuses_the_role_probe_deadline() {
         "{}",
         stderr(&output)
     );
+    // Under 2x the 5 s budget: a second pick deadline after the probe would take about 10 s.
     assert!(
-        start.elapsed() < std::time::Duration::from_secs(3),
+        start.elapsed() < std::time::Duration::from_secs(9),
         "{:?}",
         start.elapsed()
     );
-    // One read per home (default and work), all started at once under the one deadline.
+    // One read per home (default and work), all started at once under the one deadline. A second
+    // probe would read each home again.
     assert_eq!(
         std::fs::read_to_string(home.join("native-reads"))
             .unwrap()
@@ -405,14 +408,16 @@ fn account_budget_starts_after_the_herdr_check() {
     tool(
         &home,
         "herdr",
-        "test \"$*\" = status || exit 8; /bin/sleep 2.2",
+        "test \"$*\" = status || exit 8; /bin/sleep 4.2",
     );
+    // The check takes longer than the 3.5 s budget, so a budget that started first runs out.
     let output = swarm(
         &home,
         &[
             ("SWARM_ADAPTER", "herdr"),
             ("SWARM_SESSION_ID", &session),
             ("SWARM_AGENT_ID", "orchestrator"),
+            ("SWARM_TEST_ACCOUNT_PICK_MS", "3500"),
         ],
         &[
             "launch",
@@ -440,9 +445,10 @@ fn account_budget_starts_after_a_waiting_store_open() {
         .execute_batch("PRAGMA journal_mode=DELETE; BEGIN EXCLUSIVE;")
         .unwrap();
     let release = std::thread::spawn(move || {
-        std::thread::sleep(std::time::Duration::from_millis(2200));
+        std::thread::sleep(std::time::Duration::from_millis(4200));
         connection.execute_batch("COMMIT;").unwrap();
     });
+    // The lock outlasts the 3.5 s budget and ends inside the store's 5 s busy timeout.
     let started = std::time::Instant::now();
     let output = swarm(
         &home,
@@ -450,6 +456,7 @@ fn account_budget_starts_after_a_waiting_store_open() {
             ("SWARM_ADAPTER", "fake"),
             ("SWARM_SESSION_ID", &session),
             ("SWARM_AGENT_ID", "orchestrator"),
+            ("SWARM_TEST_ACCOUNT_PICK_MS", "3500"),
         ],
         &[
             "launch",
@@ -466,7 +473,7 @@ fn account_budget_starts_after_a_waiting_store_open() {
         ],
     );
     release.join().unwrap();
-    assert!(started.elapsed() >= std::time::Duration::from_secs(2));
+    assert!(started.elapsed() >= std::time::Duration::from_secs(4));
     assert!(output.status.success(), "{}", stderr(&output));
     assert!(stderr(&output).contains("account work"));
 }

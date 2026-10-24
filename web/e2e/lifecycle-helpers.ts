@@ -40,6 +40,11 @@ async function shoot(tab: Page, name: string, browser: string) {
   await tab.evaluate(() => delete document.documentElement.dataset.theme);
 }
 
+/** A new workspace starts a chat. With no provider, `swarm launch` waits about 10 s for a chair that
+ *  never registers, holds the server's action lane meanwhile, and leaves a chat in the shared home.
+ *  The page keeps the request pending instead. */
+const holdChatStart = (tab: Page) => tab.route("**/api/chat/new", () => {});
+
 /** Opens New Workspace from the project's "+", fills a name, and creates it. */
 async function newWorkspace(tab: Page, project: string, fill: () => Promise<void>) {
   await header(tab, project).hover();
@@ -52,4 +57,4 @@ async function newWorkspace(tab: Page, project: string, fill: () => Promise<void
   return dialog;
 }
 
-export { server, api, readTree, open, header, workspace, shoot, newWorkspace };
+export { server, api, readTree, open, header, workspace, shoot, holdChatStart, newWorkspace };

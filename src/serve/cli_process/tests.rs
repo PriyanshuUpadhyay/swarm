@@ -19,17 +19,10 @@ wait
     let call = action_session(&fixture.app, &fixture.session)
         .unwrap()
         .args(&["interrupt", "worker"]);
-    let result = run_cli_with_timeout(&fixture.app, call, None, Duration::from_secs(1)).await;
+    // The limit must outlast the stand-in's start on a loaded Mac, so its sleeper exists.
+    let result = run_cli_with_timeout(&fixture.app, call, None, Duration::from_secs(5)).await;
     assert_eq!(result.unwrap_err().0, StatusCode::GATEWAY_TIMEOUT);
     assert_eq!(action_calls(&fixture), "start\n");
     let pid = std::fs::read_to_string(fixture.app.root.parent().unwrap().join("sleeper")).unwrap();
-    tokio::time::sleep(Duration::from_secs(1)).await;
-    assert!(
-        !std::process::Command::new("/bin/kill")
-            .args(["-0", pid.trim()])
-            .stderr(std::process::Stdio::null())
-            .status()
-            .unwrap()
-            .success()
-    );
+    until_dead(pid.trim()).await;
 }

@@ -61,7 +61,8 @@ if "$dry"; then
             "New version $version ($tag)." \
             'Require main and no changes outside tmp/.' \
             'Run git fetch origin; require HEAD = origin/main and no v* tag at HEAD.' \
-            'Require the latest ci run for HEAD to have completed with success (gh run list --commit).' \
+            'Wait up to 30 minutes for the latest ci push run for HEAD; require success.' \
+            'Warn when the last completed background run on main did not succeed.' \
             "Require tag $tag to be absent locally and on origin." \
             "Set Cargo.toml and the swarm Cargo.lock entry to $version." \
             'Run cargo check --locked.' \
@@ -86,6 +87,46 @@ done
 if [ "$mode" != resume ]; then command -v cargo >/dev/null || die 'missing tool cargo'; fi
 export HOMEBREW_NO_ASK=1
 repo=$(gh repo view "$(git -C "$root" remote get-url origin)" --json nameWithOwner --jq .nameWithOwner)
+
+# Retry only reads, within one deadline. Failed reads back off with jitter.
+wait_run() {
+    workflow=$1
+    event=$2
+    since=$3
+    deadline=$(($(date +%s) + 1800))
+    delay=2
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        if ! runs=$(gh run list -R "$repo" --workflow "$workflow" --commit "$head" --event "$event" \
+            --limit 20 --json databaseId,status,conclusion,createdAt); then
+            now=$(date +%s)
+            [ "$now" -lt "$deadline" ] || break
+            pause=$((delay + now % 3))
+            remaining=$((deadline - now))
+            [ "$pause" -le "$remaining" ] || pause=$remaining
+            sleep "$pause"
+            [ "$delay" -ge 30 ] || delay=$((delay * 2))
+            [ "$delay" -le 30 ] || delay=30
+            continue
+        fi
+        delay=2
+        run=$(printf '%s' "$runs" | jq -c --arg since "$since" '[.[] | select(.createdAt >= $since)] | .[0] // empty')
+        if [ -n "$run" ]; then
+            if [ "$(printf '%s' "$run" | jq -r .status)" = completed ]; then
+                conclusion=$(printf '%s' "$run" | jq -r .conclusion)
+                run_id=$(printf '%s' "$run" | jq -r .databaseId)
+                if [ "$conclusion" != success ]; then
+                    next_command="gh run rerun $run_id -R $repo"
+                    die "$workflow run $run_id ended with $conclusion"
+                fi
+                printf '%s\n' "$workflow run $run_id succeeded"
+                return
+            fi
+        fi
+        sleep 10
+    done
+    die "timed out waiting for $workflow at $head"
+}
+
 if [ "$mode" = resume ]; then
     head=$(git -C "$root" rev-parse --verify --end-of-options "$tag^{commit}") || die "cannot resolve $tag"
     git -C "$root" ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null ||
@@ -105,8 +146,11 @@ else
         exit 1
     fi
     [ "$head" = "$(git -C "$root" rev-parse origin/main)" ] || die 'HEAD differs from origin/main'
-    ci=$(gh run list -R "$repo" --workflow ci.yml --commit "$head" --limit 1 --json status,conclusion)
-    [ "$(printf '%s' "$ci" | jq -r '.[0] | .status + "/" + .conclusion')" = completed/success ] || die 'the latest ci run for HEAD has not succeeded'
+    wait_run ci.yml push ''
+    # The background checks do not gate a release; a failure there is fixed before the next one.
+    background=$(gh run list -R "$repo" --workflow background.yml --branch main --status completed --limit 1 \
+        --json conclusion,url --jq '.[] | select(.conclusion != "success") | .url') || background=
+    [ -z "$background" ] || printf '%s\n' "release: warning: the last background run on main failed: $background" >&2
     if git -C "$root" show-ref --verify --quiet "refs/tags/$tag"; then die "tag $tag already exists"; fi
     remote_tag=$(git -C "$root" ls-remote --tags origin "refs/tags/$tag")
     [ -z "$remote_tag" ] || die "tag $tag already exists on origin"
@@ -175,44 +219,6 @@ if "$local_install"; then
     "$root/scripts/install-local.sh" "$tag" || printf '%s\n' 'release: local install failed; the release continues' >&2
 fi
 
-# Retry only reads, within one deadline. Failed reads back off with jitter.
-wait_run() {
-    workflow=$1
-    event=$2
-    since=$3
-    deadline=$(($(date +%s) + 1800))
-    delay=2
-    while [ "$(date +%s)" -lt "$deadline" ]; do
-        if ! runs=$(gh run list -R "$repo" --workflow "$workflow" --commit "$head" --event "$event" \
-            --limit 20 --json databaseId,status,conclusion,createdAt); then
-            now=$(date +%s)
-            [ "$now" -lt "$deadline" ] || break
-            pause=$((delay + now % 3))
-            remaining=$((deadline - now))
-            [ "$pause" -le "$remaining" ] || pause=$remaining
-            sleep "$pause"
-            [ "$delay" -ge 30 ] || delay=$((delay * 2))
-            [ "$delay" -le 30 ] || delay=30
-            continue
-        fi
-        delay=2
-        run=$(printf '%s' "$runs" | jq -c --arg since "$since" '[.[] | select(.createdAt >= $since)] | .[0] // empty')
-        if [ -n "$run" ]; then
-            if [ "$(printf '%s' "$run" | jq -r .status)" = completed ]; then
-                conclusion=$(printf '%s' "$run" | jq -r .conclusion)
-                run_id=$(printf '%s' "$run" | jq -r .databaseId)
-                if [ "$conclusion" != success ]; then
-                    next_command="gh run rerun $run_id -R $repo"
-                    die "$workflow run $run_id ended with $conclusion"
-                fi
-                printf '%s\n' "$workflow run $run_id succeeded"
-                return
-            fi
-        fi
-        sleep 10
-    done
-    die "timed out waiting for $workflow at $head"
-}
 wait_run release.yml push "$started"
 release=$(gh release view "$tag" -R "$repo" --json isDraft,publishedAt)
 if [ "$(printf '%s' "$release" | jq -r .isDraft)" = true ]; then
