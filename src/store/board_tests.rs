@@ -32,6 +32,16 @@ mod tests {
     }
 
     #[test]
+    fn has_posted_names_only_the_author_in_its_session() {
+        let (mut c, root) = fixture("posted");
+        assert!(!has_posted(&c, SESSION, CODER).unwrap());
+        n(put(&mut c, &root, CODER, finding("f")));
+        assert!(has_posted(&c, SESSION, CODER).unwrap());
+        assert!(!has_posted(&c, SESSION, ORCHESTRATOR).unwrap());
+        assert!(!has_posted(&c, OTHER_SESSION, CODER).unwrap());
+    }
+
+    #[test]
     fn posts_are_append_only() {
         let (mut c, root) = fixture("append");
         n(put(&mut c, &root, CODER, finding("f")));

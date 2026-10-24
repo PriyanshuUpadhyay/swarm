@@ -49,7 +49,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            codex_args[..13],
+            codex_args[..15],
             [
                 "codex",
                 "--model",
@@ -58,6 +58,8 @@ mod tests {
                 "model_reasoning_effort=\"high\"",
                 "-c",
                 "check_for_update_on_startup=false",
+                "-c",
+                "allow_login_shell=false",
                 "-c",
                 "default_permissions=\"swarm-code\"",
                 "-c",
@@ -73,7 +75,7 @@ mod tests {
                 "never"
             ]
         );
-        assert_eq!(codex_args.len(), 13 + 2 * CODEX_STATE_EVENTS.len());
+        assert_eq!(codex_args.len(), 15 + 2 * CODEX_STATE_EVENTS.len());
 
         let mut agy = role("agy");
         agy.permission = Some("skip".into());

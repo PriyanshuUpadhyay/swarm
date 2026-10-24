@@ -134,6 +134,9 @@ pub(crate) fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 "summary",
                 &summary,
             )?;
+            if let Some(hint) = finish_hint(&connection, &session_id, &agent_id) {
+                eprintln!("{hint}");
+            }
             println!("{seq}");
             Ok(())
         }

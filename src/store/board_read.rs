@@ -80,6 +80,15 @@ pub fn posts(
     Ok(rows.collect::<Result<_, _>>()?)
 }
 
+/// Whether `agent` wrote any post in `session`.
+pub fn has_posted(connection: &Connection, session: &str, agent: &str) -> rusqlite::Result<bool> {
+    connection.query_row(
+        "SELECT EXISTS (SELECT 1 FROM post WHERE session_id = ?1 AND author = ?2)",
+        [session, agent],
+        |r| r.get(0),
+    )
+}
+
 /// Copies a moved repository's board to its new id. The old rows stay, because posts are
 /// append-only. Only an empty board takes a copy, so post numbers and links keep their meaning.
 pub fn relink(
