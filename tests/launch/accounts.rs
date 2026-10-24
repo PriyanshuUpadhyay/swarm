@@ -64,9 +64,9 @@ fn named_launch_reuses_the_role_probe_deadline() {
         "{}",
         stderr(&output)
     );
-    // A hang guard: the launch ends at the deadline, before the 25 s hang ends.
+    // Under 2x the 5 s budget: a second pick deadline after the probe would take about 10 s.
     assert!(
-        start.elapsed() < std::time::Duration::from_secs(20),
+        start.elapsed() < std::time::Duration::from_secs(9),
         "{:?}",
         start.elapsed()
     );
