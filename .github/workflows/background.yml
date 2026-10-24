@@ -1,7 +1,7 @@
 name: background
 
-# Checks that do not gate a release: the serve build's tests with the ignored release checks, the
-# Playwright suite with its time budgets, and a launch from an empty HOME. A failure here is fixed
+# Checks that do not gate a release: the serve build's functional tests, the required Playwright
+# suite, and a launch from an empty HOME. A failure here is fixed
 # before the next release; scripts/release.sh warns about it.
 on:
   push:
@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  # Swarm ships only for macOS, and the e2e keys and the speed budgets assume a Mac.
+  # Swarm ships only for macOS, and the e2e keys assume a Mac.
   serve-tests:
     runs-on: macos-26
     steps:
@@ -23,7 +23,8 @@ jobs:
         working-directory: packages/transcript
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - run: cargo clippy --all-targets --features serve -- -D warnings
-      - run: cargo test --features serve -- --include-ignored
+      # Shared runners cannot measure the owner's Mac speed or process-wide heap budgets.
+      - run: 'cargo test --features serve -- --include-ignored --skip serve::live_delta::performance_tests::'
 
   e2e:
     runs-on: macos-26
@@ -48,7 +49,7 @@ jobs:
       - run: brew install tmux
       - run: pnpm exec playwright install --with-deps webkit
         working-directory: web
-      - run: pnpm e2e
+      - run: pnpm e2e:required
         working-directory: web
 
   # swarm needs nothing from a dotfiles checkout: an empty HOME launches a chat and a shipped role.
