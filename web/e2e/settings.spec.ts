@@ -26,7 +26,9 @@ type Roles = { revision: string; min_usage_left_pct: number; profiles: { name: s
 
 async function open(tab: Page) {
   const errors: string[] = [];
-  tab.on("pageerror", (e) => !e.message.startsWith("ResizeObserver loop") && errors.push(e.message));
+  // WebKit reports a fetch that a reload or goto cancels as "... due to access control checks".
+  const expected = (m: string) => m.startsWith("ResizeObserver loop") || m.endsWith("due to access control checks.");
+  tab.on("pageerror", (e) => !expected(e.message) && errors.push(e.message));
   // The stale cases expect a refused request, which the browser logs.
   tab.on("console", (m) => m.type() === "error" && !/\b(400|409)\b/.test(m.text()) && errors.push(m.text()));
   await tab.goto(`${server().origin}/${server().hash}`);
