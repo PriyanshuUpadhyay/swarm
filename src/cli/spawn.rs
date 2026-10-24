@@ -259,10 +259,12 @@ pub(crate) fn spawn_agent(
         if let Ok(models) = models
             && !models.is_empty()
             && !models.iter().any(|listed| listed.id == model)
-            && !(provider == Provider::Claude
-                && provider
-                    .catalog(&account_env)
-                    .is_some_and(|catalog| provider.model_known(&catalog, model)))
+            // A wrapper without the quoted alias is not a readable Claude catalog.
+            && (provider != Provider::Claude
+                || provider.catalog(&account_env).is_some_and(|catalog| {
+                    provider.model_known(&catalog, "sonnet")
+                        && !provider.model_known(&catalog, model)
+                }))
         {
             let current_account = account.as_ref().map(|account| account.name.as_str());
             let other_accounts = load_accounts(provider.id(), account_deadline)
