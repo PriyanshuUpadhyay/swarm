@@ -338,6 +338,13 @@
   outline: 1px solid var(--ring);
   outline-offset: 2px;
 }
+/* The app's ring, not the browser's, on the header and tab controls a Tab walk reaches. */
+.search-box:focus-visible,
+.view-switch button:focus-visible,
+.tab-close:focus-visible {
+  outline: 1px solid var(--ring);
+  outline-offset: 1px;
+}
 
 /* jean's Recent rows: two lines, the open one raised as a card. */
 .recent-row {

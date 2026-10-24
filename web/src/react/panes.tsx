@@ -17,6 +17,7 @@ import { showError } from "./errors";
 import { StatusGlyph } from "./status";
 import { store } from "./store";
 import { ChatView, PaneBody } from "./transcript";
+import { inputOf } from "../core/focus";
 
 // Kept in the browser until P2 serves view state.
 const WIDTHS_KEY = "swarm.panes.widths";
@@ -100,13 +101,14 @@ export function PaneStrip({ app }: { app: App }) {
     if (!pane) {
       el.scrollLeft = 0;
       // ⌘L has already put the keyboard in the chat's composer.
-      if (!el.querySelector(".strip-chat")?.contains(document.activeElement)) el.querySelector<HTMLElement>('[data-testid="transcript"]')?.focus();
+      const chat = el.querySelector(".strip-chat");
+      if (chat && !chat.contains(document.activeElement)) inputOf(chat)?.focus();
       return;
     }
     const col = pane.closest<HTMLElement>(".strip-col")!;
     if (col.offsetLeft < el.scrollLeft) el.scrollLeft = col.offsetLeft;
     else if (col.offsetLeft + col.offsetWidth + GRIP > el.scrollLeft + el.clientWidth) el.scrollLeft = col.offsetLeft + col.offsetWidth + GRIP - el.clientWidth;
-    (pane.querySelector<HTMLElement>('[data-testid="composer"]:not(:disabled)') ?? pane.querySelector<HTMLElement>('[data-testid="pane-transcript"]'))?.focus();
+    inputOf(pane)?.focus();
   }, [strip.revealSeq]);
 
   // The menu is for the header under the right click. This listener runs before React's root

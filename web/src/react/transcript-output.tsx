@@ -13,7 +13,7 @@ const plural = (n: number, word: string) => `${n.toLocaleString("en-US")} ${word
 /** The capped preview; Show full output fetches the whole text and shows it in a windowed box. */
 function OutputBox({ app, preview, full, title }: { app: Reader; preview: TextPreview; full: ReadonlyMap<string, FullText>; title: string }) {
   const f = preview.id ? full.get(preview.id) : undefined;
-  const copy = () => copyText(preview.is_truncated ? app.fullText(preview.id) : preview.text, title.toLowerCase());
+  const copy = (e: React.MouseEvent) => copyText(preview.is_truncated ? app.fullText(preview.id) : preview.text, title.toLowerCase(), e.currentTarget);
   return (
     <div className="grid gap-1" data-testid="output">
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -120,7 +120,7 @@ function DiffView({ app, diff, full }: { app: Reader; diff: DiffPreview; full: R
             Split
           </button>
         </div>
-        <button type="button" className="t-link" onClick={() => copyText(capped ? app.fullText(diff.id) : diff.patch, "patch")}>
+        <button type="button" className="t-link" onClick={(e) => copyText(capped ? app.fullText(diff.id) : diff.patch, "patch", e.currentTarget)}>
           <CopyIcon className="size-3" /> Copy patch
         </button>
       </div>

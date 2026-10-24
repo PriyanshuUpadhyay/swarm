@@ -1,6 +1,6 @@
 import { ArrowUpIcon, Maximize2Icon, Minimize2Icon, SquareIcon } from "lucide-react";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
-import type { App, Composer } from "../core/app";
+import { SENT, type App, type Composer } from "../core/app";
 import { historyStep, type Browse } from "../core/history";
 import { canBranch, outgoing, sends, usageLabel, usageTitle } from "../core/composer";
 import { editPicks, matches, menuAt, moved, offered, pick, picksAndSends, showsEmpty, skillFirst, skillNames, toSend, type CommandList, type MenuRow, type SkillPick } from "../core/slash";
@@ -60,6 +60,15 @@ export function ComposerBox({ app, composer }: { app: App; composer: Composer })
   }, [app, sessionId, state.draftRev]);
   // A switch to another chat ends browsing too, so the draft is in the stash on return.
   useEffect(() => endBrowse, [app, sessionId]);
+
+  // The chair's answered question gives the keyboard back to this box, unless the owner moved it.
+  const wasDisabled = useRef(chair.disabled);
+  useEffect(() => {
+    const back = wasDisabled.current !== null && chair.disabled === null;
+    wasDisabled.current = chair.disabled;
+    const a = document.activeElement;
+    if (back && !chair.who && (!a || a === document.body)) box.current?.focus();
+  }, [chair.disabled, chair.who]);
 
   // Grows with the text up to about 8 lines. After a pick the caret goes after the inserted text.
   useLayoutEffect(() => {
@@ -135,6 +144,7 @@ export function ComposerBox({ app, composer }: { app: App; composer: Composer })
     }
     // Keep the picked draft through a failed send. App.send clears it only after success.
     if (out.text !== text && !picks.length) change(out.text);
+    window.dispatchEvent(new CustomEvent(SENT, { detail: sessionId }));
     void app.send(sessionId, out.text, picks.length ? text : out.text);
   };
 
