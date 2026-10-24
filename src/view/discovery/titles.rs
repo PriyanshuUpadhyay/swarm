@@ -196,6 +196,8 @@ mod tests {
     #[test]
     fn a_codex_chat_takes_its_thread_name_from_the_session_index() {
         let home = std::env::temp_dir().join(format!("swarm-title-codex-{}", std::process::id()));
+        // A process id comes back, so a folder left by an old run can hold a session index.
+        let _ = std::fs::remove_dir_all(&home);
         let day = home.join("sessions/2026/10/16");
         std::fs::create_dir_all(&day).unwrap();
         let id = "01a13e6c-b745-7752-bdb0-0a04931eb858";
@@ -215,5 +217,6 @@ mod tests {
         )
         .unwrap();
         assert_eq!(read_title(&rollout).as_deref(), Some("Greet"));
+        std::fs::remove_dir_all(home).unwrap();
     }
 }
