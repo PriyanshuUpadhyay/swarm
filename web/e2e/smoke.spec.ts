@@ -173,9 +173,12 @@ test("a pasted image is saved by the server and its path goes in the draft", asy
   const composer = tab.getByTestId("composer");
   await expect(composer).toBeEnabled();
   await composer.fill("look at");
+  await expect(composer).toHaveValue("look at");
   // A real 1x1 PNG, so the preview must decode it.
   const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==", "base64");
-  await composer.evaluate((el, bytes) => {
+  await composer.evaluate((el: HTMLTextAreaElement, bytes) => {
+    // Paste after the text; WebKit can leave the filled text selected.
+    el.setSelectionRange(el.value.length, el.value.length);
     const data = new DataTransfer();
     data.items.add(new File([new Uint8Array(bytes)], "shot.png", { type: "image/png" }));
     el.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
