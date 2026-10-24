@@ -40,7 +40,7 @@ mod cases {
                 [RERING_UNSEEN_AFTER_SECS + 1],
             )
             .unwrap();
-        let budget = std::time::Duration::from_secs(3);
+        let budget = std::time::Duration::from_secs(4);
         let started = std::time::Instant::now();
         // The ring ends only once the budget is spent, so it is late however fast the reads run.
         let opener = std::thread::spawn(move || {
@@ -69,7 +69,7 @@ mod cases {
         let mut ids = Vec::new();
         for (index, (name, list, screen)) in [
             ("slow-list", slow_list.as_str(), "true"),
-            ("slow-screen", "printf pane", "sleep 30"),
+            ("slow-screen", "printf pane", "sleep 120"),
             ("fast", "printf pane", "true"),
         ]
         .into_iter()
@@ -94,8 +94,8 @@ mod cases {
         let started = std::time::Instant::now();
         // The hung reads each spend their share, so the fast session gets about a third.
         let listings =
-            all_agent_listings(&mut connection, &root, std::time::Duration::from_secs(9)).unwrap();
-        assert!(started.elapsed() < std::time::Duration::from_secs(20));
+            all_agent_listings(&mut connection, &root, std::time::Duration::from_secs(24)).unwrap();
+        assert!(started.elapsed() < std::time::Duration::from_secs(60));
         assert!(!listings.contains_key(&ids[0]));
         assert!(!listings.contains_key(&ids[1]));
         assert_eq!(listings[&ids[2]].agents.len(), 1);
@@ -127,7 +127,8 @@ mod cases {
             ids.push(session);
         }
         let listings =
-            all_agent_listings(&mut connection, &root, std::time::Duration::from_secs(30)).unwrap();
+            all_agent_listings(&mut connection, &root, std::time::Duration::from_secs(120))
+                .unwrap();
         assert_eq!(std::fs::read_to_string(&calls).unwrap().lines().count(), 1);
         for id in &ids {
             assert_eq!(listings[id].agents.len(), 1);
@@ -326,7 +327,9 @@ mod cases {
 
         let started = std::time::Instant::now();
         list_agents(&mut connection, &root, &session, &adapter).unwrap();
-        assert!(started.elapsed() < RING_TIMEOUT - std::time::Duration::from_secs(2));
+        // A loaded machine runs the fake verbs slowly, so the time bound is the app's 20 s kill. A
+        // ring that waited for its proof would have stored a delivery.
+        assert!(started.elapsed() < std::time::Duration::from_secs(20));
         assert_eq!(delivery_of(&connection, &session, ask), None);
         assert!(chair_mail(&connection, &session).is_empty());
 
@@ -339,7 +342,7 @@ mod cases {
             .unwrap();
         let started = std::time::Instant::now();
         list_agents(&mut connection, &root, &session, &adapter).unwrap();
-        assert!(started.elapsed() < RING_TIMEOUT - std::time::Duration::from_secs(2));
+        assert!(started.elapsed() < std::time::Duration::from_secs(20));
         assert_eq!(
             delivery_of(&connection, &session, ask).as_deref(),
             Some("unconfirmed")

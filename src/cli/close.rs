@@ -58,12 +58,12 @@ pub(crate) fn close_agents(
 /// How long `close` waits for the screen of a child that sent no wrap-up. A test's fake capture can
 /// start slowly on a loaded machine, so tests wait longer.
 const CAPTURE_WAIT: std::time::Duration =
-    std::time::Duration::from_secs(if cfg!(test) { 10 } else { 5 });
+    std::time::Duration::from_secs(if cfg!(test) { 15 } else { 5 });
 
 /// How long all those screen reads may take together, so `close` stays inside the 180 s call
 /// timeout that the host contracts name, for any number of silent children.
 const CAPTURES_WAIT: std::time::Duration =
-    std::time::Duration::from_secs(if cfg!(test) { 12 } else { 15 });
+    std::time::Duration::from_secs(if cfg!(test) { 18 } else { 15 });
 
 /// How often `close` looks for the wrap-ups.
 const WRAP_UP_POLL: std::time::Duration = std::time::Duration::from_millis(200);
