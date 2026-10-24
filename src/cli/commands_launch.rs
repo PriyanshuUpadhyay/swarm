@@ -167,12 +167,12 @@ pub(crate) fn commands_launch(
         // Trust and pane environment must use the same native pick.
         // A provider with no account source launches on its CLI's own login, so `auto` means
         // nothing there; the chat profile passes it whichever runner starts.
-        let picked = match (account, kind.has_accounts()) {
-            (Some(requested), true) => {
+        let picked = match (account, kind.account_provider(&runner.model)) {
+            (Some(requested), Some(account_kind)) => {
                 let mut cache = probe.accounts.borrow_mut();
-                let accounts = cache
-                    .entry(kind)
-                    .or_insert_with(|| pick_accounts(kind, account_deadline, requested == "auto"));
+                let accounts = cache.entry(account_kind).or_insert_with(|| {
+                    pick_accounts(account_kind, account_deadline, requested == "auto")
+                });
                 // Codex keeps a session in one account's home, so only that account resumes it.
                 let owner = match &resume {
                     Some((Provider::Codex, id)) => {
@@ -190,7 +190,7 @@ pub(crate) fn commands_launch(
                     _ => None,
                 };
                 select_account(
-                    kind,
+                    account_kind,
                     owner.as_deref().unwrap_or(requested),
                     resolved.model.as_deref(),
                     probe.min_usage_left_pct,

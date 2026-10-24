@@ -3,7 +3,7 @@
 import { CheckIcon, CircleIcon, LoaderCircleIcon, XIcon } from "lucide-react";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import type { App } from "../core/app";
-import { CARRY_OPTIONS, savedCarry, type Carry } from "../core/composer";
+import { accountCli, CARRY_OPTIONS, savedCarry, type Carry } from "../core/composer";
 import { isSettled, type Handoff } from "../core/lifecycle";
 import { Button } from "../components/ui/button";
 import { FIELD, message, useLife, Frame, Label, ErrorLine } from "./lifecycle-shared";
@@ -51,13 +51,12 @@ function SwitchModelBody({ app, old }: { app: App; old: string }) {
       (err) => setError(`Could not read the providers: ${message(err)}`),
     );
   }, [app]);
-  const hasAccounts = providers.find((p) => p.id === provider)?.accounts ?? false;
+  const accountProvider = accountCli(provider, model);
+  const hasAccounts = providers.find((p) => p.id === accountProvider)?.accounts ?? false;
   useEffect(() => {
     let live = true;
     setModels(null);
     setModel(null);
-    setAccounts([]);
-    setAccount("");
     setError(null);
     app.life.runs.models(provider).then(
       (m) => live && setModels(m.models),
@@ -68,15 +67,23 @@ function SwitchModelBody({ app, old }: { app: App; old: string }) {
         setError(`Could not read the models: ${message(err)}`);
       },
     );
+    return () => {
+      live = false;
+    };
+  }, [app, provider]);
+  useEffect(() => {
+    let live = true;
+    setAccounts([]);
+    setAccount("");
     if (hasAccounts)
-      app.life.runs.accounts(provider).then(
+      app.life.runs.accounts(accountProvider).then(
         (a) => live && setAccounts(a.accounts),
         () => {}, // Accounts are optional; the default account starts.
       );
     return () => {
       live = false;
     };
-  }, [app, provider, hasAccounts]);
+  }, [app, accountProvider, hasAccounts]);
 
   const q = query.trim();
   const shown = useMemo(() => (models ?? []).filter((m) => !q || m.label.toLowerCase().includes(q.toLowerCase())), [models, q]);

@@ -40,9 +40,13 @@ pub(crate) fn commands_pane(
             .as_deref()
             .and_then(swarm::providers::Provider::parse)
             .ok_or("swarm: this agent's CLI is unknown")?;
-        let env = match agent.account.as_deref() {
-            Some(name) if provider.has_accounts() => {
-                swarm::profiles::native::launch_env(provider, name)?
+        let account_provider = agent
+            .model
+            .as_deref()
+            .and_then(|model| provider.account_provider(model));
+        let env = match (agent.account.as_deref(), account_provider) {
+            (Some(name), Some(account_provider)) => {
+                swarm::profiles::native::launch_env(account_provider, name)?
             }
             _ => Default::default(),
         };

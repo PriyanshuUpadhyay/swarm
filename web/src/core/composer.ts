@@ -171,8 +171,14 @@ export function cliName(id: string): string {
   return Object.hasOwn(CLI_NAMES, id) ? CLI_NAMES[id] : id;
 }
 
-/** The run chip: `account · model · thinking`. Pi and AGY have no swarm accounts, so their CLI
- *  name stands in. */
+/** The CLI whose accounts a run uses. Pi's `claude-bridge/` models run `claude`, so they take a
+ *  Claude account; Pi's `default` model is left to the launch, which reads Pi's settings. */
+export function accountCli(provider: string, model: string | null): string {
+  return provider === "pi" && model?.startsWith("claude-bridge/") ? "claude" : provider;
+}
+
+/** The run chip: `account · model · thinking`. AGY, and Pi with no Claude account, have no swarm
+ *  account, so their CLI name stands in. */
 export function runLabel(input: AgentInput): string {
   return [input.account ?? (input.provider ? cliName(input.provider) : null), input.model ?? "Default model", input.effort].filter(Boolean).join(" · ");
 }

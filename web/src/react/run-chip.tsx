@@ -4,7 +4,7 @@
 import { ChevronDownIcon, LoaderCircleIcon } from "lucide-react";
 import { useEffect, useId, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
 import type { App } from "../core/app";
-import { accountColor, applyBlock, applyLabel, CARRY_OPTIONS, chooseModel, cliName, levelWord, limitText, modelLevels, outcomeText, runLabel, runTip, savedCarry, switchOutcome, type AgentInput, type Carry, type Run } from "../core/composer";
+import { accountCli, accountColor, applyBlock, applyLabel, CARRY_OPTIONS, chooseModel, cliName, levelWord, limitText, modelLevels, outcomeText, runLabel, runTip, savedCarry, switchOutcome, type AgentInput, type Carry, type Run } from "../core/composer";
 import { isSettled } from "../core/lifecycle";
 import type { ModelInfo } from "../core/run-catalog";
 import type { Account, ProviderInfo } from "../core/settings";
@@ -134,18 +134,19 @@ function RunBody({ app, sessionId, chair }: { app: App; sessionId: string; chair
   }, [app, provider]);
 
   const info = providers.find((p) => p.id === draft.provider);
+  const accountInfo = providers.find((p) => p.id === accountCli(draft.provider, draft.model));
   useEffect(() => {
     let live = true;
     setAccounts([]);
-    if (info?.accounts)
-      app.life.runs.accounts(info.id).then(
+    if (accountInfo?.accounts)
+      app.life.runs.accounts(accountInfo.id).then(
         (a) => live && setAccounts(a.accounts),
         () => {}, // Accounts are optional; the default account starts.
       );
     return () => {
       live = false;
     };
-  }, [app, info]);
+  }, [app, accountInfo]);
 
   const list = models[draft.provider];
   const model = Array.isArray(list) ? list.find((m) => m.id === draft.model) : undefined;
@@ -242,12 +243,12 @@ function RunBody({ app, sessionId, chair }: { app: App; sessionId: string; chair
           <div className="grid gap-1" role="group" aria-label="Account" data-testid="run-account">
             <div className="flex gap-2 text-xs text-muted-foreground">
               <span className="flex-1 font-medium">Account</span>
-              {info?.accounts && <span>limit left</span>}
+              {accountInfo?.accounts && <span>limit left</span>}
             </div>
-            {info?.accounts ? (
+            {accountInfo?.accounts ? (
               [{ name: null, email: null, summary: null }, ...accountRows].map((a) => {
                 const on = draft.account === a.name;
-                const limit = a.name ? limitText(meters, draft.provider, a.name, a.summary ?? null) : null;
+                const limit = a.name ? limitText(meters, accountInfo.id, a.name, a.summary ?? null) : null;
                 return (
                   <button key={a.name ?? ""} type="button" aria-pressed={on} title={[a.name && (a.email ? `${a.name} (${a.email})` : a.name), limit?.text].filter(Boolean).join("\n") || undefined} className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-hover aria-pressed:bg-selected" onClick={() => setDraft({ ...draft, account: a.name })}>
                     <Radio on={on} />
