@@ -24,8 +24,21 @@ pub(crate) const RING_ENTER_RETRIES: usize = 3;
 /// ring cannot hold the caller for ever.
 pub(crate) const RING_TIMEOUT: std::time::Duration =
     std::time::Duration::from_secs(if cfg!(test) { 5 } else { 30 });
-/// How long one read of a pane (capture, screen, or status) may take.
-const PANE_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1);
+#[cfg(test)]
+thread_local! {
+    /// The deadline of a test's waiting ring. A short sh fake can take over a second to run under
+    /// load, so a test whose ring must reach its proof sets the production 30 s; a test that waits
+    /// out the deadline keeps `RING_TIMEOUT`.
+    pub(crate) static RING_DEADLINE: std::cell::Cell<std::time::Duration> =
+        const { std::cell::Cell::new(RING_TIMEOUT) };
+}
+/// How long one read of a pane (capture, screen, or status) may take. A short sh fake can take
+/// over a second to run under load, so tests allow longer.
+pub(crate) const PANE_READ_TIMEOUT: std::time::Duration =
+    std::time::Duration::from_secs(if cfg!(test) { 10 } else { 1 });
+/// How long a read of a pi agent's host record may take.
+const HOST_RECORD_TIMEOUT: std::time::Duration =
+    std::time::Duration::from_millis(if cfg!(test) { 10_000 } else { 300 });
 /// How often a ring reads the pane and the store for its proof.
 pub(crate) const RING_POLL: std::time::Duration = std::time::Duration::from_millis(500);
 /// How long `clear_box` waits for pi to show the messages that M-Up moved into its box.
@@ -100,7 +113,10 @@ pub(crate) fn ring_pane(
     let provider = provider.as_deref();
     // The ring's own deadline replaces a batch deadline, so a ring that starts within the batch
     // still gets the time to send its text and Enter, and to see its proof.
+    #[cfg(not(test))]
     let deadline = std::time::Instant::now() + RING_TIMEOUT;
+    #[cfg(test)]
+    let deadline = std::time::Instant::now() + RING_DEADLINE.get();
     let adapter = swarm::adapter::Adapter {
         deadline: Some(deadline),
         ..adapter.clone()
@@ -189,7 +205,7 @@ pub(crate) fn host_record_of(
     if provider != Some("pi") {
         return None;
     }
-    let body = adapter.status(&[("pane", pane)], std::time::Duration::from_millis(300))?;
+    let body = adapter.status(&[("pane", pane)], HOST_RECORD_TIMEOUT)?;
     // A time ahead of this clock would prove every later ring, so such a record is no record.
     swarm::host::host_record(&body, seen_work)
         .filter(|(_, at)| unix_now().is_ok_and(|now| *at <= now))

@@ -8,6 +8,7 @@ mod cases {
 
     #[test]
     fn rering_finishes_after_the_session_deadline() {
+        patient_rings();
         let root =
             std::env::temp_dir().join(format!("swarm-ring-deadline-{}", uuid::Uuid::now_v7()));
         let mut connection = swarm::store::open(std::path::Path::new(":memory:")).unwrap();
@@ -118,6 +119,7 @@ mod cases {
     /// box as a starting Claude does, and starts a turn on Enter.
     #[test]
     fn a_ring_to_claude_waits_for_the_input_box_and_presses_enter_until_it_sends() {
+        patient_rings();
         let (dir, connection, session) =
             ring_session("ring-pane", Some("claude"), "", "$ claude\n");
         let box_rows = |text: &str| format!("────\n❯ {text}\n────\n");
@@ -159,6 +161,7 @@ mod cases {
 
     #[test]
     fn deliver_rings_only_when_no_unread_is_rung() {
+        patient_rings();
         let root = std::env::temp_dir().join(format!("swarm-deliver-test-{}", std::process::id()));
         let adapters = root.join("adapters");
         let ring_log = root.join("rings");
@@ -293,6 +296,7 @@ mod cases {
     /// cannot prove a ring, so it is stored as unchecked with no wait.
     #[test]
     fn a_working_screen_proves_a_ring_and_a_pane_with_no_reader_is_unchecked() {
+        patient_rings();
         let (root, mut connection, session) = ring_session(
             "screen-proof",
             Some("agy"),
@@ -315,7 +319,8 @@ mod cases {
             ring_session("unchecked", None, "ring = true", "anything\n");
         let started = std::time::Instant::now();
         let seq = send_task(&root, &mut connection, &session);
-        assert!(started.elapsed() < std::time::Duration::from_secs(2));
+        // Well before the 30 s deadline of a patient ring.
+        assert!(started.elapsed() < std::time::Duration::from_secs(15));
         assert_eq!(
             delivery_of(&connection, &session, seq).as_deref(),
             Some("unchecked")

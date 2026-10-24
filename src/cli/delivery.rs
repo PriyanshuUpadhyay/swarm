@@ -163,7 +163,7 @@ pub(crate) fn settle_rings(
                 refresh_host(connection, adapter, session_id, &agent, provider, &pane);
                 let vars = [("pane", pane.as_str())];
                 adapter
-                    .capture_within(&vars, std::time::Duration::from_secs(1))
+                    .capture_within(&vars, PANE_READ_TIMEOUT)
                     .map(|rows| {
                         let screen = screen_of(adapter, &vars, &rows);
                         (rows, screen)

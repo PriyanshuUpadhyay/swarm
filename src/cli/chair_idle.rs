@@ -17,9 +17,9 @@ pub(crate) fn chair_idle(
         .find(|agent| agent.id == chair)
         .and_then(|agent| agent.log);
     let vars = [("pane", pane.as_str())];
-    let capture = || adapter.capture_within(&vars, std::time::Duration::from_secs(1));
+    let capture = || adapter.capture_within(&vars, crate::cli::PANE_READ_TIMEOUT);
     let screen = match adapter.screen {
-        Some(_) => adapter.screen(&vars, std::time::Duration::from_secs(1)),
+        Some(_) => adapter.screen(&vars, crate::cli::PANE_READ_TIMEOUT),
         None => capture(),
     };
     Ok(screen.is_some_and(|screen| {
