@@ -11,8 +11,9 @@ on:
   workflow_dispatch:
 
 jobs:
+  # Swarm ships only for macOS, and the e2e keys and the speed budgets assume a Mac.
   serve-tests:
-    runs-on: ubuntu-latest
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
       - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
@@ -25,7 +26,7 @@ jobs:
       - run: cargo test --features serve -- --include-ignored
 
   e2e:
-    runs-on: ubuntu-latest
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
       - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
@@ -43,8 +44,8 @@ jobs:
         working-directory: web
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - run: cargo build --features serve
-      # The e2e setup drives the store and the panes with these CLIs.
-      - run: sudo apt-get install -y sqlite3 tmux
+      # The e2e setup drives the panes with tmux; macOS ships sqlite3.
+      - run: brew install tmux
       - run: pnpm exec playwright install --with-deps webkit
         working-directory: web
       - run: pnpm e2e
