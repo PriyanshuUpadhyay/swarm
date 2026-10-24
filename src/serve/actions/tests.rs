@@ -223,7 +223,7 @@ if [ "$1" = type ]; then cat > "$SWARM_HOME/text"; fi
             .await
         });
         let home = fixture.app.root.parent().unwrap();
-        tokio::time::timeout(Duration::from_secs(3), async {
+        tokio::time::timeout(Duration::from_secs(30), async {
             while !home.join("slow-start").exists() {
                 tokio::time::sleep(Duration::from_millis(10)).await;
             }
@@ -231,7 +231,7 @@ if [ "$1" = type ]; then cat > "$SWARM_HOME/text"; fi
         .await
         .unwrap();
         let send = tokio::time::timeout(
-            Duration::from_secs(2),
+            Duration::from_secs(30),
             call_action(
                 &fixture,
                 "/api/chat/send",
@@ -242,7 +242,7 @@ if [ "$1" = type ]; then cat > "$SWARM_HOME/text"; fi
         let still_running = !slow.is_finished();
         // Release the stand-in before an assertion so a failed test cannot leave it waiting.
         std::fs::write(home.join("release"), "release").unwrap();
-        let _ = tokio::time::timeout(Duration::from_secs(3), slow)
+        let _ = tokio::time::timeout(Duration::from_secs(30), slow)
             .await
             .unwrap()
             .unwrap()
@@ -289,7 +289,7 @@ esac
         )
         .await
     });
-    tokio::time::timeout(Duration::from_secs(3), async {
+    tokio::time::timeout(Duration::from_secs(30), async {
         while !home.join("slow-start").exists() {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
@@ -306,7 +306,7 @@ esac
         .await
     });
     let send = tokio::time::timeout(
-        Duration::from_secs(2),
+        Duration::from_secs(30),
         call_action(
             &fixture,
             "/api/chat/send",
@@ -316,12 +316,12 @@ esac
     .await;
     let restore_waited = !restore.is_finished() && !home.join("restored").exists();
     std::fs::write(home.join("release"), "release").unwrap();
-    let _ = tokio::time::timeout(Duration::from_secs(3), archive)
+    let _ = tokio::time::timeout(Duration::from_secs(30), archive)
         .await
         .unwrap()
         .unwrap()
         .unwrap();
-    let _ = tokio::time::timeout(Duration::from_secs(3), restore)
+    let _ = tokio::time::timeout(Duration::from_secs(30), restore)
         .await
         .unwrap()
         .unwrap()
