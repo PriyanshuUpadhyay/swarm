@@ -261,9 +261,9 @@ pub(crate) fn spawn_agent(
             && !models.iter().any(|listed| listed.id == model)
             // A wrapper without the quoted alias is not a readable Claude catalog.
             && (provider != Provider::Claude
-                || provider.catalog(&account_env).is_some_and(|catalog| {
-                    provider.model_known(&catalog, "sonnet")
-                        && !provider.model_known(&catalog, model)
+                || Provider::claude_catalog().is_some_and(|catalog| {
+                    Provider::model_known(&catalog, "sonnet")
+                        && !Provider::model_known(&catalog, model)
                 }))
         {
             let current_account = account.as_ref().map(|account| account.name.as_str());

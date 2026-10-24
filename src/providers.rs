@@ -241,39 +241,22 @@ impl Provider {
         }
     }
 
-    /// What the provider CLI on PATH knows as models, for `model_known`. None when the check
-    /// cannot run; agy is skipped because `agy models` asks the network (about 5 s), and pi
-    /// because it takes a model pattern, not only a listed id.
-    pub fn catalog(self, account_env: &BTreeMap<String, String>) -> Option<Vec<u8>> {
-        match self {
-            Provider::Claude => std::env::split_paths(&std::env::var_os("PATH")?)
-                .map(|dir| dir.join("claude"))
-                .find(|path| path.is_file())
-                .and_then(|path| std::fs::read(path).ok()),
-            Provider::Codex => std::process::Command::new("codex")
-                .args(["debug", "models"])
-                .envs(account_env)
-                .output()
-                .ok()
-                .filter(|output| output.status.success())
-                .map(|output| output.stdout),
-            Provider::Agy | Provider::Pi => None,
-        }
+    /// The Claude binary on PATH, for `model_known`, because full ids such as `claude-opus-5-5`
+    /// are not in Claude's alias list. None when no `claude` file is on PATH.
+    pub fn claude_catalog() -> Option<Vec<u8>> {
+        std::env::split_paths(&std::env::var_os("PATH")?)
+            .map(|dir| dir.join("claude"))
+            .find(|path| path.is_file())
+            .and_then(|path| std::fs::read(path).ok())
     }
 
     /// `catalog` is the Claude binary itself, where every model id and alias sits as a quoted
-    /// string, or the JSON of `codex debug models`.
-    pub fn model_known(self, catalog: &[u8], model: &str) -> bool {
-        if self == Provider::Claude {
-            let quoted = format!("\"{model}\"");
-            return catalog
-                .windows(quoted.len())
-                .any(|window| window == quoted.as_bytes());
-        }
-        serde_json::from_slice::<serde_json::Value>(catalog)
-            .ok()
-            .and_then(|value| value["models"].as_array().cloned())
-            .is_some_and(|models| models.iter().any(|entry| entry["slug"] == model))
+    /// string.
+    pub fn model_known(catalog: &[u8], model: &str) -> bool {
+        let quoted = format!("\"{model}\"");
+        catalog
+            .windows(quoted.len())
+            .any(|window| window == quoted.as_bytes())
     }
 
     /// Provider flags the role owns; a caller's extra args may not set them.
