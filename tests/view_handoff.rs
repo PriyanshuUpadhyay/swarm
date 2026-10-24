@@ -47,32 +47,40 @@ fn completed_summary() {
         message("user_message_chunk", handoff::REQUEST),
         message("agent_message_chunk", "files and next step"),
     ];
-    assert_eq!(handoff::completed_summary(&rows(events.clone()), 1), None);
+    assert_eq!(handoff::summary_turn(&rows(events.clone()), 1), None);
     let mut events = events;
     events.push(end("completed"));
     assert_eq!(
-        handoff::completed_summary(&rows(events), 1).as_deref(),
-        Some("files and next step")
+        handoff::summary_turn(&rows(events), 1),
+        Some(Some("files and next step".into()))
     );
 }
+/// A summary turn that ends early, by the owner or by a usage limit, has no summary, so the switch
+/// stops waiting at once.
 #[test]
 fn interrupted_summary() {
     for interrupt in [
-        json!({"type":"system_message","kind":"interrupted","text":"[Request interrupted by user]"}),
-        end("aborted"),
+        vec![
+            json!({"type":"system_message","kind":"interrupted","text":"[Request interrupted by user]"}),
+        ],
+        vec![end("aborted")],
+        vec![
+            json!({"type":"error","message":"Claude rate limit (seven_day)"}),
+            end("aborted"),
+        ],
     ] {
         let mut events = vec![
             message("user_message_chunk", handoff::REQUEST),
             message("agent_message_chunk", "Goal: fix the"),
-            interrupt,
         ];
-        assert_eq!(handoff::completed_summary(&rows(events.clone()), 0), None);
+        events.extend(interrupt);
+        assert_eq!(handoff::summary_turn(&rows(events.clone()), 0), Some(None));
         events.extend([
             message("user_message_chunk", "Carry on"),
             message("agent_message_chunk", "Done"),
             end("completed"),
         ]);
-        assert_eq!(handoff::completed_summary(&rows(events), 0), None);
+        assert_eq!(handoff::summary_turn(&rows(events), 0), Some(None));
     }
 }
 #[test]
@@ -110,7 +118,8 @@ fn context_limits_and_delivery_instructions() {
         end("completed"),
     ]);
     assert_eq!(
-        handoff::completed_summary(&summary, 0)
+        handoff::summary_turn(&summary, 0)
+            .flatten()
             .unwrap()
             .chars()
             .count(),

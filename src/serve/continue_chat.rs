@@ -350,7 +350,11 @@ pub(super) async fn execute_continue_timed(
                         handoff_rows(app, old).await
                     }).await;
                     match summary {
-                        Ok(Ok(new_rows)) => if let Some(context) = handoff::completed_summary(&new_rows, rows.len()) { return Ok((call, context, true)); },
+                        Ok(Ok(new_rows)) => match handoff::summary_turn(&new_rows, rows.len()) {
+                            Some(Some(context)) => return Ok((call, context, true)),
+                            Some(None) => break,
+                            None => {}
+                        },
                         Ok(Err(_)) => {}, // Swift keeps waiting if a summary poll cannot read the log.
                         Err(_) => break,
                     }
