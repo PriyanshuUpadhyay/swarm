@@ -150,3 +150,21 @@ fn a_model_is_checked_against_the_catalog() {
     assert!(!Provider::Codex.model_known(codex, "gpt-5.6-sol"));
     assert!(!Provider::Codex.model_known(b"not json", "gpt-6-sol"));
 }
+
+/// pi's claude-bridge runs `claude`, so its launches use Claude accounts; other pi models use
+/// pi's own login.
+#[test]
+fn a_pi_launch_on_claude_bridge_uses_claude_accounts() {
+    let pi = Provider::Pi;
+    assert_eq!(
+        pi.account_provider("claude-bridge/claude-opus-5-5"),
+        Some(Provider::Claude)
+    );
+    assert_eq!(pi.account_provider("openai-codex/gpt-6-sol"), None);
+    assert_eq!(pi.account_provider("claude-opus-5-5"), None);
+    assert_eq!(
+        Provider::Codex.account_provider("gpt-6-sol"),
+        Some(Provider::Codex)
+    );
+    assert_eq!(Provider::Agy.account_provider("gemini"), None);
+}

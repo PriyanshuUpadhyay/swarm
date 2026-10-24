@@ -157,6 +157,17 @@ impl Provider {
         !matches!(self, Provider::Agy | Provider::Pi)
     }
 
+    /// The CLI whose accounts a launch on `model` uses. pi's claude-bridge starts `claude` with
+    /// pi's environment, so a Claude account applies to it.
+    pub fn account_provider(self, model: &str) -> Option<Provider> {
+        match self {
+            Provider::Pi => {
+                (pi_provider(model).as_deref() == Some("claude-bridge")).then_some(Provider::Claude)
+            }
+            _ => self.has_accounts().then_some(self),
+        }
+    }
+
     pub fn login_argv(self) -> Option<&'static [&'static str]> {
         match self {
             Provider::Codex => Some(&["codex", "login"]),
@@ -168,13 +179,14 @@ impl Provider {
     /// Clear inherited keys before applying an account, including the native default.
     pub fn account_env_keys(self) -> &'static [&'static str] {
         match self {
-            Provider::Claude => &[
+            // pi gets an account only for claude-bridge, which runs `claude` (account_provider).
+            Provider::Claude | Provider::Pi => &[
                 "CLAUDE_CONFIG_DIR",
                 "CLAUDE_SECURESTORAGE_CONFIG_DIR",
                 "AGENT_PROFILE_LABEL",
             ],
             Provider::Codex => &["CODEX_HOME"],
-            Provider::Agy | Provider::Pi => &[],
+            Provider::Agy => &[],
         }
     }
 
@@ -396,6 +408,24 @@ fn agy_models(output: &str) -> Vec<Model> {
             })
         })
         .collect()
+}
+
+/// The pi provider a launch on `model` runs: the model's prefix, or for `default` the
+/// `defaultProvider` in pi's settings. A bare model id names no provider, so it gets none.
+fn pi_provider(model: &str) -> Option<String> {
+    if let Some((provider, _)) = model.split_once('/') {
+        return Some(provider.into());
+    }
+    if model != "default" {
+        return None;
+    }
+    let dir = match std::env::var_os("PI_CODING_AGENT_DIR") {
+        Some(dir) => std::path::PathBuf::from(dir),
+        None => std::path::PathBuf::from(std::env::var_os("HOME")?).join(".pi/agent"),
+    };
+    let settings: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(dir.join("settings.json")).ok()?).ok()?;
+    settings["defaultProvider"].as_str().map(str::to_owned)
 }
 
 /// The table of `pi --list-models`: a header row, then `provider model context ...` rows.

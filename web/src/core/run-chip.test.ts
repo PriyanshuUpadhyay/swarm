@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from "vitest";
 import { chair, session } from "./chat-fixtures";
-import { accountColor, agentInput, applyBlock, applyLabel, chooseModel, cliName, levelWord, limitText, outcomeText, runLabel, runTip, switchOutcome, usageLabel, usageTitle } from "./composer";
+import { accountCli, accountColor, agentInput, applyBlock, applyLabel, chooseModel, cliName, levelWord, limitText, outcomeText, runLabel, runTip, switchOutcome, usageLabel, usageTitle } from "./composer";
 import type { Meter } from "./settings";
 
 
@@ -105,5 +105,14 @@ describe("run chip", () => {
     expect(chooseModel(current, run("codex", "x", "minimal"), codex, { id: "deep", efforts: ["low", "high"], default_effort: "high" }).effort).toBe("high");
     // A level the model lists but the CLI's launch does not take is never picked.
     expect(chooseModel(current, run("codex", "x", "minimal"), codex, { id: "mini", efforts: ["minimal", "high"] }).effort).toBe("high");
+  });
+});
+
+describe("accountCli", () => {
+  it("gives a Pi claude-bridge model Claude's accounts and leaves other runs on their own CLI", () => {
+    expect(accountCli("pi", "claude-bridge/claude-opus-5-5")).toBe("claude");
+    expect(accountCli("pi", "openai-codex/gpt-6-sol")).toBe("pi");
+    expect(accountCli("pi", null)).toBe("pi");
+    expect(accountCli("codex", "gpt-6-sol")).toBe("codex");
   });
 });

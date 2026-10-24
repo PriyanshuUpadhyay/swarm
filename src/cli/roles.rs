@@ -35,9 +35,7 @@ impl Probe {
                 format!("{} CLI not found on PATH", provider.id()),
             ));
         }
-        if !provider.has_accounts() {
-            return None;
-        }
+        let provider = provider.account_provider(&runner.model)?;
         let mut cache = self.accounts.borrow_mut();
         let accounts = cache
             .entry(provider)
