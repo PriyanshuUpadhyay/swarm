@@ -4,9 +4,9 @@
 
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
 
 const repo = resolve(import.meta.dirname, "../..");
@@ -209,7 +209,7 @@ export default async function setup() {
   for (const pane of PANES.slice(1)) copyFileSync(join(repo, "tests/fixtures/screens/claude-idle.txt"), join(home, `screen-${pane}`));
   // One chat per browser with a chair and two children, each on its own stand-in pane. `swarm
   // spawn` gives a child its pane and its hooks report its log; here the store gets both directly.
-  const db = execFileSync("fd", ["-HI", "-t", "f", "^swarm.db$", home], { encoding: "utf8" }).trim().split("\n")[0];
+  const db = join(home, readdirSync(home, { recursive: true, encoding: "utf8" }).find((path) => basename(path) === "swarm.db")!);
   const sql = (text: string) => `'${text.replaceAll("'", "''")}'`;
   for (const { session, log } of plain) {
     execFileSync("sqlite3", [db, `UPDATE session SET adapter = 'tmux-swarm' WHERE id = ${sql(session)};`]);

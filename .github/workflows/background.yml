@@ -43,6 +43,8 @@ jobs:
         working-directory: web
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - run: cargo build --features serve
+      # The e2e setup drives the store and the panes with these CLIs.
+      - run: sudo apt-get install -y sqlite3 tmux
       - run: pnpm exec playwright install --with-deps webkit
         working-directory: web
       - run: pnpm e2e

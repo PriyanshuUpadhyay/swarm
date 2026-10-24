@@ -1,6 +1,9 @@
 //! Shared server test metrics.
 
+// Only the macOS soak uses the shared helpers.
+#[cfg(target_os = "macos")]
 use super::test_support::*;
+#[cfg(target_os = "macos")]
 use super::*;
 #[cfg(target_os = "macos")]
 pub(super) fn allocated_bytes() -> usize {
