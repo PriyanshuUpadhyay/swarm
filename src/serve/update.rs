@@ -35,16 +35,6 @@ fn hud_set_up() -> bool {
     std::env::var_os("HOME").is_some_and(|home| swarm::hud::plist_path(Path::new(&home)).exists())
 }
 
-/// `<prefix>` when `exe` is `<prefix>/Cellar/swarm/<version>/...`, else None: brew cannot
-/// upgrade a cargo or checkout build.
-pub(super) fn cellar_prefix(exe: &Path) -> Option<PathBuf> {
-    let parts: Vec<_> = exe.components().collect();
-    let at = parts
-        .windows(2)
-        .position(|pair| pair[0].as_os_str() == "Cellar" && pair[1].as_os_str() == "swarm")?;
-    Some(parts[..at].iter().collect())
-}
-
 /// The Homebrew prefix of this swarm, read once. `brew upgrade` deletes this version's Cellar
 /// folder, so the path cannot be resolved again after the upgrade; `start` reads it first.
 pub(super) fn brew_prefix() -> Option<&'static Path> {
@@ -52,7 +42,8 @@ pub(super) fn brew_prefix() -> Option<&'static Path> {
     PREFIX
         .get_or_init(|| {
             let exe = std::fs::canonicalize(std::env::current_exe().ok()?).ok()?;
-            cellar_prefix(&exe)
+            // brew cannot upgrade a cargo or checkout build.
+            swarm::hud::cellar_prefix(&exe)
         })
         .as_deref()
 }
@@ -77,6 +68,12 @@ pub(super) fn newer(latest: &str, current: &str) -> bool {
     }
 }
 
+/// The last `lines` lines of `text`, so a long brew log does not fill the error toast.
+fn tail(text: &str, lines: usize) -> String {
+    let all: Vec<_> = text.lines().collect();
+    all[all.len().saturating_sub(lines)..].join("\n")
+}
+
 /// Runs `program` without a shell, with Homebrew's prompts off. Its stderr, else its stdout, is
 /// the error on a failed exit.
 async fn run(program: &Path, args: &[&str], timeout: Duration) -> Result<String, ApiError> {
@@ -84,6 +81,9 @@ async fn run(program: &Path, args: &[&str], timeout: Duration) -> Result<String,
         .args(args)
         .env("HOMEBREW_NO_ASK", "1")
         .env("HOMEBREW_NO_ENV_HINTS", "1")
+        // The running server still reads its own version's folder, such as its transcript tool,
+        // until the restart, so brew keeps old versions; its next cleanup removes them.
+        .env("HOMEBREW_NO_INSTALL_CLEANUP", "1")
         .stdin(std::process::Stdio::null())
         .kill_on_drop(true)
         .output();
@@ -109,7 +109,7 @@ async fn run(program: &Path, args: &[&str], timeout: Duration) -> Result<String,
         } else {
             stderr.trim()
         };
-        let message = format!("{name} {} failed: {text}", args.join(" "));
+        let message = format!("{name} {} failed: {}", args.join(" "), tail(text, 5));
         return Err(error(StatusCode::BAD_GATEWAY, &message));
     }
     Ok(stdout)
@@ -162,9 +162,12 @@ pub(super) async fn update_write() -> Result<Json<Value>, ApiError> {
             "this swarm is not a Homebrew install; rebuild it from its checkout",
         )
     })?;
-    let running = UPGRADE
-        .try_lock()
-        .map_err(|_| error(StatusCode::CONFLICT, "an upgrade is already running"))?;
+    let running = UPGRADE.try_lock().map_err(|_| {
+        error(
+            StatusCode::CONFLICT,
+            "an upgrade or a restart is already running",
+        )
+    })?;
     // The lock, brew, and the results all live in this task, so a closed page that drops the
     // request neither frees the lock while brew runs nor loses the HUD mark.
     let upgrade = tokio::spawn(async move {
@@ -174,6 +177,9 @@ pub(super) async fn update_write() -> Result<Json<Value>, ApiError> {
         run(&brew, &["update", "--quiet"], Duration::from_secs(300)).await?;
         run(&brew, &["upgrade", "swarm"], Duration::from_secs(900)).await?;
         let hud = before.is_some_and(|before| hud_changed(before, hud_hash(prefix)));
+        // Marked now, so a step below that fails keeps the HUD change for the next try. A repeat
+        // upgrade that finds the HUD unchanged keeps the mark of the one before it.
+        let hud = HUD_CHANGED.fetch_or(hud, Ordering::SeqCst) || hud;
         let swarm = prefix.join("opt/swarm/bin/swarm");
         let printed = run(&swarm, &["--version"], Duration::from_secs(10)).await?;
         // `swarm 0.0.38 abc1234 branch`
@@ -190,8 +196,6 @@ pub(super) async fn update_write() -> Result<Json<Value>, ApiError> {
             return Err(error(StatusCode::CONFLICT, &message));
         }
         *LATEST.lock().unwrap() = None;
-        // A repeat upgrade that finds the HUD unchanged keeps the mark of the one before it.
-        let hud = HUD_CHANGED.fetch_or(hud, Ordering::SeqCst) || hud;
         Ok(Json(json!({"version": version, "hud": hud})))
     });
     upgrade
@@ -199,11 +203,32 @@ pub(super) async fn update_write() -> Result<Json<Value>, ApiError> {
         .map_err(|err| error(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()))?
 }
 
+/// `launchctl kickstart -k` for a login item that runs, so it runs the app that `opt` names now.
+/// A login item that does not run starts the new app through `opt` when it next starts.
+async fn hud_restart() -> Result<(), ApiError> {
+    let home = std::env::var_os("HOME").unwrap_or_default();
+    let status = tokio::task::spawn_blocking(move || swarm::hud::status(Path::new(&home)));
+    let status = tokio::time::timeout(Duration::from_secs(10), status)
+        .await
+        .map_err(|_| error(StatusCode::GATEWAY_TIMEOUT, "launchctl print timed out"))?
+        .map_err(|err| error(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()))?;
+    if status.running {
+        let launchctl = Path::new("/bin/launchctl");
+        let target = swarm::hud::target();
+        run(
+            launchctl,
+            &["kickstart", "-k", &target],
+            Duration::from_secs(10),
+        )
+        .await?;
+    }
+    Ok(())
+}
+
 /// Step two: restart the HUD login item when the upgrade changed it, then start `swarm ui` of the
 /// installed version on this port. That finds this server of an older build, stops it, and starts
 /// its own, and the open pages reload on the new build.
 pub(super) async fn update_restart(State(app): State<App>) -> Result<Json<Value>, ApiError> {
-    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
     use std::os::unix::process::CommandExt;
     let prefix = brew_prefix().ok_or_else(|| {
         error(
@@ -228,41 +253,18 @@ pub(super) async fn update_restart(State(app): State<App>) -> Result<Json<Value>
     let hud = HUD_CHANGED.load(Ordering::SeqCst);
     if hud {
         // A login item that is not running starts the new app through `opt` when it next starts.
-        let restarted = tokio::task::spawn_blocking(|| {
-            let home = std::env::var_os("HOME").unwrap_or_default();
-            if !swarm::hud::status(Path::new(&home)).running {
-                return Ok(());
-            }
-            let output = swarm::hud::restart()?;
-            if output.status.success() {
-                Ok(())
-            } else {
-                Err(std::io::Error::other(
-                    String::from_utf8_lossy(&output.stderr).trim().to_string(),
-                ))
-            }
-        })
-        .await
-        .map_err(|err| error(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()))?;
+        let restarted = hud_restart().await;
         // One try only: the server is not touched yet, and the next press restarts it alone.
         HUD_CHANGED.store(false, Ordering::SeqCst);
-        restarted.map_err(|err| {
+        restarted.map_err(|(_, body)| {
+            let err = body["error"].as_str().unwrap_or_default();
             let message = format!(
                 "the HUD did not restart: {err}; press Restart server again to restart only the server"
             );
             error(StatusCode::BAD_GATEWAY, &message)
         })?;
     }
-    // The server writes its URL with the token there, so only the owner may read the log.
-    let log = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .mode(0o600)
-        .open(app.root.join("ui.log"))
-        .map_err(fail)?;
-    // `mode` applies only to a new file; an older log may be wider, as `spawn_ui` also fixes.
-    log.set_permissions(std::fs::Permissions::from_mode(0o600))
-        .map_err(fail)?;
+    let log = owner_log(&app.root.join("ui.log")).map_err(fail)?;
     std::process::Command::new(prefix.join("opt/swarm/bin/swarm"))
         .args(["ui", "--port", &app.port.to_string()])
         .env("SWARM_HOME", app.root.parent().expect("swarm home"))
@@ -295,6 +297,13 @@ mod tests {
     }
 
     #[test]
+    fn keeps_the_last_lines_of_a_failure() {
+        assert_eq!(tail("a\nb\nc", 2), "b\nc");
+        assert_eq!(tail("a", 5), "a");
+        assert_eq!(tail("", 5), "");
+    }
+
+    #[test]
     fn compares_versions_as_numbers() {
         assert!(newer("0.0.38", "0.0.37"));
         assert!(newer("0.0.100", "0.0.99"));
@@ -312,12 +321,5 @@ mod tests {
         assert!(hud_changed(None, new));
         assert!(!hud_changed(old, None));
         assert!(!hud_changed(None, None));
-    }
-
-    #[test]
-    fn finds_the_homebrew_prefix() {
-        let exe = Path::new("/opt/homebrew/Cellar/swarm/0.0.37/bin/swarm");
-        assert_eq!(cellar_prefix(exe), Some(PathBuf::from("/opt/homebrew")));
-        assert_eq!(cellar_prefix(Path::new("/Users/me/.cargo/bin/swarm")), None);
     }
 }

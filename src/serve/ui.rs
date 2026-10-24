@@ -148,6 +148,19 @@ pub(super) fn page_base(url: &str) -> &str {
     url.split_once('#').map_or(url, |(base, _)| base)
 }
 
+/// `path` opened to append, readable by the owner only, because the server prints its URL with
+/// the token there. `mode` applies only to a new file, so an older log is narrowed too.
+pub(super) fn owner_log(path: &Path) -> std::io::Result<std::fs::File> {
+    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+    let log = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .mode(0o600)
+        .open(path)?;
+    log.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+    Ok(log)
+}
+
 /// Start `swarm ui --foreground` with `args` as a background process whose output goes to
 /// `<root>/ui.log`, and wait until the URL that it records answers.
 pub(super) fn spawn_ui(
@@ -155,16 +168,9 @@ pub(super) fn spawn_ui(
     record: &Path,
     args: &[String],
 ) -> Result<String, Box<dyn std::error::Error>> {
-    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
     use std::os::unix::process::CommandExt;
     let log_path = root.join("ui.log");
-    // The server prints its URL with the token, so only the owner may read the log.
-    let log = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .mode(0o600)
-        .open(&log_path)?;
-    log.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+    let log = owner_log(&log_path)?;
     let _ = std::fs::remove_file(record);
     let mut child = std::process::Command::new(std::env::current_exe()?)
         .arg("ui")

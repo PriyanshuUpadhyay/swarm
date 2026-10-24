@@ -41,15 +41,21 @@ and the restart breaks the open page for a moment, so the owner picks when each 
 - The first ask, Upgrade, runs `brew update --quiet` and `brew upgrade swarm` in a task that a
   closed page does not stop, and checks that `<prefix>/opt/swarm/bin/swarm --version` is newer.
   A `.local` build that brew keeps is an error that names `brew reinstall`.
+- The upgrade sets `HOMEBREW_NO_INSTALL_CLEANUP=1`, because the old server still reads its own
+  version's folder, such as its transcript tool, until the restart.
 - When the HUD login item exists, the upgrade hashes the HUD executable before and after. A new
-  hash marks the HUD as changed, and a later upgrade that finds no change keeps the mark.
-- A failed upgrade shows its error and offers Upgrade again.
+  hash marks the HUD as changed as soon as `brew upgrade` ends. A step after it that fails, and a
+  later upgrade that finds no change, both keep the mark.
+- A failed step shows the last 5 lines of its error in the same toast, beside the button that
+  tries it again, and the page records the error as it records any error toast.
 - The second ask, Restart server, kickstarts the HUD login item with `-k` when it changed and
   runs, then starts the new `swarm ui --port <this port>`. That `swarm ui` stops the server of the
   old build and starts its own, and the page reloads on the new build's `hello` frame. A login
   item that does not run starts the new app when it next starts.
-- The HUD gets one try. When the kickstart fails, the restart returns 502 before it touches the
-  server, and the next press restarts only the server.
+- The HUD gets one try, and each launchctl call has a 10 s limit. When the kickstart fails or
+  times out, the restart returns 502 before it touches the server. The page then names only the
+  server, and the next press restarts only the server. Any other refusal keeps the HUD mark and
+  the HUD in the page's text.
 - The upgrade and the restart share one lock, and a restart that started keeps it until the new
   server stops this one. So a second page cannot start a second `swarm ui`.
 - Only a `swarm ui` server restarts. A `swarm serve` server refuses with 409, because the new
@@ -65,6 +71,11 @@ and the restart breaks the open page for a moment, so the owner picks when each 
   beyond the HTTP request itself.
 - Bad: a HUD that runs without the login item, such as one that `swarm ui` started, keeps the old
   build until it restarts.
+- Bad: old versions stay in the Cellar until the owner's next `brew cleanup` or a brew install
+  that cleans up.
+- Bad: after "Later", the next page load offers Upgrade again and not Restart server, because the
+  page compares the tap with the running build. That Upgrade has nothing to install, so it soon
+  offers Restart server.
 - Bad: a `swarm serve` server cannot restart this way. Its owner stops it and starts it again.
 - Bad: when the new `swarm ui` does not stop this server, the lock stays held, and the owner runs
   `swarm ui` in a terminal.

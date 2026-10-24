@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { ApiError } from "../core/api";
 import type { App } from "../core/app";
 import { message } from "../core/app-types";
-import { showError } from "./errors";
+import { showError, shownErrors } from "./errors";
 
 type Update = { current: string; latest: string | null; available: boolean };
 
@@ -40,11 +40,18 @@ export function watchUpdates(app: App): () => void {
   return () => clearInterval(timer);
 }
 
-function offer(app: App, latest: string) {
-  toast(`Swarm ${latest} is available`, {
+// A failed step shows its error in this toast, beside the button that tries again: a toast of its
+// own would hide this one, since sonner shows 3 and a press can leave their timers paused.
+function failed(text: string) {
+  shownErrors.report(text);
+  return text;
+}
+
+function offer(app: App, latest: string, error?: string) {
+  (error ? toast.error : toast)(`Swarm ${latest} is available`, {
     id: ID,
     duration: Infinity,
-    description: "Upgrade installs it with Homebrew. Then you restart the server.",
+    description: error ?? "Upgrade installs it with Homebrew. Then you restart the server.",
     action: { label: "Upgrade", onClick: keep(() => void upgrade(app, latest)) },
     cancel: { label: "Not now", onClick: () => {} },
   });
@@ -56,18 +63,16 @@ async function upgrade(app: App, latest: string) {
     const { version, hud } = await app.api.post<{ version: string; hud: boolean }>("/api/update", {});
     installed(app, version, hud);
   } catch (err) {
-    // The error shows in its own toast and is recorded; this one offers the upgrade again.
-    showError(`Upgrade: ${message(err)}`);
-    offer(app, latest);
+    offer(app, latest, failed(`Upgrade: ${message(err)}`));
   }
 }
 
-function installed(app: App, version: string, hud: boolean) {
+function installed(app: App, version: string, hud: boolean, error?: string) {
   const what = hud ? "The swarm ui server and the HUD still run" : "The swarm ui server still runs";
-  toast.success(`Swarm ${version} is installed`, {
+  (error ? toast.error : toast.success)(`Swarm ${version} is installed`, {
     id: ID,
     duration: Infinity,
-    description: `${what} the old version. Restart to use the new one.`,
+    description: `${error ? `${error}. ` : ""}${what} the old version. Restart to use the new one.`,
     action: { label: "Restart server", onClick: keep(() => void restart(app, version, hud)) },
     cancel: { label: "Later", onClick: () => {} },
   });
@@ -79,11 +84,10 @@ async function restart(app: App, version: string, hud: boolean) {
     await app.api.post("/api/update/restart", {});
   } catch (err) {
     // The old server stops during this call, so only a refusal it sent is a failure. It refuses
-    // before it stops, so the owner can press Restart server again. The server tries the HUD
-    // once, so the next press restarts only the server.
+    // before it stops, so the owner can press Restart server again. A 502 is the HUD's one try,
+    // so the next press restarts only the server; other refusals leave the HUD mark set.
     if (err instanceof ApiError) {
-      showError(`Restart: ${message(err)}`);
-      return installed(app, version, false);
+      return installed(app, version, hud && err.status !== 502, failed(`Restart: ${message(err)}`));
     }
   }
   // The stream's hello frame reloads the page on the new build, which ends this timer.

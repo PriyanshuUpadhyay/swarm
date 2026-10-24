@@ -16,23 +16,25 @@ test("an update upgrades, then restarts the server and the HUD, in two asks", as
     if (route.request().method() === "GET") return route.fulfill({ json: { current: "0.0.37", latest: "0.0.38", available: true } });
     // The first upgrade fails, as a brew that cannot reach the tap does.
     return upgrades++ === 0
-      ? route.fulfill({ status: 500, json: { error: "brew update failed" } })
+      ? route.fulfill({ status: 502, json: { error: "brew update failed" } })
       : route.fulfill({ json: { version: "0.0.38", hud: true } });
   });
   let restarts = 0;
   await tab.route("**/api/update/restart", (route) => {
     calls.push("POST /api/update/restart");
-    // The first restart is refused, as a HUD that did not restart is.
-    return restarts++ === 0
-      ? route.fulfill({ status: 502, json: { error: "the HUD did not restart: no job" } })
-      : route.fulfill({ json: { ok: true, hud: false } });
+    // The first restart meets a busy lock, and the second a HUD that did not restart.
+    const refusals = [
+      { status: 409, json: { error: "an upgrade or a restart is already running" } },
+      { status: 502, json: { error: "the HUD did not restart: no job" } },
+    ];
+    return route.fulfill(refusals[restarts++] ?? { json: { ok: true, hud: false } });
   });
   await tab.goto(`${server().origin}/${server().hash}`);
   await tab.waitForFunction(() => window.__swarmReady === true);
   const toast = tab.locator("[data-sonner-toast]").filter({ hasText: "Swarm 0.0.38" });
   await expect(toast).toContainText("Swarm 0.0.38 is available");
   await toast.getByRole("button", { name: "Upgrade" }).click();
-  await expect(tab.locator("[data-sonner-toast]").filter({ hasText: "brew update failed" })).toBeVisible();
+  await expect(toast).toContainText("Upgrade: brew update failed");
   await expect(toast).toContainText("Swarm 0.0.38 is available");
   await toast.getByRole("button", { name: "Upgrade" }).click();
   await expect(toast).toContainText("Swarm 0.0.38 is installed");
@@ -40,7 +42,11 @@ test("an update upgrades, then restarts the server and the HUD, in two asks", as
   await expect(toast.getByRole("button", { name: "Upgrade" })).toHaveCount(0);
   await expect(toast).toContainText("the HUD still run the old version");
   await toast.getByRole("button", { name: "Restart server" }).click();
-  await expect(tab.locator("[data-sonner-toast]").filter({ hasText: "the HUD did not restart" })).toBeVisible();
+  await expect(toast).toContainText("Restart: an upgrade or a restart is already running");
+  // The server did not try the HUD, so the toast still names it.
+  await expect(toast).toContainText("the HUD still run the old version");
+  await toast.getByRole("button", { name: "Restart server" }).click();
+  await expect(toast).toContainText("Restart: the HUD did not restart: no job");
   // The server tried the HUD once, so the toast now names only the server.
   await expect(toast).toContainText("The swarm ui server still runs the old version");
   await toast.getByRole("button", { name: "Restart server" }).click();
@@ -48,7 +54,9 @@ test("an update upgrades, then restarts the server and the HUD, in two asks", as
   await expect(restarting).toBeVisible();
   await expect(restarting.getByRole("button")).toHaveCount(0);
   // The toast shows before the POST is sent, so wait for the route to see it.
-  await expect.poll(() => calls.length).toBe(5);
-  expect(calls).toEqual(["GET /api/update", "POST /api/update", "POST /api/update", "POST /api/update/restart", "POST /api/update/restart"]);
+  await expect.poll(() => calls.length).toBe(6);
+  expect(calls).toEqual(["GET /api/update", "POST /api/update", "POST /api/update", ...Array(3).fill("POST /api/update/restart")]);
+  // Each error shows in the one toast and is still recorded.
+  await expect(tab.locator("[data-sonner-toast]")).toHaveCount(1);
   expect(errors).toEqual([]);
 });
