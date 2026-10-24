@@ -16,22 +16,23 @@ pub fn agy_ready(agents: &Value) -> bool {
     })
 }
 
-pub fn completed_summary(rows: &[Row], baseline: usize) -> Option<String> {
+/// None while the summary turn runs. Some(None) when it ended with no summary, such as a usage
+/// limit error, so the caller stops waiting and lets the new agent summarize.
+pub fn summary_turn(rows: &[Row], baseline: usize) -> Option<Option<String>> {
     let added = rows.get(baseline..)?;
     let question = added
         .iter()
         .position(|r| r.kind == RowKind::User && r.text.contains(REQUEST))?;
     let end = question + added[question..].iter().position(|r| r.ends_turn)?;
     if added[end].kind != RowKind::Result || added[end].text != "completed" {
-        return None;
+        return Some(None);
     }
     let answer = added[question..end]
         .iter()
         .rev()
-        .find(|r| r.kind == RowKind::Assistant)?
-        .text
-        .trim();
-    (!answer.is_empty()).then(|| answer.chars().take(12_000).collect())
+        .find(|r| r.kind == RowKind::Assistant)
+        .map_or("", |r| r.text.trim());
+    Some((!answer.is_empty()).then(|| answer.chars().take(12_000).collect()))
 }
 
 pub fn recent_context(rows: &[Row]) -> Option<String> {
