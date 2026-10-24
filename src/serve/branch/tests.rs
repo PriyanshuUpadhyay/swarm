@@ -339,18 +339,23 @@ esac
     #[tokio::test]
     async fn a_dropped_request_removes_the_cut_file() {
         let fixture = action_fixture();
-        stand_in(&fixture, "true", "sleep 5");
+        stand_in(&fixture, "true", "sleep 30");
         with_second_message(&fixture);
         let row = second_message(&fixture).await;
         let before = logs_in(&fixture);
-        let dropped = tokio::time::timeout(
-            std::time::Duration::from_millis(1500),
-            branch(&fixture, &fixture.session, &row),
-        )
-        .await;
-        assert!(dropped.is_err(), "the launch should still be running");
-        // The launch started, so the cut was written before the drop and then removed.
-        assert!(action_calls(&fixture).contains("launch orchestrator"));
+        let mut request = Box::pin(branch(&fixture, &fixture.session, &row));
+        // The launch started, so the cut was written before the drop.
+        let launched = tokio::time::timeout(std::time::Duration::from_secs(30), async {
+            while !action_calls(&fixture).contains("launch orchestrator") {
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        });
+        tokio::select! {
+            _ = &mut request => panic!("the launch should still be running"),
+            waited = launched => waited.expect("the branch reached its launch"),
+        }
+        assert_eq!(logs_in(&fixture), before + 1);
+        drop(request);
         assert_eq!(logs_in(&fixture), before);
     }
 
@@ -375,7 +380,9 @@ esac
             "dropped-cut".into(),
         ));
         let mut cx = std::task::Context::from_waker(std::task::Waker::noop());
-        assert!(write.as_mut().poll(&mut cx).is_pending());
+        // A blocking thread can finish the write before this first poll; the guard it returns
+        // is dropped here then, and removes the file the same way.
+        let _ = write.as_mut().poll(&mut cx);
         drop(write);
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
         assert_eq!(logs_in(&fixture), before);
