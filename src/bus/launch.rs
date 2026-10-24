@@ -277,6 +277,33 @@ pub fn fable_refusal(agent_id: &str, role: &str, model: Option<&str>) -> Option<
     .then(|| format!("swarm: Fable is a child only for review.* and council.* (role {role})"))
 }
 
+/// A model absent from a readable list, with the account and model choices in list order.
+pub fn model_refusal(
+    provider: &str,
+    model: &str,
+    account: Option<&str>,
+    other_accounts: &[String],
+    models: &[String],
+) -> String {
+    let login = account.map_or_else(
+        || "the CLI's own login".to_string(),
+        |name| format!("account {name}"),
+    );
+    let mut message = format!(
+        "swarm: model {model} is not in the {provider} model list for {login}\nfixes that might work:"
+    );
+    if !other_accounts.is_empty() {
+        let accounts = other_accounts
+            .iter()
+            .map(|name| format!("--account {name}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        message.push_str(&format!("\n  - another account: {accounts}"));
+    }
+    message.push_str(&format!("\n  - another model: {}", models.join(", ")));
+    message
+}
+
 /// Why this session has no spawn path, from the stderr of `herdr status`, or None. A sandbox that
 /// denies the Herdr socket denies every later `herdr` call too, and a wider sandbox would spend a
 /// user approval on a path this session is not meant to use.
