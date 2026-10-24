@@ -333,7 +333,16 @@ pub(crate) fn client_app(mut pid: u32) -> Option<std::path::PathBuf> {
     None
 }
 
-pub(crate) const ACCOUNT_PICK_TIMEOUT_SECONDS: u64 = 2;
+/// The 2 s account pick budget. A debug build takes `SWARM_TEST_ACCOUNT_PICK_MS` instead, so an
+/// integration test gives its fake CLIs, which start slowly on a loaded machine, a long budget.
+pub(crate) fn account_pick_deadline() -> std::time::Instant {
+    let millis = env::var("SWARM_TEST_ACCOUNT_PICK_MS")
+        .ok()
+        .filter(|_| cfg!(debug_assertions))
+        .and_then(|millis| millis.parse().ok())
+        .unwrap_or(2000);
+    std::time::Instant::now() + std::time::Duration::from_millis(millis)
+}
 /// A usage refresh before an automatic pick: one CLI start and one quota read per account.
 pub(crate) const USAGE_PICK_REFRESH_TIMEOUT_SECONDS: u64 = 8;
 // Leave time for CLI output before SwarmCLIProfileSource kills its process at 20 seconds.

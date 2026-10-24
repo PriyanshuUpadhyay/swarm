@@ -39,6 +39,8 @@ fn run(home: &Path, args: &[&str]) -> Output {
             "PATH",
             format!("{}:/usr/bin:/bin", home.join("bin").display()),
         )
+        // The account pick budget a debug build takes, long enough for fake CLIs on a loaded Mac.
+        .env("SWARM_TEST_ACCOUNT_PICK_MS", "30000")
         .args(args)
         .output()
         .unwrap()
