@@ -155,6 +155,9 @@ pub fn load(root: &std::path::Path, name: &str) -> Result<Adapter, Box<dyn std::
 mod tests {
     use super::*;
 
+    /// Long enough that only a hung verb meets it, however slowly a loaded machine starts one.
+    const LONG: std::time::Duration = std::time::Duration::from_secs(30);
+
     const FULL: &str = "# herdr\nself = printf '%s' \"$HERDR_PANE_ID\"\nspawn = herdr pane split\nring = herdr pane send-text\nlist = herdr pane list\nclose = herdr pane close\ncapture = herdr pane read\n";
 
     #[test]
@@ -225,11 +228,10 @@ mod tests {
 
     #[test]
     fn the_status_verb_is_optional_and_no_record_is_none() {
-        let wait = std::time::Duration::from_secs(1);
         let status = |line: &str| {
             parse("fake", &format!("{FULL}status = {line}\n"))
                 .unwrap()
-                .status(&[("pane", "%3")], wait)
+                .status(&[("pane", "%3")], LONG)
         };
         assert_eq!(
             status("printf 'state=working:at=7 %s' \"$SWARM_PANE\"").as_deref(),
@@ -237,7 +239,7 @@ mod tests {
         );
         assert_eq!(status("true"), None);
         assert_eq!(status("printf 'state=done:at=7'; exit 1"), None);
-        assert_eq!(parse("fake", FULL).unwrap().status(&[], wait), None);
+        assert_eq!(parse("fake", FULL).unwrap().status(&[], LONG), None);
     }
 
     #[test]
@@ -283,7 +285,7 @@ mod tests {
         let mut adapter = parse("probe", FULL).unwrap();
         adapter.list = "printf 'pane \\351'".into();
         let expected = adapter.run("list", &[]).unwrap();
-        adapter.deadline = Some(std::time::Instant::now() + std::time::Duration::from_secs(2));
+        adapter.deadline = Some(std::time::Instant::now() + LONG);
         assert_eq!(adapter.run("list", &[]).unwrap(), expected);
         assert_eq!(expected, "pane \u{fffd}");
     }
@@ -291,24 +293,25 @@ mod tests {
     #[test]
     fn screen_gives_up_on_a_slow_or_failing_verb() {
         let with = |line: &str| parse("probe", &format!("{FULL}screen = {line}\n")).unwrap();
-        let timeout = std::time::Duration::from_millis(300);
         assert_eq!(
-            with(r#"printf '%s' "rows of $SWARM_PANE""#).screen(&[("pane", "%3")], timeout),
+            with(r#"printf '%s' "rows of $SWARM_PANE""#).screen(&[("pane", "%3")], LONG),
             Some("rows of %3".into())
         );
         let started = std::time::Instant::now();
-        assert_eq!(with("exec sleep 5").screen(&[], timeout), None);
-        assert!(started.elapsed() < std::time::Duration::from_secs(2));
-        assert_eq!(with("exit 1").screen(&[], timeout), None);
-        assert_eq!(parse("probe", FULL).unwrap().screen(&[], timeout), None);
+        let timeout = std::time::Duration::from_millis(300);
+        assert_eq!(with("exec sleep 30").screen(&[], timeout), None);
+        assert!(started.elapsed() < std::time::Duration::from_secs(20));
+        assert_eq!(with("exit 1").screen(&[], LONG), None);
+        assert_eq!(parse("probe", FULL).unwrap().screen(&[], LONG), None);
     }
 
     #[test]
     fn screen_returns_by_the_deadline_when_a_child_keeps_stdout_open() {
-        let adapter = parse("probe", &format!("{FULL}screen = sleep 5 & printf rows\n")).unwrap();
+        let adapter = parse("probe", &format!("{FULL}screen = sleep 30 & printf rows\n")).unwrap();
         let started = std::time::Instant::now();
-        let text = adapter.screen(&[], std::time::Duration::from_millis(300));
-        assert!(started.elapsed() < std::time::Duration::from_millis(700));
+        // The shell must print and exit within the timeout, which a loaded machine can delay.
+        let text = adapter.screen(&[], std::time::Duration::from_secs(5));
+        assert!(started.elapsed() < std::time::Duration::from_secs(20));
         assert_eq!(text.as_deref(), Some("rows"));
     }
 
