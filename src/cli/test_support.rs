@@ -9,6 +9,12 @@ mod fixtures {
     pub(crate) const ORCHESTRATOR: &str = "orchestrator";
     pub(crate) const CODER: &str = "coder";
 
+    /// Give this thread's waiting rings the production deadline, for a test whose ring must reach
+    /// its proof however slowly the fake runs.
+    pub(crate) fn patient_rings() {
+        RING_DEADLINE.set(std::time::Duration::from_secs(30));
+    }
+
     /// A session whose coder pane `%2` shows the file `<root>/screen`, which the fake adapter's
     /// `capture` reads; `verbs` adds the `ring` verb and any other, with `{screen}` for that path.
     pub(crate) fn ring_session(
