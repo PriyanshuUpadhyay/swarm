@@ -109,14 +109,30 @@ fn notify_starts_the_helper_and_does_not_wait() {
     let env = [("SWARM_NOTIFY_APP", helper.to_str().unwrap())];
     std::fs::write(
         home.join("bin/open"),
-        "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$HOME/opened\"\nsleep 30\n",
+        "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$HOME/opened\"\nwhile [ ! -e \"$HOME/release-open\" ]; do sleep 0.01; done\nprintf 'released\\n' >> \"$HOME/opened\"\n",
     )
     .unwrap();
-    let started = std::time::Instant::now();
-    assert!(swarm(&home, &env, &["notify", "Done"], "").status.success());
-    // A hang guard: notify that waited for `open` would take its whole 30 s.
-    assert!(started.elapsed() < std::time::Duration::from_secs(20));
-    assert_eq!(opened(&home, 1).unwrap(), helper_start(&home, &helper));
+    std::thread::scope(|scope| {
+        let home = &home;
+        let (sent, received) = std::sync::mpsc::channel();
+        scope.spawn(move || {
+            let result = swarm(home, &env, &["notify", "Done"], "");
+            let _ = sent.send(result);
+        });
+        // `open` stays blocked until notify returns. The timeout only bounds a failing run.
+        let result = received.recv_timeout(std::time::Duration::from_secs(60));
+        let arguments = opened(home, 1);
+        // Release the stub before any assertion, also when notify waited for it.
+        std::fs::write(home.join("release-open"), "").unwrap();
+        let released = opened(home, 2);
+        let result = result.expect("notify waited for open");
+        assert!(result.status.success(), "{result:?}");
+        assert_eq!(arguments.unwrap(), helper_start(home, &helper));
+        assert_eq!(
+            released.unwrap(),
+            format!("{}released\n", helper_start(home, &helper))
+        );
+    });
     std::fs::remove_dir_all(home).unwrap();
 }
 

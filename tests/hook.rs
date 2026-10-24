@@ -167,11 +167,10 @@ fn git_repo(home: &Path, name: &str) -> PathBuf {
     dir
 }
 
-/// Waits up to 1 s for the stand-in `open` to record its arguments.
-/// The `open` stand-in's log once it holds `lines` whole lines, or what it holds at the deadline.
-/// swarm starts `open` and does not wait for it.
+/// The `open` stand-in's log once it holds `lines` whole lines, or what it holds after 60 s.
+/// swarm starts `open` and does not wait for it, and the deadline only bounds a failing run.
 fn opened(home: &Path, lines: usize) -> Option<String> {
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
     loop {
         let text = std::fs::read_to_string(home.join("opened")).ok();
         let whole = text.as_deref().map_or(0, |text| text.matches('\n').count());
