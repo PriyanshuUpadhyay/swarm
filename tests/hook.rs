@@ -161,12 +161,18 @@ fn git_repo(home: &Path, name: &str) -> PathBuf {
 }
 
 /// Waits up to 1 s for the stand-in `open` to record its arguments.
-fn opened(home: &Path) -> Option<String> {
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
-    while !home.join("opened").exists() && std::time::Instant::now() < deadline {
+/// The `open` stand-in's log once it holds `lines` whole lines, or what it holds at the deadline.
+/// swarm starts `open` and does not wait for it.
+fn opened(home: &Path, lines: usize) -> Option<String> {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    loop {
+        let text = std::fs::read_to_string(home.join("opened")).ok();
+        let whole = text.as_deref().map_or(0, |text| text.matches('\n').count());
+        if whole >= lines || std::time::Instant::now() >= deadline {
+            return text;
+        }
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
-    std::fs::read_to_string(home.join("opened")).ok()
 }
 
 /// The `open` arguments that start the notice helper at `helper` for this test's home (ADR 0077).

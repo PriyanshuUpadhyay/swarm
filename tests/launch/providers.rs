@@ -139,12 +139,12 @@ fn a_chat_launches_from_the_chat_profile_and_a_one_off_pick_keeps_its_effort() {
     tool(
         &home,
         "claude",
-        "if [ \"$*\" = 'auth status' ]; then exec /bin/sleep 8; fi",
+        "if [ \"$*\" = 'auth status' ]; then exec /bin/sleep 25; fi",
     );
     let started = std::time::Instant::now();
     let stuck = swarm(
         &home,
-        &env,
+        &[&env[..], &[("SWARM_TEST_ACCOUNT_PICK_MS", "2000")]].concat(),
         &[
             "launch",
             "chat-stuck-auth",
@@ -156,7 +156,8 @@ fn a_chat_launches_from_the_chat_profile_and_a_one_off_pick_keeps_its_effort() {
         ],
     );
     assert!(stuck.status.success(), "{}", stderr(&stuck));
-    assert!(started.elapsed() < std::time::Duration::from_secs(8));
+    // A hang guard: the launch ends at the 2 s pick deadline, before the 25 s hang ends.
+    assert!(started.elapsed() < std::time::Duration::from_secs(20));
     assert!(
         stderr(&stuck).contains("no automatic account for claude; claude uses its own login"),
         "{}",

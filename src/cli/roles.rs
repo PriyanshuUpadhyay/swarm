@@ -17,7 +17,7 @@ impl Probe {
     pub(crate) fn new(config: &swarm::config::Config, account: Option<&str>) -> Probe {
         // Account selection starts its budget after launch has checked the host and opened the store.
         Probe {
-            deadline: swarm::profiles::native::deadline(ACCOUNT_PICK_TIMEOUT_SECONDS),
+            deadline: account_pick_deadline(),
             min_usage_left_pct: config.min_usage_left_pct,
             account: account.filter(|name| *name != "auto").map(str::to_string),
             accounts: Default::default(),

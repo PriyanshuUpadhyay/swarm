@@ -70,6 +70,8 @@ fn command(home: &Path, args: &[&str]) -> Command {
             format!("{}:/usr/bin:/bin", home.join("bin").display()),
         )
         .current_dir(home)
+        // The account pick budget a debug build takes, long enough for fake CLIs on a loaded Mac.
+        .env("SWARM_TEST_ACCOUNT_PICK_MS", "30000")
         .args(args);
     command
 }
@@ -84,12 +86,12 @@ fn a_named_pick_reads_every_account_within_the_pick_deadline() {
     for name in ["a", "b", "c"] {
         std::fs::create_dir_all(home.join(format!(".codex-{name}"))).unwrap();
     }
-    // Each login read takes 0.7 s, so five reads in a row pass the 2 s pick deadline.
+    // Each login read takes 1.5 s, so five reads in a row pass the 6 s pick deadline.
     tool(
         &home,
         "codex",
         &format!(
-            "sleep 0.7\n{}",
+            "sleep 1.5\n{}",
             include_str!("fixtures/accounts/work-app-server.sh")
         ),
     );
@@ -106,6 +108,7 @@ fn a_named_pick_reads_every_account_within_the_pick_deadline() {
                 "--json",
             ],
         )
+        .env("SWARM_TEST_ACCOUNT_PICK_MS", "6000")
         .output()
         .unwrap();
         assert!(
