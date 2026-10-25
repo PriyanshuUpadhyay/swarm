@@ -268,6 +268,8 @@ fn a_pi_chair_is_named_at_launch_and_gets_the_host_contract() {
         "{script}"
     );
     assert!(!script.contains("[agent-runtime"), "{script}");
+    // This adapter's spawn line names no `$SWARM_FEED`, so pi runs bare.
+    assert!(!script.contains("'pty'"), "{script}");
 
     let sessions = swarm(&home, &[], &["sessions", "--json"]);
     let sessions: serde_json::Value = serde_json::from_slice(&sessions.stdout).unwrap();
@@ -523,7 +525,11 @@ fn a_feed_pane_runs_claude_agy_and_pi_under_swarm_pty_and_codex_bare() {
             .split_once("'pty' '--' ")
             .is_some_and(|(_, rest)| rest.contains(&format!("'{provider}' '--model'")));
         assert_eq!(wrapped, provider != "codex", "{seat}: {script}");
-        assert!(!script.contains("PI_PROGRAM_STATUS"), "{seat}: {script}");
+        assert_eq!(
+            script.contains("'PI_PROGRAM_STATUS=1'"),
+            provider == "pi",
+            "{seat}: {script}"
+        );
     }
 
     // A `swarm spawn` command is the caller's own line, which may be a pane shell function.

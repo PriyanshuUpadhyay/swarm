@@ -37,10 +37,10 @@ keeps tmux for attach, capture, keys, and pane lifetime.
   A `swarm spawn -- <cmd>` line is not wrapped, because it may call a pane shell function.
   Codex sends no OSC 7501 and is not wrapped. Other adapters keep their own terminal, which may
   answer the probe itself (Rex).
-- pi no longer starts with `PI_PROGRAM_STATUS=1`. This replaces that part of ADR 0086.
-- `swarm status-feed` stores the CLI's own reports as it stores the hook echo today. Both say
-  the same states, and the CLI's own report adds the cancel (`idle` after work) that no Claude
-  or AGY hook gives.
+- pi still starts with `PI_PROGRAM_STATUS=1`, so it reports on an adapter that does not wrap it.
+- `swarm status-feed` stores the CLI's own reports beside the Claude or AGY hook states. Both
+  say the same states, and the CLI's own report adds the cancel (`idle` after work) that no
+  Claude or AGY hook gives. The feed looks for a pi log only in a pi pane.
 
 Rejected options and why:
 - `send-keys` answer: tested, Claude sent no report, because tmux's device-attributes reply
@@ -51,6 +51,9 @@ Rejected options and why:
 
 - Each wrapped pane has one more process, `swarm pty`, between the pane shell and the CLI.
   The CLI does not inherit the PTY master, so it is hung up when `swarm pty` dies.
+- A Claude or AGY pane now has two state writers, its hooks and its own reports.
+- If `swarm pty` is killed and the pane stays open, the pane's terminal stays in raw mode. The
+  pane shell then runs `swarm exited`, and the pane closes.
 - An Esc cancel in a Claude or AGY pane is stored as `done` in under a second (0.6 s live),
   where a screen read took 7.8 s before.
 - The shim uses `libc`, which is now a dependency of the default build.

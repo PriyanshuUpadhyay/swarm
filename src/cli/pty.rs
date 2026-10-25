@@ -148,7 +148,13 @@ pub(crate) fn pty(command: &[String]) -> i32 {
         let mut stdout = std::io::stdout().lock();
         let mut chunk = [0; 65536];
         // A read error is EIO once the CLI and every process it left have closed the terminal.
-        while let Ok(read @ 1..) = terminal.read(&mut chunk) {
+        loop {
+            let read = match terminal.read(&mut chunk) {
+                Ok(0) => break,
+                Ok(read) => read,
+                Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+                Err(_) => break,
+            };
             // Answer before this chunk reaches tmux, so the CLI reads the reply before tmux's
             // device-attributes reply to the query that follows the probe.
             for _ in 0..scanner.push(&chunk[..read]) {

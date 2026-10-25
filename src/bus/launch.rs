@@ -169,9 +169,13 @@ pub fn argv(
             Ok(args)
         }
         Provider::Pi => {
-            // pi sends OSC 7501 to a terminal that answers its probe; `swarm pty` answers it in
-            // a tmux-swarm pane (ADR 0122).
-            let mut args = vec![provider.id().into()];
+            // pi sends OSC 7501 only to a terminal that answers its probe. `swarm pty` answers it
+            // in a tmux-swarm pane (ADR 0122), and the variable makes pi send on any other host.
+            let mut args = vec![
+                "env".into(),
+                "PI_PROGRAM_STATUS=1".into(),
+                provider.id().into(),
+            ];
             if let Some(model) = resolved
                 .model
                 .as_deref()
