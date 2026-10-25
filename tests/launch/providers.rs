@@ -263,7 +263,7 @@ fn a_pi_chair_is_named_at_launch_and_gets_the_host_contract() {
     let id = format!("{session}-orchestrator");
     assert!(
         script.contains(&format!(
-            "'env' 'PI_PROGRAM_STATUS=1' 'pi' '--model' 'anthropic/claude-haiku-5-5' '--thinking' 'low' '--session-id' '{id}' '--append-system-prompt' '[agent-host: swarm-app]"
+            "'pi' '--model' 'anthropic/claude-haiku-5-5' '--thinking' 'low' '--session-id' '{id}' '--append-system-prompt' '[agent-host: swarm-app]"
         )),
         "{script}"
     );
@@ -463,4 +463,64 @@ fn a_pi_seat_gets_its_seat_block_in_the_system_prompt() {
         )),
         "{script}"
     );
+}
+
+/// tmux answers no OSC 7501 probe, so on an adapter whose pane feeds `swarm status-feed`, a CLI
+/// that sends reports runs under `swarm pty`, which answers it; Codex sends none (ADR 0122).
+#[test]
+fn a_feed_pane_runs_claude_agy_and_pi_under_swarm_pty_and_codex_bare() {
+    let home = scratch("pty-wrap");
+    for cli in ["claude", "codex", "agy", "pi"] {
+        tool(&home, cli, "true");
+    }
+    std::fs::create_dir_all(home.join(".swarm/adapters")).unwrap();
+    std::fs::write(
+        home.join(".swarm/adapters/tmux-swarm.conf"),
+        "self = printf chair\nspawn = : \"$SWARM_FEED\"; printf pane\nring = true\nlist = true\nclose = true\ncapture = true\n",
+    )
+    .unwrap();
+    let app = [("SWARM_ADAPTER", "tmux-swarm")];
+    let session = swarm(&home, &app, &["session", "new", "lane"]);
+    assert!(session.status.success(), "{}", stderr(&session));
+    let session = String::from_utf8(session.stdout)
+        .unwrap()
+        .trim()
+        .to_string();
+    let env = [
+        ("SWARM_ADAPTER", "tmux-swarm"),
+        ("SWARM_SESSION_ID", session.as_str()),
+        ("SWARM_AGENT_ID", "orchestrator"),
+    ];
+    let cwd = home.join("repo");
+    std::fs::create_dir_all(&cwd).unwrap();
+    let cwd = cwd.to_string_lossy().into_owned();
+    for (seat, provider, model) in [
+        ("seat-claude", "claude", "opus"),
+        ("seat-codex", "codex", "gpt-6-luna"),
+        ("seat-agy", "agy", "flash"),
+        ("seat-pi", "pi", "anthropic/claude-haiku-5-5"),
+    ] {
+        let output = swarm(
+            &home,
+            &env,
+            &[
+                "launch",
+                seat,
+                "chat",
+                "--provider",
+                provider,
+                "--model",
+                model,
+                "--cwd",
+                &cwd,
+            ],
+        );
+        assert!(output.status.success(), "{seat}: {}", stderr(&output));
+        let script =
+            std::fs::read_to_string(home.join(format!(".swarm/runs/{session}/{seat}.sh"))).unwrap();
+        let wrapped = script.contains(&format!("'pty' '--' '{provider}' "))
+            || script.contains("'pty' '--' 'env' ");
+        assert_eq!(wrapped, provider != "codex", "{seat}: {script}");
+        assert!(!script.contains("PI_PROGRAM_STATUS"), "{seat}: {script}");
+    }
 }

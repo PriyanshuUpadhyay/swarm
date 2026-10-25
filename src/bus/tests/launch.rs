@@ -124,14 +124,12 @@ mod tests {
     }
 
     #[test]
-    fn pi_reports_its_state_by_osc_7501() {
+    fn pi_takes_its_model_and_thinking_level() {
         let mut pi = role("pi");
         pi.model = Some("anthropic/claude-haiku-5-5".into());
         assert_eq!(
             argv("coder", "coder", &pi, "/home", std::path::Path::new("/")),
             Ok(vec![
-                "env",
-                "PI_PROGRAM_STATUS=1",
                 "pi",
                 "--model",
                 "anthropic/claude-haiku-5-5",
@@ -144,7 +142,7 @@ mod tests {
         );
         pi.model = Some("default".into());
         assert_eq!(
-            argv("coder", "coder", &pi, "/home", std::path::Path::new("/")).unwrap()[3..],
+            argv("coder", "coder", &pi, "/home", std::path::Path::new("/")).unwrap()[1..],
             ["--thinking", "high"]
         );
         assert!(extra_args(Provider::Pi, &strings(&["--thinking", "max"])).is_err());

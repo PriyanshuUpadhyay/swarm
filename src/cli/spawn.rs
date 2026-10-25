@@ -286,7 +286,7 @@ pub(crate) fn spawn_agent(
             swarm::adapter::shell_line(&[bin.to_string_lossy().into_owned()])
         );
         let exe = exe.to_string_lossy().into_owned();
-        let hook = swarm::adapter::shell_line(&[exe, "exited".into()]);
+        let hook = swarm::adapter::shell_line(&[exe.clone(), "exited".into()]);
         let child = if account.is_some()
             || (options.runner.is_some() && provider.is_some_and(Provider::has_accounts))
         {
@@ -311,6 +311,18 @@ pub(crate) fn spawn_agent(
             swarm::adapter::shell_line(&args)
         } else {
             swarm::adapter::shell_line(options.command)
+        };
+        // tmux answers no OSC 7501 probe, so a CLI that sends reports gets a terminal that does
+        // when the pane feeds `swarm status-feed`; Codex sends none (ADR 0122).
+        let child = if adapter.spawn.contains("SWARM_FEED")
+            && matches!(
+                provider,
+                Some(Provider::Claude | Provider::Agy | Provider::Pi)
+            ) {
+            let pty = swarm::adapter::shell_line(&[exe, "pty".into(), "--".into()]);
+            format!("{pty} {child}")
+        } else {
+            child
         };
         let line = script_line(root, &session_id, agent_id, &format!("{path}{child}"))?;
         Ok(Some(format!("{line}; {hook}")))
