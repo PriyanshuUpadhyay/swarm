@@ -97,3 +97,31 @@ fn the_command_hangs_up_when_swarm_pty_is_killed() {
     }
     assert!(!survived, "pid {pid} outlived swarm pty");
 }
+
+#[test]
+fn the_command_hangs_up_when_the_output_closes() {
+    use std::io::{BufRead, Read};
+    // With no reader of the output, the command must not block forever on a full terminal.
+    let mut shim = Command::new(env!("CARGO_BIN_EXE_swarm"))
+        .args(["pty", "--", "sh", "-c", "echo pid=$$; exec yes"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut output = std::io::BufReader::new(shim.stdout.take().unwrap());
+    let mut line = String::new();
+    output.read_line(&mut line).unwrap();
+    let pid = line.trim().strip_prefix("pid=").unwrap().to_string();
+    output.read_exact(&mut [0; 100]).unwrap();
+    drop(output);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while shim.try_wait().unwrap().is_none() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    let exited = shim.try_wait().unwrap().is_some();
+    if !exited {
+        let _ = shim.kill();
+        let _ = Command::new("kill").args(["-9", &pid]).status();
+    }
+    assert!(exited, "swarm pty kept running with no reader");
+}

@@ -142,11 +142,14 @@ pub(crate) fn pty(command: &[String]) -> i32 {
         let _ = std::io::copy(&mut std::io::stdin().lock(), &mut input);
     });
     let (done, finished) = std::sync::mpsc::channel();
+    // The CLI leads its own session, so its pid is also its process group.
+    let group = child.id() as libc::pid_t;
     std::thread::spawn(move || {
         let mut terminal = std::fs::File::from(output);
         let mut scanner = ProbeScanner::default();
         let mut stdout = std::io::stdout().lock();
         let mut chunk = [0; 65536];
+        let mut output_open = true;
         // A read error is EIO once the CLI and every process it left have closed the terminal.
         loop {
             let read = match terminal.read(&mut chunk) {
@@ -160,12 +163,18 @@ pub(crate) fn pty(command: &[String]) -> i32 {
             for _ in 0..scanner.push(&chunk[..read]) {
                 let _ = terminal.write_all(PROBE_REPLY);
             }
-            if stdout
-                .write_all(&chunk[..read])
-                .and_then(|()| stdout.flush())
-                .is_err()
+            if output_open
+                && stdout
+                    .write_all(&chunk[..read])
+                    .and_then(|()| stdout.flush())
+                    .is_err()
             {
-                break;
+                // With no reader the CLI blocks on a full terminal, so hang it up as a pane close
+                // would, and keep draining: a process cannot finish its exit while its terminal
+                // holds unread output.
+                output_open = false;
+                // SAFETY: kill only sends a signal.
+                unsafe { libc::kill(-group, libc::SIGHUP) };
             }
         }
         let _ = done.send(());
