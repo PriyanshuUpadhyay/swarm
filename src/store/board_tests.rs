@@ -42,6 +42,26 @@ mod tests {
     }
 
     #[test]
+    fn has_acked_names_only_the_reader_in_its_session() {
+        let (c, _root) = fixture("acked");
+        assert!(!has_acked(&c, SESSION, CODER).unwrap());
+        c.execute(
+            "INSERT INTO message (session_id, seq, sender_id, recipient_id, kind, body_path)
+             VALUES (?1, 0, ?2, ?3, 'ask', 'runs/0.txt')",
+            (SESSION, ORCHESTRATOR, CODER),
+        )
+        .unwrap();
+        c.execute(
+            "INSERT INTO read_mark (session_id, message_seq, agent_id) VALUES (?1, 0, ?2)",
+            (SESSION, CODER),
+        )
+        .unwrap();
+        assert!(has_acked(&c, SESSION, CODER).unwrap());
+        assert!(!has_acked(&c, SESSION, ORCHESTRATOR).unwrap());
+        assert!(!has_acked(&c, OTHER_SESSION, CODER).unwrap());
+    }
+
+    #[test]
     fn posts_are_append_only() {
         let (mut c, root) = fixture("append");
         n(put(&mut c, &root, CODER, finding("f")));

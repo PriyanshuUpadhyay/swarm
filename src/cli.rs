@@ -15,6 +15,9 @@ pub(crate) use answer::*;
 mod board;
 pub(crate) use board::*;
 
+mod board_hints;
+pub(crate) use board_hints::*;
+
 mod chair_idle;
 pub(crate) use chair_idle::*;
 

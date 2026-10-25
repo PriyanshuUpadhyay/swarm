@@ -92,6 +92,15 @@ pub fn has_posted(connection: &Connection, session: &str, agent: &str) -> rusqli
     )
 }
 
+/// Whether `agent` acked any message in `session`, so its first `inbox` is behind it.
+pub fn has_acked(connection: &Connection, session: &str, agent: &str) -> rusqlite::Result<bool> {
+    connection.query_row(
+        "SELECT EXISTS (SELECT 1 FROM read_mark WHERE session_id = ?1 AND agent_id = ?2)",
+        [session, agent],
+        |r| r.get(0),
+    )
+}
+
 /// Copies a moved repository's board to its new id. The old rows stay, because posts are
 /// append-only. Only an empty board takes a copy, so post numbers and links keep their meaning.
 pub fn relink(

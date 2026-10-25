@@ -199,6 +199,9 @@ pub(crate) fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         [cmd] if cmd == "inbox" => {
+            if let Some(hint) = start_hint(&connection, &session_id, &agent_id) {
+                eprintln!("{hint}");
+            }
             for m in swarm::store::inbox(&connection, &session_id, &agent_id)? {
                 println!("{} {} {} {}", m.seq, m.sender_id, m.kind, m.body_path);
             }

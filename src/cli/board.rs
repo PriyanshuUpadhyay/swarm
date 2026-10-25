@@ -96,7 +96,7 @@ fn is_temp(path: &str) -> bool {
 
 /// The board of a folder. A temp folder outside git gets none, so scratch runs cannot fill a board
 /// that no later run finds.
-fn project_of(cwd: &str) -> Result<String, String> {
+pub(crate) fn project_of(cwd: &str) -> Result<String, String> {
     let id = swarm::view::discovery::project_id(cwd);
     if id.starts_with("folder:") && is_temp(cwd) {
         return Err("swarm: no project: run swarm in a project folder".into());
@@ -186,25 +186,6 @@ fn body_from_stdin() -> Result<String, std::io::Error> {
         return Ok(String::new());
     }
     std::io::read_to_string(std::io::stdin())
-}
-
-/// The trial runs found facts that the next run needs, but no seat posted, because no step asked
-/// it to. `swarm finish` is the step that every seat runs, so it asks a seat that wrote no post.
-pub(crate) fn finish_hint(
-    connection: &rusqlite::Connection,
-    session: &str,
-    agent: &str,
-) -> Option<&'static str> {
-    let cwd = swarm::store::session_cwd(connection, session).ok()??;
-    project_of(&cwd).ok()?;
-    if swarm::store::has_posted(connection, session, agent).unwrap_or(true) {
-        return None;
-    }
-    Some(
-        "swarm: you wrote no board post in this session. Post each fact that the next run in this \
-         project needs, with `swarm board post finding --subject <text> --source <path|url>` and \
-         the body on stdin. Skip it if the run found nothing new.",
-    )
 }
 
 pub(crate) fn board(
