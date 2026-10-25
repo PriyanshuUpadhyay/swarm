@@ -263,9 +263,14 @@ mod tests {
             let at = args.iter().position(|arg| arg == "--settings").unwrap();
             let settings: serde_json::Value = serde_json::from_str(&args[at + 1]).unwrap();
             for event in CLAUDE_STATE_EVENTS {
+                let timeout = if event == "PermissionRequest" {
+                    crate::permission::HOOK_TIMEOUT_SECONDS
+                } else {
+                    STATE_HOOK_TIMEOUT
+                };
                 assert_eq!(
                     settings["hooks"][event],
-                    serde_json::json!([{"hooks": [{"type": "command", "command": claude_command, "timeout": 3}]}]),
+                    serde_json::json!([{"hooks": [{"type": "command", "command": claude_command, "timeout": timeout}]}]),
                     "{agent} {event}"
                 );
             }

@@ -63,6 +63,9 @@ pub(crate) use managed_hooks::*;
 mod notices;
 pub(crate) use notices::*;
 
+mod permission;
+pub(crate) use permission::*;
+
 mod read_screen;
 pub(crate) use read_screen::*;
 

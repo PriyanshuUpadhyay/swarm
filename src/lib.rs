@@ -10,6 +10,7 @@ pub mod host;
 pub mod hud;
 pub mod managed;
 pub mod paths;
+pub mod permission;
 pub mod plugin;
 pub mod profiles;
 pub mod providers;

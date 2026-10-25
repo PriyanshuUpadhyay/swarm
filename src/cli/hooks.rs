@@ -163,26 +163,28 @@ pub(crate) fn nested_run(commands: &[String], cli: &str) -> bool {
         > 1
 }
 
-/// `swarm hook`: a hook must never block or fail an agent's turn, so every error goes to stderr
-/// and the caller always gets `{}` and exit 0. Providers give a hook about 3 s: stdin gets 2 s,
-/// the bus 1 s.
-pub(crate) fn hook(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+/// State hooks return promptly. Claude's PermissionRequest additionally waits within its longer
+/// registration budget. An error reports no decision, so Claude's own dialog remains usable.
+pub(crate) fn hook(
+    args: &[String],
+) -> Result<Option<serde_json::Value>, Box<dyn std::error::Error>> {
     // A caller that is no swarm agent is done before its stdin is read.
     if env::var_os("SWARM_SESSION_ID").is_none() || env::var_os("SWARM_AGENT_ID").is_none() {
-        return Ok(());
+        return Ok(None);
     }
     let payload = read_within(std::io::stdin(), std::time::Duration::from_secs(2))
         .ok_or("swarm hook: stdin did not close within 2 s")?;
     let Some(report) = hook_report(args, &payload, |name| env::var(name).ok())? else {
-        return Ok(());
+        return Ok(None);
     };
     // A nested run speaks for no agent; its log once replaced a chat's own (ADR 0110).
     if let Some(cli) = args.first()
         && nested_run(&ancestor_commands(std::process::id()), cli)
     {
-        return Ok(());
+        return Ok(None);
     }
     let connection = swarm::store::open(&swarm::paths::sqlite_db()?)?;
+    let root = swarm::paths::root_dir()?;
     // The providers give a hook about 3 s; a busy bus loses this report rather than the turn.
     connection.busy_timeout(std::time::Duration::from_secs(1))?;
     // A CLI that the agent starts, such as a probe `agy -p`, inherits its SWARM_* variables, and
@@ -194,7 +196,7 @@ pub(crate) fn hook(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         .flatten()
         .is_some_and(|cli| Some(&cli) != args.first())
     {
-        return Ok(());
+        return Ok(None);
     }
     // Before the writes, so a busy bus does not lose what the owner sees in the block. Claude Code
     // and Antigravity send their own OSC 7501 reports in Rex, and a second writer flips the
@@ -208,22 +210,50 @@ pub(crate) fn hook(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(log) = &report.log {
         store_log(&connection, &report.session, &report.agent, log)?;
     }
-    let Some(state) = &report.state else {
-        return Ok(());
+    let payload: serde_json::Value = if payload.trim().is_empty() {
+        serde_json::json!({})
+    } else {
+        serde_json::from_str(&payload)?
     };
-    if store_state(
-        &connection,
-        &report.session,
-        &report.agent,
-        state,
-        "hook",
-        unix_now()?,
-    )? && let Some(provider) = &report.usage_provider
-    {
-        // Store the state before a usage read can wait on the log or bus.
-        let _ = swarm::store::update_usage(&connection, &report.session, &report.agent, provider);
+    let mut payload = payload;
+    if let [_, event] = args {
+        payload["hook_event_name"] = event.clone().into();
     }
-    Ok(())
+    let stored = if let Some(state) = &report.state {
+        store_state(
+            &connection,
+            &report.session,
+            &report.agent,
+            state,
+            "hook",
+            unix_now()?,
+        )?
+    } else {
+        false
+    };
+    // A broken handoff must not discard the state report.
+    if args.first().is_some_and(|provider| provider == "claude") {
+        swarm::permission::close_permission_requests(
+            &root,
+            &report.session,
+            &report.agent,
+            &payload,
+            permission_now_ms()?,
+        )?;
+    }
+    if stored {
+        if let Some(provider) = &report.usage_provider {
+            // Store the state before a usage read can wait on the log or bus.
+            let _ =
+                swarm::store::update_usage(&connection, &report.session, &report.agent, provider);
+        }
+        if args.first().is_some_and(|provider| provider == "claude")
+            && swarm::permission::is_request(&payload)
+        {
+            return wait_for_permission(&root, &report.session, &report.agent, &payload);
+        }
+    }
+    Ok(None)
 }
 
 /// The orchestrator is the chair, so its log is the chat's log. Only `swarm sessions --json`
