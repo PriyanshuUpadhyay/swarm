@@ -84,8 +84,8 @@ fn interrupted_summary() {
     }
 }
 #[test]
-fn recent_context() {
-    let context = handoff::recent_context(&rows(vec![
+fn chat_text() {
+    let context = handoff::chat_text(&rows(vec![
         message("user_message_chunk", "Fix the menu"),
         json!({"type":"tool_call_update","content":"secret tool output"}),
         message("agent_message_chunk", "I found the filter"),
@@ -94,24 +94,18 @@ fn recent_context() {
     assert!(context.contains("User: Fix the menu"));
     assert!(context.contains("Agent: I found the filter"));
     assert!(!context.contains("secret tool output"));
-    assert!(handoff::recent_context(&[]).is_none());
+    assert!(handoff::chat_text(&[]).is_none());
 }
 #[test]
 fn context_limits_and_delivery_instructions() {
+    // The whole chat goes over, not only its last messages.
     let events = (0..20)
         .map(|i| message("user_message_chunk", &format!("message-{i:02}")))
         .collect();
-    let context = handoff::recent_context(&rows(events)).unwrap();
-    assert!(!context.contains("message-03"));
-    assert!(context.contains("message-04"));
+    let context = handoff::chat_text(&rows(events)).unwrap();
+    assert!(context.contains("message-00"));
+    assert!(context.contains("message-19"));
     let long = "é".repeat(13_000);
-    assert_eq!(
-        handoff::recent_context(&rows(vec![message("agent_message_chunk", &long)]))
-            .unwrap()
-            .chars()
-            .count(),
-        12_000
-    );
     let summary = rows(vec![
         message("user_message_chunk", handoff::REQUEST),
         message("agent_message_chunk", &long),
@@ -127,4 +121,5 @@ fn context_limits_and_delivery_instructions() {
     );
     assert!(handoff::first_message("context", true).contains("Use this context"));
     assert!(handoff::first_message("context", false).contains("Make a compact working summary"));
+    assert!(handoff::file_message("/h/chat.md").contains("/h/chat.md. Read all of it"));
 }

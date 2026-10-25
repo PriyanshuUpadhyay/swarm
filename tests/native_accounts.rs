@@ -186,7 +186,11 @@ fn cached_windows_choose_least_left_and_match_the_shared_account_fixture() {
     }
     apply_usage(&mut list, &meters);
     assert_eq!(list.accounts[0].usage_state, "stale");
-    assert_eq!(pick_auto(&list.accounts, None, None, 5).unwrap(), None);
+    // A stale reading with room left is still the best guess.
+    assert_eq!(
+        pick_auto(&list.accounts, None, None, 5).unwrap().as_deref(),
+        Some("work")
+    );
     assert_eq!(
         pick_auto(&list.accounts, Some("/tmp/demo/.codex-work"), None, 5)
             .unwrap()

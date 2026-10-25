@@ -57,6 +57,9 @@ pub(crate) use logs::*;
 mod maintenance;
 pub(crate) use maintenance::*;
 
+mod resume;
+pub(crate) use resume::*;
+
 mod managed_hooks;
 pub(crate) use managed_hooks::*;
 

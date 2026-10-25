@@ -129,9 +129,35 @@ async fn handoff_successful_handoff() {
     assert!(calls[calls.len() - 2].ends_with("type orchestrator"));
     assert!(calls[calls.len() - 1].contains("session continue"));
     let text = std::fs::read_to_string(fixture.dir.join("home/handoff-text")).unwrap();
-    assert!(text.contains("These are recent messages"));
+    assert!(text.contains("These are the messages of the prior chat"));
     assert!(text.contains("Check the worker inbox"));
     assert!(fixture.app.handoffs.lock().unwrap().is_empty());
+}
+/// A chat too long to paste goes over whole, in a file the new agent reads.
+#[tokio::test]
+async fn handoff_long_chat_goes_in_a_file() {
+    use std::os::unix::fs::PermissionsExt;
+    let (fixture, body) = handoff_fixture();
+    let long = "first decision ".repeat(1_000);
+    let entry = json!({"type":"assistant","uuid":"long","message":{"role":"assistant","content":[{"type":"text","text":long}]}});
+    std::fs::OpenOptions::new()
+        .append(true)
+        .open(&fixture.log)
+        .unwrap()
+        .write_all(format!("{entry}\n").as_bytes())
+        .unwrap();
+    handoff_test_run(&fixture, body).await.unwrap();
+    let file = fixture
+        .app
+        .root
+        .join(format!("handoffs/{}.md", fixture.session));
+    let text = std::fs::read_to_string(fixture.dir.join("home/handoff-text")).unwrap();
+    assert!(text.contains(&format!("{}. Read all of it", file.display())), "{text}");
+    assert!(std::fs::read_to_string(&file).unwrap().contains(long.trim()));
+    assert_eq!(
+        std::fs::metadata(&file).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
 }
 #[tokio::test]
 async fn handoff_delivery_failure() {
@@ -193,7 +219,7 @@ async fn handoff_summary_timeout_falls_back_and_ready_timeout_leaves_separate() 
             assert!(
                 std::fs::read_to_string(home.join("handoff-text"))
                     .unwrap()
-                    .contains("These are recent messages")
+                    .contains("These are the messages of the prior chat")
             );
         } else {
             assert_eq!(result.unwrap_err().0, StatusCode::GATEWAY_TIMEOUT);
