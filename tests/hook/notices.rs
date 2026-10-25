@@ -120,6 +120,74 @@ fn notify_starts_the_helper_and_does_not_wait() {
     std::fs::remove_dir_all(home).unwrap();
 }
 
+/// A helper that exists but cannot be started is a visible stderr line. The notice row stays and
+/// notify still exits 0.
+#[test]
+fn notify_says_so_on_stderr_when_open_cannot_start() {
+    let home = scratch("notice-open-fails");
+    assert!(swarm(&home, &[], &["init"], "").status.success());
+    let helper = home.join("SwarmNotify.app");
+    std::fs::create_dir_all(&helper).unwrap();
+    // No `open` on PATH, so spawn fails with ENOENT.
+    std::fs::remove_file(home.join("bin/open")).unwrap();
+    let bin = home.join("bin");
+    let env = [
+        ("SWARM_NOTIFY_APP", helper.to_str().unwrap()),
+        ("PATH", bin.to_str().unwrap()),
+    ];
+    let notified = swarm(&home, &env, &["notify", "Done"], "");
+    assert!(notified.status.success(), "{notified:?}");
+    let stderr = String::from_utf8_lossy(&notified.stderr);
+    let lines: Vec<&str> = stderr
+        .lines()
+        .filter(|line| line.starts_with("swarm: notice helper did not start: "))
+        .collect();
+    assert_eq!(lines.len(), 1, "{stderr}");
+    let rows: serde_json::Value =
+        serde_json::from_str(&stdout(&swarm(&home, &[], &["notices", "--json"], ""))).unwrap();
+    assert_eq!(rows.as_array().unwrap().len(), 1, "{rows}");
+    std::fs::remove_dir_all(home).unwrap();
+}
+
+/// The hook never fails over a helper that did not start.
+#[test]
+fn a_change_to_waiting_still_prints_empty_json_when_open_cannot_start() {
+    let home = scratch("notice-hook-open-fails");
+    let session = stdout(&swarm(&home, &[], &["session", "new", "lane"], ""))
+        .trim()
+        .to_string();
+    assert!(
+        swarm(
+            &home,
+            &[("SWARM_SESSION_ID", &session)],
+            &["agent", "add", "coder", "coder"],
+            ""
+        )
+        .status
+        .success()
+    );
+    let helper = home.join("SwarmNotify.app");
+    std::fs::create_dir_all(&helper).unwrap();
+    std::fs::remove_file(home.join("bin/open")).unwrap();
+    let bin = home.join("bin");
+    let as_coder = [
+        ("SWARM_SESSION_ID", session.as_str()),
+        ("SWARM_AGENT_ID", "coder"),
+        ("SWARM_NOTIFY_APP", helper.to_str().unwrap()),
+        ("PATH", bin.to_str().unwrap()),
+    ];
+    let reported = swarm(
+        &home,
+        &as_coder,
+        &["hook", "claude"],
+        r#"{"hook_event_name":"PermissionRequest"}"#,
+    );
+    assert!(reported.status.success(), "{reported:?}");
+    assert_eq!(stdout(&reported), "{}\n", "{reported:?}");
+    assert_eq!(coder_state(&home, &session)["state"], "waiting");
+    std::fs::remove_dir_all(home).unwrap();
+}
+
 #[test]
 fn notify_starts_nothing_when_the_helper_is_missing() {
     let home = scratch("notice-open-missing");
