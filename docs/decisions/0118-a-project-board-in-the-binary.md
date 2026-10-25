@@ -57,8 +57,9 @@ with a source can be checked when the file changes.
 - **Ask chains stop at depth 3.** A deeper ask is stored, rings no peer, and rings the lead once.
 - **No owner approval in v1.** `--needs-owner` parks a decision, rings the lead, and writes one
   notice. Only the lead posts `--relayed`, and `read` shows it as "relayed by lead".
-- **The checker has a wall.** A worker's `board read` leaves out posts by role `checker`, except
-  a post sent to that worker and an answer to its own ask. A worker hands off a work key only
+- **The checker has a wall.** A worker's `board read` leaves out posts by role `checker` in its
+  own session, except a post sent to that worker and an answer to its own ask. A checker post
+  from another session stays readable, so a later run gets an earlier run's findings. A worker hands off a work key only
   after a checker finding with that key exists. `swarm guard` denies a worker's tool call that
   names `.swarm/boards`.
 

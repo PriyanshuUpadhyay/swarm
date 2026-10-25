@@ -6,8 +6,10 @@ use super::*;
 pub const CHECKER_ROLE: &str = "checker";
 
 /// The posts that `reader` (session, agent) may read; None is the owner at a plain terminal. A
-/// worker does not get the checker's posts, except one sent to it and an answer to its own ask,
-/// so a ping never points at a post it cannot read. Best effort: the body files stay readable.
+/// worker does not get the posts of its own session's checker, except one sent to it and an
+/// answer to its own ask, so a ping never points at a post it cannot read. A checker post from
+/// another session is a finished task's fact and stays readable. Best effort: the body files stay
+/// readable.
 pub fn posts_for(
     connection: &Connection,
     project_id: &str,
@@ -35,6 +37,7 @@ pub fn posts_for(
         .collect();
     all.retain(|p| {
         p.author_role != CHECKER_ROLE
+            || p.session_id != session
             || (p.to_session.as_deref() == Some(session) && p.to_agent.as_deref() == Some(agent))
             || (p.kind == "answer" && p.reply_to.is_some_and(|n| asked.contains(&n)))
     });

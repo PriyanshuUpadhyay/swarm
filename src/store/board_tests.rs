@@ -436,5 +436,7 @@ mod tests {
         assert_eq!(seen(Some((SESSION, ORCHESTRATOR))), all);
         assert_eq!(seen(Some((SESSION, CHECKER))), all);
         assert_eq!(seen(None), all);
+        // The wall is per task: a worker in a later session reads an earlier checker's findings.
+        assert_eq!(seen(Some((OTHER_SESSION, OUTSIDER))), all);
     }
 }
