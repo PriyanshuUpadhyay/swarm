@@ -52,7 +52,8 @@ and the restart breaks the open page for a moment, so the owner picks when each 
 - The second ask, Restart server, kickstarts the HUD login item with `-k` when it changed and
   runs, then starts the new `swarm ui --port <this port>`. That `swarm ui` stops the server of the
   old build and starts its own, and the page reloads on the new build's `hello` frame. A login
-  item that does not run starts the new app when it next starts.
+  item that does not run is started by the new `swarm ui` at once, as every `swarm ui` starts
+  the HUD. So a HUD that the owner quit comes back after the restart.
 - The HUD gets one try, and each launchctl call has a 10 s limit. When the kickstart fails or
   times out, the restart returns 502 before it touches the server. The page then names only the
   server, and the next press restarts only the server. Only a 409 comes before the HUD try, so

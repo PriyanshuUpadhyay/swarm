@@ -200,7 +200,7 @@ pub fn install(home: &Path) -> Result<Status, Box<dyn std::error::Error>> {
     std::fs::write(&path, text)?;
     // A loaded job keeps its old plist until it is booted out, and bootout returns before the job
     // is gone; a bootstrap before then fails with error 5. Not loaded at all is fine.
-    let target = format!("{}/{LABEL}", domain());
+    let target = target();
     let _ = launchctl(&["bootout", &target]);
     for _ in 0..30 {
         if !launchctl(&["print", &target]).is_ok_and(|output| output.status.success()) {
@@ -232,7 +232,7 @@ pub fn install(home: &Path) -> Result<Status, Box<dyn std::error::Error>> {
 }
 
 pub fn uninstall(home: &Path) -> Result<Status, Box<dyn std::error::Error>> {
-    let _ = launchctl(&["bootout", &format!("{}/{LABEL}", domain())]);
+    let _ = launchctl(&["bootout", &target()]);
     stop(&strays(None));
     match std::fs::remove_file(plist_path(home)) {
         Err(error) if error.kind() != std::io::ErrorKind::NotFound => return Err(error.into()),
@@ -272,6 +272,10 @@ mod tests {
         ] {
             assert_eq!(stable_path(Path::new(kept)), PathBuf::from(kept));
         }
+    }
+
+    #[test]
+    fn cellar_prefix_reads_a_cellar_path_and_refuses_other_paths() {
         let exe = Path::new("/opt/homebrew/Cellar/swarm/0.0.37/bin/swarm");
         assert_eq!(cellar_prefix(exe), Some(PathBuf::from("/opt/homebrew")));
         assert_eq!(cellar_prefix(Path::new("/Users/me/.cargo/bin/swarm")), None);

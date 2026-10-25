@@ -152,12 +152,13 @@ pub(super) fn page_base(url: &str) -> &str {
 /// the token there. `mode` applies only to a new file, so an older log is narrowed too.
 pub(super) fn owner_log(path: &Path) -> std::io::Result<std::fs::File> {
     use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+    const OWNER_ONLY: u32 = 0o600;
     let log = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
-        .mode(0o600)
+        .mode(OWNER_ONLY)
         .open(path)?;
-    log.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+    log.set_permissions(std::fs::Permissions::from_mode(OWNER_ONLY))?;
     Ok(log)
 }
 

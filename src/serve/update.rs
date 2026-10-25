@@ -11,6 +11,13 @@ const FORMULA_URL: &str =
 
 /// How long one tap read stays good, so many pages and reloads do not read it again.
 const CHECK_TTL: Duration = Duration::from_secs(3600);
+/// curl's own limit for the tap read; the outer limit is longer, so curl's error shows first.
+const CURL_SECS: u64 = 10;
+/// `brew update` reads every tap, and `brew upgrade swarm` downloads and links a release.
+const BREW_UPDATE_WAIT: Duration = Duration::from_secs(300);
+const BREW_UPGRADE_WAIT: Duration = Duration::from_secs(900);
+/// Each launchctl call and `swarm --version`.
+const SHORT_WAIT: Duration = Duration::from_secs(10);
 
 static LATEST: Mutex<Option<(std::time::Instant, String)>> = Mutex::new(None);
 static UPGRADE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
@@ -26,7 +33,7 @@ fn hud_hash(prefix: &Path) -> Option<[u8; 32]> {
 }
 
 /// Whether the upgrade brought a different HUD. With no HUD after it, there is nothing to start.
-pub(super) fn hud_changed(before: Option<[u8; 32]>, after: Option<[u8; 32]>) -> bool {
+fn hud_changed(before: Option<[u8; 32]>, after: Option<[u8; 32]>) -> bool {
     after.is_some() && before != after
 }
 
@@ -49,7 +56,7 @@ pub(super) fn brew_prefix() -> Option<&'static Path> {
 }
 
 /// The version in the formula's release URL: `.../releases/download/v0.0.38/...`.
-pub(super) fn formula_version(formula: &str) -> Option<&str> {
+fn formula_version(formula: &str) -> Option<&str> {
     let rest = formula.split_once("/releases/download/v")?.1;
     let version = rest.split_once('/')?.0;
     version_parts(version).map(|_| version)
@@ -61,7 +68,7 @@ fn version_parts(version: &str) -> Option<Vec<u64>> {
 
 /// Whether `latest` sorts above `current` as dotted numbers. A version that does not parse is
 /// never newer.
-pub(super) fn newer(latest: &str, current: &str) -> bool {
+fn newer(latest: &str, current: &str) -> bool {
     match (version_parts(latest), version_parts(current)) {
         (Some(latest), Some(current)) => latest > current,
         _ => false,
@@ -132,15 +139,16 @@ pub(super) async fn update_read() -> Result<Json<Value>, ApiError> {
         Some((_, latest)) => latest,
         None => {
             let curl = Path::new("/usr/bin/curl");
+            let max_time = CURL_SECS.to_string();
             let args = [
                 "--fail",
                 "--silent",
                 "--show-error",
                 "--max-time",
-                "10",
+                &max_time,
                 FORMULA_URL,
             ];
-            let formula = run(curl, &args, Duration::from_secs(15)).await?;
+            let formula = run(curl, &args, Duration::from_secs(CURL_SECS + 5)).await?;
             let latest = formula_version(&formula)
                 .ok_or_else(|| error(StatusCode::BAD_GATEWAY, "the tap formula names no version"))?
                 .to_string();
@@ -154,6 +162,16 @@ pub(super) async fn update_read() -> Result<Json<Value>, ApiError> {
     ))
 }
 
+/// The one lock of the upgrade and the restart, or a 409 while it is held.
+fn lock() -> Result<tokio::sync::MutexGuard<'static, ()>, ApiError> {
+    UPGRADE.try_lock().map_err(|_| {
+        error(
+            StatusCode::CONFLICT,
+            "an upgrade or a restart is already running",
+        )
+    })
+}
+
 /// Step one: `brew update`, then `brew upgrade swarm`, and the version that is now installed.
 pub(super) async fn update_write() -> Result<Json<Value>, ApiError> {
     let prefix = brew_prefix().ok_or_else(|| {
@@ -162,28 +180,23 @@ pub(super) async fn update_write() -> Result<Json<Value>, ApiError> {
             "this swarm is not a Homebrew install; rebuild it from its checkout",
         )
     })?;
-    let running = UPGRADE.try_lock().map_err(|_| {
-        error(
-            StatusCode::CONFLICT,
-            "an upgrade or a restart is already running",
-        )
-    })?;
+    let running = lock()?;
     // The lock, brew, and the results all live in this task, so a closed page that drops the
     // request neither frees the lock while brew runs nor loses the HUD mark.
     let upgrade = tokio::spawn(async move {
         let _running = running;
         let before = hud_set_up().then(|| hud_hash(prefix));
         let brew = prefix.join("bin/brew");
-        run(&brew, &["update", "--quiet"], Duration::from_secs(300)).await?;
-        let upgraded = run(&brew, &["upgrade", "swarm"], Duration::from_secs(900)).await;
-        let hud = before.is_some_and(|before| hud_changed(before, hud_hash(prefix)));
+        run(&brew, &["update", "--quiet"], BREW_UPDATE_WAIT).await?;
+        let upgraded = run(&brew, &["upgrade", "swarm"], BREW_UPGRADE_WAIT).await;
+        let changed = before.is_some_and(|before| hud_changed(before, hud_hash(prefix)));
         // Marked now, so a step that fails keeps the HUD change for the next try, also a brew
         // that fails after it moved `opt`. A repeat upgrade that finds the HUD unchanged keeps
         // the mark of the one before it.
-        let hud = HUD_CHANGED.fetch_or(hud, Ordering::SeqCst) || hud;
+        let pending = HUD_CHANGED.fetch_or(changed, Ordering::SeqCst) || changed;
         upgraded?;
         let swarm = prefix.join("opt/swarm/bin/swarm");
-        let printed = run(&swarm, &["--version"], Duration::from_secs(10)).await?;
+        let printed = run(&swarm, &["--version"], SHORT_WAIT).await?;
         // `swarm 0.0.38 abc1234 branch`
         let version = printed
             .split_whitespace()
@@ -198,7 +211,7 @@ pub(super) async fn update_write() -> Result<Json<Value>, ApiError> {
             return Err(error(StatusCode::CONFLICT, &message));
         }
         *LATEST.lock().unwrap() = None;
-        Ok(Json(json!({"version": version, "hud": hud})))
+        Ok(Json(json!({"version": version, "hud": pending})))
     });
     upgrade
         .await
@@ -206,23 +219,18 @@ pub(super) async fn update_write() -> Result<Json<Value>, ApiError> {
 }
 
 /// `launchctl kickstart -k` for a login item that runs, so it runs the app that `opt` names now.
-/// A login item that does not run starts the new app through `opt` when it next starts.
+/// A login item that does not run is started by the new `swarm ui` (`start_hud`).
 async fn hud_restart() -> Result<(), ApiError> {
     let home = std::env::var_os("HOME").unwrap_or_default();
     let status = tokio::task::spawn_blocking(move || swarm::hud::status(Path::new(&home)));
-    let status = tokio::time::timeout(Duration::from_secs(10), status)
+    let status = tokio::time::timeout(SHORT_WAIT, status)
         .await
         .map_err(|_| error(StatusCode::GATEWAY_TIMEOUT, "launchctl print timed out"))?
         .map_err(|err| error(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()))?;
     if status.running {
         let launchctl = Path::new("/bin/launchctl");
         let target = swarm::hud::target();
-        run(
-            launchctl,
-            &["kickstart", "-k", &target],
-            Duration::from_secs(10),
-        )
-        .await?;
+        run(launchctl, &["kickstart", "-k", &target], SHORT_WAIT).await?;
     }
     Ok(())
 }
@@ -245,16 +253,10 @@ pub(super) async fn update_restart(State(app): State<App>) -> Result<Json<Value>
             "this server is `swarm serve`; stop it and run `swarm serve` again",
         ));
     }
-    let running = UPGRADE.try_lock().map_err(|_| {
-        error(
-            StatusCode::CONFLICT,
-            "an upgrade or a restart is already running",
-        )
-    })?;
+    let running = lock()?;
     let fail = |err: std::io::Error| error(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string());
     let hud = HUD_CHANGED.load(Ordering::SeqCst);
     if hud {
-        // A login item that is not running starts the new app through `opt` when it next starts.
         let restarted = hud_restart().await;
         // One try only: the server is not touched yet, and the next press restarts it alone.
         HUD_CHANGED.store(false, Ordering::SeqCst);
@@ -280,7 +282,7 @@ pub(super) async fn update_restart(State(app): State<App>) -> Result<Json<Value>
     // The new server stops this one, so the lock stays held and a second page cannot start a
     // second `swarm ui`. If it never stops this one, `swarm ui` in a terminal does.
     std::mem::forget(running);
-    Ok(Json(json!({"ok": true, "hud": hud})))
+    Ok(Json(json!({"ok": true})))
 }
 
 #[cfg(test)]

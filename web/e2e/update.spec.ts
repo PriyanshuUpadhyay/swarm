@@ -28,7 +28,7 @@ test("an update upgrades, then restarts the server and the HUD, in two asks", as
       { status: 409, json: { error: "an upgrade or a restart is already running" } },
       { status: 500, json: { error: "Permission denied (os error 13)" } },
     ];
-    return route.fulfill(refusals[restarts++] ?? { json: { ok: true, hud: false } });
+    return route.fulfill(refusals[restarts++] ?? { json: { ok: true } });
   });
   await tab.goto(`${server().origin}/${server().hash}`);
   await tab.waitForFunction(() => window.__swarmReady === true);
@@ -55,8 +55,9 @@ test("an update upgrades, then restarts the server and the HUD, in two asks", as
   await expect(restarting).toBeVisible();
   await expect(restarting.getByRole("button")).toHaveCount(0);
   // The toast shows before the POST is sent, so wait for the route to see it.
-  await expect.poll(() => calls.length).toBe(6);
-  expect(calls).toEqual(["GET /api/update", "POST /api/update", "POST /api/update", ...Array(3).fill("POST /api/update/restart")]);
+  const expected = ["GET /api/update", "POST /api/update", "POST /api/update", ...Array(3).fill("POST /api/update/restart")];
+  await expect.poll(() => calls.length).toBe(expected.length);
+  expect(calls).toEqual(expected);
   // Each error shows in the one toast and is still recorded.
   await expect(tab.locator("[data-sonner-toast]")).toHaveCount(1);
   expect(errors).toEqual([]);

@@ -44,7 +44,7 @@ pub(super) fn start(
     record: Option<PathBuf>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Before any upgrade deletes this binary's folder, which the restart's path comes from.
-    brew_prefix();
+    let _ = brew_prefix();
     let root = swarm::paths::root_dir()?;
     drop(swarm::store::open(&root.join("swarm.db"))?);
     let token = match record {
