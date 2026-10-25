@@ -22,10 +22,11 @@ test("an update upgrades, then restarts the server and the HUD, in two asks", as
   let restarts = 0;
   await tab.route("**/api/update/restart", (route) => {
     calls.push("POST /api/update/restart");
-    // The first restart meets a busy lock, and the second a HUD that did not restart.
+    // The first restart meets a busy lock, and the second a server that cannot start after the
+    // HUD restarted.
     const refusals = [
       { status: 409, json: { error: "an upgrade or a restart is already running" } },
-      { status: 502, json: { error: "the HUD did not restart: no job" } },
+      { status: 500, json: { error: "Permission denied (os error 13)" } },
     ];
     return route.fulfill(refusals[restarts++] ?? { json: { ok: true, hud: false } });
   });
@@ -46,7 +47,7 @@ test("an update upgrades, then restarts the server and the HUD, in two asks", as
   // The server did not try the HUD, so the toast still names it.
   await expect(toast).toContainText("the HUD still run the old version");
   await toast.getByRole("button", { name: "Restart server" }).click();
-  await expect(toast).toContainText("Restart: the HUD did not restart: no job");
+  await expect(toast).toContainText("Restart: Permission denied (os error 13)");
   // The server tried the HUD once, so the toast now names only the server.
   await expect(toast).toContainText("The swarm ui server still runs the old version");
   await toast.getByRole("button", { name: "Restart server" }).click();

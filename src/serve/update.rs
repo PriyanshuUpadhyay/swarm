@@ -175,11 +175,13 @@ pub(super) async fn update_write() -> Result<Json<Value>, ApiError> {
         let before = hud_set_up().then(|| hud_hash(prefix));
         let brew = prefix.join("bin/brew");
         run(&brew, &["update", "--quiet"], Duration::from_secs(300)).await?;
-        run(&brew, &["upgrade", "swarm"], Duration::from_secs(900)).await?;
+        let upgraded = run(&brew, &["upgrade", "swarm"], Duration::from_secs(900)).await;
         let hud = before.is_some_and(|before| hud_changed(before, hud_hash(prefix)));
-        // Marked now, so a step below that fails keeps the HUD change for the next try. A repeat
-        // upgrade that finds the HUD unchanged keeps the mark of the one before it.
+        // Marked now, so a step that fails keeps the HUD change for the next try, also a brew
+        // that fails after it moved `opt`. A repeat upgrade that finds the HUD unchanged keeps
+        // the mark of the one before it.
         let hud = HUD_CHANGED.fetch_or(hud, Ordering::SeqCst) || hud;
+        upgraded?;
         let swarm = prefix.join("opt/swarm/bin/swarm");
         let printed = run(&swarm, &["--version"], Duration::from_secs(10)).await?;
         // `swarm 0.0.38 abc1234 branch`

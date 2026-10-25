@@ -24,6 +24,7 @@ const keep = (step: () => void) => (event: { preventDefault: () => void }) => {
 /** Checks on load and every 6 h until a notice shows. Returns the stop function. */
 export function watchUpdates(app: App): () => void {
   let shown = false;
+  let reported = false;
   const check = async () => {
     if (shown) return;
     try {
@@ -31,8 +32,13 @@ export function watchUpdates(app: App): () => void {
       if (!update.available || !update.latest) return;
       shown = true;
       offer(app, update.latest);
-    } catch {
-      // Offline or the tap is not reachable: the next check tries again.
+    } catch (err) {
+      // Offline or the tap is not reachable: the next check tries again. A server refusal, such
+      // as a tap formula that names no version, can repeat on every check, so it is recorded once.
+      if (err instanceof ApiError && !reported) {
+        reported = true;
+        shownErrors.report(`Update check: ${message(err)}`);
+      }
     }
   };
   void check();
@@ -84,10 +90,10 @@ async function restart(app: App, version: string, hud: boolean) {
     await app.api.post("/api/update/restart", {});
   } catch (err) {
     // The old server stops during this call, so only a refusal it sent is a failure. It refuses
-    // before it stops, so the owner can press Restart server again. A 502 is the HUD's one try,
-    // so the next press restarts only the server; other refusals leave the HUD mark set.
+    // before it stops, so the owner can press Restart server again. Only a 409 comes before the
+    // HUD's one try; after any other refusal the next press restarts only the server.
     if (err instanceof ApiError) {
-      return installed(app, version, hud && err.status !== 502, failed(`Restart: ${message(err)}`));
+      return installed(app, version, hud && err.status === 409, failed(`Restart: ${message(err)}`));
     }
   }
   // The stream's hello frame reloads the page on the new build, which ends this timer.
