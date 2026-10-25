@@ -202,7 +202,7 @@ pub(crate) fn list_agents_from(
     for (((mut row, alive), (screen, host, _)), provider) in
         rows.into_iter().zip(alive).zip(screens).zip(providers)
     {
-        let (screen, detail, prompt) = match screen {
+        let (screen, detail, mut prompt) = match screen {
             Some((screen, detail, prompt)) => (Some(screen), detail, prompt),
             None => (None, None, None),
         };
@@ -300,6 +300,11 @@ pub(crate) fn list_agents_from(
         let state_kind = row
             .state_kind
             .filter(|_| state.as_deref() == Some("waiting"));
+        if provider.as_deref() == Some("claude")
+            && let Some(prompt) = &mut prompt
+        {
+            tag_permission_prompt(root, session_id, &row.id, prompt)?;
+        }
         agents.push(swarm::bus::Agent {
             id: row.id,
             role: row.role,
