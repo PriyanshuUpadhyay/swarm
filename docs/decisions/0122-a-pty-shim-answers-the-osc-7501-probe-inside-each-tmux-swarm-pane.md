@@ -33,7 +33,8 @@ keeps tmux for attach, capture, keys, and pane lifetime.
 - `swarm pty` copies bytes unchanged in both directions, passes the window size on SIGWINCH,
   and exits with the CLI's code. It writes the probe reply to the CLI before it passes that
   output on to tmux, so the reply arrives before tmux's device-attributes reply.
-- `spawn_agent` wraps Claude, AGY, and pi when the adapter's spawn line names `$SWARM_FEED`.
+- `swarm launch` wraps Claude, AGY, and pi when the adapter's spawn line names `$SWARM_FEED`.
+  A `swarm spawn -- <cmd>` line is not wrapped, because it may call a pane shell function.
   Codex sends no OSC 7501 and is not wrapped. Other adapters keep their own terminal, which may
   answer the probe itself (Rex).
 - pi no longer starts with `PI_PROGRAM_STATUS=1`. This replaces that part of ADR 0086.
@@ -49,6 +50,7 @@ Rejected options and why:
 ### Consequences
 
 - Each wrapped pane has one more process, `swarm pty`, between the pane shell and the CLI.
+  The CLI does not inherit the PTY master, so it is hung up when `swarm pty` dies.
 - An Esc cancel in a Claude or AGY pane is stored as `done` in under a second (0.6 s live),
   where a screen read took 7.8 s before.
 - The shim uses `libc`, which is now a dependency of the default build.

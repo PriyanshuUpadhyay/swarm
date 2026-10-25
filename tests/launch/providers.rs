@@ -518,9 +518,18 @@ fn a_feed_pane_runs_claude_agy_and_pi_under_swarm_pty_and_codex_bare() {
         assert!(output.status.success(), "{seat}: {}", stderr(&output));
         let script =
             std::fs::read_to_string(home.join(format!(".swarm/runs/{session}/{seat}.sh"))).unwrap();
-        let wrapped = script.contains(&format!("'pty' '--' '{provider}' "))
-            || script.contains("'pty' '--' 'env' ");
+        // An account seat runs `env ... -- <cli>`, so the wrapped part must name this CLI.
+        let wrapped = script
+            .split_once("'pty' '--' ")
+            .is_some_and(|(_, rest)| rest.contains(&format!("'{provider}' '--model'")));
         assert_eq!(wrapped, provider != "codex", "{seat}: {script}");
         assert!(!script.contains("PI_PROGRAM_STATUS"), "{seat}: {script}");
     }
+
+    // A `swarm spawn` command is the caller's own line, which may be a pane shell function.
+    let output = swarm(&home, &env, &["spawn", "seat-raw", "chat", "--", "claude"]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    let script =
+        std::fs::read_to_string(home.join(format!(".swarm/runs/{session}/seat-raw.sh"))).unwrap();
+    assert!(!script.contains("'pty'"), "{script}");
 }

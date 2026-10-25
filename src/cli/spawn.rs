@@ -313,8 +313,10 @@ pub(crate) fn spawn_agent(
             swarm::adapter::shell_line(options.command)
         };
         // tmux answers no OSC 7501 probe, so a CLI that sends reports gets a terminal that does
-        // when the pane feeds `swarm status-feed`; Codex sends none (ADR 0122).
+        // when the pane feeds `swarm status-feed`; Codex sends none (ADR 0122). Only a launch,
+        // which has a runner, is wrapped: a `swarm spawn` command may be a pane shell function.
         let child = if adapter.spawn.contains("SWARM_FEED")
+            && options.runner.is_some()
             && matches!(
                 provider,
                 Some(Provider::Claude | Provider::Agy | Provider::Pi)

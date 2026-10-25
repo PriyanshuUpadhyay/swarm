@@ -78,12 +78,20 @@ pub(crate) fn pty(command: &[String]) -> i32 {
         eprintln!("swarm pty: openpty: {}", std::io::Error::last_os_error());
         return 127;
     }
-    // SAFETY: openpty succeeded, so both fds are open and owned here alone.
+    // SAFETY: openpty succeeded, so both fds are open and owned here alone. openpty does not set
+    // close-on-exec, and a CLI that inherits its own master is never hung up when this process
+    // dies, so it would outlive its pane.
     let (master, slave) = unsafe {
+        libc::fcntl(master_fd, libc::F_SETFD, libc::FD_CLOEXEC);
+        libc::fcntl(slave_fd, libc::F_SETFD, libc::FD_CLOEXEC);
         (
             OwnedFd::from_raw_fd(master_fd),
             OwnedFd::from_raw_fd(slave_fd),
         )
+    };
+    let (Ok(input), Ok(output)) = (master.try_clone(), master.try_clone()) else {
+        eprintln!("swarm pty: {}", std::io::Error::last_os_error());
+        return 127;
     };
     let stdio = || slave.try_clone().map(std::process::Stdio::from);
     let child = match (stdio(), stdio(), stdio()) {
@@ -124,15 +132,10 @@ pub(crate) fn pty(command: &[String]) -> i32 {
     // Raw mode, so each key reaches the CLI as it is typed and Ctrl-C reaches it as a byte.
     let mut saved: libc::termios = unsafe { std::mem::zeroed() };
     // SAFETY: tcgetattr fills a local termios; cfmakeraw and tcsetattr read it.
-    let raw = unsafe { libc::tcgetattr(0, &mut saved) } == 0 && {
-        let mut raw = saved;
-        unsafe { libc::cfmakeraw(&mut raw) };
-        (unsafe { libc::tcsetattr(0, libc::TCSANOW, &raw) }) == 0
-    };
-
-    let (Ok(input), Ok(output)) = (master.try_clone(), master.try_clone()) else {
-        eprintln!("swarm pty: {}", std::io::Error::last_os_error());
-        return 127;
+    let raw_mode = unsafe { libc::tcgetattr(0, &mut saved) } == 0 && {
+        let mut attrs = saved;
+        unsafe { libc::cfmakeraw(&mut attrs) };
+        (unsafe { libc::tcsetattr(0, libc::TCSANOW, &attrs) }) == 0
     };
     std::thread::spawn(move || {
         let mut input = std::fs::File::from(input);
@@ -165,7 +168,7 @@ pub(crate) fn pty(command: &[String]) -> i32 {
     let status = child.wait();
     // A process the CLI left behind can keep the terminal open, so the last output gets a moment.
     let _ = finished.recv_timeout(std::time::Duration::from_secs(1));
-    if raw {
+    if raw_mode {
         // SAFETY: restores the termios read above.
         unsafe { libc::tcsetattr(0, libc::TCSANOW, &saved) };
     }

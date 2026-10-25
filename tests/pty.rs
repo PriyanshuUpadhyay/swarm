@@ -61,3 +61,39 @@ fn a_command_that_cannot_start_exits_127() {
         .unwrap();
     assert_eq!(output.status.code(), Some(127), "{output:?}");
 }
+
+#[test]
+fn the_command_hangs_up_when_swarm_pty_is_killed() {
+    use std::io::BufRead;
+    // A pane close kills `swarm pty`; the command must not keep its terminal open and live on.
+    let mut shim = Command::new(env!("CARGO_BIN_EXE_swarm"))
+        .args(["pty", "--", "sh", "-c", "echo pid=$$; sleep 30"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut line = String::new();
+    std::io::BufReader::new(shim.stdout.take().unwrap())
+        .read_line(&mut line)
+        .unwrap();
+    let pid = line.trim().strip_prefix("pid=").unwrap().to_string();
+    shim.kill().unwrap();
+    shim.wait().unwrap();
+    let alive = || {
+        Command::new("kill")
+            .args(["-0", &pid])
+            .stderr(Stdio::null())
+            .status()
+            .unwrap()
+            .success()
+    };
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while alive() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    let survived = alive();
+    if survived {
+        let _ = Command::new("kill").args(["-9", &pid]).status();
+    }
+    assert!(!survived, "pid {pid} outlived swarm pty");
+}
