@@ -183,6 +183,24 @@
       ]
     },
     {
+      "name": "checker",
+      "runners": [
+        {
+          "provider": "claude",
+          "model": "sonnet",
+          "effort": "high",
+          "permission": "auto"
+        },
+        {
+          "provider": "codex",
+          "model": "gpt-6.1-sol",
+          "effort": "high",
+          "sandbox": "workspace-write",
+          "approval": "never"
+        }
+      ]
+    },
+    {
       "name": "review.deep",
       "runners": [
         {

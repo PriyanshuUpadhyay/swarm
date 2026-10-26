@@ -53,6 +53,14 @@ When running rounds, put `round: N` on the first line of every ask and discard a
 In lane mode children cannot message each other. In relay mode you receive their child-to-child
 messages as kind `relay:<recipient>` and forward them yourself.
 
+## Project board
+
+You are the board's lead. Run `swarm board read` before you write the first brief, and put each
+post that applies to the task in that brief. Post with `swarm board post <kind>`, and
+answer with `swarm board answer B-n`. Run `swarm board` for the flags; a refused post prints how to fix it.
+Launch the seat that writes a task's tests with role `checker`; swarm keeps its posts from the
+workers of this session.
+
 ## Reports to the owner
 
 Give each report, plan, review, or status the form that the kit's `references/explain-formats.md`

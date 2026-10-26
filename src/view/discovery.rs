@@ -159,6 +159,15 @@ pub fn resolve(path: &str) -> Option<String> {
     )
 }
 
+/// The project a folder belongs to. All worktrees of one repository share the id, so the app's
+/// project list and the project board agree on it.
+pub fn project_id(path: &str) -> String {
+    id_for(path, resolve(path).as_deref())
+}
+fn id_for(path: &str, common: Option<&str>) -> String {
+    common.map_or_else(|| format!("folder:{path}"), |c| format!("repository:{c}"))
+}
+
 pub fn parse_worktrees(bytes: &[u8]) -> Vec<WorkspaceFact> {
     let mut result = Vec::new();
     let mut current: Option<WorkspaceFact> = None;
@@ -234,9 +243,7 @@ impl Discovery {
                         }
                     })
                     .unwrap_or_else(|| path.clone());
-                let id = common
-                    .as_ref()
-                    .map_or_else(|| format!("folder:{path}"), |c| format!("repository:{c}"));
+                let id = id_for(&path, common.as_deref());
                 let project = projects.entry(id.clone()).or_insert_with(|| {
                     let workspaces = if let Some(common) = &common {
                         run(

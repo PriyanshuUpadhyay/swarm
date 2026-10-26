@@ -98,6 +98,11 @@ pub(crate) fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         println!("{}", clear_box(&adapter, &pane, dequeue)?);
         return Ok(());
     }
+    if let [cmd, rest @ ..] = args
+        && cmd == "board"
+    {
+        return board(rest, &root, &mut connection);
+    }
     let (session_id, agent_id) = identity()?;
     match args {
         [cmd, recipient, kind] if cmd == "send" => {
@@ -129,6 +134,9 @@ pub(crate) fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 "summary",
                 &summary,
             )?;
+            if let Some(hint) = finish_hint(&connection, &session_id, &agent_id) {
+                eprintln!("{hint}");
+            }
             println!("{seq}");
             Ok(())
         }
@@ -191,6 +199,9 @@ pub(crate) fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         [cmd] if cmd == "inbox" => {
+            if let Some(hint) = start_hint(&connection, &session_id, &agent_id) {
+                eprintln!("{hint}");
+            }
             for m in swarm::store::inbox(&connection, &session_id, &agent_id)? {
                 println!("{} {} {} {}", m.seq, m.sender_id, m.kind, m.body_path);
             }

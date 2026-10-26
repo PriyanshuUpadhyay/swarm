@@ -73,6 +73,11 @@ pub fn argv(
                 // and an agent pane has nobody at it to answer.
                 "-c".into(),
                 "check_for_update_on_startup=false".into(),
+                // A login shell runs the owner's profile, and `brew shellenv` there puts
+                // /opt/homebrew/bin back in front of the pane's swarm link, so the seat ran another
+                // swarm build. The pane already holds the login environment.
+                "-c".into(),
+                "allow_login_shell=false".into(),
             ];
             match resolved.sandbox.as_deref() {
                 // `--sandbox workspace-write` keeps `.git` read-only, so a seat cannot commit. A

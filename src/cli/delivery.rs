@@ -58,10 +58,35 @@ pub(crate) fn deliver_with(
     let seq = swarm::store::send_message(
         connection, root, session_id, sender, &recipient, &kind, body,
     )?;
+    ring_stored(
+        connection,
+        root,
+        adapter_name,
+        session_id,
+        &recipient,
+        &pane,
+        seq,
+        proof,
+    );
+    Ok(seq)
+}
+
+/// Rings a stored message unless the recipient already has a rung unread one.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn ring_stored(
+    connection: &rusqlite::Connection,
+    root: &std::path::Path,
+    adapter_name: &str,
+    session_id: &str,
+    recipient: &str,
+    pane: &str,
+    seq: i64,
+    proof: Proof,
+) {
     // The message is stored now, so a failed ring mark only warns: the row stays unrung, a later
     // re-ring rings it, and a caller such as `report` does not send it a second time.
     let mark = || -> Result<Option<i64>, Box<dyn std::error::Error>> {
-        if swarm::store::has_rung_unread(connection, session_id, &recipient)? {
+        if swarm::store::has_rung_unread(connection, session_id, recipient)? {
             return Ok(None);
         }
         let rung_at = unix_now()?;
@@ -78,8 +103,8 @@ pub(crate) fn deliver_with(
                 root,
                 swarm::adapter::load(root, adapter_name),
                 session_id,
-                &recipient,
-                &pane,
+                recipient,
+                pane,
                 &[seq],
                 rung_at,
                 proof,
@@ -88,7 +113,6 @@ pub(crate) fn deliver_with(
         Ok(None) => {}
         Err(error) => eprintln!("swarm: message {seq} stored but not rung: {error}"),
     }
-    Ok(seq)
 }
 
 pub(crate) fn ack(

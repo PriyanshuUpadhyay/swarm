@@ -4,12 +4,20 @@ use rusqlite::{Connection, OptionalExtension, TransactionBehavior};
 
 mod agent_state;
 mod agents;
+mod board;
+mod board_claims;
+mod board_ping;
+mod board_read;
 mod delivery;
 mod messages;
 mod sessions;
 mod usage;
 pub use agent_state::*;
 pub use agents::*;
+pub use board::*;
+pub use board_claims::*;
+pub use board_ping::*;
+pub use board_read::*;
 pub use delivery::*;
 pub use messages::*;
 pub use sessions::*;
@@ -22,6 +30,22 @@ mod agent_tests;
 #[cfg(test)]
 #[path = "store/delivery_tests.rs"]
 mod delivery_tests;
+
+#[cfg(test)]
+#[path = "store/board_test_support.rs"]
+mod board_test_support;
+
+#[cfg(test)]
+#[path = "store/board_tests.rs"]
+mod board_tests;
+
+#[cfg(test)]
+#[path = "store/board_claim_tests.rs"]
+mod board_claim_tests;
+
+#[cfg(test)]
+#[path = "store/board_ping_tests.rs"]
+mod board_ping_tests;
 
 #[cfg(test)]
 #[path = "store/schema_tests.rs"]
@@ -58,6 +82,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0012.sql"),
     include_str!("../migrations/0013.sql"),
     include_str!("../migrations/0014.sql"),
+    include_str!("../migrations/0015.sql"),
 ];
 
 #[derive(serde::Serialize)]
@@ -244,6 +269,11 @@ fn migrate_locked(connection: &mut Connection) -> Result<(), Box<dyn std::error:
     if version < 14 {
         tx.execute_batch(MIGRATIONS[13])?;
         tx.pragma_update(None, "user_version", 14)?;
+    }
+
+    if version < 15 {
+        tx.execute_batch(MIGRATIONS[14])?;
+        tx.pragma_update(None, "user_version", 15)?;
     }
 
     let added = broken(&tx)? - broken_before;
