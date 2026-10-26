@@ -85,9 +85,19 @@ impl Host {
             .recursive(true)
             .mode(0o700)
             .create(swarm::paths::root_dir()?.join(format!("runs/{session}")))?;
-        // A socket left by a host that was killed refuses connections; a live one belongs to a
-        // second chair of the same session, which takes the children's socket from it.
-        let _ = std::fs::remove_file(&socket);
+        // A host that was killed, as a closed tmux pane kills it, leaves its socket, which then
+        // refuses connections. A live one here belongs to a second chair of the same session,
+        // which takes the children's socket from it.
+        if let Some(dir) = socket.parent() {
+            for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+                let path = entry.path();
+                let refused = UnixStream::connect(&path)
+                    .is_err_and(|error| error.kind() == std::io::ErrorKind::ConnectionRefused);
+                if path == socket || refused {
+                    let _ = std::fs::remove_file(&path);
+                }
+            }
+        }
         let listener = UnixListener::bind(&socket)?;
         std::fs::set_permissions(&socket, std::fs::Permissions::from_mode(0o600))?;
         let children = Children::default();
