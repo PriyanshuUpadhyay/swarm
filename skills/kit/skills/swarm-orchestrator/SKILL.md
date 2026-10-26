@@ -55,9 +55,10 @@ messages as kind `relay:<recipient>` and forward them yourself.
 
 ## Project board
 
-You are the board's lead. Run `swarm board read` before you write the first brief, and put each
-post that applies to the task in that brief. Post with `swarm board post <kind>`, and
-answer with `swarm board answer B-n`. Run `swarm board` for the flags; a refused post prints how to fix it.
+You are the lead, the senior of the session. A seat on any other role is a worker, a junior, and
+role `checker` is the checker. Run `swarm board read` before you write the first brief, and name
+the posts that apply as the kit's `blocks/worker-brief/SKILL.md` says. Post with
+`swarm board post <kind>`, and answer a worker's ask with `swarm board answer B-n`. Run `swarm board` for the flags; a refused post prints how to fix it.
 Launch the seat that writes a task's tests with role `checker`; swarm keeps its posts from the
 workers of this session.
 

@@ -10,7 +10,7 @@ metadata:
   gives: "visible seats with accepted results, closed at the end"
   conflicts: ""
   users: "orchestrate-claude, orchestrate-codex, orchestrate-agy, council, web-search, review"
-  source: "skills/orchestrate-claude/SKILL.md, skills/orchestrate-codex/SKILL.md, skills/orchestrate-agy/SKILL.md (the shared text, moved here 2026-10-13); skills/council/SKILL.md (Execution backend)"
+  source: "skills/orchestrate-claude/SKILL.md, skills/orchestrate-codex/SKILL.md, skills/orchestrate-agy/SKILL.md (the shared text, moved here 2026-10-13); skills/council/SKILL.md (Execution backend); council 2026-10-26-board-roles-blocks (the take-the-task move)"
 ---
 
 ## Rules
@@ -23,6 +23,7 @@ metadata:
 - A search can run in the current agent without a worker pane. When a workflow requires workers, use the visibility and lifecycle rules of the active host and runtime contract.
 - Before a retry of a launch or a send that timed out, check whether the first one landed, with `swarm agents --json` for a launch and `swarm messages --json` for a send. Retry only when it did not, so a slow call never makes a second seat or a second message.
 - If a visible seat cannot launch or stay interactive, retry it once. Then start a visible seat on the role's next declared fallback runner, and tell the user the run is degraded. With no fallback left, go on without that seat only when the skill allows it.
+- When a worker publishes `blocked: tried <the 3>`, the chair, as the senior, may take the task: it closes the blocked seat, because a run has at most two coding seats, then relaunches the task once on `code.complex`, with the worker's result as the new brief. The binary's claim and handoff refusals still apply. When the checker role declares a runner of another provider than the worker's, the chair may launch the checker on that runner.
 - Send the briefs of one stage under one deadline. Sending returns when the worker took the task, not when it finished; the worker's finish rings the chair. The kit's `references/fan-out.md` owns what goes out in parallel and the chair's work while seats run.
 - Accept only a result that the host's durable channel confirms and that names its seat. Pass the skill's refusal or degraded state to the chair as the skill says.
 - At the end, close only the seats this run started, and check that they are gone.
@@ -39,3 +40,4 @@ Result: three result files, each confirmed by an inbox message from its seat; at
 - Was each seat's role resolved with `swarm roles get` before launch? Quote the routed model of each seat.
 - Was any seat headless or detached, or hidden when the skill asked for visible seats? Quote the launch line, or write "none".
 - Were all seats this run started closed and checked gone at the end? Quote the close and the check.
+- Was each relaunch after `blocked: tried` one relaunch on `code.complex` with the worker's result as its brief? Quote the launch, or write "no relaunch".
