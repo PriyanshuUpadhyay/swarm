@@ -46,8 +46,12 @@ pub(crate) fn close_agents(
         match adapter.run("close", &[("pane", &pane)]) {
             Ok(_) => swarm::store::clear_pane(connection, session_id, id)?,
             Err(_) if swarm::store::pane_of(connection, session_id, id)?.is_none() => {}
-            Err(error) => failed.push(format!("{id}: not closed: {error}")),
+            Err(error) => {
+                failed.push(format!("{id}: not closed: {error}"));
+                continue;
+            }
         }
+        swarm::store::release_claims_of(connection, session_id, id, unix_now()?)?;
     }
     if failed.is_empty() {
         return Ok(());

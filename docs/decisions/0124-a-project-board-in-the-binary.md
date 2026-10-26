@@ -48,7 +48,8 @@ with a source can be checked when the file changes.
 - **Claims carry a generation fence.** A claim takes a work key for a lease. A renewal names the
   current generation and writes no post. A new holder after the lease ends gets generation + 1.
   An old holder's handoff with a stale generation is refused. A 4th holder in one session is
-  refused, and the work parks for the owner; a later session starts its tries again.
+  refused, and the work parks for the owner; a later session starts its tries again. `swarm close`
+  releases the closed seat's live claims, so the lead's relaunch claims at once (probe c3, 2026-10-26).
 - **Pings are fixed text.** An addressed ask, an answer to the asker, and an addressed handoff
   add one `message` row from the paneless `board` sender, in the post's transaction, for example
   "board post B-7: ask from c1. Run swarm board read B-7." Agent text never goes in a ping.
@@ -61,7 +62,8 @@ with a source can be checked when the file changes.
   own session, except a post sent to that worker and an answer to its own ask. A checker post
   from another session stays readable, so a later run gets an earlier run's findings. A worker hands off a work key only
   after a checker finding with that key exists. `swarm guard` denies a worker's tool call that
-  names `.swarm/boards`.
+  names `.swarm/boards`. The wall also works the other way: a checker may not list the board,
+  and reads only `B-n`, the posts its brief names (probe d2, 2026-10-26).
 
 ### Consequences
 

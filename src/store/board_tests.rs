@@ -470,5 +470,13 @@ mod tests {
         assert_eq!(seen(None), all);
         // The wall is per task: a worker in a later session reads an earlier checker's findings.
         assert_eq!(seen(Some((OTHER_SESSION, OUTSIDER))), all);
+        // A checker reads only named posts, so it may not list the board; the others may.
+        let err = may_list(&c, Some((SESSION, CHECKER)))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("swarm board read B-n"), "{err}");
+        for reader in [Some((SESSION, CODER)), Some((SESSION, ORCHESTRATOR)), None] {
+            assert!(may_list(&c, reader).is_ok());
+        }
     }
 }

@@ -136,6 +136,21 @@ pub(super) fn claim_fence(
     Ok(ControlFlow::Continue(generation))
 }
 
+/// Releases every live claim that `agent` of `session` holds, so a closed seat does not block the
+/// lead's relaunch until its lease ends (probe c3, 2026-10-26). Returns the number released.
+pub fn release_claims_of(
+    connection: &Connection,
+    session: &str,
+    agent: &str,
+    now: i64,
+) -> rusqlite::Result<usize> {
+    connection.execute(
+        "UPDATE claim SET released_at = ?3
+         WHERE session_id = ?1 AND holder = ?2 AND released_at IS NULL AND lease_until > ?3",
+        (session, agent, now),
+    )
+}
+
 pub(super) fn claim_row(
     tx: &Connection,
     project_id: &str,
