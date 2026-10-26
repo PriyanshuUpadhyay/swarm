@@ -30,7 +30,27 @@ fn main() {
         && cmd == "pty"
         && dashes == "--"
     {
-        std::process::exit(pty(command));
+        std::process::exit(pty(command, false));
+    }
+    if let [cmd, flag, dashes, command @ ..] = args.as_slice()
+        && cmd == "pty"
+        && flag == "--host"
+        && dashes == "--"
+    {
+        std::process::exit(pty(command, true));
+    }
+    if let [cmd, verb] = args.as_slice()
+        && cmd == "pty"
+        && verb != "--"
+    {
+        match pty_client(verb) {
+            Ok(out) => print!("{out}"),
+            Err(error) => {
+                eprintln!("{error}");
+                std::process::exit(1);
+            }
+        }
+        return;
     }
     if let [cmd] = args.as_slice()
         && cmd == "status-feed"

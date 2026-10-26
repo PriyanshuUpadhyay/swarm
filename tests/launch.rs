@@ -16,6 +16,8 @@ mod listing;
 mod owner;
 #[path = "launch/providers.rs"]
 mod providers;
+#[path = "launch/pty_host.rs"]
+mod pty_host;
 #[path = "launch/resume.rs"]
 mod resume;
 #[path = "launch/spawning.rs"]
