@@ -6,7 +6,14 @@ import { expect, test } from "@playwright/test";
 
 const server = () => new URL(process.env.SWARM_SERVE_URL!);
 
-test("an update upgrades, then restarts the server and the HUD, in two asks", async ({ page: tab }) => {
+// A 502 (the HUD's one try) and a 500 (the new server) each drop the HUD from the toast, so each
+// comes first in one run.
+const tries = {
+  502: { error: "the HUD did not restart: no job", text: "Restart: the HUD did not restart: no job" },
+  500: { error: "Permission denied (os error 13)", text: "Restart: Permission denied (os error 13)" },
+};
+
+for (const [first, later] of [[502, 500], [500, 502]] as const) test(`an update upgrades, then restarts the server and the HUD, in two asks (${first} first)`, async ({ page: tab }) => {
   const errors: string[] = [];
   tab.on("pageerror", (e) => errors.push(e.message));
   const calls: string[] = [];
@@ -22,12 +29,11 @@ test("an update upgrades, then restarts the server and the HUD, in two asks", as
   let restarts = 0;
   await tab.route("**/api/update/restart", (route) => {
     calls.push("POST /api/update/restart");
-    // The first restart meets a busy lock, the second a HUD that did not restart, and the third a
-    // server that cannot start after the HUD restarted.
+    // The first restart meets a busy lock, then the two failures after the HUD try.
     const refusals = [
       { status: 409, json: { error: "an upgrade or a restart is already running" } },
-      { status: 502, json: { error: "the HUD did not restart: no job" } },
-      { status: 500, json: { error: "Permission denied (os error 13)" } },
+      { status: first, json: { error: tries[first].error } },
+      { status: later, json: { error: tries[later].error } },
     ];
     return route.fulfill(refusals[restarts++] ?? { json: { ok: true } });
   });
@@ -48,13 +54,13 @@ test("an update upgrades, then restarts the server and the HUD, in two asks", as
   // The server did not try the HUD, so the toast still names it.
   await expect(toast).toContainText("the HUD still run the old version");
   await toast.getByRole("button", { name: "Restart server" }).click();
-  await expect(toast).toContainText("Restart: the HUD did not restart: no job");
+  await expect(toast).toContainText(tries[first].text);
   // The server tried the HUD once, so the toast now names only the server.
   await expect(toast).toContainText("The swarm ui server still runs the old version");
   await expect(toast).not.toContainText("the HUD still run the old version");
   await toast.getByRole("button", { name: "Restart server" }).click();
   // A later refusal keeps the HUD out of the toast.
-  await expect(toast).toContainText("Restart: Permission denied (os error 13)");
+  await expect(toast).toContainText(tries[later].text);
   await expect(toast).toContainText("The swarm ui server still runs the old version");
   await toast.getByRole("button", { name: "Restart server" }).click();
   const restarting = tab.locator("[data-sonner-toast]").filter({ hasText: "Restarting the swarm ui server" });

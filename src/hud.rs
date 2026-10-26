@@ -150,6 +150,9 @@ fn stop(pids: &[u32]) {
     }
 }
 
+/// The step of each wait on launchctl below.
+const POLL: std::time::Duration = std::time::Duration::from_millis(100);
+
 fn domain() -> String {
     // SAFETY: getuid has no preconditions and cannot fail.
     format!("gui/{}", unsafe { getuid() })
@@ -228,7 +231,7 @@ fn reload(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         if !launchctl(&["print", &target]).is_ok_and(|output| output.status.success()) {
             break;
         }
-        std::thread::sleep(std::time::Duration::from_millis(100));
+        std::thread::sleep(POLL);
     }
     // The job is gone now, so each HUD left is a stray; one HUD runs after the bootstrap.
     stop(&strays(None));
@@ -249,7 +252,7 @@ fn wait_running(home: &Path) -> Status {
         if now.running {
             return now;
         }
-        std::thread::sleep(std::time::Duration::from_millis(100));
+        std::thread::sleep(POLL);
     }
     status(home)
 }
@@ -267,7 +270,7 @@ pub fn uninstall(home: &Path) -> Result<Status, Box<dyn std::error::Error>> {
         if !now.running {
             return Ok(now);
         }
-        std::thread::sleep(std::time::Duration::from_millis(100));
+        std::thread::sleep(POLL);
     }
     Ok(status(home))
 }
@@ -275,6 +278,14 @@ pub fn uninstall(home: &Path) -> Result<Status, Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn restart_leaves_a_login_item_that_is_not_installed_alone() {
+        let home = std::env::temp_dir().join(format!("swarm-hud-restart-{}", std::process::id()));
+        let status = restart(&home).unwrap();
+        assert!(!status.installed);
+        assert!(!plist_path(&home).exists());
+    }
 
     #[test]
     fn stable_path_maps_a_cellar_version_to_opt_and_keeps_other_paths() {

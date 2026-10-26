@@ -112,8 +112,12 @@ pub(crate) fn commands_info(args: &[String]) -> Result<Option<()>, Box<dyn std::
             [flag] if flag == "--json" => true,
             _ => return Err(USAGE.into()),
         };
-        // ADR 0087: the HUD starts at login only after the owner opts in, never from a worker.
-        if verb != "status" && swarm::host::is_worker(|name| env::var(name).ok()) {
+        // ADR 0087: the HUD starts at login only after the owner opts in, never from a worker. A
+        // restart only reloads a login item the owner installed, so the release scripts run it
+        // from any pane.
+        if (verb == "install" || verb == "uninstall")
+            && swarm::host::is_worker(|name| env::var(name).ok())
+        {
             return Err("swarm: only the owner turns the usage HUD on or off".into());
         }
         let home = std::path::PathBuf::from(env::var("HOME")?);

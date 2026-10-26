@@ -78,7 +78,7 @@ fn notify_records_the_chair_identity_and_refuses_a_worker() {
 }
 
 #[test]
-fn hud_install_and_uninstall_refuse_a_worker() {
+fn hud_install_and_uninstall_refuse_a_worker_and_restart_does_not() {
     let home = scratch("hud-worker");
     for verb in ["install", "uninstall"] {
         let refused = swarm(&home, &[("SWARM_AGENT_ID", "coder")], &["hud", verb], "");
@@ -88,6 +88,14 @@ fn hud_install_and_uninstall_refuse_a_worker() {
             "swarm: only the owner turns the usage HUD on or off\n"
         );
     }
+    // A release script in a worker pane reloads the HUD; with no login item there is nothing to do.
+    let restarted = swarm(
+        &home,
+        &[("SWARM_AGENT_ID", "coder")],
+        &["hud", "restart"],
+        "",
+    );
+    assert!(restarted.status.success(), "{restarted:?}");
     assert!(!home.join("Library/LaunchAgents").exists());
     std::fs::remove_dir_all(home).unwrap();
 }

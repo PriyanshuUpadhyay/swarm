@@ -16,7 +16,7 @@ const CURL_SECS: u64 = 10;
 /// `brew update` reads every tap, and `brew upgrade swarm` downloads and links a release.
 const BREW_UPDATE_WAIT: Duration = Duration::from_secs(300);
 const BREW_UPGRADE_WAIT: Duration = Duration::from_secs(900);
-/// Each launchctl call and `swarm --version`.
+/// `swarm --version` or the HUD reload, which takes about 4 s at most.
 const SHORT_WAIT: Duration = Duration::from_secs(10);
 /// The last lines of a failed step that the error toast shows.
 const ERROR_LINES: usize = 5;
@@ -238,7 +238,7 @@ async fn hud_restart() -> Result<(), ApiError> {
     });
     tokio::time::timeout(SHORT_WAIT, restarted)
         .await
-        .map_err(|_| error(StatusCode::GATEWAY_TIMEOUT, "the HUD restart timed out"))?
+        .map_err(|_| error(StatusCode::GATEWAY_TIMEOUT, "timed out"))?
         .map_err(|err| error(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()))?
         .map_err(|err| error(StatusCode::BAD_GATEWAY, &err))?;
     Ok(())
