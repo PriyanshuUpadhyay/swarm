@@ -81,6 +81,9 @@ pub(crate) use permission::*;
 mod read_screen;
 pub(crate) use read_screen::*;
 
+mod pty;
+pub(crate) use pty::*;
+
 mod ring;
 pub(crate) use ring::*;
 

@@ -286,6 +286,49 @@ fn a_pane_status_feed_stores_the_pi_log_named_by_its_session_id() {
 }
 
 #[test]
+fn a_pane_status_feed_looks_for_no_pi_log_for_another_cli() {
+    let home = scratch("status-feed-claude-log");
+    let session = stdout(&swarm(&home, &[], &["session", "new", "lane"], ""))
+        .trim()
+        .to_string();
+    let connection = swarm::store::open(&home.join(".swarm/swarm.db")).unwrap();
+    swarm::store::add_agent(&connection, &session, "coder", "coder").unwrap();
+    swarm::store::set_provider(&connection, &session, "coder", "claude").unwrap();
+    // A Claude pane under `swarm pty` sends OSC 7501 too, but a pi log with its id is not its log.
+    let pi = home.join("pi");
+    let folder = pi.join("sessions/--tmp-proj--");
+    std::fs::create_dir_all(&folder).unwrap();
+    std::fs::write(
+        folder.join(format!("2026-10-14T00-00-00-000Z_{session}-coder.jsonl")),
+        "{}\n",
+    )
+    .unwrap();
+    let fed = swarm(
+        &home,
+        &[
+            ("SWARM_SESSION_ID", session.as_str()),
+            ("SWARM_AGENT_ID", "coder"),
+            ("PI_CODING_AGENT_DIR", pi.to_str().unwrap()),
+        ],
+        &["status-feed"],
+        "\x1b]7501;state=working:app=claude\x07",
+    );
+    assert!(
+        fed.status.success(),
+        "{}",
+        String::from_utf8_lossy(&fed.stderr)
+    );
+    let (state, log): (Option<String>, Option<String>) = connection
+        .query_row(
+            "SELECT state, log FROM agent WHERE session_id = ?1 AND id = 'coder'",
+            [&session],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!((state.as_deref(), log), (Some("working"), None));
+}
+
+#[test]
 fn a_pi_log_written_after_the_working_report_is_stored_from_later_output() {
     use std::io::Write;
     let home = scratch("status-feed-pi-late-log");

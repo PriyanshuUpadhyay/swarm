@@ -313,8 +313,14 @@ pub(crate) fn status_feed() -> Result<(), Box<dyn std::error::Error>> {
     let mut seen_work = false;
     // pi has no hook to name its log, but `launch` gave it the id `<session>-<agent>` (ADR 0086).
     // pi writes the file just after it reports working and then reports nothing until the turn
-    // ends, so after a working report the pane's output looks too, at most once a second.
-    let mut logged = false;
+    // ends, so after a working report the pane's output looks too, at most once a second. Another
+    // CLI under `swarm pty` reports too, but its log comes from its hooks, so it looks for none.
+    let mut logged = swarm::paths::sqlite_db()
+        .and_then(|db| swarm::store::open(&db))
+        .and_then(|connection| swarm::store::provider_of(&connection, &session, &agent))
+        .ok()
+        .flatten()
+        .is_some_and(|provider| provider != "pi");
     let mut looked: Option<std::time::Instant> = None;
     let mut stdin = std::io::stdin().lock();
     let mut chunk = [0; 8192];
