@@ -64,8 +64,10 @@ answers the probe.
   `$SWARM_FEED` line, which drops bytes when that pipe is full.
 - No terminal stands behind the host, so it answers the OSC 7501 probe, DA1, DSR 5n and 6n, and
   OSC 10 and 11 in the order they arrive. A CLI that gets no cursor report can fail to start.
-- When the chair exits, the host sends SIGHUP to each child's shell and foreground job. When the
-  host is killed, the kernel hangs the children up as their masters close.
+- When the chair exits, the host sends SIGHUP to each child's shell and foreground job, and keeps
+  the masters open for up to 1 s until the shells exit, because bash passes the hangup on to its
+  background jobs only while its terminal is open. When the host is killed, the kernel hangs the
+  children up as their masters close.
 
 ### Consequences
 

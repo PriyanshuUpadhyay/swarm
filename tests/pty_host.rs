@@ -163,8 +163,6 @@ fn the_host_answers_a_cursor_report() {
     assert_eq!(read(&reply), "\x1b[2;3R");
 }
 
-// Swarm supports macOS only; on Linux, bash does not pass the hangup on to its background job.
-#[cfg(target_os = "macos")]
 #[test]
 fn children_and_their_jobs_stop_when_the_chair_exits() {
     let mut host = Host::start();

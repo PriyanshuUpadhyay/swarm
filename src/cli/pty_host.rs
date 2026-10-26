@@ -26,6 +26,8 @@ pub(super) const REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::fro
 /// chair, so after this wait a chair runs with no host.
 const LOCK_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
 const LOCK_POLL: std::time::Duration = std::time::Duration::from_millis(20);
+/// How long a stopping host keeps its terminals open for its shells to pass on the hangup.
+const HANG_UP_WAIT: std::time::Duration = std::time::Duration::from_secs(1);
 /// Only this user reads the socket folder and the socket.
 const PRIVATE_DIR: u32 = 0o700;
 const PRIVATE_FILE: u32 = 0o600;
@@ -177,10 +179,33 @@ impl Drop for Host {
         {
             let _ = std::fs::remove_file(&self.socket);
         }
-        let mut children = lock(&self.children);
-        for hosted in std::mem::take(&mut *children).values() {
+        let children = std::mem::take(&mut *lock(&self.children));
+        for hosted in children.values() {
             hang_up(hosted);
         }
+        // bash passes the hangup on to its background jobs only while its terminal is open; a
+        // master closed at once can let it exit on end of input first and leave them running.
+        let deadline = std::time::Instant::now() + HANG_UP_WAIT;
+        for hosted in children.values() {
+            while !exited(hosted.group) && std::time::Instant::now() < deadline {
+                std::thread::sleep(LOCK_POLL);
+            }
+        }
+    }
+}
+
+/// Whether the shell has exited, without reaping it, as its pane's thread waits for it.
+fn exited(pid: libc::pid_t) -> bool {
+    // SAFETY: waitid writes only the zeroed siginfo it is given.
+    unsafe {
+        let mut info: libc::siginfo_t = std::mem::zeroed();
+        libc::waitid(
+            libc::P_PID,
+            pid as libc::id_t,
+            &raw mut info,
+            libc::WEXITED | libc::WNOHANG | libc::WNOWAIT,
+        ) != 0
+            || info.si_pid() != 0
     }
 }
 
