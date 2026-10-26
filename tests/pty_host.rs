@@ -257,3 +257,39 @@ fn a_client_that_sends_a_byte_at_a_time_gets_one_deadline() {
     );
     host.stop();
 }
+
+#[test]
+fn a_child_that_reads_no_input_fails_a_ring_and_still_shows_its_output() {
+    use std::io::{BufRead, Write};
+    let host = Host::start();
+    let pane = host.spawn();
+    let n: u64 = pane.rsplit_once(':').unwrap().1.parse().unwrap();
+    let ready = host.home.join("ready");
+    // Raw, so a full input queue stops the writer. Then it asks for the cursor many times while
+    // nothing reads its input, and the host must go on reading what it prints.
+    let line = format!(
+        "stty raw -echo; touch {}; sleep 2; i=0; while [ $i -lt 300 ]; do printf '\\033[6nline%s\\r\\n' $i; i=$((i+1)); done; echo DO''NE; sleep 999",
+        ready.display()
+    );
+    host.out("ring", &[("pane", &pane), ("text", &line)]);
+    wait_for(|| ready.exists(), "the child in raw mode");
+    let write = |text: &str| {
+        let stream = std::os::unix::net::UnixStream::connect(host.socket()).unwrap();
+        let request = serde_json::json!({"op": "write", "n": n, "text": text});
+        writeln!(&stream, "{request}").unwrap();
+        let mut reply = String::new();
+        std::io::BufReader::new(&stream)
+            .read_line(&mut reply)
+            .unwrap();
+        reply
+    };
+    let text = "x".repeat(1000);
+    let full = (0..200)
+        .map(|_| write(&text))
+        .find(|reply| reply.contains("\"ok\":false"));
+    assert!(full.is_some_and(|reply| reply.contains("reads no input")));
+    wait_for(
+        || host.out("screen", &[("pane", &pane)]).contains("DONE"),
+        "the output after the queries",
+    );
+}

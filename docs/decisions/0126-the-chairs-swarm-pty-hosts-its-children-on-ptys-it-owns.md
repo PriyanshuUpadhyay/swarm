@@ -46,8 +46,13 @@ answers the probe.
 - A host that finds a live host at its socket does not start, so a second chair of the session
   runs with tmux panes and the first chair's children stay reachable. A chair with no host of its
   own drops an inherited `SWARM_PTY_HOST`.
-- Each pane has one thread that writes its input in order, so two rings do not mix, and a ring
-  to a child that reads nothing waits in a queue and holds no request.
+- Each pane has one thread that writes its input and the query replies in order, so the bytes of
+  one write do not mix with another's. A ring is two writes, its text and then Enter, so two rings
+  sent at the same time can still mix, as in tmux. The queue holds 64 writes. When a child reads
+  no input and the queue is full, a write fails, and a query reply is dropped, so the host goes on
+  reading the child's output.
+- A host waits at most 5 s for the folder lock, and then the chair runs with no host.
+- A pane whose reader thread panics leaves the list, and its shell is hung up.
 - A host numbers its panes from its start time in ms, so a pane id that an earlier chair of the
   session stored never names a child of a later one.
 - The session adapter stays `tmux-swarm`, because the app lists only tmux-swarm chats (ADR

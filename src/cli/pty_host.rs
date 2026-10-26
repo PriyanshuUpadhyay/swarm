@@ -4,17 +4,16 @@
 //! host, and the owner accepted that.
 
 mod client;
+mod pane;
 mod screen;
 
-use super::pty::{CHUNK, QUERIES, QueryScanner, Reply};
 pub(crate) use client::client;
+use pane::spawn;
 use screen::{capture, key_bytes, screen};
 use std::collections::HashMap;
 use std::io::{Read, Write};
-use std::os::fd::{FromRawFd, OwnedFd};
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
-use std::os::unix::process::CommandExt;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -28,16 +27,18 @@ const MAX_REQUEST: u64 = 1 << 20;
 
 /// A host answers at once, so a request that takes longer meets a stuck host or a stuck client.
 pub(super) const REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+/// Writes that wait for a child that reads no input. More than this means the child is stuck, and
+/// a ring to it fails, as a ring that tmux cannot type does.
+const INPUT_QUEUE: usize = 64;
 /// Only this user reads the socket folder and the socket.
 const PRIVATE_DIR: u32 = 0o700;
 const PRIVATE_FILE: u32 = 0o600;
 
 struct Hosted {
     master: std::fs::File,
-    /// Input for the child, which one thread per pane writes in order. A child that reads no
-    /// input fills its terminal, and then only that thread waits.
-    // ponytail: the queue has no bound, so a child that never reads keeps what is rung to it.
-    input: std::sync::mpsc::Sender<Vec<u8>>,
+    /// Input and query replies for the child, which one thread per pane writes in order. A child
+    /// that reads no input fills its terminal, and then only that thread waits.
+    input: std::sync::mpsc::SyncSender<Vec<u8>>,
     /// The shell leads its own session, so its pid is also its process group.
     group: libc::pid_t,
     parser: Arc<Mutex<vt100::Parser>>,
@@ -104,9 +105,21 @@ impl Host {
         // Hosts start one at a time, so a socket that refuses connections here belongs to a host
         // that was killed, as a closed tmux pane kills it, not to one between bind and listen.
         let folder = std::fs::File::open(&dir)?;
+        // A start holds the lock for a few ms. A holder that is stopped must not stop every
+        // later chair, so this one runs with no host after a while.
+        let deadline = std::time::Instant::now() + REQUEST_TIMEOUT;
         // SAFETY: flock on an fd this process owns; closing `folder` releases it.
-        if unsafe { libc::flock(std::os::fd::AsRawFd::as_raw_fd(&folder), libc::LOCK_EX) } != 0 {
-            return Err(std::io::Error::last_os_error().into());
+        while unsafe {
+            libc::flock(
+                std::os::fd::AsRawFd::as_raw_fd(&folder),
+                libc::LOCK_EX | libc::LOCK_NB,
+            )
+        } != 0
+        {
+            if std::time::Instant::now() > deadline {
+                return Err(format!("another host start holds {}", dir.display()).into());
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
         }
         // A live host here belongs to another chair of the session. Taking its socket would leave
         // that chair's children unreachable, so this chair runs with no host instead.
@@ -284,204 +297,14 @@ fn handle(
     };
     hosted
         .input
-        .send(bytes)
+        .try_send(bytes)
         .map(|()| String::new())
-        .map_err(|_| format!("swarm pty: pane pty:{session}:{n} takes no input"))
-}
-
-/// Held from `openpty` to the end of each spawn, so no other spawn forks while a new master is
-/// still open across exec.
-static SPAWN: Mutex<()> = Mutex::new(());
-
-/// Starts the owner's login shell on a new PTY, as tmux starts a pane, adds it to `children`, and
-/// reads its output on a thread until every process in it closes the terminal.
-fn spawn(
-    pane: &str,
-    cwd: &str,
-    env: &HashMap<String, String>,
-    feed: &str,
-    children: Children,
-    n: u64,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let _spawning = lock(&SPAWN);
-    // The pipe-pane line of tmux-swarm, so the child's OSC 7501 reports reach the store. It
-    // starts first, so a failure leaves no shell behind.
-    let mut feed = std::process::Command::new("sh")
-        .args(["-c", feed])
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn()?;
-    let feed_in = feed.stdin.take().expect("piped stdin");
-    // A stalled feed must not stop the child, so a full pipe drops the bytes, as status-feed
-    // already accepts a lost report.
-    // SAFETY: fcntl on an fd this process owns.
-    unsafe {
-        use std::os::fd::AsRawFd;
-        let fd = feed_in.as_raw_fd();
-        libc::fcntl(
-            fd,
-            libc::F_SETFL,
-            libc::fcntl(fd, libc::F_GETFL) | libc::O_NONBLOCK,
-        );
-    }
-    let stop_feed = |mut feed: std::process::Child| {
-        let _ = feed.kill();
-        let _ = feed.wait();
-    };
-    let (master, slave) = match open_pty() {
-        Ok(pair) => pair,
-        Err(error) => {
-            stop_feed(feed);
-            return Err(error);
-        }
-    };
-    let shell = std::env::var("SHELL")
-        .ok()
-        .filter(|shell| !shell.is_empty())
-        .unwrap_or_else(|| "/bin/sh".into());
-    let name = std::path::Path::new(&shell)
-        .file_name()
-        .map_or("sh".into(), |name| name.to_string_lossy().into_owned());
-    let mut command = std::process::Command::new(&shell);
-    // A leading dash makes it a login shell, as tmux starts one.
-    command
-        .arg0(format!("-{name}"))
-        .current_dir(cwd)
-        .env_remove("TMUX")
-        .env_remove("TMUX_PANE")
-        .env_remove("SWARM_PTY_HOST")
-        .envs(env)
-        .env("SWARM_PTY_PANE", pane);
-    let started = (|| {
-        let writer = (
-            std::fs::File::from(master.try_clone()?),
-            std::fs::File::from(master.try_clone()?),
-        );
-        command
-            .stdin(std::process::Stdio::from(slave.try_clone()?))
-            .stdout(std::process::Stdio::from(slave.try_clone()?))
-            .stderr(std::process::Stdio::from(slave));
-        // SAFETY: the closure calls only setsid and ioctl, which are async-signal-safe.
-        unsafe {
-            command.pre_exec(|| {
-                if libc::setsid() == -1 || libc::ioctl(0, libc::TIOCSCTTY as _, 0) == -1 {
-                    return Err(std::io::Error::last_os_error());
-                }
-                Ok(())
-            });
-        }
-        command.spawn().map(|child| (writer, child))
-    })();
-    let ((master_file, mut writer), mut child) = match started {
-        Ok(started) => started,
-        Err(error) => {
-            stop_feed(feed);
-            return Err(error.into());
-        }
-    };
-    let parser = Arc::new(Mutex::new(vt100::Parser::new(ROWS, COLS, SCROLLBACK)));
-    let activity = Arc::new(AtomicU64::new(
-        super::unix_now().map_or(0, |now| now as u64),
-    ));
-    let (input, queued) = std::sync::mpsc::channel::<Vec<u8>>();
-    // It ends when the pane leaves the list, which drops the sender, or when the child is gone.
-    std::thread::spawn(move || {
-        for bytes in queued {
-            if writer.write_all(&bytes).is_err() {
-                break;
+        .map_err(|error| match error {
+            std::sync::mpsc::TrySendError::Full(_) => {
+                format!("swarm pty: pane pty:{session}:{n} reads no input")
             }
-        }
-    });
-    // In the list before the reader runs, so a shell that exits at once is removed after it.
-    lock(&children).insert(
-        n,
-        Hosted {
-            master: master_file,
-            input,
-            group: child.id() as libc::pid_t,
-            parser: parser.clone(),
-            activity: activity.clone(),
-        },
-    );
-    std::thread::spawn(move || {
-        let mut terminal = std::fs::File::from(master);
-        let mut feed_in = feed_in;
-        let mut scanner = QueryScanner::new(QUERIES);
-        let mut chunk = [0; CHUNK];
-        // A read error is EIO once every process in the terminal has closed it.
-        loop {
-            let read = match terminal.read(&mut chunk) {
-                Ok(0) => break,
-                Ok(read) => read,
-                Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
-                Err(_) => break,
-            };
-            let bytes = &chunk[..read];
-            if let Ok(now) = super::unix_now() {
-                activity.store(now as u64, Ordering::Relaxed);
+            std::sync::mpsc::TrySendError::Disconnected(_) => {
+                format!("swarm pty: pane pty:{session}:{n} takes no input")
             }
-            let _ = feed_in.write_all(bytes);
-            let mut replies = Vec::new();
-            let mut parser = lock(&parser);
-            let mut done = 0;
-            // Each reply follows the bytes before its query, so a cursor report names the cell
-            // the cursor was on when the CLI asked.
-            for (end, query) in scanner.push(bytes) {
-                parser.process(&bytes[done..end]);
-                done = end;
-                replies.extend_from_slice(&match query.reply {
-                    Reply::Text(text) => text.to_vec(),
-                    Reply::Cursor => {
-                        let (row, col) = parser.screen().cursor_position();
-                        format!("\x1b[{};{}R", row + 1, col + 1).into_bytes()
-                    }
-                });
-            }
-            parser.process(&bytes[done..]);
-            // A reply can wait on a child that reads nothing, so it goes with no lock held.
-            drop(parser);
-            let _ = terminal.write_all(&replies);
-        }
-        // The pane is gone once its shell and everything it left have exited, as in tmux.
-        lock(&children).remove(&n);
-        drop(feed_in);
-        let _ = child.wait();
-        let _ = feed.wait();
-    });
-    Ok(())
-}
-
-/// A new PTY at tmux's detached size, with both ends closed on exec, so no other child holds
-/// this one's terminal open.
-fn open_pty() -> Result<(OwnedFd, OwnedFd), Box<dyn std::error::Error>> {
-    let (mut master_fd, mut slave_fd) = (-1, -1);
-    let mut size = libc::winsize {
-        ws_row: ROWS,
-        ws_col: COLS,
-        ws_xpixel: 0,
-        ws_ypixel: 0,
-    };
-    // SAFETY: openpty writes two fds; the name pointer and termp may be null.
-    if unsafe {
-        libc::openpty(
-            &mut master_fd,
-            &mut slave_fd,
-            std::ptr::null_mut(),
-            std::ptr::null_mut(),
-            &mut size,
-        )
-    } != 0
-    {
-        return Err(std::io::Error::last_os_error().into());
-    }
-    // SAFETY: openpty succeeded, so both fds are open and owned here alone.
-    unsafe {
-        libc::fcntl(master_fd, libc::F_SETFD, libc::FD_CLOEXEC);
-        libc::fcntl(slave_fd, libc::F_SETFD, libc::FD_CLOEXEC);
-        Ok((
-            OwnedFd::from_raw_fd(master_fd),
-            OwnedFd::from_raw_fd(slave_fd),
-        ))
-    }
+        })
 }
