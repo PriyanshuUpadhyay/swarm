@@ -128,6 +128,8 @@ pub(crate) fn pty(command: &[String]) -> i32 {
         action.sa_sigaction = copy_size as extern "C" fn(libc::c_int) as usize;
         action.sa_flags = libc::SA_RESTART;
         libc::sigaction(libc::SIGWINCH, &action, std::ptr::null_mut());
+        // A resize while the CLI started came before the handler, so copy the size once now.
+        copy_size(0);
     }
     // Raw mode, so each key reaches the CLI as it is typed and Ctrl-C reaches it as a byte.
     let mut saved: libc::termios = unsafe { std::mem::zeroed() };
