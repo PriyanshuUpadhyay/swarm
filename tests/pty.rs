@@ -1,4 +1,4 @@
-// `swarm pty` runs a command on its own terminal and answers the OSC 7501 probe (ADR 0122).
+// `swarm pty` runs a command on its own terminal and answers the OSC 7501 probe (ADR 0123).
 
 use std::process::{Command, Output, Stdio};
 use std::time::{Duration, Instant};

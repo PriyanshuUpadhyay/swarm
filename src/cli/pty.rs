@@ -1,5 +1,5 @@
 //! `swarm pty -- <cmd>`: runs an agent CLI on a terminal that swarm owns, inside its tmux pane,
-//! and answers the OSC 7501 probe there (ADR 0122). tmux does not answer it, and it answers the
+//! and answers the OSC 7501 probe there (ADR 0123). tmux does not answer it, and it answers the
 //! device-attributes query that a CLI sends right after the probe, so a CLI in a bare tmux pane
 //! decides that no program-status reader is there and sends no reports.
 

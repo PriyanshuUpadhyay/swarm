@@ -468,7 +468,7 @@ fn a_pi_seat_gets_its_seat_block_in_the_system_prompt() {
 }
 
 /// tmux answers no OSC 7501 probe, so on an adapter whose pane feeds `swarm status-feed`, a CLI
-/// that sends reports runs under `swarm pty`, which answers it; Codex sends none (ADR 0122).
+/// that sends reports runs under `swarm pty`, which answers it; Codex sends none (ADR 0123).
 #[test]
 fn a_feed_pane_runs_claude_agy_and_pi_under_swarm_pty_and_codex_bare() {
     let home = scratch("pty-wrap");

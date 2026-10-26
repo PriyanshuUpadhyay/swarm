@@ -9,7 +9,7 @@ informed-by:
   - "Owner approved the plan in Plannotator and said: Approve and auto (2026-10-25)"
 ---
 
-# 0122. A PTY shim answers the OSC 7501 probe inside each tmux-swarm pane
+# 0123. A PTY shim answers the OSC 7501 probe inside each tmux-swarm pane
 
 ## Context and Problem Statement
 
