@@ -48,9 +48,10 @@ answers the probe.
   own drops an inherited `SWARM_PTY_HOST`.
 - Each pane has one thread that writes its input and the query replies in order, so the bytes of
   one write do not mix with another's. A ring is two writes, its text and then Enter, so two rings
-  sent at the same time can still mix, as in tmux. The queue holds 64 writes. When a child reads
-  no input and the queue is full, a write fails, and a query reply is dropped, so the host goes on
-  reading the child's output.
+  sent at the same time can still mix, as in tmux. The queue holds 64 writes of any size, where
+  tmux keeps all of them. When a child reads no input and the queue is full, a write fails, and
+  a query reply is dropped, so the host goes on reading the child's output. A reply waits behind
+  the writes queued before it, so a CLI that asks while a large ring is queued gets it late.
 - A host waits at most 5 s for the folder lock, and then the chair runs with no host.
 - A pane whose reader thread panics leaves the list, and its shell is hung up.
 - A host numbers its panes from its start time in ms, so a pane id that an earlier chair of the

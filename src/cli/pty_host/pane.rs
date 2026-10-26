@@ -1,14 +1,23 @@
 //! One hosted pane: its login shell on a new PTY, the thread that writes its input, and the thread
 //! that reads its output.
 
-use super::{COLS, ROWS, SCROLLBACK, hang_up};
-use super::{Children, Hosted, INPUT_QUEUE, lock};
+use super::{Children, Hosted, hang_up, lock};
 use crate::cli::pty::{CHUNK, QUERIES, QueryScanner, Reply};
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::os::fd::{FromRawFd, OwnedFd};
 use std::os::unix::process::CommandExt;
 use std::sync::Arc;
+
+/// tmux's size for a detached session, so a CLI lays out its screen as it does in tmux-swarm.
+const ROWS: u16 = 24;
+const COLS: u16 = 80;
+/// tmux's default history-limit.
+const SCROLLBACK: usize = 2000;
+/// Writes that wait for a child that reads no input. tmux keeps every one, but more than this
+/// means the child is stuck, so this host fails the next write. It counts writes, not bytes, so a
+/// pane can hold up to 64 MiB.
+const INPUT_QUEUE: usize = 64;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 

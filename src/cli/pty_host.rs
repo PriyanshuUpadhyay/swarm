@@ -17,19 +17,15 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
-/// tmux's size for a detached session, so a CLI lays out its screen as it does in tmux-swarm.
-const ROWS: u16 = 24;
-const COLS: u16 = 80;
-/// tmux's default history-limit.
-const SCROLLBACK: usize = 2000;
 /// A request is a few ids and a ring's text; more than this is no client of ours.
 const MAX_REQUEST: u64 = 1 << 20;
 
 /// A host answers at once, so a request that takes longer meets a stuck host or a stuck client.
 pub(super) const REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
-/// Writes that wait for a child that reads no input. More than this means the child is stuck, and
-/// a ring to it fails, as a ring that tmux cannot type does.
-const INPUT_QUEUE: usize = 64;
+/// A start holds the folder lock for a few ms. A holder that is stopped must not stop every later
+/// chair, so after this wait a chair runs with no host.
+const LOCK_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
+const LOCK_POLL: std::time::Duration = std::time::Duration::from_millis(20);
 /// Only this user reads the socket folder and the socket.
 const PRIVATE_DIR: u32 = 0o700;
 const PRIVATE_FILE: u32 = 0o600;
@@ -105,9 +101,7 @@ impl Host {
         // Hosts start one at a time, so a socket that refuses connections here belongs to a host
         // that was killed, as a closed tmux pane kills it, not to one between bind and listen.
         let folder = std::fs::File::open(&dir)?;
-        // A start holds the lock for a few ms. A holder that is stopped must not stop every
-        // later chair, so this one runs with no host after a while.
-        let deadline = std::time::Instant::now() + REQUEST_TIMEOUT;
+        let deadline = std::time::Instant::now() + LOCK_WAIT;
         // SAFETY: flock on an fd this process owns; closing `folder` releases it.
         while unsafe {
             libc::flock(
@@ -116,10 +110,15 @@ impl Host {
             )
         } != 0
         {
-            if std::time::Instant::now() > deadline {
-                return Err(format!("another host start holds {}", dir.display()).into());
+            let error = std::io::Error::last_os_error();
+            match error.kind() {
+                std::io::ErrorKind::WouldBlock if std::time::Instant::now() > deadline => {
+                    return Err(format!("another host start holds {}", dir.display()).into());
+                }
+                std::io::ErrorKind::WouldBlock | std::io::ErrorKind::Interrupted => {}
+                _ => return Err(error.into()),
             }
-            std::thread::sleep(std::time::Duration::from_millis(20));
+            std::thread::sleep(LOCK_POLL);
         }
         // A live host here belongs to another chair of the session. Taking its socket would leave
         // that chair's children unreachable, so this chair runs with no host instead.

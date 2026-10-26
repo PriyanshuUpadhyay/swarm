@@ -23,8 +23,8 @@ pub(super) async fn run_cli_with_timeout(
 ) -> Result<String, ApiError> {
     use tokio::io::AsyncWriteExt;
     let mut command = tokio::process::Command::new(&app.cli);
-    // Match ChildProcessEnvironment.swarmCall so key and answer remain owner actions even when
-    // serve was opened from an agent pane. Identity never comes from the HTTP request.
+    // The app runs every swarm call through here, so this is the one scrub list. It keeps key and
+    // answer owner actions even when serve was opened from an agent pane. Identity never comes from the HTTP request.
     for (name, _) in std::env::vars_os() {
         let key = name.to_string_lossy();
         if [
