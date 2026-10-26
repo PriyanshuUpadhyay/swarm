@@ -30,7 +30,8 @@ pub fn stable_path(path: &Path) -> PathBuf {
     let Some(prefix) = cellar_prefix(path) else {
         return path.to_path_buf();
     };
-    // `Cellar`, `swarm`, and the version come after the prefix.
+    // `Cellar`, `swarm`, and the version come after the prefix. cellar_prefix took the prefix
+    // from this path, so strip_prefix cannot fail.
     let rest: PathBuf = path.strip_prefix(&prefix).unwrap().iter().skip(3).collect();
     if rest.as_os_str().is_empty() {
         return path.to_path_buf();
@@ -162,17 +163,17 @@ fn launchctl(args: &[&str]) -> std::io::Result<std::process::Output> {
 }
 
 /// The login item's launchctl service target, `gui/<uid>/<label>`.
-pub fn target() -> String {
+pub fn service_target() -> String {
     format!("{}/{LABEL}", domain())
 }
 
 /// Start the installed login item now, as a login would.
 pub fn kickstart() -> std::io::Result<std::process::Output> {
-    launchctl(&["kickstart", &target()])
+    launchctl(&["kickstart", &service_target()])
 }
 
 pub fn status(home: &Path) -> Status {
-    let print = launchctl(&["print", &target()])
+    let print = launchctl(&["print", &service_target()])
         .map(|output| String::from_utf8_lossy(&output.stdout).into_owned())
         .unwrap_or_default();
     let running = running(&print);
@@ -200,7 +201,7 @@ pub fn install(home: &Path) -> Result<Status, Box<dyn std::error::Error>> {
     std::fs::write(&path, text)?;
     // A loaded job keeps its old plist until it is booted out, and bootout returns before the job
     // is gone; a bootstrap before then fails with error 5. Not loaded at all is fine.
-    let target = target();
+    let target = service_target();
     let _ = launchctl(&["bootout", &target]);
     for _ in 0..30 {
         if !launchctl(&["print", &target]).is_ok_and(|output| output.status.success()) {
@@ -232,7 +233,7 @@ pub fn install(home: &Path) -> Result<Status, Box<dyn std::error::Error>> {
 }
 
 pub fn uninstall(home: &Path) -> Result<Status, Box<dyn std::error::Error>> {
-    let _ = launchctl(&["bootout", &target()]);
+    let _ = launchctl(&["bootout", &service_target()]);
     stop(&strays(None));
     match std::fs::remove_file(plist_path(home)) {
         Err(error) if error.kind() != std::io::ErrorKind::NotFound => return Err(error.into()),

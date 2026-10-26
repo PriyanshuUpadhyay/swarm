@@ -108,20 +108,8 @@ pub fn steps(link: &Path, kit: &Path, found: &[&str], codex_homes: &[CodexHome])
 /// `<prefix>/Cellar/swarm/<version>` on upgrade, and `<prefix>/opt/swarm` always names the current
 /// version, so a kit in the Cellar is named through `opt` when that resolves to the same folder.
 pub fn stable_kit(kit: &Path) -> PathBuf {
-    let parts: Vec<_> = kit.iter().collect();
-    let Some(cellar) = parts
-        .windows(2)
-        .position(|pair| pair[0] == "Cellar" && pair[1] == "swarm")
-    else {
-        return kit.to_path_buf();
-    };
-    let opt: PathBuf = parts[..cellar]
-        .iter()
-        .copied()
-        .chain(["opt".as_ref(), "swarm".as_ref()])
-        .chain(parts.iter().skip(cellar + 3).copied())
-        .collect();
-    if std::fs::canonicalize(&opt).is_ok_and(|resolved| resolved == kit) {
+    let opt = crate::hud::stable_path(kit);
+    if opt != kit && std::fs::canonicalize(&opt).is_ok_and(|resolved| resolved == kit) {
         opt
     } else {
         kit.to_path_buf()

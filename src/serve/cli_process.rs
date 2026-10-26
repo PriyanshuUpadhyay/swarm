@@ -93,18 +93,13 @@ pub(super) async fn run_cli_with_timeout(
     };
     let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let message = if stderr.trim().is_empty() {
-            stdout.trim()
-        } else {
-            stderr.trim()
-        };
+        let message = failure_text(&output);
         return Err(error(
             StatusCode::CONFLICT,
             if message.is_empty() {
                 "swarm action failed"
             } else {
-                message
+                &message
             },
         ));
     }
@@ -132,3 +127,14 @@ impl Drop for ActionProcessGroup {
 #[cfg(test)]
 #[path = "cli_process/tests.rs"]
 mod tests;
+
+/// What a failed exit says: its stderr, else its stdout, trimmed.
+pub(super) fn failure_text(output: &std::process::Output) -> String {
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let text = if stderr.trim().is_empty() {
+        String::from_utf8_lossy(&output.stdout)
+    } else {
+        stderr
+    };
+    text.trim().to_string()
+}

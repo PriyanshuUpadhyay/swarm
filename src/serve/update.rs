@@ -18,22 +18,29 @@ const BREW_UPDATE_WAIT: Duration = Duration::from_secs(300);
 const BREW_UPGRADE_WAIT: Duration = Duration::from_secs(900);
 /// Each launchctl call and `swarm --version`.
 const SHORT_WAIT: Duration = Duration::from_secs(10);
+/// The last lines of a failed step that the error toast shows.
+const ERROR_LINES: usize = 5;
+const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// A SHA-256 digest.
+type Digest = [u8; 32];
 
 static LATEST: Mutex<Option<(std::time::Instant, String)>> = Mutex::new(None);
-static UPGRADE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+/// Held by an upgrade or a restart, so only one of them runs at a time.
+static UPDATE_BUSY: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 /// Set by an upgrade that changed the HUD of a set-up login item; the restart takes it.
 static HUD_CHANGED: AtomicBool = AtomicBool::new(false);
 
 /// The SHA-256 of the HUD executable that the login item runs through `opt`, or None without one.
 // ponytail: the executable only; a change to the bundle's resources alone does not restart it.
-fn hud_hash(prefix: &Path) -> Option<[u8; 32]> {
+fn hud_hash(prefix: &Path) -> Option<Digest> {
     use sha2::Digest;
     let path = prefix.join("opt/swarm/libexec/SwarmHUD.app/Contents/MacOS/SwarmHUD");
     Some(sha2::Sha256::digest(std::fs::read(path).ok()?).into())
 }
 
 /// Whether the upgrade brought a different HUD. With no HUD after it, there is nothing to start.
-fn hud_changed(before: Option<[u8; 32]>, after: Option<[u8; 32]>) -> bool {
+fn hud_changed(before: Option<Digest>, after: Option<Digest>) -> bool {
     after.is_some() && before != after
 }
 
@@ -60,6 +67,11 @@ fn formula_version(formula: &str) -> Option<&str> {
     let rest = formula.split_once("/releases/download/v")?.1;
     let version = rest.split_once('/')?.0;
     version_parts(version).map(|_| version)
+}
+
+/// The `swarm` that `opt` names, which is the installed version.
+fn installed_swarm(prefix: &Path) -> PathBuf {
+    prefix.join("opt/swarm/bin/swarm")
 }
 
 fn version_parts(version: &str) -> Option<Vec<u64>> {
@@ -108,23 +120,21 @@ async fn run(program: &Path, args: &[&str], timeout: Duration) -> Result<String,
             return Err(error(StatusCode::GATEWAY_TIMEOUT, &message));
         }
     };
-    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let text = if stderr.trim().is_empty() {
-            stdout.trim()
-        } else {
-            stderr.trim()
-        };
-        let message = format!("{name} {} failed: {}", args.join(" "), tail(text, 5));
+        let text = failure_text(&output);
+        let message = format!(
+            "{name} {} failed: {}",
+            args.join(" "),
+            tail(&text, ERROR_LINES)
+        );
         return Err(error(StatusCode::BAD_GATEWAY, &message));
     }
-    Ok(stdout)
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
 /// `{current, latest, available}`. `latest` is null for a swarm that brew did not install.
 pub(super) async fn update_read() -> Result<Json<Value>, ApiError> {
-    let current = env!("CARGO_PKG_VERSION");
+    let current = VERSION;
     if brew_prefix().is_none() {
         return Ok(Json(
             json!({"current": current, "latest": null, "available": false}),
@@ -164,7 +174,7 @@ pub(super) async fn update_read() -> Result<Json<Value>, ApiError> {
 
 /// The one lock of the upgrade and the restart, or a 409 while it is held.
 fn lock() -> Result<tokio::sync::MutexGuard<'static, ()>, ApiError> {
-    UPGRADE.try_lock().map_err(|_| {
+    UPDATE_BUSY.try_lock().map_err(|_| {
         error(
             StatusCode::CONFLICT,
             "an upgrade or a restart is already running",
@@ -195,15 +205,17 @@ pub(super) async fn update_write() -> Result<Json<Value>, ApiError> {
         // the mark of the one before it.
         let pending = HUD_CHANGED.fetch_or(changed, Ordering::SeqCst) || changed;
         upgraded?;
-        let swarm = prefix.join("opt/swarm/bin/swarm");
-        let printed = run(&swarm, &["--version"], SHORT_WAIT).await?;
+        let printed = run(&installed_swarm(prefix), &["--version"], SHORT_WAIT).await?;
         // `swarm 0.0.38 abc1234 branch`
         let version = printed
             .split_whitespace()
             .nth(1)
-            .unwrap_or_default()
+            .ok_or_else(|| {
+                let message = format!("swarm --version printed `{}`", printed.trim());
+                error(StatusCode::BAD_GATEWAY, &message)
+            })?
             .to_string();
-        if !newer(&version, env!("CARGO_PKG_VERSION")) {
+        if !newer(&version, VERSION) {
             // A local build sorts above the release of its tag, so brew keeps it.
             let message = format!(
                 "brew left swarm at {version}; run `brew reinstall --formula priyanshuupadhyay/tap/swarm`"
@@ -218,8 +230,10 @@ pub(super) async fn update_write() -> Result<Json<Value>, ApiError> {
         .map_err(|err| error(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()))?
 }
 
-/// `launchctl kickstart -k` for a login item that runs, so it runs the app that `opt` names now.
-/// A login item that does not run is started by the new `swarm ui` (`start_hud`).
+/// SIGTERM to a login item that runs. KeepAlive starts it again with the app that `opt` names
+/// now, and launchd tries again after ThrottleInterval when that first start fails, as a new ad
+/// hoc app can (ADR 0118). `kickstart -k` would wait out the ThrottleInterval. A login item that
+/// does not run is started by the new `swarm ui` (`start_hud`).
 async fn hud_restart() -> Result<(), ApiError> {
     let home = std::env::var_os("HOME").unwrap_or_default();
     let status = tokio::task::spawn_blocking(move || swarm::hud::status(Path::new(&home)));
@@ -229,8 +243,8 @@ async fn hud_restart() -> Result<(), ApiError> {
         .map_err(|err| error(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()))?;
     if status.running {
         let launchctl = Path::new("/bin/launchctl");
-        let target = swarm::hud::target();
-        run(launchctl, &["kickstart", "-k", &target], SHORT_WAIT).await?;
+        let target = swarm::hud::service_target();
+        run(launchctl, &["kill", "SIGTERM", &target], SHORT_WAIT).await?;
     }
     Ok(())
 }
@@ -240,12 +254,6 @@ async fn hud_restart() -> Result<(), ApiError> {
 /// its own, and the open pages reload on the new build.
 pub(super) async fn update_restart(State(app): State<App>) -> Result<Json<Value>, ApiError> {
     use std::os::unix::process::CommandExt;
-    let prefix = brew_prefix().ok_or_else(|| {
-        error(
-            StatusCode::CONFLICT,
-            "this swarm is not a Homebrew install; run `swarm ui` again",
-        )
-    })?;
     if !app.ui {
         // The new `swarm ui` would stop the recorded `swarm ui` server, not this one.
         return Err(error(
@@ -253,6 +261,12 @@ pub(super) async fn update_restart(State(app): State<App>) -> Result<Json<Value>
             "this server is `swarm serve`; stop it and run `swarm serve` again",
         ));
     }
+    let prefix = brew_prefix().ok_or_else(|| {
+        error(
+            StatusCode::CONFLICT,
+            "this swarm is not a Homebrew install; run `swarm ui` again",
+        )
+    })?;
     let running = lock()?;
     let fail = |err: std::io::Error| error(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string());
     let hud = HUD_CHANGED.load(Ordering::SeqCst);
@@ -269,7 +283,7 @@ pub(super) async fn update_restart(State(app): State<App>) -> Result<Json<Value>
         })?;
     }
     let log = owner_log(&app.root.join("ui.log")).map_err(fail)?;
-    std::process::Command::new(prefix.join("opt/swarm/bin/swarm"))
+    std::process::Command::new(installed_swarm(prefix))
         .args(["ui", "--port", &app.port.to_string()])
         .env("SWARM_HOME", app.root.parent().expect("swarm home"))
         .stdin(std::process::Stdio::null())
@@ -288,6 +302,18 @@ pub(super) async fn update_restart(State(app): State<App>) -> Result<Json<Value>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::serve::test_support::*;
+
+    #[tokio::test]
+    async fn a_swarm_serve_server_refuses_a_restart() {
+        let mut fixture = Fixture::new();
+        Arc::get_mut(&mut fixture.app).unwrap().ui = false;
+        let (status, body) = update_restart(State(fixture.app.clone()))
+            .await
+            .unwrap_err();
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert!(body["error"].as_str().unwrap().contains("`swarm serve`"));
+    }
 
     #[test]
     fn reads_the_tap_formula() {
