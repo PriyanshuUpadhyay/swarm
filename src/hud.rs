@@ -12,7 +12,7 @@ pub struct Status {
     /// The HUD app that `install` would start, or None when no HUD app is found.
     pub app: Option<String>,
     /// Each running HUD that the login item did not start, such as one that `swarm ui` started
-    /// before the login item existed. `install` and `uninstall` stop them.
+    /// before the login item existed. `install`, `restart`, and `uninstall` stop them.
     pub strays: Vec<u32>,
 }
 
@@ -211,8 +211,9 @@ pub fn install(home: &Path) -> Result<Status, Box<dyn std::error::Error>> {
 }
 
 /// Start the installed HUD again with the app that `opt` names now: boot the login item out and
-/// load its plist again. A new ad hoc build fails its first start when the item stays loaded, and
-/// a reload starts it at once (ADR 0126). Does nothing when the login item is not installed.
+/// load its plist again. A new ad hoc build fails its first start when the item stays loaded; a
+/// reload is meant to start it at once, which the next release tests (ADR 0126). Does nothing
+/// when the login item is not installed.
 pub fn restart(home: &Path) -> Result<Status, Box<dyn std::error::Error>> {
     let path = plist_path(home);
     if !path.exists() {

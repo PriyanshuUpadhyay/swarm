@@ -16,7 +16,7 @@ const CURL_SECS: u64 = 10;
 /// `brew update` reads every tap, and `brew upgrade swarm` downloads and links a release.
 const BREW_UPDATE_WAIT: Duration = Duration::from_secs(300);
 const BREW_UPGRADE_WAIT: Duration = Duration::from_secs(900);
-/// `swarm --version` or the HUD reload, which takes about 4 s at most.
+/// `swarm --version` or the HUD reload, whose waits add up to about 4 s.
 const SHORT_WAIT: Duration = Duration::from_secs(10);
 /// The last lines of a failed step that the error toast shows.
 const ERROR_LINES: usize = 5;
@@ -234,7 +234,8 @@ pub(super) async fn update_write() -> Result<Json<Value>, ApiError> {
 async fn hud_restart() -> Result<(), ApiError> {
     let home = std::env::var_os("HOME").unwrap_or_default();
     let restarted = tokio::task::spawn_blocking(move || {
-        swarm::hud::restart(Path::new(&home)).map_err(|err| err.to_string())
+        swarm::hud::restart(Path::new(&home))
+            .map_err(|err| err.to_string().trim_start_matches("swarm: ").to_string())
     });
     tokio::time::timeout(SHORT_WAIT, restarted)
         .await
