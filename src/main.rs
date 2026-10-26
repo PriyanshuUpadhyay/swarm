@@ -26,6 +26,12 @@ fn main() {
         eprint!("{stderr}");
         std::process::exit(code);
     }
+    if let [cmd, dashes, command @ ..] = args.as_slice()
+        && cmd == "pty"
+        && dashes == "--"
+    {
+        std::process::exit(pty(command));
+    }
     if let [cmd] = args.as_slice()
         && cmd == "status-feed"
     {
