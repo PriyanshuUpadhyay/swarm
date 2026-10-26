@@ -213,14 +213,47 @@ fn a_second_chair_of_the_session_leaves_the_live_host_alone() {
         ])
         .env("SWARM_HOME", &host.home)
         .env("SWARM_SESSION_ID", &host.session)
+        .env("SWARM_PTY_HOST", host.socket())
         .stdin(Stdio::null())
         .output()
         .unwrap();
     assert!(second.status.success(), "{second:?}");
-    // It runs with no host, so its children would open tmux panes.
+    // It runs with no host, and drops the inherited one, so its children would open tmux panes.
     assert_eq!(String::from_utf8_lossy(&second.stdout), "");
     assert!(String::from_utf8_lossy(&second.stderr).contains("already serves this session"));
     // The first chair's child is still reachable, after the second chair has exited.
     host.out("screen", &[("pane", &pane)]);
+    host.stop();
+}
+
+#[test]
+fn a_client_that_sends_a_byte_at_a_time_gets_one_deadline() {
+    use std::io::{Read, Write};
+    let mut host = Host::start();
+    let mut stream = std::os::unix::net::UnixStream::connect(host.socket()).unwrap();
+    let started = Instant::now();
+    // Each byte comes well inside the 5 s deadline, so only a deadline for the whole line ends it.
+    let mut reply = String::new();
+    while started.elapsed() < Duration::from_secs(8) {
+        if stream.write_all(b" ").is_err() {
+            break;
+        }
+        std::thread::sleep(Duration::from_secs(1));
+        stream.set_nonblocking(true).unwrap();
+        let mut chunk = [0; 4096];
+        if let Ok(read) = stream.read(&mut chunk) {
+            reply.push_str(&String::from_utf8_lossy(&chunk[..read]));
+        }
+        stream.set_nonblocking(false).unwrap();
+        if reply.contains('\n') {
+            break;
+        }
+    }
+    assert!(reply.contains("\"ok\":false"), "{reply:?}");
+    assert!(
+        started.elapsed() < Duration::from_secs(7),
+        "{:?}",
+        started.elapsed()
+    );
     host.stop();
 }

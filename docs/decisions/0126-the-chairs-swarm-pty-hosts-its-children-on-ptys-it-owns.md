@@ -39,11 +39,15 @@ answers the probe.
 - The host listens on `/tmp/swarm-<uid>/<hash>.sock`, mode 0600 in a 0700 folder, where the hash
   comes from `runs/<session>`. A macOS socket path holds at most 104 bytes, and a branch build's
   `runs/<session>/pty.sock` is longer. The chair gets `SWARM_PTY_HOST`. `list` asks each socket
-  in the folder, and a starting host removes a socket that has refused connections for 10 s.
+  in the folder. Hosts start one at a time under a lock on the folder, and a starting host
+  removes each socket there that refuses connections, which a killed host leaves.
 - A host that cannot start prints one line, and the chair runs without it, so its children open
   tmux panes. The host is opt-in, and a chair that runs is worth more than the missing host.
 - A host that finds a live host at its socket does not start, so a second chair of the session
-  runs with tmux panes and the first chair's children stay reachable.
+  runs with tmux panes and the first chair's children stay reachable. A chair with no host of its
+  own drops an inherited `SWARM_PTY_HOST`.
+- Each pane has one thread that writes its input in order, so two rings do not mix, and a ring
+  to a child that reads nothing waits in a queue and holds no request.
 - A host numbers its panes from its start time in ms, so a pane id that an earlier chair of the
   session stored never names a child of a later one.
 - The session adapter stays `tmux-swarm`, because the app lists only tmux-swarm chats (ADR

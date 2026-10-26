@@ -10,7 +10,7 @@ use super::pty::{CHUNK, QUERIES, QueryScanner, Reply};
 pub(crate) use client::client;
 use screen::{capture, key_bytes, screen};
 use std::collections::HashMap;
-use std::io::{BufRead, Read, Write};
+use std::io::{Read, Write};
 use std::os::fd::{FromRawFd, OwnedFd};
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -26,17 +26,18 @@ const SCROLLBACK: usize = 2000;
 /// A request is a few ids and a ring's text; more than this is no client of ours.
 const MAX_REQUEST: u64 = 1 << 20;
 
-/// A socket that refuses connections for this long belongs to a host that was killed, not to one
-/// that is still between its bind and its listen.
-const STALE: std::time::Duration = std::time::Duration::from_secs(10);
-/// A host answers at once, so a request that takes longer meets a stuck host.
+/// A host answers at once, so a request that takes longer meets a stuck host or a stuck client.
 pub(super) const REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 /// Only this user reads the socket folder and the socket.
 const PRIVATE_DIR: u32 = 0o700;
 const PRIVATE_FILE: u32 = 0o600;
 
 struct Hosted {
-    writer: std::fs::File,
+    master: std::fs::File,
+    /// Input for the child, which one thread per pane writes in order. A child that reads no
+    /// input fills its terminal, and then only that thread waits.
+    // ponytail: the queue has no bound, so a child that never reads keeps what is rung to it.
+    input: std::sync::mpsc::Sender<Vec<u8>>,
     /// The shell leads its own session, so its pid is also its process group.
     group: libc::pid_t,
     parser: Arc<Mutex<vt100::Parser>>,
@@ -45,10 +46,16 @@ struct Hosted {
 
 type Children = Arc<Mutex<HashMap<u64, Hosted>>>;
 
+/// A panic in one pane's thread, such as in the parser, must not stop the other panes, the
+/// hang-up, or the chair's terminal restore, so a poisoned lock is still used.
+fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(|poison| poison.into_inner())
+}
+
 pub(crate) struct Host {
     socket: std::path::PathBuf,
-    /// The bound socket's device and inode. A second chair of the session can replace the file
-    /// at this path, and this host must not remove that one.
+    /// The bound socket's device and inode. A host that started after this one stopped answering
+    /// can own the file at this path, and this host must not remove that one.
     bound: (u64, u64),
     children: Children,
 }
@@ -93,30 +100,29 @@ impl Host {
         let session = std::env::var("SWARM_SESSION_ID")
             .map_err(|_| "SWARM_SESSION_ID is not set, so no session owns the children")?;
         let socket = socket_of(&session)?;
+        let dir = socket_dir()?;
+        // Hosts start one at a time, so a socket that refuses connections here belongs to a host
+        // that was killed, as a closed tmux pane kills it, not to one between bind and listen.
+        let folder = std::fs::File::open(&dir)?;
+        // SAFETY: flock on an fd this process owns; closing `folder` releases it.
+        if unsafe { libc::flock(std::os::fd::AsRawFd::as_raw_fd(&folder), libc::LOCK_EX) } != 0 {
+            return Err(std::io::Error::last_os_error().into());
+        }
         // A live host here belongs to another chair of the session. Taking its socket would leave
         // that chair's children unreachable, so this chair runs with no host instead.
         if UnixStream::connect(&socket).is_ok() {
             return Err(format!("{} already serves this session", socket.display()).into());
         }
-        // A host that was killed, as a closed tmux pane kills it, leaves its socket, which then
-        // refuses connections.
-        let _ = std::fs::remove_file(&socket);
-        if let Some(dir) = socket.parent() {
-            for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
-                let path = entry.path();
-                let old = entry
-                    .metadata()
-                    .and_then(|meta| meta.modified())
-                    .is_ok_and(|at| at.elapsed().is_ok_and(|age| age > STALE));
-                let refused = old
-                    && UnixStream::connect(&path)
-                        .is_err_and(|error| error.kind() == std::io::ErrorKind::ConnectionRefused);
-                if refused {
-                    let _ = std::fs::remove_file(&path);
-                }
+        for entry in std::fs::read_dir(&dir)?.flatten() {
+            let path = entry.path();
+            if UnixStream::connect(&path)
+                .is_err_and(|error| error.kind() == std::io::ErrorKind::ConnectionRefused)
+            {
+                let _ = std::fs::remove_file(&path);
             }
         }
         let listener = UnixListener::bind(&socket)?;
+        drop(folder);
         std::fs::set_permissions(&socket, std::fs::Permissions::from_mode(PRIVATE_FILE))?;
         let meta = std::fs::metadata(&socket)?;
         let children = Children::default();
@@ -159,12 +165,7 @@ impl Drop for Host {
         {
             let _ = std::fs::remove_file(&self.socket);
         }
-        // A thread that panicked with the lock held must not stop the hang-up, or the chair's
-        // terminal restore after it.
-        let mut children = self
-            .children
-            .lock()
-            .unwrap_or_else(|poison| poison.into_inner());
+        let mut children = lock(&self.children);
         for hosted in std::mem::take(&mut *children).values() {
             hang_up(hosted);
         }
@@ -177,7 +178,7 @@ fn hang_up(hosted: &Hosted) {
     use std::os::fd::AsRawFd;
     // SAFETY: tcgetpgrp and kill take plain integers.
     unsafe {
-        let foreground = libc::tcgetpgrp(hosted.writer.as_raw_fd());
+        let foreground = libc::tcgetpgrp(hosted.master.as_raw_fd());
         if foreground > 0 && foreground != hosted.group {
             libc::kill(-foreground, libc::SIGHUP);
         }
@@ -186,11 +187,9 @@ fn hang_up(hosted: &Hosted) {
 }
 
 fn serve(stream: UnixStream, children: &Children, next: &AtomicU64, session: &str) {
-    let _ = stream.set_read_timeout(Some(REQUEST_TIMEOUT));
     let _ = stream.set_write_timeout(Some(REQUEST_TIMEOUT));
-    let mut line = String::new();
-    let reply = match std::io::BufReader::new((&stream).take(MAX_REQUEST)).read_line(&mut line) {
-        Ok(_) => serde_json::from_str(&line)
+    let reply = match read_request(&stream) {
+        Ok(line) => serde_json::from_str(&line)
             .map_err(|error| error.to_string())
             .and_then(|request| handle(&request, children, next, session)),
         Err(error) => Err(error.to_string()),
@@ -200,6 +199,30 @@ fn serve(stream: UnixStream, children: &Children, next: &AtomicU64, session: &st
         Err(error) => serde_json::json!({"ok": false, "error": error}),
     };
     let _ = writeln!(&stream, "{reply}");
+}
+
+/// One request line, read under one deadline for the whole line, so a client that sends a byte at a
+/// time holds no thread for longer.
+fn read_request(mut stream: &UnixStream) -> std::io::Result<String> {
+    let deadline = std::time::Instant::now() + REQUEST_TIMEOUT;
+    let mut line = Vec::new();
+    let mut chunk = [0; 4096];
+    while !line.contains(&b'\n') {
+        let left = deadline
+            .checked_duration_since(std::time::Instant::now())
+            .filter(|left| !left.is_zero())
+            .ok_or(std::io::ErrorKind::TimedOut)?;
+        stream.set_read_timeout(Some(left))?;
+        let read = stream.read(&mut chunk)?;
+        if read == 0 {
+            break;
+        }
+        line.extend_from_slice(&chunk[..read]);
+        if line.len() as u64 > MAX_REQUEST {
+            return Err(std::io::Error::other("swarm pty: request too long"));
+        }
+    }
+    String::from_utf8(line).map_err(std::io::Error::other)
 }
 
 fn handle(
@@ -232,9 +255,7 @@ fn handle(
     }
     if op == "list" {
         let now = super::unix_now().map_or(0, |now| now as u64);
-        return Ok(children
-            .lock()
-            .unwrap()
+        return Ok(lock(children)
             .iter()
             .map(|(n, hosted)| {
                 let active = hosted.activity.load(Ordering::Relaxed).min(now);
@@ -243,35 +264,29 @@ fn handle(
             .collect());
     }
     let n = request["n"].as_u64().ok_or("swarm pty: request has no n")?;
-    let mut children = children.lock().unwrap();
+    let mut children = lock(children);
     let hosted = children
         .get(&n)
         .ok_or_else(|| format!("swarm pty: no pane pty:{session}:{n}"))?;
     let bytes = match op {
         "write" => text("text")?.as_bytes().to_vec(),
         "key" => {
-            let cursor = hosted.parser.lock().unwrap().screen().application_cursor();
+            let cursor = lock(&hosted.parser).screen().application_cursor();
             key_bytes(text("key")?, cursor)
         }
-        "screen" => return Ok(screen(&hosted.parser.lock().unwrap())),
-        "capture" => return Ok(capture(&mut hosted.parser.lock().unwrap())),
+        "screen" => return Ok(screen(&lock(&hosted.parser))),
+        "capture" => return Ok(capture(&mut lock(&hosted.parser))),
         "close" => {
             hang_up(&children.remove(&n).expect("found above"));
             return Ok(String::new());
         }
         _ => return Err(format!("swarm pty: unknown op {op}")),
     };
-    // A child that reads no input fills its terminal, and the write then waits, so it runs with
-    // no lock held, and the other panes' requests go on.
-    let mut writer = hosted
-        .writer
-        .try_clone()
-        .map_err(|error| error.to_string())?;
-    drop(children);
-    writer
-        .write_all(&bytes)
+    hosted
+        .input
+        .send(bytes)
         .map(|()| String::new())
-        .map_err(|error| error.to_string())
+        .map_err(|_| format!("swarm pty: pane pty:{session}:{n} takes no input"))
 }
 
 /// Held from `openpty` to the end of each spawn, so no other spawn forks while a new master is
@@ -288,7 +303,7 @@ fn spawn(
     children: Children,
     n: u64,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let _spawning = SPAWN.lock().unwrap_or_else(|poison| poison.into_inner());
+    let _spawning = lock(&SPAWN);
     // The pipe-pane line of tmux-swarm, so the child's OSC 7501 reports reach the store. It
     // starts first, so a failure leaves no shell behind.
     let mut feed = std::process::Command::new("sh")
@@ -339,7 +354,10 @@ fn spawn(
         .envs(env)
         .env("SWARM_PTY_PANE", pane);
     let started = (|| {
-        let writer = std::fs::File::from(master.try_clone()?);
+        let writer = (
+            std::fs::File::from(master.try_clone()?),
+            std::fs::File::from(master.try_clone()?),
+        );
         command
             .stdin(std::process::Stdio::from(slave.try_clone()?))
             .stdout(std::process::Stdio::from(slave.try_clone()?))
@@ -355,7 +373,7 @@ fn spawn(
         }
         command.spawn().map(|child| (writer, child))
     })();
-    let (writer, mut child) = match started {
+    let ((master_file, mut writer), mut child) = match started {
         Ok(started) => started,
         Err(error) => {
             stop_feed(feed);
@@ -366,11 +384,21 @@ fn spawn(
     let activity = Arc::new(AtomicU64::new(
         super::unix_now().map_or(0, |now| now as u64),
     ));
+    let (input, queued) = std::sync::mpsc::channel::<Vec<u8>>();
+    // It ends when the pane leaves the list, which drops the sender, or when the child is gone.
+    std::thread::spawn(move || {
+        for bytes in queued {
+            if writer.write_all(&bytes).is_err() {
+                break;
+            }
+        }
+    });
     // In the list before the reader runs, so a shell that exits at once is removed after it.
-    children.lock().unwrap().insert(
+    lock(&children).insert(
         n,
         Hosted {
-            writer,
+            master: master_file,
+            input,
             group: child.id() as libc::pid_t,
             parser: parser.clone(),
             activity: activity.clone(),
@@ -395,7 +423,7 @@ fn spawn(
             }
             let _ = feed_in.write_all(bytes);
             let mut replies = Vec::new();
-            let mut parser = parser.lock().unwrap();
+            let mut parser = lock(&parser);
             let mut done = 0;
             // Each reply follows the bytes before its query, so a cursor report names the cell
             // the cursor was on when the CLI asked.
@@ -416,7 +444,7 @@ fn spawn(
             let _ = terminal.write_all(&replies);
         }
         // The pane is gone once its shell and everything it left have exited, as in tmux.
-        children.lock().unwrap().remove(&n);
+        lock(&children).remove(&n);
         drop(feed_in);
         let _ = child.wait();
         let _ = feed.wait();

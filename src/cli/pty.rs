@@ -173,9 +173,11 @@ pub(crate) fn pty(command: &[String], host: bool) -> i32 {
         (Ok(stdin), Ok(stdout), Ok(stderr)) => {
             let mut child = std::process::Command::new(program);
             child.args(args).stdin(stdin).stdout(stdout).stderr(stderr);
-            if let Some(child_host) = &child_host {
-                child.env("SWARM_PTY_HOST", child_host.socket());
-            }
+            // An inherited host is another chair's, so a chair with no host of its own drops it.
+            match &child_host {
+                Some(child_host) => child.env("SWARM_PTY_HOST", child_host.socket()),
+                None => child.env_remove("SWARM_PTY_HOST"),
+            };
             // SAFETY: the closure calls only setsid and ioctl, which are async-signal-safe.
             unsafe {
                 child.pre_exec(|| {
