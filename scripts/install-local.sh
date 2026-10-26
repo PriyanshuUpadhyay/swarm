@@ -136,8 +136,8 @@ git -C "$tap_root" checkout -- Formula/swarm.rb
 restore=false
 if [ -f "$plist" ]; then
     # SIGTERM, so KeepAlive starts the new HUD; `kickstart -k` waits out the 60 s ThrottleInterval.
-    hud=gui/$(id -u)/io.github.priyanshuupadhyay.swarm.hud
-    launchctl kill SIGTERM "$hud" 2>/dev/null || launchctl kickstart "$hud"
+    hud_target=gui/$(id -u)/io.github.priyanshuupadhyay.swarm.hud
+    launchctl kill SIGTERM "$hud_target" 2>/dev/null || launchctl kickstart "$hud_target"
 fi
 installed=$(swarm --version)
 printf '%s\n' "$installed"

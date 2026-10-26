@@ -22,7 +22,6 @@ const SHORT_WAIT: Duration = Duration::from_secs(10);
 const ERROR_LINES: usize = 5;
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// A SHA-256 hash.
 type Sha256Hash = [u8; 32];
 
 static LATEST: Mutex<Option<(std::time::Instant, String)>> = Mutex::new(None);

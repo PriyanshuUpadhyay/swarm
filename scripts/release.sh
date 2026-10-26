@@ -238,8 +238,8 @@ esac
 plist=$HOME/Library/LaunchAgents/io.github.priyanshuupadhyay.swarm.hud.plist
 # SIGTERM, so KeepAlive starts the new HUD; `kickstart -k` waits out the 60 s ThrottleInterval.
 # A HUD that does not run is started.
-hud=gui/$(id -u)/io.github.priyanshuupadhyay.swarm.hud
-if [ -f "$plist" ]; then launchctl kill SIGTERM "$hud" 2>/dev/null || launchctl kickstart "$hud"; fi
+hud_target=gui/$(id -u)/io.github.priyanshuupadhyay.swarm.hud
+if [ -f "$plist" ]; then launchctl kill SIGTERM "$hud_target" 2>/dev/null || launchctl kickstart "$hud_target"; fi
 installed=$(swarm --version)
 printf '%s\n' "$installed"
 printed=$(printf '%s\n' "$installed" | awk 'NR == 1 {print $3}')

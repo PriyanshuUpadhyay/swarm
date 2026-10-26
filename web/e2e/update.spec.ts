@@ -22,10 +22,11 @@ test("an update upgrades, then restarts the server and the HUD, in two asks", as
   let restarts = 0;
   await tab.route("**/api/update/restart", (route) => {
     calls.push("POST /api/update/restart");
-    // The first restart meets a busy lock, and the second a server that cannot start after the
-    // HUD restarted.
+    // The first restart meets a busy lock, the second a HUD that did not restart, and the third a
+    // server that cannot start after the HUD restarted.
     const refusals = [
       { status: 409, json: { error: "an upgrade or a restart is already running" } },
+      { status: 502, json: { error: "the HUD did not restart: no job" } },
       { status: 500, json: { error: "Permission denied (os error 13)" } },
     ];
     return route.fulfill(refusals[restarts++] ?? { json: { ok: true } });
@@ -47,15 +48,20 @@ test("an update upgrades, then restarts the server and the HUD, in two asks", as
   // The server did not try the HUD, so the toast still names it.
   await expect(toast).toContainText("the HUD still run the old version");
   await toast.getByRole("button", { name: "Restart server" }).click();
-  await expect(toast).toContainText("Restart: Permission denied (os error 13)");
+  await expect(toast).toContainText("Restart: the HUD did not restart: no job");
   // The server tried the HUD once, so the toast now names only the server.
+  await expect(toast).toContainText("The swarm ui server still runs the old version");
+  await expect(toast).not.toContainText("the HUD still run the old version");
+  await toast.getByRole("button", { name: "Restart server" }).click();
+  // A later refusal keeps the HUD out of the toast.
+  await expect(toast).toContainText("Restart: Permission denied (os error 13)");
   await expect(toast).toContainText("The swarm ui server still runs the old version");
   await toast.getByRole("button", { name: "Restart server" }).click();
   const restarting = tab.locator("[data-sonner-toast]").filter({ hasText: "Restarting the swarm ui server" });
   await expect(restarting).toBeVisible();
   await expect(restarting.getByRole("button")).toHaveCount(0);
   // The toast shows before the POST is sent, so wait for the route to see it.
-  const expected = ["GET /api/update", "POST /api/update", "POST /api/update", ...Array(3).fill("POST /api/update/restart")];
+  const expected = ["GET /api/update", "POST /api/update", "POST /api/update", ...Array(4).fill("POST /api/update/restart")];
   await expect.poll(() => calls.length).toBe(expected.length);
   expect(calls).toEqual(expected);
   // Each error shows in the one toast and is still recorded.
