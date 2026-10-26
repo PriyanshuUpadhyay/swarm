@@ -235,7 +235,7 @@ installed_versions=$(brew list --formula --versions swarm)
 case "$installed_versions" in
     *"$version.local."*) brew reinstall --formula priyanshuupadhyay/tap/swarm ;;
 esac
-# Reload the HUD login item, so the new ad hoc build starts at once (ADR 0126).
+# Reload the HUD login item, so the new ad hoc build starts at once (ADR 0127).
 swarm hud restart
 installed=$(swarm --version)
 printf '%s\n' "$installed"

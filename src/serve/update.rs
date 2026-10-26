@@ -230,7 +230,7 @@ pub(super) async fn update_write() -> Result<Json<Value>, ApiError> {
 }
 
 /// Boot the login item out and load it again, so the HUD runs the app that `opt` names now
-/// (ADR 0126). A login item that is not installed is left alone.
+/// (ADR 0127). A login item that is not installed is left alone.
 async fn hud_restart() -> Result<(), ApiError> {
     let home = std::env::var_os("HOME").unwrap_or_default();
     let restarted = tokio::task::spawn_blocking(move || {

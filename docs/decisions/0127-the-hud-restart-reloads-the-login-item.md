@@ -10,7 +10,7 @@ informed-by:
   - "probe on 2026-10-26: a new ad hoc login item in ~/Library/LaunchAgents started v2 after SIGTERM only when the 60 s ThrottleInterval ended, and started v3 0.7 s after a bootout and a bootstrap, with no new BTM notice; it did not show the constraint error"
 ---
 
-# 0126. The HUD restart reloads the login item
+# 0127. The HUD restart reloads the login item
 
 ## Context and Problem Statement
 

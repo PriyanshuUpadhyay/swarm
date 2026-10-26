@@ -57,7 +57,7 @@ pub fn context(provider: &str, env: impl Fn(&str) -> Option<String>) -> Option<S
         (REX_CONTEXT, REX_WORKER_CONTEXT)
     } else if env("SWARM_ADAPTER").as_deref() == Some("tmux-swarm")
         && set("SWARM_SESSION_ID")
-        && set("TMUX_PANE")
+        && (set("TMUX_PANE") || set("SWARM_PTY_PANE"))
     {
         (APP_CONTEXT, APP_WORKER_CONTEXT)
     } else {

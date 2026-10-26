@@ -212,7 +212,7 @@ pub fn install(home: &Path) -> Result<Status, Box<dyn std::error::Error>> {
 
 /// Start the installed HUD again with the app that `opt` names now: boot the login item out and
 /// load its plist again. A new ad hoc build fails its first start when the item stays loaded; a
-/// reload is meant to start it at once, which the next release tests (ADR 0126). Does nothing
+/// reload is meant to start it at once, which the next release tests (ADR 0127). Does nothing
 /// when the login item is not installed.
 pub fn restart(home: &Path) -> Result<Status, Box<dyn std::error::Error>> {
     let path = plist_path(home);
