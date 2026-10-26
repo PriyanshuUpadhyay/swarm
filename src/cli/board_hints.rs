@@ -31,7 +31,9 @@ pub(crate) fn start_hint(
 ) -> Option<String> {
     let cwd = swarm::store::session_cwd(connection, session).ok()??;
     let project = project_of(&cwd).ok()?;
-    if swarm::store::has_acked(connection, session, agent).unwrap_or(true) {
+    if swarm::store::has_acked(connection, session, agent).unwrap_or(true)
+        || swarm::store::may_list(connection, Some((session, agent))).is_err()
+    {
         return None;
     }
     let posts = swarm::store::posts_for(connection, &project, Some((session, agent))).ok()?;

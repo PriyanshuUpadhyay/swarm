@@ -37,6 +37,20 @@ mod tests {
     }
 
     #[test]
+    fn a_closed_seats_claim_is_released_so_the_relaunch_claims_at_once() {
+        let (mut c, root) = fixture("release");
+        n(put(&mut c, &root, CODER, claim("auth", None)));
+        assert_eq!(
+            release_claims_of(&c, SESSION, ORCHESTRATOR, NOW).unwrap(),
+            0
+        );
+        assert_eq!(release_claims_of(&c, SESSION, CODER, NOW).unwrap(), 1);
+        n(put(&mut c, &root, ORCHESTRATOR, claim("auth", None)));
+        let row = &claims(&c, PROJECT).unwrap()[0];
+        assert_eq!((row.holder.as_str(), row.generation), (ORCHESTRATOR, 2));
+    }
+
+    #[test]
     fn an_expired_lease_passes_with_a_new_generation_and_fences_the_old_holder() {
         let (mut c, root) = fixture("fence");
         n(put(&mut c, &root, CODER, claim("auth", None)));

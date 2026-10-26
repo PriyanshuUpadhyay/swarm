@@ -368,6 +368,13 @@ fn a_death_note_is_not_saved_as_the_wrap_up() {
 #[test]
 fn close_now_sends_no_wrap_up() {
     let (root, mut connection, session) = closing("close-now");
+    connection
+        .execute(
+            "INSERT INTO claim (project_id, work_key, session_id, holder, generation, attempts, lease_until)
+             VALUES ('p', 'auth', ?1, ?2, 1, 1, ?3)",
+            (&session, CODER, i64::MAX),
+        )
+        .unwrap();
 
     close(&mut connection, &root, &session, None);
 
@@ -375,6 +382,12 @@ fn close_now_sends_no_wrap_up() {
         swarm::store::messages(&connection, &session, -1)
             .unwrap()
             .is_empty()
+    );
+    // The closed seat's claim is released, so the lead's relaunch can claim the work at once.
+    assert!(
+        swarm::store::claims(&connection, "p").unwrap()[0]
+            .released_at
+            .is_some()
     );
     std::fs::remove_dir_all(root).unwrap();
 }

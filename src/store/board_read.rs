@@ -19,14 +19,7 @@ pub fn posts_for(
     let Some((session, agent)) = reader else {
         return Ok(all);
     };
-    let role: Option<String> = connection
-        .query_row(
-            "SELECT role FROM agent WHERE session_id = ?1 AND id = ?2",
-            (session, agent),
-            |r| r.get(0),
-        )
-        .optional()?;
-    if role.as_deref() == Some(CHECKER_ROLE) || is_lead(connection, session, agent)? {
+    if is_checker(connection, session, agent)? || is_lead(connection, session, agent)? {
         return Ok(all);
     }
     let mine = |p: &Post| p.session_id == session && p.author == agent;
@@ -42,6 +35,33 @@ pub fn posts_for(
             || (p.kind == "answer" && p.reply_to.is_some_and(|n| asked.contains(&n)))
     });
     Ok(all)
+}
+
+/// A checker reads only the posts its brief names, so a list of the board, which shows every
+/// subject, is refused to it. `swarm board read B-n` still works. The rule is here and not in the
+/// checker's skill, because an old installed copy of that skill tells every seat to list the board.
+pub fn may_list(
+    connection: &Connection,
+    reader: Option<(&str, &str)>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    match reader {
+        Some((session, agent)) if is_checker(connection, session, agent)? => Err(
+            "swarm: a checker reads only the posts its brief names; run `swarm board read B-n` for each one"
+                .into(),
+        ),
+        _ => Ok(()),
+    }
+}
+
+fn is_checker(connection: &Connection, session: &str, agent: &str) -> rusqlite::Result<bool> {
+    let role: Option<String> = connection
+        .query_row(
+            "SELECT role FROM agent WHERE session_id = ?1 AND id = ?2",
+            (session, agent),
+            |r| r.get(0),
+        )
+        .optional()?;
+    Ok(role.as_deref() == Some(CHECKER_ROLE))
 }
 
 pub fn posts(

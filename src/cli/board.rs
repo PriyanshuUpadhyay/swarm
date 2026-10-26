@@ -344,6 +344,9 @@ fn read(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let reader = identity().ok();
     let reader = reader.as_ref().map(|(s, a)| (s.as_str(), a.as_str()));
+    if flags.target.is_none() || flags.json {
+        swarm::store::may_list(connection, reader)?;
+    }
     let posts = swarm::store::posts_for(connection, project, reader)?;
     let claims = swarm::store::claims(connection, project)?;
     if flags.json {
