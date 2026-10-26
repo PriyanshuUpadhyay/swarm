@@ -26,6 +26,7 @@ import { store } from "./store";
 import { TabStrip } from "./tabs";
 import { applyAppearance, chooseTheme, followAppearance, useTheme } from "./appearance";
 import { copyText } from "./copy";
+import { watchUpdates } from "./update";
 
 // Sidebar side and width stay in this browser until P3b adds their owner choices.
 const SIDE_KEY = "swarm.sidebar.side";
@@ -40,6 +41,7 @@ const BackgroundPanel = lazy(() => import("./background").then((m) => ({ default
 function Root({ app, changes }: { app: App; changes: Changes }) {
   useEffect(() => app.start(), [app]);
   useEffect(() => followAppearance(app), [app]);
+  useEffect(() => watchUpdates(app), [app]);
   const theme = useTheme();
   const sidebar = usePanelRef();
   const [side, setSide] = useState(store.getItem(SIDE_KEY) === "right" ? "right" : "left");
