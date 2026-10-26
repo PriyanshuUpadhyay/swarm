@@ -315,14 +315,23 @@ pub(crate) fn spawn_agent(
         // tmux answers no OSC 7501 probe, so a CLI that sends reports gets a terminal that does
         // when the pane feeds `swarm status-feed`; Codex sends none (ADR 0123). Only a launch,
         // which has a runner, is wrapped: a `swarm spawn` command may be a pane shell function.
+        // A chair launched with `SWARM_CHILD_HOST=pty` hosts its children on PTYs its shim owns,
+        // whatever its provider (ADR 0126).
+        let host = agent_id == "orchestrator"
+            && env::var("SWARM_CHILD_HOST").is_ok_and(|host| host == "pty");
         let child = if adapter.spawn.contains("SWARM_FEED")
             && options.runner.is_some()
-            && matches!(
-                provider,
-                Some(Provider::Claude | Provider::Agy | Provider::Pi)
-            ) {
-            let pty = swarm::adapter::shell_line(&[exe, "pty".into(), "--".into()]);
-            format!("{pty} {child}")
+            && (host
+                || matches!(
+                    provider,
+                    Some(Provider::Claude | Provider::Agy | Provider::Pi)
+                )) {
+            let mut pty = vec![exe, "pty".into()];
+            if host {
+                pty.push("--host".into());
+            }
+            pty.push("--".into());
+            format!("{} {child}", swarm::adapter::shell_line(&pty))
         } else {
             child
         };

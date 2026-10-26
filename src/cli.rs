@@ -83,6 +83,8 @@ pub(crate) use read_screen::*;
 
 mod pty;
 pub(crate) use pty::*;
+mod pty_host;
+pub(crate) use pty_host::client as pty_client;
 
 mod ring;
 pub(crate) use ring::*;

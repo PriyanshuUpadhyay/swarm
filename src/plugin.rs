@@ -109,7 +109,7 @@ pub fn steps(link: &Path, kit: &Path, found: &[&str], codex_homes: &[CodexHome])
 /// version, so a kit in the Cellar is named through `opt` when that resolves to the same folder.
 pub fn stable_kit(kit: &Path) -> PathBuf {
     let opt = crate::hud::stable_path(kit);
-    if opt != kit && std::fs::canonicalize(&opt).is_ok_and(|resolved| resolved == kit) {
+    if std::fs::canonicalize(&opt).is_ok_and(|resolved| resolved == kit) {
         opt
     } else {
         kit.to_path_buf()
