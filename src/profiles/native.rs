@@ -60,6 +60,41 @@ pub fn codex_session_owner<'a>(
     accounts: &'a [Account],
     session: &CodexSession,
 ) -> Option<&'a Account> {
+    match session {
+        CodexSession::Id(wanted) => codex_rollout(accounts, wanted).map(|(account, _)| account),
+        CodexSession::Last(cwd) => {
+            let mut rollouts = rollouts(accounts, false);
+            rollouts.sort_by(|left, right| right.0.cmp(&left.0));
+            let cwd = cwd.clone().map(resolved);
+            rollouts
+                .into_iter()
+                .find(|(_, _, path, _)| {
+                    cwd.as_ref().is_none_or(|cwd| {
+                        rollout_cwd(path).is_some_and(|dir| resolved(dir) == *cwd)
+                    })
+                })
+                .map(|(.., account)| account)
+        }
+    }
+}
+
+/// The rollout of session `id` and the account whose home holds it. A chat moved to another
+/// account leaves a copy in each home it ran in, so the copy written last is the chat.
+pub fn codex_rollout<'a>(accounts: &'a [Account], id: &str) -> Option<(&'a Account, PathBuf)> {
+    let modified = |path: &Path| {
+        std::fs::metadata(path)
+            .and_then(|meta| meta.modified())
+            .ok()
+    };
+    rollouts(accounts, true)
+        .into_iter()
+        .filter(|(_, found, _, _)| *found == id.to_ascii_lowercase())
+        .max_by_key(|(_, _, path, _)| modified(path))
+        .map(|(_, _, path, account)| (account, path))
+}
+
+/// Each rollout in the accounts' homes: its start time, its id, its path, and its account.
+fn rollouts(accounts: &[Account], archived: bool) -> Vec<(String, String, PathBuf, &Account)> {
     let entries = |dir: PathBuf| -> Vec<PathBuf> {
         std::fs::read_dir(dir)
             .into_iter()
@@ -77,7 +112,7 @@ pub fn codex_session_owner<'a>(
             .flat_map(entries)
             .flat_map(entries)
             .collect();
-        if matches!(session, CodexSession::Id(_)) {
+        if archived {
             files.extend(entries(home.join("archived_sessions")));
         }
         rollouts.extend(files.into_iter().filter_map(|path| {
@@ -89,24 +124,7 @@ pub fn codex_session_owner<'a>(
             Some((started.to_string(), id.to_ascii_lowercase(), path, account))
         }));
     }
-    match session {
-        CodexSession::Id(wanted) => rollouts
-            .into_iter()
-            .find(|(_, id, _, _)| *id == wanted.to_ascii_lowercase())
-            .map(|(.., account)| account),
-        CodexSession::Last(cwd) => {
-            rollouts.sort_by(|left, right| right.0.cmp(&left.0));
-            let cwd = cwd.clone().map(resolved);
-            rollouts
-                .into_iter()
-                .find(|(_, _, path, _)| {
-                    cwd.as_ref().is_none_or(|cwd| {
-                        rollout_cwd(path).is_some_and(|dir| resolved(dir) == *cwd)
-                    })
-                })
-                .map(|(.., account)| account)
-        }
-    }
+    rollouts
 }
 
 /// The folder a rollout's session started in, from its first line, the `session_meta` record.

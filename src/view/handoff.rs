@@ -35,16 +35,11 @@ pub fn summary_turn(rows: &[Row], baseline: usize) -> Option<Option<String>> {
     Some((!answer.is_empty()).then(|| answer.chars().take(12_000).collect()))
 }
 
-pub fn recent_context(rows: &[Row]) -> Option<String> {
-    let messages: Vec<_> = rows
+/// Each user and agent message of the chat, oldest first, or None when it has none.
+pub fn chat_text(rows: &[Row]) -> Option<String> {
+    let text = rows
         .iter()
         .filter(|r| matches!(r.kind, RowKind::User | RowKind::Assistant))
-        .collect();
-    if messages.is_empty() {
-        return None;
-    }
-    let text = messages[messages.len().saturating_sub(16)..]
-        .iter()
         .map(|r| {
             let speaker = if r.kind == RowKind::User {
                 "User"
@@ -55,9 +50,11 @@ pub fn recent_context(rows: &[Row]) -> Option<String> {
         })
         .collect::<Vec<_>>()
         .join("\n\n");
-    let skip = text.chars().count().saturating_sub(12_000);
-    Some(text.chars().skip(skip).collect())
+    (!text.is_empty()).then_some(text)
 }
+
+/// The longest chat text the first message carries itself; a longer chat goes in a file.
+pub const INLINE_LIMIT: usize = 12_000;
 
 pub fn first_message(context: &str, summary: bool) -> String {
     let (heading, instruction) = if summary {
@@ -67,9 +64,16 @@ pub fn first_message(context: &str, summary: bool) -> String {
         )
     } else {
         (
-            "These are recent messages from the prior chat:",
+            "These are the messages of the prior chat:",
             "Make a compact working summary from this context. Confirm that you are ready, then wait.",
         )
     };
     format!("{heading}\n\n{context}\n\n{instruction}")
+}
+
+/// The first message when the whole prior chat is in the file at `path`.
+pub fn file_message(path: &str) -> String {
+    format!(
+        "The prior chat is too long to paste, so its user and agent messages are in {path}. Read all of it, then make a compact working summary. Confirm that you are ready, then wait."
+    )
 }

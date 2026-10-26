@@ -160,7 +160,11 @@ fn a_pi_launch_on_claude_bridge_uses_claude_accounts() {
         pi.account_provider("claude-bridge/claude-opus-5-5"),
         Some(Provider::Claude)
     );
-    assert_eq!(pi.account_provider("openai-codex/gpt-6-sol"), None);
+    assert_eq!(
+        pi.account_provider("openai-codex/gpt-6-sol"),
+        Some(Provider::Codex)
+    );
+    assert_eq!(pi.account_provider("anthropic/claude-haiku-5-5"), None);
     assert_eq!(pi.account_provider("claude-opus-5-5"), None);
     assert_eq!(
         Provider::Codex.account_provider("gpt-6-sol"),

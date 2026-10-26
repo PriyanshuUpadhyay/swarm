@@ -187,6 +187,9 @@ pub enum Writer {
     Skills,
     #[serde(rename = "import.conductor")]
     ImportConductor,
+    /// A Codex chat moved to another account gets a copy of its rollout there.
+    #[serde(rename = "launch.codex_move")]
+    LaunchCodexMove,
 }
 
 /// One item that a writer adds to a file outside the swarm home.

@@ -158,12 +158,15 @@ impl Provider {
     }
 
     /// The CLI whose accounts a launch on `model` uses. pi's claude-bridge starts `claude` with
-    /// pi's environment, so a Claude account applies to it.
+    /// pi's environment, so a Claude account applies to it. pi's openai-codex reads the Codex
+    /// account that `PI_CODEX_HOME` names (`pi_codex_env`).
     pub fn account_provider(self, model: &str) -> Option<Provider> {
         match self {
-            Provider::Pi => {
-                (pi_provider(model).as_deref() == Some("claude-bridge")).then_some(Provider::Claude)
-            }
+            Provider::Pi => match pi_provider(model).as_deref() {
+                Some("claude-bridge") => Some(Provider::Claude),
+                Some("openai-codex") => Some(Provider::Codex),
+                _ => None,
+            },
             _ => self.has_accounts().then_some(self),
         }
     }
@@ -179,11 +182,18 @@ impl Provider {
     /// Clear inherited keys before applying an account, including the native default.
     pub fn account_env_keys(self) -> &'static [&'static str] {
         match self {
-            // pi gets an account only for claude-bridge, which runs `claude` (account_provider).
-            Provider::Claude | Provider::Pi => &[
+            Provider::Claude => &[
                 "CLAUDE_CONFIG_DIR",
                 "CLAUDE_SECURESTORAGE_CONFIG_DIR",
                 "AGENT_PROFILE_LABEL",
+            ],
+            // pi gets a Claude account for claude-bridge and a Codex one for openai-codex.
+            Provider::Pi => &[
+                "CLAUDE_CONFIG_DIR",
+                "CLAUDE_SECURESTORAGE_CONFIG_DIR",
+                "AGENT_PROFILE_LABEL",
+                "PI_CODEX_HOME",
+                "PI_CODEX_PROFILE",
             ],
             Provider::Codex => &["CODEX_HOME"],
             Provider::Agy => &[],
@@ -419,13 +429,37 @@ fn pi_provider(model: &str) -> Option<String> {
     if model != "default" {
         return None;
     }
+    pi_settings()?["defaultProvider"]
+        .as_str()
+        .map(str::to_owned)
+}
+
+/// The variables that give pi's openai-codex the Codex account `name` in `home`. The owner's pi
+/// extension `codex-profile.ts` reads them; pi without it keeps its own login.
+pub fn pi_codex_env(name: &str, home: &str) -> BTreeMap<String, String> {
+    BTreeMap::from([
+        ("PI_CODEX_HOME".into(), home.into()),
+        ("PI_CODEX_PROFILE".into(), name.into()),
+    ])
+}
+
+/// pi's `default` as the `provider/model` its settings name, so a launch records which login it
+/// runs on. None when the settings name no provider and model.
+pub fn pi_default_model() -> Option<String> {
+    let settings = pi_settings()?;
+    let (provider, model) = (
+        settings["defaultProvider"].as_str()?,
+        settings["defaultModel"].as_str()?,
+    );
+    Some(format!("{provider}/{model}"))
+}
+
+fn pi_settings() -> Option<serde_json::Value> {
     let dir = match std::env::var_os("PI_CODING_AGENT_DIR") {
         Some(dir) => std::path::PathBuf::from(dir),
         None => std::path::PathBuf::from(std::env::var_os("HOME")?).join(".pi/agent"),
     };
-    let settings: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(dir.join("settings.json")).ok()?).ok()?;
-    settings["defaultProvider"].as_str().map(str::to_owned)
+    serde_json::from_slice(&std::fs::read(dir.join("settings.json")).ok()?).ok()
 }
 
 /// The table of `pi --list-models`: a header row, then `provider model context ...` rows.

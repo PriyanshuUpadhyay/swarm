@@ -2,6 +2,8 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
+#[path = "launch/account_resume.rs"]
+mod account_resume;
 #[path = "launch/accounts.rs"]
 mod accounts;
 #[path = "launch/claude_trust.rs"]

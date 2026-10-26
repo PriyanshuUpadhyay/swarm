@@ -133,6 +133,13 @@ pub(crate) fn commands_launch(
         };
         // A switch keeps the chat and changes only its run, so the effort is the owner's pick.
         let mut resolved = resolved;
+        // pi's `default` hides which login it runs on, so the chat shows no account to switch.
+        if resolved.provider.as_deref() == Some("pi")
+            && resolved.model.as_deref() == Some("default")
+            && let Some(model) = swarm::providers::pi_default_model()
+        {
+            resolved.model = Some(model);
+        }
         if let Some(effort) = effort {
             let kind = resolved.provider.as_deref().and_then(Provider::parse);
             if !kind.is_some_and(|kind| kind.info().efforts.contains(&effort)) {
@@ -173,29 +180,44 @@ pub(crate) fn commands_launch(
                 let accounts = cache.entry(account_kind).or_insert_with(|| {
                     pick_accounts(account_kind, account_deadline, requested == "auto")
                 });
-                // Codex keeps a session in one account's home, so only that account resumes it.
-                let owner = match &resume {
+                // Codex keeps a session in one account's home. Auto stays there; a named other
+                // account gets a copy of the session first, so the chat moves with its history.
+                let (owner, moved) = match &resume {
                     Some((Provider::Codex, id)) => {
                         let list = accounts
                             .as_ref()
                             .map_err(|error| format!("swarm: {error}"))?;
-                        let session = swarm::profiles::native::CodexSession::Id(id.clone());
-                        let owner =
-                            swarm::profiles::native::codex_session_owner(&list.accounts, &session)
-                                .ok_or_else(|| {
-                                    format!("swarm: session {id} is not in any codex account")
-                                })?;
-                        Some(owner.name.clone())
+                        let (owner, rollout) =
+                            swarm::profiles::native::codex_rollout(&list.accounts, id).ok_or_else(
+                                || format!("swarm: session {id} is not in any codex account"),
+                            )?;
+                        if requested == "auto" || requested == owner.name {
+                            (Some(owner.name.clone()), None)
+                        } else {
+                            (None, Some((owner.home.clone(), rollout)))
+                        }
                     }
-                    _ => None,
+                    _ => (None, None),
                 };
-                select_account(
+                let picked = select_account(
                     account_kind,
                     owner.as_deref().unwrap_or(requested),
                     resolved.model.as_deref(),
                     probe.min_usage_left_pct,
                     accounts.as_ref().map_err(Clone::clone),
-                )?
+                )?;
+                if let (Some((from, rollout)), Some(to)) = (&moved, &picked) {
+                    move_codex_session(connection, from, rollout, &to.home)?;
+                }
+                // pi reads a Codex account from `PI_CODEX_HOME`, not `CODEX_HOME` (ADR 0081).
+                if kind == Provider::Pi && account_kind == Provider::Codex {
+                    picked.map(|mut account| {
+                        account.env = swarm::providers::pi_codex_env(&account.name, &account.home);
+                        account
+                    })
+                } else {
+                    picked
+                }
             }
             _ => None,
         };
@@ -370,41 +392,4 @@ pub(crate) fn commands_launch(
         .map(Some);
     }
     Ok(None)
-}
-
-/// The args that start session `id` of `kind` again. The model and effort flags come before them
-/// from the run, so a switch resumes on its new model.
-pub(crate) fn resume_args(kind: Provider, id: &str) -> Vec<String> {
-    match kind {
-        Provider::Codex => vec!["resume".into(), id.into()],
-        Provider::Agy => vec!["--conversation".into(), id.into()],
-        // pi's launch passes the resumed id as `--session-id`, which opens that session.
-        Provider::Pi => Vec::new(),
-        Provider::Claude => vec!["--resume".into(), id.into()],
-    }
-}
-
-/// The CLI and its session id that `launch orchestrator <role> --resume` starts again in this
-/// chat, while its chair has no pane.
-pub(crate) fn resume_target(
-    connection: &rusqlite::Connection,
-    session: &str,
-) -> Result<(Provider, String), Box<dyn std::error::Error>> {
-    let (provider, id, pane): (Option<String>, Option<String>, Option<String>) = connection
-        .query_row(
-            "SELECT s.chair_provider, s.chair_id, a.pane_id FROM session s
-             LEFT JOIN agent a ON a.session_id = s.id AND a.id = 'orchestrator'
-             WHERE s.id = ?1",
-            [session],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-        )?;
-    if pane.is_some() {
-        return Err("swarm: this chat's agent is still running".into());
-    }
-    let provider = provider
-        .as_deref()
-        .and_then(Provider::parse)
-        .ok_or("swarm: this chat's CLI is unknown")?;
-    let id = id.ok_or("swarm: this chat has no session id to resume")?;
-    Ok((provider, id))
 }

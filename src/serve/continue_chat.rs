@@ -202,18 +202,6 @@ async fn resume_switch(app: &App, body: &ContinueChat) -> Result<Value, ApiError
             "This chat has no session to resume before its first reply. Send a message first, then switch.",
         ));
     }
-    // A Codex session lives in one account's home, so only that account resumes it.
-    if body.provider == "codex"
-        && body
-            .account
-            .as_deref()
-            .is_some_and(|a| a != "auto" && Some(a) != chair["account"].as_str())
-    {
-        return Err(error(
-            StatusCode::CONFLICT,
-            "A Codex chat stays in its account. Choose Summary or Start clean to move it.",
-        ));
-    }
     // launch takes only the CLI's own levels; a refusal after the close would cost a restart.
     if let Some(effort) = body.effort.as_deref()
         && !swarm::providers::Provider::parse(&body.provider)
@@ -329,7 +317,7 @@ pub(super) async fn execute_continue_timed(
             continue_phase(app, old, "preparing")?;
             // Clean carries nothing, so it needs neither the log nor the chair.
             if body.carry == Carry::Clean {
-                return Ok((action_session(app, old)?, String::new(), false));
+                return Ok((action_session(app, old)?, String::new()));
             }
             let rows = handoff_rows(app, old).await?;
             let call = action_session(app, old)?;
@@ -351,7 +339,7 @@ pub(super) async fn execute_continue_timed(
                     }).await;
                     match summary {
                         Ok(Ok(new_rows)) => match handoff::summary_turn(&new_rows, rows.len()) {
-                            Some(Some(context)) => return Ok((call, context, true)),
+                            Some(Some(context)) => return Ok((call, handoff::first_message(&context, true))),
                             Some(None) => break,
                             None => {}
                         },
@@ -360,10 +348,16 @@ pub(super) async fn execute_continue_timed(
                     }
                 }
             }
-            let context = handoff::recent_context(&rows).ok_or_else(|| error(StatusCode::CONFLICT, "The current chat has no messages to carry forward"))?;
-            Ok((call, context, false))
+            // No summary came, for example from a spent account, so the new agent gets the whole
+            // chat. Without a warm cache a summary turn costs the same full read.
+            let text = handoff::chat_text(&rows).ok_or_else(|| error(StatusCode::CONFLICT, "The current chat has no messages to carry forward"))?;
+            if text.chars().count() <= handoff::INLINE_LIMIT {
+                return Ok((call, handoff::first_message(&text, false)));
+            }
+            let path = chat_file(app, old, text).await?;
+            Ok((call, handoff::file_message(&path.to_string_lossy())))
         };
-        let (call, context, summary) = tokio::select! {
+        let (call, first) = tokio::select! {
             biased;
             _ = cancelled.changed() => return Err(error(StatusCode::CONFLICT, "model switch cancelled")),
             prepared = prepare => prepared?,
@@ -394,7 +388,7 @@ pub(super) async fn execute_continue_timed(
         }).await;
         ready.map_err(|_| error(StatusCode::GATEWAY_TIMEOUT, "The new agent did not become ready to receive the summary"))??;
         continue_phase(app, old, "delivering")?;
-        run_cli(app, new_call.args(&["type", "orchestrator"]), Some(handoff::first_message(&context, summary))).await?;
+        run_cli(app, new_call.args(&["type", "orchestrator"]), Some(first)).await?;
         run_cli(app, call.args(&["session", "continue", session, old]), None).await?;
         Ok(started)
     }.await;
@@ -417,6 +411,39 @@ pub(super) async fn execute_continue_timed(
     app.hub.lock().unwrap().publish(Frame::new("handoff", json!({"old_session":old,"phase":phase,"canCancel":false,"session":session,"error":message}), None));
     app.handoffs.lock().unwrap().remove(old);
     result
+}
+
+/// Saves the chat `text` of session `old` as `<swarm home>/handoffs/<old>.md`, mode 0600.
+// ponytail: handoff files are never removed; prune by age if the folder grows.
+async fn chat_file(app: &App, old: &str, text: String) -> Result<std::path::PathBuf, ApiError> {
+    let dir = app.root.join("handoffs");
+    let path = dir.join(format!("{old}.md"));
+    let saved = path.clone();
+    tokio::task::spawn_blocking(move || {
+        use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
+        std::fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(&dir)?;
+        std::io::Write::write_all(
+            &mut std::fs::OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .mode(0o600)
+                .open(&saved)?,
+            text.as_bytes(),
+        )
+    })
+    .await
+    .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "chat file task failed"))?
+    .map_err(|e| {
+        error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            &format!("Could not save the chat for the new agent: {e}"),
+        )
+    })?;
+    Ok(path)
 }
 
 #[cfg(test)]

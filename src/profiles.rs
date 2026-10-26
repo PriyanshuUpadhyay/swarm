@@ -86,9 +86,10 @@ pub fn empty_accounts(provider: &str) -> AccountList {
     }
 }
 
-/// The fresh account with the most left when it has at least `min_usage_left_pct`, else the
-/// first renewable account by name, else the fresh account with the most left, else the current
-/// home. A signed-out account is never picked.
+/// The fresh account with the most left when it has at least `min_usage_left_pct`, else the stale
+/// one, else the first renewable account by name, else the fresh account with the most left, else
+/// the current home. A signed-out account is never picked. A stale reading comes from a failed
+/// refresh, so a stale account with room left beats a fresh one that is spent.
 pub fn pick_auto(
     accounts: &[Account],
     current_home: Option<&str>,
@@ -109,16 +110,21 @@ pub fn pick_auto(
             .filter(|account| account.auth_state == AuthState::SignedIn)
             .filter(|account| !fable || !account.fable_spent)
     };
-    let fresh = signed_in()
-        .filter(|account| account.usage_state == "fresh" && account.remaining_pct.is_some())
-        .min_by(|left, right| {
-            right
-                .remaining_pct
-                .cmp(&left.remaining_pct)
-                .then(left.name.cmp(&right.name))
-        });
+    let most_left = |state: &str| {
+        signed_in()
+            .filter(|account| account.usage_state == state && account.remaining_pct.is_some())
+            .min_by(|left, right| {
+                right
+                    .remaining_pct
+                    .cmp(&left.remaining_pct)
+                    .then(left.name.cmp(&right.name))
+            })
+    };
+    let enough = |account: &&Account| account.remaining_pct >= Some(i64::from(min_usage_left_pct));
+    let fresh = most_left("fresh");
     Ok(fresh
-        .filter(|account| account.remaining_pct >= Some(i64::from(min_usage_left_pct)))
+        .filter(enough)
+        .or_else(|| most_left("stale").filter(enough))
         .or_else(|| {
             signed_in()
                 .filter(|account| account.renewable)
@@ -248,7 +254,7 @@ mod tests {
     }
 
     #[test]
-    fn auto_uses_fresh_most_left_then_names_and_keeps_current_without_fresh_quota() {
+    fn auto_uses_fresh_most_left_then_stale_and_keeps_current_without_quota() {
         let mut rows = vec![
             account("work", AuthState::SignedIn, "fresh", Some(70)),
             account("personal", AuthState::SignedIn, "fresh", Some(25)),
@@ -279,11 +285,36 @@ mod tests {
                 .as_deref(),
             Some("work")
         );
+        assert_eq!(
+            pick_auto(&rows, None, None, 5).unwrap().as_deref(),
+            Some("work")
+        );
+        rows[0].remaining_pct = Some(2);
         assert_eq!(pick_auto(&rows, None, None, 5).unwrap(), None);
         rows[0].auth_state = AuthState::Unavailable;
         assert_eq!(
             pick_auto(&rows, Some("/profiles/work"), None, 5).unwrap(),
             None
+        );
+    }
+
+    // Live 2026-10-25: the read of the account in use failed, so it went stale at 100% left, and
+    // the pick fell back to the fresh account with 0% left.
+    #[test]
+    fn auto_takes_a_stale_account_with_room_over_a_spent_fresh_one() {
+        let mut rows = vec![
+            account("spent", AuthState::SignedIn, "fresh", Some(0)),
+            account("roomy", AuthState::SignedIn, "stale", Some(100)),
+            account("low", AuthState::SignedIn, "stale", Some(3)),
+        ];
+        assert_eq!(
+            pick_auto(&rows, None, None, 5).unwrap().as_deref(),
+            Some("roomy")
+        );
+        rows[1].remaining_pct = Some(2);
+        assert_eq!(
+            pick_auto(&rows, None, None, 5).unwrap().as_deref(),
+            Some("spent")
         );
     }
 
