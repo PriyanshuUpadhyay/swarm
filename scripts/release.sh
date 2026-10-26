@@ -75,7 +75,7 @@ if "$dry"; then
         "If $tag is a draft, run gh release edit $tag --draft=false --latest." \
         'Wait up to 30 minutes for Tap, using the saved publication time.' \
         'Run brew update, then brew upgrade swarm; reinstall if a .local build remains.' \
-        'Restart the HUD if its LaunchAgent plist exists.' \
+        'Run swarm hud restart; it reloads the HUD login item when it is installed.' \
         'Print swarm --version and check the printed commit as a prefix of the full release hash.' \
         'Run swarm __prune-stale-trust schedule-upgrade; log scheduling errors and continue.'
     exit 0
@@ -235,11 +235,8 @@ installed_versions=$(brew list --formula --versions swarm)
 case "$installed_versions" in
     *"$version.local."*) brew reinstall --formula priyanshuupadhyay/tap/swarm ;;
 esac
-plist=$HOME/Library/LaunchAgents/io.github.priyanshuupadhyay.swarm.hud.plist
-# SIGTERM, so KeepAlive starts the new HUD; `kickstart -k` waits out the 60 s ThrottleInterval.
-# A HUD that does not run is started.
-hud=gui/$(id -u)/io.github.priyanshuupadhyay.swarm.hud
-if [ -f "$plist" ]; then launchctl kill SIGTERM "$hud" 2>/dev/null || launchctl kickstart "$hud"; fi
+# Reload the HUD login item, so the new ad hoc build starts at once (ADR 0127).
+swarm hud restart
 installed=$(swarm --version)
 printf '%s\n' "$installed"
 printed=$(printf '%s\n' "$installed" | awk 'NR == 1 {print $3}')

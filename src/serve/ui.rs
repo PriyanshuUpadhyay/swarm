@@ -149,7 +149,8 @@ pub(super) fn page_base(url: &str) -> &str {
 }
 
 /// `path` opened to append, readable by the owner only, because a server prints its URL there,
-/// and the `swarm ui` URL holds the token. `mode` applies only to a new file, so an older log is narrowed too.
+/// and the `swarm ui` URL holds the token. `mode` applies only to a new file, so an older log is
+/// narrowed too.
 pub(super) fn owner_log(path: &Path) -> std::io::Result<std::fs::File> {
     use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
     const OWNER_ONLY: u32 = 0o600;

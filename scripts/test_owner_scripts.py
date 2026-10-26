@@ -105,10 +105,10 @@ elif name == 'make':
 elif name == 'swarm':
     if a == ['__prune-stale-trust', 'schedule-upgrade']:
         sys.exit(1 if scenario == 'cleanup-error' else 0)
+    if a == ['hud', 'restart']:
+        sys.exit(1 if scenario == 'hud-error' else 0)
     if scenario == 'version-error': fail()
     print('swarm 0.0.20 ' + ('' if scenario == 'empty-hash' else 'deadbee' if scenario == 'wrong-hash' else head[:int(os.environ.get('HASH_LENGTH', '7'))]))
-elif name == 'launchctl':
-    if scenario == 'hud-error': fail()
 elif name in ('sleep', 'swift'): pass
 '''
 
@@ -126,7 +126,7 @@ class OwnerScripts(unittest.TestCase):
         (self.root / 'scripts/install-local.sh').write_text('#!/bin/sh\nexit 1\n')
         self.bin = self.root / 'bin'
         self.bin.mkdir()
-        for name in ('git', 'gh', 'date', 'brew', 'cargo', 'sleep', 'launchctl', 'swarm', 'uname', 'zig', 'node', 'pnpm', 'make', 'swift'):
+        for name in ('git', 'gh', 'date', 'brew', 'cargo', 'sleep', 'swarm', 'uname', 'zig', 'node', 'pnpm', 'make', 'swift'):
             path = self.bin / name
             path.write_text(STUB); path.chmod(0o755)
         self.state = dict(head='abcdef0123456789abcdef0123456789abcdef01')
@@ -134,8 +134,6 @@ class OwnerScripts(unittest.TestCase):
                         HOME=str(self.root / 'home'), TMPDIR=str(self.root),
                         PATH=str(self.bin) + os.pathsep + os.environ['PATH'],
                         GIT_CONFIG_GLOBAL='/dev/null', GIT_CONFIG_NOSYSTEM='1')
-        plist = self.root / 'home/Library/LaunchAgents/io.github.priyanshuupadhyay.swarm.hud.plist'
-        plist.parent.mkdir(parents=True); plist.touch()
         self.save()
 
     def save(self):

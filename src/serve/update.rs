@@ -16,13 +16,12 @@ const CURL_SECS: u64 = 10;
 /// `brew update` reads every tap, and `brew upgrade swarm` downloads and links a release.
 const BREW_UPDATE_WAIT: Duration = Duration::from_secs(300);
 const BREW_UPGRADE_WAIT: Duration = Duration::from_secs(900);
-/// Each launchctl call and `swarm --version`.
+/// `swarm --version` or the HUD reload, whose waits add up to about 4 s.
 const SHORT_WAIT: Duration = Duration::from_secs(10);
 /// The last lines of a failed step that the error toast shows.
 const ERROR_LINES: usize = 5;
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// A SHA-256 hash.
 type Sha256Hash = [u8; 32];
 
 static LATEST: Mutex<Option<(std::time::Instant, String)>> = Mutex::new(None);
@@ -230,22 +229,19 @@ pub(super) async fn update_write() -> Result<Json<Value>, ApiError> {
         .map_err(|err| error(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()))?
 }
 
-/// SIGTERM to a login item that runs. KeepAlive starts it again with the app that `opt` names
-/// now, and launchd tries again after ThrottleInterval when that first start fails, as a new ad
-/// hoc app can (ADR 0125). `kickstart -k` would wait out the ThrottleInterval. A login item that
-/// does not run is started by the new `swarm ui` (`start_hud`).
+/// Boot the login item out and load it again, so the HUD runs the app that `opt` names now
+/// (ADR 0127). A login item that is not installed is left alone.
 async fn hud_restart() -> Result<(), ApiError> {
     let home = std::env::var_os("HOME").unwrap_or_default();
-    let status = tokio::task::spawn_blocking(move || swarm::hud::status(Path::new(&home)));
-    let status = tokio::time::timeout(SHORT_WAIT, status)
+    let restarted = tokio::task::spawn_blocking(move || {
+        swarm::hud::restart(Path::new(&home))
+            .map_err(|err| err.to_string().trim_start_matches("swarm: ").to_string())
+    });
+    tokio::time::timeout(SHORT_WAIT, restarted)
         .await
-        .map_err(|_| error(StatusCode::GATEWAY_TIMEOUT, "launchctl print timed out"))?
-        .map_err(|err| error(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()))?;
-    if status.running {
-        let launchctl = Path::new("/bin/launchctl");
-        let target = swarm::hud::service_target();
-        run(launchctl, &["kill", "SIGTERM", &target], SHORT_WAIT).await?;
-    }
+        .map_err(|_| error(StatusCode::GATEWAY_TIMEOUT, "timed out"))?
+        .map_err(|err| error(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()))?
+        .map_err(|err| error(StatusCode::BAD_GATEWAY, &err))?;
     Ok(())
 }
 
