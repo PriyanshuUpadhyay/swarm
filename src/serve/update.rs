@@ -22,8 +22,8 @@ const SHORT_WAIT: Duration = Duration::from_secs(10);
 const ERROR_LINES: usize = 5;
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// A SHA-256 digest.
-type Digest = [u8; 32];
+/// A SHA-256 hash.
+type Sha256Hash = [u8; 32];
 
 static LATEST: Mutex<Option<(std::time::Instant, String)>> = Mutex::new(None);
 /// Held by an upgrade or a restart, so only one of them runs at a time.
@@ -33,14 +33,14 @@ static HUD_CHANGED: AtomicBool = AtomicBool::new(false);
 
 /// The SHA-256 of the HUD executable that the login item runs through `opt`, or None without one.
 // ponytail: the executable only; a change to the bundle's resources alone does not restart it.
-fn hud_hash(prefix: &Path) -> Option<Digest> {
+fn hud_hash(prefix: &Path) -> Option<Sha256Hash> {
     use sha2::Digest;
     let path = prefix.join("opt/swarm/libexec/SwarmHUD.app/Contents/MacOS/SwarmHUD");
     Some(sha2::Sha256::digest(std::fs::read(path).ok()?).into())
 }
 
 /// Whether the upgrade brought a different HUD. With no HUD after it, there is nothing to start.
-fn hud_changed(before: Option<Digest>, after: Option<Digest>) -> bool {
+fn hud_changed(before: Option<Sha256Hash>, after: Option<Sha256Hash>) -> bool {
     after.is_some() && before != after
 }
 

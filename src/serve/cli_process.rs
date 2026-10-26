@@ -124,10 +124,6 @@ impl Drop for ActionProcessGroup {
     }
 }
 
-#[cfg(test)]
-#[path = "cli_process/tests.rs"]
-mod tests;
-
 /// What a failed exit says: its stderr, else its stdout, trimmed.
 pub(super) fn failure_text(output: &std::process::Output) -> String {
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -138,3 +134,7 @@ pub(super) fn failure_text(output: &std::process::Output) -> String {
     };
     text.trim().to_string()
 }
+
+#[cfg(test)]
+#[path = "cli_process/tests.rs"]
+mod tests;

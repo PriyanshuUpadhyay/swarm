@@ -2,7 +2,8 @@
 status: accepted
 date: 2026-10-26
 deciders: [user]
-related: ["0118", "0087"]
+amends: ["0118"]
+related: ["0087"]
 informed-by:
   - 'owner, 2026-10-26: "yeah let''s fix th ehud thing." and "do it" for this record'
   - "release 0.0.43: `launchctl kickstart -k` took over 60 s, and launchd logged `OS_REASON_CODESIGNING | Launch Constraint Violation` on the first start of each new brew build"

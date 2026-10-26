@@ -72,7 +72,7 @@ fn coder_state(home: &Path, session: &str) -> serde_json::Value {
     coder.clone()
 }
 
-/// `name` run as a copy of the built binary at its own path, as the brew CLI and the app's helper
+/// `name` run as the built binary at its own path, as the brew CLI and the app's helper
 /// are two paths on one Mac.
 fn build_at(home: &Path, name: &str) -> PathBuf {
     let dir = home.join(name);
@@ -80,6 +80,9 @@ fn build_at(home: &Path, name: &str) -> PathBuf {
     let exe = dir.join("swarm");
     // A hard link opens no file for write. A copy does, and on Linux another test's fork can hold
     // that write handle while this test runs the file, so exec fails with ETXTBSY.
+    // A leftover link from an earlier run is removed first, so the copy below never writes
+    // through a link into the cargo binary itself.
+    let _ = std::fs::remove_file(&exe);
     std::fs::hard_link(env!("CARGO_BIN_EXE_swarm"), &exe)
         .or_else(|_| std::fs::copy(env!("CARGO_BIN_EXE_swarm"), &exe).map(drop))
         .unwrap();
