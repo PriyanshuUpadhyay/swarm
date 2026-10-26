@@ -1,6 +1,6 @@
 //! `swarm pty <verb>`, the client half that the tmux-swarm adapter runs for a `pty:` pane.
 
-use super::socket_of;
+use super::{REQUEST_TIMEOUT, socket_dir, socket_of};
 use std::collections::HashMap;
 use std::io::{BufRead, Write};
 use std::os::unix::net::UnixStream;
@@ -12,6 +12,8 @@ fn request(
 ) -> Result<String, Box<dyn std::error::Error>> {
     let stream = UnixStream::connect(socket)
         .map_err(|error| format!("swarm pty: no host at {}: {error}", socket.display()))?;
+    stream.set_read_timeout(Some(REQUEST_TIMEOUT))?;
+    stream.set_write_timeout(Some(REQUEST_TIMEOUT))?;
     writeln!(&stream, "{request}")?;
     let mut line = String::new();
     std::io::BufReader::new(&stream).read_line(&mut line)?;
@@ -53,15 +55,10 @@ pub(crate) fn client(verb: &str) -> Result<String, Box<dyn std::error::Error>> {
         );
     }
     if verb == "list" {
-        // Every live host on this machine, as tmux lists every pane on its server.
-        let runs = swarm::paths::root_dir()?.join("runs");
+        // Every live host of this user, as tmux lists every pane on its server.
         let mut out = String::new();
-        for dir in std::fs::read_dir(runs).into_iter().flatten().flatten() {
-            let session = dir.file_name().to_string_lossy().into_owned();
-            let Ok(socket) = socket_of(&session) else {
-                continue;
-            };
-            if let Ok(text) = request(&socket, serde_json::json!({"op": "list"})) {
+        for entry in std::fs::read_dir(socket_dir()?)?.flatten() {
+            if let Ok(text) = request(&entry.path(), serde_json::json!({"op": "list"})) {
                 out.push_str(&text);
             }
         }
@@ -73,6 +70,7 @@ pub(crate) fn client(verb: &str) -> Result<String, Box<dyn std::error::Error>> {
     let send = |op: &str, field: &str, value: String| {
         request(&socket, serde_json::json!({"op": op, "n": n, field: value}))
     };
+    let ask = |op: &str| request(&socket, serde_json::json!({"op": op, "n": n}));
     match verb {
         "ring" => {
             send("write", "text", var("TEXT"))?;
@@ -82,7 +80,7 @@ pub(crate) fn client(verb: &str) -> Result<String, Box<dyn std::error::Error>> {
         }
         "interrupt" => send("key", "key", "Escape".into()),
         "key" => send("key", "key", var("KEY")),
-        "screen" | "capture" | "close" => send(verb, "verb", verb.into()),
+        "screen" | "capture" | "close" => ask(verb),
         "attach" => Err("swarm pty: a hosted pane has no attach yet".into()),
         _ => Err(format!("swarm pty: unknown verb {verb}").into()),
     }

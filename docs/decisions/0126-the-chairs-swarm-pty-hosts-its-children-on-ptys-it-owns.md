@@ -38,7 +38,12 @@ answers the probe.
   tmux stays the default.
 - The host listens on `/tmp/swarm-<uid>/<hash>.sock`, mode 0600 in a 0700 folder, where the hash
   comes from `runs/<session>`. A macOS socket path holds at most 104 bytes, and a branch build's
-  `runs/<session>/pty.sock` is longer. The chair gets `SWARM_PTY_HOST`.
+  `runs/<session>/pty.sock` is longer. The chair gets `SWARM_PTY_HOST`. `list` asks each socket
+  in the folder, and a starting host removes a socket that has refused connections for 10 s.
+- A host that cannot start prints one line, and the chair runs without it, so its children open
+  tmux panes. The host is opt-in, and a chair that runs is worth more than the missing host.
+- A host numbers its panes from its start time in ms, so a pane id that an earlier chair of the
+  session stored never names a child of a later one.
 - The session adapter stays `tmux-swarm`, because the app lists only tmux-swarm chats (ADR
   0084). Its spawn sends a chair with `SWARM_PTY_HOST` to the host, and each verb sends a
   `pty:<session>:<n>` pane to `swarm pty <verb>`. Other panes go to tmux as before.

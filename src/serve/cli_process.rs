@@ -36,6 +36,8 @@ pub(super) async fn run_cli_with_timeout(
             "SWARM_ADAPTER",
             "SWARM_PANE",
             "TMUX_PANE",
+            "SWARM_PTY_PANE",
+            "SWARM_PTY_HOST",
             "SUPERSET_TERMINAL_ID",
             "REX_BLOCK",
         ]

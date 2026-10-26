@@ -8,59 +8,94 @@ use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 use std::os::unix::process::{CommandExt, ExitStatusExt};
 use std::sync::atomic::{AtomicI32, Ordering};
 
-/// The terminal queries a hosted child can send. The shim inside tmux answers only the first, the
-/// OSC 7501 probe, because tmux answers the rest; the host has no terminal behind it, so it answers
-/// all. A CLI that gets no cursor report can refuse to start.
-pub(crate) const QUERIES: [&[u8]; 7] = [
-    b"\x1b]7501;?",
-    b"\x1b[c",
-    b"\x1b[0c",
-    b"\x1b[5n",
-    b"\x1b[6n",
-    b"\x1b]10;?",
-    b"\x1b]11;?",
-];
+/// What a terminal sends back for a query.
+pub(crate) enum Reply {
+    Text(&'static [u8]),
+    /// `CSI <row>;<col> R`, from the cursor at the moment of the query.
+    Cursor,
+}
+
+pub(crate) struct Query {
+    pub(crate) text: &'static [u8],
+    pub(crate) reply: Reply,
+}
+
 /// A supporting terminal replies with `?`; no `states` or `kinds` means the base sets.
-pub(crate) const PROBE_REPLY: &[u8] = b"\x1b]7501;?\x07";
+const PROBE: Query = Query {
+    text: b"\x1b]7501;?",
+    reply: Reply::Text(b"\x1b]7501;?\x07"),
+};
+/// The shim inside tmux answers only the OSC 7501 probe, because tmux answers the rest.
+const PROBE_ONLY: &[Query] = &[PROBE];
+/// The host has no terminal behind it, so it answers the queries the CLIs send at start. A CLI
+/// that gets no cursor report can refuse to start.
+pub(crate) const QUERIES: &[Query] = &[
+    PROBE,
+    Query {
+        text: b"\x1b[c",
+        reply: Reply::Text(b"\x1b[?1;2c"),
+    },
+    Query {
+        text: b"\x1b[0c",
+        reply: Reply::Text(b"\x1b[?1;2c"),
+    },
+    Query {
+        text: b"\x1b[5n",
+        reply: Reply::Text(b"\x1b[0n"),
+    },
+    Query {
+        text: b"\x1b[6n",
+        reply: Reply::Cursor,
+    },
+    Query {
+        text: b"\x1b]10;?",
+        reply: Reply::Text(b"\x1b]10;rgb:ffff/ffff/ffff\x1b\\"),
+    },
+    Query {
+        text: b"\x1b]11;?",
+        reply: Reply::Text(b"\x1b]11;rgb:0000/0000/0000\x1b\\"),
+    },
+];
+/// One read of a PTY master.
+pub(crate) const CHUNK: usize = 65536;
 
 /// The PTY master, for the SIGWINCH handler.
 static MASTER: AtomicI32 = AtomicI32::new(-1);
 
-/// Finds queries in a byte stream that arrives in pieces.
-pub(crate) struct Scanner {
-    queries: &'static [&'static [u8]],
+/// Finds terminal queries in a byte stream that arrives in pieces.
+pub(crate) struct QueryScanner {
+    queries: &'static [Query],
     tail: Vec<u8>,
 }
 
-impl Scanner {
-    pub(crate) fn new(queries: &'static [&'static [u8]]) -> Self {
-        Scanner {
+impl QueryScanner {
+    pub(crate) fn new(queries: &'static [Query]) -> Self {
+        QueryScanner {
             queries,
             tail: Vec::new(),
         }
     }
 
-    /// Each query that ends in `bytes`, in order, as (end offset in `bytes`, index in queries).
-    pub(crate) fn push(&mut self, bytes: &[u8]) -> Vec<(usize, usize)> {
+    /// Each query that ends in `bytes`, in order, with its end offset in `bytes`.
+    pub(crate) fn push(&mut self, bytes: &[u8]) -> Vec<(usize, &'static Query)> {
         let kept = self.tail.len();
         self.tail.extend_from_slice(bytes);
-        let mut found: Vec<(usize, usize)> = self
-            .queries
+        let queries = self.queries;
+        let mut found: Vec<(usize, &'static Query)> = queries
             .iter()
-            .enumerate()
-            .flat_map(|(index, query)| {
+            .flat_map(|query| {
                 let tail = &self.tail;
-                (0..=tail.len().saturating_sub(query.len()))
-                    .filter(move |&at| tail[at..].starts_with(query))
-                    .map(move |at| (at + query.len(), index))
+                (0..=tail.len().saturating_sub(query.text.len()))
+                    .filter(move |&at| tail[at..].starts_with(query.text))
+                    .map(move |at| (at + query.text.len(), query))
             })
             // A query that ended in the kept tail was found in an earlier push.
             .filter(|&(end, _)| end > kept)
-            .map(|(end, index)| (end - kept, index))
+            .map(|(end, query)| (end - kept, query))
             .collect();
-        found.sort();
+        found.sort_by_key(|&(end, _)| end);
         // Keep a tail that can hold the start of a split query, but no whole query.
-        let longest = self.queries.iter().map(|q| q.len()).max().unwrap_or(1);
+        let longest = queries.iter().map(|q| q.text.len()).max().unwrap_or(1);
         let keep = self.tail.len().min(longest - 1);
         self.tail.drain(..self.tail.len() - keep);
         found
@@ -84,7 +119,7 @@ extern "C" fn copy_size(_: libc::c_int) {
 /// chair's child agents until `command` exits.
 pub(crate) fn pty(command: &[String], host: bool) -> i32 {
     let Some((program, args)) = command.split_first() else {
-        eprintln!("usage: swarm pty -- <cmd> [args...]");
+        eprintln!("usage: swarm pty [--host] -- <cmd> [args...]");
         return 2;
     };
     let (mut master_fd, mut slave_fd) = (-1, -1);
@@ -126,7 +161,7 @@ pub(crate) fn pty(command: &[String], host: bool) -> i32 {
         return 127;
     };
     // Without a host the chair still runs, and its children open tmux panes as before.
-    let host = host
+    let child_host = host
         .then(|| {
             super::pty_host::Host::start()
                 .inspect_err(|error| eprintln!("swarm pty: no child host: {error}"))
@@ -138,8 +173,8 @@ pub(crate) fn pty(command: &[String], host: bool) -> i32 {
         (Ok(stdin), Ok(stdout), Ok(stderr)) => {
             let mut child = std::process::Command::new(program);
             child.args(args).stdin(stdin).stdout(stdout).stderr(stderr);
-            if let Some(host) = &host {
-                child.env("SWARM_PTY_HOST", host.socket());
+            if let Some(child_host) = &child_host {
+                child.env("SWARM_PTY_HOST", child_host.socket());
             }
             // SAFETY: the closure calls only setsid and ioctl, which are async-signal-safe.
             unsafe {
@@ -191,9 +226,9 @@ pub(crate) fn pty(command: &[String], host: bool) -> i32 {
     let group = child.id() as libc::pid_t;
     std::thread::spawn(move || {
         let mut terminal = std::fs::File::from(output);
-        let mut scanner = Scanner::new(&QUERIES[..1]);
+        let mut scanner = QueryScanner::new(PROBE_ONLY);
         let mut stdout = std::io::stdout().lock();
-        let mut chunk = [0; 65536];
+        let mut chunk = [0; CHUNK];
         let mut output_open = true;
         // A read error is EIO once the CLI and every process it left have closed the terminal.
         loop {
@@ -206,7 +241,9 @@ pub(crate) fn pty(command: &[String], host: bool) -> i32 {
             // Answer before this chunk reaches tmux, so the CLI reads the reply before tmux's
             // device-attributes reply to the query that follows the probe.
             for _ in scanner.push(&chunk[..read]) {
-                let _ = terminal.write_all(PROBE_REPLY);
+                if let Reply::Text(reply) = PROBE.reply {
+                    let _ = terminal.write_all(reply);
+                }
             }
             if output_open
                 && stdout
@@ -229,7 +266,7 @@ pub(crate) fn pty(command: &[String], host: bool) -> i32 {
     // A process the CLI left behind can keep the terminal open, so the last output gets a moment.
     let _ = finished.recv_timeout(std::time::Duration::from_secs(1));
     // Its children end with the chair (ADR 0126).
-    drop(host);
+    drop(child_host);
     if raw_mode {
         // SAFETY: restores the termios read above.
         unsafe { libc::tcsetattr(0, libc::TCSANOW, &saved) };
@@ -249,23 +286,34 @@ pub(crate) fn pty(command: &[String], host: bool) -> i32 {
 mod tests {
     use super::*;
 
+    fn found(scanner: &mut QueryScanner, bytes: &[u8]) -> Vec<(usize, &'static [u8])> {
+        scanner
+            .push(bytes)
+            .into_iter()
+            .map(|(end, query)| (end, query.text))
+            .collect()
+    }
+
     #[test]
     fn finds_a_probe_split_across_reads() {
-        let mut scanner = Scanner::new(&QUERIES[..1]);
-        assert_eq!(scanner.push(b"text\x1b]75").len(), 0);
-        assert_eq!(scanner.push(b"01;?\x1b\\\x1b[c"), vec![(4, 0)]);
-        assert_eq!(scanner.push(b"\x1b]7501;state=idle\x07").len(), 0);
+        let mut scanner = QueryScanner::new(PROBE_ONLY);
+        assert_eq!(found(&mut scanner, b"text\x1b]75"), vec![]);
+        assert_eq!(
+            found(&mut scanner, b"01;?\x1b\\\x1b[c"),
+            vec![(4, PROBE.text)]
+        );
+        assert_eq!(found(&mut scanner, b"\x1b]7501;state=idle\x07"), vec![]);
     }
 
     #[test]
     fn finds_each_query_once_in_order() {
-        let mut scanner = Scanner::new(&QUERIES);
+        let mut scanner = QueryScanner::new(QUERIES);
         assert_eq!(
-            scanner.push(b"\x1b]7501;?\x07\x1b[c\x1b[6"),
-            vec![(8, 0), (12, 1)]
+            found(&mut scanner, b"\x1b]7501;?\x07\x1b[c\x1b[6"),
+            vec![(8, PROBE.text), (12, &b"\x1b[c"[..])]
         );
         // The DA1 query is still in the kept tail; only the cursor query is new.
-        assert_eq!(scanner.push(b"n"), vec![(1, 4)]);
-        assert_eq!(scanner.push(b"\x07"), vec![]);
+        assert_eq!(found(&mut scanner, b"n"), vec![(1, &b"\x1b[6n"[..])]);
+        assert_eq!(found(&mut scanner, b"\x07"), vec![]);
     }
 }

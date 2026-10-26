@@ -156,7 +156,10 @@ fn a_chair_under_a_host_launches_drives_and_closes_a_pty_seat() {
     assert_eq!(seat("pane"), serde_json::Value::Null);
     assert!(screen().is_empty());
     std::fs::write(home.join("stop"), "").unwrap();
-    chair.0.wait().unwrap();
+    wait_for(
+        || chair.0.try_wait().unwrap().is_some(),
+        "the chair to stop",
+    );
     let _ = std::fs::remove_dir_all(&home);
 }
 
