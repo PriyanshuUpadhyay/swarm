@@ -1,4 +1,4 @@
-//! Board pings (ADR 0118): which post rings whom, as a message row in the post's transaction.
+//! Board pings (ADR 0124): which post rings whom, as a message row in the post's transaction.
 
 use super::*;
 

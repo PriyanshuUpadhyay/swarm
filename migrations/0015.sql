@@ -1,4 +1,4 @@
--- One append-only list of typed posts per project (ADR 0118). The project id is the one the app's
+-- One append-only list of typed posts per project (ADR 0124). The project id is the one the app's
 -- project list uses, so all worktrees of a repository share one board.
 CREATE TABLE post (
     project_id TEXT NOT NULL,

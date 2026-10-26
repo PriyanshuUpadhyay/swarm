@@ -310,17 +310,9 @@ fn answers(url: &str, pid: i32, deadline: Instant) -> bool {
 }
 
 fn spawn(root: &Path, record: &Path, deadline: Instant) -> Result<String> {
-    use std::os::unix::{
-        fs::{OpenOptionsExt, PermissionsExt},
-        process::CommandExt,
-    };
+    use std::os::unix::process::CommandExt;
     let log_path = root.join("pages.log");
-    let log = fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .mode(0o600)
-        .open(&log_path)?;
-    log.set_permissions(fs::Permissions::from_mode(0o600))?;
+    let log = owner_log(&log_path)?;
     let _ = fs::remove_file(record);
     let mut child = Process::new(std::env::current_exe()?)
         .args(["pages", "--foreground"])

@@ -48,6 +48,8 @@ struct Server {
     root: PathBuf,
     tool: PathBuf,
     port: u16,
+    /// A `swarm ui` server, which writes its record; only it can restart on a new build.
+    ui: bool,
     token: String,
     assets: Option<PathBuf>,
     dev_origin: Option<String>,
@@ -317,6 +319,9 @@ use tree_routes::*;
 
 mod ui;
 use ui::*;
+
+mod update;
+use update::*;
 
 mod usage;
 use usage::*;

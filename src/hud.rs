@@ -27,20 +27,25 @@ pub fn app() -> Option<PathBuf> {
 /// `<prefix>/Cellar/swarm/<version>/rest` as `<prefix>/opt/swarm/rest`, so a LaunchAgent written
 /// by one formula version still works after `brew upgrade` removes that version's folder.
 pub fn stable_path(path: &Path) -> PathBuf {
+    let Some(prefix) = cellar_prefix(path) else {
+        return path.to_path_buf();
+    };
+    // `Cellar`, `swarm`, and the version come after the prefix.
+    let rest: PathBuf = path.strip_prefix(&prefix).unwrap().iter().skip(3).collect();
+    if rest.as_os_str().is_empty() {
+        return path.to_path_buf();
+    }
+    prefix.join("opt/swarm").join(rest)
+}
+
+/// `<prefix>` when `path` is `<prefix>/Cellar/swarm/...`, else None, as for a cargo or checkout
+/// build.
+pub fn cellar_prefix(path: &Path) -> Option<PathBuf> {
     let parts: Vec<_> = path.components().collect();
     let at = parts
         .windows(2)
-        .position(|pair| pair[0].as_os_str() == "Cellar" && pair[1].as_os_str() == "swarm");
-    match at {
-        Some(at) if parts.len() > at + 3 => {
-            let mut stable: PathBuf = parts[..at].iter().collect();
-            stable.push("opt");
-            stable.push("swarm");
-            stable.extend(&parts[at + 3..]);
-            stable
-        }
-        _ => path.to_path_buf(),
-    }
+        .position(|pair| pair[0].as_os_str() == "Cellar" && pair[1].as_os_str() == "swarm")?;
+    Some(parts[..at].iter().collect())
 }
 
 fn xml_escape(text: &str) -> String {
@@ -156,13 +161,18 @@ fn launchctl(args: &[&str]) -> std::io::Result<std::process::Output> {
         .output()
 }
 
+/// The login item's launchctl service target, `gui/<uid>/<label>`.
+pub fn target() -> String {
+    format!("{}/{LABEL}", domain())
+}
+
 /// Start the installed login item now, as a login would.
 pub fn kickstart() -> std::io::Result<std::process::Output> {
-    launchctl(&["kickstart", &format!("{}/{LABEL}", domain())])
+    launchctl(&["kickstart", &target()])
 }
 
 pub fn status(home: &Path) -> Status {
-    let print = launchctl(&["print", &format!("{}/{LABEL}", domain())])
+    let print = launchctl(&["print", &target()])
         .map(|output| String::from_utf8_lossy(&output.stdout).into_owned())
         .unwrap_or_default();
     let running = running(&print);
@@ -190,7 +200,7 @@ pub fn install(home: &Path) -> Result<Status, Box<dyn std::error::Error>> {
     std::fs::write(&path, text)?;
     // A loaded job keeps its old plist until it is booted out, and bootout returns before the job
     // is gone; a bootstrap before then fails with error 5. Not loaded at all is fine.
-    let target = format!("{}/{LABEL}", domain());
+    let target = target();
     let _ = launchctl(&["bootout", &target]);
     for _ in 0..30 {
         if !launchctl(&["print", &target]).is_ok_and(|output| output.status.success()) {
@@ -222,7 +232,7 @@ pub fn install(home: &Path) -> Result<Status, Box<dyn std::error::Error>> {
 }
 
 pub fn uninstall(home: &Path) -> Result<Status, Box<dyn std::error::Error>> {
-    let _ = launchctl(&["bootout", &format!("{}/{LABEL}", domain())]);
+    let _ = launchctl(&["bootout", &target()]);
     stop(&strays(None));
     match std::fs::remove_file(plist_path(home)) {
         Err(error) if error.kind() != std::io::ErrorKind::NotFound => return Err(error.into()),
@@ -262,6 +272,13 @@ mod tests {
         ] {
             assert_eq!(stable_path(Path::new(kept)), PathBuf::from(kept));
         }
+    }
+
+    #[test]
+    fn cellar_prefix_reads_a_cellar_path_and_refuses_other_paths() {
+        let exe = Path::new("/opt/homebrew/Cellar/swarm/0.0.37/bin/swarm");
+        assert_eq!(cellar_prefix(exe), Some(PathBuf::from("/opt/homebrew")));
+        assert_eq!(cellar_prefix(Path::new("/Users/me/.cargo/bin/swarm")), None);
     }
 
     #[test]

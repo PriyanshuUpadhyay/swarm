@@ -1,4 +1,4 @@
-//! Board sources: each file source of a post gets its current git blob (ADR 0118).
+//! Board sources: each file source of a post gets its current git blob (ADR 0124).
 
 use super::*;
 

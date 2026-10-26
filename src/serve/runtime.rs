@@ -43,6 +43,8 @@ pub(super) fn start(
     dev_origin: Option<String>,
     record: Option<PathBuf>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    // Before any upgrade deletes this binary's folder, which the restart's path comes from.
+    let _ = brew_prefix();
     let root = swarm::paths::root_dir()?;
     drop(swarm::store::open(&root.join("swarm.db"))?);
     let token = match record {
@@ -72,6 +74,7 @@ pub(super) fn start(
         root,
         tool,
         port,
+        ui: record.is_some(),
         token,
         assets,
         dev_origin,
@@ -162,6 +165,8 @@ pub(super) fn router(app: App) -> Router {
         .route("/api/hud", get(hud_read).post(hud_write))
         .route("/api/notices", get(notices_read).post(notices_write))
         .route("/api/doctor", get(doctor_read))
+        .route("/api/update", get(update_read).post(update_write))
+        .route("/api/update/restart", post(update_restart))
         .route("/api/kit", get(kit_read))
         .route("/api/kit/check", post(kit_check))
         .route("/api/setup/plan", get(setup_plan))

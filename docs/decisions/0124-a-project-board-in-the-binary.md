@@ -14,7 +14,7 @@ links:
   - "migrations/0015.sql, src/store/board*.rs, src/cli/board.rs, src/guard.rs board_wall"
 ---
 
-# 0118. A project board in the binary: typed posts, fenced claims, and walls that swarm enforces
+# 0124. A project board in the binary: typed posts, fenced claims, and walls that swarm enforces
 
 ## Context and Problem Statement
 

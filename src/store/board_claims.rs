@@ -1,4 +1,4 @@
-//! Board claims (ADR 0118): one holder per work key, a generation fence, and an attempt cap.
+//! Board claims (ADR 0124): one holder per work key, a generation fence, and an attempt cap.
 
 use super::*;
 use std::ops::ControlFlow;
@@ -107,7 +107,7 @@ pub(super) fn claim_fence(
             if c.session_id != session_id || c.holder != author || c.released_at.is_some() {
                 return Err(format!("swarm: you do not hold {work}").into());
             }
-            // The checker records its test before a worker's work counts as handed off (ADR 0118).
+            // The checker records its test before a worker's work counts as handed off (ADR 0124).
             let role: String = tx.query_row(
                 "SELECT role FROM agent WHERE session_id = ?1 AND id = ?2",
                 (session_id, author),

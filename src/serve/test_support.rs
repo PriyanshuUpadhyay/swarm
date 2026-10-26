@@ -74,6 +74,7 @@ impl Fixture {
             tool: Path::new(env!("CARGO_MANIFEST_DIR"))
                 .join("packages/transcript/zig-out/bin/transcript"),
             port: 1,
+            ui: true,
             token: "test".into(),
             assets: None,
             dev_origin: None,

@@ -1,4 +1,4 @@
-//! Board hints: one stderr line at an agent's first `inbox` and at its `finish` (ADR 0118).
+//! Board hints: one stderr line at an agent's first `inbox` and at its `finish` (ADR 0124).
 
 use super::*;
 
