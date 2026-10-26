@@ -221,7 +221,7 @@ fn open_pty() -> Result<(OwnedFd, OwnedFd), Box<dyn std::error::Error>> {
             &mut slave_fd,
             std::ptr::null_mut(),
             std::ptr::null_mut(),
-            &mut size,
+            &raw mut size,
         )
     } != 0
     {
