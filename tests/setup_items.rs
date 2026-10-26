@@ -12,7 +12,7 @@ struct Fixture {
 }
 
 impl Fixture {
-    /// A home with `swarm` copied into `prefix/bin`, a kit in `prefix/libexec/skills/kit`, and
+    /// A home with `swarm` linked into `prefix/bin`, a kit in `prefix/libexec/skills/kit`, and
     /// fake `claude` and `pi` on PATH that log each call to `calls`.
     fn new(name: &str) -> Self {
         let home = std::env::temp_dir().join(format!("swarm-items-{name}-{}", std::process::id()));
@@ -28,7 +28,14 @@ impl Fixture {
         }
         std::fs::create_dir_all(home.join("prefix/bin")).unwrap();
         let exe = home.join("prefix/bin/swarm");
-        std::fs::copy(env!("CARGO_BIN_EXE_swarm"), &exe).unwrap();
+        // A hard link opens no file for write. A copy does, and on Linux another test's fork can hold
+        // that write handle while this test runs the file, so exec fails with ETXTBSY.
+        // A leftover link from an earlier run is removed first, so the copy below never writes
+        // through a link into the cargo binary itself.
+        let _ = std::fs::remove_file(&exe);
+        std::fs::hard_link(env!("CARGO_BIN_EXE_swarm"), &exe)
+            .or_else(|_| std::fs::copy(env!("CARGO_BIN_EXE_swarm"), &exe).map(drop))
+            .unwrap();
         std::fs::create_dir_all(home.join("bin")).unwrap();
         for cli in ["claude", "pi"] {
             let path = home.join("bin").join(cli);

@@ -33,7 +33,7 @@ if "$dry"; then
         "Replace the tap formula with a file:// tarball formula at version $local_version." \
         "Run brew reinstall --formula $formula if installed, else brew install --formula $formula." \
         'Restore the tap formula, also on failure; the install receipt keeps the real tap.' \
-        "If $plist exists, run launchctl kickstart -k gui/$(id -u)/io.github.priyanshuupadhyay.swarm.hud." \
+        "If $plist exists, run launchctl kill SIGTERM gui/$(id -u)/io.github.priyanshuupadhyay.swarm.hud, or kickstart it when it does not run." \
         "Print swarm --version and check its commit prefix against $commit." \
         'Run swarm __prune-stale-trust schedule-upgrade; log scheduling errors and continue.' \
         'Remove the temporary worktree and build files, also on failure.'
@@ -135,7 +135,9 @@ git -C "$tap_root" checkout -- Formula/swarm.rb
 [ -z "$(git -C "$tap_root" status --porcelain -- Formula/swarm.rb)" ] || die 'tap formula restore left changes'
 restore=false
 if [ -f "$plist" ]; then
-    launchctl kickstart -k "gui/$(id -u)/io.github.priyanshuupadhyay.swarm.hud"
+    # SIGTERM, so KeepAlive starts the new HUD; `kickstart -k` waits out the 60 s ThrottleInterval.
+    hud=gui/$(id -u)/io.github.priyanshuupadhyay.swarm.hud
+    launchctl kill SIGTERM "$hud" 2>/dev/null || launchctl kickstart "$hud"
 fi
 installed=$(swarm --version)
 printf '%s\n' "$installed"

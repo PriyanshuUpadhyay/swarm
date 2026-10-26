@@ -42,6 +42,7 @@ export function watchUpdates(app: App): () => void {
       }
     }
   };
+  // Fire-and-forget is safe: check catches its own errors.
   void check();
   const timer = setInterval(() => void check(), CHECK_MS);
   return () => clearInterval(timer);
@@ -74,27 +75,30 @@ async function upgrade(app: App, latest: string) {
   }
 }
 
-function installed(app: App, version: string, hud: boolean, error?: string) {
-  const stale = hud ? "The swarm ui server and the HUD still run" : "The swarm ui server still runs";
+// `hudChanged`: the upgrade changed the HUD, and it still needs its restart.
+function installed(app: App, version: string, hudChanged: boolean, error?: string) {
+  const stale = hudChanged ? "The swarm ui server and the HUD still run" : "The swarm ui server still runs";
   (error ? toast.error : toast.success)(`Swarm ${version} is installed`, {
     ...STAY,
     description: `${error ? `${error}. ` : ""}${stale} the old version. Restart to use the new one.`,
     // Fire-and-forget is safe: restart shows a refusal in this toast, and its timer covers the rest.
-    action: { label: "Restart server", onClick: keep(() => void restart(app, version, hud)) },
+    action: { label: "Restart server", onClick: keep(() => void restart(app, version, hudChanged)) },
     cancel: { label: "Later", onClick: () => {} },
   });
 }
 
-async function restart(app: App, version: string, hud: boolean) {
-  toast.loading(hud ? "Restarting the HUD and the swarm ui server…" : "Restarting the swarm ui server…", { ...STAY, description: "The page reloads when the new server answers.", ...NO_BUTTONS });
+async function restart(app: App, version: string, hudChanged: boolean) {
+  toast.loading(hudChanged ? "Restarting the HUD and the swarm ui server…" : "Restarting the swarm ui server…", { ...STAY, description: "The page reloads when the new server answers.", ...NO_BUTTONS });
   try {
     await app.api.post("/api/update/restart", {});
   } catch (err) {
     // The old server stops during this call, so only a refusal it sent is a failure. It refuses
-    // before it stops, so the owner can press Restart server again. Only a 409 comes before the
-    // HUD's one try; after any other refusal the next press restarts only the server.
+    // before it stops, so the owner can press Restart server again. Only a 502 (the HUD's one try)
+    // and a 500 (the start of the new server) come after the HUD try; then the next press restarts
+    // only the server. The 409s and the guard's refusals come before it.
     if (err instanceof ApiError) {
-      return installed(app, version, hud && err.status === 409, reportFailure(`Restart: ${message(err)}`));
+      const tried = err.status === 500 || err.status === 502;
+      return installed(app, version, hudChanged && !tried, reportFailure(`Restart: ${message(err)}`));
     }
   }
   // The stream's hello frame reloads the page on the new build, which ends this timer.
