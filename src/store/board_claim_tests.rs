@@ -121,6 +121,19 @@ mod tests {
             fourth.to_string(),
             "swarm: 3 attempts used on auth; parked for owner"
         );
+        // A later run's tries start again, because the cap is per session.
+        post(
+            &mut c,
+            &root,
+            PROJECT,
+            OTHER_SESSION,
+            OUTSIDER,
+            NOW + 400,
+            &claim("auth", None),
+        )
+        .unwrap();
+        let row = &claims(&c, PROJECT).unwrap()[0];
+        assert_eq!((row.holder.as_str(), row.attempts), (OUTSIDER, 1));
     }
 
     #[test]

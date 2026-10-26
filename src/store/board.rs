@@ -140,15 +140,23 @@ pub fn post(
 ) -> Result<Posted, Box<dyn std::error::Error>> {
     let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
     if let Some(idem) = new.idem {
-        let found: Option<i64> = tx
+        let found: Option<(i64, bool)> = tx
             .query_row(
-                "SELECT n FROM post WHERE project_id = ?1 AND idem = ?2",
-                (project_id, idem),
-                |r| r.get(0),
+                "SELECT n, session_id = ?3 AND author = ?4 AND kind = ?5
+                 FROM post WHERE project_id = ?1 AND idem = ?2",
+                (project_id, idem, session_id, author, new.kind),
+                |r| Ok((r.get(0)?, r.get(1)?)),
             )
             .optional()?;
-        if let Some(n) = found {
-            return Ok(Posted::Again(n));
+        match found {
+            Some((n, true)) => return Ok(Posted::Again(n)),
+            // Another seat's post, or another kind: a repeat would report a post this call did not make.
+            Some((n, false)) => {
+                return Err(
+                    format!("swarm: --idem {idem} is used by B-{n}; pick another key").into(),
+                );
+            }
+            None => {}
         }
     }
     if !KINDS.contains(&new.kind) {

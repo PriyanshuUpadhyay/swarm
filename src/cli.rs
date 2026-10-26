@@ -18,6 +18,9 @@ pub(crate) use board::*;
 mod board_hints;
 pub(crate) use board_hints::*;
 
+mod board_sources;
+pub(crate) use board_sources::*;
+
 mod chair_idle;
 pub(crate) use chair_idle::*;
 

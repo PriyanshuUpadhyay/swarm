@@ -22,7 +22,8 @@ pub(super) fn board_pings(
     depth: i64,
 ) -> Result<Vec<Ping>, Box<dyn std::error::Error>> {
     let line = |what: String| format!("board post B-{n}: {what}. Run swarm board read B-{n}.");
-    let lead = orchestrator_of(tx, session_id)?;
+    // Only a ping to the lead needs one, so a post that rings nobody works in a seat-only session.
+    let lead = || orchestrator_of(tx, session_id);
     let mut targets: Vec<(String, String, &str, String)> = Vec::new();
     match new.kind {
         "ask" if depth > MAX_DEPTH => {
@@ -30,7 +31,7 @@ pub(super) fn board_pings(
             if depth == MAX_DEPTH + 1 {
                 let what =
                     format!("ask from {author} is past depth {MAX_DEPTH}, so no peer was rung");
-                targets.push((session_id.into(), lead.clone(), "depth", line(what)));
+                targets.push((session_id.into(), lead()?, "depth", line(what)));
             }
         }
         "ask" | "handoff" => {
@@ -51,7 +52,7 @@ pub(super) fn board_pings(
         }
         "decision" if new.needs_owner => {
             let what = format!("decision from {author} waits for the owner");
-            targets.push((session_id.into(), lead.clone(), "owner", line(what)));
+            targets.push((session_id.into(), lead()?, "owner", line(what)));
             // The binary writes the notice, so a worker that cannot run `swarm notify` still reaches the owner.
             add_notice(
                 tx,

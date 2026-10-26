@@ -356,6 +356,18 @@ mod tests {
         .unwrap();
         assert!(matches!(first, Posted::New(1, _)));
         assert_eq!(again, Posted::Again(1));
+        refused(
+            put(
+                &mut c,
+                &root,
+                ORCHESTRATOR,
+                NewPost {
+                    idem: Some("k1"),
+                    ..finding("f")
+                },
+            ),
+            "--idem k1 is used by B-1",
+        );
         assert_eq!(posts(&c, PROJECT).unwrap().len(), 1);
     }
 

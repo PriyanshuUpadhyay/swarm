@@ -3,7 +3,8 @@
 use super::*;
 use std::ops::ControlFlow;
 
-/// After this many holders, a work key parks for the owner instead of taking another claim.
+/// After this many holders in one session, a work key parks for the owner instead of taking
+/// another claim.
 const MAX_ATTEMPTS: i64 = 3;
 const MAX_LEASE_SECS: i64 = 86_400;
 
@@ -73,7 +74,8 @@ pub(super) fn claim_fence(
                         )
                         .into());
                     }
-                    if c.attempts >= MAX_ATTEMPTS {
+                    // Tries count per run, so a key that an earlier session handed off is not parked forever.
+                    if c.session_id == session_id && c.attempts >= MAX_ATTEMPTS {
                         return Err(format!(
                             "swarm: {MAX_ATTEMPTS} attempts used on {work}; parked for owner"
                         )
@@ -81,7 +83,8 @@ pub(super) fn claim_fence(
                     }
                     tx.execute(
                         "UPDATE claim SET session_id = ?3, holder = ?4, generation = generation + 1,
-                                attempts = attempts + 1, lease_until = ?5, released_at = NULL
+                                attempts = CASE WHEN session_id = ?3 THEN attempts + 1 ELSE 1 END,
+                                lease_until = ?5, released_at = NULL
                          WHERE project_id = ?1 AND work_key = ?2",
                         (project_id, work, session_id, author, now + lease),
                     )?;

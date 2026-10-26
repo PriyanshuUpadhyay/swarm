@@ -76,7 +76,7 @@ fn parse(args: &[String]) -> Result<Flags, String> {
     Ok(flags)
 }
 
-fn git(cwd: &str, args: &[&str]) -> Option<String> {
+pub(crate) fn git(cwd: &str, args: &[&str]) -> Option<String> {
     let mut all = vec!["-C", cwd];
     all.extend(args);
     swarm::view::discovery::run("git", &all, 5)
@@ -102,37 +102,6 @@ pub(crate) fn project_of(cwd: &str) -> Result<String, String> {
         return Err("swarm: no project: run swarm in a project folder".into());
     }
     Ok(id)
-}
-
-/// A file source gets its current blob, and a named blob must match the file now, so a post
-/// cannot cite a file version that the author did not read.
-fn checked_sources(cwd: &str, sources: &[String]) -> Result<Vec<String>, String> {
-    let top = || {
-        git(cwd, &["rev-parse", "--show-toplevel"])
-            .ok_or("swarm: a file source needs a git folder; cite a URL instead")
-    };
-    sources
-        .iter()
-        .map(|source| {
-            if source.starts_with("https://") || source.starts_with("http://") {
-                return Ok(source.clone());
-            }
-            let (path, named) = match source.rsplit_once('@') {
-                Some((path, blob)) => (path, Some(blob)),
-                None => (source.as_str(), None),
-            };
-            let top = top()?;
-            let blob = git(&top, &["hash-object", "--", path])
-                .filter(|b| !b.is_empty())
-                .ok_or_else(|| format!("swarm: source {path} is not a readable file in {top}"))?;
-            match named {
-                Some(named) if !blob.starts_with(&named.to_ascii_lowercase()) => Err(format!(
-                    "swarm: source {source} does not match the file now (blob {blob})"
-                )),
-                _ => Ok(format!("{path}@{blob}")),
-            }
-        })
-        .collect()
 }
 
 /// One live seat of this project with the name, as (session, agent).
@@ -185,7 +154,12 @@ fn body_from_stdin() -> Result<String, std::io::Error> {
     if std::io::stdin().is_terminal() {
         return Ok(String::new());
     }
-    std::io::read_to_string(std::io::stdin())
+    // A tool runner can hold stdin open with nothing to send, so the read has a deadline.
+    read_within(std::io::stdin(), std::time::Duration::from_secs(10)).ok_or_else(|| {
+        std::io::Error::other(
+            "swarm: stdin stayed open for 10 s; pipe the body, or add < /dev/null for none",
+        )
+    })
 }
 
 pub(crate) fn board(
@@ -255,6 +229,12 @@ fn write(
         None => None,
     };
     let body = body_from_stdin()?;
+    // A seat in another worktree of this project cites the files it read, not the session folder's.
+    let here = std::env::current_dir()
+        .ok()
+        .map(|dir| dir.to_string_lossy().into_owned())
+        .filter(|dir| project_of(dir).is_ok_and(|id| id == project));
+    let sources = checked_sources(here.as_deref().unwrap_or(&cwd), &flags.sources)?;
     let new = NewPost {
         kind,
         to: to.as_ref().map(|(s, a)| (s.as_str(), a.as_str())),
@@ -265,7 +245,7 @@ fn write(
         lease_secs: flags.lease,
         needs_owner: flags.needs_owner,
         relayed: flags.relayed,
-        sources: checked_sources(&cwd, &flags.sources)?,
+        sources,
         subject: flags.subject.as_deref().unwrap_or(""),
         body: &body,
         idem: flags.idem.as_deref(),
@@ -318,15 +298,19 @@ fn write(
     Ok(())
 }
 
-fn label(post: &Post, lead: &str) -> &'static str {
-    match (post.relayed, post.author == lead) {
+/// `lead` is (session, agent), because every session's lead is usually named `orchestrator`.
+fn label(post: &Post, lead: &(String, String)) -> &'static str {
+    match (
+        post.relayed,
+        post.session_id == lead.0 && post.author == lead.1,
+    ) {
         (true, _) => "relayed by lead",
         (false, true) => "lead",
         (false, false) => "unreviewed",
     }
 }
 
-fn line(post: &Post, lead: &str, stale: bool) -> String {
+fn line(post: &Post, lead: &(String, String), stale: bool) -> String {
     let mut text = format!(
         "B-{} {} {} ({}, {})",
         post.n,
@@ -372,7 +356,10 @@ fn read(
     // The lead of the reader's session; a post by another session's lead still reads as unreviewed.
     let lead = identity()
         .ok()
-        .and_then(|(session, _)| swarm::store::orchestrator_of(connection, &session).ok())
+        .and_then(|(session, _)| {
+            let lead = swarm::store::orchestrator_of(connection, &session).ok()?;
+            Some((session, lead))
+        })
         .unwrap_or_default();
     let top = git(cwd, &["rev-parse", "--show-toplevel"]);
     let mut blobs: BTreeMap<String, Option<String>> = BTreeMap::new();

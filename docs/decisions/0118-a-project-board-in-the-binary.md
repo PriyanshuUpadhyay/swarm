@@ -47,8 +47,8 @@ with a source can be checked when the file changes.
   match the file now, and `board read` marks the post stale when the file changes.
 - **Claims carry a generation fence.** A claim takes a work key for a lease. A renewal names the
   current generation and writes no post. A new holder after the lease ends gets generation + 1.
-  An old holder's handoff with a stale generation is refused. A 4th holder is refused, and the
-  work parks for the owner.
+  An old holder's handoff with a stale generation is refused. A 4th holder in one session is
+  refused, and the work parks for the owner; a later session starts its tries again.
 - **Pings are fixed text.** An addressed ask, an answer to the asker, and an addressed handoff
   add one `message` row from the paneless `board` sender, in the post's transaction, for example
   "board post B-7: ask from c1. Run swarm board read B-7." Agent text never goes in a ping.

@@ -58,6 +58,8 @@ messages as kind `relay:<recipient>` and forward them yourself.
 You are the board's lead. Run `swarm board read` before you write the first brief, and put each
 post that applies to the task in that brief. Post with `swarm board post <kind>`, and
 answer with `swarm board answer B-n`. Run `swarm board` for the flags; a refused post prints how to fix it.
+Launch the seat that writes a task's tests with role `checker`; swarm keeps its posts from the
+workers of this session.
 
 ## Reports to the owner
 
