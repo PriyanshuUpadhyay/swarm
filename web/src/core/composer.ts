@@ -171,8 +171,15 @@ export function cliName(id: string): string {
   return Object.hasOwn(CLI_NAMES, id) ? CLI_NAMES[id] : id;
 }
 
-/** The run chip: `account · model · thinking`. Pi and AGY have no swarm accounts, so their CLI
- *  name stands in. */
+/** The CLI whose accounts a run uses. Pi's `claude-bridge/` models run `claude`, so they take a
+ *  Claude account; Pi's `default` model is left to the launch, which reads Pi's settings. */
+export function accountCli(provider: string, model: string | null): string {
+  if (provider !== "pi") return provider;
+  return model?.startsWith("claude-bridge/") ? "claude" : model?.startsWith("openai-codex/") ? "codex" : provider;
+}
+
+/** The run chip: `account · model · thinking`. AGY, and Pi with no Claude or Codex account, have no swarm
+ *  account, so their CLI name stands in. */
 export function runLabel(input: AgentInput): string {
   return [input.account ?? (input.provider ? cliName(input.provider) : null), input.model ?? "Default model", input.effort].filter(Boolean).join(" · ");
 }
@@ -245,9 +252,13 @@ export function savedCarry(prefs: { switchCarry?: string } | undefined): Carry {
  *  history; another CLI, or another Codex account, cannot take the session, so a new chat starts. */
 export function switchOutcome(current: Run, draft: Run): Outcome {
   if (current.provider !== draft.provider) return "handoff";
-  if (current.model === draft.model && current.effort === draft.effort && current.account === draft.account) return "none";
-  // Each Codex session lives in one account home.
-  return current.provider === "codex" && current.account !== draft.account ? "handoff" : "resume";
+  if (current.model === draft.model && current.effort === draft.effort && current.account === targetAccount(current, draft)) return "none";
+  return "resume";
+}
+
+/** The account a resume runs on. A Codex chat with no account picked stays in its own. */
+function targetAccount(current: Run, draft: Run): string | null {
+  return draft.provider === "codex" ? (draft.account ?? current.account) : draft.account;
 }
 
 const REREAD = "The next reply re-reads the whole chat once, so it costs more.";
@@ -264,9 +275,12 @@ function handoffLine(draft: Run, target: string, carry: Carry): string {
 }
 
 function resumeLine(current: Run, draft: Run, target: string): string {
-  if (current.account !== draft.account) {
+  const account = targetAccount(current, draft);
+  if (current.account !== account) {
     const on = current.model !== draft.model || current.effort !== draft.effort ? ` on ${target}` : "";
-    const who = draft.account ?? "the default account";
+    const who = account ?? "the default account";
+    // A Codex session lives in one account's home, so the move copies it there.
+    if (draft.provider === "codex") return `Moves this chat${on} to ${who}. History stays. Usage now counts against ${who}. The next reply re-reads the whole chat once.`;
     return `Restarts this chat${on} under ${who}. History stays. Usage now counts against ${who}. The next reply may re-read the chat once.`;
   }
   if (current.model !== draft.model) return `Restarts this chat on ${target}. History stays. ${REREAD}`;
@@ -298,14 +312,15 @@ export function modelLevels(cli: string[], model: string[] | undefined): string[
 }
 
 /** The draft after a pick of model `m` of CLI `cli`. The draft keeps its level when the model
- *  takes it, else the model's default, else the CLI's, and its account while the CLI stays; back on the chat's own CLI, the chat's
- *  account comes back. */
+ *  takes it, else the model's default, else the CLI's, and its account while the login stays; back on the chat's own login, the
+ *  chat's account comes back. */
 export function chooseModel(current: Run, draft: Run, cli: { id: string; efforts: string[]; default_effort: string }, m: { id: string; efforts?: string[]; default_effort?: string } | string): Run {
   const model = typeof m === "string" ? m : m.id;
   // launch takes only the CLI's own levels, also when the model lists more.
   const allowed = modelLevels(cli.efforts, typeof m === "string" ? undefined : m.efforts);
   const own = typeof m === "string" ? undefined : m.default_effort;
   const effort = [draft.effort, own, cli.default_effort].find((l) => l && allowed.includes(l)) ?? allowed[0] ?? null;
-  const account = cli.id === draft.provider ? draft.account : cli.id === current.provider ? current.account : null;
+  const login = accountCli(cli.id, model);
+  const account = login === accountCli(draft.provider, draft.model) ? draft.account : login === accountCli(current.provider, current.model) ? current.account : null;
   return { provider: cli.id, model, effort, account };
 }

@@ -10,6 +10,7 @@ mod cases {
     /// a late pass store no result, so the chair is not told that a delivered message was lost.
     #[test]
     fn a_store_error_in_the_proof_check_stores_no_ring_result() {
+        patient_rings();
         let (root, mut connection, session) = ring_session(
             "proof-store-error",
             Some("claude"),
@@ -454,6 +455,7 @@ mod cases {
 
     #[test]
     fn orchestrator_agent_add_records_self_pane_and_child_finish_rings_it() {
+        patient_rings();
         let root = std::env::temp_dir().join(format!("swarm-chair-test-{}", std::process::id()));
         let adapters = root.join("adapters");
         let ring_log = root.join("rings");

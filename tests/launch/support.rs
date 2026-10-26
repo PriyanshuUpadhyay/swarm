@@ -33,6 +33,8 @@ pub(super) fn swarm(home: &Path, env: &[(&str, &str)], args: &[&str]) -> Output 
             format!("{}:/usr/bin:/bin", home.join("bin").display()),
         )
         .current_dir(home)
+        // The account pick budget a debug build takes, long enough for fake CLIs on a loaded Mac.
+        .env("SWARM_TEST_ACCOUNT_PICK_MS", "30000")
         .args(args);
     for (name, value) in env {
         command.env(name, value);

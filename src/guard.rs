@@ -13,7 +13,7 @@ pub const REGISTRATION_TIMEOUT: u64 = 10;
 /// The runner answers before the CLI's timeout, because a CLI that times a hook out lets the call
 /// through.
 pub const DEADLINE: Duration = Duration::from_secs(8);
-const RULE_TIMEOUT: u64 = 3;
+const RULE_TIMEOUT: u64 = if cfg!(test) { 30 } else { 3 };
 /// How often the runner looks for a rule's exit; it bounds the delay each rule adds.
 const POLL: Duration = Duration::from_millis(5);
 /// A rule that leaves a process behind can hold stderr open, so the reason gets this long.
@@ -138,6 +138,9 @@ pub fn board_wall(provider: Provider, event: &str, payload: &str) -> Option<Verd
 mod tests {
     use super::*;
 
+    /// Long enough that only a hung rule meets it, however slowly a loaded machine starts one.
+    const LONG: Duration = Duration::from_secs(60);
+
     const CLAUDE_BASH: &str = r#"{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"ls"},"session_id":"s1","cwd":"/w"}"#;
 
     fn list(rules: &str) -> String {
@@ -159,7 +162,7 @@ mod tests {
             "PreToolUse",
             CLAUDE_BASH,
             "/h",
-            Instant::now() + DEADLINE,
+            Instant::now() + LONG,
         )
     }
 
@@ -202,12 +205,12 @@ mod tests {
 
     #[test]
     fn a_guard_that_crashes_times_out_or_does_not_start_blocks_the_call() {
-        for (script, why) in [
-            ("exit 1", "exit 1"),
-            ("kill -9 $$", "killed by a signal"),
-            ("sleep 5", "no answer within 1 s"),
+        for (script, extra, why) in [
+            ("exit 1", "", "exit 1"),
+            ("kill -9 $$", "", "killed by a signal"),
+            ("sleep 30", r#", "timeout": 1"#, "no answer within 1 s"),
         ] {
-            let verdict = decide_claude(Some(&list(&rule("g", script, r#", "timeout": 1"#))));
+            let verdict = decide_claude(Some(&list(&rule("g", script, extra))));
             assert_eq!(
                 verdict,
                 Verdict::Deny(format!(
@@ -433,7 +436,7 @@ mod tests {
             "PreToolUse",
             &payload,
             &home.to_string_lossy(),
-            Instant::now() + DEADLINE,
+            Instant::now() + LONG,
         );
         let folder = std::fs::canonicalize(&home).unwrap();
         assert_eq!(

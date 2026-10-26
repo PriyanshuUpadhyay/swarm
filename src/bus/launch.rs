@@ -43,7 +43,11 @@ pub fn argv(
             let state = state_hook_command(provider.id())?;
             let mut hooks = serde_json::Map::new();
             for event in CLAUDE_STATE_EVENTS {
-                hooks.insert(event.into(), serde_json::json!([handler(state.clone())]));
+                let mut group = handler(state.clone());
+                if event == "PermissionRequest" {
+                    group["hooks"][0]["timeout"] = crate::permission::HOOK_TIMEOUT_SECONDS.into();
+                }
+                hooks.insert(event.into(), serde_json::json!([group]));
             }
             // `/clear` opens a new log, so every Claude agent reports SessionStart state; the chair
             // also records its new session id.

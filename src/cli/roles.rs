@@ -17,7 +17,7 @@ impl Probe {
     pub(crate) fn new(config: &swarm::config::Config, account: Option<&str>) -> Probe {
         // Account selection starts its budget after launch has checked the host and opened the store.
         Probe {
-            deadline: swarm::profiles::native::deadline(ACCOUNT_PICK_TIMEOUT_SECONDS),
+            deadline: account_pick_deadline(),
             min_usage_left_pct: config.min_usage_left_pct,
             account: account.filter(|name| *name != "auto").map(str::to_string),
             accounts: Default::default(),
@@ -35,9 +35,7 @@ impl Probe {
                 format!("{} CLI not found on PATH", provider.id()),
             ));
         }
-        if !provider.has_accounts() {
-            return None;
-        }
+        let provider = provider.account_provider(&runner.model)?;
         let mut cache = self.accounts.borrow_mut();
         let accounts = cache
             .entry(provider)

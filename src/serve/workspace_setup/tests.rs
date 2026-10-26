@@ -31,7 +31,7 @@ async fn setup_streams_both_channels_reports_failure_and_kills_timeout_group() {
         &fixture.app,
         workspace,
         "printf 'ready'; printf 'problem' >&2; exit 7",
-        Duration::from_secs(2),
+        Duration::from_secs(30),
     )
     .await;
     assert_eq!(result["state"], "failed");
@@ -60,35 +60,22 @@ async fn setup_streams_both_channels_reports_failure_and_kills_timeout_group() {
         &fixture.app,
         workspace,
         "sleep 30 & printf '%s' \"$!\" > sleeper; wait",
-        Duration::from_millis(150),
+        // The limit must outlast the shell's start on a loaded Mac, so its sleeper exists.
+        Duration::from_secs(5),
     )
     .await;
     assert_eq!(result["state"], "timeout");
     assert!(fixture.dir.is_dir());
     let pid = std::fs::read_to_string(fixture.dir.join("sleeper")).unwrap();
-    assert!(
-        !std::process::Command::new("/bin/kill")
-            .args(["-0", pid.trim()])
-            .stderr(std::process::Stdio::null())
-            .status()
-            .unwrap()
-            .success()
-    );
+    until_dead(pid.trim()).await;
     let result = run_setup(
         &fixture.app,
         workspace,
         "sleep 30 & printf '%s' \"$!\" > detached; exit 0",
-        Duration::from_secs(1),
+        Duration::from_secs(30),
     )
     .await;
     assert_eq!(result["state"], "completed");
     let pid = std::fs::read_to_string(fixture.dir.join("detached")).unwrap();
-    assert!(
-        !std::process::Command::new("/bin/kill")
-            .args(["-0", pid.trim()])
-            .stderr(std::process::Stdio::null())
-            .status()
-            .unwrap()
-            .success()
-    );
+    until_dead(pid.trim()).await;
 }

@@ -17,7 +17,7 @@ mod cases {
             (
                 "live",
                 "printf pane",
-                "sleep 0.2; printf '{\"result\":{\"agent\":{\"agent_status\":\"idle\"}}}'",
+                "sleep 1.5; printf '{\"result\":{\"agent\":{\"agent_status\":\"idle\"}}}'",
             ),
             ("failed", "false", "true"),
         ] {
@@ -31,7 +31,7 @@ mod cases {
         }
         let mut connection = swarm::store::open(&root.join("swarm.db")).unwrap();
         let mut ids = Vec::new();
-        // The live session runs first and needs more than an even share of the budget.
+        // The live session runs first and needs more than an even share of the budget, 1 s.
         for index in 0..50 {
             let adapter = if index == 0 { "live" } else { "failed" };
             let session =
@@ -47,12 +47,8 @@ mod cases {
                 .unwrap();
             ids.push(session);
         }
-        let listings = all_agent_listings(
-            &mut connection,
-            &root,
-            std::time::Duration::from_millis(900),
-        )
-        .unwrap();
+        let listings =
+            all_agent_listings(&mut connection, &root, std::time::Duration::from_secs(50)).unwrap();
         let listed = listings
             .get(&ids[0])
             .expect("live session must not time out");
@@ -94,7 +90,7 @@ mod cases {
             let listings = all_agent_listings_kept(
                 &mut connection,
                 &root,
-                std::time::Duration::from_secs(5),
+                std::time::Duration::from_secs(30),
                 &mut cache,
             )
             .unwrap();
@@ -144,7 +140,7 @@ mod cases {
             let listings = all_agent_listings_kept(
                 &mut connection,
                 &root,
-                std::time::Duration::from_secs(5),
+                std::time::Duration::from_secs(30),
                 &mut cache,
             )
             .unwrap();

@@ -168,4 +168,5 @@ impl LiveRows {
 
 #[cfg(test)]
 #[path = "live_delta/tests.rs"]
-mod tests;
+// Run locally with `cargo test --features serve performance_tests -- --ignored --test-threads=1`.
+mod performance_tests;

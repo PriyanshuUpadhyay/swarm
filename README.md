@@ -233,7 +233,7 @@ The install and release scripts accept `--dry-run` and make no changes in that m
 | Command | Use |
 |---|---|
 | `scripts/install-local.sh <tag-or-commit>` | Build a clean copy of the ref and install it through Homebrew. |
-| `scripts/release.sh patch\|minor\|major [--no-local]` | Check main, bump the version, push the release, install the tag locally (skip with `--no-local`), and wait for Release and Tap. |
+| `scripts/release.sh patch\|minor\|major [--no-local]` | Check main, wait for its `ci` run, bump the version, push the release, install the tag locally (skip with `--no-local`), and wait for Release and Tap. |
 | `scripts/kit-checks.sh [worktree]` | Run the nine kit checks and keep full logs in `tmp/kit-checks/`. |
 | `scripts/prune-worktrees.sh [--yes]` | List merged, clean worktrees after a fetch; use `--yes` to remove them and their branches. |
 
@@ -244,6 +244,9 @@ It changes and restores the formula in `priyanshuupadhyay/tap`, which keeps that
 record and keeps `/opt/homebrew/opt/swarm` as the path for the kit and HUD.
 A plain `brew upgrade` keeps this build until the next release.
 Use `scripts/release.sh resume v<version>` to finish a pushed release after a failure.
+Only the `ci` workflow gates a release. The `background` workflow runs the serve tests with the
+ignored release checks, the Playwright suite with its time budgets, and the empty-HOME launch.
+The release script warns when its last run on main failed; fix that before the next release.
 The release script replaces a local build of that tag with the published build.
 See the Homebrew [formula guide](https://docs.brew.sh/Formula-Cookbook) and
 [command guide](https://docs.brew.sh/Manpage#reinstall-options-formulacask-).

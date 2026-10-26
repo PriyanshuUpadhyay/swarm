@@ -215,6 +215,7 @@ mod tests {
 
     #[test]
     fn sweep_rerings_a_child_once_for_old_unseen_messages() {
+        patient_rings();
         let root = std::env::temp_dir().join(format!("swarm-sweep-test-{}", std::process::id()));
         let ring_log = root.join("rings");
         let _ = std::fs::remove_dir_all(&root);
@@ -289,6 +290,7 @@ mod tests {
 
     #[test]
     fn sweep_reports_a_dead_child_as_before() {
+        patient_rings();
         let root = std::env::temp_dir().join(format!("swarm-dead-test-{}", std::process::id()));
         let ring_log = root.join("rings");
         let _ = std::fs::remove_dir_all(&root);
@@ -399,6 +401,7 @@ mod tests {
 
     #[test]
     fn sweep_rerings_its_own_chair_for_an_old_unseen_finish() {
+        patient_rings();
         let root =
             std::env::temp_dir().join(format!("swarm-sweep-chair-test-{}", std::process::id()));
         let ring_log = root.join("rings");

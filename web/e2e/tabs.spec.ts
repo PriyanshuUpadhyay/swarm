@@ -45,6 +45,8 @@ for (const pending of ["empty", null, "starting", "failed", "closing"] as const)
       try {
         await tab.screenshot({ path: info.outputPath("workspace-landing.png") });
       } finally {
+        // The page polls the strip, so a read can be in the route when the case ends.
+        await tab.unrouteAll({ behavior: "ignoreErrors" });
         await tab.close();
         writeFileSync(choicesPath, before);
       }
@@ -76,8 +78,12 @@ test("archiving the last open sidebar chat shows the workspace landing", async (
     const pane = snapshot.agents[session].find((agent) => agent.id === "orchestrator")?.pane;
     expect(["fixture-tabs-1", "fixture-tabs-2"]).toContain(pane);
     restore = { session, pane: pane! };
-    await choose({ op: "close_tab", workspace: workspaceId, chat: other });
-    await choose({ op: "selected_chat", workspace: workspaceId, chat: session });
+    // Let the page save its selection and URL before reload, then close through its write queue.
+    // An API-only selection leaves the old URL free to reopen the closed chat on reload.
+    await tabs.first().click();
+    await expect(tabs.first()).toHaveAttribute("aria-selected", "true");
+    await tab.locator(`[data-testid="tab"][data-id="${other}"] [data-action="close"]`).click();
+    await expect(tabs).toHaveCount(1);
     await tab.reload();
     await tab.waitForFunction(() => window.__swarmReady === true);
     await expect(tabs).toHaveCount(1);

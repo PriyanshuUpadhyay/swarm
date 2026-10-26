@@ -8,6 +8,8 @@
     "typecheck": "tsc -p tsconfig.react.json && tsc -p tsconfig.node.json",
     "test": "vitest run",
     "e2e": "playwright test",
+    "e2e:required": "playwright test --grep-invert @perf",
+    "e2e:perf": "playwright test --grep @perf",
     "perf": "node perf/run.mjs"
   },
   "dependencies": {

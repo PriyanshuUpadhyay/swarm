@@ -47,37 +47,45 @@ fn completed_summary() {
         message("user_message_chunk", handoff::REQUEST),
         message("agent_message_chunk", "files and next step"),
     ];
-    assert_eq!(handoff::completed_summary(&rows(events.clone()), 1), None);
+    assert_eq!(handoff::summary_turn(&rows(events.clone()), 1), None);
     let mut events = events;
     events.push(end("completed"));
     assert_eq!(
-        handoff::completed_summary(&rows(events), 1).as_deref(),
-        Some("files and next step")
+        handoff::summary_turn(&rows(events), 1),
+        Some(Some("files and next step".into()))
     );
 }
+/// A summary turn that ends early, by the owner or by a usage limit, has no summary, so the switch
+/// stops waiting at once.
 #[test]
 fn interrupted_summary() {
     for interrupt in [
-        json!({"type":"system_message","kind":"interrupted","text":"[Request interrupted by user]"}),
-        end("aborted"),
+        vec![
+            json!({"type":"system_message","kind":"interrupted","text":"[Request interrupted by user]"}),
+        ],
+        vec![end("aborted")],
+        vec![
+            json!({"type":"error","message":"Claude rate limit (seven_day)"}),
+            end("aborted"),
+        ],
     ] {
         let mut events = vec![
             message("user_message_chunk", handoff::REQUEST),
             message("agent_message_chunk", "Goal: fix the"),
-            interrupt,
         ];
-        assert_eq!(handoff::completed_summary(&rows(events.clone()), 0), None);
+        events.extend(interrupt);
+        assert_eq!(handoff::summary_turn(&rows(events.clone()), 0), Some(None));
         events.extend([
             message("user_message_chunk", "Carry on"),
             message("agent_message_chunk", "Done"),
             end("completed"),
         ]);
-        assert_eq!(handoff::completed_summary(&rows(events), 0), None);
+        assert_eq!(handoff::summary_turn(&rows(events), 0), Some(None));
     }
 }
 #[test]
-fn recent_context() {
-    let context = handoff::recent_context(&rows(vec![
+fn chat_text() {
+    let context = handoff::chat_text(&rows(vec![
         message("user_message_chunk", "Fix the menu"),
         json!({"type":"tool_call_update","content":"secret tool output"}),
         message("agent_message_chunk", "I found the filter"),
@@ -86,31 +94,26 @@ fn recent_context() {
     assert!(context.contains("User: Fix the menu"));
     assert!(context.contains("Agent: I found the filter"));
     assert!(!context.contains("secret tool output"));
-    assert!(handoff::recent_context(&[]).is_none());
+    assert!(handoff::chat_text(&[]).is_none());
 }
 #[test]
 fn context_limits_and_delivery_instructions() {
+    // The whole chat goes over, not only its last messages.
     let events = (0..20)
         .map(|i| message("user_message_chunk", &format!("message-{i:02}")))
         .collect();
-    let context = handoff::recent_context(&rows(events)).unwrap();
-    assert!(!context.contains("message-03"));
-    assert!(context.contains("message-04"));
+    let context = handoff::chat_text(&rows(events)).unwrap();
+    assert!(context.contains("message-00"));
+    assert!(context.contains("message-19"));
     let long = "é".repeat(13_000);
-    assert_eq!(
-        handoff::recent_context(&rows(vec![message("agent_message_chunk", &long)]))
-            .unwrap()
-            .chars()
-            .count(),
-        12_000
-    );
     let summary = rows(vec![
         message("user_message_chunk", handoff::REQUEST),
         message("agent_message_chunk", &long),
         end("completed"),
     ]);
     assert_eq!(
-        handoff::completed_summary(&summary, 0)
+        handoff::summary_turn(&summary, 0)
+            .flatten()
             .unwrap()
             .chars()
             .count(),
@@ -118,4 +121,5 @@ fn context_limits_and_delivery_instructions() {
     );
     assert!(handoff::first_message("context", true).contains("Use this context"));
     assert!(handoff::first_message("context", false).contains("Make a compact working summary"));
+    assert!(handoff::file_message("/h/chat.md").contains("/h/chat.md. Read all of it"));
 }

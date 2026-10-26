@@ -43,12 +43,46 @@ pub(crate) fn answer(
             )
         };
         let prompt = read().ok_or(format!("swarm: {agent_id} shows no question now"))?;
-        if prompt.id != *prompt_id {
-            return Err("swarm: the question changed; read it again".into());
+        let request = if provider.as_deref() == Some("claude") {
+            swarm::permission::permission_for_prompt(
+                root,
+                &session,
+                agent_id,
+                &prompt,
+                permission_now_ms()?,
+            )?
+        } else {
+            None
+        };
+        let current_id = match &request {
+            Some(request) => format!("{}.{}", prompt.id, request.id),
+            None => prompt.id.clone(),
+        };
+        if current_id != *prompt_id {
+            return Err(if prompt_id.contains('.') {
+                "swarm: this permission request expired or was already answered; read it again"
+            } else {
+                "swarm: the question changed; read it again"
+            }
+            .into());
         }
         let keys = prompt
             .keys(choice)
             .ok_or(format!("swarm: the question has no choice {choice}"))?;
+        if let Some(request) = request {
+            let decision = swarm::permission::decision(&request.payload, &prompt.choices[choice]);
+            swarm::permission::answer_permission_request(
+                root,
+                &session,
+                agent_id,
+                &request.id,
+                decision.as_ref(),
+                permission_now_ms()?,
+            )?;
+            if decision.is_some() {
+                return Ok(Some(()));
+            }
+        }
         // Each key after the first goes only once the same question shows the cursor where the
         // keys before it put it.
         let settled = |cursor: usize| {

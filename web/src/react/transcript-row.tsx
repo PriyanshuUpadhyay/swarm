@@ -198,7 +198,7 @@ function Bubble({ row, queued, reuse, branch, children }: { row: Row; queued?: b
 
 function CopyMessage({ row }: { row: Row }) {
   return (
-    <button type="button" className="copy-msg icon-btn" aria-label="Copy message" title="Copy message" onClick={() => copyText(row.text, "message")}>
+    <button type="button" className="copy-msg icon-btn" aria-label="Copy message" title="Copy message" onClick={(e) => copyText(row.text, "message", e.currentTarget)}>
       <CopyIcon />
     </button>
   );

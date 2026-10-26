@@ -37,10 +37,15 @@ fn main() {
     if let [cmd, rest @ ..] = args.as_slice()
         && cmd == "hook"
     {
-        if let Err(error) = hook(rest) {
-            eprintln!("{error}");
-        }
-        println!("{{}}");
+        let output = match hook(rest) {
+            Ok(Some(output)) => output,
+            Ok(None) => serde_json::json!({}),
+            Err(error) => {
+                eprintln!("{error}");
+                serde_json::json!({})
+            }
+        };
+        println!("{output}");
         return;
     }
     if let [cmd, agent_id] = args.as_slice()

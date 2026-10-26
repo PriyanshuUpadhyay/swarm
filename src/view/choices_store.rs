@@ -139,12 +139,19 @@ fn lock(root: &Path, wait: bool) -> Result<File, StoreError> {
     #[cfg(unix)]
     options.mode(0o600);
     let file = options.open(root.join("choices.lock"))?;
-    let deadline = Instant::now() + Duration::from_secs(1);
+    // A read waits a moment too: a child that another thread forks holds a copy of the lock fd
+    // until its exec, so the lock can stay held briefly after its owner dropped it.
+    let deadline = Instant::now()
+        + if wait {
+            Duration::from_secs(1)
+        } else {
+            Duration::from_millis(200)
+        };
     let mut delay = Duration::from_millis(10);
     loop {
         match file.try_lock() {
             Ok(()) => return Ok(file),
-            Err(std::fs::TryLockError::WouldBlock) if wait && Instant::now() < deadline => {
+            Err(std::fs::TryLockError::WouldBlock) if Instant::now() < deadline => {
                 std::thread::sleep(delay.min(deadline.saturating_duration_since(Instant::now())));
                 delay = (delay * 2).min(Duration::from_millis(100));
             }

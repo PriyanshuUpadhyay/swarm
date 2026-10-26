@@ -14,6 +14,9 @@ export class AppNavigation {
   private keyboardFollow: { session: string; row: string } | null = null;
   // A fresh strip can still list an archived chat until the server prunes it.
   private leftChat: string | null = null;
+  /** Puts the keyboard in a chat that opened. App.start sets it (focusOpenedChat), so the node
+   *  tests run with no DOM. */
+  focusOpened: (session: string, byKey: boolean, current: () => boolean) => void = () => {};
 
   constructor(private readonly app: App) {}
 
@@ -289,7 +292,7 @@ export class AppNavigation {
    *  shows it (a restore at start); `history: false` keeps the tab history order (⌃Tab). */
   openChat(sessionId: string, e?: KeyboardEvent, opts: { write?: boolean; history?: boolean } = {}) {
     if (this.leftChat === sessionId) this.leftChat = null;
-    this.app.navSeq++;
+    const seq = ++this.app.navSeq;
     const kind: PerfKind = this.app.lru.includes(sessionId) ? "switch" : "open";
     if (this.app.openId !== sessionId) this.app.panes.leavePanes(sessionId);
     this.app.openId = sessionId;
@@ -320,6 +323,8 @@ export class AppNavigation {
       this.app.panes.loadChair(chat);
     } else if (!this.app.liveAll) this.app.streaming.syncSubscriptions();
     this.app.notify();
+    // A restore leaves the keyboard on the page, where j and k walk the sidebar.
+    if (opts.write !== false) this.focusOpened(sessionId, e !== undefined, () => this.app.navSeq === seq && this.app.openId === sessionId);
     if (e) measure(kind, sessionId, e.timeStamp, () => this.app.reading.transcriptPainted(sessionId));
   }
 

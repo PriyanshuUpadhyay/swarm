@@ -75,14 +75,16 @@ printf '{"commands":[{"insert":"/clear"}],"note":null}\n'
         stale["commands"][0]["insert"], "/clear",
         "a stale list returns at once"
     );
-    for _ in 0..50 {
-        if probes() == 2 {
-            break;
+    tokio::time::timeout(Duration::from_secs(30), async {
+        while probes() < 2 {
+            tokio::time::sleep(Duration::from_millis(20)).await;
         }
-        tokio::time::sleep(Duration::from_millis(20)).await;
-    }
-    assert_eq!(probes(), 2, "the stale read refreshed behind the reply");
-    tokio::time::sleep(Duration::from_millis(50)).await;
+    })
+    .await
+    .expect("the stale read refreshed behind the reply");
+    assert_eq!(probes(), 2);
+    // The refresh holds the probe lock until it stores its answer.
+    drop(slot.probe.lock().await);
     let failed = read("chair").await.unwrap().0;
     assert_eq!(
         failed["commands"][0]["insert"], "/clear",

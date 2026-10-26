@@ -4,6 +4,7 @@ import { Api, type Row, type RowFrame, type Snapshot } from "./api";
 import { installKeys, Registry } from "./commands";
 import { type AgentInput, type Prompt } from "./composer";
 import { whenPainted } from "./perf";
+import { focusOpenedChat, keepFocus } from "./focus";
 import { chatFromPath, resolveChat } from "./route";
 import { type Direction, type PaneCell } from "./panes";
 import { type HistoryEntry } from "./history";
@@ -23,7 +24,7 @@ import { AppPanes } from "./app-panes";
 import { AppStream } from "./app-stream";
 import { AppActions } from "./app-actions";
 
-export { TAIL, LRU_SIZE, type FullText, type Banner, type Input, type Composer, type Find, type Pane, type Strip, type View, type Reader, type Ask, SIDEBAR_VIEWS, paneId, PROMPT_JUMP } from "./app-types";
+export { TAIL, LRU_SIZE, type FullText, type Banner, type Input, type Composer, type Find, type Pane, type Strip, type View, type Reader, type Ask, SIDEBAR_VIEWS, paneId, PROMPT_JUMP, SENT } from "./app-types";
 
 export class App {
   readonly navigation = new AppNavigation(this);
@@ -131,6 +132,8 @@ export class App {
   start(): () => void {
     window.__swarmPerf = [];
     const uninstall = installKeys(this.registry);
+    const unkeep = keepFocus();
+    this.navigation.focusOpened = focusOpenedChat;
     const abort = new AbortController();
     // Back and forward open the chat that the URL names, or leave the open one.
     addEventListener(
@@ -155,6 +158,7 @@ export class App {
     void this.streaming.connect(abort.signal);
     return () => {
       uninstall();
+      unkeep();
       abort.abort();
     };
   }

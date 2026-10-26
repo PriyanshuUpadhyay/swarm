@@ -77,7 +77,19 @@ test("Changes lists local layers and branch commits, and keys move the file list
   expect(errors).toEqual([]);
 });
 
-test("a 20,000-line diff opens capped and inside the 150 ms budget", async ({ page: tab }, info) => {
+test("a 20,000-line diff opens capped", async ({ page: tab }) => {
+  const errors = await openGitChat(tab);
+  await tab.getByTestId("show-changes").click();
+  await row(tab, "big.txt").click();
+  await expect(diffPath(tab)).toHaveText("big.txt");
+  await expect(tab.getByTestId("diff-pane")).toHaveAttribute("data-state", "ready");
+  await expect(tab.getByTestId("diff-counts")).toHaveText(`+${GIANT_DIFF_LINES.toLocaleString()} −0`);
+  expect(await tab.getByTestId("diff-line").count()).toBeLessThanOrEqual(200);
+  await expect(tab.getByTestId("diff-capped")).toContainText("20,004 lines");
+  expect(errors).toEqual([]);
+});
+
+test("a 20,000-line diff opens inside the 150 ms budget @perf", async ({ page: tab }, info) => {
   const errors = await openGitChat(tab);
   await tab.getByTestId("show-changes").click();
   await expect(row(tab, "big.txt")).toBeVisible();

@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from "vitest";
 import { chair, session } from "./chat-fixtures";
-import { accountColor, agentInput, applyBlock, applyLabel, chooseModel, cliName, levelWord, limitText, outcomeText, runLabel, runTip, switchOutcome, usageLabel, usageTitle } from "./composer";
+import { accountCli, accountColor, agentInput, applyBlock, applyLabel, chooseModel, cliName, levelWord, limitText, outcomeText, runLabel, runTip, switchOutcome, usageLabel, usageTitle } from "./composer";
 import type { Meter } from "./settings";
 
 
@@ -14,12 +14,14 @@ describe("run chip", () => {
     expect(runLabel(agentInput(session({ chair_provider: "pi" }), [chair({ provider: "pi" })]))).toBe("Pi · Default model");
   });
 
-  it("resumes inside one CLI and hands off to another CLI or Codex account", () => {
+  it("resumes inside one CLI, also on another Codex account, and hands off to another CLI", () => {
     expect(switchOutcome(run("claude", "a"), run("claude", "a"))).toBe("none");
     expect(switchOutcome(run("claude", "a"), run("claude", "b", "high", "work"))).toBe("resume");
     // One pi session runs Claude and GPT models.
     expect(switchOutcome(run("pi", "anthropic/x"), run("pi", "openai-codex/y"))).toBe("resume");
-    expect(switchOutcome(run("codex", "a", null, "one"), run("codex", "a", null, "two"))).toBe("handoff");
+    expect(switchOutcome(run("codex", "a", null, "one"), run("codex", "a", null, "two"))).toBe("resume");
+    // A Codex chat with no account picked stays in its own.
+    expect(switchOutcome(run("codex", "a", null, "one"), run("codex", "a"))).toBe("none");
     expect(switchOutcome(run("claude", "a"), run("agy", "a"))).toBe("handoff");
   });
 
@@ -30,6 +32,8 @@ describe("run chip", () => {
     expect(say(run("claude", "sonnet", "high", "work"))).toBe("Restarts this chat on Sonnet 5.5 · High. History stays. The next reply re-reads the whole chat once, so it costs more.");
     expect(say(run("claude", "opus", "xhigh", "work"))).toBe("Restarts this chat on Extra high thinking. History stays. The next reply re-reads the whole chat once, so it costs more.");
     expect(say(run("claude", "opus", "high", "home"))).toBe("Restarts this chat under home. History stays. Usage now counts against home. The next reply may re-read the chat once.");
+    const codex = run("codex", "sol", "high", "one");
+    expect(outcomeText("resume", codex, { ...codex, account: "two" }, "summary", "Sol")).toBe("Moves this chat to two. History stays. Usage now counts against two. The next reply re-reads the whole chat once.");
     expect(say(run("agy", "gemini", null))).toBe("Starts a new AGY chat on Sonnet 5.5 with a summary of this one. This chat stays as it is.");
     expect(say(run("agy", "gemini", null), "clean")).toBe("Starts a new AGY chat on Sonnet 5.5 with nothing from this one. This chat stays as it is.");
     expect([applyLabel("handoff"), applyLabel("resume"), applyLabel("none")]).toEqual(["Start new chat", "Restart and apply", "Apply"]);
@@ -100,10 +104,25 @@ describe("run chip", () => {
     // Back from another CLI, the chat's own account comes back.
     expect(chooseModel(current, run("codex", "x"), claude, "b").account).toBe("work");
     expect(chooseModel(current, current, codex, "x").account).toBeNull();
+    // A Claude account never follows a Pi model that runs on a Codex login.
+    const pi = { id: "pi", efforts: ["low"], default_effort: "low" };
+    const bridge = run("pi", "claude-bridge/claude-opus-5-5", "low", "work");
+    expect(chooseModel(bridge, bridge, pi, "openai-codex/gpt-6-sol").account).toBeNull();
+    expect(chooseModel(bridge, bridge, pi, "claude-bridge/claude-sonnet-5-5").account).toBe("work");
     expect(chooseModel(current, current, { id: "agy", efforts: [], default_effort: "" }, { id: "claude-sonnet-4-6", efforts: [] }).effort).toBeNull();
     // A model's own default comes before the CLI's.
     expect(chooseModel(current, run("codex", "x", "minimal"), codex, { id: "deep", efforts: ["low", "high"], default_effort: "high" }).effort).toBe("high");
     // A level the model lists but the CLI's launch does not take is never picked.
     expect(chooseModel(current, run("codex", "x", "minimal"), codex, { id: "mini", efforts: ["minimal", "high"] }).effort).toBe("high");
+  });
+});
+
+describe("accountCli", () => {
+  it("gives a Pi claude-bridge model Claude's accounts and leaves other runs on their own CLI", () => {
+    expect(accountCli("pi", "claude-bridge/claude-opus-5-5")).toBe("claude");
+    expect(accountCli("pi", "openai-codex/gpt-6-sol")).toBe("codex");
+    expect(accountCli("pi", "anthropic/claude-haiku-5-5")).toBe("pi");
+    expect(accountCli("pi", null)).toBe("pi");
+    expect(accountCli("codex", "gpt-6-sol")).toBe("codex");
   });
 });

@@ -128,7 +128,8 @@ fn held_lock_times_out_and_immediate_read_keeps_file() {
         choices_store::load(&home.root, false),
         Err(StoreError::Busy)
     ));
-    assert!(started.elapsed() < Duration::from_millis(200));
+    // A read retries for a moment only, well short of the writer's wait below.
+    assert!(started.elapsed() < Duration::from_millis(900));
     let started = Instant::now();
     assert!(matches!(
         choices_store::load(&home.root, true),

@@ -328,9 +328,12 @@ test("Import chats lists a chat that another adapter started, and importing it l
   } finally {
     // The other cases count the listed chats, so this one leaves the sidebar as it found it. The
     // server's refresh then drops the chat's tab and writes a new revision, so wait for it, else
-    // the next case can load the old revision and get a 409.
+    // the next case can load the old revision and get a 409. Archive drops the import (ADR 0085),
+    // and unarchive makes the chat importable again for a repeat.
     await api("/api/sessions/archive", { ids: [session] });
     await expect.poll(async () => JSON.stringify(await readTree()).includes(session), { timeout: 10_000 }).toBe(false);
+    await api("/api/sessions/unarchive", { ids: [session] });
+    await expect.poll(async () => (await api<{ chats: { id: string }[] }>("/api/chats/importable")).chats.some((c) => c.id === session)).toBe(true);
   }
   expect(errors).toEqual([]);
 });

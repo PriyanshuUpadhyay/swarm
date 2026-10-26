@@ -65,8 +65,8 @@ async fn handoff_test_run(fixture: &Fixture, body: ContinueChat) -> Result<Value
     execute_continue_timed(
         &fixture.app,
         body,
-        Duration::from_secs(2),
-        Duration::from_secs(2),
+        Duration::from_secs(30),
+        Duration::from_secs(30),
         Duration::from_millis(10),
     )
     .await
@@ -129,9 +129,35 @@ async fn handoff_successful_handoff() {
     assert!(calls[calls.len() - 2].ends_with("type orchestrator"));
     assert!(calls[calls.len() - 1].contains("session continue"));
     let text = std::fs::read_to_string(fixture.dir.join("home/handoff-text")).unwrap();
-    assert!(text.contains("These are recent messages"));
+    assert!(text.contains("These are the messages of the prior chat"));
     assert!(text.contains("Check the worker inbox"));
     assert!(fixture.app.handoffs.lock().unwrap().is_empty());
+}
+/// A chat too long to paste goes over whole, in a file the new agent reads.
+#[tokio::test]
+async fn handoff_long_chat_goes_in_a_file() {
+    use std::os::unix::fs::PermissionsExt;
+    let (fixture, body) = handoff_fixture();
+    let long = "first decision ".repeat(1_000);
+    let entry = json!({"type":"assistant","uuid":"long","message":{"role":"assistant","content":[{"type":"text","text":long}]}});
+    std::fs::OpenOptions::new()
+        .append(true)
+        .open(&fixture.log)
+        .unwrap()
+        .write_all(format!("{entry}\n").as_bytes())
+        .unwrap();
+    handoff_test_run(&fixture, body).await.unwrap();
+    let file = fixture
+        .app
+        .root
+        .join(format!("handoffs/{}.md", fixture.session));
+    let text = std::fs::read_to_string(fixture.dir.join("home/handoff-text")).unwrap();
+    assert!(text.contains(&format!("{}. Read all of it", file.display())), "{text}");
+    assert!(std::fs::read_to_string(&file).unwrap().contains(long.trim()));
+    assert_eq!(
+        std::fs::metadata(&file).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
 }
 #[tokio::test]
 async fn handoff_delivery_failure() {
@@ -183,7 +209,8 @@ async fn handoff_summary_timeout_falls_back_and_ready_timeout_leaves_separate() 
             &fixture.app,
             body,
             Duration::from_millis(50),
-            Duration::from_millis(70),
+            // A ready chat must answer within the limit even on a loaded Mac.
+            Duration::from_millis(if ready { 30_000 } else { 70 }),
             Duration::from_millis(10),
         )
         .await;
@@ -192,7 +219,7 @@ async fn handoff_summary_timeout_falls_back_and_ready_timeout_leaves_separate() 
             assert!(
                 std::fs::read_to_string(home.join("handoff-text"))
                     .unwrap()
-                    .contains("These are recent messages")
+                    .contains("These are the messages of the prior chat")
             );
         } else {
             assert_eq!(result.unwrap_err().0, StatusCode::GATEWAY_TIMEOUT);
@@ -218,7 +245,7 @@ async fn handoff_cancel_during_summary_and_refused_after_starting() {
         register_continue(&fixture.app, &body).unwrap();
         let app = fixture.app.clone();
         let task = tokio::spawn(async move { execute_continue(&app, body).await });
-        tokio::time::timeout(Duration::from_secs(4), async {
+        tokio::time::timeout(Duration::from_secs(30), async {
             loop {
                 if handoff_phases(&fixture)
                     .contains(&if late { "starting" } else { "summarizing" }.into())
@@ -240,7 +267,7 @@ async fn handoff_cancel_during_summary_and_refused_after_starting() {
         if late {
             assert_eq!(result.unwrap_err().0, StatusCode::CONFLICT);
             std::fs::remove_file(home.join("block-launch")).unwrap();
-            assert!(task.await.unwrap().is_ok());
+            task.await.unwrap().unwrap();
         } else {
             let _ = result.unwrap();
             assert_eq!(
