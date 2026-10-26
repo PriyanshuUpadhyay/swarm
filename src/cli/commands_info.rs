@@ -120,6 +120,7 @@ pub(crate) fn commands_info(args: &[String]) -> Result<Option<()>, Box<dyn std::
         let status = match verb.as_str() {
             "install" => return Err("swarm: `swarm hud install` is now `swarm setup hud`".into()),
             "uninstall" => swarm::hud::uninstall(&home)?,
+            "restart" => swarm::hud::restart(&home)?,
             "status" => swarm::hud::status(&home),
             _ => return Err(USAGE.into()),
         };

@@ -21,7 +21,6 @@ version=$(git -C "$root" show "$commit:Cargo.toml" | python3 -c 'import sys,toml
 local_version=$version.local.$short
 tap=priyanshuupadhyay/tap
 formula=$tap/swarm
-plist=$HOME/Library/LaunchAgents/io.github.priyanshuupadhyay.swarm.hud.plist
 
 if "$dry"; then
     printf '%s\n' \
@@ -33,7 +32,7 @@ if "$dry"; then
         "Replace the tap formula with a file:// tarball formula at version $local_version." \
         "Run brew reinstall --formula $formula if installed, else brew install --formula $formula." \
         'Restore the tap formula, also on failure; the install receipt keeps the real tap.' \
-        "If $plist exists, run launchctl kill SIGTERM gui/$(id -u)/io.github.priyanshuupadhyay.swarm.hud, or kickstart it when it does not run." \
+        'Run swarm hud restart; it reloads the HUD login item when it is installed.' \
         "Print swarm --version and check its commit prefix against $commit." \
         'Run swarm __prune-stale-trust schedule-upgrade; log scheduling errors and continue.' \
         'Remove the temporary worktree and build files, also on failure.'
@@ -134,11 +133,8 @@ fi
 git -C "$tap_root" checkout -- Formula/swarm.rb
 [ -z "$(git -C "$tap_root" status --porcelain -- Formula/swarm.rb)" ] || die 'tap formula restore left changes'
 restore=false
-if [ -f "$plist" ]; then
-    # SIGTERM, so KeepAlive starts the new HUD; `kickstart -k` waits out the 60 s ThrottleInterval.
-    hud_target=gui/$(id -u)/io.github.priyanshuupadhyay.swarm.hud
-    launchctl kill SIGTERM "$hud_target" 2>/dev/null || launchctl kickstart "$hud_target"
-fi
+# Reload the HUD login item, so the new ad hoc build starts at once (ADR 0126).
+swarm hud restart
 installed=$(swarm --version)
 printf '%s\n' "$installed"
 printed=$(printf '%s\n' "$installed" | awk 'NR == 1 {print $3}')

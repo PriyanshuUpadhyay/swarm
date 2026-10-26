@@ -199,6 +199,27 @@ pub fn install(home: &Path) -> Result<Status, Box<dyn std::error::Error>> {
     let path = plist_path(home);
     std::fs::create_dir_all(path.parent().ok_or("swarm: bad LaunchAgents path")?)?;
     std::fs::write(&path, text)?;
+    if let Err(error) = reload(&path) {
+        // A plist left behind would start the HUD at the next login while the switch reads off.
+        let _ = std::fs::remove_file(&path);
+        return Err(error);
+    }
+    Ok(wait_running(home))
+}
+
+/// Start the installed HUD again with the app that `opt` names now: boot the login item out and
+/// load its plist again. A new ad hoc build fails its first start when the item stays loaded, and
+/// a reload starts it at once (ADR 0126). Does nothing when the login item is not installed.
+pub fn restart(home: &Path) -> Result<Status, Box<dyn std::error::Error>> {
+    let path = plist_path(home);
+    if !path.exists() {
+        return Ok(status(home));
+    }
+    reload(&path)?;
+    Ok(wait_running(home))
+}
+
+fn reload(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     // A loaded job keeps its old plist until it is booted out, and bootout returns before the job
     // is gone; a bootstrap before then fails with error 5. Not loaded at all is fine.
     let target = service_target();
@@ -211,25 +232,26 @@ pub fn install(home: &Path) -> Result<Status, Box<dyn std::error::Error>> {
     }
     // The job is gone now, so each HUD left is a stray; one HUD runs after the bootstrap.
     stop(&strays(None));
-    let failure = match launchctl(&["bootstrap", &domain(), &path.to_string_lossy()]) {
-        Ok(output) if output.status.success() => None,
-        Ok(output) => Some(String::from_utf8_lossy(&output.stderr).trim().to_string()),
-        Err(error) => Some(error.to_string()),
-    };
-    if let Some(reason) = failure {
-        // A plist left behind would start the HUD at the next login while the switch reads off.
-        let _ = std::fs::remove_file(&path);
-        return Err(format!("swarm: launchctl bootstrap failed: {reason}").into());
+    match launchctl(&["bootstrap", &domain(), &path.to_string_lossy()]) {
+        Ok(output) if output.status.success() => Ok(()),
+        Ok(output) => {
+            let reason = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            Err(format!("swarm: launchctl bootstrap failed: {reason}").into())
+        }
+        Err(error) => Err(format!("swarm: launchctl bootstrap failed: {error}").into()),
     }
-    // RunAtLoad starts the HUD a moment after bootstrap; wait up to 1 s so the reply shows it.
+}
+
+/// RunAtLoad starts the HUD a moment after bootstrap; wait up to 1 s so the reply shows it.
+fn wait_running(home: &Path) -> Status {
     for _ in 0..10 {
         let now = status(home);
         if now.running {
-            return Ok(now);
+            return now;
         }
         std::thread::sleep(std::time::Duration::from_millis(100));
     }
-    Ok(status(home))
+    status(home)
 }
 
 pub fn uninstall(home: &Path) -> Result<Status, Box<dyn std::error::Error>> {
