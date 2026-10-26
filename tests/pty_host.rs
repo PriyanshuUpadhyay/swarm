@@ -197,3 +197,30 @@ fn children_stop_when_the_host_is_killed() {
     Command::new("kill").args(["-9", &shim]).status().unwrap();
     wait_for(|| !alive(&pid), "the child to hang up");
 }
+
+#[test]
+fn a_second_chair_of_the_session_leaves_the_live_host_alone() {
+    let mut host = Host::start();
+    let pane = host.spawn();
+    let second = Command::new(env!("CARGO_BIN_EXE_swarm"))
+        .args([
+            "pty",
+            "--host",
+            "--",
+            "sh",
+            "-c",
+            "printf %s \"$SWARM_PTY_HOST\"",
+        ])
+        .env("SWARM_HOME", &host.home)
+        .env("SWARM_SESSION_ID", &host.session)
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert!(second.status.success(), "{second:?}");
+    // It runs with no host, so its children would open tmux panes.
+    assert_eq!(String::from_utf8_lossy(&second.stdout), "");
+    assert!(String::from_utf8_lossy(&second.stderr).contains("already serves this session"));
+    // The first chair's child is still reachable, after the second chair has exited.
+    host.out("screen", &[("pane", &pane)]);
+    host.stop();
+}

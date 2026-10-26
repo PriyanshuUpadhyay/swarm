@@ -93,9 +93,13 @@ impl Host {
         let session = std::env::var("SWARM_SESSION_ID")
             .map_err(|_| "SWARM_SESSION_ID is not set, so no session owns the children")?;
         let socket = socket_of(&session)?;
+        // A live host here belongs to another chair of the session. Taking its socket would leave
+        // that chair's children unreachable, so this chair runs with no host instead.
+        if UnixStream::connect(&socket).is_ok() {
+            return Err(format!("{} already serves this session", socket.display()).into());
+        }
         // A host that was killed, as a closed tmux pane kills it, leaves its socket, which then
-        // refuses connections. A live one at this path belongs to a second chair of the same
-        // session, which takes the children's socket from it.
+        // refuses connections.
         let _ = std::fs::remove_file(&socket);
         if let Some(dir) = socket.parent() {
             for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {

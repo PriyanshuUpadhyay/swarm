@@ -42,6 +42,8 @@ answers the probe.
   in the folder, and a starting host removes a socket that has refused connections for 10 s.
 - A host that cannot start prints one line, and the chair runs without it, so its children open
   tmux panes. The host is opt-in, and a chair that runs is worth more than the missing host.
+- A host that finds a live host at its socket does not start, so a second chair of the session
+  runs with tmux panes and the first chair's children stay reachable.
 - A host numbers its panes from its start time in ms, so a pane id that an earlier chair of the
   session stored never names a child of a later one.
 - The session adapter stays `tmux-swarm`, because the app lists only tmux-swarm chats (ADR
@@ -61,6 +63,9 @@ answers the probe.
   `capture`, and `close` reach it. With no tmux installed, `list` names the hosted panes alone.
 - Bad: a hosted pane has no attach yet, so the app cannot show it as a column. Phase 2 sends a
   `vt100` snapshot and then the live bytes to the app.
+- Bad: a process that inherits `SWARM_PTY_PANE` and starts the `-L swarm` tmux server passes
+  it to that server's panes, and `self` there names the hosted pane. Hosted workers are leaves
+  and start no chair, so no current path does this.
 - Bad: a chair restart ends its children, and a seat that the app launches outside the chair
   still opens a tmux pane.
 - Later: make the host the default after a real session with Claude, Codex, AGY, and pi seats.
