@@ -232,7 +232,7 @@ pub(super) async fn update_write() -> Result<Json<Value>, ApiError> {
 
 /// SIGTERM to a login item that runs. KeepAlive starts it again with the app that `opt` names
 /// now, and launchd tries again after ThrottleInterval when that first start fails, as a new ad
-/// hoc app can (ADR 0118). `kickstart -k` would wait out the ThrottleInterval. A login item that
+/// hoc app can (ADR 0125). `kickstart -k` would wait out the ThrottleInterval. A login item that
 /// does not run is started by the new `swarm ui` (`start_hud`).
 async fn hud_restart() -> Result<(), ApiError> {
     let home = std::env::var_os("HOME").unwrap_or_default();
