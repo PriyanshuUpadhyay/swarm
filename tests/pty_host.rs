@@ -1,0 +1,199 @@
+// `swarm pty --host` keeps a chair's children on PTYs it owns, and `swarm pty <verb>` drives them
+// (ADR 0126).
+
+use std::path::{Path, PathBuf};
+use std::process::{Child, Command, Stdio};
+use std::time::{Duration, Instant};
+
+struct Host {
+    home: PathBuf,
+    session: String,
+    chair: Child,
+}
+
+impl Host {
+    /// A host whose chair runs until `stop` exists. The home is long, as a branch build's is.
+    fn start() -> Host {
+        let home = std::env::temp_dir().join(format!(
+            "swarm-pty-host-test-with-a-long-name-{}",
+            uuid::Uuid::now_v7().simple()
+        ));
+        std::fs::create_dir_all(&home).unwrap();
+        let session = uuid::Uuid::now_v7().to_string();
+        let chair = Command::new(env!("CARGO_BIN_EXE_swarm"))
+            .args(["pty", "--host", "--", "sh", "-c"])
+            .arg(format!(
+                "echo \"$SWARM_PTY_HOST\" > {0}/host; while [ ! -e {0}/stop ]; do sleep 0.1; done",
+                home.display()
+            ))
+            .env("SWARM_HOME", &home)
+            .env("SWARM_SESSION_ID", &session)
+            .env("SHELL", "/bin/sh")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .spawn()
+            .unwrap();
+        let host = Host {
+            home,
+            session,
+            chair,
+        };
+        wait_for(
+            || read(&host.home.join("host")).ends_with('\n'),
+            "the chair's SWARM_PTY_HOST",
+        );
+        host
+    }
+
+    fn socket(&self) -> PathBuf {
+        PathBuf::from(read(&self.home.join("host")).trim())
+    }
+
+    /// `swarm pty <verb>` with the vars the adapter runtime exports.
+    fn verb(&self, verb: &str, vars: &[(&str, &str)]) -> std::process::Output {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_swarm"));
+        command
+            .args(["pty", verb])
+            .env("SWARM_HOME", &self.home)
+            .env("SWARM_SESSION_ID", &self.session)
+            .env("SWARM_PTY_HOST", self.socket())
+            .current_dir(&self.home);
+        for (key, value) in vars {
+            command.env(format!("SWARM_{}", key.to_uppercase()), value);
+        }
+        command.output().unwrap()
+    }
+
+    fn out(&self, verb: &str, vars: &[(&str, &str)]) -> String {
+        let output = self.verb(verb, vars);
+        assert!(output.status.success(), "{verb}: {output:?}");
+        String::from_utf8(output.stdout).unwrap()
+    }
+
+    /// A child whose output is copied to `feed` in the home.
+    fn spawn(&self) -> String {
+        let feed = format!("cat > {}/feed", self.home.display());
+        self.out("spawn", &[("agent_id", "w1"), ("feed", &feed)])
+    }
+
+    fn stop(&mut self) {
+        std::fs::write(self.home.join("stop"), "").unwrap();
+        wait_for(
+            || self.chair.try_wait().unwrap().is_some(),
+            "the chair to exit",
+        );
+    }
+}
+
+impl Drop for Host {
+    fn drop(&mut self) {
+        let _ = self.chair.kill();
+        let _ = self.chair.wait();
+        let _ = std::fs::remove_dir_all(&self.home);
+    }
+}
+
+fn wait_for(mut done: impl FnMut() -> bool, what: &str) {
+    let deadline = Instant::now() + Duration::from_secs(15);
+    while !done() {
+        assert!(Instant::now() < deadline, "timed out waiting for {what}");
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
+fn alive(pid: &str) -> bool {
+    Command::new("kill")
+        .args(["-0", pid])
+        .stderr(Stdio::null())
+        .status()
+        .unwrap()
+        .success()
+}
+
+fn read(path: &Path) -> String {
+    std::fs::read_to_string(path).unwrap_or_default()
+}
+
+#[test]
+fn a_hosted_child_takes_rings_and_keys_and_shows_its_screen() {
+    let host = Host::start();
+    let pane = host.spawn();
+    assert!(
+        pane.starts_with(&format!("pty:{}:", host.session)),
+        "{pane}"
+    );
+    let pane = pane.as_str();
+    assert!(host.out("list", &[]).contains(&format!("{pane} ")));
+    host.out("ring", &[("pane", pane), ("text", "echo hosted-$((40+2))")]);
+    wait_for(
+        || host.out("screen", &[("pane", pane)]).contains("hosted-42"),
+        "the ring on the screen",
+    );
+    assert!(host.out("capture", &[("pane", pane)]).contains("hosted-42"));
+    assert!(read(&host.home.join("feed")).contains("hosted-42"));
+    // A key name becomes its bytes: the digit, then Enter as CR.
+    host.out("ring", &[("pane", pane), ("text", "read x; echo got-$x")]);
+    host.out("key", &[("pane", pane), ("key", "7")]);
+    host.out("key", &[("pane", pane), ("key", "Enter")]);
+    wait_for(
+        || host.out("screen", &[("pane", pane)]).contains("got-7"),
+        "the key's answer",
+    );
+    host.out("close", &[("pane", pane)]);
+    wait_for(
+        || !host.out("list", &[]).contains(&format!("{pane} ")),
+        "the pane to leave the list",
+    );
+    let closed = host.verb("screen", &[("pane", pane)]);
+    assert!(!closed.status.success());
+}
+
+#[test]
+fn the_host_answers_a_cursor_report() {
+    let host = Host::start();
+    let pane = host.spawn();
+    let reply = host.home.join("reply");
+    // Raw, so the reply needs no newline; the cursor stands on row 2, column 3 when it asks.
+    let line = format!(
+        "stty raw -echo; printf '\\033[2;3H\\033[6n'; dd bs=1 count=6 2>/dev/null > {}; stty sane",
+        reply.display()
+    );
+    host.out("ring", &[("pane", &pane), ("text", &line)]);
+    wait_for(|| read(&reply).len() == 6, "the cursor report");
+    assert_eq!(read(&reply), "\x1b[2;3R");
+}
+
+#[test]
+fn children_and_their_jobs_stop_when_the_chair_exits() {
+    let mut host = Host::start();
+    let pane = host.spawn();
+    let pids = host.home.join("pids");
+    // A background job and a foreground job, as a CLI and a process it left behind.
+    let line = format!("sleep 1000 & echo $$ $! > {}; sleep 999", pids.display());
+    host.out("ring", &[("pane", &pane), ("text", &line)]);
+    wait_for(|| read(&pids).ends_with('\n'), "the child's pids");
+    let pids = read(&pids);
+    let pids: Vec<&str> = pids.split_whitespace().collect();
+    assert!(pids.iter().all(|pid| alive(pid)));
+    host.stop();
+    assert!(!host.socket().exists());
+    wait_for(
+        || pids.iter().all(|pid| !alive(pid)),
+        "the child to hang up",
+    );
+}
+
+#[test]
+fn children_stop_when_the_host_is_killed() {
+    let host = Host::start();
+    let pane = host.spawn();
+    let pids = host.home.join("pids");
+    let line = format!("echo $$ > {}; sleep 999", pids.display());
+    host.out("ring", &[("pane", &pane), ("text", &line)]);
+    wait_for(|| read(&pids).ends_with('\n'), "the child's pid");
+    let pid = read(&pids).trim().to_string();
+    // SIGKILL runs no cleanup; the kernel hangs the child up when the master closes.
+    let shim = host.chair.id().to_string();
+    Command::new("kill").args(["-9", &shim]).status().unwrap();
+    wait_for(|| !alive(&pid), "the child to hang up");
+}

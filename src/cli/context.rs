@@ -53,6 +53,7 @@ pub(crate) fn valid_session_id(id: &str) -> Result<String, String> {
 pub(crate) fn in_agent_pane() -> bool {
     [
         "TMUX_PANE",
+        "SWARM_PTY_PANE",
         "HERDR_PANE_ID",
         "SUPERSET_TERMINAL_ID",
         "REX_BLOCK",
