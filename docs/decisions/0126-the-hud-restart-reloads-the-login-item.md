@@ -35,7 +35,8 @@ Chosen: the first option, because it needs no certificate and reuses the reload 
 `swarm setup hud` already does.
 
 - `swarm hud restart` reloads the HUD login item when its plist exists and does nothing when it
-  does not. It loads the plist that is there and does not write a new one.
+  does not. It loads the plist that is there and does not write a new one. A worker pane may run
+  it, because it only reloads a login item that the owner installed (ADR 0087).
 - The page's Restart, `scripts/release.sh`, and `scripts/install-local.sh` call it. This replaces
   the SIGTERM and the `kickstart` of ADR 0125. Its 502 and 500 rule for the page stays.
 
