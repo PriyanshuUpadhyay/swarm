@@ -159,3 +159,43 @@ fn a_chair_under_a_host_launches_drives_and_closes_a_pty_seat() {
     chair.0.wait().unwrap();
     let _ = std::fs::remove_dir_all(&home);
 }
+
+#[test]
+fn swarm_child_host_wraps_the_chair_in_a_host_whatever_its_provider() {
+    let home = scratch("pty-host-chair");
+    tool(&home, "codex", "true");
+    std::fs::create_dir_all(home.join(".swarm/adapters")).unwrap();
+    std::fs::write(
+        home.join(".swarm/adapters/tmux-swarm.conf"),
+        "self = printf chair\nspawn = : \"$SWARM_FEED\"; printf pane\nring = true\nlist = true\nclose = true\ncapture = true\n",
+    )
+    .unwrap();
+    let cwd = home.join("repo");
+    std::fs::create_dir_all(&cwd).unwrap();
+    let cwd = cwd.to_string_lossy().into_owned();
+    for host in [false, true] {
+        let app = [("SWARM_ADAPTER", "tmux-swarm")];
+        let session = swarm(&home, &app, &["session", "new", "lane"]);
+        assert!(session.status.success(), "{}", stderr(&session));
+        let session = String::from_utf8(session.stdout)
+            .unwrap()
+            .trim()
+            .to_string();
+        let mut env = vec![
+            ("SWARM_ADAPTER", "tmux-swarm"),
+            ("SWARM_SESSION_ID", session.as_str()),
+        ];
+        if host {
+            env.push(("SWARM_CHILD_HOST", "pty"));
+        }
+        let args = ["launch", "orchestrator", "chat", "--provider", "codex"];
+        let output = swarm(&home, &env, &[&args[..], &["--cwd", &cwd]].concat());
+        assert!(output.status.success(), "{}", stderr(&output));
+        let script =
+            std::fs::read_to_string(home.join(format!(".swarm/runs/{session}/orchestrator.sh")))
+                .unwrap();
+        // Codex sends no reports, so without a host its chair runs bare.
+        assert_eq!(script.contains("'pty' '--host' '--'"), host, "{script}");
+        assert_eq!(script.contains("'pty'"), host, "{script}");
+    }
+}
