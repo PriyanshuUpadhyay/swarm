@@ -99,7 +99,11 @@ fn a_spawned_agent_runs_the_swarm_that_launched_it() {
     let install = home.join("install");
     std::fs::create_dir_all(&install).unwrap();
     let launcher = install.join("swarm");
-    std::fs::copy(env!("CARGO_BIN_EXE_swarm"), &launcher).unwrap();
+    // A hard link opens no file for write. A copy does, and on Linux another test's fork can hold
+    // that write handle while this test runs the file, so exec fails with ETXTBSY.
+    std::fs::hard_link(env!("CARGO_BIN_EXE_swarm"), &launcher)
+        .or_else(|_| std::fs::copy(env!("CARGO_BIN_EXE_swarm"), &launcher).map(drop))
+        .unwrap();
     tool(&home, "cargo", "true");
     std::fs::copy(home.join("bin/cargo"), install.join("cargo")).unwrap();
     let output = Command::new(&launcher)

@@ -31,6 +31,8 @@ test("the composer recalls, stashes, reuses and finds prompts, and @ inserts a f
   await tab.keyboard.type(prompt);
   await tab.keyboard.press("Enter");
   await expect.poll(typed).toContain(prompt);
+  // The box keeps the text until the server answers the send, and an Up before then does nothing.
+  await expect(status).not.toContainText("Sending…");
   await expect(composer).toHaveValue("");
   await tab.keyboard.press("ArrowUp");
   await expect(composer).toHaveValue(prompt);
@@ -101,6 +103,7 @@ test("the composer recalls, stashes, reuses and finds prompts, and @ inserts a f
   await tab.keyboard.press("Escape");
   await tab.keyboard.press("Enter");
   await expect.poll(typed).toContain("check @README.md");
+  await expect(status).not.toContainText("Sending…");
   await tab.keyboard.press("ArrowUp");
   await tab.keyboard.press("ArrowUp");
   await expect(composer).toHaveValue(prompt);

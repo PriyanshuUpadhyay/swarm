@@ -28,7 +28,11 @@ impl Fixture {
         }
         std::fs::create_dir_all(home.join("prefix/bin")).unwrap();
         let exe = home.join("prefix/bin/swarm");
-        std::fs::copy(env!("CARGO_BIN_EXE_swarm"), &exe).unwrap();
+        // A hard link opens no file for write. A copy does, and on Linux another test's fork can hold
+        // that write handle while this test runs the file, so exec fails with ETXTBSY.
+        std::fs::hard_link(env!("CARGO_BIN_EXE_swarm"), &exe)
+            .or_else(|_| std::fs::copy(env!("CARGO_BIN_EXE_swarm"), &exe).map(drop))
+            .unwrap();
         std::fs::create_dir_all(home.join("bin")).unwrap();
         for cli in ["claude", "pi"] {
             let path = home.join("bin").join(cli);
