@@ -78,7 +78,7 @@ fn fixture(format: &str, name: &str) -> Vec<Value> {
         .args(["--format", format])
         .arg(root.join("packages/transcript/src/fixtures").join(name))
         .output()
-        .unwrap();
+        .expect("cannot run transcript; run `zig build` in packages/transcript first");
     assert!(output.status.success());
     output
         .stdout
@@ -110,7 +110,8 @@ fn inline_fixture(format: &str, lines: &[&str]) -> Vec<Value> {
     .arg(&path)
     .output();
     std::fs::remove_file(path).unwrap();
-    let output = output.unwrap();
+    let output =
+        output.expect("cannot run transcript; run `zig build` in packages/transcript first");
     assert!(output.status.success());
     output
         .stdout
