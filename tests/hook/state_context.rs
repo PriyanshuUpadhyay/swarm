@@ -355,13 +355,28 @@ fn a_pi_log_written_after_the_working_report_is_stored_from_later_output() {
         .write_all(b"\x1b]7501;state=working:app=pi\x07")
         .unwrap();
     input.flush().unwrap();
-    std::thread::sleep(std::time::Duration::from_millis(300));
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    loop {
+        let state: Option<String> = connection
+            .query_row(
+                "SELECT state FROM agent WHERE session_id = ?1 AND id = 'orchestrator'",
+                [&session],
+                |r| r.get(0),
+            )
+            .unwrap();
+        if state.as_deref() == Some("working") {
+            break;
+        }
+        assert!(std::time::Instant::now() < deadline, "working not stored");
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    // Storing working follows the report's lookup, so that lookup saw no file.
     // pi makes its file after the report, and the turn then prints output with no report.
     let log = folder.join(format!(
         "2026-10-16T00-00-00-000Z_{session}-orchestrator.jsonl"
     ));
     std::fs::write(&log, "{}\n").unwrap();
-    std::thread::sleep(std::time::Duration::from_millis(1100));
+    // The report does not start the plain-output lookup's one-second interval.
     input.write_all(b"thinking...").unwrap();
     input.flush().unwrap();
     let chair = || -> Option<String> {
@@ -373,7 +388,7 @@ fn a_pi_log_written_after_the_working_report_is_stored_from_later_output() {
             )
             .unwrap()
     };
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
     while chair().is_none() && std::time::Instant::now() < deadline {
         std::thread::sleep(std::time::Duration::from_millis(50));
     }
