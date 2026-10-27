@@ -16,8 +16,6 @@ pub const DEADLINE: Duration = Duration::from_secs(8);
 const RULE_TIMEOUT: u64 = if cfg!(test) { 30 } else { 3 };
 /// How often the runner looks for a rule's exit; it bounds the delay each rule adds.
 const POLL: Duration = Duration::from_millis(5);
-/// A rule that leaves a process behind can hold stderr open, so the reason gets this long.
-const REASON_WAIT: Duration = Duration::from_millis(200);
 /// The most of a rule's stderr that becomes a deny reason.
 const REASON_MAX: u64 = 64 * 1024;
 
@@ -200,6 +198,18 @@ mod tests {
         assert_eq!(
             decide_claude(Some(&list(&rule("quiet", "exit 2", "")))),
             Verdict::Deny("rule quiet denied the call".into())
+        );
+    }
+
+    #[test]
+    fn a_deny_reason_is_kept_when_a_descendant_holds_stderr_open() {
+        assert_eq!(
+            decide_claude(Some(&list(&rule(
+                "no",
+                "sleep 1 >&2 & echo 'blocked by the rule' >&2; exit 2",
+                ""
+            )))),
+            Verdict::Deny("blocked by the rule".into())
         );
     }
 

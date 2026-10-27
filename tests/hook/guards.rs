@@ -1,4 +1,5 @@
 // Tests for guards.
+// Fixture rules use an explicit timeout to check routing under load, within the runner's deadline.
 use super::*;
 
 /// With a rule list, setup registers `swarm guard` for Claude, Codex, and AGY next to the owner's
@@ -47,6 +48,7 @@ fn a_rule_list_registers_the_guard_on_every_cli_and_each_registration_answers() 
     write(
         ".swarm/guards.json",
         r#"{"rules": [{"name": "no-blocked", "event": "PreToolUse", "tools": ["Bash", "run_command"],
+            "timeout": 30,
             "command": ["/bin/sh", "-c", "grep -q blocked && { echo 'blocked by the rule' >&2; exit 2; }; exit 0"]}]}"#,
     );
     let applied = hooks(exe, &home, &["setup"]);
@@ -146,7 +148,7 @@ fn a_rule_list_registers_the_guard_on_every_cli_and_each_registration_answers() 
         assert_eq!(
             (allowed.status.code(), stdout(&allowed)),
             (Some(0), String::new()),
-            "{provider}"
+            "{provider}: {allowed:?}"
         );
     }
     let denied = run("claude", &bash("echo blocked"));
@@ -178,7 +180,7 @@ fn swarm_guards_names_the_rule_list() {
     let list = home.join("elsewhere.json");
     std::fs::write(
         &list,
-        r#"{"rules": [{"name": "no", "event": "PreToolUse", "command": ["/bin/sh", "-c", "echo from elsewhere >&2; exit 2"]}]}"#,
+        r#"{"rules": [{"name": "no", "event": "PreToolUse", "timeout": 30, "command": ["/bin/sh", "-c", "echo from elsewhere >&2; exit 2"]}]}"#,
     )
     .unwrap();
     let payload = r#"{"tool_name": "Bash", "tool_input": {"command": "ls"}}"#;

@@ -171,7 +171,7 @@ fn a_setup_waiting_on_the_trust_lock_keeps_an_answer_recorded_meanwhile() {
     let consent = home.join(".swarm/consent.json");
     let holder = std::fs::File::create(home.join(".swarm/trust.lock")).unwrap();
     holder.lock().unwrap();
-    let waiting = clean(Path::new(env!("CARGO_BIN_EXE_swarm")), &home)
+    let mut waiting = clean(Path::new(env!("CARGO_BIN_EXE_swarm")), &home)
         .current_dir(&home)
         .args(["setup", "trust", "--yes", "--cwd"])
         .arg(&repo)
@@ -179,8 +179,10 @@ fn a_setup_waiting_on_the_trust_lock_keeps_an_answer_recorded_meanwhile() {
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    // The waiting setup has read the files it reads before the lock by now.
-    std::thread::sleep(std::time::Duration::from_millis(500));
+    // Setup prints its plan after reading the files and before taking the lock.
+    let mut first = [0];
+    std::io::Read::read_exact(waiting.stdout.as_mut().unwrap(), &mut first).unwrap();
+    assert_eq!(&first, b"-");
     std::fs::write(&consent, "{\"trust\": \"ask\"}\n").unwrap();
     drop(holder);
     let applied = waiting.wait_with_output().unwrap();
