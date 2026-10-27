@@ -142,13 +142,9 @@ fn claude_default_uses_the_native_store_without_profile_overrides() {
 #[test]
 fn a_model_is_checked_against_the_catalog() {
     let binary = br#"aliases:{opus:{default:"claude-opus-5-5"}},x="opus""#;
-    assert!(Provider::Claude.model_known(binary, "claude-opus-5-5"));
-    assert!(Provider::Claude.model_known(binary, "opus"));
-    assert!(!Provider::Claude.model_known(binary, "claude-opus-5"));
-    let codex = br#"{"models":[{"slug":"gpt-6-sol"},{"slug":"gpt-6-luna"}]}"#;
-    assert!(Provider::Codex.model_known(codex, "gpt-6-sol"));
-    assert!(!Provider::Codex.model_known(codex, "gpt-5.6-sol"));
-    assert!(!Provider::Codex.model_known(b"not json", "gpt-6-sol"));
+    assert!(Provider::model_known(binary, "claude-opus-5-5"));
+    assert!(Provider::model_known(binary, "opus"));
+    assert!(!Provider::model_known(binary, "claude-opus-5"));
 }
 
 /// pi's claude-bridge runs `claude`, so its launches use Claude accounts; other pi models use

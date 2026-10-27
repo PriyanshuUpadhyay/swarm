@@ -12,6 +12,8 @@ mod claude_trust;
 mod consent;
 #[path = "launch/listing.rs"]
 mod listing;
+#[path = "launch/model_check.rs"]
+mod model_check;
 #[path = "launch/owner.rs"]
 mod owner;
 #[path = "launch/providers.rs"]

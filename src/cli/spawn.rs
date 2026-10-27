@@ -237,21 +237,57 @@ pub(crate) fn spawn_agent(
         .provider
         .or_else(|| options.command.first().map(String::as_str))
         .and_then(Provider::parse);
-    // Warn, do not refuse: an unknown name usually means the role config or the CLI is stale,
-    // and the pane shows the real error if the model does not run.
-    if let (Some(provider), Some(model)) = (provider, swarm::bus::command_model(options.command)) {
+    // Check before any pane or agent row. A failed list read leaves launch to the CLI.
+    if let (Some(provider @ (Provider::Claude | Provider::Codex)), Some(model)) =
+        (provider, swarm::bus::command_model(options.command))
+    {
         let account_env = account
             .as_ref()
             .map(|account| account.env.clone())
             .unwrap_or_default();
-        if provider
-            .catalog(&account_env)
-            .is_some_and(|catalog| !provider.model_known(&catalog, model))
+        let models = provider.models(|cli, args| {
+            let mut command = std::process::Command::new(cli);
+            command.args(args);
+            if account.is_some() || options.runner.is_some() {
+                for key in provider.account_env_keys() {
+                    command.env_remove(key);
+                }
+            }
+            let output = command
+                .envs(&account_env)
+                .output()
+                .map_err(|error| error.to_string())?;
+            checked_stdout(cli, output).map_err(|error| error.to_string())
+        });
+        if let Ok(models) = models
+            && !models.is_empty()
+            && !models.iter().any(|listed| listed.id == model)
+            // A wrapper without the quoted alias is not a readable Claude catalog.
+            && (provider != Provider::Claude
+                || Provider::claude_catalog().is_some_and(|catalog| {
+                    Provider::model_known(&catalog, "sonnet")
+                        && !Provider::model_known(&catalog, model)
+                }))
         {
-            eprintln!(
-                "swarm: warning: the installed {} CLI does not list model {model}; the role config may need an update",
-                provider.id()
-            );
+            let current_account = account.as_ref().map(|account| account.name.as_str());
+            let other_accounts = load_accounts(provider.id(), account_deadline)
+                .map(|list| {
+                    list.accounts
+                        .into_iter()
+                        .filter(|account| Some(account.name.as_str()) != current_account)
+                        .map(|account| account.name)
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            let models = models.into_iter().map(|model| model.id).collect::<Vec<_>>();
+            return Err(swarm::bus::model_refusal(
+                provider.id(),
+                model,
+                current_account,
+                &other_accounts,
+                &models,
+            )
+            .into());
         }
     }
     let adapter = swarm::adapter::load(root, &adapter_name())?;
