@@ -193,7 +193,9 @@ mod tests {
                     ..finding("x")
                 },
             ),
-            &format!("B-{ask} is a ask"),
+            &format!(
+                "B-{ask} is a ask; a finding cannot supersede it. Post a ask with --supersedes B-{ask}"
+            ),
         );
     }
 
