@@ -397,7 +397,7 @@ pub(crate) fn notice_waiting(
 }
 
 /// ADR 0077: a notice starts the small helper, never the full app. Never waits, so the hook keeps
-/// its remaining budget.
+/// its remaining budget. Reports a failure to start on stderr.
 pub(crate) fn start_notify_helper() {
     use std::os::unix::process::CommandExt;
     let Some(helper) = notify_helper() else {
@@ -414,12 +414,15 @@ pub(crate) fn start_notify_helper() {
             .arg("--env")
             .arg(format!("SWARM_BIN={}", exe.display()));
     }
-    let _ = command
+    if let Err(error) = command
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .process_group(0)
-        .spawn();
+        .spawn()
+    {
+        eprintln!("swarm: notice helper did not start: {error}");
+    }
 }
 
 /// `SWARM_NOTIFY_APP` alone when set, else the helper that ships with this swarm (ADR 0079). Never
