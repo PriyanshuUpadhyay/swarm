@@ -60,7 +60,8 @@ with a source can be checked when the file changes.
   notice. Only the lead posts `--relayed`, and `read` shows it as "relayed by lead".
 - **The checker has a wall.** A worker's `board read` leaves out posts by role `checker` in its
   own session, except a post sent to that worker and an answer to its own ask. A checker post
-  from another session stays readable, so a later run gets an earlier run's findings. A worker hands off a work key only
+  from another session stays readable once that checker's pane is closed, so a later run gets an
+  earlier run's findings, but a run at the same time does not. A worker hands off a work key only
   after a checker finding with that key exists. `swarm guard` denies a worker's tool call that
   names `.swarm/boards`. The wall also works the other way: a checker may not list the board,
   and reads only `B-n`, the posts its brief names (probe d2, 2026-10-26).

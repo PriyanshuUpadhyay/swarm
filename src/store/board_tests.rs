@@ -470,6 +470,11 @@ mod tests {
         assert_eq!(seen(None), all);
         // The wall is per task: a worker in a later session reads an earlier checker's findings.
         assert_eq!(seen(Some((OTHER_SESSION, OUTSIDER))), all);
+        // A checker whose pane is still open may be checking a task that runs now.
+        set_pane(&c, SESSION, CHECKER, "%9").unwrap();
+        assert_eq!(seen(Some((OTHER_SESSION, OUTSIDER))), [ask]);
+        assert_eq!(seen(Some((SESSION, ORCHESTRATOR))), all);
+        clear_pane(&c, SESSION, CHECKER).unwrap();
         // A checker reads only named posts, so it may not list the board; the others may.
         let err = may_list(&c, Some((SESSION, CHECKER)))
             .unwrap_err()
