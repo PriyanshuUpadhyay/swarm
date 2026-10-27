@@ -227,7 +227,7 @@ pub fn post(
         let old_kind = kind_of(&tx, project_id, old)?;
         if old_kind != new.kind {
             return Err(format!(
-                "swarm: B-{old} is a {old_kind}; a {} cannot supersede it",
+                "swarm: B-{old} is a {old_kind}; a {} cannot supersede it. Post a {old_kind} with --supersedes B-{old}",
                 new.kind
             )
             .into());

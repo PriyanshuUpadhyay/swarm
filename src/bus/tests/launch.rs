@@ -237,6 +237,35 @@ mod tests {
     }
 
     #[test]
+    fn only_a_building_codex_seat_may_reach_the_package_hosts() {
+        let mut codex = role("codex");
+        codex.sandbox = Some("workspace-write".into());
+        let profile = |role: &str| {
+            argv("seat", role, &codex, "/home", std::path::Path::new("/"))
+                .unwrap()
+                .into_iter()
+                .find(|arg| arg.starts_with("permissions.swarm-code="))
+                .unwrap()
+        };
+        let uv = |role: &str| {
+            argv("seat", role, &codex, "/home", std::path::Path::new("/"))
+                .unwrap()
+                .iter()
+                .any(|arg| arg.starts_with("shell_environment_policy.set.UV_CACHE_DIR="))
+        };
+        assert!(uv("code.routine") && !uv("review.deep"));
+        for role in ["code.routine", "code.complex", "build", "checker"] {
+            assert!(
+                profile(role).contains(r#""allow"},domains={"pypi.org"="allow","#),
+                "{role}"
+            );
+        }
+        for role in ["review.deep", "council.gpt", "search.web"] {
+            assert!(!profile(role).contains("domains="), "{role}");
+        }
+    }
+
+    #[test]
     fn a_codex_seat_may_reach_the_tmux_socket_folder_tmux_names() {
         assert_eq!(
             tmux_socket_dir(Some("/no/such/dir"), 7),

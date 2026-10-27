@@ -61,7 +61,10 @@ pub(crate) fn add_agent(
     } else {
         None
     };
-    let transaction = connection.unchecked_transaction()?;
+    // Immediate: a read that upgrades to a write fails at once when another swarm wrote first;
+    // taking the write lock before the read waits on busy_timeout instead.
+    let transaction =
+        rusqlite::Transaction::new_unchecked(connection, rusqlite::TransactionBehavior::Immediate)?;
     // A chair registers again each time its CLI starts, from a pane that may be new. Any other
     // clash is still an error, so a second agent cannot take an existing agent's name.
     let rejoins = pane.is_some()

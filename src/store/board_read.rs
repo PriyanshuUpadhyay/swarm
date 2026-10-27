@@ -8,8 +8,8 @@ pub const CHECKER_ROLE: &str = "checker";
 /// The posts that `reader` (session, agent) may read; None is the owner at a plain terminal. A
 /// worker does not get the posts of its own session's checker, except one sent to it and an
 /// answer to its own ask, so a ping never points at a post it cannot read. A checker post from
-/// another session is a finished task's fact and stays readable. Best effort: the body files stay
-/// readable.
+/// another session is a finished task's fact and stays readable once that checker's pane is
+/// closed; while it is open, its task may still run. Best effort: the body files stay readable.
 pub fn posts_for(
     connection: &Connection,
     project_id: &str,
@@ -28,9 +28,14 @@ pub fn posts_for(
         .filter(|p| p.kind == "ask" && mine(p))
         .map(|p| p.n)
         .collect();
+    let open: Vec<(String, String)> = connection
+        .prepare("SELECT session_id, id FROM agent WHERE role = ?1 AND pane_id IS NOT NULL")?
+        .query_map([CHECKER_ROLE], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<rusqlite::Result<_>>()?;
     all.retain(|p| {
         p.author_role != CHECKER_ROLE
-            || p.session_id != session
+            || (p.session_id != session
+                && !open.contains(&(p.session_id.clone(), p.author.clone())))
             || (p.to_session.as_deref() == Some(session) && p.to_agent.as_deref() == Some(agent))
             || (p.kind == "answer" && p.reply_to.is_some_and(|n| asked.contains(&n)))
     });

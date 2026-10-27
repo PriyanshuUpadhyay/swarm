@@ -12,6 +12,22 @@ pub fn valid_agent_id(id: &str) -> bool {
             .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || *byte == b'-')
 }
 
+/// Hosts a building seat may reach through the owner's Codex network proxy: Python, Rust, npm,
+/// and SwiftPM packages, and Hugging Face model files.
+const PACKAGE_HOSTS: &[&str] = &[
+    "pypi.org",
+    "files.pythonhosted.org",
+    "crates.io",
+    "**.crates.io",
+    "registry.npmjs.org",
+    "github.com",
+    "**.github.com",
+    "**.githubusercontent.com",
+    "huggingface.co",
+    "**.huggingface.co",
+    "**.hf.co",
+];
+
 pub fn argv(
     agent_id: &str,
     role: &str,
@@ -119,12 +135,35 @@ pub fn argv(
                     // SAFETY: getuid has no preconditions and cannot fail.
                     let uid = unsafe { crate::hud::getuid() };
                     let tmux = tmux_socket_dir(std::env::var("TMUX_TMPDIR").ok().as_deref(), uid);
+                    let builds = role.starts_with("code.") || role == "build" || role == "checker";
+                    // uv's default cache is outside the writable roots, so uv cannot lock it.
+                    if builds {
+                        let cache = std::env::temp_dir().join("swarm-uv-cache");
+                        args.extend([
+                            "-c".into(),
+                            format!(
+                                "shell_environment_policy.set.UV_CACHE_DIR={}",
+                                quote(&cache.to_string_lossy())
+                            ),
+                        ]);
+                    }
+                    // The owner's network proxy allows few hosts. A seat that builds or tests
+                    // fetches packages, and only these package hosts are added for it.
+                    let domains = if builds {
+                        let hosts: Vec<String> = PACKAGE_HOSTS
+                            .iter()
+                            .map(|host| format!(r#"{}="allow""#, quote(host)))
+                            .collect();
+                        format!(",domains={{{}}}", hosts.join(","))
+                    } else {
+                        String::new()
+                    };
                     args.extend([
                         "-c".into(),
                         r#"default_permissions="swarm-code""#.into(),
                         "-c".into(),
                         format!(
-                            r#"permissions.swarm-code={{extends=":workspace",filesystem={{{filesystem}}},network={{enabled=true,unix_sockets={{{}="allow"}}}}}}"#,
+                            r#"permissions.swarm-code={{extends=":workspace",filesystem={{{filesystem}}},network={{enabled=true,unix_sockets={{{}="allow"}}{domains}}}}}"#,
                             quote(&tmux)
                         ),
                     ]);

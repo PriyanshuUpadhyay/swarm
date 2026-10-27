@@ -424,6 +424,23 @@ fn read(
         }) {
             println!("{}", line(post, &lead, stale(post)));
         }
+        if let Some(c) = claims
+            .iter()
+            .find(|c| flags.work.as_ref() == Some(&c.work_key))
+        {
+            let now = unix_now()?;
+            let state = if c.released_at.is_some() {
+                "released".to_string()
+            } else if c.lease_until <= now {
+                "lease ended".to_string()
+            } else {
+                format!("held by {}, {} s left", c.holder, c.lease_until - now)
+            };
+            println!(
+                "claim {}: {state}, generation {}, attempt {} of 3",
+                c.work_key, c.generation, c.attempts
+            );
+        }
         return Ok(());
     }
 
