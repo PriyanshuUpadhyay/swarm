@@ -132,7 +132,7 @@ def nodes(fence):
     if fence.startswith("sequenceDiagram"):
         return len(re.findall(r"^\s*(?:participant|actor)\s", fence, re.M))
     text = re.sub(r'"[^"]*"', '""', re.sub(r"^\s*subgraph .*$", "", fence, flags=re.M))
-    text = re.sub(r"\|[^|\n]*\||\s(?:--|==|-\.)\s[^\n]*?(?=-->|==>|\.->|--[ox]|---|===|\.-)", "", text)  # edge labels
+    text = re.sub(r"\|[^|\n]*\||(?<![-=.])(?:--|==|-\.)\s[^\n]*?(?=-->|==>|\.->|--[ox]|---|===|\.-)", "", text)  # edge labels
     # Each match takes its whole label, so a word inside a label is never read as an id.
     found = re.findall(r"(?<![\w-])([A-Za-z_]\w*)\s*(?:\[[^\]]*\]|\([^)]*\)+|\{[^}]*\}+)", text)
     return len(set(found))

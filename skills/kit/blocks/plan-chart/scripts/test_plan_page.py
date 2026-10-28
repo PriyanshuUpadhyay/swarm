@@ -88,6 +88,8 @@ def test_diagram_checks():
     assert plan_rules.nodes(edges) == 3, plan_rules.nodes(edges)
     for link in ("== go (now) ==>", "-- see (x) --o", "-- see (x) --x", "-- see (x) ---", "-. wait (x) .->"):
         assert plan_rules.nodes(f"flowchart LR\n  a[x] {link} b[y]\n") == 2, link
+    for link in ("-- go (now) -->", "== go (now) ==>", "-. go (now) .->"):  # text against the node, as Mermaid allows
+        assert plan_rules.nodes(f"flowchart LR\n  a[x]{link}b[y]\n") == 2, link
     for chain in ("a[x] -.-> b[y] -.-> c[z]", "a[x] --- b[y] --> c[z]", "a[x] -- go --> b[y] -- on --> c[z]"):
         assert plan_rules.nodes(f"flowchart LR\n  {chain}\n") == 3, chain
     big = "```mermaid\nflowchart LR\n" + "".join(f"  n{i}[x] --> n{i + 1}[y]\n" for i in range(11)) + "```\n"
@@ -112,9 +114,12 @@ def test_page_guards():
     assert "uses only plain tags" in refused(lambda: plan_page.convert('```html\n<div onclick="x">a</div>\n```'))
     for bad in ("<style>.part{display:none}</style>", "<svg/onload=alert(1)>", '<a href="&#106;avascript:x">a</a>',
                 '<div style="background:url(x)">a</div>', "<img src=x onerror=y>", '<div title="a>b" onclick="x">c</div>', '<div style="background:u\\72l(x)">a</div>',
-                '<div style="position: fixed;inset:0">a</div>'):
+                '<div style="position: fixed;inset:0">a</div>', '<div title=a"b onclick=x>c</div>', '<div a"b onclick=x>c</div><div title="y">d</div>',
+                '<div style="background:&#117;rl(x)">a</div>', '<div style="background:url&lpar;x)">a</div>',
+                '<div style="background:image-set(\'x\' 1x)">a</div>'):
         assert "uses only plain tags" in refused(lambda: plan_page.convert(f"```html\n{bad}\n```")), bad
-    assert ".flow>li:not(:last-child)::after" in plan_page.CSS  # the html-diagram flow, since a fence has no <style>
+    assert ".chart,.figure{" in plan_page.CSS and ".flow>li:not(:last-child)::after" in plan_page.CSS  # the html-diagram flow, since a fence has no <style>
+    assert plan_page.unsafe('<div style="width:calc(100% - var(--gap));color:rgb(0 0 0)">a</div>') is None
     assert plan_page.convert('```html\n<div class="box">a</div>\n```') == '<div class="figure"><div class="box">a</div></div>'
     assert "<table>" in plan_page.convert("|---|---|")
     chips = plan_page.dress(plan_page.convert("## Steps\n\n- Seed searches:\n  - one\n  - `two`\n"))
