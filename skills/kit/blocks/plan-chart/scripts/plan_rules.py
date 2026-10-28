@@ -8,6 +8,7 @@ from pathlib import Path, PurePosixPath
 KIT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(KIT / "references"))  # python3 -I does not add it
 from block_resolver import read_toml, resolve_blocks  # noqa: E402
+from step_brief import briefs  # noqa: E402
 
 
 def blocks_toml():
@@ -90,3 +91,37 @@ def check_writes(rows, uses, selected):
             raise SystemExit(f"the first step {name} has no requirements block")
         if writes[name] and not any(name in earlier[n] and "change-review" in selected[n] for n in names):
             raise SystemExit(f"step {name} writes {writes[name][0]}, and no later step has a change-review block")
+
+
+def check_layout(text, rows, uses):
+    """SystemExit with the first gap in a research plan's page sections: briefs, seed searches, blocks, diagrams.
+    `text` is plan.md without the step chart that plan_chart.py writes."""
+    found = briefs(text)
+    used = {u for need in uses.values() for u in need}
+    for name, need, _, blocks, *_ in rows:
+        if need == "none" or name not in used:
+            continue  # the frame and the reply have no work to brief
+        if name not in found:
+            raise SystemExit(f'step {name} has no brief under "## Steps" (add "### N · <plain name>" with "Step: {name}")')
+        if "deep-search" in blocks:
+            seeds = re.search(r"^- Seed searches[^\n]*\n((?:  - .*\n)*)", found[name], re.M)
+            if not seeds or seeds[1].count("  - ") < 2:
+                raise SystemExit(f'step {name} needs "- Seed searches:" with two or more "  - " lines in its brief')
+    part = text.split("\n## Building blocks\n", 1)[1].split("\n## ", 1)[0] if "\n## Building blocks\n" in text else ""
+    for block in re.split(r"^(?=### )", part, flags=re.M)[1:]:
+        if block.startswith("### Block") and "\nSo in this plan:" not in block:
+            raise SystemExit(f'building block "{block.splitlines()[0][4:]}" has no "So in this plan:" line')
+    for before, fence in re.findall(r"((?:^.*\n){0,3})^```mermaid\n(.*?)^```", text, re.M | re.S):
+        if "Answers:" not in before:
+            raise SystemExit(f"the diagram that starts `{fence.splitlines()[0]}` has no Answers: line over it")
+        if (count := nodes(fence)) > 10:
+            raise SystemExit(f"the diagram that starts `{fence.splitlines()[0]}` has {count} nodes; split it to 10 or fewer")
+
+
+def nodes(fence):
+    """The node count of a Mermaid diagram: participants, or ids defined with a label."""
+    # ponytail: counts `id[`, `id(`, `id{` only; a node that is never given a label is missed.
+    if fence.startswith("sequenceDiagram"):
+        return len(re.findall(r"^\s*(?:participant|actor)\s", fence, re.M))
+    found = re.findall(r"(?<![\w-])([A-Za-z_]\w*)\s*[\[({]", re.sub(r"^\s*subgraph .*$", "", fence, flags=re.M))
+    return len(set(found))

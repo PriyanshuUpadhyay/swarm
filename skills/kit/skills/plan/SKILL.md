@@ -30,7 +30,7 @@ each step with the blocks it resolves to. A task with no verb has no preset.
 1. Write the plan by `blocks/planner/SKILL.md`.
 2. Check it and draw it by `blocks/plan-chart/SKILL.md`.
 3. With `Stop: owner`, or with no preset, get the owner's approval by `blocks/plan-review/SKILL.md`.
-   Nothing runs before that. With `Stop: chat`, show the chart and the Chosen table in
+   Nothing runs before that. With `Stop: chat`, show the chart and the blocks table of `plan.md` in
    the reply, and go on.
 4. Start the steps with `python3 -I <kit root>/blocks/plan-review/scripts/start_plan.py <run>`. The
    script owns the stop rule. For a preset with a `Start:` line, it makes no step files and prints

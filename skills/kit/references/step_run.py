@@ -31,6 +31,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from step_checks import run_checks, work_root  # noqa: E402
 import step_scope  # noqa: E402
+import step_brief  # noqa: E402
 
 TODO_HEAD = "## Todo (check a box only with its evidence after the colon; `done` refuses an empty one)"
 # Parse by this prefix, so a step file written under an older head wording still has its todos checked.
@@ -219,6 +220,7 @@ def start(folder, skill_md):
             root, selected, "default", blocks_dir=Path(__file__).resolve().parents[1] / "blocks",
             params_override={"site": site, "shots": str(Path(site) / "shots")}, judge_todos=True)
     uses = check_needs([r[:3] for r in rows])
+    brief = step_brief.sections(skill_md)
     folder.mkdir(parents=True, exist_ok=True)
     for name, need, holds, _, writes, optional in rows:
         file = folder / f"{name}.md"
@@ -229,7 +231,7 @@ def start(folder, skill_md):
             rules = f"Kit blocks (`blocks/<id>/`) and the kit's `references/` are under {kit_path(Path(__file__).resolve().parents[1])} (the kit root).\n{rules}"
         extra = (f"Skills read: {', '.join(read)}\n\n## Rules for this step\n{rules}\n" if read else "")
         scope = "" if writes is None else f"Writes: {', '.join(writes) or 'none'}\n" + ("Optional: yes\n" if optional else "")
-        file.write_text(f"Status: open\nUses: {', '.join(uses[name])}\n{scope}\n{extra}"
+        file.write_text(f"Status: open\nUses: {', '.join(uses[name])}\n{scope}\n{brief.get(name, '')}{extra}"
                         f"{TODO_HEAD}\n" + "".join(f"- [ ] {item}: \n" for item in [holds] + todos)
                         + f"\n{RESULT_HEAD}\n", encoding="utf-8")
     print(folder)

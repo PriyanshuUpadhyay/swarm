@@ -21,6 +21,18 @@ def kit_profile(kit, kit_file, name):
     return profile
 
 
+def frontmatter(text, block):
+    """({key: value}, body) of a block file that starts with `---`. Agent Skills frontmatter: only top-level one-line
+    values in plain or double quotes are read; YAML escapes are not decoded."""
+    # Keep the opening newline, so an empty frontmatter finds its close. A `## ` line before the
+    # close means the frontmatter never closed and a later `---` rule in the body was taken for it.
+    head, close, rest = text[3:].partition("\n---\n")
+    if not close or "\n## " in head:
+        raise SystemExit(f"block {block} frontmatter has no closing --- line")
+    fields = dict(l.split(": ", 1) for l in head.splitlines() if ": " in l and l[:1] != " ")
+    return {key: value.strip().strip('"') for key, value in fields.items()}, rest
+
+
 def read_parents(files):
     """{parent: [parts]} from {block: SKILL.md path}. Membership has one owner: a parent's metadata.parts."""
     parents = {}
@@ -174,17 +186,10 @@ def resolve_blocks(root, wanted, profile_name, *, blocks_dir=None, pack=True, pa
             # A large repo file would fill every step file, and a cut could end inside a check, so it stops start.
             if len(text) > CAP:
                 raise SystemExit(f"block {block} is {len(text)} characters; a block holds at most {CAP}")
-            # Agent Skills frontmatter: only name and description are read, as one-line values in plain or
-            # double quotes; YAML escapes are not decoded. The name is the block id, and the description goes
-            # to the step as the Concept line, in place of the frontmatter.
+            # The name is the block id, and the description goes to the step as the Concept line, in place of
+            # the frontmatter.
             if text.startswith("---\n"):
-                # Keep the opening newline, so an empty frontmatter finds its close. A `## ` line before the
-                # close means the frontmatter never closed and a later `---` rule in the body was taken for it.
-                head, close, rest = text[3:].partition("\n---\n")
-                if not close or "\n## " in head:
-                    raise SystemExit(f"block {block} frontmatter has no closing --- line")
-                fields = dict(l.split(": ", 1) for l in head.splitlines() if ": " in l and l[:1] != " ")
-                fields = {key: value.strip().strip('"') for key, value in fields.items()}
+                fields, rest = frontmatter(text, block)
                 for key in ("name", "description"):
                     if not fields.get(key):
                         raise SystemExit(f"block {block} frontmatter has no {key}")

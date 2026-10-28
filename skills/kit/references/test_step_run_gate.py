@@ -104,7 +104,7 @@ def test_kit_check_lines(tmp):
             (runnable if step_checks.RUN_FORM.match(line) else reader).append(f"{file.parent.name}: {line[:40]}")
             filled = re.sub(r"\{\{\w+\}\}", "site/x", line)  # start fills a param in the command with one quoted word
             assert any(p.match(filled + ": ok") for _, p in step_checks.block_checks(file.parent.name)), line
-    assert len(runnable) == 10 and len(reader) == 10, (runnable, reader)
+    assert len(runnable) == 11 and len(reader) == 10, (runnable, reader)
     # The kit's own test scripts run through done with <kit root> filled and pass.
     for block in ("plan-review", "comment-round"):
         line = next(l for l in block_resolver.check_lines(block_resolver.sections(

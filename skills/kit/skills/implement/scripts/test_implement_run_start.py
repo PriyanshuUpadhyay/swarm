@@ -71,7 +71,11 @@ def implement_table():
 
 
 def approve(plan):
-    files = {f"../{n}": hashlib.sha256((plan / n).read_bytes()).hexdigest() for n in ("plan.html", "plan.md")}
+    """Draw plan.html from plan.md, as plan_chart.py does, and record a round on the page alone."""
+    sys.path.insert(0, str(SCRIPT.parents[3] / "blocks" / "plan-review" / "scripts"))
+    import start_plan
+    (plan / "plan.html").write_text(start_plan.preset.plan_chart.page(plan / "plan.md"), encoding="utf-8")
+    files = {"../plan.html": hashlib.sha256((plan / "plan.html").read_bytes()).hexdigest()}
     (plan / "plan-review").mkdir(exist_ok=True)
     (plan / "plan-review" / "1.json").write_text(json.dumps({"files": files, "result": {"decision": "approved"}}),
                                                   encoding="utf-8")

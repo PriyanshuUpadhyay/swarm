@@ -22,6 +22,7 @@ checks = [
     "skills/kit/skills/implement/scripts/test_implement_run.py",
     "skills/kit/references/test_step_run.py",
     "skills/kit/blocks/plan-chart/scripts/test_plan_chart.py",
+    "skills/kit/blocks/plan-chart/scripts/test_plan_page.py",
     "skills/kit/blocks/plan-review/scripts/test_start_plan.py",
     "skills/kit/skills/plan/scripts/test_preset.py",
     "skills/kit/skills/review/scripts/test_review_check.py",
