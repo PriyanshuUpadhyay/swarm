@@ -40,8 +40,9 @@ export type Chat = {
   /** The queue that the agent's CLI shows, as rows after the log's rows. */
   queue: Row[];
   /** The newest texts typed into this chat, never shown. A stop or Up on pi puts them back exact,
-   *  because pi's box joins lines and its queue cuts them (ADR 0130). */
-  typed: string[];
+   *  because pi's box joins lines and its queue cuts them (ADR 0130). Each is its own object, so a
+   *  restore drops the entries it matched and not a text sent while the stop was on its way. */
+  typed: { text: string }[];
   memo: { sig: unknown[]; pane: Pane } | null;
 };
 

@@ -190,7 +190,7 @@ export class AppComposer {
       () => void this.send(sessionId, text, draftText, owner),
     );
     if (!ok) return false;
-    if (chat) chat.typed = [...chat.typed, typed].slice(-TYPED_CAP);
+    if (chat) chat.typed = [...chat.typed, { text: typed }].slice(-TYPED_CAP);
     // The owner's words, before a pi skill moved to the front.
     if (owner) this.recordHistory(sessionId, outgoing(draftText) ?? out);
     if (this.draft(sessionId) === draftText) this.replaceDraft(sessionId, "");
@@ -228,17 +228,17 @@ export class AppComposer {
 
   /** Puts the text pi's box `held` before the draft and forgets the typed texts it held.
    *  pi takes the oldest queued message first, so the box holds the newest k typed texts in order.
-   *  For each k, largest first, the rows' texts must appear in the box as whole words; failing
-   *  that, rows with no spaces (a long URL that the box wrapped) must make up the whole box once
-   *  its spaces are removed. When the box held only those rows, their exact texts come back, line
+   *  For each k, largest first, the texts must appear in the box as whole words; failing that,
+   *  texts with no spaces (a long URL that the box wrapped) must make up the whole box once its
+   *  spaces are removed. When the box held only those texts, they come back exact, line
    *  breaks and all; otherwise the box text comes back as pi drew it, for it also holds what the
    *  owner typed in pi. */
-  private restoreTyped(sessionId: string, typed: readonly string[], held: string) {
+  private restoreTyped(sessionId: string, typed: readonly { text: string }[], held: string) {
     if (!held.trim()) return;
     const { back, only } = heldTexts(typed, held);
     const chat = this.app.chats.get(sessionId);
-    if (chat) chat.typed = chat.typed.slice(0, chat.typed.length - back.length);
-    const text = only ? back.map((t) => t.trim()).join("\n") : held.trim();
+    if (chat) chat.typed = chat.typed.filter((t) => !back.includes(t));
+    const text = only ? back.map((t) => t.text.trim()).join("\n") : held.trim();
     if (text) this.prependDraft(sessionId, text);
   }
 
@@ -300,15 +300,15 @@ export class AppComposer {
 const TYPED_CAP = 20;
 
 /** The newest typed texts that pi's box `held` still shows, and whether the box held only them. */
-function heldTexts(typed: readonly string[], held: string): { back: string[]; only: boolean } {
+function heldTexts(typed: readonly { text: string }[], held: string): { back: { text: string }[]; only: boolean } {
   const words = (text: string) => text.trim().split(/\s+/).join(" ");
   const squash = (text: string) => text.replace(/\s+/g, "");
   const box = words(held);
   for (let k = typed.length; k > 0; k--) {
     const tail = typed.slice(-k);
-    const joined = tail.map(words).join(" ");
+    const joined = tail.map((t) => words(t.text)).join(" ");
     if (` ${box} `.includes(` ${joined} `)) return { back: tail, only: joined === box };
-    if (tail.every((t) => !/\s/.test(t.trim())) && squash(joined) === squash(box)) return { back: tail, only: true };
+    if (tail.every((t) => !/\s/.test(t.text.trim())) && squash(joined) === squash(box)) return { back: tail, only: true };
   }
   return { back: [], only: false };
 }

@@ -71,7 +71,7 @@ describe("pi's queue back in the draft", () => {
     held = "steer four";
     await app.interrupt("chat");
     expect(app.draft("chat")).toBe("steer four");
-    expect(app.chats.get("chat")!.typed).toEqual(["steer three"]);
+    expect(app.chats.get("chat")!.typed.map((t) => t.text)).toEqual(["steer three"]);
     app.chats.get("chat")!.typed = [];
 
     // A box that was not emptied keeps its rows, so the text is never in two places.
@@ -94,7 +94,7 @@ describe("what pi's box held goes to the draft", () => {
     await app.send("chat", "ok");
     await app.send("chat", "hook");
     await app.interrupt("chat");
-    expect(app.chats.get("chat")!.typed).toEqual(["ok"]);
+    expect(app.chats.get("chat")!.typed.map((t) => t.text)).toEqual(["ok"]);
     expect(app.draft("chat")).toBe("hook");
 
     // A note typed in pi's own box comes back with the queue.
@@ -117,6 +117,23 @@ describe("what pi's box held goes to the draft", () => {
 });
 
 describe("which typed texts pi's box held", () => {
+  it("keeps a text sent while the stop is on its way", async () => {
+    let release = () => {};
+    const stopped = new Promise<unknown>((r) => (release = () => r({ ok: true, box: "cleared", held: "one two" })));
+    const { app, snapshot } = harness(undefined, (path) => (path === "/api/chat/interrupt" ? stopped : null));
+    snapshot({ provider: "pi", state: "working" });
+    app.openChat("chat");
+    await settle();
+    await app.send("chat", "one");
+    await app.send("chat", "two");
+    const stop = app.interrupt("chat");
+    await app.send("chat", "three");
+    release();
+    await stop;
+    expect(app.draft("chat")).toBe("one\ntwo");
+    expect(app.chats.get("chat")!.typed.map((t) => t.text)).toEqual(["three"]);
+  });
+
   it("takes the newest texts, so 'ok' taken by pi is not mistaken for part of 'ok then'", async () => {
     const { app, snapshot } = harness(undefined, (path) => (path === "/api/chat/interrupt" ? { ok: true, box: "cleared", held: "ok then" } : null));
     snapshot({ provider: "pi", state: "working" });
@@ -127,7 +144,7 @@ describe("which typed texts pi's box held", () => {
     await app.interrupt("chat");
     // pi took "ok" before the stop. Only "ok then" came back, once.
     expect(app.draft("chat")).toBe("ok then");
-    expect(app.chats.get("chat")!.typed).toEqual(["ok"]);
+    expect(app.chats.get("chat")!.typed.map((t) => t.text)).toEqual(["ok"]);
   });
 
   it("does not take 'ok' for part of what the owner typed in pi's own box", async () => {
@@ -138,7 +155,7 @@ describe("which typed texts pi's box held", () => {
     await app.send("chat", "ok");
     await app.interrupt("chat");
     expect(app.draft("chat")).toBe("hook");
-    expect(app.chats.get("chat")!.typed).toEqual(["ok"]);
+    expect(app.chats.get("chat")!.typed.map((t) => t.text)).toEqual(["ok"]);
   });
 
   it("holds a wrapped URL and the short message after it together", async () => {
