@@ -147,7 +147,7 @@ async fn pull_back_route_refuses_agent_queue_and_unsupported_targets_without_up(
 }
 
 /// pi: the pull-back and the stop empty pi's box with `swarm clear-box`, and the app takes the
-/// text from its own Sent rows, so the reply holds none.
+/// text from its own typed texts, so the reply holds none.
 #[tokio::test]
 async fn a_pi_pull_back_and_stop_empty_the_box_with_clear_box() {
     let fixture = pull_back_fixture("", "");
@@ -208,7 +208,7 @@ async fn a_pi_pull_back_and_stop_empty_the_box_with_clear_box() {
     );
 }
 
-/// A pi child's Stop empties its box too, so the page restores the child's Sent rows.
+/// A pi child's Stop empties its box too, so the page restores the child's typed texts.
 #[tokio::test]
 async fn a_pi_child_stop_empties_its_box_with_clear_box() {
     let fixture = pull_back_fixture("", "");
