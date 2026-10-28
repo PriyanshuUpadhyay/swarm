@@ -1,6 +1,6 @@
 
 
-import { agentInput, confirmSent, outgoing, sentRow, submission, type AgentInput, type Prompt, type SendKey, type Sent } from "./composer";
+import { agentInput, outgoing, submission, type AgentInput, type Prompt, type SendKey } from "./composer";
 import { recallOrder, recordSent, type HistoryEntry } from "./history";
 import { editPicks, fileRows, validPicks, type CommandList, type SkillPick } from "./slash";
 import {
@@ -22,9 +22,8 @@ export class AppComposer {
 
   composerView(chat: Chat, sendKey: SendKey): Composer {
     const agent = this.chair(chat.id);
-    // pi logs no queue, so its queued rows are the app's Sent rows. Claude logs its queue, and a
-    // Sent row there is a message on its way to the log.
-    let queued = agent.provider === "pi" ? chat.sent.length : 0;
+    // pi's queue comes from its screen; Claude's is the queued rows at the end of its log.
+    let queued = chat.queue.length;
     for (let i = chat.rows.length - 1; i >= 0 && chat.rows[i].kind === "queued"; i--) queued++;
     return {
       id: chat.id,
@@ -183,7 +182,6 @@ export class AppComposer {
     if (!out || st.sending || st.pulling || chair.disabled) return false;
     const typed = submission(out);
     const chat = this.app.chats.get(sessionId);
-    const sent = chat && sentRow(typed, chair.provider, chat.rows, chair.running);
     const ok = await this.act(
       sessionId,
       { sending: true },
@@ -192,11 +190,7 @@ export class AppComposer {
       () => void this.send(sessionId, text, draftText, owner),
     );
     if (!ok) return false;
-    if (chat && sent) {
-      // The log can show the text while the send is in flight.
-      chat.sent = confirmSent([...chat.sent, sent], chat.rows);
-      this.app.reading.changed(chat);
-    }
+    if (chat) chat.typed = [...chat.typed, { text: typed }].slice(-TYPED_CAP);
     // The owner's words, before a pi skill moved to the front.
     if (owner) this.recordHistory(sessionId, outgoing(draftText) ?? out);
     if (this.draft(sessionId) === draftText) this.replaceDraft(sessionId, "");
@@ -215,11 +209,10 @@ export class AppComposer {
   }
 
   /** ⌘. and Stop: interrupt the chair's turn. pi puts its queue back in its box on a stop, and
-   *  the server empties it, so the Sent rows taken before the stop go to the draft. */
+   *  the server empties it, so the texts typed before the stop go to the draft. */
   async interrupt(sessionId: string) {
     if (this.input(sessionId).stopping || this.chair(sessionId).unreachable) return;
-    // The turn's end drops started Sent rows (settleSent), maybe before the reply comes.
-    const sent = this.app.chats.get(sessionId)?.sent ?? [];
+    const typed = this.app.chats.get(sessionId)?.typed ?? [];
     const reply: { box?: string; held?: string | null } = {};
     await this.act(
       sessionId,
@@ -230,25 +223,22 @@ export class AppComposer {
       },
       () => void this.interrupt(sessionId),
     );
-    if (reply.box === "cleared") this.restoreSent(sessionId, sent, reply.held ?? "");
+    if (reply.box === "cleared") this.restoreTyped(sessionId, typed, reply.held ?? "");
   }
 
-  /** Puts the text pi's box `held` before the draft and drops the Sent rows it held from the chat.
-   *  pi takes the oldest queued message first, so the box holds the newest k Sent rows in order.
-   *  For each k, largest first, the rows' texts must appear in the box as whole words; failing
-   *  that, rows with no spaces (a long URL that the box wrapped) must make up the whole box once
-   *  its spaces are removed. When the box held only those rows, their exact texts come back, line
+  /** Puts the text pi's box `held` before the draft and forgets the typed texts it held.
+   *  pi takes the oldest queued message first, so the box holds the newest k typed texts in order.
+   *  For each k, largest first, the texts must appear in the box as whole words; failing that,
+   *  texts with no spaces (a long URL that the box wrapped) must make up the whole box once its
+   *  spaces are removed. When the box held only those texts, they come back exact, line
    *  breaks and all; otherwise the box text comes back as pi drew it, for it also holds what the
    *  owner typed in pi. */
-  private restoreSent(sessionId: string, sent: readonly Sent[], held: string) {
+  private restoreTyped(sessionId: string, typed: readonly { text: string }[], held: string) {
     if (!held.trim()) return;
-    const { back, only } = heldRows(sent, held);
+    const { back, only } = heldTexts(typed, held);
     const chat = this.app.chats.get(sessionId);
-    if (chat) {
-      chat.sent = chat.sent.filter((s) => !back.includes(s));
-      this.app.reading.changed(chat);
-    }
-    const text = only ? back.map((s) => s.row.text).join("\n") : held.trim();
+    if (chat) chat.typed = chat.typed.filter((t) => !back.includes(t));
+    const text = only ? back.map((t) => t.text.trim()).join("\n") : held.trim();
     if (text) this.prependDraft(sessionId, text);
   }
 
@@ -277,9 +267,9 @@ export class AppComposer {
     const st = this.input(sessionId);
     const chair = this.chair(sessionId);
     if (!chat || !chair.pullBack || chair.disabled || st.pulling || st.sending) return;
-    if (!(chair.provider === "pi" && chat.sent.length) && !chat.rows.some((r) => r.kind === "queued")) return;
-    // pi's reply holds no text, because its screen joins lines; the app's Sent rows are exact.
-    const sent = chat.sent;
+    if (!chat.queue.length && !chat.rows.some((r) => r.kind === "queued")) return;
+    // pi's reply holds no text, because its screen joins lines; the typed texts are exact.
+    const typed = chat.typed;
     const result: { pulled: string | null; held?: string | null } = { pulled: null };
     await this.act(
       sessionId,
@@ -300,22 +290,25 @@ export class AppComposer {
       setTimeout(() => seq === this.app.alreadySentSeq && this.update(sessionId, { alreadySent: false }), 2000);
       return;
     }
-    if (chair.provider === "pi") return this.restoreSent(sessionId, sent, result.held ?? "");
+    if (chair.provider === "pi") return this.restoreTyped(sessionId, typed, result.held ?? "");
     // Keep anything typed while the CLI let go of the text.
     this.prependDraft(sessionId, result.pulled);
   }
 }
 
-/** The newest Sent rows that pi's box `held` still shows, and whether the box held only them. */
-function heldRows(sent: readonly Sent[], held: string): { back: Sent[]; only: boolean } {
+/** Typed texts kept per chat for a pi restore; older ones have long left pi's queue. */
+const TYPED_CAP = 20;
+
+/** The newest typed texts that pi's box `held` still shows, and whether the box held only them. */
+function heldTexts(typed: readonly { text: string }[], held: string): { back: { text: string }[]; only: boolean } {
   const words = (text: string) => text.trim().split(/\s+/).join(" ");
   const squash = (text: string) => text.replace(/\s+/g, "");
   const box = words(held);
-  for (let k = sent.length; k > 0; k--) {
-    const tail = sent.slice(-k);
-    const joined = tail.map((s) => words(s.row.text)).join(" ");
+  for (let k = typed.length; k > 0; k--) {
+    const tail = typed.slice(-k);
+    const joined = tail.map((t) => words(t.text)).join(" ");
     if (` ${box} `.includes(` ${joined} `)) return { back: tail, only: joined === box };
-    if (tail.every((s) => !/\s/.test(s.row.text.trim())) && squash(joined) === squash(box)) return { back: tail, only: true };
+    if (tail.every((t) => !/\s/.test(t.text.trim())) && squash(joined) === squash(box)) return { back: tail, only: true };
   }
   return { back: [], only: false };
 }

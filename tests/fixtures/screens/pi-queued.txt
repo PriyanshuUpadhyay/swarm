@@ -1,0 +1,37 @@
+
+
+ Warning: tmux extended-keys is off. Modified Enter keys may not work. Add `set -g extended-keys
+ on` to ~/.tmux.conf and restart tmux.
+
+────────────────────────────────────────────────────────────────────────────────────────────────────
+ Update Available
+ New version 1.4.0 is available. Run pi update
+ Changelog: https://pi.dev/changelog
+────────────────────────────────────────────────────────────────────────────────────────────────────
+
+────────────────────────────────────────────────────────────────────────────────────────────────────
+ Package Updates Available
+ Package updates are available. Run pi update --extensions
+ Packages:
+ - @plannotator/pi-extension
+────────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+ Run the bash command sleep 30 and then reply with the word done.
+
+
+
+ $ sleep 30 (timeout 60s)
+
+ Elapsed 12.0s
+
+
+ Steering: first queued note
+ Steering: second queued note that is quite long so that it will need to be cut by the truncated...
+ ↳ Option+Up to edit all queued messages
+
+── ⠦ Working ───────────────────────────────────────────────────────────────────────────────────────
+
+────────────────────────────────────────────────────────────────────────────────────────────────────
+~/project
+↑2 ↓83 R1.8k W13k CH11.7% 1.5%/1.0M (auto)                  (claude-bridge) claude-opus-5-5 • medium

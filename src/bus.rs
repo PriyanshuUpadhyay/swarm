@@ -35,6 +35,10 @@ pub struct Agent {
     pub log: Option<String>,
     /// The question the agent's screen shows now, if any; `swarm answer` picks a choice.
     pub prompt: Option<crate::screen::Prompt>,
+    /// The messages the agent's CLI holds for a later turn, as its screen lists them; absent when
+    /// swarm does not read that CLI's queue from the screen (ADR 0130).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub queue: Option<Vec<crate::screen::QueuedMessage>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub profile: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

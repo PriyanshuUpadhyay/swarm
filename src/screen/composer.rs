@@ -46,6 +46,58 @@ pub fn pi_composer(rows: &str) -> Option<String> {
     Some(text.join(" ").trim().to_string())
 }
 
+/// One message that pi holds for a later turn, as its screen lists it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct QueuedMessage {
+    /// `steering` or `follow-up`, pi's own word for when the message joins.
+    pub mode: String,
+    /// The text as pi draws it, cut to one row.
+    pub text: String,
+}
+
+/// The messages pi holds, read from the `Steering: ` and `Follow-up: ` rows right above the
+/// last `↳ … to edit all queued messages` hint above its input box, which pi draws while it holds
+/// one. pi stacks its status and extension widgets between the hint and the box, so rows may sit
+/// between. A hint that the history quotes reads as a queue while no real one is drawn below it.
+/// None until the box is drawn.
+pub fn pi_queue(rows: &str) -> Option<Vec<QueuedMessage>> {
+    let lines: Vec<&str> = rows.trim_end().lines().map(str::trim).collect();
+    let rule = |line: &&str| line.starts_with('─');
+    let bottom = lines.iter().rposition(rule)?;
+    let top = lines[..bottom].iter().rposition(rule)?;
+    let Some(hint) = lines[..top]
+        .iter()
+        .rposition(|line| line.starts_with("↳ ") && line.ends_with(" to edit all queued messages"))
+    else {
+        return Some(Vec::new());
+    };
+    let mut queue: Vec<QueuedMessage> = lines[..hint]
+        .iter()
+        .rev()
+        .map_while(|line| {
+            let (mode, text) = [("steering", "Steering: "), ("follow-up", "Follow-up: ")]
+                .into_iter()
+                .find_map(|(mode, label)| Some((mode, line.strip_prefix(label)?)))?;
+            Some(QueuedMessage {
+                mode: mode.into(),
+                text: text.into(),
+            })
+        })
+        .collect();
+    queue.reverse();
+    Some(queue)
+}
+
+/// The messages that `provider`'s CLI holds, as its screen lists them, or None when swarm cannot
+/// read that CLI's queue from its screen. Claude logs its queue, and Codex and AGY draw none that
+/// swarm reads.
+pub fn queue(provider: &str, rows: &str) -> Option<Vec<QueuedMessage>> {
+    match provider {
+        "pi" => pi_queue(rows),
+        _ => None,
+    }
+}
+
 /// Whether swarm can read the input box of `provider`'s CLI. AGY's idle prompt was never
 /// captured, so its box is never read.
 pub fn reads_composer(provider: &str) -> bool {

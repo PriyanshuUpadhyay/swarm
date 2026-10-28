@@ -67,6 +67,15 @@ mod tests {
                 &["Yes", "No"],
                 false,
             ),
+            (
+                // The last step of a Claude question with several tabs has no footer row, and its
+                // cursor row is the bottom choice.
+                fixture!("claude-submit-answers"),
+                "←  ☒ Color  ☒ Size  ✔ Submit  →\nReview your answers\n● Which color?\n→ Red\n\
+                 ● Which size?\n→ Small\nReady to submit your answers?",
+                &["Submit answers", "Cancel"],
+                true,
+            ),
         ];
         for (rows, question, choices, numbered) in cases {
             let prompt = prompt(rows).unwrap_or_else(|| panic!("no prompt in:\n{rows}"));
@@ -79,6 +88,14 @@ mod tests {
         assert_eq!(claude.keys(2), Some(vec!["3".to_string()]));
         assert_eq!(claude.keys(3), None);
         let agy = prompt(fixture!("agy-trust")).unwrap();
+        // AGY's trust screen opens with its own header row, so the card shows the whole question
+        // even though no rule or history row sits above it.
+        assert_eq!(
+            whole_prompt(fixture!("agy-trust"), || None),
+            Some(agy.clone())
+        );
+        let headless = fixture!("agy-trust").replace("Accessing workspace:", "");
+        assert_eq!(whole_prompt(&headless, || None), None);
         assert_eq!(agy.keys(0), Some(vec!["Enter".to_string()]));
         assert_eq!(
             agy.keys(1),

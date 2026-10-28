@@ -11,6 +11,7 @@ mod tests {
             ("claude", fixture!("claude-done"), Some(Idle)),
             ("claude", fixture!("claude-after-esc"), Some(Idle)),
             ("claude", fixture!("claude-waiting"), Some(Waiting)),
+            ("claude", fixture!("claude-submit-answers"), Some(Waiting)),
             ("claude", fixture!("claude-working"), Some(Working)),
             ("codex", fixture!("codex-idle"), Some(Idle)),
             ("codex", fixture!("codex-waiting"), Some(Waiting)),

@@ -39,7 +39,10 @@ mod log_prompt;
 mod prompt;
 
 pub use classify::{failure_detail, herdr_state, read_pane, screen_state};
-pub use composer::{claude_composer, codex_composer, composer, holds, pi_composer, reads_composer};
+pub use composer::{
+    QueuedMessage, claude_composer, codex_composer, composer, holds, pi_composer, pi_queue, queue,
+    reads_composer,
+};
 pub use log_prompt::agent_prompt;
 pub use prompt::{Prompt, prompt, whole_prompt};
 

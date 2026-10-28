@@ -40,4 +40,44 @@ mod tests {
         // A starting pi has no box yet.
         assert_eq!(composer("pi", "$ pi --model x\n"), None);
     }
+
+    #[test]
+    fn pi_queue_lists_the_queued_lines_above_its_box() {
+        let queued = |mode: &str, text: &str| QueuedMessage {
+            mode: mode.into(),
+            text: text.into(),
+        };
+        // pi cuts a long line to the pane's width.
+        assert_eq!(
+            pi_queue(fixture!("pi-queued")),
+            Some(vec![
+                queued("steering", "first queued note"),
+                queued(
+                    "steering",
+                    "second queued note that is quite long so that it will need to be cut by the truncated..."
+                ),
+            ])
+        );
+        let follow_up = fixture!("pi-queued")
+            .replace(" ↳ Option+Up", " Follow-up: after the turn\n ↳ Option+Up");
+        assert_eq!(
+            pi_queue(&follow_up).unwrap()[2],
+            queued("follow-up", "after the turn")
+        );
+        // A queued line that the history quotes is not in the queue.
+        let quoted = format!(" Steering: a quoted line\n{}", fixture!("pi-queued"));
+        assert_eq!(pi_queue(&quoted).unwrap().len(), 2);
+        // pi stacks a status or an extension widget between the hint and its box; the queue still
+        // shows.
+        let widget = fixture!("pi-queued").replace(
+            " ↳ Option+Up to edit all queued messages\n",
+            " ↳ Option+Up to edit all queued messages\n Auto-compacting... (esc to cancel)\n",
+        );
+        assert_eq!(pi_queue(&widget).unwrap().len(), 2);
+        // With no hint line nothing is queued.
+        assert_eq!(pi_queue(fixture!("pi-idle")), Some(vec![]));
+        assert_eq!(pi_queue(&quoted.replace("↳ ", "")), Some(vec![]));
+        // A starting pi has no box, so its queue is not read.
+        assert_eq!(pi_queue("$ pi --model x\n"), None);
+    }
 }

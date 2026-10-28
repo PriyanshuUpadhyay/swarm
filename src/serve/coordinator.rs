@@ -130,9 +130,13 @@ fn agent_snapshot(
                             }) {
                                 agent["alive"] = old["alive"].clone();
                                 // A resolved listing state can differ from the stored hook state.
+                                // A new hook state can also mean the CLI took its queue.
                                 if agent["state_at_s"] == old["state_at_s"] {
                                     agent["state"] = old["state"].clone();
                                     agent["prompt"] = old["prompt"].clone();
+                                    if !old["queue"].is_null() {
+                                        agent["queue"] = old["queue"].clone();
+                                    }
                                 }
                             }
                         }
@@ -169,6 +173,7 @@ pub(super) fn stored_agents(
             state_kind: row.state_kind,
             log: row.log,
             prompt: None,
+            queue: None,
             profile: row.profile,
             runner: row.runner,
             model: row.model,

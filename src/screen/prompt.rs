@@ -3,7 +3,7 @@
 /// A question on an agent's screen and the choices it offers, in screen order.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct Prompt {
-    /// The rows above the choices, up to a rule or an earlier history row.
+    /// The rows above the choices, up to a rule, an earlier history row, or a header row.
     pub question: String,
     pub choices: Vec<String>,
     /// Log-backed descriptions in choice order, with empty entries for choices without one.
@@ -15,7 +15,8 @@ pub struct Prompt {
     pub cursor: usize,
     /// A hash of the question and choices, so an answer can prove it saw this prompt.
     pub id: String,
-    /// No rule or history row closes the question above, so rows of it can be off the screen.
+    /// No rule, history, or header row closes the question above, so rows of it can be off the
+    /// screen.
     #[serde(skip)]
     pub cut: bool,
 }
@@ -34,6 +35,9 @@ pub(super) const PROMPT_FOOTERS: &[&str] = &[
 pub(super) const CURSORS: &[char] = &['❯', '›', '>'];
 /// Rows the question does not reach past: a history entry's marker.
 const HISTORY: &[char] = &['❯', '›', '>', '•', '⏺', '●', '↳', '✻', '▸'];
+/// Rows that open a whole-screen question, so nothing of it is above them: AGY's folder trust
+/// screen (agy-trust.txt), which a pane shows first with no rule or history row above.
+const HEADERS: &[&str] = &["Accessing workspace:"];
 
 /// A numbered choice's number, label, and label column, as in `❯ 1. Yes` or `  2. No`.
 pub(super) fn numbered_choice(line: &str) -> Option<(usize, &str, usize)> {
@@ -53,7 +57,8 @@ fn indent(line: &str) -> usize {
 pub(super) const ROWS_BELOW_FOOTER: usize = 2;
 
 /// The prompt a pane's screen shows: at least two choices with only blank rows between the last
-/// one and a known footer row near the bottom. Numbered choices run 1, 2, … and may have a
+/// one and a known footer row near the bottom, or, on the submit tab of a Claude question with
+/// several tabs, at the bottom with no footer row. Numbered choices run 1, 2, … and may have a
 /// description or a rule row between them; unnumbered ones (AGY folder trust) are a cursor row and
 /// the rows below it at the same label column.
 pub fn prompt(rows: &str) -> Option<Prompt> {
@@ -68,7 +73,7 @@ pub fn prompt(rows: &str) -> Option<Prompt> {
         // An input line below a list makes the list history: the agent waits on text, not a
         // choice, and a digit sent to it would be typed into the input line.
         if below > ROWS_BELOW_FOOTER || lines[index].trim_start().starts_with(CURSORS) {
-            return None;
+            break;
         }
         if is_footer(lines[index])
             && let Some(found) = prompt_above(&lines, index)
@@ -79,13 +84,23 @@ pub fn prompt(rows: &str) -> Option<Prompt> {
             below += 1;
         }
     }
+    // The submit tab of a Claude question with several tabs has no footer row, and its cursor row
+    // is the bottom choice. Its tab bar row, as `←  ☒ Color  ☒ Size  ✔ Submit  →`, marks the
+    // question; the other tabs have a footer row and are read above.
+    let is_tab_bar = |line: &&str| {
+        let line = line.trim();
+        line.starts_with('←') && line.ends_with('→')
+    };
+    if lines.iter().any(is_tab_bar) {
+        return prompt_above(&lines, lines.len());
+    }
     None
 }
 
 /// The prompt a screen shows, read again from the pane's history when nothing closes its question
 /// above. None when that read fails or nothing closes the question there either: a pane can keep
 /// no row above its screen, so no read proves the question starts at its top row. Such a prompt,
-/// as a folder trust screen, is answered in the pane.
+/// as Codex's folder trust screen, is answered in the pane.
 pub fn whole_prompt(screen: &str, history: impl FnOnce() -> Option<String>) -> Option<Prompt> {
     let found = prompt(screen)?;
     if !found.cut {
@@ -201,6 +216,10 @@ fn prompt_above(lines: &[&str], footer: usize) -> Option<Prompt> {
             break;
         }
         question.push(text);
+        if HEADERS.contains(&text) {
+            bounded = true;
+            break;
+        }
     }
     question.reverse();
     let question = question.join("\n");

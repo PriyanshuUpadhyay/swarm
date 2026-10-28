@@ -66,8 +66,8 @@ pub(super) async fn interrupt_claude(app: &App, body: ActionTarget) -> Result<Va
     Ok(json!({"ok": true}))
 }
 
-/// pi puts its queued messages back in its box on a stop. The app's Sent rows hold their exact
-/// text, so the box is only emptied here, and the app moves the rows to the draft on "cleared".
+/// pi puts its queued messages back in its box on a stop. The app's typed texts hold their exact
+/// text, so the box is only emptied here, and the app moves them to the draft on "cleared".
 pub(super) async fn interrupt_pi(app: &App, body: ActionTarget) -> Result<Value, ApiError> {
     let (call, agent) = action_target(app, &body.session, &body.agent)?;
     run_cli(app, call.args(&["interrupt", &agent]), None).await?;
@@ -81,7 +81,7 @@ pub(super) async fn interrupt_pi(app: &App, body: ActionTarget) -> Result<Value,
 }
 
 /// `swarm clear-box` prints "empty", or "cleared" and the text the box held, which the screen
-/// joins with spaces. The app restores the Sent rows that this text holds.
+/// joins with spaces. The app restores the typed texts that this text holds.
 fn cleared_box(output: &str) -> (&'static str, Option<&str>) {
     match output.split_once('\n') {
         Some(("cleared", held)) => ("cleared", Some(held.trim())),
@@ -108,7 +108,7 @@ pub(super) async fn pull_back(app: &App, body: ActionTarget) -> Result<Value, Ap
     let (call, agent) = action_target(app, &body.session, &body.agent)?;
     let provider = action_provider(app, &body.session, &agent)?;
     if queue::can_clear_pi_box(provider.as_deref(), &call.adapter) {
-        // The text is the app's own Sent rows; the screen joins pi's lines with spaces.
+        // The text is the app's own typed texts; the screen joins pi's lines with spaces.
         let output = run_cli(app, call.args(&["clear-box", &agent, "--dequeue"]), None).await?;
         let (state, held) = cleared_box(&output);
         let outcome = if state == "cleared" {

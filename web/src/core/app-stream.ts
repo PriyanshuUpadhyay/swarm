@@ -1,5 +1,5 @@
 import { sleep, type RowFrame, type Snapshot, type SubscribeKey } from "./api";
-import { confirmSent, settleSent, type Usage } from "./composer";
+import { queueRows, type Usage } from "./composer";
 import { readSse, type SseEvent } from "./sse";
 import { mergeRows } from "./transcript";
 import { MAX_KEYS, type Chat, paneId } from "./app-types";
@@ -14,9 +14,10 @@ export class AppStream {
     for (const [id, input] of this.app.inputs)
       if (input.answering && this.app.composing.chair(id).prompt?.id !== input.answering.prompt) input.answering = null;
     for (const chat of this.app.chats.values()) {
-      const sent = settleSent(chat.sent, this.app.composing.chair(chat.id).running);
-      if (sent.length !== chat.sent.length) chat.version++;
-      chat.sent = sent;
+      const queue = queueRows(this.app.composing.chair(chat.id).queue);
+      if (JSON.stringify(queue) === JSON.stringify(chat.queue)) continue;
+      chat.queue = queue;
+      chat.version++;
     }
     // A chair's and a child's log can show up after the chat opens.
     if (this.app.reading.open) this.app.panes.loadChair(this.app.reading.open);
@@ -107,7 +108,6 @@ export class AppStream {
         }
       }
       if (chat.rows !== before) {
-        chat.sent = confirmSent(chat.sent, chat.rows);
         chat.version++;
         chat.shift = false;
         if (chat.sessionId === this.app.openId) render = true;
