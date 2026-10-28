@@ -63,7 +63,12 @@ th,td{border-bottom:1px solid var(--line);padding:8px 10px;text-align:left;verti
 td:first-child code{white-space:nowrap}th{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
 details{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin:14px 0}
 summary{cursor:pointer;font-weight:600}
-.chart,.figure{background:#fafafa;color:#1d1d1b;border:1px solid var(--line);border-radius:12px;padding:12px;margin:12px 0;overflow-x:auto}
+.chart,.flow{list-style:none;margin:0;padding:0;display:flex;gap:28px}
+.flow>li{flex:1;min-width:0;position:relative;border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:#fff;font-size:14px}
+.flow>li:not(:last-child)::after{content:"→";position:absolute;right:-21px;top:50%;transform:translateY(-50%)}
+@media (max-width:600px){.flow{flex-direction:column}.flow>li:not(:last-child)::after{content:"↓";right:auto;top:auto;
+left:50%;bottom:-25px;transform:translateX(-50%)}}
+.figure{background:#fafafa;color:#1d1d1b;border:1px solid var(--line);border-radius:12px;padding:12px;margin:12px 0;overflow:auto;position:relative;isolation:isolate;contain:paint}
 .pele{--pele-bg:#fafafa;--pele-font:Inter,system-ui,sans-serif}
 """
 
@@ -96,14 +101,18 @@ ATTRS = re.compile(r"(?:class|style|id|title|role|aria-[\w-]+|data-[\w-]+)$")
 
 def unsafe(text):
     """The first tag or attribute of an html fence that a drawn diagram may not use, or None."""
-    for tag in re.finditer(r"<\s*(/?)\s*([^\s/>]*)([^>]*)>?", text):
+    # A quoted value may hold `>`, so the tag runs to the first `>` outside quotes.
+    for tag in re.finditer(r"""<\s*(/?)\s*([^\s/>]*)((?:"[^"]*"|'[^']*'|[^>"'])*)>?""", text):
         if tag[2].lower() not in TAGS:
             return tag[0]
-        for attr in re.findall(r"([^\s=/\"']+)\s*=", tag[3]):
+        for attr in re.findall(r"([^\s=/\"']+)\s*=", re.sub(r""""[^"]*"|'[^']*'""", '""', tag[3])):
             if not ATTRS.match(attr.lower()):
                 return f"{attr}="
-    if re.search(r"url\s*\(|expression\s*\(|@import", text, re.I):
-        return "url(" if "url" in text.lower() else "expression("
+        # A CSS escape such as `u\72l(` hides a word from the check below, and a fixed box covers the page.
+        if bad := re.search(r"\\|position\s*:\s*(?:fixed|sticky)", tag[3], re.I):
+            return bad[0]
+    if bad := re.search(r"url\s*\(|expression\s*\(|@import", text, re.I):
+        return bad[0]
     return None
 
 

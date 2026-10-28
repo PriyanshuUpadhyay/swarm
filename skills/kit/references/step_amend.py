@@ -79,9 +79,11 @@ def add(folder, row, before):
         raise SystemExit(f"amended step {name or '(empty)'} is not NN-name")
     if writes != []:
         raise SystemExit("an amended step writes none; a write or a scope change goes back to the owner")
-    if "deep-search" in blocks and "\n## Steps\n" in text:
+    from block_resolver import resolve_blocks
+    loads = resolve_blocks(None, {name: blocks}, "default", blocks_dir=Path(__file__).resolve().parents[1] / "blocks", pack=False)
+    if "deep-search" in loads[name] and "\n## Steps\n" in text and re.search(r"^Preset: `?research\b", text, re.M):
         # Its brief needs seed searches, which the owner sees before a search runs.
-        raise SystemExit("an amended step cannot add deep-search to a plan with step briefs; ask the owner")
+        raise SystemExit("an amended step cannot add deep-search to a research plan; ask the owner")
     if (folder / f"{name}.md").exists():
         raise SystemExit(f"step {name} exists")
     end = head + 2

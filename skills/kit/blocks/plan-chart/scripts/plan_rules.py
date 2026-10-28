@@ -100,12 +100,13 @@ def check_layout(text, rows, uses):
     if extra := sorted(set(found) - {row[0] for row in rows}):
         raise SystemExit(f"the brief with Step: {extra[0]} names no step of the table; fix its Step line")
     used = {u for need in uses.values() for u in need}
-    for name, need, _, blocks, *_ in rows:
+    loads = resolve_blocks(None, {r[0]: r[3] for r in rows}, "default", blocks_dir=KIT / "blocks", pack=False)
+    for name, need, *_ in rows:
         if need == "none" or name not in used:
             continue  # the frame and the reply have no work to brief
         if name not in found:
             raise SystemExit(f'step {name} has no brief under "## Steps" (add "### N · <plain name>" with "Step: {name}")')
-        if "deep-search" in blocks:
+        if "deep-search" in loads[name]:  # also through a parent such as `sources`
             seeds = re.search(r"^- Seed searches[^\n]*\n((?:  - .*\n)*)", found[name], re.M)
             if not seeds or seeds[1].count("  - ") < 2:
                 raise SystemExit(f'step {name} needs "- Seed searches:" with two or more "  - " lines in its brief')
@@ -115,7 +116,7 @@ def check_layout(text, rows, uses):
             raise SystemExit(f'building block "{block.splitlines()[0][4:]}" has no "So in this plan:" line')
     lines = text.split("\n")
     for i, line in enumerate(lines):
-        if not re.fullmatch(r"`{3,}mermaid", line.strip()):
+        if not re.fullmatch(r"`{3,}\s*mermaid", line.strip()):
             continue
         fence = "\n".join(lines[i + 1:next((j for j in range(i + 1, len(lines)) if lines[j].startswith("```")), len(lines))])
         first = (fence.splitlines() or ["(empty)"])[0]
@@ -131,7 +132,7 @@ def nodes(fence):
     if fence.startswith("sequenceDiagram"):
         return len(re.findall(r"^\s*(?:participant|actor)\s", fence, re.M))
     text = re.sub(r'"[^"]*"', '""', re.sub(r"^\s*subgraph .*$", "", fence, flags=re.M))
-    text = re.sub(r"\|[^|\n]*\||(?<=--)[^->\n|][^\n]*?(?=-->)|(?<=-\.)[^\n]*?(?=\.->)", "", text)  # edge labels
+    text = re.sub(r"\|[^|\n]*\||\s(?:--|==|-\.)\s[^\n]*?(?=-->|==>|\.->|--[ox]|---|===|\.-)", "", text)  # edge labels
     # Each match takes its whole label, so a word inside a label is never read as an id.
     found = re.findall(r"(?<![\w-])([A-Za-z_]\w*)\s*(?:\[[^\]]*\]|\([^)]*\)+|\{[^}]*\}+)", text)
     return len(set(found))

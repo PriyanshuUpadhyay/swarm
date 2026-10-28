@@ -86,12 +86,21 @@ def test_diagram_checks():
     assert plan_rules.nodes(labels) == 10, plan_rules.nodes(labels)
     edges = 'flowchart LR\n  a[x] -->|calls (once)| b[y]\n  b -- reads (cache) --> c[z]\n  c -. waits (x) .-> a\n'
     assert plan_rules.nodes(edges) == 3, plan_rules.nodes(edges)
+    for link in ("== go (now) ==>", "-- see (x) --o", "-- see (x) --x", "-- see (x) ---", "-. wait (x) .->"):
+        assert plan_rules.nodes(f"flowchart LR\n  a[x] {link} b[y]\n") == 2, link
+    for chain in ("a[x] -.-> b[y] -.-> c[z]", "a[x] --- b[y] --> c[z]", "a[x] -- go --> b[y] -- on --> c[z]"):
+        assert plan_rules.nodes(f"flowchart LR\n  {chain}\n") == 3, chain
     big = "```mermaid\nflowchart LR\n" + "".join(f"  n{i}[x] --> n{i + 1}[y]\n" for i in range(11)) + "```\n"
     # Each fence is checked, not only the last, and its Answers line must sit right over it.
     text = f"*Answers: a*\n{big}\n*Answers: b*\n```mermaid\nflowchart LR\n  a[x]\n```\n"
     assert "has 12 nodes" in refused(lambda: plan_rules.check_layout(text, [], {}))
     text = "*Answers: a*\n```mermaid\nflowchart LR\n  a[x]\n```\n\n\n\n\n```mermaid\nflowchart LR\n  b[x]\n```\n"
     assert "no Answers: line" in refused(lambda: plan_rules.check_layout(text, [], {}))
+    rows = [("03-web", "local", "x", ["sources"], "y")]
+    brief = "## Steps\n\n### 1 · web\n\nStep: `03-web`\n\n- Result: x\n"
+    assert "Seed searches" in refused(lambda: plan_rules.check_layout(brief, rows, {"04-report": ["03-web"]}))
+    spaced = "``` mermaid\nflowchart LR\n" + "".join(f"  n{i}[x]\n" for i in range(11)) + "```\n"
+    assert "no Answers: line" in refused(lambda: plan_rules.check_layout(spaced, [], {}))
     four = "````mermaid\nflowchart LR\n" + "".join(f"  n{i}[x]\n" for i in range(11)) + "````\n"
     assert "no Answers: line" in refused(lambda: plan_rules.check_layout(four, [], {}))
     assert "`(empty)` has no Answers" in refused(lambda: plan_rules.check_layout("```mermaid\n```\n", [], {}))
@@ -102,8 +111,10 @@ def test_page_guards():
     assert "uses only plain tags" in refused(lambda: plan_page.convert("```html\n<script>x</script>\n```"))
     assert "uses only plain tags" in refused(lambda: plan_page.convert('```html\n<div onclick="x">a</div>\n```'))
     for bad in ("<style>.part{display:none}</style>", "<svg/onload=alert(1)>", '<a href="&#106;avascript:x">a</a>',
-                '<div style="background:url(x)">a</div>', "<img src=x onerror=y>"):
+                '<div style="background:url(x)">a</div>', "<img src=x onerror=y>", '<div title="a>b" onclick="x">c</div>', '<div style="background:u\\72l(x)">a</div>',
+                '<div style="position: fixed;inset:0">a</div>'):
         assert "uses only plain tags" in refused(lambda: plan_page.convert(f"```html\n{bad}\n```")), bad
+    assert ".flow>li:not(:last-child)::after" in plan_page.CSS  # the html-diagram flow, since a fence has no <style>
     assert plan_page.convert('```html\n<div class="box">a</div>\n```') == '<div class="figure"><div class="box">a</div></div>'
     assert "<table>" in plan_page.convert("|---|---|")
     chips = plan_page.dress(plan_page.convert("## Steps\n\n- Seed searches:\n  - one\n  - `two`\n"))
@@ -115,6 +126,19 @@ def test_page_guards():
     assert "To check · step 12</span> look." in page, page
     # A blocks table row that names no kit block draws, so start_plan.py can give its own refusal.
     assert "(not in the kit)" in plan_page.skill_blocks([], {"no-such": ("Offered", "x")})
+
+
+def test_amend_adds_deep_search_outside_research():
+    text = research_plan().replace("Preset: research\n", "").replace("\n| Block | Status", "\nAmend: 1\n\n| Block | Status")
+    out, folder = chart(text)
+    assert out.returncode == 0, out.stderr
+    import test_plan_chart
+    test_plan_chart.approve(folder)
+    start = [sys.executable, "-I", KIT / "blocks" / "plan-review" / "scripts" / "start_plan.py", folder]
+    assert subprocess.run(start, capture_output=True, text=True).returncode == 0
+    row = "| 06-more | local | more search | none | deep-search | a gap |"
+    out = subprocess.run([sys.executable, "-I", STEP_RUN, "amend", folder, row, "--before", "04-report"], capture_output=True, text=True)
+    assert out.returncode == 0, out.stderr
 
 
 def test_chart_markers_in_order():
@@ -139,14 +163,15 @@ def test_kit_update_keeps_the_approval_and_amend_adds_a_brief():
     out = subprocess.run([sys.executable, "-I", STEP_RUN, "amend", folder, row, "--before", "04-report"], capture_output=True, text=True)
     assert out.returncode == 0, out.stderr
     assert "## Brief (approved in plan.md)\n### Amended · 06-probe" in (folder / "06-probe.md").read_text(encoding="utf-8")
-    row = "| 07-more | local | more search | none | deep-search | a gap |"
+    row = "| 07-more | local | more search | none | sources | a gap |"
     out = subprocess.run([sys.executable, "-I", STEP_RUN, "amend", folder, row, "--before", "04-report"], capture_output=True, text=True)
-    assert "cannot add deep-search" in out.stderr, out.stderr
+    assert "cannot add deep-search to a research plan" in out.stderr, out.stderr
     # A plan.md with CRLF line ends keeps its approval: the page and the start hash the same text.
     plan.write_bytes(plan.read_bytes().replace(b"\n", b"\r\n"))
     assert subprocess.run([sys.executable, "-I", plan_chart.__file__, plan], capture_output=True).returncode == 0
     test_plan_chart.approve(folder)
-    assert "plan.md changed" not in subprocess.run(start, capture_output=True, text=True).stderr
+    result = subprocess.run(start, capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
 
 
 if __name__ == "__main__":
