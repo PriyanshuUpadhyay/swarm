@@ -73,8 +73,9 @@ def test_briefs_skip_fences():
     assert "starts with `## `" in refused(lambda: step_brief.briefs(text.replace("### not a step", "## Todo (x)")))
     indented = text.replace("```text\n### not a step\n```", "```text\nx\n  ```\n### 2 · b\n\nStep: `03-b`\n")
     assert sorted(step_brief.briefs(indented)) == ["02-a", "03-b"], step_brief.briefs(indented)
-    drawn = text.replace("```text\n### not a step\n```", '```html\n<div data-x="secret">a</div>\n```')
-    assert "secret" not in step_brief.briefs(drawn)["02-a"] and "drawn diagram" in step_brief.briefs(drawn)["02-a"]
+    for opener in ("```html", "``` html", "```html ", "```mermaid"):
+        drawn = text.replace("```text\n### not a step\n```", opener + '\n<div data-x="secret">a</div>\n```')
+        assert "secret" not in step_brief.briefs(drawn)["02-a"] and "a diagram, shown in plan.html" in step_brief.briefs(drawn)["02-a"], opener
     assert "hidden" not in step_brief.briefs(text.replace("- Result: x", "<!-- hidden -->\n- Result: x"))["02-a"]
     assert "  <!-- shown -->" in step_brief.briefs(text.replace("- Result: x", "  <!-- shown -->\n- Result: x"))["02-a"]
     assert "<!-- kept -->" in step_brief.briefs(text.replace("### not a step", "<!-- kept -->"))["02-a"]
@@ -173,6 +174,21 @@ def test_chart_without_fold_and_clean_errors():
     assert text.index("## not a section") < text.index("plan-chart:start"), text[:500]
     out, folder = chart(research_plan().replace("Preset: research\n", "Preset: research\n\nx\x1b[2J\x9b\u2028y\n", 1))
     assert out.returncode == 1 and "control character U+001B on line" in out.stderr and "\x9b" not in out.stderr and "plan-chart:start" not in (folder / "plan.md").read_text(encoding="utf-8"), out.stderr
+
+
+def test_format_characters_and_lede():
+    for c in ("\u202e", "\u200b", "\U000e0041"):
+        out, _ = chart(research_plan().replace("Preset: research\n", f"Preset: research\n\na{c}b\n", 1))
+        assert out.returncode == 1 and f"U+{ord(c):04X}" in out.stderr, out.stderr
+    import plan_page
+    page = plan_page.render("# T\n\n```html\n<figure><p>in diagram</p></figure>\n```\n\nreal lede\n\n## S\n", [], {})
+    assert '<p class="lede">real lede</p>' in page, page.split("<main", 1)[-1][:600]
+    assert "<figure><p>in diagram</p></figure>" in page
+
+
+def test_missing_plan_is_a_clean_refusal():
+    out = subprocess.run([sys.executable, "-I", plan_chart.__file__, "/nonexistent/plan.md"], capture_output=True, text=True)
+    assert out.returncode == 1 and "cannot read" in out.stderr and "Traceback" not in out.stderr, out.stderr
 
 
 def test_chart_markers_in_order():

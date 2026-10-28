@@ -24,6 +24,7 @@ line in each `### Block` under `## Building blocks`, and an `Answers:` line over
 
 import re
 import sys
+import unicodedata
 from pathlib import Path
 
 KIT = Path(__file__).resolve().parents[3]
@@ -235,11 +236,16 @@ def main(argv):
     if len(argv) != 1 or argv[0].startswith("-"):
         raise SystemExit(usage)
     plan = Path(argv[0])
-    # Python, the page, and a terminal split lines and read controls in different ways, so plan.md keeps to
-    # tabs and newlines; a NUL, a form feed, or U+2028 would let the checks and the page see different text.
-    if bad := re.search(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f\u2028\u2029]", plan.read_text(encoding="utf-8")):
-        line = plan.read_text(encoding="utf-8")[:bad.start()].count("\n") + 1
-        raise SystemExit(f"plan.md has the control character U+{ord(bad[0]):04X} on line {line}; remove it")
+    # Python, the page, and a terminal split lines and read controls in different ways, and a format character such
+    # as a bidi override or a zero-width one shows text in another order or not at all; so plan.md keeps to visible
+    # text, tabs, and newlines, and the checks, the page, and the worker see the same text.
+    try:
+        text = plan.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as error:
+        raise SystemExit(f"cannot read {plan}: {error}") from None
+    if bad := next((i for i, c in enumerate(text) if c not in "\t\n\r" and unicodedata.category(c) in ("Cc", "Cf", "Zl", "Zp")), None):
+        line = text[:bad].count("\n") + 1
+        raise SystemExit(f"plan.md has the control character U+{ord(text[bad]):04X} on line {line}; remove it")
     title, done, rows = read_plan(plan)
     if rows and rows[0][5] is None and not chat_preset(plan):
         raise SystemExit("the step table has no Writes column; add one (`none` for a step that writes only its run folder)")

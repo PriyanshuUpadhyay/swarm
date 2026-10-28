@@ -19,8 +19,9 @@ def briefs(text):
                 # The step file reads these lines as its own: `## ` as a section such as the todo list, and the first
                 # `Skills read: ` line as the blocks the worker read.
                 raise SystemExit(f"the brief of {name} has a line that starts with `## ` or `Skills read: `; indent it")
-            # A drawn diagram's attributes are text the page does not show, so the worker gets a pointer instead.
-            text = re.sub(r"^(`{3,})html\n.*?^\s*\1`*[ \t]*$", "(a drawn diagram, shown in plan.html)", "\n".join(lines), flags=re.M | re.S)
+            # A diagram holds text the page does not show (html attributes, Mermaid `%%` comments and tooltips),
+            # so the worker gets a pointer to the drawn one instead.
+            text = re.sub(r"^(`{3,})[ \t]*(?:html|mermaid)[ \t]*\n.*?^\s*\1`*[ \t]*$", "(a diagram, shown in plan.html)", "\n".join(lines), flags=re.M | re.S)
             found[name] = re.sub(r"\n{3,}", "\n\n", text).strip() + "\n"
 
     for line in text.splitlines():

@@ -261,7 +261,7 @@ def render(text, rows, ledger):
     title = re.search(r"<h1[^>]*>(.*?)</h1>", body)
     body = body.replace(title[0], "", 1) if title else body
     body = re.sub(r"^\s*<p>(Preset: [^<]*)</p>", r'<p class="muted">\1</p>', body)
-    lede = re.search(r"<p>(.*?)</p>", body.split("<h2", 1)[0])
+    lede = re.search(r"(?:^|\n)\s*<p>(.*?)</p>", body.split("<h2", 1)[0])  # a top-level paragraph, not one in a diagram
     body = body.replace(lede[0], "", 1) if lede else body
     nav = "".join(f'<a href="#{i}">{t}</a>' for i, t in re.findall(r'<h2 id="([^"]+)">(.*?)</h2>', body))
     stats = [(len(re.findall(r"^### Block", text, re.M)), "building blocks"), (len(briefs(text)), "steps you approve"),
