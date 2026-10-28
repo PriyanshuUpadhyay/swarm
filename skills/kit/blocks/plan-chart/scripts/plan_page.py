@@ -9,7 +9,7 @@ from pathlib import Path
 KIT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(KIT / "references"))  # python3 -I does not add it
 from step_brief import briefs  # noqa: E402
-from block_resolver import frontmatter, read_parents, resolve_blocks  # noqa: E402
+from block_resolver import frontmatter, read_parents, read_toml, resolve_blocks  # noqa: E402
 
 ASSETS = Path(__file__).resolve().parents[1] / "assets"
 
@@ -82,10 +82,11 @@ def inline(text):
             out.append(f"<code>{html.escape(part[1:-1])}</code>")
             continue
         part = html.escape(part, quote=False)
-        part = re.sub(r"\[([^\]]+)\]\((https?://[^)\s\"]+)\)", r'<a href="\2">\1</a>', part)
+        links = []  # a URL may hold `*`, so links are set aside before bold and italic
+        part = re.sub(r"\[([^\]]+)\]\((https?://(?:[^()\s\"]|\([^()\s\"]*\))+)\)", lambda m: links.append(m) or f"\0{len(links) - 1}\0", part)
         part = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", part)
         part = re.sub(r"(?<![\w*])\*(?!\s)(.+?)\*(?!\w)", r"<em>\1</em>", part)
-        out.append(part)
+        out.append(re.sub(r"\0(\d+)\0", lambda m: f'<a href="{links[int(m[1])][2]}">{links[int(m[1])][1]}</a>', part))
     return "".join(out)
 
 
@@ -97,10 +98,8 @@ def slug(text):
 # else could run code or restyle the page the owner approves.
 TAGS = {"figure", "figcaption", "div", "span", "p", "ol", "ul", "li", "b", "strong", "i", "em", "code", "small", "br",
         "table", "thead", "tbody", "tr", "th", "td", "h3", "h4"}
-ATTRS = re.compile(r"(?:class|style|id|title|role|aria-[\w-]+|data-[\w-]+)$")
-
-
-CSS_FUNCTIONS = {"var", "calc", "min", "max", "clamp", "rgb", "rgba", "hsl", "hsla", "repeat", "minmax"}
+# No `style`: an inline style can hide text from the owner or cover the page, so a diagram uses the page classes.
+ATTRS = re.compile(r"(?:class|id|title|role|aria-[\w-]+|data-[\w-]+)$")
 
 
 def unsafe(text):
@@ -111,23 +110,13 @@ def unsafe(text):
             return tag[0]  # an unknown tag, or a tag that a stray quote keeps from closing
         # Each attribute is a name with an optional quoted or plain value; a stray quote or `=` is refused,
         # because a browser and this check could then split the tag in different places.
-        attrs = re.findall(r"""\s*([^\s=/>"'`<]+)(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>"'`=<]+))?""", tag[3])
-        rest = re.sub(r"""\s*([^\s=/>"'`<]+)(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>"'`=<]+))?""", "", tag[3])
+        attrs = re.findall(r"""\s*([^\s=/>"'`<]+)(?:\s*=\s*("[^"]*"|'[^']*'|[^\s>"'`=<]+))?""", tag[3])
+        rest = re.sub(r"""\s*([^\s=/>"'`<]+)(?:\s*=\s*("[^"]*"|'[^']*'|[^\s>"'`=<]+))?""", "", tag[3])
         if rest.strip(" \t\n/"):
             return rest.strip()
-        for attr in attrs:
+        for attr, _ in attrs:
             if not ATTRS.match(attr.lower()):
                 return f"{attr}="
-        # The browser decodes `&#117;` before CSS reads it, and CSS decodes `\72`; so check the decoded text, refuse
-        # any CSS escape, and allow only CSS functions that cannot load anything. A fixed box covers the page.
-        value = html.unescape(tag[3])
-        if bad := re.search(r"\\|@|position\s*:\s*(?:fixed|sticky)", value, re.I):
-            return bad[0]
-        for fn in re.findall(r"([\w-]+)\s*\(", value):
-            if fn.lower() not in CSS_FUNCTIONS:
-                return f"{fn}("
-    if bad := re.search(r"url\s*\(|expression\s*\(|@import", text, re.I):
-        return bad[0]
     return None
 
 
@@ -215,7 +204,8 @@ def skill_blocks(rows, ledger):
     steps = {b: [n for n, blocks in selected.items() if b in blocks] for b in desc}
     cell = lambda text: text.replace("|", "\\|")
     used, offered = ledger_rows(ledger, "Chosen"), ledger_rows(ledger, "Offered")
-    rest = [b for b in desc if b not in ledger]
+    base = read_toml(KIT / "blocks" / "blocks.toml").get("base", [])  # every step loads these; no plan leaves them out
+    rest = [b for b in desc if b not in ledger and b not in base]
     out = ["## Skill blocks", "",
            f"A skill block is one small rule file in the kit that a step follows. The kit has {len(desc)}. "
            f"This plan uses {len(used)}, offers {len(offered)} more, and leaves {len(rest)} out. "

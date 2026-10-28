@@ -71,6 +71,8 @@ def test_briefs_skip_fences():
     assert step_brief.briefs(text) == {"02-a": "### 1 · a\n\n```text\n### not a step\n```\n- Result: x\n"}
     # A `## ` line would end the step file's own sections, and two briefs for one step would lose one.
     assert "starts with `## `" in refused(lambda: step_brief.briefs(text.replace("### not a step", "## Todo (x)")))
+    indented = text.replace("```text\n### not a step\n```", "```text\nx\n  ```\n### 2 · b\n\nStep: `03-b`\n")
+    assert sorted(step_brief.briefs(indented)) == ["02-a", "03-b"], step_brief.briefs(indented)
     assert "hidden" not in step_brief.briefs(text.replace("- Result: x", "<!-- hidden -->\n- Result: x"))["02-a"]
     assert "  <!-- shown -->" in step_brief.briefs(text.replace("- Result: x", "  <!-- shown -->\n- Result: x"))["02-a"]
     assert "<!-- kept -->" in step_brief.briefs(text.replace("### not a step", "<!-- kept -->"))["02-a"]
@@ -86,6 +88,7 @@ def test_diagram_checks():
     assert plan_rules.nodes(labels) == 10, plan_rules.nodes(labels)
     edges = 'flowchart LR\n  a[x] -->|calls (once)| b[y]\n  b -- reads (cache) --> c[z]\n  c -. waits (x) .-> a\n'
     assert plan_rules.nodes(edges) == 3, plan_rules.nodes(edges)
+    assert plan_rules.nodes('flowchart TD\n  A[One] --> B[Two]\n  style A fill:rgb(1,2,3)\n  click A call cb() "tip"\n') == 2
     for link in ("== go (now) ==>", "-- see (x) --o", "-- see (x) --x", "-- see (x) ---", "-. wait (x) .->"):
         assert plan_rules.nodes(f"flowchart LR\n  a[x] {link} b[y]\n") == 2, link
     for link in ("-- go (now) -->", "== go (now) ==>", "-. go (now) .->"):  # text against the node, as Mermaid allows
@@ -105,6 +108,10 @@ def test_diagram_checks():
     assert "no Answers: line" in refused(lambda: plan_rules.check_layout(spaced, [], {}))
     four = "````mermaid\nflowchart LR\n" + "".join(f"  n{i}[x]\n" for i in range(11)) + "````\n"
     assert "no Answers: line" in refused(lambda: plan_rules.check_layout(four, [], {}))
+    seq = "---\ntitle: t\n---\nsequenceDiagram\n" + "".join(f"  participant p{i}\n" for i in range(11))
+    assert plan_rules.nodes(seq) == 11
+    quoted = "````md\n```mermaid\nflowchart LR\n  a[x]\n```\n````\n"
+    plan_rules.check_layout(quoted, [], {})  # a quoted diagram is not a diagram of the plan
     assert "`(empty)` has no Answers" in refused(lambda: plan_rules.check_layout("```mermaid\n```\n", [], {}))
 
 
@@ -119,7 +126,11 @@ def test_page_guards():
                 '<div style="background:image-set(\'x\' 1x)">a</div>'):
         assert "uses only plain tags" in refused(lambda: plan_page.convert(f"```html\n{bad}\n```")), bad
     assert ".chart,.figure{" in plan_page.CSS and ".flow>li:not(:last-child)::after" in plan_page.CSS  # the html-diagram flow, since a fence has no <style>
-    assert plan_page.unsafe('<div style="width:calc(100% - var(--gap));color:rgb(0 0 0)">a</div>') is None
+    for hide in ('<div style="display:none">x</div>', '<div style="position:var(--p)">x</div>'):
+        assert plan_page.unsafe(hide) == "style=", hide
+    assert '<a href="https://w.org/a_(b)">x</a>' in plan_page.inline("[x](https://w.org/a_(b))")
+    assert '<a href="https://a.com/**b**">x</a>' in plan_page.inline("[x](https://a.com/**b**) **y**")
+    assert plan_page.unsafe('<div title="two (or more)" aria-label="a@b">x</div>') is None
     assert plan_page.convert('```html\n<div class="box">a</div>\n```') == '<div class="figure"><div class="box">a</div></div>'
     assert "<table>" in plan_page.convert("|---|---|")
     chips = plan_page.dress(plan_page.convert("## Steps\n\n- Seed searches:\n  - one\n  - `two`\n"))
@@ -130,6 +141,7 @@ def test_page_guards():
     page = plan_page.dress('<h2 id="building-blocks">B</h2><h3>x</h3><p>To check in step 12, look.</p>')
     assert "To check · step 12</span> look." in page, page
     # A blocks table row that names no kit block draws, so start_plan.py can give its own refusal.
+    assert "base-rules" not in plan_page.skill_blocks([], {})  # every step loads it, so it is never left out
     assert "(not in the kit)" in plan_page.skill_blocks([], {"no-such": ("Offered", "x")})
 
 
@@ -144,6 +156,15 @@ def test_amend_adds_deep_search_outside_research():
     row = "| 06-more | local | more search | none | deep-search | a gap |"
     out = subprocess.run([sys.executable, "-I", STEP_RUN, "amend", folder, row, "--before", "04-report"], capture_output=True, text=True)
     assert out.returncode == 0, out.stderr
+
+
+def test_chart_without_fold_and_clean_errors():
+    out, folder = chart(research_plan().replace("<details>\n", "").replace("</details>\n", ""))
+    assert out.returncode == 0, out.stderr
+    text = (folder / "plan.md").read_text(encoding="utf-8")
+    assert text.index("Preset: research") < text.index("plan-chart:start") < text.index("\n## "), text[:400]
+    out, folder = chart(research_plan().replace("Preset: research\n", "Preset: research\n\n```html\n<x-\x1b[2J>\n```\n", 1))
+    assert out.returncode == 1 and "\x1b" not in out.stderr and "plan-chart:start" not in (folder / "plan.md").read_text(), out.stderr
 
 
 def test_chart_markers_in_order():

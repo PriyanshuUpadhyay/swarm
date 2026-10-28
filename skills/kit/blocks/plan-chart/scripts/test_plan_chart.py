@@ -100,8 +100,8 @@ def test_mermaid_chart():
     out, folder = chart(PLAN)
     assert out.returncode == 0, out.stderr
     md = (folder / "plan.md").read_text(encoding="utf-8")
-    # The fence sits right under the title, between the markers.
-    assert md.startswith("# Plan: add dark mode to settings\n\n<!-- plan-chart:start -->\n```mermaid\nflowchart TD\n"), md[:200]
+    # With no fold, the fence sits above the first section, so the lede stays under the title.
+    assert "\n<!-- plan-chart:start -->\n```mermaid\nflowchart TD\n" in md.split("\n## ", 1)[0], md[:400]
     chart_text = md.split("```mermaid\n")[1].split("```")[0]
     # Only a stage of 2 or more steps gets a subgraph; the chart holds the flow and no dropped block.
     assert chart_text.split("  s1 --> s2")[0] == "\n".join([

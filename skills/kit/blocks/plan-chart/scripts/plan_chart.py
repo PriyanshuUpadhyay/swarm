@@ -14,7 +14,7 @@ A second table, | Block | Status | Why |, lists each block the steps use as Chos
 step uses as Offered. The script checks it against the step table, and plan.html draws it as the Skill blocks
 section. The script prints only the path of plan.html.
 The Mermaid chart goes into plan.md between the START and END markers, in the `<details>` fold that holds the step
-table (else under the title), so the approved plan.md holds the chart the owner saw.
+table (else above the first section), so the approved plan.md holds the chart the owner saw.
 plan.html is the whole plan.md drawn as one page, with a Skill blocks section made from the blocks table and each
 block's SKILL.md description, and every Mermaid fence drawn with the pinned Pele build in ../assets. The owner
 reviews only plan.html. A plan whose `Preset:` line names research must also give a brief under `## Steps` to each
@@ -182,7 +182,7 @@ def mermaid(rows, uses):
 
 def put_chart(plan, chart):
     """Write the chart fence between the markers: in place of the old one, else at the top of the `<details>` fold
-    that holds the step table, else right under the title."""
+    that holds the step table, else above the first `## ` section."""
     text = plan.read_text(encoding="utf-8")
     block = f"{START}\n```mermaid\n{chart}```\n{END}"
     lines = text.split("\n")
@@ -193,8 +193,9 @@ def put_chart(plan, chart):
     elif head is not None and fold is not None and lines[fold].strip() == "<details>":
         new = "\n".join(lines[:head] + [block, ""] + lines[head:])
     else:
-        at = next((i + 1 for i, line in enumerate(lines) if line.startswith("# ")), 0)
-        new = "\n".join(lines[:at] + ["", block] + lines[at:])
+        # Above the first section, so the Preset line and the lede stay at the top of the page.
+        at = next((i for i, line in enumerate(lines) if line.startswith("## ")), len(lines))
+        new = "\n".join(lines[:at] + [block, ""] + lines[at:])
     if new != text:
         plan.write_text(new, encoding="utf-8")
 
@@ -244,10 +245,15 @@ def main(argv):
         raise SystemExit(f"plan.md needs the chart markers {START} and {END} once each and in that order, or neither")
     if research(plan):
         check_layout(text.split(START)[0] + text.split(END)[-1] if START in text else text, rows, uses)
+    render(text, rows, ledger)  # its refusals, such as an unsafe html fence, come before plan.md is written
     put_chart(plan, mermaid(rows, uses))
     plan.with_suffix(".html").write_text(page(plan), encoding="utf-8")
     print(plan.with_suffix(".html"))
 
 
 if __name__ == "__main__":
-    main(sys.argv[1:])
+    try:
+        main(sys.argv[1:])
+    except SystemExit as stop:
+        # A message may quote plan.md, so control bytes are removed before it reaches the terminal.
+        raise SystemExit(re.sub(r"[\x00-\x08\x0b-\x1f\x7f]", "?", stop.code) if isinstance(stop.code, str) else stop.code) from None

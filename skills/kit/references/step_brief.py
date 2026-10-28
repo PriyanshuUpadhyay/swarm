@@ -23,8 +23,10 @@ def briefs(text):
 
     for line in text.splitlines():
         # A fence ends only at a line of at least as many backticks, so a ```` fence may hold a ``` one.
-        if m := re.match(r"`{3,}", line):
-            fence = m[0] if not fence else "" if line.strip() == "`" * len(line.strip()) and len(m[0]) >= len(fence) else fence
+        if fence and set(line.strip()) == {"`"} and len(line.strip()) >= len(fence):
+            fence = ""  # plan_page.convert also ends a fence at an indented closing line
+        elif not fence and (m := re.match(r"`{3,}", line)):
+            fence = m[0]
         if not fence and line.startswith(("## ", "### ")):
             close()
             head, body = None, []
@@ -37,6 +39,18 @@ def briefs(text):
             body.append(line)  # the page does not show a `<!--` line outside a fence, so the worker does not get it
     close()
     return found
+
+
+def fences(text):
+    """(language, line index of the opening line, body) for each fence, closed as plan_page.convert closes it."""
+    lines, i = text.split("\n"), 0
+    while i < len(lines):
+        if m := re.match(r"`{3,}", lines[i]):
+            j = next((j for j in range(i + 1, len(lines))
+                      if set(lines[j].strip()) == {"`"} and len(lines[j].strip()) >= len(m[0])), len(lines))
+            yield lines[i][len(m[0]):].strip(), i, "\n".join(lines[i + 1:j])
+            i = j
+        i += 1
 
 
 def sections(plan):
