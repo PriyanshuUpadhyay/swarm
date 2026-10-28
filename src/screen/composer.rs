@@ -56,14 +56,20 @@ pub struct QueuedMessage {
 }
 
 /// The messages pi holds, read from the `Steering: ` and `Follow-up: ` rows right above the
-/// `↳ … to edit all queued messages` hint, which pi draws above its input box only while it
-/// holds one. None until the box is drawn.
+/// `↳ … to edit all queued messages` hint, which pi draws above its input box, with only blank
+/// rows between, while it holds one. A hint that the history quotes has other rows under it.
+/// None until the box is drawn.
 pub fn pi_queue(rows: &str) -> Option<Vec<QueuedMessage>> {
-    pi_composer(rows)?;
     let lines: Vec<&str> = rows.trim_end().lines().map(str::trim).collect();
-    let Some(hint) = lines
+    let rule = |line: &&str| line.starts_with('─');
+    let bottom = lines.iter().rposition(rule)?;
+    let top = lines[..bottom].iter().rposition(rule)?;
+    let Some(hint) = lines[..top]
         .iter()
-        .rposition(|line| line.starts_with("↳ ") && line.ends_with(" to edit all queued messages"))
+        .rposition(|line| !line.is_empty())
+        .filter(|&index| {
+            lines[index].starts_with("↳ ") && lines[index].ends_with(" to edit all queued messages")
+        })
     else {
         return Some(Vec::new());
     };
