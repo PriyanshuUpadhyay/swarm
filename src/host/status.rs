@@ -86,6 +86,9 @@ pub fn program_status(body: &str, seen_work: bool) -> Option<HookState> {
         "blocked" => match pairs.get("kind").copied() {
             Some("permission") => ("waiting", Some("permission")),
             Some("question") => ("waiting", Some("question")),
+            // AGY reports `kind=auth` ("Sign in required") at every start while it signs itself
+            // in, then `idle`; it is no question the owner can answer from a card.
+            Some("auth") => return None,
             _ => ("waiting", None),
         },
         "done" => ("done", None),

@@ -32,8 +32,9 @@ fn program_status_maps_the_root_record() {
         state("state=blocked:kind=question", true),
         Some(("waiting", Some("question"), None))
     );
+    assert_eq!(state("state=blocked:kind=auth", true), None);
     assert_eq!(
-        state("state=blocked:kind=auth", true),
+        state("state=blocked", true),
         Some(("waiting", None, None))
     );
     assert_eq!(state("state=done:app=pi", true), Some(("done", None, None)));
