@@ -109,6 +109,21 @@ fn a_pi_listing_carries_its_screen_queue_and_a_missing_listing_keeps_it() {
 
     let failed = agent_snapshot(&connection, &BTreeMap::new(), &mut previous);
     assert_eq!(failed[&fixture.session][0]["queue"], *queue);
+
+    // A new hook state means pi moved on, maybe took the queue, so the old queue goes.
+    swarm::store::set_state(
+        &connection,
+        &fixture.session,
+        "worker",
+        "done",
+        "hook",
+        None,
+        None,
+        discovery::now() + 1,
+    )
+    .unwrap();
+    let moved = agent_snapshot(&connection, &BTreeMap::new(), &mut previous);
+    assert!(moved[&fixture.session][0]["queue"].is_null());
 }
 
 #[test]

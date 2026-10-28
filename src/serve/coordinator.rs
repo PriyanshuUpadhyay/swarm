@@ -129,14 +129,14 @@ fn agent_snapshot(
                                 old["id"] == agent["id"] && old["pane"] == agent["pane"]
                             }) {
                                 agent["alive"] = old["alive"].clone();
-                                // The queue is what the pane showed last, as `alive` is.
-                                if !old["queue"].is_null() {
-                                    agent["queue"] = old["queue"].clone();
-                                }
                                 // A resolved listing state can differ from the stored hook state.
+                                // A new hook state can also mean the CLI took its queue.
                                 if agent["state_at_s"] == old["state_at_s"] {
                                     agent["state"] = old["state"].clone();
                                     agent["prompt"] = old["prompt"].clone();
+                                    if !old["queue"].is_null() {
+                                        agent["queue"] = old["queue"].clone();
+                                    }
                                 }
                             }
                         }
