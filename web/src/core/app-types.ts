@@ -1,5 +1,5 @@
 import { type Row } from "./api";
-import { type AgentInput, type Sent, type SendKey, type Usage } from "./composer";
+import { type AgentInput, type SendKey, type Usage } from "./composer";
 import { MarkdownCache } from "./markdown";
 import { type PaneCell } from "./panes";
 import { FoldChoices, type Line, type Match } from "./transcript";
@@ -37,8 +37,11 @@ export type Chat = {
   md: MarkdownCache;
   built: { version: number; lines: Line[] } | null;
   usage: Usage;
-  /** Typed texts, shown as queued rows until the log has them. */
-  sent: Sent[];
+  /** The queue that the agent's CLI shows, as rows after the log's rows. */
+  queue: Row[];
+  /** The newest texts typed into this chat, never shown. A stop or Up on pi puts them back exact,
+   *  because pi's box joins lines and its queue cuts them (ADR 0130). */
+  typed: string[];
   memo: { sig: unknown[]; pane: Pane } | null;
 };
 

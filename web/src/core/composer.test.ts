@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { type Agent, type Api, type Row, type RowFrame, type RowPage, type Snapshot } from "./api";
+import { type Agent, type Api, type RowFrame, type RowPage, type Snapshot } from "./api";
 import { App } from "./app";
 import { chair, session } from "./chat-fixtures";
 import { harness, settle, user } from "./composer-harness";
-import { agentInput, canBranch, confirmSent, MISSING_ADAPTER, sends, sentRow, settleSent, submission, usageLabel } from "./composer";
+import { agentInput, canBranch, MISSING_ADAPTER, queueRows, sends, submission, usageLabel } from "./composer";
 
 const waitingPrompt = { id: "prompt-hash", question: "Do you want to proceed?", choices: ["Yes", "No"] };
 
@@ -35,42 +35,16 @@ describe("submission", () => {
   });
 });
 
-describe("sent rows", () => {
-  it("leave when a new user row with the same text shows, one row for one text", () => {
-    const earlier = user("earlier", "again");
-    const first = sentRow("again", "codex", [earlier]);
-    const second = sentRow("again", "codex", [earlier]);
-    expect(first.row.detail).toBe("Sent · joins after the next tool call");
-    expect(sentRow("hi", "agy", []).row.detail).toBe("Sent");
-    const left = confirmSent([first, second], [earlier, user("logged", "again ")]);
-    expect(left).toEqual([second]);
-    const none = [first];
-    expect(confirmSent(none, [earlier])).toBe(none);
-  });
-
-  it("stay through a turn that logs nothing, such as Claude's /compact, and leave when it ends", () => {
-    const idle = [sentRow("/compact ", "claude", [])];
-    expect(settleSent(idle, false)).toBe(idle);
-    const running = settleSent(idle, true);
-    expect(running[0].started).toBe(true);
-    expect(settleSent(running, true)).toBe(running);
-    expect(settleSent(running, false)).toEqual([]);
-    const queued: Row = { id: "q", kind: "queued", text: "/compact", order: [1, 0] };
-    expect(confirmSent(idle, [queued])).toEqual([]);
-  });
-
-  it("leave when a pi skill row shows the same command and words", () => {
-    const sent = sentRow("/skill:plan fix this now ", "pi", []);
-    const skill: Row = {
-      id: "skill",
-      kind: "system",
-      system_kind: "command",
-      text: "",
-      order: [10, 0],
-      command: { name: "/skill:plan", arguments: "fix this now" },
-    };
-    expect(confirmSent([sent], [skill])).toEqual([]);
-    expect(confirmSent([sent], [{ ...skill, command: { name: "/skill:plan", arguments: "other" } }])).toEqual([sent]);
+describe("queue rows", () => {
+  it("show each held message with the CLI's own word for when it joins", () => {
+    const rows = queueRows([
+      { mode: "steering", text: "first" },
+      { mode: "follow-up", text: "second" },
+    ]);
+    expect(rows.map((r) => [r.kind, r.text, r.detail])).toEqual([
+      ["queued", "first", "Steering"],
+      ["queued", "second", "Follow-up"],
+    ]);
   });
 });
 
@@ -248,75 +222,76 @@ describe("chat actions", () => {
     expect(app.view.composer!.state.answering).toEqual({ prompt: "prompt-hash", choice: 1 });
   });
 
-  it("shows a running Codex send as a Sent row until the log has it, and drops it when the turn ends", async () => {
-    const { app, snapshot } = harness();
-    const codex = (agent: Partial<Agent>) =>
-      (app as unknown as { applySnapshot(s: Snapshot): void }).applySnapshot({
-        version: 2,
-        sessions: [session({ chair_provider: "codex" })],
-        agents: { chat: [chair(agent)] },
-      });
-    snapshot();
-    codex({ state: "working" });
-    app.openChat("chat");
-    await settle();
-    await app.send("chat", "also check the docs");
-    expect(app.view.lines.map((l) => [l.row.kind, l.row.text, l.row.detail])).toEqual([
-      ["user", "hello", undefined],
-      ["queued", "also check the docs", "Sent · joins after the next tool call"],
-      ["notice", "Working…", undefined],
-    ]);
-    codex({ state: "done" });
-    app.openChat("chat");
-    expect(app.view.lines.map((l) => l.row.kind)).toEqual(["user"]);
-  });
-
-  it("shows a running pi send as a Sent row, because pi logs it only when the current reply ends", async () => {
+  it("shows a Codex send only when the log has it, because Codex shows no queue that swarm reads", async () => {
     const { app, snapshot } = harness();
     snapshot();
     (app as unknown as { applySnapshot(s: Snapshot): void }).applySnapshot({
       version: 2,
-      sessions: [session({ chair_provider: "pi" })],
+      sessions: [session({ chair_provider: "codex" })],
       agents: { chat: [chair({ state: "working" })] },
     });
     app.openChat("chat");
     await settle();
     await app.send("chat", "also check the docs");
-    expect(app.view.lines.map((l) => [l.row.kind, l.row.text, l.row.detail])).toEqual([
-      ["user", "hello", undefined],
-      ["queued", "also check the docs", "Sent"],
-      ["notice", "Working…", undefined],
+    expect(app.view.lines.map((l) => [l.row.kind, l.row.text])).toEqual([
+      ["user", "hello"],
+      ["notice", "Working…"],
     ]);
   });
 
-  it("shows Claude's /compact as a Sent row and a Working line while it runs, because Claude logs it only at the end", async () => {
+  it("shows pi's queue as its screen lists it, and nothing once the screen lists none", async () => {
     const { app, snapshot } = harness();
-    const claude = (agent: Partial<Agent>) =>
+    const pi = (agent: Partial<Agent>) =>
       (app as unknown as { applySnapshot(s: Snapshot): void }).applySnapshot({
         version: 2,
-        sessions: [session({ chair_provider: "claude" })],
+        sessions: [session({ chair_provider: "pi" })],
         agents: { chat: [chair(agent)] },
       });
     snapshot();
-    claude({ state: "done" });
+    // The incident: /compact runs, and pi holds the note typed during it.
+    pi({ state: "working" });
     app.openChat("chat");
     await settle();
     await app.send("chat", "/compact");
-    const kinds = () => app.view.lines.map((l) => [l.row.kind, l.row.text]);
-    expect(kinds()).toEqual([
-      ["user", "hello"],
-      ["queued", "/compact"],
+    await app.send("chat", "note typed during compaction");
+    const lines = () => app.view.lines.map((l) => [l.row.kind, l.row.text, l.row.detail]);
+    expect(lines()).toEqual([
+      ["user", "hello", undefined],
+      ["notice", "Working…", undefined],
     ]);
-    claude({ state: "working" });
+    pi({ state: "working", queue: [{ mode: "steering", text: "note typed during compaction" }] });
     app.openChat("chat");
-    expect(kinds()).toEqual([
+    expect(lines()).toEqual([
+      ["user", "hello", undefined],
+      ["queued", "note typed during compaction", "Steering"],
+      ["notice", "Working…", undefined],
+    ]);
+    expect(app.view.composer!.queued).toBe(1);
+    // pi took the note straight after the compaction, with no idle pane between.
+    pi({ state: "working", queue: [] });
+    app.openChat("chat");
+    expect(lines()).toEqual([
+      ["user", "hello", undefined],
+      ["notice", "Working…", undefined],
+    ]);
+    expect(app.view.composer!.queued).toBe(0);
+  });
+
+  it("shows Claude's /compact only as a Working line until Claude logs it", async () => {
+    const { app, snapshot } = harness();
+    snapshot();
+    (app as unknown as { applySnapshot(s: Snapshot): void }).applySnapshot({
+      version: 2,
+      sessions: [session({ chair_provider: "claude" })],
+      agents: { chat: [chair({ state: "working" })] },
+    });
+    app.openChat("chat");
+    await settle();
+    await app.send("chat", "/compact");
+    expect(app.view.lines.map((l) => [l.row.kind, l.row.text])).toEqual([
       ["user", "hello"],
-      ["queued", "/compact"],
       ["notice", "Working…"],
     ]);
-    claude({ state: "done" });
-    app.openChat("chat");
-    expect(kinds()).toEqual([["user", "hello"]]);
   });
 });
 

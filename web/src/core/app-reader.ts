@@ -1,6 +1,6 @@
 
 
-import { confirmSent, type Usage } from "./composer";
+import { queueRows, type Usage } from "./composer";
 import { MarkdownCache } from "./markdown";
 import { FoldChoices, findMatches, lines, mergeRows, type Line } from "./transcript";
 import { TAIL, LRU_SIZE, type FullText, type Chat, type Find, type Reader, paneId } from "./app-types";
@@ -10,7 +10,7 @@ export class AppReader {
   constructor(private readonly app: App) {}
 
   build(chat: Chat) {
-    const rows = chat.sent.length ? chat.rows.concat(chat.sent.map((s) => s.row)) : chat.rows;
+    const rows = chat.queue.length ? chat.rows.concat(chat.queue) : chat.rows;
     return lines(rows, { folds: chat.folds, opened: chat.opened });
   }
 
@@ -32,10 +32,13 @@ export class AppReader {
       shift: false,
       loadingOlder: false,
       usage: null,
-      sent: [],
+      queue: [],
+      typed: [],
       ...this.freshReaderState(),
     };
     this.app.chats.set(chat.id, chat);
+    // Later snapshots update it (applySnapshot).
+    chat.queue = queueRows(this.app.composing.chair(chat.id).queue);
     return chat;
   }
 
@@ -62,7 +65,6 @@ export class AppReader {
       chat.older = page.page.start_offset;
       chat.end = page.page.end_offset;
       chat.usage = page.usage as Usage;
-      chat.sent = confirmSent(chat.sent, chat.rows);
       chat.state = "ready";
       chat.error = null;
     } catch (err) {

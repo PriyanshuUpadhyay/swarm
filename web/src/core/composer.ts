@@ -32,52 +32,18 @@ export function submission(text: string): string {
   return word.endsWith("\\") || word.endsWith(":") || "@$/".includes(word[0]) ? cleaned + " " : cleaned;
 }
 
-/** A typed text that the log does not show yet. Codex, AGY, and pi log nothing until the agent
- *  takes it, and Claude logs a slash command such as /compact only when the command ends.
- *  `started` is true once the agent was seen running after the send. */
-export type Sent = { row: Row; before: ReadonlySet<string>; started: boolean };
+/** One message that the agent's CLI holds, as its screen lists it (ADR 0130). */
+export type QueuedMessage = { mode: string; text: string };
 
-let sentSeq = 0;
-
-export function sentRow(text: string, provider: string | null, rows: readonly Row[], running = false): Sent {
-  const n = ++sentSeq;
-  return {
-    row: {
-      id: `sent-${n}`,
-      kind: "queued",
-      text: text.trim(),
-      detail: provider === "codex" ? "Sent · joins after the next tool call" : "Sent",
-      order: [Number.MAX_SAFE_INTEGER, n],
-    },
-    before: new Set(rows.map((r) => r.id)),
-    started: running,
-  };
-}
-
-/** A turn that ran after the send and then ended took or dropped the text
- *  (ComposerSentMessages.update). Returns the same array when nothing changed. */
-export function settleSent(sent: Sent[], running: boolean): Sent[] {
-  if (!sent.length) return sent;
-  if (running) return sent.every((s) => s.started) ? sent : sent.map((s) => ({ ...s, started: true }));
-  const left = sent.filter((s) => !s.started);
-  return left.length === sent.length ? sent : left;
-}
-
-/** The text a row shows the owner typed. A pi skill message is a command row of name and words.
- *  A pasted `<skill>` block does not match, so its Sent row waits for the turn's end. */
-const shown = (r: Row) => (r.kind === "user" || r.kind === "queued" ? r.text.trim() : r.command ? `${r.command.name} ${r.command.arguments}`.trim() : null);
-
-/** Drops each sent text that a new user row now shows; one row confirms one text. Returns the same
- *  array when nothing left. */
-export function confirmSent(sent: Sent[], rows: readonly Row[]): Sent[] {
-  if (!sent.length) return sent;
-  const used = new Set<string>();
-  const left = sent.filter((s) => {
-    const match = rows.find((r) => !s.before.has(r.id) && !used.has(r.id) && shown(r) === s.row.text);
-    if (match) used.add(match.id);
-    return !match;
-  });
-  return left.length === sent.length ? sent : left;
+/** The CLI's queue as chat rows, each labelled with the CLI's own word for when it joins. */
+export function queueRows(queue: readonly QueuedMessage[]): Row[] {
+  return queue.map((q, i) => ({
+    id: `queue-${i}`,
+    kind: "queued",
+    text: q.text,
+    detail: q.mode.charAt(0).toUpperCase() + q.mode.slice(1),
+    order: [Number.MAX_SAFE_INTEGER, i],
+  }));
 }
 
 /** What the composer can do for one agent of a chat, from the snapshot. */
@@ -97,8 +63,10 @@ export type AgentInput = {
   resumable: boolean;
   running: boolean;
   prompt: Prompt | null;
-  /** Claude in tmux keeps a queue, and pi's Sent rows act as one, that Up pulls back (ADR 0038). */
+  /** Claude and pi in tmux keep a queue that Up pulls back (ADR 0038). */
   pullBack: boolean;
+  /** The messages the CLI holds, as its screen lists them; empty when swarm does not read them. */
+  queue: QueuedMessage[];
 };
 
 export const MISSING_ADAPTER = "This session does not record an adapter, so Swarm cannot reach its panes.";
@@ -140,6 +108,7 @@ export function agentInput(session: Session | undefined, agents: readonly Agent[
     running: agent?.state === "working",
     prompt: unreachable ? null : prompt,
     pullBack: (provider === "claude" || provider === "pi") && (adapter === "tmux" || adapter === "tmux-swarm"),
+    queue: (agent?.queue as QueuedMessage[] | undefined) ?? [],
   };
 }
 
