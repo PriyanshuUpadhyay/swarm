@@ -2,7 +2,8 @@ Bottom rows of agent panes for the screen check tests in `src/screen.rs`.
 
 - `claude-*.txt` are real `tmux capture-pane` output from Claude Code 2.1.284, with the account,
   session id, and paths replaced by neutral text. `claude-question.txt` is an AskUserQuestion
-  prompt captured on 2026-09-29.
+  prompt captured on 2026-09-29. `claude-submit-answers.txt` is the submit tab of a question with
+  two tabs, captured from Claude Code 2.1.312 on 2026-10-28; the digit `1` submitted it.
 - `codex-waiting.txt` and `codex-trust.txt` are real captures from codex-cli 0.159.0 on
   2026-09-29 (an escalated command approval with `approvals_reviewer=user`, and the folder trust
   screen). The other `codex-*.txt` are synthesized from the codex-cli 0.157.1 TUI snapshot tests
