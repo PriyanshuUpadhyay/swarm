@@ -33,7 +33,7 @@ def approved(run):
         # The page carries the hash of the plan.md it was drawn from, so a kit update that redraws it differently
         # does not count as an edit, and an edit to plan.md after the round does.
         drawn = re.search(r'<meta name="plan-md-sha256" content="(\w+)">', (run / "plan.html").read_text(encoding="utf-8"))
-        if not drawn or drawn[1] != hashlib.sha256((run / "plan.md").read_bytes()).hexdigest():
+        if not drawn or drawn[1] != hashlib.sha256((run / "plan.md").read_text(encoding="utf-8").encode("utf-8")).hexdigest():
             raise SystemExit("plan.md changed after the owner approved plan.html; run plan-chart and start a new round")
     return start
 

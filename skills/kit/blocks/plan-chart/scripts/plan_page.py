@@ -87,7 +87,26 @@ def slug(text):
     return re.sub(r"[^a-z0-9]+", "-", re.sub(r"<[^>]+>", "", text).lower()).strip("-")
 
 
-UNSAFE = re.compile(r"<\s*/?\s*(?:script|iframe|object|embed|link|meta|base|form)\b|\son\w+\s*=|javascript:", re.I)
+# An html fence is a drawn diagram (blocks/html-diagram), so it may use only these tags and attributes; anything
+# else could run code or restyle the page the owner approves.
+TAGS = {"figure", "figcaption", "div", "span", "p", "ol", "ul", "li", "b", "strong", "i", "em", "code", "small", "br",
+        "table", "thead", "tbody", "tr", "th", "td", "h3", "h4"}
+ATTRS = re.compile(r"(?:class|style|id|title|role|aria-[\w-]+|data-[\w-]+)$")
+
+
+def unsafe(text):
+    """The first tag or attribute of an html fence that a drawn diagram may not use, or None."""
+    for tag in re.finditer(r"<\s*(/?)\s*([^\s/>]*)([^>]*)>?", text):
+        if tag[2].lower() not in TAGS:
+            return tag[0]
+        for attr in re.findall(r"([^\s=/\"']+)\s*=", tag[3]):
+            if not ATTRS.match(attr.lower()):
+                return f"{attr}="
+    if re.search(r"url\s*\(|expression\s*\(|@import", text, re.I):
+        return "url(" if "url" in text.lower() else "expression("
+    return None
+
+
 ITEM = re.compile(r"( *)(- |\d+\. )(.*)")
 
 
@@ -119,8 +138,8 @@ def convert(md):
                 body.append(lines[i])
                 i += 1
             text = "\n".join(body)
-            if lang == "html" and (bad := UNSAFE.search(text)):
-                raise SystemExit(f"an html fence holds `{bad[0]}`; a drawn diagram uses HTML and CSS only")
+            if lang == "html" and (bad := unsafe(text)):
+                raise SystemExit(f"an html fence holds `{bad}`; a drawn diagram uses only plain tags with class and style")
             out.append(f'<div class="chart">{html.escape(text)}</div>' if lang == "mermaid"
                        else f'<div class="figure">{text}</div>' if lang == "html"
                        else f"<pre><code>{html.escape(text)}</code></pre>")
@@ -208,7 +227,8 @@ def dress(body):
             part = re.sub(r"<p>So in this (plan|design): ", r'<p class="so"><b>So in this \1:</b> ', part)
             part = re.sub(r"<p>Step: (<code>[^<]+</code>)</p>", r'<span class="stepid">\1</span>', part)
             part = re.sub(r"<li>(Seed searches[^<]*)<ul>(.*?)</ul></li>", lambda m: f'<li>{m[1]}<div class="chips">'
-                          + "".join(re.findall(r"<li>(.*?)</li>", m[2])) + "</div></li>", part)
+                          + "".join(s if s.startswith("<code>") else f"<code>{s}</code>" for s in re.findall(r"<li>(.*?)</li>", m[2]))
+                          + "</div></li>", part)
             part = re.sub(r"<li>Skill blocks: (.*?)</li>", r'<li class="sb">Skill blocks: \1</li>', part)
         parts[n] = part
     return "".join(parts)

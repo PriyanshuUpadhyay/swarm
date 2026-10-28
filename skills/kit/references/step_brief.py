@@ -11,14 +11,14 @@ def briefs(text):
 
     def close():
         if head is not None and (step := next((l for l in body if re.fullmatch(r"Step: `?\d\d-[a-z0-9-]+`?", l)), None)):
-            # The page does not show a `<!--` line, so the worker does not get it either.
-            lines = [head] + [l for l in body if l != step and not l.lstrip().startswith("<!--")]
+            lines = [head] + [l for l in body if l != step]
             name = step[6:].strip("`")
             if name in found:
                 raise SystemExit(f"two briefs under ## Steps have the line Step: {name}; keep one")
-            if any(l.startswith("## ") for l in body):
-                # The step file reads `## ` lines as its own sections, such as the todo list.
-                raise SystemExit(f"the brief of {name} has a line that starts with `## `; indent it")
+            if any(l.startswith(("## ", "Skills read: ")) for l in body):
+                # The step file reads these lines as its own: `## ` as a section such as the todo list, and the first
+                # `Skills read: ` line as the blocks the worker read.
+                raise SystemExit(f"the brief of {name} has a line that starts with `## ` or `Skills read: `; indent it")
             found[name] = re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip() + "\n"
 
     for line in text.splitlines():
@@ -33,8 +33,8 @@ def briefs(text):
             elif inside:
                 head = line
             continue
-        if head is not None:
-            body.append(line)
+        if head is not None and (fence or not line.startswith("<!--")):
+            body.append(line)  # the page does not show a `<!--` line outside a fence, so the worker does not get it
     close()
     return found
 

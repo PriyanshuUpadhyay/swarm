@@ -200,8 +200,8 @@ def put_chart(plan, chart):
 
 
 def page(plan):
-    """The plan.html text for plan.md as it is now. start_plan.py compares it with the approved page, so the review
-    of plan.html alone also binds plan.md."""
+    """The plan.html text for plan.md as it is now. It carries the hash of plan.md, which start_plan.py checks, so the
+    review of plan.html alone also binds plan.md."""
     return render(plan.read_text(encoding="utf-8"), read_plan(plan)[2], read_ledger(plan))
 
 
@@ -240,8 +240,8 @@ def main(argv):
     ledger = read_ledger(plan)
     check_ledger(rows, ledger)
     text = plan.read_text(encoding="utf-8")
-    if (START in text) != (END in text):
-        raise SystemExit(f"plan.md has one of the chart markers {START} and {END}; restore both, or delete both")
+    if text.count(START) != text.count(END) or text.count(START) > 1 or START in text and text.index(END) < text.index(START):
+        raise SystemExit(f"plan.md needs the chart markers {START} and {END} once each and in that order, or neither")
     if research(plan):
         check_layout(text.split(START)[0] + text.split(END)[-1] if START in text else text, rows, uses)
     put_chart(plan, mermaid(rows, uses))

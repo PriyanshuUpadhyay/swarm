@@ -97,6 +97,8 @@ def check_layout(text, rows, uses):
     """SystemExit with the first gap in a research plan's page sections: briefs, seed searches, blocks, diagrams.
     `text` is plan.md without the step chart that plan_chart.py writes."""
     found = briefs(text)
+    if extra := sorted(set(found) - {row[0] for row in rows}):
+        raise SystemExit(f"the brief with Step: {extra[0]} names no step of the table; fix its Step line")
     used = {u for need in uses.values() for u in need}
     for name, need, _, blocks, *_ in rows:
         if need == "none" or name not in used:
@@ -113,7 +115,7 @@ def check_layout(text, rows, uses):
             raise SystemExit(f'building block "{block.splitlines()[0][4:]}" has no "So in this plan:" line')
     lines = text.split("\n")
     for i, line in enumerate(lines):
-        if line.strip() != "```mermaid":
+        if not re.fullmatch(r"`{3,}mermaid", line.strip()):
             continue
         fence = "\n".join(lines[i + 1:next((j for j in range(i + 1, len(lines)) if lines[j].startswith("```")), len(lines))])
         first = (fence.splitlines() or ["(empty)"])[0]
@@ -129,6 +131,7 @@ def nodes(fence):
     if fence.startswith("sequenceDiagram"):
         return len(re.findall(r"^\s*(?:participant|actor)\s", fence, re.M))
     text = re.sub(r'"[^"]*"', '""', re.sub(r"^\s*subgraph .*$", "", fence, flags=re.M))
+    text = re.sub(r"\|[^|\n]*\||(?<=--)[^->\n|][^\n]*?(?=-->)|(?<=-\.)[^\n]*?(?=\.->)", "", text)  # edge labels
     # Each match takes its whole label, so a word inside a label is never read as an id.
     found = re.findall(r"(?<![\w-])([A-Za-z_]\w*)\s*(?:\[[^\]]*\]|\([^)]*\)+|\{[^}]*\}+)", text)
     return len(set(found))

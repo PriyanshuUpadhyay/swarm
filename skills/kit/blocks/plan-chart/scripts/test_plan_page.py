@@ -72,6 +72,9 @@ def test_briefs_skip_fences():
     # A `## ` line would end the step file's own sections, and two briefs for one step would lose one.
     assert "starts with `## `" in refused(lambda: step_brief.briefs(text.replace("### not a step", "## Todo (x)")))
     assert "hidden" not in step_brief.briefs(text.replace("- Result: x", "<!-- hidden -->\n- Result: x"))["02-a"]
+    assert "  <!-- shown -->" in step_brief.briefs(text.replace("- Result: x", "  <!-- shown -->\n- Result: x"))["02-a"]
+    assert "<!-- kept -->" in step_brief.briefs(text.replace("### not a step", "<!-- kept -->"))["02-a"]
+    assert "Skills read: " in refused(lambda: step_brief.briefs(text.replace("- Result: x", "Skills read: x")))
     nested = text.replace("```text\n### not a step\n```", "````md\n```\n### not a step\n```\n````")
     assert list(step_brief.briefs(nested)) == ["02-a"] and "### not a step" in step_brief.briefs(nested)["02-a"]
     assert "two briefs" in refused(lambda: step_brief.briefs(text.replace("## Not doing", "### 2 · b\n\nStep: `02-a`\n\n## Not doing")))
@@ -81,26 +84,43 @@ def test_diagram_checks():
     import plan_rules
     labels = "flowchart TD\n" + "".join(f'  n{i}["Read (fast) [x]"] --> m{i}(Write {{disk}})\n' for i in range(5))
     assert plan_rules.nodes(labels) == 10, plan_rules.nodes(labels)
+    edges = 'flowchart LR\n  a[x] -->|calls (once)| b[y]\n  b -- reads (cache) --> c[z]\n  c -. waits (x) .-> a\n'
+    assert plan_rules.nodes(edges) == 3, plan_rules.nodes(edges)
     big = "```mermaid\nflowchart LR\n" + "".join(f"  n{i}[x] --> n{i + 1}[y]\n" for i in range(11)) + "```\n"
     # Each fence is checked, not only the last, and its Answers line must sit right over it.
     text = f"*Answers: a*\n{big}\n*Answers: b*\n```mermaid\nflowchart LR\n  a[x]\n```\n"
     assert "has 12 nodes" in refused(lambda: plan_rules.check_layout(text, [], {}))
     text = "*Answers: a*\n```mermaid\nflowchart LR\n  a[x]\n```\n\n\n\n\n```mermaid\nflowchart LR\n  b[x]\n```\n"
     assert "no Answers: line" in refused(lambda: plan_rules.check_layout(text, [], {}))
+    four = "````mermaid\nflowchart LR\n" + "".join(f"  n{i}[x]\n" for i in range(11)) + "````\n"
+    assert "no Answers: line" in refused(lambda: plan_rules.check_layout(four, [], {}))
     assert "`(empty)` has no Answers" in refused(lambda: plan_rules.check_layout("```mermaid\n```\n", [], {}))
 
 
 def test_page_guards():
     import plan_page
-    assert "a drawn diagram uses HTML and CSS only" in refused(lambda: plan_page.convert("```html\n<script>x</script>\n```"))
-    assert "uses HTML and CSS only" in refused(lambda: plan_page.convert('```html\n<div onclick="x">a</div>\n```'))
+    assert "uses only plain tags" in refused(lambda: plan_page.convert("```html\n<script>x</script>\n```"))
+    assert "uses only plain tags" in refused(lambda: plan_page.convert('```html\n<div onclick="x">a</div>\n```'))
+    for bad in ("<style>.part{display:none}</style>", "<svg/onload=alert(1)>", '<a href="&#106;avascript:x">a</a>',
+                '<div style="background:url(x)">a</div>', "<img src=x onerror=y>"):
+        assert "uses only plain tags" in refused(lambda: plan_page.convert(f"```html\n{bad}\n```")), bad
     assert plan_page.convert('```html\n<div class="box">a</div>\n```') == '<div class="figure"><div class="box">a</div></div>'
     assert "<table>" in plan_page.convert("|---|---|")
+    chips = plan_page.dress(plan_page.convert("## Steps\n\n- Seed searches:\n  - one\n  - `two`\n"))
+    assert '<div class="chips"><code>one</code><code>two</code></div>' in chips, chips
+    import plan_rules
+    assert "names no step" in refused(lambda: plan_rules.check_layout("## Steps\n\n### 1 · a\n\nStep: `09-x`\n", [], {}))
     assert "<td>a | b</td>" in plan_page.convert("| x | y |\n|---|---|\n| a \\| b | c |")
     page = plan_page.dress('<h2 id="building-blocks">B</h2><h3>x</h3><p>To check in step 12, look.</p>')
     assert "To check · step 12</span> look." in page, page
     # A blocks table row that names no kit block draws, so start_plan.py can give its own refusal.
     assert "(not in the kit)" in plan_page.skill_blocks([], {"no-such": ("Offered", "x")})
+
+
+def test_chart_markers_in_order():
+    swapped = research_plan().replace("<details>", "<!-- plan-chart:end -->\n\n<!-- plan-chart:start -->\n\n<details>")
+    out, _ = chart(swapped)
+    assert "once each and in that order" in out.stderr, out.stderr
 
 
 def test_kit_update_keeps_the_approval_and_amend_adds_a_brief():
@@ -114,11 +134,19 @@ def test_kit_update_keeps_the_approval_and_amend_adds_a_brief():
     start = [sys.executable, "-I", KIT / "blocks" / "plan-review" / "scripts" / "start_plan.py", folder]
     assert subprocess.run(start, capture_output=True, text=True).returncode == 0
     plan = folder / "plan.md"
-    plan.write_text(plan.read_text(encoding="utf-8").replace("\n| Block | Status", "\nAmend: 1\n\n| Block | Status"), encoding="utf-8")
+    plan.write_text(plan.read_text(encoding="utf-8").replace("\n| Block | Status", "\nAmend: 2\n\n| Block | Status"), encoding="utf-8")
     row = "| 06-probe | local | one more check | none | local-research | a gap in step 1 |"
     out = subprocess.run([sys.executable, "-I", STEP_RUN, "amend", folder, row, "--before", "04-report"], capture_output=True, text=True)
     assert out.returncode == 0, out.stderr
     assert "## Brief (approved in plan.md)\n### Amended · 06-probe" in (folder / "06-probe.md").read_text(encoding="utf-8")
+    row = "| 07-more | local | more search | none | deep-search | a gap |"
+    out = subprocess.run([sys.executable, "-I", STEP_RUN, "amend", folder, row, "--before", "04-report"], capture_output=True, text=True)
+    assert "cannot add deep-search" in out.stderr, out.stderr
+    # A plan.md with CRLF line ends keeps its approval: the page and the start hash the same text.
+    plan.write_bytes(plan.read_bytes().replace(b"\n", b"\r\n"))
+    assert subprocess.run([sys.executable, "-I", plan_chart.__file__, plan], capture_output=True).returncode == 0
+    test_plan_chart.approve(folder)
+    assert "plan.md changed" not in subprocess.run(start, capture_output=True, text=True).stderr
 
 
 if __name__ == "__main__":

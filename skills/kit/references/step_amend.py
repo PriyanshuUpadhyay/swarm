@@ -79,6 +79,9 @@ def add(folder, row, before):
         raise SystemExit(f"amended step {name or '(empty)'} is not NN-name")
     if writes != []:
         raise SystemExit("an amended step writes none; a write or a scope change goes back to the owner")
+    if "deep-search" in blocks and "\n## Steps\n" in text:
+        # Its brief needs seed searches, which the owner sees before a search runs.
+        raise SystemExit("an amended step cannot add deep-search to a plan with step briefs; ask the owner")
     if (folder / f"{name}.md").exists():
         raise SystemExit(f"step {name} exists")
     end = head + 2
