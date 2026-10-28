@@ -73,6 +73,45 @@ fn a_missing_listing_keeps_the_last_live_prompt_until_a_new_listing() {
 }
 
 #[test]
+fn a_pi_listing_carries_its_screen_queue_and_a_missing_listing_keeps_it() {
+    let fixture = Fixture::new();
+    let root = &fixture.app.root;
+    std::fs::create_dir_all(root.join("adapters")).unwrap();
+    let screen = swarm::adapter::shell_line(&[fixture.dir.join("screen").display().to_string()]);
+    std::fs::write(
+        fixture.dir.join("screen"),
+        include_str!("../../../tests/fixtures/screens/pi-queued.txt"),
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("adapters/fake.conf"),
+        format!(
+            "self = true\nspawn = true\nring = true\nlist = printf pane\nclose = true\ncapture = true\nscreen = cat {screen}\n"
+        ),
+    )
+    .unwrap();
+    let mut connection = swarm::store::open(&root.join("swarm.db")).unwrap();
+    connection
+        .execute(
+            "UPDATE session SET adapter = 'fake' WHERE id = ?1",
+            [&fixture.session],
+        )
+        .unwrap();
+    swarm::store::set_pane(&connection, &fixture.session, "worker", "pane").unwrap();
+    swarm::store::set_provider(&connection, &fixture.session, "worker", "pi").unwrap();
+    let mut previous = BTreeMap::new();
+    let listings = all_agent_listings(&mut connection, root, Duration::from_secs(30)).unwrap();
+    let first = agent_snapshot(&connection, &listings, &mut previous);
+    let queue = &first[&fixture.session][0]["queue"];
+    assert_eq!(queue.as_array().unwrap().len(), 2);
+    assert_eq!(queue[0]["mode"], "steering");
+    assert_eq!(queue[0]["text"], "first queued note");
+
+    let failed = agent_snapshot(&connection, &BTreeMap::new(), &mut previous);
+    assert_eq!(failed[&fixture.session][0]["queue"], *queue);
+}
+
+#[test]
 fn a_session_without_a_good_listing_keeps_reading_stored_agents() {
     let fixture = Fixture::new();
     let connection = swarm::store::open(&fixture.app.root.join("swarm.db")).unwrap();

@@ -129,6 +129,10 @@ fn agent_snapshot(
                                 old["id"] == agent["id"] && old["pane"] == agent["pane"]
                             }) {
                                 agent["alive"] = old["alive"].clone();
+                                // The queue is what the pane showed last, as `alive` is.
+                                if !old["queue"].is_null() {
+                                    agent["queue"] = old["queue"].clone();
+                                }
                                 // A resolved listing state can differ from the stored hook state.
                                 if agent["state_at_s"] == old["state_at_s"] {
                                     agent["state"] = old["state"].clone();
@@ -169,6 +173,7 @@ pub(super) fn stored_agents(
             state_kind: row.state_kind,
             log: row.log,
             prompt: None,
+            queue: None,
             profile: row.profile,
             runner: row.runner,
             model: row.model,

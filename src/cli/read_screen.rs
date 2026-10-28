@@ -1,10 +1,12 @@
 //! CLI read screen.
 
-/// A pane's state, its detail, and the question on it, read from the screen (ADR 0021).
+/// A pane's state, its detail, the question on it, and the messages its CLI holds, read from
+/// the screen (ADR 0021, ADR 0130).
 pub(crate) type ScreenRead = (
     swarm::screen::ScreenState,
     Option<String>,
     Option<swarm::screen::Prompt>,
+    Option<Vec<swarm::screen::QueuedMessage>>,
 );
 
 /// How long one screen or capture read may take. A test's stand-in shell starts slowly on a
@@ -28,5 +30,6 @@ pub(crate) fn read_screen(
     } else {
         swarm::screen::read_pane(provider, &output, capture)?
     };
-    Some((state, detail, prompt))
+    let queue = provider.and_then(|provider| swarm::screen::queue(provider, &output));
+    Some((state, detail, prompt, queue))
 }
