@@ -33,10 +33,7 @@ fn program_status_maps_the_root_record() {
         Some(("waiting", Some("question"), None))
     );
     assert_eq!(state("state=blocked:kind=auth", true), None);
-    assert_eq!(
-        state("state=blocked", true),
-        Some(("waiting", None, None))
-    );
+    assert_eq!(state("state=blocked", true), Some(("waiting", None, None)));
     assert_eq!(state("state=done:app=pi", true), Some(("done", None, None)));
     // pi reports idle when it starts and when the owner cancels a run.
     assert_eq!(state("state=idle:app=pi", false), None);
