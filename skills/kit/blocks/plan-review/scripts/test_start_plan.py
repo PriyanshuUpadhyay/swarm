@@ -114,7 +114,7 @@ def test_a_forged_preset_line_keeps_the_owner_stop():
         except SystemExit as stop:
             error = str(stop)
         assert error and expected in error and not (run / "01-reply.md").exists(), (name, error)
-    # The chart block that plan_chart.py writes under the title does not hide the Preset line.
+    # A chart block above the Preset line, as an older plan_chart.py wrote it, does not hide that line.
     run = Path(tempfile.mkdtemp())
     chart = "<!-- plan-chart:start -->\n```mermaid\nflowchart TD\n```\n<!-- plan-chart:end -->\n"
     (run / "plan.md").write_text(PLAN.replace("# Plan: x\n", f"# Plan: x\n\n{chart}\nPreset: talk\n"), encoding="utf-8")

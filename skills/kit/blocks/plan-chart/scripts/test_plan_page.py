@@ -73,6 +73,8 @@ def test_briefs_skip_fences():
     assert "starts with `## `" in refused(lambda: step_brief.briefs(text.replace("### not a step", "## Todo (x)")))
     indented = text.replace("```text\n### not a step\n```", "```text\nx\n  ```\n### 2 · b\n\nStep: `03-b`\n")
     assert sorted(step_brief.briefs(indented)) == ["02-a", "03-b"], step_brief.briefs(indented)
+    drawn = text.replace("```text\n### not a step\n```", '```html\n<div data-x="secret">a</div>\n```')
+    assert "secret" not in step_brief.briefs(drawn)["02-a"] and "drawn diagram" in step_brief.briefs(drawn)["02-a"]
     assert "hidden" not in step_brief.briefs(text.replace("- Result: x", "<!-- hidden -->\n- Result: x"))["02-a"]
     assert "  <!-- shown -->" in step_brief.briefs(text.replace("- Result: x", "  <!-- shown -->\n- Result: x"))["02-a"]
     assert "<!-- kept -->" in step_brief.briefs(text.replace("### not a step", "<!-- kept -->"))["02-a"]
@@ -110,6 +112,8 @@ def test_diagram_checks():
     assert "no Answers: line" in refused(lambda: plan_rules.check_layout(four, [], {}))
     seq = "---\ntitle: t\n---\nsequenceDiagram\n" + "".join(f"  participant p{i}\n" for i in range(11))
     assert plan_rules.nodes(seq) == 11
+    assert plan_rules.nodes("classDiagram\n" + "".join(f"  class C{i} {{\n  }}\n" for i in range(11))) == 11
+    assert plan_rules.nodes("flowchart LR\n  %% Parse (fast)\n  a[x] --> b[y]\n") == 2
     quoted = "````md\n```mermaid\nflowchart LR\n  a[x]\n```\n````\n"
     plan_rules.check_layout(quoted, [], {})  # a quoted diagram is not a diagram of the plan
     assert "`(empty)` has no Answers" in refused(lambda: plan_rules.check_layout("```mermaid\n```\n", [], {}))
@@ -141,7 +145,7 @@ def test_page_guards():
     page = plan_page.dress('<h2 id="building-blocks">B</h2><h3>x</h3><p>To check in step 12, look.</p>')
     assert "To check · step 12</span> look." in page, page
     # A blocks table row that names no kit block draws, so start_plan.py can give its own refusal.
-    assert "base-rules" not in plan_page.skill_blocks([], {})  # every step loads it, so it is never left out
+    assert "loads `base-rules` in each step" in plan_page.skill_blocks([], {})  # counted apart, so the counts add up
     assert "(not in the kit)" in plan_page.skill_blocks([], {"no-such": ("Offered", "x")})
 
 
@@ -163,8 +167,12 @@ def test_chart_without_fold_and_clean_errors():
     assert out.returncode == 0, out.stderr
     text = (folder / "plan.md").read_text(encoding="utf-8")
     assert text.index("Preset: research") < text.index("plan-chart:start") < text.index("\n## "), text[:400]
-    out, folder = chart(research_plan().replace("Preset: research\n", "Preset: research\n\n```html\n<x-\x1b[2J>\n```\n", 1))
-    assert out.returncode == 1 and "\x1b" not in out.stderr and "plan-chart:start" not in (folder / "plan.md").read_text(), out.stderr
+    quoted = research_plan().replace("<details>\n", "").replace("</details>\n", "")
+    out, folder = chart(quoted.replace("Preset: research\n", "Preset: research\n\n```md\n## not a section\n```\n", 1))
+    text = (folder / "plan.md").read_text(encoding="utf-8")
+    assert text.index("## not a section") < text.index("plan-chart:start"), text[:500]
+    out, folder = chart(research_plan().replace("Preset: research\n", "Preset: research\n\nx\x1b[2J\x9b\u2028y\n", 1))
+    assert out.returncode == 1 and "control character U+001B on line" in out.stderr and "\x9b" not in out.stderr and "plan-chart:start" not in (folder / "plan.md").read_text(encoding="utf-8"), out.stderr
 
 
 def test_chart_markers_in_order():

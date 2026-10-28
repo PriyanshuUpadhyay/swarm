@@ -128,8 +128,11 @@ def check_layout(text, rows, uses):
 def nodes(fence):
     """The node count of a Mermaid diagram: participants, or ids defined with a label."""
     # ponytail: counts ids given a label only; a node that is never given a label is missed.
+    fence = re.sub(r"^\s*%%.*$", "", fence, flags=re.M)  # a comment line
     if re.search(r"^\s*sequenceDiagram\b", fence, re.M):
         return len(re.findall(r"^\s*(?:participant|actor)\s", fence, re.M))
+    if re.search(r"^\s*classDiagram\b", fence, re.M):
+        return len(set(re.findall(r"^\s*class\s+([\w`]+)", fence, re.M)))
     text = re.sub(r'"[^"]*"', '""', re.sub(r"^\s*(?:subgraph|style|classDef|class|click|linkStyle) .*$", "", fence, flags=re.M))
     text = re.sub(r"\|[^|\n]*\||(?<![-=.])(?:--|==|-\.)\s[^\n]*?(?=-->|==>|\.->|--[ox]|---|===|\.-)", "", text)  # edge labels
     # Each match takes its whole label, so a word inside a label is never read as an id.

@@ -155,7 +155,7 @@ def approve(run):
     files = {"../plan.html": hashlib.sha256((run / "plan.html").read_bytes()).hexdigest()}
     (run / "plan-review").mkdir(exist_ok=True)
     result = {"decision": "approved", "message": "", "annotationCount": 0}
-    (run / "plan-review" / "1.json").write_text(json.dumps({"files": files, "result": result}))
+    (run / "plan-review" / "1.json").write_text(json.dumps({"files": files, "result": result}), encoding="utf-8")
 
 
 def test_start_refuses_after_chart_change():

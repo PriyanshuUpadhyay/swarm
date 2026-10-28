@@ -152,7 +152,7 @@ def convert(md):
                 i += 1
             text = "\n".join(body)
             if lang == "html" and (bad := unsafe(text)):
-                raise SystemExit(f"an html fence holds `{bad}`; a drawn diagram uses only plain tags with class and style")
+                raise SystemExit(f"an html fence holds `{bad}`; a drawn diagram uses only plain tags with class, id, title, role, aria-, and data- attributes")
             out.append(f'<div class="chart">{html.escape(text)}</div>' if lang == "mermaid"
                        else f'<div class="figure">{text}</div>' if lang == "html"
                        else f"<pre><code>{html.escape(text)}</code></pre>")
@@ -204,11 +204,12 @@ def skill_blocks(rows, ledger):
     steps = {b: [n for n, blocks in selected.items() if b in blocks] for b in desc}
     cell = lambda text: text.replace("|", "\\|")
     used, offered = ledger_rows(ledger, "Chosen"), ledger_rows(ledger, "Offered")
-    base = read_toml(KIT / "blocks" / "blocks.toml").get("base", [])  # every step loads these; no plan leaves them out
+    base = [b for b in read_toml(KIT / "blocks" / "blocks.toml").get("base", []) if b in desc and b not in ledger]
     rest = [b for b in desc if b not in ledger and b not in base]
+    always = f", loads {', '.join(f'`{b}`' for b in base)} in each step of a repo with a `.blocks.toml`," if base else ""
     out = ["## Skill blocks", "",
            f"A skill block is one small rule file in the kit that a step follows. The kit has {len(desc)}. "
-           f"This plan uses {len(used)}, offers {len(offered)} more, and leaves {len(rest)} out. "
+           f"This plan uses {len(used)}, offers {len(offered)} more{always} and leaves {len(rest)} out. "
            'Say "add X" or "drop X" to change the plan.', "",
            f"### Used in this plan ({len(used)})", "", "| Block | What it does | Why it is here | Step |", "|---|---|---|---|"]
     out += [f"| `{b}` | {cell(does.get(b, '(not in the kit)'))} | {cell(why)} | {', '.join(steps.get(b, []))} |" for b, why in used]

@@ -30,6 +30,7 @@ KIT = Path(__file__).resolve().parents[3]
 sys.path[:0] = [str(KIT / "references"), str(Path(__file__).parent)]  # python3 -I adds neither
 import step_run  # noqa: E402
 from block_resolver import resolve_blocks  # noqa: E402
+from step_brief import fences  # noqa: E402
 from plan_page import inline, parents, render  # noqa: E402,F401 (inline, parents: callers read them here)
 from plan_rules import check_layout, check_ledger, check_writes, conflicts  # noqa: E402
 
@@ -194,7 +195,8 @@ def put_chart(plan, chart):
         new = "\n".join(lines[:head] + [block, ""] + lines[head:])
     else:
         # Above the first section, so the Preset line and the lede stay at the top of the page.
-        at = next((i for i, line in enumerate(lines) if line.startswith("## ")), len(lines))
+        fenced = {j for _, i, body in fences(text) for j in range(i, i + body.count("\n") + 2)}  # opening line to closing line
+        at = next((i for i, line in enumerate(lines) if line.startswith("## ") and i not in fenced), len(lines))
         new = "\n".join(lines[:at] + [block, ""] + lines[at:])
     if new != text:
         plan.write_text(new, encoding="utf-8")
@@ -233,6 +235,11 @@ def main(argv):
     if len(argv) != 1 or argv[0].startswith("-"):
         raise SystemExit(usage)
     plan = Path(argv[0])
+    # Python, the page, and a terminal split lines and read controls in different ways, so plan.md keeps to
+    # tabs and newlines; a NUL, a form feed, or U+2028 would let the checks and the page see different text.
+    if bad := re.search(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f\u2028\u2029]", plan.read_text(encoding="utf-8")):
+        line = plan.read_text(encoding="utf-8")[:bad.start()].count("\n") + 1
+        raise SystemExit(f"plan.md has the control character U+{ord(bad[0]):04X} on line {line}; remove it")
     title, done, rows = read_plan(plan)
     if rows and rows[0][5] is None and not chat_preset(plan):
         raise SystemExit("the step table has no Writes column; add one (`none` for a step that writes only its run folder)")
@@ -256,4 +263,4 @@ if __name__ == "__main__":
         main(sys.argv[1:])
     except SystemExit as stop:
         # A message may quote plan.md, so control bytes are removed before it reaches the terminal.
-        raise SystemExit(re.sub(r"[\x00-\x08\x0b-\x1f\x7f]", "?", stop.code) if isinstance(stop.code, str) else stop.code) from None
+        raise SystemExit(re.sub(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]", "?", stop.code) if isinstance(stop.code, str) else stop.code) from None
