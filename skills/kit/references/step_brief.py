@@ -21,8 +21,11 @@ def briefs(text):
                 raise SystemExit(f"the brief of {name} has a line that starts with `## ` or `Skills read: `; indent it")
             # A diagram holds text the page does not show (html attributes, Mermaid `%%` comments and tooltips),
             # so the worker gets a pointer to the drawn one instead.
-            text = re.sub(r"^(`{3,})[ \t]*(?:html|mermaid)[ \t]*\n.*?^\s*\1`*[ \t]*$", "(a diagram, shown in plan.html)", "\n".join(lines), flags=re.M | re.S)
-            found[name] = re.sub(r"\n{3,}", "\n\n", text).strip() + "\n"
+            # The fences come from the scanner the page uses, so an opener the page draws is always caught.
+            for lang, i, fenced in reversed(list(fences("\n".join(lines)))):
+                if lang in ("html", "mermaid"):
+                    lines[i:i + fenced.count("\n") + 2] = ["(a diagram, shown in plan.html)"]
+            found[name] = re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip() + "\n"
 
     for line in text.splitlines():
         # A fence ends only at a line of at least as many backticks, so a ```` fence may hold a ``` one.

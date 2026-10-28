@@ -73,7 +73,9 @@ def test_briefs_skip_fences():
     assert "starts with `## `" in refused(lambda: step_brief.briefs(text.replace("### not a step", "## Todo (x)")))
     indented = text.replace("```text\n### not a step\n```", "```text\nx\n  ```\n### 2 · b\n\nStep: `03-b`\n")
     assert sorted(step_brief.briefs(indented)) == ["02-a", "03-b"], step_brief.briefs(indented)
-    for opener in ("```html", "``` html", "```html ", "```mermaid"):
+    unclosed = "## Steps\n\n### 1 · a\n\nStep: `02-a`\n\n```html\n<div data-x=\"secret\">a</div>\n"
+    assert "secret" not in step_brief.briefs(unclosed)["02-a"]
+    for opener in ("```html", "``` html", "```html ", "```mermaid", "```\u00a0html\u3000"):
         drawn = text.replace("```text\n### not a step\n```", opener + '\n<div data-x="secret">a</div>\n```')
         assert "secret" not in step_brief.briefs(drawn)["02-a"] and "a diagram, shown in plan.html" in step_brief.briefs(drawn)["02-a"], opener
     assert "hidden" not in step_brief.briefs(text.replace("- Result: x", "<!-- hidden -->\n- Result: x"))["02-a"]
@@ -180,10 +182,12 @@ def test_format_characters_and_lede():
     for c in ("\u202e", "\u200b", "\U000e0041"):
         out, _ = chart(research_plan().replace("Preset: research\n", f"Preset: research\n\na{c}b\n", 1))
         assert out.returncode == 1 and f"U+{ord(c):04X}" in out.stderr, out.stderr
+    out, _ = chart("\ufeff" + research_plan())  # the first character too
+    assert out.returncode == 1 and "U+FEFF on line 1" in out.stderr, out.stderr
     import plan_page
-    page = plan_page.render("# T\n\n```html\n<figure><p>in diagram</p></figure>\n```\n\nreal lede\n\n## S\n", [], {})
+    page = plan_page.render("# T\n\n```html\n<figure>\n<p>in diagram</p>\n</figure>\n```\n\nreal lede\n\n## S\n", [], {})
     assert '<p class="lede">real lede</p>' in page, page.split("<main", 1)[-1][:600]
-    assert "<figure><p>in diagram</p></figure>" in page
+    assert "<p>in diagram</p>" in page.split('<div class="figure">', 1)[1], page
 
 
 def test_missing_plan_is_a_clean_refusal():

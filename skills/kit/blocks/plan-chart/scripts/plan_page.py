@@ -154,7 +154,7 @@ def convert(md):
             if lang == "html" and (bad := unsafe(text)):
                 raise SystemExit(f"an html fence holds `{bad}`; a drawn diagram uses only plain tags with class, id, title, role, aria-, and data- attributes")
             out.append(f'<div class="chart">{html.escape(text)}</div>' if lang == "mermaid"
-                       else f'<div class="figure">{text}</div>' if lang == "html"
+                       else f'<div class="figure">{" ".join(text.splitlines())}</div>' if lang == "html"
                        else f"<pre><code>{html.escape(text)}</code></pre>")
         elif m := re.match(r"(#{1,3}) (.*)", line):
             level, text = len(m[1]), inline(m[2])

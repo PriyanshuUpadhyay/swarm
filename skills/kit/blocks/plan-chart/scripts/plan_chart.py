@@ -243,7 +243,7 @@ def main(argv):
         text = plan.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as error:
         raise SystemExit(f"cannot read {plan}: {error}") from None
-    if bad := next((i for i, c in enumerate(text) if c not in "\t\n\r" and unicodedata.category(c) in ("Cc", "Cf", "Zl", "Zp")), None):
+    if (bad := next((i for i, c in enumerate(text) if c not in "\t\n\r" and unicodedata.category(c) in ("Cc", "Cf", "Zl", "Zp")), None)) is not None:
         line = text[:bad].count("\n") + 1
         raise SystemExit(f"plan.md has the control character U+{ord(text[bad]):04X} on line {line}; remove it")
     title, done, rows = read_plan(plan)
