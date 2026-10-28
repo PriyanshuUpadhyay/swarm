@@ -111,17 +111,24 @@ def check_layout(text, rows, uses):
     for block in re.split(r"^(?=### )", part, flags=re.M)[1:]:
         if block.startswith("### Block") and "\nSo in this plan:" not in block:
             raise SystemExit(f'building block "{block.splitlines()[0][4:]}" has no "So in this plan:" line')
-    for before, fence in re.findall(r"((?:^.*\n){0,3})^```mermaid\n(.*?)^```", text, re.M | re.S):
-        if "Answers:" not in before:
-            raise SystemExit(f"the diagram that starts `{fence.splitlines()[0]}` has no Answers: line over it")
+    lines = text.split("\n")
+    for i, line in enumerate(lines):
+        if line.strip() != "```mermaid":
+            continue
+        fence = "\n".join(lines[i + 1:next((j for j in range(i + 1, len(lines)) if lines[j].startswith("```")), len(lines))])
+        first = (fence.splitlines() or ["(empty)"])[0]
+        if not any("Answers:" in l for l in lines[max(0, i - 3):i]):
+            raise SystemExit(f"the diagram that starts `{first}` has no Answers: line over it")
         if (count := nodes(fence)) > 10:
-            raise SystemExit(f"the diagram that starts `{fence.splitlines()[0]}` has {count} nodes; split it to 10 or fewer")
+            raise SystemExit(f"the diagram that starts `{first}` has {count} nodes; split it to 10 or fewer")
 
 
 def nodes(fence):
     """The node count of a Mermaid diagram: participants, or ids defined with a label."""
-    # ponytail: counts `id[`, `id(`, `id{` only; a node that is never given a label is missed.
+    # ponytail: counts ids given a label only; a node that is never given a label is missed.
     if fence.startswith("sequenceDiagram"):
         return len(re.findall(r"^\s*(?:participant|actor)\s", fence, re.M))
-    found = re.findall(r"(?<![\w-])([A-Za-z_]\w*)\s*[\[({]", re.sub(r"^\s*subgraph .*$", "", fence, flags=re.M))
+    text = re.sub(r'"[^"]*"', '""', re.sub(r"^\s*subgraph .*$", "", fence, flags=re.M))
+    # Each match takes its whole label, so a word inside a label is never read as an id.
+    found = re.findall(r"(?<![\w-])([A-Za-z_]\w*)\s*(?:\[[^\]]*\]|\([^)]*\)+|\{[^}]*\}+)", text)
     return len(set(found))

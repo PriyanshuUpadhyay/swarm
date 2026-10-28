@@ -1,5 +1,6 @@
 """Draw plan.md as plan.html, the one page the owner reviews: plan_chart.py runs it; see its docstring."""
 
+import hashlib
 import html
 import re
 import sys
@@ -86,6 +87,7 @@ def slug(text):
     return re.sub(r"[^a-z0-9]+", "-", re.sub(r"<[^>]+>", "", text).lower()).strip("-")
 
 
+UNSAFE = re.compile(r"<\s*/?\s*(?:script|iframe|object|embed|link|meta|base|form)\b|\son\w+\s*=|javascript:", re.I)
 ITEM = re.compile(r"( *)(- |\d+\. )(.*)")
 
 
@@ -110,13 +112,15 @@ def convert(md):
     lines, out, i = md.splitlines(), [], 0
     while i < len(lines):
         line = lines[i]
-        if line.startswith("```"):
-            lang, body = line[3:].strip(), []
+        if m := re.match(r"`{3,}", line):
+            lang, body = line[len(m[0]):].strip(), []
             i += 1
-            while i < len(lines) and not lines[i].startswith("```"):
+            while i < len(lines) and not (lines[i].strip().startswith(m[0]) and set(lines[i].strip()) == {"`"}):
                 body.append(lines[i])
                 i += 1
             text = "\n".join(body)
+            if lang == "html" and (bad := UNSAFE.search(text)):
+                raise SystemExit(f"an html fence holds `{bad[0]}`; a drawn diagram uses HTML and CSS only")
             out.append(f'<div class="chart">{html.escape(text)}</div>' if lang == "mermaid"
                        else f'<div class="figure">{text}</div>' if lang == "html"
                        else f"<pre><code>{html.escape(text)}</code></pre>")
@@ -127,9 +131,9 @@ def convert(md):
             rows = []
             while i < len(lines) and lines[i].startswith("|"):
                 if not lines[i].startswith("|---"):
-                    rows.append([c.strip() for c in lines[i].strip().strip("|").split("|")])
+                    rows.append([c.strip().replace("\\|", "|") for c in re.split(r"(?<!\\)\|", lines[i].strip().strip("|"))])
                 i += 1
-            head, *body = rows
+            head, *body = rows or [[]]
             out.append('<div class="tablewrap"><table><thead><tr>' + "".join(f"<th>{inline(c)}</th>" for c in head)
                        + "</tr></thead><tbody>" + "".join("<tr>" + "".join(f"<td>{inline(c)}</td>" for c in r) + "</tr>"
                                                           for r in body) + "</tbody></table></div>")
@@ -166,7 +170,7 @@ def skill_blocks(rows, ledger):
     when = {b: d.partition(" Use when ")[2].rstrip(".") or "—" for b, d in desc.items()}
     selected = resolve_blocks(None, {r[0]: r[3] for r in rows}, "default", blocks_dir=KIT / "blocks", pack=False)
     steps = {b: [n for n, blocks in selected.items() if b in blocks] for b in desc}
-    cell = lambda text: text.replace("|", "&#124;")
+    cell = lambda text: text.replace("|", "\\|")
     used, offered = ledger_rows(ledger, "Chosen"), ledger_rows(ledger, "Offered")
     rest = [b for b in desc if b not in ledger]
     out = ["## Skill blocks", "",
@@ -174,10 +178,10 @@ def skill_blocks(rows, ledger):
            f"This plan uses {len(used)}, offers {len(offered)} more, and leaves {len(rest)} out. "
            'Say "add X" or "drop X" to change the plan.', "",
            f"### Used in this plan ({len(used)})", "", "| Block | What it does | Why it is here | Step |", "|---|---|---|---|"]
-    out += [f"| `{b}` | {cell(does[b])} | {cell(why)} | {', '.join(steps[b])} |" for b, why in used]
+    out += [f"| `{b}` | {cell(does.get(b, '(not in the kit)'))} | {cell(why)} | {', '.join(steps.get(b, []))} |" for b, why in used]
     if offered:
         out += ["", f"### Offered, left off ({len(offered)})", "", "| Block | What it does | Why it is off |", "|---|---|---|"]
-        out += [f"| `{b}` | {cell(does[b])} | {cell(why)} |" for b, why in offered]
+        out += [f"| `{b}` | {cell(does.get(b, '(not in the kit)'))} | {cell(why)} |" for b, why in offered]
     out += ["", "<details>", f"<summary>Other blocks in the kit ({len(rest)}), and when each one is used</summary>", "",
             "| Block | What it does | Used when |", "|---|---|---|"]
     out += [f"| `{b}` | {cell(does[b])} | {cell(when[b])} |" for b in rest]
@@ -200,7 +204,7 @@ def dress(body):
             chunks = re.split(r"(?=<h3 )", part)
             part = chunks[0] + "".join(f'<section class="part {kind}">{c}</section>' for c in chunks[1:])
             part = re.sub(r"<p>Known \(([^)]*)\)\. ", r'<p><span class="tag known">Known</span><span class="src">\1</span> ', part)
-            part = re.sub(r"<p>To check in step (\d)[,.]? ?", r'<p><span class="tag check">To check · step \1</span> ', part)
+            part = re.sub(r"<p>To check in step (\d+)[,.]? ?", r'<p><span class="tag check">To check · step \1</span> ', part)
             part = re.sub(r"<p>So in this (plan|design): ", r'<p class="so"><b>So in this \1:</b> ', part)
             part = re.sub(r"<p>Step: (<code>[^<]+</code>)</p>", r'<span class="stepid">\1</span>', part)
             part = re.sub(r"<li>(Seed searches[^<]*)<ul>(.*?)</ul></li>", lambda m: f'<li>{m[1]}<div class="chips">'
@@ -212,6 +216,7 @@ def dress(body):
 
 def render(text, rows, ledger):
     """plan.html: the whole plan.md as one page in the readable layout, with the Skill blocks section."""
+    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()  # start_plan.py binds the approved page to this plan.md
     blocks = skill_blocks(rows, ledger)
     old = re.compile(r"^## Blocks considered\n\s*(?:\|.*\n?)+", re.M)  # a plan in the older layout
     text = (old.sub(lambda _: blocks, text, count=1) if old.search(text)
@@ -232,7 +237,7 @@ def render(text, rows, ledger):
               'approve</span><span style="--c:var(--warn)">still to check</span></div>')
     heading = title[1] if title else "Plan"
     return ('<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,'
-            f'initial-scale=1"><title>{re.sub("<[^>]+>", "", heading)}</title><style>{CSS}</style></head><body><main>'
+            f'initial-scale=1"><meta name="plan-md-sha256" content="{digest}"><title>{re.sub("<[^>]+>", "", heading)}</title><style>{CSS}</style></head><body><main>'
             f'<nav>{nav}<button class="toggle" title="light or dark" onclick="const r=document.documentElement;'
             "r.dataset.theme=(r.dataset.theme||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'))==='dark'"
             "?'light':'dark'\">◐</button></nav>"

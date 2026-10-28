@@ -58,9 +58,67 @@ def test_research_plan_gaps_stop():
         assert out.returncode == 0, (error, out.stderr)
 
 
+def refused(call):
+    try:
+        call()
+    except SystemExit as stop:
+        return str(stop)
+    return None
+
+
 def test_briefs_skip_fences():
-    text = "## Steps\n\n### 1 · a\n\nStep: `02-a`\n\n```text\n## Steps\n### not a step\n```\n- Result: x\n\n## Not doing\n"
-    assert step_brief.briefs(text) == {"02-a": "### 1 · a\n\n```text\n## Steps\n### not a step\n```\n- Result: x\n"}
+    text = "## Steps\n\n### 1 · a\n\nStep: `02-a`\n\n```text\n### not a step\n```\n- Result: x\n\n## Not doing\n"
+    assert step_brief.briefs(text) == {"02-a": "### 1 · a\n\n```text\n### not a step\n```\n- Result: x\n"}
+    # A `## ` line would end the step file's own sections, and two briefs for one step would lose one.
+    assert "starts with `## `" in refused(lambda: step_brief.briefs(text.replace("### not a step", "## Todo (x)")))
+    assert "hidden" not in step_brief.briefs(text.replace("- Result: x", "<!-- hidden -->\n- Result: x"))["02-a"]
+    nested = text.replace("```text\n### not a step\n```", "````md\n```\n### not a step\n```\n````")
+    assert list(step_brief.briefs(nested)) == ["02-a"] and "### not a step" in step_brief.briefs(nested)["02-a"]
+    assert "two briefs" in refused(lambda: step_brief.briefs(text.replace("## Not doing", "### 2 · b\n\nStep: `02-a`\n\n## Not doing")))
+
+
+def test_diagram_checks():
+    import plan_rules
+    labels = "flowchart TD\n" + "".join(f'  n{i}["Read (fast) [x]"] --> m{i}(Write {{disk}})\n' for i in range(5))
+    assert plan_rules.nodes(labels) == 10, plan_rules.nodes(labels)
+    big = "```mermaid\nflowchart LR\n" + "".join(f"  n{i}[x] --> n{i + 1}[y]\n" for i in range(11)) + "```\n"
+    # Each fence is checked, not only the last, and its Answers line must sit right over it.
+    text = f"*Answers: a*\n{big}\n*Answers: b*\n```mermaid\nflowchart LR\n  a[x]\n```\n"
+    assert "has 12 nodes" in refused(lambda: plan_rules.check_layout(text, [], {}))
+    text = "*Answers: a*\n```mermaid\nflowchart LR\n  a[x]\n```\n\n\n\n\n```mermaid\nflowchart LR\n  b[x]\n```\n"
+    assert "no Answers: line" in refused(lambda: plan_rules.check_layout(text, [], {}))
+    assert "`(empty)` has no Answers" in refused(lambda: plan_rules.check_layout("```mermaid\n```\n", [], {}))
+
+
+def test_page_guards():
+    import plan_page
+    assert "a drawn diagram uses HTML and CSS only" in refused(lambda: plan_page.convert("```html\n<script>x</script>\n```"))
+    assert "uses HTML and CSS only" in refused(lambda: plan_page.convert('```html\n<div onclick="x">a</div>\n```'))
+    assert plan_page.convert('```html\n<div class="box">a</div>\n```') == '<div class="figure"><div class="box">a</div></div>'
+    assert "<table>" in plan_page.convert("|---|---|")
+    assert "<td>a | b</td>" in plan_page.convert("| x | y |\n|---|---|\n| a \\| b | c |")
+    page = plan_page.dress('<h2 id="building-blocks">B</h2><h3>x</h3><p>To check in step 12, look.</p>')
+    assert "To check · step 12</span> look." in page, page
+    # A blocks table row that names no kit block draws, so start_plan.py can give its own refusal.
+    assert "(not in the kit)" in plan_page.skill_blocks([], {"no-such": ("Offered", "x")})
+
+
+def test_kit_update_keeps_the_approval_and_amend_adds_a_brief():
+    out, folder = chart(research_plan())
+    assert out.returncode == 0, out.stderr
+    import test_plan_chart
+    test_plan_chart.approve(folder)
+    page = folder / "plan.html"
+    page.write_text(page.read_text(encoding="utf-8").replace("The kit has", "The kit now has"), encoding="utf-8")
+    test_plan_chart.approve(folder)  # the owner approved a page drawn by another kit version
+    start = [sys.executable, "-I", KIT / "blocks" / "plan-review" / "scripts" / "start_plan.py", folder]
+    assert subprocess.run(start, capture_output=True, text=True).returncode == 0
+    plan = folder / "plan.md"
+    plan.write_text(plan.read_text(encoding="utf-8").replace("\n| Block | Status", "\nAmend: 1\n\n| Block | Status"), encoding="utf-8")
+    row = "| 06-probe | local | one more check | none | local-research | a gap in step 1 |"
+    out = subprocess.run([sys.executable, "-I", STEP_RUN, "amend", folder, row, "--before", "04-report"], capture_output=True, text=True)
+    assert out.returncode == 0, out.stderr
+    assert "## Brief (approved in plan.md)\n### Amended · 06-probe" in (folder / "06-probe.md").read_text(encoding="utf-8")
 
 
 if __name__ == "__main__":

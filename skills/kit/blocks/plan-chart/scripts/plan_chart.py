@@ -11,8 +11,8 @@ paths a step may change; two steps that no Needs path orders may not write the s
 A plan with Writes keeps its duty blocks: `requirements` in each first step, `change-review` after each writing step,
 and a `voice-` block at the end.
 A second table, | Block | Status | Why |, lists each block the steps use as Chosen, and may list a block that no
-step uses as Offered. The script checks it against the step table, draws it under the chart, and prints it for
-the plan reply.
+step uses as Offered. The script checks it against the step table, and plan.html draws it as the Skill blocks
+section. The script prints only the path of plan.html.
 The Mermaid chart goes into plan.md between the START and END markers, in the `<details>` fold that holds the step
 table (else under the title), so the approved plan.md holds the chart the owner saw.
 plan.html is the whole plan.md drawn as one page, with a Skill blocks section made from the blocks table and each
@@ -30,7 +30,7 @@ KIT = Path(__file__).resolve().parents[3]
 sys.path[:0] = [str(KIT / "references"), str(Path(__file__).parent)]  # python3 -I adds neither
 import step_run  # noqa: E402
 from block_resolver import resolve_blocks  # noqa: E402
-from plan_page import ASSETS, inline, parents, render  # noqa: E402,F401 (ASSETS, inline, parents: callers read them here)
+from plan_page import inline, parents, render  # noqa: E402,F401 (inline, parents: callers read them here)
 from plan_rules import check_layout, check_ledger, check_writes, conflicts  # noqa: E402
 
 START, END = "<!-- plan-chart:start -->", "<!-- plan-chart:end -->"
@@ -239,8 +239,10 @@ def main(argv):
     read_claims(plan)
     ledger = read_ledger(plan)
     check_ledger(rows, ledger)
+    text = plan.read_text(encoding="utf-8")
+    if (START in text) != (END in text):
+        raise SystemExit(f"plan.md has one of the chart markers {START} and {END}; restore both, or delete both")
     if research(plan):
-        text = plan.read_text(encoding="utf-8")
         check_layout(text.split(START)[0] + text.split(END)[-1] if START in text else text, rows, uses)
     put_chart(plan, mermaid(rows, uses))
     plan.with_suffix(".html").write_text(page(plan), encoding="utf-8")

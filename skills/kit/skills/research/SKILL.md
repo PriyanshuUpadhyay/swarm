@@ -25,6 +25,9 @@ run's chosen inputs.
 Stop: owner
 Offers: tool-trial, decision-with-default, when-to-diagram, html-diagram, scratch-home
 
+When the question picks a tool, library, or service for later use, the planner adds a step with the
+offered `tool-trial` block before `04-report`, so the candidates are tested hands-on. Leave it out otherwise.
+
 | File | Needs | Holds | Block | Why |
 |---|---|---|---|---|
 | `01-question.md` | none | the question in one line and the decision it serves in one line | requirements | the question and its decision frame the run |
@@ -85,9 +88,6 @@ every view can be shared and reloaded.
 For X, Reddit, and other pages that a plain fetch cannot open, use the browser rows of the Reach
 tools in `web-search`. They read the page in the user's own signed-in browser. Each claim cites its
 source as `blocks/cite-sources/SKILL.md` says.
-
-When the question picks a tool, library, or service for later use, add a step with the offered
-`tool-trial` block before `04-report`, so the candidates are tested hands-on. Leave it out otherwise.
 
 ## 04-report
 

@@ -14,7 +14,7 @@ metadata:
 ---
 
 ## Rules
-- Run each round with the `comment-round` block on `<run>/plan.html` only, with `<run>/plan-review` as its folder. The page holds all of `plan.md`, and `start_plan.py` refuses a `plan.md` that no longer draws that page, so the owner never reads the same plan twice.
+- Run each round with the `comment-round` block on `<run>/plan.html` only, with `<run>/plan-review` as its folder. The page holds all of `plan.md`, and the page carries the hash of the `plan.md` it was drawn from, so `start_plan.py` refuses a `plan.md` edited after the round, so the owner never reads the same plan twice.
 - After each round, act on the decision:
   - `approved` with no notes: the plan is approved.
   - `approved` with notes, or `annotated`: change `plan.md` for each note, answer each note, run `plan-chart`, and start another round. Any change to the plan needs a new round, because the approval holds only for the files the owner saw.
