@@ -79,6 +79,11 @@ def add(folder, row, before):
         raise SystemExit(f"amended step {name or '(empty)'} is not NN-name")
     if writes != []:
         raise SystemExit("an amended step writes none; a write or a scope change goes back to the owner")
+    from block_resolver import resolve_blocks
+    loads = resolve_blocks(None, {name: blocks}, "default", blocks_dir=Path(__file__).resolve().parents[1] / "blocks", pack=False)
+    if "deep-search" in loads[name] and plan_chart.research(plan):
+        # Its brief needs seed searches, which the owner sees before a search runs.
+        raise SystemExit("an amended step cannot add deep-search to a research plan; ask the owner")
     if (folder / f"{name}.md").exists():
         raise SystemExit(f"step {name} exists")
     end = head + 2
@@ -113,6 +118,10 @@ def add(folder, row, before):
         lines[start:at] = kept
         at = start + len(kept)
         lines[at:at] = add
+    if "## Steps" in lines:
+        # A plan with step briefs gives the new step one too, as plan_chart.py requires of a research plan.
+        at = next((i for i in range(lines.index("## Steps") + 1, len(lines)) if lines[i].startswith("## ")), len(lines))
+        lines[at:at] = [f"### Amended · {name}", "", f"Step: `{name}`", "", f"- Result: {new[0][2]}", ""]
     page = plan.with_suffix(".html")
     old_page = page.read_bytes() if page.is_file() else None
     held = folder / f"{before}.md" if before else None

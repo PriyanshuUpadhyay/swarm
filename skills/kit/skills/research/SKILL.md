@@ -23,16 +23,18 @@ run's chosen inputs.
 ## Preset
 
 Stop: owner
-Offers: decision-with-default, when-to-diagram, html-diagram, scratch-home
+Offers: tool-trial, decision-with-default, when-to-diagram, html-diagram, scratch-home
+
+When the question picks a tool, library, or service for later use, the planner adds a step with the
+offered `tool-trial` block before `04-report`, so the candidates are tested hands-on. Leave it out otherwise.
 
 | File | Needs | Holds | Block | Why |
 |---|---|---|---|---|
 | `01-question.md` | none | the question in one line and the decision it serves in one line | requirements | the question and its decision frame the run |
 | `02-local.md` | question | what the local sources say, with paths | local-research | local sources come first |
 | `03-web.md` | question | the `web-search` run folder, or the reason no trigger below held; a `Fetched:` list of URLs whose page content was read; the origin rows from `blocks/primary-sources/SKILL.md`, or `skipped: <reason>`; what the web says, with links to the sources that own the claims; the off-path ideas and the searches that found them | deep-search, primary-sources, cite-sources | the web part goes past the known answers |
-| `04-test.md` | local, web | for a tool pick, each candidate's install, task, time, and result; else `skipped: not a tool pick` | tool-trial | a tool pick needs a hands-on test |
-| `05-report.md` | local, web, test | the report path and the result of the link check | report, link-check | the report keeps the answer with checked links |
-| `06-close.md` | report | the reply as sent | voice-reply | the owner reads the answer |
+| `04-report.md` | local, web | the report path and the result of the link check | report, link-check | the report keeps the answer with checked links |
+| `05-close.md` | report | the reply as sent | voice-reply | the owner reads the answer |
 
 ## 01-question
 
@@ -87,18 +89,13 @@ For X, Reddit, and other pages that a plain fetch cannot open, use the browser r
 tools in `web-search`. They read the page in the user's own signed-in browser. Each claim cites its
 source as `blocks/cite-sources/SKILL.md` says.
 
-## 04-test
-
-When the question picks a tool, library, or service for later use, test the candidates as the kit
-block `blocks/tool-trial/SKILL.md` says.
-
-## 05-report
+## 04-report
 
 Write the report at the research path in `references/run-folder.md` as the kit block
 `blocks/report/SKILL.md` says, and
 check every link as `blocks/link-check/SKILL.md` says before you finish.
 
-## 06-close
+## 05-close
 
 Send the reply by the loaded agent instructions. The kit's `references/plan-layout.md` owns the
 first screen, `blocks/report/SKILL.md` owns the report sections, and

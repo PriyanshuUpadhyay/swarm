@@ -17,7 +17,11 @@ Evidence:
 
 
 def approve(run, decision="approved"):
-    files = {f"../{name}": hashlib.sha256((run / name).read_bytes()).hexdigest() for name in ("plan.html", "plan.md")}
+    """Draw plan.html from plan.md, as plan_chart.py does, and record a round on the page alone."""
+    sys.path.insert(0, str(SCRIPT.parent))
+    import start_plan
+    (run / "plan.html").write_text(start_plan.preset.plan_chart.page(run / "plan.md"), encoding="utf-8")
+    files = {"../plan.html": hashlib.sha256((run / "plan.html").read_bytes()).hexdigest()}
     result = {"decision": decision, "message": "", "annotationCount": 0}
     (run / "plan-review").mkdir(exist_ok=True)
     (run / "plan-review" / "1.json").write_text(json.dumps({"files": files, "result": result}))
@@ -38,7 +42,11 @@ def test_start_needs_the_current_approval():
     approve(run)
     (run / "plan.md").write_text(PLAN.replace("it |", "it now |"), encoding="utf-8")
     out = start(run)
-    assert "../plan.md changed after round 1" in out.stderr and not (run / "01-reply.md").exists(), out
+    assert "plan.md changed after the owner approved plan.html" in out.stderr and not (run / "01-reply.md").exists(), out
+    # The page itself is bound by its hash.
+    approve(run)
+    (run / "plan.html").write_text("<p>edited</p>", encoding="utf-8")
+    assert "../plan.html changed after round 1" in start(run).stderr
     approve(run)
     out = start(run)
     assert out.returncode == 0 and (run / "01-reply.md").read_text().startswith("Status: open\n"), out
@@ -106,7 +114,7 @@ def test_a_forged_preset_line_keeps_the_owner_stop():
         except SystemExit as stop:
             error = str(stop)
         assert error and expected in error and not (run / "01-reply.md").exists(), (name, error)
-    # The chart block that plan_chart.py writes under the title does not hide the Preset line.
+    # A chart block above the Preset line, as an older plan_chart.py wrote it, does not hide that line.
     run = Path(tempfile.mkdtemp())
     chart = "<!-- plan-chart:start -->\n```mermaid\nflowchart TD\n```\n<!-- plan-chart:end -->\n"
     (run / "plan.md").write_text(PLAN.replace("# Plan: x\n", f"# Plan: x\n\n{chart}\nPreset: talk\n"), encoding="utf-8")

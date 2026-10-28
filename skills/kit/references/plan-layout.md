@@ -9,9 +9,9 @@ Short plans keep the 3-7 behavior list of `implement` in `pair` mode. Research r
 verdicts keep their own section order under the first screen below. Codex and AGY seats never load
 this file, so a brief that needs it quotes it.
 
-The checked `plan.md` file made by `blocks/planner/SKILL.md` uses that block's file schema, with
-its title, done-when line, and tables. This is the exception to the opening and section order
-below. The reply that presents the plan still follows this layout.
+The checked `plan.md` file made by `blocks/planner/SKILL.md` uses the section order that block owns,
+and the owner reads it as the page that `blocks/plan-chart/SKILL.md` draws. This is the exception to
+the opening and section order below. The reply that presents the plan still follows this layout.
 
 ## Opening
 

@@ -9,8 +9,8 @@ Status: ✅ exists, ✂️ cut from a skill next, ⬜ later, 🆕 new, 🔒 stay
 | Block | Kind | Owns | Needs → gives | Today's text | Users | Status |
 |---|---|---|---|---|---|---|
 | planner | step | which blocks a task uses, in which order, with which inputs | task → `plan.md`, a step table with a Block and a Why column | `blocks/planner` | the `plan` skill | ✅ basic, B9 |
-| plan-chart | step | the check and the drawing of a plan's step graph | `plan.md` → Mermaid chart in `plan.md`, `plan.html`, or the first defect | `blocks/plan-chart` with `scripts/plan_chart.py` | the `plan` skill | ✅ basic |
-| plan-review | step | the owner's approval of a plan before work starts | `plan.html`, `plan.md` → approved plan, started step run | `blocks/plan-review` with `scripts/start_plan.py`, which refuses a plan that changed after approval | the `plan` skill | ✅ basic |
+| plan-chart | step | the check of a plan, the drawing of its step graph, and its review page | `plan.md` → Mermaid chart in `plan.md`, `plan.html`, or the first defect | `blocks/plan-chart` with `scripts/plan_chart.py` | the `plan` skill | ✅ basic |
+| plan-review | step | the owner's approval of a plan before work starts | `plan.html` drawn from `plan.md` → approved plan, started step run | `blocks/plan-review` with `scripts/start_plan.py`, which refuses a plan that changed after approval | the `plan` skill | ✅ basic |
 | comment-round | rule | one Plannotator round: command, saved result with file hashes, answers, loop stop | files → `<N>.json`, `<N>-answers.md` | `blocks/comment-round` with `scripts/comment_round.py` | plan-review, page-comments | ✅ basic |
 | page-comments | step | the comment, fix and check loop for a built page | page, its checks, its build block → approved page | `blocks/page-comments` | glitch-walk, any page | ✅ basic |
 | change-review | step | that a plan's commits get the full review check verdict | range → verdict | `blocks/change-review`, which runs `skills/review/references/check.md` whole | plans that make commits | ✅ basic |

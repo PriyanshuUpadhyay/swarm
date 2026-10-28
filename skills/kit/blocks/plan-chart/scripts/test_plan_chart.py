@@ -1,5 +1,5 @@
 """Run: python3 test_plan_chart.py"""
-import hashlib, json, re, shutil, subprocess, sys, tempfile
+import hashlib, html, json, re, shutil, subprocess, sys, tempfile
 from pathlib import Path
 from unittest.mock import patch
 
@@ -56,14 +56,14 @@ def test_good_plan():
     out, folder = chart(PLAN)
     assert out.returncode == 0, out.stderr
     page = (folder / "plan.html").read_text(encoding="utf-8")
-    assert "Stage 2, 2 steps run in parallel" in page and page.count('<li class="step') == 5, page
-    assert "findings with paths from <b>02-read</b>; DESIGN.md tokens from <b>03-tokens</b>" in page, page
-    assert '<li class="step end"><h2>05-reply' in page, page
-    # One row per Chosen block, parts right under their parent, no census of the rest, and the stdout carries
-    # the table for the plan reply.
-    chosen = page.split("<h3>Chosen (")[1]
-    assert chosen.index("<code>voice</code>") < chosen.index("<code>↳ voice-reply</code>"), chosen[:400]
-    assert "### Chosen (9)" in out.stdout and "Rejected" not in out.stdout and "html-diagram" not in out.stdout, out.stdout
+    # The page is the whole plan: the step table, and a Skill blocks section in place of the blocks table, with
+    # one row per Chosen block, each part right under its parent, its SKILL.md description, and its steps.
+    assert "<td>findings with paths</td>" in page and ">Blocks considered<" not in page, page
+    used = page.split('id="used-in-this-plan-9"')[1].split("</table>")[0]
+    assert used.index("<code>voice</code>") < used.index("<code>voice-reply</code>"), used[:400]
+    assert "<td>Write the final answer to the owner" in used and "<td>05-reply</td>" in used, used
+    assert "Offered, left off" not in page and "Other blocks in the kit (" in page, page
+    assert out.stdout == f"{folder / 'plan.html'}\n", out.stdout
     # The approved plan runs as a step run with no change, and each step file carries its Writes.
     run = subprocess.run([sys.executable, "-I", STEP_RUN, "start", folder / "run", folder / "plan.md"], capture_output=True, text=True)
     assert run.returncode == 0, run.stderr
@@ -76,9 +76,9 @@ def test_an_offered_block_that_no_step_loads_is_listed_apart():
     out, folder = chart(PLAN + "| html-diagram | Offered | a drawn flow may help the owner later |\n")
     assert out.returncode == 0, out.stderr
     page = (folder / "plan.html").read_text(encoding="utf-8")
-    assert "<h3>Chosen (9)</h3>" in page and "<h3>Offered (1)</h3>" in page, page
-    assert page.index("<h3>Offered (1)</h3>") < page.index("<code>html-diagram</code>"), page
-    assert "### Chosen (9)" in out.stdout and "### Offered (1)" in out.stdout, out.stdout
+    offered = page.split('id="offered-left-off-1"')[1].split("</table>")[0]
+    assert "<td><code>html-diagram</code></td>" in offered and "a drawn flow may help the owner later" in offered, offered
+    assert "<code>html-diagram</code>" not in page.split("Other blocks in the kit (")[1], "an offered block is not in Other"
 
 
 def test_page_is_readable():
@@ -88,7 +88,7 @@ def test_page_is_readable():
     # Backticks become <code> after escaping, and Done when claims are a list.
     assert "<code>theme.ts</code>" in page and "`" not in re.sub(r"<script>.*?</script>", "", page.split("</style>")[1], flags=re.S), page[:400]
     assert "<li>the page shows dark colors from <code>tokens.css</code></li>" in page, page
-    assert "<p>Evidence:</p><ul><li>a screenshot at 375 px and 1280 px</li>" in page, page
+    assert "<p>Evidence:</p>\n<ul><li>a screenshot at 375 px and 1280 px</li>" in page, page
     assert inline_escapes_html()
     # Stages wrap or stack, never one fixed row that cuts stages off.
     assert "grid-auto-flow:column" not in page and "auto-fit" in page, page
@@ -96,18 +96,12 @@ def test_page_is_readable():
     assert plan_chart.read_plan(folder / "plan.md")[2][1][4] == "find where `theme.ts` sets it"
 
 
-def test_reasons_are_short():
-    long = "one two three four five six seven eight nine ten eleven `twelve thirteen` fourteen"
-    assert plan_chart.short(long) == "one two three four five six seven eight nine ten eleven `twelve…`"
-    assert plan_chart.short("the task needs it") == "the task needs it"
-
-
 def test_mermaid_chart():
     out, folder = chart(PLAN)
     assert out.returncode == 0, out.stderr
     md = (folder / "plan.md").read_text(encoding="utf-8")
-    # The fence sits right under the title, between the markers.
-    assert md.startswith("# Plan: add dark mode to settings\n\n<!-- plan-chart:start -->\n```mermaid\nflowchart TD\n"), md[:200]
+    # With no fold, the fence sits above the first section, so the lede stays under the title.
+    assert "\n<!-- plan-chart:start -->\n```mermaid\nflowchart TD\n" in md.split("\n## ", 1)[0], md[:400]
     chart_text = md.split("```mermaid\n")[1].split("```")[0]
     # Only a stage of 2 or more steps gets a subgraph; the chart holds the flow and no dropped block.
     assert chart_text.split("  s1 --> s2")[0] == "\n".join([
@@ -119,7 +113,7 @@ def test_mermaid_chart():
     assert md.split("```\n", 1)[1].startswith("<!-- plan-chart:end -->"), md[:900]
     # plan.html draws the same text with the pinned Pele build, offline.
     page = (folder / "plan.html").read_text(encoding="utf-8")
-    assert plan_chart.html.escape(chart_text) in page and "/*! Pele 1.6.0 | MIT License" in page and "<script src" not in page
+    assert html.escape(chart_text.rstrip("\n")) in page and "/*! Pele 1.6.0 | MIT License" in page and "<script src" not in page
     rendered = pele_render(chart_text)
     assert rendered is None or rendered.startswith("<svg"), rendered
 
@@ -158,10 +152,10 @@ def test_chart_replace_is_idempotent():
 
 
 def approve(run):
-    files = {f"../{name}": hashlib.sha256((run / name).read_bytes()).hexdigest() for name in ("plan.html", "plan.md")}
+    files = {"../plan.html": hashlib.sha256((run / "plan.html").read_bytes()).hexdigest()}
     (run / "plan-review").mkdir(exist_ok=True)
     result = {"decision": "approved", "message": "", "annotationCount": 0}
-    (run / "plan-review" / "1.json").write_text(json.dumps({"files": files, "result": result}))
+    (run / "plan-review" / "1.json").write_text(json.dumps({"files": files, "result": result}), encoding="utf-8")
 
 
 def test_start_refuses_after_chart_change():
@@ -173,7 +167,7 @@ def test_start_refuses_after_chart_change():
     plan.write_text(approved.replace("s2 --> s4", "s2 --> s5"), encoding="utf-8")  # only the chart changed
     start = lambda: subprocess.run([sys.executable, "-I", START_PLAN, run], capture_output=True, text=True)
     refused = start()
-    assert refused.returncode == 1 and "../plan.md changed after round 1" in refused.stderr, refused
+    assert refused.returncode == 1 and "plan.md changed after the owner approved plan.html" in refused.stderr, refused
     assert subprocess.run([sys.executable, "-I", SCRIPT, plan], capture_output=True).returncode == 0
     assert plan.read_text(encoding="utf-8") == approved
     assert start().returncode == 0 and (run / "05-reply.md").is_file()
@@ -254,8 +248,10 @@ def test_parent_selection():
         out, folder = chart(text)
         assert out.returncode == 0, out.stderr
         page = (folder / "plan.html").read_text(encoding="utf-8")
-        card = page.split("<h2>04-build</h2>")[1].split("</li>", 1)[0]
-        assert card.split("</p>", 1)[0] == '<p>Blocks: ' + ", ".join(f"<code>{b}</code>" for b in expected), card
+        used = page.split('id="used-in-this-plan-')[1].split("</table>")[0]
+        for block in expected:
+            row = used.split(f"<td><code>{block}</code></td>")[1].split("</tr>")[0]
+            assert row.endswith("<td>04-build</td>"), (block, row)
 
 
 def test_rejected_parent_stops():

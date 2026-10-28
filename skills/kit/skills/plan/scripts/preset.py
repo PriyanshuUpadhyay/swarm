@@ -62,8 +62,8 @@ def section(file, text=None):
 def of_plan(plan):
     """The preset file that the plan's `Preset:` line names, or None.
 
-    Only the first line after the title counts, past blank lines and the chart that plan_chart.py writes
-    there, so a `Preset:` line anywhere else in the plan names nothing.
+    Only the first line after the title counts, past blank lines and a chart that an older
+    plan_chart.py wrote there, so a `Preset:` line anywhere else in the plan names nothing.
     """
     lines = iter(Path(plan).read_text(encoding="utf-8").splitlines())
     if not any(l.startswith("# ") for l in lines):

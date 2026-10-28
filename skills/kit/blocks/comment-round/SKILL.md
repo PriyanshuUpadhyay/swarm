@@ -24,9 +24,9 @@ metadata:
 - `python3 -I <script> check <dir> <file>...` exits 0 only when the newest round approved these files and no file changed since. An edit after approval needs a new round.
 
 ## Example
-Initial state: `plan.md` and `plan.html` are ready.
-Action: `comment_round.py run plan-review plan.html plan.md` prints `round 1: annotated, with notes`. The note says "skip 03-tokens". Write `1-answers.md` with the quote and "removed 03-tokens". Change the plan and run round 2, which prints `round 2: approved, no notes`.
-Result: `comment_round.py check plan-review plan.html plan.md` prints `round 2 approved these files`.
+Initial state: `plan.html`, drawn from `plan.md`, is ready.
+Action: `comment_round.py run plan-review plan.html` prints `round 1: annotated, with notes`. The note says "skip 03-tokens". Write `1-answers.md` with the quote and "removed 03-tokens". Change the plan and run round 2, which prints `round 2: approved, no notes`.
+Result: `comment_round.py check plan-review plan.html` prints `round 2 approved these files`.
 
 ## Check (script)
 - `python3 -I <kit root>/blocks/comment-round/scripts/test_comment_round.py` prints `ok`: a round saves its hashes, notes need answers, an edit voids the approval, and a missing binary, a bad result, a URL and round 4 stop the script.
