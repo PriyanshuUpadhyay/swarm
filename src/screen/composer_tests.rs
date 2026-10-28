@@ -67,14 +67,13 @@ mod tests {
         // A queued line that the history quotes is not in the queue.
         let quoted = format!(" Steering: a quoted line\n{}", fixture!("pi-queued"));
         assert_eq!(pi_queue(&quoted).unwrap().len(), 2);
-        // A hint that the history quotes, as when pi prints this fixture, is not pi's own hint.
-        let rows: Vec<&str> = fixture!("pi-queued").lines().collect();
-        let printed = format!(
-            "{}\n Reply\n{}",
-            rows[..rows.len() - 6].join("\n"),
-            fixture!("pi-idle")
+        // pi stacks a status or an extension widget between the hint and its box; the queue still
+        // shows.
+        let widget = fixture!("pi-queued").replace(
+            " ↳ Option+Up to edit all queued messages\n",
+            " ↳ Option+Up to edit all queued messages\n Auto-compacting... (esc to cancel)\n",
         );
-        assert_eq!(pi_queue(&printed), Some(vec![]));
+        assert_eq!(pi_queue(&widget).unwrap().len(), 2);
         // With no hint line nothing is queued.
         assert_eq!(pi_queue(fixture!("pi-idle")), Some(vec![]));
         assert_eq!(pi_queue(&quoted.replace("↳ ", "")), Some(vec![]));
