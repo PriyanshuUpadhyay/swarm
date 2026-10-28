@@ -88,6 +88,14 @@ mod tests {
         assert_eq!(claude.keys(2), Some(vec!["3".to_string()]));
         assert_eq!(claude.keys(3), None);
         let agy = prompt(fixture!("agy-trust")).unwrap();
+        // AGY's trust screen opens with its own header row, so the card shows the whole question
+        // even though no rule or history row sits above it.
+        assert_eq!(
+            whole_prompt(fixture!("agy-trust"), || None),
+            Some(agy.clone())
+        );
+        let headless = fixture!("agy-trust").replace("Accessing workspace:", "");
+        assert_eq!(whole_prompt(&headless, || None), None);
         assert_eq!(agy.keys(0), Some(vec!["Enter".to_string()]));
         assert_eq!(
             agy.keys(1),

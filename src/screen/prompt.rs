@@ -34,6 +34,9 @@ pub(super) const PROMPT_FOOTERS: &[&str] = &[
 pub(super) const CURSORS: &[char] = &['❯', '›', '>'];
 /// Rows the question does not reach past: a history entry's marker.
 const HISTORY: &[char] = &['❯', '›', '>', '•', '⏺', '●', '↳', '✻', '▸'];
+/// Rows that open a whole-screen question, so nothing of it is above them: AGY's folder trust
+/// screen (agy-trust.txt), which a pane shows first with no rule or history row above.
+const HEADERS: &[&str] = &["Accessing workspace:"];
 
 /// A numbered choice's number, label, and label column, as in `❯ 1. Yes` or `  2. No`.
 pub(super) fn numbered_choice(line: &str) -> Option<(usize, &str, usize)> {
@@ -212,6 +215,10 @@ fn prompt_above(lines: &[&str], footer: usize) -> Option<Prompt> {
             break;
         }
         question.push(text);
+        if HEADERS.contains(&text) {
+            bounded = true;
+            break;
+        }
     }
     question.reverse();
     let question = question.join("\n");
