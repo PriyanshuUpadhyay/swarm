@@ -62,6 +62,17 @@ pub fn prompt(rows: &str) -> Option<Prompt> {
         let line = line.to_lowercase();
         PROMPT_FOOTERS.iter().any(|footer| line.contains(footer))
     };
+    // The submit tab of a Claude question with several tabs has no footer row, and its cursor row
+    // is the bottom choice. Its tab bar row, as `←  ☒ Color  ☒ Size  ✔ Submit  →`, marks it.
+    let tab_bar = |line: &&str| {
+        let line = line.trim();
+        line.starts_with('←') && line.ends_with('→')
+    };
+    if lines.iter().any(tab_bar)
+        && let Some(found) = prompt_above(&lines, lines.len())
+    {
+        return Some(found);
+    }
     let mut below = 0;
     // AGY's status row also says "esc to cancel", so each footer candidate near the bottom is tried.
     for index in (0..lines.len()).rev() {
