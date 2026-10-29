@@ -1,8 +1,9 @@
 // Profile settings and the ordered runner editor.
 
 import { ArrowDownIcon, ArrowUpIcon, XIcon } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { App } from "../core/app";
+import type { ModelInfo } from "../core/run-catalog";
 import type { Profile, ProviderInfo, Runner } from "../core/settings";
 import { Button } from "../components/ui/button";
 import { FIELD, Row, useSettings } from "./settings-shared";
@@ -24,7 +25,7 @@ function ProfilesPage({ app }: { app: App }) {
   const edited = data.profiles.find((p) => p.name === editing) ?? null;
   return (
     <div className="grid min-w-0 gap-4">
-      <MinUsage key={data.revision} app={app} value={data.min_usage_left_pct} />
+      <MinUsage app={app} value={data.min_usage_left_pct} />
       <div className="flex gap-2">
         <Button size="sm" variant="outline" disabled={busy} data-testid="profile-new" onClick={() => setNaming({ op: "new" })}>
           New profile…
@@ -67,7 +68,7 @@ function ProfilesPage({ app }: { app: App }) {
                 Delete
               </Button>
             </div>
-            {edited === p && <ProfileEditor key={data.revision} app={app} profile={p} done={() => setEditing(null)} />}
+            {edited === p && <ProfileEditor app={app} profile={p} done={() => setEditing(null)} />}
           </li>
         ))}
       </ul>
@@ -80,22 +81,29 @@ function MinUsage({ app, value }: { app: App; value: number }) {
   const [text, setText] = useState(String(value));
   const pct = Number(text);
   const valid = text !== "" && Number.isInteger(pct) && pct >= 0 && pct <= 100;
-  const save = () => valid && pct !== value && void app.settings.profileOp({ op: "min_usage", pct });
+  const [saved, setSaved] = useState(false);
+  useEffect(() => setText(String(value)), [value]);
+  const save = () => {
+    if (valid && pct !== value) void app.settings.profileOp({ op: "min_usage", pct }).then(setSaved);
+  };
   return (
     <Row title="Usage left" detail="A runner is skipped when every account of its provider has less than this left.">
       <span className="flex items-center gap-1 text-sm">
         <input
-          className={`${FIELD} w-16 text-right`}
+          className={`${FIELD} w-16 text-right ${!valid ? "border-failed" : ""}`}
+          aria-invalid={!valid}
+          aria-describedby="usage-range"
           aria-label="Usage left minimum, percent"
           data-testid="min-usage"
           inputMode="numeric"
           value={text}
           disabled={busy}
-          onChange={(e) => setText(e.target.value.replace(/\D/g, ""))}
+          onChange={(e) => { setSaved(false); setText(e.target.value.replace(/\D/g, "")); }}
           onBlur={save}
           onKeyDown={(e) => e.key === "Enter" && save()}
         />
         %
+        <span id="usage-range" className="text-xs text-muted-foreground">{!valid ? "Enter 0 to 100." : saved ? "Saved" : "0 to 100"}</span>
       </span>
     </Row>
   );
@@ -115,6 +123,8 @@ function NameForm({ app, mode, done }: { app: App; mode: NameMode; done: () => v
     <form
       className="flex items-end gap-2"
       data-testid="profile-name-form"
+      data-settings-inline
+      onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); done(); } }}
       onSubmit={(e) => {
         e.preventDefault();
         void submit();
@@ -139,7 +149,9 @@ function NameForm({ app, mode, done }: { app: App; mode: NameMode; done: () => v
 function ProfileEditor({ app, profile, done }: { app: App; profile: Profile; done: () => void }) {
   const busy = useSettings(app, "busy");
   const providers = useSettings(app, "providers");
-  const [runners, setRunners] = useState<Runner[]>(profile.runners);
+  const drafts = useSettings(app, "profileDrafts");
+  const runners = drafts[profile.name] ?? profile.runners;
+  const setRunners = (next: Runner[]) => app.settings.setProfileDraft(profile.name, next);
   const info = (id: string): ProviderInfo | undefined => providers.find((p) => p.id === id);
   const change = (i: number, next: Runner) => setRunners(runners.map((r, j) => (j === i ? next : r)));
   const move = (i: number, by: number) => {
@@ -148,10 +160,14 @@ function ProfileEditor({ app, profile, done }: { app: App; profile: Profile; don
     setRunners(next);
   };
   const save = async () => {
-    if (await app.settings.profileOp({ op: "save", profile: { name: profile.name, runners } })) done();
+    if (await app.settings.profileOp({ op: "save", profile: { name: profile.name, runners } })) {
+      app.settings.setProfileDraft(profile.name, null);
+      done();
+    }
   };
   return (
-    <div className="grid gap-2 border-t border-border pt-2" data-testid="profile-editor">
+    <div className="grid gap-2 border-t border-border pt-2" data-testid="profile-editor" data-settings-inline onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); done(); } }}>
+      <p className="text-xs text-muted-foreground">Unsaved runner edits stay here until you save or discard them.</p>
       {runners.map((r, i) => {
         const efforts = info(r.provider)?.efforts ?? [r.effort];
         const extras = (["sandbox", "approval", "permission"] as const).filter((k) => r[k]).map((k) => `${k}=${r[k]}`);
@@ -174,7 +190,7 @@ function ProfileEditor({ app, profile, done }: { app: App; profile: Profile; don
                 </option>
               ))}
             </select>
-            <input className={`${FIELD} w-40 font-mono`} aria-label={`Runner ${i + 1} model`} data-testid="runner-model" value={r.model} onChange={(e) => change(i, { ...r, model: e.target.value.trim() })} />
+            <ModelField app={app} runner={r} index={i} onChange={(model) => change(i, { ...r, model })} />
             <select className={FIELD} aria-label={`Runner ${i + 1} effort`} data-testid="runner-effort" value={r.effort} onChange={(e) => change(i, { ...r, effort: e.target.value })}>
               {(efforts.includes(r.effort) ? efforts : [r.effort, ...efforts]).map((e) => (
                 <option key={e}>{e}</option>
@@ -198,8 +214,8 @@ function ProfileEditor({ app, profile, done }: { app: App; profile: Profile; don
           Add runner
         </Button>
         <span className="flex-1" />
-        <Button size="sm" variant="outline" onClick={done}>
-          Cancel
+        <Button size="sm" variant="outline" onClick={() => { app.settings.setProfileDraft(profile.name, null); done(); }}>
+          Discard edits
         </Button>
         <Button size="sm" data-testid="profile-save" disabled={busy || runners.some((r) => !r.model)} onClick={() => void save()}>
           Save
@@ -210,3 +226,16 @@ function ProfileEditor({ app, profile, done }: { app: App; profile: Profile; don
 }
 
 export { ProfilesPage };
+
+function ModelField({ app, runner, index, onChange }: { app: App; runner: Runner; index: number; onChange: (value: string) => void }) {
+  const [models, setModels] = useState<ModelInfo[]>([]);
+  useEffect(() => {
+    let live = true;
+    setModels([]);
+    app.life.runs.models(runner.provider).then((data) => live && setModels(data.models), () => {});
+    return () => { live = false; };
+  }, [app, runner.provider]);
+  const id = `profile-model-${index}`;
+  return <><input className={`${FIELD} w-40 font-mono`} list={id} aria-label={`Runner ${index + 1} model`} data-testid="runner-model" value={runner.model} onChange={(e) => onChange(e.target.value.trim())} />
+    <datalist id={id}>{models.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}</datalist></>;
+}

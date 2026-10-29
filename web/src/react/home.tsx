@@ -16,6 +16,9 @@ export function Home({ app }: { app: App }) {
   const recent = view.recent.slice(0, 8);
   const hasProject = (view.tree?.sections.length ?? 0) > 0;
   const hasChat = recent.length > 0;
+  const doctor = useSyncExternalStore(app.settings.subscribe, () => app.settings.state.doctor);
+  const setupDone = doctor.state === "ready" && doctor.data.items.every((item) => item.state === "ok");
+  useEffect(() => { void app.settings.loadSetup(); }, [app]);
   const hasAccount = useSyncExternalStore(app.settings.subscribe, () => signedIn(app.settings.state.usage));
   const hud = useSyncExternalStore(app.settings.subscribe, () => app.settings.state.hud);
   const hudPending = useSyncExternalStore(app.settings.subscribe, () => app.settings.state.hudPending);
@@ -68,9 +71,11 @@ export function Home({ app }: { app: App }) {
           </section>
         )}
         {view.error && <p className="text-sm text-failed select-text">Chats unavailable: {view.error}</p>}
-        {(!hasProject || !hasChat) && (
+        {(!hasProject || !hasChat || !setupDone) && (
           <section className="grid gap-3" aria-label="Get started">
             <h2 className="text-lg font-semibold">Get started</h2>
+            <Step done={setupDone} title="Set up this Mac" run={() => app.settings.show("setup")} />
+            {doctor.state === "error" && <p className="text-sm text-failed">Could not check setup. Open Setup &amp; doctor to try again.</p>}
             <Step done={hasProject} title="Import a project" run={() => app.life.openProject("import")} />
             <Step done={hasAccount} title="Sign in to an account" run={() => app.settings.show("accounts")} />
             <Step done={hasChat} title="Start a chat" run={hasProject ? () => app.life.newWorkspace() : undefined} />
