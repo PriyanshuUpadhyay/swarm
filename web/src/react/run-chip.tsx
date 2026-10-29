@@ -12,6 +12,7 @@ import { Button } from "../components/ui/button";
 import { FIELD, message, useLife, ErrorLine } from "./lifecycle-shared";
 import { SwitchProgress } from "./lifecycle-switch-model";
 import { Segmented } from "./settings-shared";
+import { modelPickerKey } from "./model-picker";
 import { meterTone } from "./usage-meters";
 
 export function RunChip({ app, sessionId, chair }: { app: App; sessionId: string; chair: AgentInput }) {
@@ -105,7 +106,7 @@ function RunBody({ app, sessionId, chair }: { app: App; sessionId: string; chair
   // The meters are a cached read with no provider call; Settings may not have read them yet.
   useEffect(() => {
     // loadUsage keeps its own error in state.usage, so nothing waits for it.
-    if (app.settings.state.usage.state === "idle") void app.settings.loadUsage();
+    void app.settings.loadUsage();
   }, [app]);
 
   useEffect(() => {
@@ -174,7 +175,7 @@ function RunBody({ app, sessionId, chair }: { app: App; sessionId: string; chair
   return (
     <div className="grid gap-3">
       <fieldset disabled={running} className="grid grid-cols-2 gap-3">
-        <div className="grid min-w-0 gap-1">
+        <div className="grid min-w-0 gap-1" onKeyDown={(e) => modelPickerKey(e, query)}>
           <input className={FIELD} data-testid="run-query" placeholder="Search or type a model id" aria-label="Model" spellCheck={false} autoComplete="off" value={query} onChange={(e) => setQuery(e.target.value)} />
           <div data-testid="run-models" className="max-h-[260px] overflow-y-auto">
             {(providers.length ? providers : [{ id: current.provider }]).map((p) => {
@@ -198,7 +199,7 @@ function RunBody({ app, sessionId, chair }: { app: App; sessionId: string; chair
                   {shown.map((m) => {
                     const on = draft.provider === p.id && draft.model === m.id;
                     return (
-                      <button key={m.id} type="button" aria-pressed={on} className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-hover aria-pressed:bg-selected" onClick={() => choose(p.id, m)}>
+                      <button key={m.id} data-model-id={m.id} type="button" aria-pressed={on} className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-hover aria-pressed:bg-selected" onClick={() => choose(p.id, m)}>
                         <Radio on={on} />
                         <span className="min-w-0 truncate">{m.label}</span>
                         <span className="ml-auto max-w-[55%] truncate text-xs text-muted-foreground" title={m.note}>{[m.note, current.provider === p.id && current.model === m.id && "now"].filter(Boolean).join(" · ")}</span>
@@ -206,7 +207,7 @@ function RunBody({ app, sessionId, chair }: { app: App; sessionId: string; chair
                     );
                   })}
                   {custom && (
-                    <button type="button" aria-pressed={draft.provider === p.id && draft.model === custom} data-testid={`run-custom-${p.id}`} className="flex w-full min-w-0 rounded-md px-2 py-1 text-left hover:bg-hover aria-pressed:bg-selected" onClick={() => choose(p.id, custom)}>
+                    <button type="button" aria-pressed={draft.provider === p.id && draft.model === custom} data-model-id={custom} data-testid={`run-custom-${p.id}`} className="flex w-full min-w-0 rounded-md px-2 py-1 text-left hover:bg-hover aria-pressed:bg-selected" onClick={() => choose(p.id, custom)}>
                       <span className="truncate">Use “{custom}”</span>
                     </button>
                   )}
@@ -253,7 +254,7 @@ function RunBody({ app, sessionId, chair }: { app: App; sessionId: string; chair
                   <button key={a.name ?? ""} type="button" aria-pressed={on} title={[a.name && (a.email ? `${a.name} (${a.email})` : a.name), limit?.text].filter(Boolean).join("\n") || undefined} className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-hover aria-pressed:bg-selected" onClick={() => setDraft({ ...draft, account: a.name })}>
                     <Radio on={on} />
                     {a.name && <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ background: accountColor(a.name) }} />}
-                    <span className="min-w-0 truncate">{a.name ?? "CLI default"}</span>
+                    <span className="min-w-0 truncate">{a.name ?? (draft.provider === "codex" && current.provider === "codex" && current.account ? `Keep current account (${current.account})` : "CLI default")}</span>
                     {limit?.text && (
                       <span className="ml-auto flex min-w-0 max-w-[60%] items-center gap-1.5 text-xs text-muted-foreground tabular-nums">
                         {limit.left !== null && (
@@ -270,6 +271,10 @@ function RunBody({ app, sessionId, chair }: { app: App; sessionId: string; chair
             ) : (
               <span className="px-2 text-sm">{cliName(draft.provider)} login</span>
             )}
+            {accountInfo?.accounts && <div className="text-xs text-muted-foreground">
+              <span>{meters.filter((m) => m.provider === accountInfo.id).map((m) => m.as_of_seconds).filter((t): t is number => t !== null).sort((a, b) => a - b).slice(0, 1).map((t) => `Limits checked ${new Date(t * 1000).toLocaleString()}`).join("") || "No cached limit time"}</span>
+              <Button type="button" variant="ghost" size="sm" onClick={() => void app.settings.refreshUsage(accountInfo.id)}>Refresh limits</Button>
+            </div>}
           </div>
         </div>
       </fieldset>

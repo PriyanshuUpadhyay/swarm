@@ -1,7 +1,7 @@
 // Output previews, virtual text lists, and unified or split patches.
 import { CopyIcon } from "lucide-react";
-import { useMemo, useSyncExternalStore } from "react";
-import { VList } from "virtua";
+import { useEffect, useMemo, useRef, useSyncExternalStore } from "react";
+import { VList, type VListHandle } from "virtua";
 import type { DiffPreview, TextPreview } from "../core/api";
 import type { FullText, Reader } from "../core/app";
 import { isPatch, parsePatch, patchKinds, splitPatch, type PatchLine, type SplitRow } from "../core/transcript";
@@ -15,7 +15,7 @@ function OutputBox({ app, preview, full, title }: { app: Reader; preview: TextPr
   const f = preview.id ? full.get(preview.id) : undefined;
   const copy = (e: React.MouseEvent) => copyText(preview.is_truncated ? app.fullText(preview.id) : preview.text, title.toLowerCase(), e.currentTarget);
   return (
-    <div className="grid gap-1" data-testid="output">
+    <div className="grid gap-1" data-testid="output" data-preview={preview.id}>
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
         <span className="font-medium">{f?.state === "ready" ? `${title} · ${plural(f.lines.length, "line")}` : title}</span>
         <span className="flex-1" />
@@ -24,11 +24,11 @@ function OutputBox({ app, preview, full, title }: { app: Reader; preview: TextPr
         </button>
       </div>
       {f?.state === "ready" ? (
-        <TextLines lines={f.lines} testid="full-output" />
+        <TextLines lines={f.lines} previewId={preview.id} testid="full-output" />
       ) : isPatch(preview.text) ? (
         <PatchText text={preview.text} />
       ) : (
-        <pre className="out">{preview.text || "No output was recorded."}</pre>
+        <pre className="out">{(preview.text || "No output was recorded.").split("\n").map((text, i, lines) => <span key={i} data-output-line={i}>{text}{i < lines.length - 1 ? "\n" : ""}</span>)}</pre>
       )}
       {preview.is_truncated && f?.state !== "ready" && (
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -50,7 +50,7 @@ function PatchText({ text }: { text: string }) {
   return (
     <pre className="out">
       {lines.map((l, i) => (
-        <span key={i} className={`dl ${kinds[i]}`}>
+        <span key={i} data-output-line={i} className={`dl ${kinds[i]}`}>
           {l}
           {"\n"}
         </span>
@@ -63,12 +63,21 @@ const LINE_HEIGHT = 17;
 const BOX_HEIGHT = 360;
 
 /** A windowed box of text lines, so a 200,000-line output keeps a few dozen nodes. */
-function TextLines({ lines, testid }: { lines: string[]; testid?: string }) {
+function TextLines({ lines, previewId, testid }: { lines: string[]; previewId: string; testid?: string }) {
+  const handle = useRef<VListHandle>(null);
+  useEffect(() => {
+    const find = (e: Event) => {
+      const match = (e as CustomEvent<{ preview: string; line: number }>).detail;
+      if (match.preview === previewId) handle.current?.scrollToIndex(match.line, { align: "center" });
+    };
+    window.addEventListener("swarm:find-output", find);
+    return () => window.removeEventListener("swarm:find-output", find);
+  }, [previewId]);
   const kinds = useMemo(() => (lines.some((l) => l.startsWith("@@ ")) ? patchKinds(lines) : null), [lines]);
   return (
-    <VList className="out vbox" data-testid={testid} style={{ height: Math.min(BOX_HEIGHT, lines.length * LINE_HEIGHT + 12) }} itemSize={LINE_HEIGHT} data={lines}>
+    <VList ref={handle} className="out vbox" data-testid={testid} style={{ height: Math.min(BOX_HEIGHT, lines.length * LINE_HEIGHT + 12) }} itemSize={LINE_HEIGHT} data={lines}>
       {(text: string, i: number) => (
-        <div key={i} className={kinds ? `vline dl ${kinds[i]}` : "vline"}>
+        <div key={i} data-output-line={i} className={kinds ? `vline dl ${kinds[i]}` : "vline"}>
           {text || " "}
         </div>
       )}
@@ -103,7 +112,7 @@ function DiffView({ app, diff, full }: { app: Reader; diff: DiffPreview; full: R
   const capped = diff.omitted_lines > 0 || diff.shortened_lines > 0;
   const name = diff.path.slice(diff.path.lastIndexOf("/") + 1);
   return (
-    <div className="diff" data-testid="diff" data-split={split}>
+    <div className="diff" data-testid="diff" data-preview={diff.id} data-split={split}>
       <div className="diff-head">
         <span className="font-medium" title={diff.path}>
           {name}
@@ -124,7 +133,7 @@ function DiffView({ app, diff, full }: { app: Reader; diff: DiffPreview; full: R
           <CopyIcon className="size-3" /> Copy patch
         </button>
       </div>
-      <PatchBody patch={patch} split={split} />
+      <PatchBody patch={patch} split={split} previewId={diff.id} />
       {capped && f?.state !== "ready" && (
         <div className="flex items-center gap-2 px-2 pb-1.5 text-xs text-muted-foreground">
           <span>
@@ -141,17 +150,42 @@ function DiffView({ app, diff, full }: { app: Reader; diff: DiffPreview; full: R
   );
 }
 
-function PatchBody({ patch, split }: { patch: string; split: boolean }) {
+function PatchBody({ patch, split, previewId }: { patch: string; split: boolean; previewId: string }) {
+  const handle = useRef<VListHandle>(null);
   const parsed = useMemo(() => parsePatch(patch), [patch]);
+  const sourceLines = useMemo(() => {
+    const raw = patch.split("\n");
+    const positions = new Map<PatchLine, number>();
+    let i = 0;
+    for (const line of parsed) {
+      const text = line.kind === "add" ? `+${line.text}` : line.kind === "del" ? `-${line.text}` : line.kind === "ctx" ? ` ${line.text}` : line.text;
+      while (i < raw.length && raw[i] !== text) i++;
+      positions.set(line, i++);
+    }
+    return positions;
+  }, [patch, parsed]);
   const rows: (PatchLine | SplitRow)[] = split ? splitPatch(parsed) : parsed.filter((l) => l.kind !== "meta");
+  useEffect(() => {
+    const find = (e: Event) => {
+      const match = (e as CustomEvent<{ preview: string; line: number }>).detail;
+      if (match.preview !== previewId) return;
+      const target = parsed.find((line) => sourceLines.get(line) === match.line);
+      if (!target) return;
+      const same = (line: PatchLine | null) => line === target;
+      const i = rows.findIndex((r) => "kind" in r ? same(r) : "hunk" in r ? r.hunk === target.text : same(r.left) || same(r.right));
+      if (i >= 0) handle.current?.scrollToIndex(i, { align: "center" });
+    };
+    window.addEventListener("swarm:find-output", find);
+    return () => window.removeEventListener("swarm:find-output", find);
+  }, [patch, split, previewId, sourceLines]);
   const height = Math.min(BOX_HEIGHT, rows.length * LINE_HEIGHT + 4);
   return (
-    <VList className="patch" style={{ height }} itemSize={LINE_HEIGHT} data={rows}>
+    <VList ref={handle} className="patch" style={{ height }} itemSize={LINE_HEIGHT} data={rows}>
       {(r: PatchLine | SplitRow, i: number) => {
-        if ("hunk" in r) return <div key={i} className="pl hunk">{r.hunk}</div>;
+        if ("hunk" in r) return <div key={i} data-output-line={sourceLines.get(parsed.find((line) => line.kind === "hunk" && line.text === r.hunk)!)} className="pl hunk">{r.hunk}</div>;
         if ("kind" in r)
           return (
-            <div key={i} className={`pl ${r.kind}`}>
+            <div key={i} data-output-line={sourceLines.get(r)} className={`pl ${r.kind}`}>
               <span className="ln">{r.old ?? ""}</span>
               <span className="ln">{r.new ?? ""}</span>
               <span className="mark">{r.kind === "add" ? "+" : r.kind === "del" ? "−" : r.kind === "hunk" ? "" : " "}</span>
@@ -160,8 +194,8 @@ function PatchBody({ patch, split }: { patch: string; split: boolean }) {
           );
         return (
           <div key={i} className="pl split">
-            <Half line={r.left} side="old" />
-            <Half line={r.right} side="new" />
+            <Half line={r.left} sourceLine={r.left ? sourceLines.get(r.left) : undefined} side="old" />
+            <Half line={r.right} sourceLine={r.right ? sourceLines.get(r.right) : undefined} side="new" />
           </div>
         );
       }}
@@ -169,11 +203,11 @@ function PatchBody({ patch, split }: { patch: string; split: boolean }) {
   );
 }
 
-function Half({ line, side }: { line: PatchLine | null; side: "old" | "new" }) {
+function Half({ line, side, sourceLine }: { line: PatchLine | null; side: "old" | "new"; sourceLine?: number }) {
   if (!line) return <span className="half empty" />;
   const kind = line.kind === "ctx" ? "ctx" : line.kind;
   return (
-    <span className={`half ${kind}`}>
+    <span data-output-line={sourceLine} className={`half ${kind}`}>
       <span className="ln">{side === "old" ? line.old : line.new}</span>
       <span className="code">{line.text}</span>
     </span>

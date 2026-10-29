@@ -186,12 +186,13 @@ export function PaneStrip({ app }: { app: App }) {
       {/* A zoomed pane fills this box, over the strip. */}
       <div className="relative min-h-0 flex-1">
         <div ref={scroller} className="strip" data-panes={hasPanes} data-testid="strip">
-          <section className="strip-chat" onPointerDownCapture={() => app.paneFocused(null)} onFocusCapture={() => app.paneFocused(null)}>
+          <section inert={!!strip.zoomed} className="strip-chat" onPointerDownCapture={() => app.paneFocused(null)} onFocusCapture={() => app.paneFocused(null)}>
             <Asking app={app} strip={strip} />
             <ChatView app={app} />
           </section>
           {hasPanes && (
             <Grip
+              inactive={!!strip.zoomed}
               axis="x"
               label="Chat page width"
               onStart={() => (dragStart.current = chatNow())}
@@ -216,6 +217,7 @@ export function PaneStrip({ app }: { app: App }) {
                       {pane(col[0])}
                       {col[1] && (
                         <Grip
+                          inactive={!!strip.zoomed}
                           axis="y"
                           label={`Split of ${col[0].id}`}
                           onStart={(el) => (dragStart.current = Number(el.parentElement!.style.getPropertyValue("--split")))}
@@ -230,6 +232,7 @@ export function PaneStrip({ app }: { app: App }) {
                       {col[1] && pane(col[1])}
                     </div>
                     <Grip
+                      inactive={!!strip.zoomed}
                       axis="x"
                       label="Agent column width"
                       onStart={() => (dragColumn.current = columnStart())}
@@ -301,10 +304,10 @@ function Asking({ app, strip }: { app: App; strip: Strip }) {
   );
 }
 
-/** A clear grip on a pane edge. It takes no focus, so keys stay with the columns. `onDrag` gets the
- *  pointer's travel since the drag began, along the axis. */
+/** A pane edge supports pointer and keyboard resize. `onDrag` gets the travel along its axis. */
 function Grip({
   axis,
+  inactive,
   label,
   onStart,
   onDrag,
@@ -312,12 +315,27 @@ function Grip({
   onReset,
 }: {
   axis: "x" | "y";
+  inactive: boolean;
   label: string;
   onStart: (el: HTMLElement) => void;
   onDrag: (travel: number, el: HTMLElement) => void;
   onEnd: () => void;
   onReset: (el: HTMLElement) => void;
 }) {
+  const element = useRef<HTMLDivElement>(null);
+  const [size, setSize] = useState({ now: 0, max: 0 });
+  useEffect(() => {
+    const el = element.current;
+    const previous = el?.previousElementSibling as HTMLElement | null;
+    const parent = el?.parentElement;
+    if (!previous || !parent) return;
+    const measure = () => setSize({ now: axis === "x" ? previous.clientWidth : previous.clientHeight, max: axis === "x" ? Math.max(previous.clientWidth, parent.closest(".strip")?.clientWidth ?? parent.clientWidth) : parent.clientHeight });
+    const observer = new ResizeObserver(measure);
+    observer.observe(previous);
+    observer.observe(parent);
+    measure();
+    return () => observer.disconnect();
+  }, [axis]);
   const start = useRef<number | null>(null);
   const at = (e: React.PointerEvent) => (axis === "x" ? e.clientX : e.clientY);
   const end = () => {
@@ -327,10 +345,26 @@ function Grip({
   };
   return (
     <div
+      ref={element}
       role="separator"
+      tabIndex={inactive ? -1 : 0}
+      aria-hidden={inactive || undefined}
+      aria-valuemin={0}
+      aria-valuemax={size.max}
+      aria-valuenow={size.now}
+      onKeyDown={(e) => {
+        if (e.metaKey || e.ctrlKey || e.altKey) return;
+        if (e.key === "Home") { e.preventDefault(); onReset(e.currentTarget); return; }
+        const by = axis === "x" ? { ArrowLeft: -20, ArrowRight: 20 }[e.key] : { ArrowUp: -20, ArrowDown: 20 }[e.key];
+        if (by === undefined) return;
+        e.preventDefault();
+        onStart(e.currentTarget);
+        onDrag(by * (e.shiftKey ? 5 : 1), e.currentTarget);
+        onEnd();
+      }}
       aria-orientation={axis === "x" ? "vertical" : "horizontal"}
       aria-label={label}
-      title="Drag to resize; double-click to reset"
+      title="Drag or use arrow keys to resize; Home or double-click resets"
       className={`grip ${axis}`}
       data-testid="grip"
       onPointerDown={(e) => {
@@ -367,6 +401,7 @@ function PaneView({ app, cell, pane, focused, zoomed, actions }: { app: App; cel
       data-pane={cell.id}
       data-status={cell.status}
       data-focused={focused}
+      inert={!!app.view.strip.zoomed && !zoomed}
       data-zoomed={zoomed}
       aria-label={`Agent ${cell.id}`}
       onPointerDownCapture={focus}

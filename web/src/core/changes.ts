@@ -4,6 +4,7 @@
 
 import type { TextPreview } from "./api";
 import type { App } from "./app";
+import { readStore, writeStore } from "./app-types";
 import type { Command } from "./commands";
 import { parsePatch, type PatchLine } from "./transcript";
 
@@ -56,6 +57,8 @@ export type Load<T> = { state: "idle" } | { state: "loading" } | { state: "ready
 /** One draft comment on a diff: the file, the line range label, the quoted lines with their +/-
  *  marks, and the owner's text. `at` is the display line it shows under. */
 export type DiffComment = { id: number; path: string; layer: Layer; lines: string; quoted: string[]; text: string; at: number };
+
+export type CommentEditor = { anchor: number; cursor: number; text: string };
 
 export type Tab = "changes" | "pr";
 
@@ -149,7 +152,20 @@ export class Changes {
   /** Bumped by each list, diff, file or PR read; an older reply is dropped. */
   private seq = { list: 0, diff: 0, file: 0, pr: 0 };
 
+  private editors = new Map<string, CommentEditor>();
+
   constructor(private readonly app: App) {
+    try {
+      const saved = JSON.parse(readStore("swarm.changes.v1") ?? "null");
+      if (saved) {
+        this.open = saved.open === true;
+        this.tab = saved.tab === "pr" ? "pr" : "changes";
+        this.mode = saved.mode === "branch" ? "branch" : "local";
+        if (Array.isArray(saved.bases)) this.bases = new Map(saved.bases.filter((x: unknown) => Array.isArray(x) && x.length === 2 && x.every((s) => typeof s === "string")));
+        if (Array.isArray(saved.drafts)) this.drafts = new Map(saved.drafts.filter((x: unknown) => Array.isArray(x) && typeof x[0] === "string" && Array.isArray(x[1]) && x[1].every((c) => typeof c.id === "number" && typeof c.path === "string" && typeof c.text === "string" && typeof c.lines === "string" && typeof c.layer === "string" && typeof c.at === "number" && Array.isArray(c.quoted) && c.quoted.every((q: unknown) => typeof q === "string"))));
+        this.commentSeq = Math.max(0, ...[...this.drafts.values()].flat().map((c) => c.id));
+      }
+    } catch { /* A bad saved value leaves the panel usable. */ }
     this.view = this.makeView();
     // Only a workspace change reloads; a rows frame in the chat costs one comparison.
     app.subscribe(() => {
@@ -163,6 +179,7 @@ export class Changes {
   };
 
   private notify() {
+    writeStore("swarm.changes.v1", JSON.stringify({ open: this.open, tab: this.tab, mode: this.mode, bases: [...this.bases], drafts: [...this.drafts] }));
     this.view = this.makeView();
     for (const fn of this.listeners) fn();
   }
@@ -193,6 +210,8 @@ export class Changes {
   }
 
   private follow() {
+    this.seq.list++;
+    this.seq.pr++;
     this.workspace = this.app.view.workspace;
     this.list = IDLE;
     this.pr = IDLE;
@@ -223,7 +242,10 @@ export class Changes {
     else if (!wasOpen || (tab === "changes" ? this.list : this.pr).state === "idle") this.reload();
     else this.notify();
     const list = tab === "changes" ? '[data-testid="changes-list"]' : '[data-testid="pr-panel"]';
-    requestAnimationFrame(() => document.querySelector<HTMLElement>(list)?.focus());
+    const before = document.activeElement;
+    requestAnimationFrame(() => {
+      if (document.activeElement === before || document.activeElement === document.body) document.querySelector<HTMLElement>(list)?.focus();
+    });
   }
 
   close() {
@@ -278,6 +300,7 @@ export class Changes {
 
   private async loadList() {
     if (!this.workspace) return;
+    const workspace = this.workspace;
     const seq = ++this.seq.list;
     const keep = this.list.state === "ready";
     if (!keep) this.list = LOADING;
@@ -286,11 +309,11 @@ export class Changes {
     if (this.mode === "branch" && !this.base()) {
       try {
         const local = await this.read<ChangeList>("/api/changes", new URLSearchParams({ workspace: this.workspace, mode: "local" }));
-        if (seq !== this.seq.list) return;
+        if (seq !== this.seq.list || workspace !== this.workspace) return;
         if (local.refs.length === 0) throw new Error("This workspace has no branch to compare with.");
         this.list = { state: "ready", data: { ...local, files: [] } };
       } catch (err) {
-        if (seq !== this.seq.list) return;
+        if (seq !== this.seq.list || workspace !== this.workspace) return;
         this.list = { state: "error", error: message(err) };
         return this.notify();
       }
@@ -301,7 +324,7 @@ export class Changes {
     } catch (err) {
       next = { state: "error", error: message(err) };
     }
-    if (seq !== this.seq.list) return;
+    if (seq !== this.seq.list || workspace !== this.workspace) return;
     this.list = next;
     const files = next.state === "ready" ? next.data.files : [];
     // The shown file stays when it is still changed; else the first file shows.
@@ -336,8 +359,8 @@ export class Changes {
   }
 
   /** j/k and the arrows in the file list. */
-  move(by: number | "home" | "end") {
-    const files = this.list.state === "ready" ? this.list.data.files : [];
+  move(by: number | "home" | "end", query = "") {
+    const files = this.list.state === "ready" ? this.list.data.files.filter((f) => f.path.toLowerCase().includes(query.trim().toLowerCase())) : [];
     if (!files.length) return;
     const i = files.findIndex((f) => fileKey(f) === this.selected);
     const next = by === "home" ? 0 : by === "end" ? files.length - 1 : Math.max(0, Math.min(files.length - 1, i + by));
@@ -369,6 +392,7 @@ export class Changes {
 
   private async loadPr() {
     if (!this.workspace) return;
+    const workspace = this.workspace;
     const seq = ++this.seq.pr;
     if (this.pr.state !== "ready") this.pr = LOADING;
     this.notify();
@@ -378,8 +402,19 @@ export class Changes {
     } catch (err) {
       next = { state: "error", error: message(err) };
     }
-    if (seq !== this.seq.pr) return;
+    if (seq !== this.seq.pr || workspace !== this.workspace) return;
     this.pr = next;
+    this.notify();
+  }
+
+  editor(path: string, layer: Layer): CommentEditor | null {
+    return this.editors.get(`${this.workspace}\n${fileKey({ path, layer })}`) ?? null;
+  }
+
+  setEditor(path: string, layer: Layer, value: CommentEditor | null) {
+    const key = `${this.workspace}\n${fileKey({ path, layer })}`;
+    if (value) this.editors.set(key, value);
+    else this.editors.delete(key);
     this.notify();
   }
 
