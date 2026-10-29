@@ -185,6 +185,11 @@ fn attach(socket: &std::path::Path, n: u64) -> Result<(), Box<dyn std::error::Er
             Err(_) => break,
         }
     }
+    // The pane's CLI may have left the main screen, mouse reports, bracketed paste, or a hidden
+    // cursor on; turn them off, as tmux does when a client detaches.
+    let _ = stdout
+        .write_all(b"\x1b[?1049l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?2004l\x1b[?25h")
+        .and_then(|()| stdout.flush());
     if raw_mode {
         // SAFETY: restores the termios read above.
         unsafe { libc::tcsetattr(0, libc::TCSANOW, &saved) };

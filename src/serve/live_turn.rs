@@ -6,6 +6,9 @@ use super::*;
 /// How often a working agent's pane is read. One capture is one adapter process, or one socket
 /// read on a PTY host.
 const TICK: Duration = Duration::from_millis(250);
+/// How long one screen read may take. A slow read delays the next tick, so the row updates
+/// less often but still updates.
+const CAPTURE: Duration = Duration::from_secs(2);
 
 /// Sends `{key, text}` to each client that shows `key`'s rows whenever the turn text on the
 /// agent's screen changes, and `text: null` once the agent stops working. Ends with its follower.
@@ -73,7 +76,7 @@ pub(super) async fn watch_turn(
             Some(pane) => {
                 let (adapter, provider) = (adapter.clone(), provider.clone());
                 let read = tokio::task::spawn_blocking(move || {
-                    let rows = adapter.capture_within(&[("pane", &pane)], TICK)?;
+                    let rows = adapter.capture_within(&[("pane", &pane)], CAPTURE)?;
                     Some(swarm::screen::turn_text(&provider, &rows))
                 })
                 .await

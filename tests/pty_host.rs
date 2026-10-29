@@ -421,9 +421,19 @@ fn ask(socket: &Path, request: serde_json::Value) -> serde_json::Value {
     serde_json::from_str(&line).unwrap()
 }
 
+/// A headless host process, killed on drop, so a failed assert leaves no host behind.
+struct Headless(Child);
+
+impl Drop for Headless {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
 /// A headless host, as `launch orchestrator` starts it, with no TERM in its env, as an app's
 /// serve may have none.
-fn headless(home: &Path) -> (Child, PathBuf) {
+fn headless(home: &Path) -> (Headless, PathBuf) {
     use std::io::BufRead;
     let mut host = Command::new(env!("CARGO_BIN_EXE_swarm"))
         .args(["pty", "host"])
@@ -439,7 +449,7 @@ fn headless(home: &Path) -> (Child, PathBuf) {
     std::io::BufReader::new(host.stdout.take().unwrap())
         .read_line(&mut line)
         .unwrap();
-    (host, PathBuf::from(line.trim()))
+    (Headless(host), PathBuf::from(line.trim()))
 }
 
 #[test]
@@ -474,7 +484,7 @@ fn a_headless_host_takes_its_first_live_pane_as_chair_after_a_failed_spawn() {
     std::thread::sleep(Duration::from_secs(1));
     ask(&socket, serde_json::json!({"op": "close", "n": n}));
     wait_for(
-        || host.try_wait().unwrap().is_some(),
+        || host.0.try_wait().unwrap().is_some(),
         "the host to end with its chair",
     );
     let _ = std::fs::remove_dir_all(&home);
@@ -485,7 +495,7 @@ fn a_pane_gets_a_terminal_type_when_its_host_has_none() {
     let home =
         std::env::temp_dir().join(format!("swarm-pty-term-{}", uuid::Uuid::now_v7().simple()));
     std::fs::create_dir_all(&home).unwrap();
-    let (mut host, socket) = headless(&home);
+    let (host, socket) = headless(&home);
     let request =
         serde_json::json!({"op": "spawn", "cwd": home, "env": {}, "feed": "cat > /dev/null"});
     let pane = ask(&socket, request);
@@ -509,8 +519,7 @@ fn a_pane_gets_a_terminal_type_when_its_host_has_none() {
     wait_for(|| read(&file).ends_with('\n'), "the pane's TERM");
     let term = read(&file);
     ask(&socket, serde_json::json!({"op": "close", "n": n}));
-    let _ = host.kill();
-    let _ = host.wait();
+    drop(host);
     let _ = std::fs::remove_dir_all(&home);
     // tmux gives its panes a terminal type too, whatever its server's env holds.
     assert_eq!(term, "[xterm-256color]\n");

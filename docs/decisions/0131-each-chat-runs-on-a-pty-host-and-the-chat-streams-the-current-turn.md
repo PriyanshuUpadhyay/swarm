@@ -72,8 +72,9 @@ a host apart from serve lives through a serve restart.
   that changes its prompt echo or composer can break the cut until the reader learns it.
 - Bad: a host is a process per chat that outlives serve, and a chat ends only when its chair
   exits or the owner closes it.
-- Bad: workspace shells (Cmd+J) stay on tmux until a later decision moves them, so tmux is still
-  needed for them.
+- Bad: the background shells of a workspace (`src/serve/shells.rs`) stay on tmux until a later
+  decision moves them, so tmux is still needed for them. Cmd+J shows a hosted agent's pane through
+  `swarm pty attach`, and those shells through tmux.
 
 ## Decision Drivers
 
