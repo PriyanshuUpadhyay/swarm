@@ -325,11 +325,17 @@ fn the_tmux_choice_counts_only_while_tmux_is_on_path() {
         "case \"$*\" in *new-session*) echo %77 ;; esac",
     );
     assert_eq!(launch(), "%77");
-    // With tmux gone the choice cannot hold, so the chat runs on its own host.
+    // With tmux gone the choice cannot hold, so the chat runs on its own host. The test PATH keeps
+    // /usr/bin and /bin, so a machine with tmux there cannot check this half.
     std::fs::remove_file(home.join("bin/tmux")).unwrap();
-    let chair = launch();
-    assert!(chair.starts_with("pty:"), "{chair}");
-    let close = swarm(&home, &[("SWARM_PANE", chair.as_str())], &["pty", "close"]);
-    assert!(close.status.success(), "{}", stderr(&close));
+    if !["/usr/bin/tmux", "/bin/tmux"]
+        .iter()
+        .any(|path| std::path::Path::new(path).exists())
+    {
+        let chair = launch();
+        assert!(chair.starts_with("pty:"), "{chair}");
+        let close = swarm(&home, &[("SWARM_PANE", chair.as_str())], &["pty", "close"]);
+        assert!(close.status.success(), "{}", stderr(&close));
+    }
     let _ = std::fs::remove_dir_all(&home);
 }

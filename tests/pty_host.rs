@@ -357,3 +357,54 @@ fn a_viewer_sees_the_screen_types_keys_and_the_last_one_out_restores_the_size() 
         "the size put back",
     );
 }
+
+#[test]
+fn a_viewer_gets_no_query_the_host_answered_and_ends_with_its_pane() {
+    let host = Host::start();
+    let pane = host.spawn();
+    let mut viewer = Command::new(env!("CARGO_BIN_EXE_swarm"))
+        .args(["pty", "attach"])
+        .env("SWARM_HOME", &host.home)
+        .env("SWARM_PANE", &pane)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut out = viewer.stdout.take().unwrap();
+    let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let reader = {
+        let seen = seen.clone();
+        std::thread::spawn(move || {
+            let mut chunk = [0; 4096];
+            while let Ok(read @ 1..) = std::io::Read::read(&mut out, &mut chunk) {
+                seen.lock().unwrap().extend_from_slice(&chunk[..read]);
+            }
+        })
+    };
+    let text = || String::from_utf8_lossy(&seen.lock().unwrap()).into_owned();
+    // A viewer's terminal would answer a cursor query again, into the pane.
+    host.out(
+        "ring",
+        &[
+            ("pane", &pane),
+            ("text", "printf 'q\\033[6nr'; echo done-$((1+1))"),
+        ],
+    );
+    wait_for(|| text().contains("done-2"), "the query's line");
+    assert!(text().contains("qr"), "{:?}", text());
+    assert!(!text().contains("\x1b[6n"), "{:?}", text());
+    // The viewer's input stays open, so only the pane's end can end it.
+    let _keys = viewer.stdin.take().unwrap();
+    // The host's own answer sits in the shell's input line, so C-u clears it first.
+    host.out("key", &[("pane", &pane), ("key", "C-u")]);
+    host.out("ring", &[("pane", &pane), ("text", "exit")]);
+    wait_for(
+        || !host.out("list", &[]).contains(&format!("{pane} ")),
+        "the pane to end",
+    );
+    wait_for(
+        || viewer.try_wait().unwrap().is_some(),
+        "the viewer to end with its pane",
+    );
+    reader.join().unwrap();
+}

@@ -9,14 +9,18 @@ import type { App } from "./app";
 
 const letters = (text: string) => text.replace(/[^\p{L}\p{N}]/gu, "");
 
-/** The running turn's screen text as a row, or null once a log row of this turn holds it. The
- *  screen drops markdown marks and wraps lines, so only letters and digits are compared. */
+/** The running turn's screen text as a row, or null once a recent log row holds it. The screen
+ *  drops markdown marks and wraps lines, so only letters and digits are compared. Rows of earlier
+ *  turns count too, because pi's screen can still show the last turn's answer. A text shorter
+ *  than 20 letters, such as a spinner's "Working", is never matched, so it cannot hide itself. */
 export function liveRow(rows: readonly Row[], text: string | null): Row | null {
-  const head = letters(text ?? "").slice(0, 80);
+  if (!text) return null;
+  const head = letters(text).slice(0, 80);
   if (!head) return null;
-  for (let i = rows.length - 1; i >= 0 && rows[i].kind !== "user"; i--)
-    if (rows[i].kind === "assistant" && letters(rows[i].text).includes(head)) return null;
-  return { id: "live", kind: "assistant", text: text!, order: [Number.MAX_SAFE_INTEGER, -1] };
+  if (head.length >= 20)
+    for (let i = rows.length - 1; i >= Math.max(0, rows.length - 50); i--)
+      if (rows[i].kind === "assistant" && letters(rows[i].text).includes(head)) return null;
+  return { id: "live", kind: "assistant", text, order: [Number.MAX_SAFE_INTEGER, -1] };
 }
 
 export class AppReader {

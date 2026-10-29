@@ -24,20 +24,27 @@ pub(super) async fn watch_turn(
     };
     let root = server.root.clone();
     drop(server);
-    let lookup = (root.clone(), session.clone(), agent.clone());
+    let lookup = (root.clone(), session.clone(), agent);
     let found = tokio::task::spawn_blocking(move || {
         let (root, session, agent) = lookup;
         let connection = read_connection(&root).ok()?;
+        // The page names the chair's chat `chair`, as `resolve_log` reads it.
+        let agent = match agent.as_str() {
+            "chair" => swarm::store::orchestrator_of(&connection, &session).ok()?,
+            _ => agent,
+        };
         let adapter = swarm::store::adapter_of(&connection, &session).ok()??;
         let provider = swarm::store::provider_of(&connection, &session, &agent).ok()??;
-        Some((swarm::adapter::load(&root, &adapter).ok()?, provider))
+        Some((swarm::adapter::load(&root, &adapter).ok()?, provider, agent))
     })
     .await;
-    let Ok(Some((adapter, provider))) = found else {
+    let Ok(Some((adapter, provider, agent))) = found else {
         return;
     };
     let adapter = Arc::new(adapter);
-    let mut last: Option<String> = None;
+    // The first read is always sent, so a page that held an earlier watcher's text gets this
+    // one's, or null.
+    let mut last: Option<Option<String>> = None;
     let mut timer = tokio::time::interval(TICK);
     timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     loop {
@@ -65,25 +72,35 @@ pub(super) async fn watch_turn(
         let text = match pane {
             Some(pane) => {
                 let (adapter, provider) = (adapter.clone(), provider.clone());
-                tokio::task::spawn_blocking(move || {
+                let read = tokio::task::spawn_blocking(move || {
                     let rows = adapter.capture_within(&[("pane", &pane)], TICK)?;
-                    swarm::screen::turn_text(&provider, &rows)
+                    Some(swarm::screen::turn_text(&provider, &rows))
                 })
                 .await
                 .ok()
-                .flatten()
+                .flatten();
+                // A failed or slow read keeps the shown text, so the row does not blink.
+                let Some(text) = read else {
+                    continue;
+                };
+                text
             }
             None => None,
         };
-        if text == last {
+        if last.as_ref() == Some(&text) {
             continue;
         }
-        last = text;
+        last = Some(text);
         let Some(server) = app.upgrade() else {
             return;
         };
-        let frame = Frame::new("live", json!({"key": key, "text": last}), Some(&key));
-        // ponytail: a client that subscribes mid-turn sees the text from its next change.
+        let frame = Frame::new(
+            "live",
+            json!({"key": key, "text": last.clone().flatten()}),
+            Some(&key),
+        );
+        // ponytail: a client that joins a running follower sees the text from its next change;
+        // the page clears its live text on reconnect, so it never keeps a stale one.
         let mut hub = server.hub.lock().unwrap();
         for client in hub.streams.values_mut() {
             if client.row_keys.contains(&key) {

@@ -41,7 +41,8 @@ a host apart from serve lives through a serve restart.
 
 - `swarm launch orchestrator` starts a detached `swarm pty host` for the chat, so a chat that the
   app starts and one that the CLI starts get the same host. The chair is the host's first pane,
-  and its children are hosted panes, as in ADR 0126. The host ends when the chair ends. This
+  and its children are hosted panes, as in ADR 0126. The host ends when the chair's pane ends,
+  as a tmux pane ends with its shell, not with the CLI in it. This
   reverses the rejection of a PTY daemon in ADR 0123.
 - Codex runs on the host as the other CLIs do.
 - `swarm pty attach` sends a `vt100` snapshot and then the live bytes, so the Cmd+J terminal of

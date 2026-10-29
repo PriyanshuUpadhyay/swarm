@@ -101,7 +101,10 @@ extern "C" fn note_resize(_: libc::c_int) {
 fn terminal_size() -> serde_json::Value {
     let mut size: libc::winsize = unsafe { std::mem::zeroed() };
     // SAFETY: TIOCGWINSZ writes a local winsize.
-    if unsafe { libc::ioctl(0, libc::TIOCGWINSZ, &mut size) } != 0 || size.ws_row == 0 {
+    if unsafe { libc::ioctl(0, libc::TIOCGWINSZ, &mut size) } != 0
+        || size.ws_row == 0
+        || size.ws_col == 0
+    {
         return serde_json::json!({});
     }
     serde_json::json!({"rows": size.ws_row, "cols": size.ws_col})
@@ -116,10 +119,16 @@ fn attach(socket: &std::path::Path, n: u64) -> Result<(), Box<dyn std::error::Er
     let mut ask = terminal_size();
     ask["op"] = "attach".into();
     ask["n"] = n.into();
+    // Only the reply is bounded; the viewer then waits on the pane for as long as it shows.
+    stream.set_read_timeout(Some(REQUEST_TIMEOUT))?;
+    stream.set_write_timeout(Some(REQUEST_TIMEOUT))?;
     writeln!(&stream, "{ask}")?;
     let mut reader = std::io::BufReader::new(stream.try_clone()?);
     let mut line = String::new();
     reader.read_line(&mut line)?;
+    stream.set_read_timeout(None)?;
+    stream.set_write_timeout(None)?;
+    let mut keys = stream.try_clone()?;
     let reply: serde_json::Value = serde_json::from_str(&line)?;
     if reply["ok"] != true {
         return Err(reply["error"]
@@ -153,7 +162,6 @@ fn attach(socket: &std::path::Path, n: u64) -> Result<(), Box<dyn std::error::Er
             }
         }
     });
-    let mut keys = stream.try_clone()?;
     std::thread::spawn(move || {
         let _ = std::io::copy(&mut std::io::stdin().lock(), &mut keys);
         let _ = keys.shutdown(std::net::Shutdown::Write);

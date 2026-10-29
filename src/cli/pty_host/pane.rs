@@ -187,10 +187,14 @@ fn read_pane(
         let _ = feed_in.write_all(bytes);
         let mut parser = lock(parser);
         let mut done = 0;
+        // A viewer's terminal would answer each query again, into the pane, so viewers get the
+        // bytes without them.
+        let mut shown = Vec::with_capacity(bytes.len());
         // Each reply follows the bytes before its query, so a cursor report names the cell the
         // cursor was on when the CLI asked.
         for (end, query) in scanner.push(bytes) {
             parser.process(&bytes[done..end]);
+            shown.extend_from_slice(&bytes[done..end.saturating_sub(query.text.len()).max(done)]);
             done = end;
             let reply = match query.reply {
                 Reply::Text(text) => text.to_vec(),
@@ -205,8 +209,11 @@ fn read_pane(
             let _ = replies.try_send(reply);
         }
         parser.process(&bytes[done..]);
-        show(viewers, bytes);
+        shown.extend_from_slice(&bytes[done..]);
+        show(viewers, &shown);
     }
+    // Each viewer's writer ends when its queue goes, and closes the viewer's stream.
+    lock(viewers).clear();
 }
 
 /// A new PTY at tmux's detached size, with both ends closed on exec, so no other child holds

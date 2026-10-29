@@ -142,12 +142,11 @@ async fn show_tells_each_open_page_to_open_the_chat() {
     assert!(bad.is_err());
 }
 #[tokio::test]
-async fn a_working_agent_streams_its_screen_text_and_the_turn_end_clears_it() {
+async fn a_working_chair_streams_its_screen_text_and_the_turn_end_clears_it() {
     let fixture = Fixture::new();
-    codex_log(&fixture, 2);
     let screen = fixture.dir.join("screen.txt");
     std::fs::copy(
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/screens/codex-turn-text.txt"),
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/screens/claude-turn-text.txt"),
         &screen,
     )
     .unwrap();
@@ -158,11 +157,16 @@ async fn a_working_agent_streams_its_screen_text_and_the_turn_end_clears_it() {
     )
     .unwrap();
     let connection = swarm::store::open(&fixture.app.root.join("swarm.db")).unwrap();
-    swarm::store::set_provider(&connection, &fixture.session, "worker", "codex").unwrap();
-    swarm::store::set_log(&connection, &fixture.session, "worker", &fixture.log).unwrap();
+    swarm::store::add_agent(
+        &connection,
+        &fixture.session,
+        "orchestrator",
+        "orchestrator",
+    )
+    .unwrap();
     drop(connection);
     let agents = |state: &str| {
-        let agent = json!({"id": "worker", "pane": "%1", "alive": true, "state": state});
+        let agent = json!({"id": "orchestrator", "pane": "%1", "alive": true, "state": state});
         json!({ fixture.session.as_str(): [agent] })
     };
     {
@@ -170,7 +174,8 @@ async fn a_working_agent_streams_its_screen_text_and_the_turn_end_clears_it() {
         hub.agents = agents("working");
         hub.streams.insert("all".into(), client(&[]));
     }
-    let key = format!("{}:worker", fixture.session);
+    // The page names the chair's chat `chair`; the store names it `orchestrator`.
+    let key = format!("{}:chair", fixture.session);
     let from = std::fs::metadata(&fixture.log).unwrap().len();
     let _ = subscribe(
         State(fixture.app.clone()),
@@ -201,7 +206,7 @@ async fn a_working_agent_streams_its_screen_text_and_the_turn_end_clears_it() {
         frames[0]["text"]
             .as_str()
             .unwrap()
-            .starts_with("A rider on an early bicycle")
+            .starts_with("In the 1860s, French makers")
     );
     fixture.app.hub.lock().unwrap().agents = agents("idle");
     until_live(&fixture.app, &live, 2).await;

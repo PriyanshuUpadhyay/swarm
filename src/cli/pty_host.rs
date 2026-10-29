@@ -248,6 +248,10 @@ pub(crate) fn ensure(session: &str) -> Result<std::path::PathBuf, Box<dyn std::e
     std::io::BufReader::new(child.stdout.take().expect("piped stdout")).read_line(&mut line)?;
     if std::path::Path::new(line.trim()) != socket {
         let _ = child.wait();
+        // A launch of the same chat at the same time started the host first.
+        if UnixStream::connect(&socket).is_ok() {
+            return Ok(socket);
+        }
         return Err(format!(
             "swarm pty: the chat's host did not start; see {}",
             runs.join("pty-host.log").display()
