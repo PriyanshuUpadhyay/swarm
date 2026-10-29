@@ -90,6 +90,9 @@ export class AppStream {
         const chat = this.byKey(String(data.key));
         if (!chat) break;
         const text = typeof data.text === "string" ? data.text : null;
+        // Each new watcher sends its first read, often a null that changes nothing. A redraw then
+        // would follow the end before a reader's scroll up registers.
+        if (text === chat.live && !chat.liveEnded) break;
         // A turn can end seconds before its log's rows land, so its text stays until they do.
         if (text === null && keepsEnded(chat.rows, chat.live)) {
           chat.liveEnded = true;

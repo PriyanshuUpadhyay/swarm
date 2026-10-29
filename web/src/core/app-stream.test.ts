@@ -106,4 +106,11 @@ describe("live frame at turn end", () => {
     stream.onSse({ event: "live", data: JSON.stringify({ key: "s:chair", text: null }) });
     expect(chat.live).toBeNull();
   });
+
+  it("a frame that changes nothing does not redraw the chat, so a reader who just scrolled up stays there", () => {
+    const chat = { id: "s", key: "s:chair", sessionId: "s", state: "ready", rows: [], end: 0, version: 0, shift: false, live: null, liveShown: 0, liveEnded: false } as unknown as Chat;
+    const app = { chats: new Map([["s", chat]]), pending: new Map(), openId: "s", notify: () => {}, reading: { changed: (c: Chat) => c.version++ } };
+    new AppStream(app as unknown as App).onSse({ event: "live", data: JSON.stringify({ key: "s:chair", text: null }) });
+    expect(chat.version).toBe(0);
+  });
 });
