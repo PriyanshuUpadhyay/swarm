@@ -53,6 +53,8 @@ export type TreeView = {
   revision: string;
   view: TreeName;
   sections: Section[];
+  /** All live chats, independent of sidebar folds and list limits. */
+  chats?: SidebarRow[];
   selectedRow: string | null;
   archivedStatus: Status | null;
   choicesError: string | null;
@@ -195,7 +197,7 @@ export const foldId = (r: NavRow) => (r.row ? r.id : r.section.collapseId);
 
 /** Every tree row with a chat, across both sections. */
 export function chatRows(tree: TreeView | null): SidebarRow[] {
-  return tree ? tree.sections.flatMap((s) => s.rows.filter((r) => r.kind === "chat")) : [];
+  return tree?.chats ?? (tree ? tree.sections.flatMap((s) => s.rows.filter((r) => r.kind === "chat")) : []);
 }
 
 /** The workspace a session belongs to: from the tree, else from the snapshot. */
@@ -258,28 +260,28 @@ export type RecentChat = {
 export function recentWork(tree: TreeView | null, snapshot: Snapshot | null, limit = 8): RecentChat[] {
   const seen = new Set<string>();
   const out: (RecentChat & { at: number })[] = [];
-  for (const section of tree?.sections ?? [])
-    for (const row of section.rows) {
-      const session = row.selection?.chat;
-      if (row.kind !== "chat" || !session || seen.has(session)) continue;
-      seen.add(session);
-      const path = row.selection?.workspace ?? "";
-      const ws = workspaceRow(tree, path);
-      // The pinned section mixes projects; its project is the one whose section also lists the workspace.
-      const home = section.kind === "project" ? section : tree!.sections.find((s) => s.kind === "project" && s.rows.some((r) => r.id === path));
-      const project = home?.title ?? projectOf(snapshot, path)?.split("/").pop() ?? "";
-      out.push({
-        session,
-        title: row.title,
-        project,
-        workspace: ws?.title ?? path,
-        workspacePath: path,
-        age: row.age,
-        status: row.status,
-        unread: row.fields.some((f) => f.field === "unread"),
-        at: recency(snapshot, session) ?? 0,
-      });
-    }
+  for (const row of chatRows(tree)) {
+    const section = tree?.sections.find((s) => s.rows.some((r) => r.id === row.selection?.workspace));
+    const session = row.selection?.chat;
+    if (row.kind !== "chat" || !session || seen.has(session)) continue;
+    seen.add(session);
+    const path = row.selection?.workspace ?? "";
+    const ws = workspaceRow(tree, path);
+    // The pinned section mixes projects; its project is the one whose section also lists the workspace.
+    const home = section?.kind === "project" ? section : tree!.sections.find((s) => s.kind === "project" && s.rows.some((r) => r.id === path));
+    const project = home?.title ?? projectOf(snapshot, path)?.split("/").pop() ?? "";
+    out.push({
+      session,
+      title: row.title,
+      project,
+      workspace: ws?.title ?? path,
+      workspacePath: path,
+      age: row.age,
+      status: row.status,
+      unread: row.fields.some((f) => f.field === "unread"),
+      at: recency(snapshot, session) ?? 0,
+    });
+  }
   out.sort((a, b) => b.at - a.at || (a.session < b.session ? -1 : 1));
   return out.slice(0, limit).map(({ at: _, ...r }) => r);
 }
@@ -355,7 +357,7 @@ export function paletteSources(tree: TreeView | null, snapshot: Snapshot | null)
   for (const section of tree?.sections ?? [])
     for (const row of section.rows) {
       if (row.kind !== "workspace" || workspaces.some((w) => w.row.id === row.id)) continue;
-      const chats = section.rows.filter((r) => r.kind === "chat" && r.selection?.workspace === row.id);
+      const chats = chatRows(tree).filter((r) => r.selection?.workspace === row.id);
       const ats = chats.map((c) => (c.selection?.chat ? recency(snapshot, c.selection?.chat) : null)).filter((a): a is number => a != null);
       workspaces.push({ row, project: section.kind === "project" ? section.title : "", at: ats.length ? Math.max(...ats) : null, chats });
     }
