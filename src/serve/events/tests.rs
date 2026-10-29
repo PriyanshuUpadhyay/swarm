@@ -31,6 +31,20 @@ fn queue_overflow_resets_every_affected_key_and_stays_bounded() {
     );
 }
 #[test]
+fn a_stalled_client_keeps_only_the_newest_live_text_of_each_key() {
+    let mut stream = client(&[("s:one", 0), ("s:two", 0)]);
+    for index in 0..2000 {
+        let key = if index % 2 == 0 { "s:one" } else { "s:two" };
+        stream.push(Frame::new("live", json!({"text": index}), Some(key)));
+    }
+    let texts: Vec<_> = stream
+        .queue
+        .iter()
+        .map(|frame| serde_json::from_str::<Value>(&frame.data).unwrap()["text"].clone())
+        .collect();
+    assert_eq!(texts, [json!(1998), json!(1999)]);
+}
+#[test]
 fn cold_row_cache_keeps_only_four_keys() {
     let fixture = Fixture::new();
     let mut hub = fixture.app.hub.lock().unwrap();
@@ -211,12 +225,18 @@ async fn a_working_chair_streams_its_screen_text_and_the_turn_end_clears_it() {
     // A failed read keeps the shown text, so the row does not blink.
     std::fs::remove_file(&screen).unwrap();
     tokio::time::sleep(Duration::from_millis(800)).await;
-    assert_eq!(live(&fixture.app).len(), 1);
+    assert!(live(&fixture.app)[0]["text"].is_string());
     fixture.app.hub.lock().unwrap().agents = agents("idle");
-    until_live(&fixture.app, &live, 2).await;
+    // The queue keeps only the newest live frame of a key, so the turn end replaces the text.
+    for _ in 0..40 {
+        if live(&fixture.app)[0]["text"].is_null() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
     let frames = live(&fixture.app);
-    assert_eq!(frames.len(), 2);
-    assert_eq!(frames[1]["text"], Value::Null);
+    assert_eq!(frames.len(), 1);
+    assert_eq!(frames[0]["text"], Value::Null);
     drop(Events {
         app: fixture.app.clone(),
         id: "all".into(),

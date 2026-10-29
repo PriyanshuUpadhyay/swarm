@@ -59,6 +59,7 @@ export class AppStream {
           if (chat.live === null) continue;
           chat.live = null;
           chat.version++;
+          chat.shift = false;
         }
         this.app.notify();
         if (this.app.serverBuild !== null && data.build !== this.app.serverBuild) return location.reload();
@@ -82,8 +83,7 @@ export class AppStream {
         const chat = this.byKey(String(data.key));
         if (!chat) break;
         chat.live = typeof data.text === "string" ? data.text : null;
-        chat.version++;
-        if (chat.sessionId === this.app.openId) this.app.notify();
+        this.app.reading.changed(chat);
         break;
       }
       case "reset":

@@ -61,17 +61,12 @@ pub(crate) struct Host {
     children: Children,
 }
 
-/// The host socket of `session`. A socket path holds at most 104 bytes on macOS, and a branch
-/// build's `runs/<session>/` is longer, so the socket lives in a private folder per user, as
-/// tmux's does, under a hash of that runs folder.
+/// The host socket of `session`, in its checked private folder.
 fn socket_of(session: &str) -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
-    use sha2::Digest;
-    use std::os::unix::ffi::OsStrExt;
     super::valid_session_id(session)?;
-    let runs = swarm::paths::root_dir()?.join(format!("runs/{session}"));
-    let hash = sha2::Sha256::digest(runs.as_os_str().as_bytes());
-    let name: String = hash[..8].iter().map(|byte| format!("{byte:02x}")).collect();
-    Ok(socket_dir()?.join(format!("{name}.sock")))
+    socket_dir()?;
+    // SAFETY: getuid cannot fail.
+    swarm::bus::pty_socket_of(session, unsafe { libc::getuid() })
 }
 
 /// `/tmp/swarm-<uid>`, made 0700 when missing. Another user could make it first and listen in

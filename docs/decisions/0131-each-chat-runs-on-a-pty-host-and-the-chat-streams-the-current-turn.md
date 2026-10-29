@@ -3,7 +3,7 @@ status: accepted
 date: 2026-10-29
 deciders: [user]
 amends: ["0099", "0120", "0123", "0126"]
-related: ["0084", "0104", "0125"]
+related: ["0084", "0104", "0118"]
 informed-by:
   - 'owner, 2026-10-29: "I would want the PTY support for each of them, Claude, Codex, Pi, and AGY. We don''t have to support any other adapter. We would start moving to Pty and remove the Tmux dependency, and we would only let users choose Tmux if they have it available in their system."'
   - 'owner, 2026-10-29: accepted the four recommendations of the plan ("your recommendation is sound")'
@@ -28,7 +28,7 @@ wants swarm to stop needing tmux.
 
 - A detached PTY host per chat holds the chair and its children, and the chat shows the host's
   screen of the current turn as one live row (chosen).
-- `swarm serve` holds the PTYs. Each update restarts serve (ADR 0125), and the chats would die.
+- `swarm serve` holds the PTYs. Each update restarts serve (ADR 0118), and the chats would die.
 - Keep tmux, and poll `capture` for the live row. tmux stays a dependency, and Codex in tmux has
   no shim.
 - Read each CLI's structured token stream (Codex app-server deltas, pi `message_update`). Claude
@@ -79,7 +79,7 @@ a host apart from serve lives through a serve restart.
 
 - The owner wants the current turn to stream in the chat for Claude, Codex, pi, and AGY.
 - The owner wants swarm to stop needing tmux, and to offer tmux only when it is installed.
-- A chat must live through a serve restart, because each update restarts serve (ADR 0125).
+- A chat must live through a serve restart, because each update restarts serve (ADR 0118).
 - The log stays the record of a turn (ADR 0099), so a preview must never land as a row.
 
 ## Pros and Cons of the Options
@@ -125,4 +125,4 @@ a host apart from serve lives through a serve restart.
 ## Links
 
 - Amends: 0099, 0120, 0123, 0126
-- Related: 0084, 0104, 0125
+- Related: 0084, 0104, 0118

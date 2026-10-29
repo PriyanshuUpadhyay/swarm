@@ -421,19 +421,16 @@ fn ask(socket: &Path, request: serde_json::Value) -> serde_json::Value {
     serde_json::from_str(&line).unwrap()
 }
 
-#[test]
-fn a_headless_host_takes_its_first_live_pane_as_chair_after_a_failed_spawn() {
+/// A headless host, as `launch orchestrator` starts it, with no TERM in its env, as an app's
+/// serve may have none.
+fn headless(home: &Path) -> (Child, PathBuf) {
     use std::io::BufRead;
-    let home = std::env::temp_dir().join(format!(
-        "swarm-pty-headless-{}",
-        uuid::Uuid::now_v7().simple()
-    ));
-    std::fs::create_dir_all(&home).unwrap();
     let mut host = Command::new(env!("CARGO_BIN_EXE_swarm"))
         .args(["pty", "host"])
-        .env("SWARM_HOME", &home)
+        .env("SWARM_HOME", home)
         .env("SWARM_SESSION_ID", uuid::Uuid::now_v7().to_string())
         .env("SHELL", "/bin/sh")
+        .env_remove("TERM")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .spawn()
@@ -442,7 +439,17 @@ fn a_headless_host_takes_its_first_live_pane_as_chair_after_a_failed_spawn() {
     std::io::BufReader::new(host.stdout.take().unwrap())
         .read_line(&mut line)
         .unwrap();
-    let socket = PathBuf::from(line.trim());
+    (host, PathBuf::from(line.trim()))
+}
+
+#[test]
+fn a_headless_host_takes_its_first_live_pane_as_chair_after_a_failed_spawn() {
+    let home = std::env::temp_dir().join(format!(
+        "swarm-pty-headless-{}",
+        uuid::Uuid::now_v7().simple()
+    ));
+    std::fs::create_dir_all(&home).unwrap();
+    let (mut host, socket) = headless(&home);
     let spawn = |cwd: &Path| {
         let request =
             serde_json::json!({"op": "spawn", "cwd": cwd, "env": {}, "feed": "cat > /dev/null"});
@@ -471,4 +478,40 @@ fn a_headless_host_takes_its_first_live_pane_as_chair_after_a_failed_spawn() {
         "the host to end with its chair",
     );
     let _ = std::fs::remove_dir_all(&home);
+}
+
+#[test]
+fn a_pane_gets_a_terminal_type_when_its_host_has_none() {
+    let home =
+        std::env::temp_dir().join(format!("swarm-pty-term-{}", uuid::Uuid::now_v7().simple()));
+    std::fs::create_dir_all(&home).unwrap();
+    let (mut host, socket) = headless(&home);
+    let request =
+        serde_json::json!({"op": "spawn", "cwd": home, "env": {}, "feed": "cat > /dev/null"});
+    let pane = ask(&socket, request);
+    let n: u64 = pane["out"]
+        .as_str()
+        .unwrap()
+        .rsplit(':')
+        .next()
+        .unwrap()
+        .parse()
+        .unwrap();
+    let file = home.join("term");
+    let text = format!("echo \"[$TERM]\" > {}\n", file.display());
+    assert_eq!(
+        ask(
+            &socket,
+            serde_json::json!({"op": "write", "n": n, "text": text})
+        )["ok"],
+        true
+    );
+    wait_for(|| read(&file).ends_with('\n'), "the pane's TERM");
+    let term = read(&file);
+    ask(&socket, serde_json::json!({"op": "close", "n": n}));
+    let _ = host.kill();
+    let _ = host.wait();
+    let _ = std::fs::remove_dir_all(&home);
+    // tmux gives its panes a terminal type too, whatever its server's env holds.
+    assert_eq!(term, "[xterm-256color]\n");
 }

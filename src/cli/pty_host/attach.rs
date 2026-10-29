@@ -80,6 +80,8 @@ pub(super) fn attach(
             master,
         )
     };
+    // Before the viewer joins the list, so a failure leaves no viewer behind.
+    let mut out = stream.try_clone().map_err(|error| error.to_string())?;
     let id = NEXT_VIEWER.fetch_add(1, Ordering::Relaxed);
     let (queue, queued) = std::sync::mpsc::sync_channel::<Vec<u8>>(VIEW_QUEUE);
     {
@@ -98,7 +100,6 @@ pub(super) fn attach(
     }
     let (rows, cols) = size_of(request);
     resize(&master, &parser, rows, cols);
-    let mut out = stream.try_clone().map_err(|error| error.to_string())?;
     std::thread::spawn(move || {
         for bytes in queued {
             if out.write_all(&bytes).is_err() {

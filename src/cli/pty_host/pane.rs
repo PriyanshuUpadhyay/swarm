@@ -84,6 +84,9 @@ pub(super) fn spawn(
         .env_remove("TMUX")
         .env_remove("TMUX_PANE")
         .env_remove("SWARM_PTY_HOST")
+        // The vt100 parser reads xterm's codes, and the host's own env may have no TERM, as an
+        // app's serve has none.
+        .env("TERM", "xterm-256color")
         .envs(env)
         .env("SWARM_PTY_PANE", pane);
     let started = (|| {
@@ -147,6 +150,8 @@ pub(super) fn spawn(
         let read = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             read_pane(master, &mut feed_in, &parser, &activity, &replies, &viewers)
         }));
+        // Each viewer's writer ends when its queue goes, and closes the viewer's stream.
+        lock(&viewers).take();
         // The pane is gone once its shell and everything it left have exited, as in tmux.
         let gone = lock(&children).remove(&n);
         if let (Err(_), Some(hosted)) = (read, &gone) {
@@ -212,8 +217,6 @@ fn read_pane(
         shown.extend_from_slice(&bytes[done..]);
         show(viewers, &shown);
     }
-    // Each viewer's writer ends when its queue goes, and closes the viewer's stream.
-    lock(viewers).take();
 }
 
 /// A new PTY at tmux's detached size, with both ends closed on exec, so no other child holds

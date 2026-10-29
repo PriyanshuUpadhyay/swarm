@@ -137,7 +137,11 @@ pub fn argv(
                     let uid = unsafe { crate::hud::getuid() };
                     let tmux = tmux_socket_dir(std::env::var("TMUX_TMPDIR").ok().as_deref(), uid);
                     let mut sockets = format!(r#"{}="allow""#, quote(&tmux));
-                    if let Some(pty) = pty_socket(std::env::var("SWARM_PTY_HOST").ok().as_deref()) {
+                    let chair_session = (agent_id == "orchestrator")
+                        .then(|| std::env::var("SWARM_SESSION_ID").ok())
+                        .flatten();
+                    let host = std::env::var("SWARM_PTY_HOST").ok();
+                    if let Some(pty) = pty_socket(host.as_deref(), chair_session.as_deref(), uid) {
                         sockets += &format!(r#",{}="allow""#, quote(&pty));
                     }
                     let builds = role.starts_with("code.") || role == "build" || role == "checker";

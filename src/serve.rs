@@ -121,6 +121,11 @@ impl Client {
         if frame.name == "snapshot" {
             self.queue.retain(|queued| queued.name != "snapshot");
         }
+        // Only a key's newest live text matters, so a stalled page holds one per key.
+        if frame.name == "live" {
+            self.queue
+                .retain(|queued| queued.name != "live" || queued.key != frame.key);
+        }
         if self.queue.len() == QUEUE_LIMIT {
             let keys: HashSet<_> = self
                 .queue

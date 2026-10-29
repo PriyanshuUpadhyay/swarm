@@ -116,6 +116,14 @@ fn attach(socket: &std::path::Path, n: u64) -> Result<(), Box<dyn std::error::Er
     use std::io::Read;
     let stream = UnixStream::connect(socket)
         .map_err(|error| format!("swarm pty: no host at {}: {error}", socket.display()))?;
+    // Before the size is read, so a resize during the reply still reaches the pane.
+    // SAFETY: the handler only stores to an atomic.
+    unsafe {
+        let mut action: libc::sigaction = std::mem::zeroed();
+        action.sa_sigaction = note_resize as extern "C" fn(libc::c_int) as usize;
+        action.sa_flags = libc::SA_RESTART;
+        libc::sigaction(libc::SIGWINCH, &action, std::ptr::null_mut());
+    }
     let mut ask = terminal_size();
     ask["op"] = "attach".into();
     ask["n"] = n.into();
@@ -135,13 +143,6 @@ fn attach(socket: &std::path::Path, n: u64) -> Result<(), Box<dyn std::error::Er
             .as_str()
             .unwrap_or("swarm pty: bad reply")
             .into());
-    }
-    // SAFETY: the handler only stores to an atomic.
-    unsafe {
-        let mut action: libc::sigaction = std::mem::zeroed();
-        action.sa_sigaction = note_resize as extern "C" fn(libc::c_int) as usize;
-        action.sa_flags = libc::SA_RESTART;
-        libc::sigaction(libc::SIGWINCH, &action, std::ptr::null_mut());
     }
     let mut saved: libc::termios = unsafe { std::mem::zeroed() };
     // SAFETY: tcgetattr fills a local termios; cfmakeraw and tcsetattr read it.
