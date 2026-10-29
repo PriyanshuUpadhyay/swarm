@@ -94,6 +94,7 @@ export type SettingsState = {
   nextRefresh: Record<string, number>;
   refreshing: string | null;
   roles: Load<Roles>;
+  profileDrafts: Record<string, Runner[]>;
   providers: ProviderInfo[];
   accounts: Record<string, Load<AccountList>>;
   /** A profile or account write in flight. */
@@ -152,6 +153,7 @@ export class Settings {
     nextRefresh: {},
     refreshing: null,
     roles: { state: "idle" },
+    profileDrafts: {},
     providers: [],
     accounts: {},
     busy: false,
@@ -275,6 +277,13 @@ export class Settings {
   }
 
   // ---- profiles ----
+
+  setProfileDraft(name: string, runners: Runner[] | null) {
+    const profileDrafts = { ...this.state.profileDrafts };
+    if (runners) profileDrafts[name] = runners;
+    else delete profileDrafts[name];
+    this.set({ profileDrafts });
+  }
 
   async loadRoles() {
     if (this.state.roles.state !== "ready") this.set({ roles: { state: "loading" } });
@@ -419,7 +428,12 @@ export class Settings {
   importConductor(): Promise<boolean> {
     const c = this.state.conductor;
     if (this.state.busy || c.state !== "ready" || c.data.chats.length === 0) return Promise.resolve(false);
-    return this.write(() => this.api.post("/api/import/conductor", { digest: c.data.digest }), "The Conductor import", () => this.loadConductor());
+    const count = c.data.chats.length;
+    const archived = c.data.chats.filter((chat) => !chat.open).length;
+    return this.write(() => this.api.post("/api/import/conductor", { digest: c.data.digest }), "The Conductor import", () => this.loadConductor()).then((ok) => {
+      if (ok) this.app.notice(`Imported ${count} chats; ${archived} are in Archived chats.`);
+      return ok;
+    });
   }
 
   // ---- shared ----

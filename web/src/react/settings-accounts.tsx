@@ -81,7 +81,9 @@ function ProviderAccounts({ app, provider }: { app: App; provider: string }) {
                 {data.auto === a.name && <span className="rounded bg-selected px-1 text-xs text-muted-foreground">Auto</span>}
                 <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{a.email ?? ""}</span>
                 <span className="text-xs text-muted-foreground">{AUTH[a.auth_state] ?? a.auth_state}</span>
+                {a.auth_state !== "signed_in" && a.name !== "default" && <Button size="sm" variant="outline" disabled={busy} onClick={() => void app.settings.login(provider, a.name)}>Sign in…</Button>}
               </div>
+              {a.auth_state !== "signed_in" && a.name === "default" && <p className="text-xs text-muted-foreground">Sign in from a terminal with <code>{provider === "claude" ? "claude /login" : "codex login"}</code>.</p>}
               <div className="grid gap-0.5 text-xs">
                 {meters
                   .filter((m) => m.account === a.name)
@@ -94,7 +96,9 @@ function ProviderAccounts({ app, provider }: { app: App; provider: string }) {
         </ul>
       )}
       <form
+        data-settings-inline
         className="flex items-end gap-2"
+        onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); setName(""); } }}
         onSubmit={(e) => {
           e.preventDefault();
           void app.settings.login(provider, name.trim()).then((ok) => ok && setName(""));

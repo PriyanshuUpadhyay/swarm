@@ -39,7 +39,7 @@ export function SkillsPage({ app, view }: { app: App; view: SkillsView }) {
 // ---- Catalog ----
 
 function Catalog({ app, kit }: { app: App; kit: Kit }) {
-  const [filter, setFilter] = useState("");
+  const filter = useSkills(app, "filter");
   const chosen = useSkills(app, "block");
   const groups = catalogGroups(kit, filter);
   const block = kit.blocks.find((b) => b.id === chosen) ?? null;
@@ -55,8 +55,9 @@ function Catalog({ app, kit }: { app: App; kit: Kit }) {
             autoComplete="off"
             spellCheck={false}
             data-testid="skills-filter"
+            autoFocus
             value={filter}
-            onChange={(e) => setFilter(e.target.value)}
+            onChange={(e) => app.skills.setFilter(e.target.value)}
           />
           <p className="mt-2 text-xs text-muted-foreground">
             {kit.blocks.length} blocks, {kit.presets.length} default skills · kit {kit.version}

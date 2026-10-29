@@ -94,3 +94,16 @@ async fn send_with_unknown_provider_preserves_text() {
         text
     );
 }
+
+#[test]
+fn archived_results_keep_the_title_from_the_tree_owner() {
+    let mut owner = choices::OwnerChoices::default();
+    owner.chat_names.insert("old".into(), "Saved title".into());
+    let snapshot = json!({
+        "sessions": [],
+        "archived": [{"id":"old","cwd":"/repo","workspace":"/repo","title":"Automatic title","archivedAt":42}]
+    });
+    let titles = archived_titles(&snapshot, &owner);
+    assert_eq!(titles.get("old").map(String::as_str), Some("Saved title"));
+    assert!(!titles.contains_key("missing"));
+}

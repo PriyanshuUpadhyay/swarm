@@ -235,3 +235,17 @@ describe("chats", () => {
     expect(life.state.handoffs["chat-1"]?.phase).toBe("cancelled");
   });
 });
+
+describe("setup script save", () => {
+  it("keeps the editor after a refused write and closes it only after success", async () => {
+    const { life } = fakeApp(async () => ({}));
+    const app = (life as unknown as { app: { choose: () => Promise<boolean> } }).app;
+    life.editSetupScript("/repo", "Repo");
+    app.choose = async () => false;
+    expect(await life.saveSetupScript("/repo", "keep this draft")).toBe(false);
+    expect(life.state.setupScript?.project).toBe("/repo");
+    app.choose = async () => true;
+    expect(await life.saveSetupScript("/repo", "keep this draft")).toBe(true);
+    expect(life.state.setupScript).toBeNull();
+  });
+});

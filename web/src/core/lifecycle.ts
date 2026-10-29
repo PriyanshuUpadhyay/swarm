@@ -139,9 +139,10 @@ export class Lifecycle {
     this.set({ setupScript: { project, title } });
   }
 
-  saveSetupScript(project: string, script: string): Promise<boolean> {
-    this.set({ setupScript: null });
-    return this.app.choose({ op: "setup_script", project, setup_script: script });
+  async saveSetupScript(project: string, script: string): Promise<boolean> {
+    const saved = await this.app.choose({ op: "setup_script", project, setup_script: script });
+    if (saved && this.state.setupScript?.project === project) this.set({ setupScript: null });
+    return saved;
   }
 
   // ---- new workspace ----

@@ -22,15 +22,29 @@ const keep = (step: () => void) => (event: { preventDefault: () => void }) => {
   step();
 };
 
+type PendingUpdate = { version: string; hud: boolean };
+let pending: PendingUpdate | null = null;
+const listeners = new Set<() => void>();
+let checkNow: (() => Promise<void>) | null = null;
+export const updateStatus = {
+  subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; },
+  get: () => pending,
+  show: (app: App) => { if (pending) installed(app, pending.version, pending.hud); else void checkNow?.(); },
+};
+function remember(version: string, hud: boolean) {
+  pending = { version, hud };
+  for (const listener of listeners) listener();
+}
+
 /** Checks on load and every 6 h until a notice shows. Returns the stop function. */
 export function watchUpdates(app: App): () => void {
   let shown = false;
   let reported = false;
-  const check = async () => {
-    if (shown) return;
+  const check = async (manual = false) => {
+    if (shown && !manual) return;
     try {
       const update = await app.api.get<Update>("/api/update");
-      if (!update.available || !update.latest) return;
+      if (!update.available || !update.latest) { if (manual) app.notice("Swarm is up to date."); return; }
       shown = true;
       offer(app, update.latest);
     } catch (err) {
@@ -43,9 +57,10 @@ export function watchUpdates(app: App): () => void {
     }
   };
   // Fire-and-forget is safe: check catches its own errors.
+  checkNow = () => check(true);
   void check();
   const timer = setInterval(() => void check(), CHECK_MS);
-  return () => clearInterval(timer);
+  return () => { clearInterval(timer); checkNow = null; };
 }
 
 // A failed step shows its error in this toast, beside the button that tries again: a toast of its
@@ -77,6 +92,7 @@ async function upgrade(app: App, latest: string) {
 
 // `hudChanged`: the upgrade changed the HUD, and it still needs its restart.
 function installed(app: App, version: string, hudChanged: boolean, error?: string) {
+  remember(version, hudChanged);
   const stale = hudChanged ? "The swarm ui server and the HUD still run" : "The swarm ui server still runs";
   (error ? toast.error : toast.success)(`Swarm ${version} is installed`, {
     ...STAY,

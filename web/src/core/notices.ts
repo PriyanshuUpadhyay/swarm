@@ -1,3 +1,4 @@
+import { readStore, writeStore } from "./app-types";
 import type { App } from "./app";
 import type { Load } from "./changes";
 
@@ -8,7 +9,7 @@ export type NoticesState = {
   health: Load<NoticeHealth>;
   /** The fix in flight. */
   pending: NoticeAction | null;
-  /** The owner's Not now, or Done after a fix, until the page reloads. */
+  /** The owner's Not now, or Done after a fix, for this health state. */
   hidden: boolean;
   /** A fix ran, so the card says when notices work again. */
   fixing: boolean;
@@ -43,6 +44,7 @@ export class Notices {
   private readAt = 0;
   /** Counts reads and fixes, so an older read cannot write over a newer answer. */
   private writes = 0;
+  private dismissed = readStore("swarm.notices.dismissed");
 
   constructor(private readonly app: App) {}
 
@@ -63,7 +65,13 @@ export class Notices {
     const write = ++this.writes;
     try {
       const data = await this.app.api.get<NoticeHealth>("/api/notices");
-      if (write === this.writes) this.set({ health: { state: "ready", data } });
+      if (write === this.writes) {
+        if (this.dismissed && this.dismissed !== data.state) {
+          this.dismissed = null;
+          writeStore("swarm.notices.dismissed", "");
+        }
+        this.set({ health: { state: "ready", data }, hidden: this.dismissed === data.state });
+      }
     } catch (err) {
       if (write === this.writes) this.set({ health: { state: "error", error: message(err) } });
     }
@@ -86,6 +94,10 @@ export class Notices {
   }
 
   hide() {
+    if (this.state.health.state === "ready") {
+      this.dismissed = this.state.health.data.state;
+      writeStore("swarm.notices.dismissed", this.dismissed);
+    }
     this.set({ hidden: true });
   }
 }

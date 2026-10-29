@@ -161,12 +161,13 @@ function WorkspaceList({ app }: { app: App }) {
           </span>
         </div>
       )}
-      <div className="flex shrink-0 items-center border-t border-border px-2 py-1.5">
+      <div className="flex shrink-0 flex-wrap items-center gap-x-1 border-t border-border px-2 py-1.5">
         <Button variant="ghost" size="sm" data-testid="archive-toggle" onClick={() => app.setTreeName(archive ? "workspaces" : "archived")}>
           <ArchiveRestoreIcon />
-          {archive ? "Workspaces" : "Archived"}
+          {archive ? "Workspaces" : "Archived workspaces"}
           {!archive && tree?.archivedStatus && <StatusGlyph status={tree.archivedStatus} />}
         </Button>
+        {archive && <Button variant="ghost" size="sm" onClick={() => app.life.openClosed()}>Archived chats…</Button>}
         <span className="ml-auto truncate pr-1 text-[11px] text-muted-foreground" data-testid="row-bar-hint">
           Hold <Kbd>⌘</Kbd> for actions
         </span>
