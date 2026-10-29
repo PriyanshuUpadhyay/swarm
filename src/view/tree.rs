@@ -278,7 +278,11 @@ pub fn short_id(id: &str, snapshot: &Value) -> String {
 
 /// The snapshot's archived sessions in `workspace`, newest first. A chat with no name or title
 /// shows its provider and short id, as a live one does.
-fn archived_chats(snapshot: &Value, workspace: &str, owner: &OwnerChoices) -> Vec<ArchivedChat> {
+pub fn archived_chats(
+    snapshot: &Value,
+    workspace: &str,
+    owner: &OwnerChoices,
+) -> Vec<ArchivedChat> {
     let all: Vec<&Value> = ["sessions", "archived"]
         .iter()
         .flat_map(|k| snapshot[*k].as_array().into_iter().flatten())

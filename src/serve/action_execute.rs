@@ -1,6 +1,7 @@
 //! Server action execute.
 
 use super::*;
+use std::collections::BTreeSet;
 
 pub(super) fn action_target(
     app: &Server,
@@ -161,12 +162,50 @@ pub(super) async fn execute_action(app: &App, action: Action) -> Result<Value, A
                 )
             })?;
             sessions.retain(|session| !session["archivedAt"].is_null());
+            let app = app.clone();
+            let titles = tokio::task::spawn_blocking(move || {
+                let saved = choices_store::load(&app.root, false).map_err(choice_error)?;
+                let mut snapshot = snapshot_value(&app)
+                    .map_err(|err| error(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()))?;
+                app.tree_cache.lock().unwrap().discovery.augment(
+                    &mut snapshot,
+                    &saved.owner,
+                    discovery::now(),
+                );
+                Ok::<_, ApiError>(archived_titles(&snapshot, &saved.owner))
+            })
+            .await
+            .map_err(|_| {
+                error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "archive title task failed",
+                )
+            })??;
+            for session in sessions {
+                if let Some(title) = session["id"].as_str().and_then(|id| titles.get(id)) {
+                    session["title"] = json!(title);
+                }
+            }
             value["ok"] = json!(true);
             return Ok(value);
         }
     };
     run_cli(app, call, text).await?;
     Ok(json!({"ok": true}))
+}
+
+fn archived_titles(snapshot: &Value, owner: &choices::OwnerChoices) -> BTreeMap<String, String> {
+    let workspaces: BTreeSet<_> = snapshot["archived"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|session| session["workspace"].as_str())
+        .collect();
+    workspaces
+        .into_iter()
+        .flat_map(|workspace| tree::archived_chats(snapshot, workspace, owner))
+        .map(|chat| (chat.id, chat.title))
+        .collect()
 }
 
 #[cfg(test)]

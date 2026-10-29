@@ -1,6 +1,6 @@
 // Project creation, folder import, and project setup scripts.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { App } from "../core/app";
 import { Button } from "../components/ui/button";
 import { FIELD, message, useLife, Frame, Label, ErrorLine } from "./lifecycle-shared";
@@ -139,45 +139,61 @@ function SetupScriptDialog({ app }: { app: App }) {
 function SetupScriptBody({ app, project }: { app: App; project: string }) {
   const [script, setScript] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const field = useRef<HTMLTextAreaElement>(null);
+  const loaded = script !== null;
+  useEffect(() => {
+    if (loaded) field.current?.focus();
+  }, [loaded]);
   useEffect(() => {
     let live = true;
+    setError(null);
     app.life.options(project).then(
       (o) => live && setScript(o.setup_script ?? ""),
-      (err) => {
-        if (!live) return;
-        setScript("");
-        setError(message(err));
-      },
+      (err) => live && setError(message(err)),
     );
-    return () => {
-      live = false;
-    };
-  }, [app, project]);
+    return () => { live = false; };
+  }, [app, project, attempt]);
+  const save = async () => {
+    if (script === null || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      if (!await app.life.saveSetupScript(project, script)) setError("Could not save. Your draft is kept. Try Save again.");
+    } catch (err) {
+      setError(message(err));
+    } finally {
+      setBusy(false);
+    }
+  };
   return (
     <form
       className="grid gap-3"
       onSubmit={(e) => {
         e.preventDefault();
-        if (script !== null) void app.life.saveSetupScript(project, script);
+        void save();
       }}
     >
       <textarea
-        autoFocus
+        ref={field}
+        data-autofocus
         aria-label="Setup script"
         data-testid="setup-script"
         rows={5}
-        disabled={script === null}
+        disabled={script === null || busy}
         className="w-full resize-y rounded-md border border-border-strong bg-background p-2 font-mono text-sm outline-none focus:border-ring"
         placeholder="pnpm install"
         value={script ?? ""}
         onChange={(e) => setScript(e.target.value)}
       />
       <ErrorLine text={error} />
+      {script === null && error && <Button type="button" variant="outline" size="sm" onClick={() => setAttempt(attempt + 1)}>Retry</Button>}
       <div className="flex justify-end gap-2">
         <Button type="button" variant="ghost" size="sm" onClick={() => app.life.close("setupScript")}>
           Cancel
         </Button>
-        <Button type="submit" size="sm" data-testid="setup-script-save" disabled={script === null}>
+        <Button type="submit" size="sm" data-testid="setup-script-save" disabled={script === null || busy}>
           Save
         </Button>
       </div>

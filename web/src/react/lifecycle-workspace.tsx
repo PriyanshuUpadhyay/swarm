@@ -35,7 +35,7 @@ function NewWorkspaceBody({ app, initialProject }: { app: App; initialProject: s
   const [base, setBase] = useState("");
   const [branch, setBranch] = useState("");
   const [pr, setPr] = useState("");
-  const [issue, setIssue] = useState<Issue | null>(null);
+  const [issue, setIssue] = useState<{ project: string; issue: Issue } | null>(null);
   const [folder, setFolder] = useState("");
   const [prefix, setPrefix] = useState("");
   const [reads, setReads] = useState(0);
@@ -78,7 +78,7 @@ function NewWorkspaceBody({ app, initialProject }: { app: App; initialProject: s
   const unborn = options !== null && options.defaultBranch === null;
   const request = (): NewRequest | null => {
     const common = { project, folder, prefix };
-    if (mode === "issue") return issue ? { ...common, mode, name: "", issue: issue.number, base: base || undefined } : null;
+    if (mode === "issue") return issue?.project === project ? { ...common, mode, name: "", issue: issue.issue.number, base: base || undefined } : null;
     if (!name.trim()) return null;
     if (mode === "new-branch") return { ...common, mode, name: name.trim(), base: unborn ? undefined : base };
     if (mode === "existing-branch") return branch ? { ...common, mode, name: name.trim(), branch } : null;
@@ -98,7 +98,7 @@ function NewWorkspaceBody({ app, initialProject }: { app: App; initialProject: s
     >
       <fieldset disabled={working || kept} className="grid gap-3">
         <Label text="Project">
-          <select className={FIELD} data-testid="nw-project" value={project} onChange={(e) => setProject(e.target.value)}>
+          <select className={FIELD} data-testid="nw-project" value={project} onChange={(e) => { setIssue(null); setProject(e.target.value); }}>
             {projects.map((p) => (
               <option key={p.path} value={p.path}>
                 {p.title} — {p.path}
@@ -157,7 +157,7 @@ function NewWorkspaceBody({ app, initialProject }: { app: App; initialProject: s
                 <input className={FIELD} data-testid="nw-pr" inputMode="numeric" value={pr} onChange={(e) => setPr(e.target.value.replace(/\D/g, ""))} placeholder="42" />
               </Label>
             )}
-            {mode === "issue" && <IssuePicker app={app} project={project} selected={issue} onSelect={setIssue} />}
+            {mode === "issue" && <IssuePicker app={app} project={project} selected={issue?.project === project ? issue.issue : null} onSelect={(picked) => setIssue({ project, issue: picked })} />}
             <div className="grid grid-cols-[2fr_1fr] gap-2">
               <Label text="Worktree folder">
                 <input className={FIELD} data-testid="nw-folder" value={folder} onChange={(e) => setFolder(e.target.value)} />
@@ -175,9 +175,10 @@ function NewWorkspaceBody({ app, initialProject }: { app: App; initialProject: s
         )}
       </fieldset>
       <CreateProgress app={app} />
+      {working && <p className="text-sm text-muted-foreground">Setup continues when you hide this dialog.</p>}
       <div className="flex justify-end gap-2">
         <Button type="button" variant="ghost" size="sm" onClick={() => app.life.close("newWorkspace")}>
-          {kept ? "Close" : "Cancel"}
+          {working ? "Hide" : kept ? "Close" : "Cancel"}
         </Button>
         {kept ? (
           <Button type="button" size="sm" data-testid="nw-open" onClick={() => void app.life.openKept()}>

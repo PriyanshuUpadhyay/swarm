@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import type { App } from "../core/app";
 import type { ClosedChat, ImportableChat } from "../core/lifecycle";
 import { Button } from "../components/ui/button";
-import { message, useLife, Frame, ErrorLine } from "./lifecycle-shared";
+import { FIELD, message, useLife, Frame, ErrorLine } from "./lifecycle-shared";
 
 // ---- Archived chats ----
 
@@ -29,9 +29,17 @@ function ClosedBody({ app }: { app: App }) {
   const [chats, setChats] = useState<ClosedChat[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [query, setQuery] = useState("");
+  const [attempt, setAttempt] = useState(0);
+  const [loading, setLoading] = useState(false);
   useEffect(() => {
-    app.life.closedChats().then(setChats, (err) => setError(message(err)));
-  }, [app]);
+    let live = true;
+    setLoading(true);
+    setError(null);
+    app.life.closedChats().then((data) => live && setChats(data), (err) => live && setError(message(err))).finally(() => live && setLoading(false));
+    return () => { live = false; };
+  }, [app, attempt]);
+  const shown = chats?.filter((c) => `${c.title ?? ""} ${c.cwd} ${c.id}`.toLowerCase().includes(query.trim().toLowerCase()));
   const reopen = async (id: string) => {
     setBusy(true);
     try {
@@ -43,10 +51,21 @@ function ClosedBody({ app }: { app: App }) {
   };
   return (
     <>
-      <div role="list" className="grid max-h-[320px] overflow-y-auto">
+      <input data-autofocus className={FIELD} type="search" aria-label="Filter chats" placeholder="Filter chats…" value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => {
+        if (e.key === "ArrowDown") { e.preventDefault(); e.currentTarget.nextElementSibling?.querySelector<HTMLButtonElement>("button")?.focus(); }
+      }} />
+      <div role="list" className="grid max-h-[320px] overflow-y-auto" onKeyDown={(e) => {
+        const by = e.key === "ArrowDown" ? 1 : e.key === "ArrowUp" ? -1 : 0;
+        if (!by) return;
+        const buttons = [...e.currentTarget.querySelectorAll<HTMLButtonElement>("button")];
+        const index = buttons.indexOf(e.target as HTMLButtonElement);
+        if (index < 0) return;
+        e.preventDefault();
+        buttons[Math.max(0, Math.min(buttons.length - 1, index + by))]?.focus();
+      }}>
         {!chats && !error && <p className="text-sm text-muted-foreground">Reading closed chats…</p>}
         {chats?.length === 0 && <p className="text-sm text-muted-foreground">No archived chats.</p>}
-        {chats?.map((c) => (
+        {shown?.map((c) => (
           <button
             key={c.id}
             role="listitem"
@@ -59,7 +78,7 @@ function ClosedBody({ app }: { app: App }) {
             onClick={() => void reopen(c.id)}
           >
             <span className="truncate text-sm font-medium">
-              {c.cwd.split("/").pop()} <span className="font-mono text-xs text-muted-foreground">{c.id.slice(0, 8)}</span>
+              {c.title || c.cwd.split("/").pop()} <span className="font-mono text-xs text-muted-foreground">{c.id.slice(0, 8)}</span>
             </span>
             <span className="truncate text-xs text-muted-foreground">
               {c.chair_provider ?? "chat"} · closed {ageText(c.archivedAt)} ago · {c.cwd}
@@ -67,8 +86,10 @@ function ClosedBody({ app }: { app: App }) {
           </button>
         ))}
       </div>
+      {chats && chats.length > 0 && shown?.length === 0 && <p role="status" className="text-sm text-muted-foreground">No chat matches.</p>}
       <ErrorLine text={error} />
-      <div className="flex justify-end">
+      <div className="flex justify-end gap-2">
+        <Button type="button" variant="outline" size="sm" disabled={loading || busy} onClick={() => setAttempt(attempt + 1)}>{loading ? "Reading…" : error ? "Retry" : "Refresh"}</Button>
         <Button type="button" variant="ghost" size="sm" onClick={() => app.life.close("closed")}>
           Close
         </Button>
@@ -92,9 +113,17 @@ function ImportBody({ app }: { app: App }) {
   const [chats, setChats] = useState<ImportableChat[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [query, setQuery] = useState("");
+  const [attempt, setAttempt] = useState(0);
+  const [loading, setLoading] = useState(false);
   useEffect(() => {
-    app.life.importableChats().then(setChats, (err) => setError(message(err)));
-  }, [app]);
+    let live = true;
+    setLoading(true);
+    setError(null);
+    app.life.importableChats().then((data) => live && setChats(data), (err) => live && setError(message(err))).finally(() => live && setLoading(false));
+    return () => { live = false; };
+  }, [app, attempt]);
+  const shown = chats?.filter((c) => `${c.title} ${c.workspace} ${c.id}`.toLowerCase().includes(query.trim().toLowerCase()));
   const pick = async (chat: ImportableChat) => {
     setBusy(true);
     try {
@@ -106,10 +135,21 @@ function ImportBody({ app }: { app: App }) {
   };
   return (
     <>
-      <div role="list" className="grid max-h-[320px] overflow-y-auto">
+      <input data-autofocus className={FIELD} type="search" aria-label="Filter chats" placeholder="Filter chats…" value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => {
+        if (e.key === "ArrowDown") { e.preventDefault(); e.currentTarget.nextElementSibling?.querySelector<HTMLButtonElement>("button")?.focus(); }
+      }} />
+      <div role="list" className="grid max-h-[320px] overflow-y-auto" onKeyDown={(e) => {
+        const by = e.key === "ArrowDown" ? 1 : e.key === "ArrowUp" ? -1 : 0;
+        if (!by) return;
+        const buttons = [...e.currentTarget.querySelectorAll<HTMLButtonElement>("button")];
+        const index = buttons.indexOf(e.target as HTMLButtonElement);
+        if (index < 0) return;
+        e.preventDefault();
+        buttons[Math.max(0, Math.min(buttons.length - 1, index + by))]?.focus();
+      }}>
         {!chats && !error && <p className="text-sm text-muted-foreground">Reading chats…</p>}
         {chats?.length === 0 && <p className="text-sm text-muted-foreground">No chats to import.</p>}
-        {chats?.map((c) => (
+        {shown?.map((c) => (
           <button
             key={c.id}
             role="listitem"
@@ -128,8 +168,10 @@ function ImportBody({ app }: { app: App }) {
           </button>
         ))}
       </div>
+      {chats && chats.length > 0 && shown?.length === 0 && <p role="status" className="text-sm text-muted-foreground">No chat matches.</p>}
       <ErrorLine text={error} />
-      <div className="flex justify-end">
+      <div className="flex justify-end gap-2">
+        <Button type="button" variant="outline" size="sm" disabled={loading || busy} onClick={() => setAttempt(attempt + 1)}>{loading ? "Reading…" : error ? "Retry" : "Refresh"}</Button>
         <Button type="button" variant="ghost" size="sm" onClick={() => app.life.close("imports")}>
           Close
         </Button>
