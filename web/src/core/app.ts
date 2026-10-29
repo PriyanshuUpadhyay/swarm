@@ -81,6 +81,7 @@ export class App {
   lru: string[] = [];
   listeners = new Set<() => void>();
   streamId: string | null = null;
+  reconnecting = false;
   /** The server build of the first stream; a later stream from another build reloads the page. */
   serverBuild: string | null = null;
   sentKeys = "";

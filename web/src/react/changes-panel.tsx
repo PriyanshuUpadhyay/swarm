@@ -3,7 +3,7 @@
 // so its lines render plainly. One list per tab; rows are plain elements.
 
 import { FileDiffIcon, GitPullRequestIcon, RefreshCwIcon, SendIcon, XIcon } from "lucide-react";
-import { memo, useEffect, useMemo, useRef, useSyncExternalStore, type KeyboardEvent, type MouseEvent } from "react";
+import { memo, useEffect, useMemo, useRef, useSyncExternalStore, useState, type KeyboardEvent, type MouseEvent } from "react";
 import type { App } from "../core/app";
 import { checkState, fileKey, safeUrl, type ChangeFile, type Changes, type Check, type Load, type PrView } from "../core/changes";
 import { Button } from "../components/ui/button";
@@ -31,6 +31,13 @@ export function PanelToggles({ changes }: { changes: Changes }) {
 
 export function WorkspacePanel({ app, changes }: { app: App; changes: Changes }) {
   const view = useSyncExternalStore(changes.subscribe, () => changes.view);
+  useEffect(() => {
+    if (!view.open || !view.workspace) return;
+    const refresh = () => { if (!document.hidden && changes.view.list.state !== "loading" && changes.view.pr.state !== "loading") changes.reload(); };
+    const timer = window.setInterval(refresh, 5000);
+    window.addEventListener("focus", refresh);
+    return () => { clearInterval(timer); window.removeEventListener("focus", refresh); };
+  }, [changes, view.open, view.workspace]);
   if (!view.open) return null;
   return (
     <aside className="wpanel" aria-label="Workspace panel" data-testid="workspace-panel">
@@ -64,15 +71,17 @@ export function WorkspacePanel({ app, changes }: { app: App; changes: Changes })
 
 function ChangesPanel({ app, changes }: { app: App; changes: Changes }) {
   const view = useSyncExternalStore(changes.subscribe, () => changes.view);
+  const [query, setQuery] = useState("");
   const list = view.list;
   const files = list.state === "ready" ? list.data.files : [];
+  const shown = files.filter((f) => f.path.toLowerCase().includes(query.trim().toLowerCase()));
   const refs = list.state === "ready" ? list.data.refs : [];
   const totals = useMemo(() => files.reduce((t, f) => ({ added: t.added + (f.added ?? 0), removed: t.removed + (f.removed ?? 0) }), { added: 0, removed: 0 }), [files]);
   const onKey = (e: KeyboardEvent) => {
     const by = { j: 1, ArrowDown: 1, k: -1, ArrowUp: -1, Home: "home", End: "end" }[e.key] as number | "home" | "end" | undefined;
     if (by === undefined || e.metaKey || e.ctrlKey || e.altKey) return;
     e.preventDefault();
-    changes.move(by);
+    changes.move(by, query);
   };
   const onClick = (e: MouseEvent) => {
     const key = (e.target as Element).closest<HTMLElement>('[data-testid="change-row"]')?.dataset.key;
@@ -115,6 +124,7 @@ function ChangesPanel({ app, changes }: { app: App; changes: Changes }) {
           </span>
         )}
       </div>
+      <input aria-label="Filter changed files" placeholder="Filter by path" value={query} onChange={(e) => setQuery(e.target.value)} className="mx-3 my-1 rounded border px-2 py-1 text-xs" />
       <div
         ref={listRef}
         className="changes-list"
@@ -129,7 +139,8 @@ function ChangesPanel({ app, changes }: { app: App; changes: Changes }) {
         {list.state === "loading" && <p className="px-3 py-2 text-xs text-muted-foreground">Reading changes…</p>}
         {list.state === "error" && <p className="px-3 py-2 text-xs break-words text-failed select-text">{list.error}</p>}
         {list.state === "ready" && files.length === 0 && <p className="px-3 py-2 text-xs text-muted-foreground">{view.mode === "local" ? "No local changes." : "No commits since the base."}</p>}
-        {files.map((f) => (
+        {files.length > 0 && !shown.length && <p className="px-3 py-2 text-xs text-muted-foreground">No paths match.</p>}
+        {shown.map((f) => (
           <ChangeRow key={fileKey(f)} f={f} selected={fileKey(f) === view.selected} />
         ))}
       </div>

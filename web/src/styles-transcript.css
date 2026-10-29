@@ -535,3 +535,7 @@ pre.plain {
 .half.empty {
   background: color-mix(in srgb, var(--foreground) 3%, transparent);
 }
+
+::highlight(find-matches) { background: #f5da62; color: #202020; }
+::highlight(find-current) { background: #ff963b; color: #202020; }
+::highlight(surface-find) { background: #ff963b; color: #202020; }

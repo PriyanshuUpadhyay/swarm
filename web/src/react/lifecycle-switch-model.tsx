@@ -7,6 +7,7 @@ import { accountCli, CARRY_OPTIONS, savedCarry, type Carry } from "../core/compo
 import { isSettled, type Handoff } from "../core/lifecycle";
 import { Button } from "../components/ui/button";
 import { FIELD, message, useLife, Frame, Label, ErrorLine } from "./lifecycle-shared";
+import { modelPickerKey } from "./model-picker";
 import { Segmented } from "./settings-shared";
 
 // ---- Switch model ----
@@ -36,12 +37,13 @@ function SwitchModelBody({ app, old }: { app: App; old: string }) {
   const saved = useSyncExternalStore(app.subscribe, () => savedCarry(app.view.tree?.prefs));
   const [carry, setCarry] = useState<Carry>(saved);
   const [providers, setProviders] = useState<{ id: string; label: string; accounts: boolean }[]>([]);
-  const [provider, setProvider] = useState("claude");
+  const current = app.chair(old);
+  const [provider, setProvider] = useState(current.provider ?? "claude");
   const [models, setModels] = useState<{ id: string; label: string }[] | null>(null);
   const [accounts, setAccounts] = useState<{ name: string; email: string | null }[]>([]);
-  const [account, setAccount] = useState("");
+  const [account, setAccount] = useState(current.account ?? "");
   const [query, setQuery] = useState("");
-  const [model, setModel] = useState<string | null>(null);
+  const [model, setModel] = useState<string | null>(current.model);
   const [error, setError] = useState<string | null>(null);
   const running = handoff !== null && !isSettled(handoff.phase);
 
@@ -56,7 +58,7 @@ function SwitchModelBody({ app, old }: { app: App; old: string }) {
   useEffect(() => {
     let live = true;
     setModels(null);
-    setModel(null);
+    setModel(provider === current.provider ? current.model : null);
     setError(null);
     app.life.runs.models(provider).then(
       (m) => live && setModels(m.models),
@@ -74,7 +76,7 @@ function SwitchModelBody({ app, old }: { app: App; old: string }) {
   useEffect(() => {
     let live = true;
     setAccounts([]);
-    setAccount("");
+    setAccount(accountProvider === accountCli(current.provider ?? "claude", current.model) ? current.account ?? "" : "");
     if (hasAccounts)
       app.life.runs.accounts(accountProvider).then(
         (a) => live && setAccounts(a.accounts),
@@ -86,16 +88,16 @@ function SwitchModelBody({ app, old }: { app: App; old: string }) {
   }, [app, accountProvider, hasAccounts]);
 
   const q = query.trim();
-  const shown = useMemo(() => (models ?? []).filter((m) => !q || m.label.toLowerCase().includes(q.toLowerCase())), [models, q]);
+  const shown = useMemo(() => (models ?? []).filter((m) => !q || m.label.toLowerCase().includes(q.toLowerCase()) || m.id.toLowerCase().includes(q.toLowerCase())), [models, q]);
   const custom = q && !(models ?? []).some((m) => m.id === q) ? q : null;
 
   return (
-    <div className="grid gap-3">
+    <div className="grid gap-3" onKeyDown={(e) => modelPickerKey(e, query)}>
       <fieldset disabled={running} className="grid gap-3">
         <div className="grid grid-cols-2 gap-2">
           <Label text="Provider">
             <select className={FIELD} data-testid="sm-provider" value={provider} onChange={(e) => setProvider(e.target.value)}>
-              {(providers.length ? providers : [{ id: "claude", label: "Claude" }]).map((p) => (
+              {(providers.length ? providers : [{ id: provider, label: provider }]).map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.label}
                 </option>
@@ -120,13 +122,13 @@ function SwitchModelBody({ app, old }: { app: App; old: string }) {
           {!models && <p className="px-2 py-1.5 text-sm text-muted-foreground">Reading models…</p>}
           {models?.length === 0 && !custom && <p className="px-2 py-1.5 text-sm text-muted-foreground">No models listed. Type a model id.</p>}
           {shown.map((m) => (
-            <button key={m.id} type="button" aria-pressed={model === m.id} className="flex w-full items-center gap-2 px-2 py-1 text-left text-sm hover:bg-hover aria-pressed:bg-selected" onClick={() => setModel(m.id)}>
+            <button key={m.id} data-model-id={m.id} type="button" aria-pressed={model === m.id} className="flex w-full items-center gap-2 px-2 py-1 text-left text-sm hover:bg-hover aria-pressed:bg-selected" onClick={() => setModel(m.id)}>
               <span className="min-w-0 flex-1 truncate">{m.label}</span>
               {model === m.id && <CheckIcon className="size-3.5" />}
             </button>
           ))}
           {custom && (
-            <button type="button" aria-pressed={model === custom} data-testid="sm-custom" className="flex w-full items-center gap-2 px-2 py-1 text-left text-sm hover:bg-hover aria-pressed:bg-selected" onClick={() => setModel(custom)}>
+            <button type="button" aria-pressed={model === custom} data-model-id={custom} data-testid="sm-custom" className="flex w-full items-center gap-2 px-2 py-1 text-left text-sm hover:bg-hover aria-pressed:bg-selected" onClick={() => setModel(custom)}>
               Use “{custom}”
             </button>
           )}
