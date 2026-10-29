@@ -3,7 +3,7 @@
 // and new-chat menu serve the tree (decision 3). Drags use the browser's own drag and drop.
 
 import { ArchiveRestoreIcon, TriangleAlertIcon } from "lucide-react";
-import { useRef, useState, useSyncExternalStore, type DragEvent, type MouseEvent } from "react";
+import { useLayoutEffect, useRef, useState, useSyncExternalStore, type DragEvent, type MouseEvent } from "react";
 import { SIDEBAR_VIEWS, type App } from "../core/app";
 import { archivedSession, currentRow, type SidebarRow } from "../core/nav";
 import { Button } from "../components/ui/button";
@@ -17,6 +17,7 @@ import { SidebarHeader } from "./sidebar-header";
 
 export function Sidebar({ app }: { app: App }) {
   const sidebarView = useSyncExternalStore(app.subscribe, () => app.view.sidebarView);
+  useLayoutEffect(() => app.sidebar.focusRequestedView());
   return (
     <div className="flex h-full min-w-0 flex-col bg-sidebar">
       <SidebarHeader app={app} />

@@ -86,6 +86,22 @@ test("body keys do not act on hidden rows and Recent left and right do not fold 
   expect((await tree()).revision).toBe(recent.revision);
 });
 
+test("switching to Recent takes the next keys before another animation frame", async ({ page }) => {
+  await load(page);
+  await row(page, process.env.SWARM_E2E_LIVE!).click();
+  await expect(composer(page)).toBeFocused();
+  const start = new Date("2030-01-01T00:00:00Z");
+  await page.clock.install({ time: start });
+  await page.clock.pauseAt(new Date(start.getTime() + 1_000));
+  try {
+    await page.keyboard.press("Alt+Meta+2");
+    await expect(page.locator('[data-testid="recent-row"][aria-current="true"]')).toBeFocused();
+    await page.keyboard.press("Home");
+    await page.keyboard.press("j");
+    await expect(page.getByTestId("recent-row").nth(1)).toHaveAttribute("aria-selected", "true");
+  } finally { await page.clock.resume(); }
+});
+
 test("a workspace landing lists chats that its closed tabs can reopen", async ({ page }) => {
   await load(page);
   const list = await tabs(page);
@@ -171,6 +187,7 @@ test("tabs have a keyboard stop, arrows move focus, Enter opens, and middle clic
   await expect(list.last()).toBeFocused();
   await page.keyboard.press("Home");
   await expect(list.first()).toBeFocused();
+  await page.locator(`[data-testid="tab"][data-session="${old}"]`).focus();
   await page.keyboard.press("ArrowRight");
   await expect(page.locator(`[data-testid="tab"][data-session="${other}"]`)).toBeFocused();
   await page.keyboard.press("Enter");

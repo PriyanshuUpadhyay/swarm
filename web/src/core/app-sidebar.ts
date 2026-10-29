@@ -8,6 +8,7 @@ const RECENT_ORDER = "swarm.recentOrder";
 import type { App } from "./app";
 
 export class AppSidebar {
+  private focusView: number | null = null;
   constructor(private readonly app: App) {}
 
   // ---- sidebar ----
@@ -216,17 +217,24 @@ export class AppSidebar {
   /** ⌥⌘1 Workspaces, ⌥⌘2 Recent. The list takes the keyboard, on the open chat's row. */
   setSidebarView(n: number) {
     if (n < 1 || n > SIDEBAR_VIEWS.length) return;
+    this.focusView = n;
     if (n !== this.app.sidebarView) {
       this.app.sidebarView = n;
       writeStore(SIDEBAR_VIEW_KEY, String(n));
       if (n === 2) this.app.recentSelected = this.app.openId ?? this.recentList()[0]?.session ?? null;
       this.app.notify();
     }
-    const list = n === 2 ? '[data-testid="recent"]' : '[data-testid="sidebar"]';
-    whenPainted(() => document.querySelector(list) !== null, () => {
-      const target = document.querySelector<HTMLElement>(`${list} [tabindex="0"]`) ?? document.querySelector<HTMLElement>(list);
-      target?.focus();
-    });
+    this.focusRequestedView();
+  }
+
+  /** A new list takes focus during its layout commit, before the next key can reach the old input. */
+  focusRequestedView() {
+    if (this.focusView !== this.app.sidebarView) return;
+    const list = this.focusView === 2 ? '[data-testid="recent"]' : '[data-testid="sidebar"]';
+    const target = document.querySelector<HTMLElement>(`${list} [tabindex="0"]`) ?? document.querySelector<HTMLElement>(list);
+    if (!target) return;
+    this.focusView = null;
+    target.focus();
   }
 
   /** The sessions of the picked chat rows that the tree still lists. */

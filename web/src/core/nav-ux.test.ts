@@ -75,10 +75,21 @@ describe("navigation UX", () => {
     const row = { focus: vi.fn() };
     const list = { focus: vi.fn() };
     vi.stubGlobal("document", { querySelector: (selector: string) => selector.includes("[tabindex") ? row : list });
-    vi.stubGlobal("requestAnimationFrame", (callback: () => void) => callback());
+    vi.stubGlobal("requestAnimationFrame", vi.fn());
     app.sidebar.setSidebarView(2);
     expect(row.focus).toHaveBeenCalledOnce();
     expect(list.focus).not.toHaveBeenCalled();
+  });
+  it("waits for the new list commit and consumes its focus request once", () => {
+    const app = harness();
+    const querySelector = vi.fn<() => { focus: () => void } | null>(() => null);
+    const row = { focus: vi.fn() };
+    vi.stubGlobal("document", { querySelector });
+    app.sidebar.setSidebarView(2);
+    querySelector.mockReturnValue(row);
+    app.sidebar.focusRequestedView();
+    app.sidebar.focusRequestedView();
+    expect(row.focus).toHaveBeenCalledOnce();
   });
   it("does not fold hidden tree rows in Recent", () => {
     const app = harness();
