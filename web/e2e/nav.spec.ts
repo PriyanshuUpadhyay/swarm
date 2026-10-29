@@ -200,10 +200,12 @@ test("Recent lists chats across projects and opens one in another project from t
   await tab.keyboard.press("Alt+Meta+2");
   const rows = tab.getByTestId("recent-row");
   await expect(tab.locator(`[data-testid="recent-row"][data-session="${build}"]`)).toHaveAttribute("aria-current", "true");
+  await expect(tab.locator(`[data-testid="recent-row"][data-session="${build}"]`)).toBeFocused();
   const order = await rows.evaluateAll((els) => els.map((e) => e.getAttribute("data-session")));
   const target = order.indexOf(edit);
   expect(target).toBeGreaterThanOrEqual(0);
   await tab.keyboard.press("Home");
+  await expect(rows.first()).toBeFocused();
   for (let i = 0; i < target; i++) await tab.keyboard.press("j");
   await expect(tab.locator(`[data-testid="recent-row"][data-session="${edit}"]`)).toHaveAttribute("aria-selected", "true");
   await tab.keyboard.press("Enter");
