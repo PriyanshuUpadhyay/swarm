@@ -30,6 +30,10 @@ mod tests {
         // pi's own message has no mark, so a turn shows nothing before its first tool.
         assert_eq!(turn_text("pi", fixture!("pi-turn-start")), None);
         assert_eq!(turn_text("claude", "$ claude --model haiku\n"), None);
+        // Before the first block, the rows above the box are the rest of the sent message.
+        let sent = "❯ Run the shell command ls docs once, then\n  write about the railway.\n\n\
+                    ✢ Synthesizing… (1s)\n────\n❯ \n────\n";
+        assert_eq!(turn_text("claude", sent), None);
         assert_eq!(turn_text("shell", fixture!("claude-turn-text")), None);
     }
 }

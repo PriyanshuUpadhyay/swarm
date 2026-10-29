@@ -6,9 +6,10 @@
 /// answer only at the end of a turn, so its one spinner row is its preview.
 pub fn turn_text(provider: &str, rows: &str) -> Option<String> {
     let lines: Vec<&str> = rows.lines().collect();
-    let (bottom, mark) = match provider {
-        "claude" => (rposition(&lines, |line| line.starts_with('❯'))?, "⏺"),
-        "codex" => (rposition(&lines, |line| line.starts_with('›'))?, "•"),
+    // The input box and the echo of a sent message start with the same mark.
+    let (bottom, echo, mark) = match provider {
+        "claude" => (rposition(&lines, |line| line.starts_with('❯'))?, '❯', "⏺"),
+        "codex" => (rposition(&lines, |line| line.starts_with('›'))?, '›', "•"),
         // ponytail: pi marks no block, so its text starts after its last tool's `Took` row; a
         // turn with no tool shows nothing, because its own message sits above with no mark.
         "pi" => {
@@ -50,6 +51,10 @@ pub fn turn_text(provider: &str, rows: &str) -> Option<String> {
             break;
         }
         if !body(line) && !line.trim().is_empty() {
+            // The rows under an echo are the rest of the owner's message, and no block yet.
+            if line.starts_with(echo) {
+                return None;
+            }
             break;
         }
         text.push(line.trim());
