@@ -256,8 +256,8 @@ pub(crate) fn hook(
     Ok(None)
 }
 
-/// The orchestrator is the chair, so its log is the chat's log. Only `swarm sessions --json`
-/// looks a chair log up from its id, and the app never runs it for a live chat.
+/// The orchestrator is the chair, so its log is the chat's log. Until a hook stores it, `swarm
+/// sessions --json` and serve look it up from the chair's id (ADR 0131).
 pub(crate) fn store_log(
     connection: &rusqlite::Connection,
     session: &str,

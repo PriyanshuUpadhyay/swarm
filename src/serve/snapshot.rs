@@ -31,6 +31,7 @@ pub(super) fn snapshot_value(app: &Server) -> Result<Value, Box<dyn std::error::
     for row in swarm::store::sessions_with_archived(&connection, true)? {
         let is_archived = row.archived_at.is_some();
         let cwd = row.cwd.clone();
+        let chair_log = chair_log(&row, is_archived);
         let session = swarm::bus::Session {
             id: row.id,
             talk_mode: row.talk_mode,
@@ -39,7 +40,7 @@ pub(super) fn snapshot_value(app: &Server) -> Result<Value, Box<dyn std::error::
             created_at: row.created_at,
             chair_provider: row.chair_provider,
             chair_id: row.chair_id,
-            chair_log: row.chair_log,
+            chair_log,
             continuation_of: row.continuation_of,
             branch_of: row.branch_of,
             agents: row.agents,
@@ -84,3 +85,20 @@ pub(super) fn snapshot_value(app: &Server) -> Result<Value, Box<dyn std::error::
 #[cfg(test)]
 #[path = "snapshot/tests.rs"]
 mod tests;
+
+/// The chair's stored log, or for a live chat the log its id names. A new chair's hook stores its
+/// log only at the end of its first turn, but the file exists from the turn's start, so the page
+/// can show that turn live (ADR 0131).
+// ponytail: each snapshot scans the provider's log folders for a live chat with no stored log;
+// store the found path if a snapshot gets slow.
+pub(super) fn chair_log(row: &swarm::store::SessionRow, archived: bool) -> Option<String> {
+    row.chair_log
+        .clone()
+        .filter(|log| !log.is_empty())
+        .or_else(|| {
+            (!archived)
+                .then(|| crate::resolved_chair_log(row))
+                .flatten()
+                .map(|path| path.to_string_lossy().into_owned())
+        })
+}

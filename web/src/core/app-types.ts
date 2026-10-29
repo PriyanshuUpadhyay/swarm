@@ -41,6 +41,8 @@ export type Chat = {
   queue: Row[];
   /** The running turn's text on the agent's screen, a preview the log replaces (ADR 0131). */
   live: string | null;
+  /** The turn ended; `live` stays shown until the log's next rows land. */
+  liveEnded: boolean;
   /** The newest texts typed into this chat, never shown. A stop or Up on pi puts them back exact,
    *  because pi's box joins lines and its queue cuts them (ADR 0130). Each is its own object, so a
    *  restore drops the entries it matched and not a text sent while the stop was on its way. */

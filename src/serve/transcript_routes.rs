@@ -43,10 +43,19 @@ pub(super) fn resolve_log(root: &Path, session: &str, agent: &str) -> Result<Log
             .ok_or_else(|| error(StatusCode::NOT_FOUND, "unknown agent"))?;
         (row.log, row.provider, Some(format!("{session}-{agent}")))
     };
-    // pi has no hook to report its log; `launch` gave it the id `<session>-<agent>` (ADR 0086).
-    // ponytail: each read scans pi's session folders until a log is stored; store the found path
+    // A chair's log is found by its id as the snapshot finds it. pi has no hook to report a seat's
+    // log; `launch` gave it the id `<session>-<agent>` (ADR 0086).
+    // ponytail: each read scans the session folders until a log is stored; store the found path
     // if a read gets slow.
     let path = path.filter(|path| !path.is_empty()).or_else(|| {
+        if agent == "chair"
+            && let Some(log) = swarm::store::sessions_with_archived(&connection, false)
+                .ok()
+                .and_then(|rows| rows.into_iter().find(|row| row.id == session))
+                .and_then(|row| chair_log(&row, false))
+        {
+            return Some(log);
+        }
         (format.as_deref() == Some("pi"))
             .then(|| crate::pi_chair_log(pi_id.as_deref()?))
             .flatten()

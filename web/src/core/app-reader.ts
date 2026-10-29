@@ -52,6 +52,7 @@ export class AppReader {
       usage: null,
       queue: [],
       live: null,
+      liveEnded: false,
       typed: [],
       ...this.freshReaderState(),
     };

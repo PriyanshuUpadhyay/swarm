@@ -55,7 +55,10 @@ a host apart from serve lives through a serve restart.
   Codex `•` block, pi's text after its last tool, and AGY's spinner row. A tool block, or the rest
   of the sent message before the first block, shows no row. The page hides the row once a recent log row
   holds its text, a row of an earlier turn included, because pi's screen can still show the last
-  turn's answer. At turn end the row goes away. This is a named screen read
+  turn's answer. A turn can end seconds before its log rows land, so at turn end the row stays
+  until the chat's next rows land. A new chair's hook stores its log only at the end of its first
+  turn, so serve finds a live chat's log by the chair's id until then, and the first turn shows
+  live too. This is a named screen read
   under ADR 0120 and an exception to ADR 0099's "nothing more", because the live row is a preview
   and never a record.
 
@@ -116,6 +119,8 @@ a host apart from serve lives through a serve restart.
 - `src/screen/live_tests.rs` checks the turn cut on real screens of the four CLIs. A CLI update
   that breaks the cut fails these tests once its new screen is captured.
 - `serve::events::tests` checks the `live` frame of a chair chat and its null at turn end.
+- `app-stream.test.ts` checks that the text stays after turn end until the log's rows land, and
+  `cargo test --features serve --test serve a_claude_chair_log` checks the log found by the id.
 
 ## Informed by
 

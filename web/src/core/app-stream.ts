@@ -82,7 +82,10 @@ export class AppStream {
       case "live": {
         const chat = this.byKey(String(data.key));
         if (!chat) break;
-        chat.live = typeof data.text === "string" ? data.text : null;
+        const text = typeof data.text === "string" ? data.text : null;
+        // A turn can end seconds before its log's rows land, so its text stays until they do.
+        if (text === null && chat.live !== null) chat.liveEnded = true;
+        else [chat.live, chat.liveEnded] = [text, false];
         this.app.reading.changed(chat);
         break;
       }
@@ -128,6 +131,7 @@ export class AppStream {
         }
       }
       if (chat.rows !== before) {
+        if (chat.liveEnded) [chat.live, chat.liveEnded] = [null, false];
         chat.version++;
         chat.shift = false;
         if (chat.sessionId === this.app.openId) render = true;
