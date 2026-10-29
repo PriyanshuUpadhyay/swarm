@@ -295,3 +295,65 @@ fn a_child_that_reads_no_input_fails_a_ring_and_still_shows_its_output() {
         "the output after the queries",
     );
 }
+
+#[test]
+fn a_viewer_sees_the_screen_types_keys_and_the_last_one_out_restores_the_size() {
+    let host = Host::start();
+    let pane = host.spawn();
+    host.out("ring", &[("pane", &pane), ("text", "echo before-$((1+1))")]);
+    wait_for(
+        || host.out("screen", &[("pane", &pane)]).contains("before-2"),
+        "the first line",
+    );
+    let mut viewer = Command::new(env!("CARGO_BIN_EXE_swarm"))
+        .args(["pty", "attach"])
+        .env("SWARM_HOME", &host.home)
+        .env("SWARM_PANE", &pane)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut out = viewer.stdout.take().unwrap();
+    let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let reader = {
+        let seen = seen.clone();
+        std::thread::spawn(move || {
+            let mut chunk = [0; 4096];
+            while let Ok(read @ 1..) = std::io::Read::read(&mut out, &mut chunk) {
+                seen.lock().unwrap().extend_from_slice(&chunk[..read]);
+            }
+        })
+    };
+    let text = || String::from_utf8_lossy(&seen.lock().unwrap()).into_owned();
+    // The screen comes first, then the keys typed here reach the shell and its output comes back.
+    wait_for(|| text().contains("before-2"), "the screen");
+    let mut keys = viewer.stdin.take().unwrap();
+    std::io::Write::write_all(&mut keys, b"echo typed-$((2+3))\r").unwrap();
+    wait_for(|| text().contains("typed-5"), "the typed line's output");
+    host.out("ring", &[("pane", &pane), ("text", "stty size")]);
+    wait_for(|| text().contains("24 80"), "the default size");
+    // With no terminal the viewer asks for no size; the resize op that its SIGWINCH sends sets one.
+    let n: u64 = pane.rsplit(':').next().unwrap().parse().unwrap();
+    let stream = std::os::unix::net::UnixStream::connect(host.socket()).unwrap();
+    let request = format!("{{\"op\":\"resize\",\"n\":{n},\"rows\":30,\"cols\":100}}\n");
+    std::io::Write::write_all(&mut &stream, request.as_bytes()).unwrap();
+    let mut reply = String::new();
+    std::io::BufRead::read_line(&mut std::io::BufReader::new(&stream), &mut reply).unwrap();
+    assert!(reply.contains("\"ok\":true"), "{reply}");
+    host.out("ring", &[("pane", &pane), ("text", "stty size")]);
+    wait_for(|| text().contains("30 100"), "the new size");
+    // The viewer leaves when its input ends, and the host closes its stream.
+    drop(keys);
+    wait_for(
+        || viewer.try_wait().unwrap().is_some(),
+        "the viewer to leave",
+    );
+    reader.join().unwrap();
+    assert!(host.out("list", &[]).contains(&format!("{pane} ")));
+    // The last viewer out puts the pane back at its detached size.
+    host.out("ring", &[("pane", &pane), ("text", "stty size > size")]);
+    wait_for(
+        || read(&host.home.join("size")) == "24 80\n",
+        "the size put back",
+    );
+}

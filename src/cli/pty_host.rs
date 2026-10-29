@@ -3,6 +3,7 @@
 //! client half here, which talks to the host over a Unix socket. A child dies with the
 //! host, and the owner accepted that.
 
+mod attach;
 mod client;
 mod pane;
 mod screen;
@@ -41,6 +42,7 @@ struct Hosted {
     group: libc::pid_t,
     parser: Arc<Mutex<vt100::Parser>>,
     activity: Arc<AtomicU64>,
+    viewers: attach::Viewers,
 }
 
 type Children = Arc<Mutex<HashMap<u64, Hosted>>>;
@@ -310,12 +312,27 @@ fn hang_up(hosted: &Hosted) {
 
 fn serve(stream: UnixStream, children: &Children, next: &AtomicU64, session: &str) {
     let _ = stream.set_write_timeout(Some(REQUEST_TIMEOUT));
-    let reply = match read_request(&stream) {
-        Ok(line) => serde_json::from_str(&line)
-            .map_err(|error| error.to_string())
-            .and_then(|request| handle(&request, children, next, session)),
-        Err(error) => Err(error.to_string()),
-    };
+    let request = read_request(&stream)
+        .map_err(|error| error.to_string())
+        .and_then(|line| {
+            serde_json::from_str::<serde_json::Value>(&line).map_err(|error| error.to_string())
+        });
+    // A viewer keeps its connection, and the first line of its stream is the reply.
+    if let Ok(request) = &request
+        && request["op"] == "attach"
+    {
+        let error = match stream.try_clone() {
+            Ok(viewer) => match attach::attach(viewer, request, children) {
+                Ok(()) => return,
+                Err(error) => error,
+            },
+            Err(error) => error.to_string(),
+        };
+        let reply = serde_json::json!({"ok": false, "error": error});
+        let _ = writeln!(&stream, "{reply}");
+        return;
+    }
+    let reply = request.and_then(|request| handle(&request, children, next, session));
     let reply = match reply {
         Ok(out) => serde_json::json!({"ok": true, "out": out}),
         Err(error) => serde_json::json!({"ok": false, "error": error}),
@@ -398,6 +415,10 @@ fn handle(
         }
         "screen" => return Ok(screen(&lock(&hosted.parser))),
         "capture" => return Ok(capture(&mut lock(&hosted.parser))),
+        "resize" => {
+            attach::resize_op(request, hosted);
+            return Ok(String::new());
+        }
         "close" => {
             hang_up(&children.remove(&n).expect("found above"));
             return Ok(String::new());
