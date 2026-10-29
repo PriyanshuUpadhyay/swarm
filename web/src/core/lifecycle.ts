@@ -252,6 +252,7 @@ export class Lifecycle {
       for (const { session, agents } of live) for (const agent of agents) await this.api.action("/api/agent/close", { session, agent });
       if (archive) {
         await this.api.action("/api/sessions/archive", { ids: sessions });
+        this.app.navigation.rememberArchived(sessions);
         for (const session of sessions) this.app.leaveChat(session);
       }
     };

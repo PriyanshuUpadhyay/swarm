@@ -234,6 +234,14 @@ export class AppNavigation {
     if (tabs[next].session !== this.app.openId) this.openChat(tabs[next].session, e);
   }
 
+  /** Records a successful archive beside closed tabs, with the same restore action for Undo. */
+  rememberArchived(sessions: string[]) {
+    this.app.closedTabs = [...this.app.closedTabs.filter((session) => !sessions.includes(session)), ...sessions];
+    this.app.notice(sessions.length === 1 ? "Chat archived." : "Chats archived.", false, {
+      label: "Undo", run: () => { for (const session of sessions) this.app.unarchive(session); },
+    });
+  }
+
   /** ⇧⌘T reopens the last closed tab, as a browser does. A chat archived since its tab closed
    *  is unarchived. With no closed tab, the archived chats list opens. */
   reopenTab() {
