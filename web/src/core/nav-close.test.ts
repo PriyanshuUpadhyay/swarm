@@ -154,4 +154,25 @@ describe("closing tabs", () => {
     expect(app.life.state.confirm).toBeNull();
   });
 
+  it("puts an archived chat after older closed tabs and offers Undo only after success", async () => {
+    const { app } = harness();
+    app.closedTabs = ["older"];
+    app.notice = vi.fn();
+    await app.life.endChat("open", true);
+    expect(app.closedTabs).toEqual(["older", "open"]);
+    expect(app.notice).toHaveBeenCalledWith("Chat archived.", false, expect.objectContaining({ label: "Undo", run: expect.any(Function) }));
+    app.sidebar.unarchive = vi.fn();
+    app.navigation.reopenTab();
+    expect(app.sidebar.unarchive).toHaveBeenCalledWith("open");
+  });
+
+  it("does not offer Undo or change the reopen list when archive fails", async () => {
+    const { app } = harness({ failArchive: true });
+    app.closedTabs = ["older"];
+    app.notice = vi.fn();
+    await app.life.endChat("open", true);
+    expect(app.closedTabs).toEqual(["older"]);
+    expect(app.notice).not.toHaveBeenCalledWith("Chat archived.", false, expect.anything());
+  });
+
 });

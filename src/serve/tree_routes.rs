@@ -78,6 +78,27 @@ pub(super) async fn tree_view(
             discovery::now(),
             &cache,
         );
+        // Search and Recent use every chat even when the sidebar is folded or capped.
+        let mut catalog_state = saved.state.clone();
+        catalog_state.collapsed.clear();
+        catalog_state.expanded_lists = tree
+            .projects
+            .iter()
+            .flat_map(|p| &p.workspaces)
+            .map(|w| w.path.clone())
+            .collect();
+        let chats: Vec<_> = tree::sections(
+            &tree,
+            &saved.owner,
+            &catalog_state,
+            false,
+            discovery::now(),
+            &cache,
+        )
+        .into_iter()
+        .flat_map(|s| s.rows)
+        .filter(|r| r.kind == "chat")
+        .collect();
         let rows: Vec<_> = sections
             .iter()
             .filter(|s| s.expanded)
@@ -119,6 +140,7 @@ pub(super) async fn tree_view(
             "revision": saved.revision,
             "view": if archive { "archived" } else { "workspaces" },
             "sections": sections,
+            "chats": chats,
             "selectedRow": selected_row,
             "archivedStatus": archived_status,
             "choicesError": choices_error,

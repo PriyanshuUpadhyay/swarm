@@ -28,6 +28,7 @@ export type SkillsState = {
   kit: Load<Kit>;
   preset: string | null;
   block: string | null;
+  filter: string;
   draft: Draft;
   /** The edited draft that the last new start replaced, until the next edit. */
   undo: Draft | null;
@@ -119,7 +120,7 @@ function withDefaults(kit: Kit): Kit {
 }
 
 export class Skills {
-  state: SkillsState = { open: false, view: "catalog", kit: { state: "idle" }, preset: null, block: null, draft: blankDraft(), undo: null, check: null };
+  state: SkillsState = { open: false, view: "catalog", kit: { state: "idle" }, preset: null, block: null, filter: "", draft: blankDraft(), undo: null, check: null };
   private listeners = new Set<() => void>();
   private timer: ReturnType<typeof setTimeout> | null = null;
   /** Count reads and checks, so an older reply cannot replace a newer one. */
@@ -151,6 +152,10 @@ export class Skills {
 
   setView(view: SkillsView) {
     this.set({ view });
+  }
+
+  setFilter(filter: string) {
+    this.set({ filter });
   }
 
   selectBlock(block: string) {

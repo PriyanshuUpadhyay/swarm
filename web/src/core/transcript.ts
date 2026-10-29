@@ -103,18 +103,65 @@ export function searchText(row: Row): string {
 }
 
 /** A find match: the row, and the fold that holds it when it is a step. */
-export type Match = { id: string; fold: Row | null };
+export type Match = { id: string; fold: Row | null; offset: number; occurrence: number; preview?: string; line?: number; lineOccurrence?: number };
 
-/** Matches over visible loaded rows, in list order, including visible steps of closed folds. */
-export function findMatches(rows: readonly Row[], query: string): Match[] {
+type LoadedText = ReadonlyMap<string, { state: string; text?: string }>;
+
+/** Every occurrence in the loaded content, including text behind an expanded preview. */
+export function findMatches(rows: readonly Row[], query: string, full?: LoadedText): Match[] {
   const q = query.trim().toLowerCase();
   if (!q) return [];
   const out: Match[] = [];
-  for (const row of rows) {
-    if (row.collapsed) continue;
-    if (searchText(row).includes(q)) out.push({ id: row.id, fold: null });
-    for (const step of row.steps ?? []) if (!step.collapsed && searchText(step).includes(q)) out.push({ id: step.id, fold: row });
-  }
+  const visit = (row: Row, fold: Row | null) => {
+    if (row.collapsed) return;
+    const parts: { text: string; preview?: string }[] = [];
+    const add = (text?: string, preview?: string) => {
+      const loaded = preview ? full?.get(preview) : undefined;
+      const value = loaded?.state === "ready" ? loaded.text : text;
+      if (value) parts.push({ text: value, preview });
+    };
+    const output = (p?: { id: string; text: string }) => p && add(p.text, p.id);
+    const diff = (p?: { id: string; patch: string }) => p && add(p.patch, p.id);
+    if (row.system_kind === "swarm_ring") add("New swarm message");
+    else if (row.kind === "fold") add(row.fold?.text ?? row.text);
+    else if (row.tool) {
+      add(row.tool.name);
+      add(row.tool.header_title ?? row.text);
+      add(row.tool.command);
+      add(row.tool.path);
+      output(row.tool.output);
+      output(row.tool.skill_body);
+      row.tool.diffs?.forEach(diff);
+    } else if (row.shell) {
+      add(row.shell.command);
+      output(row.shell.output);
+    } else if (row.command) {
+      add(row.command.arguments.includes(row.command.name) ? row.command.arguments : `${row.command.name} ${row.command.arguments}`);
+      output(row.command.skill_body);
+      output(row.command.output);
+    } else if (row.kind === "toolResult") {
+      if (row.output) output(row.output);
+      else add(row.text);
+    } else if (row.kind === "diff") diff(row.diff);
+    else {
+      add(row.text);
+      add(row.detail);
+      output(row.output);
+      diff(row.diff);
+    }
+    let occurrence = 0;
+    for (const part of parts) {
+      const text = part.text.toLowerCase();
+      for (let offset = text.indexOf(q); offset >= 0; offset = text.indexOf(q, offset + q.length)) {
+        const before = text.slice(0, offset);
+        const line = before.split("\n").length - 1;
+        const onLine = before.slice(before.lastIndexOf("\n") + 1);
+        out.push({ id: row.id, fold, offset, occurrence: occurrence++, ...(part.preview ? { preview: part.preview, line, lineOccurrence: onLine.split(q).length - 1 } : {}) });
+      }
+    }
+    for (const step of row.steps ?? []) visit(step, row);
+  };
+  for (const row of rows) visit(row, null);
   return out;
 }
 

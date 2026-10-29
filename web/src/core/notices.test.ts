@@ -73,3 +73,28 @@ describe("notices card", () => {
     expect(noticesCard(notices.state)).toBe("fixed");
   });
 });
+
+it("keeps dismissal after a reload and clears it when health changes", async () => {
+  const memory = new Map<string, string>();
+  const old = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+  Object.defineProperty(globalThis, "localStorage", { configurable: true, value: {
+    getItem: (key: string) => memory.get(key) ?? null,
+    setItem: (key: string, value: string) => memory.set(key, value),
+    removeItem: (key: string) => memory.delete(key),
+  } });
+  try {
+    const first = fakeApp(async () => health("ok")).notices;
+    await first.load();
+    first.hide();
+    const second = fakeApp(async () => health("ok")).notices;
+    await second.load();
+    expect(noticesCard(second.state)).toBeNull();
+    const changed = fakeApp(async () => health("ok"), async () => health("blocked")).notices;
+    await changed.load();
+    expect(noticesCard(changed.state)).toEqual(health("blocked"));
+    expect(memory.has("swarm.notices.dismissed")).toBe(false);
+  } finally {
+    if (old) Object.defineProperty(globalThis, "localStorage", old);
+    else Reflect.deleteProperty(globalThis, "localStorage");
+  }
+});

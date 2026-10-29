@@ -44,7 +44,7 @@ describe("Conductor import", () => {
     expect(await settings.importConductor()).toBe(false);
     await settings.loadConductor();
     expect(await settings.importConductor()).toBe(true);
-    expect(calls).toEqual(["GET /api/import/conductor", 'POST /api/import/conductor {"digest":"c-1"}', "GET /api/import/conductor"]);
+    expect(calls).toEqual(["GET /api/import/conductor", 'POST /api/import/conductor {"digest":"c-1"}', "GET /api/import/conductor", "notice Imported 1 chats; 0 are in Archived chats."]);
   });
 
   it("a changed plan is a 409 that reloads the plan and says so", async () => {
@@ -272,4 +272,15 @@ describe("owner writes", () => {
     await settings.mute("/work/proj", true);
     expect(calls).toEqual(['choose {"op":"pref","key":"notices.sound","value":false}', 'choose {"op":"mute_project","project":"/work/proj","muted":true}']);
   });
+});
+
+it("keeps runner drafts across Settings close and page changes until explicitly cleared", () => {
+  const { settings } = fakeApp(async () => ({}));
+  const runners = [{ provider: "codex", model: "typed-model", effort: "high" }];
+  settings.setProfileDraft("review", runners);
+  settings.close();
+  settings.show("appearance");
+  expect(settings.state.profileDrafts.review).toEqual(runners);
+  settings.setProfileDraft("review", null);
+  expect(settings.state.profileDrafts.review).toBeUndefined();
 });

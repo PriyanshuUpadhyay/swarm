@@ -55,6 +55,22 @@ mod cases {
             std::fs::read_to_string(dir.join("log")).unwrap(),
             "read\nread\n"
         );
+        // pi's folder trust screen is a question, so typed text and its Enter would pick a choice.
+        std::fs::write(
+            dir.join("screen"),
+            include_str!("../../../tests/fixtures/screens/pi-trust.txt"),
+        )
+        .unwrap();
+        let refused = type_text(&connection, &adapter, &session, CODER, "%2", "hi").unwrap_err();
+        assert!(
+            refused.to_string().contains("shows a question"),
+            "{refused}"
+        );
+        assert!(
+            !std::fs::read_to_string(dir.join("log"))
+                .unwrap()
+                .contains("ring")
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

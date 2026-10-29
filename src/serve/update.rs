@@ -282,6 +282,7 @@ pub(super) async fn update_restart(State(app): State<App>) -> Result<Json<Value>
     std::process::Command::new(installed_swarm(prefix))
         .args(["ui", "--port", &app.port.to_string()])
         .env("SWARM_HOME", app.root.parent().expect("swarm home"))
+        .env(RELOAD_ONLY, "1")
         .stdin(std::process::Stdio::null())
         .stdout(log.try_clone().map_err(fail)?)
         .stderr(log)

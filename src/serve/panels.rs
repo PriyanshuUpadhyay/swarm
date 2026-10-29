@@ -75,6 +75,27 @@ pub(super) async fn panel_read(
     })?
 }
 
+/// `POST /api/workspace/fetch`: `git fetch --prune origin` in the project, so New Workspace lists
+/// the branches that origin has now. It runs off the action queue, because a fetch can take a minute.
+pub(super) async fn workspace_fetch(
+    State(app): State<App>,
+    body: Result<Json<ProjectPath>, JsonRejection>,
+) -> Result<Json<Value>, ApiError> {
+    let Json(query) = body.map_err(|e| error(StatusCode::BAD_REQUEST, &e.body_text()))?;
+    tokio::task::spawn_blocking(move || {
+        let (tree, _) = fresh_lifecycle_tree(&app)?;
+        let project = lifecycle::project(&tree, &query.project).map_err(lifecycle_error)?;
+        lifecycle::checked_path(&app.root, &query.project, true).map_err(lifecycle_error)?;
+        let common = lifecycle::common(project)
+            .ok_or_else(|| error(StatusCode::BAD_REQUEST, "Fetch needs a Git project"))?;
+        lifecycle::checked_path(&app.root, common, true).map_err(lifecycle_error)?;
+        lifecycle::check_git(common, &["fetch", "--prune", "origin"]).map_err(lifecycle_error)?;
+        Ok(Json(json!({"ok": true})))
+    })
+    .await
+    .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "fetch task failed"))?
+}
+
 #[cfg(test)]
 #[path = "panels/tests.rs"]
 mod tests;

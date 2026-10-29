@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import { usePanelRef, useDefaultLayout } from "react-resizable-panels";
 import { toast } from "sonner";
 import { showError, shownErrors } from "./errors";
-import { CopyIcon } from "lucide-react";
+import { CopyIcon, TerminalIcon } from "lucide-react";
 import { forgetToken } from "../core/api";
 import type { App } from "../core/app";
 import { boot, NO_TOKEN, savedStore } from "../core/boot";
@@ -99,12 +99,15 @@ function Root({ app, changes }: { app: App; changes: Changes }) {
 function Main({ app, changes }: { app: App; changes: Changes }) {
   const openId = useSyncExternalStore(app.subscribe, () => app.view.openId);
   const workspace = useSyncExternalStore(app.subscribe, () => app.view.workspace);
+  const reconnecting = useSyncExternalStore(app.subscribe, () => app.view.reconnecting);
   return (
     <div className="flex h-full min-w-0 flex-col">
+      {reconnecting && <div role="status" data-testid="reconnecting" className="border-b border-waiting/40 bg-waiting/10 px-3 py-1 text-xs">Reconnecting… Live updates have stopped.</div>}
       {(workspace || openId) && (
         <div className="flex min-w-0">
           <div className="min-w-0 flex-1">{workspace && <TabStrip app={app} />}</div>
           {openId && <ChatId id={openId} short={shortId(openId, app.chatIds())} />}
+          {openId && <button type="button" className="icon-btn" aria-label="Terminal and background tasks" title="Terminal and background tasks (⌘J)" onClick={() => backgroundPanel.toggle()}><TerminalIcon /></button>}
           <PanelToggles changes={changes} />
         </div>
       )}
@@ -119,16 +122,18 @@ function Main({ app, changes }: { app: App; changes: Changes }) {
 /** The open chat over the ⌘J panel of its agents and background tasks (ADR 0104). */
 function ChatColumn({ app, openId }: { app: App; openId: string }) {
   const [open, setOpen] = useState(() => store.getItem(BACKGROUND_KEY) === "1");
+  const [focusRequest, setFocusRequest] = useState({ session: openId, seq: 0 });
   useEffect(() => {
     backgroundPanel.toggle = () =>
       setOpen((was) => {
         store.setItem(BACKGROUND_KEY, was ? "0" : "1");
+        if (!was) setFocusRequest((n) => ({ session: openId, seq: n.seq + 1 }));
         return !was;
       });
     return () => {
       backgroundPanel.toggle = () => {};
     };
-  }, []);
+  }, [openId]);
   // The ids must be the panels that mount, so each set keeps its own saved layout.
   const layout = useDefaultLayout({ id: "swarm.background", storage: store, panelIds: open ? ["chat-panel", "background-panel"] : ["chat-panel"] });
   return (
@@ -143,7 +148,7 @@ function ChatColumn({ app, openId }: { app: App; openId: string }) {
         <ResizablePanel id="background-panel" defaultSize="280px" minSize="120px">
           <LoadFailed key={openId} what="background panel">
             <Suspense fallback={<p role="status" className="p-3 text-sm text-muted-foreground">Loading…</p>}>
-              <BackgroundPanel app={app} session={openId} />
+              <BackgroundPanel app={app} session={openId} focusRequest={focusRequest.session === openId ? focusRequest.seq : 0} />
             </Suspense>
           </LoadFailed>
         </ResizablePanel>
@@ -173,7 +178,7 @@ const app = boot();
 const changes = typeof app === "string" ? null : new Changes(app);
 if (typeof app !== "string") {
   app.registry.add(...changes!.commands());
-  app.notice = (text, error) => (error ? showError(text) : toast(text));
+  app.notice = (text, error, action) => (error ? showError(text) : toast(text, action ? { action: { label: action.label, onClick: action.run } } : undefined));
   // A failed report is dropped, so it never shows an error of its own.
   shownErrors.report = (text) => void app.api.post("/api/ui-error", { text, page: location.pathname }).catch(() => {});
   // A token that the server refuses is forgotten, so the next link that swarm ui opens saves its own.

@@ -59,10 +59,12 @@ export function isSettled(phase: string): boolean {
 /** A switch model run, from its `handoff` stream frames (P3b). */
 export type Handoff = { old: string; phase: string; canCancel: boolean; error: string | null; carry?: SwitchCarry };
 
-export type Confirm = { title: string; body: string; action: string; blocked?: boolean; run: () => Promise<unknown> };
+/** Enter takes the action, the usual default of a confirm; `cancelFirst` gives Enter to Cancel for
+ *  a step that loses data, such as a folder delete. */
+export type Confirm = { title: string; body: string; action: string; blocked?: boolean; cancelFirst?: boolean; run: () => Promise<unknown> };
 
 /** One row of `GET /api/sessions/archived`. */
-export type ClosedChat = { id: string; cwd: string; archivedAt: number; chair_provider: string | null };
+export type ClosedChat = { title?: string; id: string; cwd: string; archivedAt: number; chair_provider: string | null };
 
 /** `GET /api/chats/importable`: a chat on another adapter that the app can show. */
 export type ImportableChat = { id: string; workspace: string; title: string; provider: string | null; lastActivity: number; running: boolean };

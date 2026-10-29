@@ -37,7 +37,7 @@ function Thumb({ path, load, onRemove }: { path: string; load: Load; onRemove?: 
         <button
           type="button"
           aria-label="Remove image"
-          className="absolute -top-1.5 -right-1.5 hidden size-5 items-center justify-center rounded-full border border-border bg-popover group-hover:flex"
+          className="absolute -top-1.5 -right-1.5 flex size-5 items-center justify-center rounded-full border border-border bg-popover group-hover:flex"
           onClick={onRemove}
         >
           <XIcon className="size-3" />

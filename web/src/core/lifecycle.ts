@@ -139,9 +139,10 @@ export class Lifecycle {
     this.set({ setupScript: { project, title } });
   }
 
-  saveSetupScript(project: string, script: string): Promise<boolean> {
-    this.set({ setupScript: null });
-    return this.app.choose({ op: "setup_script", project, setup_script: script });
+  async saveSetupScript(project: string, script: string): Promise<boolean> {
+    const saved = await this.app.choose({ op: "setup_script", project, setup_script: script });
+    if (saved && this.state.setupScript?.project === project) this.set({ setupScript: null });
+    return saved;
   }
 
   // ---- new workspace ----
@@ -157,6 +158,11 @@ export class Lifecycle {
 
   options(project: string): Promise<NewOptions> {
     return this.api.get("/api/workspace/new-options", { project });
+  }
+
+  /** `git fetch --prune origin`, so the next options read lists the branches origin has now. */
+  fetchOrigin(project: string): Promise<unknown> {
+    return this.api.post("/api/workspace/fetch", { project });
   }
 
   async issues(project: string): Promise<Issue[]> {
@@ -246,6 +252,7 @@ export class Lifecycle {
       for (const { session, agents } of live) for (const agent of agents) await this.api.action("/api/agent/close", { session, agent });
       if (archive) {
         await this.api.action("/api/sessions/archive", { ids: sessions });
+        this.app.navigation.rememberArchived(sessions);
         for (const session of sessions) this.app.leaveChat(session);
       }
     };
@@ -372,6 +379,7 @@ export class Lifecycle {
       body: lines.join("\n\n"),
       action: "Delete Workspace",
       blocked: impact.deleteBlocker !== null,
+      cancelFirst: true,
       run: async () => {
         await this.api.post("/api/workspace/delete", { workspace });
         this.app.leaveWorkspace(workspace);

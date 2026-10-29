@@ -489,3 +489,33 @@ fn a_branch_is_its_own_chat_and_its_tooltip_names_the_parent() {
     );
     assert_eq!(help("chat:older"), "Fix menu\n/repo");
 }
+
+#[test]
+fn folding_workspace_resets_its_expanded_chat_list() {
+    let tree = tree();
+    let mut owner = owner();
+    let mut state = ViewState::default();
+    let workspace = "/repo/wt/main".to_string();
+    choices::apply(
+        &mut owner,
+        &mut state,
+        &tree,
+        ChoiceOp::ExpandList {
+            workspace: workspace.clone(),
+        },
+        0,
+    )
+    .unwrap();
+    assert!(state.expanded_lists.contains(&workspace));
+    choices::apply(
+        &mut owner,
+        &mut state,
+        &tree,
+        ChoiceOp::Collapse {
+            id: workspace.clone(),
+        },
+        0,
+    )
+    .unwrap();
+    assert!(!state.expanded_lists.contains(&workspace));
+}

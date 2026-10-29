@@ -166,3 +166,11 @@ describe("Skills", () => {
     expect(calls.filter((c) => c === "GET /api/kit").length).toBe(2);
   });
 });
+
+it("keeps the catalog filter while switching views", () => {
+  const skills = new Skills({} as App);
+  skills.setFilter("review");
+  skills.setView("graph");
+  skills.setView("catalog");
+  expect(skills.state.filter).toBe("review");
+});

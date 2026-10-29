@@ -9,24 +9,28 @@ import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } from "react";
 import type { App } from "../core/app";
-import { message } from "../core/app-types";
+import { ApiError } from "../core/api";
+import { message, readStore, writeStore } from "../core/app-types";
 import { backgroundRows, poll, type BackgroundRow, type BackgroundTask, type WorkspaceShell } from "../core/background";
 import { Button } from "../components/ui/button";
 import { StatusGlyph } from "./status";
+import { SurfaceFind } from "./surface-find";
+import { terminalMatches } from "../core/background";
 import { useTheme } from "./appearance";
 
 const POLL_MS = 3000;
 
 const readShells = (app: App, session: string) => app.api.get<{ shells: WorkspaceShell[] }>("/api/shells", { session });
 
-export function BackgroundPanel({ app, session }: { app: App; session: string }) {
+export function BackgroundPanel({ app, session, focusRequest = 0 }: { app: App; session: string; focusRequest?: number }) {
   const snapshot = useSyncExternalStore(app.subscribe, () => app.snapshot);
   const [tasks, setTasks] = useState<BackgroundTask[]>([]);
   const [shells, setShells] = useState<WorkspaceShell[]>([]);
   const [shellError, setShellError] = useState<string | null>(null);
   // A shell request in flight: a second click would make a second shell, or close one twice.
   const [busy, setBusy] = useState(false);
-  const [picked, setPicked] = useState<string | null>(null);
+  const [picked, setPicked] = useState<string | null>(() => readStore(`swarm.background.picked.${session}`));
+  const requested = useRef(0);
   // A click asks for focus once: the shown terminal takes it now, a new one when its socket opens.
   // Nothing else focuses, so a panel that opens with the chat, or a row that comes back, leaves
   // the keys where they are.
@@ -34,7 +38,8 @@ export function BackgroundPanel({ app, session }: { app: App; session: string })
   const shown = useRef<{ key: string; focus: () => void } | null>(null);
   const choose = (key: string) => {
     setPicked(key);
-    if (shown.current?.key === key) shown.current.focus();
+    writeStore(`swarm.background.picked.${session}`, key);
+    if (shown.current?.key === key) requestAnimationFrame(() => { if (shown.current?.key === key) shown.current.focus(); });
     else wanted.current = key;
   };
   const ready = (key: string) => (focus: () => void) => {
@@ -74,6 +79,12 @@ export function BackgroundPanel({ app, session }: { app: App; session: string })
     shells,
   );
   const row: BackgroundRow | undefined = rows.find((r) => r.key === picked) ?? rows[0];
+  useEffect(() => {
+    if (!focusRequest || requested.current === focusRequest || !row) return;
+    requested.current = focusRequest;
+    if (shown.current?.key === row.key) shown.current.focus();
+    else wanted.current = row.key;
+  }, [focusRequest, row?.key]);
   const pickAgent = (agent: string) => choose(`agent:${agent}`);
   const refreshShells = () => readShells(app, session).then((r) => setShells(r.shells));
   // Every error lands in `shellError`, so the `void` at the click handler loses nothing.
@@ -82,8 +93,10 @@ export function BackgroundPanel({ app, session }: { app: App; session: string })
     setBusy(true);
     try {
       const { id } = await app.api.post<{ id: string }>("/api/shells", { session });
-      await refreshShells();
       choose(`shell:${id}`);
+      setShells((all) => [...all, { id, command: "Starting…" }]);
+      try { await refreshShells(); }
+      catch (err) { setShellError(`Shell created. Could not refresh the list: ${message(err)}`); }
     } catch (err) {
       setShellError(message(err) || "The shell did not start.");
     } finally {
@@ -135,7 +148,7 @@ export function BackgroundPanel({ app, session }: { app: App; session: string })
           <Button variant="ghost" size="sm" data-testid="new-shell" title="A shell in this chat's folder; it keeps running when the panel closes" disabled={busy} onClick={() => void newShell()}>
             New shell
           </Button>
-          {shellError && <p role="alert" className="py-1 text-xs text-destructive">{shellError}</p>}
+          {shellError && <><p role="alert" className="py-1 text-xs text-destructive">{shellError}</p><button type="button" className="t-link" onClick={() => void refreshShells().then(() => setShellError(null), (err) => setShellError(message(err)))}>Refresh shells</button></>}
         </li>
       </ul>
       <div className="flex min-w-0 flex-1 flex-col">{row && <Detail key={row.key} app={app} session={session} row={row} busy={busy} onReady={ready(row.key)} onOwner={pickAgent} onClose={closeShell} />}</div>
@@ -193,6 +206,22 @@ const colors = () => ({ background: css("--background"), foreground: css("--fore
  *  focus when it mounts; a focus asked before the socket opens waits for the open. */
 function Term({ app, session, agent = "", task, shell: shellId, onReady }: { app: App; session: string; agent?: string; task?: string; shell?: string; onReady?: Ready }) {
   const readOnly = task !== undefined;
+  const [attempt, setAttempt] = useState(0);
+  const [connection, setConnection] = useState("Connecting…");
+  const surface = useRef<HTMLDivElement>(null);
+  const searchIndex = useRef(0);
+  const search = (query: string, direction: number) => {
+    const term = live.current;
+    if (!term) return "";
+    const buffer = term.buffer.active;
+    const lines = Array.from({ length: buffer.length }, (_, i) => buffer.getLine(i)?.translateToString() ?? "");
+    const matches = terminalMatches(lines, query);
+    searchIndex.current = direction ? (searchIndex.current + direction + matches.length) % matches.length : 0;
+    const match = matches[searchIndex.current];
+    term.clearSelection();
+    if (match) { term.select(match.column, match.line, query.length); term.scrollToLine(match.line); }
+    return matches.length ? `${searchIndex.current + 1} of ${matches.length}` : query ? "No matches" : "";
+  };
   const host = useRef<HTMLDivElement>(null);
   const live = useRef<Terminal | null>(null);
   const register = useEffectEvent((focus: () => void) => onReady?.(focus));
@@ -209,6 +238,7 @@ function Term({ app, session, agent = "", task, shell: shellId, onReady }: { app
   }, [theme]);
   useEffect(() => {
     const el = host.current!;
+    setConnection("Connecting…");
     const term = new Terminal({
       fontFamily: css("--font-mono"),
       fontSize: 12,
@@ -225,6 +255,7 @@ function Term({ app, session, agent = "", task, shell: shellId, onReady }: { app
     term.attachCustomKeyEventHandler((e) => !app.registry.match(e));
     let ws: WebSocket | null = null;
     let gone = false;
+    // Once the terminal has opened, a row click can focus its saved output even after disconnect.
     let opened = false;
     let asked = false;
     const release = register(() => (opened ? term.focus() : (asked = true)));
@@ -240,12 +271,14 @@ function Term({ app, session, agent = "", task, shell: shellId, onReady }: { app
           fit.fit();
           resize();
           opened = true;
+          setConnection("Connected");
           if (asked) term.focus();
         };
         ws.onmessage = (m) => term.write(typeof m.data === "string" ? m.data : new Uint8Array(m.data as ArrayBuffer));
-        ws.onclose = () => !gone && term.write("\r\n\x1b[2m[closed]\x1b[0m\r\n");
+        ws.onclose = () => { if (!gone) { term.write("\r\n[closed]\r\n"); setConnection("Connection closed. Reconnect to attach again."); } };
+        ws.onerror = () => { if (!gone) setConnection("Terminal connection failed."); };
       })
-      .catch((err: unknown) => !gone && term.write(`${message(err)}\r\n`));
+      .catch((err: unknown) => { if (!gone) { term.write(`${message(err)}\r\n`); setConnection(err instanceof ApiError && err.status === 404 ? `Target unavailable: ${message(err)}` : `Terminal connection failed: ${message(err)}`); } });
     const encoder = new TextEncoder();
     const subs = [
       term.onData((d) => send(encoder.encode(d))),
@@ -263,6 +296,10 @@ function Term({ app, session, agent = "", task, shell: shellId, onReady }: { app
       live.current = null;
       term.dispose();
     };
-  }, [app, session, agent, task, shellId]);
-  return <div ref={host} className="h-full w-full overflow-hidden p-1" data-testid="terminal" />;
+  }, [app, session, agent, task, shellId, attempt]);
+  return <div ref={surface} tabIndex={-1} data-find-surface="terminal" className="flex h-full min-h-0 flex-col">
+    <SurfaceFind surface={surface} scope="terminal" search={search} />
+    {connection !== "Connected" && <div role="status" className="flex items-center gap-2 px-2 py-1 text-xs">{connection}{connection !== "Connecting…" && <Button variant="ghost" size="sm" onClick={() => setAttempt((n) => n + 1)}>Reconnect</Button>}</div>}
+    <div ref={host} className="min-h-0 w-full flex-1 overflow-hidden p-1" data-testid="terminal" />
+  </div>;
 }

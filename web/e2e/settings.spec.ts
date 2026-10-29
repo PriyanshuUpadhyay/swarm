@@ -325,3 +325,18 @@ test("/setup opens Setup & doctor; a row's Set up applies its group and the row 
   await expect.poll(() => new URL(tab.url()).pathname).not.toBe("/setup");
   expect(errors).toEqual([]);
 });
+
+test("⌘W in Settings closes Settings and leaves the chat tab, and ⇧⌘W does not archive", async ({ page: tab }) => {
+  await open(tab);
+  await tab.getByTestId("sidebar").locator('[data-testid="tree-row"][data-kind="chat"]').first().click();
+  const tabs = tab.getByTestId("tab");
+  await expect(tabs.first()).toBeVisible();
+  const before = await tabs.count();
+  const dialog = await settings(tab, "appearance");
+  await tab.keyboard.press("Shift+Meta+w");
+  await expect(tab.getByRole("alertdialog")).toHaveCount(0);
+  await expect(dialog).toBeVisible();
+  await tab.keyboard.press("Meta+w");
+  await expect(dialog).toBeHidden();
+  await expect(tabs).toHaveCount(before);
+});

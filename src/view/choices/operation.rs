@@ -188,6 +188,7 @@ pub fn apply(
         ChoiceOp::Collapse { id } => {
             validate_fold(tree, &id)?;
             state.fold(&id, true);
+            state.expanded_lists.remove(&id);
         }
         ChoiceOp::Expand { id } => {
             validate_fold(tree, &id)?;

@@ -15,7 +15,7 @@ import { Settings } from "./settings";
 import { Skills } from "./skills";
 import { Notices } from "./notices";
 import { chatRows, type ChoiceOp, type NavRow, type PaletteItem, type RecentChat, type Tabs, type TreeName, type TreeView } from "./nav";
-import { type Chat, type Input, type Find, type Strip, type View, type Reader, type Ask, NO_FIND, NO_CELLS } from "./app-types";
+import { type Chat, type Input, type Find, type Strip, type View, type Reader, type Ask, NO_FIND, NO_CELLS, SIDEBAR_VIEW_KEY, readStore } from "./app-types";
 import { AppNavigation } from "./app-navigation";
 import { AppSidebar } from "./app-sidebar";
 import { AppReader } from "./app-reader";
@@ -47,6 +47,7 @@ export class App {
   view: View;
   snapshot: Snapshot | null = null;
   tree: TreeView | null = null;
+  archivedTree: TreeView | null = null;
   treeName: TreeName = "workspaces";
   rows: NavRow[] = [];
   /** Fold presses the server has not confirmed yet, by fold id. */
@@ -56,7 +57,7 @@ export class App {
   openId: string | null = null;
   workspace: string | null = null;
   tabs: Tabs | null = null;
-  sidebarView = 1;
+  sidebarView = readStore(SIDEBAR_VIEW_KEY) === "2" ? 2 : 1;
   recentMemo: { tree: TreeView | null; snapshot: Snapshot | null; list: RecentChat[] } | null = null;
   recentSelected: string | null = null;
   /** The choices revision of the last read or write. Writes go one at a time, each on the last. */
@@ -81,6 +82,7 @@ export class App {
   lru: string[] = [];
   listeners = new Set<() => void>();
   streamId: string | null = null;
+  reconnecting = false;
   /** The server build of the first stream; a later stream from another build reloads the page. */
   serverBuild: string | null = null;
   sentKeys = "";
@@ -106,7 +108,7 @@ export class App {
   strip: Strip = { cells: NO_CELLS, panes: new Map(), focused: null, zoomed: null, reveal: null, revealSeq: 0 };
   readers = new Map<string, Reader>();
   /** Shows a short message to the owner; the view layer sets it (a toast). */
-  notice: (text: string, error?: boolean) => void = () => {};
+  notice: (text: string, error?: boolean, action?: { label: string; run: () => void }) => void = () => {};
   /** The server refused the token. */
   unauthorized: () => void = () => {};
 
@@ -151,7 +153,8 @@ export class App {
     abort.signal.addEventListener("abort", this.settings.subscribe(() => this.navigation.followUrl()));
     void this.navigation.refreshSnapshot().then(() => {
       whenPainted(
-        () => document.querySelector('[data-testid="sidebar"][data-loaded="true"]') !== null,
+        // The sidebar view is saved, so the page can start on Recent, which has no tree.
+        () => document.querySelector('[data-testid="sidebar"][data-loaded="true"], [data-testid="recent"]') !== null,
         () => (window.__swarmReady = true),
       );
     });

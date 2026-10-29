@@ -33,8 +33,12 @@ pub fn codex_composer(rows: &str) -> Option<String> {
 
 /// The text in pi's input box: the rows between the last two rules, joined. Pi draws its folder
 /// and model rows under the box, and while a turn runs the top rule reads `── ⠋ Working ──`.
-/// None until the box is drawn.
+/// None until the box is drawn, and while a question such as pi's folder trust screen sits
+/// between the rules in its place.
 pub fn pi_composer(rows: &str) -> Option<String> {
+    if prompt(rows).is_some() {
+        return None;
+    }
     let lines: Vec<&str> = rows.trim_end().lines().collect();
     let rule = |line: &&str| line.trim_start().starts_with('─');
     let bottom = lines.iter().rposition(rule)?;

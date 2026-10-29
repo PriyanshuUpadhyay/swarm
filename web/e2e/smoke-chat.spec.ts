@@ -26,8 +26,10 @@ test("select a chat by keyboard and see its rows", async ({ page: tab }) => {
   const rows = sidebar.locator('[data-testid="tree-row"]');
   const ids = await rows.evaluateAll((els) => els.map((e) => e.getAttribute("data-id")!));
   const first = (await rows.evaluateAll((els) => els.map((e) => e.getAttribute("data-kind")))).indexOf("chat");
-  for (let i = 0; i < first; i++) await tab.keyboard.press("j");
+  // A load that restores a chat puts the keyboard in its composer, so the walk starts on the tree.
   const selected = sidebar.locator('[aria-selected="true"]');
+  await selected.focus();
+  for (let i = 0; i < first; i++) await tab.keyboard.press("j");
   await expect(selected).toHaveAttribute("data-kind", "chat");
   const rowId = (await selected.getAttribute("data-id"))!;
   const chatId = (await selected.getAttribute("data-session"))!;

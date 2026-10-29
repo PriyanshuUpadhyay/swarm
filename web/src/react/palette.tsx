@@ -107,6 +107,16 @@ function PaletteBody({ app }: { app: App }) {
           </CommandGroup>
         ))}
       </CommandList>
+      <details className="border-t border-border px-3 py-2 text-sm" data-testid="keyboard-shortcuts">
+        <summary className="cursor-pointer">Keyboard shortcuts</summary>
+        <div className="grid max-h-64 gap-1 overflow-y-auto pt-2">
+          {app.registry.list().filter((command) => command.chord).map((command) => (
+            <div key={command.id} className="flex items-center justify-between gap-3">
+              <span>{command.title}</span><Kbd>{chordLabel(command.chord!)}</Kbd>
+            </div>
+          ))}
+        </div>
+      </details>
     </Command>
   );
 }

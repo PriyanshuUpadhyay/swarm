@@ -27,6 +27,7 @@ export class AppPanes {
       tree: this.app.tree,
       treeName: this.app.treeName,
       error: this.app.error,
+      reconnecting: this.app.reconnecting,
       rows: this.app.rows,
       selected: this.app.selected,
       marked: this.app.marked,
@@ -49,7 +50,7 @@ export class AppPanes {
     const finds = chat.id === (this.app.findId ?? this.app.openId);
     if (finds) this.app.reading.refind(chat);
     const find = finds ? this.app.find : NO_FIND;
-    const sig = [chat.version, chat.state, chat.loaded, chat.loadingOlder, find, this.app.snapshot, this.app.inputRev, sendKey, hasLog];
+    const sig = [chat.version, chat.state, chat.error, chat.loaded, chat.loadingOlder, find, this.app.snapshot, this.app.inputRev, sendKey, hasLog];
     if (chat.memo && sig.every((v, i) => v === chat.memo!.sig[i])) return chat.memo.pane;
     if (chat.built?.version !== chat.version) chat.built = { version: chat.version, lines: this.app.reading.build(chat) };
     const pane: Pane = {
@@ -154,7 +155,8 @@ export class AppPanes {
 
   /** A key or "Show column" moved focus to this pane: the strip scrolls to it and its composer takes the keyboard. */
   focusPane(agent: string) {
-    this.app.pane = { ...this.app.pane, focused: agent, reveal: agent, revealSeq: this.app.pane.revealSeq + 1 };
+    this.app.pane = { ...this.app.pane, focused: agent, zoomed: this.app.pane.zoomed ? agent : null, reveal: agent, revealSeq: this.app.pane.revealSeq + 1 };
+    this.app.streaming.syncSubscriptions();
     this.app.notify();
   }
 

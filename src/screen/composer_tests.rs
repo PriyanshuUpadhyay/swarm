@@ -37,6 +37,8 @@ mod tests {
         assert_eq!(composer("pi", fixture!("pi-idle")).as_deref(), Some(""));
         assert_eq!(composer("pi", fixture!("pi-working")).as_deref(), Some(""));
         assert!(!holds("pi", fixture!("pi-working"), ring));
+        // pi's folder trust screen sits between the box's rules, but it is a question, not text.
+        assert_eq!(composer("pi", fixture!("pi-trust")), None);
         // A starting pi has no box yet.
         assert_eq!(composer("pi", "$ pi --model x\n"), None);
     }

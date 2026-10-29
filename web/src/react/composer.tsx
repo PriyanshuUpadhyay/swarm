@@ -1,10 +1,12 @@
 import { ArrowUpIcon, Maximize2Icon, Minimize2Icon, SquareIcon } from "lucide-react";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { SENT, type App, type Composer } from "../core/app";
+import { hasPendingImage } from "../core/images";
 import { historyStep, type Browse } from "../core/history";
 import { canBranch, outgoing, sends, usageLabel, usageTitle } from "../core/composer";
 import { editPicks, matches, menuAt, moved, offered, pick, picksAndSends, showsEmpty, skillFirst, skillNames, toSend, type CommandList, type MenuRow, type SkillPick } from "../core/slash";
 import { Button } from "../components/ui/button";
+import { pasteImage } from "./composer-image";
 import { ImageThumbs } from "./images";
 import { RunChip } from "./run-chip";
 import { cn } from "../lib/utils";
@@ -121,7 +123,7 @@ export function ComposerBox({ app, composer }: { app: App; composer: Composer })
   };
   // True while a pi send waits for pi's skill list, which can take the probe's 15 s deadline.
   const [listing, setListing] = useState(false);
-  const canSend = outgoing(text) !== null && !state.sending && !listing && !state.pulling && !chair.disabled;
+  const canSend = outgoing(text) !== null && !hasPendingImage(text) && !state.sending && !listing && !state.pulling && !chair.disabled;
   const canPullBack = chair.pullBack && !chair.disabled && composer.queued > 0;
   const branchable = canBranch(chair);
   const lastEscape = useRef(-Infinity);
@@ -148,25 +150,6 @@ export function ComposerBox({ app, composer }: { app: App; composer: Composer })
     void app.send(sessionId, out.text, picks.length ? text : out.text);
   };
 
-  /** A pasted image goes to the server, and its path goes in the draft at the caret. */
-  const paste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
-    const image = [...e.clipboardData.files].find((f) => f.type.startsWith("image/"));
-    if (!image) return;
-    e.preventDefault();
-    const el = e.currentTarget;
-    const [start, end] = [el.selectionStart, el.selectionEnd];
-    app.api.image(image).then(
-      (path) => {
-        const draft = app.draft(sessionId);
-        const before = draft.slice(0, start);
-        const insert = `${before && !before.endsWith(" ") ? " " : ""}${path} `;
-        change(before + insert + draft.slice(end));
-        pickedCaret.current = start + insert.length;
-      },
-      (err: unknown) => app.notice(`Could not attach the image: ${err instanceof Error ? err.message : String(err)}`, true),
-    );
-  };
-
   /** Puts the row in the draft; `send` also sends that new draft at once. */
   const choose = (row: MenuRow, send: boolean) => {
     if (!menu) return;
@@ -174,7 +157,10 @@ export function ComposerBox({ app, composer }: { app: App; composer: Composer })
     const recorded = editPicks(text, next.text, picks, menu);
     if (chair.provider === "pi" && row.kind === "skill") recorded.push({ start: menu.start, insert: row.insert });
     change(next.text, recorded);
-    if (send) return void app.send(sessionId, next.text);
+    if (send && !hasPendingImage(next.text)) {
+      window.dispatchEvent(new CustomEvent(SENT, { detail: sessionId }));
+      return void app.send(sessionId, next.text);
+    }
     setCaret(next.caret);
     pickedCaret.current = next.caret;
   };
@@ -241,7 +227,7 @@ export function ComposerBox({ app, composer }: { app: App; composer: Composer })
         app.setBranchPicker(true);
       }
       lastEscape.current = e.timeStamp;
-    } else if (e.key === "ArrowUp" && text === "" && canPullBack) {
+    } else if (e.key === "ArrowUp" && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && text === "" && canPullBack) {
       // The CLI's queue comes back before the history, as in Claude Code (ADR 0038).
       e.preventDefault();
       void app.pullBack(sessionId);
@@ -263,7 +249,7 @@ export function ComposerBox({ app, composer }: { app: App; composer: Composer })
   const showStop = chair.running;
   const chips = chair.provider === "pi" ? picks : [];
   const extraSkills = chair.provider === "pi" ? skillFirst(text, skills, chips).extra : [];
-  const caption = state.sending || listing
+  const caption = hasPendingImage(text) ? "Uploading image… Send waits for the upload." : state.sending || listing
     ? "Sending…"
     : state.stopping
       ? "Stopping…"
@@ -370,7 +356,7 @@ export function ComposerBox({ app, composer }: { app: App; composer: Composer })
             onFocus={() => setFocused(true)}
             onBlur={() => setFocused(false)}
             onKeyDown={onKeyDown}
-            onPaste={paste}
+            onPaste={(e) => pasteImage(e, app, sessionId, change)}
             onScroll={(e) => {
               if (!highlights.current) return;
               highlights.current.scrollTop = e.currentTarget.scrollTop;

@@ -22,7 +22,8 @@ pub struct Prompt {
 }
 
 /// Rows that end a choice list on every prompt seen: Claude permission and AskUserQuestion,
-/// Codex approval and folder trust, AGY folder trust and ask_question (tests/fixtures/screens).
+/// Codex approval and folder trust, AGY folder trust and ask_question, pi folder trust
+/// (tests/fixtures/screens).
 pub(super) const PROMPT_FOOTERS: &[&str] = &[
     "esc to cancel",
     "press enter to confirm",
@@ -32,7 +33,8 @@ pub(super) const PROMPT_FOOTERS: &[&str] = &[
     "enter confirm",
     "tab amend",
 ];
-pub(super) const CURSORS: &[char] = &['❯', '›', '>'];
+/// Choice cursors: Claude and Codex `❯` and `›`, AGY `>`, and pi `→` (pi-trust.txt).
+pub(super) const CURSORS: &[char] = &['❯', '›', '>', '→'];
 /// Rows the question does not reach past: a history entry's marker.
 const HISTORY: &[char] = &['❯', '›', '>', '•', '⏺', '●', '↳', '✻', '▸'];
 /// Rows that open a whole-screen question, so nothing of it is above them: AGY's folder trust

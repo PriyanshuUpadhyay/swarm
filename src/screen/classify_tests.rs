@@ -20,6 +20,7 @@ mod tests {
             ("agy", fixture!("agy-waiting"), Some(Waiting)),
             ("agy", fixture!("agy-working"), Some(Working)),
             ("pi", fixture!("pi-idle"), Some(Idle)),
+            ("pi", fixture!("pi-trust"), Some(Waiting)),
             ("pi", fixture!("pi-ring-unsent"), Some(Idle)),
             ("pi", fixture!("pi-working"), Some(Working)),
             ("pi", "$ pi --model x\n", None),

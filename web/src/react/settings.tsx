@@ -1,8 +1,8 @@
 // Settings (⌘,) with five pages. Rows are plain elements with inline buttons; no row has its own
 // menu, tooltip or hover card.
 
-import { TriangleAlertIcon } from "lucide-react";
-import { useSyncExternalStore } from "react";
+import { XIcon, TriangleAlertIcon } from "lucide-react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 import type { App } from "../core/app";
 import { CARRY_OPTIONS, savedCarry } from "../core/composer";
 import type { Prefs } from "../core/nav";
@@ -13,6 +13,8 @@ import { chooseTheme, fontMono, fontSans, useTheme, type FontMono, type FontSans
 import { label, Row, Segmented, Toggle, useSettings } from "./settings-shared";
 import { AccountsPage } from "./settings-accounts";
 import { ProfilesPage } from "./settings-profiles";
+import { NoticesStatus } from "./settings-notices";
+import { updateStatus } from "./update";
 import { SetupPage } from "./settings-setup";
 
 // ---- dialog ----
@@ -23,9 +25,13 @@ export function SettingsDialog({ app }: { app: App }) {
   return (
     <Dialog open={open} onOpenChange={(o) => !o && app.settings.close()}>
       {open && (
-        <DialogContent className="flex h-[min(600px,calc(100vh-104px))] w-[min(780px,calc(100vw-32px))] p-0" data-testid="settings" aria-describedby={undefined}>
+        <DialogContent className="flex h-[min(600px,calc(100vh-104px))] w-[min(780px,calc(100vw-32px))] p-0" data-testid="settings" aria-describedby={undefined}
+          onEscapeKeyDown={(event) => { if ((event.target as HTMLElement).closest("[data-settings-inline]")) event.preventDefault(); }}>
           <nav aria-label="Settings pages" className="flex w-44 shrink-0 flex-col gap-0.5 border-r border-border p-2">
-            <DialogTitle className="px-2 pt-1 pb-2">Settings</DialogTitle>
+            <div className="flex items-center justify-between">
+              <DialogTitle className="px-2 pt-1 pb-2">Settings</DialogTitle>
+              <Button size="icon-sm" variant="ghost" aria-label="Close Settings" onClick={() => app.settings.close()}><XIcon /></Button>
+            </div>
             {PAGES.map(([id, title]) => (
               <button
                 key={id}
@@ -38,10 +44,12 @@ export function SettingsDialog({ app }: { app: App }) {
               </button>
             ))}
           </nav>
-          <div className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)] content-start gap-4 overflow-y-auto p-5" data-testid={`settings-${page}`}>
-            <h2 className="text-lg font-semibold">{PAGES.find(([id]) => id === page)![1]}</h2>
-            <Banner app={app} />
-            <PageBody app={app} page={page} />
+          <div className="flex min-w-0 flex-1 flex-col" data-testid={`settings-${page}`}>
+            <div className="shrink-0 px-5 pt-5"><Banner app={app} /></div>
+            <div className="grid min-w-0 content-start gap-4 overflow-y-auto p-5">
+              <h2 className="text-lg font-semibold">{PAGES.find(([id]) => id === page)![1]}</h2>
+              <PageBody app={app} page={page} />
+            </div>
           </div>
         </DialogContent>
       )}
@@ -62,8 +70,13 @@ function Banner({ app }: { app: App }) {
   const error = useSettings(app, "error");
   const login = useSettings(app, "login");
   const confirm = useSettings(app, "confirm");
+  const banner = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (confirm) banner.current?.querySelector<HTMLButtonElement>("[data-safe]")?.focus();
+    else if (error || login) banner.current?.focus();
+  }, [confirm, error, login]);
   return (
-    <>
+    <div ref={banner} tabIndex={-1} className="grid gap-2 outline-none">
       {error && (
         <p role="alert" data-testid="settings-error" className="flex items-start gap-1.5 text-sm break-words text-failed select-text">
           <TriangleAlertIcon className="mt-0.5 size-3.5 shrink-0" />
@@ -82,13 +95,13 @@ function Banner({ app }: { app: App }) {
             <Button size="sm" data-testid="settings-confirm-yes" onClick={() => void app.settings.answer(true)}>
               {confirm.action}
             </Button>
-            <Button size="sm" variant="outline" onClick={() => void app.settings.answer(false)}>
+            <Button size="sm" variant="outline" data-safe onClick={() => void app.settings.answer(false)}>
               Cancel
             </Button>
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 }
 
@@ -105,6 +118,7 @@ function AppearancePage({ app }: { app: App }) {
   const prefs = usePrefs(app);
   return (
     <div className="grid gap-4">
+      <UpdateRow app={app} />
       <Row title="Theme">
         <Segmented<Theme>
           label="Theme"
@@ -189,6 +203,7 @@ function NotificationsPage({ app }: { app: App }) {
   const projects = (tree?.sections ?? []).filter((s) => s.kind === "project" && s.path);
   return (
     <div className="grid gap-4">
+      <NoticesStatus app={app} />
       {NOTICES.map(([key, title, detail]) => (
         <Row key={key} title={title} detail={detail || undefined}>
           <Toggle label={title} testid={`notice-${key}`} checked={notices[key] !== false} onChange={(on) => void app.settings.setPref(`notices.${key}`, on)} />
@@ -203,4 +218,11 @@ function NotificationsPage({ app }: { app: App }) {
       ))}
     </div>
   );
+}
+
+function UpdateRow({ app }: { app: App }) {
+  const pending = useSyncExternalStore(updateStatus.subscribe, updateStatus.get);
+  return <Row title="Swarm updates" detail={pending ? `Swarm ${pending.version} is installed. Restart the server to use it.` : "Check for a newer version."}>
+    <Button size="sm" variant="outline" onClick={() => updateStatus.show(app)}>{pending ? "Restart server…" : "Check for updates"}</Button>
+  </Row>;
 }

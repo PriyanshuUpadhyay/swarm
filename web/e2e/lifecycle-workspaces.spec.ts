@@ -19,7 +19,7 @@ test("New workspace makes a new branch, an existing branch and a pull request wo
 
   await newWorkspace(tab, "proj-gh", async () => {
     await dialog.getByTestId("nw-name").fill(`nb-${b}`);
-    await expect(dialog.getByTestId("nw-base")).toHaveValue("main");
+    await expect(dialog.getByTestId("nw-base").getByRole("option", { selected: true })).toHaveText("main");
     await shoot(tab, "new-workspace", b);
   });
   await expect(dialog).toBeHidden();
@@ -29,7 +29,10 @@ test("New workspace makes a new branch, an existing branch and a pull request wo
   // An existing branch fills the name from the branch.
   await newWorkspace(tab, "proj-gh", async () => {
     await dialog.getByTestId("nw-mode-existing-branch").click();
-    await dialog.getByTestId("nw-branch").selectOption(`topic-${b}`);
+    // The filter finds the branch in a long list, and Enter picks its first match.
+    await dialog.getByTestId("nw-branch-filter").fill(`topic-${b}`);
+    await dialog.getByTestId("nw-branch-filter").press("Enter");
+    await expect(dialog.getByTestId("nw-branch").getByRole("option", { selected: true })).toHaveText(`topic-${b}`);
     await expect(dialog.getByTestId("nw-name")).toHaveValue(`topic-${b}`);
   });
   await expect(dialog).toBeHidden();

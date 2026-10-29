@@ -4,7 +4,7 @@ import { CircleCheckIcon, CircleIcon } from "lucide-react";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import type { App } from "../core/app";
 import type { Load } from "../core/changes";
-import { workspaceRow } from "../core/nav";
+import { recentWork, workspaceRow } from "../core/nav";
 import { hudCard, USAGE_PROVIDERS, type Usage } from "../core/settings";
 import { Button } from "../components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "../components/ui/dialog";
@@ -13,9 +13,12 @@ import { NoticesCard } from "./notices";
 
 export function Home({ app }: { app: App }) {
   const view = useSyncExternalStore(app.subscribe, () => app.view);
-  const recent = view.recent.slice(0, 8);
+  const recent = recentWork(view.tree, app.snapshot, 8);
   const hasProject = (view.tree?.sections.length ?? 0) > 0;
   const hasChat = recent.length > 0;
+  const doctor = useSyncExternalStore(app.settings.subscribe, () => app.settings.state.doctor);
+  const setupDone = doctor.state === "ready" && doctor.data.items.every((item) => item.state === "ok");
+  useEffect(() => { void app.settings.loadSetup(); }, [app]);
   const hasAccount = useSyncExternalStore(app.settings.subscribe, () => signedIn(app.settings.state.usage));
   const hud = useSyncExternalStore(app.settings.subscribe, () => app.settings.state.hud);
   const hudPending = useSyncExternalStore(app.settings.subscribe, () => app.settings.state.hudPending);
@@ -68,9 +71,11 @@ export function Home({ app }: { app: App }) {
           </section>
         )}
         {view.error && <p className="text-sm text-failed select-text">Chats unavailable: {view.error}</p>}
-        {(!hasProject || !hasChat) && (
+        {(!hasProject || !hasChat || !setupDone) && (
           <section className="grid gap-3" aria-label="Get started">
             <h2 className="text-lg font-semibold">Get started</h2>
+            <Step done={setupDone} title="Set up this Mac" run={() => app.settings.show("setup")} />
+            {doctor.state === "error" && <p className="text-sm text-failed">Could not check setup. Open Setup &amp; doctor to try again.</p>}
             <Step done={hasProject} title="Import a project" run={() => app.life.openProject("import")} />
             <Step done={hasAccount} title="Sign in to an account" run={() => app.settings.show("accounts")} />
             <Step done={hasChat} title="Start a chat" run={hasProject ? () => app.life.newWorkspace() : undefined} />
@@ -122,13 +127,22 @@ function Step({ done, title, run }: { done: boolean; title: string; run?: () => 
 export function WorkspaceLanding({ app }: { app: App }) {
   const view = useSyncExternalStore(app.subscribe, () => app.view);
   const row = workspaceRow(view.tree, view.workspace);
+  const chats = recentWork(view.tree, app.snapshot, Infinity).filter((chat) => chat.workspacePath === view.workspace);
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-4" data-testid="workspace-landing">
       <h2 className="text-lg font-semibold">{row?.title ?? view.workspace?.split("/").pop()}</h2>
       <p className="text-muted-foreground">{view.tabs?.tabs.some((tab) => tab.pending === null) ? "Pick a tab, or start a new chat." : "This workspace has no open chats."}</p>
-      <Button size="sm" disabled={!row?.newChatEnabled} onClick={() => void app.startChat()}>
+      {chats.length > 0 && <div className="grid w-full max-w-lg gap-1 px-4" aria-label="Workspace chats">
+        {chats.map((chat) => <button key={chat.session} data-testid="workspace-chat" onClick={() => app.openChat(chat.session)}
+          className="flex items-center gap-3 rounded px-2 py-2 text-left hover:bg-hover">
+          {chat.status && <StatusGlyph status={chat.status} />}<span className="min-w-0 flex-1 truncate">{chat.title}</span>
+          <span className="text-xs text-muted-foreground">{chat.age}</span>
+        </button>)}
+      </div>}
+      <Button title="New chat (⌘T)" size="sm" disabled={!row?.newChatEnabled} onClick={() => void app.startChat()}>
         New chat
       </Button>
+      <p className="text-xs text-muted-foreground">Reopen the last closed tab with ⇧⌘T.</p>
       {row && !row.newChatEnabled && <p className="text-sm text-muted-foreground">{row.archived ? "This workspace is archived." : "This workspace is read-only."}</p>}
     </div>
   );
@@ -154,7 +168,7 @@ function AskBody({ app }: { app: App }) {
   // An empty rename clears the saved name.
   const save = () => {
     app.ask(null);
-    ask.save(name.trim());
+    if (name.trim() !== ask.value.trim()) ask.save(name.trim());
   };
   return (
     <form

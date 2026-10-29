@@ -49,6 +49,7 @@ function ConfirmDialog({ app }: { app: App }) {
               type="button"
               size="sm"
               data-testid="confirm-action"
+              data-autofocus={confirm.cancelFirst ? undefined : ""}
               className="bg-failed text-white hover:bg-failed/90"
               disabled={busy || confirm.blocked}
               onClick={async () => {

@@ -19,6 +19,7 @@ function fakeApp(post: (path: string, body: Record<string, unknown>) => Promise<
     },
     choose: async (op: Record<string, unknown>) => (calls.push(`choose ${JSON.stringify(op)}`), true),
     view: { tree: null, workspace: null },
+    navigation: { rememberArchived: () => {} },
     notice: (text: string) => calls.push(`notice ${text}`),
     refresh: async () => {},
     listsChat: (session: string) => !importable.some((c) => c.id === session),
@@ -233,5 +234,19 @@ describe("chats", () => {
     life.onFrame("handoff", { old_session: "chat-1", phase: "cancelled", canCancel: false });
     life.onFrame("handoff", { old_session: "chat-1", phase: "starting", canCancel: false });
     expect(life.state.handoffs["chat-1"]?.phase).toBe("cancelled");
+  });
+});
+
+describe("setup script save", () => {
+  it("keeps the editor after a refused write and closes it only after success", async () => {
+    const { life } = fakeApp(async () => ({}));
+    const app = (life as unknown as { app: { choose: () => Promise<boolean> } }).app;
+    life.editSetupScript("/repo", "Repo");
+    app.choose = async () => false;
+    expect(await life.saveSetupScript("/repo", "keep this draft")).toBe(false);
+    expect(life.state.setupScript?.project).toBe("/repo");
+    app.choose = async () => true;
+    expect(await life.saveSetupScript("/repo", "keep this draft")).toBe(true);
+    expect(life.state.setupScript).toBeNull();
   });
 });

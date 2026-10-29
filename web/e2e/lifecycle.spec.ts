@@ -7,7 +7,7 @@ import { api, header, open, readTree, server, shoot, workspace } from "./lifecyc
 // Recently closed (S3), plus the four V1 fixes. Both browsers share one server home, so each case
 // names its workspaces after the browser and puts back any choice it changes.
 
-test("Archive chat moves a chat to Archived, and ⇧⌘T with no closed tab opens the archived list", async ({ page: tab }) => {
+test("Archive chat offers Undo, ⇧⌘T restores its chat, and an empty reopen list opens Archived chats", async ({ page: tab }, info) => {
   const errors = await open(tab);
   const session = (await workspace(tab, "ws-edit").locator("xpath=following-sibling::*[@data-kind='chat']").first().getAttribute("data-session"))!;
   const row = tab.locator(`[data-testid="tree-row"][data-session="${session}"]`);
@@ -16,14 +16,18 @@ test("Archive chat moves a chat to Archived, and ⇧⌘T with no closed tab open
     await tab.getByRole("menuitem", { name: "Archive chat" }).click();
     await expect(row).toBeHidden();
 
-    await tab.getByTestId("sidebar").focus();
+    await tab.getByRole("button", { name: "Undo", exact: true }).click();
+    await expect(row).toBeVisible();
+    await row.click({ button: "right" });
+    await tab.getByRole("menuitem", { name: "Archive chat" }).click();
+    await expect(row).toBeHidden();
     await tab.keyboard.press("Shift+Meta+t");
-    const closed = tab.getByTestId("recently-closed");
-    await expect(closed).toBeVisible();
-    await closed.locator(`[data-testid="closed-chat"][data-session="${session}"]`).click();
-    await expect(closed).toBeHidden();
     await expect(row).toBeVisible();
     await expect(tab.locator(`[data-testid="transcript"][data-chat="${session}"][data-state="ready"]`)).toBeVisible();
+    await tab.screenshot({ path: info.outputPath("archive-undo.png") });
+    await tab.keyboard.press("Shift+Meta+t");
+    await expect(tab.getByTestId("recently-closed")).toBeVisible();
+    await tab.keyboard.press("Escape");
   } finally {
     const { sessions } = await api<{ sessions: { id: string }[] }>("/api/sessions/archived");
     if (sessions.some((s) => s.id === session)) await api("/api/sessions/unarchive", { ids: [session] });

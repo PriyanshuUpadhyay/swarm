@@ -3,7 +3,7 @@
 // context menu serves every tab.
 
 import { ChevronDownIcon, CopyIcon, LoaderCircleIcon, PencilIcon, PlusIcon, TriangleAlertIcon, XIcon } from "lucide-react";
-import { memo, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type DragEvent, type MouseEvent } from "react";
+import { memo, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type DragEvent, type KeyboardEvent, type MouseEvent } from "react";
 import type { App } from "../core/app";
 import { workspaceRow, type Tab, type Tabs } from "../core/nav";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuShortcut, ContextMenuTrigger } from "../components/ui/context-menu";
@@ -23,10 +23,26 @@ export function TabStrip({ app }: { app: App }) {
   const scroller = useRef<HTMLDivElement>(null);
   const dragged = useRef<string | null>(null);
   const newChat = useRef<((anchor: NewChatAnchor) => void) | null>(null);
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [overflow, setOverflow] = useState<Tab[]>([]);
   const ws = workspaceRow(tree, workspace);
   const list = tabs?.tabs ?? [];
   const selected = list.find((t) => t.session === openId);
+  const focusable = selected?.pending === null ? selected : list.find((tab) => tab.pending === null);
+
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (e.ctrlKey || Math.abs(e.deltaX) >= Math.abs(e.deltaY) || el.scrollWidth <= el.clientWidth) return;
+      const delta = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? el.clientWidth : 1);
+      const before = el.scrollLeft;
+      el.scrollLeft += delta;
+      if (before !== el.scrollLeft) e.preventDefault();
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [workspace]);
 
   // The open tab comes into view when it changes, not on every refresh of the strip.
   const selectedId = selected?.id;
@@ -47,6 +63,25 @@ export function TabStrip({ app }: { app: App }) {
     if (action === "children" && tab.children?.firstWaiting) app.focusPane(tab.children.firstWaiting);
   };
 
+  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if ((e.target as Element).closest("button") || e.metaKey || e.ctrlKey || e.altKey) return;
+    const tab = tabOf(e);
+    const choices = list.filter((item) => item.pending === null);
+    if (!tab || tab.pending !== null) return;
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      app.openChat(tab.session);
+      return;
+    }
+    const index = choices.indexOf(tab);
+    const next = e.key === "Home" ? 0 : e.key === "End" ? choices.length - 1 :
+      e.key === "ArrowLeft" ? (index + choices.length - 1) % choices.length :
+      e.key === "ArrowRight" ? (index + 1) % choices.length : null;
+    if (next === null) return;
+    e.preventDefault();
+    scroller.current?.querySelector<HTMLElement>(`[data-id="${CSS.escape(choices[next].id)}"]`)?.focus();
+  };
+
   // Drop a tab on another tab to move it there.
   const dragProps = {
     onDragStart: (e: DragEvent) => {
@@ -58,16 +93,23 @@ export function TabStrip({ app }: { app: App }) {
     },
     onDragOver: (e: DragEvent) => {
       const tab = tabOf(e);
-      if (tab && dragged.current && tab.id !== dragged.current) e.preventDefault();
+      if (tab && dragged.current && tab.id !== dragged.current) {
+        e.preventDefault();
+        setDropTarget(tab.id);
+      }
     },
     onDrop: (e: DragEvent) => {
       const tab = tabOf(e);
       const chat = dragged.current;
       if (!tab || !chat || !tabs || tab.id === chat) return;
       e.preventDefault();
+      setDropTarget(null);
       void app.choose({ op: "move_tab", workspace: tabs.workspace, chat, target: tab.id });
     },
-    onDragEnd: () => (dragged.current = null),
+    onDragLeave: (e: DragEvent) => {
+      if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropTarget(null);
+    },
+    onDragEnd: () => { dragged.current = null; setDropTarget(null); },
   };
 
   // Tabs past either edge of the strip, read when the menu opens (ChatTab.overflow).
@@ -100,10 +142,15 @@ export function TabStrip({ app }: { app: App }) {
             data-next-recent={tabs?.nextRecent ?? undefined}
             className="flex h-full min-w-0 flex-1 items-stretch overflow-x-auto [scrollbar-width:none]"
             onClick={onClick}
+            onKeyDown={onKeyDown}
+            onAuxClick={(e) => {
+              const tab = tabOf(e);
+              if (e.button === 1 && tab?.canHide) { e.preventDefault(); void app.closeTab(tab.id); }
+            }}
             {...dragProps}
           >
             {list.map((tab) => (
-              <TabView key={tab.id} tab={tab} active={tab === selected} />
+              <TabView key={tab.id} tab={tab} active={tab === selected} focusable={tab === focusable} dropTarget={tab.id === dropTarget} />
             ))}
           </div>
         </ContextMenuTrigger>
@@ -111,7 +158,7 @@ export function TabStrip({ app }: { app: App }) {
       </ContextMenu>
       <DropdownMenu onOpenChange={(o) => o && readOverflow()}>
         <DropdownMenuTrigger asChild>
-          <button className="icon-btn" aria-label="More tabs" title="Tabs past the edge">
+          <button className="icon-btn" aria-label="More tabs" title="Tabs past the edge (⌃Tab for recent chats)">
             <ChevronDownIcon />
           </button>
         </DropdownMenuTrigger>
@@ -128,7 +175,7 @@ export function TabStrip({ app }: { app: App }) {
       <button
         className="icon-btn"
         aria-label="New chat in this workspace"
-        title="New chat in this workspace"
+        title="New chat in this workspace (⌘T)"
         disabled={ws ? !ws.newChatEnabled : true}
         onClick={(e) => ws && newChat.current?.({ rect: e.currentTarget.getBoundingClientRect(), workspace: ws })}
       >
@@ -140,7 +187,7 @@ export function TabStrip({ app }: { app: App }) {
 }
 
 /** One tab. Memoized on its wire object, so a strip refresh renders only the tabs that changed. */
-const TabView = memo(function TabView({ tab, active }: { tab: Tab; active: boolean }) {
+const TabView = memo(function TabView({ tab, active, focusable, dropTarget }: { tab: Tab; active: boolean; focusable: boolean; dropTarget: boolean }) {
   return (
     <div
       role="tab"
@@ -148,7 +195,8 @@ const TabView = memo(function TabView({ tab, active }: { tab: Tab; active: boole
       data-id={tab.id}
       data-session={tab.session}
       aria-selected={active}
-      tabIndex={-1}
+      tabIndex={focusable ? 0 : -1}
+      data-drop-target={dropTarget || undefined}
       draggable={tab.pending === null ? true : undefined}
       title={tab.title}
       className="tab"
@@ -179,6 +227,7 @@ const TabView = memo(function TabView({ tab, active }: { tab: Tab; active: boole
       )}
       {tab.children && (
         <button
+          tabIndex={-1}
           data-action="children"
           className={`fld rounded-sm px-1 hover:bg-hover ${tab.children.waiting ? "text-waiting" : ""}`}
           title={tab.children.waiting ? "Show first waiting child" : "Show chat"}
@@ -188,7 +237,7 @@ const TabView = memo(function TabView({ tab, active }: { tab: Tab; active: boole
         </button>
       )}
       {tab.canHide && (
-        <button data-action="close" aria-label={`Close tab ${tab.title}`} title="Close tab" className="tab-close">
+        <button tabIndex={-1} data-action="close" aria-label={`Close tab ${tab.title}`} title="Close tab (⌘W)" className="tab-close">
           <XIcon className="size-3" />
         </button>
       )}

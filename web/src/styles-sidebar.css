@@ -341,6 +341,7 @@
 /* The app's ring, not the browser's, on the header and tab controls a Tab walk reaches. */
 .search-box:focus-visible,
 .view-switch button:focus-visible,
+.tab:focus-visible,
 .tab-close:focus-visible {
   outline: 1px solid var(--ring);
   outline-offset: 1px;
@@ -489,4 +490,8 @@
   to {
     transform: rotate(360deg);
   }
+}
+
+.tab[data-drop-target="true"] {
+  box-shadow: inset 3px 0 var(--ring);
 }

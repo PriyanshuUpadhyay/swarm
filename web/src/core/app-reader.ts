@@ -115,6 +115,7 @@ export class AppReader {
         fullText: (previewId) => this.fullText(previewId, id),
         imageUrl: this.imageUrl,
         loadOlder: () => this.loadOlder(id),
+        retryRows: () => this.retryRows(id),
         setFindQuery: (query) => this.setFindQuery(query),
         stepFind: (dir) => this.stepFind(dir),
         closeFind: () => this.closeFind(),
@@ -179,11 +180,24 @@ export class AppReader {
     return this.app.api.toolOutput(chat.sessionId, chat.agent, previewId);
   }
 
+  async retryRows(id?: string) {
+    const chat = this.chat(id);
+    if (!chat || chat.state === "loading") return;
+    chat.state = "loading";
+    chat.error = null;
+    this.app.notify();
+    await this.loadTail(chat);
+    this.app.streaming.syncSubscriptions();
+    this.app.notify();
+  }
+
   /** Pages older rows in above the current ones. */
   async loadOlder(id?: string) {
     const chat = this.chat(id);
     if (!chat || chat.state !== "ready" || chat.loadingOlder || chat.older <= 0) return;
     chat.loadingOlder = true;
+    chat.error = null;
+    this.app.notify();
     try {
       const page = await this.app.api.rows(chat.sessionId, chat.agent, TAIL, chat.older);
       chat.rows = mergeRows(chat.rows, page.rows, page.remove);
@@ -210,9 +224,9 @@ export class AppReader {
       if (f.matches.length) this.app.find = { ...f, matches: [], index: -1 };
       return;
     }
-    const current = f.matches[f.index]?.id;
-    const matches = findMatches(chat.rows, f.query);
-    const kept = current === undefined ? -1 : matches.findIndex((m) => m.id === current);
+    const current = f.matches[f.index];
+    const matches = findMatches(chat.rows, f.query, chat.full);
+    const kept = current === undefined ? -1 : matches.findIndex((m) => m.id === current.id && m.occurrence === current.occurrence);
     this.app.find = { ...f, matches, index: kept >= 0 ? kept : matches.length ? matches.length - 1 : -1 };
     // A new current match must come into view.
     if (kept < 0 && matches.length) this.reveal(chat, this.app.find);
@@ -233,6 +247,8 @@ export class AppReader {
 
   /** ⌘F finds in the focused pane, else in the chat. */
   openFind() {
+    const surface = document.activeElement?.closest<HTMLElement>("[data-find-surface]");
+    if (surface) { surface.dispatchEvent(new Event("swarm:find")); return; }
     if (!this.open) return;
     this.app.findId = this.app.pane.focused ? paneId(this.app.openId!, this.app.pane.focused) : null;
     this.app.find = { ...this.app.find, open: true, seq: this.app.find.seq + 1 };

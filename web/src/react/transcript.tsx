@@ -11,7 +11,10 @@ import { copyText } from "./copy";
 import { focusInputOf } from "../core/focus";
 import { SourcePopover, TranscriptMenu, type Source } from "./transcript-overlays";
 import { setSplit } from "./transcript-output";
+import { paintRanges, textRanges } from "./find-text";
 import { LineView } from "./transcript-row";
+
+const readingPlaces = new Map<string, { row: string; offset: number; bottom: boolean }>();
 
 export { StatusGlyph } from "./transcript-tool";
 
@@ -50,9 +53,14 @@ function Transcript({ app, view, testid = "transcript", empty }: { app: Reader; 
 
   // A new chat, or its first page: start at the newest row.
   useLayoutEffect(() => {
-    atBottom.current = true;
-    setAway(false);
-    if (lines.length) handle.current?.scrollToIndex(lines.length - 1, { align: "end" });
+    if (chatState !== "ready") return;
+    const place = readingPlaces.get(openId);
+    atBottom.current = place?.bottom ?? true;
+    setAway(!atBottom.current);
+    const index = place && !place.bottom ? lines.findIndex((l) => l.id === place.row) : -1;
+    if (index >= 0) {
+      handle.current?.scrollToIndex(index, { align: "start", offset: -place!.offset });
+    } else if (lines.length) handle.current?.scrollToIndex(lines.length - 1, { align: "end" });
   }, [openId, chatState]);
 
   // New or changed rows: follow only when the reader is at the bottom (ADR 0028).
@@ -65,12 +73,35 @@ function Transcript({ app, view, testid = "transcript", empty }: { app: Reader; 
     if (!current) return;
     const i = lines.findIndex((l) => l.id === current);
     if (i >= 0) handle.current?.scrollToIndex(i, { align: "center" });
+    let frame = 0;
+    const timer = requestAnimationFrame(() => {
+      const match = find.matches[find.index];
+      const row = scrollRef.current?.querySelector<HTMLElement>(`[data-id="${CSS.escape(current)}"]`);
+      if (match?.preview) row?.dispatchEvent(new CustomEvent("swarm:find-output", { bubbles: true, detail: match }));
+      frame = requestAnimationFrame(() => {
+        if (!row || !match) return;
+        const target = match.preview ? row.querySelector<HTMLElement>(`[data-preview="${CSS.escape(match.preview)}"] [data-output-line="${match.line}"]`) ?? row.querySelector<HTMLElement>(`[data-preview="${CSS.escape(match.preview)}"] .patch`) ?? row : row;
+        const ranges = textRanges(target, find.query);
+        const selected = ranges[match.preview ? match.lineOccurrence ?? 0 : match.occurrence];
+        paintRanges("find-matches", textRanges(row, find.query));
+        paintRanges("find-current", selected ? [selected] : []);
+        const rect = selected?.getBoundingClientRect();
+        if (rect && scrollRef.current) handle.current?.scrollToIndex(i, { align: "start", offset: rect.top - row.getBoundingClientRect().top - scrollRef.current.clientHeight / 2 });
+      });
+    });
+    return () => { cancelAnimationFrame(timer); cancelAnimationFrame(frame); };
   }, [find.seq]);
+  useEffect(() => {
+    if (!find.open) { paintRanges("find-matches", []); paintRanges("find-current", []); }
+  }, [find.open]);
 
   const onScroll = (offset: number) => {
     const h = handle.current;
     if (!h) return;
     atBottom.current = offset + h.viewportSize >= h.scrollSize - 8;
+    const first = h.findItemIndex(offset);
+    const el = scrollRef.current?.querySelector<HTMLElement>(`[data-index="${first}"]`);
+    if (lines[first]) readingPlaces.set(openId, { row: lines[first].id, offset: el && scrollRef.current ? el.getBoundingClientRect().top - scrollRef.current.getBoundingClientRect().top : 0, bottom: atBottom.current });
     setAway(!atBottom.current && h.scrollSize - offset - h.viewportSize > 400);
     if (offset < 400) void app.loadOlder();
   };
@@ -152,6 +183,7 @@ function Transcript({ app, view, testid = "transcript", empty }: { app: Reader; 
             {chatState === "error" && (
               <ChatState icon={<TriangleAlertIcon className="size-5 text-failed" />} title="Could not load this chat">
                 <span className="font-mono text-xs break-all">{view.chatError}</span>
+                <button type="button" className="t-link" onClick={() => void (testid === "transcript" ? (app as App).reading.retryRows() : app.retryRows?.())}>Retry</button>
               </ChatState>
             )}
             {chatState === "ready" && view.md && (
@@ -201,6 +233,7 @@ function Transcript({ app, view, testid = "transcript", empty }: { app: Reader; 
 function Head({ app, view }: { app: Reader; view: Pane }) {
   return (
     <div className="t-head" style={{ height: HEAD_HEIGHT }}>
+      {view.chatError && <span role="alert" className="text-failed">{view.chatError} <button type="button" className="t-link" onClick={() => void app.loadOlder()}>Retry</button></span>}
       {view.hasOlder ? (
         <button type="button" className="t-link" data-testid="load-older" disabled={view.loadingOlder} onClick={() => void app.loadOlder()}>
           {view.loadingOlder ? "Loading earlier messages…" : "Load earlier messages"}
@@ -239,6 +272,7 @@ function FindBar({ app, view, listRef }: { app: Reader; view: Pane; listRef: Rea
       <span className="find-count" data-testid="find-count">
         {count}
       </span>
+      {find.query.trim() && !find.matches.length && view.hasOlder && <button type="button" className="t-link" disabled={view.loadingOlder} onClick={() => void app.loadOlder()}>{view.loadingOlder ? "Searching earlier messages…" : "Search earlier messages"}</button>}
       <button type="button" className="icon-btn" aria-label="Previous match" disabled={!find.matches.length} onClick={() => app.stepFind(-1)}>
         <ChevronDownIcon />
       </button>

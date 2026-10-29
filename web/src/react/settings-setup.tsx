@@ -145,7 +145,7 @@ function ConductorImport({ app }: { app: App }) {
               : p
                 ? p.chats.length === 0
                   ? "Nothing new to import."
-                  : `${p.chats.length} chats: ${open} open tabs, ${p.chats.length - open} to Recently closed. ${p.skipped.length} skipped.`
+                  : `${p.chats.length} chats: ${open} open tabs, ${p.chats.length - open} to Archived chats. ${p.skipped.length} skipped.`
                 : "Copies Conductor's chats and tabs into swarm. Conductor is not changed."}
           </p>
         </div>
