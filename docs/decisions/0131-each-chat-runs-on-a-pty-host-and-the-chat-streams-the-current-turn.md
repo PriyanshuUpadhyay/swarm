@@ -55,8 +55,8 @@ a host apart from serve lives through a serve restart.
   Codex `•` block, pi's text after its last tool, and AGY's spinner row. A tool block, or the rest
   of the sent message before the first block, shows no row. The page hides the row once a recent log row
   holds its text, a row of an earlier turn included, because pi's screen can still show the last
-  turn's answer. A turn can end seconds before its log rows land, so at turn end the row stays
-  until the chat's next rows land. A new chair's hook stores its log only at the end of its first
+  turn's answer. A turn can end seconds before its log rows land, so at turn end a text that a
+  log row will hide stays until that row lands. A short spinner text goes at once. A new chair's hook stores its log only at the end of its first
   turn, so serve finds a live chat's log by the chair's id until then, and the first turn shows
   live too. This is a named screen read
   under ADR 0120 and an exception to ADR 0099's "nothing more", because the live row is a preview
