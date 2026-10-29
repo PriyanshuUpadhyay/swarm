@@ -19,6 +19,6 @@ describe("liveRow", () => {
 
   it("never hides a short text that an earlier row happens to contain", () => {
     const rows = [row("user", "go"), row("assistant", "Everything is done except the tests.")];
-    expect(liveRow(rows, "Done.")?.id).toBe("live");
+    expect(liveRow(rows, "done")?.id).toBe("live");
   });
 });

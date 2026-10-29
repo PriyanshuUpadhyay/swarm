@@ -208,6 +208,10 @@ async fn a_working_chair_streams_its_screen_text_and_the_turn_end_clears_it() {
             .unwrap()
             .starts_with("In the 1860s, French makers")
     );
+    // A failed read keeps the shown text, so the row does not blink.
+    std::fs::remove_file(&screen).unwrap();
+    tokio::time::sleep(Duration::from_millis(800)).await;
+    assert_eq!(live(&fixture.app).len(), 1);
     fixture.app.hub.lock().unwrap().agents = agents("idle");
     until_live(&fixture.app, &live, 2).await;
     let frames = live(&fixture.app);
@@ -226,4 +230,57 @@ async fn until_live(app: &App, live: &impl Fn(&App) -> Vec<Value>, count: usize)
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
+}
+
+#[tokio::test]
+async fn a_new_watcher_tells_the_page_that_no_turn_runs() {
+    let fixture = Fixture::new();
+    let connection = swarm::store::open(&fixture.app.root.join("swarm.db")).unwrap();
+    swarm::store::add_agent(
+        &connection,
+        &fixture.session,
+        "orchestrator",
+        "orchestrator",
+    )
+    .unwrap();
+    drop(connection);
+    {
+        let mut hub = fixture.app.hub.lock().unwrap();
+        let agent = json!({"id": "orchestrator", "pane": "%1", "alive": true, "state": "idle"});
+        hub.agents = json!({ fixture.session.as_str(): [agent] });
+        hub.streams.insert("all".into(), client(&[]));
+    }
+    let key = format!("{}:chair", fixture.session);
+    let from = std::fs::metadata(&fixture.log).unwrap().len();
+    let _ = subscribe(
+        State(fixture.app.clone()),
+        Json(Subscription {
+            stream: "all".into(),
+            keys: vec![SubscriptionKey {
+                key: key.clone(),
+                from,
+                view: Some("rows".into()),
+            }],
+        }),
+    )
+    .await
+    .unwrap();
+    // A page that kept an old turn's text from an earlier watcher gets null at once.
+    let live = |app: &App| {
+        let hub = app.hub.lock().unwrap();
+        hub.streams["all"]
+            .queue
+            .iter()
+            .filter(|frame| frame.name == "live")
+            .map(|frame| serde_json::from_str::<Value>(&frame.data).unwrap())
+            .collect::<Vec<_>>()
+    };
+    until_live(&fixture.app, &live, 1).await;
+    let frames = live(&fixture.app);
+    assert_eq!(frames.len(), 1);
+    assert_eq!(frames[0]["text"], Value::Null);
+    drop(Events {
+        app: fixture.app.clone(),
+        id: "all".into(),
+    });
 }
