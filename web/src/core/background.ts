@@ -71,3 +71,14 @@ export function poll(read: () => Promise<unknown>, ms: number, hidden: () => boo
     clearTimeout(timer);
   };
 }
+
+/** Search the current terminal buffer without a provider or a new shell. */
+export function terminalMatches(lines: readonly string[], query: string) {
+  const q = query.toLowerCase();
+  if (!q) return [];
+  return lines.flatMap((text, line) => {
+    const hits: { line: number; column: number }[] = [];
+    for (let column = text.toLowerCase().indexOf(q); column >= 0; column = text.toLowerCase().indexOf(q, column + q.length)) hits.push({ line, column });
+    return hits;
+  });
+}
