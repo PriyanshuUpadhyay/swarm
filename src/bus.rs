@@ -113,20 +113,24 @@ fn tmux_socket_dir(tmpdir: Option<&str>, uid: u32) -> String {
     format!("{base}/tmux-{uid}")
 }
 
-/// The folder of the PTY hosts' sockets (`swarm pty`, ADR 0126), resolved as the sandbox sees it.
-fn pty_socket_dir(uid: u32) -> String {
-    let dir = format!("/tmp/swarm-{uid}");
-    std::fs::canonicalize("/tmp").map_or(dir, |tmp| format!("{}/swarm-{uid}", tmp.display()))
+/// The launching chair's PTY host socket (`SWARM_PTY_HOST`, ADR 0131), resolved as the sandbox
+/// sees it, or None off a host. Only this file is allowed, so a seat cannot reach another chat's
+/// host.
+fn pty_socket(host: Option<&str>) -> Option<String> {
+    let host = host.filter(|host| !host.is_empty())?;
+    Some(std::fs::canonicalize(host).map_or(host.to_string(), |path| path.display().to_string()))
 }
 
 mod codex;
 mod hooks;
 mod launch;
+mod refusal;
 mod trust;
 
 pub use codex::*;
 pub use hooks::*;
 pub use launch::*;
+pub use refusal::*;
 pub use trust::*;
 
 /// A Codex `config.toml` as text and as TOML.

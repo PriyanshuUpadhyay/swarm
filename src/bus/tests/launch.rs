@@ -88,14 +88,15 @@ mod tests {
                 "default_permissions=\"swarm-code\"",
                 "-c",
                 &format!(
-                    r#"permissions.swarm-code={{extends=":workspace",filesystem={{":workspace_roots"={{".git"="write",".git/hooks"="read",".git/config"="read",".git/modules"="read",".codex"="read",".agents"="read"}},"/home x/.swarm"="write"}},network={{enabled=true,unix_sockets={{{}="allow",{}="allow"}}}}}}"#,
+                    r#"permissions.swarm-code={{extends=":workspace",filesystem={{":workspace_roots"={{".git"="write",".git/hooks"="read",".git/config"="read",".git/modules"="read",".codex"="read",".agents"="read"}},"/home x/.swarm"="write"}},network={{enabled=true,unix_sockets={{{}="allow"{}}}}}}}"#,
                     serde_json::to_string(&tmux_socket_dir(
                         std::env::var("TMUX_TMPDIR").ok().as_deref(),
                         unsafe { crate::hud::getuid() }
                     ))
                     .unwrap(),
-                    serde_json::to_string(&pty_socket_dir(unsafe { crate::hud::getuid() }))
-                        .unwrap()
+                    pty_socket(std::env::var("SWARM_PTY_HOST").ok().as_deref())
+                        .map(|pty| format!(r#",{}="allow""#, serde_json::to_string(&pty).unwrap()))
+                        .unwrap_or_default()
                 ),
                 "--ask-for-approval",
                 "never"
@@ -457,5 +458,26 @@ mod tests {
             command_model(&command(&["agy", "--", "--model", "x"])),
             None
         );
+    }
+
+    #[test]
+    fn a_codex_seat_may_reach_only_its_chair_host_socket() {
+        assert_eq!(pty_socket(None), None);
+        assert_eq!(pty_socket(Some("")), None);
+        // A socket that is gone stays as named; a live one resolves /tmp as the sandbox does.
+        assert_eq!(
+            pty_socket(Some("/tmp/swarm-test-none/ab.sock")).as_deref(),
+            Some("/tmp/swarm-test-none/ab.sock")
+        );
+        let dir = std::env::temp_dir().join(format!("pty-socket-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("cd.sock");
+        let _listener = std::os::unix::net::UnixListener::bind(&path).unwrap();
+        let named = path.to_string_lossy().into_owned();
+        assert_eq!(
+            pty_socket(Some(&named)),
+            Some(std::fs::canonicalize(&path).unwrap().display().to_string())
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
