@@ -72,3 +72,17 @@ describe("live frame", () => {
     expect(chat.live).toBe("Next turn");
   });
 });
+
+describe("live frame at turn end", () => {
+  it("drops a short spinner text, and a text the log already holds, at once", () => {
+    const chat = { id: "s", key: "s:chair", sessionId: "s", state: "ready", rows: [], end: 0, version: 0, shift: false, live: "Working...", liveEnded: false } as unknown as Chat;
+    const app = { chats: new Map([["s", chat]]), pending: new Map(), openId: "s", notify: () => {}, reading: { changed: (c: Chat) => c.version++ } };
+    const stream = new AppStream(app as unknown as App);
+    stream.onSse({ event: "live", data: JSON.stringify({ key: "s:chair", text: null }) });
+    expect(chat.live).toBeNull();
+    chat.rows = [{ id: "a", kind: "assistant", text: "The umbrella began more than four thousand years ago.", order: [1, 0] }];
+    chat.live = "The umbrella began more than four thousand years ago.";
+    stream.onSse({ event: "live", data: JSON.stringify({ key: "s:chair", text: null }) });
+    expect(chat.live).toBeNull();
+  });
+});

@@ -8,6 +8,8 @@ import { TAIL, LRU_SIZE, type FullText, type Chat, type Find, type Reader, paneI
 import type { App } from "./app";
 
 const letters = (text: string) => text.replace(/[^\p{L}\p{N}]/gu, "");
+/** The fewest letters a screen text needs before a log row may hide it. */
+const MATCHED = 20;
 
 /** The running turn's screen text as a row, or null once a recent log row holds it. The screen
  *  drops markdown marks and wraps lines, so only letters and digits are compared. Rows of earlier
@@ -17,10 +19,16 @@ export function liveRow(rows: readonly Row[], text: string | null): Row | null {
   if (!text) return null;
   const head = letters(text).slice(0, 80);
   if (!head) return null;
-  if (head.length >= 20)
+  if (head.length >= MATCHED)
     for (let i = rows.length - 1; i >= Math.max(0, rows.length - 50); i--)
       if (rows[i].kind === "assistant" && letters(rows[i].text).includes(head)) return null;
   return { id: "live", kind: "assistant", text, order: [Number.MAX_SAFE_INTEGER, -1] };
+}
+
+/** Whether an ended turn's text stays until the log's rows land: only a text that a landed row
+ *  will hide, and that none hides yet. A spinner's short text never matches, so it goes at once. */
+export function keepsEnded(rows: readonly Row[], text: string | null): boolean {
+  return text !== null && letters(text).length >= MATCHED && liveRow(rows, text) !== null;
 }
 
 export class AppReader {

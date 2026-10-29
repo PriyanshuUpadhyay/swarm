@@ -2,6 +2,7 @@ import { sleep, type RowFrame, type Snapshot, type SubscribeKey } from "./api";
 import { queueRows, type Usage } from "./composer";
 import { readSse, type SseEvent } from "./sse";
 import { mergeRows } from "./transcript";
+import { keepsEnded } from "./app-reader";
 import { MAX_KEYS, type Chat, paneId } from "./app-types";
 import type { App } from "./app";
 
@@ -84,7 +85,7 @@ export class AppStream {
         if (!chat) break;
         const text = typeof data.text === "string" ? data.text : null;
         // A turn can end seconds before its log's rows land, so its text stays until they do.
-        if (text === null && chat.live !== null) chat.liveEnded = true;
+        if (text === null && keepsEnded(chat.rows, chat.live)) chat.liveEnded = true;
         else [chat.live, chat.liveEnded] = [text, false];
         this.app.reading.changed(chat);
         break;
