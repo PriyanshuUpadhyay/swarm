@@ -1,4 +1,4 @@
-// Provider launch arguments and child-agent limits.
+// Provider launch arguments.
 use super::*;
 
 pub fn valid_agent_id(id: &str) -> bool {

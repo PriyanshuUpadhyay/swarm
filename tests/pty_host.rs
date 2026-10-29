@@ -408,3 +408,67 @@ fn a_viewer_gets_no_query_the_host_answered_and_ends_with_its_pane() {
     );
     reader.join().unwrap();
 }
+
+/// One request on the host socket, and its reply line.
+fn ask(socket: &Path, request: serde_json::Value) -> serde_json::Value {
+    use std::io::{BufRead, Write};
+    let stream = std::os::unix::net::UnixStream::connect(socket).unwrap();
+    writeln!(&stream, "{request}").unwrap();
+    let mut line = String::new();
+    std::io::BufReader::new(&stream)
+        .read_line(&mut line)
+        .unwrap();
+    serde_json::from_str(&line).unwrap()
+}
+
+#[test]
+fn a_headless_host_takes_its_first_live_pane_as_chair_after_a_failed_spawn() {
+    use std::io::BufRead;
+    let home = std::env::temp_dir().join(format!(
+        "swarm-pty-headless-{}",
+        uuid::Uuid::now_v7().simple()
+    ));
+    std::fs::create_dir_all(&home).unwrap();
+    let mut host = Command::new(env!("CARGO_BIN_EXE_swarm"))
+        .args(["pty", "host"])
+        .env("SWARM_HOME", &home)
+        .env("SWARM_SESSION_ID", uuid::Uuid::now_v7().to_string())
+        .env("SHELL", "/bin/sh")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut line = String::new();
+    std::io::BufReader::new(host.stdout.take().unwrap())
+        .read_line(&mut line)
+        .unwrap();
+    let socket = PathBuf::from(line.trim());
+    let spawn = |cwd: &Path| {
+        let request =
+            serde_json::json!({"op": "spawn", "cwd": cwd, "env": {}, "feed": "cat > /dev/null"});
+        ask(&socket, request)
+    };
+    // A launch whose spawn fails uses up a pane number; the launch after it starts the chair.
+    assert_eq!(spawn(&home.join("gone"))["ok"], false);
+    let chair = spawn(&home);
+    let n: u64 = chair["out"]
+        .as_str()
+        .unwrap()
+        .rsplit(':')
+        .next()
+        .unwrap()
+        .parse()
+        .unwrap();
+    wait_for(
+        || ask(&socket, serde_json::json!({"op": "screen", "n": n}))["ok"] == true,
+        "the chair",
+    );
+    // The host looks for its chair every 200 ms, and a real chair runs far longer.
+    std::thread::sleep(Duration::from_secs(1));
+    ask(&socket, serde_json::json!({"op": "close", "n": n}));
+    wait_for(
+        || host.try_wait().unwrap().is_some(),
+        "the host to end with its chair",
+    );
+    let _ = std::fs::remove_dir_all(&home);
+}

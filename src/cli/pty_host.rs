@@ -59,8 +59,6 @@ pub(crate) struct Host {
     /// can own the file at this path, and this host must not remove that one.
     bound: (u64, u64),
     children: Children,
-    /// The number of the first pane, which a headless host holds as its chair.
-    first: u64,
 }
 
 /// The host socket of `session`. A socket path holds at most 104 bytes on macOS, and a branch
@@ -166,7 +164,6 @@ impl Host {
             socket,
             bound: (meta.dev(), meta.ino()),
             children,
-            first: start,
         })
     }
 
@@ -197,12 +194,14 @@ pub(crate) fn headless() -> i32 {
         unsafe { libc::dup2(std::os::fd::AsRawFd::as_raw_fd(&null), 1) };
     }
     let started = std::time::Instant::now();
-    let mut seen = false;
+    // The chair is the lowest pane once one runs; a spawn that failed used up its number.
+    let mut chair = None;
     loop {
         std::thread::sleep(LOCK_POLL * 10);
-        let chair = lock(&host.children).contains_key(&host.first);
-        seen |= chair;
-        if !chair && (seen || started.elapsed() > FIRST_PANE_WAIT) {
+        let children = lock(&host.children);
+        chair = chair.or_else(|| children.keys().min().copied());
+        let gone = chair.is_none_or(|n| !children.contains_key(&n));
+        if gone && (chair.is_some() || started.elapsed() > FIRST_PANE_WAIT) {
             return 0;
         }
     }

@@ -102,6 +102,14 @@ pub(super) async fn watch_turn(
         // ponytail: a client that joins a running follower sees the text from its next change;
         // the page clears its live text on reconnect, so it never keeps a stale one.
         let mut hub = server.hub.lock().unwrap();
+        // A newer watcher of this key may have started during the read; its frames win.
+        if hub
+            .followers
+            .get(&key)
+            .is_none_or(|follower| follower.generation != generation)
+        {
+            return;
+        }
         for client in hub.streams.values_mut() {
             if client.row_keys.contains(&key) {
                 client.push(frame.clone());

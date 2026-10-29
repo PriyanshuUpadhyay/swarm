@@ -119,7 +119,7 @@ pub(super) fn spawn(
     ));
     let (input, queued) = std::sync::mpsc::sync_channel::<Vec<u8>>(INPUT_QUEUE);
     let replies = input.clone();
-    let viewers = Viewers::default();
+    let viewers = Viewers::new(Mutex::new(Some(Vec::new())));
     // It ends when the pane leaves the list and the reader ends, which drop the senders, or when
     // the child is gone.
     std::thread::spawn(move || {
@@ -213,7 +213,7 @@ fn read_pane(
         show(viewers, &shown);
     }
     // Each viewer's writer ends when its queue goes, and closes the viewer's stream.
-    lock(viewers).clear();
+    lock(viewers).take();
 }
 
 /// A new PTY at tmux's detached size, with both ends closed on exec, so no other child holds

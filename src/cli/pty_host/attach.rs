@@ -15,13 +15,16 @@ const VIEW_QUEUE: usize = 256;
 
 static NEXT_VIEWER: AtomicU64 = AtomicU64::new(0);
 
-/// The viewers of one pane, each with its id and the queue its writer thread sends.
-pub(super) type Viewers = Arc<Mutex<Vec<(u64, SyncSender<Vec<u8>>)>>>;
+/// The viewers of one pane, each with its id and the queue its writer thread sends. None once the
+/// pane's output ended, so a viewer that comes after it is refused, not left waiting.
+pub(super) type Viewers = Arc<Mutex<Option<Vec<(u64, SyncSender<Vec<u8>>)>>>>;
 
 /// Sends `bytes` to each viewer, and drops a viewer whose queue is full or gone. The caller holds
 /// the parser lock, so a new viewer's screen and these bytes never cross.
 pub(super) fn show(viewers: &Viewers, bytes: &[u8]) {
-    lock(viewers).retain(|(_, queue)| queue.try_send(bytes.to_vec()).is_ok());
+    if let Some(viewers) = lock(viewers).as_mut() {
+        viewers.retain(|(_, queue)| queue.try_send(bytes.to_vec()).is_ok());
+    }
 }
 
 /// Sets the pane's terminal and parser to `rows` x `cols`; the kernel signals the CLI to redraw.
@@ -88,7 +91,10 @@ pub(super) fn attach(
         first.extend_from_slice(b"\x1b[H\x1b[2J");
         first.extend(parser.screen().state_formatted());
         queue.try_send(first).map_err(|error| error.to_string())?;
-        lock(&viewers).push((id, queue));
+        lock(&viewers)
+            .as_mut()
+            .ok_or("swarm pty: the pane ended")?
+            .push((id, queue));
     }
     let (rows, cols) = size_of(request);
     resize(&master, &parser, rows, cols);
@@ -119,8 +125,10 @@ pub(super) fn attach(
     }
     let last = {
         let mut viewers = lock(&viewers);
-        viewers.retain(|(viewer, _)| *viewer != id);
-        viewers.is_empty()
+        viewers.as_mut().is_some_and(|viewers| {
+            viewers.retain(|(viewer, _)| *viewer != id);
+            viewers.is_empty()
+        })
     };
     // Outside the viewers lock, since the reader takes the parser lock before it.
     if last {

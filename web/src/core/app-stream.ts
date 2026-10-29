@@ -54,15 +54,15 @@ export class AppStream {
     switch (e.event) {
       case "hello":
         this.app.reconnecting = false;
-        this.app.notify();
-        if (this.app.serverBuild !== null && data.build !== this.app.serverBuild) return location.reload();
-        this.app.serverBuild = String(data.build);
         // A frame sent while the stream was down is lost, so live text could be stale.
         for (const chat of this.app.chats.values()) {
           if (chat.live === null) continue;
           chat.live = null;
           chat.version++;
         }
+        this.app.notify();
+        if (this.app.serverBuild !== null && data.build !== this.app.serverBuild) return location.reload();
+        this.app.serverBuild = String(data.build);
         this.app.streamId = String(data.stream);
         this.syncSubscriptions();
         void this.app.navigation.refreshSnapshot();

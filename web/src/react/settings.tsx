@@ -203,6 +203,7 @@ function TerminalHostRow({ app, prefs }: { app: App; prefs: Prefs }) {
           ["pty", "PTY"],
           ["tmux", "tmux"],
         ]}
+        // Fire-and-forget is safe: choose never rejects, and it shows its own error notice.
         onChange={(v) => void app.settings.setPref("terminalHost", v)}
       />
     </Row>
