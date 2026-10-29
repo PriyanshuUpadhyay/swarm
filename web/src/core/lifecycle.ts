@@ -159,6 +159,11 @@ export class Lifecycle {
     return this.api.get("/api/workspace/new-options", { project });
   }
 
+  /** `git fetch --prune origin`, so the next options read lists the branches origin has now. */
+  fetchOrigin(project: string): Promise<unknown> {
+    return this.api.post("/api/workspace/fetch", { project });
+  }
+
   async issues(project: string): Promise<Issue[]> {
     return (await this.api.get<{ issues: Issue[] }>("/api/issues", { project })).issues;
   }
@@ -372,6 +377,7 @@ export class Lifecycle {
       body: lines.join("\n\n"),
       action: "Delete Workspace",
       blocked: impact.deleteBlocker !== null,
+      cancelFirst: true,
       run: async () => {
         await this.api.post("/api/workspace/delete", { workspace });
         this.app.leaveWorkspace(workspace);

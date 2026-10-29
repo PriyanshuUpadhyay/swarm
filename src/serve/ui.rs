@@ -93,7 +93,8 @@ fn open_ui(args: &[String], chat: Option<&str>) -> Result<(), Box<dyn std::error
             None => reload_pages(&url) > 0,
         };
         if reached || std::time::Instant::now() >= deadline {
-            if !reached || shell_app().is_some() {
+            // ponytail: a changed Swarm.app shell takes effect at its next launch, not on Restart.
+            if !reached || (shell_app().is_some() && std::env::var_os(RELOAD_ONLY).is_none()) {
                 // `swarm ui` keeps going when `open` fails, as it always did; a notice click
                 // reports it, so it does not claim a window it never opened.
                 let opened = open_page(&page);
@@ -108,6 +109,10 @@ fn open_ui(args: &[String], chat: Option<&str>) -> Result<(), Box<dyn std::error
     start_hud();
     Ok(())
 }
+
+/// Set by the page's Restart server: the window that asked is open, so the reload is enough and
+/// `open` of the new Swarm.app would close that window and open a new one.
+pub(super) const RELOAD_ONLY: &str = "SWARM_UI_RELOAD_ONLY";
 
 /// The version and commit of this binary, which `swarm ui` records so it can tell its own server.
 pub(super) const BUILD: &str = concat!(env!("CARGO_PKG_VERSION"), " ", env!("SWARM_BUILD_COMMIT"));
@@ -178,6 +183,7 @@ pub(super) fn spawn_ui(
         .arg("ui")
         .arg("--foreground")
         .args(args)
+        .env_remove(RELOAD_ONLY)
         .stdin(std::process::Stdio::null())
         .stdout(log.try_clone()?)
         .stderr(log)

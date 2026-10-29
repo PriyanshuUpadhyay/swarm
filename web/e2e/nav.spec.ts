@@ -214,6 +214,21 @@ test("Recent lists chats across projects and opens one in another project from t
   expect(errors).toEqual([]);
 });
 
+test("a reload keeps the sidebar view the owner picked", async ({ page: tab }) => {
+  const errors = await open(tab);
+  await tab.keyboard.press("Alt+Meta+2");
+  await expect(tab.getByTestId("recent")).toBeVisible();
+  await tab.reload();
+  await tab.waitForFunction(() => window.__swarmReady === true);
+  await expect(tab.getByTestId("recent")).toBeVisible();
+  await tab.keyboard.press("Alt+Meta+1");
+  await tab.reload();
+  await tab.waitForFunction(() => window.__swarmReady === true);
+  await expect(tab.getByTestId("sidebar")).toBeVisible();
+  await expect(tab.getByTestId("recent")).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
 test("reloading at / restores the selected chat", async ({ page: tab }, info) => {
   const errors = await open(tab);
   const choicesPath = join(process.env.SWARM_E2E_HOME!, ".swarm/choices.json");

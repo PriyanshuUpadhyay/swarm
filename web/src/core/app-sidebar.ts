@@ -2,7 +2,7 @@
 
 import { measure, whenPainted } from "./perf";
 import { foldId, moveTarget, archivedSession, navRows, inOrder, recentWork, type NavRow, type RecentChat, type TreeName } from "./nav";
-import { SIDEBAR_VIEWS, message, markable, readStore, writeStore } from "./app-types";
+import { SIDEBAR_VIEWS, SIDEBAR_VIEW_KEY, message, markable, readStore, writeStore } from "./app-types";
 
 const RECENT_ORDER = "swarm.recentOrder";
 import type { App } from "./app";
@@ -216,6 +216,7 @@ export class AppSidebar {
     if (n < 1 || n > SIDEBAR_VIEWS.length) return;
     if (n !== this.app.sidebarView) {
       this.app.sidebarView = n;
+      writeStore(SIDEBAR_VIEW_KEY, String(n));
       if (n === 2) this.app.recentSelected = this.app.openId ?? this.recentList()[0]?.session ?? null;
       this.app.notify();
     }

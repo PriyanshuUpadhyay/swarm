@@ -95,7 +95,9 @@ test("archiving the last open sidebar chat shows the workspace landing", async (
     const confirm = tab.getByTestId("confirm");
     await expect(confirm).toBeVisible();
     await expect(confirm.getByTestId("confirm-action")).toHaveText("Archive Chat");
-    await confirm.getByTestId("confirm-action").click();
+    // Enter takes the primary action, so the confirm opens with focus on it.
+    await expect(confirm.getByTestId("confirm-action")).toBeFocused();
+    await tab.keyboard.press("Enter");
     await expect(confirm).toBeHidden();
     await expect(tabs).toHaveCount(0);
     await expect(row).toHaveCount(0);

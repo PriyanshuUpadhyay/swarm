@@ -21,6 +21,13 @@ function Frame({ open, onClose, title, description, children, testid, wide }: { 
         <DialogContent
           className={`${wide ? "w-[min(560px,calc(100vw-32px))]" : "w-[min(440px,calc(100vw-32px))]"} grid max-h-[calc(100vh-104px)] gap-3 overflow-y-auto p-4`}
           data-testid={testid}
+          // Radix focuses the first button, Cancel in a confirm; a `data-autofocus` control wins.
+          onOpenAutoFocus={(e) => {
+            const first = (e.currentTarget as HTMLElement).querySelector<HTMLElement>("[data-autofocus]:not(:disabled)");
+            if (!first) return;
+            e.preventDefault();
+            first.focus();
+          }}
           {...(description ? {} : { "aria-describedby": undefined })}
         >
           <DialogTitle>{title}</DialogTitle>

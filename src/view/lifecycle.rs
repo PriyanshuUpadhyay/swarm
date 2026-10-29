@@ -249,6 +249,8 @@ pub fn references(common: &str) -> Result<References> {
         common,
         &[
             "for-each-ref",
+            // Newest commit first, so the branch the owner worked on last is near the top.
+            "--sort=-committerdate",
             "--format=%(refname:lstrip=2)%00%(refname)",
             "refs/heads",
             "refs/remotes/origin",

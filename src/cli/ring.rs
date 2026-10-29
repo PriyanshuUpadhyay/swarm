@@ -272,12 +272,17 @@ pub(crate) fn type_text(
     let started = provider
         .as_deref()
         .is_some_and(|provider| wait_for_input_box(provider, &read));
-    // pi puts its queued messages back in its box on a stop, and the text would join them. An
-    // unread box types as before.
-    if provider.as_deref() == Some("pi")
-        && swarm::screen::composer("pi", &read()).is_some_and(|held| !held.is_empty())
-    {
-        return Err("swarm: pi's input box holds text, and this send would join it".into());
+    if provider.as_deref() == Some("pi") {
+        let rows = read();
+        // pi draws its folder trust question in its box's place, and Enter there picks a choice.
+        if swarm::screen::prompt(&rows).is_some() {
+            return Err("swarm: pi's screen shows a question; answer it first".into());
+        }
+        // pi puts its queued messages back in its box on a stop, and the text would join them. An
+        // unread box types as before.
+        if swarm::screen::composer("pi", &rows).is_some_and(|held| !held.is_empty()) {
+            return Err("swarm: pi's input box holds text, and this send would join it".into());
+        }
     }
     adapter.run("ring", &[("pane", pane), ("text", text)])?;
     let Some(provider) = provider.filter(|_| !started && adapter.key.is_some()) else {

@@ -61,6 +61,19 @@ mod tests {
                 false,
             ),
             (
+                fixture!("pi-trust"),
+                "Trust project folder?\n/Users/you/proj\nThis allows pi to load .pi settings and \
+                 resources, install missing project packages, and execute\nproject extensions.",
+                &[
+                    "Trust",
+                    "Trust parent folder (/Users/you)",
+                    "Trust (this session only)",
+                    "Do not trust",
+                    "Do not trust (this session only)",
+                ],
+                false,
+            ),
+            (
                 fixture!("agy-waiting"),
                 "Agent is requesting permission for: run_command\ntouch /tmp/work/probe.txt\n\
                  Do you want to proceed?",

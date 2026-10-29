@@ -15,7 +15,7 @@ import { Settings } from "./settings";
 import { Skills } from "./skills";
 import { Notices } from "./notices";
 import { chatRows, type ChoiceOp, type NavRow, type PaletteItem, type RecentChat, type Tabs, type TreeName, type TreeView } from "./nav";
-import { type Chat, type Input, type Find, type Strip, type View, type Reader, type Ask, NO_FIND, NO_CELLS } from "./app-types";
+import { type Chat, type Input, type Find, type Strip, type View, type Reader, type Ask, NO_FIND, NO_CELLS, SIDEBAR_VIEW_KEY, readStore } from "./app-types";
 import { AppNavigation } from "./app-navigation";
 import { AppSidebar } from "./app-sidebar";
 import { AppReader } from "./app-reader";
@@ -56,7 +56,7 @@ export class App {
   openId: string | null = null;
   workspace: string | null = null;
   tabs: Tabs | null = null;
-  sidebarView = 1;
+  sidebarView = readStore(SIDEBAR_VIEW_KEY) === "2" ? 2 : 1;
   recentMemo: { tree: TreeView | null; snapshot: Snapshot | null; list: RecentChat[] } | null = null;
   recentSelected: string | null = null;
   /** The choices revision of the last read or write. Writes go one at a time, each on the last. */
@@ -151,7 +151,8 @@ export class App {
     abort.signal.addEventListener("abort", this.settings.subscribe(() => this.navigation.followUrl()));
     void this.navigation.refreshSnapshot().then(() => {
       whenPainted(
-        () => document.querySelector('[data-testid="sidebar"][data-loaded="true"]') !== null,
+        // The sidebar view is saved, so the page can start on Recent, which has no tree.
+        () => document.querySelector('[data-testid="sidebar"][data-loaded="true"], [data-testid="recent"]') !== null,
         () => (window.__swarmReady = true),
       );
     });

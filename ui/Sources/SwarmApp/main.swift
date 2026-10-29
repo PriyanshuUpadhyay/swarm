@@ -17,6 +17,8 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKUIDelega
     var stripColor: NSKeyValueObservation?
     /// The owner's View › Zoom level, kept in this app's UserDefaults. A browser tab has its own zoom.
     static let zoomKey = "pageZoom"
+    /// Whether the window was in full screen when the app last quit, so a relaunch goes back to it.
+    static let fullScreenKey = "fullScreen"
 
     init(url: URL?) {
         self.url = url
@@ -36,6 +38,8 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKUIDelega
             styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         window.title = "Swarm"
         window.center()
+        // AppKit saves the frame on each move or resize and puts it back here, also a zoomed one.
+        window.setFrameAutosaveName("Swarm")
         window.collectionBehavior = .fullScreenPrimary
         window.delegate = self
         window.backgroundColor = NSColor(red: 0x10 / 255, green: 0x10 / 255, blue: 0x10 / 255, alpha: 1)
@@ -45,6 +49,7 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKUIDelega
         window.contentView = webView
         window.makeFirstResponder(webView)
         window.makeKeyAndOrderFront(nil)
+        if UserDefaults.standard.bool(forKey: Self.fullScreenKey) { window.toggleFullScreen(nil) }
         if let url, url.host == "127.0.0.1" {
             webView.load(URLRequest(url: url))
         } else {
@@ -65,6 +70,7 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKUIDelega
     }
 
     func windowDidEnterFullScreen(_ notification: Notification) {
+        UserDefaults.standard.set(true, forKey: Self.fullScreenKey)
         guard let screen = window.screen, screen.safeAreaInsets.top > 0 else { return }
         let height = screen.safeAreaInsets.top
         let panel = StripPanel(
@@ -82,6 +88,7 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKUIDelega
     }
 
     func windowWillExitFullScreen(_ notification: Notification) {
+        UserDefaults.standard.set(false, forKey: Self.fullScreenKey)
         stripColor = nil
         if let strip { window.removeChildWindow(strip); strip.close() }
         strip = nil

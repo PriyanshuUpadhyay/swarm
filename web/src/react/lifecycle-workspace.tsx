@@ -1,7 +1,7 @@
 // New workspace creation, issue selection, and setup progress.
 
 import { LoaderCircleIcon } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type KeyboardEvent } from "react";
 import type { App } from "../core/app";
 import { setupFailure, type Issue, type Mode, type NewOptions, type NewRequest } from "../core/lifecycle";
 import { Button } from "../components/ui/button";
@@ -38,6 +38,8 @@ function NewWorkspaceBody({ app, initialProject }: { app: App; initialProject: s
   const [issue, setIssue] = useState<Issue | null>(null);
   const [folder, setFolder] = useState("");
   const [prefix, setPrefix] = useState("");
+  const [reads, setReads] = useState(0);
+  const [fetching, setFetching] = useState<{ error: string | null } | null>(null);
   const working = create?.state === "working";
   const kept = create?.state === "kept";
 
@@ -48,8 +50,9 @@ function NewWorkspaceBody({ app, initialProject }: { app: App; initialProject: s
       (options) => {
         if (!live) return;
         setOpts({ project, options, error: null });
-        setBase(options.bases[0] ?? "");
-        setBranch(options.branches[0] ?? "");
+        // A re-read after a fetch keeps the picks that still exist.
+        setBase((b) => (options.bases.includes(b) ? b : (options.bases[0] ?? "")));
+        setBranch((b) => (options.branches.includes(b) ? b : (options.branches[0] ?? "")));
         setFolder(options.folder);
         setPrefix(options.prefix);
       },
@@ -58,7 +61,18 @@ function NewWorkspaceBody({ app, initialProject }: { app: App; initialProject: s
     return () => {
       live = false;
     };
-  }, [app, project]);
+  }, [app, project, reads]);
+
+  const fetchOrigin = () => {
+    setFetching({ error: null });
+    app.life.fetchOrigin(project).then(
+      () => {
+        setFetching(null);
+        setReads((n) => n + 1);
+      },
+      (err) => setFetching({ error: message(err) }),
+    );
+  };
 
   const options = opts?.project === project ? opts.options : null;
   const unborn = options !== null && options.defaultBranch === null;
@@ -99,6 +113,15 @@ function NewWorkspaceBody({ app, initialProject }: { app: App; initialProject: s
             </button>
           ))}
         </div>
+        {options && !unborn && (
+          <div className="flex items-center justify-end gap-2">
+            {fetching?.error && <ErrorLine text={fetching.error} />}
+            <Button type="button" variant="ghost" size="sm" data-testid="nw-fetch" disabled={fetching !== null && !fetching.error} onClick={fetchOrigin}>
+              {fetching && !fetching.error && <LoaderCircleIcon className="animate-spin motion-reduce:animate-none" />}
+              Fetch origin
+            </Button>
+          </div>
+        )}
         {opts?.error && <ErrorLine text={opts.error} />}
         {!opts && <p className="text-sm text-muted-foreground">Reading branches…</p>}
         {options && (
@@ -112,31 +135,20 @@ function NewWorkspaceBody({ app, initialProject }: { app: App; initialProject: s
               (unborn ? (
                 <p className="text-sm text-muted-foreground">This repository has no commits yet, so the first workspace starts a new branch with no base.</p>
               ) : (
-                <Label text="Base branch">
-                  <select className={FIELD} data-testid="nw-base" value={base} onChange={(e) => setBase(e.target.value)}>
-                    {options.bases.map((b) => (
-                      <option key={b}>{b}</option>
-                    ))}
-                  </select>
-                </Label>
+                <BranchPicker label="Base branch" testid="nw-base" branches={options.bases} value={base} onChange={setBase} />
               ))}
             {mode === "existing-branch" &&
               (options.branches.length ? (
-                <Label text="Branch">
-                  <select
-                    className={FIELD}
-                    data-testid="nw-branch"
-                    value={branch}
-                    onChange={(e) => {
-                      setBranch(e.target.value);
-                      if (!name) setName(e.target.value.split("/").pop() ?? "");
-                    }}
-                  >
-                    {options.branches.map((b) => (
-                      <option key={b}>{b}</option>
-                    ))}
-                  </select>
-                </Label>
+                <BranchPicker
+                  label="Branch"
+                  testid="nw-branch"
+                  branches={options.branches}
+                  value={branch}
+                  onChange={(b) => {
+                    setBranch(b);
+                    if (!name) setName(b.split("/").pop() ?? "");
+                  }}
+                />
               ) : (
                 <p className="text-sm text-muted-foreground">Every branch is already checked out in a workspace.</p>
               ))}
@@ -179,6 +191,46 @@ function NewWorkspaceBody({ app, initialProject }: { app: App; initialProject: s
         )}
       </div>
     </form>
+  );
+}
+
+/** A filter box over a branch list, so a long list needs no scrolling. Arrow keys move the pick. */
+function BranchPicker({ label, testid, branches, value, onChange }: { label: string; testid: string; branches: string[]; value: string; onChange: (branch: string) => void }) {
+  const [query, setQuery] = useState("");
+  const q = query.trim().toLowerCase();
+  const shown = q ? branches.filter((b) => b.toLowerCase().includes(q)) : branches;
+  const onKeyDown = (e: KeyboardEvent) => {
+    const at = shown.indexOf(value);
+    const step = e.key === "ArrowDown" ? 1 : e.key === "ArrowUp" ? -1 : 0;
+    if (step && shown.length) onChange(shown[Math.min(shown.length - 1, Math.max(0, at + step))]);
+    // Enter confirms the pick in the list, or the first match, and does not submit the form.
+    else if (e.key === "Enter" && shown.length) onChange(at >= 0 ? value : shown[0]);
+    else return;
+    e.preventDefault();
+  };
+  return (
+    <div className="grid gap-1">
+      <span className="text-sm text-muted-foreground">
+        {label}: <span className="font-mono text-foreground">{value || "none"}</span>
+      </span>
+      <input className={FIELD} aria-label={`Filter ${label.toLowerCase()}`} data-testid={`${testid}-filter`} placeholder={`Filter ${branches.length} branches`} value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={onKeyDown} />
+      <div role="listbox" aria-label={label} data-testid={testid} className="max-h-[160px] overflow-y-auto rounded-md border border-border">
+        {shown.length === 0 && <p className="px-2 py-2 text-sm text-muted-foreground">No branch matches.</p>}
+        {shown.map((b) => (
+          <button
+            key={b}
+            type="button"
+            role="option"
+            aria-selected={b === value}
+            ref={b === value ? (el) => el?.scrollIntoView({ block: "nearest" }) : undefined}
+            className="flex w-full px-2 py-1 text-left font-mono text-sm hover:bg-hover aria-selected:bg-selected"
+            onClick={() => onChange(b)}
+          >
+            <span className="min-w-0 truncate">{b}</span>
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 

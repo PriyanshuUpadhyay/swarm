@@ -17,6 +17,8 @@ Bottom rows of agent panes for the screen check tests in `src/screen.rs`.
 - `pi-*.txt` are real `tmux capture-pane -p -J` output from pi 1.2.0 on 2026-10-15 (an empty
   input box, a ring left unsent in it, and a running turn), cut to the rows from the box up and
   with the folder replaced by `~/project`.
+  `pi-trust.txt` is pi 1.2.0's folder trust screen, captured on 2026-10-29 from a new folder with a
+  `.pi` folder, under a private tmux server, with the paths replaced by `/Users/you`.
 
 Digit keys, checked live on the same versions: a digit picks a Claude permission or
 AskUserQuestion choice, a Codex approval choice, and an AGY `ask_question` choice with no Enter.

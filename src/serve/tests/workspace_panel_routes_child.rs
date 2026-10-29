@@ -127,4 +127,20 @@ async fn workspace_panel_routes_child() {
             StatusCode::FORBIDDEN
         );
     }
+    // Fetch origin brings a branch that only origin has into New Workspace's list.
+    let origin = root.join("origin.git").to_string_lossy().into_owned();
+    lifecycle::check_git(&source, &["clone", "-q", "--bare", &source, &origin]).unwrap();
+    lifecycle::check_git(&origin, &["branch", "remote-only", "main"]).unwrap();
+    lifecycle::check_git(&source, &["remote", "set-url", "origin", &origin]).unwrap();
+    let fetch = |project: String| {
+        workspace_fetch(
+            State(fixture.app.clone()),
+            Ok(Json(ProjectPath { project })),
+        )
+    };
+    assert_eq!(fetch(source.clone()).await.unwrap().0, json!({"ok": true}));
+    let refs = lifecycle::references(&source).unwrap();
+    assert!(refs.branches.contains(&"origin/remote-only".to_string()), "{refs:?}");
+    let outside = root.to_string_lossy().into_owned();
+    assert_eq!(fetch(outside).await.unwrap_err().0, StatusCode::FORBIDDEN);
 }

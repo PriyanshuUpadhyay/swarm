@@ -157,6 +157,8 @@ export const NO_FULL: ReadonlyMap<string, FullText> = new Map();
 /** The chat id of a child agent's column. It is also the agent's stream key. */
 export const paneId = (sessionId: string, agent: string) => `${sessionId}:${agent}`;
 export const DRAFT_PREFIX = "composer.draft.";
+/** The sidebar view the owner last picked, so a reload or restart keeps Workspaces or Recent. */
+export const SIDEBAR_VIEW_KEY = "swarm.sidebar.view";
 /** The window event that moves the chat's transcript to the owner's previous (-1) or next (1) prompt. */
 export const PROMPT_JUMP = "swarm:prompt-jump";
 /** The window event of a send from a composer; its detail is the chat id, whose transcript moves to the end. */
