@@ -41,6 +41,9 @@ export type Chat = {
   queue: Row[];
   /** The running turn's text on the agent's screen, a preview the log replaces (ADR 0131). */
   live: string | null;
+  /** How many characters of `live` show. The screen grows a line at a time, so new text types
+   *  out over a few steps. */
+  liveShown: number;
   /** The turn ended; `live` stays shown until the log's next rows land. */
   liveEnded: boolean;
   /** The newest texts typed into this chat, never shown. A stop or Up on pi puts them back exact,

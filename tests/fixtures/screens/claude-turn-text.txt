@@ -15,7 +15,7 @@
   fibre. Today the bicycle is a common tool for transport, sport, and clean city
   travel.
 
-✻ Sautéed for 11s · done 6:52 PM                                              
+✻ Sautéing… (11s · esc to interrupt)                                              
                              Plugins changed. Run /reload-plugins to activate.  
 ────────────────────────────────────────────────────────────────────── live-lc ─
 ❯                                                             

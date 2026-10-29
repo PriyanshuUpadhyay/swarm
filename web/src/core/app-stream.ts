@@ -6,7 +6,13 @@ import { keepsEnded } from "./app-reader";
 import { MAX_KEYS, type Chat, paneId } from "./app-types";
 import type { App } from "./app";
 
+/** How often live text types out, and in how many steps it catches up with the screen. */
+const TYPE_MS = 30;
+const TYPE_STEPS = 8;
+
 export class AppStream {
+  private typing: ReturnType<typeof setInterval> | null = null;
+
   constructor(private readonly app: App) {}
 
   applySnapshot(snap: Snapshot) {
@@ -85,8 +91,16 @@ export class AppStream {
         if (!chat) break;
         const text = typeof data.text === "string" ? data.text : null;
         // A turn can end seconds before its log's rows land, so its text stays until they do.
-        if (text === null && keepsEnded(chat.rows, chat.live)) chat.liveEnded = true;
-        else [chat.live, chat.liveEnded] = [text, false];
+        if (text === null && keepsEnded(chat.rows, chat.live)) {
+          chat.liveEnded = true;
+          chat.liveShown = chat.live?.length ?? 0;
+        } else {
+          const shown = chat.live?.slice(0, chat.liveShown) ?? "";
+          let same = 0;
+          while (same < shown.length && text !== null && shown[same] === text[same]) same++;
+          [chat.live, chat.liveShown, chat.liveEnded] = [text, same, false];
+          if (text !== null && same < text.length) this.typeLive();
+        }
         this.app.reading.changed(chat);
         break;
       }
@@ -105,6 +119,24 @@ export class AppStream {
         this.app.life.onFrame(e.event, data);
         break;
     }
+  }
+
+  /** Shows more of each chat's live text every `TYPE_MS` until all of it shows. */
+  private typeLive() {
+    this.typing ??= setInterval(() => {
+      let left = false;
+      for (const chat of this.app.chats.values()) {
+        const length = chat.live?.length ?? 0;
+        if (chat.liveShown >= length) continue;
+        chat.liveShown += Math.max(1, Math.ceil((length - chat.liveShown) / TYPE_STEPS));
+        left ||= chat.liveShown < length;
+        this.app.reading.changed(chat);
+      }
+      if (!left && this.typing !== null) {
+        clearInterval(this.typing);
+        this.typing = null;
+      }
+    }, TYPE_MS);
   }
 
   /** ADR 0102: a notice click opens its chat. A chat newer than the snapshot is read first. */

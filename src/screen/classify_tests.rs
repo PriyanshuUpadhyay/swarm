@@ -38,6 +38,24 @@ mod tests {
     }
 
     #[test]
+    fn a_claude_answer_with_no_end_row_under_its_echo_is_working() {
+        // Claude hides its spinner row while it writes the answer.
+        let writing = "❯ Write about the windmill.\n\n⏺ The first windmills ground grain.\n\n────\n❯ \n────\n";
+        assert_eq!(screen_state("claude", writing), Some(ScreenState::Working));
+        let ended = writing.replace("\n\n────", "\n✻ Sautéed for 9s · done 1:34 AM\n────");
+        assert_eq!(screen_state("claude", &ended), Some(ScreenState::Idle));
+    }
+
+    #[test]
+    fn a_codex_answer_with_no_end_row_under_its_echo_is_working() {
+        // Codex hides its working row while it writes the answer.
+        let writing = fixture!("codex-turn-text");
+        assert_eq!(screen_state("codex", writing), Some(ScreenState::Working));
+        let ended = writing.replace("\n› Ask Codex", "  Worked for 12s • 6:52 PM\n› Ask Codex");
+        assert_eq!(screen_state("codex", &ended), Some(ScreenState::Idle));
+    }
+
+    #[test]
     fn a_codex_error_row_above_the_idle_composer_is_a_failure_with_its_message() {
         let rows = fixture!("codex-failed");
         assert_eq!(screen_state("codex", rows), Some(ScreenState::Failed));

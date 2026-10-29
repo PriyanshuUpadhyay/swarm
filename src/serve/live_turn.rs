@@ -22,6 +22,7 @@ pub(super) async fn watch_turn(
         return;
     };
     let (session, agent) = (session.to_string(), agent.to_string());
+    let log_agent = agent.clone();
     let Some(server) = app.upgrade() else {
         return;
     };
@@ -48,6 +49,11 @@ pub(super) async fn watch_turn(
     // The first read is always sent, so a page that held an earlier watcher's text gets this
     // one's, or null.
     let mut last: Option<Option<String>> = None;
+    // pi's text starts under the turn's message. A send can show as working before pi logs the
+    // message, so only a message other than the one before this turn is this turn's.
+    // ponytail: the same message sent twice in a row shows no live text on its second turn.
+    let mut prompt: Option<String> = None;
+    let mut before: Option<Option<String>> = None;
     let mut timer = tokio::time::interval(TICK);
     timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     loop {
@@ -71,13 +77,29 @@ pub(super) async fn watch_turn(
                 .find(|row| row["id"] == agent.as_str() && row["state"] == "working")
                 .and_then(|row| row["pane"].as_str().map(str::to_string))
         };
+        if provider == "pi" {
+            match (&pane, &prompt) {
+                (None, Some(_)) => before = Some(prompt.take()),
+                (None, None) if before.is_none() => {
+                    before = Some(sent_prompt(&server, &session, &log_agent).await);
+                }
+                (Some(_), None) => {
+                    let sent = sent_prompt(&server, &session, &log_agent).await;
+                    if before.as_ref() != Some(&sent) {
+                        prompt = sent;
+                    }
+                }
+                _ => {}
+            }
+        }
         drop(server);
         let text = match pane {
             Some(pane) => {
                 let (adapter, provider) = (adapter.clone(), provider.clone());
+                let sent = prompt.clone();
                 let read = tokio::task::spawn_blocking(move || {
                     let rows = adapter.capture_within(&[("pane", &pane)], CAPTURE)?;
-                    Some(swarm::screen::turn_text(&provider, &rows))
+                    Some(swarm::screen::turn_text(&provider, &rows, sent.as_deref()))
                 })
                 .await
                 .ok()
@@ -119,4 +141,17 @@ pub(super) async fn watch_turn(
             }
         }
     }
+}
+
+/// The last message the owner sent to `agent`, from its log.
+async fn sent_prompt(server: &App, session: &str, agent: &str) -> Option<String> {
+    let (root, session, agent) = (server.root.clone(), session.to_string(), agent.to_string());
+    let log = tokio::task::spawn_blocking(move || resolve_log(&root, &session, &agent))
+        .await
+        .ok()?
+        .ok()?;
+    last_prompt(server, &log)
+        .await
+        .ok()
+        .filter(|prompt| !prompt.is_empty())
 }

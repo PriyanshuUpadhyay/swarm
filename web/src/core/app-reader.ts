@@ -35,7 +35,7 @@ export class AppReader {
   constructor(private readonly app: App) {}
 
   build(chat: Chat) {
-    const live = liveRow(chat.rows, chat.live);
+    const live = liveRow(chat.rows, chat.live?.slice(0, chat.liveShown) ?? null);
     const rows = live || chat.queue.length ? [...chat.rows, ...(live ? [live] : []), ...chat.queue] : chat.rows;
     return lines(rows, { folds: chat.folds, opened: chat.opened });
   }
@@ -60,6 +60,7 @@ export class AppReader {
       usage: null,
       queue: [],
       live: null,
+      liveShown: 0,
       liveEnded: false,
       typed: [],
       ...this.freshReaderState(),

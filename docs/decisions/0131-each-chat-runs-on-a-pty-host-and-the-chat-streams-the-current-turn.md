@@ -52,8 +52,16 @@ a host apart from serve lives through a serve restart.
 - While an agent works, serve reads its pane with the chat adapter's `capture` verb every 250 ms,
   and the chat shows one live row under the log rows. The live row holds the last block of the
   turn above the input box, without its mark, the status rows, and the hints: a Claude `⏺` or
-  Codex `•` block, pi's text after its last tool, and AGY's spinner row. A tool block, or the rest
-  of the sent message before the first block, shows no row. The page hides the row once a recent log row
+  Codex `•` block, pi's text under the turn's message (read from its log) or its last tool, and
+  AGY's spinner row. A tool block, or the rest of the sent message before the first block, shows
+  no row, and so does a screen that still shows the ended turn's end row (Claude's
+  `✻ Sautéed for 1s · done …`, Codex's `Worked for 37s • …`). A hosted pane that no one views is
+  80 columns by 100 rows, so a turn's whole answer stays on the screen; a tmux pane keeps its
+  size. The page types each new piece of text out over a few frames, so the row grows smoothly
+  and not a screen line at a time.
+- Claude and Codex hide their working row while they write the answer. Text under the latest
+  echo of a sent message with no end row reads as working, so the screen read of ADR 0070 does
+  not end the turn early. The page hides the row once a recent log row
   holds its text, a row of an earlier turn included, because pi's screen can still show the last
   turn's answer. A turn can end seconds before its log rows land, so at turn end a text that a
   log row will hide stays until that row lands. A short spinner text goes at once. A new chair's hook stores its log only at the end of its first
@@ -69,8 +77,11 @@ a host apart from serve lives through a serve restart.
 - Good: the read uses `capture`, so a chat that runs in tmux gets the live row too.
 - Bad: AGY draws its answer only at turn end, so its live row shows only the one cut spinner line
   until then.
-- Bad: pi marks no block, so its live row starts after its first tool. A model bridge that sends
+- Bad: pi marks no block, so its live row needs its echo of the sent message on the screen; the
+  same message sent twice in a row shows no live row the second time. A model bridge that sends
   its answer whole shows nothing until turn end.
+- Bad: a Claude or Codex version that drops its end row reads as working once the hook report is
+  stale, until the next turn.
 - Bad: the live row is the text as the CLI draws it, wrapped at the pane width, and a CLI update
   that changes its prompt echo or composer can break the cut until the reader learns it.
 - Bad: a host is a process per chat that outlives serve, and a chat ends only when its chair

@@ -10,8 +10,10 @@ use std::os::fd::{FromRawFd, OwnedFd};
 use std::os::unix::process::CommandExt;
 use std::sync::Arc;
 
-/// tmux's size for a detached session, so a CLI lays out its screen as it does in tmux-swarm.
-pub(super) const ROWS: u16 = 24;
+/// The size of a pane no one views: tmux's width for a detached session, so a CLI lays out its
+/// lines as it does in tmux-swarm, and enough rows that a turn's whole answer stays on the screen
+/// the live row reads (ADR 0131).
+pub(super) const ROWS: u16 = 100;
 pub(super) const COLS: u16 = 80;
 /// tmux's default history-limit.
 const SCROLLBACK: usize = 2000;

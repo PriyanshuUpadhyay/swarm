@@ -2,7 +2,7 @@
 
 use super::{ROWS, ScreenState, pi_composer, prompt};
 
-const CLAUDE_SPINNERS: &[char] = &['*', '·', '✢', '✳', '✶', '✻', '✽'];
+pub(super) const CLAUDE_SPINNERS: &[char] = &['*', '·', '✢', '✳', '✶', '✻', '✽'];
 
 /// True for a numbered choice row such as `❯ 1. Yes` or `  2. No`, after an optional marker.
 fn is_option(line: &str, marker: char) -> bool {
@@ -79,7 +79,13 @@ pub fn screen_state(provider: &str, rows: &str) -> Option<ScreenState> {
             if spinner || has(&["esc to interrupt"]) {
                 return Some(ScreenState::Working);
             }
-            (0..lines.len()).any(idle_at).then_some(ScreenState::Idle)
+            (0..lines.len()).any(idle_at).then(|| {
+                if writing(rows, '❯', "claude") {
+                    ScreenState::Working
+                } else {
+                    ScreenState::Idle
+                }
+            })
         }
         "codex" => {
             let questions = ["would you like to", "to submit answer"];
@@ -106,6 +112,8 @@ pub fn screen_state(provider: &str, rows: &str) -> Option<ScreenState> {
             }
             Some(if codex_failure(lines).is_some() {
                 ScreenState::Failed
+            } else if writing(rows, '›', "codex") {
+                ScreenState::Working
             } else {
                 ScreenState::Idle
             })
@@ -156,6 +164,34 @@ pub fn failure_detail(provider: &str, rows: &str) -> Option<String> {
         "codex" => codex_failure(lines),
         _ => None,
     }
+}
+
+/// Claude and Codex hide their working row while they write the answer, so the idle input line
+/// shows under it. Each ends a turn with a row of its own (`live::ended`), and Codex a failed or
+/// stopped one with a `■` row, so text under the latest echo of a sent message with neither row
+/// is a turn still running. Reads the whole screen, because the echo is above the bottom rows.
+/// ponytail: a CLI version with no end row reads as working once the hook report goes stale;
+/// check the end rows again on a Claude or Codex upgrade.
+fn writing(rows: &str, mark: char, provider: &str) -> bool {
+    let lines: Vec<&str> = rows.trim_end().lines().collect();
+    let Some(input) = lines
+        .iter()
+        .rposition(|line| line.trim_start().starts_with(mark))
+    else {
+        return false;
+    };
+    // An approval's cursor row starts with the same mark, but it is a choice, not a message.
+    let Some(echo) = lines[..input]
+        .iter()
+        .rposition(|line| line.starts_with(mark) && !is_option(line, mark))
+    else {
+        return false;
+    };
+    let turn = &lines[echo + 1..input];
+    turn.iter().any(|line| !line.trim().is_empty())
+        && !turn
+            .iter()
+            .any(|line| super::live::ended(provider, line) || line.trim_start().starts_with('■'))
 }
 
 /// Codex ends a failed turn with a red `■ message` row (codex-rs `new_error_event`). It counts

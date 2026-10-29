@@ -331,7 +331,7 @@ fn a_viewer_sees_the_screen_types_keys_and_the_last_one_out_restores_the_size() 
     std::io::Write::write_all(&mut keys, b"echo typed-$((2+3))\r").unwrap();
     wait_for(|| text().contains("typed-5"), "the typed line's output");
     host.out("ring", &[("pane", &pane), ("text", "stty size")]);
-    wait_for(|| text().contains("24 80"), "the default size");
+    wait_for(|| text().contains("100 80"), "the default size");
     // With no terminal the viewer asks for no size; the resize op that its SIGWINCH sends sets one.
     let n: u64 = pane.rsplit(':').next().unwrap().parse().unwrap();
     let stream = std::os::unix::net::UnixStream::connect(host.socket()).unwrap();
@@ -353,7 +353,7 @@ fn a_viewer_sees_the_screen_types_keys_and_the_last_one_out_restores_the_size() 
     // The last viewer out puts the pane back at its detached size.
     host.out("ring", &[("pane", &pane), ("text", "stty size > size")]);
     wait_for(
-        || read(&host.home.join("size")) == "24 80\n",
+        || read(&host.home.join("size")) == "100 80\n",
         "the size put back",
     );
 }

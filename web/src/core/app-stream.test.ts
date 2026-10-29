@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { App } from "./app";
 import { AppStream } from "./app-stream";
 import type { Chat } from "./app-types";
@@ -43,7 +43,7 @@ describe("show frame", () => {
 describe("live frame", () => {
   /** An App stand-in that holds one ready chair chat with live text on screen. */
   function liveApp() {
-    const chat = { id: "s", key: "s:chair", sessionId: "s", state: "ready", rows: [], end: 0, version: 0, shift: false, live: "The history of the bicycle", liveEnded: false } as unknown as Chat;
+    const chat = { id: "s", key: "s:chair", sessionId: "s", state: "ready", rows: [], end: 0, version: 0, shift: false, live: "The history of the bicycle", liveShown: 26, liveEnded: false } as unknown as Chat;
     const app = {
       chats: new Map([["s", chat]]),
       pending: new Map(),
@@ -71,11 +71,32 @@ describe("live frame", () => {
     stream.flush();
     expect(chat.live).toBe("Next turn");
   });
+
+  it("types a new text out in steps from where it differs, and shows all of it at turn end", () => {
+    vi.useFakeTimers();
+    try {
+      const { stream, chat } = liveApp();
+      const next = "The history of the bicycle began in 1817, when Karl Drais rode a machine with no pedals.";
+      stream.onSse({ event: "live", data: JSON.stringify({ key: "s:chair", text: next }) });
+      expect(chat.liveShown).toBe(26);
+      vi.advanceTimersByTime(40);
+      expect(chat.liveShown).toBeGreaterThan(26);
+      expect(chat.liveShown).toBeLessThan(next.length);
+      vi.advanceTimersByTime(1000);
+      expect(chat.liveShown).toBe(next.length);
+      stream.onSse({ event: "live", data: JSON.stringify({ key: "s:chair", text: "Another block." }) });
+      expect(chat.liveShown).toBe(0);
+      stream.onSse({ event: "live", data: JSON.stringify({ key: "s:chair", text: null }) });
+      expect(chat.live).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe("live frame at turn end", () => {
   it("drops a short spinner text, and a text the log already holds, at once", () => {
-    const chat = { id: "s", key: "s:chair", sessionId: "s", state: "ready", rows: [], end: 0, version: 0, shift: false, live: "Working...", liveEnded: false } as unknown as Chat;
+    const chat = { id: "s", key: "s:chair", sessionId: "s", state: "ready", rows: [], end: 0, version: 0, shift: false, live: "Working...", liveShown: 10, liveEnded: false } as unknown as Chat;
     const app = { chats: new Map([["s", chat]]), pending: new Map(), openId: "s", notify: () => {}, reading: { changed: (c: Chat) => c.version++ } };
     const stream = new AppStream(app as unknown as App);
     stream.onSse({ event: "live", data: JSON.stringify({ key: "s:chair", text: null }) });
