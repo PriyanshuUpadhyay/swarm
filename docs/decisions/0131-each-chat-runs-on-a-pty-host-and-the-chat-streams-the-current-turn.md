@@ -39,27 +39,33 @@ wants swarm to stop needing tmux.
 Chosen: the first option, because only a PTY that swarm owns sees the bytes of all four CLIs, and
 a host apart from serve lives through a serve restart.
 
-- Serve starts a detached `swarm pty --host` for each new or resumed chat before it launches the
-  chair. The chair is the host's first pane, and its children are hosted panes, as in ADR 0126.
-  The host ends when its last pane ends. This reverses the rejection of a PTY daemon in ADR 0123.
+- `swarm launch orchestrator` starts a detached `swarm pty host` for the chat, so a chat that the
+  app starts and one that the CLI starts get the same host. The chair is the host's first pane,
+  and its children are hosted panes, as in ADR 0126. The host ends when the chair ends. This
+  reverses the rejection of a PTY daemon in ADR 0123.
 - Codex runs on the host as the other CLIs do.
 - `swarm pty attach` sends a `vt100` snapshot and then the live bytes, so the Cmd+J terminal of
   ADR 0104 works for a hosted pane.
 - A setting chooses the terminal host, PTY or tmux. PTY is the default, and tmux is offered only
   when `tmux` is on `PATH`. A chat that runs in tmux stays there until it ends.
-- While an agent works, serve watches its hosted pane, and the chat shows one live row under the
-  log rows. The live row holds the screen text after the last echo of the user's prompt, without
-  the composer, the status lines, and the lines that already landed as log rows. At turn end the
-  live row goes away. This is a named screen read under ADR 0120 and an exception to ADR 0099's
-  "nothing more", because the live row is a preview and never a record.
-- Other adapters (`tmux`, `herdr`, `rex`, `superset`) get no live row.
+- While an agent works, serve reads its pane with the chat adapter's `capture` verb every 250 ms,
+  and the chat shows one live row under the log rows. The live row holds the last block of the
+  turn above the input box, without its mark, the status rows, and the hints: a Claude `⏺` or
+  Codex `•` block, pi's text after its last tool, and AGY's spinner row. A tool block, or the rest
+  of the sent message before the first block, shows no row. The page hides the row once a log row
+  of the same turn holds its text, and at turn end the row goes away. This is a named screen read
+  under ADR 0120 and an exception to ADR 0099's "nothing more", because the live row is a preview
+  and never a record.
 
 ### Consequences
 
 - Good: a new chat needs no tmux, and the chat shows Claude, Codex, and pi text as it arrives.
 - Good: a serve restart keeps the chats and their stream.
+- Good: the read uses `capture`, so a chat that runs in tmux gets the live row too.
 - Bad: AGY draws its answer only at turn end, so its live row shows only the one cut spinner line
   until then.
+- Bad: pi marks no block, so its live row starts after its first tool. A model bridge that sends
+  its answer whole shows nothing until turn end.
 - Bad: the live row is the text as the CLI draws it, wrapped at the pane width, and a CLI update
   that changes its prompt echo or composer can break the cut until the reader learns it.
 - Bad: a host is a process per chat that outlives serve, and a chat ends only when its chair
