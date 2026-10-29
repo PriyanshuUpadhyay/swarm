@@ -69,6 +69,17 @@ describe("navigation UX", () => {
     app.openChat("one", undefined, { write: false });
     expect(app.recentSelected).toBe("one");
   });
+  it("focuses the Recent row without moving focus back to its list", () => {
+    const app = harness();
+    app.openId = "one";
+    const row = { focus: vi.fn() };
+    const list = { focus: vi.fn() };
+    vi.stubGlobal("document", { querySelector: (selector: string) => selector.includes("[tabindex") ? row : list });
+    vi.stubGlobal("requestAnimationFrame", (callback: () => void) => callback());
+    app.sidebar.setSidebarView(2);
+    expect(row.focus).toHaveBeenCalledOnce();
+    expect(list.focus).not.toHaveBeenCalled();
+  });
   it("does not fold hidden tree rows in Recent", () => {
     const app = harness();
     app.sidebarView = 2;

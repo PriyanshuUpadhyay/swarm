@@ -223,7 +223,10 @@ export class AppSidebar {
       this.app.notify();
     }
     const list = n === 2 ? '[data-testid="recent"]' : '[data-testid="sidebar"]';
-    whenPainted(() => document.querySelector(list) !== null, () => document.querySelector<HTMLElement>(`${list} [tabindex="0"]`)?.focus() ?? document.querySelector<HTMLElement>(list)?.focus());
+    whenPainted(() => document.querySelector(list) !== null, () => {
+      const target = document.querySelector<HTMLElement>(`${list} [tabindex="0"]`) ?? document.querySelector<HTMLElement>(list);
+      target?.focus();
+    });
   }
 
   /** The sessions of the picked chat rows that the tree still lists. */

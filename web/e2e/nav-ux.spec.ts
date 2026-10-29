@@ -190,7 +190,8 @@ test("saving the same rename leaves the auto title unset and a bad chat link sho
 
 test("Home orders Recent work by activity while the sidebar keeps its dragged order", async ({ page }) => {
   const data = await tree();
-  const sessions = data.chats!.slice(0, 2).map((chat) => chat.selection!.chat!);
+  // New chats go above the saved order, so seed every known chat before checking a drag order.
+  const sessions = data.chats!.map((chat) => chat.selection!.chat!);
   await page.addInitScript((order) => localStorage.setItem("swarm.recentOrder", JSON.stringify(order)), sessions);
   await page.route("**/api/snapshot", async (route) => {
     const response = await route.fetch();
