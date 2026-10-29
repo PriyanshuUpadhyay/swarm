@@ -43,10 +43,14 @@ fn pane_of(pane: &str) -> Result<(&str, u64), Box<dyn std::error::Error>> {
 pub(crate) fn client(verb: &str) -> Result<String, Box<dyn std::error::Error>> {
     let var = |name: &str| std::env::var(format!("SWARM_{name}")).unwrap_or_default();
     if verb == "spawn" {
-        let env: HashMap<String, String> = ["SESSION_ID", "AGENT_ID", "HOME", "ADAPTER"]
+        let mut env: HashMap<String, String> = ["SESSION_ID", "AGENT_ID", "HOME", "ADAPTER"]
             .iter()
             .map(|name| (format!("SWARM_{name}"), var(name)))
             .collect();
+        // A hosted chair spawns its children on the same host (ADR 0131).
+        if var("AGENT_ID") == "orchestrator" {
+            env.insert("SWARM_PTY_HOST".into(), var("PTY_HOST"));
+        }
         let cwd = std::env::current_dir()?.to_string_lossy().into_owned();
         let feed = var("FEED");
         return request(

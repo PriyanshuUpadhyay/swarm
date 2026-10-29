@@ -41,6 +41,12 @@ fn main() {
     }
     if let [cmd, verb] = args.as_slice()
         && cmd == "pty"
+        && verb == "host"
+    {
+        std::process::exit(pty_host_headless());
+    }
+    if let [cmd, verb] = args.as_slice()
+        && cmd == "pty"
         && verb != "--"
     {
         match pty_client(verb) {

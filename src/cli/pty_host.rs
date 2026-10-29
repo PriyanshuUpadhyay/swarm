@@ -57,6 +57,8 @@ pub(crate) struct Host {
     /// can own the file at this path, and this host must not remove that one.
     bound: (u64, u64),
     children: Children,
+    /// The number of the first pane, which a headless host holds as its chair.
+    first: u64,
 }
 
 /// The host socket of `session`. A socket path holds at most 104 bytes on macOS, and a branch
@@ -162,12 +164,95 @@ impl Host {
             socket,
             bound: (meta.dev(), meta.ino()),
             children,
+            first: start,
         })
     }
 
     pub(crate) fn socket(&self) -> &std::path::Path {
         &self.socket
     }
+}
+
+/// How long a headless host waits for its first pane, which the launch that started it spawns.
+const FIRST_PANE_WAIT: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// `swarm pty host`: a host with no chair terminal of its own, which `launch orchestrator` starts
+/// for a chat (ADR 0131). It prints its socket once it listens. The chair is its first pane, and
+/// when the chair ends the host ends and hangs up the chair's children, as ADR 0126 has them.
+pub(crate) fn headless() -> i32 {
+    let host = match Host::start() {
+        Ok(host) => host,
+        Err(error) => {
+            eprintln!("swarm pty host: {error}");
+            return 1;
+        }
+    };
+    println!("{}", host.socket.display());
+    // The launch reads one line, so the pipe closes here and a later print cannot fail on it.
+    // SAFETY: dup2 of a fresh /dev/null fd over stdout.
+    if let Ok(null) = std::fs::OpenOptions::new().write(true).open("/dev/null") {
+        let _ = std::io::stdout().flush();
+        unsafe { libc::dup2(std::os::fd::AsRawFd::as_raw_fd(&null), 1) };
+    }
+    let started = std::time::Instant::now();
+    let mut seen = false;
+    loop {
+        std::thread::sleep(LOCK_POLL * 10);
+        let chair = lock(&host.children).contains_key(&host.first);
+        seen |= chair;
+        if !chair && (seen || started.elapsed() > FIRST_PANE_WAIT) {
+            return 0;
+        }
+    }
+}
+
+/// The socket of `session`'s host, after starting a headless host when none answers there. The
+/// host leads its own session, so it outlives the launch and a serve restart (ADR 0131).
+pub(crate) fn ensure(session: &str) -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
+    use std::io::BufRead;
+    use std::os::unix::process::CommandExt;
+    let socket = socket_of(session)?;
+    if UnixStream::connect(&socket).is_ok() {
+        return Ok(socket);
+    }
+    let runs = swarm::paths::root_dir()?.join(format!("runs/{session}"));
+    std::fs::create_dir_all(&runs)?;
+    let log = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(runs.join("pty-host.log"))?;
+    let mut command = std::process::Command::new(std::env::current_exe()?);
+    command
+        .args(["pty", "host"])
+        .env("SWARM_SESSION_ID", session)
+        .env_remove("SWARM_PTY_HOST")
+        .env_remove("SWARM_PTY_PANE")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(log);
+    // SAFETY: setsid is async-signal-safe.
+    unsafe {
+        command.pre_exec(|| {
+            if libc::setsid() == -1 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+    let mut child = command.spawn()?;
+    // A host that cannot start exits, which closes the pipe, and its start waits at most
+    // LOCK_WAIT, so this read ends.
+    let mut line = String::new();
+    std::io::BufReader::new(child.stdout.take().expect("piped stdout")).read_line(&mut line)?;
+    if std::path::Path::new(line.trim()) != socket {
+        let _ = child.wait();
+        return Err(format!(
+            "swarm pty: the chat's host did not start; see {}",
+            runs.join("pty-host.log").display()
+        )
+        .into());
+    }
+    Ok(socket)
 }
 
 impl Drop for Host {

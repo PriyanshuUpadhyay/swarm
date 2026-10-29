@@ -85,6 +85,7 @@ mod pty;
 pub(crate) use pty::*;
 mod pty_host;
 pub(crate) use pty_host::client as pty_client;
+pub(crate) use pty_host::{ensure as ensure_pty_host, headless as pty_host_headless};
 
 mod ring;
 pub(crate) use ring::*;

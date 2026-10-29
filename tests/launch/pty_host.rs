@@ -202,3 +202,75 @@ fn swarm_child_host_wraps_the_chair_in_a_host_whatever_its_provider() {
         assert_eq!(script.contains("'pty'"), host, "{script}");
     }
 }
+
+#[test]
+fn an_app_chair_runs_on_a_headless_host_and_its_children_end_with_it() {
+    let home = scratch("pty-headless");
+    // The chair and the seat report working, as Claude does, and the chair notes its host.
+    tool(
+        &home,
+        "claude",
+        "case \"$*\" in *--model*) ;; *) exit 0 ;; esac\n\
+         printf '%s\\n' \"$SWARM_PTY_HOST\" > \"$SWARM_HOME/host-$SWARM_AGENT_ID\"\n\
+         report() { printf '\\033]7501;state=working:app=claude\\007'; }\n\
+         report; while read -r line; do report; done",
+    );
+    let app = [("SWARM_ADAPTER", "tmux-swarm")];
+    let session = swarm(&home, &app, &["session", "new", "lane"]);
+    assert!(session.status.success(), "{}", stderr(&session));
+    let session = String::from_utf8(session.stdout)
+        .unwrap()
+        .trim()
+        .to_string();
+    let cwd = home.join("repo");
+    std::fs::create_dir_all(&cwd).unwrap();
+    let cwd = cwd.to_string_lossy().into_owned();
+    let env = [
+        ("SWARM_ADAPTER", "tmux-swarm"),
+        ("SWARM_SESSION_ID", session.as_str()),
+    ];
+    let launch = |env: &[(&str, &str)], agent: &str| {
+        let args = [
+            "launch",
+            agent,
+            "chat",
+            "--provider",
+            "claude",
+            "--model",
+            "opus",
+        ];
+        let output = swarm(&home, env, &[&args[..], &["--cwd", &cwd]].concat());
+        assert!(output.status.success(), "{}", stderr(&output));
+        String::from_utf8(output.stdout).unwrap().trim().to_string()
+    };
+    // The test's PATH has no tmux, so the chair needs the host.
+    let chair = launch(&env, "orchestrator");
+    assert!(chair.starts_with(&format!("pty:{session}:")), "{chair}");
+    let noted = |agent: &str| std::fs::read_to_string(home.join(format!("host-{agent}")));
+    wait_for(
+        || noted("orchestrator").is_ok_and(|text| text.ends_with('\n')),
+        "the chair",
+    );
+    let socket = noted("orchestrator").unwrap().trim().to_string();
+    assert!(std::os::unix::net::UnixStream::connect(&socket).is_ok());
+
+    // The chair's env sends its seat to the same host.
+    let chair_env = [
+        env[0],
+        env[1],
+        ("SWARM_AGENT_ID", "orchestrator"),
+        ("SWARM_PTY_HOST", socket.as_str()),
+    ];
+    let seat = launch(&chair_env, "seat");
+    assert!(seat.starts_with(&format!("pty:{session}:")), "{seat}");
+    wait_for(|| noted("seat").is_ok(), "the seat");
+
+    // The chair's end ends the host, and the seat with it.
+    let close = swarm(&home, &[("SWARM_PANE", chair.as_str())], &["pty", "close"]);
+    assert!(close.status.success(), "{}", stderr(&close));
+    wait_for(
+        || std::os::unix::net::UnixStream::connect(&socket).is_err(),
+        "the host to stop",
+    );
+    let _ = std::fs::remove_dir_all(&home);
+}
