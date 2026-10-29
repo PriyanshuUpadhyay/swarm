@@ -4,15 +4,29 @@ import type { App } from "../core/app";
 import { diffLines, type Changes, type DiffComment, type FileDiff, type Load } from "../core/changes";
 import type { PatchLine } from "../core/transcript";
 import { Button } from "../components/ui/button";
+import { SurfaceFind } from "./surface-find";
+import { textRanges, paintRanges } from "./find-text";
 import { plural } from "./changes-shared";
 
 function DiffPane({ app, changes }: { app: App; changes: Changes }) {
   const view = useSyncExternalStore(changes.subscribe, () => changes.view);
+  const surface = useRef<HTMLDivElement>(null);
+  const searchIndex = useRef(0);
+  const search = (query: string, direction: number) => {
+    const body = surface.current?.querySelector<HTMLElement>(".patch");
+    const ranges = body ? textRanges(body, query) : [];
+    searchIndex.current = direction ? (searchIndex.current + direction + ranges.length) % ranges.length : 0;
+    const range = ranges[searchIndex.current];
+    paintRanges("surface-find", range ? [range] : []);
+    range?.startContainer.parentElement?.scrollIntoView({ block: "nearest" });
+    return ranges.length ? `${searchIndex.current + 1} of ${ranges.length}` : query ? "No matches" : "";
+  };
   const d = view.diff;
   if (d.state === "idle") return <div className="diff-pane" />;
   const data = d.state === "ready" ? d.data : null;
   return (
-    <div className="diff-pane" data-testid="diff-pane" data-state={d.state}>
+    <div ref={surface} tabIndex={-1} data-find-surface="diff" className="diff-pane" data-testid="diff-pane" data-state={d.state}>
+      <SurfaceFind surface={surface} scope="diff" search={search} />
       {data && (
         <div className="diff-head">
           <span className="min-w-0 truncate font-medium" title={data.path} data-testid="diff-path">
@@ -44,15 +58,17 @@ function DiffPane({ app, changes }: { app: App; changes: Changes }) {
  *  box opens under it. Keys in the body: j/k or arrows move, Shift extends, Enter or c comments. */
 function DiffBody({ app, changes, d, comments }: { app: App; changes: Changes; d: FileDiff; comments: DiffComment[] }) {
   const lines = useMemo(() => (d.patch ? diffLines(d.patch) : []), [d.patch]);
-  const [sel, setSel] = useState<{ anchor: number; cursor: number } | null>(null);
-  const [composing, setComposing] = useState(false);
+  const editor = useSyncExternalStore(changes.subscribe, () => changes.editor(d.path, d.layer ?? "branch"));
+  const [sel, setSel] = useState<{ anchor: number; cursor: number } | null>(editor);
+  const [composing, setComposing] = useState(!!editor);
   const body = useRef<HTMLDivElement>(null);
   // A new file or a new patch drops the selection.
-  const [shown, setShown] = useState(d.patch);
-  if (shown !== d.patch) {
-    setShown(d.patch);
-    setSel(null);
-    setComposing(false);
+  const identity = `${d.layer}\n${d.path}\n${d.patch}`;
+  const [shown, setShown] = useState(identity);
+  if (shown !== identity) {
+    setShown(identity);
+    setSel(editor);
+    setComposing(!!editor);
   }
   if (d.notice) return <p className="px-3 py-3 text-xs text-muted-foreground">{d.notice}</p>;
   if (!lines.length) return <p className="px-3 py-3 text-xs text-muted-foreground">No text changes.</p>;
@@ -95,6 +111,7 @@ function DiffBody({ app, changes, d, comments }: { app: App; changes: Changes; d
   };
   const done = () => {
     setComposing(false);
+    changes.setEditor(d.path, d.layer ?? "branch", null);
     body.current?.focus();
   };
 
@@ -108,6 +125,8 @@ function DiffBody({ app, changes, d, comments }: { app: App; changes: Changes; d
             {composing && sel && i === hi && (
               <CommentBox
                 label={`${d.path}`}
+                text={editor?.text ?? ""}
+                onChange={(text) => changes.setEditor(d.path, d.layer ?? "branch", { ...sel, text })}
                 onAdd={(text) => {
                   changes.addComment(lo, hi, text);
                   setSel(null);
@@ -147,8 +166,7 @@ const DiffLine = memo(function DiffLine({ l, i, picked }: { l: PatchLine; i: num
   );
 });
 
-function CommentBox({ label, onAdd, onCancel }: { label: string; onAdd: (text: string) => void; onCancel: () => void }) {
-  const [text, setText] = useState("");
+function CommentBox({ label, text, onChange, onAdd, onCancel }: { label: string; text: string; onChange: (text: string) => void; onAdd: (text: string) => void; onCancel: () => void }) {
   return (
     <div className="comment-box" data-testid="comment-box">
       <MessageSquarePlusIcon className="mt-1 size-3.5 shrink-0 text-muted-foreground" />
@@ -159,7 +177,7 @@ function CommentBox({ label, onAdd, onCancel }: { label: string; onAdd: (text: s
         aria-label={`Comment on ${label}`}
         placeholder="What should the agent do with these lines?"
         data-testid="comment-input"
-        onChange={(e) => setText(e.target.value)}
+        onChange={(e) => onChange(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
             e.preventDefault();
