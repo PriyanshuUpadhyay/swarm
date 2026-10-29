@@ -73,3 +73,55 @@ a host apart from serve lives through a serve restart.
   exits or the owner closes it.
 - Bad: workspace shells (Cmd+J) stay on tmux until a later decision moves them, so tmux is still
   needed for them.
+
+## Decision Drivers
+
+- The owner wants the current turn to stream in the chat for Claude, Codex, pi, and AGY.
+- The owner wants swarm to stop needing tmux, and to offer tmux only when it is installed.
+- A chat must live through a serve restart, because each update restarts serve (ADR 0125).
+- The log stays the record of a turn (ADR 0099), so a preview must never land as a row.
+
+## Pros and Cons of the Options
+
+### A detached PTY host per chat, and a live row from its screen
+
+- Good, because one reader serves all four CLIs, and a new chat needs no tmux.
+- Good, because the host lives apart from serve, so a serve restart keeps the chat.
+- Bad, because the cut of the screen depends on each CLI's layout, which can change.
+- Bad, because each chat adds a process that outlives serve.
+
+### `swarm serve` holds the PTYs
+
+- Good, because no new process is needed.
+- Bad, because a serve restart ends every chat.
+
+### Keep tmux, and poll `capture`
+
+- Good, because the code and the panes stay as they are.
+- Bad, because tmux stays a dependency, which the owner wants to remove.
+
+### Read each CLI's structured token stream
+
+- Good, because the text arrives as the CLI sends it, with no screen cut.
+- Bad, because Claude has no such stream in interactive mode, so it still needs the screen.
+
+## Confirmation
+
+- `cargo test --test launch an_app_chair` checks that an app chair runs on its own host when tmux
+  is not on `PATH`, and that its children end with it.
+- `cargo test --test pty_host` checks attach, the viewer's end with its pane, and the cut of the
+  host's query answers.
+- `src/screen/live_tests.rs` checks the turn cut on real screens of the four CLIs. A CLI update
+  that breaks the cut fails these tests once its new screen is captured.
+- `serve::events::tests` checks the `live` frame of a chair chat and its null at turn end.
+
+## Informed by
+
+- The screen probes and the Claude log of 2026-10-29 in the front matter.
+- `src/cli/pty_host.rs` and ADR 0126, the host that this record extends.
+- `src/serve/follow.rs` and ADR 0099, the log-only chat that this record amends.
+
+## Links
+
+- Amends: 0099, 0120, 0123, 0126
+- Related: 0084, 0104, 0125
