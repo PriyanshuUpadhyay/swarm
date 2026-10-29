@@ -1,0 +1,24 @@
+  In the 1860s, French makers added cranks and pedals to the front wheel. This
+  machine was the velocipede, and people called it the "boneshaker" because the
+  iron-rimmed wheels made the ride hard. In the 1870s, makers built the
+  high-wheeler, or penny-farthing. One turn of the pedals moved the bike far,
+  because the front wheel was very large. But a fall from the high seat was
+  dangerous.                                  
+
+  In 1885, John Kemp Starley made the Rover "safety bicycle". It had two wheels 
+  of equal size and a chain that drove the rear wheel. In 1888, John Boyd Dunlop
+  added the air-filled tire, and the ride became soft and fast. Women and men
+  of all ages began to ride, and the bicycle changed how people travelled and
+  worked.     
+
+  In the 20th century, makers added gears, light alloy frames, and later carbon
+  fibre. Today the bicycle is a common tool for transport, sport, and clean city
+  travel.
+
+✻ Sautéed for 11s · done 6:52 PM                                              
+                             Plugins changed. Run /reload-plugins to activate.  
+────────────────────────────────────────────────────────────────────── live-lc ─
+❯                                                             
+────────────────────────────────────────────────────────────────────────────────
+  ➜  workers git:(swarm/streamable-outputs) Sonnet 5.5 acct owner ctx 6% c…
+  ⏵⏵ auto mode on (shift+tab to cycle) · ← 1 agent   

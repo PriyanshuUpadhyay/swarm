@@ -1,0 +1,19 @@
+
+      ▄▀▀▄        Antigravity CLI 1.4.10
+     ▀▀▀▀▀▀       owner@example.com (Google AI Pro)
+    ▀▀▀▀▀▀▀▀      Gemini 3.8 Flash (Medium)
+   ▄▀▀    ▀▀▄     ~/work/swarm/wt/streamable-outputs
+  ▄▀▀      ▀▀▄
+
+────────────────────────────────────────────────────────────                    
+> Run the shell command `ls docs` once, then without more tools write about 200
+  words on the history of the bicycle as plain paragraphs.                      
+
+○ Thought for 7.8s (Understood. Must first execute the `ls docs` command. A...) 
+● Ran (ls docs) (ctrl+o to expand)                                              
+⣻  Initial draft focuses on a concise history, starting with the draisine, ev...
+────────────────────────────────────────────────────────────────────────────────
+>                                                                               
+────────────────────────────────────────────────────────────────────────────────
+esc to cancel				accept-edits · Gemini 3.8 Flash · medium
+

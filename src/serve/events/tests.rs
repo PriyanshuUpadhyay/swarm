@@ -141,3 +141,84 @@ async fn show_tells_each_open_page_to_open_the_chat() {
     .await;
     assert!(bad.is_err());
 }
+#[tokio::test]
+async fn a_working_agent_streams_its_screen_text_and_the_turn_end_clears_it() {
+    let fixture = Fixture::new();
+    codex_log(&fixture, 2);
+    let screen = fixture.dir.join("screen.txt");
+    std::fs::copy(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/screens/codex-turn-text.txt"),
+        &screen,
+    )
+    .unwrap();
+    std::fs::create_dir_all(fixture.app.root.join("adapters")).unwrap();
+    std::fs::write(
+        fixture.app.root.join("adapters/tmux-swarm.conf"),
+        format!("capture = cat '{}'\n", screen.display()),
+    )
+    .unwrap();
+    let connection = swarm::store::open(&fixture.app.root.join("swarm.db")).unwrap();
+    swarm::store::set_provider(&connection, &fixture.session, "worker", "codex").unwrap();
+    swarm::store::set_log(&connection, &fixture.session, "worker", &fixture.log).unwrap();
+    drop(connection);
+    let agents = |state: &str| {
+        let agent = json!({"id": "worker", "pane": "%1", "alive": true, "state": state});
+        json!({ fixture.session.as_str(): [agent] })
+    };
+    {
+        let mut hub = fixture.app.hub.lock().unwrap();
+        hub.agents = agents("working");
+        hub.streams.insert("all".into(), client(&[]));
+    }
+    let key = format!("{}:worker", fixture.session);
+    let from = std::fs::metadata(&fixture.log).unwrap().len();
+    let _ = subscribe(
+        State(fixture.app.clone()),
+        Json(Subscription {
+            stream: "all".into(),
+            keys: vec![SubscriptionKey {
+                key: key.clone(),
+                from,
+                view: Some("rows".into()),
+            }],
+        }),
+    )
+    .await
+    .unwrap();
+    let live = |app: &App| {
+        let hub = app.hub.lock().unwrap();
+        hub.streams["all"]
+            .queue
+            .iter()
+            .filter(|frame| frame.name == "live")
+            .map(|frame| serde_json::from_str::<Value>(&frame.data).unwrap())
+            .collect::<Vec<_>>()
+    };
+    until_live(&fixture.app, &live, 1).await;
+    let frames = live(&fixture.app);
+    assert_eq!(frames[0]["key"], key.as_str());
+    assert!(
+        frames[0]["text"]
+            .as_str()
+            .unwrap()
+            .starts_with("A rider on an early bicycle")
+    );
+    fixture.app.hub.lock().unwrap().agents = agents("idle");
+    until_live(&fixture.app, &live, 2).await;
+    let frames = live(&fixture.app);
+    assert_eq!(frames.len(), 2);
+    assert_eq!(frames[1]["text"], Value::Null);
+    drop(Events {
+        app: fixture.app.clone(),
+        id: "all".into(),
+    });
+}
+
+async fn until_live(app: &App, live: &impl Fn(&App) -> Vec<Value>, count: usize) {
+    for _ in 0..40 {
+        if live(app).len() >= count {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}

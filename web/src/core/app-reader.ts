@@ -3,14 +3,28 @@
 import { queueRows, type Usage } from "./composer";
 import { MarkdownCache } from "./markdown";
 import { FoldChoices, findMatches, lines, mergeRows, type Line } from "./transcript";
+import type { Row } from "./api";
 import { TAIL, LRU_SIZE, type FullText, type Chat, type Find, type Reader, paneId } from "./app-types";
 import type { App } from "./app";
+
+const letters = (text: string) => text.replace(/[^\p{L}\p{N}]/gu, "");
+
+/** The running turn's screen text as a row, or null once a log row of this turn holds it. The
+ *  screen drops markdown marks and wraps lines, so only letters and digits are compared. */
+export function liveRow(rows: readonly Row[], text: string | null): Row | null {
+  const head = letters(text ?? "").slice(0, 80);
+  if (!head) return null;
+  for (let i = rows.length - 1; i >= 0 && rows[i].kind !== "user"; i--)
+    if (rows[i].kind === "assistant" && letters(rows[i].text).includes(head)) return null;
+  return { id: "live", kind: "assistant", text: text!, order: [Number.MAX_SAFE_INTEGER, -1] };
+}
 
 export class AppReader {
   constructor(private readonly app: App) {}
 
   build(chat: Chat) {
-    const rows = chat.queue.length ? chat.rows.concat(chat.queue) : chat.rows;
+    const live = liveRow(chat.rows, chat.live);
+    const rows = live || chat.queue.length ? [...chat.rows, ...(live ? [live] : []), ...chat.queue] : chat.rows;
     return lines(rows, { folds: chat.folds, opened: chat.opened });
   }
 
@@ -33,6 +47,7 @@ export class AppReader {
       loadingOlder: false,
       usage: null,
       queue: [],
+      live: null,
       typed: [],
       ...this.freshReaderState(),
     };

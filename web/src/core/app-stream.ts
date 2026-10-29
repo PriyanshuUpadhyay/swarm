@@ -72,6 +72,14 @@ export class AppStream {
         this.app.frame ||= requestAnimationFrame(() => this.flush());
         break;
       }
+      case "live": {
+        const chat = this.byKey(String(data.key));
+        if (!chat) break;
+        chat.live = typeof data.text === "string" ? data.text : null;
+        chat.version++;
+        if (chat.sessionId === this.app.openId) this.app.notify();
+        break;
+      }
       case "reset":
         void this.reset(String(data.key));
         break;

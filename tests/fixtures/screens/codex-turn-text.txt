@@ -1,0 +1,24 @@
+› Run the shell command `ls docs` once, then without more tools write about 200
+  words on the history of the bicycle as plain paragraphs.                     
+                                                                               
+                                                                               
+• Explored                                                                     
+  └ List docs                                                                  
+    + Show details                                                              
+                                                                                
+• A rider on an early bicycle pushed against the ground with both feet to move  
+  forward. The bicycle developed as makers added pedals, better wheels, and     
+  safer frames to this simple idea.                                             
+                                                                                
+  In 1817, German inventor Karl von Drais built a two-wheeled machine that    
+  riders moved with their feet. It had a wooden frame and a front wheel that  
+  could turn. It had no pedals, but it showed that a person could balance on two
+  wheels in line.                                                               
+  During the 1860s, French makers helped develop bicycles with pedals fixed to  
+  the front wheel. Their hard wheels gave a rough ride, which                   
+
+                                                                               
+› Ask Codex to do anything                                
+
+  GPT-6.1-Sol medium · ~/work/swarm/wt/streamable-outputs · swarm/streamable-ou…
+  ? for shortcuts                                     ⚠ 2 warnings · f2 to view
