@@ -67,8 +67,9 @@ export class AppNavigation {
     const navSeq = this.app.navSeq;
     const name = this.app.treeName;
     const workspace = this.app.workspace;
-    const [tree, tabs] = await Promise.all([
-      this.app.api.tree(name),
+    const [tree, archivedTree, tabs] = await Promise.all([
+      this.app.api.tree("workspaces"),
+      name === "archived" ? this.app.api.tree("archived") : null,
       // An unknown workspace is a 404; the strip stays empty.
       workspace ? this.app.api.tabs(workspace).catch(() => null) : null,
     ]);
@@ -78,9 +79,10 @@ export class AppNavigation {
       this.app.revision = tree.revision;
       this.app.folds.clear();
     }
-    this.app.tree = shareTree(this.app.tree?.view === name ? this.app.tree : null, tree);
+    this.app.tree = shareTree(this.app.tree, tree);
+    if (archivedTree) this.app.archivedTree = shareTree(this.app.archivedTree, archivedTree);
     if (tabs && workspace === this.app.workspace) this.app.tabs = tabs.view;
-    this.app.rows = navRows(this.app.tree, this.app.folds);
+    this.app.rows = navRows(this.app.treeName === "archived" ? this.app.archivedTree : this.app.tree, this.app.folds);
     return tabs ? { workspace: tabs.view.workspace, writeSeq: seq, navSeq } : null;
   }
 
@@ -107,6 +109,7 @@ export class AppNavigation {
     if (!this.app.restored) {
       this.app.restored = true;
       const asked = this.app.urlChat && resolveChat(this.app.urlChat, this.app.chatIds());
+      if (this.app.urlChat && !asked) this.app.notice("This chat link is unavailable. The chat may be archived or removed.", true);
       const row = tree.sections.flatMap((s) => s.rows).find((r) => r.id === tree.selectedRow);
       if (asked && !this.app.openId) {
         this.openChat(asked);
@@ -143,7 +146,7 @@ export class AppNavigation {
         return true;
       } catch (err) {
         this.app.folds.clear();
-        this.app.rows = navRows(this.app.tree, this.app.folds);
+        this.app.rows = navRows(this.app.treeName === "archived" ? this.app.archivedTree : this.app.tree, this.app.folds);
         this.app.notice(
           err instanceof ApiError && err.status === 409 ? "Your choices changed elsewhere. The list was reloaded; try again." : message(err),
           true,
@@ -296,6 +299,7 @@ export class AppNavigation {
     const kind: PerfKind = this.app.lru.includes(sessionId) ? "switch" : "open";
     if (this.app.openId !== sessionId) this.app.panes.leavePanes(sessionId);
     this.app.openId = sessionId;
+    if (this.app.sidebarView === 2 && this.app.recentSelected === null) this.app.recentSelected = sessionId;
     const workspace = workspaceOf(this.app.tree, this.app.snapshot, sessionId);
     const moved = workspace !== null && workspace !== this.app.workspace;
     if (workspace) this.app.workspace = workspace;
@@ -310,7 +314,7 @@ export class AppNavigation {
     }
     if (workspace && this.app.revision !== null && opts.write !== false) {
       // Swift's select: open the tab, then select; only a move to another workspace opens its project.
-      const section = this.app.tree?.sections.find((s) => s.rows.some((r) => r.selection?.chat === sessionId));
+      const section = this.app.tree?.sections.find((s) => s.rows.some((r) => r.id === workspace));
       if (moved && section && !section.expanded) void this.choose({ op: "expand", id: section.collapseId });
       void this.choose({ op: "open_tab", workspace, chat: sessionId });
       void this.choose({ op: "selected_chat", workspace, chat: sessionId, recording_history: opts.history !== false });
@@ -323,14 +327,13 @@ export class AppNavigation {
       this.app.panes.loadChair(chat);
     } else if (!this.app.liveAll) this.app.streaming.syncSubscriptions();
     this.app.notify();
-    // A restore leaves the keyboard on the page, where j and k walk the sidebar.
-    if (opts.write !== false) this.focusOpened(sessionId, e !== undefined, () => this.app.navSeq === seq && this.app.openId === sessionId);
+    if (opts.write !== false || typeof document === "undefined" || document.activeElement === document.body) this.focusOpened(sessionId, e !== undefined && e.key !== "Enter", () => this.app.navSeq === seq && this.app.openId === sessionId);
     if (e) measure(kind, sessionId, e.timeStamp, () => this.app.reading.transcriptPainted(sessionId));
   }
 
   /** ⌃⌘↓ / ⌃⌘↑ go to the next or previous workspace row in the sidebar, wrapping. */
   stepWorkspace(delta: number, e?: KeyboardEvent) {
-    const list = this.app.rows.filter((r) => r.kind === "workspace").map((r) => r.id);
+    const list = navRows(this.app.tree, this.app.folds).filter((r) => r.kind === "workspace").map((r) => r.id);
     if (!list.length) return;
     const i = this.app.workspace ? list.indexOf(this.app.workspace) : -1;
     const next = i < 0 ? (delta < 0 ? list.length - 1 : 0) : (i + delta + list.length) % list.length;

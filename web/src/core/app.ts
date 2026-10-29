@@ -47,6 +47,7 @@ export class App {
   view: View;
   snapshot: Snapshot | null = null;
   tree: TreeView | null = null;
+  archivedTree: TreeView | null = null;
   treeName: TreeName = "workspaces";
   rows: NavRow[] = [];
   /** Fold presses the server has not confirmed yet, by fold id. */
@@ -106,7 +107,7 @@ export class App {
   strip: Strip = { cells: NO_CELLS, panes: new Map(), focused: null, zoomed: null, reveal: null, revealSeq: 0 };
   readers = new Map<string, Reader>();
   /** Shows a short message to the owner; the view layer sets it (a toast). */
-  notice: (text: string, error?: boolean) => void = () => {};
+  notice: (text: string, error?: boolean, action?: { label: string; run: () => void }) => void = () => {};
   /** The server refused the token. */
   unauthorized: () => void = () => {};
 

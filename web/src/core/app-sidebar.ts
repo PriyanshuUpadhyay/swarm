@@ -32,6 +32,7 @@ export class AppSidebar {
 
   /** ← collapses an open row, else moves to its parent. */
   collapse(e?: KeyboardEvent) {
+    if (this.app.sidebarView === 2) return;
     const row = this.app.rows.find((r) => r.id === this.app.selected);
     if (!row) return;
     if (row.expanded) this.toggle(row.id);
@@ -40,6 +41,7 @@ export class AppSidebar {
 
   /** → opens a closed row, else moves to its first child. */
   expand(e?: KeyboardEvent) {
+    if (this.app.sidebarView === 2) return;
     const i = this.app.rows.findIndex((r) => r.id === this.app.selected);
     const row = this.app.rows[i];
     if (!row || row.expanded === null) return;
@@ -54,7 +56,7 @@ export class AppSidebar {
     this.app.navigation.stopKeyboardFollow();
     const open = !row.expanded;
     this.app.folds.set(foldId(row), open);
-    this.app.rows = navRows(this.app.tree, this.app.folds);
+    this.app.rows = navRows(this.app.treeName === "archived" ? this.app.archivedTree : this.app.tree, this.app.folds);
     this.app.notify();
     void this.app.navigation.choose({ op: open ? "expand" : "collapse", id: foldId(row) });
   }
@@ -76,6 +78,7 @@ export class AppSidebar {
     this.app.unarchiving.add(session);
     this.app.life
       .reopen(session)
+      .then(() => { this.app.closedTabs = this.app.closedTabs.filter((id) => id !== session); })
       .catch((err) => this.app.notice(`Unarchive failed: ${message(err)}`, true))
       .finally(() => this.app.unarchiving.delete(session));
   }
@@ -135,7 +138,7 @@ export class AppSidebar {
   }
 
   /** Every chat the tree lists, across projects, in the order the user dragged them; a new chat goes
-   *  on top. Activity does not move a row. Home shows the first ones. */
+   *  on top. Activity does not move a row. */
   recentList(): RecentChat[] {
     const m = this.app.recentMemo;
     if (m && m.tree === this.app.tree && m.snapshot === this.app.snapshot) return m.list;
@@ -205,8 +208,7 @@ export class AppSidebar {
   setTreeName(name: TreeName) {
     if (name === this.app.treeName) return;
     this.app.treeName = name;
-    this.app.tree = null;
-    this.app.rows = [];
+    this.app.rows = navRows(name === "archived" ? this.app.archivedTree : this.app.tree, this.app.folds);
     this.app.notify();
     void this.app.navigation.refreshSnapshot();
   }

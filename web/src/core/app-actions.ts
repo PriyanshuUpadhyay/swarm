@@ -16,8 +16,9 @@ export class AppActions {
   /** ⌘T, a "+" and New chat: starts a profile (the default one unless `launch` names it) in the
    *  workspace. A notice shows while `swarm launch` runs; `draft` goes into the new chat's composer. */
   async startChat(workspace = this.app.workspace, launch: { role?: string } = {}, draft = "") {
-    const row = workspaceRow(this.app.tree, workspace);
-    if (!workspace || this.app.starting || (row && !row.newChatEnabled)) return;
+    const reason = this.newChatReason(workspace);
+    if (reason || !workspace) return this.app.notice(reason ?? "Pick a workspace to start a chat.");
+    if (this.app.starting) return;
     this.app.starting = true;
     this.app.notice("Starting a chat…");
     try {
@@ -29,6 +30,12 @@ export class AppActions {
     } finally {
       this.app.starting = false;
     }
+  }
+
+  private newChatReason(workspace = this.app.workspace): string | null {
+    if (!workspace) return "Pick a workspace to start a chat.";
+    const row = workspaceRow(this.app.tree, workspace);
+    return row && !row.newChatEnabled ? row.archived ? "This workspace is archived." : "This workspace is read-only." : null;
   }
 
   /** The server's tree lists a new chat after its agent poll sees the chair's pane, about a second
@@ -116,7 +123,7 @@ export class AppActions {
     const items: PaletteItem[] = this.app.registry
       .list()
       .filter((c) => c.palette !== false)
-      .map((c) => ({ id: `action:${c.id}`, title: c.title, group: "action", shortcut: c.chord, disabledReason: c.phase ? `Comes in ${c.phase}` : null, run: () => c.run() }));
+      .map((c) => ({ id: `action:${c.id}`, title: c.title, group: "action", shortcut: c.chord, disabledReason: c.phase ? `Comes in ${c.phase}` : c.disabledReason?.() ?? (c.when && !c.when() ? "Unavailable in this view" : null), run: () => { this.app.registry.run(c.id); } }));
     const open = this.app.openId;
     const chatAction = (id: string, title: string, run: (() => void) | string): PaletteItem => ({
       id: `chatAction:${id}`,
@@ -182,7 +189,7 @@ export class AppActions {
   commands(): Command[] {
     const inTree = () => {
       const a = document.activeElement;
-      return !a || a === document.body || a.closest('[data-testid="sidebar"], [data-testid="recent"]') !== null;
+      return !!a && !a.closest("button, input, textarea, select, [contenteditable=true]") && a.closest('[data-testid="sidebar"], [data-testid="recent"]') !== null;
     };
     const tree = (id: string, title: string, chord: string, run: (e?: KeyboardEvent) => void): Command => ({
       id,
@@ -199,7 +206,7 @@ export class AppActions {
         id: "chat.new",
         title: "New Chat",
         chord: "Meta+T",
-        when: () => this.app.workspace !== null,
+        disabledReason: () => this.newChatReason(),
         // A held key must not start one chat per repeat.
         run: (e) => void (e?.repeat || this.startChat()),
       },
@@ -236,14 +243,14 @@ export class AppActions {
       },
       { id: "palette", title: "Search", chord: "Meta+K", palette: false, run: () => this.setPalette(!this.app.paletteOpen) },
       { id: "palette.alt", title: "Search", chord: "Shift+Meta+P", palette: false, run: () => this.setPalette(!this.app.paletteOpen) },
-      { id: "find.next", title: "Find Next", chord: "Meta+G", palette: false, when: chat, run: () => this.app.reading.stepFind(1) },
-      { id: "find.prev", title: "Find Previous", chord: "Shift+Meta+G", palette: false, when: chat, run: () => this.app.reading.stepFind(-1) },
-      { id: "tab.close", title: "Close Tab", chord: "Meta+W", palette: false, run: () => void this.app.navigation.closeTab() },
+      { id: "find.next", title: "Find Next", palette: false, chord: "Meta+G", when: chat, run: () => this.app.reading.stepFind(1) },
+      { id: "find.prev", title: "Find Previous", palette: false, chord: "Shift+Meta+G", when: chat, run: () => this.app.reading.stepFind(-1) },
+      { id: "tab.close", title: "Close Tab", palette: false, chord: "Meta+W", run: () => void this.app.navigation.closeTab() },
       // The palette lists Archive chat with this key, so the command stays out of it.
       { id: "chat.archive", title: "Archive Chat", chord: "Shift+Meta+W", palette: false, when: chat, run: (e) => void (e?.repeat || this.app.life.endChat(this.app.openId!, true)) },
-      { id: "recent.closed", title: "Reopen Closed Tab", chord: "Shift+Meta+T", palette: false, run: () => this.app.navigation.reopenTab() },
-      { id: "recent.prev", title: "Previous Recent Chat", chord: "Ctrl+Tab", palette: false, run: (e) => this.app.navigation.stepRecent(-1, e) },
-      { id: "recent.next", title: "Next Recent Chat", chord: "Ctrl+Shift+Tab", palette: false, run: (e) => this.app.navigation.stepRecent(1, e) },
+      { id: "recent.closed", title: "Reopen Closed Tab", chord: "Shift+Meta+T", run: () => this.app.navigation.reopenTab() },
+      { id: "recent.prev", title: "Previous Recent Chat", palette: false, chord: "Ctrl+Tab", run: (e) => this.app.navigation.stepRecent(-1, e) },
+      { id: "recent.next", title: "Next Recent Chat", palette: false, chord: "Ctrl+Shift+Tab", run: (e) => this.app.navigation.stepRecent(1, e) },
       tree("tree.down", "Select next row", "j", (e) => this.app.sidebar.moveSelection(1, e)),
       tree("tree.down2", "Select next row", "ArrowDown", (e) => this.app.sidebar.moveSelection(1, e)),
       tree("tree.up", "Select previous row", "k", (e) => this.app.sidebar.moveSelection(-1, e)),

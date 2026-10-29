@@ -9,6 +9,8 @@ export type Command = {
   palette?: boolean;
   /** The phase that brings the command's target; until then it only says so. */
   phase?: string;
+  /** Explains an unavailable palette item; keys can still show the reason themselves. */
+  disabledReason?: () => string | null;
   /** Extra gate for keys without ⌘ or ⌃, such as the tree keys. */
   when?: () => boolean;
   run: (e?: KeyboardEvent) => void;
