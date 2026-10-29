@@ -83,10 +83,38 @@ function editable(t: EventTarget | null): boolean {
   return t.isContentEditable || t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT";
 }
 
-/** Installs the one global listener and `swarmCommand`. Keys without ⌘ or ⌃ never fire inside a text input. */
+/** The open modal dialog, such as Settings, a confirm, or the palette: a Radix dialog, which marks
+ *  its content `data-state="open"`. The transcript's row source overlay is a dialog with no state. */
+function openDialog(doc: Document): Element | null {
+  return doc.querySelector('[role="dialog"][data-state="open"], [role="alertdialog"][data-state="open"]');
+}
+
+/** Commands that still run while a dialog is open: the palette keys, which also close it. */
+const OVER_DIALOGS = new Set(["palette", "palette.alt"]);
+
+/** Installs the one global listener and `swarmCommand`. Keys without ⌘ or ⌃ never fire inside a text input.
+ *  A modal dialog owns the keyboard, so app commands do not act on the page behind it; ⌘W closes the
+ *  dialog, as Escape does. */
 export function installKeys(registry: Registry, target: Window = window): () => void {
   const onKey = (e: KeyboardEvent) => {
-    if (e.isComposing || (!e.metaKey && !e.ctrlKey && editable(e.target))) return;
+    if (e.isComposing) return;
+    const dialog = openDialog(target.document);
+    if (dialog) {
+      if (e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && eventKey(e) === "w") {
+        e.preventDefault();
+        // Radix closes its top layer on an Escape keydown; from the focused control, so a dialog's
+        // own Escape handler sees an element target.
+        (target.document.activeElement ?? target.document.body).dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+        return;
+      }
+      const cmd = registry.match(e);
+      if (cmd && OVER_DIALOGS.has(cmd.id)) {
+        e.preventDefault();
+        cmd.run(e);
+      }
+      return;
+    }
+    if (!e.metaKey && !e.ctrlKey && editable(e.target)) return;
     const cmd = registry.match(e);
     if (!cmd) return;
     e.preventDefault();
