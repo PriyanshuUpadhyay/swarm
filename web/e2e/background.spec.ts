@@ -63,12 +63,13 @@ test("a resized panel keeps its height when Meta+J hides and shows it", async ({
   await expect(panel).toHaveCount(0);
   await tab.keyboard.press("Meta+j");
   await expect.poll(height).toBeCloseTo(resized, -1);
-  // A panel that opens with the chat leaves the keys with the chat, also once its terminal connects.
+  // An explicit shortcut opening gives the terminal the keys.
   await expect(panel.locator(".xterm-rows")).not.toBeEmpty();
-  await expect(panel.locator(".xterm-helper-textarea")).not.toBeFocused();
+  await expect(panel.locator(".xterm-helper-textarea")).toBeFocused();
   // The saved layout brings it back after a reload, shown or hidden at the time.
   await openChat(tab, info);
   await expect.poll(height).toBeCloseTo(resized, -1);
+  await expect(panel.locator(".xterm-helper-textarea")).not.toBeFocused();
   await tab.keyboard.press("Meta+j");
   await openChat(tab, info);
   await tab.keyboard.press("Meta+j");
@@ -88,7 +89,7 @@ test("clicking the row that is already shown gives its terminal the keys", async
   await tab.keyboard.press("Meta+j");
   const panel = tab.getByTestId("background-panel").last();
   await expect(panel.locator(".xterm-rows")).not.toBeEmpty();
-  await expect(panel.locator(".xterm-helper-textarea")).not.toBeFocused();
+  await expect(panel.locator(".xterm-helper-textarea")).toBeFocused();
   const row = panel.locator(`button[aria-current="true"]`);
   await row.click();
   await expect(panel.locator(".xterm-helper-textarea")).toBeFocused();
