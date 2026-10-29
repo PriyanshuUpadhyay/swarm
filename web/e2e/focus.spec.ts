@@ -42,7 +42,7 @@ test("a sidebar click, a workspace click, and a tab click put the keyboard in th
   await expect(composer(tab)).toBeFocused();
 });
 
-test("Enter on a sidebar row opens the chat and keeps the keyboard in the sidebar", async ({ page: tab }) => {
+test("Enter on a sidebar row opens the chat and focuses its input", async ({ page: tab }) => {
   await load(tab);
   const live = process.env.SWARM_E2E_LIVE!;
   const git = process.env.SWARM_E2E_GIT!;
@@ -54,7 +54,7 @@ test("Enter on a sidebar row opens the chat and keeps the keyboard in the sideba
   await expect(row(tab, live)).toBeFocused();
   await tab.keyboard.press("Enter");
   await expect(ready(tab, live)).toBeVisible();
-  await expect(row(tab, live)).toBeFocused();
+  await expect(composer(tab)).toBeFocused();
 });
 
 test("a chat picked in the palette gets the keyboard", async ({ page: tab }) => {

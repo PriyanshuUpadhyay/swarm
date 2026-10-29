@@ -146,9 +146,27 @@ export function RowBar({ listRef, select, target }: { listRef: RefObject<HTMLDiv
     const list = listRef.current;
     if (!list) return;
     let held = false;
+    let ready = false;
+    let picked = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     let hovered: Element | null = null;
     const update = () => {
-      setBar(held && hovered ? { el: hovered, rect: hovered.getBoundingClientRect() } : null);
+      setBar(held && ready && !picked && hovered ? { el: hovered, rect: hovered.getBoundingClientRect() } : null);
+    };
+    const hold = (meta: boolean) => {
+      if (meta === held) return;
+      held = meta;
+      ready = false;
+      clearTimeout(timer);
+      if (!held) picked = false;
+      else timer = setTimeout(() => { ready = true; update(); }, 400);
+    };
+    const onDown = (e: PointerEvent) => {
+      const el = e.target as Element;
+      if (!(e.metaKey || e.ctrlKey) || !el.closest(select)) return;
+      picked = true;
+      clearTimeout(timer);
+      update();
     };
     const onOver = (e: PointerEvent) => {
       const target = e.target as Element;
@@ -157,7 +175,7 @@ export function RowBar({ listRef, select, target }: { listRef: RefObject<HTMLDiv
       const meta = e.metaKey || e.ctrlKey;
       if (next === hovered && meta === held) return;
       hovered = next;
-      held = meta;
+      hold(meta);
       update();
     };
     const onLeave = () => {
@@ -168,16 +186,17 @@ export function RowBar({ listRef, select, target }: { listRef: RefObject<HTMLDiv
       if (e.key !== "Meta" && e.key !== "Control") return;
       const meta = e.type === "keydown";
       if (meta === held) return;
-      held = meta;
+      hold(meta);
       update();
     };
     // ⌘-Tab away sends no keyup to this window.
     const onBlur = () => {
-      held = false;
+      hold(false);
       update();
     };
     const onScroll = () => hovered && held && update();
     reset.current = onLeave;
+    list.addEventListener("pointerdown", onDown, true);
     list.addEventListener("pointerover", onOver);
     list.addEventListener("pointerleave", onLeave);
     list.addEventListener("scroll", onScroll, { passive: true });
@@ -185,6 +204,8 @@ export function RowBar({ listRef, select, target }: { listRef: RefObject<HTMLDiv
     window.addEventListener("keyup", onKey);
     window.addEventListener("blur", onBlur);
     return () => {
+      clearTimeout(timer);
+      list.removeEventListener("pointerdown", onDown, true);
       list.removeEventListener("pointerover", onOver);
       list.removeEventListener("pointerleave", onLeave);
       list.removeEventListener("scroll", onScroll);

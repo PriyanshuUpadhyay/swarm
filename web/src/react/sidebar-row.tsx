@@ -46,7 +46,7 @@ export const RowView = memo(function RowView({ row, selected, marked, current, a
           {chev()}
           <span className="flex-1" />
           {s.kind === "project" && !archive && (
-            <button className="row-btn" data-action="new-workspace" aria-label={`New workspace in ${s.title}`} title="New workspace">
+            <button tabIndex={-1} className="row-btn" data-action="new-workspace" aria-label={`New workspace in ${s.title}`} title="New workspace (⌘N)">
               <PlusIcon />
             </button>
           )}
@@ -93,12 +93,12 @@ export const RowView = memo(function RowView({ row, selected, marked, current, a
           <span className="flex-1" />
           {i === 0 && r.kind === "workspace" && !r.archived && !archive && <GripVerticalIcon className="grip" aria-hidden data-tip="Drag to reorder or pin workspace" />}
           {i === 0 && r.kind === "archived-chat" && (
-            <button className="row-btn" data-action="unarchive" aria-label={`Unarchive ${r.title}`} title="Unarchive and open">
+            <button tabIndex={-1} className="row-btn" data-action="unarchive" aria-label={`Unarchive ${r.title}`} title="Unarchive and open">
               <ArchiveRestoreIcon />
             </button>
           )}
           {i === 0 && canNew && (
-            <button className="row-btn" data-action="new-chat" aria-label={`New chat in ${r.title}`}>
+            <button tabIndex={-1} className="row-btn" data-action="new-chat" aria-label={`New chat in ${r.title}`} title="New chat (⌘T)">
               <PlusIcon />
             </button>
           )}
