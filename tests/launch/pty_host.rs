@@ -212,6 +212,7 @@ fn an_app_chair_runs_on_a_headless_host_and_its_children_end_with_it() {
         "claude",
         "case \"$*\" in *--model*) ;; *) exit 0 ;; esac\n\
          printf '%s\\n' \"$SWARM_PTY_HOST\" > \"$SWARM_HOME/host-$SWARM_AGENT_ID\"\n\
+         echo $$ > \"$SWARM_HOME/pid-$SWARM_AGENT_ID\"\n\
          report() { printf '\\033]7501;state=working:app=claude\\007'; }\n\
          report; while read -r line; do report; done",
     );
@@ -271,6 +272,18 @@ fn an_app_chair_runs_on_a_headless_host_and_its_children_end_with_it() {
     wait_for(
         || std::os::unix::net::UnixStream::connect(&socket).is_err(),
         "the host to stop",
+    );
+    let seat_pid = std::fs::read_to_string(home.join("pid-seat")).unwrap();
+    wait_for(
+        || {
+            !std::process::Command::new("kill")
+                .args(["-0", seat_pid.trim()])
+                .stderr(std::process::Stdio::null())
+                .status()
+                .unwrap()
+                .success()
+        },
+        "the seat to end",
     );
     let _ = std::fs::remove_dir_all(&home);
 }

@@ -53,8 +53,9 @@ a host apart from serve lives through a serve restart.
   and the chat shows one live row under the log rows. The live row holds the last block of the
   turn above the input box, without its mark, the status rows, and the hints: a Claude `⏺` or
   Codex `•` block, pi's text after its last tool, and AGY's spinner row. A tool block, or the rest
-  of the sent message before the first block, shows no row. The page hides the row once a log row
-  of the same turn holds its text, and at turn end the row goes away. This is a named screen read
+  of the sent message before the first block, shows no row. The page hides the row once a recent log row
+  holds its text, a row of an earlier turn included, because pi's screen can still show the last
+  turn's answer. At turn end the row goes away. This is a named screen read
   under ADR 0120 and an exception to ADR 0099's "nothing more", because the live row is a preview
   and never a record.
 
