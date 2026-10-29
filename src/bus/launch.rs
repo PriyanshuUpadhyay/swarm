@@ -130,11 +130,13 @@ pub fn argv(
                             );
                         }
                     }
-                    // A seat's reply rings its chair with `tmux -L swarm` on a tmux host, and the
-                    // sandbox refuses every AF_UNIX socket that it does not name.
+                    // A seat's reply rings its chair with `tmux -L swarm` on a tmux host, or through
+                    // a PTY host's socket (ADR 0131), and the sandbox refuses every AF_UNIX socket
+                    // that it does not name.
                     // SAFETY: getuid has no preconditions and cannot fail.
                     let uid = unsafe { crate::hud::getuid() };
                     let tmux = tmux_socket_dir(std::env::var("TMUX_TMPDIR").ok().as_deref(), uid);
+                    let pty = pty_socket_dir(uid);
                     let builds = role.starts_with("code.") || role == "build" || role == "checker";
                     // uv's default cache is outside the writable roots, so uv cannot lock it.
                     if builds {
@@ -163,8 +165,9 @@ pub fn argv(
                         r#"default_permissions="swarm-code""#.into(),
                         "-c".into(),
                         format!(
-                            r#"permissions.swarm-code={{extends=":workspace",filesystem={{{filesystem}}},network={{enabled=true,unix_sockets={{{}="allow"}}{domains}}}}}"#,
-                            quote(&tmux)
+                            r#"permissions.swarm-code={{extends=":workspace",filesystem={{{filesystem}}},network={{enabled=true,unix_sockets={{{}="allow",{}="allow"}}{domains}}}}}"#,
+                            quote(&tmux),
+                            quote(&pty)
                         ),
                     ]);
                 }

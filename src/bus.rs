@@ -113,6 +113,12 @@ fn tmux_socket_dir(tmpdir: Option<&str>, uid: u32) -> String {
     format!("{base}/tmux-{uid}")
 }
 
+/// The folder of the PTY hosts' sockets (`swarm pty`, ADR 0126), resolved as the sandbox sees it.
+fn pty_socket_dir(uid: u32) -> String {
+    let dir = format!("/tmp/swarm-{uid}");
+    std::fs::canonicalize("/tmp").map_or(dir, |tmp| format!("{}/swarm-{uid}", tmp.display()))
+}
+
 mod codex;
 mod hooks;
 mod launch;

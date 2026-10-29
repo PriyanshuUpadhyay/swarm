@@ -88,12 +88,14 @@ mod tests {
                 "default_permissions=\"swarm-code\"",
                 "-c",
                 &format!(
-                    r#"permissions.swarm-code={{extends=":workspace",filesystem={{":workspace_roots"={{".git"="write",".git/hooks"="read",".git/config"="read",".git/modules"="read",".codex"="read",".agents"="read"}},"/home x/.swarm"="write"}},network={{enabled=true,unix_sockets={{{}="allow"}}}}}}"#,
+                    r#"permissions.swarm-code={{extends=":workspace",filesystem={{":workspace_roots"={{".git"="write",".git/hooks"="read",".git/config"="read",".git/modules"="read",".codex"="read",".agents"="read"}},"/home x/.swarm"="write"}},network={{enabled=true,unix_sockets={{{}="allow",{}="allow"}}}}}}"#,
                     serde_json::to_string(&tmux_socket_dir(
                         std::env::var("TMUX_TMPDIR").ok().as_deref(),
                         unsafe { crate::hud::getuid() }
                     ))
-                    .unwrap()
+                    .unwrap(),
+                    serde_json::to_string(&pty_socket_dir(unsafe { crate::hud::getuid() }))
+                        .unwrap()
                 ),
                 "--ask-for-approval",
                 "never"
