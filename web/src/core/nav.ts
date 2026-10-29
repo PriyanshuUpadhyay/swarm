@@ -60,6 +60,8 @@ export type TreeView = {
   choicesError: string | null;
   /** The owner's `prefs` in choices.json, Swift keys; an absent notice switch is on. */
   prefs: Prefs;
+  /** Whether tmux is on the server's PATH, so Settings can offer it as the terminal host (ADR 0131). */
+  tmuxAvailable?: boolean;
 };
 
 export type Prefs = {
@@ -67,6 +69,8 @@ export type Prefs = {
   sendKey?: string;
   /** What a switch to another CLI brings: `summary` (absent) or `clean` (ADR 0110). */
   switchCarry?: string;
+  /** Where a new chat runs: `pty` (absent) or `tmux`, which counts only while tmux is on PATH (ADR 0131). */
+  terminalHost?: string;
   fontSans?: string;
   fontMono?: string;
   usageHUDAsked?: boolean;

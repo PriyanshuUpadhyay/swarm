@@ -274,3 +274,62 @@ fn an_app_chair_runs_on_a_headless_host_and_its_children_end_with_it() {
     );
     let _ = std::fs::remove_dir_all(&home);
 }
+
+#[test]
+fn the_tmux_choice_counts_only_while_tmux_is_on_path() {
+    let home = scratch("pty-tmux-choice");
+    tool(
+        &home,
+        "claude",
+        "case \"$*\" in *--model*) ;; *) exit 0 ;; esac\nwhile read -r line; do :; done",
+    );
+    std::fs::write(
+        home.join(".swarm/choices.json"),
+        r#"{"prefs":{"terminalHost":"tmux"}}"#,
+    )
+    .unwrap();
+    let cwd = home.join("repo");
+    std::fs::create_dir_all(&cwd).unwrap();
+    let cwd = cwd.to_string_lossy().into_owned();
+    let launch = || {
+        let session = swarm(
+            &home,
+            &[("SWARM_ADAPTER", "tmux-swarm")],
+            &["session", "new", "lane"],
+        );
+        let session = String::from_utf8(session.stdout)
+            .unwrap()
+            .trim()
+            .to_string();
+        let env = [
+            ("SWARM_ADAPTER", "tmux-swarm"),
+            ("SWARM_SESSION_ID", session.as_str()),
+        ];
+        let args = [
+            "launch",
+            "orchestrator",
+            "chat",
+            "--provider",
+            "claude",
+            "--model",
+            "opus",
+        ];
+        let output = swarm(&home, &env, &[&args[..], &["--cwd", &cwd]].concat());
+        assert!(output.status.success(), "{}", stderr(&output));
+        String::from_utf8(output.stdout).unwrap().trim().to_string()
+    };
+    // With tmux on PATH the chat runs there; this tmux only names a pane.
+    tool(
+        &home,
+        "tmux",
+        "case \"$*\" in *new-session*) echo %77 ;; esac",
+    );
+    assert_eq!(launch(), "%77");
+    // With tmux gone the choice cannot hold, so the chat runs on its own host.
+    std::fs::remove_file(home.join("bin/tmux")).unwrap();
+    let chair = launch();
+    assert!(chair.starts_with("pty:"), "{chair}");
+    let close = swarm(&home, &[("SWARM_PANE", chair.as_str())], &["pty", "close"]);
+    assert!(close.status.success(), "{}", stderr(&close));
+    let _ = std::fs::remove_dir_all(&home);
+}
