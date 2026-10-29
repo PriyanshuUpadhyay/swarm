@@ -105,6 +105,7 @@ export type Strip = {
 /** The chair's chat as `Pane` fields, and the rest of the window. */
 export type View = Pane & {
   loaded: boolean;
+  reconnecting: boolean;
   tree: TreeView | null;
   treeName: TreeName;
   error: string | null;
@@ -137,6 +138,7 @@ export type Reader = {
   /** A pasted image's preview URL. */
   imageUrl(path: string): Promise<string>;
   loadOlder(): Promise<void>;
+  retryRows?(): Promise<void>;
   setFindQuery(query: string): void;
   stepFind(dir: number): void;
   closeFind(): void;

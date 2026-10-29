@@ -36,7 +36,11 @@ export class AppStream {
       }
       this.app.streamId = null;
       this.app.sentKeys = "";
-      if (!signal.aborted) await sleep(1000);
+      if (!signal.aborted) {
+        this.app.reconnecting = true;
+        this.app.notify();
+        await sleep(1000);
+      }
     }
   }
 
@@ -49,6 +53,8 @@ export class AppStream {
     }
     switch (e.event) {
       case "hello":
+        this.app.reconnecting = false;
+        this.app.notify();
         if (this.app.serverBuild !== null && data.build !== this.app.serverBuild) return location.reload();
         this.app.serverBuild = String(data.build);
         this.app.streamId = String(data.stream);
