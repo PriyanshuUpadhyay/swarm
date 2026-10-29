@@ -1,0 +1,24 @@
+
+────────────────────────────────────────────────────────────────────────────────
+ Package Updates Available              
+ Package updates are available. Run pi update --extensions                      
+ Packages:          
+ - @plannotator/pi-extension            
+────────────────────────────────────────────────────────────────────────────────
+
+────────────────────────────────────────────────────────────────────────────────
+ Update Available   
+ New version 1.4.0 is available. Run pi update                                  
+ Changelog: https://pi.dev/changelog    
+────────────────────────────────────────────────────────────────────────────────
+
+                                                                                
+ Run the shell command ls docs once, then without more tools write about 200    
+ words on the history of the bicycle as plain paragraphs.                       
+                                                                                
+
+── ⠦ Working ───────────────────────────────────────────────────────────────────
+                    
+────────────────────────────────────────────────────────────────────────────────
+~/work/swarm/wt/streamable-outputs (swarm/streamable-outputs)
+1.0%/1.0M (auto)                        (claude-bridge) claude-opus-5-5 • medium

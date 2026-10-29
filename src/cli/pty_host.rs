@@ -3,6 +3,7 @@
 //! client half here, which talks to the host over a Unix socket. A child dies with the
 //! host, and the owner accepted that.
 
+mod attach;
 mod client;
 mod pane;
 mod screen;
@@ -41,6 +42,7 @@ struct Hosted {
     group: libc::pid_t,
     parser: Arc<Mutex<vt100::Parser>>,
     activity: Arc<AtomicU64>,
+    viewers: attach::Viewers,
 }
 
 type Children = Arc<Mutex<HashMap<u64, Hosted>>>;
@@ -59,17 +61,12 @@ pub(crate) struct Host {
     children: Children,
 }
 
-/// The host socket of `session`. A socket path holds at most 104 bytes on macOS, and a branch
-/// build's `runs/<session>/` is longer, so the socket lives in a private folder per user, as
-/// tmux's does, under a hash of that runs folder.
+/// The host socket of `session`, in its checked private folder.
 fn socket_of(session: &str) -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
-    use sha2::Digest;
-    use std::os::unix::ffi::OsStrExt;
     super::valid_session_id(session)?;
-    let runs = swarm::paths::root_dir()?.join(format!("runs/{session}"));
-    let hash = sha2::Sha256::digest(runs.as_os_str().as_bytes());
-    let name: String = hash[..8].iter().map(|byte| format!("{byte:02x}")).collect();
-    Ok(socket_dir()?.join(format!("{name}.sock")))
+    socket_dir()?;
+    // SAFETY: getuid cannot fail.
+    swarm::bus::pty_socket_of(session, unsafe { libc::getuid() })
 }
 
 /// `/tmp/swarm-<uid>`, made 0700 when missing. Another user could make it first and listen in
@@ -170,6 +167,94 @@ impl Host {
     }
 }
 
+/// How long a headless host waits for its first pane, which the launch that started it spawns.
+const FIRST_PANE_WAIT: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// `swarm pty host`: a host with no chair terminal of its own, which `launch orchestrator` starts
+/// for a chat (ADR 0131). It prints its socket once it listens. The chair is its first pane, and
+/// when the chair ends the host ends and hangs up the chair's children, as ADR 0126 has them.
+pub(crate) fn headless() -> i32 {
+    let host = match Host::start() {
+        Ok(host) => host,
+        Err(error) => {
+            eprintln!("swarm pty host: {error}");
+            return 1;
+        }
+    };
+    println!("{}", host.socket.display());
+    // The launch reads one line, so the pipe closes here and a later print cannot fail on it.
+    // SAFETY: dup2 of a fresh /dev/null fd over stdout.
+    if let Ok(null) = std::fs::OpenOptions::new().write(true).open("/dev/null") {
+        let _ = std::io::stdout().flush();
+        unsafe { libc::dup2(std::os::fd::AsRawFd::as_raw_fd(&null), 1) };
+    }
+    let started = std::time::Instant::now();
+    // The chair is the lowest pane once one runs; a spawn that failed used up its number.
+    let mut chair = None;
+    loop {
+        std::thread::sleep(LOCK_POLL * 10);
+        let children = lock(&host.children);
+        chair = chair.or_else(|| children.keys().min().copied());
+        let gone = chair.is_none_or(|n| !children.contains_key(&n));
+        if gone && (chair.is_some() || started.elapsed() > FIRST_PANE_WAIT) {
+            return 0;
+        }
+    }
+}
+
+/// The socket of `session`'s host, after starting a headless host when none answers there. The
+/// host leads its own session, so it outlives the launch and a serve restart (ADR 0131).
+pub(crate) fn ensure(session: &str) -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
+    use std::io::BufRead;
+    use std::os::unix::process::CommandExt;
+    let socket = socket_of(session)?;
+    if UnixStream::connect(&socket).is_ok() {
+        return Ok(socket);
+    }
+    let runs = swarm::paths::root_dir()?.join(format!("runs/{session}"));
+    std::fs::create_dir_all(&runs)?;
+    let log = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(runs.join("pty-host.log"))?;
+    let mut command = std::process::Command::new(std::env::current_exe()?);
+    command
+        .args(["pty", "host"])
+        .env("SWARM_SESSION_ID", session)
+        .env_remove("SWARM_PTY_HOST")
+        .env_remove("SWARM_PTY_PANE")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(log);
+    // SAFETY: setsid is async-signal-safe.
+    unsafe {
+        command.pre_exec(|| {
+            if libc::setsid() == -1 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+    let mut child = command.spawn()?;
+    // A host that cannot start exits, which closes the pipe, and its start waits at most
+    // LOCK_WAIT, so this read ends.
+    let mut line = String::new();
+    std::io::BufReader::new(child.stdout.take().expect("piped stdout")).read_line(&mut line)?;
+    if std::path::Path::new(line.trim()) != socket {
+        let _ = child.wait();
+        // A launch of the same chat at the same time started the host first.
+        if UnixStream::connect(&socket).is_ok() {
+            return Ok(socket);
+        }
+        return Err(format!(
+            "swarm pty: the chat's host did not start; see {}",
+            runs.join("pty-host.log").display()
+        )
+        .into());
+    }
+    Ok(socket)
+}
+
 impl Drop for Host {
     /// Hangs up every child, as tmux does when it closes a pane. The kernel hangs them up too when
     /// this process dies without running this.
@@ -225,12 +310,27 @@ fn hang_up(hosted: &Hosted) {
 
 fn serve(stream: UnixStream, children: &Children, next: &AtomicU64, session: &str) {
     let _ = stream.set_write_timeout(Some(REQUEST_TIMEOUT));
-    let reply = match read_request(&stream) {
-        Ok(line) => serde_json::from_str(&line)
-            .map_err(|error| error.to_string())
-            .and_then(|request| handle(&request, children, next, session)),
-        Err(error) => Err(error.to_string()),
-    };
+    let request = read_request(&stream)
+        .map_err(|error| error.to_string())
+        .and_then(|line| {
+            serde_json::from_str::<serde_json::Value>(&line).map_err(|error| error.to_string())
+        });
+    // A viewer keeps its connection, and the first line of its stream is the reply.
+    if let Ok(request) = &request
+        && request["op"] == "attach"
+    {
+        let error = match stream.try_clone() {
+            Ok(viewer) => match attach::attach(viewer, request, children) {
+                Ok(()) => return,
+                Err(error) => error,
+            },
+            Err(error) => error.to_string(),
+        };
+        let reply = serde_json::json!({"ok": false, "error": error});
+        let _ = writeln!(&stream, "{reply}");
+        return;
+    }
+    let reply = request.and_then(|request| handle(&request, children, next, session));
     let reply = match reply {
         Ok(out) => serde_json::json!({"ok": true, "out": out}),
         Err(error) => serde_json::json!({"ok": false, "error": error}),
@@ -313,6 +413,10 @@ fn handle(
         }
         "screen" => return Ok(screen(&lock(&hosted.parser))),
         "capture" => return Ok(capture(&mut lock(&hosted.parser))),
+        "resize" => {
+            attach::resize_op(request, hosted);
+            return Ok(String::new());
+        }
         "close" => {
             hang_up(&children.remove(&n).expect("found above"));
             return Ok(String::new());

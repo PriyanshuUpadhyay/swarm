@@ -301,13 +301,29 @@ pub(crate) fn spawn_agent(
         .map(|(_, pane)| pane)
         .collect::<Vec<_>>()
         .join(" ");
-    let vars = [
+    // ADR 0131: a chair of the app's adapter runs on a headless host of its own, so its chat
+    // needs no tmux, unless the owner chose tmux. A chair under `SWARM_CHILD_HOST=pty` keeps the
+    // host of ADR 0126 inside its tmux pane.
+    let pty_host = if agent_id == "orchestrator"
+        && current_adapter == "tmux-swarm"
+        && options.runner.is_some()
+        && env::var("SWARM_CHILD_HOST").is_err()
+        && chat_on_pty(root)
+    {
+        Some(ensure_pty_host(&session)?.to_string_lossy().into_owned())
+    } else {
+        None
+    };
+    let mut vars = vec![
         ("session_id", session.as_str()),
         ("agent_id", agent_id),
         ("home", home.as_str()),
         ("adapter", current_adapter.as_str()),
         ("panes", panes.as_str()),
     ];
+    if let Some(socket) = &pty_host {
+        vars.push(("pty_host", socket));
+    }
     let line = || {
         if options.command.is_empty() {
             return Ok(None);
@@ -358,8 +374,11 @@ pub(crate) fn spawn_agent(
         // whatever its provider (ADR 0126).
         let host = agent_id == "orchestrator"
             && env::var("SWARM_CHILD_HOST").is_ok_and(|host| host == "pty");
+        // A chair on its own host needs no shim: the host answers the probe and feeds the store,
+        // and a shim would drop the host from the chair's env (ADR 0131).
         let child = if adapter.spawn.contains("SWARM_FEED")
             && options.runner.is_some()
+            && pty_host.is_none()
             && (host
                 || matches!(
                     provider,
@@ -468,6 +487,10 @@ pub(crate) fn script_line(
         swarm::adapter::shell_line(&[path.to_string_lossy().into_owned()])
     ))
 }
+
+#[path = "spawn/terminal_host.rs"]
+mod terminal_host;
+use terminal_host::chat_on_pty;
 
 #[cfg(test)]
 #[path = "spawn/tests.rs"]

@@ -19,6 +19,13 @@ Bottom rows of agent panes for the screen check tests in `src/screen.rs`.
   with the folder replaced by `~/project`.
   `pi-trust.txt` is pi 1.2.0's folder trust screen, captured on 2026-10-29 from a new folder with a
   `.pi` folder, under a private tmux server, with the paths replaced by `/Users/you`.
+- `*-turn-*.txt` are real `tmux capture-pane -p -J -S -` output of one turn (one `ls docs`, then a
+  short history of the bicycle), captured on 2026-10-29 from Claude Code 2.1.312, codex-cli
+  0.162.1, pi with its claude-bridge model, and Antigravity CLI 1.4.10, for the live turn cut in
+  `src/screen/live.rs` (ADR 0131). The account, email, and home path are replaced by neutral text.
+  `claude-turn-text.txt` is the turn just after its end, with the block mark scrolled off; its
+  `✻ Sautéed for 11s · done 6:52 PM` row is replaced by a running row, so it reads as if the turn
+  still ran.
 
 Digit keys, checked live on the same versions: a digit picks a Claude permission or
 AskUserQuestion choice, a Codex approval choice, and an AGY `ask_question` choice with no Enter.

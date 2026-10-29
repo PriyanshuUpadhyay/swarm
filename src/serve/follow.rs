@@ -158,6 +158,9 @@ pub(super) async fn follow(
 ) {
     let result = async {
         if *stop.borrow() { return Ok(()); }
+        if entry.view.as_deref() == Some("rows") {
+            tokio::spawn(watch_turn(app.clone(), entry.key.clone(), generation.clone(), stop.clone()));
+        }
         let source = std::fs::File::open(&log.path)?;
         let mut child = tokio::process::Command::new(tool)
             .args(["--follow", "--from", &entry.from.to_string(), "--format", &log.format])

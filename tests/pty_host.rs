@@ -295,3 +295,232 @@ fn a_child_that_reads_no_input_fails_a_ring_and_still_shows_its_output() {
         "the output after the queries",
     );
 }
+
+#[test]
+fn a_viewer_sees_the_screen_types_keys_and_the_last_one_out_restores_the_size() {
+    let host = Host::start();
+    let pane = host.spawn();
+    host.out("ring", &[("pane", &pane), ("text", "echo before-$((1+1))")]);
+    wait_for(
+        || host.out("screen", &[("pane", &pane)]).contains("before-2"),
+        "the first line",
+    );
+    let mut viewer = Command::new(env!("CARGO_BIN_EXE_swarm"))
+        .args(["pty", "attach"])
+        .env("SWARM_HOME", &host.home)
+        .env("SWARM_PANE", &pane)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut out = viewer.stdout.take().unwrap();
+    let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let reader = {
+        let seen = seen.clone();
+        std::thread::spawn(move || {
+            let mut chunk = [0; 4096];
+            while let Ok(read @ 1..) = std::io::Read::read(&mut out, &mut chunk) {
+                seen.lock().unwrap().extend_from_slice(&chunk[..read]);
+            }
+        })
+    };
+    let text = || String::from_utf8_lossy(&seen.lock().unwrap()).into_owned();
+    // The screen comes first, then the keys typed here reach the shell and its output comes back.
+    wait_for(|| text().contains("before-2"), "the screen");
+    let mut keys = viewer.stdin.take().unwrap();
+    std::io::Write::write_all(&mut keys, b"echo typed-$((2+3))\r").unwrap();
+    wait_for(|| text().contains("typed-5"), "the typed line's output");
+    host.out("ring", &[("pane", &pane), ("text", "stty size")]);
+    wait_for(|| text().contains("100 80"), "the default size");
+    // With no terminal the viewer asks for no size; the resize op that its SIGWINCH sends sets one.
+    let n: u64 = pane.rsplit(':').next().unwrap().parse().unwrap();
+    let stream = std::os::unix::net::UnixStream::connect(host.socket()).unwrap();
+    let request = format!("{{\"op\":\"resize\",\"n\":{n},\"rows\":30,\"cols\":100}}\n");
+    std::io::Write::write_all(&mut &stream, request.as_bytes()).unwrap();
+    let mut reply = String::new();
+    std::io::BufRead::read_line(&mut std::io::BufReader::new(&stream), &mut reply).unwrap();
+    assert!(reply.contains("\"ok\":true"), "{reply}");
+    host.out("ring", &[("pane", &pane), ("text", "stty size")]);
+    wait_for(|| text().contains("30 100"), "the new size");
+    // The viewer leaves when its input ends, and the host closes its stream.
+    drop(keys);
+    wait_for(
+        || viewer.try_wait().unwrap().is_some(),
+        "the viewer to leave",
+    );
+    reader.join().unwrap();
+    assert!(host.out("list", &[]).contains(&format!("{pane} ")));
+    // The last viewer out puts the pane back at its detached size.
+    host.out("ring", &[("pane", &pane), ("text", "stty size > size")]);
+    wait_for(
+        || read(&host.home.join("size")) == "100 80\n",
+        "the size put back",
+    );
+}
+
+#[test]
+fn a_viewer_gets_no_query_the_host_answered_and_ends_with_its_pane() {
+    let host = Host::start();
+    let pane = host.spawn();
+    let mut viewer = Command::new(env!("CARGO_BIN_EXE_swarm"))
+        .args(["pty", "attach"])
+        .env("SWARM_HOME", &host.home)
+        .env("SWARM_PANE", &pane)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut out = viewer.stdout.take().unwrap();
+    let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let reader = {
+        let seen = seen.clone();
+        std::thread::spawn(move || {
+            let mut chunk = [0; 4096];
+            while let Ok(read @ 1..) = std::io::Read::read(&mut out, &mut chunk) {
+                seen.lock().unwrap().extend_from_slice(&chunk[..read]);
+            }
+        })
+    };
+    let text = || String::from_utf8_lossy(&seen.lock().unwrap()).into_owned();
+    // A viewer's terminal would answer a cursor query again, into the pane.
+    host.out(
+        "ring",
+        &[
+            ("pane", &pane),
+            ("text", "printf 'q\\033[6nr'; echo done-$((1+1))"),
+        ],
+    );
+    wait_for(|| text().contains("done-2"), "the query's line");
+    assert!(text().contains("qr"), "{:?}", text());
+    assert!(!text().contains("\x1b[6n"), "{:?}", text());
+    // The viewer's input stays open, so only the pane's end can end it.
+    let _keys = viewer.stdin.take().unwrap();
+    // The host's own answer sits in the shell's input line, so C-u clears it first.
+    host.out("key", &[("pane", &pane), ("key", "C-u")]);
+    host.out("ring", &[("pane", &pane), ("text", "exit")]);
+    wait_for(
+        || !host.out("list", &[]).contains(&format!("{pane} ")),
+        "the pane to end",
+    );
+    wait_for(
+        || viewer.try_wait().unwrap().is_some(),
+        "the viewer to end with its pane",
+    );
+    reader.join().unwrap();
+}
+
+/// One request on the host socket, and its reply line.
+fn ask(socket: &Path, request: serde_json::Value) -> serde_json::Value {
+    use std::io::{BufRead, Write};
+    let stream = std::os::unix::net::UnixStream::connect(socket).unwrap();
+    writeln!(&stream, "{request}").unwrap();
+    let mut line = String::new();
+    std::io::BufReader::new(&stream)
+        .read_line(&mut line)
+        .unwrap();
+    serde_json::from_str(&line).unwrap()
+}
+
+/// A headless host process, killed on drop, so a failed assert leaves no host behind.
+struct Headless(Child);
+
+impl Drop for Headless {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
+/// A headless host, as `launch orchestrator` starts it, with no TERM in its env, as an app's
+/// serve may have none.
+fn headless(home: &Path) -> (Headless, PathBuf) {
+    use std::io::BufRead;
+    let mut host = Command::new(env!("CARGO_BIN_EXE_swarm"))
+        .args(["pty", "host"])
+        .env("SWARM_HOME", home)
+        .env("SWARM_SESSION_ID", uuid::Uuid::now_v7().to_string())
+        .env("SHELL", "/bin/sh")
+        .env_remove("TERM")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut line = String::new();
+    std::io::BufReader::new(host.stdout.take().unwrap())
+        .read_line(&mut line)
+        .unwrap();
+    (Headless(host), PathBuf::from(line.trim()))
+}
+
+#[test]
+fn a_headless_host_takes_its_first_live_pane_as_chair_after_a_failed_spawn() {
+    let home = std::env::temp_dir().join(format!(
+        "swarm-pty-headless-{}",
+        uuid::Uuid::now_v7().simple()
+    ));
+    std::fs::create_dir_all(&home).unwrap();
+    let (mut host, socket) = headless(&home);
+    let spawn = |cwd: &Path| {
+        let request =
+            serde_json::json!({"op": "spawn", "cwd": cwd, "env": {}, "feed": "cat > /dev/null"});
+        ask(&socket, request)
+    };
+    // A launch whose spawn fails uses up a pane number; the launch after it starts the chair.
+    assert_eq!(spawn(&home.join("gone"))["ok"], false);
+    let chair = spawn(&home);
+    let n: u64 = chair["out"]
+        .as_str()
+        .unwrap()
+        .rsplit(':')
+        .next()
+        .unwrap()
+        .parse()
+        .unwrap();
+    wait_for(
+        || ask(&socket, serde_json::json!({"op": "screen", "n": n}))["ok"] == true,
+        "the chair",
+    );
+    // The host looks for its chair every 200 ms, and a real chair runs far longer.
+    std::thread::sleep(Duration::from_secs(1));
+    ask(&socket, serde_json::json!({"op": "close", "n": n}));
+    wait_for(
+        || host.0.try_wait().unwrap().is_some(),
+        "the host to end with its chair",
+    );
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+#[test]
+fn a_pane_gets_a_terminal_type_when_its_host_has_none() {
+    let home =
+        std::env::temp_dir().join(format!("swarm-pty-term-{}", uuid::Uuid::now_v7().simple()));
+    std::fs::create_dir_all(&home).unwrap();
+    let (host, socket) = headless(&home);
+    let request =
+        serde_json::json!({"op": "spawn", "cwd": home, "env": {}, "feed": "cat > /dev/null"});
+    let pane = ask(&socket, request);
+    let n: u64 = pane["out"]
+        .as_str()
+        .unwrap()
+        .rsplit(':')
+        .next()
+        .unwrap()
+        .parse()
+        .unwrap();
+    let file = home.join("term");
+    let text = format!("echo \"[$TERM]\" > {}\n", file.display());
+    assert_eq!(
+        ask(
+            &socket,
+            serde_json::json!({"op": "write", "n": n, "text": text})
+        )["ok"],
+        true
+    );
+    wait_for(|| read(&file).ends_with('\n'), "the pane's TERM");
+    let term = read(&file);
+    ask(&socket, serde_json::json!({"op": "close", "n": n}));
+    drop(host);
+    let _ = std::fs::remove_dir_all(&home);
+    // tmux gives its panes a terminal type too, whatever its server's env holds.
+    assert_eq!(term, "[xterm-256color]\n");
+}

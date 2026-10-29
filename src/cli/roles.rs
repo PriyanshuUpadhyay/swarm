@@ -178,13 +178,7 @@ pub(crate) fn resolve_role(
 /// A provider counts as installed when an executable file of its name is on PATH, because that
 /// binary is what a pane runs.
 pub(crate) fn installed(provider: &str) -> bool {
-    use std::os::unix::fs::PermissionsExt;
-    env::var_os("PATH").is_some_and(|path| {
-        env::split_paths(&path).any(|dir| {
-            std::fs::metadata(dir.join(provider))
-                .is_ok_and(|meta| meta.is_file() && meta.permissions().mode() & 0o111 != 0)
-        })
-    })
+    swarm::paths::on_path(provider)
 }
 
 pub(crate) fn load_accounts(

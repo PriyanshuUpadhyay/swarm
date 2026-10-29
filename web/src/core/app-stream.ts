@@ -2,10 +2,17 @@ import { sleep, type RowFrame, type Snapshot, type SubscribeKey } from "./api";
 import { queueRows, type Usage } from "./composer";
 import { readSse, type SseEvent } from "./sse";
 import { mergeRows } from "./transcript";
+import { keepsEnded } from "./app-reader";
 import { MAX_KEYS, type Chat, paneId } from "./app-types";
 import type { App } from "./app";
 
+/** How often live text types out, and in how many steps it catches up with the screen. */
+const TYPE_MS = 30;
+const TYPE_STEPS = 8;
+
 export class AppStream {
+  private typing: ReturnType<typeof setInterval> | null = null;
+
   constructor(private readonly app: App) {}
 
   applySnapshot(snap: Snapshot) {
@@ -54,6 +61,13 @@ export class AppStream {
     switch (e.event) {
       case "hello":
         this.app.reconnecting = false;
+        // A frame sent while the stream was down is lost, so live text could be stale.
+        for (const chat of this.app.chats.values()) {
+          if (chat.live === null) continue;
+          chat.live = null;
+          chat.version++;
+          chat.shift = false;
+        }
         this.app.notify();
         if (this.app.serverBuild !== null && data.build !== this.app.serverBuild) return location.reload();
         this.app.serverBuild = String(data.build);
@@ -72,6 +86,27 @@ export class AppStream {
         this.app.frame ||= requestAnimationFrame(() => this.flush());
         break;
       }
+      case "live": {
+        const chat = this.byKey(String(data.key));
+        if (!chat) break;
+        const text = typeof data.text === "string" ? data.text : null;
+        // Each new watcher sends its first read, often a null that changes nothing. A redraw then
+        // would follow the end before a reader's scroll up registers.
+        if (text === chat.live && !chat.liveEnded) break;
+        // A turn can end seconds before its log's rows land, so its text stays until they do.
+        if (text === null && keepsEnded(chat.rows, chat.live)) {
+          chat.liveEnded = true;
+          chat.liveShown = chat.live?.length ?? 0;
+        } else {
+          const shown = chat.live?.slice(0, chat.liveShown) ?? "";
+          let same = 0;
+          while (same < shown.length && text !== null && shown[same] === text[same]) same++;
+          [chat.live, chat.liveShown, chat.liveEnded] = [text, same, false];
+          if (text !== null && same < text.length) this.typeLive();
+        }
+        this.app.reading.changed(chat);
+        break;
+      }
       case "reset":
         void this.reset(String(data.key));
         break;
@@ -87,6 +122,24 @@ export class AppStream {
         this.app.life.onFrame(e.event, data);
         break;
     }
+  }
+
+  /** Shows more of each chat's live text every `TYPE_MS` until all of it shows. */
+  private typeLive() {
+    this.typing ??= setInterval(() => {
+      let left = false;
+      for (const chat of this.app.chats.values()) {
+        const length = chat.live?.length ?? 0;
+        if (chat.liveShown >= length) continue;
+        chat.liveShown += Math.max(1, Math.ceil((length - chat.liveShown) / TYPE_STEPS));
+        left ||= chat.liveShown < length;
+        this.app.reading.changed(chat);
+      }
+      if (!left && this.typing !== null) {
+        clearInterval(this.typing);
+        this.typing = null;
+      }
+    }, TYPE_MS);
   }
 
   /** ADR 0102: a notice click opens its chat. A chat newer than the snapshot is read first. */
@@ -114,6 +167,7 @@ export class AppStream {
         }
       }
       if (chat.rows !== before) {
+        if (chat.liveEnded) [chat.live, chat.liveEnded] = [null, false];
         chat.version++;
         chat.shift = false;
         if (chat.sessionId === this.app.openId) render = true;

@@ -1,6 +1,7 @@
 //! One hosted pane: its login shell on a new PTY, the thread that writes its input, and the thread
 //! that reads its output.
 
+use super::attach::{Viewers, show};
 use super::{Children, Hosted, hang_up, lock};
 use crate::cli::pty::{CHUNK, QUERIES, QueryScanner, Reply};
 use std::collections::HashMap;
@@ -9,9 +10,11 @@ use std::os::fd::{FromRawFd, OwnedFd};
 use std::os::unix::process::CommandExt;
 use std::sync::Arc;
 
-/// tmux's size for a detached session, so a CLI lays out its screen as it does in tmux-swarm.
-const ROWS: u16 = 24;
-const COLS: u16 = 80;
+/// The size of a pane no one views: tmux's width for a detached session, so a CLI lays out its
+/// lines as it does in tmux-swarm, and enough rows that a turn's whole answer stays on the screen
+/// the live row reads (ADR 0131).
+pub(super) const ROWS: u16 = 100;
+pub(super) const COLS: u16 = 80;
 /// tmux's default history-limit.
 const SCROLLBACK: usize = 2000;
 /// Writes that wait for a child that reads no input. tmux keeps every one, but more than this
@@ -83,6 +86,9 @@ pub(super) fn spawn(
         .env_remove("TMUX")
         .env_remove("TMUX_PANE")
         .env_remove("SWARM_PTY_HOST")
+        // The vt100 parser reads xterm's codes, and the host's own env may have no TERM, as an
+        // app's serve has none.
+        .env("TERM", "xterm-256color")
         .envs(env)
         .env("SWARM_PTY_PANE", pane);
     let started = (|| {
@@ -118,6 +124,7 @@ pub(super) fn spawn(
     ));
     let (input, queued) = std::sync::mpsc::sync_channel::<Vec<u8>>(INPUT_QUEUE);
     let replies = input.clone();
+    let viewers = Viewers::new(Mutex::new(Some(Vec::new())));
     // It ends when the pane leaves the list and the reader ends, which drop the senders, or when
     // the child is gone.
     std::thread::spawn(move || {
@@ -136,14 +143,17 @@ pub(super) fn spawn(
             group: child.id() as libc::pid_t,
             parser: parser.clone(),
             activity: activity.clone(),
+            viewers: viewers.clone(),
         },
     );
     std::thread::spawn(move || {
         let mut feed_in = feed_in;
         // A panic, such as in the parser, must still take the pane off the list and reap it.
         let read = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            read_pane(master, &mut feed_in, &parser, &activity, &replies)
+            read_pane(master, &mut feed_in, &parser, &activity, &replies, &viewers)
         }));
+        // Each viewer's writer ends when its queue goes, and closes the viewer's stream.
+        lock(&viewers).take();
         // The pane is gone once its shell and everything it left have exited, as in tmux.
         let gone = lock(&children).remove(&n);
         if let (Err(_), Some(hosted)) = (read, &gone) {
@@ -164,6 +174,7 @@ fn read_pane(
     parser: &Mutex<vt100::Parser>,
     activity: &AtomicU64,
     replies: &std::sync::mpsc::SyncSender<Vec<u8>>,
+    viewers: &Viewers,
 ) {
     let mut terminal = std::fs::File::from(master);
     let mut scanner = QueryScanner::new(QUERIES);
@@ -183,10 +194,14 @@ fn read_pane(
         let _ = feed_in.write_all(bytes);
         let mut parser = lock(parser);
         let mut done = 0;
+        // A viewer's terminal would answer each query again, into the pane, so viewers get the
+        // bytes without them.
+        let mut shown = Vec::with_capacity(bytes.len());
         // Each reply follows the bytes before its query, so a cursor report names the cell the
         // cursor was on when the CLI asked.
         for (end, query) in scanner.push(bytes) {
             parser.process(&bytes[done..end]);
+            shown.extend_from_slice(&bytes[done..end.saturating_sub(query.text.len()).max(done)]);
             done = end;
             let reply = match query.reply {
                 Reply::Text(text) => text.to_vec(),
@@ -201,6 +216,8 @@ fn read_pane(
             let _ = replies.try_send(reply);
         }
         parser.process(&bytes[done..]);
+        shown.extend_from_slice(&bytes[done..]);
+        show(viewers, &shown);
     }
 }
 

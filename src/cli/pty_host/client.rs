@@ -43,10 +43,14 @@ fn pane_of(pane: &str) -> Result<(&str, u64), Box<dyn std::error::Error>> {
 pub(crate) fn client(verb: &str) -> Result<String, Box<dyn std::error::Error>> {
     let var = |name: &str| std::env::var(format!("SWARM_{name}")).unwrap_or_default();
     if verb == "spawn" {
-        let env: HashMap<String, String> = ["SESSION_ID", "AGENT_ID", "HOME", "ADAPTER"]
+        let mut env: HashMap<String, String> = ["SESSION_ID", "AGENT_ID", "HOME", "ADAPTER"]
             .iter()
             .map(|name| (format!("SWARM_{name}"), var(name)))
             .collect();
+        // A hosted chair spawns its children on the same host (ADR 0131).
+        if var("AGENT_ID") == "orchestrator" {
+            env.insert("SWARM_PTY_HOST".into(), var("PTY_HOST"));
+        }
         let cwd = std::env::current_dir()?.to_string_lossy().into_owned();
         let feed = var("FEED");
         return request(
@@ -81,9 +85,116 @@ pub(crate) fn client(verb: &str) -> Result<String, Box<dyn std::error::Error>> {
         "interrupt" => send("key", "key", "Escape".into()),
         "key" => send("key", "key", var("KEY")),
         "screen" | "capture" | "close" => ask(verb),
-        "attach" => Err("swarm pty: a hosted pane has no attach yet".into()),
+        "attach" => attach(&socket, n).map(|()| String::new()),
         _ => Err(format!("swarm pty: unknown verb {verb}").into()),
     }
+}
+
+/// Set by SIGWINCH, so the viewer sends its new size.
+static RESIZED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+extern "C" fn note_resize(_: libc::c_int) {
+    RESIZED.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// This terminal's rows and columns, as `{"rows", "cols"}`, or none on a non-terminal.
+fn terminal_size() -> serde_json::Value {
+    let mut size: libc::winsize = unsafe { std::mem::zeroed() };
+    // SAFETY: TIOCGWINSZ writes a local winsize.
+    if unsafe { libc::ioctl(0, libc::TIOCGWINSZ, &mut size) } != 0
+        || size.ws_row == 0
+        || size.ws_col == 0
+    {
+        return serde_json::json!({});
+    }
+    serde_json::json!({"rows": size.ws_row, "cols": size.ws_col})
+}
+
+/// `swarm pty attach`: shows a hosted pane on this terminal and sends it the keys typed here,
+/// until the pane ends or this terminal goes (ADR 0131).
+fn attach(socket: &std::path::Path, n: u64) -> Result<(), Box<dyn std::error::Error>> {
+    use std::io::Read;
+    let stream = UnixStream::connect(socket)
+        .map_err(|error| format!("swarm pty: no host at {}: {error}", socket.display()))?;
+    // Before the size is read, so a resize during the reply still reaches the pane.
+    // SAFETY: the handler only stores to an atomic.
+    unsafe {
+        let mut action: libc::sigaction = std::mem::zeroed();
+        action.sa_sigaction = note_resize as extern "C" fn(libc::c_int) as usize;
+        action.sa_flags = libc::SA_RESTART;
+        libc::sigaction(libc::SIGWINCH, &action, std::ptr::null_mut());
+    }
+    let mut ask = terminal_size();
+    ask["op"] = "attach".into();
+    ask["n"] = n.into();
+    // Only the reply is bounded; the viewer then waits on the pane for as long as it shows.
+    stream.set_read_timeout(Some(REQUEST_TIMEOUT))?;
+    stream.set_write_timeout(Some(REQUEST_TIMEOUT))?;
+    writeln!(&stream, "{ask}")?;
+    let mut reader = std::io::BufReader::new(stream.try_clone()?);
+    let mut line = String::new();
+    reader.read_line(&mut line)?;
+    stream.set_read_timeout(None)?;
+    stream.set_write_timeout(None)?;
+    let mut keys = stream.try_clone()?;
+    let reply: serde_json::Value = serde_json::from_str(&line)?;
+    if reply["ok"] != true {
+        return Err(reply["error"]
+            .as_str()
+            .unwrap_or("swarm pty: bad reply")
+            .into());
+    }
+    let mut saved: libc::termios = unsafe { std::mem::zeroed() };
+    // SAFETY: tcgetattr fills a local termios; cfmakeraw and tcsetattr read it.
+    let raw_mode = unsafe { libc::tcgetattr(0, &mut saved) } == 0 && {
+        let mut attrs = saved;
+        unsafe { libc::cfmakeraw(&mut attrs) };
+        (unsafe { libc::tcsetattr(0, libc::TCSANOW, &attrs) }) == 0
+    };
+    let socket = socket.to_path_buf();
+    std::thread::spawn(move || {
+        loop {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            if RESIZED.swap(false, std::sync::atomic::Ordering::Relaxed) {
+                let mut size = terminal_size();
+                size["op"] = "resize".into();
+                size["n"] = n.into();
+                let _ = request(&socket, size);
+            }
+        }
+    });
+    std::thread::spawn(move || {
+        let _ = std::io::copy(&mut std::io::stdin().lock(), &mut keys);
+        let _ = keys.shutdown(std::net::Shutdown::Write);
+    });
+    let mut stdout = std::io::stdout().lock();
+    let mut chunk = [0; 65536];
+    loop {
+        match reader.read(&mut chunk) {
+            Ok(0) => break,
+            Ok(read) => {
+                if stdout
+                    .write_all(&chunk[..read])
+                    .and_then(|()| stdout.flush())
+                    .is_err()
+                {
+                    break;
+                }
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(_) => break,
+        }
+    }
+    // The pane's CLI may have left the main screen, mouse reports, bracketed paste, or a hidden
+    // cursor on; turn them off, as tmux does when a client detaches.
+    let _ = stdout
+        .write_all(b"\x1b[?1049l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?2004l\x1b[?25h")
+        .and_then(|()| stdout.flush());
+    if raw_mode {
+        // SAFETY: restores the termios read above.
+        unsafe { libc::tcsetattr(0, libc::TCSANOW, &saved) };
+    }
+    Ok(())
 }
 
 #[cfg(test)]

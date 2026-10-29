@@ -199,6 +199,17 @@ pub fn sqlite_db_to_read() -> Result<std::path::PathBuf, Box<dyn std::error::Err
         .join(SWARM_DB))
 }
 
+/// Whether an executable file named `name` is in a folder of PATH.
+pub fn on_path(name: &str) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    std::env::var_os("PATH").is_some_and(|path| {
+        std::env::split_paths(&path).any(|dir| {
+            std::fs::metadata(dir.join(name))
+                .is_ok_and(|meta| meta.is_file() && meta.permissions().mode() & 0o111 != 0)
+        })
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::{branch_folder, branch_home};

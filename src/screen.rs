@@ -35,6 +35,7 @@ impl ScreenState {
 
 mod classify;
 mod composer;
+mod live;
 mod log_prompt;
 mod prompt;
 
@@ -43,6 +44,7 @@ pub use composer::{
     QueuedMessage, claude_composer, codex_composer, composer, holds, pi_composer, pi_queue, queue,
     reads_composer,
 };
+pub use live::turn_text;
 pub use log_prompt::agent_prompt;
 pub use prompt::{Prompt, prompt, whole_prompt};
 
@@ -127,6 +129,8 @@ macro_rules! fixture {
 mod classify_tests;
 #[cfg(test)]
 mod composer_tests;
+#[cfg(test)]
+mod live_tests;
 #[cfg(test)]
 mod prompt_tests;
 #[cfg(test)]

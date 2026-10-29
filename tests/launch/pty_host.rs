@@ -202,3 +202,208 @@ fn swarm_child_host_wraps_the_chair_in_a_host_whatever_its_provider() {
         assert_eq!(script.contains("'pty'"), host, "{script}");
     }
 }
+
+#[test]
+fn an_app_chair_runs_on_a_headless_host_and_its_children_end_with_it() {
+    let home = scratch("pty-headless");
+    // The chair and the seat report working, as Claude does, and the chair notes its host.
+    tool(
+        &home,
+        "claude",
+        "case \"$*\" in *--model*) ;; *) exit 0 ;; esac\n\
+         printf '%s\\n' \"$SWARM_PTY_HOST\" > \"$SWARM_HOME/host-$SWARM_AGENT_ID\"\n\
+         echo $$ > \"$SWARM_HOME/pid-$SWARM_AGENT_ID\"\n\
+         report() { printf '\\033]7501;state=working:app=claude\\007'; }\n\
+         report; while read -r line; do report; done",
+    );
+    let app = [("SWARM_ADAPTER", "tmux-swarm")];
+    let session = swarm(&home, &app, &["session", "new", "lane"]);
+    assert!(session.status.success(), "{}", stderr(&session));
+    let session = String::from_utf8(session.stdout)
+        .unwrap()
+        .trim()
+        .to_string();
+    let cwd = home.join("repo");
+    std::fs::create_dir_all(&cwd).unwrap();
+    let cwd = cwd.to_string_lossy().into_owned();
+    let env = [
+        ("SWARM_ADAPTER", "tmux-swarm"),
+        ("SWARM_SESSION_ID", session.as_str()),
+    ];
+    let launch = |env: &[(&str, &str)], agent: &str| {
+        let args = [
+            "launch",
+            agent,
+            "chat",
+            "--provider",
+            "claude",
+            "--model",
+            "opus",
+        ];
+        let output = swarm(&home, env, &[&args[..], &["--cwd", &cwd]].concat());
+        assert!(output.status.success(), "{}", stderr(&output));
+        String::from_utf8(output.stdout).unwrap().trim().to_string()
+    };
+    // The test's PATH has no tmux, so the chair needs the host.
+    let chair = launch(&env, "orchestrator");
+    assert!(chair.starts_with(&format!("pty:{session}:")), "{chair}");
+    let noted = |agent: &str| std::fs::read_to_string(home.join(format!("host-{agent}")));
+    wait_for(
+        || noted("orchestrator").is_ok_and(|text| text.ends_with('\n')),
+        "the chair",
+    );
+    let socket = noted("orchestrator").unwrap().trim().to_string();
+    assert!(std::os::unix::net::UnixStream::connect(&socket).is_ok());
+
+    // The chair's env sends its seat to the same host.
+    let chair_env = [
+        env[0],
+        env[1],
+        ("SWARM_AGENT_ID", "orchestrator"),
+        ("SWARM_PTY_HOST", socket.as_str()),
+    ];
+    let seat = launch(&chair_env, "seat");
+    assert!(seat.starts_with(&format!("pty:{session}:")), "{seat}");
+    let pid_file = home.join("pid-seat");
+    wait_for(
+        || std::fs::read_to_string(&pid_file).is_ok_and(|pid| pid.ends_with('\n')),
+        "the seat",
+    );
+
+    // The chair's end ends the host, and the seat with it.
+    let close = swarm(&home, &[("SWARM_PANE", chair.as_str())], &["pty", "close"]);
+    assert!(close.status.success(), "{}", stderr(&close));
+    wait_for(
+        || std::os::unix::net::UnixStream::connect(&socket).is_err(),
+        "the host to stop",
+    );
+    let seat_pid = std::fs::read_to_string(&pid_file).unwrap();
+    wait_for(
+        || {
+            !std::process::Command::new("kill")
+                .args(["-0", seat_pid.trim()])
+                .stderr(std::process::Stdio::null())
+                .status()
+                .unwrap()
+                .success()
+        },
+        "the seat to end",
+    );
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+#[test]
+fn the_tmux_choice_counts_only_while_tmux_is_on_path() {
+    let home = scratch("pty-tmux-choice");
+    tool(
+        &home,
+        "claude",
+        "case \"$*\" in *--model*) ;; *) exit 0 ;; esac\nwhile read -r line; do :; done",
+    );
+    std::fs::write(
+        home.join(".swarm/choices.json"),
+        r#"{"prefs":{"terminalHost":"tmux"}}"#,
+    )
+    .unwrap();
+    let cwd = home.join("repo");
+    std::fs::create_dir_all(&cwd).unwrap();
+    let cwd = cwd.to_string_lossy().into_owned();
+    let launch = || {
+        let session = swarm(
+            &home,
+            &[("SWARM_ADAPTER", "tmux-swarm")],
+            &["session", "new", "lane"],
+        );
+        let session = String::from_utf8(session.stdout)
+            .unwrap()
+            .trim()
+            .to_string();
+        let env = [
+            ("SWARM_ADAPTER", "tmux-swarm"),
+            ("SWARM_SESSION_ID", session.as_str()),
+        ];
+        let args = [
+            "launch",
+            "orchestrator",
+            "chat",
+            "--provider",
+            "claude",
+            "--model",
+            "opus",
+        ];
+        let output = swarm(&home, &env, &[&args[..], &["--cwd", &cwd]].concat());
+        assert!(output.status.success(), "{}", stderr(&output));
+        String::from_utf8(output.stdout).unwrap().trim().to_string()
+    };
+    // With tmux on PATH the chat runs there; this tmux only names a pane.
+    tool(
+        &home,
+        "tmux",
+        "case \"$*\" in *new-session*) echo %77 ;; esac",
+    );
+    assert_eq!(launch(), "%77");
+    // With tmux gone the choice cannot hold, so the chat runs on its own host. The test PATH keeps
+    // /usr/bin and /bin, so a machine with tmux there cannot check this half.
+    std::fs::remove_file(home.join("bin/tmux")).unwrap();
+    if !["/usr/bin/tmux", "/bin/tmux"]
+        .iter()
+        .any(|path| std::path::Path::new(path).exists())
+    {
+        let chair = launch();
+        assert!(chair.starts_with("pty:"), "{chair}");
+        let close = swarm(&home, &[("SWARM_PANE", chair.as_str())], &["pty", "close"]);
+        assert!(close.status.success(), "{}", stderr(&close));
+    }
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+#[test]
+fn a_codex_chair_on_a_new_host_may_reach_that_host() {
+    let home = scratch("pty-codex-chair");
+    // The chair notes its host and its sandbox, and stays up.
+    tool(
+        &home,
+        "codex",
+        "case \"$*\" in *unix_sockets*) ;; *) exit 0 ;; esac\n\
+         printf '%s\\n' \"$SWARM_PTY_HOST\" > \"$SWARM_HOME/host\"\n\
+         printf '%s\\n' \"$*\" > \"$SWARM_HOME/args\"\n\
+         while read -r line; do :; done",
+    );
+    let app = [("SWARM_ADAPTER", "tmux-swarm")];
+    let session = swarm(&home, &app, &["session", "new", "lane"]);
+    assert!(session.status.success(), "{}", stderr(&session));
+    let session = String::from_utf8(session.stdout)
+        .unwrap()
+        .trim()
+        .to_string();
+    let env = [
+        ("SWARM_ADAPTER", "tmux-swarm"),
+        ("SWARM_SESSION_ID", session.as_str()),
+    ];
+    let args = [
+        "launch",
+        "orchestrator",
+        "chat",
+        "--provider",
+        "codex",
+        "--model",
+        "gpt-5",
+    ];
+    let home_dir = home.to_string_lossy().into_owned();
+    let output = swarm(&home, &env, &[&args[..], &["--cwd", &home_dir]].concat());
+    assert!(output.status.success(), "{}", stderr(&output));
+    let chair = String::from_utf8(output.stdout).unwrap().trim().to_string();
+    let read = |name: &str| std::fs::read_to_string(home.join(name)).unwrap_or_default();
+    wait_for(|| read("args").ends_with('\n'), "the chair");
+    // The sandbox names the socket as /private/tmp, as it resolves it.
+    let socket = std::fs::canonicalize(read("host").trim()).unwrap();
+    let grant = format!("\"{}\"=\"allow\"", socket.display());
+    assert!(
+        read("args").contains(&grant),
+        "{grant} not in {}",
+        read("args")
+    );
+    let close = swarm(&home, &[("SWARM_PANE", chair.as_str())], &["pty", "close"]);
+    assert!(close.status.success(), "{}", stderr(&close));
+    let _ = std::fs::remove_dir_all(&home);
+}

@@ -31,6 +31,20 @@ fn queue_overflow_resets_every_affected_key_and_stays_bounded() {
     );
 }
 #[test]
+fn a_stalled_client_keeps_only_the_newest_live_text_of_each_key() {
+    let mut stream = client(&[("s:one", 0), ("s:two", 0)]);
+    for index in 0..2000 {
+        let key = if index % 2 == 0 { "s:one" } else { "s:two" };
+        stream.push(Frame::new("live", json!({"text": index}), Some(key)));
+    }
+    let texts: Vec<_> = stream
+        .queue
+        .iter()
+        .map(|frame| serde_json::from_str::<Value>(&frame.data).unwrap()["text"].clone())
+        .collect();
+    assert_eq!(texts, [json!(1998), json!(1999)]);
+}
+#[test]
 fn cold_row_cache_keeps_only_four_keys() {
     let fixture = Fixture::new();
     let mut hub = fixture.app.hub.lock().unwrap();
@@ -140,4 +154,153 @@ async fn show_tells_each_open_page_to_open_the_chat() {
     )
     .await;
     assert!(bad.is_err());
+}
+#[tokio::test]
+async fn a_working_chair_streams_its_screen_text_and_the_turn_end_clears_it() {
+    let fixture = Fixture::new();
+    let screen = fixture.dir.join("screen.txt");
+    std::fs::copy(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/screens/claude-turn-text.txt"),
+        &screen,
+    )
+    .unwrap();
+    std::fs::create_dir_all(fixture.app.root.join("adapters")).unwrap();
+    std::fs::write(
+        fixture.app.root.join("adapters/tmux-swarm.conf"),
+        format!("capture = cat '{}'\n", screen.display()),
+    )
+    .unwrap();
+    let connection = swarm::store::open(&fixture.app.root.join("swarm.db")).unwrap();
+    swarm::store::add_agent(
+        &connection,
+        &fixture.session,
+        "orchestrator",
+        "orchestrator",
+    )
+    .unwrap();
+    drop(connection);
+    let agents = |state: &str| {
+        let agent = json!({"id": "orchestrator", "pane": "%1", "alive": true, "state": state});
+        json!({ fixture.session.as_str(): [agent] })
+    };
+    {
+        let mut hub = fixture.app.hub.lock().unwrap();
+        hub.agents = agents("working");
+        hub.streams.insert("all".into(), client(&[]));
+    }
+    // The page names the chair's chat `chair`; the store names it `orchestrator`.
+    let key = format!("{}:chair", fixture.session);
+    let from = std::fs::metadata(&fixture.log).unwrap().len();
+    let _ = subscribe(
+        State(fixture.app.clone()),
+        Json(Subscription {
+            stream: "all".into(),
+            keys: vec![SubscriptionKey {
+                key: key.clone(),
+                from,
+                view: Some("rows".into()),
+            }],
+        }),
+    )
+    .await
+    .unwrap();
+    let live = |app: &App| {
+        let hub = app.hub.lock().unwrap();
+        hub.streams["all"]
+            .queue
+            .iter()
+            .filter(|frame| frame.name == "live")
+            .map(|frame| serde_json::from_str::<Value>(&frame.data).unwrap())
+            .collect::<Vec<_>>()
+    };
+    until_live(&fixture.app, &live, 1).await;
+    let frames = live(&fixture.app);
+    assert_eq!(frames[0]["key"], key.as_str());
+    assert!(
+        frames[0]["text"]
+            .as_str()
+            .unwrap()
+            .starts_with("In the 1860s, French makers")
+    );
+    // A failed read keeps the shown text, so the row does not blink.
+    std::fs::remove_file(&screen).unwrap();
+    tokio::time::sleep(Duration::from_millis(800)).await;
+    assert!(live(&fixture.app)[0]["text"].is_string());
+    fixture.app.hub.lock().unwrap().agents = agents("idle");
+    // The queue keeps only the newest live frame of a key, so the turn end replaces the text.
+    for _ in 0..40 {
+        if live(&fixture.app)[0]["text"].is_null() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    let frames = live(&fixture.app);
+    assert_eq!(frames.len(), 1);
+    assert_eq!(frames[0]["text"], Value::Null);
+    drop(Events {
+        app: fixture.app.clone(),
+        id: "all".into(),
+    });
+}
+
+async fn until_live(app: &App, live: &impl Fn(&App) -> Vec<Value>, count: usize) {
+    for _ in 0..40 {
+        if live(app).len() >= count {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+
+#[tokio::test]
+async fn a_new_watcher_tells_the_page_that_no_turn_runs() {
+    let fixture = Fixture::new();
+    let connection = swarm::store::open(&fixture.app.root.join("swarm.db")).unwrap();
+    swarm::store::add_agent(
+        &connection,
+        &fixture.session,
+        "orchestrator",
+        "orchestrator",
+    )
+    .unwrap();
+    drop(connection);
+    {
+        let mut hub = fixture.app.hub.lock().unwrap();
+        let agent = json!({"id": "orchestrator", "pane": "%1", "alive": true, "state": "idle"});
+        hub.agents = json!({ fixture.session.as_str(): [agent] });
+        hub.streams.insert("all".into(), client(&[]));
+    }
+    let key = format!("{}:chair", fixture.session);
+    let from = std::fs::metadata(&fixture.log).unwrap().len();
+    let _ = subscribe(
+        State(fixture.app.clone()),
+        Json(Subscription {
+            stream: "all".into(),
+            keys: vec![SubscriptionKey {
+                key: key.clone(),
+                from,
+                view: Some("rows".into()),
+            }],
+        }),
+    )
+    .await
+    .unwrap();
+    // A page that kept an old turn's text from an earlier watcher gets null at once.
+    let live = |app: &App| {
+        let hub = app.hub.lock().unwrap();
+        hub.streams["all"]
+            .queue
+            .iter()
+            .filter(|frame| frame.name == "live")
+            .map(|frame| serde_json::from_str::<Value>(&frame.data).unwrap())
+            .collect::<Vec<_>>()
+    };
+    until_live(&fixture.app, &live, 1).await;
+    let frames = live(&fixture.app);
+    assert_eq!(frames.len(), 1);
+    assert_eq!(frames[0]["text"], Value::Null);
+    drop(Events {
+        app: fixture.app.clone(),
+        id: "all".into(),
+    });
 }

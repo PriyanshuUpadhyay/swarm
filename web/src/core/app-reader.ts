@@ -3,14 +3,40 @@
 import { queueRows, type Usage } from "./composer";
 import { MarkdownCache } from "./markdown";
 import { FoldChoices, findMatches, lines, mergeRows, type Line } from "./transcript";
+import type { Row } from "./api";
 import { TAIL, LRU_SIZE, type FullText, type Chat, type Find, type Reader, paneId } from "./app-types";
 import type { App } from "./app";
+
+const letters = (text: string) => text.replace(/[^\p{L}\p{N}]/gu, "");
+/** The fewest letters a screen text needs before a log row may hide it. */
+const MATCHED = 20;
+
+/** The running turn's screen text as a row, or null once a recent log row holds it. The screen
+ *  drops markdown marks and wraps lines, so only letters and digits are compared. Rows of earlier
+ *  turns count too, because pi's screen can still show the last turn's answer. A text shorter
+ *  than 20 letters, such as a spinner's "Working", is never matched, so it cannot hide itself. */
+export function liveRow(rows: readonly Row[], text: string | null): Row | null {
+  if (!text) return null;
+  const head = letters(text).slice(0, 80);
+  if (!head) return null;
+  if (head.length >= MATCHED)
+    for (let i = rows.length - 1; i >= Math.max(0, rows.length - 50); i--)
+      if (rows[i].kind === "assistant" && letters(rows[i].text).includes(head)) return null;
+  return { id: "live", kind: "assistant", text, order: [Number.MAX_SAFE_INTEGER, -1] };
+}
+
+/** Whether an ended turn's text stays until the log's rows land: only a text that a landed row
+ *  will hide, and that none hides yet. A spinner's short text never matches, so it goes at once. */
+export function keepsEnded(rows: readonly Row[], text: string | null): boolean {
+  return text !== null && letters(text).length >= MATCHED && liveRow(rows, text) !== null;
+}
 
 export class AppReader {
   constructor(private readonly app: App) {}
 
   build(chat: Chat) {
-    const rows = chat.queue.length ? chat.rows.concat(chat.queue) : chat.rows;
+    const live = liveRow(chat.rows, chat.live?.slice(0, chat.liveShown) ?? null);
+    const rows = live || chat.queue.length ? [...chat.rows, ...(live ? [live] : []), ...chat.queue] : chat.rows;
     return lines(rows, { folds: chat.folds, opened: chat.opened });
   }
 
@@ -33,6 +59,9 @@ export class AppReader {
       loadingOlder: false,
       usage: null,
       queue: [],
+      live: null,
+      liveShown: 0,
+      liveEnded: false,
       typed: [],
       ...this.freshReaderState(),
     };

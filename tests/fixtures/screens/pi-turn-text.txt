@@ -1,0 +1,24 @@
+ since that's the actual task at hand—run the ls command, then write the        
+ response directly. 
+
+                                                                                
+ $ ls /Users/x/work/swarm/wt/streamable-outputs/docs (timeout 120s)     
+                                                                                
+ ... (6 earlier lines, ctrl+o to expand)                                        
+ environment.md                                                                 
+ images                                                                         
+ progress.md                                                                    
+ research                                                                       
+ usage-format.md                                                                
+                                                                                
+ Took 0.0s                                                                      
+                                                                                
+
+ I should aim for plain, straightforward paragraphs without relying on colons   
+ to structure sentences, keeping the tone simple and direct.                    
+
+── ⠧ Working ───────────────────────────────────────────────────────────────────
+                    
+────────────────────────────────────────────────────────────────────────────────
+~/work/swarm/wt/streamable-outputs (swarm/streamable-outputs)
+↑2 ↓264 R1.8k W16k CH9.6% 1.9%/1.0M (auto)              claude-opus-5-5 • medium

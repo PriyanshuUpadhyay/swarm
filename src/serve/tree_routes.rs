@@ -145,6 +145,8 @@ pub(super) async fn tree_view(
             "archivedStatus": archived_status,
             "choicesError": choices_error,
             "prefs": saved.owner.prefs,
+            // ADR 0131: Settings offers tmux only when a new chat could run there.
+            "tmuxAvailable": swarm::paths::on_path("tmux"),
         })))
     })
     .await

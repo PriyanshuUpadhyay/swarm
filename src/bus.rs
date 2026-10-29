@@ -113,14 +113,50 @@ fn tmux_socket_dir(tmpdir: Option<&str>, uid: u32) -> String {
     format!("{base}/tmux-{uid}")
 }
 
+/// The PTY host socket of `session` (ADR 0131). A socket path holds at most 104 bytes on macOS,
+/// and a branch build's `runs/<session>/` is longer, so the socket lives in `/tmp/swarm-<uid>`, as
+/// tmux's does, under a hash of that runs folder.
+pub fn pty_socket_of(
+    session: &str,
+    uid: u32,
+) -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
+    use sha2::Digest;
+    use std::os::unix::ffi::OsStrExt;
+    let runs = crate::paths::root_dir()?.join(format!("runs/{session}"));
+    let hash = sha2::Sha256::digest(runs.as_os_str().as_bytes());
+    let name: String = hash[..8].iter().map(|byte| format!("{byte:02x}")).collect();
+    Ok(format!("/tmp/swarm-{uid}/{name}.sock").into())
+}
+
+/// The one PTY host socket a Codex seat may reach, resolved as the sandbox sees it, or None. It is
+/// the launching chair's host (`SWARM_PTY_HOST`), or for a chair, its own session's host, which
+/// its launch starts only after this profile is built. Only this file is allowed, so a seat cannot
+/// reach another chat's host.
+fn pty_socket(host: Option<&str>, chair_session: Option<&str>, uid: u32) -> Option<String> {
+    let path = match host.filter(|host| !host.is_empty()) {
+        Some(host) => std::path::PathBuf::from(host),
+        None => pty_socket_of(chair_session.filter(|id| !id.is_empty())?, uid).ok()?,
+    };
+    if let Ok(path) = std::fs::canonicalize(&path) {
+        return Some(path.display().to_string());
+    }
+    // A socket that its host has not bound yet still needs /tmp resolved.
+    match (path.strip_prefix("/tmp"), std::fs::canonicalize("/tmp")) {
+        (Ok(rest), Ok(tmp)) => Some(tmp.join(rest).display().to_string()),
+        _ => Some(path.display().to_string()),
+    }
+}
+
 mod codex;
 mod hooks;
 mod launch;
+mod refusal;
 mod trust;
 
 pub use codex::*;
 pub use hooks::*;
 pub use launch::*;
+pub use refusal::*;
 pub use trust::*;
 
 /// A Codex `config.toml` as text and as TOML.

@@ -334,3 +334,30 @@ fn a_pi_log_is_found_by_its_session_id() {
         assert!(body.contains("One test fails."), "{agent}: {body}");
     }
 }
+
+/// A new Claude chair's hook stores its log only at the end of its first turn, but the file exists
+/// from the turn's start. The server finds it by the chair's id, so the page can show that turn
+/// live (ADR 0131).
+#[test]
+fn a_claude_chair_log_is_found_by_its_id_before_its_hook_stores_it() {
+    let server = Server::new();
+    let connection = swarm::store::open(&server.dir.join("home/.swarm/swarm.db")).unwrap();
+    let id = uuid::Uuid::now_v7().to_string();
+    swarm::store::set_chair(&connection, &server.session, Some(("claude", &id))).unwrap();
+    let chair_log = || {
+        let (status, _, body) = server.request("GET", "/api/snapshot", "", "", true);
+        assert_eq!(status, 200, "{body}");
+        let snapshot: Value = serde_json::from_str(&body).unwrap();
+        snapshot["sessions"][0]["chair_log"].clone()
+    };
+    let rows = format!("/api/rows?session={}&agent=chair&tail=200", server.session);
+    assert_eq!(chair_log(), Value::Null);
+    assert_eq!(server.request("GET", &rows, "", "", true).0, 404);
+    let project = server.dir.join("home/.claude/projects/-work-");
+    fs::create_dir_all(&project).unwrap();
+    let log = project.join(format!("{id}.jsonl"));
+    fs::copy(&server.log, &log).unwrap();
+    assert_eq!(chair_log(), json!(log.to_string_lossy()));
+    let (status, _, body) = server.request("GET", &rows, "", "", true);
+    assert_eq!(status, 200, "{body}");
+}

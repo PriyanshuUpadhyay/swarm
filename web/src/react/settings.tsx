@@ -184,7 +184,29 @@ function AppearancePage({ app }: { app: App }) {
           onChange={(v) => void app.settings.setPref("switchCarry", v)}
         />
       </Row>
+      <TerminalHostRow app={app} prefs={prefs} />
     </div>
+  );
+}
+
+/** Where a new chat runs (ADR 0131). PTY needs nothing else, so tmux is offered only when it is installed. */
+function TerminalHostRow({ app, prefs }: { app: App; prefs: Prefs }) {
+  const tmux = useSyncExternalStore(app.subscribe, () => app.view.tree?.tmuxAvailable === true);
+  if (!tmux) return null;
+  return (
+    <Row title="Terminal host" detail="Where a new chat runs. A running chat stays where it started.">
+      <Segmented
+        label="Terminal host"
+        testid="pref-terminal-host"
+        value={prefs.terminalHost === "tmux" ? "tmux" : "pty"}
+        options={[
+          ["pty", "PTY"],
+          ["tmux", "tmux"],
+        ]}
+        // Fire-and-forget is safe: choose never rejects, and it shows its own error notice.
+        onChange={(v) => void app.settings.setPref("terminalHost", v)}
+      />
+    </Row>
   );
 }
 
