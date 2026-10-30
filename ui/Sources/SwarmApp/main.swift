@@ -131,6 +131,9 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKUIDelega
         if navigationAction.request.url?.scheme == "swarm-retry" {
             decisionHandler(.cancel)
             reloadPage(nil)
+        } else if navigationAction.request.url?.isFileURL == true {
+            // A file dropped outside the composer would otherwise replace the app page.
+            decisionHandler(.cancel)
         } else {
             decisionHandler(.allow)
         }
