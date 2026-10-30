@@ -2,7 +2,7 @@
 
 import { queueRows, type Usage } from "./composer";
 import { MarkdownCache } from "./markdown";
-import { FoldChoices, findMatches, lines, mergeRows, type Line } from "./transcript";
+import { FoldChoices, LIVE_THOUGHT, findMatches, lines, mergeRows, type Line } from "./transcript";
 import type { Row } from "./api";
 import { TAIL, LRU_SIZE, type FullText, type Chat, type Find, type Reader, paneId } from "./app-types";
 import type { App } from "./app";
@@ -25,6 +25,14 @@ export function liveRow(rows: readonly Row[], text: string | null): Row | null {
   return { id: "live", kind: "assistant", text, order: [Number.MAX_SAFE_INTEGER, -1] };
 }
 
+/** The live rows under the log's rows: pi's streaming thinking, open while it streams, and the
+ *  answer text. */
+export function liveRows(rows: readonly Row[], text: string | null, thinking: string | null): Row[] {
+  const live = liveRow(rows, text);
+  const thought: Row | null = thinking ? { id: LIVE_THOUGHT, kind: "thought", text: thinking, order: [Number.MAX_SAFE_INTEGER, -2] } : null;
+  return [thought, live].filter((row) => row !== null);
+}
+
 /** Whether an ended turn's text stays until the log's rows land: only a text that a landed row
  *  will hide, and that none hides yet. A spinner's short text never matches, so it goes at once. */
 export function keepsEnded(rows: readonly Row[], text: string | null): boolean {
@@ -35,8 +43,8 @@ export class AppReader {
   constructor(private readonly app: App) {}
 
   build(chat: Chat) {
-    const live = liveRow(chat.rows, chat.live?.slice(0, chat.liveShown) ?? null);
-    const rows = live || chat.queue.length ? [...chat.rows, ...(live ? [live] : []), ...chat.queue] : chat.rows;
+    const live = liveRows(chat.rows, chat.live?.slice(0, chat.liveShown) ?? null, chat.liveThinking);
+    const rows = live.length || chat.queue.length ? [...chat.rows, ...live, ...chat.queue] : chat.rows;
     return lines(rows, { folds: chat.folds, opened: chat.opened });
   }
 
@@ -61,6 +69,7 @@ export class AppReader {
       queue: [],
       live: null,
       liveShown: 0,
+      liveThinking: null,
       liveEnded: false,
       typed: [],
       ...this.freshReaderState(),

@@ -64,8 +64,11 @@ export type Line = { id: string; row: Row; fold: Row | null; open: boolean };
 
 export type LineState = { folds: FoldChoices; opened: ReadonlyMap<string, boolean> };
 
-/** A failed tool card starts open; the reader's choice wins. */
-export const cardOpen = (row: Row, opened: ReadonlyMap<string, boolean>) => opened.get(row.id) ?? row.tool?.state === "failed";
+/** The id of the live row of pi's streaming thinking. */
+export const LIVE_THOUGHT = "live-thought";
+
+/** A failed tool card and the streaming thinking start open; the reader's choice wins. */
+export const cardOpen = (row: Row, opened: ReadonlyMap<string, boolean>) => opened.get(row.id) ?? (row.id === LIVE_THOUGHT || row.tool?.state === "failed");
 
 /** Visible rows become lines; an open fold includes only its visible steps. */
 export function lines(rows: readonly Row[], s: LineState): Line[] {

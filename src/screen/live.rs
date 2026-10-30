@@ -4,29 +4,13 @@
 /// its block mark, or None when the block is a tool call, when nothing is drawn yet, when the
 /// screen still shows an ended turn, or when swarm cannot read that CLI. A preview only: the log
 /// stays the record of the turn. AGY draws its answer only at the end of a turn, so its one
-/// spinner row is its preview. `prompt` is the turn's message from the log; pi marks neither its
-/// echo nor its text, so its text starts under that message.
-pub fn turn_text(provider: &str, rows: &str, prompt: Option<&str>) -> Option<String> {
+/// spinner row is its preview. pi marks no block, so its text comes from its extension, not here.
+pub fn turn_text(provider: &str, rows: &str) -> Option<String> {
     let lines: Vec<&str> = rows.lines().collect();
     // The input box and the echo of a sent message start with the same mark.
     let (bottom, echo, mark) = match provider {
         "claude" => (rposition(&lines, |line| line.starts_with('❯'))?, '❯', "⏺"),
         "codex" => (rposition(&lines, |line| line.starts_with('›'))?, '›', "•"),
-        // ponytail: pi marks no block, so its text starts after its last tool's `Took` row; a
-        // turn with no tool shows nothing, because its own message sits above with no mark.
-        "pi" => {
-            let bottom = rposition(&lines, |line| {
-                line.starts_with("── ") && line.contains("Working")
-            })?;
-            let echo = prompt.and_then(|prompt| echo_end(&lines[..bottom], prompt));
-            let took = rposition(&lines[..bottom], |line| line.starts_with(" Took "));
-            let top = echo.max(took)?;
-            let text: Vec<&str> = lines[top + 1..bottom]
-                .iter()
-                .map(|line| line.trim())
-                .collect();
-            return joined(&text);
-        }
         "agy" => {
             let line = lines.iter().rev().find(|line| {
                 line.chars()
@@ -58,6 +42,11 @@ pub fn turn_text(provider: &str, rows: &str, prompt: Option<&str>) -> Option<Str
     let last = rposition(&lines[..bottom], |line| {
         body(line) || is_block_start(line, mark)
     })?;
+    // A block above the latest echo, such as a message queued while the turn runs, is already in
+    // the log, and the turn has drawn nothing since.
+    if echoed.is_some_and(|echoed| last < echoed) {
+        return None;
+    }
     let mut text = Vec::new();
     for line in lines[..=last].iter().rev() {
         if is_block_start(line, mark) {
@@ -96,37 +85,6 @@ pub(super) fn ended(provider: &str, line: &str) -> bool {
         }
         _ => line.trim_start().starts_with("Worked for "),
     }
-}
-
-/// The row where pi's echo of `prompt` ends: the lowest row that, with the rows above it, spells
-/// the whole message. pi wraps at spaces, so the rows joined by one space give it back.
-fn echo_end(lines: &[&str], prompt: &str) -> Option<usize> {
-    let words = |text: &str| text.split_whitespace().collect::<Vec<_>>().join(" ");
-    let prompt = words(prompt);
-    if prompt.is_empty() {
-        return None;
-    }
-    (0..lines.len()).rev().find(|&end| {
-        let mut tail = String::new();
-        for line in lines[..=end].iter().rev() {
-            let line = words(line);
-            if line.is_empty() {
-                continue;
-            }
-            tail = if tail.is_empty() {
-                line
-            } else {
-                format!("{line} {tail}")
-            };
-            if tail == prompt {
-                return true;
-            }
-            if !prompt.ends_with(&tail) {
-                return false;
-            }
-        }
-        false
-    })
 }
 
 fn is_block_start(line: &str, mark: &str) -> bool {

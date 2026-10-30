@@ -26,6 +26,11 @@ Bottom rows of agent panes for the screen check tests in `src/screen.rs`.
   `claude-turn-text.txt` is the turn just after its end, with the block mark scrolled off; its
   `✻ Sautéed for 11s · done 6:52 PM` row is replaced by a running row, so it reads as if the turn
   still ran.
+  `claude-queued.txt` and `codex-queued.txt` are real `swarm pty capture` output from Claude Code
+  2.1.314 (Haiku 5.5) and codex-cli 0.162.1 (GPT-6-Luna) on 2026-10-30: a turn that runs
+  `sleep 6` and then writes, with a second message sent while it runs. The account, session id,
+  and paths are replaced by neutral text. Haiku wrote its answer between two captures, so the
+  Claude turn's `✻ Crunched for 20s · done 3:01 PM` row is replaced by a running row.
 
 Digit keys, checked live on the same versions: a digit picks a Claude permission or
 AskUserQuestion choice, a Codex approval choice, and an AGY `ask_question` choice with no Enter.

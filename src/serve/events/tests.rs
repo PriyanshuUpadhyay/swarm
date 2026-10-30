@@ -243,6 +243,90 @@ async fn a_working_chair_streams_its_screen_text_and_the_turn_end_clears_it() {
     });
 }
 
+#[tokio::test]
+async fn a_working_pi_chair_streams_its_extension_file_and_not_its_screen() {
+    let fixture = Fixture::new();
+    // The screen holds a running bash box, its clock, and queued messages (ADR 0131).
+    let screen = fixture.dir.join("screen.txt");
+    std::fs::copy(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/screens/pi-queued.txt"),
+        &screen,
+    )
+    .unwrap();
+    std::fs::create_dir_all(fixture.app.root.join("adapters")).unwrap();
+    std::fs::write(
+        fixture.app.root.join("adapters/tmux-swarm.conf"),
+        format!("capture = cat '{}'\n", screen.display()),
+    )
+    .unwrap();
+    let connection = swarm::store::open(&fixture.app.root.join("swarm.db")).unwrap();
+    swarm::store::add_agent(
+        &connection,
+        &fixture.session,
+        "orchestrator",
+        "orchestrator",
+    )
+    .unwrap();
+    swarm::store::set_provider(&connection, &fixture.session, "orchestrator", "pi").unwrap();
+    drop(connection);
+    let file = swarm::bus::pi_live_file(&fixture.app.root, &fixture.session, "orchestrator");
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    std::fs::write(
+        &file,
+        r#"{"thinking":"Plan the walk.","text":"The river bends."}"#,
+    )
+    .unwrap();
+    {
+        let mut hub = fixture.app.hub.lock().unwrap();
+        let agent = json!({"id": "orchestrator", "pane": "%1", "alive": true, "state": "working"});
+        hub.agents = json!({ fixture.session.as_str(): [agent] });
+        hub.streams.insert("all".into(), client(&[]));
+    }
+    let key = format!("{}:chair", fixture.session);
+    let from = std::fs::metadata(&fixture.log).unwrap().len();
+    let _ = subscribe(
+        State(fixture.app.clone()),
+        Json(Subscription {
+            stream: "all".into(),
+            keys: vec![SubscriptionKey {
+                key: key.clone(),
+                from,
+                view: Some("rows".into()),
+            }],
+        }),
+    )
+    .await
+    .unwrap();
+    let live = |app: &App| {
+        let hub = app.hub.lock().unwrap();
+        hub.streams["all"]
+            .queue
+            .iter()
+            .filter(|frame| frame.name == "live")
+            .map(|frame| serde_json::from_str::<Value>(&frame.data).unwrap())
+            .collect::<Vec<_>>()
+    };
+    until_live(&fixture.app, &live, 1).await;
+    let frames = live(&fixture.app);
+    assert_eq!(frames[0]["text"], "The river bends.");
+    assert_eq!(frames[0]["thinking"], "Plan the walk.");
+    // pi empties the file when the message ends, while its tools run.
+    std::fs::write(&file, "").unwrap();
+    for _ in 0..40 {
+        if live(&fixture.app)[0]["text"].is_null() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    let frames = live(&fixture.app);
+    assert_eq!(frames[0]["text"], Value::Null);
+    assert_eq!(frames[0]["thinking"], Value::Null);
+    drop(Events {
+        app: fixture.app.clone(),
+        id: "all".into(),
+    });
+}
+
 async fn until_live(app: &App, live: &impl Fn(&App) -> Vec<Value>, count: usize) {
     for _ in 0..40 {
         if live(app).len() >= count {
