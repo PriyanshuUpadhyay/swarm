@@ -234,3 +234,24 @@ test("Find reaches repeated matches in a loaded full patch in Unified and Split 
     await tab.getByTestId("find-input").press("Escape");
   }
 });
+
+test("a table column keeps its longest word and a wide table scrolls inside its frame", async ({ page: tab }) => {
+  const table = "| CLI | Name form | Note |\n| --- | --- | --- |\n| Claude | `swarm:plan` | " + "plain words that wrap ".repeat(40) + " |";
+  await mockRows(tab, [row("a1", table)]);
+  await open(tab);
+  const heads = tab.locator(".md-table th");
+  await expect(heads).toHaveCount(3);
+  for (const [i, word] of ["CLI", "Name", "Note"].entries()) {
+    const wide = await heads.nth(i).evaluate((el, w) => {
+      const probe = document.createElement("span");
+      probe.style.cssText = "position:absolute;visibility:hidden;white-space:nowrap";
+      probe.textContent = w;
+      el.append(probe);
+      const need = probe.getBoundingClientRect().width;
+      probe.remove();
+      return el.getBoundingClientRect().width >= need;
+    }, word);
+    expect(wide, `${word} column is as wide as its longest word`).toBe(true);
+  }
+  expect(await tab.locator(".md-table td").first().evaluate((el) => getComputedStyle(el).overflowWrap)).toBe("normal");
+});
