@@ -108,7 +108,12 @@ test("a copy, a find close, and a send leave the keyboard in the composer", asyn
   // A send while scrolled up moves the transcript to its end, where the new message lands. The
   // stand-in pane can be slow to take the text, so the end is checked, not the sent row.
   const end = answer.getByText("copy me");
-  await scroller.evaluate((el) => (el.scrollTop = 0));
+  // A row that lands before the scroll event follows to the end again, so scroll until the
+  // transcript reads as scrolled up.
+  await expect(async () => {
+    await scroller.evaluate((el) => (el.scrollTop = 0));
+    await expect(tab.getByTestId("jump-latest")).toBeVisible({ timeout: 1000 });
+  }).toPass();
   await expect(end).not.toBeInViewport();
   await composer(tab).fill(`sent from far up ${info.project.name}`);
   await tab.getByTestId("send").click();

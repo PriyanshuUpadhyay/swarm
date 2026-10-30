@@ -157,6 +157,8 @@ test("Settings shows notice health after Home dismissal and Home includes setup"
   await card.getByRole("button", { name: "Not now" }).click();
   await page.reload();
   await page.waitForFunction(() => window.__swarmReady === true);
+  // Home is not saved, so a reload opens the last workspace an earlier case selected.
+  await page.getByTestId("home-button").click();
   await expect(page.getByTestId("notices-card")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Set up this Mac" })).toBeVisible();
   const dialog = await settings(page, "notifications");
