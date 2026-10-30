@@ -349,6 +349,9 @@
   border-collapse: collapse;
   margin: 0;
   font-size: 12px;
+  /* .line sets overflow-wrap:anywhere, which drops each cell's min width to one character. Words
+     keep their width and .md-scroll scrolls a wide table. */
+  overflow-wrap: normal;
 }
 .md td,
 .md th {
