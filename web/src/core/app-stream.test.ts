@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import type { App } from "./app";
 import { AppStream } from "./app-stream";
 import type { Chat } from "./app-types";
+import { liveRows } from "./app-reader";
+import { FoldChoices, lines } from "./transcript";
 
 /** An App stand-in whose snapshot lists `ids`, and lists `later` too after one refresh. */
 function fakeApp(ids: string[], later: string[] = []) {
@@ -43,7 +45,7 @@ describe("show frame", () => {
 describe("live frame", () => {
   /** An App stand-in that holds one ready chair chat with live text on screen. */
   function liveApp() {
-    const chat = { id: "s", key: "s:chair", sessionId: "s", state: "ready", rows: [], end: 0, version: 0, shift: false, live: "The history of the bicycle", liveShown: 26, liveEnded: false } as unknown as Chat;
+    const chat = { id: "s", key: "s:chair", sessionId: "s", state: "ready", rows: [], end: 0, version: 0, shift: false, live: "The history of the bicycle", liveShown: 26, liveThinking: null, liveEnded: false } as unknown as Chat;
     const app = {
       chats: new Map([["s", chat]]),
       pending: new Map(),
@@ -94,9 +96,38 @@ describe("live frame", () => {
   });
 });
 
+describe("live typing", () => {
+  function typingApp(live: string) {
+    const chat = { id: "s", key: "s:chair", sessionId: "s", state: "ready", rows: [], end: 0, version: 0, shift: false, live, liveShown: live.length, liveThinking: null, liveEnded: false } as unknown as Chat;
+    const app = { chats: new Map([["s", chat]]), pending: new Map(), openId: "s", notify: () => {}, reading: { changed: (c: Chat) => c.version++ } };
+    return { stream: new AppStream(app as unknown as App), chat };
+  }
+
+  it("shows a change inside the shown text at once, and types only the text past it", () => {
+    const { stream, chat } = typingApp("Elapsed 24.0s, and the rest of a long row that already shows.");
+    // A clock digit near the top used to type the whole rest out again each second.
+    const next = "Elapsed 25.0s, and the rest of a long row that already shows. More.";
+    stream.onSse({ event: "live", data: JSON.stringify({ key: "s:chair", text: next }) });
+    expect(chat.liveShown).toBe(next.length - " More.".length);
+  });
+
+  it("shows pi's thinking at once as an open thought row above the answer, and keeps both until the log's rows land", () => {
+    const { stream, chat } = typingApp("");
+    stream.onSse({ event: "live", data: JSON.stringify({ key: "s:chair", text: null, thinking: "Check the daily chart first." }) });
+    expect(chat.liveThinking).toBe("Check the daily chart first.");
+    const rows = liveRows(chat.rows, chat.live, chat.liveThinking);
+    expect(rows.map((r) => r.kind)).toEqual(["thought"]);
+    expect(lines(rows, { folds: new FoldChoices(), opened: new Map() })[0].open).toBe(true);
+    // pi empties its file when the message ends, before the log has the message.
+    stream.onSse({ event: "live", data: JSON.stringify({ key: "s:chair", text: null }) });
+    expect(chat.liveThinking).toBe("Check the daily chart first.");
+    expect(chat.liveEnded).toBe(true);
+  });
+});
+
 describe("live frame at turn end", () => {
   it("drops a short spinner text, and a text the log already holds, at once", () => {
-    const chat = { id: "s", key: "s:chair", sessionId: "s", state: "ready", rows: [], end: 0, version: 0, shift: false, live: "Working...", liveShown: 10, liveEnded: false } as unknown as Chat;
+    const chat = { id: "s", key: "s:chair", sessionId: "s", state: "ready", rows: [], end: 0, version: 0, shift: false, live: "Working...", liveShown: 10, liveThinking: null, liveEnded: false } as unknown as Chat;
     const app = { chats: new Map([["s", chat]]), pending: new Map(), openId: "s", notify: () => {}, reading: { changed: (c: Chat) => c.version++ } };
     const stream = new AppStream(app as unknown as App);
     stream.onSse({ event: "live", data: JSON.stringify({ key: "s:chair", text: null }) });
@@ -108,7 +139,7 @@ describe("live frame at turn end", () => {
   });
 
   it("a frame that changes nothing does not redraw the chat, so a reader who just scrolled up stays there", () => {
-    const chat = { id: "s", key: "s:chair", sessionId: "s", state: "ready", rows: [], end: 0, version: 0, shift: false, live: null, liveShown: 0, liveEnded: false } as unknown as Chat;
+    const chat = { id: "s", key: "s:chair", sessionId: "s", state: "ready", rows: [], end: 0, version: 0, shift: false, live: null, liveShown: 0, liveThinking: null, liveEnded: false } as unknown as Chat;
     const app = { chats: new Map([["s", chat]]), pending: new Map(), openId: "s", notify: () => {}, reading: { changed: (c: Chat) => c.version++ } };
     new AppStream(app as unknown as App).onSse({ event: "live", data: JSON.stringify({ key: "s:chair", text: null }) });
     expect(chat.version).toBe(0);

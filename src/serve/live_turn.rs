@@ -22,7 +22,6 @@ pub(super) async fn watch_turn(
         return;
     };
     let (session, agent) = (session.to_string(), agent.to_string());
-    let log_agent = agent.clone();
     let Some(server) = app.upgrade() else {
         return;
     };
@@ -46,14 +45,11 @@ pub(super) async fn watch_turn(
         return;
     };
     let adapter = Arc::new(adapter);
+    // pi's extension writes the streaming message to this file, so its live row needs no screen.
+    let pi_file = (provider == "pi").then(|| swarm::bus::pi_live_file(&root, &session, &agent));
     // The first read is always sent, so a page that held an earlier watcher's text gets this
     // one's, or null.
-    let mut last: Option<Option<String>> = None;
-    // pi's text starts under the turn's message. A send can show as working before pi logs the
-    // message, so only a message other than the one before this turn is this turn's.
-    // ponytail: the same message sent twice in a row shows no live text on its second turn.
-    let mut prompt: Option<String> = None;
-    let mut before: Option<Option<String>> = None;
+    let mut last: Option<Live> = None;
     let mut timer = tokio::time::interval(TICK);
     timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     loop {
@@ -77,51 +73,42 @@ pub(super) async fn watch_turn(
                 .find(|row| row["id"] == agent.as_str() && row["state"] == "working")
                 .and_then(|row| row["pane"].as_str().map(str::to_string))
         };
-        if provider == "pi" {
-            match (&pane, &prompt) {
-                (None, Some(_)) => before = Some(prompt.take()),
-                (None, None) if before.is_none() => {
-                    before = Some(sent_prompt(&server, &session, &log_agent).await);
-                }
-                (Some(_), None) => {
-                    let sent = sent_prompt(&server, &session, &log_agent).await;
-                    if before.as_ref() != Some(&sent) {
-                        prompt = sent;
-                    }
-                }
-                _ => {}
-            }
-        }
         drop(server);
-        let text = match pane {
+        let live = match pane {
             Some(pane) => {
-                let (adapter, provider) = (adapter.clone(), provider.clone());
-                let sent = prompt.clone();
-                let read = tokio::task::spawn_blocking(move || {
-                    let rows = adapter.capture_within(&[("pane", &pane)], CAPTURE)?;
-                    Some(swarm::screen::turn_text(&provider, &rows, sent.as_deref()))
+                let (adapter, provider, file) =
+                    (adapter.clone(), provider.clone(), pi_file.clone());
+                let read = tokio::task::spawn_blocking(move || match file {
+                    Some(file) => Some(pi_live(&std::fs::read_to_string(file).unwrap_or_default())),
+                    None => {
+                        let rows = adapter.capture_within(&[("pane", &pane)], CAPTURE)?;
+                        Some(Live {
+                            text: swarm::screen::turn_text(&provider, &rows),
+                            thinking: None,
+                        })
+                    }
                 })
                 .await
                 .ok()
                 .flatten();
                 // A failed or slow read keeps the shown text, so the row does not blink.
-                let Some(text) = read else {
+                let Some(live) = read else {
                     continue;
                 };
-                text
+                live
             }
-            None => None,
+            None => Live::default(),
         };
-        if last.as_ref() == Some(&text) {
+        if last.as_ref() == Some(&live) {
             continue;
         }
-        last = Some(text);
+        last = Some(live.clone());
         let Some(server) = app.upgrade() else {
             return;
         };
         let frame = Frame::new(
             "live",
-            json!({"key": key, "text": last.clone().flatten()}),
+            json!({"key": key, "text": live.text, "thinking": live.thinking}),
             Some(&key),
         );
         // ponytail: a client that joins a running follower sees the text from its next change;
@@ -143,15 +130,24 @@ pub(super) async fn watch_turn(
     }
 }
 
-/// The last message the owner sent to `agent`, from its log.
-async fn sent_prompt(server: &App, session: &str, agent: &str) -> Option<String> {
-    let (root, session, agent) = (server.root.clone(), session.to_string(), agent.to_string());
-    let log = tokio::task::spawn_blocking(move || resolve_log(&root, &session, &agent))
-        .await
-        .ok()?
-        .ok()?;
-    last_prompt(server, &log)
-        .await
-        .ok()
-        .filter(|prompt| !prompt.is_empty())
+/// The text of a running turn: the answer, and for pi its thinking. None is no text.
+#[derive(Clone, Default, PartialEq)]
+struct Live {
+    text: Option<String>,
+    thinking: Option<String>,
+}
+
+/// The `{thinking, text}` that pi's extension writes. A missing or empty file is no text.
+fn pi_live(file: &str) -> Live {
+    let value: serde_json::Value = serde_json::from_str(file).unwrap_or_default();
+    let field = |name: &str| {
+        value[name]
+            .as_str()
+            .filter(|text| !text.trim().is_empty())
+            .map(str::to_string)
+    };
+    Live {
+        text: field("text"),
+        thinking: field("thinking"),
+    }
 }

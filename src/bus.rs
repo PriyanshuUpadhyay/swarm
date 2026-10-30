@@ -159,6 +159,30 @@ pub use launch::*;
 pub use refusal::*;
 pub use trust::*;
 
+/// The pi extension that writes the streaming message of a turn for the chat (ADR 0131).
+pub const PI_LIVE_EXTENSION: &str = include_str!("bus/pi_live.ts");
+
+/// The file where `agent`'s pi writes `{thinking, text}` of its streaming message. Both ids are
+/// checked ids, so the path stays in the session's runs folder.
+pub fn pi_live_file(root: &std::path::Path, session: &str, agent: &str) -> std::path::PathBuf {
+    root.join("runs")
+        .join(session)
+        .join(format!("{agent}.live"))
+}
+
+/// Writes swarm's pi extension where pi loads it, and returns its path. The file changes only
+/// with the swarm build, and a rename keeps a pi that starts at the same time from reading half.
+pub fn write_pi_extension(root: &std::path::Path) -> std::io::Result<std::path::PathBuf> {
+    let path = root.join("pi").join("swarm-live.ts");
+    if std::fs::read_to_string(&path).ok().as_deref() != Some(PI_LIVE_EXTENSION) {
+        std::fs::create_dir_all(root.join("pi"))?;
+        let temp = path.with_extension(format!("{}.tmp", std::process::id()));
+        std::fs::write(&temp, PI_LIVE_EXTENSION)?;
+        std::fs::rename(&temp, &path)?;
+    }
+    Ok(path)
+}
+
 /// A Codex `config.toml` as text and as TOML.
 fn read_codex_config(path: &std::path::Path) -> Result<(String, toml_edit::DocumentMut), String> {
     let existing = read_text(path)?;

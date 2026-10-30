@@ -63,8 +63,8 @@ export class AppStream {
         this.app.reconnecting = false;
         // A frame sent while the stream was down is lost, so live text could be stale.
         for (const chat of this.app.chats.values()) {
-          if (chat.live === null) continue;
-          chat.live = null;
+          if (chat.live === null && chat.liveThinking === null) continue;
+          [chat.live, chat.liveThinking] = [null, null];
           chat.version++;
           chat.shift = false;
         }
@@ -90,19 +90,23 @@ export class AppStream {
         const chat = this.byKey(String(data.key));
         if (!chat) break;
         const text = typeof data.text === "string" ? data.text : null;
+        const thinking = typeof data.thinking === "string" ? data.thinking : null;
         // Each new watcher sends its first read, often a null that changes nothing. A redraw then
         // would follow the end before a reader's scroll up registers.
-        if (text === chat.live && !chat.liveEnded) break;
-        // A turn can end seconds before its log's rows land, so its text stays until they do.
-        if (text === null && keepsEnded(chat.rows, chat.live)) {
+        if (text === chat.live && thinking === chat.liveThinking && !chat.liveEnded) break;
+        // A message can end seconds before its log's rows land, so its text stays until they do.
+        if (text === null && thinking === null && (keepsEnded(chat.rows, chat.live) || chat.liveThinking)) {
           chat.liveEnded = true;
           chat.liveShown = chat.live?.length ?? 0;
         } else {
           const shown = chat.live?.slice(0, chat.liveShown) ?? "";
           let same = 0;
           while (same < shown.length && text !== null && shown[same] === text[same]) same++;
-          [chat.live, chat.liveShown, chat.liveEnded] = [text, same, false];
-          if (text !== null && same < text.length) this.typeLive();
+          // Only text past what shows types out. A change inside it, such as a digit or a table
+          // that aligns again, shows at once; a text with nothing in common is a new block.
+          const from = same === 0 ? 0 : Math.max(same, chat.liveShown);
+          [chat.live, chat.liveShown, chat.liveThinking, chat.liveEnded] = [text, Math.min(text?.length ?? 0, from), thinking, false];
+          if (text !== null && chat.liveShown < text.length) this.typeLive();
         }
         this.app.reading.changed(chat);
         break;
@@ -167,7 +171,7 @@ export class AppStream {
         }
       }
       if (chat.rows !== before) {
-        if (chat.liveEnded) [chat.live, chat.liveEnded] = [null, false];
+        if (chat.liveEnded) [chat.live, chat.liveThinking, chat.liveEnded] = [null, null, false];
         chat.version++;
         chat.shift = false;
         if (chat.sessionId === this.app.openId) render = true;
