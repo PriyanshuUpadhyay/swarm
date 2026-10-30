@@ -6,7 +6,7 @@ import { historyStep, type Browse } from "../core/history";
 import { canBranch, outgoing, sends, usageLabel, usageTitle } from "../core/composer";
 import { editPicks, matches, menuAt, moved, offered, pick, picksAndSends, showsEmpty, skillFirst, skillNames, toSend, type CommandList, type MenuRow, type SkillPick } from "../core/slash";
 import { Button } from "../components/ui/button";
-import { pasteImage } from "./composer-image";
+import { dragOverFiles, dropImage, pasteImage } from "./composer-image";
 import { ImageThumbs } from "./images";
 import { RunChip } from "./run-chip";
 import { cn } from "../lib/utils";
@@ -357,6 +357,8 @@ export function ComposerBox({ app, composer }: { app: App; composer: Composer })
             onBlur={() => setFocused(false)}
             onKeyDown={onKeyDown}
             onPaste={(e) => pasteImage(e, app, sessionId, change)}
+            onDragOver={dragOverFiles}
+            onDrop={(e) => dropImage(e, app, sessionId, change)}
             onScroll={(e) => {
               if (!highlights.current) return;
               highlights.current.scrollTop = e.currentTarget.scrollTop;
