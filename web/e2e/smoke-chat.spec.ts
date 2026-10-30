@@ -38,10 +38,13 @@ test("select a chat by keyboard and see its rows", async ({ page: tab }) => {
   const transcript = tab.locator(`[data-testid="transcript"][data-chat="${chatId}"][data-state="ready"]`);
   await expect(transcript.getByTestId("row").first()).toBeVisible();
 
-  // Records land in the frame after the paint, so poll.
-  await expect.poll(() => tab.evaluate(() => window.__swarmPerf.map((p) => `${p.kind}:${p.target}`))).toEqual([
+  // Records land in the frame after the paint, so poll. A load that restored this chat makes the
+  // Enter a switch, not an open.
+  const perf = () => tab.evaluate(() => window.__swarmPerf.map((p) => `${p.kind}:${p.target}`));
+  await expect.poll(async () => (await perf()).length).toBe(first + 1);
+  expect(await perf()).toEqual([
     ...ids.slice(1, first + 1).map((id) => `key:${id}`),
-    `open:${chatId}`,
+    expect.stringMatching(new RegExp(`^(open|switch):${chatId}$`)),
   ]);
   expect(ids[first]).toBe(rowId);
   expect(errors).toEqual([]);
