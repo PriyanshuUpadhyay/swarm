@@ -1,4 +1,4 @@
-// The Skills page (ADR 0111): the kit's blocks, its default skills (presets) as step graphs, and a
+// The Skills page (ADR 0111): the kit's blocks, filtered by the preset that loads them, and a
 // Composer for a new preset. Every fact comes from the kit's own `preset.py` through `/api/kit`, and
 // every draft check through `/api/kit/check`; this module parses no Needs text and checks nothing.
 
@@ -16,7 +16,7 @@ export type Preset = { preset: string; verb: string; mode: string | null; stop: 
 export type Kit = { schema: string; version: string; front: string[]; blocks: Block[]; presets: Preset[] };
 export type Checked = { ok: true; preset: Preset } | { ok: false; defect: string };
 
-export type SkillsView = "catalog" | "graph" | "composer";
+export type SkillsView = "catalog" | "composer";
 /** A Composer draft. `from` names the preset it started from, or null for a new skill. `offers` is the Offers line as typed. */
 export type Draft = { from: string | null; name: string; description: string; stop: "owner" | "chat"; offers: string; rows: string[][] };
 /** The last check, for the exact text it checked. */
@@ -26,6 +26,7 @@ export type SkillsState = {
   open: boolean;
   view: SkillsView;
   kit: Load<Kit>;
+  /** The Catalog's preset filter; null shows every block. */
   preset: string | null;
   block: string | null;
   filter: string;
@@ -68,8 +69,8 @@ export function composable(kit: Kit): Preset[] {
   return kit.presets.filter((p) => p.start === null);
 }
 
-export type CatalogItem = { block: Block; depth: number };
-export type CatalogGroup = { title: string; items: CatalogItem[] };
+/** One Catalog section: a family (a parent and its parts) or the free blocks of one kind. */
+export type CatalogGroup = { title: string; parent: Block | null; items: Block[] };
 
 const KIND_TITLES: [string, string][] = [
   ["step", "Steps"],
@@ -90,21 +91,33 @@ export function usedByLabel(block: Block, use: UsedBy) {
   return block.parent ? `through ${block.parent}` : "for a named part";
 }
 
-/** Parents with their parts under them, then the other blocks by kind; a filter keeps a parent whose part matches. */
-export function catalogGroups(kit: Kit, filter: string): CatalogGroup[] {
+/** The presets whose steps load a block, each once, in kit order. */
+export function usedIn(kit: Kit, block: Block): string[] {
+  return kit.presets.map((p) => p.preset).filter((p) => block.used_by.some((u) => u.preset === p));
+}
+
+/** True when a preset's steps load the block, or the preset offers it; null means every preset. */
+export function inPreset(block: Block, preset: string | null) {
+  return preset === null || block.used_by.some((u) => u.preset === preset) || block.offered_by.includes(preset);
+}
+
+/**
+ * Each family first, its parts under the parent, then the free blocks by kind. A filter keeps a family
+ * when its parent or a part matches; a family whose parent matches keeps every part.
+ */
+export function catalogGroups(kit: Kit, filter: string, preset: string | null = null): CatalogGroup[] {
   const q = filter.trim().toLowerCase();
-  const hit = (b: Block) => !q || [b.id, b.description, b.needs, b.gives].some((t) => t.toLowerCase().includes(q));
+  const hit = (b: Block) => inPreset(b, preset) && (!q || [b.id, b.description, b.needs, b.gives].some((t) => t.toLowerCase().includes(q)));
   const byId = new Map(kit.blocks.map((b) => [b.id, b]));
-  const parents = kit.blocks.filter((b) => b.kind === "parent");
-  const grouped: CatalogItem[] = parents.flatMap((p) => {
-    const parts = p.parts.map((id) => byId.get(id)).filter((b): b is Block => !!b);
-    if (!hit(p) && !parts.some(hit)) return [];
-    return [{ block: p, depth: 0 }, ...parts.filter((b) => hit(p) || hit(b)).map((block) => ({ block, depth: 1 }))];
-  });
-  const groups: CatalogGroup[] = grouped.length ? [{ title: "Parents and their parts", items: grouped }] : [];
+  const groups: CatalogGroup[] = [];
+  for (const parent of kit.blocks.filter((b) => b.kind === "parent")) {
+    const parts = parent.parts.map((id) => byId.get(id)).filter((b): b is Block => !!b);
+    const items = hit(parent) ? parts.filter((b) => inPreset(b, preset)) : parts.filter(hit);
+    if (hit(parent) || items.length) groups.push({ title: parent.id, parent, items });
+  }
   for (const [kind, title] of KIND_TITLES) {
-    const items = kit.blocks.filter((b) => b.kind === kind && !b.parent && hit(b)).map((block) => ({ block, depth: 0 }));
-    if (items.length) groups.push({ title, items });
+    const items = kit.blocks.filter((b) => b.kind === kind && !b.parent && hit(b));
+    if (items.length) groups.push({ title, parent: null, items });
   }
   return groups;
 }
@@ -162,7 +175,8 @@ export class Skills {
     this.set({ block });
   }
 
-  selectPreset(preset: string) {
+  /** The Catalog's preset filter; null shows every block. */
+  selectPreset(preset: string | null) {
     this.set({ preset });
   }
 
@@ -172,7 +186,7 @@ export class Skills {
     try {
       const data = withDefaults(await this.app.api.get<Kit>("/api/kit"));
       if (seq !== this.loads) return;
-      this.set({ kit: { state: "ready", data }, preset: this.state.preset ?? data.presets[0]?.preset ?? null });
+      this.set({ kit: { state: "ready", data } });
       this.scheduleCheck(0);
     } catch (e) {
       if (seq === this.loads) this.set({ kit: { state: "error", error: message(e) } });

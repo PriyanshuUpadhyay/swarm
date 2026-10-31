@@ -1,12 +1,10 @@
 // The Skills pages, loaded on the first open (ADR 0111). They show what `preset.py` says and work
 // out no fact of their own.
 
-import { useState } from "react";
 import type { App } from "../core/app";
-import { blockTag, catalogGroups, usedByLabel, type Block, type Kit, type Preset, type SkillsView } from "../core/skills";
+import { blockTag, catalogGroups, usedByLabel, usedIn, type Block, type Kit, type SkillsView } from "../core/skills";
 import { Button } from "../components/ui/button";
 import { FIELD } from "./settings-shared";
-import { SkillGraph } from "./skill-graph";
 import { Composer } from "./skills-composer";
 import { useSkills } from "./skills";
 
@@ -27,8 +25,6 @@ export function SkillsPage({ app, view }: { app: App; view: SkillsView }) {
   switch (view) {
     case "catalog":
       return <Catalog app={app} kit={kit.data} />;
-    case "graph":
-      return <Graphs app={app} kit={kit.data} />;
     case "composer":
       return <Composer app={app} kit={kit.data} />;
     default:
@@ -38,91 +34,174 @@ export function SkillsPage({ app, view }: { app: App; view: SkillsView }) {
 
 // ---- Catalog ----
 
+function Kind({ kind }: { kind: string }) {
+  return <span className="rounded border border-border-strong px-1 py-px font-sans text-[10px] leading-none text-muted-foreground">{kind}</span>;
+}
+
 function Catalog({ app, kit }: { app: App; kit: Kit }) {
   const filter = useSkills(app, "filter");
   const chosen = useSkills(app, "block");
-  const groups = catalogGroups(kit, filter);
+  const preset = useSkills(app, "preset");
+  const groups = catalogGroups(kit, filter, preset);
   const block = kit.blocks.find((b) => b.id === chosen) ?? null;
+  const shown = groups.reduce((n, g) => n + g.items.length + (g.parent ? 1 : 0), 0);
   return (
-    <div className="flex min-h-0 flex-1">
-      <div className="flex w-72 shrink-0 flex-col border-r border-border">
-        <div className="p-3 pb-2">
-          <input
-            className={`${FIELD} w-full text-sm`}
-            type="search"
-            aria-label="Filter blocks"
-            placeholder="Filter blocks…"
-            autoComplete="off"
-            spellCheck={false}
-            data-testid="skills-filter"
-            autoFocus
-            value={filter}
-            onChange={(e) => app.skills.setFilter(e.target.value)}
-          />
-          <p className="mt-2 text-xs text-muted-foreground">
-            {kit.blocks.length} blocks, {kit.presets.length} default skills · kit {kit.version}
-          </p>
-        </div>
-        <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3" data-testid="skills-tree">
-          {groups.length === 0 && <p role="status" className="px-2 text-sm text-muted-foreground">No block matches.</p>}
-          {groups.map((g) => (
-            <section key={g.title} aria-label={g.title} className="mt-2">
-              <h3 className="px-2 pb-1 text-xs font-medium text-muted-foreground">{g.title}</h3>
-              {g.items.map(({ block: b, depth }) => (
-                <button
-                  key={b.id}
-                  className={`flex w-full items-center gap-2 rounded-md py-1 pr-2 text-left font-mono text-xs ${depth ? "pl-6" : "pl-2"} ${b.id === chosen ? "bg-selected text-foreground" : "text-foreground hover:bg-hover"}`}
-                  aria-current={b.id === chosen || undefined}
-                  data-block={b.id}
-                  onClick={() => app.skills.selectBlock(b.id)}
-                >
-                  <span className="min-w-0 flex-1 truncate">{b.id}</span>
-                  {blockTag(kit, b) && <span className="font-sans text-[11px] text-muted-foreground">{blockTag(kit, b)}</span>}
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex flex-wrap items-center gap-2 border-b border-border p-3">
+        <input
+          className={`${FIELD} w-56 text-sm`}
+          type="search"
+          aria-label="Filter blocks"
+          placeholder="Filter blocks…"
+          autoComplete="off"
+          spellCheck={false}
+          data-testid="skills-filter"
+          autoFocus
+          value={filter}
+          onChange={(e) => app.skills.setFilter(e.target.value)}
+        />
+        <nav aria-label="Presets" className="flex flex-wrap gap-1" data-testid="skills-presets">
+          {[null, ...kit.presets.map((p) => p.preset)].map((p) => (
+            <button
+              key={p ?? "all"}
+              aria-pressed={preset === p}
+              data-preset={p ?? "all"}
+              className={`rounded-full border px-2.5 py-0.5 font-mono text-xs ${preset === p ? "border-ring bg-selected text-foreground" : "border-border text-muted-foreground hover:bg-hover hover:text-foreground"}`}
+              onClick={() => app.skills.selectPreset(p)}
+            >
+              {p ?? "all"}
+            </button>
+          ))}
+        </nav>
+        <p className="ml-auto text-xs text-muted-foreground" data-testid="skills-count">
+          {shown} of {kit.blocks.length} blocks · kit {kit.version.split("+")[0]}
+        </p>
+      </div>
+      <div className="flex min-h-0 flex-1">
+        <div className="min-w-0 flex-1 overflow-y-auto p-4" data-testid="skills-tree">
+          <p className="mb-4 flex flex-wrap items-center gap-1 text-xs text-muted-foreground" data-testid="skills-front">
+            <span className="mr-1">Every task starts with</span>
+            {kit.front.map((b, i) => (
+              <span key={b} className="flex items-center gap-1">
+                {i > 0 && <span aria-hidden>→</span>}
+                <button className="rounded border border-border-strong px-1.5 py-0.5 font-mono text-foreground hover:border-ring" data-block={b} onClick={() => app.skills.selectBlock(b)}>
+                  {b}
                 </button>
-              ))}
+              </span>
+            ))}
+            <span className="ml-1">first. They pick the blocks below for the task.</span>
+          </p>
+          {groups.length === 0 && <p role="status" className="text-sm text-muted-foreground">No block matches.</p>}
+          {groups.map((g) => (
+            <section key={g.title} aria-label={g.title} className="mb-5">
+              {g.parent ? (
+                <button
+                  className={`mb-2 flex w-full items-baseline gap-2 rounded-md px-1 text-left ${g.parent.id === chosen ? "bg-selected" : "hover:bg-hover"}`}
+                  aria-current={g.parent.id === chosen || undefined}
+                  data-block={g.parent.id}
+                  onClick={() => app.skills.selectBlock(g.parent!.id)}
+                >
+                  <h3 className="font-mono text-xs font-semibold">{g.parent.id}</h3>
+                  <span className="text-[11px] text-muted-foreground">family · {g.parent.parts.length} parts</span>
+                </button>
+              ) : (
+                <h3 className="mb-2 px-1 text-xs font-medium text-muted-foreground">{g.title}</h3>
+              )}
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(210px,1fr))] gap-2">
+                {g.items.map((b) => (
+                  <Card key={b.id} kit={kit} block={b} chosen={b.id === chosen} onClick={() => app.skills.selectBlock(b.id)} />
+                ))}
+              </div>
             </section>
           ))}
         </div>
-      </div>
-      <div className="min-w-0 flex-1 overflow-y-auto p-5" data-testid="skills-detail">
-        {block ? <BlockDetail app={app} kit={kit} block={block} /> : <p className="text-sm text-muted-foreground">Pick a block to see what it needs, what it gives, and which skills use it.</p>}
+        <aside className="w-80 shrink-0 overflow-y-auto border-l border-border p-4" data-testid="skills-detail">
+          {block ? (
+            <BlockDetail app={app} kit={kit} block={block} />
+          ) : (
+            <p className="text-sm text-muted-foreground">Pick a block to see what it needs, what it gives, and which presets load it.</p>
+          )}
+        </aside>
       </div>
     </div>
   );
 }
 
-function BlockDetail({ app, kit, block }: { app: App; kit: Kit; block: Block }) {
-  const graph = (preset: string) => {
-    app.skills.selectPreset(preset);
-    app.skills.setView("graph");
-  };
+function Card({ kit, block, chosen, onClick }: { kit: Kit; block: Block; chosen: boolean; onClick: () => void }) {
+  const tag = blockTag(kit, block);
+  const used = usedIn(kit, block);
   return (
-    <div className="grid max-w-2xl gap-4 text-sm">
+    <button
+      className={`flex min-h-[92px] flex-col gap-1.5 rounded-lg border p-2.5 text-left ${chosen ? "border-ring bg-selected" : "border-border hover:border-border-strong hover:bg-hover"} ${tag === "unused" ? "opacity-60" : ""}`}
+      aria-current={chosen || undefined}
+      data-block={block.id}
+      onClick={onClick}
+    >
+      <span className="flex items-center gap-2">
+        <span className="min-w-0 flex-1 truncate font-mono text-xs font-medium">{block.id}</span>
+        <Kind kind={block.kind} />
+      </span>
+      <span className="line-clamp-2 text-[11px] leading-snug text-muted-foreground">{block.description}</span>
+      <span className="mt-auto truncate font-mono text-[10px] text-muted-foreground">{tag ?? used.join(" · ")}</span>
+    </button>
+  );
+}
+
+function BlockDetail({ app, kit, block }: { app: App; kit: Kit; block: Block }) {
+  const byPreset = kit.presets.map((p) => ({ preset: p.preset, uses: block.used_by.filter((u) => u.preset === p.preset) })).filter((x) => x.uses.length);
+  const chip = "rounded border border-border-strong px-1.5 py-0.5 font-mono text-xs hover:border-ring";
+  return (
+    <div className="grid gap-4 text-sm">
       <div>
-        <h3 className="font-mono text-base font-semibold">{block.id}</h3>
-        <p className="text-xs text-muted-foreground">
-          {block.kind}
-          {block.parent && ` · part of ${block.parent}`}
-        </p>
+        <div className="flex items-center gap-2">
+          <h3 className="min-w-0 flex-1 truncate font-mono text-base font-semibold">{block.id}</h3>
+          <Kind kind={block.kind} />
+        </div>
+        {block.parent && (
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            part of{" "}
+            <button className="font-mono underline-offset-2 hover:underline" onClick={() => app.skills.selectBlock(block.parent!)}>
+              {block.parent}
+            </button>
+          </p>
+        )}
       </div>
-      <p>{block.description}</p>
-      <Fact name="Needs" text={block.needs} />
-      <Fact name="Gives" text={block.gives} />
-      {block.parts.length > 0 && <Fact name="Parts" text={block.parts.join(", ")} mono />}
+      <p className="leading-relaxed">{block.description}</p>
+      <div className="grid gap-1.5" data-testid="skills-io">
+        <Fact name="Needs" text={block.needs} />
+        <span aria-hidden className="pl-3 text-muted-foreground">↓</span>
+        <Fact name="Gives" text={block.gives} />
+      </div>
+      {block.parts.length > 0 && (
+        <div>
+          <h4 className="text-xs font-medium text-muted-foreground">Parts</h4>
+          <div className="mt-1 flex flex-wrap gap-1">
+            {block.parts.map((p) => (
+              <button key={p} className={chip} data-block={p} onClick={() => app.skills.selectBlock(p)}>
+                {p}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       <div>
-        <h4 className="text-xs font-medium text-muted-foreground">Used by</h4>
-        {block.used_by.length === 0 ? (
-          <p className="mt-1" data-testid="skills-unused">
-            {kit.front.includes(block.id) ? "the plan front door, before step 1 of every skill" : "not used by a default preset"}
+        <h4 className="text-xs font-medium text-muted-foreground">Loaded by</h4>
+        {byPreset.length === 0 ? (
+          <p className="mt-1 text-xs" data-testid="skills-unused">
+            {kit.front.includes(block.id) ? "the plan front door, before step 1 of every task" : "no preset step; the planner can still pick it"}
           </p>
         ) : (
-          <ul className="mt-1 grid" data-testid="skills-used-by">
-            {block.used_by.map((u) => (
-              <li key={`${u.preset}/${u.step}`}>
-                <button className="py-1 font-mono text-xs underline-offset-2 hover:underline" onClick={() => graph(u.preset)}>
-                  {u.preset} · {u.step}
+          <ul className="mt-1 grid gap-1.5" data-testid="skills-used-by">
+            {byPreset.map(({ preset, uses }) => (
+              <li key={preset} className="grid gap-0.5">
+                <button className="w-fit font-mono text-xs font-medium underline-offset-2 hover:underline" onClick={() => app.skills.selectPreset(preset)}>
+                  {preset}
                 </button>
-                <span className="ml-2 text-xs text-muted-foreground">{usedByLabel(block, u)}</span>
+                {uses.map((u) => (
+                  <span key={u.step} className="pl-3 font-mono text-[11px] text-muted-foreground">
+                    {u.step} · {usedByLabel(block, u)}
+                  </span>
+                ))}
               </li>
             ))}
           </ul>
@@ -130,113 +209,25 @@ function BlockDetail({ app, kit, block }: { app: App; kit: Kit; block: Block }) 
       </div>
       {block.offered_by.length > 0 && (
         <div>
-          <h4 className="text-xs font-medium text-muted-foreground">Offered by (off until the planner adds it)</h4>
-          <ul className="mt-1 grid" data-testid="skills-offered-by">
+          <h4 className="text-xs font-medium text-muted-foreground">Offered by · off until the planner adds it</h4>
+          <div className="mt-1 flex flex-wrap gap-1" data-testid="skills-offered-by">
             {block.offered_by.map((p) => (
-              <li key={p}>
-                <button className="py-1 font-mono text-xs underline-offset-2 hover:underline" onClick={() => graph(p)}>
-                  {p}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function Fact({ name, text, mono }: { name: string; text: string; mono?: boolean }) {
-  return (
-    <div>
-      <h4 className="text-xs font-medium text-muted-foreground">{name}</h4>
-      <p className={`mt-1 ${mono ? "font-mono text-xs" : ""}`}>{text || "—"}</p>
-    </div>
-  );
-}
-
-// ---- Skill graph ----
-
-function Graphs({ app, kit }: { app: App; kit: Kit }) {
-  const chosen = useSkills(app, "preset");
-  const preset = kit.presets.find((p) => p.preset === chosen) ?? kit.presets[0];
-  const [step, setStep] = useState<string | null>(null);
-  return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <nav aria-label="Default skills" className="flex flex-wrap gap-1 border-b border-border p-3">
-        {kit.presets.map((p) => (
-          <button
-            key={p.preset}
-            aria-current={p.preset === preset?.preset || undefined}
-            className={`rounded-md px-2 py-1 font-mono text-xs ${p.preset === preset?.preset ? "bg-selected text-foreground" : "text-muted-foreground hover:bg-hover hover:text-foreground"}`}
-            data-preset={p.preset}
-            onClick={() => {
-              app.skills.selectPreset(p.preset);
-              setStep(null);
-            }}
-          >
-            {p.preset}
-          </button>
-        ))}
-      </nav>
-      {preset && <PresetView key={preset.preset} app={app} kit={kit} preset={preset} step={step} onStep={setStep} />}
-    </div>
-  );
-}
-
-function PresetView({ app, kit, preset, step, onStep }: { app: App; kit: Kit; preset: Preset; step: string | null; onStep: (file: string) => void }) {
-  const chosen = preset.steps.find((s) => s.file === step) ?? null;
-  const duty = new Set(kit.blocks.filter((b) => b.duty).map((b) => b.id));
-  const open = (block: string) => {
-    app.skills.selectBlock(block);
-    app.skills.setView("catalog");
-  };
-  return (
-    <div className="flex min-h-0 flex-1">
-      <div className="min-w-0 flex-1 overflow-auto p-4">
-        <p className="mb-3 text-xs text-muted-foreground">
-          {preset.steps.length} steps · stops for {preset.stop === "owner" ? "the owner" : "the chat"}
-          {preset.mode && ` · ${preset.mode}`}
-        </p>
-        {preset.start && (
-          <p className="mb-3 text-xs text-muted-foreground" data-testid="skills-view-only">
-            View only: this skill starts its own run.
-          </p>
-        )}
-        <div className="mb-3 flex flex-wrap items-center gap-1 text-xs text-muted-foreground" data-testid="skills-front">
-          <span className="mr-1">Before step 1 · plan</span>
-          {kit.front.map((b, i) => (
-            <span key={b} className="flex items-center gap-1">
-              {i > 0 && <span aria-hidden>→</span>}
-              <button className="rounded border border-border-strong px-1.5 py-0.5 font-mono text-foreground hover:border-ring" data-block={b} onClick={() => open(b)}>
-                {b}
+              <button key={p} className={`${chip} border-dashed`} onClick={() => app.skills.selectPreset(p)}>
+                {p}
               </button>
-            </span>
-          ))}
-          <span className="ml-1">picks blocks, checks, owner approves</span>
-        </div>
-        <SkillGraph steps={preset.steps} duty={duty} selected={step} onSelect={onStep} />
-        <section aria-label="Offered blocks" className="mt-4 rounded-lg border border-dashed border-border p-3 text-xs" data-testid="skills-offered">
-          <h3 className="mb-2 font-medium text-muted-foreground">Offered · off by default; the planner adds one when the task needs it</h3>
-          {preset.offers.length === 0 && <p className="text-muted-foreground">No offered blocks.</p>}
-          <div className="flex flex-wrap gap-1">
-              {preset.offers.map((b) => (
-                <button key={b} className="rounded border border-dashed border-border-strong px-1.5 py-0.5 font-mono text-muted-foreground hover:border-ring hover:text-foreground" data-block={b} onClick={() => open(b)}>
-                  {b}
-                </button>
-              ))}
+            ))}
           </div>
-        </section>
-      </div>
-      {chosen && (
-        <aside className="grid w-72 shrink-0 content-start gap-3 overflow-y-auto border-l border-border p-4 text-sm" data-testid="skills-step">
-          <h3 className="font-mono font-semibold">{chosen.file}</h3>
-          <Fact name="Needs" text={chosen.needs} />
-          <Fact name="Holds" text={chosen.holds} />
-          <Fact name="Why" text={chosen.why} />
-          <Fact name="Loads" text={chosen.resolved.join(", ")} mono />
-        </aside>
+        </div>
       )}
+    </div>
+  );
+}
+
+function Fact({ name, text }: { name: string; text: string }) {
+  return (
+    <div className="rounded-md border border-border bg-hover/40 px-2.5 py-2">
+      <h4 className="text-[11px] font-medium text-muted-foreground">{name}</h4>
+      <p className="mt-0.5 text-xs leading-relaxed">{text || "—"}</p>
     </div>
   );
 }

@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { App } from "./app";
-import { blankDraft, blockTag, catalogGroups, usedByLabel, composable, copyable, draftText, presetDraft, Skills, type Checked, type Kit } from "./skills";
+import { blankDraft, blockTag, catalogGroups, usedByLabel, usedIn, composable, copyable, draftText, presetDraft, Skills, type Checked, type Kit } from "./skills";
 
 const script = fileURLToPath(new URL("../../../skills/kit/skills/swarm/scripts/preset.py", import.meta.url));
 const python = (args: string[], input = "") => JSON.parse(execFileSync("python3", ["-I", "-B", script, ...args], { encoding: "utf8", input }));
@@ -50,16 +50,24 @@ describe("draftText", () => {
 });
 
 describe("catalogGroups", () => {
-  it("lists every block once, with each part under its parent", () => {
-    const items = catalogGroups(kit, "").flatMap((g) => g.items);
-    expect(items.map((i) => i.block.id).sort()).toEqual(kit.blocks.map((b) => b.id).sort());
-    const voice = items.findIndex((i) => i.block.id === "voice");
-    expect(items[voice + 1]).toMatchObject({ depth: 1, block: { parent: "voice" } });
+  it("lists every block once, a parent as its family's head and each part in its family", () => {
+    const groups = catalogGroups(kit, "");
+    const ids = groups.flatMap((g) => [...(g.parent ? [g.parent.id] : []), ...g.items.map((b) => b.id)]);
+    expect(ids.sort()).toEqual(kit.blocks.map((b) => b.id).sort());
+    const voice = groups.find((g) => g.parent?.id === "voice")!;
+    expect(voice.items.every((b) => b.parent === "voice")).toBe(true);
   });
 
   it("keeps a parent when only one of its parts matches the filter", () => {
-    const items = catalogGroups(kit, "voice-reply").flatMap((g) => g.items.map((i) => i.block.id));
-    expect(items).toEqual(["voice", "voice-reply"]);
+    const groups = catalogGroups(kit, "voice-reply");
+    expect(groups.map((g) => [g.parent?.id, g.items.map((b) => b.id)])).toEqual([["voice", ["voice-reply"]]]);
+  });
+
+  it("keeps only the blocks a preset loads or offers", () => {
+    const ids = catalogGroups(kit, "", "research").flatMap((g) => g.items.map((b) => b.id));
+    expect(ids).toContain("report");
+    expect(ids).not.toContain("change-review");
+    expect(usedIn(kit, kit.blocks.find((b) => b.id === "change-review")!)).toContain("implement");
   });
 });
 
@@ -170,7 +178,7 @@ describe("Skills", () => {
 it("keeps the catalog filter while switching views", () => {
   const skills = new Skills({} as App);
   skills.setFilter("review");
-  skills.setView("graph");
+  skills.setView("composer");
   skills.setView("catalog");
   expect(skills.state.filter).toBe("review");
 });
