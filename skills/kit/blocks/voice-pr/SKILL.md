@@ -18,6 +18,7 @@ metadata:
 - Write in the author's voice. Apply `blocks/voice-review/SKILL.md` for the voice file path and its privacy rule. With no voice file, write short plain sentences.
 - The title says the behavior that changed, not the files.
 - The body says how the change was tested, with each command and its result, and names what is not verified.
+- When the repo has no PR template, add a Before and After pair as evidence, and one risk line: a one-way or two-way door, and the blast radius.
 - This is a draft. Opening or editing the PR is an outside write, so it waits for the owner's yes.
 - Review comments belong to the `voice-review` block, not here.
 
@@ -31,3 +32,4 @@ Result: the title "settings page follows the system dark mode" and the body go t
 
 ## Check (judge)
 - Does the body fill every section of the template, and give each test command with its result? Quote each section heading and one command with its result.
+- With no PR template, does the body hold a Before and After pair and a risk line? Quote them, or write "template used".

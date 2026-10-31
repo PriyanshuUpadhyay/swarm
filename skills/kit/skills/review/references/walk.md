@@ -13,7 +13,7 @@ viewed it, and marks the unchanged files viewed again on GitHub after you say ye
 
 Stop: owner
 Start: python3 <skill-dir>/scripts/review_walk.py start <pr-number|url|local|base..head>
-Offers: html-diagram, diagram-check, prove-it-works, headless-shot
+Offers: html-diagram, diagram-check, prove-it-works, headless-shot, drive-app
 
 | File | Needs | Holds | Block | Why |
 |---|---|---|---|---|

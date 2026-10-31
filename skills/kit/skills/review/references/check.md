@@ -14,7 +14,7 @@ helper that already does that math.
 ## Preset
 
 Stop: owner
-Offers: prove-it-works, call-tree, headless-shot
+Offers: prove-it-works, call-tree, headless-shot, lean-review
 
 | File | Needs | Holds | Block | Why |
 |---|---|---|---|---|
@@ -98,7 +98,8 @@ Write each row as `| unit | rule | file:line | quote | kind | problem | proof |`
 - `rule` is one ID, a comma list of IDs for a `pass` or an `n/a` row, or `-`.
 - `kind` is `pass` (the unit follows the rule), `n/a` (the rule cannot apply, for example "no SQL
   in this hunk"), `fix` (a proved defect or a rule break), `ask` (a question, or a defect that is
-  not proved), or `note` (optional cleanup). An unproved defect is an `ask`, never a `fix`. Start
+  not proved), or `note` (optional cleanup). An unproved defect is an `ask`, never a `fix`. A `fix` also needs a defect that this change
+  introduced and that its author would fix; an older defect or a matter of taste is a `note`. Start
   its problem with "potential issue, not confirmed:" and name the input that would trigger it.
   The script sets `answered` when an answer closes an `ask`, or `limit` when the user accepts a
   `fix` as a known limit; a seat never writes those kinds.

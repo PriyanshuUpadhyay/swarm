@@ -29,7 +29,6 @@ Look
 - Apply `blocks/design-tokens/SKILL.md` to the page look and its code tokens.
 - For a page with 3D or texture, the look file also keeps light, 3D, texture, and the mark budget.
 - Label and verify a pulled `DESIGN.md` by `blocks/reference-analysis/SKILL.md`.
-- Read the `taste-skill` skill (Taste Skill, `design-taste-frontend`) for the layout and type rules that keep a page from looking like a template.
 Story and motion
 - The story sheet lists the sections in scroll order, each with the settled state that the scroll driver asks for.
 - The motion list names the loader, the section entrances, the scroll-linked motion, hover and cursor states, and the page transitions.

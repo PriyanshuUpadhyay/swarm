@@ -16,6 +16,7 @@ metadata:
 ## Rules
 - A claim decision sits on the claim it changes, after that claim's exhibit and before its child claims.
 - Ask only about forks that change what you build, at most 5 per plan. A plan with no such fork asks nothing.
+- Ask a question only when the questions it depends on have answers. Word it so that a yes accepts the marked default.
 - Mark the option you would pick. The marked option is your recommendation, so "I changed nothing" is a full answer. Never leave a choice with no default.
 - If an option removes a claim, say so: "claim 4 goes".
 - The question is 15 words at most.
@@ -33,7 +34,7 @@ metadata:
   Recommendation:  <one option, with the reason>
   Owner:           human
   ```
-- Record a decision once it is made with the `decisions` skill. This block writes no ADR.
+- Record a decision once it is made, in the repo's decision log when it has one. This block writes no ADR.
 
 ## Example
 Initial state: claim 2 says "A visitor sees how one request flows through `tracer`." The diagram could be static or step through on scroll. The fork is important: the scroll form adds a reduced-motion variant and its own checks to the build.

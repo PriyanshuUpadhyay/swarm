@@ -21,7 +21,7 @@ metadata:
 - Put a frame beside the reference at the same scale with `magick ref.png frame.png -resize x900 +append {{shots}}/compare-NN.png`.
 - Limit: the screenshot is one viewport tall. For a part lower on a long page, shoot with a taller window (for example W,4000), then cut the part out at 100 % with `magick tall.png -crop WxH+0+Y +repage {{shots}}/<name>-<W>.png`, where Y is the part's top in the tall shot. Do not use an anchor URL (`index.html#id`): this binary gives an all-white shot for it.
 - Limit: an image viewer may show a page shot downscaled. Crop the part you judge at 100 % (`magick out.png -crop Wx400+0+0 crop.png`) before you judge small text.
-- Limit: it runs no real clicks or clipboard. Say "not tested in a real browser" for those.
+- Limit: it runs no real clicks or clipboard. For those, use `blocks/drive-app/SKILL.md`, or say "not tested in a real browser".
 - Use `chrome-headless-shell` for DOM, CSS, Canvas 2D, and WebGL captures. For WebGPU, use full Chrome for Testing from Playwright's `chromium-*` folder with `--headless=new --enable-unsafe-webgpu --use-mock-keychain` and a fresh `--user-data-dir`. Check one frame before a long export.
 - For WebGPU, drive Chrome for Testing over the DevTools protocol. Call `window.seek(t)` with `Runtime.evaluate` and `awaitPromise: true`, then call `Page.captureScreenshot`. The artifact's `seek(t)` must meet the readiness contract in `blocks/build-canvas/SKILL.md`; `--screenshot` cannot wait for it.
 - Do not use Lightpanda or Obscura for canvas frames.

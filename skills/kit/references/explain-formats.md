@@ -50,7 +50,7 @@ The format depends on where it is read:
   terminal does not render Mermaid.
 - In a doc or file read on GitHub or in a browser, use Mermaid (`sequenceDiagram`, `flowchart`,
   `stateDiagram-v2`, `erDiagram`, `timeline`).
-- In a page the kit builds, including a walk's step map, use HTML/CSS boxes by
+- In a page the kit builds, use HTML/CSS boxes by
   `blocks/html-diagram/SKILL.md`.
 - For an answer sent to chat and saved to a file, follow where the owner reads it first.
   A chat answer uses a text diagram, and a saved copy keeps that form.
@@ -64,14 +64,6 @@ folder, draw its diagrams by the page form above, and give its path in one line 
 
 The page is extra. Apply the session's agent instructions to the reply. The agent never publishes
 the page or opens it.
-
-A walk is the one exception. A walk from the borrowed `glitch-walk` skill
-(https://github.com/Glitch-Cat-Club/glitch-skills) shows one action as real screens, each with the
-real code lines behind it, and text cannot hold that. So its page is the main result. The reply gives
-the page's path and two or three lines on what it covers and what was not checked. The agent still
-never publishes or opens the page. Its diagram is the step map that the skill draws from the walk in
-HTML and CSS by the page form above; `blocks/html-diagram/SKILL.md` (from the kit root, one folder up from this file) owns how that map
-is drawn.
 
 ## Not yet
 

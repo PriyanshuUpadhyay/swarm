@@ -16,7 +16,7 @@ and the comment asks if the helper is needed, because our own code sets the valu
 The goal is a change that the next reader can follow without holding extra state in their head.
 
 - `C-1` A new or kept helper, wrapper, or file → check every permitted reason in the kit block `blocks/when-to-extract/SKILL.md`; quote the reason that holds, or the unit that meets none.
-- `C-2` A shallow module whose interface is as big as its body → merge it into the caller (Ousterhout, deep modules).
+- `C-2` A shallow module whose interface is as big as its body → apply the deletion test in `blocks/when-to-extract/SKILL.md`; quote what deleting it would remove.
 - `C-3` Validation, `unknown`, or a schema on locally produced data → apply section 6 of `skills/review/references/cleanup-rules.md`; quote the check and its boundary before asking to remove it.
 - `C-4` A second type for a shape that already has one → apply the state and derivation rules in `blocks/when-to-extract/SKILL.md`; quote both shapes and their owner.
 - `C-5` The same logic shape in two hunks → one shared piece, or say which one stays (Fowler, duplicated code).
@@ -27,6 +27,7 @@ The goal is a change that the next reader can follow without holding extra state
 - `C-10` Debug routes, repair scripts, or feature flags that the change no longer needs → remove them.
 - `C-11` Speculative parameters, hooks, or config with no current caller → remove them (Fowler, speculative generality).
 - `C-12` One change that forces edits in many unrelated files → ask where the concept should live (Fowler, shotgun surgery).
+- `C-13` Hand-written code or a new dependency for what the standard library, the platform, or an installed dependency already does → apply the ladder in `blocks/lean-ladder/SKILL.md`; name the function or feature that replaces it.
 
 ## Logic
 
