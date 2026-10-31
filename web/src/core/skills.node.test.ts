@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import type { App } from "./app";
 import { blankDraft, blockTag, catalogGroups, usedByLabel, composable, copyable, draftText, presetDraft, Skills, type Checked, type Kit } from "./skills";
 
-const script = fileURLToPath(new URL("../../../skills/kit/skills/plan/scripts/preset.py", import.meta.url));
+const script = fileURLToPath(new URL("../../../skills/kit/skills/swarm/scripts/preset.py", import.meta.url));
 const python = (args: string[], input = "") => JSON.parse(execFileSync("python3", ["-I", "-B", script, ...args], { encoding: "utf8", input }));
 const kit: Kit = python(["--json"]);
 const check = (text: string): Checked => python(["--check"], text);

@@ -5,7 +5,7 @@ reversals supersede, never edit. Add one row, newest first, with each new record
 
 | #    | Title                                                                | Tier | Status     | Date       | Refs                    |
 |------|----------------------------------------------------------------------|------|------------|------------|-------------------------|
-| 0132 | Plan is the one workflow skill, and the verbs are its presets | 2 | accepted | 2026-10-31 | →0080 →0111 →0113 |
+| 0132 | The swarm skill is the one workflow skill, and the verbs are its presets | 2 | accepted | 2026-10-31 | →0080 →0111 →0113 |
 | 0131 | Each chat runs on a PTY host, and the chat streams the current turn | 3 | accepted | 2026-10-29 | ↑0099 ↑0120 ↑0123 ↑0126 →0084 →0104 →0118 |
 | 0130 | The chat shows a sent message only as the CLI shows it | 2 | accepted | 2026-10-28 | ↑0038 →0021 →0012 |
 | 0129 | A building Codex seat reaches the package hosts, and only those | 2 | accepted | 2026-10-27 | →0128 |

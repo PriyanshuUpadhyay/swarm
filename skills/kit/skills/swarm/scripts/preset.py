@@ -36,7 +36,7 @@ def path(verb, mode=None):
     return file
 
 
-# The plan front door, in the order skills/plan/SKILL.md runs it before any preset step.
+# The plan front door, in the order skills/swarm/SKILL.md runs it before any preset step.
 FRONT = ["planner", "plan-chart", "plan-review"]
 
 

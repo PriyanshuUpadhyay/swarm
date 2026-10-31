@@ -14,7 +14,7 @@ Research is a step run, so the kit's `references/step-run.md` owns the status li
 close, and when a step waits for the user. `references/run-folder.md` owns the research run and
 report paths. "research continue <folder>" picks up that run.
 
-Run the front door in `skills/plan/SKILL.md` with the preset below, and write `plan.md` in the
+Run the front door in `skills/swarm/SKILL.md` with the preset below, and write `plan.md` in the
 research run folder. When local facts set the web query, set `03-web.md`'s Needs cell to `local`;
 otherwise keep `question`. Close each step with
 `python3 <kit root>/references/step_run.py done <folder> <step> <n>`. The saved `plan.md` keeps this

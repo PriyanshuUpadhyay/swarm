@@ -1,11 +1,11 @@
 ---
-name: plan
+name: swarm
 description: Plan and run any task from kit blocks, starting from a preset when one fits; show the chart, get approval, run the steps. Use when asked to build, implement, review, research, explain, run a council, or plan a task.
 ---
 
-# Plan
+# Swarm
 
-Example. The owner types `/plan research which state library`. The task matches the `research`
+Example. The owner types `/swarm:swarm research which state library`. The task matches the `research`
 preset, so the agent reads `presets/research/PRESET.md` in full. The planner copies its preset into
 `plan.md`, adds no block, and the chart shows five steps. The preset says `Stop: owner`, so the
 owner clicks approve in Plannotator, and `start_plan.py` makes the five step files.
@@ -16,7 +16,7 @@ The kit root, with its `blocks/` and `references/` folders, is two folders up fr
 
 ## Pick a preset
 
-Plan is the one workflow skill. Each verb is a preset folder in `<kit root>/presets/`. Match the
+This skill is the one workflow skill of the kit. Each verb is a preset folder in `<kit root>/presets/`. Match the
 task to one row, then read that `PRESET.md` in full before you plan, because it holds the verb's own
 rules next to its preset. "<verb> continue <folder>" picks up that verb's run. When no row fits, or
 the task mixes verbs, plan from the block catalog with no preset.
@@ -38,7 +38,7 @@ A preset is a verb's start list of steps and blocks. It is a `## Preset` section
 step run, an optional line `Offers: <block>, <block>` with the blocks that the planner may add for this
 verb (no step loads them; they are off by default), and one table in the plan step-table shape that `blocks/planner/SKILL.md` sets, with no
 Writes column. The planner adds Writes, so the Writes and duty rules apply to the plan, not the preset.
-`python3 -I <kit root>/skills/plan/scripts/preset.py <verb> [<mode>]` checks a preset and prints
+`python3 -I <kit root>/skills/swarm/scripts/preset.py <verb> [<mode>]` checks a preset and prints
 each step with the blocks it resolves to. A task with no verb has no preset.
 
 ## Steps

@@ -6,10 +6,11 @@ related: ["0080", "0111", "0113"]
 informed-by:
   - 'council 2026-10-30 (~/dotfiles/docs/council/2026-10-30-skill-consolidation.md), GO-WITH-CHANGES: take the useful parts of the third-party packs into kit blocks before any pack is removed'
   - 'owner, 2026-10-30, on the skill-tree page: there are no separate skills; blocks combine at run time from the task'
-  - 'owner, 2026-10-31: "go" on the restructure table (plan the one skill; build, implement, review, research, explain, and council as presets; web-search and engineering-standards as blocks; orchestrate-* as run-workers rows; decisions removed)'
+  - 'owner, 2026-10-31: "do not name the final skill as planned. It should just be swarm."'
+  - 'owner, 2026-10-31: "go" on the restructure table (one skill; build, implement, review, research, explain, and council as presets; web-search and engineering-standards as blocks; orchestrate-* as run-workers rows; decisions removed)'
 ---
 
-# 0132. Plan is the one workflow skill, and the verbs are its presets
+# 0132. The swarm skill is the one workflow skill, and the verbs are its presets
 
 ## Context and Problem Statement
 
@@ -22,19 +23,20 @@ run from blocks.
 
 ## Considered Options
 
-- `plan` is the only workflow skill; each verb is a `presets/<verb>/PRESET.md` that `plan` reads
-  (chosen).
+- One skill, `swarm` (the old `plan`), is the only workflow skill; each verb is a
+  `presets/<verb>/PRESET.md` that it reads (chosen).
 - Keep the verb skills as thin pointers to `plan`. The menu stays long, and two files say when a
   verb applies.
-- Fold every preset into `plan/SKILL.md`. The file grows past 1,000 lines, and the preset scripts
+- Fold every preset into the one `SKILL.md`. The file grows past 1,000 lines, and the preset scripts
   lose their folders.
 
 ## Decision Outcome
 
-Chosen option: `plan` is the only workflow skill, because one menu entry with a preset table picks
+Chosen option: `swarm` is the only workflow skill, because one menu entry with a preset table picks
 the verb, and each verb keeps its folder, scripts, and mode files.
 
-- The plugin ships three skills: `plan`, `swarm-orchestrator`, and `swarm-voice`.
+- The plugin ships three skills: `swarm`, `swarm-orchestrator`, and `swarm-voice`. The `plan` skill is
+  renamed `swarm`, so Claude Code shows it as `/swarm:swarm`; the plan blocks keep their names.
 - `skills/kit/presets/<verb>/PRESET.md` holds each verb's rules and its `## Preset` section.
   `preset.py` and the Skills page read presets from there.
 - `web-search` and `engineering-standards` are blocks. The standards rows are in
@@ -45,9 +47,9 @@ the verb, and each verb keeps its folder, scripts, and mode files.
 
 ### Consequences
 
-- Good, because a CLI menu shows one kit workflow entry, and the preset table in `plan` says which
+- Good, because a CLI menu shows one kit workflow entry, and the preset table in `swarm` says which
   verb fits.
-- Bad, because `/research` and `/review` stop being commands; the owner types `/plan research …`.
+- Bad, because `/research` and `/review` stop being commands; the owner types `/swarm:swarm research …`.
   `skills/kit/README.md` lists what to type now.
 - Bad, because `~/AGENTS.md` and other dotfiles point at the old paths until the new kit is
   installed. They change in the same step as the install.

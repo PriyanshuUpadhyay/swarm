@@ -7,7 +7,7 @@ import { layoutSkill, type Size } from "./skill-layout";
 import type { Kit } from "./skills";
 
 // The real kit, from the script the Skills page reads, so a new preset is tested on its own.
-const script = fileURLToPath(new URL("../../../skills/kit/skills/plan/scripts/preset.py", import.meta.url));
+const script = fileURLToPath(new URL("../../../skills/kit/skills/swarm/scripts/preset.py", import.meta.url));
 const kit: Kit = JSON.parse(execFileSync("python3", ["-I", "-B", script, "--json"], { encoding: "utf8" }));
 
 // Card sizes the page can draw: the trial's box, a tall card, and a narrow pane's card.

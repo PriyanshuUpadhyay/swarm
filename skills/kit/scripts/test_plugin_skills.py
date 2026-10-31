@@ -15,8 +15,8 @@ def test_plugin_ships_the_workflow_verbs():
     source = next(p["source"] for p in marketplace["plugins"] if p["name"] == plugin["name"])
     assert (KIT / source).resolve() == KIT
     skills = KIT / "skills"  # Each plugin uses its default skills/ folder.
-    # Owner rule 2026-10-31: plan is the one workflow skill; the verbs are presets that plan reads.
-    assert {p.parent.name for p in skills.glob("*/SKILL.md")} == {"plan", "swarm-orchestrator", "swarm-voice"}
+    # Owner rule 2026-10-31: swarm is the one workflow skill (named for the plugin, 2026-10-31); the verbs are presets that plan reads.
+    assert {p.parent.name for p in skills.glob("*/SKILL.md")} == {"swarm", "swarm-orchestrator", "swarm-voice"}
     presets = {p.parent.name for p in (KIT / "presets").glob("*/PRESET.md")}
     assert presets == {"build", "council", "explain", "implement", "research", "review"}, presets
     # deliver and pair are implement modes since 2026-10-19; the kit README names what to type now.

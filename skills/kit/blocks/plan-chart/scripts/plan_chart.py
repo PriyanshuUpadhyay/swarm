@@ -211,7 +211,7 @@ def page(plan):
 
 def preset_of(plan):
     """The preset file that the plan's `Preset:` line names, or None."""
-    sys.path.insert(0, str(KIT / "skills" / "plan" / "scripts"))
+    sys.path.insert(0, str(KIT / "skills" / "swarm" / "scripts"))
     import preset
     return preset.of_plan(plan)
 

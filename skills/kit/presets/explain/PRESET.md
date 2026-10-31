@@ -13,7 +13,7 @@ The kit root, with its `blocks/` and `references/` folders, is two folders up fr
 Read `blocks/voice/SKILL.md`, then `blocks/voice-teach/SKILL.md` for the order of ideas, and `references/explain-formats.md`
 for the form of the answer. Apply both to the requested subject.
 
-Run the front door in `skills/plan/SKILL.md` with the preset below.
+Run the front door in `skills/swarm/SKILL.md` with the preset below.
 
 ## Preset
 

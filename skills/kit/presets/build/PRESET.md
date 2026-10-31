@@ -73,7 +73,7 @@ Example. `~/work/seed-city/ink/` holds one file per step. Steps 1-4 are done, so
 `build continue ~/work/seed-city`, reads line 1 of every file, and starts `05-animatic.md`.
 
 A piece is a step run, so `references/step-run.md` owns the status line, ready and stale steps,
-pick-up, close, and when a step waits for the user. Run the front door in `skills/plan/SKILL.md`
+pick-up, close, and when a step waits for the user. Run the front door in `skills/swarm/SKILL.md`
 with the preset below, and write `plan.md` in `<piece>/ink/`. The `Blocks` column makes `start`
 write each block's rules into its step file.
 Each file holds the step's output, not a copy of it.

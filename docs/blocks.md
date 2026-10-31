@@ -126,7 +126,7 @@ On 2026-10-17, the owner approved domain selection by `implement_run.py start --
 `skills/kit/presets/implement/PRESET.md` names the command and its saved choice.
 
 On 2026-10-19, the owner made every work verb a preset, the Template above: a start list of steps
-and blocks that the planner copies. `skills/plan/SKILL.md` owns the preset format and the front door,
+and blocks that the planner copies. `skills/swarm/SKILL.md` owns the preset format and the front door,
 and `blocks/plan-review/scripts/start_plan.py` owns which presets stop for approval.
 
 1. A block owns one concern. Its `owns` line names that concern, and no other block's `owns` line
@@ -142,7 +142,7 @@ and `blocks/plan-review/scripts/start_plan.py` owns which presets stop for appro
 On 2026-10-17, the owner closed C4/D1 with the diagram form rule in
 `references/explain-formats.md`. Implement and the plan chart select blocks with
 `references/block_resolver.py`, so the plan chart accepts a parent id as implement does.
-`skills/plan/SKILL.md` directs the step agent to load the resolved list shown in `plan.html`.
+`skills/swarm/SKILL.md` directs the step agent to load the resolved list shown in `plan.html`.
 
 ## Catalog
 

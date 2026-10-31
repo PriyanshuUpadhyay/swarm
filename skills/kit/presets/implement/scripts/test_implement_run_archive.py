@@ -3,9 +3,9 @@ from test_implement_run_support import *
 
 
 def test_catalog_uses_running_kit(tmp):
-    local = implement_run.BLOCKS.parent / "skills" / "plan" / "SKILL.md"
-    installed = "~/.swarm/kit/skills/plan/SKILL.md"
-    absolute = str(Path(tmp, "running-kit", "home", ".swarm", "kit", "skills", "plan", "SKILL.md"))
+    local = implement_run.BLOCKS.parent / "skills" / "swarm" / "SKILL.md"
+    installed = "~/.swarm/kit/skills/swarm/SKILL.md"
+    absolute = str(Path(tmp, "running-kit", "home", ".swarm", "kit", "skills", "swarm", "SKILL.md"))
     missing = "~/.swarm/kit/skills/not-shipped/SKILL.md"
     outside = "~/.swarm/kit-other/skills/example/SKILL.md"
     out, folder, _, _ = blocks_start(tmp, "running-kit", f"- build: {installed}, {absolute}, {missing}, {outside}\n")

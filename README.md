@@ -149,14 +149,14 @@ AGY has no account source yet.
 ### Bundled workflow skills
 
 The plugin `swarm` holds three skills in `skills/kit/skills/`, the verb presets in
-`skills/kit/presets/`, and the blocks in `skills/kit/blocks/`. `plan` is the one workflow skill: it
+`skills/kit/presets/`, and the blocks in `skills/kit/blocks/`. `swarm` is the one workflow skill: it
 matches the task to a preset, or plans from the blocks with no preset. A block is never called by
-itself; `plan` puts blocks into the steps of a run. Claude Code shows a skill as `/swarm:<name>`, pi
+itself; the `swarm` skill puts blocks into the steps of a run. Claude Code shows a skill as `/swarm:<name>`, pi
 as `/skill:<name>`.
 
 | Skill or preset | Use |
 |---|---|
-| `plan` (skill) | Plan any task from blocks, starting from a preset; show the flowchart, run it after approval |
+| `swarm` (skill) | Plan any task from blocks, starting from a preset; show the flowchart, run it after approval |
 | `research` | Answer one question in a short report; its web step loads the `web-search` block |
 | `council` | Claude, GPT, and Gemini voices debate in panes and end in one verdict |
 | `implement` | Run one change through frame, design, contracts, impact, build, review, and close, in `pair` mode (one approved diff of about 40 lines at a time) or `auto` mode (stops before a push or merge) |

@@ -9,7 +9,7 @@ metadata:
   needs: "review findings with file and line"
   gives: "comments in the reviewer's voice"
   conflicts: ""
-  users: "plan"
+  users: "swarm"
   source: "presets/review/references/walk.md, step 4 (Comments) and Voice"
 ---
 

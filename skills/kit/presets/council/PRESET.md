@@ -20,7 +20,7 @@ that remains with the user.
 A council is a step run, so the kit's `references/step-run.md` owns the status line, pick-up,
 close, and when a step waits for the user. Choose the council run and log paths by
 `references/run-folder.md`. "council continue <folder>" picks it up. Make the folder with the
-front door in `skills/plan/SKILL.md` and the preset below, and close each step with `done`.
+front door in `skills/swarm/SKILL.md` and the preset below, and close each step with `done`.
 
 ## Preset
 

@@ -5,17 +5,17 @@ Workflow skills for coding agents (Claude Code, Codex, Antigravity). Each skill 
 
 ## Skills
 
-The plugin ships three skills. `plan` is the one workflow skill; the others serve swarm panes.
+The plugin ships three skills. `swarm` is the one workflow skill; the others serve swarm panes.
 
 | Skill | Use |
 |---|---|
-| `plan` | Plan any task from kit blocks, starting from a preset when one fits; draw it, get approval, run the steps |
+| `swarm` | Plan any task from kit blocks, starting from a preset when one fits; draw it, get approval, run the steps |
 | `swarm-orchestrator` | Run a swarm session as the parent agent |
 | `swarm-voice` | Act as one child agent in a swarm session |
 
 ## Presets
 
-Each work verb is a preset folder in `presets/`, with a `PRESET.md` that `plan` reads. A preset is a
+Each work verb is a preset folder in `presets/`, with a `PRESET.md` that the `swarm` skill reads. A preset is a
 start list of steps and blocks; the planner may add or drop blocks for the task.
 
 | Preset | Use |
@@ -35,10 +35,10 @@ holds each runtime's lines. Run folders stay where they were.
 
 | You typed | Type now |
 |---|---|
-| `/implement`, `/pair`, `/deliver` | `/plan implement`, then choose `pair` or `auto` mode |
-| `/review`, `/review-check`, `/review-walk`, `/cleanup-gate` | `/plan review`, then choose `check`, `walk`, or `cleanup` |
-| `/research`, `/web-search` | `/plan research` |
-| `/build`, `/explain`, `/council` | `/plan build`, `/plan explain`, `/plan council` |
+| `/implement`, `/pair`, `/deliver` | `/swarm:swarm implement`, then choose `pair` or `auto` mode |
+| `/review`, `/review-check`, `/review-walk`, `/cleanup-gate` | `/swarm:swarm review`, then choose `check`, `walk`, or `cleanup` |
+| `/research`, `/web-search` | `/swarm:swarm research` |
+| `/build`, `/explain`, `/council` | `/swarm:swarm build`, `/swarm:swarm explain`, `/swarm:swarm council` |
 
 The rules for proof, checked units, and code extraction live directly in
 `blocks/prove-it-works/SKILL.md`, `blocks/checked-units/SKILL.md`, and
@@ -71,8 +71,8 @@ agy plugin install <repo>/skills/kit
 pi install <repo>/skills/kit
 ```
 
-Claude Code shows each skill with the plugin name in front, for example `/swarm:plan`; pi shows
-`/skill:plan`. Claude Code and pi read the local folder in place, so edits reach the next session.
+Claude Code shows each skill with the plugin name in front, for example `/swarm:swarm`; pi shows
+`/skill:swarm`. Claude Code and pi read the local folder in place, so edits reach the next session.
 Run the commands above after an edit to refresh the copies in Codex and Antigravity.
 The package build stamps both plugin manifests from the kit content in `<repo>/scripts/stamp-kit.py`.
 A source checkout keeps its ordinary manifest version and needs no stamp.

@@ -17,7 +17,7 @@ from pathlib import Path
 
 KIT = Path(__file__).resolve().parents[3]
 sys.path[:0] = [str(KIT / "references"), str(KIT / "blocks" / "comment-round" / "scripts"),
-                str(KIT / "skills" / "plan" / "scripts")]  # python3 -I adds none of them
+                str(KIT / "skills" / "swarm" / "scripts")]  # python3 -I adds none of them
 import comment_round  # noqa: E402
 import preset  # noqa: E402
 import step_run  # noqa: E402

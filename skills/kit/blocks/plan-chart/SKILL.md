@@ -5,11 +5,11 @@ license: MIT
 metadata:
   kind: step
   owns: "the check of a plan, the drawing of its step graph, and its review page"
-  serves: "plan"
+  serves: "swarm"
   needs: "plan.md"
   gives: "the chart in plan.md, and plan.html, or the first defect"
   conflicts: ""
-  users: "plan"
+  users: "swarm"
   source: "blocks/html-diagram/SKILL.md (HTML boxes that reflow); docs/progress.md B3 (refuse an unknown Needs word or a cycle); references/step_run.py (need_files); assets/pele.global.js is npm pele 1.6.0 dist/pele.global.js (https://pele.run, MIT, assets/pele.LICENSE, sha256 b82d1bcd435302779a945e1e0f4a54ea56fb26e010ce3f2122f4216fcfc095d7)"
 ---
 

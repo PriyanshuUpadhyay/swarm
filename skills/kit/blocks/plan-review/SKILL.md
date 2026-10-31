@@ -5,11 +5,11 @@ license: MIT
 metadata:
   kind: step
   owns: "the owner's approval of a plan before work starts"
-  serves: "plan"
+  serves: "swarm"
   needs: "plan.html drawn from plan.md"
   gives: "an approved plan and its started step run"
   conflicts: ""
-  users: "plan"
+  users: "swarm"
   source: "blocks/comment-round/SKILL.md (one round, hashes, answers, loop stop); references/step_run.py (start)"
 ---
 
@@ -19,7 +19,7 @@ metadata:
   - `approved` with no notes: the plan is approved.
   - `approved` with notes, or `annotated`: change `plan.md` for each note, answer each note, run `plan-chart`, and start another round. Any change to the plan needs a new round, because the approval holds only for the files the owner saw.
   - `dismissed`: ask the owner in chat.
-- Start the work as step 4 of `skills/plan/SKILL.md` says. `start_plan.py` owns the stop rule, and its docstring says when a plan needs this round.
+- Start the work as step 4 of `skills/swarm/SKILL.md` says. `start_plan.py` owns the stop rule, and its docstring says when a plan needs this round.
 - An approved page or comment round elsewhere is never an approval of the plan.
 
 ## Example
