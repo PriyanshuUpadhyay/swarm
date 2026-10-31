@@ -96,6 +96,7 @@ Unbreakable strings: they have no spaces, so the browser has nowhere to wrap the
 | A future date | "in 3 days" vs "-3 days ago" |
 | `1970-01-01` | A zero timestamp shown as a real date |
 | `2025-12-31T23:30:00-08:00` | Shows as a different day in UTC and the user's timezone |
+| `2024-03-01` (a date with no time), viewed west of UTC | `new Date("2024-03-01")` is UTC midnight, so the card shows 29 Feb; render it once with `TZ=America/Los_Angeles` |
 | Very long duration (`1,284 hours`) | Duration formatting that never rolls up to days |
 
 Use `Intl.RelativeTimeFormat` and `Intl.DateTimeFormat`, not hand-built strings.
