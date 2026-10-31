@@ -20,31 +20,52 @@ async function open(tab: Page) {
   return errors;
 }
 
-test("the Blocks page shows each block's users, filters by preset, and an unused block says so", async ({ page }, info) => {
+test("the Blocks page shows the run tree of a starting plan beside the library, and a library pick finds the block in the tree", async ({ page }, info) => {
   const errors = await open(page);
   await page.getByTestId("skills-button").click();
   const dialog = page.getByTestId("skills");
+  const tree = page.getByTestId("skills-tree");
   await expect(dialog).toBeVisible();
-  await expect(page.getByTestId("skills-view-graph")).toHaveCount(0);
+  await expect(page.getByTestId("skills-start")).toHaveValue("implement");
   await expect(page.getByTestId("skills-front").locator("[data-block]")).toHaveText(["planner", "plan-chart", "plan-review"]);
+  await expect(tree.locator('[aria-level="1"][aria-expanded]')).toHaveCount(8);
   await shoot(page, "blocks", info.project.name);
+
+  // A library pick opens the detail in the list and marks the block in the tree.
   await page.getByTestId("skills-filter").fill("change-review");
-  await dialog.locator('[data-block="change-review"]').click();
-  await expect(page.getByTestId("skills-used-by")).toContainText("implement");
-  await expect(page.getByTestId("skills-used-by")).toContainText("06-review · named");
+  await page.getByTestId("skills-library").locator('[data-block="change-review"]').click();
+  await expect(page.getByTestId("skills-used-by")).toContainText("implement 06-review");
+  await expect(page.getByTestId("skills-where")).toContainText("In this plan at 06-review");
+  await expect(tree.locator('[data-block="change-review"][data-hit]')).toHaveCount(1);
+
+  // A block outside the plan says so.
+  await page.getByTestId("skills-start").selectOption("research");
+  await page.getByTestId("skills-library").locator('[data-block="change-review"]').click();
+  await expect(page.getByTestId("skills-where")).toContainText("Not in this plan");
   await page.getByTestId("skills-filter").fill("");
-  const unused = page.getByTestId("skills-tree").locator("[data-block]").filter({ hasText: "unused" }).first();
-  await unused.click();
-  await expect(page.getByTestId("skills-unused")).toHaveText("no preset step; the planner can still pick it");
-  // An offered block names the presets that offer it, and each one filters the cards to that preset.
-  await page.getByTestId("skills-filter").fill("html-diagram");
-  await dialog.locator('[data-block="html-diagram"]').click();
-  await expect(page.getByTestId("skills-offered-by")).toContainText("implement");
-  await page.getByTestId("skills-offered-by").getByText("implement").click();
-  await expect(page.getByTestId("skills-presets").locator('[data-preset="implement"]')).toHaveAttribute("aria-pressed", "true");
-  await page.getByTestId("skills-filter").fill("");
-  await expect(page.getByTestId("skills-tree").locator('[data-block="report"]')).toHaveCount(0);
+
+  // A family node names only the parts the step loads, and opens to all its parts.
+  const family = tree.locator('[data-family="sources"]').first();
+  await expect(family).toContainText("3 of 4 load here");
+  await family.locator("button").first().click();
+  await expect(family.locator('[role="group"] [data-block]')).toHaveCount(4);
+  await expect(family.locator('[data-block="link-check"]')).toContainText("not loaded here");
+
+  // The tree follows the tree view keys: Down moves, Left closes a step.
+  await page.getByTestId("skills-front").focus();
+  await page.keyboard.press("ArrowDown");
+  await expect(tree.locator('[data-key^="s:01"]')).toBeFocused();
+  await page.keyboard.press("ArrowLeft");
+  await expect(tree.locator('[data-key^="s:01"]')).toHaveAttribute("aria-expanded", "false");
+
+  await page.getByTestId("skills-start").selectOption("blank");
+  await expect(page.getByTestId("skills-summary")).toContainText("Blank plan");
+  await page.getByTestId("skills-start").selectOption("implement");
+  await tree.locator('[data-block="prove-it-works"]').first().click();
+  await expect(page.getByTestId("skills-detail")).toBeVisible();
   await shoot(page, "blocks-implement", info.project.name);
+  await page.emulateMedia({ colorScheme: "dark" });
+  await shoot(page, "blocks-dark", info.project.name);
   expect(errors).toEqual([]);
 });
 

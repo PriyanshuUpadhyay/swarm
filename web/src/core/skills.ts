@@ -1,5 +1,5 @@
-// The Skills page (ADR 0111): the kit's blocks, filtered by the preset that loads them, and a
-// Composer for a new preset. Every fact comes from the kit's own `preset.py` through `/api/kit`, and
+// The Skills page (ADR 0111): the kit's blocks as the run tree of a starting plan beside the block
+// library, and a Composer for a new preset. Every fact comes from the kit's own `preset.py` through `/api/kit`, and
 // every draft check through `/api/kit/check`; this module parses no Needs text and checks nothing.
 
 import type { App } from "./app";
@@ -26,8 +26,9 @@ export type SkillsState = {
   open: boolean;
   view: SkillsView;
   kit: Load<Kit>;
-  /** The Catalog's preset filter; null shows every block. */
-  preset: string | null;
+  /** The "Start from" plan of the Blocks page: a preset name, or BLANK. */
+  preset: string;
+  /** The selected block of the Blocks page, or null. */
   block: string | null;
   filter: string;
   draft: Draft;
@@ -69,57 +70,102 @@ export function composable(kit: Kit): Preset[] {
   return kit.presets.filter((p) => p.start === null);
 }
 
-/** One Catalog section: a family (a parent and its parts) or the free blocks of one kind. */
-export type CatalogGroup = { title: string; parent: Block | null; items: Block[] };
+/** The "Start from" choice with no preset: only the front door, and the planner adds every step. */
+export const BLANK = "blank";
 
-const KIND_TITLES: [string, string][] = [
-  ["step", "Steps"],
-  ["rule", "Rules"],
-  ["pack", "Packs"],
-];
-
-/** The Catalog tag of a block that no preset step loads: the plan front door, offered by a preset, or unused. */
-export function blockTag(kit: Kit, block: Block): "front door" | "offered" | "unused" | null {
-  if (kit.front.includes(block.id)) return "front door";
-  if (block.used_by.length) return null;
-  return block.offered_by.length ? "offered" : "unused";
+export function planOf(kit: Kit, preset: string): Preset | null {
+  return kit.presets.find((p) => p.preset === preset) ?? null;
 }
 
-/** How a step loads a block; a parent that a step did not name comes in for one of its named parts. */
-export function usedByLabel(block: Block, use: UsedBy) {
-  if (use.named) return "named";
-  return block.parent ? `through ${block.parent}` : "for a named part";
+/** The step files of the plan that name a block, in step order. */
+export function stepsLoading(kit: Kit, preset: string, id: string): string[] {
+  return (planOf(kit, preset)?.steps ?? []).filter((s) => s.blocks.includes(id)).map((s) => s.file);
 }
 
-/** The presets whose steps load a block, each once, in kit order. */
-export function usedIn(kit: Kit, block: Block): string[] {
-  return kit.presets.map((p) => p.preset).filter((p) => block.used_by.some((u) => u.preset === p));
+export function offeredIn(kit: Kit, preset: string): Block[] {
+  return planOf(kit, preset) ? kit.blocks.filter((b) => b.offered_by.includes(preset)) : [];
 }
 
-/** True when a preset's steps load the block, or the preset offers it; null means every preset. */
-export function inPreset(block: Block, preset: string | null) {
-  return preset === null || block.used_by.some((u) => u.preset === preset) || block.offered_by.includes(preset);
-}
+/** A step's child: one block, or one family node for the parts of one parent that the step names. */
+export type StepChild = { block: string } | { family: string; parts: string[] };
 
 /**
- * Each family first, its parts under the parent, then the free blocks by kind. A filter keeps a family
- * when its parent or a part matches; a family whose parent matches keeps every part.
+ * A step's blocks, with the named parts of one family under one family node. A step loads only the parts
+ * it names, so the node lists those parts and never the others. Front-door blocks stay single.
  */
-export function catalogGroups(kit: Kit, filter: string, preset: string | null = null): CatalogGroup[] {
-  const q = filter.trim().toLowerCase();
-  const hit = (b: Block) => inPreset(b, preset) && (!q || [b.id, b.description, b.needs, b.gives].some((t) => t.toLowerCase().includes(q)));
+export function stepChildren(kit: Kit, step: Step): StepChild[] {
   const byId = new Map(kit.blocks.map((b) => [b.id, b]));
-  const groups: CatalogGroup[] = [];
-  for (const parent of kit.blocks.filter((b) => b.kind === "parent")) {
-    const parts = parent.parts.map((id) => byId.get(id)).filter((b): b is Block => !!b);
-    const items = hit(parent) ? parts.filter((b) => inPreset(b, preset)) : parts.filter(hit);
-    if (hit(parent) || items.length) groups.push({ title: parent.id, parent, items });
+  const out: StepChild[] = [];
+  const families = new Map<string, { family: string; parts: string[] }>();
+  for (const id of step.blocks) {
+    const parent = kit.front.includes(id) ? null : (byId.get(id)?.parent ?? null);
+    if (!parent) {
+      out.push({ block: id });
+      continue;
+    }
+    let node = families.get(parent);
+    if (!node) {
+      node = { family: parent, parts: [] };
+      families.set(parent, node);
+      out.push(node);
+    }
+    node.parts.push(id);
   }
-  for (const [kind, title] of KIND_TITLES) {
-    const items = kit.blocks.filter((b) => b.kind === kind && !b.parent && hit(b));
-    if (items.length) groups.push({ title, parent: null, items });
+  return out;
+}
+
+export function planSummary(kit: Kit, preset: string): string {
+  const plan = planOf(kit, preset);
+  if (!plan) return "Blank plan: only the front door. The planner adds every step and block for the task.";
+  const named = new Set(plan.steps.flatMap((s) => s.blocks));
+  const offered = offeredIn(kit, preset).length;
+  const rest = kit.blocks.filter((b) => !named.has(b.id) && !b.offered_by.includes(preset) && !kit.front.includes(b.id)).length;
+  return `${plan.steps.length} steps load ${named.size} blocks, ${offered} offered, ${rest} only in the library.`;
+}
+
+/** Where a block sits in the chosen plan, as one sentence. */
+export function whereInPlan(kit: Kit, preset: string, block: Block): string {
+  if (kit.front.includes(block.id)) return "Front door. It runs first for every task.";
+  const here = stepsLoading(kit, preset, block.id);
+  if (here.length) return `In this plan at ${here.join(", ")}.`;
+  if (block.offered_by.includes(preset)) return "In the offered tray. Off until the planner adds it.";
+  if (block.kind === "parent") {
+    const parts = block.parts.filter((p) => stepsLoading(kit, preset, p).length);
+    if (parts.length) return `Not named in this plan. Its parts ${parts.join(", ")} load on their own.`;
   }
-  return groups;
+  return "Not in this plan. The planner can add it.";
+}
+
+/** The presets whose steps name a block (or, for a parent, load it for a part), with those steps. */
+export function loadedBy(block: Block): [string, string[]][] {
+  const out = new Map<string, string[]>();
+  for (const u of block.used_by) if (u.named || block.kind === "parent") out.set(u.preset, [...(out.get(u.preset) ?? []), u.step]);
+  return [...out];
+}
+
+/** The library: blocks by id with each family's parts under it; a query matches id, description, needs, or gives. */
+export function libraryRows(kit: Kit, query: string): { block: Block; part: boolean }[] {
+  const q = query.trim().toLowerCase();
+  const byId = new Map(kit.blocks.map((b) => [b.id, b]));
+  const rows = [...kit.blocks]
+    .filter((b) => !b.parent || !byId.has(b.parent))
+    .sort((x, y) => x.id.localeCompare(y.id))
+    .flatMap((b) => [{ block: b, part: false }, ...b.parts.flatMap((p) => (byId.has(p) ? [{ block: byId.get(p)!, part: true }] : []))]);
+  if (!q) return rows;
+  return rows.filter(({ block: b }) => [b.id, b.description, b.needs, b.gives].some((t) => t.toLowerCase().includes(q))).map((r) => ({ ...r, part: false }));
+}
+
+/** The library row's tag: front, the step numbers that load it, or offered. */
+export function libraryTag(kit: Kit, preset: string, id: string): string {
+  if (kit.front.includes(id)) return "front";
+  const steps = stepsLoading(kit, preset, id);
+  if (steps.length) return steps.map((f) => f.split("-")[0]).join(" ");
+  return kit.blocks.find((b) => b.id === id)?.offered_by.includes(preset) ? "offered" : "";
+}
+
+/** The first sentence of a description, for a one-line row. */
+export function firstSentence(text: string): string {
+  return text.split(/(?<=\.)\s/)[0];
 }
 
 /** A kit older than the app has no front door, duty, or offers; they are empty then, so the page still draws. */
@@ -133,7 +179,7 @@ function withDefaults(kit: Kit): Kit {
 }
 
 export class Skills {
-  state: SkillsState = { open: false, view: "catalog", kit: { state: "idle" }, preset: null, block: null, filter: "", draft: blankDraft(), undo: null, check: null };
+  state: SkillsState = { open: false, view: "catalog", kit: { state: "idle" }, preset: "implement", block: null, filter: "", draft: blankDraft(), undo: null, check: null };
   private listeners = new Set<() => void>();
   private timer: ReturnType<typeof setTimeout> | null = null;
   /** Count reads and checks, so an older reply cannot replace a newer one. */
@@ -171,12 +217,11 @@ export class Skills {
     this.set({ filter });
   }
 
-  selectBlock(block: string) {
+  selectBlock(block: string | null) {
     this.set({ block });
   }
 
-  /** The Catalog's preset filter; null shows every block. */
-  selectPreset(preset: string | null) {
+  selectPreset(preset: string) {
     this.set({ preset });
   }
 
@@ -186,7 +231,9 @@ export class Skills {
     try {
       const data = withDefaults(await this.app.api.get<Kit>("/api/kit"));
       if (seq !== this.loads) return;
-      this.set({ kit: { state: "ready", data } });
+      // A plan that this kit no longer has falls back to its first preset.
+      const known = this.state.preset === BLANK || data.presets.some((p) => p.preset === this.state.preset);
+      this.set({ kit: { state: "ready", data }, preset: known ? this.state.preset : (data.presets[0]?.preset ?? BLANK) });
       this.scheduleCheck(0);
     } catch (e) {
       if (seq === this.loads) this.set({ kit: { state: "error", error: message(e) } });

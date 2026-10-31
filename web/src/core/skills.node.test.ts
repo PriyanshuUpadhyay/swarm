@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { App } from "./app";
-import { blankDraft, blockTag, catalogGroups, usedByLabel, usedIn, composable, copyable, draftText, presetDraft, Skills, type Checked, type Kit } from "./skills";
+import { BLANK, blankDraft, composable, libraryRows, libraryTag, planSummary, stepChildren, stepsLoading, whereInPlan, copyable, draftText, presetDraft, Skills, type Checked, type Kit } from "./skills";
 
 const script = fileURLToPath(new URL("../../../skills/kit/skills/swarm/scripts/preset.py", import.meta.url));
 const python = (args: string[], input = "") => JSON.parse(execFileSync("python3", ["-I", "-B", script, ...args], { encoding: "utf8", input }));
@@ -49,25 +49,33 @@ describe("draftText", () => {
   });
 });
 
-describe("catalogGroups", () => {
-  it("lists every block once, a parent as its family's head and each part in its family", () => {
-    const groups = catalogGroups(kit, "");
-    const ids = groups.flatMap((g) => [...(g.parent ? [g.parent.id] : []), ...g.items.map((b) => b.id)]);
-    expect(ids.sort()).toEqual(kit.blocks.map((b) => b.id).sort());
-    const voice = groups.find((g) => g.parent?.id === "voice")!;
-    expect(voice.items.every((b) => b.parent === "voice")).toBe(true);
+describe("run tree", () => {
+  const blocks = new Map(kit.blocks.map((b) => [b.id, b]));
+
+  it("puts a step's named parts of one family under one node, and never the parts it does not name", () => {
+    const research = kit.presets.find((p) => p.preset === "research")!;
+    for (const step of research.steps)
+      for (const c of stepChildren(kit, step)) {
+        if ("family" in c) expect(c.parts.every((p) => step.blocks.includes(p) && blocks.get(p)!.parent === c.family)).toBe(true);
+        else expect(step.blocks).toContain(c.block);
+      }
+    const named = research.steps.flatMap((s) => stepChildren(kit, s).flatMap((c) => ("family" in c ? c.parts : [c.block])));
+    expect(named.sort()).toEqual(research.steps.flatMap((s) => s.blocks).sort());
   });
 
-  it("keeps a parent when only one of its parts matches the filter", () => {
-    const groups = catalogGroups(kit, "voice-reply");
-    expect(groups.map((g) => [g.parent?.id, g.items.map((b) => b.id)])).toEqual([["voice", ["voice-reply"]]]);
+  it("says where a block sits in the plan, and that a blank plan has only the front door", () => {
+    const step = stepsLoading(kit, "research", "report")[0];
+    expect(whereInPlan(kit, "research", blocks.get("report")!)).toBe(`In this plan at ${step}.`);
+    expect(whereInPlan(kit, "research", blocks.get("change-review")!)).toMatch(/^Not in this plan/);
+    expect(whereInPlan(kit, "research", blocks.get("planner")!)).toMatch(/^Front door/);
+    expect(planSummary(kit, BLANK)).toMatch(/^Blank plan/);
+    expect(libraryTag(kit, "research", "report")).toBe(step.split("-")[0]);
   });
 
-  it("keeps only the blocks a preset loads or offers", () => {
-    const ids = catalogGroups(kit, "", "research").flatMap((g) => g.items.map((b) => b.id));
-    expect(ids).toContain("report");
-    expect(ids).not.toContain("change-review");
-    expect(usedIn(kit, kit.blocks.find((b) => b.id === "change-review")!)).toContain("implement");
+  it("lists every block once in the library, and a query keeps only the matches", () => {
+    expect(libraryRows(kit, "").map((r) => r.block.id).sort()).toEqual(kit.blocks.map((b) => b.id).sort());
+    expect(libraryRows(kit, "voice-reply").map((r) => r.block.id)).toContain("voice-reply");
+    expect(libraryRows(kit, "zzzz-no-such")).toEqual([]);
   });
 });
 
@@ -82,29 +90,6 @@ function model(answer: (path: string, body?: Record<string, unknown>) => Promise
   };
   return { skills: new Skills(app as unknown as App), calls };
 }
-
-describe("blockTag", () => {
-  it("names the front door, and says unused only for a block no preset uses or offers", () => {
-    const blocks = new Map(kit.blocks.map((b) => [b.id, b]));
-    expect(blockTag(kit, blocks.get("planner")!)).toBe("front door");
-    expect(blockTag(kit, blocks.get("change-review")!)).toBe(null);
-    const offeredOnly = kit.blocks.find((b) => !b.used_by.length && b.offered_by.length && !kit.front.includes(b.id))!;
-    expect(blockTag(kit, offeredOnly)).toBe("offered");
-    const none = kit.blocks.find((b) => !b.used_by.length && !b.offered_by.length && !kit.front.includes(b.id))!;
-    expect(blockTag(kit, none)).toBe("unused");
-  });
-});
-
-describe("usedByLabel", () => {
-  it("says a parent comes in for a named part, and a part through its parent", () => {
-    const blocks = new Map(kit.blocks.map((b) => [b.id, b]));
-    const parent = blocks.get("voice")!;
-    const part = blocks.get("voice-reply")!;
-    expect(parent.used_by.filter((u) => !u.named).map((u) => usedByLabel(parent, u))).toContain("for a named part");
-    expect(usedByLabel(part, { preset: "x", step: "y", named: false })).toBe("through voice");
-    expect(usedByLabel(part, { preset: "x", step: "y", named: true })).toBe("named");
-  });
-});
 
 describe("Skills", () => {
   it("turns Copy on only for the exact text that Python passed", async () => {
