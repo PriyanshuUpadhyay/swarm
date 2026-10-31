@@ -1,23 +1,39 @@
 ---
 name: plan
-description: Plan from a verb's preset or the block catalog, show the chart, get approval, run the steps. Use when a verb skill sends you here, for "plan this", "plan and do", or a task with no skill of its own.
+description: Plan and run any task from kit blocks, starting from a preset when one fits; show the chart, get approval, run the steps. Use when asked to build, implement, review, research, explain, run a council, or plan a task.
 ---
 
 # Plan
 
-Example. The owner types `/research which state library`. The `research` skill sends the task
-here with its preset. The planner copies the preset into `plan.md`, adds no block, and the chart
-shows six steps. The preset says `Stop: owner`, so the owner clicks approve in Plannotator, and
-`start_plan.py` makes the six step files.
+Example. The owner types `/plan research which state library`. The task matches the `research`
+preset, so the agent reads `presets/research/PRESET.md` in full. The planner copies its preset into
+`plan.md`, adds no block, and the chart shows five steps. The preset says `Stop: owner`, so the
+owner clicks approve in Plannotator, and `start_plan.py` makes the five step files.
 
 For the approval gate, apply `blocks/worker-brief/SKILL.md`. The default is to return the checked draft and leave its steps unstarted.
 
 The kit root, with its `blocks/` and `references/` folders, is two folders up from this skill's folder.
 
+## Pick a preset
+
+Plan is the one workflow skill. Each verb is a preset folder in `<kit root>/presets/`. Match the
+task to one row, then read that `PRESET.md` in full before you plan, because it holds the verb's own
+rules next to its preset. "<verb> continue <folder>" picks up that verb's run. When no row fits, or
+the task mixes verbs, plan from the block catalog with no preset.
+
+| Preset | Use when the task is to |
+|---|---|
+| `build` | make a picture, film, or site where code draws every frame: a reel, a loop, a generative still, a landing page, or a portfolio |
+| `implement` | build one change, in pair or auto mode |
+| `review` | check a range, walk a GitHub PR, or run a cleanup pass |
+| `research` | answer one question from evidence in a short report |
+| `explain` | explain how something works |
+| `council` | get a visible debate between Gemini, GPT, and Claude seats on one question |
+
 ## Presets
 
 A preset is a verb's start list of steps and blocks. It is a `## Preset` section in the verb's
-`SKILL.md`, or in `references/<mode>.md` for a verb with modes. The section has one line
+`PRESET.md`, or in `references/<mode>.md` for a verb with modes. The section has one line
 `Stop: owner` or `Stop: chat`, an optional line `Start: <command>` for a verb that runs its own
 step run, an optional line `Offers: <block>, <block>` with the blocks that the planner may add for this
 verb (no step loads them; they are off by default), and one table in the plan step-table shape that `blocks/planner/SKILL.md` sets, with no

@@ -10,7 +10,7 @@ metadata:
   gives: "a table of candidates with install, task, time, and result"
   conflicts: ""
   users: "research"
-  source: "skills/research/SKILL.md (04-test, moved here 2026-10-13)"
+  source: "presets/research/PRESET.md (04-test, moved here 2026-10-13)"
 ---
 
 ## Rules

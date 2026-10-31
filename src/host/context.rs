@@ -78,14 +78,11 @@ pub fn context(provider: &str, env: impl Fn(&str) -> Option<String>) -> Option<S
             .unwrap_or_default();
         context.push_str(&format!("\n\n[swarm-seat]\nYou are seat `{agent}`{role} in swarm session `{session}`. Your chair is `orchestrator`.\nSend your final result to the chair with `swarm finish`, and a question with `swarm send orchestrator <kind>`, as the swarm-voice skill says."));
     }
-    // pi has no runtime adapter skill, so it gets only the host contract.
-    let adapter = match provider {
-        "claude" => "~/.swarm/kit/skills/orchestrate-claude/SKILL.md",
-        "codex" => "~/.swarm/kit/skills/orchestrate-codex/SKILL.md",
-        "agy" => "~/.swarm/kit/skills/orchestrate-agy/SKILL.md",
-        _ => return Some(context),
-    };
-    context.push_str(&format!("\n\n[agent-runtime: {provider}]\nBefore executing any portable skill that requests workers, load `{adapter}`.\nThe runtime adapter translates workflow requirements; the active agent-host contract owns worker lifecycle and visibility."));
+    // pi has no runtime lines in run-workers, so it gets only the host contract.
+    if !matches!(provider, "claude" | "codex" | "agy") {
+        return Some(context);
+    }
+    context.push_str(&format!("\n\n[agent-runtime: {provider}]\nBefore a plan step that requests workers, load `~/.swarm/kit/blocks/run-workers/SKILL.md` and follow its `{provider}` runtime line.\nThe active agent-host contract owns worker lifecycle and visibility."));
     Some(context)
 }
 

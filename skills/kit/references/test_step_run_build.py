@@ -5,7 +5,7 @@ from test_step_run_support import *
 def test_build_start_and_skip():
     with tempfile.TemporaryDirectory() as tmp:
         folder = Path(tmp) / "piece" / "ink"
-        skill = SCRIPT.parents[1] / "skills" / "build" / "SKILL.md"
+        skill = SCRIPT.parents[1] / "presets" / "build" / "PRESET.md"
         out = run("start", folder, skill)
         assert out.returncode == 0, out.stderr
         assert step_run.steps(folder) == ["01-intake", "02-look", "03-story", "04-style-frames",
@@ -43,7 +43,7 @@ def test_build_start_and_skip():
 def test_build_block_todos():
     with tempfile.TemporaryDirectory() as tmp:
         folder = Path(tmp, "piece with spaces", "ink")
-        skill = SCRIPT.parents[1] / "skills/build/SKILL.md"
+        skill = SCRIPT.parents[1] / "presets/build/PRESET.md"
         out = subprocess.run([sys.executable, "-I", SCRIPT, "start", folder, skill], capture_output=True, text=True)
         assert out.returncode == 0, out.stderr
         file = folder / "04-style-frames.md"
@@ -95,7 +95,7 @@ def test_table_blocks():
 def test_build_start_without_tomllib():
     with tempfile.TemporaryDirectory() as tmp:
         folder = Path(tmp, "piece/ink")
-        skill = SCRIPT.parents[1] / "skills/build/SKILL.md"
+        skill = SCRIPT.parents[1] / "presets/build/PRESET.md"
         code = "import runpy, sys; sys.modules['tomllib'] = None; sys.argv = sys.argv[1:]; runpy.run_path(sys.argv[0], run_name='__main__')"
         args = [sys.executable, "-c", code, str(SCRIPT)]
         out = subprocess.run([*args, "start", str(folder), str(skill)], capture_output=True, text=True)
@@ -118,7 +118,7 @@ def test_build_piece_repo_paths():
         for root in (repo, decoy):
             subprocess.run(["git", "init", "-q", str(root)], env=env, check=True)
         piece = repo / "art-b"
-        skill = SCRIPT.parents[1] / "skills/build/SKILL.md"
+        skill = SCRIPT.parents[1] / "presets/build/PRESET.md"
         texts = []
         hook = {"GIT_DIR": str(decoy / ".git"), "GIT_WORK_TREE": str(decoy),
                 "GIT_INDEX_FILE": str(decoy / ".git/index")}
@@ -145,7 +145,7 @@ def test_build_repo_additions():
         (repo / ".blocks.toml").write_text(
             '[params]\nsource_of_truth = "docs/rule.md"\n[add]\nbuild = ["docs/rule.md"]\n04-style-frames = ["docs/visual.md"]\n', encoding="utf-8")
         folder = repo / "art-b/ink"
-        skill = SCRIPT.parents[1] / "skills/build/SKILL.md"
+        skill = SCRIPT.parents[1] / "presets/build/PRESET.md"
         out = subprocess.run([sys.executable, SCRIPT, "start", folder, skill],
                              cwd=repo, env=env, capture_output=True, text=True)
         assert out.returncode == 0, out.stderr
@@ -155,7 +155,7 @@ def test_build_repo_additions():
 
 
 def test_block_command():
-    for script in (SCRIPT, SCRIPT.parents[1] / "skills/implement/scripts/implement_run.py"):
+    for script in (SCRIPT, SCRIPT.parents[1] / "presets/implement/scripts/implement_run.py"):
         with tempfile.TemporaryDirectory() as tmp:
             folder = Path(tmp)
             step = "01-ask" if script == SCRIPT else "01-frame"
@@ -222,7 +222,8 @@ def test_start_refuses_bad_needs():
         out = run("start", Path(tmp) / "run", skill)
         assert out.returncode == 0, out.stderr
         assert (Path(tmp) / "run" / "03-reply.md").read_text(encoding="utf-8").splitlines()[1] == "Uses: 01-review"
-    for skill in ("council", "build", "research", "web-search", "implement"):
+    for skill in ("presets/council/PRESET.md", "presets/build/PRESET.md", "presets/research/PRESET.md",
+                  "blocks/web-search/SKILL.md", "presets/implement/PRESET.md"):
         with tempfile.TemporaryDirectory() as tmp:
-            out = run("start", Path(tmp) / "run", SCRIPT.parents[1] / "skills" / skill / "SKILL.md")
+            out = run("start", Path(tmp) / "run", SCRIPT.parents[1] / skill)
             assert out.returncode == 0, (skill, out.stderr)

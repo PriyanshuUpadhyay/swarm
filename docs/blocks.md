@@ -123,7 +123,7 @@ On 2026-10-17, the owner settled the voice-file part of #70 in `blocks/voice-rev
 On 2026-10-17, the owner chose `blocks/worker-brief/SKILL.md` as the owner of gates with no user present.
 
 On 2026-10-17, the owner approved domain selection by `implement_run.py start --domains`;
-`skills/kit/skills/implement/SKILL.md` names the command and its saved choice.
+`skills/kit/presets/implement/PRESET.md` names the command and its saved choice.
 
 On 2026-10-19, the owner made every work verb a preset, the Template above: a start list of steps
 and blocks that the planner copies. `skills/plan/SKILL.md` owns the preset format and the front door,
@@ -149,6 +149,10 @@ On 2026-10-17, the owner closed C4/D1 with the diagram form rule in
 The catalog of workflow blocks, rule cards, and units that stay whole is in [blocks-catalog.md](blocks-catalog.md).
 
 ## Every skill, split (2026-10-13)
+
+Since 2026-10-31 the verbs are presets in `skills/kit/presets/`, `web-search` and `engineering-standards`
+are blocks, `decisions` is removed, and the `orchestrate-*` lines are in `blocks/run-workers/SKILL.md`.
+The table below is the 2026-10-13 split.
 
 Each skill keeps its contract, its step table and its stays-whole part, and points to the blocks
 below. The proof, checked-unit, and extraction rules live directly in

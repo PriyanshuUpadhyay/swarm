@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Check a verb's preset and print each step with the blocks it resolves to.
 
-  preset.py <verb> [<mode>]    check skills/<verb>/SKILL.md, or skills/<verb>/references/<mode>.md, and print its steps
+  preset.py <verb> [<mode>]    check presets/<verb>/PRESET.md, or presets/<verb>/references/<mode>.md, and print its steps
   preset.py --json             print every block and preset as JSON, with each step's stage and resolved blocks
   preset.py --check            check a draft SKILL.md or `## Preset` section on stdin; print {"ok", "preset" or "defect"}
 
@@ -27,7 +27,7 @@ from block_resolver import resolve_blocks  # noqa: E402
 def path(verb, mode=None):
     if not re.fullmatch(r"[a-z0-9-]+", verb + (mode or "")):
         raise SystemExit(f"no preset file for {verb} {mode or ''}".strip())
-    skill = KIT / "skills" / verb / "SKILL.md"
+    skill = KIT / "presets" / verb / "PRESET.md"
     if mode and skill.is_file() and "\n## Preset\n" in skill.read_text(encoding="utf-8"):
         raise SystemExit(f"{verb} has no mode presets; write `Preset: {verb}`")
     file = skill.parent / "references" / f"{mode}.md" if mode else skill
@@ -168,9 +168,9 @@ def kit_json():
     parents = plan_chart.parents()
     parent_of = {part: parent for parent, parts in parents.items() for part in parts}
     presets = []
-    for file in sorted((KIT / "skills").glob("*/SKILL.md")) + sorted((KIT / "skills").glob("*/references/*.md")):
+    for file in sorted((KIT / "presets").glob("*/PRESET.md")) + sorted((KIT / "presets").glob("*/references/*.md")):
         if "\n## Preset\n" in file.read_text(encoding="utf-8"):
-            verb, mode = (file.parent.name, None) if file.name == "SKILL.md" else (file.parents[1].name, file.stem)
+            verb, mode = (file.parent.name, None) if file.name == "PRESET.md" else (file.parents[1].name, file.stem)
             presets.append(facts(file, verb, mode))
     used = {}
     for p in presets:

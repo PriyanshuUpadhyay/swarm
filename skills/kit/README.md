@@ -5,40 +5,46 @@ Workflow skills for coding agents (Claude Code, Codex, Antigravity). Each skill 
 
 ## Skills
 
+The plugin ships three skills. `plan` is the one workflow skill; the others serve swarm panes.
+
 | Skill | Use |
 |---|---|
-| `plan` | The front door of every work verb: plan from the verb's preset, draw it, get approval, run the steps |
+| `plan` | Plan any task from kit blocks, starting from a preset when one fits; draw it, get approval, run the steps |
+| `swarm-orchestrator` | Run a swarm session as the parent agent |
+| `swarm-voice` | Act as one child agent in a swarm session |
+
+## Presets
+
+Each work verb is a preset folder in `presets/`, with a `PRESET.md` that `plan` reads. A preset is a
+start list of steps and blocks; the planner may add or drop blocks for the task.
+
+| Preset | Use |
+|---|---|
 | `implement` | Run one change through frame, design, contracts, impact, build, review, and close, in `pair` or `auto` mode (on trial) |
-| `research` | Answer one question from evidence in a short report |
-| `web-search` | Three visible seats search different parts of the web, the chair merges |
+| `research` | Answer one question from evidence in a short report; its `03-web` step loads the `web-search` block |
 | `council` | A visible debate between Claude, GPT and Gemini voices that ends in a verdict |
 | `review` | Check a range with a script verdict, walk a PR into a pending review, or run a cleanup pass on request |
-| `decisions` | Record consequential choices as in-repo ADRs |
-| `engineering-standards` | Scoped engineering rules for design, code and review |
 | `build` | Pictures, generative plates, films, and websites drawn by code, from a story or a visual reference |
 | `explain` | Explain a subject with one running example, using the `voice-teach` block |
-| `orchestrate-claude`, `orchestrate-codex`, `orchestrate-agy` | Runtime adapters that bind the skills' worker needs to each agent CLI |
 
-## Removed skill names (2026-10-19)
+## Removed skill names
 
-Every work verb now starts from a preset through `plan` (see `skills/plan/SKILL.md`). Five skills
-merged into two, and their run folders (`tmp/pair/`, `tmp/deliver/`, `tmp/review-check/`,
-`tmp/review-walk/`) stay where they were.
+On 2026-10-31 the verb skills became presets, and `web-search` and `engineering-standards` became
+blocks. The `decisions` skill and the three `orchestrate-*` adapters are gone; `blocks/run-workers/SKILL.md`
+holds each runtime's lines. Run folders stay where they were.
 
 | You typed | Type now |
 |---|---|
-| `/pair` | `/implement`, then choose `pair` mode |
-| `/deliver` | `/implement`, then choose `auto` mode |
-| `/review-check` | `/review`, then choose `check` |
-| `/review-walk` | `/review`, then choose `walk` |
-| `/cleanup-gate` | `/review`, then choose `cleanup` |
+| `/implement`, `/pair`, `/deliver` | `/plan implement`, then choose `pair` or `auto` mode |
+| `/review`, `/review-check`, `/review-walk`, `/cleanup-gate` | `/plan review`, then choose `check`, `walk`, or `cleanup` |
+| `/research`, `/web-search` | `/plan research` |
+| `/build`, `/explain`, `/council` | `/plan build`, `/plan explain`, `/plan council` |
 
 The rules for proof, checked units, and code extraction live directly in
 `blocks/prove-it-works/SKILL.md`, `blocks/checked-units/SKILL.md`, and
 `blocks/when-to-extract/SKILL.md`.
 
-The runtime adapters, `swarm-orchestrator`, `swarm-voice`, `engineering-standards`, and `decisions`
-set `user-invocable: false`. They stay available to the model. Claude Code hides them from its
+`swarm-orchestrator` and `swarm-voice` set `user-invocable: false`. They stay available to the model. Claude Code hides them from its
 slash menu, as [its skill controls](https://code.claude.com/docs/en/skills#control-who-invokes-a-skill)
 specify. Swarm checks this field for its web menu when a provider lists the skill's file path.
 pi lists `sourceInfo.path`, and Codex lists `path`. Claude's initialize command list has no file
@@ -47,12 +53,12 @@ row's `source`; a file under the Swarm plugin's `skills/` folder gets `swarm` fr
 
 `references/plan-layout.md` is the plan shape and the first screen of a long result that several
 skills point to.
-`contracts/orchestration-requirements.schema.json` describes what a skill may ask of a runtime adapter.
+`contracts/orchestration-requirements.schema.json` describes what a preset may ask of `blocks/run-workers/SKILL.md`.
 
 ## Install
 
 The kit is one plugin, `swarm`, for Claude Code, Codex, Antigravity and pi. Each CLI installs the
-whole kit, so a skill reaches the kit's `blocks/` and `references/` two folders up from its own
+whole kit, so a skill or preset reaches the kit's `blocks/` and `references/` two folders up from its own
 folder. `swarm setup plugin` installs the kit that ships with swarm in each CLI on `PATH` after
 you say yes. Run it again after an upgrade to refresh the copies.
 `swarm doctor` reports stale copies, and `swarm launch` shows the fix in one line.
@@ -65,8 +71,8 @@ agy plugin install <repo>/skills/kit
 pi install <repo>/skills/kit
 ```
 
-Claude Code shows each skill with the plugin name in front, for example `/swarm:implement`; pi shows
-`/skill:implement`. Claude Code and pi read the local folder in place, so edits reach the next session.
+Claude Code shows each skill with the plugin name in front, for example `/swarm:plan`; pi shows
+`/skill:plan`. Claude Code and pi read the local folder in place, so edits reach the next session.
 Run the commands above after an edit to refresh the copies in Codex and Antigravity.
 The package build stamps both plugin manifests from the kit content in `<repo>/scripts/stamp-kit.py`.
 A source checkout keeps its ordinary manifest version and needs no stamp.
@@ -78,7 +84,7 @@ Codex reads `~/.agents/skills` and Antigravity reads `~/.gemini/config/skills`.
 
 ## What the skills expect
 
-- Skills that start workers (`council`, `web-search`, `research`) run them as visible panes through
+- Presets and blocks that start workers (`council`, `research`, `web-search`) run them as visible panes through
   [swarm](https://github.com/PriyanshuUpadhyay/swarm).
 - `references/run-folder.md` owns run placement by kind, including repository state, reports,
   council input and logs, and piece artifacts. It also keeps the older paths used by `implement`

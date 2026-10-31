@@ -19,15 +19,15 @@ env = dict(os.environ, TMPDIR=str(root / "tmp"))
 checks = [
     "skills/kit/scripts/test_block_refs.py",
     "skills/kit/scripts/test_plugin_skills.py",
-    "skills/kit/skills/implement/scripts/test_implement_run.py",
+    "skills/kit/presets/implement/scripts/test_implement_run.py",
     "skills/kit/references/test_step_run.py",
     "skills/kit/blocks/plan-chart/scripts/test_plan_chart.py",
     "skills/kit/blocks/plan-chart/scripts/test_plan_page.py",
     "skills/kit/blocks/plan-review/scripts/test_start_plan.py",
     "skills/kit/skills/plan/scripts/test_preset.py",
-    "skills/kit/skills/review/scripts/test_review_check.py",
+    "skills/kit/presets/review/scripts/test_review_check.py",
     "skills/kit/scripts/test_build_checks.py",
-    "skills/kit/skills/review/scripts/test_review_walk.py",
+    "skills/kit/presets/review/scripts/test_review_walk.py",
 ]
 failed = False
 for check in checks:
@@ -37,7 +37,7 @@ for check in checks:
     if name == "test_review_walk":
         # This suite imports siblings through PYTHONPATH, which -I ignores.
         command = [sys.executable, check]
-        check_env["PYTHONPATH"] = "skills/kit/skills/review/scripts"
+        check_env["PYTHONPATH"] = "skills/kit/presets/review/scripts"
     log = logs / f"{name}.log"
     with log.open("wb") as output:
         try:

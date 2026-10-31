@@ -10,7 +10,7 @@ metadata:
   gives: "a brief that a seat can follow alone"
   conflicts: ""
   users: "run-workers, council, web-search, review, implement"
-  source: "council 2026-10-22-agent-role-boards changes 4, 6, 10 and council 2026-10-26-board-roles-blocks (board field, ask rule, checker inputs); skills/orchestrate-claude/SKILL.md (Worker contract and the report-only paragraph of all three adapters, moved here 2026-10-13); skills/council/SKILL.md (Pinned brief, report-only seat brief); skills/web-search/SKILL.md (Guards)"
+  source: "council 2026-10-22-agent-role-boards changes 4, 6, 10 and council 2026-10-26-board-roles-blocks (board field, ask rule, checker inputs); skills/orchestrate-claude/SKILL.md (Worker contract and the report-only paragraph of all three adapters, moved here 2026-10-13); presets/council/PRESET.md (Pinned brief, report-only seat brief); skills/web-search/SKILL.md (Guards)"
 ---
 
 ## Rules

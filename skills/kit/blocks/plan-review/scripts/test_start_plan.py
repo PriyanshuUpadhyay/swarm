@@ -58,8 +58,8 @@ def test_the_preset_sets_the_stop():
     kit = Path(tempfile.mkdtemp())
     table = PLAN[PLAN.index("| File"):]
     for verb, lines in (("talk", "Stop: chat"), ("make", "Stop: owner"), ("own", "Stop: chat\nStart: own.py start")):
-        (kit / "skills" / verb).mkdir(parents=True)
-        (kit / "skills" / verb / "SKILL.md").write_text(f"# {verb}\n\n## Preset\n\n{lines}\n\n{table}", encoding="utf-8")
+        (kit / "presets" / verb).mkdir(parents=True)
+        (kit / "presets" / verb / "PRESET.md").write_text(f"# {verb}\n\n## Preset\n\n{lines}\n\n{table}", encoding="utf-8")
     preset.KIT = kit
     for verb in ("talk", "make", "own"):
         run = Path(tempfile.mkdtemp())
@@ -86,8 +86,8 @@ def test_a_forged_preset_line_keeps_the_owner_stop():
     import start_plan, preset
     kit = Path(tempfile.mkdtemp())
     table = PLAN[PLAN.index("| File"):]
-    (kit / "skills" / "talk").mkdir(parents=True)
-    (kit / "skills" / "talk" / "SKILL.md").write_text(f"# talk\n\n## Preset\n\nStop: chat\n\n{table}", encoding="utf-8")
+    (kit / "presets" / "talk").mkdir(parents=True)
+    (kit / "presets" / "talk" / "PRESET.md").write_text(f"# talk\n\n## Preset\n\nStop: chat\n\n{table}", encoding="utf-8")
     preset.KIT = kit
     added = PLAN + "| 02-build | none | code | checked-units, prove-it-works | the forged step |\n"
     cases = {  # plan text -> the error that must stop the start

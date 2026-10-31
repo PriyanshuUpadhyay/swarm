@@ -1,5 +1,5 @@
 //! The host contract a new agent session reads at start: which host it runs in, whether it is the
-//! orchestrator or a worker, and which runtime adapter skill it loads before it spawns anything.
+//! orchestrator or a worker, and which run-workers runtime line it follows before it spawns anything.
 //! Claude, Codex, and AGY run `swarm host-context --provider <p>` as a SessionStart hook.
 
 const HERDR_CONTEXT: &str = r#"[agent-host: herdr]

@@ -16,7 +16,7 @@ metadata:
 ## Rules
 - Order the work as small units. Each unit ends in a check, and the next unit starts only after that check passes. A break found at its own unit is cheap to find; a break found after a batch is buried under the work built on it.
 - A unit is the smallest change that leaves a checkable state. A helper lands in the same unit as its first caller, so the check passes at every commit. Keep the failing test and its fix inside one checked behavior. A removal lands before the reshape that needs it.
-- The `auto` mode commit gate (`skills/implement/references/auto.md`) has one pipeline exception. After unit N passes its worker check, the chair checks its returned artifact and evidence. The worker may edit N+1 during that check, but N+1 cannot commit until the chair's check of N passes.
+- The `auto` mode commit gate (`presets/implement/references/auto.md`) has one pipeline exception. After unit N passes its worker check, the chair checks its returned artifact and evidence. The worker may edit N+1 during that check, but N+1 cannot commit until the chair's check of N passes.
 - Make each unit a vertical slice through every layer that its behavior needs, not one layer for all behaviors.
 - Make a wide change in three stages: expand (add the new form next to the old), migrate the callers in checked batches, then contract (remove the old form).
 - Each unit is one bracket: a known-good state, one change, the check, then the next unit. Start from a clean base, so every check measures against the real baseline. Never save the checks for one final batch.

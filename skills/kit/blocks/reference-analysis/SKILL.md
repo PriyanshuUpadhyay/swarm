@@ -10,7 +10,7 @@ metadata:
   gives: "measured notes per reference with evidence labels"
   conflicts: ""
   users: "build, design-tokens"
-  source: "skills/build/references/references.md (research references, inspection, passes 1-5, evidence language; moved 2026-10-13); skills/build/SKILL.md (contract: inspected pixels, borrow not copy, density); sources table, pick intake, Dembrandt, tool output as stated: references/sources.md and the design-reference council (2026-10-22)"
+  source: "presets/build/references/references.md (research references, inspection, passes 1-5, evidence language; moved 2026-10-13); presets/build/PRESET.md (contract: inspected pixels, borrow not copy, density); sources table, pick intake, Dembrandt, tool output as stated: references/sources.md and the design-reference council (2026-10-22)"
 ---
 
 ## Rules

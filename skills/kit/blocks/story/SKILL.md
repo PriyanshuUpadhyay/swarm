@@ -10,7 +10,7 @@ metadata:
   gives: "a story sheet and a shot list"
   conflicts: ""
   users: "build, reference-analysis"
-  source: "skills/build/references/story-and-motion.md (story sheet, structures, shot list, pacing; moved 2026-10-13); skills/build/references/qa.md (story checks: key frame, pacing)"
+  source: "presets/build/references/story-and-motion.md (story sheet, structures, shot list, pacing; moved 2026-10-13); presets/build/references/qa.md (story checks: key frame, pacing)"
 ---
 
 ## Rules

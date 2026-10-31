@@ -13,14 +13,14 @@ Status: ✅ exists, ✂️ cut from a skill next, ⬜ later, 🆕 new, 🔒 stay
 | plan-review | step | the owner's approval of a plan before work starts | `plan.html` drawn from `plan.md` → approved plan, started step run | `blocks/plan-review` with `scripts/start_plan.py`, which refuses a plan that changed after approval | the `plan` skill | ✅ basic |
 | comment-round | rule | one Plannotator round: command, saved result with file hashes, answers, loop stop | files → `<N>.json`, `<N>-answers.md` | `blocks/comment-round` with `scripts/comment_round.py` | plan-review, page-comments | ✅ basic |
 | page-comments | step | the comment, fix and check loop for a built page | page, its checks, its build block → approved page | `blocks/page-comments` | glitch-walk, any page | ✅ basic |
-| change-review | step | that a plan's commits get the full review check verdict | range → verdict | `blocks/change-review`, which runs `skills/review/references/check.md` whole | plans that make commits | ✅ basic |
+| change-review | step | that a plan's commits get the full review check verdict | range → verdict | `blocks/change-review`, which runs `presets/review/references/check.md` whole | plans that make commits | ✅ basic |
 | voice-reply | rule | the final reply to the owner, by the session's reply rules | step results → reply | `blocks/voice-reply` (points to the agent instructions) | the last step of a plan | ✅ basic |
 | voice-teach | rule | the order of ideas in an explanation to learn from | subject, known terms → explanation | `blocks/voice-teach` | explain, the last step of an explain plan | ✅ basic |
 | voice-pr | rule | how PR titles and bodies read | change, tests → PR draft | `blocks/voice-pr` | the last step of a PR plan | ✅ basic |
 | voice-review | rule | how review comments sound | findings → comments in the reviewer's voice | `blocks/voice-review`, which owns the voice file path and privacy rule | the last step of a review plan | ✅ basic |
 | frame | step | goal, done-when claims, out of scope | request → frame | implement 01-frame, research 01-question, build intake | implement, research, build | ⬜ |
 | local-research | step | what local sources say | question → findings with paths | `blocks/local-research` | research (planned: glitch-walk, implement contracts) | ✅ |
-| web-research | step | web evidence | query brief → findings with links | `skills/web-search` (stays whole) with `blocks/deep-search` and `blocks/cite-sources` | research, reference-analysis, motion | ✅ by the skill |
+| web-research | step | web evidence | query brief → findings with links | `blocks/web-search` (stays whole) with `blocks/deep-search` and `blocks/cite-sources` | research, reference-analysis, motion | ✅ by the skill |
 | primary-sources | step | the origin of a claim: paper, spec, or the author's code at the commit | question → origin rows (source, exact location, quote) | `blocks/primary-sources` | research, web-search | ✅ |
 | deep-search | rule | how a search goes past the known answers | question, known answers → sub-questions, seeds, off-path ideas | `blocks/deep-search` | research, web-search | ✅ |
 | tool-trial | step | the hands-on test of tool candidates | tool question → candidate table | `blocks/tool-trial` | research (planned: implement contracts) | ✅ |
@@ -42,7 +42,7 @@ Status: ✅ exists, ✂️ cut from a skill next, ⬜ later, 🆕 new, 🔒 stay
 | web-ui-basics | rule | the floor for one static page | page → pass or fail | `blocks/web-ui-basics` | any static page | ✅ HTML only |
 | page-shelf | step | how a built page reaches the owner | page folder → shelf URL, hash, source, commit | `blocks/page-shelf` | page-comments, planner, any static page | ✅ basic |
 | serve-local | step | a local view of the checked build | built folder → URL, commit, stop command | `blocks/serve-local` | page-comments, build sites, a page that needs a dev server | ✅ basic |
-| review | step | the review verdict | range → verdict | `skills/review` check mode (stays whole; `blocks/change-review` calls it) | implement, plans | 🔒 |
+| review | step | the review verdict | range → verdict | `presets/review` check mode (stays whole; `blocks/change-review` calls it) | implement, plans | 🔒 |
 | report | step | the written answer | findings → report with checked links | `blocks/report` (report sections; the agent instructions own the reply) | research | ✅ |
 | done-when-evidence | rule | close maps claims to evidence | frame, results → evidence rows | `blocks/done-when-evidence` | every template | ✅ |
 

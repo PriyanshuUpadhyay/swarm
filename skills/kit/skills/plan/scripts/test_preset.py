@@ -18,9 +18,9 @@ STOPS = {"implement": "owner", "build": "owner", "research": "owner", "review ch
 def presets():
     """{"<verb>[ <mode>]": file} for each file with a ## Preset section."""
     found = {}
-    for file in sorted((KIT / "skills").glob("*/SKILL.md")) + sorted((KIT / "skills").glob("*/references/*.md")):
+    for file in sorted((KIT / "presets").glob("*/PRESET.md")) + sorted((KIT / "presets").glob("*/references/*.md")):
         if "\n## Preset\n" in file.read_text(encoding="utf-8"):
-            verb = file.parent.name if file.name == "SKILL.md" else f"{file.parents[1].name} {file.stem}"
+            verb = file.parent.name if file.name == "PRESET.md" else f"{file.parents[1].name} {file.stem}"
             found[verb] = file
     return found
 

@@ -10,11 +10,11 @@ metadata:
   gives: "the verdict that review_check.py printed"
   conflicts: ""
   users: "planner"
-  source: "skills/review/references/check.md (Contract, Run); docs/council 2026-10-13 block rules (R-f: a plan needs a block that runs the full review)"
+  source: "presets/review/references/check.md (Contract, Run); docs/council 2026-10-13 block rules (R-f: a plan needs a block that runs the full review)"
 ---
 
 ## Rules
-- The kit root is two folders up from this file. Read `<kit root>/skills/review/references/check.md` and run it whole on `<base>..<head>`: the commit before the first build step, up to the last build commit. This block adds no rule, lens, or verdict of its own.
+- The kit root is two folders up from this file. Read `<kit root>/presets/review/references/check.md` and run it whole on `<base>..<head>`: the commit before the first build step, up to the last build commit. This block adds no rule, lens, or verdict of its own.
 - The session that wrote the change never fills the checklist. The rows come from new seats, as that file says, started by the `run-workers` block.
 - Pass on only the verdict line that `review_check.py verdict` printed. `INCOMPLETE` is not a pass.
 - On `REQUEST CHANGES`, fix each finding as its own unit by the `checked-units` block, then review the new range again.
