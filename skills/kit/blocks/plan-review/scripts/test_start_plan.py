@@ -227,6 +227,20 @@ def test_a_checked_holds_with_no_space_is_no_change():
     assert out.returncode == 0, out.stderr
 
 
+def test_a_todo_head_in_rules_text_is_skipped():
+    """A `## Todo (` line in rules text with no item under it is not the list, as step_run.todo_scan reads it."""
+    run = Path(tempfile.mkdtemp())
+    (run / "plan.md").write_text(TWO_STEP_PLAN, encoding="utf-8")
+    approve(run)
+    assert start(run).returncode == 0
+    ask = run / "01-ask.md"
+    text = ask.read_text(encoding="utf-8")
+    head = text.index("## Todo (")
+    ask.write_text(text[:head] + "## Todo (an example in rules text)\nno item here\n" + text[head:], encoding="utf-8")
+    out = start(run)
+    assert out.returncode == 0, out.stderr
+
+
 def test_a_kit_update_alone_is_no_change():
     """A part the kit adds later, or a block the kit no longer has, is no change; a resolver error stops the start
     with its reason; a block the plan drops refuses."""
@@ -337,6 +351,7 @@ if __name__ == "__main__":
     test_a_taken_step_still_matches_its_plan()
     test_a_holds_cell_cut_back_at_a_colon_refuses()
     test_a_checked_holds_with_no_space_is_no_change()
+    test_a_todo_head_in_rules_text_is_skipped()
     test_a_kit_update_alone_is_no_change()
     test_a_repo_off_block_is_no_change()
     test_a_damaged_step_file_and_control_text()

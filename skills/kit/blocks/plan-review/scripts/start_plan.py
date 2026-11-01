@@ -82,9 +82,9 @@ def drift(run):
             found.append(f"{name} (writes: was {'; '.join(head).removeprefix('Writes: ') or 'none'}, now {now})")
         elif not any(rest.startswith(brief.get(name, "") + tail) for tail in (step_run.SKILLS_HEAD, step_run.TODO_MARK)):
             found.append(f"{name} (brief changed)")
-        # By its prefix, as step_run reads it, so a head that an older kit worded otherwise still matches.
-        todo = next((i for i, x in enumerate(lines) if x.startswith(step_run.TODO_MARK)), -1)
-        first = lines[todo + 1] if 0 <= todo < len(lines) - 1 else ""
+        # As step_run finds it: by its prefix, so an older kit's wording still matches, and past rules text.
+        at = step_run.todo_scan("\n".join(lines))[0]
+        first = ("\n".join(lines)[at:].split("\n") + ["", ""])[1] if at >= 0 else ""
         # start writes Holds as the first todo. An open one is exact; a checked one holds evidence after the
         # colon, which can hold a colon too, so a Holds cell cut back at a colon is not seen there.
         if not (first.rstrip() == f"- [ ] {holds}:" or first.startswith(f"- [x] {holds}:")):

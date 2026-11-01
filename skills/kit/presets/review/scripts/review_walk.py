@@ -58,7 +58,7 @@ def home():
 
 
 def revision(path):
-    return hashlib.sha1("".join(path.read_text().splitlines(True)[1:]).encode()).hexdigest()[:12]
+    return hashlib.sha1("".join(path.read_text(encoding="utf-8").splitlines(True)[1:]).encode()).hexdigest()[:12]
 
 
 def resolve(target):
@@ -141,11 +141,11 @@ def start(target):
             "`unchanged.txt` lists the files that `remark` can mark viewed on GitHub again.", "",
             "| File | State |", "|---|---|", *rows, *(f"| `{f}` | untracked |" for f in untracked)]
     rest = "Uses:\n" + "\n".join(body) + "\n"
-    (d / "01-scope.md").write_text(f"Status: done {hashlib.sha1(rest.encode()).hexdigest()[:12]}\n{rest}")
+    (d / "01-scope.md").write_text(f"Status: done {hashlib.sha1(rest.encode()).hexdigest()[:12]}\n{rest}", encoding="utf-8")
     skipped = t["kind"] != "pr"
     for step, uses in list(STEPS.items())[1:]:
         status = "skipped not a PR" if skipped and step == "05-walk" else "open"
-        (d / f"{step}.md").write_text(f"Status: {status}\nUses: {', '.join(uses)}\n")
+        (d / f"{step}.md").write_text(f"Status: {status}\nUses: {', '.join(uses)}\n", encoding="utf-8")
     print(d)
 
 
@@ -155,13 +155,15 @@ def status(name=None):
     if not d or not d.exists():
         raise SystemExit("no run")
     current = {s: revision(d / f"{s}.md") for s in STEPS}
-    state = {s: (d / f"{s}.md").read_text().splitlines()[0].removeprefix("Status: ") for s in STEPS}
+    state = {s: (d / f"{s}.md").read_text(encoding="utf-8").splitlines()[0].removeprefix("Status: ") for s in STEPS}
     print(d)
     for s, uses in STEPS.items():
-        used = dict(re.findall(r"([\w-]+)@(\w+)", (d / f"{s}.md").read_text().splitlines()[1]))
+        used = dict(re.findall(r"([\w-]+)@(\w+)", (d / f"{s}.md").read_text(encoding="utf-8").splitlines()[1]))
         stale = [u for u, rev in used.items() if current.get(u) != rev and state.get(u, "").startswith("done")]
         # step-run.md owns ready: no waiting step and no stale done step on the chain before it.
-        ready = step_inputs.ready(d, s, list(uses), rev=lambda folder, n: revision(Path(folder) / f"{n}.md"))
+        # A hand-written Uses name with no file has no revision, so the step that uses it reads as stale.
+        rev = lambda folder, n: revision(Path(folder) / f"{n}.md") if (Path(folder) / f"{n}.md").exists() else ""
+        ready = step_inputs.ready(d, s, list(uses), rev=rev)
         note = "stale: " + ", ".join(stale) if stale else ("ready" if ready and state[s] == "open" else "")
         print(f"{s:12} {state[s]:30} {note}")
     for problem in checks(d, state):
@@ -172,7 +174,7 @@ def checks(d, state):
     """What a done step claims and the files can disprove: every file mapped once, and the verdict line
     copied from a done review-check run of this head."""
     out = []
-    text = {s: (d / f"{s}.md").read_text() for s in STEPS}
+    text = {s: (d / f"{s}.md").read_text(encoding="utf-8") for s in STEPS}
     if state["02-map"].startswith("done"):
         files = re.findall(r"^\| `([^`]+)` \|", text["01-scope"], re.M)
         # A fenced diagram has three backticks, which would shift every inline pair after it.

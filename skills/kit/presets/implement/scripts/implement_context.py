@@ -1,6 +1,7 @@
 # Implement graph, profile, loop key, and skill text helpers.
 import json
 import re
+import shlex
 import subprocess
 import sys
 import uuid
@@ -186,11 +187,15 @@ def check_mode(folder):
                          f"in 01-frame.md, not {' / '.join(lines)}; the owner chooses auto, never the agent")
 
 
-def plan_drift(folder, blocks, scope):
-    """Refuse a `start --plan` over an existing run whose `Plan blocks:` or `Writes:` lines differ from the plan.
+def plan_drift(folder, blocks, scope, plan):
+    """Refuse a `start --plan` over an existing run whose `Plan:`, `Plan blocks:`, or `Writes:` lines differ from the plan.
     start skips an existing folder, so the old step files would otherwise run in silence. start_plan.drift
     checks a plan run's own files, which hold other lines (`Skills read:`, the brief), so the two stay apart."""
     found = []
+    frame = Path(folder) / "01-frame.md"
+    was = step_run.step_scope.header(frame.read_text(encoding="utf-8"), "Plan") if frame.exists() else None
+    if was != str(plan):
+        found.append(f"01-frame (plan: was {was or 'none'}, now {plan})")
     for step in step_run.steps(folder):
         lines = (Path(folder) / f"{step}.md").read_text(encoding="utf-8").split("\n")
         head = lines[:lines.index("")] if "" in lines else lines
@@ -209,5 +214,5 @@ def plan_drift(folder, blocks, scope):
         # The moved folder takes its loop.json along, so the new start must name the key to keep the round ledger.
         keep = f" with --parent-loop {plain(json.loads(read_utf8(loop))['parent_loop'])}" if loop.exists() else ""
         raise SystemExit(f"the step files in {folder} differ from plan.md: {plain('; '.join(found))}. "
-                         f"Move the old run aside with `mkdir -p {aside} && mv {folder} {aside}/` "
+                         f"Move the old run aside with `mkdir -p {shlex.quote(str(aside))} && mv {shlex.quote(str(folder))} {shlex.quote(f'{aside}/')}` "
                          f"(or another free name there), then start again{keep}")

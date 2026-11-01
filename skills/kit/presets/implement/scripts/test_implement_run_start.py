@@ -70,6 +70,11 @@ def test_start_plan_needs_approval(tmp):
     approve(plan)
     out = run("start", "--plan", plan)
     assert out.returncode == 0, out.stderr
+    # Another plan file with the same blocks and writes is still another plan, so it refuses too.
+    other = Path(tmp, "plan-other")
+    shutil.copytree(plan, other)
+    refused = run("start", "--plan", other)
+    assert refused.returncode == 1 and f"01-frame (plan: was {plan.resolve()}, now {other.resolve()})" in refused.stderr, refused
     # A chat preset passes the stop rule with no round, but it is not an implement plan.
     explain = SCRIPT.parents[1].parent / "explain" / "PRESET.md"
     chat = Path(tmp, "chat-run")
@@ -80,6 +85,22 @@ def test_start_plan_needs_approval(tmp):
     shutil.rmtree(Path(out.stdout.splitlines()[0]))
     out = run("start", "--plan", chat)
     assert out.returncode == 1 and "needs `Preset: implement`" in out.stderr, out
+
+
+def test_plan_drift_quotes_the_move(tmp):
+    """The printed move is a shell command, so a path with a space stays one word."""
+    import shlex
+    import implement_context
+    folder = Path(tmp, "my repo", "tmp", "flow", "2026-11-01-x")
+    folder.mkdir(parents=True)
+    (folder / "01-frame.md").write_text("Status: open\nUses: none\nPlan: /old\n\n## Result\n", encoding="utf-8")
+    try:
+        implement_context.plan_drift(folder, {}, {}, Path("/new"))
+        raise AssertionError("a changed plan must refuse")
+    except SystemExit as stop:
+        command = str(stop).split("`")[1]
+    assert shlex.split(command) == ["mkdir", "-p", str(folder.parent / "_replaced"), "&&", "mv", str(folder),
+                                    f"{folder.parent / '_replaced'}/"], command
 
 
 def implement_table():

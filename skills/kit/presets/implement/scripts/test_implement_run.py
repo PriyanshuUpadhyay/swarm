@@ -216,6 +216,7 @@ with tempfile.TemporaryDirectory() as tmp:
     test_start_block_ledger(tmp)
     test_start_domains(tmp)
     test_start_plan_needs_approval(tmp)
+    test_plan_drift_quotes_the_move(tmp)
     test_start_plan_must_match_the_graph(tmp)
     test_auto_mode_needs_the_owners_words(tmp)
     test_start_ledger_without_chosen_blocks(tmp)

@@ -173,6 +173,9 @@ def test_status_uses_the_stale_chain_rule():
     assert line().endswith("ready"), line()
     (d / "02-map.md").write_text((d / "02-map.md").read_text(encoding="utf-8") + "a later edit\n", encoding="utf-8")
     assert not line().endswith("ready"), "04-comments is stale, so 05-walk is not ready"
+    # A hand-written Uses name with no file, such as walk.md's short `01`, reads as stale, not as a traceback.
+    (d / "02-map.md").write_text(f"Status: done x\nUses: 01@{rw.revision(d / '01-scope.md')}\n\n`p.ts`\n", encoding="utf-8")
+    assert not line().endswith("ready"), "02-map uses a step with no file"
 
 
 if __name__ == "__main__":

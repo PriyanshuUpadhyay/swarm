@@ -92,11 +92,12 @@ def stale(folder, step, rev=revision):
 def stale_before(folder, need, rev=revision):
     """(step, its changed inputs) for each done step on the chain before a step, its needed steps first and then
     the steps they need, whose own input changed after it was taken. Its result is old, so a step that uses it,
-    even two links on, would build on an old result. A step that is not done ends the walk on its branch."""
+    even two links on, would build on an old result. A step that is not done ends the walk on its branch, and
+    so does a name with no step file, which a hand-written Uses line can hold."""
     found, seen, queue = [], set(), list(need)
     while queue:
         step = queue.pop(0)
-        if step in seen or status_of(folder, step).split()[0] != "done":
+        if step in seen or not (Path(folder) / f"{step}.md").exists() or status_of(folder, step).split()[0] != "done":
             continue
         seen.add(step)
         if old := stale(folder, step, rev):
