@@ -172,8 +172,8 @@ def take(folder, step, who, force=False):
     need = graph().get(step)
     if need is None:
         raise SystemExit(f"unknown step {step}; steps are {', '.join(graph())}")
-    if not step_run.ready(folder, step, need):
-        waiting = [u for u in need if status_of(folder, u).split()[0] not in ("done", "skipped")]
+    # step_run.take refuses a stale chain with its own reason, after this check of the status words.
+    if waiting := [u for u in need if status_of(folder, u).split()[0] not in ("done", "skipped")]:
         raise SystemExit(f"{step} is not ready; it needs {', '.join(waiting)}")
     if step == "07-close":
         approved(folder)

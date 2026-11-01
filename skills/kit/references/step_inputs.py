@@ -71,9 +71,10 @@ def steps(folder):
     return sorted(p.stem for p in Path(folder).glob("[0-9][0-9]-*.md"))
 
 
-def ready(folder, step, need=None):
+def ready(folder, step, need=None, rev=revision):
+    """Each needed step is done or skipped, and no done step on the chain before it is stale."""
     need = needs(folder, step) if need is None else need
-    return all(status_of(folder, n).split()[0] in ("done", "skipped") for n in need)
+    return all(status_of(folder, n).split()[0] in ("done", "skipped") for n in need) and not stale_before(folder, need, rev)
 
 
 def stale(folder, step, rev=revision):
@@ -81,3 +82,25 @@ def stale(folder, step, rev=revision):
     line = (Path(folder) / f"{step}.md").read_text(encoding="utf-8").splitlines()[1]
     used = dict(u.strip().split("@", 1) for u in line.removeprefix("Uses:").split(",") if "@" in u)
     return [n for n, r in used.items() if rev(folder, n) != r]
+
+
+def stale_before(folder, need, rev=revision):
+    """(step, its changed inputs) for each done step on the chain before a step, its needed steps first and then
+    the steps they need, whose own input changed after it was taken. Its result is old, so a step that uses it,
+    even two links on, would build on an old result. An open or skipped step ends the walk on its branch."""
+    found, seen, queue = [], set(), list(need)
+    while queue:
+        step = queue.pop(0)
+        if step in seen or status_of(folder, step).split()[0] != "done":
+            continue
+        seen.add(step)
+        if old := stale(folder, step, rev):
+            found.append((step, old))
+        queue += needs(folder, step)
+    return found
+
+
+def stale_note(chain):
+    step, old = chain[0]
+    return f"{step} is stale (its input {', '.join(old)} changed after it was done)"
+

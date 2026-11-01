@@ -203,6 +203,10 @@ with tempfile.TemporaryDirectory() as tmp:
     assert "06-review: done" in run("status", folder).stdout and "(stale: 05-build)" in run("status", folder).stdout
     assert "covers" in run("take", folder, "07-close", "a").stderr
     (review / "target.json").write_text(json.dumps({"head": git("rev-parse", "HEAD")}))
+    out = run("take", folder, "07-close", "a")
+    assert out.returncode == 1 and "06-review is stale (its input 05-build changed after it was done)" in out.stderr, out
+    assert run("take", folder, "06-review", "a").returncode == 0, "the review step records the new build revision"
+    assert run("done", folder, "06-review", claim(folder, "06-review")).returncode == 0
     assert run("take", folder, "07-close", "a").returncode == 0
 
     events = (folder / "events.log").read_text()

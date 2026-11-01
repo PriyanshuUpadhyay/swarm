@@ -16,6 +16,7 @@ from test_step_run_gate import *
 from test_step_run_gate_attacks import *
 from test_step_run_scope import *
 from test_step_run_amend import *
+from test_step_run_chain import CASES as CHAIN_CASES
 
 
 def test_explicit_text_encoding():
@@ -23,7 +24,7 @@ def test_explicit_text_encoding():
     for name in ("test_step_run.py", "test_step_run_support.py", "test_step_run_commands.py",
                  "test_step_run_todos.py", "test_step_run_build.py",
                  "test_step_run_gate.py", "test_step_run_gate_attacks.py", "test_step_run_scope.py",
-                 "test_step_run_amend.py"):
+                 "test_step_run_amend.py", "test_step_run_chain.py"):
         tree = ast.parse(Path(__file__).with_name(name).read_text(encoding="utf-8"))
         missing = [node.lineno for node in ast.walk(tree) if isinstance(node, ast.Call)
                    and isinstance(node.func, ast.Attribute) and node.func.attr in ("read_text", "write_text", "open")
@@ -54,7 +55,7 @@ for gate in (test_done_needs_the_current_claim, test_done_refuses_a_stale_input,
              test_scope_fails_closed_in_a_repo,
              test_done_takes_blocks_from_the_plan, test_writer_does_not_take_its_review,
              test_amend_within_the_owner_budget, test_amend_turns_an_offered_block_chosen, test_plan_blocks_follow_the_repo_off_table,
-             test_amend_refuses_odd_rows):
+             test_amend_refuses_odd_rows, *CHAIN_CASES):
     with tempfile.TemporaryDirectory() as tmp:
         gate(tmp)
 

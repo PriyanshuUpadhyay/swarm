@@ -31,7 +31,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from step_checks import run_checks, work_root  # noqa: E402
 import step_scope  # noqa: E402
 import step_brief  # noqa: E402
-from step_inputs import check_needs, need_files, needs, ready, revision, stale, status_of, steps  # noqa: E402,F401
+from step_inputs import check_needs, need_files, needs, ready, revision, stale, stale_before, stale_note, status_of, steps  # noqa: E402,F401
 
 TODO_HEAD = "## Todo (check a box only with its evidence after the colon; `done` refuses an empty one)"
 # Parse by this prefix, so a step file written under an older head wording still has its todos checked.
@@ -165,7 +165,7 @@ def status(folder, need_of=None, rev=revision):
         s = status_of(folder, step)
         old = stale(folder, step, rev) if s.split()[0] in ("active", "done") else []
         note = (f"  (stale: {', '.join(old)})" if old
-                else "  (ready)" if s == "open" and ready(folder, step, need_of and need_of.get(step)) else "")
+                else "  (ready)" if s == "open" and ready(folder, step, need_of and need_of.get(step), rev) else "")
         print(f"{step}: {s}{note}")
 
 
@@ -197,8 +197,10 @@ def take(folder, step, who, need=None, rev=revision, force=False, on_claim=None)
         if owner.startswith("active ") and holder != who and not force:
             raise SystemExit(f"{step} is active for {holder}; use --force if that run is gone")
         need = needs(folder, step) if need is None else need
-        if not ready(folder, step, need):
+        if not all(status_of(folder, n).split()[0] in ("done", "skipped") for n in need):
             raise SystemExit(f"{step} is not ready; it needs {', '.join(need)}")
+        if chain := stale_before(folder, need, rev):
+            raise SystemExit(f"{step} is not ready: {stale_note(chain)}; take {chain[0][0]} again")
         step_scope.check_reviewer(folder, step, who)
         uses = ", ".join(f"{n}@{rev(folder, n)}" for n in need)
         # done compares the work tree with this one, so only changes made after the take count. It is read before
@@ -246,6 +248,8 @@ def done(folder, step, claim, rev=None, ends=(RESULT_HEAD,), rev_of=revision):
                              f"the step is {plain(state)}")
         if old := stale(folder, step, rev_of):
             raise SystemExit(f"{step} is not done: its input changed after take: {', '.join(old)}; take it again")
+        if chain := stale_before(folder, needs(folder, step), rev_of):
+            raise SystemExit(f"{step} is not done: its input {stale_note(chain)}; take {chain[0][0]} again, then this step")
         step_scope.check(folder, step, text)
         run_checks(folder, step, todo, text)
         if file.read_text(encoding="utf-8") != text:
