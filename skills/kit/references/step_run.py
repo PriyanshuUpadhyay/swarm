@@ -128,20 +128,26 @@ def write_step(file, text):
         temporary.unlink(missing_ok=True)
 
 
+def plan_blocks(folder, rows):
+    """{step: (skills read, rules, todos)} for the plan rows that name blocks, as start writes them."""
+    selected = {name: ids for name, _, _, ids, *_ in rows if ids is not None}
+    if not selected:
+        return {}
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import block_resolver
+    root, piece = work_root(folder)
+    site = str(piece.relative_to(root))
+    blocks, _, _ = block_resolver.resolve_blocks(
+        root, selected, "default", blocks_dir=Path(__file__).resolve().parents[1] / "blocks",
+        params_override={"site": site, "shots": str(Path(site) / "shots")}, judge_todos=True)
+    return blocks
+
+
 def start(folder, skill_md):
     folder = Path(folder)
     rows = table(skill_md)
     names = [r[0] for r in rows]
-    selected = {name: ids for name, _, _, ids, *_ in rows if ids is not None}
-    blocks = {}
-    if selected and not all((folder / f"{name}.md").exists() for name in names):
-        sys.path.insert(0, str(Path(__file__).resolve().parent))
-        import block_resolver
-        root, piece = work_root(folder)
-        site = str(piece.relative_to(root))
-        blocks, _, _ = block_resolver.resolve_blocks(
-            root, selected, "default", blocks_dir=Path(__file__).resolve().parents[1] / "blocks",
-            params_override={"site": site, "shots": str(Path(site) / "shots")}, judge_todos=True)
+    blocks = {} if all((folder / f"{name}.md").exists() for name in names) else plan_blocks(folder, rows)
     uses = check_needs([r[:3] for r in rows])
     brief = step_brief.sections(skill_md)
     folder.mkdir(parents=True, exist_ok=True)

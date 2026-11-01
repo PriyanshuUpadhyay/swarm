@@ -52,6 +52,22 @@ def test_start_plan_needs_approval(tmp):
     assert out.returncode == 0, out.stderr
     assert "Writes: src/\n" in step_text(Path(out.stdout.splitlines()[0]), "05-build")
     assert "Writes: none\nOptional: yes\n" in step_text(Path(out.stdout.splitlines()[0]), "02-design")
+    # A second start of the same plan goes on; one whose blocks or writes changed refuses and writes nothing.
+    made = Path(out.stdout.splitlines()[0])
+    assert run("start", "--plan", plan).returncode == 0
+    before = {f.name: f.read_text(encoding="utf-8") for f in made.glob("0*.md")}
+    text = (plan / "plan.md").read_text(encoding="utf-8")
+    for change, words in ((("| checked-units, ui-motion |", "| checked-units |"), "05-build (blocks: was checked-units, ui-motion, now checked-units)"),
+                          (("| `src/` |", "| `web/` |"), "05-build (writes: was src/, now web/)")):
+        (plan / "plan.md").write_text(text.replace(*change), encoding="utf-8")
+        approve(plan)
+        out = run("start", "--plan", plan)
+        assert out.returncode == 1 and f"plan.md changed after these steps were made: {words}" in out.stderr, out
+        assert f"rename {made} to {made}-1, then start again" in out.stderr, out.stderr
+        assert {f.name: f.read_text(encoding="utf-8") for f in made.glob("0*.md")} == before
+    (plan / "plan.md").write_text(text, encoding="utf-8")
+    approve(plan)
+    out = run("start", "--plan", plan)
     # A chat preset passes the stop rule with no round, but it is not an implement plan.
     explain = SCRIPT.parents[1].parent / "explain" / "PRESET.md"
     chat = Path(tmp, "chat-run")

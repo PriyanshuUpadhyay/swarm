@@ -20,6 +20,7 @@ sys.path[:0] = [str(KIT / "references"), str(KIT / "blocks" / "comment-round" / 
                 str(KIT / "skills" / "swarm" / "scripts")]  # python3 -I adds none of them
 import comment_round  # noqa: E402
 import preset  # noqa: E402
+import step_brief  # noqa: E402
 import step_run  # noqa: E402
 
 
@@ -38,6 +39,44 @@ def approved(run):
     return start
 
 
+def drift(run):
+    """Each existing step file whose needs, writes, blocks, or brief differ from plan.md, and each one with no row.
+
+    step_run.start skips a file that exists, so a re-approved plan would otherwise run the old file in silence.
+    The check sits here, not in start, because step_amend calls start on purpose to add one file. Block ids are
+    compared without their hash, and a part that the kit adds to a block later is no change, so a kit update
+    alone does not refuse: only a plan block missing from the file, or a file block the plan no longer gives."""
+    run = Path(run)
+    if not (have := step_run.steps(run)):
+        return []
+    rows = step_run.table(run / "plan.md")
+    uses = step_run.check_needs([r[:3] for r in rows])
+    brief = step_brief.sections(run / "plan.md")
+    blocks = step_run.plan_blocks(run, rows)
+    found = [f"{name} (no row in plan.md)" for name in have if name not in uses]
+    for name, _, _, chosen, writes, optional in rows:
+        if name not in have:
+            continue
+        lines = (run / f"{name}.md").read_text(encoding="utf-8").split("\n")
+        was = [u.split("@")[0] for u in lines[1].removeprefix("Uses: ").split(", ") if u]
+        if was != uses[name]:
+            found.append(f"{name} (needs: was {', '.join(was) or 'none'}, now {', '.join(uses[name]) or 'none'})")
+        scope = "" if writes is None else f"Writes: {', '.join(writes) or 'none'}\n" + ("Optional: yes\n" if optional else "")
+        blank = lines.index("", 2)
+        head, rest = lines[2:blank], "\n".join(lines[blank + 1:])
+        if "".join(f"{x}\n" for x in head) != scope:
+            now = scope.strip().replace("\n", "; ").removeprefix("Writes: ") or "none"
+            found.append(f"{name} (writes: was {'; '.join(head).removeprefix('Writes: ') or 'none'}, now {now})")
+        elif not any(rest.startswith(brief.get(name, "") + tail) for tail in ("Skills read: ", step_run.TODO_HEAD)):
+            found.append(f"{name} (brief changed)")
+        ids = lambda read: [r.split("@")[0].removeprefix("block:") for r in read if r.startswith("block:")]
+        old = ids(next((x.removeprefix("Skills read: ").split(", ") for x in lines if x.startswith("Skills read: ")), []))
+        new = ids(blocks.get(name, ([],))[0])
+        if any(b not in old for b in chosen or []) or any(b not in new for b in old):
+            found.append(f"{name} (blocks: was {', '.join(old) or 'none'}, now {', '.join(new) or 'none'})")
+    return found
+
+
 def main(argv):
     if len(argv) != 1:
         raise SystemExit(__doc__.strip().splitlines()[2].strip())
@@ -45,6 +84,9 @@ def main(argv):
     if start := approved(run):
         print(f"start with: {start}")
         return
+    if changed := drift(run):
+        raise SystemExit(f"plan.md changed after these steps were made: {'; '.join(changed)}. "
+                         f"Start the new plan in a new run folder, such as {run}-2, and name {run} in its first lines.")
     step_run.start(run, run / "plan.md")
 
 

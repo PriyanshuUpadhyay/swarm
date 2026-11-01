@@ -118,6 +118,8 @@ def start(profile="default", domains=None, parent_loop=None, plan=None):
         raise SystemExit(f"unknown domains: {', '.join(sorted(unknown))}; allowed domains: {', '.join(sorted(allowed))}")
     if folder.exists() and domains is not None:
         print(f"note: {folder} exists, so --domains {domains} was not applied", file=sys.stderr)
+    if plan and folder.exists():
+        plan_drift(folder, plan_blocks, plan_scope)
     if not folder.exists():
         steps = graph()
         # Read every step's text before the folder exists, so a config or read error leaves no half-made run.

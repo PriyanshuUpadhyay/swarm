@@ -186,3 +186,21 @@ def check_mode(folder):
                          f"in 01-frame.md, not {' / '.join(lines)}; the owner chooses auto, never the agent")
 
 
+def plan_drift(folder, blocks, scope):
+    """Refuse a `start --plan` over an existing run whose `Plan blocks:` or `Writes:` lines differ from the plan.
+    start skips an existing folder, so the old step files would otherwise run in silence."""
+    found = []
+    for step in step_run.steps(folder):
+        lines = (Path(folder) / f"{step}.md").read_text(encoding="utf-8").split("\n")
+        head = lines[:lines.index("")] if "" in lines else lines
+        was = next((x.removeprefix("Plan blocks: ") for x in head if x.startswith("Plan blocks: ")), "none")
+        if was != (now := ", ".join(blocks.get(step) or []) or "none"):
+            found.append(f"{step} (blocks: was {was}, now {now})")
+        was = "; ".join(x for x in head if x.startswith(("Writes: ", "Optional: "))).removeprefix("Writes: ") or "none"
+        if was != (now := scope.get(step, "").strip().replace("\n", "; ").removeprefix("Writes: ") or "none"):
+            found.append(f"{step} (writes: was {was}, now {now})")
+    if found:
+        # The folder name comes from the date and branch, so the old run moves aside instead.
+        raise SystemExit(f"plan.md changed after these steps were made: {'; '.join(found)}. "
+                         f"rename {folder} to {folder}-1, then start again")
+

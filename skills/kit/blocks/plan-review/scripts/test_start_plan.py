@@ -1,5 +1,5 @@
 """Run: python3 test_start_plan.py"""
-import contextlib, hashlib, io, json, subprocess, sys, tempfile
+import contextlib, hashlib, io, json, re, subprocess, sys, tempfile
 from pathlib import Path
 
 SCRIPT = Path(__file__).with_name("start_plan.py")
@@ -124,8 +124,101 @@ def test_a_forged_preset_line_keeps_the_owner_stop():
     assert (run / "01-reply.md").exists(), "a chat plan equal to its preset starts"
 
 
+TWO = """# Plan: two
+
+Done when: y.
+- y
+Evidence:
+- z
+
+## Steps
+
+### 1 · Ask
+
+Step: `01-ask`
+
+- Ask the owner one question.
+
+### 2 · Reply
+
+Step: `02-reply`
+
+- Reply in plain words.
+
+## Step table
+
+| File | Needs | Holds | Writes | Block | Why |
+|---|---|---|---|---|---|
+| 01-ask | none | the ask | none | requirements | the ask frames it |
+| 02-reply | ask | the reply | none | voice-reply | the owner reads it |
+"""
+
+
+def test_a_changed_plan_refuses_the_old_step_files():
+    """A re-approved plan whose existing steps differ refuses before it writes; an unchanged or grown plan starts."""
+    cases = {  # change -> the part of the refusal, or None when the start goes on
+        "unchanged": (TWO, None),
+        "changed Needs": (TWO.replace("| 02-reply | ask |", "| 02-reply | none |"), "02-reply (needs: was 01-ask, now none)"),
+        "changed Block": (TWO.replace("| none | voice-reply |", "| none | requirements |"),
+                          "02-reply (blocks: was voice, voice-reply, now requirements)"),
+        "changed Writes": (TWO.replace("| the reply | none |", "| the reply | docs/ |"), "02-reply (writes: was none, now docs/)"),
+        "changed brief": (TWO.replace("Ask the owner one question.", "Ask the team one question."), "01-ask (brief changed)"),
+        "dropped step": (TWO[:TWO.index("| 02-reply")], "02-reply (no row in plan.md)"),
+        "added step": (TWO + "| 03-note | reply | a note | none | voice-reply | a later step |\n", None),
+    }
+    for name, (text, expected) in cases.items():
+        run = Path(tempfile.mkdtemp())
+        (run / "plan.md").write_text(TWO, encoding="utf-8")
+        approve(run)
+        assert start(run).returncode == 0
+        before = {p.name: p.read_text(encoding="utf-8") for p in run.glob("0*.md")}
+        (run / "plan.md").write_text(text, encoding="utf-8")
+        approve(run)
+        out = start(run)
+        if expected is None:
+            assert out.returncode == 0, (name, out.stderr)
+            continue
+        assert out.returncode == 1 and expected in out.stderr, (name, out.stderr)
+        assert f"Start the new plan in a new run folder, such as {run}-2, and name {run} in its first lines." in out.stderr, out.stderr
+        assert {p.name: p.read_text(encoding="utf-8") for p in run.glob("0*.md")} == before, (name, "a refusal writes no file")
+
+
+def test_a_taken_step_still_matches_its_plan():
+    """take adds the input revision to the Uses line; that alone is no change to the plan."""
+    run = Path(tempfile.mkdtemp())
+    (run / "plan.md").write_text(TWO, encoding="utf-8")
+    approve(run)
+    assert start(run).returncode == 0
+    reply = run / "02-reply.md"
+    reply.write_text(reply.read_text(encoding="utf-8").replace("Uses: 01-ask\n", "Uses: 01-ask@0123456789ab\n"), encoding="utf-8")
+    out = start(run)
+    assert out.returncode == 0, out.stderr
+    out = start(run)
+    assert out.returncode == 0, out.stderr
+
+
+def test_a_part_the_kit_adds_later_is_no_change():
+    """A file made before the kit gave voice-reply its parent voice still matches; a block the plan drops refuses."""
+    run = Path(tempfile.mkdtemp())
+    (run / "plan.md").write_text(TWO, encoding="utf-8")
+    approve(run)
+    assert start(run).returncode == 0
+    reply = run / "02-reply.md"
+    text = reply.read_text(encoding="utf-8")
+    assert re.search(r"block:voice@\w+, ", text), text
+    reply.write_text(re.sub(r"block:voice@\w+, ", "", text), encoding="utf-8")
+    out = start(run)
+    assert out.returncode == 0, out.stderr
+    reply.write_text(text.replace("Skills read: ", "Skills read: block:requirements@0, "), encoding="utf-8")
+    out = start(run)
+    assert out.returncode == 1 and "02-reply (blocks: was requirements, voice, voice-reply, now voice, voice-reply)" in out.stderr, out
+
+
 if __name__ == "__main__":
     test_start_needs_the_current_approval()
     test_the_preset_sets_the_stop()
     test_a_forged_preset_line_keeps_the_owner_stop()
+    test_a_changed_plan_refuses_the_old_step_files()
+    test_a_taken_step_still_matches_its_plan()
+    test_a_part_the_kit_adds_later_is_no_change()
     print("ok")
