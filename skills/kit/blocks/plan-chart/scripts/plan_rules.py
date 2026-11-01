@@ -7,7 +7,7 @@ from pathlib import Path, PurePosixPath
 
 KIT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(KIT / "references"))  # python3 -I does not add it
-from block_resolver import read_toml, resolve_blocks  # noqa: E402
+from block_resolver import read_parents, read_toml, resolve_blocks  # noqa: E402
 from step_brief import briefs, fences  # noqa: E402
 
 
@@ -44,7 +44,13 @@ def check_ledger(rows, ledger):
     used = {b for blocks in selected.values() for b in blocks} - base
     if chosen != used:
         odd = sorted(chosen ^ used)[0]
-        raise SystemExit(f"block {odd} is {'Chosen but no step uses it' if odd in chosen else 'used by a step but not Chosen'}")
+        if odd in chosen:
+            raise SystemExit(f"block {odd} is Chosen but no step uses it")
+        parents = read_parents({p.parent.name: p for p in sorted((KIT / "blocks").glob("*/SKILL.md"))})
+        via = next(((r[0], b) for r in rows for b in r[3] if odd in parents.get(b, ())), None)
+        hint = (f"; step {via[0]} loads it through its parent {via[1]}, which loads all its parts "
+                f"({', '.join(parents[via[1]])}); name only the parts it needs, or give each a Chosen row") if via else ""
+        raise SystemExit(f"block {odd} is used by a step but not Chosen{hint}")
 
 
 def conflicts(block):
