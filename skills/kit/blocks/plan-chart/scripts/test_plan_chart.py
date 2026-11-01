@@ -299,7 +299,8 @@ def test_cli_help_and_options():
 
 
 if __name__ == "__main__":
-    for name, test in list(globals().items()):
-        if name.startswith("test_"):
+    import test_plan_chart_cells  # the Block cell and brief cases, split out for the file size cap
+    for name, test in [*globals().items(), *vars(test_plan_chart_cells).items()]:
+        if name.startswith("test_") and callable(test):
             test()
     print("ok")
