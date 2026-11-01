@@ -74,7 +74,17 @@ def steps(folder):
 def ready(folder, step, need=None, rev=revision):
     """Each needed step is done or skipped, and no done step on the chain before it is stale."""
     need = needs(folder, step) if need is None else need
-    return all(status_of(folder, n).split()[0] in ("done", "skipped") for n in need) and not stale_before(folder, need, rev)
+    return not waiting(folder, need) and not stale_before(folder, need, rev)
+
+
+def waiting(folder, need):
+    """The needed steps that are not done or skipped yet."""
+    return [n for n in need if status_of(folder, n).split()[0] not in ("done", "skipped")]
+
+
+def scope_lines(writes, optional):
+    """The `Writes:` and `Optional:` lines that start writes below line 2 of a step file, or "" with no Writes column."""
+    return "" if writes is None else f"Writes: {', '.join(writes) or 'none'}\n" + ("Optional: yes\n" if optional else "")
 
 
 def stale(folder, step, rev=revision):
@@ -100,7 +110,9 @@ def stale_before(folder, need, rev=revision):
     return found
 
 
-def stale_note(chain):
-    step, old = chain[0]
-    return f"{step} is stale (its input {', '.join(old)} changed after it was done)"
+def stale_note(folder, chain, rev=revision):
+    """(the stale step to take first, the reason). That is the first one whose own chain holds no stale step,
+    because take refuses a step that has a stale step behind it."""
+    step, old = next(((s, o) for s, o in chain if not stale_before(folder, needs(folder, s), rev)), chain[-1])
+    return step, f"{step} is stale (its input {', '.join(old)} changed after it was done)"
 

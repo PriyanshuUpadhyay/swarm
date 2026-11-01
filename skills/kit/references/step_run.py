@@ -32,7 +32,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from step_checks import run_checks, work_root  # noqa: E402
 import step_scope  # noqa: E402
 import step_brief  # noqa: E402
-from step_inputs import check_needs, need_files, needs, ready, revision, stale, stale_before, stale_note, status_of, steps  # noqa: E402,F401
+from step_inputs import (check_needs, need_files, needs, ready, revision, scope_lines, stale, stale_before,  # noqa: E402,F401
+                         stale_note, status_of, steps, waiting)
+SKILLS_HEAD = "Skills read: "
 
 TODO_HEAD = "## Todo (check a box only with its evidence after the colon; `done` refuses an empty one)"
 # Parse by this prefix, so a step file written under an older head wording still has its todos checked.
@@ -129,26 +131,23 @@ def write_step(file, text):
         temporary.unlink(missing_ok=True)
 
 
-def plan_blocks(folder, rows):
-    """{step: (skills read, rules, todos)} for the plan rows that name blocks, as start writes them."""
-    selected = {name: ids for name, _, _, ids, *_ in rows if ids is not None}
-    if not selected:
+def resolve_start_blocks(folder, rows):
+    """{step: (Skills read items, rules, todos)} for the rows that name blocks, as start writes them."""
+    if not (selected := {name: ids for name, _, _, ids, *_ in rows if ids is not None}):
         return {}
-    sys.path.insert(0, str(Path(__file__).resolve().parent))
     import block_resolver
     root, piece = work_root(folder)
     site = str(piece.relative_to(root))
-    blocks, _, _ = block_resolver.resolve_blocks(
+    return block_resolver.resolve_blocks(
         root, selected, "default", blocks_dir=Path(__file__).resolve().parents[1] / "blocks",
-        params_override={"site": site, "shots": str(Path(site) / "shots")}, judge_todos=True)
-    return blocks
+        params_override={"site": site, "shots": str(Path(site) / "shots")}, judge_todos=True)[0]
 
 
 def start(folder, skill_md):
     folder = Path(folder)
     rows = table(skill_md)
     names = [r[0] for r in rows]
-    blocks = {} if all((folder / f"{name}.md").exists() for name in names) else plan_blocks(folder, rows)
+    blocks = {} if all((folder / f"{name}.md").exists() for name in names) else resolve_start_blocks(folder, rows)
     uses = check_needs([r[:3] for r in rows])
     brief = step_brief.sections(skill_md)
     folder.mkdir(parents=True, exist_ok=True)
@@ -159,8 +158,8 @@ def start(folder, skill_md):
         read, rules, todos = blocks.get(name, ([], "", []))
         if any(token in rules + "\n".join(todos) for token in ("blocks/", "the kit's `references/", "<kit root>")):
             rules = f"Kit blocks (`blocks/<id>/`) and the kit's `references/` are under {kit_path(Path(__file__).resolve().parents[1])} (the kit root).\n{rules}"
-        extra = (f"Skills read: {', '.join(read)}\n\n## Rules for this step\n{rules}\n" if read else "")
-        scope = "" if writes is None else f"Writes: {', '.join(writes) or 'none'}\n" + ("Optional: yes\n" if optional else "")
+        extra = (f"{SKILLS_HEAD}{', '.join(read)}\n\n## Rules for this step\n{rules}\n" if read else "")
+        scope = scope_lines(writes, optional)
         file.write_text(f"Status: open\nUses: {', '.join(uses[name])}\n{scope}\n{brief.get(name, '')}{extra}"
                         f"{TODO_HEAD}\n" + "".join(f"- [ ] {item}: \n" for item in [holds] + todos)
                         + f"\n{RESULT_HEAD}\n", encoding="utf-8")
@@ -204,10 +203,11 @@ def take(folder, step, who, need=None, rev=revision, force=False, on_claim=None)
         if owner.startswith("active ") and holder != who and not force:
             raise SystemExit(f"{step} is active for {holder}; use --force if that run is gone")
         need = needs(folder, step) if need is None else need
-        if not all(status_of(folder, n).split()[0] in ("done", "skipped") for n in need):
+        if waiting(folder, need):
             raise SystemExit(f"{step} is not ready; it needs {', '.join(need)}")
         if chain := stale_before(folder, need, rev):
-            raise SystemExit(f"{step} is not ready: {stale_note(chain)}; take {chain[0][0]} again")
+            first, note = stale_note(folder, chain, rev)
+            raise SystemExit(f"{step} is not ready: {note}; take {first} again")
         step_scope.check_reviewer(folder, step, who)
         uses = ", ".join(f"{n}@{rev(folder, n)}" for n in need)
         # done compares the work tree with this one, so only changes made after the take count. It is read before
@@ -255,18 +255,24 @@ def done(folder, step, claim, rev=None, ends=(RESULT_HEAD,), rev_of=revision):
                              f"the step is {plain(state)}")
         if old := stale(folder, step, rev_of):
             raise SystemExit(f"{step} is not done: its input changed after take: {', '.join(old)}; take it again")
-        if chain := stale_before(folder, needs(folder, step), rev_of):
-            raise SystemExit(f"{step} is not done: its input {stale_note(chain)}; take {chain[0][0]} again, then this step")
+        stale_chain(folder, step, rev_of)
         step_scope.check(folder, step, text)
         run_checks(folder, step, todo, text)
         if file.read_text(encoding="utf-8") != text:
             raise SystemExit(f"{step} is not done: its file changed while its checks ran; run done again")
         if old := stale(folder, step, rev_of):
             raise SystemExit(f"{step} is not done: its input changed while its checks ran: {', '.join(old)}; take it again")
+        stale_chain(folder, step, rev_of)  # again, as for the direct inputs: a step further back can change too
         rev = rev or revision(folder, step)
         write_step(file, f"Status: done {rev}\n" + text.split("\n", 1)[1])
     log(folder, step, f"done {rev}")
     print(f"{step}: done {rev}")
+
+
+def stale_chain(folder, step, rev_of):
+    if chain := stale_before(folder, needs(folder, step), rev_of):
+        first, note = stale_note(folder, chain, rev_of)
+        raise SystemExit(f"{step} is not done: its input {note}; take {first} again, then this step")
 
 
 def skip(folder, step, *why):

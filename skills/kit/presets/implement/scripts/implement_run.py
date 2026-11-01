@@ -39,7 +39,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "references"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from implement_context import *  # noqa: E402,F403
 import step_run  # noqa: E402
-from step_run import RESULT_HEAD, TODO_HEAD, kit_path, plain, status_of  # noqa: E402
+from step_run import RESULT_HEAD, TODO_HEAD, kit_path, plain  # noqa: E402
 from block_resolver import BLOCKS, CAP, kit_profile, one_line, read_toml, read_utf8, resolve_blocks, sections  # noqa: E402
 
 
@@ -90,8 +90,7 @@ def start(profile="default", domains=None, parent_loop=None, plan=None):
         check_graph(plan, rows)
         plan_blocks = {r[0]: r[3] for r in rows}
         # step_run's scope, review, and skip rules read these lines, so a plan with Writes keeps them in implement.
-        plan_scope = {r[0]: (f"Writes: {', '.join(r[5]) or 'none'}\n" + ("Optional: yes\n" if r[6] else ""))
-                      for r in rows if r[5] is not None}
+        plan_scope = {r[0]: step_run.scope_lines(r[5], r[6]) for r in rows if r[5] is not None}
     root = git("rev-parse", "--show-toplevel")
     if not root:
         raise SystemExit("not in a git repository")
@@ -175,7 +174,7 @@ def take(folder, step, who, force=False):
     if need is None:
         raise SystemExit(f"unknown step {step}; steps are {', '.join(graph())}")
     # step_run.take refuses a stale chain with its own reason, after this check of the status words.
-    if waiting := [u for u in need if status_of(folder, u).split()[0] not in ("done", "skipped")]:
+    if waiting := step_run.waiting(folder, need):
         raise SystemExit(f"{step} is not ready; it needs {', '.join(waiting)}")
     if step == "07-close":
         approved(folder)

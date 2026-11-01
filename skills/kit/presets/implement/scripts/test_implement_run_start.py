@@ -62,12 +62,13 @@ def test_start_plan_needs_approval(tmp):
         (plan / "plan.md").write_text(text.replace(*change), encoding="utf-8")
         approve(plan)
         out = run("start", "--plan", plan)
-        assert out.returncode == 1 and f"plan.md changed after these steps were made: {words}" in out.stderr, out
-        assert f"rename {made} to {made}-1, then start again" in out.stderr, out.stderr
+        assert out.returncode == 1 and f"the step files in {made} differ from plan.md: {words}" in out.stderr, out
+        assert f"Move {made} to {made.parent / '_replaced' / made.name} (or another free name there)" in out.stderr, out.stderr
         assert {f.name: f.read_text(encoding="utf-8") for f in made.glob("0*.md")} == before
     (plan / "plan.md").write_text(text, encoding="utf-8")
     approve(plan)
     out = run("start", "--plan", plan)
+    assert out.returncode == 0, out.stderr
     # A chat preset passes the stop rule with no round, but it is not an implement plan.
     explain = SCRIPT.parents[1].parent / "explain" / "PRESET.md"
     chat = Path(tmp, "chat-run")

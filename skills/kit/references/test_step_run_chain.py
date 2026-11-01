@@ -3,6 +3,7 @@ import re, subprocess, sys, tempfile
 from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # python3 -I does not add the script's folder
 import step_run  # noqa: E402
@@ -113,8 +114,55 @@ def test_the_callers_revision_is_used(tmp):
     assert not step_run.ready(folder, "04-d"), "the file hash of 02-b is not its revision, so 03-c reads as stale"
 
 
+def test_done_checks_the_chain_again_after_its_checks(tmp):
+    """A step further back that changes while done runs its checks still refuses, as a direct input does."""
+    folder = chain_run(tmp)
+    finish(folder, "01-a")
+    finish(folder, "02-b")
+    claim = take(folder, "03-c")
+    check(folder, "03-c")
+    real = step_run.run_checks
+
+    def edit_during_checks(*args):
+        edit(folder, "01-a")
+        return real(*args)
+
+    with patch.object(step_run, "run_checks", edit_during_checks), redirect_stdout(StringIO()):
+        try:
+            step_run.done(folder, "03-c", claim)
+            raise AssertionError("done wrote done on a stale chain")
+        except SystemExit as stop:
+            assert "03-c is not done: its input 02-b is stale" in str(stop), stop
+    assert step_run.status_of(folder, "03-c").startswith("active ")
+
+
+def test_the_message_names_a_step_that_can_be_taken(tmp):
+    """With 02-b and 03-c both stale, take 03-c would refuse, so the message names 02-b."""
+    folder = chain_run(tmp)
+    for step in ("01-a", "02-b", "03-c"):
+        finish(folder, step)
+    edit(folder, "02-b")
+    edit(folder, "01-a")
+    out = cli("take", folder, "04-d", "tester")
+    assert out.returncode == 1 and out.stderr.strip() == (
+        "04-d is not ready: 02-b is stale (its input 01-a changed after it was done); take 02-b again"), out
+    assert cli("take", folder, "02-b", "tester").returncode == 0
+
+
+def test_a_skipped_step_taken_before_its_input_changed_ends_the_walk(tmp):
+    folder = chain_run(tmp)
+    finish(folder, "01-a")
+    take(folder, "02-b")
+    edit(folder, "01-a")
+    assert step_run.stale(folder, "02-b"), "02-b holds an old revision of 01-a"
+    assert cli("skip", folder, "02-b", "not needed").returncode == 0
+    finish(folder, "03-c")
+
+
 CASES = (test_take_refuses_a_stale_needed_step, test_take_refuses_a_stale_step_two_links_back,
-         test_done_refuses_a_needed_step_that_went_stale, test_a_skipped_step_ends_the_walk, test_the_callers_revision_is_used)
+         test_done_refuses_a_needed_step_that_went_stale, test_a_skipped_step_ends_the_walk, test_the_callers_revision_is_used,
+         test_done_checks_the_chain_again_after_its_checks, test_the_message_names_a_step_that_can_be_taken,
+         test_a_skipped_step_taken_before_its_input_changed_ends_the_walk)
 
 if __name__ == "__main__":
     for case in CASES:

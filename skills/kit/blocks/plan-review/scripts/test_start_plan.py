@@ -1,6 +1,7 @@
 """Run: python3 test_start_plan.py"""
 import contextlib, hashlib, io, json, re, subprocess, sys, tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 SCRIPT = Path(__file__).with_name("start_plan.py")
 PLAN = """# Plan: x
@@ -124,7 +125,7 @@ def test_a_forged_preset_line_keeps_the_owner_stop():
     assert (run / "01-reply.md").exists(), "a chat plan equal to its preset starts"
 
 
-TWO = """# Plan: two
+TWO_STEP_PLAN = """# Plan: two
 
 Done when: y.
 - y
@@ -157,18 +158,18 @@ Step: `02-reply`
 def test_a_changed_plan_refuses_the_old_step_files():
     """A re-approved plan whose existing steps differ refuses before it writes; an unchanged or grown plan starts."""
     cases = {  # change -> the part of the refusal, or None when the start goes on
-        "unchanged": (TWO, None),
-        "changed Needs": (TWO.replace("| 02-reply | ask |", "| 02-reply | none |"), "02-reply (needs: was 01-ask, now none)"),
-        "changed Block": (TWO.replace("| none | voice-reply |", "| none | requirements |"),
+        "unchanged": (TWO_STEP_PLAN, None),
+        "changed Needs": (TWO_STEP_PLAN.replace("| 02-reply | ask |", "| 02-reply | none |"), "02-reply (needs: was 01-ask, now none)"),
+        "changed Block": (TWO_STEP_PLAN.replace("| none | voice-reply |", "| none | requirements |"),
                           "02-reply (blocks: was voice, voice-reply, now requirements)"),
-        "changed Writes": (TWO.replace("| the reply | none |", "| the reply | docs/ |"), "02-reply (writes: was none, now docs/)"),
-        "changed brief": (TWO.replace("Ask the owner one question.", "Ask the team one question."), "01-ask (brief changed)"),
-        "dropped step": (TWO[:TWO.index("| 02-reply")], "02-reply (no row in plan.md)"),
-        "added step": (TWO + "| 03-note | reply | a note | none | voice-reply | a later step |\n", None),
+        "changed Writes": (TWO_STEP_PLAN.replace("| the reply | none |", "| the reply | docs/ |"), "02-reply (writes: was none, now docs/)"),
+        "changed brief": (TWO_STEP_PLAN.replace("Ask the owner one question.", "Ask the team one question."), "01-ask (brief changed)"),
+        "dropped step": (TWO_STEP_PLAN[:TWO_STEP_PLAN.index("| 02-reply")], "02-reply (no row in plan.md)"),
+        "added step": (TWO_STEP_PLAN + "| 03-note | reply | a note | none | voice-reply | a later step |\n", None),
     }
     for name, (text, expected) in cases.items():
         run = Path(tempfile.mkdtemp())
-        (run / "plan.md").write_text(TWO, encoding="utf-8")
+        (run / "plan.md").write_text(TWO_STEP_PLAN, encoding="utf-8")
         approve(run)
         assert start(run).returncode == 0
         before = {p.name: p.read_text(encoding="utf-8") for p in run.glob("0*.md")}
@@ -177,6 +178,7 @@ def test_a_changed_plan_refuses_the_old_step_files():
         out = start(run)
         if expected is None:
             assert out.returncode == 0, (name, out.stderr)
+            assert name != "added step" or (run / "03-note.md").exists(), "a grown plan makes the new file"
             continue
         assert out.returncode == 1 and expected in out.stderr, (name, out.stderr)
         assert f"Start the new plan in a new run folder, such as {run}-2, and name {run} in its first lines." in out.stderr, out.stderr
@@ -186,21 +188,21 @@ def test_a_changed_plan_refuses_the_old_step_files():
 def test_a_taken_step_still_matches_its_plan():
     """take adds the input revision to the Uses line; that alone is no change to the plan."""
     run = Path(tempfile.mkdtemp())
-    (run / "plan.md").write_text(TWO, encoding="utf-8")
+    (run / "plan.md").write_text(TWO_STEP_PLAN, encoding="utf-8")
     approve(run)
     assert start(run).returncode == 0
     reply = run / "02-reply.md"
     reply.write_text(reply.read_text(encoding="utf-8").replace("Uses: 01-ask\n", "Uses: 01-ask@0123456789ab\n"), encoding="utf-8")
-    out = start(run)
-    assert out.returncode == 0, out.stderr
+    assert "Uses: 01-ask@0123456789ab\n" in reply.read_text(encoding="utf-8")
     out = start(run)
     assert out.returncode == 0, out.stderr
 
 
-def test_a_part_the_kit_adds_later_is_no_change():
-    """A file made before the kit gave voice-reply its parent voice still matches; a block the plan drops refuses."""
+def test_a_kit_update_alone_is_no_change():
+    """A part the kit adds later, a block the kit no longer has, or a plan block it no longer resolves is no
+    change; a block the plan drops refuses."""
     run = Path(tempfile.mkdtemp())
-    (run / "plan.md").write_text(TWO, encoding="utf-8")
+    (run / "plan.md").write_text(TWO_STEP_PLAN, encoding="utf-8")
     approve(run)
     assert start(run).returncode == 0
     reply = run / "02-reply.md"
@@ -209,9 +211,53 @@ def test_a_part_the_kit_adds_later_is_no_change():
     reply.write_text(re.sub(r"block:voice@\w+, ", "", text), encoding="utf-8")
     out = start(run)
     assert out.returncode == 0, out.stderr
+    gone_id = "gone-from" + "-the-kit"  # built here, so the kit's block reference check does not read it as a real one
+    reply.write_text(text.replace("Skills read: ", f"Skills read: block:{gone_id}@0, "), encoding="utf-8")
+    out = start(run)
+    assert out.returncode == 0, out.stderr
+    sys.path.insert(0, str(SCRIPT.parent))
+    import start_plan
+
+    def gone(*args, **kwargs):
+        raise SystemExit("unknown block voice-reply")
+
+    with patch.object(start_plan.step_run, "resolve_start_blocks", gone):
+        assert start_plan.drift(run) == [], "a plan block the kit no longer resolves is no change"
     reply.write_text(text.replace("Skills read: ", "Skills read: block:requirements@0, "), encoding="utf-8")
     out = start(run)
     assert out.returncode == 1 and "02-reply (blocks: was requirements, voice, voice-reply, now voice, voice-reply)" in out.stderr, out
+
+
+def test_a_repo_off_block_is_no_change():
+    """start leaves a block the repo's .blocks.toml turns off out of the file, so drift leaves it out too."""
+    repo = Path(tempfile.mkdtemp())
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    (repo / "README.md").write_text("x\n", encoding="utf-8")
+    (repo / ".blocks.toml").write_text('[params]\nsource_of_truth = "README.md"\n\n[off]\nrequirements = "this repo has none"\n',
+                                       encoding="utf-8")
+    run = repo / "run"
+    run.mkdir()
+    (run / "plan.md").write_text(TWO_STEP_PLAN, encoding="utf-8")
+    approve(run)
+    assert start(run).returncode == 0
+    assert "block:requirements" not in (run / "01-ask.md").read_text(encoding="utf-8")
+    out = start(run)
+    assert out.returncode == 0, out.stderr
+
+
+def test_a_damaged_step_file_and_control_text():
+    run = Path(tempfile.mkdtemp())
+    (run / "plan.md").write_text(TWO_STEP_PLAN, encoding="utf-8")
+    approve(run)
+    assert start(run).returncode == 0
+    reply = run / "02-reply.md"
+    text = reply.read_text(encoding="utf-8")
+    reply.write_text(text.replace("Writes: none\n", "Writes: src/\x1b[2J\n"), encoding="utf-8")
+    out = start(run)
+    assert out.returncode == 1 and "02-reply (writes: was src/[2J, now none)" in out.stderr and "\x1b" not in out.stderr, out
+    reply.write_text("Status: open\n", encoding="utf-8")
+    out = start(run)
+    assert out.returncode == 1 and f"{reply} is not a step file" in out.stderr and "Traceback" not in out.stderr, out
 
 
 if __name__ == "__main__":
@@ -220,5 +266,7 @@ if __name__ == "__main__":
     test_a_forged_preset_line_keeps_the_owner_stop()
     test_a_changed_plan_refuses_the_old_step_files()
     test_a_taken_step_still_matches_its_plan()
-    test_a_part_the_kit_adds_later_is_no_change()
+    test_a_kit_update_alone_is_no_change()
+    test_a_repo_off_block_is_no_change()
+    test_a_damaged_step_file_and_control_text()
     print("ok")

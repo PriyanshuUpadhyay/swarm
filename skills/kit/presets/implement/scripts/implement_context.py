@@ -188,7 +188,8 @@ def check_mode(folder):
 
 def plan_drift(folder, blocks, scope):
     """Refuse a `start --plan` over an existing run whose `Plan blocks:` or `Writes:` lines differ from the plan.
-    start skips an existing folder, so the old step files would otherwise run in silence."""
+    start skips an existing folder, so the old step files would otherwise run in silence. start_plan.drift
+    checks a plan run's own files, which hold other lines (`Skills read:`, the brief), so the two stay apart."""
     found = []
     for step in step_run.steps(folder):
         lines = (Path(folder) / f"{step}.md").read_text(encoding="utf-8").split("\n")
@@ -196,11 +197,13 @@ def plan_drift(folder, blocks, scope):
         was = next((x.removeprefix("Plan blocks: ") for x in head if x.startswith("Plan blocks: ")), "none")
         if was != (now := ", ".join(blocks.get(step) or []) or "none"):
             found.append(f"{step} (blocks: was {was}, now {now})")
-        was = "; ".join(x for x in head if x.startswith(("Writes: ", "Optional: "))).removeprefix("Writes: ") or "none"
-        if was != (now := scope.get(step, "").strip().replace("\n", "; ").removeprefix("Writes: ") or "none"):
-            found.append(f"{step} (writes: was {was}, now {now})")
+        was = "".join(f"{x}\n" for x in head if x.startswith(("Writes: ", "Optional: ")))
+        if was != scope.get(step, ""):
+            show = lambda lines: lines.strip().replace("\n", "; ").removeprefix("Writes: ") or "no Writes line"
+            found.append(f"{step} (writes: was {show(was)}, now {show(scope.get(step, ''))})")
     if found:
-        # The folder name comes from the date and branch, so the old run moves aside instead.
-        raise SystemExit(f"plan.md changed after these steps were made: {'; '.join(found)}. "
-                         f"rename {folder} to {folder}-1, then start again")
-
+        # The folder name comes from the date and branch, so the old run moves aside, out of the 2*/ names that
+        # a status with no folder sorts.
+        raise SystemExit(f"the step files in {folder} differ from plan.md: {plain('; '.join(found))}. "
+                         f"Move {folder} to {Path(folder).parent / '_replaced' / Path(folder).name} "
+                         "(or another free name there), then start again")

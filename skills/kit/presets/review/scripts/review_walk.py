@@ -13,6 +13,9 @@ the pending review. The agent owns every judgment; this script owns every git an
 import hashlib, json, re, subprocess, sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "references"))
+import step_inputs  # noqa: E402
+
 SECRET = re.compile(r"AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{36,}|sk-[A-Za-z0-9_-]{20,}|xox[abposr]-[A-Za-z0-9-]{10,}"
                     r"|-----BEGIN [A-Z ]*PRIVATE KEY-----")
 
@@ -157,7 +160,8 @@ def status(name=None):
     for s, uses in STEPS.items():
         used = dict(re.findall(r"([\w-]+)@(\w+)", (d / f"{s}.md").read_text().splitlines()[1]))
         stale = [u for u, rev in used.items() if current.get(u) != rev and state.get(u, "").startswith("done")]
-        ready = all(state[u].split()[0] in ("done", "skipped") for u in uses)
+        # step-run.md owns ready: no waiting step and no stale done step on the chain before it.
+        ready = step_inputs.ready(d, s, list(uses), rev=lambda folder, n: revision(Path(folder) / f"{n}.md"))
         note = "stale: " + ", ".join(stale) if stale else ("ready" if ready and state[s] == "open" else "")
         print(f"{s:12} {state[s]:30} {note}")
     for problem in checks(d, state):
