@@ -18,6 +18,7 @@ metadata:
 - Ask only about forks that change what you build, at most 5 per plan. A plan with no such fork asks nothing.
 - Ask a question only when the questions it depends on have answers. Word it so that a yes accepts the marked default.
 - Mark the option you would pick. The marked option is your recommendation, so "I changed nothing" is a full answer. Never leave a choice with no default.
+- When the task states the rule, the default is that rule as the frame's `Task rules:` line quotes it, by `blocks/requirements/SKILL.md`.
 - If an option removes a claim, say so: "claim 4 goes".
 - The question is 15 words at most.
 - An answer of "not opened; default kept" is not agreement. If the decision is important, ask about it in chat.

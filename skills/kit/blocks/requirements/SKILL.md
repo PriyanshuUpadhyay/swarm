@@ -21,6 +21,7 @@ metadata:
 - At most 5 children and 3 levels.
 - If the change has no visible behavior, level 1 states the guarantees: "Nothing a caller sees changes."
 - The frame step's file holds what its caller lists in its step table or its plan's Holds cell.
+- Under a line `Task rules:`, quote word for word each rule, limit, or definition that the task states. A claim, a done-when, and a fork default never narrow or widen a quoted rule. A reading that changes it may be a fork option, never the default. A task with no stated rule gets `Task rules: none`.
 - Each done-when names the evidence that will prove it: a command, a screenshot, or a `file:line`.
 - Pre-mortem: imagine the page ships in 14 days and fails. Ask what went wrong, what you missed, and what you were overconfident about.
 - Sort each failure as a Tiger (a real risk, with evidence), a Paper Tiger (a concern that is overblown), or an Elephant (a risk that nobody is discussing or checking). When you are not sure which kind a failure is, call it a Tiger.
@@ -28,7 +29,7 @@ metadata:
 
 ## Example
 Initial state: the user asks for "a landing page for `tracer`, our CLI, with three diagrams".
-Action: write `01-frame.md` with three level-1 claims:
+Action: write `01-frame.md` with `Task rules: "three diagrams"` and three level-1 claims:
 1. A visitor learns what `tracer` does from the hero, in 20 words.
 2. A visitor sees how one request flows through `tracer` in a diagram.
 3. A visitor can copy the install command with one click.
@@ -40,6 +41,7 @@ Result: read aloud, the three claims tell the whole page.
 
 ## Check (judge)
 - Does the frame step's file give the goal, the user, out of scope, done-when, and shared assumptions? Quote each field's line.
+- Does `Task rules:` quote each rule the task states, and does every claim, done-when, and fork default keep each one unchanged? Quote each rule and any line that narrows or widens it.
 - Is each level-1 claim one sentence that can be false, in 12 words or fewer? Quote each claim with its word count.
 - Do the level-1 claims, read alone, tell the whole change, and is no claim a file, a layer, or a step? Quote the claims.
 - Does each done-when name the evidence that will prove it (a command, a screenshot, a `file:line`)? Quote each done-when.
