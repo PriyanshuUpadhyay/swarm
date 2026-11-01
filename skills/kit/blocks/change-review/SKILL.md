@@ -14,11 +14,11 @@ metadata:
 ---
 
 ## Rules
-- The kit root is two folders up from this file. Read `<kit root>/presets/review/references/check.md` and run it whole on `<base>..<head>`: the commit before the first build step, up to the last build commit. This block adds no rule, lens, or verdict of its own.
+- The kit root is two folders up from this file. Read `<kit root>/presets/review/references/check.md` and run it whole on `<base>..<head>`: the commit before the first build step, up to the last build commit. Inside a repo, this block adds no rule, lens, or verdict of its own.
 - The session that wrote the change never fills the checklist. The rows come from new seats, as that file says, started by the `run-workers` block.
-- Pass on only the verdict line that `review_check.py verdict` printed. `INCOMPLETE` is not a pass.
+- Inside a repo, pass on only the verdict line that `review_check.py verdict` printed. `INCOMPLETE` is not a pass.
 - On `REQUEST CHANGES`, fix each finding as its own unit by the `checked-units` block, then review the new range again.
-- When `git -C <repo-root> rev-parse` finds no work tree, the piece has no commits, so new seats review its files instead. Each seat writes rows to `<run>/file-review.md`, one for each written file and each done-when claim of the frame, with `pass` or `fix` and its evidence: a rendered frame, a command output, or a `file:line`. Fix each `fix` and review again. The last seat to finish writes the one last line, `Verdict: APPROVE`, only when it finds no `fix` row. Inside a repo, a file review never replaces the commit review.
+- When `git -C <repo-root> rev-parse` finds no work tree, the piece has no commits, so new seats review its files instead. Each seat writes rows to `<run>/file-review.md`, one for each written file and each done-when claim of the frame, with `pass` or `fix` and its evidence: a rendered frame, a command output, or a `file:line`. Fix each `fix`, move the file to `file-review-<N>.md` with N the round, and review again in a new `file-review.md`. The last seat to finish writes the one last line, `Verdict: APPROVE`, only when it finds no `fix` row. Inside a repo, a file review never replaces the commit review.
 
 ## Example
 Initial state: the build steps made the commits `a1b2c3d..HEAD`.
