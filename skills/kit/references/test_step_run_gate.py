@@ -1,6 +1,8 @@
 # Step runner tests for the done gate: claim numbers, stale inputs, and script checks.
 import re
 import shlex
+import shutil
+import tempfile
 
 import step_checks
 from test_step_run_support import *
@@ -104,7 +106,7 @@ def test_kit_check_lines(tmp):
             (runnable if step_checks.RUN_FORM.match(line) else reader).append(f"{file.parent.name}: {line[:40]}")
             filled = re.sub(r"\{\{\w+\}\}", "site/x", line)  # start fills a param in the command with one quoted word
             assert any(p.match(filled + ": ok") for _, p in step_checks.block_checks(file.parent.name)), line
-    assert len(runnable) == 11 and len(reader) == 10, (runnable, reader)
+    assert len(runnable) == 12 and len(reader) == 10, (runnable, reader)
     # The kit's own test scripts run through done with <kit root> filled and pass.
     for block in ("plan-review", "comment-round"):
         line = next(l for l in block_resolver.check_lines(block_resolver.sections(
@@ -119,3 +121,40 @@ def test_kit_check_lines(tmp):
     assert run("done", review, "01-ask", take(review, "01-ask")).returncode == 0
     out = run("done", review, "02-work", take(review, "02-work"))
     assert out.returncode == 0 and "not run: block change-review: needs <review-run>" in out.stdout, out
+
+
+def test_change_review_file_rule(tmp):
+    """Outside any git repo, change-review closes only on a file review whose last line approves; inside a repo,
+    its file-review line passes and the commit review decides."""
+    import block_resolver
+    lines = block_resolver.check_lines(block_resolver.sections(
+        (step_checks.KIT / "blocks" / "change-review" / "SKILL.md").read_text(encoding="utf-8")), "Check (script)")
+    line = next(l for l in lines if "file-review.md" in l)
+    todos = [f"block change-review script: {l}" for l in lines]
+    # kit-checks puts TMPDIR inside the repo, so the piece outside any repo gets its own folder under /tmp.
+    outside = tempfile.mkdtemp(dir="/tmp")
+    try:
+        assert subprocess.run(["git", "-C", outside, "rev-parse"], capture_output=True).returncode != 0, outside
+        file_review_outside_a_repo(gate_run(outside, "piece", todos))
+    finally:
+        shutil.rmtree(outside)
+    repo = Path(tmp, "repo")
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    inside = gate_run(repo, "run", todos)
+    assert run("done", inside, "01-ask", take(inside, "01-ask")).returncode == 0
+    out = run("done", inside, "02-work", take(inside, "02-work"))
+    assert out.returncode == 0 and "not run: block change-review: needs <review-run>" in out.stdout, out
+    assert line.startswith("`git -C <repo-root> rev-parse"), line
+
+
+def file_review_outside_a_repo(piece):
+    assert run("done", piece, "01-ask", take(piece, "01-ask")).returncode == 0
+    out = run("done", piece, "02-work", take(piece, "02-work"))
+    assert out.returncode == 1 and "block change-review check failed" in out.stderr, out
+    (piece / "file-review.md").write_text("| file | claim | pass |\nVerdict: REQUEST CHANGES\n", encoding="utf-8")
+    out = run("done", piece, "02-work", take(piece, "02-work"))
+    assert out.returncode == 1 and "block change-review check failed" in out.stderr, out
+    (piece / "file-review.md").write_text("| file | claim | pass |\nVerdict: APPROVE\n", encoding="utf-8")
+    out = run("done", piece, "02-work", take(piece, "02-work"))
+    assert out.returncode == 0, out.stderr

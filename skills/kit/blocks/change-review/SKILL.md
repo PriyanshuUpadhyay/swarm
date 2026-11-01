@@ -1,6 +1,6 @@
 ---
 name: change-review
-description: "Run the review check mode whole on the commits that a plan's build steps made, and pass on the verdict its script printed. Use when a plan made commits that need a review verdict."
+description: "Run the review check on the commits that a plan's build steps made, or review a piece's written files outside any repo, and pass on the verdict. Use when a plan wrote work that needs a review verdict."
 license: MIT
 metadata:
   kind: step
@@ -18,14 +18,16 @@ metadata:
 - The session that wrote the change never fills the checklist. The rows come from new seats, as that file says, started by the `run-workers` block.
 - Pass on only the verdict line that `review_check.py verdict` printed. `INCOMPLETE` is not a pass.
 - On `REQUEST CHANGES`, fix each finding as its own unit by the `checked-units` block, then review the new range again.
+- When `git -C <repo-root> rev-parse` finds no work tree, the piece has no commits, so new seats review its files instead. Each seat writes rows to `<run>/file-review.md`, one for each written file and each done-when claim of the frame, with `pass` or `fix` and its evidence: a rendered frame, a command output, or a `file:line`. Fix each `fix` and review again. The last line is `Verdict: APPROVE` only when no `fix` row stays. Inside a repo, a file review never replaces the commit review.
 
 ## Example
 Initial state: the build steps made the commits `a1b2c3d..HEAD`.
 Action: run the check on that range. The verdict prints `REQUEST CHANGES` with `C-7`. Fix it in one commit and run the review again.
-Result: the second verdict prints `APPROVE`, and the step quotes that line and its range.
+Result: the second verdict prints `APPROVE`, and the step quotes that line and its range. For a loop outside any repo, two seats write `file-review.md` rows for `index.html`, `loop.mp4`, and each claim, and its last line is `Verdict: APPROVE`.
 
 ## Check (script)
 - `sed -n 3p <repo-root>/tmp/review-check/<review-run>/03-verdict.md` starts with `Verdict: APPROVE`: the newest review approved the range.
+- `git -C <repo-root> rev-parse --is-inside-work-tree >/dev/null 2>&1 || test "$(tail -n 1 <run>/file-review.md)" = 'Verdict: APPROVE'` exits 0: outside any repo, the file review approved the written files.
 
 ## Check (judge)
 - Does the step quote the verdict line as the script printed it, for a range that ends at the last build commit? Quote the line, the range, and `git log -1 --format=%h`.
