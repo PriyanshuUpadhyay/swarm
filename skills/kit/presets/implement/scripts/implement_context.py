@@ -212,7 +212,7 @@ def plan_drift(folder, blocks, scope, plan):
         aside = Path(folder).parent / "_replaced"
         loop = Path(folder) / "loop.json"
         # The moved folder takes its loop.json along, so the new start must name the key to keep the round ledger.
-        keep = f" with --parent-loop {plain(json.loads(read_utf8(loop))['parent_loop'])}" if loop.exists() else ""
+        keep = f" with --parent-loop {plain(shlex.quote(json.loads(read_utf8(loop))['parent_loop']))}" if loop.exists() else ""
         raise SystemExit(f"the step files in {folder} differ from plan.md: {plain('; '.join(found))}. "
                          f"Move the old run aside with `mkdir -p {shlex.quote(str(aside))} && mv {shlex.quote(str(folder))} {shlex.quote(f'{aside}/')}` "
                          f"(or another free name there), then start again{keep}")

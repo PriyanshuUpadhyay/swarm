@@ -94,13 +94,15 @@ def test_plan_drift_quotes_the_move(tmp):
     folder = Path(tmp, "my repo", "tmp", "flow", "2026-11-01-x")
     folder.mkdir(parents=True)
     (folder / "01-frame.md").write_text("Status: open\nUses: none\nPlan: /old\n\n## Result\n", encoding="utf-8")
+    (folder / "loop.json").write_text(json.dumps({"parent_loop": "fix auth; echo hi"}), encoding="utf-8")
     try:
         implement_context.plan_drift(folder, {}, {}, Path("/new"))
         raise AssertionError("a changed plan must refuse")
     except SystemExit as stop:
-        command = str(stop).split("`")[1]
+        command, message = str(stop).split("`")[1], str(stop)
     assert shlex.split(command) == ["mkdir", "-p", str(folder.parent / "_replaced"), "&&", "mv", str(folder),
                                     f"{folder.parent / '_replaced'}/"], command
+    assert shlex.split(message.rsplit("with ", 1)[1]) == ["--parent-loop", "fix auth; echo hi"], message
 
 
 def implement_table():

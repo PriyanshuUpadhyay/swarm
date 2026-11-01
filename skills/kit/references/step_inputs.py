@@ -59,6 +59,10 @@ def needs(folder, step):
 
 
 def revision(folder, step):
+    """A hash of the step file below its status line. A name with no step file, which a hand-written Uses line can
+    hold, has the revision "", so a step that took it reads as stale."""
+    if not (Path(folder) / f"{step}.md").exists():
+        return ""
     rest = (Path(folder) / f"{step}.md").read_text(encoding="utf-8").split("\n", 1)[1]
     return hashlib.sha1(rest.encode()).hexdigest()[:12]
 
@@ -111,7 +115,7 @@ def stale_note(folder, chain, rev=revision):
     step, because take refuses a step that has a stale step behind it. When it also waits for an input that is
     not done, such as one that is taken again, that input comes first."""
     step, old = next(((s, o) for s, o in chain if not stale_before(folder, needs(folder, s), rev)), chain[-1])
-    before = waiting(folder, needs(folder, step))
+    before = waiting(folder, [n for n in needs(folder, step) if (Path(folder) / f"{n}.md").exists()])
     return (step, f"(its input {', '.join(old)} changed after it was done)",
             (f"finish {', '.join(before)}, then " if before else "") + f"take {step} again")
 
