@@ -101,8 +101,8 @@ def check_writes(rows, uses, selected):
 
 
 def check_briefs(text, rows, uses, skip_optional=False):
-    """SystemExit when a step that is not optional, first, or last has no brief under `## Steps`, or a brief names
-    no step; else the briefs by step. Research and implement plans both run it; implement may skip an optional step."""
+    """SystemExit when a step that needs a step, that a later step needs, and that is not optional has no brief under
+    `## Steps`, or a brief names no step; else the briefs by step. Research and implement plans both run it; implement may skip an optional step."""
     found = briefs(text)
     if extra := sorted(set(found) - {row[0] for row in rows}):
         raise SystemExit(f"the brief with Step: {extra[0]} names no step of the table; fix its Step line")

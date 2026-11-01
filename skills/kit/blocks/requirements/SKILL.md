@@ -21,7 +21,7 @@ metadata:
 - At most 5 children and 3 levels.
 - If the change has no visible behavior, level 1 states the guarantees: "Nothing a caller sees changes."
 - The frame step's file holds what its caller lists in its step table or its plan's Holds cell.
-- Under a line `Task rules:`, quote word for word each rule, limit, or definition that the task states. A claim, a done-when, and a fork default never narrow or widen a quoted rule. A reading that changes it may be a fork option, never the default. A task with no stated rule gets `Task rules: none`.
+- On the line `Task rules:`, quote word for word, one after another, each rule, limit, or definition that the task states. A claim, a done-when, and a fork default never narrow or widen a quoted rule. A reading that changes it may be a fork option, never the default. A task with no stated rule gets `Task rules: none`.
 - Each done-when names the evidence that will prove it: a command, a screenshot, or a `file:line`.
 - Pre-mortem: imagine the page ships in 14 days and fails. Ask what went wrong, what you missed, and what you were overconfident about.
 - Sort each failure as a Tiger (a real risk, with evidence), a Paper Tiger (a concern that is overblown), or an Elephant (a risk that nobody is discussing or checking). When you are not sure which kind a failure is, call it a Tiger.

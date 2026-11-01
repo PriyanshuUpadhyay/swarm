@@ -18,7 +18,7 @@ metadata:
 - The session that wrote the change never fills the checklist. The rows come from new seats, as that file says, started by the `run-workers` block.
 - Inside a repo, pass on only the verdict line that `review_check.py verdict` printed. `INCOMPLETE` is not a pass.
 - On `REQUEST CHANGES`, fix each finding as its own unit by the `checked-units` block, then review the new range again.
-- When `git -C <repo-root> rev-parse` finds no work tree, the piece has no commits, so new seats review its files instead. Each seat writes rows to `<run>/file-review.md`, one for each written file and each done-when claim of the frame, with `pass` or `fix` and its evidence: a rendered frame, a command output, or a `file:line`. Fix each `fix`, move the file to `file-review-<N>.md` with N the round, and review again in a new `file-review.md`. The last seat to finish writes the one last line, `Verdict: APPROVE`, only when it finds no `fix` row. Inside a repo, a file review never replaces the commit review.
+- When `git -C <repo-root> rev-parse` finds no work tree, the piece has no commits, so new seats review its files instead. Before a later round, the chair moves the old file to `file-review-<N>.md`, with N its round. Each seat writes rows to `<run>/file-review.md`, one for each written file and each done-when claim of the frame, with `pass` or `fix` and its evidence: a rendered frame, a command output, or a `file:line`. Fix each `fix` and review again. After every seat reports, the chair writes the one last line, `Verdict: APPROVE`, only when no `fix` row stays. Inside a repo, a file review never replaces the commit review.
 
 ## Example
 Initial state: the build steps made the commits `a1b2c3d..HEAD`.
@@ -30,5 +30,5 @@ Result: the second verdict prints `APPROVE`, and the step quotes that line and i
 - `git -C <repo-root> rev-parse --is-inside-work-tree >/dev/null 2>&1 || test "$(tail -n 1 <run>/file-review.md)" = 'Verdict: APPROVE'` exits 0: outside any repo, the file review approved the written files.
 
 ## Check (judge)
-- Does the step quote the verdict line as the script printed it, for a range that ends at the last build commit? Quote the line, the range, and `git log -1 --format=%h`.
+- Inside a repo, does the step quote the verdict line as the script printed it, for a range that ends at the last build commit? Quote the line, the range, and `git log -1 --format=%h`.
 - Outside any repo, does `file-review.md` hold one row with evidence for each written file and each done-when claim, and is its last line the only verdict line? Quote a file or claim with no row.
