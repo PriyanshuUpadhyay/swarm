@@ -37,6 +37,17 @@ def test_an_implement_plan_needs_a_brief_for_each_middle_step():
     assert out.returncode == 0, out.stderr
 
 
+
+def test_seed_searches_skip_the_frame_and_an_unused_step():
+    """The seed-search check skips a step that needs none or that no step uses, as before check_briefs."""
+    import plan_rules
+    text = ("## Steps\n\n### 1 · Web\n\nStep: `02-web`\n\n- Seed searches:\n  - `a b`\n  - `c d`\n- Result: rows.\n\n"
+            "### 2 · Extra\n\nStep: `03-extra`\n\n- Result: more rows.\n")
+    rows = [("01-frame", "none", "q", ["requirements"], "w", "none", False),
+            ("02-web", "frame", "r", ["deep-search"], "w", "none", False),
+            ("03-extra", "web", "r", ["deep-search"], "w", "none", False)]
+    plan_rules.check_layout(text, rows, {"01-frame": [], "02-web": ["01-frame"], "03-extra": ["02-web"]})
+
 if __name__ == "__main__":
     for name, test in list(globals().items()):
         if name.startswith("test_"):

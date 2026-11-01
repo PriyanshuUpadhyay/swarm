@@ -5,6 +5,8 @@ import shutil
 import tempfile
 
 import step_checks
+import step_scope
+from unittest.mock import patch
 from test_step_run_support import *
 
 CANVAS = ("`rg -n -g '*.html' -g '*.js' -g '*.mjs' -g '*.ts' -g '!**/vendor/**' -g '!**/node_modules/**' "
@@ -134,13 +136,17 @@ def test_change_review_file_rule(tmp):
     # kit-checks puts TMPDIR inside the repo, so the piece outside any repo gets its own folder under /tmp.
     outside = tempfile.mkdtemp(dir="/tmp")
     try:
-        assert subprocess.run(["git", "-C", outside, "rev-parse"], capture_output=True).returncode != 0, outside
+        assert subprocess.run(["git", "-C", outside, "rev-parse"], capture_output=True,
+                              env=step_scope.clean_env()).returncode != 0, outside
         file_review_outside_a_repo(gate_run(outside, "piece", todos))
+        # A GIT_DIR in the caller's shell must not make the piece read as inside a repo, as work_root ignores it.
+        with patch.dict(os.environ, {"GIT_DIR": str(step_checks.KIT.parents[1] / ".git")}):
+            file_review_outside_a_repo(gate_run(outside, "piece-git-dir", todos))
     finally:
         shutil.rmtree(outside)
     repo = Path(tmp, "repo")
     repo.mkdir()
-    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    subprocess.run(["git", "init", "-q", str(repo)], check=True, env=step_scope.clean_env())
     inside = gate_run(repo, "run", todos)
     assert run("done", inside, "01-ask", take(inside, "01-ask")).returncode == 0
     out = run("done", inside, "02-work", take(inside, "02-work"))

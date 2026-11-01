@@ -31,9 +31,9 @@ metadata:
 Initial state: the user asks for "a landing page for `tracer`, our CLI, with three diagrams".
 Action: write `01-frame.md` with `Task rules: "three diagrams"` and three level-1 claims:
 1. A visitor learns what `tracer` does from the hero, in 20 words.
-2. A visitor sees how one request flows through `tracer` in a diagram.
+2. A visitor sees how `tracer` works in three diagrams.
 3. A visitor can copy the install command with one click.
-Done-when: "Claim 2 diagram has the nodes of `docs/architecture.md:10-24`; evidence: each node cites its line there." Tiger: "The diagram shows a part the tool does not have." Mitigation: cite the source line for each node.
+Done-when: "Each claim 2 diagram has the nodes of its `docs/architecture.md` section; evidence: each node cites its line there." Tiger: "A diagram shows a part the tool does not have." Mitigation: cite the source line for each node.
 Result: read aloud, the three claims tell the whole page.
 
 ## Check (script)

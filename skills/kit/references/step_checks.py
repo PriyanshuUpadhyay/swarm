@@ -111,9 +111,11 @@ def run_checks(folder, step, todo, text):
             print(f"not run: block {block}: needs {left}")
             continue
         # A new session makes the check its own process group, so a timeout also stops a pipeline's children.
+        # The env of work_root, so a check that asks git finds the same repo that chose <repo-root>.
+        from step_scope import clean_env
         child = subprocess.Popen(["sh", "-c", command], cwd=root, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                  stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace",
-                                 start_new_session=True)
+                                 start_new_session=True, env=clean_env())
         try:
             stdout, stderr = child.communicate(timeout=CHECK_SECONDS)
             code, tail = child.returncode, stdout + stderr
