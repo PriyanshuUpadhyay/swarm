@@ -202,8 +202,8 @@ def test_a_taken_step_still_matches_its_plan():
 
 
 def test_a_kit_update_alone_is_no_change():
-    """A part the kit adds later, a block the kit no longer has, or a plan block it no longer resolves is no
-    change; a block the plan drops refuses."""
+    """A part the kit adds later, or a block the kit no longer has, is no change; a resolver error stops the start
+    with its reason; a block the plan drops refuses."""
     run = Path(tempfile.mkdtemp())
     (run / "plan.md").write_text(TWO_STEP_PLAN, encoding="utf-8")
     approve(run)
@@ -225,7 +225,11 @@ def test_a_kit_update_alone_is_no_change():
         raise SystemExit("unknown block voice-reply")
 
     with patch.object(start_plan.step_run, "resolve_start_blocks", gone):
-        assert start_plan.drift(run) == [], "a plan block the kit no longer resolves is no change"
+        try:
+            start_plan.drift(run)
+            raise AssertionError("a resolver error must stop the start")
+        except SystemExit as stop:
+            assert str(stop) == "unknown block voice-reply", stop
     reply.write_text(text.replace("Skills read: ", "Skills read: block:requirements@0, "), encoding="utf-8")
     out = start(run)
     assert out.returncode == 1 and "02-reply (blocks: was requirements, voice, voice-reply, now voice, voice-reply)" in out.stderr, out
@@ -246,12 +250,25 @@ def test_a_repo_off_block_is_no_change():
     assert "block:requirements" not in (run / "01-ask.md").read_text(encoding="utf-8")
     out = start(run)
     assert out.returncode == 0, out.stderr
+    # A block the repo's [add] gives a step after it was made changes its rules, so it refuses.
+    (repo / "docs/mine").mkdir(parents=True)
+    (repo / "docs/mine/SKILL.md").write_text("---\nname: mine\ndescription: A repo block. Use when testing.\n---\n# mine\n\n## Rules\n- one rule\n\n"
+                                            "## Example\nOne.\n\n## Check (script)\n- none: a test block.\n\n## Check (judge)\n- none: a test block.\n",
+                                            encoding="utf-8")
+    toml = (repo / ".blocks.toml").read_text(encoding="utf-8")
+    (repo / ".blocks.toml").write_text(toml.replace("[off]", '[add]\n02-reply = ["docs/mine/SKILL.md"]\n\n[off]'), encoding="utf-8")
+    out = start(run)
+    assert out.returncode == 1 and "02-reply (blocks: was " in out.stderr and "mine" in out.stderr, out
+    (repo / ".blocks.toml").write_text(toml, encoding="utf-8")
     # A broken .blocks.toml does not hide a changed Block cell: the start stops with the config error.
     (repo / ".blocks.toml").write_text("this is [not toml\n", encoding="utf-8")
     (run / "plan.md").write_text(TWO_STEP_PLAN.replace("| none | voice-reply |", "| none | voice-reply, link-check |"), encoding="utf-8")
     approve(run)
     out = start(run)
     assert out.returncode == 1 and "blocks.toml" in out.stderr and "Traceback" not in out.stderr, out
+    (repo / ".blocks.toml").write_text(toml.replace("[off]\n", '[off]\n"zz\\u001b[2Jq" = "odd"\n'), encoding="utf-8")
+    out = start(run)
+    assert out.returncode == 1 and "zz[2Jq" in out.stderr and "\x1b" not in out.stderr, out
 
 
 def test_a_damaged_step_file_and_control_text():

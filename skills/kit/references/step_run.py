@@ -206,8 +206,8 @@ def take(folder, step, who, need=None, rev=revision, force=False, on_claim=None)
         if waiting(folder, need):
             raise SystemExit(f"{step} is not ready; it needs {', '.join(need)}")
         if chain := stale_before(folder, need, rev):
-            note, action = stale_note(folder, chain, rev)
-            raise SystemExit(f"{step} is not ready: {note}; {action}")
+            stale_step, why, action = stale_note(folder, chain, rev)
+            raise SystemExit(f"{step} is not ready: {stale_step} is stale {why}; {action}")
         step_scope.check_reviewer(folder, step, who)
         uses = ", ".join(f"{n}@{rev(folder, n)}" for n in need)
         # done compares the work tree with this one, so only changes made after the take count. It is read before
@@ -271,8 +271,8 @@ def done(folder, step, claim, rev=None, ends=(RESULT_HEAD,), rev_of=revision):
 
 def refuse_stale_chain(folder, step, rev_of):
     if chain := stale_before(folder, needs(folder, step), rev_of):
-        note, action = stale_note(folder, chain, rev_of)
-        raise SystemExit(f"{step} is not done: its input {note}; {action}, then this step")
+        stale_step, why, action = stale_note(folder, chain, rev_of)
+        raise SystemExit(f"{step} is not done: {stale_step}, on its input chain, is stale {why}; {action}, then this step")
 
 
 def skip(folder, step, *why):

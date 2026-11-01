@@ -48,20 +48,23 @@ def drift(run):
 
     step_run.start skips a file that exists, so a re-approved plan would otherwise run the old file in silence.
     The check sits here, not in start, because step_amend calls start on purpose to add one file. Block ids are
-    compared without their hash, as start resolves them for this repo, so a repo `[off]` block is off here too. A kit update alone does not refuse: a part that the kit adds, a block that the kit no longer has, and a
-    plan block that the kit no longer resolves are no change. Only a plan block missing from the file, or a
-    file block that the kit still has and the plan no longer gives, refuses."""
+    compared without their hash, as start resolves them for this repo, so a repo `[off]` block is off here too.
+    A kit update alone does not refuse: a part that the kit adds, and a file block that the kit no longer has,
+    are no change. Only a plan block or a repo `[add]` block missing from the file, or a file block that the kit
+    still has and the plan no longer gives, refuses."""
     run = Path(run)
     if not (have := step_run.steps(run)):
         return []
     rows = step_run.table(run / "plan.md")
     uses = step_run.check_needs([r[:3] for r in rows])
     brief = step_brief.sections(run / "plan.md")
+    # A resolver error (a block the kit no longer has, a broken .blocks.toml, Python before 3.11) stops the start
+    # with its own reason, because without the resolve a changed or dropped block cannot be seen.
     try:
         new_ids = {name: [r.split("@")[0].removeprefix("block:") for r in read if r.startswith("block:")]
                    for name, (read, _, _) in step_run.resolve_start_blocks(run, rows).items()}
-    except SystemExit as error:  # a block the kit no longer has, or a broken .blocks.toml
-        new_ids, unresolved = None, error
+    except SystemExit as error:  # its reasons can quote keys from a cloned .blocks.toml
+        raise SystemExit(step_run.plain(str(error.code))) from None
     found = [f"{name} (no row in plan.md)" for name in have if name not in uses]
     for name, _, holds, chosen, writes, optional in rows:
         if name not in have:
@@ -85,13 +88,9 @@ def drift(run):
             found.append(f"{name} (holds: now {holds})")
         read = next((x.removeprefix(step_run.SKILLS_HEAD).split(", ") for x in lines if x.startswith(step_run.SKILLS_HEAD)), [])
         old = [r.split("@")[0].removeprefix("block:") for r in read if r.startswith("block:")]
-        if new_ids is None:
-            # With no resolve, only a plan block already in the file is known to be no change.
-            if any(b not in old for b in chosen or []):
-                raise unresolved
-            continue
         new = list(new_ids.get(name, []))
-        if any(b in new and b not in old for b in chosen or []) or \
+        # A new id that is a plan block, or no kit block (so a repo `[add]` gave it), refuses; a new kit part does not.
+        if any(b not in old and (b in (chosen or []) or not (KIT / "blocks" / b / "SKILL.md").is_file()) for b in new) or \
                 any(b not in new and (KIT / "blocks" / b / "SKILL.md").is_file() for b in old):
             found.append(f"{name} (blocks: was {', '.join(old) or 'none'}, now {', '.join(new) or 'none'})")
     return found

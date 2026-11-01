@@ -1,5 +1,5 @@
 """A step cannot start or close on a stale input chain. Run: python3 test_step_run_chain.py (or through test_step_run.py)"""
-import re, subprocess, sys, tempfile
+import re, sys, tempfile
 from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
@@ -7,8 +7,9 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # python3 -I does not add the script's folder
 import step_run  # noqa: E402
+from test_step_run_gate import take  # noqa: E402
+from test_step_run_support import run  # noqa: E402
 
-SCRIPT = Path(__file__).with_name("step_run.py")
 TABLE = """# chain
 
 | File | Needs | Holds |
@@ -20,22 +21,12 @@ TABLE = """# chain
 """
 
 
-def cli(*args):
-    return subprocess.run([sys.executable, "-I", SCRIPT, *map(str, args)], capture_output=True, text=True)
-
-
 def chain_run(tmp):
     skill = Path(tmp, "SKILL.md")
     skill.write_text(TABLE, encoding="utf-8")
     folder = Path(tmp, "run")
-    assert cli("start", folder, skill).returncode == 0
+    assert run("start", folder, skill).returncode == 0
     return folder
-
-
-def take(folder, step):
-    out = cli("take", folder, step, "tester")
-    assert out.returncode == 0, out.stderr
-    return re.search(r"#(\d+)", out.stdout.split("\n", 1)[0])[1]
 
 
 def check(folder, step):
@@ -47,7 +38,7 @@ def check(folder, step):
 def finish(folder, step):
     claim = take(folder, step)
     check(folder, step)
-    out = cli("done", folder, step, claim)
+    out = run("done", folder, step, claim)
     assert out.returncode == 0, out.stderr
 
 
@@ -61,10 +52,10 @@ def test_take_refuses_a_stale_needed_step(tmp):
     finish(folder, "01-a")
     finish(folder, "02-b")
     edit(folder, "01-a")
-    out = cli("take", folder, "03-c", "tester")
+    out = run("take", folder, "03-c", "tester")
     assert out.returncode == 1 and out.stderr.strip() == (
         "03-c is not ready: 02-b is stale (its input 01-a changed after it was done); take 02-b again"), out
-    assert "03-c: open\n" in cli("status", folder).stdout, "a step on a stale chain is not shown as ready"
+    assert "03-c: open\n" in run("status", folder).stdout, "a step on a stale chain is not shown as ready"
     finish(folder, "02-b")
     finish(folder, "03-c")
 
@@ -74,7 +65,7 @@ def test_take_refuses_a_stale_step_two_links_back(tmp):
     for step in ("01-a", "02-b", "03-c"):
         finish(folder, step)
     edit(folder, "01-a")
-    out = cli("take", folder, "04-d", "tester")
+    out = run("take", folder, "04-d", "tester")
     assert out.returncode == 1 and "02-b is stale (its input 01-a changed after it was done)" in out.stderr, out
 
 
@@ -85,15 +76,15 @@ def test_done_refuses_a_needed_step_that_went_stale(tmp):
     claim = take(folder, "03-c")
     check(folder, "03-c")
     edit(folder, "01-a")
-    out = cli("done", folder, "03-c", claim)
+    out = run("done", folder, "03-c", claim)
     assert out.returncode == 1 and out.stderr.strip() == (
-        "03-c is not done: its input 02-b is stale (its input 01-a changed after it was done); "
+        "03-c is not done: 02-b, on its input chain, is stale (its input 01-a changed after it was done); "
         "take 02-b again, then this step"), out
 
 
 def test_a_skipped_step_ends_the_walk(tmp):
     folder = chain_run(tmp)
-    assert cli("skip", folder, "01-a", "not needed").returncode == 0
+    assert run("skip", folder, "01-a", "not needed").returncode == 0
     finish(folder, "02-b")
     finish(folder, "03-c")
 
@@ -132,7 +123,7 @@ def test_done_checks_the_chain_again_after_its_checks(tmp):
             step_run.done(folder, "03-c", claim)
             raise AssertionError("done wrote done on a stale chain")
         except SystemExit as stop:
-            assert "03-c is not done: its input 02-b is stale" in str(stop), stop
+            assert "03-c is not done: 02-b, on its input chain, is stale" in str(stop), stop
     assert step_run.status_of(folder, "03-c").startswith("active ")
 
 
@@ -143,10 +134,10 @@ def test_the_message_names_a_step_that_can_be_taken(tmp):
         finish(folder, step)
     edit(folder, "02-b")
     edit(folder, "01-a")
-    out = cli("take", folder, "04-d", "tester")
+    out = run("take", folder, "04-d", "tester")
     assert out.returncode == 1 and out.stderr.strip() == (
         "04-d is not ready: 02-b is stale (its input 01-a changed after it was done); take 02-b again"), out
-    assert cli("take", folder, "02-b", "tester").returncode == 0
+    assert run("take", folder, "02-b", "tester").returncode == 0
 
 
 def test_a_skipped_step_taken_before_its_input_changed_ends_the_walk(tmp):
@@ -155,7 +146,7 @@ def test_a_skipped_step_taken_before_its_input_changed_ends_the_walk(tmp):
     take(folder, "02-b")
     edit(folder, "01-a")
     assert step_run.stale(folder, "02-b"), "02-b holds an old revision of 01-a"
-    assert cli("skip", folder, "02-b", "not needed").returncode == 0
+    assert run("skip", folder, "02-b", "not needed").returncode == 0
     finish(folder, "03-c")
 
 
@@ -166,7 +157,7 @@ def test_the_message_waits_for_a_step_taken_again(tmp):
         finish(folder, step)
     take(folder, "01-a")
     edit(folder, "01-a")
-    out = cli("take", folder, "03-c", "tester")
+    out = run("take", folder, "03-c", "tester")
     assert out.returncode == 1 and out.stderr.strip() == (
         "03-c is not ready: 02-b is stale (its input 01-a changed after it was done); finish 01-a, then take 02-b again"), out
 

@@ -111,11 +111,11 @@ def stale_before(folder, need, rev=revision):
 
 
 def stale_note(folder, chain, rev=revision):
-    """(the reason, what to do). The step to take again is the first stale one whose own chain holds no stale
+    """(the stale step, why it is stale, what to do). The step to take again is the first stale one whose own chain holds no stale
     step, because take refuses a step that has a stale step behind it. When it also waits for an input that is
     not done, such as one that is taken again, that input comes first."""
     step, old = next(((s, o) for s, o in chain if not stale_before(folder, needs(folder, s), rev)), chain[-1])
     before = waiting(folder, needs(folder, step))
-    return (f"{step} is stale (its input {', '.join(old)} changed after it was done)",
+    return (step, f"(its input {', '.join(old)} changed after it was done)",
             (f"finish {', '.join(before)}, then " if before else "") + f"take {step} again")
 
