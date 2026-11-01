@@ -225,7 +225,7 @@ def chat_preset(plan):
 
 
 def research(plan):
-    """True when the plan starts from the research preset, the only one whose page sections are checked yet."""
+    """True when the plan starts from the research preset, whose page sections are all checked; an implement plan has only its briefs checked."""
     return preset_of(plan) == KIT / "presets" / "research" / "PRESET.md"
 
 
