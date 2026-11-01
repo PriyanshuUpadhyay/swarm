@@ -32,7 +32,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from step_checks import run_checks, work_root  # noqa: E402
 import step_scope  # noqa: E402
 import step_brief  # noqa: E402
-from step_inputs import (check_needs, need_files, needs, ready, revision, scope_lines, stale, stale_before,  # noqa: E402,F401
+from step_inputs import (check_needs, need_files, needs, ready, revision, stale, stale_before,  # noqa: E402,F401
                          stale_note, status_of, steps, waiting)
 SKILLS_HEAD = "Skills read: "
 
@@ -159,7 +159,7 @@ def start(folder, skill_md):
         if any(token in rules + "\n".join(todos) for token in ("blocks/", "the kit's `references/", "<kit root>")):
             rules = f"Kit blocks (`blocks/<id>/`) and the kit's `references/` are under {kit_path(Path(__file__).resolve().parents[1])} (the kit root).\n{rules}"
         extra = (f"{SKILLS_HEAD}{', '.join(read)}\n\n## Rules for this step\n{rules}\n" if read else "")
-        scope = scope_lines(writes, optional)
+        scope = step_scope.scope_lines(writes, optional)
         file.write_text(f"Status: open\nUses: {', '.join(uses[name])}\n{scope}\n{brief.get(name, '')}{extra}"
                         f"{TODO_HEAD}\n" + "".join(f"- [ ] {item}: \n" for item in [holds] + todos)
                         + f"\n{RESULT_HEAD}\n", encoding="utf-8")

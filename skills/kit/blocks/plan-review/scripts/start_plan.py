@@ -77,7 +77,7 @@ def drift(run):
             found.append(f"{name} (needs: was {', '.join(was) or 'none'}, now {', '.join(uses[name]) or 'none'})")
         blank = lines.index("", 2)
         head, rest = lines[2:blank], "\n".join(lines[blank + 1:])
-        if "".join(f"{x}\n" for x in head) != (scope := step_run.scope_lines(writes, optional)):
+        if "".join(f"{x}\n" for x in head) != (scope := step_run.step_scope.scope_lines(writes, optional)):
             now = scope.strip().replace("\n", "; ").removeprefix("Writes: ") or "none"
             found.append(f"{name} (writes: was {'; '.join(head).removeprefix('Writes: ') or 'none'}, now {now})")
         elif not any(rest.startswith(brief.get(name, "") + tail) for tail in (step_run.SKILLS_HEAD, step_run.TODO_MARK)):
@@ -87,7 +87,7 @@ def drift(run):
         first = lines[todo + 1] if 0 <= todo < len(lines) - 1 else ""
         # start writes Holds as the first todo. An open one is exact; a checked one holds evidence after the
         # colon, which can hold a colon too, so a Holds cell cut back at a colon is not seen there.
-        if not (first.rstrip() == f"- [ ] {holds}:" or first.startswith(f"- [x] {holds}: ")):
+        if not (first.rstrip() == f"- [ ] {holds}:" or first.startswith(f"- [x] {holds}:")):
             found.append(f"{name} (holds: now {holds})")
         read = next((x.removeprefix(step_run.SKILLS_HEAD).split(", ") for x in lines if x.startswith(step_run.SKILLS_HEAD)), [])
         old = [r.split("@")[0].removeprefix("block:") for r in read if r.startswith("block:")]

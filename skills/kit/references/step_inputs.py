@@ -82,11 +82,6 @@ def waiting(folder, need):
     return [n for n in need if status_of(folder, n).split()[0] not in ("done", "skipped")]
 
 
-def scope_lines(writes, optional):
-    """The `Writes:` and `Optional:` lines that start writes below line 2 of a step file, or "" with no Writes column."""
-    return "" if writes is None else f"Writes: {', '.join(writes) or 'none'}\n" + ("Optional: yes\n" if optional else "")
-
-
 def stale(folder, step, rev=revision):
     """The needed steps whose revision changed after this step took them."""
     line = (Path(folder) / f"{step}.md").read_text(encoding="utf-8").splitlines()[1]

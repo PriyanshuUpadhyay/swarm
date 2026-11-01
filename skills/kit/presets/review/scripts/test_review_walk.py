@@ -158,11 +158,11 @@ def test_status_uses_the_stale_chain_rule():
     """step-run.md owns ready: a walk step is not ready while a done step behind it is stale."""
     d = rw.home() / "pr-1-01"
     d.mkdir(parents=True)
-    (d / "target.json").write_text(json.dumps({"head": sh("git", "rev-parse", "HEAD")}))
+    (d / "target.json").write_text(json.dumps({"head": sh("git", "rev-parse", "HEAD")}), encoding="utf-8")
     for step, uses in rw.STEPS.items():
         state = "open" if step == "05-walk" else "done x"
         used = ", ".join(f"{u}@{rw.revision(d / f'{u}.md')}" for u in uses) if state != "open" else ", ".join(uses)
-        (d / f"{step}.md").write_text(f"Status: {state}\nUses: {used}\n\n`p.ts`\n")
+        (d / f"{step}.md").write_text(f"Status: {state}\nUses: {used}\n\n`p.ts`\n", encoding="utf-8")
 
     def line():
         out = io.StringIO()
@@ -171,7 +171,7 @@ def test_status_uses_the_stale_chain_rule():
         return next(l for l in out.getvalue().splitlines() if l.startswith("05-walk")).rstrip()
 
     assert line().endswith("ready"), line()
-    (d / "02-map.md").write_text((d / "02-map.md").read_text() + "a later edit\n")
+    (d / "02-map.md").write_text((d / "02-map.md").read_text(encoding="utf-8") + "a later edit\n", encoding="utf-8")
     assert not line().endswith("ready"), "04-comments is stale, so 05-walk is not ready"
 
 

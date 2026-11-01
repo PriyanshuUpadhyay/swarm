@@ -90,7 +90,7 @@ def start(profile="default", domains=None, parent_loop=None, plan=None):
         check_graph(plan, rows)
         plan_blocks = {r[0]: r[3] for r in rows}
         # step_run's scope, review, and skip rules read these lines, so a plan with Writes keeps them in implement.
-        plan_scope = {r[0]: step_run.scope_lines(r[5], r[6]) for r in rows if r[5] is not None}
+        plan_scope = {r[0]: step_run.step_scope.scope_lines(r[5], r[6]) for r in rows if r[5] is not None}
     root = git("rev-parse", "--show-toplevel")
     if not root:
         raise SystemExit("not in a git repository")
