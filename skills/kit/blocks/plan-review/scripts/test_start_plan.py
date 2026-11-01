@@ -328,6 +328,9 @@ def test_a_damaged_step_file_and_control_text():
     assert old_head in reply.read_text(encoding="utf-8")
     out = start(run)
     assert out.returncode == 0, out.stderr
+    reply.write_bytes(text.encode("utf-8") + b"\xff\n")
+    out = start(run)
+    assert out.returncode == 1 and "02-reply.md is not UTF-8" in out.stderr and "Traceback" not in out.stderr, out
     reply.write_text("Status: open\n", encoding="utf-8")
     out = start(run)
     assert out.returncode == 1 and f"{reply} is not a step file" in out.stderr and "Traceback" not in out.stderr, out

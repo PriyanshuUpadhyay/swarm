@@ -193,11 +193,11 @@ def plan_drift(folder, blocks, scope, plan):
     checks a plan run's own files, which hold other lines (`Skills read:`, the brief), so the two stay apart."""
     found = []
     frame = Path(folder) / "01-frame.md"
-    was = step_run.step_scope.header(frame.read_text(encoding="utf-8"), "Plan") if frame.exists() else None
+    was = step_run.step_scope.header(read_utf8(frame), "Plan") if frame.exists() else None
     if was != str(plan):
         found.append(f"01-frame (plan: was {was or 'none'}, now {plan})")
     for step in step_run.steps(folder):
-        lines = (Path(folder) / f"{step}.md").read_text(encoding="utf-8").split("\n")
+        lines = read_utf8(Path(folder) / f"{step}.md").split("\n")  # a file that is not UTF-8 stops in one line
         head = lines[:lines.index("")] if "" in lines else lines
         was = step_run.step_scope.header("\n".join(lines), "Plan blocks") or "none"
         if was != (now := ", ".join(blocks.get(step) or []) or "none"):

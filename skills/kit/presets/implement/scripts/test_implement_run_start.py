@@ -103,6 +103,12 @@ def test_plan_drift_quotes_the_move(tmp):
     assert shlex.split(command) == ["mkdir", "-p", str(folder.parent / "_replaced"), "&&", "mv", str(folder),
                                     f"{folder.parent / '_replaced'}/"], command
     assert shlex.split(message.rsplit("with ", 1)[1]) == ["--parent-loop", "fix auth; echo hi"], message
+    (folder / "02-design.md").write_bytes(b"Status: open\nUses: 01-frame\n\xff\n")
+    try:
+        implement_context.plan_drift(folder, {}, {}, Path("/old"))
+        raise AssertionError("a step file that is not UTF-8 must refuse")
+    except SystemExit as stop:
+        assert "02-design.md is not UTF-8" in str(stop), stop
 
 
 def implement_table():

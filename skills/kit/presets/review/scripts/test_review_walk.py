@@ -164,11 +164,11 @@ def test_status_uses_the_stale_chain_rule():
         used = ", ".join(f"{u}@{rw.revision(d / f'{u}.md')}" for u in uses) if state != "open" else ", ".join(uses)
         (d / f"{step}.md").write_text(f"Status: {state}\nUses: {used}\n\n`p.ts`\n", encoding="utf-8")
 
-    def line():
+    def line(step="05-walk"):
         out = io.StringIO()
         with redirect_stdout(out):
             rw.status("pr-1-01")
-        return next(l for l in out.getvalue().splitlines() if l.startswith("05-walk")).rstrip()
+        return next(l for l in out.getvalue().splitlines() if l.startswith(step)).rstrip()
 
     assert line().endswith("ready"), line()
     (d / "02-map.md").write_text((d / "02-map.md").read_text(encoding="utf-8") + "a later edit\n", encoding="utf-8")
@@ -176,6 +176,11 @@ def test_status_uses_the_stale_chain_rule():
     # A hand-written Uses name with no file, such as walk.md's short `01`, reads as stale, not as a traceback.
     (d / "02-map.md").write_text(f"Status: done x\nUses: 01@{rw.revision(d / '01-scope.md')}\n\n`p.ts`\n", encoding="utf-8")
     assert not line().endswith("ready"), "02-map uses a step with no file"
+    # 02-map taken again after 04-comments was done: each row says why, from the same rule.
+    (d / "02-map.md").write_text(f"Status: active w #2\nUses: 01-scope@{rw.revision(d / '01-scope.md')}\n\n`p.ts` again\n",
+                                 encoding="utf-8")
+    assert line("04-comments").endswith("stale: 02-map"), line("04-comments")
+    assert line().endswith("not ready: 04-comments before it is stale"), line()
 
 
 if __name__ == "__main__":

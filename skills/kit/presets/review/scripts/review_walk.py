@@ -154,17 +154,17 @@ def status(name=None):
     d = home() / name if name else (runs[-1] if runs else None)
     if not d or not d.exists():
         raise SystemExit("no run")
-    current = {s: revision(d / f"{s}.md") for s in STEPS}
     state = {s: (d / f"{s}.md").read_text(encoding="utf-8").splitlines()[0].removeprefix("Status: ") for s in STEPS}
     print(d)
     for s, uses in STEPS.items():
-        used = dict(re.findall(r"([\w-]+)@(\w+)", (d / f"{s}.md").read_text(encoding="utf-8").splitlines()[1]))
-        stale = [u for u, rev in used.items() if current.get(u) != rev and state.get(u, "").startswith("done")]
-        # step-run.md owns ready: no waiting step and no stale done step on the chain before it.
+        # step-run.md owns stale and ready: no waiting step and no stale done step on the chain before it.
         # A hand-written Uses name with no file has no revision, so the step that uses it reads as stale.
         rev = lambda folder, n: revision(Path(folder) / f"{n}.md") if (Path(folder) / f"{n}.md").exists() else ""
-        ready = step_inputs.ready(d, s, list(uses), rev=rev)
-        note = "stale: " + ", ".join(stale) if stale else ("ready" if ready and state[s] == "open" else "")
+        stale = step_inputs.stale(d, s, rev)
+        waits, chain = step_inputs.waiting(d, list(uses)), step_inputs.stale_before(d, list(uses), rev)
+        why = f"waits for {', '.join(waits)}" if waits else f"{chain[0][0]} before it is stale" if chain else ""
+        note = ("stale: " + ", ".join(stale) if stale else "" if state[s] != "open" else
+                f"not ready: {why}" if why else "ready")
         print(f"{s:12} {state[s]:30} {note}")
     for problem in checks(d, state):
         print("problem:", problem)

@@ -23,6 +23,7 @@ KIT = Path(__file__).resolve().parents[3]
 sys.path[:0] = [str(KIT / "references"), str(KIT / "blocks" / "comment-round" / "scripts"),
                 str(KIT / "skills" / "swarm" / "scripts")]  # python3 -I adds none of them
 import comment_round  # noqa: E402
+from block_resolver import read_utf8  # noqa: E402
 import preset  # noqa: E402
 import step_brief  # noqa: E402
 import step_run  # noqa: E402
@@ -69,7 +70,10 @@ def drift(run):
     for name, _, holds, chosen, writes, optional in rows:
         if name not in have:
             continue
-        lines = (run / f"{name}.md").read_text(encoding="utf-8").split("\n")
+        try:
+            lines = read_utf8(run / f"{name}.md").split("\n")
+        except SystemExit as error:  # a file that is not UTF-8 stops in one line, as a damaged one does
+            raise SystemExit(step_run.plain(str(error.code))) from None
         if len(lines) < 3 or "" not in lines[2:]:
             raise SystemExit(step_run.plain(f"{run / name}.md is not a step file (no Uses: line and blank line below it); "
                                             "restore it or start a new run folder"))
