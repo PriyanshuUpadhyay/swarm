@@ -30,6 +30,7 @@ metadata:
   8. `<details>`, `<summary>How it runs (for the agent)</summary>`, the step table, the blocks table, then `</details>`.
 - Each diagram has a line `*Answers: <the question it answers>*` right over it and at most 10 nodes. Use Mermaid; when Mermaid draws it badly, draw it in an `html` fence by `blocks/html-diagram/SKILL.md`.
 - An implement or review plan keeps the older layout for now: `Done when:` under the title, the step table, and `## Blocks considered` with the blocks table. `presets/implement/PRESET.md` reads that layout.
+- An implement plan also gives a brief under `## Steps` to each step that is not optional, first, or last. Its build brief names each `file:line` it changes, each test with what the test asserts, and `Result:`.
 - The step table has the header `| File | Needs | Holds | Writes | Block | Why |`. A plan that copies a `Stop: chat` preset with no change may keep the preset's header with no Writes.
   - File: `NN-<word>`, numbered in the order a reader follows. The word is what other steps write in Needs. Add ` (optional)` after the name of a step that `skip` may skip; `skip` refuses any other step.
   - Needs: the words of the steps whose output this step uses, or `none`. Steps with all needs done run in parallel, so add a need only for a real input.
@@ -143,10 +144,11 @@ Evidence:
 Result: the page shows the questions, one block, and three step cards with their searches. 02-local and 03-web run in parallel. `step_run.py start` gives `03-web.md` the brief "Check Twilio's rules" with its two searches.
 
 ## Check (script)
-- `python3 -I <kit root>/blocks/plan-chart/scripts/plan_chart.py <run>/plan.md` exits 0: `Done when:` has a bullet per claim and an `Evidence:` bullet list, a research plan has a brief for each middle step, seed searches in its `deep-search` brief, a `So in this plan:` line in each building block, and an `Answers:` line over each diagram, every block exists, every Needs word names a step, the plan has no loop and one end, the end holds a `voice-` block, each step with Needs `none` holds `requirements`, each writing step is reached through Needs by a `change-review` step, no two parallel steps write the same path, and the blocks table lists each block once, its Chosen rows equal to the blocks the steps use, and any other row Offered.
+- `python3 -I <kit root>/blocks/plan-chart/scripts/plan_chart.py <run>/plan.md` exits 0: `Done when:` has a bullet per claim and an `Evidence:` bullet list, a research plan has a brief for each middle step, an implement plan has a brief for each middle step that is not optional, seed searches in its `deep-search` brief, a `So in this plan:` line in each building block, and an `Answers:` line over each diagram, every block exists, every Needs word names a step, the plan has no loop and one end, the end holds a `voice-` block, each step with Needs `none` holds `requirements`, each writing step is reached through Needs by a `change-review` step, no two parallel steps write the same path, and the blocks table lists each block once, its Chosen rows equal to the blocks the steps use, and any other row Offered.
 
 ## Check (judge)
 - Does each brief name real places to look and real searches, not a block name again? Quote a brief that only restates its block.
+- Does an implement build brief name each `file:line` it changes and what each test asserts? Quote a brief that names a test with no assertion.
 - Does any block the steps do not use hold a rule that the task needs? Quote the rule and the task text.
 - Is each claim and each proof one short line, and each Why cell one short line? Quote any that run long or hold a numbered list.
 - Does each Why line give a reason that the task needs, and does any step lack a block that the task needs? Quote the Why line, or the task text that no step covers.

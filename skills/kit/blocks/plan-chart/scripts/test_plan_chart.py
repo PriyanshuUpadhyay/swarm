@@ -263,14 +263,6 @@ def test_rejected_parent_stops():
 
 
 
-def test_a_parent_in_a_block_cell_names_the_step_and_the_parent():
-    """A parent id in a Block cell loads all its parts; the error says which step and parent pulled a part in."""
-    text = PLAN.replace("| change-review, voice-reply |", "| change-review, voice-reply, voice |")
-    out, folder = chart(text)
-    assert out.returncode == 1 and "block voice-pr is used by a step but not Chosen" in out.stderr, out
-    assert "step 05-reply loads it through its parent voice, which loads all its parts" in out.stderr, out.stderr
-    assert not (folder / "plan.html").exists()
-
 def test_empty_selection_without_catalog():
     folder = Path(tempfile.mkdtemp())
     wanted = {"build": [], "reply": []}

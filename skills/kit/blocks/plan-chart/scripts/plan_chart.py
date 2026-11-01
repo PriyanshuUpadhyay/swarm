@@ -20,6 +20,7 @@ block's SKILL.md description, and every Mermaid fence drawn with the pinned Pele
 reviews only plan.html. A plan whose `Preset:` line names research must also give a brief under `## Steps` to each
 step between the first and the last, two or more seed searches in a `deep-search` step's brief, a `So in this plan:`
 line in each `### Block` under `## Building blocks`, and an `Answers:` line over each diagram, of at most 10 nodes.
+An implement plan must give that brief to each such step that is not `(optional)`.
 """
 
 import re
@@ -33,7 +34,7 @@ import step_run  # noqa: E402
 from block_resolver import resolve_blocks  # noqa: E402
 from step_brief import fences  # noqa: E402
 from plan_page import inline, parents, render  # noqa: E402,F401 (inline, parents: callers read them here)
-from plan_rules import check_layout, check_ledger, check_writes, conflicts  # noqa: E402
+from plan_rules import check_briefs, check_layout, check_ledger, check_writes, conflicts  # noqa: E402
 
 START, END = "<!-- plan-chart:start -->", "<!-- plan-chart:end -->"
 HEAD = re.compile(r"\|\s*File\s*\|\s*Needs\s*\|\s*Holds\s*\|(\s*Writes\s*\|)?\s*Blocks?\s*\|\s*Why\s*\|")  # Blocks: step_run.py writes the block rules into each step
@@ -256,8 +257,11 @@ def main(argv):
     text = plan.read_text(encoding="utf-8")
     if text.count(START) != text.count(END) or text.count(START) > 1 or START in text and text.index(END) < text.index(START):
         raise SystemExit(f"plan.md needs the chart markers {START} and {END} once each and in that order, or neither")
+    body = text.split(START)[0] + text.split(END)[-1] if START in text else text
     if research(plan):
-        check_layout(text.split(START)[0] + text.split(END)[-1] if START in text else text, rows, uses)
+        check_layout(body, rows, uses)
+    elif preset_of(plan) == KIT / "presets" / "implement" / "PRESET.md":
+        check_briefs(body, rows, uses, skip_optional=True)
     render(text, rows, ledger)  # its refusals, such as an unsafe html fence, come before plan.md is written
     put_chart(plan, mermaid(rows, uses))
     plan.with_suffix(".html").write_text(page(plan), encoding="utf-8")
