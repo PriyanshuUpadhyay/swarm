@@ -163,6 +163,8 @@ def test_a_changed_plan_refuses_the_old_step_files():
         "changed Block": (TWO_STEP_PLAN.replace("| none | voice-reply |", "| none | requirements |"),
                           "02-reply (blocks: was voice, voice-reply, now requirements)"),
         "changed Writes": (TWO_STEP_PLAN.replace("| the reply | none |", "| the reply | docs/ |"), "02-reply (writes: was none, now docs/)"),
+        "changed Holds": (TWO_STEP_PLAN.replace("| the reply |", "| the reply with three sources |"),
+                          "02-reply (holds: now the reply with three sources)"),
         "changed brief": (TWO_STEP_PLAN.replace("Ask the owner one question.", "Ask the team one question."), "01-ask (brief changed)"),
         "dropped step": (TWO_STEP_PLAN[:TWO_STEP_PLAN.index("| 02-reply")], "02-reply (no row in plan.md)"),
         "added step": (TWO_STEP_PLAN + "| 03-note | reply | a note | none | voice-reply | a later step |\n", None),
@@ -181,6 +183,7 @@ def test_a_changed_plan_refuses_the_old_step_files():
             assert name != "added step" or (run / "03-note.md").exists(), "a grown plan makes the new file"
             continue
         assert out.returncode == 1 and expected in out.stderr, (name, out.stderr)
+        assert "plan.md or this repo's .blocks.toml changed after these steps were made: " in out.stderr, out.stderr
         assert f"Start the new plan in a new run folder, such as {run}-2, and name {run} in its first lines." in out.stderr, out.stderr
         assert {p.name: p.read_text(encoding="utf-8") for p in run.glob("0*.md")} == before, (name, "a refusal writes no file")
 
@@ -243,6 +246,12 @@ def test_a_repo_off_block_is_no_change():
     assert "block:requirements" not in (run / "01-ask.md").read_text(encoding="utf-8")
     out = start(run)
     assert out.returncode == 0, out.stderr
+    # A broken .blocks.toml does not hide a changed Block cell: the start stops with the config error.
+    (repo / ".blocks.toml").write_text("this is [not toml\n", encoding="utf-8")
+    (run / "plan.md").write_text(TWO_STEP_PLAN.replace("| none | voice-reply |", "| none | voice-reply, link-check |"), encoding="utf-8")
+    approve(run)
+    out = start(run)
+    assert out.returncode == 1 and "blocks.toml" in out.stderr and "Traceback" not in out.stderr, out
 
 
 def test_a_damaged_step_file_and_control_text():
@@ -258,6 +267,16 @@ def test_a_damaged_step_file_and_control_text():
     reply.write_text("Status: open\n", encoding="utf-8")
     out = start(run)
     assert out.returncode == 1 and f"{reply} is not a step file" in out.stderr and "Traceback" not in out.stderr, out
+    sys.path.insert(0, str(SCRIPT.parent))
+    import start_plan
+    odd = run / "02-reply\x1b[2J.md"
+    reply.rename(odd)
+    (run / "plan.md").write_text(TWO_STEP_PLAN.replace("| 02-reply |", "| 02-reply\x1b[2J |"), encoding="utf-8")
+    try:
+        start_plan.drift(run)
+        raise AssertionError("a damaged step file must refuse")
+    except SystemExit as stop:
+        assert "is not a step file" in str(stop) and "\x1b" not in str(stop), repr(str(stop))
 
 
 if __name__ == "__main__":

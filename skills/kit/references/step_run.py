@@ -206,8 +206,8 @@ def take(folder, step, who, need=None, rev=revision, force=False, on_claim=None)
         if waiting(folder, need):
             raise SystemExit(f"{step} is not ready; it needs {', '.join(need)}")
         if chain := stale_before(folder, need, rev):
-            first, note = stale_note(folder, chain, rev)
-            raise SystemExit(f"{step} is not ready: {note}; take {first} again")
+            note, action = stale_note(folder, chain, rev)
+            raise SystemExit(f"{step} is not ready: {note}; {action}")
         step_scope.check_reviewer(folder, step, who)
         uses = ", ".join(f"{n}@{rev(folder, n)}" for n in need)
         # done compares the work tree with this one, so only changes made after the take count. It is read before
@@ -255,24 +255,24 @@ def done(folder, step, claim, rev=None, ends=(RESULT_HEAD,), rev_of=revision):
                              f"the step is {plain(state)}")
         if old := stale(folder, step, rev_of):
             raise SystemExit(f"{step} is not done: its input changed after take: {', '.join(old)}; take it again")
-        stale_chain(folder, step, rev_of)
+        refuse_stale_chain(folder, step, rev_of)
         step_scope.check(folder, step, text)
         run_checks(folder, step, todo, text)
         if file.read_text(encoding="utf-8") != text:
             raise SystemExit(f"{step} is not done: its file changed while its checks ran; run done again")
         if old := stale(folder, step, rev_of):
             raise SystemExit(f"{step} is not done: its input changed while its checks ran: {', '.join(old)}; take it again")
-        stale_chain(folder, step, rev_of)  # again, as for the direct inputs: a step further back can change too
+        refuse_stale_chain(folder, step, rev_of)  # again, as for the direct inputs: a step further back can change too
         rev = rev or revision(folder, step)
         write_step(file, f"Status: done {rev}\n" + text.split("\n", 1)[1])
     log(folder, step, f"done {rev}")
     print(f"{step}: done {rev}")
 
 
-def stale_chain(folder, step, rev_of):
+def refuse_stale_chain(folder, step, rev_of):
     if chain := stale_before(folder, needs(folder, step), rev_of):
-        first, note = stale_note(folder, chain, rev_of)
-        raise SystemExit(f"{step} is not done: its input {note}; take {first} again, then this step")
+        note, action = stale_note(folder, chain, rev_of)
+        raise SystemExit(f"{step} is not done: its input {note}; {action}, then this step")
 
 
 def skip(folder, step, *why):

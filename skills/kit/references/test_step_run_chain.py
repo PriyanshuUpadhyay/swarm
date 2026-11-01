@@ -159,10 +159,22 @@ def test_a_skipped_step_taken_before_its_input_changed_ends_the_walk(tmp):
     finish(folder, "03-c")
 
 
+def test_the_message_waits_for_a_step_taken_again(tmp):
+    """01-a is taken again, so 02-b cannot be taken yet; the message says to finish 01-a first."""
+    folder = chain_run(tmp)
+    for step in ("01-a", "02-b"):
+        finish(folder, step)
+    take(folder, "01-a")
+    edit(folder, "01-a")
+    out = cli("take", folder, "03-c", "tester")
+    assert out.returncode == 1 and out.stderr.strip() == (
+        "03-c is not ready: 02-b is stale (its input 01-a changed after it was done); finish 01-a, then take 02-b again"), out
+
+
 CASES = (test_take_refuses_a_stale_needed_step, test_take_refuses_a_stale_step_two_links_back,
          test_done_refuses_a_needed_step_that_went_stale, test_a_skipped_step_ends_the_walk, test_the_callers_revision_is_used,
          test_done_checks_the_chain_again_after_its_checks, test_the_message_names_a_step_that_can_be_taken,
-         test_a_skipped_step_taken_before_its_input_changed_ends_the_walk)
+         test_a_skipped_step_taken_before_its_input_changed_ends_the_walk, test_the_message_waits_for_a_step_taken_again)
 
 if __name__ == "__main__":
     for case in CASES:

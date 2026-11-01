@@ -10,7 +10,7 @@ it is now, so an edit to plan.md after the round stops the start. A preset with 
 line runs its own step run, so this script makes no step files for it and prints that command.
 
 A run whose step files exist starts again only when each file still matches plan.md (see drift): the same
-needs, Writes and Optional lines, brief, and blocks, and no file without a row. A plan that adds a step
+needs, holds, Writes and Optional lines, brief, and blocks, and no file without a row. A plan that adds a step
 only makes the new file. Any other change refuses and asks for a new run folder that names this one.
 """
 
@@ -44,7 +44,7 @@ def approved(run):
 
 
 def drift(run):
-    """Each existing step file whose needs, writes, blocks, or brief differ from plan.md, and each one with no row.
+    """Each existing step file whose needs, holds, writes, blocks, or brief differ from plan.md, and each one with no row.
 
     step_run.start skips a file that exists, so a re-approved plan would otherwise run the old file in silence.
     The check sits here, not in start, because step_amend calls start on purpose to add one file. Block ids are
@@ -60,15 +60,16 @@ def drift(run):
     try:
         new_ids = {name: [r.split("@")[0].removeprefix("block:") for r in read if r.startswith("block:")]
                    for name, (read, _, _) in step_run.resolve_start_blocks(run, rows).items()}
-    except SystemExit:  # a block the kit no longer has; start makes only missing files, which then fail the same way
-        new_ids = None
+    except SystemExit as error:  # a block the kit no longer has, or a broken .blocks.toml
+        new_ids, unresolved = None, error
     found = [f"{name} (no row in plan.md)" for name in have if name not in uses]
-    for name, _, _, chosen, writes, optional in rows:
+    for name, _, holds, chosen, writes, optional in rows:
         if name not in have:
             continue
         lines = (run / f"{name}.md").read_text(encoding="utf-8").split("\n")
         if len(lines) < 3 or "" not in lines[2:]:
-            raise SystemExit(f"{run / name}.md is not a step file (no Uses: line and blank line below it); restore it or start a new run folder")
+            raise SystemExit(step_run.plain(f"{run / name}.md is not a step file (no Uses: line and blank line below it); "
+                                            "restore it or start a new run folder"))
         if (was := step_run.needs(run, name)) != uses[name]:
             found.append(f"{name} (needs: was {', '.join(was) or 'none'}, now {', '.join(uses[name]) or 'none'})")
         blank = lines.index("", 2)
@@ -78,10 +79,17 @@ def drift(run):
             found.append(f"{name} (writes: was {'; '.join(head).removeprefix('Writes: ') or 'none'}, now {now})")
         elif not any(rest.startswith(brief.get(name, "") + tail) for tail in (step_run.SKILLS_HEAD, step_run.TODO_HEAD)):
             found.append(f"{name} (brief changed)")
-        if new_ids is None:
-            continue
+        todo = lines.index(step_run.TODO_HEAD) if step_run.TODO_HEAD in lines else -1
+        first = lines[todo + 1] if 0 <= todo < len(lines) - 1 else ""
+        if not first.startswith((f"- [ ] {holds}:", f"- [x] {holds}:")):  # start writes Holds as the first todo
+            found.append(f"{name} (holds: now {holds})")
         read = next((x.removeprefix(step_run.SKILLS_HEAD).split(", ") for x in lines if x.startswith(step_run.SKILLS_HEAD)), [])
         old = [r.split("@")[0].removeprefix("block:") for r in read if r.startswith("block:")]
+        if new_ids is None:
+            # With no resolve, only a plan block already in the file is known to be no change.
+            if any(b not in old for b in chosen or []):
+                raise unresolved
+            continue
         new = list(new_ids.get(name, []))
         if any(b in new and b not in old for b in chosen or []) or \
                 any(b not in new and (KIT / "blocks" / b / "SKILL.md").is_file() for b in old):
@@ -97,7 +105,8 @@ def main(argv):
         print(f"start with: {start}")
         return
     if changed := drift(run):
-        raise SystemExit(f"plan.md changed after these steps were made: {step_run.plain('; '.join(changed))}. "
+        # A repo's .blocks.toml can turn a block on or off too, which changes a step's rules as a plan edit does.
+        raise SystemExit(f"plan.md or this repo's .blocks.toml changed after these steps were made: {step_run.plain('; '.join(changed))}. "
                          f"Start the new plan in a new run folder, such as {run}-2, and name {run} in its first lines.")
     step_run.start(run, run / "plan.md")
 

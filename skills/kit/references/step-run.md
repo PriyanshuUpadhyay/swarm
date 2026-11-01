@@ -71,8 +71,9 @@ Line 1 of each step file is its status:
   takes the first 12 characters of `git rev-parse HEAD` as that step's revision.
 - A step is ready when each step that it needs is done or skipped, and no done step on the chain
   before it is stale: its needed steps, the steps they need, and so on, up to a step that is not done.
-  A stale step's result is old, so a step two links on would build on it too. `take` refuses a step
-  that is not ready and names the stale step to take again.
+  A stale step's result is old, so a step two links on would build on it too. When a needed step is
+  not done, `take` says which steps it needs. When the chain holds a stale step, `take` and `done`
+  name the stale step to take again, and any input that it waits for first.
 - A step is stale when a revision in its `Uses:` line is no longer the current one. Its owner does it
   again or confirms that it still holds.
 
