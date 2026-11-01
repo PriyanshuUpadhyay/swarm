@@ -46,9 +46,9 @@ test("the Blocks page shows the run tree of a starting plan beside the library, 
 
   // A family node names only the parts the step loads, and opens to all its parts.
   const family = tree.locator('[data-family="sources"]').first();
-  await expect(family).toContainText("3 of 4 load here");
+  await expect(family).toContainText("4 of 5 load here");
   await family.locator("button").first().click();
-  await expect(family.locator('[role="group"] [data-block]')).toHaveCount(4);
+  await expect(family.locator('[role="group"] [data-block]')).toHaveCount(5);
   await expect(family.locator('[data-block="link-check"]')).toContainText("not loaded here");
 
   // The tree follows the tree view keys: Down moves, Left closes a step.

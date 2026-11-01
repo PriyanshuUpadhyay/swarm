@@ -21,6 +21,7 @@ Status: ✅ exists, ✂️ cut from a skill next, ⬜ later, 🆕 new, 🔒 stay
 | frame | step | goal, done-when claims, out of scope | request → frame | implement 01-frame, research 01-question, build intake | implement, research, build | ⬜ |
 | local-research | step | what local sources say | question → findings with paths | `blocks/local-research` | research (planned: glitch-walk, implement contracts) | ✅ |
 | web-research | step | web evidence | query brief → findings with links | `blocks/web-search` (stays whole) with `blocks/deep-search` and `blocks/cite-sources` | research, reference-analysis, motion | ✅ by the skill |
+| literature-map | step | the survey-first pass: surveys with date and scope, origins they share, newer work that cites them | question → map table | `blocks/literature-map` | research | 🆕 |
 | primary-sources | step | the origin of a claim: paper, spec, or the author's code at the commit | question → origin rows (source, exact location, quote) | `blocks/primary-sources` | research, web-search | ✅ |
 | deep-search | rule | how a search goes past the known answers | question, known answers → sub-questions, seeds, off-path ideas | `blocks/deep-search` | research, web-search | ✅ |
 | tool-trial | step | the hands-on test of tool candidates | tool question → candidate table | `blocks/tool-trial` | research (planned: implement contracts) | ✅ |
@@ -30,7 +31,7 @@ Status: ✅ exists, ✂️ cut from a skill next, ⬜ later, 🆕 new, 🔒 stay
 | motion | pack | how things move | story sheet or UI states → timings, eases, one timing owner | `blocks/ui-motion` (UI, one timing owner, emil pack tables); build `story-and-motion.md` transition catalogue and motion feel (story) | build, any UI, sites | ✅ basic UI, B8 |
 | diagram | parent | shared diagram rules | subject or diagram → rules for selected parts | `blocks/diagram` with parts `when-to-diagram`, `html-diagram`, `call-tree`, `diagram-check`; `references/explain-formats.md` owns when and which form | implement; glitch-walk and plans use the parts | ✅ slice 1 |
 | voice | parent | shared voice rules | kind of output → rules for selected parts | `blocks/voice` with parts `voice-pr`, `voice-reply`, `voice-review`, `voice-teach` | planner, explain | ✅ |
-| sources | parent | shared source rules | question or claims → rules for selected parts | `blocks/sources` with parts `primary-sources`, `deep-search`, `cite-sources`, `link-check` | research, web-search | ✅ |
+| sources | parent | shared source rules | question or claims → rules for selected parts | `blocks/sources` with parts `literature-map`, `primary-sources`, `deep-search`, `cite-sources`, `link-check` | research, web-search | ✅ |
 | web-ui | parent | shared web page rules | page or its code → rules for selected parts | `blocks/web-ui` with parts `web-ui-basics`, `ui-motion`, `design-tokens`, `headless-shot`, `look-check` | implement, build, planner | ✅ |
 | plan-flow | parent | shared plan and comment-round rules | plan or built page → rules for selected parts | `blocks/plan-flow` with parts `planner`, `plan-chart`, `plan-review`, `comment-round`, `page-comments` | planner | ✅ |
 | style-frames | step | "does it match the look" before the full build | tokens, page code → scored frames | `blocks/look-check` (owner of reference scoring) | implement, build | ✅ |

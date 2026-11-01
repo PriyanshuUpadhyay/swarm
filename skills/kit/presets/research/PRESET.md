@@ -32,8 +32,8 @@ offered `tool-trial` block before `04-report`, so the candidates are tested hand
 |---|---|---|---|---|
 | `01-question.md` | none | the question in one line and the decision it serves in one line | requirements | the question and its decision frame the run |
 | `02-local.md` | question | what the local sources say, with paths | local-research | local sources come first |
-| `03-web.md` | question | the `web-search` run folder, or the reason no trigger below held; a `Fetched:` list of URLs whose page content was read; the origin rows from `blocks/primary-sources/SKILL.md`, or `skipped: <reason>`; what the web says, with links to the sources that own the claims; the off-path ideas and the searches that found them | deep-search, primary-sources, cite-sources, web-search | the web part goes past the known answers |
-| `04-report.md` | local, web | the report path and the result of the link check | report, link-check | the report keeps the answer with checked links |
+| `03-web.md` | question | the `web-search` run folder, or the reason no trigger below held; a `Fetched:` list of URLs whose page content was read; the map table from `blocks/literature-map/SKILL.md`, or `skipped: <reason>`; the origin rows from `blocks/primary-sources/SKILL.md`, or `skipped: <reason>`; the recent-window rows from `blocks/deep-search/SKILL.md`; what the web says, with links to the sources that own the claims; the off-path ideas and the searches that found them | literature-map, deep-search, primary-sources, cite-sources, web-search | the web part maps the field, then goes past the known answers |
+| `04-report.md` | local, web | the report path and the result of the link check | report, link-check, done-when-evidence | the report keeps the answer with checked links and a row per source type |
 | `05-close.md` | report | the reply as sent | voice-reply | the owner reads the answer |
 
 ## 01-question
@@ -68,6 +68,9 @@ merged report is written. Its report is one source among the others, not the ans
 holds but this session cannot open visible seats, do the web part yourself and write in the gaps
 that `web-search` did not run and why. When no user can answer a web-seat gate,
 `blocks/worker-brief/SKILL.md` applies, and this is its default.
+
+When the question has a body of papers or reports behind it, map it first by
+`blocks/literature-map/SKILL.md`, before the open search.
 
 When the question is about how or why a technique, protocol, or implementation works, also apply
 the kit block `blocks/primary-sources/SKILL.md`. Example. The question is about SQL databases.

@@ -1,6 +1,6 @@
 ---
 name: done-when-evidence
-description: "Map each done-when of the frame to its evidence, or mark it unverified. Use when you close a change."
+description: "Map each done-when of the frame to its evidence, or mark it unverified, and in research give each source type a result. Use when you close a change or a research report."
 license: MIT
 metadata:
   kind: rule
@@ -9,7 +9,7 @@ metadata:
   needs: "the frame's done-when"
   gives: "one evidence row per claim"
   conflicts: ""
-  users: "implement"
+  users: "implement, research"
   source: "presets/implement/PRESET.md (step table, 07-close row); references/plan-layout.md:31-33 (Verification); blocks/prove-it-works/SKILL.md (the ladder: below step 4 is unproven)"
 ---
 
@@ -20,6 +20,8 @@ metadata:
 - Each row's check is the one that the build step's file names for it, in a todo's evidence or its `## Result`. In implement, review judges that each done-when has one there, before this table exists.
 - Evidence reads "not run" until you get it. A row with no proof reads "unverified" and says why.
 - Keep a partial check apart from a completed proof.
+- In research, the table also has one row for each source type: local sources, surveys, origin papers, recent work, and off-path ideas. Each row holds its result with a link, or `not applicable: <reason>`. A link check does not prove coverage, because it shows only that the links open.
+- When a source type has a gap, say whether the gap blocks the answer. Write `blocks: <which conclusion>` or `does not block: <why>`.
 
 ## Example
 Initial state: `01-frame.md` has three done-when lines, and `05-build.md` names a check for each.
@@ -38,4 +40,5 @@ Result: two rows proved, one partial row named as partial.
 - Does each done-when line of the frame and each accepted constraint have a check, planned or run, named in the build step's file (a todo's evidence or its `## Result`)? Quote each done-when and its check.
 - Does any done-when have no check named there? Quote it, or write "none".
 - Is each named check a command, a test, or a screenshot path that a close table can cite? Quote each check.
+- In research, does each source type have a result with a link or `not applicable:` with a reason, and does each gap say whether it blocks the answer? Quote the rows.
 - Is any planned or partial check in the build step's file written as a completed proof? Quote the line, or write "none".
