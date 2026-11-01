@@ -80,11 +80,14 @@ def drift(run):
         if "".join(f"{x}\n" for x in head) != (scope := step_run.scope_lines(writes, optional)):
             now = scope.strip().replace("\n", "; ").removeprefix("Writes: ") or "none"
             found.append(f"{name} (writes: was {'; '.join(head).removeprefix('Writes: ') or 'none'}, now {now})")
-        elif not any(rest.startswith(brief.get(name, "") + tail) for tail in (step_run.SKILLS_HEAD, step_run.TODO_HEAD)):
+        elif not any(rest.startswith(brief.get(name, "") + tail) for tail in (step_run.SKILLS_HEAD, step_run.TODO_MARK)):
             found.append(f"{name} (brief changed)")
-        todo = lines.index(step_run.TODO_HEAD) if step_run.TODO_HEAD in lines else -1
+        # By its prefix, as step_run reads it, so a head that an older kit worded otherwise still matches.
+        todo = next((i for i, x in enumerate(lines) if x.startswith(step_run.TODO_MARK)), -1)
         first = lines[todo + 1] if 0 <= todo < len(lines) - 1 else ""
-        if not first.startswith((f"- [ ] {holds}:", f"- [x] {holds}:")):  # start writes Holds as the first todo
+        # start writes Holds as the first todo. An open one is exact; a checked one holds evidence after the
+        # colon, which can hold a colon too, so a Holds cell cut back at a colon is not seen there.
+        if not (first.rstrip() == f"- [ ] {holds}:" or first.startswith(f"- [x] {holds}: ")):
             found.append(f"{name} (holds: now {holds})")
         read = next((x.removeprefix(step_run.SKILLS_HEAD).split(", ") for x in lines if x.startswith(step_run.SKILLS_HEAD)), [])
         old = [r.split("@")[0].removeprefix("block:") for r in read if r.startswith("block:")]
@@ -106,7 +109,7 @@ def main(argv):
     if changed := drift(run):
         # A repo's .blocks.toml can turn a block on or off too, which changes a step's rules as a plan edit does.
         raise SystemExit(f"plan.md or this repo's .blocks.toml changed after these steps were made: {step_run.plain('; '.join(changed))}. "
-                         f"Start the new plan in a new run folder, such as {run}-2, and name {run} in its first lines.")
+                         f"Start the new plan in a new run folder, such as {run}-2.")
     step_run.start(run, run / "plan.md")
 
 

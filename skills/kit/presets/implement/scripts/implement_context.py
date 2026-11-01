@@ -194,7 +194,7 @@ def plan_drift(folder, blocks, scope):
     for step in step_run.steps(folder):
         lines = (Path(folder) / f"{step}.md").read_text(encoding="utf-8").split("\n")
         head = lines[:lines.index("")] if "" in lines else lines
-        was = next((x.removeprefix("Plan blocks: ") for x in head if x.startswith("Plan blocks: ")), "none")
+        was = step_run.step_scope.header("\n".join(lines), "Plan blocks") or "none"
         if was != (now := ", ".join(blocks.get(step) or []) or "none"):
             found.append(f"{step} (blocks: was {was}, now {now})")
         was = "".join(f"{x}\n" for x in head if x.startswith(("Writes: ", "Optional: ")))
@@ -204,6 +204,10 @@ def plan_drift(folder, blocks, scope):
     if found:
         # The folder name comes from the date and branch, so the old run moves aside, out of the 2*/ names that
         # a status with no folder sorts.
+        aside = Path(folder).parent / "_replaced"
+        loop = Path(folder) / "loop.json"
+        # The moved folder takes its loop.json along, so the new start must name the key to keep the round ledger.
+        keep = f" with --parent-loop {plain(json.loads(read_utf8(loop))['parent_loop'])}" if loop.exists() else ""
         raise SystemExit(f"the step files in {folder} differ from plan.md: {plain('; '.join(found))}. "
-                         f"Move {folder} to {Path(folder).parent / '_replaced' / Path(folder).name} "
-                         "(or another free name there), then start again")
+                         f"Move the old run aside with `mkdir -p {aside} && mv {folder} {aside}/` "
+                         f"(or another free name there), then start again{keep}")

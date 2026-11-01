@@ -68,8 +68,8 @@ the git common dir (`git rev-parse --git-common-dir`), not the worktree folder n
    `start` checks them against the repo profile. Show the chosen domains with the tables that `start` prints, the same way `blocks/planner/SKILL.md` shows them
    for a plan. `01-frame.md` keeps the domains and block choice. To add or drop a block, edit its domain line in
    `~/.flow/domains.md` or its `[off]` entry in `.blocks.toml`, then start a new run. A second `start`
-   on the same day and branch reuses the folder and prints the saved choice, so first rename the
-   run folder (for example to `<folder>-old`), then run `start` again.
+   on the same day and branch reuses the folder and prints the saved choice, so first move the
+   run folder into `_replaced/` beside it, out of the dated names that `status` sorts, then run `start` again.
 
 3. Read `01-frame.md`. If `Worktree:` or `Branch:` is not the current worktree and branch, stop and
    tell the user. If two open folders exist for one branch, stop and tell the user.

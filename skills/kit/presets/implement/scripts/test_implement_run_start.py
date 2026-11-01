@@ -56,6 +56,7 @@ def test_start_plan_needs_approval(tmp):
     made = Path(out.stdout.splitlines()[0])
     assert run("start", "--plan", plan).returncode == 0
     before = {f.name: f.read_text(encoding="utf-8") for f in made.glob("0*.md")}
+    key = json.loads((made / "loop.json").read_text(encoding="utf-8"))["parent_loop"]
     text = (plan / "plan.md").read_text(encoding="utf-8")
     for change, words in ((("| checked-units, ui-motion |", "| checked-units |"), "05-build (blocks: was checked-units, ui-motion, now checked-units)"),
                           (("| `src/` |", "| `web/` |"), "05-build (writes: was src/, now web/)")):
@@ -63,7 +64,7 @@ def test_start_plan_needs_approval(tmp):
         approve(plan)
         out = run("start", "--plan", plan)
         assert out.returncode == 1 and f"the step files in {made} differ from plan.md: {words}" in out.stderr, out
-        assert f"Move {made} to {made.parent / '_replaced' / made.name} (or another free name there)" in out.stderr, out.stderr
+        assert f"Move the old run aside with `mkdir -p {made.parent / '_replaced'} && mv {made} {made.parent / '_replaced'}/` (or another free name there), then start again with --parent-loop {key}" in out.stderr, out.stderr
         assert {f.name: f.read_text(encoding="utf-8") for f in made.glob("0*.md")} == before
     (plan / "plan.md").write_text(text, encoding="utf-8")
     approve(plan)

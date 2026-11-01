@@ -184,7 +184,7 @@ def test_a_changed_plan_refuses_the_old_step_files():
             continue
         assert out.returncode == 1 and expected in out.stderr, (name, out.stderr)
         assert "plan.md or this repo's .blocks.toml changed after these steps were made: " in out.stderr, out.stderr
-        assert f"Start the new plan in a new run folder, such as {run}-2, and name {run} in its first lines." in out.stderr, out.stderr
+        assert f"Start the new plan in a new run folder, such as {run}-2." in out.stderr, out.stderr
         assert {p.name: p.read_text(encoding="utf-8") for p in run.glob("0*.md")} == before, (name, "a refusal writes no file")
 
 
@@ -199,6 +199,18 @@ def test_a_taken_step_still_matches_its_plan():
     assert "Uses: 01-ask@0123456789ab\n" in reply.read_text(encoding="utf-8")
     out = start(run)
     assert out.returncode == 0, out.stderr
+
+
+def test_a_holds_cell_cut_back_at_a_colon_refuses():
+    """The first todo of an open step is `- [ ] <holds>: `, so a Holds cell cut back at its colon is a change."""
+    run = Path(tempfile.mkdtemp())
+    (run / "plan.md").write_text(TWO_STEP_PLAN.replace("| the reply |", "| the reply: one line |"), encoding="utf-8")
+    approve(run)
+    assert start(run).returncode == 0
+    (run / "plan.md").write_text(TWO_STEP_PLAN, encoding="utf-8")
+    approve(run)
+    out = start(run)
+    assert out.returncode == 1 and "02-reply (holds: now the reply)" in out.stderr, out
 
 
 def test_a_kit_update_alone_is_no_change():
@@ -281,6 +293,13 @@ def test_a_damaged_step_file_and_control_text():
     reply.write_text(text.replace("Writes: none\n", "Writes: src/\x1b[2J\n"), encoding="utf-8")
     out = start(run)
     assert out.returncode == 1 and "02-reply (writes: was src/[2J, now none)" in out.stderr and "\x1b" not in out.stderr, out
+    # A todo head that an older kit worded otherwise is no change, as step_run reads it by its prefix.
+    old_head = "## Todo (check a box only with its evidence after the last colon)"
+    reply.write_text(text.replace("## Todo (check a box only with its evidence after the colon; `done` refuses an empty one)", old_head),
+                     encoding="utf-8")
+    assert old_head in reply.read_text(encoding="utf-8")
+    out = start(run)
+    assert out.returncode == 0, out.stderr
     reply.write_text("Status: open\n", encoding="utf-8")
     out = start(run)
     assert out.returncode == 1 and f"{reply} is not a step file" in out.stderr and "Traceback" not in out.stderr, out
@@ -302,6 +321,7 @@ if __name__ == "__main__":
     test_a_forged_preset_line_keeps_the_owner_stop()
     test_a_changed_plan_refuses_the_old_step_files()
     test_a_taken_step_still_matches_its_plan()
+    test_a_holds_cell_cut_back_at_a_colon_refuses()
     test_a_kit_update_alone_is_no_change()
     test_a_repo_off_block_is_no_change()
     test_a_damaged_step_file_and_control_text()
