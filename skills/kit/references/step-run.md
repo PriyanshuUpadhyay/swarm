@@ -70,7 +70,7 @@ Line 1 of each step file is its status:
   commit has a line `Revision: HEAD` below line 2, which the skill's script writes at start; a reader
   takes the first 12 characters of `git rev-parse HEAD` as that step's revision.
 - A step is ready when each step that it needs is done or skipped, and no done step on the chain
-  before it is stale: its needed steps, the steps they need, and so on, up to an open or skipped step.
+  before it is stale: its needed steps, the steps they need, and so on, up to a step that is not done.
   A stale step's result is old, so a step two links on would build on it too. `take` refuses a step
   that is not ready and names the stale step to take again.
 - A step is stale when a revision in its `Uses:` line is no longer the current one. Its owner does it
