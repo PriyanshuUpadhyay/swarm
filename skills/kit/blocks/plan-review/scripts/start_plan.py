@@ -8,6 +8,10 @@ that preset's (in the table that the start reads), starts with no round. Any oth
 a step, a block, or a decoy table, needs the newest review round to have approved plan.html as it is now, and plan.html to carry the hash of plan.md as
 it is now, so an edit to plan.md after the round stops the start. A preset with a `Start:`
 line runs its own step run, so this script makes no step files for it and prints that command.
+
+A run whose step files exist starts again only when each file still matches plan.md (see drift): the same
+needs, Writes and Optional lines, brief, and blocks, and no file without a row. A plan that adds a step
+only makes the new file. Any other change refuses and asks for a new run folder that names this one.
 """
 
 import hashlib

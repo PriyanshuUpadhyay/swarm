@@ -21,12 +21,13 @@ sees `02-local.md` done and `03-web.md` open, does the web step, and goes on to 
 
 A skill with a step table makes its folder with the kit's `references/step_run.py`, unless the skill
 names its own script. `start <folder> <SKILL.md>` writes one file per table row, with a todo for what
-the row holds and a `## Result` section. A table can add a `Blocks` column; `blocks/blocks.toml`
+the row holds and a `## Result` section. It skips a file that exists, so `amend` can add one step;
+`start_plan.py` refuses a re-approved plan whose existing steps changed, and its docstring owns that rule. A table can add a `Blocks` column; `blocks/blocks.toml`
 owns how those blocks become rules and evidence todos. A table with `Blocks` needs Python 3.11
 or later for `start`, because it reads TOML. `take <folder> <step> <agent>` marks a step `active <agent> #<n>` and fills
 its `Uses:` line; `<n>` counts the step's takes. `done <folder> <step> <n>` sets the step done only for
 that claim, when every todo is checked with its evidence after the last colon, and when no `Uses:`
-input changed after `take`. It also runs each checked `block <id> script:` todo that
+input changed after `take`, and when no done step on the chain before it is stale. It also runs each checked `block <id> script:` todo that
 `blocks/blocks.toml` calls runnable, and a failing one refuses. It prints `not run:` for the others,
 which keep their evidence. It never runs the evidence. `done` accepts no `--force`. `status <folder>` also names each stale step.
 `skip <folder> <step> <reason>` records a route skip.
@@ -68,7 +69,10 @@ Line 1 of each step file is its status:
   step graph for a reader without the script, such as the Swarm app. A step whose revision is a
   commit has a line `Revision: HEAD` below line 2, which the skill's script writes at start; a reader
   takes the first 12 characters of `git rev-parse HEAD` as that step's revision.
-- A step is ready when each step that it needs is done or skipped.
+- A step is ready when each step that it needs is done or skipped, and no done step on the chain
+  before it is stale: its needed steps, the steps they need, and so on, up to an open or skipped step.
+  A stale step's result is old, so a step two links on would build on it too. `take` refuses a step
+  that is not ready and names the stale step to take again.
 - A step is stale when a revision in its `Uses:` line is no longer the current one. Its owner does it
   again or confirms that it still holds.
 

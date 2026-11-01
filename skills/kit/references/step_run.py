@@ -5,7 +5,8 @@
   status <folder>              print each step's status, whether it is ready, and whether it is stale
   take <folder> <step> <who> [--force]   claim the step and print its file; force takes a stale claim
   done <folder> <step> <n>      set the step done, only for take's claim #<n>, when every todo is checked
-                                with evidence, no input is stale, and each runnable script check passes
+                                with evidence, no input or done step before it is stale, and each
+                                runnable script check passes
   skip <folder> <step> <reason> skip an open or active step, with the reason
   block <folder> <step> <reason> block an open or active step, with the reason
   amend <folder> <row> [--before <step>]  add one `Writes: none` step to a plan run, within plan.md's Amend: N
