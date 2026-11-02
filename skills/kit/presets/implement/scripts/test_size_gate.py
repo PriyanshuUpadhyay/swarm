@@ -46,6 +46,8 @@ with tempfile.TemporaryDirectory() as tmp:
     assert out.returncode == 0 and out.stdout.strip() == "small: 2 files, 41 lines (+128 test lines)", out
     out = case(tmp, "testdir", {"src/a.py": 30, "tests/helpers.py": 90, "web/a.spec.ts": 50})
     assert out.returncode == 0 and out.stdout.strip() == "small: 3 files, 30 lines (+140 test lines)", out
+    out = case(tmp, "cache", {"a.py": 5, "__pycache__/a.cpython-312.pyc": 3})
+    assert out.returncode == 0 and out.stdout.strip() == "small: 1 files, 5 lines", out
     out = case(tmp, "notatest", {"contest.py": 101})
     assert out.returncode == 1 and "101 non-test lines" in out.stdout, "a name that only contains test is code"
     out = case(tmp, "schema", {"a.py": 1, "db/schema.sql": 1})

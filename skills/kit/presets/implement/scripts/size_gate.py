@@ -69,7 +69,8 @@ def measure(base):
             added, removed, path = entry.split("\t", 2)
             changed[path] = (int(added) if added.isdigit() else 0) + (int(removed) if removed.isdigit() else 0)
     for path in git("ls-files", "--others", "--exclude-standard", "-z").split("\0"):
-        if path:
+        # A test run leaves bytecode caches; in a repo with no .gitignore they are not part of the change (trial 6).
+        if path and not ("__pycache__" in path.split("/")[:-1] or path.endswith((".pyc", ".pyo"))):
             try:
                 changed[path] = lines_of(path)
             except OSError as error:
