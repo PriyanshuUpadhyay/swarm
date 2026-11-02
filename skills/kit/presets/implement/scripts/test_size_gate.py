@@ -50,6 +50,8 @@ with tempfile.TemporaryDirectory() as tmp:
     assert out.returncode == 1 and "db/données.sql is a schema or migration path" in out.stdout, out
     out = case(tmp, "escape", {"a\x1b[2Jschema.txt": 1})
     assert out.returncode == 1 and out.stdout.strip() == "raise: a\\x1b[2Jschema.txt is a schema or migration path", out
+    out = case(tmp, "escape-c1", {"c1\x9b[2Jschema.txt": 1})
+    assert out.returncode == 1 and out.stdout.strip() == "raise: c1\\x9b[2Jschema.txt is a schema or migration path", out
     # A new binary file counts 0 lines, as git counts it after the commit.
     out = case(tmp, "binary", {"a.py": 1, "shot.png": 0})
     Path(tmp, "binary", "shot.png").write_bytes(bytes(range(256)) * 80)

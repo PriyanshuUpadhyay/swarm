@@ -30,11 +30,12 @@ def rules_for(folder, step, text, table, resolve, skills_head):
 
     SystemExit when the table is gone, or when a block, its hash, or the block list differs from the Skills read
     line that start wrote, because the worker would follow rules that no longer match its check todos."""
-    lines = [line.rstrip("\r") for line in text.split("\n")]
+    lines = text.split("\n")
     at = link_at(lines)
     if at is None:
-        # A link line that is not under the head means the head was edited, so the worker would get no rules.
-        if any(line.startswith(FROM) for line in lines) and RULES_HEAD not in lines:
+        # A step with blocks and a link line but no head had its head edited, so the worker would get no rules.
+        # A step with no blocks has no Skills read line, so a brief line with the link words still passes.
+        if RULES_HEAD not in lines and any(l.startswith(FROM) for l in lines) and any(l.startswith(skills_head) for l in lines):
             raise SystemExit(f"{step} links its rules but has no `{RULES_HEAD}` line; restore it or start a new run folder")
         return None
     source = Path(lines[at].removeprefix(FROM))
@@ -52,7 +53,7 @@ def rules_for(folder, step, text, table, resolve, skills_head):
 def fill(text, rules):
     """The step text with the rules inserted under the link line."""
     lines = text.split("\n")
-    at = link_at([line.rstrip("\r") for line in lines])
+    at = link_at(lines)
     if rules is None or at is None:
         return text
     return "\n".join(lines[:at + 1] + [rules] + lines[at + 1:])

@@ -43,7 +43,7 @@ def test_linked_rules(tmp):
     (folder / "plan.md").rename(folder / "plan-gone.md")
     out = run("take", folder, "02-work", "w")
     assert out.returncode == 1 and "which is gone" in out.stderr, out
-    # CRLF line ends keep the link; an edited rules head refuses, as a lost Skills read line does.
+    # CRLF line ends keep the link (take reads text mode); an edited rules head refuses, as a lost Skills read line does.
     (folder / "plan-gone.md").rename(folder / "plan.md")
     block.write_text(block.read_text(encoding="utf-8").replace("NEW RULE", "LINKED RULE TEXT"), encoding="utf-8")
     plain = work.read_text(encoding="utf-8")
@@ -55,6 +55,9 @@ def test_linked_rules(tmp):
     assert out.returncode == 1 and "links its rules but has no `## Rules for this step` line" in out.stderr, out
     work.write_text(plain, encoding="utf-8")
     (folder / "plan.md").rename(folder / "plan-gone.md")
+    # A step with no blocks may hold a brief line with the link words; it has no rules to refuse.
+    import step_links
+    assert step_links.rules_for(folder, "03-x", "Status: open\nRules from: the owner's notes\n## Todo\n", None, None, "Skills read: ") is None
     # The rules are read before the claim, so a block edit after the claim cannot fail a take that claimed.
     (folder / "plan-gone.md").rename(folder / "plan.md")
     block.write_text(block.read_text(encoding="utf-8").replace("NEW RULE", "LINKED RULE TEXT"), encoding="utf-8")

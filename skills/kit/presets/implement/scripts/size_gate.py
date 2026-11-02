@@ -85,7 +85,7 @@ def main(argv):
         print(f"small: {len(paths)} files, {lines} lines")
         return 0
     # -z gives raw names, so a control byte in a path is shown escaped, not sent to the terminal.
-    print("raise: " + re.sub(r"[\x00-\x1f\x7f]", lambda m: f"\\x{ord(m[0]):02x}", reason))
+    print("raise: " + re.sub(r"[\x00-\x1f\x7f-\x9f]", lambda m: f"\\x{ord(m[0]):02x}", reason))
     return 1
 
 

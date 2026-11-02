@@ -41,7 +41,7 @@ def read(run):
     for n, line in enumerate(lines, 1):
         cells = [c.strip() for c in re.split(r"(?<!\\)\|", line)[1:-1]] if line.startswith("|") else []
         # A fix row with an unescaped pipe still counts, so a split row never turns into an approval.
-        if len(cells) >= 2 and re.fullmatch(r"fix(\s*\(.*\))?", cells[1].lower().strip("`*")):
+        if len(cells) >= 2 and re.match(r"fix\b(?!\s*,)", cells[1].lower().strip("`*")):
             fixes.append(cells[0])
         if cells and len(cells) != 3:
             raise SystemExit(f"file-review.md line {n} has {len(cells)} cells, not 3; write a | in a cell as \\| and end the row with |")
