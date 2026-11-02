@@ -22,12 +22,12 @@ MAX_LINES = 100
 # A change to stored data or a wire format needs the contracts step, whatever its size.
 SCHEMA = ("*.sql", "*migration*", "*schema*", "*.proto", "*.graphql")
 TESTS = ("test_*", "*_test.*", "*.test.*", "*.spec.*", "*_spec.*", "*Test.*", "*Tests.*")
-TEST_DIRS = {"test", "tests", "__tests__", "spec", "testdata"}
+TEST_DIRS = {"test", "tests", "__tests__", "testdata"}  # not spec: many repos keep API specs there
 
 
 def is_test(path):
     parts = path.split("/")
-    return bool(TEST_DIRS & set(parts[:-1])) or any(fnmatch.fnmatchcase(parts[-1], g) for g in TESTS)
+    return bool(TEST_DIRS & {p.lower() for p in parts[:-1]}) or any(fnmatch.fnmatchcase(parts[-1], g) for g in TESTS)
 
 
 def git(*args):

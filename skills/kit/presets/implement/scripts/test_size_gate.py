@@ -46,6 +46,11 @@ with tempfile.TemporaryDirectory() as tmp:
     assert out.returncode == 0 and out.stdout.strip() == "small: 2 files, 41 lines (+128 test lines)", out
     out = case(tmp, "testdir", {"src/a.py": 30, "tests/helpers.py": 90, "web/a.spec.ts": 50})
     assert out.returncode == 0 and out.stdout.strip() == "small: 3 files, 30 lines (+140 test lines)", out
+    # Swift keeps tests in Tests/; a spec/ folder may hold an API spec, which is code (round 5).
+    out = case(tmp, "swift", {"Sources/A.swift": 10, "Tests/ATests/Fixture.swift": 120})
+    assert out.returncode == 0 and out.stdout.strip() == "small: 2 files, 10 lines (+120 test lines)", out
+    out = case(tmp, "spec", {"src/a.py": 10, "spec/openapi.yaml": 500})
+    assert out.returncode == 1 and "510 non-test lines" in out.stdout, out
     out = case(tmp, "cache", {"a.py": 5, "__pycache__/a.cpython-312.pyc": 3})
     assert out.returncode == 0 and out.stdout.strip() == "small: 1 files, 5 lines", out
     out = case(tmp, "notatest", {"contest.py": 101})

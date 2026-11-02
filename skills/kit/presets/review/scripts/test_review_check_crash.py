@@ -53,6 +53,9 @@ def test_crash_note():
             review("older defect, not from this change: int() crashes with a traceback")
             assert rc.verdict(run.name) == 0
             assert "0 fix, 0 ask, 1 note" in (run / "03-verdict.md").read_text(), "an older crash stays a note"
+            review("fixes the older bug but crashes on empty input")
+            assert rc.verdict(run.name) == 0
+            assert "1 fix, 0 ask, 0 note" in (run / "03-verdict.md").read_text(), "older words in passing hide no crash"
             review("no guard, crashes on an empty list")
             assert rc.verdict(run.name) == 0
             assert "1 fix, 0 ask, 0 note" in (run / "03-verdict.md").read_text(), "a denial of another word is still a crash"
@@ -88,14 +91,17 @@ def test_crash_note():
             assert usage.returncode == 1 and "Traceback" not in usage.stderr, usage
             usage = subprocess.run([sys.executable, "-I", str(Path(rc.__file__)), "verdict", run.name, "02-review.md"], capture_output=True, text=True)
             assert usage.returncode == 1 and "rows ok" not in usage.stdout and "Traceback" not in usage.stderr, usage
-            # A line the change only indented is older code: its crash stays a note (trial 6, an old KeyError).
+            # Removing a guard only dedents the guarded line, but the change made its crash reachable (round 5).
             shutil.rmtree(run)  # start refuses while an abandoned run is open
-            base = commit({"util.py": "def helper(s):\n    return 0\n    return int(s[:2])\n"}, "indent base")
-            head = commit({"util.py": "def helper(s):\n    if s:\n        return int(s[:2])\n"}, "indent change")
+            base = commit({"util.py": "def helper(s):\n    try:\n        return int(s[:2])\n    except ValueError:\n        return 0\n"}, "guard base")
+            head = commit({"util.py": "def helper(s):\n    return int(s[:2])\n"}, "guard removed")
             rc.start(f"{base}..{head}")
             run = Path("tmp/review-check") / f"range-{base[:7]}-{head[:7]}-01"
-            review("int() crashes with a ValueError traceback", line=3)
+            review("int() crashes with a ValueError traceback", line=2)
             assert rc.verdict(run.name) == 0
-            assert "0 fix, 0 ask, 1 note" in (run / "03-verdict.md").read_text(), "an indented old line is not new code"
+            assert "1 fix, 0 ask, 0 note" in (run / "03-verdict.md").read_text(), "a dedented line the change exposed is new code"
+            review("helper crashes on a None argument", quote="def helper(s):", line=1)
+            assert rc.verdict(run.name) == 0
+            assert "0 fix, 0 ask, 1 note" in (run / "03-verdict.md").read_text(), "a crash on a context line stays a note"
         finally:
             os.chdir(previous)
