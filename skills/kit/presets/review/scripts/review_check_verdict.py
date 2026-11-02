@@ -13,7 +13,7 @@ DENIED = re.compile(r"\b(cannot|can't|never|no|not|won't|doesn't|without)\s+((lo
 # A note that opens by naming the defect as older than the change stays a note (check.md: a fix needs a defect
 # this change introduced). Trial 6: "Older defect, not from this change ... KeyError traceback" ran two more
 # rounds. Only the opening counts, so "fixes the older bug but crashes on empty input" is still a crash.
-OLDER = re.compile(r"(potential issue, not confirmed:\s*)?(an? )?(older (defect|gap|fault|bug)s?|not (from|added by|introduced by|made by) this change)\b", re.I)
+OLDER = re.compile(r"[`*_\s]*((follow-up|potential issue, not confirmed):[`*_\s]*)?(an? )?(older (defect|gap|fault|bug)s?|not (from|added by|introduced by|made by) this change)\b", re.I)
 
 
 def crashes(problem):

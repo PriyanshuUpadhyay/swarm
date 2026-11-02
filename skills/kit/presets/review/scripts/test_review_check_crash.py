@@ -56,6 +56,9 @@ def test_crash_note():
             review("older defects, not from this change: int() crashes with a traceback")
             assert rc.verdict(run.name) == 0
             assert "0 fix, 0 ask, 1 note" in (run / "03-verdict.md").read_text(), "a plural older opening stays a note"
+            review("follow-up: **older defect**, int() crashes with a traceback")
+            assert rc.verdict(run.name) == 0
+            assert "0 fix, 0 ask, 1 note" in (run / "03-verdict.md").read_text(), "a follow-up older opening stays a note"
             review("fixes the older bug but crashes on empty input")
             assert rc.verdict(run.name) == 0
             assert "1 fix, 0 ask, 0 note" in (run / "03-verdict.md").read_text(), "older words in passing hide no crash"
