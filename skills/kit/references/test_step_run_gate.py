@@ -131,7 +131,7 @@ def test_change_review_file_rule(tmp):
     import block_resolver
     lines = block_resolver.check_lines(block_resolver.sections(
         (step_checks.KIT / "blocks" / "change-review" / "SKILL.md").read_text(encoding="utf-8")), "Check (script)")
-    line = next(l for l in lines if "file-review.md" in l)
+    line = next(l for l in lines if "file_review.py" in l)
     todos = [f"block change-review script: {l}" for l in lines]
     # kit-checks puts TMPDIR inside the repo, so the piece outside any repo gets its own folder under /tmp.
     outside = tempfile.mkdtemp(dir="/tmp")
@@ -158,9 +158,9 @@ def file_review_outside_a_repo(piece):
     assert run("done", piece, "01-ask", take(piece, "01-ask")).returncode == 0
     out = run("done", piece, "02-work", take(piece, "02-work"))
     assert out.returncode == 1 and "block change-review check failed" in out.stderr, out
-    (piece / "file-review.md").write_text("| file | claim | pass |\nVerdict: REQUEST CHANGES\n", encoding="utf-8")
+    (piece / "file-review.md").write_text("| index.html | fix | 1.2:1 contrast |\nVerdict: APPROVE\n", encoding="utf-8")
     out = run("done", piece, "02-work", take(piece, "02-work"))
     assert out.returncode == 1 and "block change-review check failed" in out.stderr, out
-    (piece / "file-review.md").write_text("| file | claim | pass |\nVerdict: APPROVE\n", encoding="utf-8")
+    (piece / "file-review.md").write_text("| index.html | pass | render at 1440 |\nVerdict: APPROVE\n", encoding="utf-8")
     out = run("done", piece, "02-work", take(piece, "02-work"))
     assert out.returncode == 0, out.stderr
