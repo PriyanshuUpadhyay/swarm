@@ -14,10 +14,13 @@ public struct UsageMeter: Decodable, Equatable, Sendable {
     public let reasonCode: String?
     public let asOfSeconds: Double?
     public let resetCredits: ResetCredits?
+    /// Claude only: the sign-in's plan, such as `max` or `pro`.
+    public let plan: String?
 
     public init(provider: String, account: String?, label: String, window: String?, windowMinutes: Int?,
                 usedPct: Int?, resetTimeSeconds: Double?, state: String, reason: String? = nil,
-                reasonCode: String? = nil, asOfSeconds: Double? = nil, resetCredits: ResetCredits? = nil) {
+                reasonCode: String? = nil, asOfSeconds: Double? = nil, resetCredits: ResetCredits? = nil,
+                plan: String? = nil) {
         self.provider = provider
         self.account = account
         self.label = label
@@ -30,6 +33,7 @@ public struct UsageMeter: Decodable, Equatable, Sendable {
         self.reasonCode = reasonCode
         self.asOfSeconds = asOfSeconds
         self.resetCredits = resetCredits
+        self.plan = plan
     }
 }
 
@@ -150,9 +154,55 @@ public struct UsageAccount: Equatable, Identifiable, Sendable {
     public let renewalArguments: [String]?
     /// Codex only; nil when the reader gave none.
     public var resetCredits: ResetCredits? = nil
+    /// Claude only: the sign-in's plan, such as `max`; nil when the reader gave none.
+    public var plan: String? = nil
 
     public var id: String { "\(provider)/\(name)" }
     public var worst: UsageWindow? { windows.max { ($0.usedPct, -$0.kind.order) < ($1.usedPct, -$1.kind.order) } }
+
+    /// A Claude reading with no 5h window: Max and Ultra plans no longer have one, so the
+    /// Session column shows that, not a missing reading.
+    public var hasNoSessionLimit: Bool {
+        provider == "claude" && !windows.isEmpty && !windows.contains { $0.kind == .session }
+    }
+
+    /// The account cannot run while any window is full; it can run again when the last full
+    /// window resets. Nil when no window is full.
+    public var full: FullAccount? {
+        let full = windows.filter { $0.usedPct >= 100 }
+        guard !full.isEmpty else { return nil }
+        // One full window with no reset time leaves the return time unknown.
+        let resets = full.map(\.resetAt)
+        return FullAccount(backAt: resets.contains(nil) ? nil : resets.compactMap { $0 }.max(),
+                           resets: resetCredits?.available ?? 0)
+    }
+}
+
+/// A full account: when it can run again, and how many Codex resets could free it now.
+public struct FullAccount: Equatable, Sendable {
+    public let backAt: Date?
+    public let resets: Int
+
+    /// "Full · back Wed 12:10 PM (in 1d 23h) · 3 resets ready". A return a week or more away
+    /// names the date, since a weekday alone would be ambiguous.
+    public func text(now: Date, timeZone: TimeZone = .current) -> String {
+        var parts = ["Full"]
+        if let backAt {
+            if backAt.timeIntervalSince(now) < 60 {
+                parts.append("back now")
+            } else {
+                let formatter = DateFormatter()
+                formatter.locale = Locale(identifier: "en_US_POSIX")
+                formatter.timeZone = timeZone
+                formatter.dateFormat = backAt.timeIntervalSince(now) < 6 * 86400 ? "EEE h:mm a" : "MMM d, h:mm a"
+                parts.append("back \(formatter.string(from: backAt)) (in \(shortDuration(until: backAt, now: now)))")
+            }
+        } else {
+            parts.append("reset time unknown")
+        }
+        if resets > 0 { parts.append("\(resets) \(resets == 1 ? "reset" : "resets") ready") }
+        return parts.joined(separator: " · ")
+    }
 }
 
 /// One account per provider and name, windows in column order. A provider row with no account and
@@ -191,7 +241,8 @@ public func accounts(from meters: [UsageMeter]) -> [UsageAccount] {
             problem: windows.isEmpty ? (group.compactMap(\.reason).first ?? "No reading") : nil,
             renewalArguments: first.provider == "claude" && group.contains(where: { $0.reasonCode == "token_expired" })
                 ? ["run", "claude", "--account", first.account ?? first.label, "--", "-p", "/usage"] : nil,
-            resetCredits: group.lazy.compactMap(\.resetCredits).first
+            resetCredits: group.lazy.compactMap(\.resetCredits).first,
+            plan: group.lazy.compactMap(\.plan).first
         )
     }
 }

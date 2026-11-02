@@ -251,3 +251,27 @@ func account(_ provider: String, _ name: String, _ windows: [UsageWindow]) -> Us
     claude.resetCredits = codex.resetCredits
     #expect(!BestAccount(account: claude, outlook: .lasts).offersReset)
 }
+
+@Test func aFullAccountSaysWhenItRunsAgainAndItsResets() {
+    let utc = TimeZone(identifier: "UTC")!
+    let now = Date(timeIntervalSince1970: 100_000) // Fri Jan 2 1970, 03:46:40 UTC
+    var codex = account("codex", "default", [window(.week, 100, resetIn: 47)])
+    codex.resetCredits = ResetCredits(available: 3, expiryTimeSeconds: nil)
+    #expect(codex.full?.text(now: now, timeZone: utc) == "Full · back Sun 2:46 AM (in 1d 23h) · 3 resets ready")
+    // Two full windows: it runs again only when the later one resets.
+    let both = account("claude", "c", [window(.week, 100, resetIn: 2), window(.fable, 100, resetIn: 200)])
+    #expect(both.full?.text(now: now, timeZone: utc) == "Full · back Jan 10, 11:46 AM (in 8d 8h)")
+    #expect(account("claude", "c", [window(.week, 100)]).full?.text(now: now, timeZone: utc) == "Full · reset time unknown")
+    #expect(account("claude", "c", [window(.week, 100, resetIn: 0)]).full?.text(now: now, timeZone: utc) == "Full · back now")
+    #expect(account("claude", "c", [window(.week, 99, resetIn: 2), window(.fable, 3, resetIn: 2)]).full == nil)
+}
+
+@Test func aClaudeReadingWithNoFiveHourWindowHasNoSessionLimit() throws {
+    #expect(account("claude", "max", [window(.week, 1), window(.fable, 0)]).hasNoSessionLimit)
+    #expect(!account("claude", "pro", [window(.session, 64), window(.week, 38)]).hasNoSessionLimit)
+    #expect(!account("codex", "w", [window(.week, 3)]).hasNoSessionLimit)
+    #expect(!account("claude", "out", []).hasNoSessionLimit)
+    let json = #"{"schema":"swarm.usage.v1","meters":[{"provider":"claude","account":"c","label":"c","window":"7d","window_minutes":10080,"used_pct":1,"state":"fresh","plan":"max"},{"provider":"codex","account":"w","label":"w","window":"primary","window_minutes":10080,"used_pct":4,"state":"fresh"}]}"#
+    let list = accounts(from: try UsageSnapshot.decode(Data(json.utf8)).meters)
+    #expect(list.map(\.plan) == ["max", nil])
+}

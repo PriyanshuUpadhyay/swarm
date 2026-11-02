@@ -220,6 +220,7 @@ mod tests {
                     reason_code: None,
                     as_of_seconds: Some(1_791_000_000),
                     reset_credits: None,
+                    plan: None,
                 };
                 if state == "stale" {
                     meter.set_reason(ReasonCode::RefreshFailed, None);

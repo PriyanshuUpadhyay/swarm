@@ -87,6 +87,7 @@ pub(super) fn status_meter(
         reason_code: None,
         as_of_seconds: None,
         reset_credits: None,
+        plan: None,
     };
     meter.set_reason(code, text);
     meter

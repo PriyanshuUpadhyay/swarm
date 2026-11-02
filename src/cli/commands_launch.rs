@@ -301,6 +301,8 @@ pub(crate) fn commands_launch(
                     extension.display().to_string(),
                     "--swarm-live".into(),
                     live.display().to_string(),
+                    "--swarm-bin".into(),
+                    std::env::current_exe()?.display().to_string(),
                 ]);
                 extra.splice(0..0, args);
                 if agent_id == "orchestrator" {
