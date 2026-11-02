@@ -358,4 +358,7 @@ if __name__ == "__main__":
     test_a_kit_update_alone_is_no_change()
     test_a_repo_off_block_is_no_change()
     test_a_damaged_step_file_and_control_text()
+    sys.path.insert(0, str(SCRIPT.parent))  # python3 -I does not add the script folder
+    from test_start_plan_auto import test_auto_approval
+    test_auto_approval(PLAN)
     print("ok")

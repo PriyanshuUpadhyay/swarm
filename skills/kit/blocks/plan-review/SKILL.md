@@ -20,6 +20,7 @@ metadata:
   - `approved` with notes, or `annotated`: change `plan.md` for each note, answer each note, run `plan-chart`, and start another round. Any change to the plan needs a new round, because the approval holds only for the files the owner saw.
   - `dismissed`: ask the owner in chat.
 - Start the work as step 4 of `skills/swarm/SKILL.md` says. `start_plan.py` owns the stop rule, and its docstring says when a plan needs this round.
+- When the owner approves in words instead of on the page, save their message to a file, add the line `Auto approval: "<their exact words>"` to `plan.md`, run `plan-chart`, then run `start_plan.py <run> --auto <file>`. The script refuses words that are not in the file and a page drawn from an older `plan.md`. Never write the words yourself.
 - An approved page or comment round elsewhere is never an approval of the plan.
 
 ## Example

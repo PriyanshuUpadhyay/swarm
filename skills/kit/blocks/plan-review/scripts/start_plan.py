@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Start the step run of a plan only when its stop rule holds.
 
-  start_plan.py <run>    <run> holds plan.md, plan.html, and the rounds in plan-review/
+  start_plan.py <run>                  <run> holds plan.md, plan.html, and the rounds in plan-review/
+  start_plan.py <run> --auto <file>    first record the owner's approval from their words in <file>, then start
 
 A plan whose `Preset:` line names a `Stop: chat` preset, and whose File, Needs, Holds, and Block rows equal
 that preset's (in the table that the start reads), starts with no round. Any other plan, also one that adds
@@ -9,12 +10,18 @@ a step, a block, or a decoy table, needs the newest review round to have approve
 it is now, so an edit to plan.md after the round stops the start. A preset with a `Start:`
 line runs its own step run, so this script makes no step files for it and prints that command.
 
+`--auto` is for an owner who approved in words, not on the page. plan.md names the words on a line
+`Auto approval: "<the owner's words>"`, and <file> holds the owner's message. It refuses when the words are
+not in <file> exactly, or when plan.html is not drawn from plan.md as it is now. It writes a normal round
+file for plan.html with the words, the file, and the plan.md hash, so the drift and edit refusals stay.
+
 A run whose step files exist starts again only when each file still matches plan.md (see drift): the same
 needs, holds, Writes and Optional lines, brief, and blocks, and no file without a row. A plan that adds a step
 only makes the new file. Any other change refuses and asks for a new run folder that names this one.
 """
 
 import hashlib
+import json
 import re
 import sys
 from pathlib import Path
@@ -42,6 +49,30 @@ def approved(run):
         if not drawn or drawn[1] != hashlib.sha256((run / "plan.md").read_text(encoding="utf-8").encode("utf-8")).hexdigest():
             raise SystemExit("plan.md changed after the owner approved plan.html; run plan-chart and start a new round")
     return start
+
+
+def auto(run, source):
+    """Write the next plan-review round as approved, from the owner's words in source; else SystemExit."""
+    run, source = Path(run), Path(source)
+    words = re.search(r'^Auto approval: "(.+)"$', (run / "plan.md").read_text(encoding="utf-8"), re.M)
+    if not words:
+        raise SystemExit('plan.md has no line Auto approval: "<the owner\'s words>"')
+    if not source.is_file() or words[1] not in read_utf8(source):
+        raise SystemExit(f"the words {words[1]!r} are not in {source}; quote the owner exactly, or run the plan-review round")
+    plan_sha = hashlib.sha256((run / "plan.md").read_bytes()).hexdigest()
+    drawn = re.search(r'<meta name="plan-md-sha256" content="(\w+)">', read_utf8(run / "plan.html")) if (run / "plan.html").is_file() else None
+    if not drawn or drawn[1] != plan_sha:
+        raise SystemExit("plan.html is not drawn from plan.md as it is now; run plan-chart first")
+    folder = run / "plan-review"
+    found = comment_round.rounds(folder) if folder.is_dir() else []
+    if missing := comment_round.unanswered(folder, found):
+        raise SystemExit(missing)
+    folder.mkdir(exist_ok=True)
+    n = found[-1][0] + 1 if found else 1
+    result = {"decision": "approved", "auto": {"words": words[1], "file": str(source.resolve()), "plan_sha256": plan_sha}}
+    data = {"files": comment_round.digests(folder, [str(run / "plan.html")]), "result": result}
+    (folder / f"{n}.json").write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    print(f"round {n}: approved by the owner's words in {source}")
 
 
 def drift(run):
@@ -104,9 +135,11 @@ def drift(run):
 
 
 def main(argv):
-    if len(argv) != 1:
+    if len(argv) not in (1, 3) or len(argv) == 3 and argv[1] != "--auto":
         raise SystemExit(__doc__.strip().splitlines()[2].strip())
     run = Path(argv[0])
+    if len(argv) == 3:
+        auto(run, argv[2])
     if start := approved(run):
         print(f"start with: {start}")
         return
