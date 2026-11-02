@@ -15,7 +15,7 @@ Take the small route only when all of these hold. Otherwise run the `implement` 
 - The change needs no new decision: no fork that the owner or a contract must settle.
 - It changes no public interface, stored data, wire format, permission, or secret.
 - The owner did not ask for a plan, a review page, or pair mode.
-- It fits in about 3 files and 100 lines.
+- It fits in about 3 files and 100 changed lines, not counting test files.
 
 ## Steps
 

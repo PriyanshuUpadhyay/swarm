@@ -10,8 +10,13 @@ DENIED = re.compile(r"\b(cannot|can't|never|no|not|won't|doesn't|without)\s+((lo
                     r"((a|an|any|to)\s+)?$", re.I)
 
 
+# A seat that names the defect as older than the change keeps it a note (check.md: a fix needs a defect this
+# change introduced). Trial 6: "Older defect, not from this change ... KeyError traceback" ran two more rounds.
+OLDER = re.compile(r"\bolder (defect|gap|fault|bug)\b|\bnot (from|added by|introduced by|made by) this change\b", re.I)
+
+
 def crashes(problem):
-    return any(not DENIED.search(problem[:m.start()]) for m in CRASH.finditer(problem))
+    return not OLDER.search(problem) and any(not DENIED.search(problem[:m.start()]) for m in CRASH.finditer(problem))
 
 
 def review_files(d, seats):
@@ -134,10 +139,14 @@ def verdict(name, only=None):
         else:  # the quote must be at the line the row names, or in code the diff removed from that file
             at = re.search(r":(\d+)(?:-(\d+))?", loc)
             new = diff.get(path, {}).get("new", {})
-            new_lines = [new[n] for n in range(int(at.group(1)), int(at.group(2) or at.group(1)) + 1) if n in new] if at else []
+            numbers = [n for n in range(int(at.group(1)), int(at.group(2) or at.group(1)) + 1) if n in new] if at else []
+            new_lines = [new[n] for n in numbers]
             # A crash on code the change added is a defect the change made, whatever kind the seat chose
-            # (trial 5: a crash on a bad stored date stayed a note). A limit: answer still closes it.
-            if kind == "note" and crashes(problem) and any(quote in line for line in new_lines):
+            # (trial 5: a crash on a bad stored date stayed a note). A limit: answer still closes it. A context
+            # line, or an added line whose text the diff also removed (an indent or a move), is older code.
+            moved = {line.strip() for line in diff.get(path, {}).get("removed", [])}
+            made = [new[n] for n in numbers if n in diff.get(path, {}).get("added", ()) and new[n].strip() not in moved]
+            if kind == "note" and crashes(problem) and any(quote in line for line in made):
                 kind = "fix"
             matches = [(i, match) for i, alternatives in enumerate(replied)
                        if (match := next((alt for alt in alternatives if alt[0] == path

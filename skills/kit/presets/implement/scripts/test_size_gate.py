@@ -40,7 +40,14 @@ with tempfile.TemporaryDirectory() as tmp:
     out = case(tmp, "five", {f"f{i}.py": 2 for i in range(5)})
     assert out.returncode == 1 and out.stdout.strip() == "raise: 5 files changed (small allows 3)", out
     out = case(tmp, "long", {"a.py": 60, "b.py": 41})
-    assert out.returncode == 1 and out.stdout.strip() == "raise: 101 lines changed (small allows 100)", out
+    assert out.returncode == 1 and out.stdout.strip() == "raise: 101 non-test lines changed (small allows 100)", out
+    # Test lines do not count toward the line limit (trial 6: 41 code lines and 128 test lines raised).
+    out = case(tmp, "tests", {"tasks.py": 41, "test_tasks.py": 128})
+    assert out.returncode == 0 and out.stdout.strip() == "small: 2 files, 41 lines (+128 test lines)", out
+    out = case(tmp, "testdir", {"src/a.py": 30, "tests/helpers.py": 90, "web/a.spec.ts": 50})
+    assert out.returncode == 0 and out.stdout.strip() == "small: 3 files, 30 lines (+140 test lines)", out
+    out = case(tmp, "notatest", {"contest.py": 101})
+    assert out.returncode == 1 and "101 non-test lines" in out.stdout, "a name that only contains test is code"
     out = case(tmp, "schema", {"a.py": 1, "db/schema.sql": 1})
     assert out.returncode == 1 and out.stdout.strip() == "raise: db/schema.sql is a schema or migration path", out
     out = case(tmp, "migration", {"migrations/0002_add.py": 3})
@@ -61,7 +68,7 @@ with tempfile.TemporaryDirectory() as tmp:
     late = Path(tmp, "binary", "late.txt")
     late.write_bytes(b"x\n" * 4500 + b"\0\n" + b"y\n" * 500)
     out = subprocess.run([sys.executable, "-I", str(GATE), "HEAD~1"], cwd=Path(tmp, "binary"), capture_output=True, text=True)
-    assert out.returncode == 1 and out.stdout.strip() == "raise: 5002 lines changed (small allows 100)", out
+    assert out.returncode == 1 and out.stdout.strip() == "raise: 5002 non-test lines changed (small allows 100)", out
     late.unlink()
     Path(tmp, "binary", "link").symlink_to("gone")
     out = subprocess.run([sys.executable, "-I", str(GATE), "HEAD~1"], cwd=Path(tmp, "binary"), capture_output=True, text=True)
