@@ -25,6 +25,9 @@ pub struct UsageMeter {
     /// cache has no field, which reads as none.
     #[serde(default)]
     pub reset_credits: Option<ResetCredits>,
+    /// Claude only: the plan the sign-in names (`subscriptionType`), such as `max` or `pro`.
+    #[serde(default)]
+    pub plan: Option<String>,
 }
 
 /// Usage limit resets that ChatGPT granted a Codex account (`docs/usage-format.md`).

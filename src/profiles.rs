@@ -333,6 +333,7 @@ mod tests {
             reason_code: code,
             as_of_seconds: None,
             reset_credits: None,
+            plan: None,
         }
     }
 
@@ -440,6 +441,7 @@ mod tests {
             reason_code: None,
             as_of_seconds: None,
             reset_credits: None,
+            plan: None,
         };
         let fable = UsageMeter {
             window: Some("fb".into()),

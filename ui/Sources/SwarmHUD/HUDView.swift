@@ -18,6 +18,10 @@ enum Palette {
     static let tertiary = Color(hex: 0x8F8F94)
     static let warn = Color(hex: 0xFFA049)
     static let critical = Color(hex: 0xFF5A4F)
+    /// The text of a full account's pill, softer than `critical` so "Full" leads.
+    static let criticalSoft = Color(hex: 0xFFB1AA)
+    /// The count of a Codex account's resets.
+    static let resets = Color(hex: 0x9FD0A8)
     /// The mascot's sweat drop: a cue, not a warning, so it is not one of the severity colours.
     static let sweat = Color(hex: 0x7FC4FF)
     static let track = Color.white.opacity(0.10)

@@ -124,7 +124,28 @@ pub(super) fn fresh_claude(
     }
     let payload =
         serde_json::from_slice(&bytes[..split]).map_err(|_| "Claude usage response is invalid")?;
-    claude_windows(account, &payload, now_seconds())
+    let plan = claude_plan(&credentials);
+    let mut meters = claude_windows(account, &payload, now_seconds())?;
+    for meter in &mut meters {
+        meter.plan = plan.clone();
+    }
+    Ok(meters)
+}
+
+/// The plan the sign-in names, such as `max` or `pro`. It is shown as a tag, so only a short
+/// lowercase word passes.
+pub(super) fn claude_plan(credentials: &Value) -> Option<String> {
+    credentials
+        .pointer("/claudeAiOauth/subscriptionType")
+        .and_then(Value::as_str)
+        .map(str::to_ascii_lowercase)
+        .filter(|plan| {
+            !plan.is_empty()
+                && plan.len() <= 24
+                && plan
+                    .bytes()
+                    .all(|byte| byte.is_ascii_lowercase() || byte == b'_')
+        })
 }
 
 pub(super) fn claude_windows(
