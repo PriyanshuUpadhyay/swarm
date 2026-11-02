@@ -53,6 +53,14 @@ with tempfile.TemporaryDirectory() as tmp:
     Path(tmp, "binary", "shot.png").write_bytes(bytes(range(256)) * 80)
     out = subprocess.run([sys.executable, "-I", str(GATE), "HEAD~1"], cwd=Path(tmp, "binary"), capture_output=True, text=True)
     assert out.returncode == 0 and out.stdout.strip() == "small: 2 files, 1 lines", out
+    # A new file that cannot be read raises, because its size is unknown.
+    locked = Path(tmp, "binary", "locked.txt")
+    locked.write_text("x\n")
+    locked.chmod(0)
+    out = subprocess.run([sys.executable, "-I", str(GATE), "HEAD~1"], cwd=Path(tmp, "binary"), capture_output=True, text=True)
+    locked.chmod(0o644)
+    assert out.returncode == 1 and "locked.txt cannot be read" in out.stdout, out
+    locked.unlink()
     # A base that starts with - is refused, not passed to git as an option.
     out = subprocess.run([sys.executable, "-I", str(GATE), f"--output={tmp}/x"], cwd=Path(tmp, "binary"), capture_output=True, text=True)
     assert out.returncode == 1 and "not a commit" in out.stderr and not Path(tmp, "x").exists(), out

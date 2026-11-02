@@ -76,7 +76,7 @@ FAMILY = {ext: fam for fam, exts in {
 if __name__ == "__main__":
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(errors="backslashreplace")
-    commands = {"start": start, "build": build, "verdict": verdict, "lint": lambda run, file: verdict(run, Path(file).name)}
-    if len(sys.argv) < 3 or sys.argv[1] not in commands or (sys.argv[1] == "lint" and len(sys.argv) != 4):
+    commands = {"start": start, "build": build, "verdict": lambda run: verdict(run), "lint": lambda run, file: verdict(run, Path(file).name)}
+    if len(sys.argv) < 3 or sys.argv[1] not in commands or len(sys.argv) != {"verdict": 3, "lint": 4}.get(sys.argv[1], len(sys.argv)):
         raise SystemExit(__doc__)
     sys.exit(commands[sys.argv[1]](*sys.argv[2:]))

@@ -43,3 +43,15 @@ def test_linked_rules(tmp):
     (folder / "plan.md").rename(folder / "plan-gone.md")
     out = run("take", folder, "02-work", "w")
     assert out.returncode == 1 and "which is gone" in out.stderr, out
+    # The rules are read before the claim, so a block edit after the claim cannot fail a take that claimed.
+    (folder / "plan-gone.md").rename(folder / "plan.md")
+    block.write_text(block.read_text(encoding="utf-8").replace("NEW RULE", "LINKED RULE TEXT"), encoding="utf-8")
+    edit = lambda _: block.write_text("## Rules\n- LATE EDIT\n", encoding="utf-8")
+    out, previous = StringIO(), os.getcwd()
+    try:
+        os.chdir(repo)
+        with redirect_stdout(out):
+            step_run.take(folder, "02-work", "w", on_claim=edit)
+    finally:
+        os.chdir(previous)
+    assert "LINKED RULE TEXT" in out.getvalue() and "LATE EDIT" not in out.getvalue(), out.getvalue()

@@ -72,5 +72,7 @@ def test_crash_note():
             (run / "02-review-empty.md").unlink()
             usage = subprocess.run([sys.executable, "-I", str(Path(rc.__file__)), "lint", run.name], capture_output=True, text=True)
             assert usage.returncode == 1 and "Traceback" not in usage.stderr, usage
+            usage = subprocess.run([sys.executable, "-I", str(Path(rc.__file__)), "verdict", run.name, "02-review.md"], capture_output=True, text=True)
+            assert usage.returncode == 1 and "rows ok" not in usage.stdout and "Traceback" not in usage.stderr, usage
         finally:
             os.chdir(previous)
