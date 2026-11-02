@@ -369,10 +369,17 @@ pub(crate) fn guard(args: &[String]) -> (String, String, i32) {
                 (_, None) => swarm::guard::Verdict::Deny(
                     "swarm guard: cannot read the hook payload on stdin within 2 s, so the call is blocked".into(),
                 ),
-                (Err(error), _) if error.kind() != std::io::ErrorKind::NotFound => {
+                (Err(error), _)
+                    if error.kind() != std::io::ErrorKind::NotFound && provider != Provider::Pi =>
+                {
                     swarm::guard::Verdict::Deny(format!(
                         "swarm guard: cannot read {path}: {error}, so the call is blocked"
                     ))
+                }
+                (_, Some(payload))
+                    if let Some(wait) = swarm::guard::inbox_wait(provider, event, &payload) =>
+                {
+                    wait
                 }
                 (_, Some(payload))
                     if swarm::host::is_worker(|name| env::var(name).ok())
@@ -380,6 +387,9 @@ pub(crate) fn guard(args: &[String]) -> (String, String, i32) {
                 {
                     wall
                 }
+                // Swarm's pi extension calls the guard for swarm's own walls only; the owner's
+                // pi extensions run the owner's rules (ADR 0086).
+                (_, Some(_)) if provider == Provider::Pi => swarm::guard::Verdict::Allow,
                 (list, Some(payload)) => swarm::guard::decide(
                     list.ok().as_deref(),
                     &path,
