@@ -43,7 +43,7 @@ test_build_start_and_skip()
 
 test_start_refuses_bad_needs()
 for gate in (test_done_needs_the_current_claim, test_done_refuses_a_stale_input, test_done_runs_script_checks,
-             test_kit_check_lines, test_change_review_file_rule, test_claim_survives_odd_logs, test_check_slots_and_todos,
+             test_kit_check_lines, test_change_review_file_rule, test_final_hash_after_export, test_claim_survives_odd_logs, test_check_slots_and_todos,
              test_check_runs_in_the_piece, test_check_results,
              test_take_logs_inside_the_lock, test_check_text_from_the_worker,
              test_done_sees_an_edit_during_checks, test_done_refuses_a_written_back_claim,

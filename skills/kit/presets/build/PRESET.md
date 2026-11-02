@@ -88,10 +88,10 @@ Offers: build-site, design-tokens, web-ui-basics, ui-motion, serve-local
 | `01-intake.md` | none | story, references, benchmark, form, size, limits, and delivery | reference-analysis | intake finds and labels the references |
 | `02-look.md` | intake | reference analysis and style grammar | reference-analysis | the look comes from measured references |
 | `03-story.md` | intake | story sheet, shot list, transitions, and scene graph | story | the story lives apart from the look |
-| `04-style-frames.md` | look, story | style frames, compare images, and scores | look-check, headless-shot, visual-qa | style frames prove the look before production |
+| `04-style-frames.md` | look, story | style frames, compare images, scores, and the first-look critic's verdict | look-check, headless-shot, visual-qa | style frames prove the look before production |
 | `05-animatic.md` | story | animatic and timing | build-canvas | the animatic proves the story before production |
 | `06-detail.md` | style-frames, animatic | detail passes and frame paths | build-canvas | detail passes bring scenes up to the frames |
-| `07-export.md` | style-frames, detail | QA log, export, and handoff | build-canvas, headless-shot, visual-qa, voice-reply | inspected frames and the handoff reach the owner |
+| `07-export.md` | style-frames, detail | QA log, export, `handoff.sha256`, the end critic's verdict on those bytes, and handoff | build-canvas, headless-shot, visual-qa, final-hash, voice-reply | inspected frames and the handoff reach the owner |
 
 For a website, the planner puts `build-site` in place of `build-canvas`, as the Steps section says.
 
@@ -105,9 +105,12 @@ For a website, the planner puts `build-site` in place of `build-canvas`, as the 
 
 - For a missing builder or visual critic seat, apply the seat routes in `blocks/worker-brief/SKILL.md`.
 - Steps 1 to 3 run in the main session, because they need the user's answers.
-- Steps 4 to 7 go to the role `build`. The builder scores its own rounds. When it closes a step
-  by `references/step-run.md`, the main session sends the final compare images to the role `review.visual`, and a `miss`
-  from that critic reopens the step.
+- Steps 4 to 7 go to the role `build`. The builder scores its own rounds. On every route that builds,
+  the role `review.visual` judges twice: a first look at the style frames of `04-style-frames`, and an
+  end look at the bytes in `handoff.sha256` of `07-export`. Steps 5 and 6 get no critic seat; the
+  builder's own scores and the main session's look cover them. A `miss` reopens the step. When the
+  critic seat cannot start a browser (the Codex sandbox), the main session renders the frames by
+  `blocks/headless-shot/SKILL.md` and sends those.
   [orchestration.json](orchestration.json) declares both roles, and the runtime adapter resolves
   each one with its fallbacks.
 - Before two builder seats run at once, each owns its files in a named subfolder; `05-animatic`

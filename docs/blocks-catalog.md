@@ -39,6 +39,7 @@ Status: ✅ exists, ✂️ cut from a skill next, ⬜ later, 🆕 new, 🔒 stay
 | build-canvas | pack | a drawn piece rendered from time and one seed | look, story, shot list → piece | `blocks/build-canvas` with `references/mark-making.md` | build | ✅ |
 | build-3d | pack | a 3D scene or hero | tokens, story → scene | build `build.md` toolbox | build, 3D sites | ⬜ after a second 3D task |
 | headless-shot | step | how shots are taken | URL or file → shots | `blocks/headless-shot` (owner of the shot and compare commands) | implement, build | ✅ |
+| final-hash | step | the handed-off bytes are the checked bytes | deliverable files → `handoff.sha256` | `blocks/final-hash` | build | ✅ |
 | visual-qa | step | the visual verdict and the QA log | frames, playback → QA log | `blocks/visual-qa` | build | ✅ |
 | web-ui-basics | rule | the floor for one static page | page → pass or fail | `blocks/web-ui-basics` | any static page | ✅ HTML only |
 | page-shelf | step | how a built page reaches the owner | page folder → shelf URL, hash, source, commit | `blocks/page-shelf` | page-comments, planner, any static page | ✅ basic |

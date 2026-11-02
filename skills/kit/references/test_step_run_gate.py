@@ -108,7 +108,7 @@ def test_kit_check_lines(tmp):
             (runnable if step_checks.RUN_FORM.match(line) else reader).append(f"{file.parent.name}: {line[:40]}")
             filled = re.sub(r"\{\{\w+\}\}", "site/x", line)  # start fills a param in the command with one quoted word
             assert any(p.match(filled + ": ok") for _, p in step_checks.block_checks(file.parent.name)), line
-    assert len(runnable) == 12 and len(reader) == 10, (runnable, reader)
+    assert len(runnable) == 13 and len(reader) == 10, (runnable, reader)
     # The kit's own test scripts run through done with <kit root> filled and pass.
     for block in ("plan-review", "comment-round"):
         line = next(l for l in block_resolver.check_lines(block_resolver.sections(
@@ -163,4 +163,23 @@ def file_review_outside_a_repo(piece):
     assert out.returncode == 1 and "block change-review check failed" in out.stderr, out
     (piece / "file-review.md").write_text("| index.html | pass | render at 1440 |\nVerdict: APPROVE\n", encoding="utf-8")
     out = run("done", piece, "02-work", take(piece, "02-work"))
+    assert out.returncode == 0, out.stderr
+
+
+def test_final_hash_after_export(tmp):
+    """The export step closes on the recorded bytes; an edit to the page after the hash makes done refuse."""
+    import block_resolver
+    line = block_resolver.check_lines(block_resolver.sections(
+        (step_checks.KIT / "blocks" / "final-hash" / "SKILL.md").read_text(encoding="utf-8")), "Check (script)")[0]
+    site = Path(tmp, "export-piece")
+    site.mkdir()
+    (site / "index.html").write_text("<h1>v1</h1>\n", encoding="utf-8")
+    subprocess.run("shasum -a 256 index.html > handoff.sha256", shell=True, cwd=site, check=True)
+    folder = gate_run(tmp, "export", [f"block final-hash script: {line.replace('{{site}}', shlex.quote(str(site)))}"])
+    assert run("done", folder, "01-ask", take(folder, "01-ask")).returncode == 0
+    (site / "index.html").write_text("<h1>v2</h1>\n", encoding="utf-8")
+    out = run("done", folder, "02-work", take(folder, "02-work"))
+    assert out.returncode == 1 and "block final-hash check failed" in out.stderr, out
+    subprocess.run("shasum -a 256 index.html > handoff.sha256", shell=True, cwd=site, check=True)
+    out = run("done", folder, "02-work", take(folder, "02-work"))
     assert out.returncode == 0, out.stderr
