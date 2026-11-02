@@ -68,7 +68,7 @@ def auto(run, source):
     said = words[1].split()
     # Three whole words at least, so a short quote such as "ok" cannot match inside another word ("book").
     if len(said) < 3:
-        raise SystemExit(f"the words {words[1]!r} are too short; quote at least 3 words of the owner's message")
+        raise SystemExit(f"the words {words[1]!r} are too short; quote at least 3 words of the owner's message, or run the plan-review round")
     phrase = r"(?<!\w)" + r"\s+".join(map(re.escape, said)) + r"(?!\w)"
     if not source.is_file() or not re.search(phrase, read_utf8(source)):
         raise SystemExit(f"the words {words[1]!r} are not in {source}; quote the owner exactly, or run the plan-review round")
