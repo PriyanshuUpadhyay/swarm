@@ -5,7 +5,8 @@
   status <folder>              print each step's status, whether it is ready, and whether it is stale
   take <folder> <step> <who> [--force]   claim the step and print its file; force takes a stale claim
   done <folder> <step> <n>      set the step done, only for take's claim #<n>, when every todo is checked
-                                with evidence, no input is stale, and each runnable script check passes
+                                with evidence, no input or done step before it is stale, and each
+                                runnable script check passes
   skip <folder> <step> <reason> skip an open or active step, with the reason
   block <folder> <step> <reason> block an open or active step, with the reason
   amend <folder> <row> [--before <step>]  add one `Writes: none` step to a plan run, within plan.md's Amend: N
@@ -19,7 +20,6 @@ and `rev`.
 
 import datetime
 import fcntl
-import hashlib
 import os
 import re
 import stat
@@ -32,6 +32,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from step_checks import run_checks, work_root  # noqa: E402
 import step_scope  # noqa: E402
 import step_brief  # noqa: E402
+import step_links  # noqa: E402
+from step_inputs import (check_needs, need_files, needs, ready, revision, stale, stale_before,  # noqa: E402,F401
+                         stale_note, status_of, steps, waiting)
+SKILLS_HEAD = "Skills read: "
 
 TODO_HEAD = "## Todo (check a box only with its evidence after the colon; `done` refuses an empty one)"
 # Parse by this prefix, so a step file written under an older head wording still has its todos checked.
@@ -102,83 +106,6 @@ def table(skill_md):
     return rows
 
 
-def need_files(need, names):
-    """A Needs cell names steps by their word ("question", "local, web"); map each to its file."""
-    found = []
-    for word in re.split(r",|\band\b", need):
-        word = word.strip()
-        if word and word != "none":
-            first = word.split()[0]
-            exact = [n for n in names if n.split("-", 1)[1] == first]  # an exact word wins over a prefix
-            found += exact or [n for n in names if n.split("-", 1)[1].startswith(first)]
-    return list(dict.fromkeys(found))
-
-
-def check_needs(rows):
-    """Each step's needed step files, or SystemExit naming the step and the word of the first defect."""
-    names = [r[0] for r in rows]
-    uses, word_of = {}, {}
-    for name, need, _ in rows:
-        uses[name] = []
-        for word in (w.strip() for w in re.split(r",|\band\b", need)):
-            if not word or word == "none":
-                continue
-            found = need_files(word, names)
-            if not found:
-                raise SystemExit(f"step {name} needs {word!r}, which no step gives")
-            if len(found) > 1:
-                raise SystemExit(f"step {name} needs {word!r}, which fits {', '.join(found)}; name one")
-            if found[0] not in uses[name]:
-                uses[name] += found
-            word_of[name, found[0]] = word
-    done, path = set(), []
-
-    def walk(name):
-        if name in path:
-            ring = path[path.index(name):] + [name]
-            raise SystemExit("cycle: " + " -> ".join(f"{a} needs {word_of[a, b]!r}" for a, b in zip(ring, ring[1:])) + f" -> {name}")
-        if name not in done:
-            path.append(name)
-            for n in uses[name]:
-                walk(n)
-            path.pop()
-            done.add(name)
-
-    for name in names:
-        walk(name)
-    return uses
-
-
-def needs(folder, step):
-    line = (Path(folder) / f"{step}.md").read_text(encoding="utf-8").splitlines()[1]
-    return [n.strip().split("@")[0] for n in line.removeprefix("Uses:").split(",") if n.strip()]
-
-
-def revision(folder, step):
-    rest = (Path(folder) / f"{step}.md").read_text(encoding="utf-8").split("\n", 1)[1]
-    return hashlib.sha1(rest.encode()).hexdigest()[:12]
-
-
-def status_of(folder, step):
-    return (Path(folder) / f"{step}.md").read_text(encoding="utf-8").splitlines()[0].removeprefix("Status: ")
-
-
-def steps(folder):
-    return sorted(p.stem for p in Path(folder).glob("[0-9][0-9]-*.md"))
-
-
-def ready(folder, step, need=None):
-    need = needs(folder, step) if need is None else need
-    return all(status_of(folder, n).split()[0] in ("done", "skipped") for n in need)
-
-
-def stale(folder, step, rev=revision):
-    """The needed steps whose revision changed after this step took them."""
-    line = (Path(folder) / f"{step}.md").read_text(encoding="utf-8").splitlines()[1]
-    used = dict(u.strip().split("@", 1) for u in line.removeprefix("Uses:").split(",") if "@" in u)
-    return [n for n, r in used.items() if rev(folder, n) != r]
-
-
 def claim_of(folder, step):
     """The number of the step's newest take, from events.log."""
     events = Path(folder) / "events.log"
@@ -205,20 +132,23 @@ def write_step(file, text):
         temporary.unlink(missing_ok=True)
 
 
+def resolve_start_blocks(folder, rows):
+    """{step: (Skills read items, rules, todos)} for the rows that name blocks, as start writes them."""
+    if not (selected := {name: ids for name, _, _, ids, *_ in rows if ids is not None}):
+        return {}
+    import block_resolver
+    root, piece = work_root(folder)
+    site = str(piece.relative_to(root))
+    return block_resolver.resolve_blocks(
+        root, selected, "default", blocks_dir=Path(__file__).resolve().parents[1] / "blocks",
+        params_override={"site": site, "shots": str(Path(site) / "shots")}, judge_todos=True)[0]
+
+
 def start(folder, skill_md):
     folder = Path(folder)
     rows = table(skill_md)
     names = [r[0] for r in rows]
-    selected = {name: ids for name, _, _, ids, *_ in rows if ids is not None}
-    blocks = {}
-    if selected and not all((folder / f"{name}.md").exists() for name in names):
-        sys.path.insert(0, str(Path(__file__).resolve().parent))
-        import block_resolver
-        root, piece = work_root(folder)
-        site = str(piece.relative_to(root))
-        blocks, _, _ = block_resolver.resolve_blocks(
-            root, selected, "default", blocks_dir=Path(__file__).resolve().parents[1] / "blocks",
-            params_override={"site": site, "shots": str(Path(site) / "shots")}, judge_todos=True)
+    blocks = {} if all((folder / f"{name}.md").exists() for name in names) else resolve_start_blocks(folder, rows)
     uses = check_needs([r[:3] for r in rows])
     brief = step_brief.sections(skill_md)
     folder.mkdir(parents=True, exist_ok=True)
@@ -229,10 +159,12 @@ def start(folder, skill_md):
         read, rules, todos = blocks.get(name, ([], "", []))
         if any(token in rules + "\n".join(todos) for token in ("blocks/", "the kit's `references/", "<kit root>")):
             rules = f"Kit blocks (`blocks/<id>/`) and the kit's `references/` are under {kit_path(Path(__file__).resolve().parents[1])} (the kit root).\n{rules}"
-        extra = (f"Skills read: {', '.join(read)}\n\n## Rules for this step\n{rules}\n" if read else "")
-        scope = "" if writes is None else f"Writes: {', '.join(writes) or 'none'}\n" + ("Optional: yes\n" if optional else "")
+        kit = rules.split("\n", 1)[0] + "\n" if rules.startswith("Kit blocks (") else ""
+        # The rules are linked; take prints them in full (step_links.py).
+        extra = (f"{SKILLS_HEAD}{', '.join(read)}\n\n{step_links.RULES_HEAD}\n{kit}{step_links.source_line(skill_md)}\n" if read else "")
+        scope = step_scope.scope_lines(writes, optional)
         file.write_text(f"Status: open\nUses: {', '.join(uses[name])}\n{scope}\n{brief.get(name, '')}{extra}"
-                        f"{TODO_HEAD}\n" + "".join(f"- [ ] {item}: \n" for item in [holds] + todos)
+                        f"{TODO_HEAD}\n" + "".join(f"- [ ] {item}: \n" for item in [holds] + step_links.unique_judges(todos))
                         + f"\n{RESULT_HEAD}\n", encoding="utf-8")
     print(folder)
 
@@ -242,7 +174,7 @@ def status(folder, need_of=None, rev=revision):
         s = status_of(folder, step)
         old = stale(folder, step, rev) if s.split()[0] in ("active", "done") else []
         note = (f"  (stale: {', '.join(old)})" if old
-                else "  (ready)" if s == "open" and ready(folder, step, need_of and need_of.get(step)) else "")
+                else "  (ready)" if s == "open" and ready(folder, step, need_of and need_of.get(step), rev) else "")
         print(f"{step}: {s}{note}")
 
 
@@ -274,9 +206,14 @@ def take(folder, step, who, need=None, rev=revision, force=False, on_claim=None)
         if owner.startswith("active ") and holder != who and not force:
             raise SystemExit(f"{step} is active for {holder}; use --force if that run is gone")
         need = needs(folder, step) if need is None else need
-        if not ready(folder, step, need):
+        if waiting(folder, need):
             raise SystemExit(f"{step} is not ready; it needs {', '.join(need)}")
+        if chain := stale_before(folder, need, rev):
+            stale_step, why, action = stale_note(folder, chain, rev)
+            raise SystemExit(f"{step} is not ready: {stale_step} is stale {why}; {action}")
         step_scope.check_reviewer(folder, step, who)
+        # A changed block refuses here, before the claim, so the step stays as it was.
+        rules = step_links.rules_for(folder, step, "\n".join(lines), table, resolve_start_blocks, SKILLS_HEAD)
         uses = ", ".join(f"{n}@{rev(folder, n)}" for n in need)
         # done compares the work tree with this one, so only changes made after the take count. It is read before
         # the claim, so a git failure (SystemExit) leaves the step as it was.
@@ -295,7 +232,8 @@ def take(folder, step, who, need=None, rev=revision, force=False, on_claim=None)
         log(folder, step, f"take {who}")
         if tree:
             log(folder, step, f"base {tree}")
-    print(text)
+    # The file keeps the link; the worker reads the rules, resolved before the claim, in full here.
+    print(step_links.fill(text, rules))
 
 
 def done(folder, step, claim, rev=None, ends=(RESULT_HEAD,), rev_of=revision):
@@ -323,16 +261,24 @@ def done(folder, step, claim, rev=None, ends=(RESULT_HEAD,), rev_of=revision):
                              f"the step is {plain(state)}")
         if old := stale(folder, step, rev_of):
             raise SystemExit(f"{step} is not done: its input changed after take: {', '.join(old)}; take it again")
+        refuse_stale_chain(folder, step, rev_of)
         step_scope.check(folder, step, text)
         run_checks(folder, step, todo, text)
         if file.read_text(encoding="utf-8") != text:
             raise SystemExit(f"{step} is not done: its file changed while its checks ran; run done again")
         if old := stale(folder, step, rev_of):
             raise SystemExit(f"{step} is not done: its input changed while its checks ran: {', '.join(old)}; take it again")
+        refuse_stale_chain(folder, step, rev_of)  # again, as for the direct inputs: a step further back can change too
         rev = rev or revision(folder, step)
         write_step(file, f"Status: done {rev}\n" + text.split("\n", 1)[1])
     log(folder, step, f"done {rev}")
     print(f"{step}: done {rev}")
+
+
+def refuse_stale_chain(folder, step, rev_of):
+    if chain := stale_before(folder, needs(folder, step), rev_of):
+        stale_step, why, action = stale_note(folder, chain, rev_of)
+        raise SystemExit(f"{step} is not done: {stale_step}, on its input chain, is stale {why}; {action}, then this step")
 
 
 def skip(folder, step, *why):

@@ -10,7 +10,7 @@ metadata:
   gives: "findings with paths, contrary evidence, and gaps"
   conflicts: ""
   users: "research"
-  source: "skills/research/SKILL.md (02-local, moved here 2026-10-13)"
+  source: "presets/research/PRESET.md (02-local, moved here 2026-10-13)"
 ---
 
 ## Rules

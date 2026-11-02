@@ -148,31 +148,28 @@ AGY has no account source yet.
 
 ### Bundled workflow skills
 
-The plugin `swarm` holds the skills in `skills/kit/skills/` and the blocks they read in
-`skills/kit/blocks/`. A block is never called by itself: a skill reads it, and `plan` and `implement`
-put blocks into the steps of a run. Claude Code shows a skill as `/swarm:<name>`, pi as
-`/skill:<name>`.
+The plugin `swarm` holds three skills in `skills/kit/skills/`, the verb presets in
+`skills/kit/presets/`, and the blocks in `skills/kit/blocks/`. `swarm` is the one workflow skill: it
+matches the task to a preset, or plans from the blocks with no preset. A block is never called by
+itself; the `swarm` skill puts blocks into the steps of a run. Claude Code shows a skill as `/swarm:<name>`, pi
+as `/skill:<name>`.
 
-| Skill | Use |
+| Skill or preset | Use |
 |---|---|
-| `plan` | The front door of every work verb: plan from its preset, show the flowchart, run it after approval |
-| `research` | Answer one question in a short report; can send the web part to a `search.web` seat |
-| `web-search` | Three seats search different parts of the web; the chair merges |
+| `swarm` (skill) | Plan any task from blocks, starting from a preset; show the flowchart, run it after approval |
+| `research` | Answer one question in a short report; its web step loads the `web-search` block |
 | `council` | Claude, GPT, and Gemini voices debate in panes and end in one verdict |
 | `implement` | Run one change through frame, design, contracts, impact, build, review, and close, in `pair` mode (one approved diff of about 40 lines at a time) or `auto` mode (stops before a push or merge) |
 | `review` | Judge a diff with a script verdict, walk a PR into a pending review, or run a cleanup pass on request |
 | `build` | Pictures, films, and sites drawn by code |
 | `explain` | Explain a subject with one running example |
-| `decisions`, `engineering-standards` | ADRs and engineering rules |
-| `orchestrate-claude`, `-codex`, `-agy` | Bind a skill's worker needs to each agent CLI |
+| `swarm-orchestrator`, `swarm-voice` (skills) | The parent and child sides of a swarm session |
 
-`skills/kit/README.md` lists the removed skill names (`pair`, `deliver`, `review-check`, `review-walk`,
-`cleanup-gate`) and what to type now.
+`skills/kit/README.md` lists the removed skill names and what to type now.
 
 The proof, code extraction, and checked-unit rules live in `skills/kit/blocks/prove-it-works/SKILL.md`,
 `skills/kit/blocks/when-to-extract/SKILL.md`, and `skills/kit/blocks/checked-units/SKILL.md`.
-The web composer's `/` menu omits the runtime adapters, swarm pane skills, engineering standards,
-and decisions. These skills stay available to the model.
+The web composer's `/` menu omits the swarm pane skills. They stay available to the model.
 
 The roles these skills ask for (`council.gpt`, `search.web`, `review.deep`, and others) are the
 profile names in `default-profiles.json`. Some workflows also need the dotfiles references,

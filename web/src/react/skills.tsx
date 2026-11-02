@@ -10,8 +10,7 @@ import { LoadFailed } from "./load-failed";
 const SkillsPage = lazy(() => import("./skills-page").then((m) => ({ default: m.SkillsPage })));
 
 const VIEWS: [SkillsView, string][] = [
-  ["catalog", "Catalog"],
-  ["graph", "Skill graph"],
+  ["catalog", "Blocks"],
   ["composer", "Composer"],
 ];
 

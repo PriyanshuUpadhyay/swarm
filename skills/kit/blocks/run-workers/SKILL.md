@@ -9,8 +9,8 @@ metadata:
   needs: "a skill's seat list or orchestration.json, and an injected agent-host contract"
   gives: "visible seats with accepted results, closed at the end"
   conflicts: ""
-  users: "orchestrate-claude, orchestrate-codex, orchestrate-agy, council, web-search, review"
-  source: "skills/orchestrate-claude/SKILL.md, skills/orchestrate-codex/SKILL.md, skills/orchestrate-agy/SKILL.md (the shared text, moved here 2026-10-13); skills/council/SKILL.md (Execution backend); council 2026-10-26-board-roles-blocks (the take-the-task move)"
+  users: "council, web-search, review, the agent-runtime hook"
+  source: "skills/orchestrate-claude, -codex, and -agy SKILL.md (the shared text, moved here 2026-10-13; the runtime lines, moved here 2026-10-31); presets/council/PRESET.md (Execution backend); council 2026-10-26-board-roles-blocks (the take-the-task move)"
 ---
 
 ## Rules
@@ -27,6 +27,12 @@ metadata:
 - Send the briefs of one stage under one deadline. Sending returns when the worker took the task, not when it finished; the worker's finish rings the chair. The kit's `references/fan-out.md` owns what goes out in parallel and the chair's work while seats run.
 - Accept only a result that the host's durable channel confirms and that names its seat. Pass the skill's refusal or degraded state to the chair as the skill says.
 - At the end, close only the seats this run started, and check that they are gone.
+- Write every brief by `blocks/worker-brief/SKILL.md`. A worker session follows the worker rules of that block, not this one.
+- Under the swarm host, the host reference is `references/host-swarm.md` in this block's folder.
+- Each runtime adds its own lines; follow the one that the `[agent-runtime: ...]` line names:
+  - claude: the reports folder is `~/.claude/reports/`. Native background subagents are allowed unless the host contract or the workflow requires a visible pane. Each Workflow `agent()` call pins the model of the workflow's named seat role, or Sonnet when it names no role. Workflow fan-out allows only Sonnet or Haiku; refuse an Opus or Fable route.
+  - codex: no reports folder. Load the host skill that the `[agent-host: ...]` contract names. Collaboration workers (`spawn_agent`) run in-process as background workers; use them unless the host contract or the workflow requires a visible pane.
+  - agy: no reports folder. Load the host skill that the `[agent-host: ...]` contract names. Native AGY subagents are allowed unless the host contract or the workflow requires a visible pane. Never pass a prompt as a launch argument; send the first task only after the host sees an input-ready AGY session.
 
 ## Example
 Initial state: a council needs three seats, `council.claude`, `council.gpt`, and `council.gemini`.

@@ -399,7 +399,7 @@ pub(crate) fn commands_info(args: &[String]) -> Result<Option<()>, Box<dyn std::
 /// `swarm kit --json | check`: the installed kit's own script gives every fact the Skills page
 /// shows, so the page cannot draw a skill that the kit would run another way (ADR 0111).
 fn kit(mode: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let script = swarm::paths::root_dir()?.join("kit/skills/plan/scripts/preset.py");
+    let script = swarm::paths::root_dir()?.join("kit/skills/swarm/scripts/preset.py");
     // -I keeps the owner's site packages and cwd out; -B writes no bytecode into the kit.
     let status = std::process::Command::new("python3")
         .arg("-I")

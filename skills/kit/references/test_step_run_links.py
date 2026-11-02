@@ -1,0 +1,79 @@
+# Step files link their block rules by hash; take prints them and refuses a changed block (A9, kit-right-size).
+import re
+
+from test_step_run_support import *
+
+
+def test_linked_rules(tmp):
+    """The file holds a link, not the rules; take prints the rules; an edited block refuses take; judge todos are unique."""
+    repo = Path(tmp, "links")
+    repo.mkdir()
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    subprocess.run(["git", "init", "-q", str(repo)], env=env, check=True)
+    (repo / "docs").mkdir()
+    block = repo / "docs" / "visual.md"
+    block.write_text("## Rules\n- LINKED RULE TEXT\n## Check (script)\n- none: text only\n## Check (judge)\n"
+                     "- Is it visual?\n- Is it visual?\n", encoding="utf-8")
+    (repo / ".blocks.toml").write_text('[params]\nsource_of_truth = "docs/visual.md"\n[add]\n02-work = ["docs/visual.md"]\n',
+                                       encoding="utf-8")
+    folder = repo / "piece" / "ink"
+    folder.mkdir(parents=True)
+    (folder / "plan.md").write_text("| File | Needs | Holds | Writes | Block | Why |\n|---|---|---|---|---|---|\n"
+                                    "| `01-ask.md` | none | the ask | none | requirements | it frames |\n"
+                                    "| `02-work.md` | ask | the work | none | voice-reply | it replies |\n", encoding="utf-8")
+    out = subprocess.run([sys.executable, SCRIPT, "start", folder, folder / "plan.md"], cwd=repo, env=env,
+                         capture_output=True, text=True)
+    assert out.returncode == 0, out.stderr
+    text = (folder / "02-work.md").read_text(encoding="utf-8")
+    assert "LINKED RULE TEXT" not in text and f"Rules from: {(folder / 'plan.md').resolve()}" in text, text
+    assert text.count("judge: Is it visual?") == 1, "a repeated judge question is one todo"
+    ask = folder / "01-ask.md"
+    ask.write_text(re.sub(r"- \[ \] (.*): \n", r"- [x] \1: ok\n", ask.read_text(encoding="utf-8")), encoding="utf-8")
+    assert run("take", folder, "01-ask", "w").returncode == 0 and run("done", folder, "01-ask", "1").returncode == 0
+    # A brief line with the link words, above the rules head, is not the link.
+    work = folder / "02-work.md"
+    work.write_text(work.read_text(encoding="utf-8").replace("Skills read: ", "Rules from: /gone/plan.md\n\nSkills read: ", 1),
+                    encoding="utf-8")
+    out = run("take", folder, "02-work", "w")
+    assert out.returncode == 0 and "LINKED RULE TEXT" in out.stdout and out.stdout.index("Rules from: ") < out.stdout.index("LINKED"), out
+    block.write_text(block.read_text(encoding="utf-8").replace("LINKED RULE TEXT", "NEW RULE"), encoding="utf-8")
+    out = run("take", folder, "02-work", "w")
+    assert out.returncode == 1 and "its blocks changed after start" in out.stderr, out
+    assert (folder / "02-work.md").read_text(encoding="utf-8").startswith("Status: active w #1"), "a refused take claims nothing"
+    (folder / "plan.md").rename(folder / "plan-gone.md")
+    out = run("take", folder, "02-work", "w")
+    assert out.returncode == 1 and "which is gone" in out.stderr, out
+    # CRLF line ends keep the link (take reads text mode); an edited rules head refuses, as a lost Skills read line does.
+    (folder / "plan-gone.md").rename(folder / "plan.md")
+    block.write_text(block.read_text(encoding="utf-8").replace("NEW RULE", "LINKED RULE TEXT"), encoding="utf-8")
+    plain = work.read_text(encoding="utf-8")
+    work.write_bytes(plain.replace("\n", "\r\n").encode("utf-8"))
+    out = run("take", folder, "02-work", "w")
+    assert out.returncode == 0 and "LINKED RULE TEXT" in out.stdout, out
+    work.write_text(work.read_text(encoding="utf-8").replace("## Rules for this step", "## Rules for this step "), encoding="utf-8")
+    out = run("take", folder, "02-work", "w")
+    assert out.returncode == 1 and "links its rules but has no `## Rules for this step` line" in out.stderr, out
+    work.write_text(plain, encoding="utf-8")
+    (folder / "plan.md").rename(folder / "plan-gone.md")
+    # A step with no blocks may hold a brief line with the link words; it has no rules to refuse.
+    import step_links
+    assert step_links.rules_for(folder, "03-x", "Status: open\nRules from: the owner's notes\n## Todo\n", None, None, "Skills read: ") is None
+    long_head = "Skills read: none\n## Rules for this step (written by implement_run.py start)\nRules from: the style guide\n"
+    assert step_links.rules_for(folder, "03-x", long_head, None, None, "Skills read: ") is None, "copied rules never refuse"
+    try:
+        step_links.rules_for(folder, "03-x", f"Status: open\nRules from: {folder / 'plan.md'}\n## Todo\n", None, None, "Skills read: ")
+        raise AssertionError("a link with no head and no Skills read line took")
+    except SystemExit as error:
+        assert "links its rules but has no" in str(error), error
+    # The rules are read before the claim, so a block edit after the claim cannot fail a take that claimed.
+    (folder / "plan-gone.md").rename(folder / "plan.md")
+    block.write_text(block.read_text(encoding="utf-8").replace("NEW RULE", "LINKED RULE TEXT"), encoding="utf-8")
+    edit = lambda _: block.write_text("## Rules\n- LATE EDIT\n", encoding="utf-8")
+    out, previous = StringIO(), os.getcwd()
+    try:
+        os.chdir(repo)
+        with redirect_stdout(out):
+            step_run.take(folder, "02-work", "w", on_claim=edit)
+    finally:
+        os.chdir(previous)
+    assert "LINKED RULE TEXT" in out.getvalue() and "LATE EDIT" not in out.getvalue(), out.getvalue()

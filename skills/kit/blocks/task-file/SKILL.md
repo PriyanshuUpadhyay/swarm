@@ -10,7 +10,7 @@ metadata:
   gives: "a task file and a status block on resume"
   conflicts: ""
   users: "implement"
-  source: "skills/implement/references/pair.md (One task file per task, moved here 2026-10-13); skills/implement/references/auto.md step 4; references/run-folder.md (where the folder is)"
+  source: "presets/implement/references/pair.md (One task file per task, moved here 2026-10-13); presets/implement/references/auto.md step 4; references/run-folder.md (where the folder is)"
 ---
 
 ## Rules

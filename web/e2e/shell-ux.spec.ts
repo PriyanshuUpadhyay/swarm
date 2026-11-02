@@ -173,7 +173,7 @@ test("the Skills catalog focuses and keeps its filter across a view switch", asy
   const filter = page.getByTestId("skills-filter");
   await expect(filter).toBeFocused();
   await filter.fill("review");
-  await page.getByTestId("skills-view-graph").click();
+  await page.getByTestId("skills-view-composer").click();
   await page.getByTestId("skills-view-catalog").click();
   await expect(filter).toHaveValue("review");
   await screenshot(page, "skills-filter");

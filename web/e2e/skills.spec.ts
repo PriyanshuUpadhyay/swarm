@@ -1,6 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
 import { resolve } from "node:path";
-import { crossings } from "../src/core/skill-crossings";
 
 // The Skills page (ADR 0111) on this repo's kit, which the e2e home links at ~/.swarm/kit.
 
@@ -21,75 +20,54 @@ async function open(tab: Page) {
   return errors;
 }
 
-/** Each box of the drawn graph, and each edge's points, in page pixels. */
-async function drawn(tab: Page) {
-  return tab.getByTestId("skill-graph").evaluate((graph) => {
-    const boxes = [...graph.querySelectorAll<HTMLElement>("[data-step]")].map((el) => {
-      const r = el.getBoundingClientRect();
-      return { file: el.dataset.step!, x: r.x, y: r.y, w: r.width, h: r.height };
-    });
-    const svg = graph.querySelector("svg")!.getBoundingClientRect();
-    const edges = [...graph.querySelectorAll<SVGPolylineElement>("[data-edge]")].map((el) => {
-      const [from, to] = el.dataset.edge!.split(">");
-      const points = [...el.points].map((p) => ({ x: p.x + svg.x, y: p.y + svg.y }));
-      return { from, to, points };
-    });
-    return { boxes, edges };
-  });
-}
-
-test("the Catalog shows each block's users, and an unused block says so", async ({ page }, info) => {
+test("the Blocks page shows the run tree of a starting plan beside the library, and a library pick finds the block in the tree", async ({ page }, info) => {
   const errors = await open(page);
   await page.getByTestId("skills-button").click();
   const dialog = page.getByTestId("skills");
+  const tree = page.getByTestId("skills-tree");
   await expect(dialog).toBeVisible();
+  await expect(page.getByTestId("skills-start")).toHaveValue("implement");
+  await expect(page.getByTestId("skills-front").locator("[data-block]")).toHaveText(["planner", "plan-chart", "plan-review"]);
+  await expect(tree.locator('[aria-level="1"][aria-expanded]')).toHaveCount(8);
+  await shoot(page, "blocks", info.project.name);
+
+  // A library pick opens the detail in the list and marks the block in the tree.
   await page.getByTestId("skills-filter").fill("change-review");
-  await dialog.locator('[data-block="change-review"]').click();
-  await expect(page.getByTestId("skills-used-by")).toContainText("implement · 06-review");
-  await expect(page.getByTestId("skills-used-by")).toContainText("named");
+  await page.getByTestId("skills-library").locator('[data-block="change-review"]').click();
+  await expect(page.getByTestId("skills-used-by")).toContainText("implement 06-review");
+  await expect(page.getByTestId("skills-where")).toContainText("In this plan at 06-review");
+  await expect(tree.locator('[data-block="change-review"][data-hit]')).toHaveCount(1);
+
+  // A block outside the plan says so.
+  await page.getByTestId("skills-start").selectOption("research");
+  await page.getByTestId("skills-library").locator('[data-block="change-review"]').click();
+  await expect(page.getByTestId("skills-where")).toContainText("Not in this plan");
   await page.getByTestId("skills-filter").fill("");
-  const unused = dialog.locator("[data-block]").filter({ hasText: "unused" }).first();
-  await unused.click();
-  await expect(page.getByTestId("skills-unused")).toHaveText("not used by a default preset");
-  // An offered block names the skills that offer it, and opens their graph.
-  await page.getByTestId("skills-filter").fill("html-diagram");
-  await dialog.locator('[data-block="html-diagram"]').click();
-  await expect(page.getByTestId("skills-offered-by")).toContainText("implement");
-  await shoot(page, "catalog", info.project.name);
+
+  // A family node names only the parts the step loads, and opens to all its parts.
+  const family = tree.locator('[data-family="sources"]').first();
+  await expect(family).toContainText("4 of 5 load here");
+  await family.locator("button").first().click();
+  await expect(family.locator('[role="group"] [data-block]')).toHaveCount(5);
+  await expect(family.locator('[data-block="link-check"]')).toContainText("not loaded here");
+
+  // The tree follows the tree view keys: Down moves, Left closes a step.
+  await page.getByTestId("skills-front").focus();
+  await page.keyboard.press("ArrowDown");
+  await expect(tree.locator('[data-key^="s:01"]')).toBeFocused();
+  await page.keyboard.press("ArrowLeft");
+  await expect(tree.locator('[data-key^="s:01"]')).toHaveAttribute("aria-expanded", "false");
+
+  await page.getByTestId("skills-start").selectOption("blank");
+  await expect(page.getByTestId("skills-summary")).toContainText("Blank plan");
+  await page.getByTestId("skills-start").selectOption("implement");
+  await tree.locator('[data-block="prove-it-works"]').first().click();
+  await expect(page.getByTestId("skills-detail")).toBeVisible();
+  await shoot(page, "blocks-implement", info.project.name);
+  await page.emulateMedia({ colorScheme: "dark" });
+  await shoot(page, "blocks-dark", info.project.name);
   expect(errors).toEqual([]);
 });
-
-for (const [name, width] of [
-  ["wide", 1280],
-  ["narrow", 760],
-] as const)
-  test(`the Skill graph draws every default skill with no edge through a card (${name})`, async ({ page }, info) => {
-    await page.setViewportSize({ width, height: 900 });
-    const errors = await open(page);
-    await page.keyboard.press("Meta+k");
-    await page.getByTestId("palette").getByText("Skills…").click();
-    await page.getByTestId("skills-view-graph").click();
-    const presets = page.getByRole("navigation", { name: "Default skills" }).locator("[data-preset]");
-    await expect(presets.first()).toBeVisible();
-    for (const preset of await presets.all()) {
-      await preset.click();
-      await expect(page.locator("[data-edge]").first()).toBeAttached();
-      expect(crossings(await drawn(page)), await preset.innerText()).toEqual([]);
-    }
-    await page.locator('[data-preset="implement"]').click();
-    // The plan front door runs before step 1, the duty blocks are marked, and offered blocks are off.
-    await expect(page.getByTestId("skills-front").locator("[data-block]")).toHaveText(["planner", "plan-chart", "plan-review"]);
-    await expect(page.locator('[data-step="06-review"] [data-duty]')).toHaveText(/change-review/);
-    await expect(page.locator('[data-step="05-build"] [data-duty]')).toHaveCount(0);
-    await expect(page.getByTestId("skills-offered").locator('[data-block="html-diagram"]')).toBeVisible();
-    await shoot(page, `graph-implement-${name}`, info.project.name);
-    await page.getByTestId("skills-offered").scrollIntoViewIfNeeded();
-    await shoot(page, `graph-implement-offered-${name}`, info.project.name);
-    await page.locator('[data-step="05-build"]').click();
-    await expect(page.getByTestId("skills-step")).toContainText("checked-units");
-    await shoot(page, `graph-${name}`, info.project.name);
-    expect(errors).toEqual([]);
-  });
 
 test("the Composer shows live text and graph, and Copy waits for Python to pass the exact text", async ({ page }, info) => {
   const errors = await open(page);

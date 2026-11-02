@@ -22,6 +22,7 @@ metadata:
   4. It has behavior that needs its own test.
   5. It sets a real boundary, such as a network, device, or storage edge, a trust boundary, or a public API.
 - "This function or file is getting long" alone is not a reason.
+- The deletion test: imagine the unit deleted. If only forwarding code goes with it, collapse it. If its complexity would come back in many callers, it earns its place.
 - The test also works in reverse. A helper with one caller that meets no reason goes back inline. A pass-through layer that repeats the same methods and arguments collapses.
 - Shrink state the same way. Prefer a returned value over a mutation, a local over a field, a field over module state, and module state over a global. Derive a value instead of syncing two copies. Name an invariant once, at the boundary, not in every consumer.
 - The test: a new reader answers "where does X come from?" and "what can change X?" in under 30 seconds. If not, cut layers or cut state.

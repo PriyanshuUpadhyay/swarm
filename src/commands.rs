@@ -166,7 +166,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!("swarm-menu-{}", uuid::Uuid::now_v7()));
         let kit = root.join(".swarm/kit");
         let visible = kit.join("skills/plan/SKILL.md");
-        let hidden = kit.join("skills/decisions/SKILL.md");
+        let hidden = kit.join("skills/swarm-voice/SKILL.md");
         let other = root.join("other/SKILL.md");
         for path in [&visible, &hidden, &other] {
             std::fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -186,7 +186,7 @@ mod tests {
         assert_eq!(codex[0].source, "swarm");
         let pi = pi_rows(&json!([
             {"name":"skill:plan","source":"skill","sourceInfo":{"path":visible}},
-            {"name":"skill:decisions","source":"skill","sourceInfo":{"path":hidden}},
+            {"name":"skill:swarm-voice","source":"skill","sourceInfo":{"path":hidden}},
             {"name":"skill:swarm","source":"skill","sourceInfo":{"path":other}},
             {"name":"skill:no-path","source":"skill"},
             {"name":"extension","source":"extension","sourceInfo":{"path":hidden}}

@@ -1,0 +1,55 @@
+# Engineering standards rows
+
+`blocks/engineering-standards/SKILL.md` (from the kit root) says how to read and apply a row.
+
+## 1. API contract
+
+| # | Rule | Status | Scope | Check | Source |
+|---|---|---|---|---|---|
+| A1 | JSON has no `Infinity` or `NaN` token. A quoted `"INFINITY"` is valid JSON but breaks a numeric field's type. | MUST | JSON payloads | judgment | RFC 8259 §6 |
+| A2 | A 401 from a bearer-protected resource must include a `WWW-Authenticate: Bearer` challenge. Use `error="invalid_token"` for an expired or invalid token. With no authentication information, normally omit the error code; `realm` is optional. A response body does not replace the challenge. | MUST | bearer-protected resource endpoints; preserve RFC SHOULD/MAY strength within the rule | judgment | [RFC 6750 §§3–3.1](https://datatracker.ietf.org/doc/html/rfc6750#section-3.1) |
+| A3 | Do not return a field whose value is computable from other fields in the same payload. | ADVICE | response bodies | judgment | Azure `rest-no-computable-fields` |
+| A4 | Treat an enum as extensible and document that new values may appear, unless the set can never change. | ADVICE | response enums | judgment | Azure `json-use-extensible-enums` |
+| A5 | `null` and an absent property must mean the same thing. One `null` cannot carry three meanings. | ADVICE | request and response bodies | judgment | Zalando 123 |
+| A6 | A boolean must not be null. If a third state is meaningful, use a named enum instead. | ADVICE | request and response bodies | judgment | Zalando 122 |
+| A7 | A quantity with a unit carries the unit as a field-name suffix. | ADVICE | numeric fields | judgment | AIP-141 |
+| A8 | A timestamp field is not named in the past tense, and an integer timestamp names its unit. `reset_time_millis`, not `resets_at`. | ADVICE | time fields | judgment | AIP-142 |
+| A9 | Model a variant as its own shape under `oneOf` with a `discriminator`, rather than as a sentinel inside a typed field. This is the answer to "should unlimited be -1 or null". | ADVICE | payloads with variant states | `vacuum lint` or `spectral lint` if installed | OpenAPI 3.1 |
+| J2 | State the mapping between a stored column and its wire field when a value carries a special meaning. The two need not share a representation, and an undocumented mapping is the defect. | PROJECT | a persisted value with a sentinel or variant | judgment | local incident, `GET /usage` |
+| A11 | Serialize declared 64-bit integer fields as decimal strings, including values inside the safe integer range. Parsers may accept numbers; that does not change the serializer's output rule. | MUST | canonical ProtoJSON output for declared 64-bit integer fields, not arbitrary JSON numbers | judgment; compare output with the protobuf field type; for an int64 field, `{"id": 1}` is a bad output and `{"id": "1"}` is the expected output | [ProtoJSON type mapping](https://protobuf.dev/programming-guides/json/#representation-of-each-type) |
+| A12 | For exact integers outside the range -(2^53-1) to 2^53-1, agree on an encoding that the actual consumers can read without loss. A decimal string is one option; preserve the declared API contract. | ADVICE | general JSON APIs whose consumers may use binary64 numbers; no universal string requirement | judgment; check the field schema and round-trip boundary values through the actual consumers | [RFC 8259 §6](https://www.rfc-editor.org/rfc/rfc8259#section-6) |
+
+## 2. Data model and schema
+
+| # | Rule | Status | Scope | Check | Source |
+|---|---|---|---|---|---|
+| D1 | Every foreign key has a covering index. | ADVICE | SQLite | `sqlite3 db '.lint fkey-indexes'` | SQLite CLI |
+| D2 | Declared foreign keys must resolve. | MUST | SQLite | `sqlite3 db 'PRAGMA foreign_key_check'` | SQLite CLI |
+| D3 | Name the storage topology before choosing a key. A time-ordered key keeps inserts near the tail on one node, and the same key hotspots one shard when the store is sharded. | ADVICE | **forks: single-node vs sharded** | judgment | RFC 9562; Spanner guidance |
+
+Contested, so it gets no row. A `deleted` boolean does not scale, and neither does a large
+`DELETE`, yet a hard delete with an audit table breaks its own trade-off. Send it to section 5.
+
+A clean linter run does not prove normal form. Normalisation stays `judgment`.
+
+## 3. Performance and efficiency
+
+| # | Rule | Status | Scope | Check | Source |
+|---|---|---|---|---|---|
+| P1 | Quote a percentile, never a mean. A mean hides the tail, and a load generator that pauses during a stall under-reports it (coordinated omission). | ADVICE | any latency claim | judgment | Dean and Barroso, *The Tail at Scale* |
+| P2 | Judge a scan by table size, rows needed, and measured cost against the workload's budget. A scan of a small table or most of its rows can be appropriate. Investigate costly scans before adding an index. | ADVICE | SQLite queries on hot paths with a known workload | judgment; inspect `EXPLAIN QUERY PLAN` and measure representative data; `SCAN` alone is not a failure | [SQLite query planning](https://www.sqlite.org/queryplanner.html) |
+
+A plan shows shape, never production cost, so P2 passing is not a benchmark.
+
+## 4. Reliability and failure policy
+
+| # | Rule | Status | Scope | Check | Source |
+|---|---|---|---|---|---|
+| R1 | Derive every outbound timeout from the caller's remaining deadline, and propagate it. A call with no deadline is an unbounded queue, and a per-call timeout still lets a chain outlive its caller's budget. | ADVICE | any network call, and any chain of two or more hops | judgment | AWS Builders' Library; gRPC service config |
+| R2 | A retried mutating request carries an idempotency key, and the server stores the result against it. | ADVICE | mutating endpoints | judgment | draft-ietf-httpapi-idempotency-key-header |
+| R3 | Cap retries with a budget, and make the backoff exponential and jittered. A per-call retry count amplifies a correlated failure, where one study measured 41.5% success with retries against 55.4% without, and fixed backoff synchronises callers into a herd. Retry at one layer only, including when a client library, platform, or queue already retries. | ADVICE | any retry | judgment | AWS, Exponential Backoff And Jitter; gRPC `retryThrottling`; arXiv 2608.25403; Google SRE book, Addressing Cascading Failures (retry at one layer) |
+| R4 | Fail closed when an authorization read fails, and say so. A failed read that yields "no plan" is indistinguishable from a real free user. | MUST | any authorization or entitlement read | judgment | local incident, `GET /usage` |
+| J1 | Test and reserve against a limit in one statement, e.g. `UPDATE ... SET used = used + 1 WHERE used < limit`. A separate check then write lets two callers both pass, and a tally written after the work reserves nothing. | PROJECT | a counter or tally compared against a limit | judgment | local incident, `GET /usage` |
+
+Whether retry-with-backoff or backpressure and load-shedding should be the default primitive is
+**contested**. It gets no row. Send it to section 5.

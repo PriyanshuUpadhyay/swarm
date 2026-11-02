@@ -10,7 +10,7 @@ metadata:
   gives: "a QA log with one row per finding"
   conflicts: ""
   users: "build"
-  source: "skills/build/references/qa.md (required evidence, frame checks, motion checks, QA log; moved 2026-10-13); blocks/look-check/SKILL.md (visually verified)"
+  source: "presets/build/references/qa.md (required evidence, frame checks, motion checks, QA log; moved 2026-10-13); blocks/look-check/SKILL.md (visually verified)"
 ---
 
 ## Rules

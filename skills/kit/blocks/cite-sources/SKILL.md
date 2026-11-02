@@ -10,7 +10,7 @@ metadata:
   gives: "claims that each cite their owning source"
   conflicts: ""
   users: "research, web-search"
-  source: "skills/research/SKILL.md (03-web owner sources, 05-report conversion check, Guards, moved here 2026-10-13); skills/web-search/SKILL.md (Yield source rules, method, Guards)"
+  source: "presets/research/PRESET.md (03-web owner sources, 05-report conversion check, Guards, moved here 2026-10-13); skills/web-search/SKILL.md (Yield source rules, method, Guards)"
 ---
 
 ## Rules

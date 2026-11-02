@@ -7,6 +7,7 @@ related: ["0109"]
 informed-by:
   - "~/dotfiles/docs/council/2026-10-21-skills-page.md (council verdict GO-WITH-CHANGES, unanimous, 6 required changes)"
   - "~/.claude/reports/2026-10-21-skill-graph-layout/report.md (Pele layered.ts 14 kB gzip and 0.017 ms per graph; elkjs 441 kB and 3.8 ms)"
+  - "~/.claude/reports/2026-10-31-workflow-card-ui.md (a run reads best as a vertical tree, the blocks as a list, presets as start templates)"
   - 'owner, 2026-10-22: approved the plan tmp/plan/2026-10-22-skill-graph in Plannotator, then "start implementing with auto"'
 ---
 
@@ -43,13 +44,23 @@ Each edge's minimum length is the stage gap, so each step sits in the row of its
 ### Consequences
 
 - Good: the page and a run agree by construction. A vitest checks every kit preset for stage rows
-  and for edges through cards, and an e2e test checks the drawn cards of every preset for edges.
+  and for edges through cards.
 - Good: the chat app does not load the page; its chunk is about 19 kB gzip.
 - Bad: the page needs Python 3.11 or newer on the server's PATH, and shows the script's error
   without it.
 - Bad: a copied layout file does not get Pele's fixes; it changes only when a newer release is
   copied in.
 - Bad: the Composer drafts text only; the owner still pastes it into a SKILL.md.
+
+## Amendment 2026-10-31
+
+The owner called the Skill graph tab outdated, so the dialog has two views, Blocks and Composer.
+The graph stays only in the Composer. The Blocks page shows one starting plan as a vertical tree,
+with the front door, then each step, then the blocks it names, beside a searchable list of every
+block. A "Start from" menu picks a preset or a blank plan, because a preset is a starting plan
+that the planner edits, not a peer of the blocks. A family shows as one node that names only the
+parts the step loads, and a block in two steps shows twice with no line, so nothing in the tree is
+drawn that the kit does not say. The owner chose this design (mock-up D) from four.
 
 ## Links
 

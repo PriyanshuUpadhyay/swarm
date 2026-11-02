@@ -9,7 +9,7 @@ KIT = Path(__file__).resolve().parents[3]
 STEP_RUN = KIT / "references" / "step_run.py"
 START_PLAN = KIT / "blocks" / "plan-review" / "scripts" / "start_plan.py"
 sys.path.insert(0, str(SCRIPT.parent))
-sys.path.insert(0, str(KIT / "skills" / "implement" / "scripts"))
+sys.path.insert(0, str(KIT / "presets" / "implement" / "scripts"))
 import implement_run
 import block_resolver
 import plan_chart
@@ -262,6 +262,7 @@ def test_rejected_parent_stops():
     assert not (folder / "plan.html").exists()
 
 
+
 def test_empty_selection_without_catalog():
     folder = Path(tempfile.mkdtemp())
     wanted = {"build": [], "reply": []}
@@ -298,7 +299,8 @@ def test_cli_help_and_options():
 
 
 if __name__ == "__main__":
-    for name, test in list(globals().items()):
-        if name.startswith("test_"):
+    import test_plan_chart_cells  # the Block cell and brief cases, split out for the file size cap
+    for name, test in [*globals().items(), *vars(test_plan_chart_cells).items()]:
+        if name.startswith("test_") and callable(test):
             test()
     print("ok")

@@ -22,6 +22,11 @@ def header(text, key):
     return None
 
 
+def scope_lines(writes, optional):
+    """The `Writes:` and `Optional:` lines that start writes below line 2 of a step file, or "" with no Writes column."""
+    return "" if writes is None else f"Writes: {', '.join(writes) or 'none'}\n" + ("Optional: yes\n" if optional else "")
+
+
 def write_paths(cell):
     """[] for `none`, else the comma-separated paths with their backticks removed. Plan cells and step files both
     come through here, so the Writes grammar has one owner."""

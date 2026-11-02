@@ -10,23 +10,23 @@ metadata:
   gives: "a motion list with its timing owner"
   conflicts: ""
   users: "web-ui-basics, build-site, planner"
-  source: "emilkowalski pack: skills/animate/SKILL.md (easing and duration tables, reduced motion); blocks/web-ui-basics/SKILL.md (Motion, moved here 2026-10-13); docs/progress.md B8"
+  source: "blocks/ui-motion/references/motion.md (from the emilkowalski pack skills/animate/SKILL.md, MIT); blocks/web-ui-basics/SKILL.md (Motion, moved here 2026-10-13); docs/progress.md B8"
 ---
 
 ## Rules
 - The kit root is two folders up from this file.
-- One timing owner per interface. When the code has a duration scale or easing tokens, they are the owner, and you extend them. Otherwise the owner is the tables of `<kit root>/vendor/emil-skills/skills/animate/SKILL.md`. Name the owner in the step's file.
+- One timing owner per interface. When the code has a duration scale or easing tokens, they are the owner, and you extend them. Otherwise the owner is the tables of `references/motion.md` in this block's folder. Name the owner in the step's file.
 - Take every duration and curve from the owner. Never invent a value.
-- When the emil pack is the timing owner, its duration table wins over its general "under 300 ms" line. Modals and drawers may take 200-500 ms; other UI stays under 300 ms.
-- Animate `transform` and `opacity`. Animate another property only where the timing owner allows it for that case; the emil pack allows `clip-path` and accordion height. Never `transition: all`. Static content needs no animation.
+- When `references/motion.md` is the timing owner, its duration table wins over its "under 300 ms" line. Modals and drawers may take 200-500 ms; other UI stays under 300 ms. Its interruption, hover, and never-ship rows apply too.
+- Animate `transform` and `opacity`. Animate another property only where the timing owner allows it for that case; `references/motion.md` allows `clip-path` and accordion height. Never `transition: all`. Static content needs no animation.
 - Honor `prefers-reduced-motion: reduce`. Keep opacity fades that help the reader, and remove movement. Loops and parallax become static.
 - Keep every key fact visible under reduced motion. The settled-state check belongs to `blocks/web-ui-basics/SKILL.md`.
 - If the selected owner's rows disagree for this state, use `blocks/decision-with-default/SKILL.md` to name the conflict before building it.
-- Story motion follows build's `skills/build/references/story-and-motion.md`.
+- Story motion follows build's `presets/build/references/story-and-motion.md`.
 
 ## Example
 Initial state: a settings page opens a dropdown, and the code has no motion tokens.
-Action: name the `animate` tables as the owner, and take 180 ms with `--ease-out: cubic-bezier(0.23, 1, 0.32, 1)` from them. Under reduced motion, the dropdown fades with no slide.
+Action: name `references/motion.md` as the owner, and take 180 ms with `--ease-out: cubic-bezier(0.23, 1, 0.32, 1)` from them. Under reduced motion, the dropdown fades with no slide.
 Result: the motion list has one row, the dropdown, with its duration and curve from the timing owner and its reduced-motion form from this block.
 
 ## Check (script)

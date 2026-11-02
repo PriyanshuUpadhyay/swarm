@@ -42,3 +42,10 @@ def claim(folder, step):
     """The claim number on the step's status line, or `#0` when no one holds it."""
     state = (Path(folder) / f"{step}.md").read_text(encoding="utf-8").split("\n", 1)[0]
     return f"#{state.rsplit(' #', 1)[1]}" if state.startswith("Status: active ") and " #" in state else "#0"
+
+
+def linked(folder, step):
+    """The step file with its linked rules filled in, as take prints it."""
+    import step_links
+    text = (Path(folder) / f"{step}.md").read_text(encoding="utf-8")
+    return step_links.expand(folder, step, text, step_run.table, step_run.resolve_start_blocks, step_run.SKILLS_HEAD)

@@ -44,7 +44,14 @@ def check_ledger(rows, ledger):
     used = {b for blocks in selected.values() for b in blocks} - base
     if chosen != used:
         odd = sorted(chosen ^ used)[0]
-        raise SystemExit(f"block {odd} is {'Chosen but no step uses it' if odd in chosen else 'used by a step but not Chosen'}")
+        if odd in chosen:
+            raise SystemExit(f"block {odd} is Chosen but no step uses it")
+        from plan_page import parents as kit_parents  # here, as plan_page is only needed for this message
+        parents = kit_parents()
+        via = next(((r[0], b) for r in rows for b in r[3] if odd in parents.get(b, ())), None)
+        hint = (f"; step {via[0]} loads it through its parent {via[1]}, which loads all its parts "
+                f"({', '.join(parents[via[1]])}); name only the parts it needs, or give each a Chosen row") if via else ""
+        raise SystemExit(f"block {odd} is used by a step but not Chosen{hint}")
 
 
 def conflicts(block):
@@ -93,20 +100,31 @@ def check_writes(rows, uses, selected):
             raise SystemExit(f"step {name} writes {writes[name][0]}, and no later step has a change-review block")
 
 
-def check_layout(text, rows, uses):
-    """SystemExit with the first gap in a research plan's page sections: briefs, seed searches, blocks, diagrams.
-    `text` is plan.md without the step chart that plan_chart.py writes."""
+def check_briefs(text, rows, uses, skip_optional=False):
+    """SystemExit when a step that needs a step, that a later step needs, and that is not optional has no brief under
+    `## Steps`, or a brief names no step; else the briefs by step. Research and implement plans both run it; implement may skip an optional step."""
     found = briefs(text)
     if extra := sorted(set(found) - {row[0] for row in rows}):
         raise SystemExit(f"the brief with Step: {extra[0]} names no step of the table; fix its Step line")
     used = {u for need in uses.values() for u in need}
+    for name, need, *_, optional in rows:
+        if need == "none" or name not in used or optional and skip_optional:
+            continue  # the frame and the reply have no work to brief; implement skips its optional steps
+        if name not in found:
+            raise SystemExit(f'step {name} has no brief under "## Steps" (add "### N · <plain name>" with "Step: {name}")')
+    return found
+
+
+def check_layout(text, rows, uses):
+    """SystemExit with the first gap in a research plan's page sections: briefs, seed searches, blocks, diagrams.
+    `text` is plan.md without the step chart that plan_chart.py writes."""
+    found = check_briefs(text, rows, uses)
     loads = resolve_blocks(None, {r[0]: r[3] for r in rows}, "default", blocks_dir=KIT / "blocks", pack=False)
+    used = {u for need in uses.values() for u in need}
     for name, need, *_ in rows:
         if need == "none" or name not in used:
             continue  # the frame and the reply have no work to brief
-        if name not in found:
-            raise SystemExit(f'step {name} has no brief under "## Steps" (add "### N · <plain name>" with "Step: {name}")')
-        if "deep-search" in loads[name]:  # also through a parent such as `sources`
+        if name in found and "deep-search" in loads[name]:  # also through a parent such as `sources`
             seeds = re.search(r"^- Seed searches[^\n]*\n((?:  - .*\n)*)", found[name], re.M)
             if not seeds or seeds[1].count("  - ") < 2:
                 raise SystemExit(f'step {name} needs "- Seed searches:" with two or more "  - " lines in its brief')

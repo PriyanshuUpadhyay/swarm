@@ -9,7 +9,7 @@ metadata:
   needs: "the results of the plan's steps"
   gives: "the reply"
   conflicts: ""
-  users: "plan"
+  users: "swarm"
   source: "the owner's agent instructions (reply rules); docs/council 2026-10-13 block rules (N4: a pointer, not a copy of those rules)"
 ---
 

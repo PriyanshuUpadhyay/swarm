@@ -5,31 +5,31 @@ license: MIT
 metadata:
   kind: step
   owns: "which blocks a task uses, in which order, with which inputs"
-  serves: "plan"
+  serves: "swarm"
   needs: "a task"
   gives: "plan.md, a step table with writes and blocks, and a Chosen blocks table"
   conflicts: ""
-  users: "plan"
+  users: "swarm"
   source: "docs/blocks.md (The model: plan block, ledger, end condition); references/step-run.md (step table, Needs); blocks/requirements/SKILL.md (done-when claims)"
 ---
 
 ## Rules
 - The kit's `references/plan-layout.md` owns how this file's schema fits the reply layout.
 - Make the run folder by the kit's `references/run-folder.md`, and write `plan.md` in it.
-- When a verb sent the task, start from that verb's preset, as `skills/plan/SKILL.md` defines it. Copy its table into `plan.md`, add the Writes column below, and write `Preset: <verb>` on the line under the title. Add a mode, as in `Preset: review walk`, only for a verb whose modes have their own presets. Add blocks or steps where the task needs them, but keep the steps and Needs of the implement preset, because `skills/implement/SKILL.md` says its `start` refuses any other. When you drop a preset step, add a line `Dropped steps: <step> (<reason>), ...` under the step table, so the owner sees it.
+- When a verb sent the task, start from that verb's preset, as `skills/swarm/SKILL.md` defines it. Copy its table into `plan.md`, add the Writes column below, and write `Preset: <verb>` on the line under the title. Add a mode, as in `Preset: review walk`, only for a verb whose modes have their own presets. Add blocks or steps where the task needs them, but keep the steps and Needs of the implement preset, because `presets/implement/PRESET.md` says its `start` refuses any other. When you drop a preset step, add a line `Dropped steps: <step> (<reason>), ...` under the step table, so the owner sees it.
 - When the preset has an `Offers:` line, read each offered block's line. Add it to a step when the task needs it. For each offered block that no step loads, add an `Offered` row to the blocks table with why it stays off, so the owner can say "add Y".
-- List the blocks with `rg -N '^(name|description|  needs|  gives|  conflicts):' <kit root>/blocks/*/SKILL.md`. Pick from that list only. Read a block's full file only when its line does not settle the choice.
+- List the blocks with `rg -N '^(name|description|  kind|  needs|  gives|  conflicts|  parts):' <kit root>/blocks/*/SKILL.md`. A `parts:` line marks a family parent. A step that loads a part also loads its parent, so the parent gets its own `Chosen` row. A parent id in a Block cell loads all of its parts, so a Block cell names only the parts the step needs. Pick from that list only. Read a block's full file only when its line does not settle the choice.
 - `plan.md` is the page the owner reads, so it shows the work and keeps the plumbing in a fold. Its sections, in this order:
   1. `# Plan: <the task in one line>`, the `Preset:` line when a verb sent the task, one or two sentences on the result, and `Next action: <what the owner does>`.
   2. `## Questions this plan answers` as a numbered list (research), or `## The problem in one example` as one short paragraph with the initial state, the action, and the bad result (other tasks).
   3. `## Building blocks`: the few facts that decide the plan, each a `### Block N · <the fact>`. Its first line starts with `Known (<source>).` or `To check in step N.`. It may hold one diagram, and it ends with a `So in this plan:` line that names what the fact changes. Leave the section out when two or fewer steps need a brief, or when no fact changes a step.
-  4. `## Steps`: one brief for each step between the first and the last, as `### N · <plain name>` and then a `Step: \`NN-word\`` line. A brief is bullets with the real work. A research brief has `Look in` (paths, sites) and `Result:`, and a `deep-search` step's brief also has `- Seed searches:` with two or more `  - ` lines. A build brief names each `file:line` it changes and `Result:`. Its last bullet is `Skill blocks:` with the step's blocks. `step_run.py start` copies each brief into its step file, so the worker gets the text the owner approved. A `mermaid` or `html` diagram in a brief reaches the worker as a pointer to `plan.html`, because it can hold text the page does not show.
+  4. `## Steps`: one brief for each step between the first and the last, as `### N · <plain name>` and then a `Step: \`NN-word\`` line. A brief is bullets with the real work. A research brief has `Look in` (paths, sites) and `Result:`, and a `deep-search` step's brief also has `- Seed searches:` with two or more `  - ` lines. A build brief names each `file:line` it changes, each test with what the test asserts, and `Result:`. Its last bullet is `Skill blocks:` with the step's blocks. `step_run.py start` copies each brief into its step file, so the worker gets the text the owner approved. A `mermaid` or `html` diagram in a brief reaches the worker as a pointer to `plan.html`, because it can hold text the page does not show.
   5. `## Why this way, not another`: a table `| Choice | We do | Not this | Why |`, one row per real choice.
   6. `## Not doing`: bullets.
   7. `## Done when`: the line `Done when: <the result in one short line>`, one bullet per claim, then a line `Evidence:` and one bullet per proof. Choose that evidence by `blocks/requirements/SKILL.md`, and map results by `blocks/done-when-evidence/SKILL.md`. Write each claim and each proof as one short line, with no `(1) ... (2) ...` list inside a line.
   8. `<details>`, `<summary>How it runs (for the agent)</summary>`, the step table, the blocks table, then `</details>`.
 - Each diagram has a line `*Answers: <the question it answers>*` right over it and at most 10 nodes. Use Mermaid; when Mermaid draws it badly, draw it in an `html` fence by `blocks/html-diagram/SKILL.md`.
-- An implement or review plan keeps the older layout for now: `Done when:` under the title, the step table, and `## Blocks considered` with the blocks table. `skills/implement/SKILL.md` reads that layout.
+- An implement or review plan keeps the older layout for now: `Done when:` under the title, the step table, and `## Blocks considered` with the blocks table. `presets/implement/PRESET.md` reads that layout. An implement plan also has `## Steps`, with a brief for each step that is not optional, that needs a step, and that a later step needs.
 - The step table has the header `| File | Needs | Holds | Writes | Block | Why |`. A plan that copies a `Stop: chat` preset with no change may keep the preset's header with no Writes.
   - File: `NN-<word>`, numbered in the order a reader follows. The word is what other steps write in Needs. Add ` (optional)` after the name of a step that `skip` may skip; `skip` refuses any other step.
   - Needs: the words of the steps whose output this step uses, or `none`. Steps with all needs done run in parallel, so add a need only for a real input.
@@ -143,10 +143,11 @@ Evidence:
 Result: the page shows the questions, one block, and three step cards with their searches. 02-local and 03-web run in parallel. `step_run.py start` gives `03-web.md` the brief "Check Twilio's rules" with its two searches.
 
 ## Check (script)
-- `python3 -I <kit root>/blocks/plan-chart/scripts/plan_chart.py <run>/plan.md` exits 0: `Done when:` has a bullet per claim and an `Evidence:` bullet list, a research plan has a brief for each middle step, seed searches in its `deep-search` brief, a `So in this plan:` line in each building block, and an `Answers:` line over each diagram, every block exists, every Needs word names a step, the plan has no loop and one end, the end holds a `voice-` block, each step with Needs `none` holds `requirements`, each writing step is reached through Needs by a `change-review` step, no two parallel steps write the same path, and the blocks table lists each block once, its Chosen rows equal to the blocks the steps use, and any other row Offered.
+- `python3 -I <kit root>/blocks/plan-chart/scripts/plan_chart.py <run>/plan.md` exits 0: `Done when:` has a bullet per claim and an `Evidence:` bullet list, a research plan has a brief for each middle step, an implement plan has a brief for each middle step that is not optional, seed searches in its `deep-search` brief, a `So in this plan:` line in each building block, and an `Answers:` line over each diagram, every block exists, every Needs word names a step, the plan has no loop and one end, the end holds a `voice-` block, each step with Needs `none` holds `requirements`, each writing step is reached through Needs by a `change-review` step, no two parallel steps write the same path, and the blocks table lists each block once, its Chosen rows equal to the blocks the steps use, and any other row Offered.
 
 ## Check (judge)
 - Does each brief name real places to look and real searches, not a block name again? Quote a brief that only restates its block.
+- Does an implement build brief name each `file:line` it changes and what each test asserts? Quote a brief that names a test with no assertion.
 - Does any block the steps do not use hold a rule that the task needs? Quote the rule and the task text.
 - Is each claim and each proof one short line, and each Why cell one short line? Quote any that run long or hold a numbered list.
 - Does each Why line give a reason that the task needs, and does any step lack a block that the task needs? Quote the Why line, or the task text that no step covers.

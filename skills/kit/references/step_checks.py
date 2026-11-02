@@ -52,7 +52,7 @@ def block_checks(block):
 def plan_blocks(folder, step):
     """The resolved blocks of the step's row in the run's plan.md, for a plan with a Writes column; else none.
 
-    start writes the rules and check todos of exactly these blocks, so done needs no `Skills read:` line to know
+    start links the rules and writes the check todos of exactly these blocks, so done needs no `Skills read:` line to know
     them, and deleting that line skips no check.
     """
     plan = Path(folder) / "plan.md"
@@ -111,9 +111,11 @@ def run_checks(folder, step, todo, text):
             print(f"not run: block {block}: needs {left}")
             continue
         # A new session makes the check its own process group, so a timeout also stops a pipeline's children.
+        # The env of work_root, so a check that asks git finds the same repo that chose <repo-root>.
+        from step_scope import clean_env
         child = subprocess.Popen(["sh", "-c", command], cwd=root, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                  stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace",
-                                 start_new_session=True)
+                                 start_new_session=True, env=clean_env())
         try:
             stdout, stderr = child.communicate(timeout=CHECK_SECONDS)
             code, tail = child.returncode, stdout + stderr

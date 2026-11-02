@@ -1,6 +1,6 @@
 ---
 name: deep-search
-description: "Search past the famous answers: name them as a baseline, seed lesser-known options, split the question, dig below page one, and look for the opposite view. Use when a search must find what the user does not already know."
+description: "Search past the famous answers: list them as a baseline, seed lesser-known options, split the question, dig deep, search a recent window, and seek the opposite view. Use when a search must find what the user does not know."
 license: MIT
 metadata:
   kind: rule
@@ -10,7 +10,7 @@ metadata:
   gives: "sub-questions, a known list, seeds, and off-path ideas with sources"
   conflicts: ""
   users: "research, web-search"
-  source: "skills/research/SKILL.md (Off the usual path, moved here 2026-10-13); skills/web-search/SKILL.md (Depth, a hard rule: sub-questions, known list, seeds, how to dig, moved here 2026-10-13)"
+  source: "presets/research/PRESET.md (Off the usual path, moved here 2026-10-13); skills/web-search/SKILL.md (Depth, a hard rule: sub-questions, known list, seeds, how to dig, moved here 2026-10-13)"
 ---
 
 ## Rules
@@ -19,6 +19,7 @@ metadata:
 - Split the question into three to six sub-questions before you search, because the first sources found are the easiest to find, not the most representative. In a search with several seats, the chair splits the question once, before any seat starts, and every seat reports against the same sub-questions. Report per sub-question. A sub-question with fewer than two independent sources gets a gap note, never a stretched finding.
 - Dig: sort by new, not top; read the comments, not only the post; follow a thread to the author's repo, model card, or paper; search the names of the technique, the format, and the runtime, not only the product; on GitHub and Hugging Face sort by recently updated and read repos with few stars; search non-English communities when the topic has them.
 - Search off the usual path on purpose: the opposite of the usual answer, such as "we removed X" or "X considered harmful"; the same problem in another field or community; a way to drop the problem instead of solving it; old or abandoned tools whose idea is still good; people who tried the popular answer and moved away, with their reason.
+- Search a recent window on purpose. Set its start date in the step file: the newest survey's date from `blocks/literature-map/SKILL.md`, or twelve months back when there is none. Search by date in the places where new work appears first: preprint listings, recently updated repos, vendor changelogs and release notes, and conference programs. Write each search tried, each candidate found, and keep or reject with one reason. A recent item with few citations or stars is not weak for that reason; judge it by what it shows.
 - Keep each off-path idea that has a real source, even when it looks wrong at first. Write why it might work and why it might fail. It does not replace the main answer without evidence.
 
 ## Example
@@ -32,4 +33,5 @@ Result: fifteen candidates that the surface pass missed, and one off-path idea, 
 ## Check (judge)
 - Is each famous answer listed as "known, baseline only" and not counted as a finding? Quote the known list.
 - Does each sub-question have two or more independent sources or a gap note? Quote the matrix or the notes.
+- Does the step set a recent-window start date and list the searches tried, the candidates, and a keep or reject reason for each? Quote the date and two rows.
 - Does each off-path idea have a source, a reason it might work, and a reason it might fail? Quote one, or the searches tried when none held up.

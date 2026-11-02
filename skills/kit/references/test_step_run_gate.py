@@ -1,8 +1,12 @@
 # Step runner tests for the done gate: claim numbers, stale inputs, and script checks.
 import re
 import shlex
+import shutil
+import tempfile
 
 import step_checks
+import step_scope
+from unittest.mock import patch
 from test_step_run_support import *
 
 CANVAS = ("`rg -n -g '*.html' -g '*.js' -g '*.mjs' -g '*.ts' -g '!**/vendor/**' -g '!**/node_modules/**' "
@@ -104,7 +108,7 @@ def test_kit_check_lines(tmp):
             (runnable if step_checks.RUN_FORM.match(line) else reader).append(f"{file.parent.name}: {line[:40]}")
             filled = re.sub(r"\{\{\w+\}\}", "site/x", line)  # start fills a param in the command with one quoted word
             assert any(p.match(filled + ": ok") for _, p in step_checks.block_checks(file.parent.name)), line
-    assert len(runnable) == 11 and len(reader) == 10, (runnable, reader)
+    assert len(runnable) == 19 and len(reader) == 4, (runnable, reader)
     # The kit's own test scripts run through done with <kit root> filled and pass.
     for block in ("plan-review", "comment-round"):
         line = next(l for l in block_resolver.check_lines(block_resolver.sections(
@@ -119,3 +123,63 @@ def test_kit_check_lines(tmp):
     assert run("done", review, "01-ask", take(review, "01-ask")).returncode == 0
     out = run("done", review, "02-work", take(review, "02-work"))
     assert out.returncode == 0 and "not run: block change-review: needs <review-run>" in out.stdout, out
+
+
+def test_change_review_file_rule(tmp):
+    """Outside any git repo, change-review closes only on a file review whose last line approves; inside a repo,
+    its file-review line passes and the commit review decides."""
+    import block_resolver
+    lines = block_resolver.check_lines(block_resolver.sections(
+        (step_checks.KIT / "blocks" / "change-review" / "SKILL.md").read_text(encoding="utf-8")), "Check (script)")
+    line = next(l for l in lines if "file_review.py" in l)
+    todos = [f"block change-review script: {l}" for l in lines]
+    # kit-checks puts TMPDIR inside the repo, so the piece outside any repo gets its own folder under /tmp.
+    outside = tempfile.mkdtemp(dir="/tmp")
+    try:
+        assert subprocess.run(["git", "-C", outside, "rev-parse"], capture_output=True,
+                              env=step_scope.clean_env()).returncode != 0, outside
+        file_review_outside_a_repo(gate_run(outside, "piece", todos))
+        # A GIT_DIR in the caller's shell must not make the piece read as inside a repo, as work_root ignores it.
+        with patch.dict(os.environ, {"GIT_DIR": str(step_checks.KIT.parents[1] / ".git")}):
+            file_review_outside_a_repo(gate_run(outside, "piece-git-dir", todos))
+    finally:
+        shutil.rmtree(outside)
+    repo = Path(tmp, "repo")
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q", str(repo)], check=True, env=step_scope.clean_env())
+    inside = gate_run(repo, "run", todos)
+    assert run("done", inside, "01-ask", take(inside, "01-ask")).returncode == 0
+    out = run("done", inside, "02-work", take(inside, "02-work"))
+    assert out.returncode == 0 and "not run: block change-review: needs <review-run>" in out.stdout, out
+    assert line.startswith("`git -C <repo-root> rev-parse"), line
+
+
+def file_review_outside_a_repo(piece):
+    assert run("done", piece, "01-ask", take(piece, "01-ask")).returncode == 0
+    out = run("done", piece, "02-work", take(piece, "02-work"))
+    assert out.returncode == 1 and "block change-review check failed" in out.stderr, out
+    (piece / "file-review.md").write_text("| index.html | fix | 1.2:1 contrast |\nVerdict: APPROVE\n", encoding="utf-8")
+    out = run("done", piece, "02-work", take(piece, "02-work"))
+    assert out.returncode == 1 and "block change-review check failed" in out.stderr, out
+    (piece / "file-review.md").write_text("| index.html | pass | render at 1440 |\nVerdict: APPROVE\n", encoding="utf-8")
+    out = run("done", piece, "02-work", take(piece, "02-work"))
+    assert out.returncode == 0, out.stderr
+
+
+def test_final_hash_after_export(tmp):
+    """The export step closes on the recorded bytes; an edit to the page after the hash makes done refuse."""
+    import block_resolver
+    line = block_resolver.check_lines(block_resolver.sections(
+        (step_checks.KIT / "blocks" / "final-hash" / "SKILL.md").read_text(encoding="utf-8")), "Check (script)")[0]
+    site = Path(tmp, "export-piece")
+    site.mkdir()
+    (site / "index.html").write_text("<h1>v1</h1>\n", encoding="utf-8")
+    subprocess.run("shasum -a 256 index.html > handoff.sha256", shell=True, cwd=site, check=True)
+    folder = gate_run(tmp, "export", [f"block final-hash script: {line.replace('{{site}}', shlex.quote(str(site)))}"])
+    assert run("done", folder, "01-ask", take(folder, "01-ask")).returncode == 0
+    (site / "index.html").write_text("<h1>v2</h1>\n", encoding="utf-8")
+    out = run("done", folder, "02-work", take(folder, "02-work"))
+    assert out.returncode == 1 and "block final-hash check failed" in out.stderr, out
+    subprocess.run("shasum -a 256 index.html > handoff.sha256", shell=True, cwd=site, check=True)
+    out = run("done", folder, "02-work", take(folder, "02-work"))
+    assert out.returncode == 0, out.stderr
