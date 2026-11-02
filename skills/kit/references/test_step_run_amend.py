@@ -12,16 +12,19 @@ def test_done_takes_blocks_from_the_plan(tmp):
     f = folder / "01-a.md"
     text = f.read_text(encoding="utf-8")
     assert "Skills read: " in text and "- [ ] block plan-review script: " in text, text
-    def keep(*drop):
+    def tick_without(*drop):
         lines = [l for l in text.splitlines() if not l.startswith(drop)]
         f.write_text("\n".join(l.replace("- [ ] ", "- [x] ", 1) + ("ok" if l.startswith("- [ ] ") else "") for l in lines) + "\n",
                      encoding="utf-8")
     # The rules are linked through `Skills read:`, so take refuses a file without it.
-    keep("Skills read: ", "- [ ] block plan-review script: ")
+    tick_without("Skills read: ", "- [ ] block plan-review script: ")
     out = run("take", folder, "01-a", "x")
     assert out.returncode == 1 and "its blocks changed after start (" in out.stderr and "block:plan-review@" in out.stderr, out
-    keep("- [ ] block plan-review script: ")
+    tick_without("- [ ] block plan-review script: ")
     assert run("take", folder, "01-a", "x").returncode == 0
+    # After the take, the worker deletes `Skills read:`; done still finds the block in plan.md.
+    f.write_text("\n".join(l for l in f.read_text(encoding="utf-8").splitlines() if not l.startswith("Skills read: ")) + "\n",
+                 encoding="utf-8")
     out = run("done", folder, "01-a", "1")
     assert out.returncode == 1 and "a blocks/plan-review script check has no todo" in out.stderr, out
 

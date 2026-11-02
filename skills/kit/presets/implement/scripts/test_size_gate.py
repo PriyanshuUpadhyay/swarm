@@ -45,6 +45,17 @@ with tempfile.TemporaryDirectory() as tmp:
     assert out.returncode == 1 and out.stdout.strip() == "raise: db/schema.sql is a schema or migration path", out
     out = case(tmp, "migration", {"migrations/0002_add.py": 3})
     assert out.returncode == 1 and "migrations/0002_add.py is a schema or migration path" in out.stdout, out
+    # A committed path with an accent still meets the schema globs, because the diff is read with -z.
+    out = case(tmp, "accent", {"db/données.sql": 1, "a.py": 1})
+    assert out.returncode == 1 and "db/données.sql is a schema or migration path" in out.stdout, out
+    # A new binary file counts 0 lines, as git counts it after the commit.
+    out = case(tmp, "binary", {"a.py": 1, "shot.png": 0})
+    Path(tmp, "binary", "shot.png").write_bytes(bytes(range(256)) * 80)
+    out = subprocess.run([sys.executable, "-I", str(GATE), "HEAD~1"], cwd=Path(tmp, "binary"), capture_output=True, text=True)
+    assert out.returncode == 0 and out.stdout.strip() == "small: 2 files, 1 lines", out
+    # A base that starts with - is refused, not passed to git as an option.
+    out = subprocess.run([sys.executable, "-I", str(GATE), f"--output={tmp}/x"], cwd=Path(tmp, "binary"), capture_output=True, text=True)
+    assert out.returncode == 1 and "not a commit" in out.stderr and not Path(tmp, "x").exists(), out
     bad = subprocess.run([sys.executable, "-I", str(GATE)], capture_output=True, text=True)
     assert bad.returncode != 0 and "usage" in bad.stderr, bad
 print("ok")

@@ -30,6 +30,10 @@ def test_linked_rules(tmp):
     ask = folder / "01-ask.md"
     ask.write_text(re.sub(r"- \[ \] (.*): \n", r"- [x] \1: ok\n", ask.read_text(encoding="utf-8")), encoding="utf-8")
     assert run("take", folder, "01-ask", "w").returncode == 0 and run("done", folder, "01-ask", "1").returncode == 0
+    # A brief line with the link words, above the rules head, is not the link.
+    work = folder / "02-work.md"
+    work.write_text(work.read_text(encoding="utf-8").replace("Skills read: ", "Rules from: /gone/plan.md\n\nSkills read: ", 1),
+                    encoding="utf-8")
     out = run("take", folder, "02-work", "w")
     assert out.returncode == 0 and "LINKED RULE TEXT" in out.stdout and out.stdout.index("Rules from: ") < out.stdout.index("LINKED"), out
     block.write_text(block.read_text(encoding="utf-8").replace("LINKED RULE TEXT", "NEW RULE"), encoding="utf-8")

@@ -37,7 +37,7 @@ Done-when: "Each claim 2 diagram has the nodes of its `docs/architecture.md` sec
 Result: read aloud, the three claims tell the whole page.
 
 ## Check (script)
-- none: the frame writes only its step file, which holds this block's own Rules and Example.
+- none: the frame writes only its step file, which links this block's own Rules and Example.
 
 ## Check (judge)
 - Does the frame step's file give the goal, the user, out of scope, done-when, and shared assumptions? Quote each field's line.

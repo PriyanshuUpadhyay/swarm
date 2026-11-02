@@ -39,6 +39,9 @@ def test_crash_note():
             review("the name could be clearer")
             assert rc.verdict(run.name) == 0
             assert "0 fix, 0 ask, 1 note" in (run / "03-verdict.md").read_text()
+            review("the loop cannot crash on an empty list; rename i")
+            assert rc.verdict(run.name) == 0
+            assert "0 fix, 0 ask, 1 note" in (run / "03-verdict.md").read_text(), "a denied crash stays a note"
             review("the removed line could crash too", quote="return 1", line=2)
             assert rc.verdict(run.name) == 0
             assert "0 fix, 0 ask, 1 note" in (run / "03-verdict.md").read_text(), "a crash note on removed code stays a note"
@@ -56,5 +59,18 @@ def test_crash_note():
                 assert rc.verdict(run.name, "02-review.md") == 1
             assert "quote not found at util.py:2" in out.getvalue(), out.getvalue()
             assert (run / "03-verdict.md").read_text() == before, "lint leaves the verdict file as it was"
+            try:
+                rc.verdict(run.name, "02-review-typo.md")
+                raise AssertionError("lint of a missing seat file passed")
+            except SystemExit as error:
+                assert "no such file" in str(error), error
+            (run / "02-review-empty.md").write_text("| Unit | Rule |\n")
+            out = StringIO()
+            with redirect_stdout(out):
+                assert rc.verdict(run.name, "02-review-empty.md") == 1
+            assert "nothing was checked" in out.getvalue(), out.getvalue()
+            (run / "02-review-empty.md").unlink()
+            usage = subprocess.run([sys.executable, "-I", str(Path(rc.__file__)), "lint", run.name], capture_output=True, text=True)
+            assert usage.returncode == 1 and "Traceback" not in usage.stderr, usage
         finally:
             os.chdir(previous)

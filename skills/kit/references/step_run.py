@@ -161,7 +161,7 @@ def start(folder, skill_md):
             rules = f"Kit blocks (`blocks/<id>/`) and the kit's `references/` are under {kit_path(Path(__file__).resolve().parents[1])} (the kit root).\n{rules}"
         kit = rules.split("\n", 1)[0] + "\n" if rules.startswith("Kit blocks (") else ""
         # The rules are linked; take prints them in full (step_links.py).
-        extra = (f"{SKILLS_HEAD}{', '.join(read)}\n\n## Rules for this step\n{kit}{step_links.source_line(skill_md)}\n" if read else "")
+        extra = (f"{SKILLS_HEAD}{', '.join(read)}\n\n{step_links.RULES_HEAD}\n{kit}{step_links.source_line(skill_md)}\n" if read else "")
         scope = step_scope.scope_lines(writes, optional)
         file.write_text(f"Status: open\nUses: {', '.join(uses[name])}\n{scope}\n{brief.get(name, '')}{extra}"
                         f"{TODO_HEAD}\n" + "".join(f"- [ ] {item}: \n" for item in [holds] + step_links.unique_judges(todos))
@@ -213,7 +213,7 @@ def take(folder, step, who, need=None, rev=revision, force=False, on_claim=None)
             raise SystemExit(f"{step} is not ready: {stale_step} is stale {why}; {action}")
         step_scope.check_reviewer(folder, step, who)
         # A changed block refuses here, before the claim, so the step stays as it was.
-        step_links.expand(folder, step, "\n".join(lines), table, resolve_start_blocks, SKILLS_HEAD)
+        rules = step_links.rules_for(folder, step, "\n".join(lines), table, resolve_start_blocks, SKILLS_HEAD)
         uses = ", ".join(f"{n}@{rev(folder, n)}" for n in need)
         # done compares the work tree with this one, so only changes made after the take count. It is read before
         # the claim, so a git failure (SystemExit) leaves the step as it was.
@@ -232,8 +232,8 @@ def take(folder, step, who, need=None, rev=revision, force=False, on_claim=None)
         log(folder, step, f"take {who}")
         if tree:
             log(folder, step, f"base {tree}")
-    # The file keeps the link; the worker reads the rules in full here.
-    print(step_links.expand(folder, step, text, table, resolve_start_blocks, SKILLS_HEAD))
+    # The file keeps the link; the worker reads the rules, resolved before the claim, in full here.
+    print(step_links.fill(text, rules))
 
 
 def done(folder, step, claim, rev=None, ends=(RESULT_HEAD,), rev_of=revision):

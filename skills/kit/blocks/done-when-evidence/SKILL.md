@@ -34,7 +34,7 @@ Action: write in `07-close.md`:
 Result: two rows proved, one partial row named as partial.
 
 ## Check (script)
-- none: the close table lives only in the step file, which holds this block's own Rules; in implement, `take 07-close` already refuses a run without APPROVE on HEAD.
+- none: the close table lives only in the step file, which links this block's own Rules; in implement, `take 07-close` already refuses a run without APPROVE on HEAD.
 
 ## Check (judge)
 - Does each done-when line of the frame and each accepted constraint have a check, planned or run, named in the build step's file (a todo's evidence or its `## Result`)? Quote each done-when and its check.

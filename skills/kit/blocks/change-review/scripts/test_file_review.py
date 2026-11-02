@@ -25,6 +25,10 @@ with tempfile.TemporaryDirectory() as tmp:
     rows(d, "pass", "fix", verdict="Verdict: APPROVE")
     out = run(d)
     assert out.returncode == 1 and "APPROVE with 1 open fix" in out.stderr, out
+    # A fix row with an unescaped pipe in its evidence refuses; it never closes as an approval.
+    (d / "file-review.md").write_text("| index.html | fix | grep a | wc -l |\n", encoding="utf-8")
+    out = run(d, "--close")
+    assert out.returncode == 1 and "has 4 cells, not 3" in out.stderr and "Verdict" not in (d / "file-review.md").read_text(), out
     rows(d, "pass", "note")
     assert run(d).returncode == 1, "no verdict line yet"
     out = run(d, "--close")

@@ -45,10 +45,18 @@ def approved(run):
         comment_round.check(run / "plan-review", [str(run / "plan.html")])
         # The page carries the hash of the plan.md it was drawn from, so a kit update that redraws it differently
         # does not count as an edit, and an edit to plan.md after the round does.
-        drawn = re.search(r'<meta name="plan-md-sha256" content="(\w+)">', (run / "plan.html").read_text(encoding="utf-8"))
-        if not drawn or drawn[1] != hashlib.sha256((run / "plan.md").read_text(encoding="utf-8").encode("utf-8")).hexdigest():
+        if not page_matches(run):
             raise SystemExit("plan.md changed after the owner approved plan.html; run plan-chart and start a new round")
     return start
+
+
+def page_matches(run):
+    """The plan.md hash when plan.html carries it, else None. The hash is of the text with LF line ends, as
+    plan_page draws it, so a CRLF file matches its own page."""
+    plan_sha = hashlib.sha256((run / "plan.md").read_text(encoding="utf-8").encode("utf-8")).hexdigest()
+    page = run / "plan.html"
+    drawn = re.search(r'<meta name="plan-md-sha256" content="(\w+)">', read_utf8(page)) if page.is_file() else None
+    return plan_sha if drawn and drawn[1] == plan_sha else None
 
 
 def auto(run, source):
@@ -57,11 +65,14 @@ def auto(run, source):
     words = re.search(r'^Auto approval: "(.+)"$', (run / "plan.md").read_text(encoding="utf-8"), re.M)
     if not words:
         raise SystemExit('plan.md has no line Auto approval: "<the owner\'s words>"')
-    if not source.is_file() or words[1] not in read_utf8(source):
+    said = words[1].split()
+    # Three whole words at least, so a short quote such as "ok" cannot match inside another word ("book").
+    if len(said) < 3:
+        raise SystemExit(f"the words {words[1]!r} are too short; quote at least 3 words of the owner's message")
+    phrase = r"(?<!\w)" + r"\s+".join(map(re.escape, said)) + r"(?!\w)"
+    if not source.is_file() or not re.search(phrase, read_utf8(source)):
         raise SystemExit(f"the words {words[1]!r} are not in {source}; quote the owner exactly, or run the plan-review round")
-    plan_sha = hashlib.sha256((run / "plan.md").read_bytes()).hexdigest()
-    drawn = re.search(r'<meta name="plan-md-sha256" content="(\w+)">', read_utf8(run / "plan.html")) if (run / "plan.html").is_file() else None
-    if not drawn or drawn[1] != plan_sha:
+    if not (plan_sha := page_matches(run)):
         raise SystemExit("plan.html is not drawn from plan.md as it is now; run plan-chart first")
     folder = run / "plan-review"
     found = comment_round.rounds(folder) if folder.is_dir() else []

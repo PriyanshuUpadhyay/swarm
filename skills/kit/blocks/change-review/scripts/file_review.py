@@ -17,7 +17,6 @@ import sys
 from pathlib import Path
 
 CAP = 2
-VERDICT = re.compile(r"^Verdict: (APPROVE|BLOCKED \(\d+ fix\)|REQUEST CHANGES)$")
 
 
 def rounds(run):
@@ -39,10 +38,13 @@ def read(run):
         raise SystemExit(f"no {file}; each seat writes its rows there")
     lines = file.read_text(encoding="utf-8").splitlines()
     fixes = []
-    for line in lines:
+    for n, line in enumerate(lines, 1):
         cells = [c.strip() for c in re.split(r"(?<!\\)\|", line)[1:-1]] if line.startswith("|") else []
-        if len(cells) == 3 and cells[1].lower().strip("`*") == "fix":
+        # A fix row with an unescaped pipe still counts, so a split row never turns into an approval.
+        if len(cells) >= 2 and cells[1].lower().strip("`*").startswith("fix"):
             fixes.append(cells[0])
+        if cells and len(cells) != 3:
+            raise SystemExit(f"file-review.md line {n} has {len(cells)} cells, not 3; write a | in a cell as \\| and end the row with |")
     return fixes, [l for l in lines if l.startswith("Verdict:")], lines
 
 

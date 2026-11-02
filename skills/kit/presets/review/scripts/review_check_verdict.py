@@ -4,6 +4,12 @@ from pathlib import Path
 
 
 CRASH = re.compile(r"\b(crash(es|ed)?|traceback|panics?|uncaught|non-zero exit|exits? [1-9]\d*)\b", re.I)
+# A crash word with a denial in the 3 words before it ("cannot crash", "no traceback") names no crash.
+DENIED = re.compile(r"\b(cannot|can't|never|no|not|won't|doesn't|without)\W+(\w+\W+){0,2}$", re.I)
+
+
+def crashes(problem):
+    return any(not DENIED.search(problem[:m.start()]) for m in CRASH.finditer(problem))
 
 
 def review_files(d, seats):
@@ -74,9 +80,13 @@ def verdict(name, only=None):
             if built == "fail":
                 kept.append(("build", f"build {b['name']}", "", "fix", f"build `{b['name']}` failed at "
                              f"{(t['head'] or 'working tree')[:7]}", b["tail"][-1] if b["tail"] else "no output"))
+    if only and not (d / only).is_file():
+        raise SystemExit(f"{only}: no such file in {d}; name the seat file you wrote")
+    linted = 0
     for src, cells in rows(d, seats):
         if only and src != only:
             continue
+        linted += 1
         if len(cells) != 7:
             problems.append(f"{src}: a row has {len(cells)} cells, not 7: {' | '.join(cells)}")
             continue
@@ -125,7 +135,7 @@ def verdict(name, only=None):
             new_lines = [new[n] for n in range(int(at.group(1)), int(at.group(2) or at.group(1)) + 1) if n in new] if at else []
             # A crash on code the change added is a defect the change made, whatever kind the seat chose
             # (trial 5: a crash on a bad stored date stayed a note). A limit: answer still closes it.
-            if kind == "note" and CRASH.search(problem) and any(quote in line for line in new_lines):
+            if kind == "note" and crashes(problem) and any(quote in line for line in new_lines):
                 kind = "fix"
             matches = [(i, match) for i, alternatives in enumerate(replied)
                        if (match := next((alt for alt in alternatives if alt[0] == path
@@ -180,6 +190,8 @@ def verdict(name, only=None):
         if body.lower().strip(". ") in GENERIC:
             problems.append(f"answers.md {path} `{quote}`: an answer needs a record the user approved or a failing test")
     if only:
+        if not linted:
+            problems.append(f"{only}: no row starts with | u<n> |, so nothing was checked")
         # A seat runs this as it writes, so a bad quote goes back to the same seat before the verdict.
         print(*(re.sub(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]", "", p) for p in problems or [f"{only}: rows ok"]), sep="\n")
         return 1 if problems else 0
