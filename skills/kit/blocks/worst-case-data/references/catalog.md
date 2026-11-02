@@ -36,11 +36,11 @@ Unbreakable strings: they have no spaces, so the browser has nowhere to wrap the
 | Value | Breaks |
 | --- | --- |
 | `bartholomew.fitzgerald@northwind-industries-holdings.example.com` | The classic. Pushes every sibling off the row without `overflow-wrap: anywhere` |
-| `a@b.co` | Shortest realistic; layout that assumed a long email looks empty |
+| `a@b.test` | Shortest realistic; layout that assumed a long email looks empty |
 | `first.last+billing-notifications@example.com` | Plus-addressing; validation that rejects `+`, display that truncates the meaningful part |
-| `ops@sub.department.region.example.co.uk` | Many subdomains, two-part TLD; "domain" extraction logic |
+| `ops@sub.department.region.example.co.test` | Many subdomains, a two-part suffix (as in `.co.uk`); "domain" extraction logic |
 | `https://example.com/workspaces/acme/projects/q3-launch/docs/9f8e7d6c5b4a?tab=comments&filter=unresolved` | Long URL; overflow, and end-truncation hides the part that differs |
-| `9f8e7d6c-5b4a-4c3d-8e2f-1a0b9c8d7e6f` | UUID; monospace width, middle-truncation candidate |
+| `9f8e7d6c-5b4a-0c3d-8e2f-1a0b9c8d7e6f` | UUID; monospace width, middle-truncation candidate |
 | `Q3 Board Deck — FINAL (revised) v12 [approved by legal].pdf` | File name; end-truncation hides the version and extension, brackets and dashes in paths |
 | `IMG_20250914_183022_HDR_portrait_edited_edited.HEIC` | Camera file name; unbreakable, uppercase extension |
 | `@a` / `@thisisaverylongusernamethatisallowed` | Handle extremes |
