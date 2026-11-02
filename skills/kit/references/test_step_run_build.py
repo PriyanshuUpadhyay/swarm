@@ -61,7 +61,8 @@ def test_build_block_todos():
                          "block visual-qa judge:"):
             assert expected in text, f"missing build check {expected}"
         assert "{{site}}" not in text and "{{shots}}" not in text
-        assert "### Rules" in text and "Skills read:" in text
+        assert "### Rules" not in text and "Skills read:" in text and "Rules from: " in text, "the file links the rules"
+        assert "### Rules" in linked(folder, "04-style-frames"), "take prints them in full"
         assert ("Kit blocks (`blocks/<id>/`) and the kit's `references/` are under "
                 f"{step_run.kit_path(SCRIPT.parents[1])} (the kit root).") in text
         head, end, _ = step_run.todo_scan(text)
@@ -161,8 +162,9 @@ def test_build_repo_additions():
         out = subprocess.run([sys.executable, SCRIPT, "start", folder, skill],
                              cwd=repo, env=env, capture_output=True, text=True)
         assert out.returncode == 0, out.stderr
-        text = (folder / "04-style-frames.md").read_text(encoding="utf-8")
+        text = linked(folder, "04-style-frames")
         assert "BUILD ONLY" in text and "IMPLEMENT ONLY" not in text, text
+        assert "BUILD ONLY" not in (folder / "04-style-frames.md").read_text(encoding="utf-8"), "the file links the rules"
         assert "[add] build in" in out.stderr and "names no step of this skill; skipped" in out.stderr, out.stderr
 
 

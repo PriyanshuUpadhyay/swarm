@@ -38,7 +38,11 @@ path changed since then outside the step's Writes, the Writes of the other activ
 not need and that were not done before its take, and the run folder. Take records a hash of `.blocks.toml`, so an
 ignored copy counts too. It also refuses a change to `.blocks.toml`, whose `[off]` table only the owner sets.
 Outside git it prints `not run: scope`. A failed git call, or a take with no base, refuses. `done` also runs the script checks of each block in the step's row of
-`<folder>/plan.md`, so removing the `Skills read:` line skips none. `take` of a step with the `change-review`
+`<folder>/plan.md`, so removing the `Skills read:` line skips none. `start` links each block's rules instead
+of copying them: the `Skills read:` line names each block with the hash of its file, and `Rules from: <table>`
+names the table. `take` prints the step file with each block's Rules and Example in full, and refuses when a
+block, its hash, or the list differs, or the table is gone. Each judge question appears once in the todos.
+`take` of a step with the `change-review`
 block refuses an agent that took a writing step it reaches through `Uses:`.
 `amend <folder> <row> [--before <step>]` adds one plan row that writes `none`, while the count of `amend`
 lines in `events.log` is below the `Amend: <N>` line of `plan.md`. It checks the plan with `plan_chart.py`

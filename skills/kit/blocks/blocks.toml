@@ -12,7 +12,7 @@
 # cites kit-relative paths with lines or a pack name, never a machine path.
 # A script check is a command that runs as written, then what it proves. It reads only the work's own
 # output (the page, its CSS and JS, the {{shots}} folder, the commit range), never a step file:
-# start copies the block's Rules and Example into the step file, so a search there matches them.
+# the step file holds the check text in its todos, so a search there matches them.
 # A check that needs the step file, a helper the block does not ship, or meaning is a judge check:
 # one precise question and the evidence its answer must quote. Form goes to script, meaning goes to
 # judge. A block with no script check says so in one line, `- none: <why>`.
