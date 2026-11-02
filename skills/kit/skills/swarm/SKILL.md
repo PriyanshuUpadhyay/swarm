@@ -43,6 +43,8 @@ each step with the blocks it resolves to. A task with no verb has no preset.
 
 ## Steps
 
+The small route of `implement` (`presets/implement/references/small.md`) skips steps 1 to 3.
+
 1. Write the plan by `blocks/planner/SKILL.md`.
 2. Check it and draw it by `blocks/plan-chart/SKILL.md`.
 3. With `Stop: owner`, or with no preset, get the owner's approval by `blocks/plan-review/SKILL.md`.

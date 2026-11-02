@@ -31,4 +31,6 @@ Take the small route only when all of these hold. Otherwise run the `implement` 
    allows. The agent that wrote the change never fills the rows.
 5. Run `verdict`. On `REQUEST CHANGES`, fix each `fix` row and review the new range once more. On
    `NEEDS DISCUSSION`, bring the asks to the owner. A second `REQUEST CHANGES` goes to the owner.
+   On `INCOMPLETE`, run `review_check.py build <run> --run` when `01-units.md` has a Build line,
+   have the seat fill each missing row, and run `verdict` again.
 6. Reply with the test output, the `size_gate.py` line, and line 3 of `03-verdict.md`.
