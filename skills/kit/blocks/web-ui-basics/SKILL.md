@@ -42,7 +42,7 @@ Result: the evidence line shows the FAIL and then the PASS for each width.
 - `rg -n -g '*.html' -g '*.css' -g '*.js' 'user-scalable=no|maximum-scale=1(\.0+)?([^.0-9]|$)' {{site}}` prints nothing: no page turns off zoom.
 - `! rg -q -g '*.html' -g '*.css' -g '*.js' 'outline:\s*none' {{site}} || rg -q -g '*.html' -g '*.css' -g '*.js' ':focus-visible' {{site}}` exits 0: an `outline: none` comes with a `:focus-visible` replacement.
 - `test -f {{site}}/index.html && rg -o -N '<h[1-6]' {{site}}/index.html | tr -d '<h' | awk '$1 > p + 1 {bad = 1} {p = $1} END {exit bad}'` exits 0: the headings start at `h1` and skip no level.
-- `rg --files -0 -g '*.html' {{site}} | xargs -0 perl -0777 -ne 'while (/<img\b[^>]*>/g) { my $t = $&; print "$ARGV: $t\n" unless $t =~ /\balt=/ && $t =~ /\bwidth=/ && $t =~ /\bheight=/ }'` prints nothing: each image tag, also one split over lines, has `alt`, `width`, and `height`.
+- `rg --files -0 -g '*.html' {{site}} | xargs -0 perl -0777 -ne 'while (/<img\b[^>]*>/g) { my $t = $&; print "$ARGV: $t\n" unless $t =~ /\salt=/ && $t =~ /\swidth=/ && $t =~ /\sheight=/ }'` prints nothing: each image tag, also one split over lines, has `alt`, `width`, and `height` (a `data-alt` does not count).
 
 ## Check (judge)
 - Do the hits of `rg -n -g '*.html' -g '*.css' -g '*.js' 'transition:\s*all|ease-in([^-]|$)|prefers-reduced-motion' {{site}}` pass the judge in `blocks/ui-motion/SKILL.md`? Quote each hit and its verdict.

@@ -52,7 +52,7 @@ def block_checks(block):
 def plan_blocks(folder, step):
     """The resolved blocks of the step's row in the run's plan.md, for a plan with a Writes column; else none.
 
-    start writes the rules and check todos of exactly these blocks, so done needs no `Skills read:` line to know
+    start links the rules and writes the check todos of exactly these blocks, so done needs no `Skills read:` line to know
     them, and deleting that line skips no check.
     """
     plan = Path(folder) / "plan.md"

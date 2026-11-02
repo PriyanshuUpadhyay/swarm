@@ -184,6 +184,8 @@ def test_web_ui_basics_checks(tmp):
     assert not zoom.stdout, zoom
     assert ring.returncode == 1 and heads.returncode == 1, "outline: none with no ring fails, and h1 to h3 skips a level"
     assert '<img src="b.png">' in images.stdout and "DESIGN.md" not in images.stdout, images
+    (site / "index.html").write_text('<h1>A</h1>\n<img src="c.png" data-alt="1" data-width="1" data-height="1">\n', encoding="utf-8")
+    assert "c.png" in block_lines("web-ui-basics", site=site)[3].stdout, "data-alt is not alt"
     (site / "index.html").write_text('<meta content="maximum-scale=1.0, width=device-width">\n<h2>B</h2>\n', encoding="utf-8")
     zoom, _, heads, _ = block_lines("web-ui-basics", site=site)
     assert "maximum-scale=1.0" in zoom.stdout and heads.returncode == 1, (zoom, heads)

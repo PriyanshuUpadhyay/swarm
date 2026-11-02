@@ -37,7 +37,7 @@ from plan_page import inline, parents, render  # noqa: E402,F401 (inline, parent
 from plan_rules import check_briefs, check_layout, check_ledger, check_writes, conflicts  # noqa: E402
 
 START, END = "<!-- plan-chart:start -->", "<!-- plan-chart:end -->"
-HEAD = re.compile(r"\|\s*File\s*\|\s*Needs\s*\|\s*Holds\s*\|(\s*Writes\s*\|)?\s*Blocks?\s*\|\s*Why\s*\|")  # Blocks: step_run.py writes the block rules into each step
+HEAD = re.compile(r"\|\s*File\s*\|\s*Needs\s*\|\s*Holds\s*\|(\s*Writes\s*\|)?\s*Blocks?\s*\|\s*Why\s*\|")  # Blocks: step_run.py links the block rules in each step
 OPTIONAL = re.compile(r"\s*\(optional\)$")
 
 

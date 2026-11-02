@@ -102,8 +102,8 @@ Write each row as `| unit | rule | file:line | quote | kind | problem | proof |`
   introduced and that its author would fix; an older defect or a matter of taste is a `note`. Start
   its problem with "potential issue, not confirmed:" and name the input that would trigger it.
   A `note` whose problem names a crash (`crash`, `traceback`, `panic`, `uncaught`, `non-zero exit`,
-  `exits 1`) and that quotes a new line counts as a `fix`: `verdict` changes its kind, so only an
-  owner's `limit:` answer keeps it open.
+  `exits 1`) and that quotes a new line counts as a `fix`: `verdict` changes its kind, and only an
+  owner's `limit:` answer closes it, as a limit.
   The script sets `answered` when an answer closes an `ask`, or `limit` when the user accepts a
   `fix` as a known limit; a seat never writes those kinds.
 - `quote` is an exact part of one line. A `pass` or `n/a` quotes a line of its unit. Other kinds
