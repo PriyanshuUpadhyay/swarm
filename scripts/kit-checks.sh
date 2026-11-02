@@ -20,6 +20,7 @@ checks = [
     "skills/kit/scripts/test_block_refs.py",
     "skills/kit/scripts/test_plugin_skills.py",
     "skills/kit/presets/implement/scripts/test_implement_run.py",
+    "skills/kit/presets/implement/scripts/test_size_gate.py",
     "skills/kit/references/test_step_run.py",
     "skills/kit/blocks/plan-chart/scripts/test_plan_chart.py",
     "skills/kit/blocks/plan-chart/scripts/test_plan_page.py",

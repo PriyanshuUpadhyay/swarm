@@ -5,7 +5,11 @@ description: Build one change through seven steps (frame, design, contracts, imp
 
 # Implement
 
-Use the `implement` preset for any change. A one-line change takes the fast lane.
+Use the `implement` preset for a change that needs a decision, touches a contract, stored data, or
+security, or that the owner wants planned. Any other change of about 3 files takes the small route in
+[references/small.md](references/small.md), whose `size_gate.py` sends it back here when the real diff is
+larger. A change that reads stored data adds `worst-case-data` to `04-impact`, so a bad stored value is
+probed too.
 The kit's `references/run-folder.md` owns the run and settings paths.
 
 ## Entry and lanes

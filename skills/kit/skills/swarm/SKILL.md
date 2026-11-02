@@ -24,7 +24,7 @@ the task mixes verbs, plan from the block catalog with no preset.
 | Preset | Use when the task is to |
 |---|---|
 | `build` | make a picture, film, or site where code draws every frame: a reel, a loop, a generative still, a landing page, or a portfolio |
-| `implement` | build one change, in pair or auto mode |
+| `implement` | build one change, in pair or auto mode; a change with no new decision or risk in about 3 files takes the small route in `presets/implement/references/small.md`, with no plan page |
 | `review` | check a range, walk a GitHub PR, or run a cleanup pass |
 | `research` | answer one question from evidence in a short report |
 | `explain` | explain how something works |
