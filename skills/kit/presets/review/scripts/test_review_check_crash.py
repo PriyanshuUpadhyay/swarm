@@ -42,6 +42,9 @@ def test_crash_note():
             review("the loop cannot crash on an empty list; rename i")
             assert rc.verdict(run.name) == 0
             assert "0 fix, 0 ask, 1 note" in (run / "03-verdict.md").read_text(), "a denied crash stays a note"
+            review("no guard, crashes on an empty list")
+            assert rc.verdict(run.name) == 0
+            assert "1 fix, 0 ask, 0 note" in (run / "03-verdict.md").read_text(), "a denial of another word is still a crash"
             review("the removed line could crash too", quote="return 1", line=2)
             assert rc.verdict(run.name) == 0
             assert "0 fix, 0 ask, 1 note" in (run / "03-verdict.md").read_text(), "a crash note on removed code stays a note"

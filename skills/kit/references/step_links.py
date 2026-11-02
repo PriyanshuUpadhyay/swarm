@@ -2,8 +2,8 @@
 
 start writes `Rules from: <table file>` under `## Rules for this step`, next to the `Skills read:` line that
 names each block with the hash of its file. take resolves the step's blocks again from that table, refuses
-when any block or hash differs, and prints the Rules and Example text where the copy used to be. The reason is
-in tmp/deliver/2026-11-02-kit-right-size.md (A9).
+when any block or hash differs, and prints the Rules and Example text where the copy used to be. So the step file
+stays short, and the worker still reads the full rules once, at take.
 """
 
 from pathlib import Path
@@ -30,9 +30,12 @@ def rules_for(folder, step, text, table, resolve, skills_head):
 
     SystemExit when the table is gone, or when a block, its hash, or the block list differs from the Skills read
     line that start wrote, because the worker would follow rules that no longer match its check todos."""
-    lines = text.split("\n")
+    lines = [line.rstrip("\r") for line in text.split("\n")]
     at = link_at(lines)
     if at is None:
+        # A link line that is not under the head means the head was edited, so the worker would get no rules.
+        if any(line.startswith(FROM) for line in lines) and RULES_HEAD not in lines:
+            raise SystemExit(f"{step} links its rules but has no `{RULES_HEAD}` line; restore it or start a new run folder")
         return None
     source = Path(lines[at].removeprefix(FROM))
     if not source.is_file():
@@ -49,7 +52,7 @@ def rules_for(folder, step, text, table, resolve, skills_head):
 def fill(text, rules):
     """The step text with the rules inserted under the link line."""
     lines = text.split("\n")
-    at = link_at(lines)
+    at = link_at([line.rstrip("\r") for line in lines])
     if rules is None or at is None:
         return text
     return "\n".join(lines[:at + 1] + [rules] + lines[at + 1:])

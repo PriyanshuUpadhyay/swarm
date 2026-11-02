@@ -4,8 +4,9 @@ from pathlib import Path
 
 
 CRASH = re.compile(r"\b(crash(es|ed)?|traceback|panics?|uncaught|non-zero exit|exits? [1-9]\d*)\b", re.I)
-# A crash word with a denial in the 3 words before it ("cannot crash", "no traceback") names no crash.
-DENIED = re.compile(r"\b(cannot|can't|never|no|not|won't|doesn't|without)\W+(\w+\W+){0,2}$", re.I)
+# A crash word right after a denial ("cannot crash", "no traceback", "without a crash") names no crash; a denial
+# of another word ("no guard, crashes") does not count.
+DENIED = re.compile(r"\b(cannot|can't|never|no|not|won't|doesn't|without)\s+((a|an|any|to)\s+)?$", re.I)
 
 
 def crashes(problem):

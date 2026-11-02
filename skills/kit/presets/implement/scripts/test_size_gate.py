@@ -48,11 +48,23 @@ with tempfile.TemporaryDirectory() as tmp:
     # A committed path with an accent still meets the schema globs, because the diff is read with -z.
     out = case(tmp, "accent", {"db/données.sql": 1, "a.py": 1})
     assert out.returncode == 1 and "db/données.sql is a schema or migration path" in out.stdout, out
+    out = case(tmp, "escape", {"a\x1b[2Jschema.txt": 1})
+    assert out.returncode == 1 and out.stdout.strip() == "raise: a\\x1b[2Jschema.txt is a schema or migration path", out
     # A new binary file counts 0 lines, as git counts it after the commit.
     out = case(tmp, "binary", {"a.py": 1, "shot.png": 0})
     Path(tmp, "binary", "shot.png").write_bytes(bytes(range(256)) * 80)
     out = subprocess.run([sys.executable, "-I", str(GATE), "HEAD~1"], cwd=Path(tmp, "binary"), capture_output=True, text=True)
     assert out.returncode == 0 and out.stdout.strip() == "small: 2 files, 1 lines", out
+    # A NUL byte after the first 8000 bytes is text to git, so the lines count; a symlink counts 1 line.
+    late = Path(tmp, "binary", "late.txt")
+    late.write_bytes(b"x\n" * 4500 + b"\0\n" + b"y\n" * 500)
+    out = subprocess.run([sys.executable, "-I", str(GATE), "HEAD~1"], cwd=Path(tmp, "binary"), capture_output=True, text=True)
+    assert out.returncode == 1 and out.stdout.strip() == "raise: 5002 lines changed (small allows 100)", out
+    late.unlink()
+    Path(tmp, "binary", "link").symlink_to("gone")
+    out = subprocess.run([sys.executable, "-I", str(GATE), "HEAD~1"], cwd=Path(tmp, "binary"), capture_output=True, text=True)
+    assert out.returncode == 0 and out.stdout.strip() == "small: 3 files, 2 lines", out
+    Path(tmp, "binary", "link").unlink()
     # A new file that cannot be read raises, because its size is unknown.
     locked = Path(tmp, "binary", "locked.txt")
     locked.write_text("x\n")

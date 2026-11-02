@@ -10,6 +10,7 @@ can widen does not hold (trial 5, kit-right-size council 2026-11-02).
 """
 
 import fnmatch
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -28,9 +29,21 @@ def git(*args):
 
 
 def lines_of(path):
-    """Lines in an untracked file; a file with a NUL byte is binary and counts 0, as git numstat counts it."""
-    data = Path(path).read_bytes()
-    return 0 if b"\0" in data else data.count(b"\n") + (not data.endswith(b"\n") and bool(data))
+    """Lines in an untracked file, read in chunks. Like git, a file with a NUL byte in its first 8000 bytes is
+    binary and counts 0, and a symlink counts 1 line, its target."""
+    path = Path(path)
+    if path.is_symlink():
+        return 1
+    count, last = 0, b"\n"
+    with path.open("rb") as file:
+        head = file.read(8000)
+        if b"\0" in head:
+            return 0
+        chunk = head
+        while chunk:
+            count, last = count + chunk.count(b"\n"), chunk[-1:]
+            chunk = file.read(1 << 20)
+    return count + (last != b"\n")
 
 
 def measure(base):
@@ -71,7 +84,8 @@ def main(argv):
     else:
         print(f"small: {len(paths)} files, {lines} lines")
         return 0
-    print(f"raise: {reason}")
+    # -z gives raw names, so a control byte in a path is shown escaped, not sent to the terminal.
+    print("raise: " + re.sub(r"[\x00-\x1f\x7f]", lambda m: f"\\x{ord(m[0]):02x}", reason))
     return 1
 
 

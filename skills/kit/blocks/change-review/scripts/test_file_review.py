@@ -25,6 +25,11 @@ with tempfile.TemporaryDirectory() as tmp:
     rows(d, "pass", "fix", verdict="Verdict: APPROVE")
     out = run(d)
     assert out.returncode == 1 and "APPROVE with 1 open fix" in out.stderr, out
+    # A header cell that starts with "fix" is not a fix row.
+    (d / "file-review.md").write_text("| File | fix, pass, or note | Evidence |\n|---|---|---|\n| a | pass | ok |\n", encoding="utf-8")
+    out = run(d, "--close")
+    assert out.returncode == 0 and "Verdict: APPROVE" in (d / "file-review.md").read_text(), out
+    (d / "file-review.md").unlink()
     # A fix row with an unescaped pipe in its evidence refuses; it never closes as an approval.
     (d / "file-review.md").write_text("| index.html | fix | grep a | wc -l |\n", encoding="utf-8")
     out = run(d, "--close")
