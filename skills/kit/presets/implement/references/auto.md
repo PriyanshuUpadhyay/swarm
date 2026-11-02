@@ -29,7 +29,8 @@ only the user can give.
    Fixes use the same folder; a re-plan starts with `start --parent-loop <saved-key>`.
    A fix seat may start on one review seat's validated `fix` rows
    after a partial verdict finds no problem in those rows, in its own worktree from the reviewed head.
-   Later rows go to the same fix seat as one more ask. The verdict word and the next review start
+   Later rows go to the same fix seat as one more ask. A `fix` row whose fix is one line goes to the
+   seat that wrote the code, as one more ask, not to a new seat. The verdict word and the next review start
    wait for every review seat. Fix each `fix` row in one more iteration, then review the
    new range. Handle each `ask` as the Asks section of the `review` preset's `references/check.md` says: answer-only work keeps
    HEAD and the range fixed, then run `verdict` again on the same run. In an implement run, you also hold

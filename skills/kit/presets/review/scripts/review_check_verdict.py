@@ -41,7 +41,8 @@ def answers(path):
 
 
 
-def verdict(name):
+def verdict(name, only=None):
+    """Gate the rows and write 03-verdict.md; with `only` (a seat file name), check only that file's rows and write nothing."""
     from review_check import GENERIC, KINDS, answers, home, parse_diff, revision, rows, step_run, tree_digest
     d = home() / name
     units = {u["id"]: u for u in json.loads((d / "units.json").read_text(encoding="utf-8"))}
@@ -60,7 +61,7 @@ def verdict(name):
     closed = [0] * len(replied)
     selected = [alternatives[0] for alternatives in replied]
     built = "none"
-    if t["ci"]:  # the build must pass even with no tool IDs, because a missing import breaks no rule ID
+    if t["ci"] and not only:  # the build must pass even with no tool IDs, because a missing import breaks no rule ID
         b = json.loads((d / "build.json").read_text(encoding="utf-8")) if (d / "build.json").exists() else None
         if b is None:
             problems.append("build: no result; run `build <run>`, or `build <run> --run` for an unpushed head")
@@ -74,6 +75,8 @@ def verdict(name):
                 kept.append(("build", f"build {b['name']}", "", "fix", f"build `{b['name']}` failed at "
                              f"{(t['head'] or 'working tree')[:7]}", b["tail"][-1] if b["tail"] else "no output"))
     for src, cells in rows(d, seats):
+        if only and src != only:
+            continue
         if len(cells) != 7:
             problems.append(f"{src}: a row has {len(cells)} cells, not 7: {' | '.join(cells)}")
             continue
@@ -176,6 +179,10 @@ def verdict(name):
         body = re.sub(r"^(?:fix|limit):\s*", "", text, flags=re.I)
         if body.lower().strip(". ") in GENERIC:
             problems.append(f"answers.md {path} `{quote}`: an answer needs a record the user approved or a failing test")
+    if only:
+        # A seat runs this as it writes, so a bad quote goes back to the same seat before the verdict.
+        print(*(re.sub(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]", "", p) for p in problems or [f"{only}: rows ok"]), sep="\n")
+        return 1 if problems else 0
     missing = {uid: [r for r in checklist[uid]["rules"] if r not in done[uid]] for uid in units}
     if seats:
         for seat, plan in seats.items():

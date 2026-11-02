@@ -39,12 +39,13 @@ Action: write and run `checks/basics.mjs` at 1440, 390, and 375 px. It reports `
 Result: the evidence line shows the FAIL and then the PASS for each width.
 
 ## Check (script)
-- `rg -n -g '*.html' -g '*.css' -g '*.js' 'outline:\s*none|transition:\s*all|user-scalable=no|maximum-scale=1(\.0+)?([^.0-9]|$)|ease-in([^-]|$)' {{site}}` reports declarations to check. A zoom hit fails. An `outline: none` hit fails unless a `:focus-visible` replacement is present. Send motion hits to the judge in `blocks/ui-motion/SKILL.md`; they do not fail this check by themselves.
-- `rg -n -g '*.html' -g '*.css' -g '*.js' 'prefers-reduced-motion' {{site}}` reports the declaration locations for the `ui-motion` judge. This scan alone gives no policy verdict.
-- `rg -o '<h[1-6]' {{site}}/index.html` lists the headings with no skipped level: heading order holds.
-- `rg -U -n -g '*.html' '<img\b[^>]*>' {{site}}` prints each whole image tag, also one split over lines, and shows `alt`, `width`, and `height` on each image: images are described and sized.
+- `rg -n -g '*.html' -g '*.css' -g '*.js' 'user-scalable=no|maximum-scale=1(\.0+)?([^.0-9]|$)' {{site}}` prints nothing: no page turns off zoom.
+- `! rg -q -g '*.html' -g '*.css' -g '*.js' 'outline:\s*none' {{site}} || rg -q -g '*.html' -g '*.css' -g '*.js' ':focus-visible' {{site}}` exits 0: an `outline: none` comes with a `:focus-visible` replacement.
+- `test -f {{site}}/index.html && rg -o -N '<h[1-6]' {{site}}/index.html | tr -d '<h' | awk '$1 > p + 1 {bad = 1} {p = $1} END {exit bad}'` exits 0: the headings start at `h1` and skip no level.
+- `rg --files -0 -g '*.html' {{site}} | xargs -0 perl -0777 -ne 'while (/<img\b[^>]*>/g) { my $t = $&; print "$ARGV: $t\n" unless $t =~ /\balt=/ && $t =~ /\bwidth=/ && $t =~ /\bheight=/ }'` prints nothing: each image tag, also one split over lines, has `alt`, `width`, and `height`.
 
 ## Check (judge)
+- Do the hits of `rg -n -g '*.html' -g '*.css' -g '*.js' 'transition:\s*all|ease-in([^-]|$)|prefers-reduced-motion' {{site}}` pass the judge in `blocks/ui-motion/SKILL.md`? Quote each hit and its verdict.
 - In the shots at 1440, 390, and 375 px, is any content cut off at the right edge or scrolled sideways? Quote each shot path.
 - Does the settled-state shot show every key fact? Quote the path and the facts. Apply `blocks/ui-motion/SKILL.md` for reduced motion.
 - Does a Tab walk show a visible ring on each link and button, with the skip link first? Quote the screenshot paths.

@@ -77,14 +77,14 @@ def test_param_quoted_in_script_checks(tmp):
     out, folder, repo, _ = blocks_start(tmp, "param-quote", "- build: block:web-ui-basics\n- design: block:design-tokens\n", toml)
     assert out.returncode == 0, out.stderr
     build = step_text(folder, "05-build")
-    todo = next(l for l in build.splitlines() if "'prefers-reduced-motion'" in l)
+    todo = next(l for l in build.splitlines() if "'user-scalable=no" in l)
     command = re.search(r"`([^`]+)`", todo)[1]
     assert command.endswith(" 'my site --files'"), todo
     assert "`my site --files/DESIGN.md`" in step_text(folder, "02-design").split(implement_run.TODO_HEAD)[0], "rules stay plain"
     (repo / "my site --files").mkdir()
-    (repo / "my site --files" / "a.css").write_text("@media (prefers-reduced-motion: reduce) {}\n", encoding="utf-8")
+    (repo / "my site --files" / "a.html").write_text('<meta content="user-scalable=no">\n', encoding="utf-8")
     ran = subprocess.run(command, shell=True, cwd=repo, capture_output=True, text=True)
-    assert ran.returncode == 0 and ran.stdout.startswith("my site --files/a.css:1:"), ran
+    assert ran.returncode == 0 and ran.stdout.startswith("my site --files/a.html:1:"), ran
 
 
 def test_param_outside_span_in_script_check(tmp):

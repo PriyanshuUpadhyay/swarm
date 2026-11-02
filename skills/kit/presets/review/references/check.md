@@ -184,7 +184,9 @@ Dispatch and gap follow-ups follow [the kit's fan-out.md](../../../references/fa
 `start` splits each `review.check` aspect by assigned unit-rule pairs, with one shard per
 150 checks rounded up, at most three. Units stay whole and in order. The split balances check
 counts. One shard keeps the aspect name; more shards use `<aspect>-1`, `<aspect>-2`, and
-`<aspect>-3`. Each seat writes `02-review-<seat>.md`.
+`<aspect>-3`. Each seat writes `02-review-<seat>.md`. Before it reports, the seat runs
+`python3 <kit root>/presets/review/scripts/review_check.py lint <run> 02-review-<seat>.md`, which checks
+only that file's rows (cells, IDs, quotes, and proofs), and fixes each row that it names.
 
 | Seat | Route | IDs | Writes |
 |---|---|---|---|

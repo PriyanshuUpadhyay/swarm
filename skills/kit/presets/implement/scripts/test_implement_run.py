@@ -254,6 +254,7 @@ with tempfile.TemporaryDirectory() as tmp:
     test_diagram_shot_check(tmp)
     test_design_tokens_dashes(tmp)
     test_web_ui_basics_checks(tmp)
+    test_headless_shot_checks(tmp)
     test_block_ascii_locale(tmp)
     test_review_read_encoding(tmp)
     print("ok")

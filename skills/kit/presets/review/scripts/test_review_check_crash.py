@@ -42,5 +42,19 @@ def test_crash_note():
             review("the removed line could crash too", quote="return 1", line=2)
             assert rc.verdict(run.name) == 0
             assert "0 fix, 0 ask, 1 note" in (run / "03-verdict.md").read_text(), "a crash note on removed code stays a note"
+            # lint checks one seat file as it is written: a quote outside the unit goes back to the seat at once.
+            review("the name could be clearer")
+            out = StringIO()
+            with redirect_stdout(out):
+                assert rc.verdict(run.name, "02-review.md") == 0
+            assert out.getvalue().strip() == "02-review.md: rows ok", out.getvalue()
+            assert not (run / "03-verdict.md").read_text().startswith("Status: blocked"), "lint writes no verdict"
+            review("the name could be clearer", quote="return 3")
+            before = (run / "03-verdict.md").read_text()
+            out = StringIO()
+            with redirect_stdout(out):
+                assert rc.verdict(run.name, "02-review.md") == 1
+            assert "quote not found at util.py:2" in out.getvalue(), out.getvalue()
+            assert (run / "03-verdict.md").read_text() == before, "lint leaves the verdict file as it was"
         finally:
             os.chdir(previous)

@@ -157,31 +157,51 @@ def test_design_tokens_dashes(tmp):
         assert (out.stdout.strip() != "") == found, (text, out)
 
 
+def block_lines(name, **fill):
+    """Run each Check (script) bullet's command of a block as done runs it, with each {{param}} filled."""
+    text = (implement_run.BLOCKS / name / "SKILL.md").read_text(encoding="utf-8").split("## Check (script)\n", 1)[1].split("\n## ")[0]
+    commands = [re.match(r"- `([^`]+)`", line)[1] for line in text.splitlines() if line.startswith("- `")]
+    for key, value in fill.items():
+        commands = [c.replace("{{%s}}" % key, shlex.quote(str(value))) for c in commands]
+    return [subprocess.run(["sh", "-c", c], capture_output=True, text=True) for c in commands]
+
+
 def test_web_ui_basics_checks(tmp):
-    """The web-ui-basics rg checks read the page files, not DESIGN.md prose beside them."""
+    """Each web-ui-basics script check runs in the run form, reads page files and not DESIGN.md prose, and fails on its fault."""
     site = Path(tmp, "basics-site")
     site.mkdir()
-    (site / "DESIGN.md").write_text("Never use outline: none. prefers-reduced-motion is nice.\n", encoding="utf-8")
-    (site / "index.html").write_text("<h1>A</h1>\n", encoding="utf-8")
-    (site / "style.css").write_text("h1 { color: red; }\n", encoding="utf-8")
-    banned, motion = block_rg("web-ui-basics", site)[:2]
-    assert banned.returncode == 1 and not banned.stdout, banned
-    assert motion.returncode == 1 and not motion.stdout, "DESIGN.md prose must not count as handling reduced motion"
-    (site / "style.css").write_text("@media (prefers-reduced-motion: reduce) { * { animation: none; } }\n", encoding="utf-8")
-    banned, motion = block_rg("web-ui-basics", site)[:2]
-    assert motion.returncode == 0 and "style.css" in motion.stdout, motion
-    # The banned-pattern check hits ease-in at a line end and maximum-scale=1 (or 1.0), not 1.5 or ease-in-out.
-    (site / "style.css").write_text("a { transition: opacity 200ms ease-in\n}\nb { transition: color 200ms ease-in-out; }\n",
-                                    encoding="utf-8")
-    (site / "index.html").write_text('<meta content="maximum-scale=1.5">\n<meta content="maximum-scale=1">\n'
-                                     '<meta content="maximum-scale=1.0, width=device-width">\n', encoding="utf-8")
-    hits = [line.split(":", 1)[1] for line in block_rg("web-ui-basics", site)[0].stdout.splitlines()]
-    assert sorted(hits) == ["1:a { transition: opacity 200ms ease-in", '2:<meta content="maximum-scale=1">',
-                            '3:<meta content="maximum-scale=1.0, width=device-width">'], hits
-    # An image tag whose attributes sit on later lines shows all of them.
-    (site / "index.html").write_text('<h1>A</h1>\n<img\n  src="a.png"\n  alt="A"\n  width="10"\n  height="10">\n'
-                                     '<img src="b.png">\n', encoding="utf-8")
-    (site / "DESIGN.md").write_text("Use <img with alt.\n", encoding="utf-8")
-    images = block_rg("web-ui-basics", site)[3]
-    assert all(attr in images.stdout for attr in ('alt="A"', 'width="10"', 'height="10"', '<img src="b.png">')), images
-    assert "DESIGN.md" not in images.stdout, images
+    (site / "DESIGN.md").write_text("Never use outline: none or maximum-scale=1. Use <img with alt.\n", encoding="utf-8")
+    (site / "index.html").write_text('<h1>A</h1>\n<h2>B</h2>\n<img\n  src="a.png"\n  alt="A"\n  width="10"\n  height="10">\n', encoding="utf-8")
+    (site / "style.css").write_text("a:focus-visible { outline: 2px solid; }\nb { outline: none; }\n", encoding="utf-8")
+    zoom, ring, heads, images = block_lines("web-ui-basics", site=site)
+    assert not zoom.stdout and zoom.returncode == 1 and not zoom.stderr, zoom
+    assert ring.returncode == 0 and heads.returncode == 0, (ring, heads)
+    assert images.returncode == 0 and not images.stdout, images
+    # The zoom check hits maximum-scale=1 (or 1.0), not 1.5.
+    (site / "index.html").write_text('<meta content="maximum-scale=1.5">\n<h1>A</h1>\n<h3>C</h3>\n<img src="b.png">\n', encoding="utf-8")
+    (site / "style.css").write_text("b { outline: none; }\n", encoding="utf-8")
+    zoom, ring, heads, images = block_lines("web-ui-basics", site=site)
+    assert not zoom.stdout, zoom
+    assert ring.returncode == 1 and heads.returncode == 1, "outline: none with no ring fails, and h1 to h3 skips a level"
+    assert '<img src="b.png">' in images.stdout and "DESIGN.md" not in images.stdout, images
+    (site / "index.html").write_text('<meta content="maximum-scale=1.0, width=device-width">\n<h2>B</h2>\n', encoding="utf-8")
+    zoom, _, heads, _ = block_lines("web-ui-basics", site=site)
+    assert "maximum-scale=1.0" in zoom.stdout and heads.returncode == 1, (zoom, heads)
+    (site / "index.html").unlink()
+    assert block_lines("web-ui-basics", site=site)[2].returncode == 1, "no index.html fails the heading check"
+
+
+def test_headless_shot_checks(tmp):
+    """The headless-shot checks fail with no shot, on a file that is not a PNG, and on a flat shot."""
+    shots = Path(tmp, "hs-shots")
+    shots.mkdir()
+    assert [r.returncode for r in block_lines("headless-shot", shots=shots)] == [1, 1], "no shot fails both"
+    if not shutil.which("magick"):
+        print("not run: headless-shot PNG cases need magick")
+        return
+    subprocess.run(["magick", "-size", "8x8", "gradient:", str(shots / "home-1440.png")], check=True)
+    assert [r.returncode for r in block_lines("headless-shot", shots=shots)] == [0, 0]
+    subprocess.run(["magick", "-size", "8x8", "xc:white", str(shots / "blank-390.png")], check=True)
+    assert [r.returncode for r in block_lines("headless-shot", shots=shots)] == [0, 1], "a flat shot fails"
+    (shots / "fake-375.png").write_text("not a png\n")
+    assert block_lines("headless-shot", shots=shots)[0].returncode == 1, "a file that is not a PNG fails"

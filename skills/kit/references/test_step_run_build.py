@@ -40,6 +40,14 @@ def test_build_start_and_skip():
         assert step_run.ready(folder, "07-export", ["06-detail"])
 
 
+def png():
+    """A 2 x 1 PNG with a black and a white pixel, so it is not one flat color."""
+    import struct, zlib
+    chunk = lambda kind, data: struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", 2, 1, 8, 0, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(b"\x00\x00\xff")) + chunk(b"IEND", b""))
+
+
 def test_build_block_todos():
     with tempfile.TemporaryDirectory() as tmp:
         folder = Path(tmp, "piece with spaces", "ink")
@@ -67,6 +75,10 @@ def test_build_block_todos():
         text = file.read_text(encoding="utf-8")
         file.write_text("\n".join(line.replace("- [ ]", "- [x]") + " evidence" if line.startswith("- [ ]")
                                   else line for line in text.splitlines()) + "\n", encoding="utf-8")
+        out = run("done", folder, "04-style-frames", claim(folder, "04-style-frames"))
+        assert out.returncode == 1 and "block headless-shot check failed" in out.stderr, "no shot fails the shot check"
+        (folder.parent / "shots").mkdir()
+        (folder.parent / "shots" / "home-1440.png").write_bytes(png())
         out = run("done", folder, "04-style-frames", claim(folder, "04-style-frames"))
         assert out.returncode == 0, out.stderr
         before = file.read_bytes()

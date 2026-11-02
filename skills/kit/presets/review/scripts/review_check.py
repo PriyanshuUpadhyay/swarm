@@ -16,6 +16,7 @@ only from it.
                                             make <repo>/tmp/review-check/<run>/ with 01-units.md
   build <run> [--run]                        record CI for the head, or run its command in the verify worktree
   verdict <run>                              gate the rows of 02-review*.md and write 03-verdict.md
+  lint <run> <seat file>                     check one seat file's rows (cells, IDs, quotes, proofs) as the seat writes them
 
 `--patch` reviews that patch instead of the whole range, for example review-walk's diff since view.
 `verdict` exits 1 when the gate fails, so a caller cannot read an APPROVE that no one earned.
@@ -75,7 +76,7 @@ FAMILY = {ext: fam for fam, exts in {
 if __name__ == "__main__":
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(errors="backslashreplace")
-    commands = {"start": start, "build": build, "verdict": verdict}
+    commands = {"start": start, "build": build, "verdict": verdict, "lint": lambda run, file: verdict(run, Path(file).name)}
     if len(sys.argv) < 3 or sys.argv[1] not in commands:
         raise SystemExit(__doc__)
     sys.exit(commands[sys.argv[1]](*sys.argv[2:]))

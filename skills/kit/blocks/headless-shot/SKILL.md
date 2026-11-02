@@ -31,10 +31,11 @@ metadata:
 Initial state: `{{site}}/index.html` exists. Action: shoot each width from `blocks/web-ui-basics/SKILL.md` to `{{shots}}/home-<W>.png`, then crop the narrowest shot's diagram at 100 %. Result: the crop shows label size truly, and the report names the clipboard as not tested.
 
 ## Check (script)
-- `file {{shots}}/*.png` prints `PNG image data, W x H` for each shot. Page shots named `<name>-<W>.png` or `<name>-<W>-reduced.png` have W from `blocks/web-ui-basics/SKILL.md`. Exclude compare images, crops, and `*-frame.png` from the width check.
-- `magick {{shots}}/*.png -format '%f %[fx:standard_deviation]\n' info:` prints a value above 0 for each shot: no shot is one flat color, as a blank shot is.
+- `file {{shots}}/*.png | awk '!/PNG image data/ {bad = 1} END {exit bad || NR == 0}'` exits 0: each shot is a PNG, and at least one exists.
+- `magick {{shots}}/*.png -format '%f %[fx:standard_deviation]\n' info: | awk '$2 == 0 {bad = 1} END {exit bad || NR == 0}'` exits 0: no shot is one flat color, as a blank shot is.
 
 ## Check (judge)
+- Does each page shot named `<name>-<W>.png` or `<name>-<W>-reduced.png` have the width W, from `blocks/web-ui-basics/SKILL.md`? Leave out compare images, crops, and `*-frame.png`. Quote each path and its `file` width.
 - Do drawn stills and reel frames match the delivery size that the build step names? Quote that size and each image's dimensions.
 - Does each screenshot path the step names exist in {{shots}}? Quote each path.
 - Does each claim about small text cite a 100 % crop, not a full downscaled shot? Quote the claim and the crop path.
