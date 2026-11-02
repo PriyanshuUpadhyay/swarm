@@ -3,6 +3,9 @@ import hashlib, json, re
 from pathlib import Path
 
 
+CRASH = re.compile(r"\b(crash(es|ed)?|traceback|panics?|uncaught|non-zero exit|exits? [1-9]\d*)\b", re.I)
+
+
 def review_files(d, seats):
     if not seats:
         return sorted(d.glob("02-review*.md"))
@@ -117,6 +120,10 @@ def verdict(name):
             at = re.search(r":(\d+)(?:-(\d+))?", loc)
             new = diff.get(path, {}).get("new", {})
             new_lines = [new[n] for n in range(int(at.group(1)), int(at.group(2) or at.group(1)) + 1) if n in new] if at else []
+            # A crash on code the change added is a defect the change made, whatever kind the seat chose
+            # (trial 5: a crash on a bad stored date stayed a note). A limit: answer still closes it.
+            if kind == "note" and CRASH.search(problem) and any(quote in line for line in new_lines):
+                kind = "fix"
             matches = [(i, match) for i, alternatives in enumerate(replied)
                        if (match := next((alt for alt in alternatives if alt[0] == path
                                           and any(alt[1] == source.strip() for source in new_lines)

@@ -14,6 +14,7 @@ from test_review_check_build_process import *
 from test_review_check_build_timeout import *
 from test_review_check_answers import *
 from test_review_check_history import *
+from test_review_check_crash import *
 
 
 def main():
@@ -190,6 +191,7 @@ if __name__ == "__main__":
         test_superseded_run()
         test_answers()
         test_limits()
+        test_crash_note()
         test_stale_verdict_guard()
         test_merge_guard()
         test_same_head_carry()
