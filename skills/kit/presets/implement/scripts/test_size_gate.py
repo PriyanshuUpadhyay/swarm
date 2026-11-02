@@ -51,6 +51,8 @@ with tempfile.TemporaryDirectory() as tmp:
     assert out.returncode == 0 and out.stdout.strip() == "small: 2 files, 10 lines (+120 test lines)", out
     out = case(tmp, "spec", {"src/a.py": 10, "spec/openapi.yaml": 500})
     assert out.returncode == 1 and "510 non-test lines" in out.stdout, out
+    out = case(tmp, "fixture", {"a.py": 10, "testdata/dump.json": 401})
+    assert out.returncode == 1 and out.stdout.strip() == "raise: 401 test lines changed (small allows 400)", out
     out = case(tmp, "cache", {"a.py": 5, "__pycache__/a.cpython-312.pyc": 3})
     assert out.returncode == 0 and out.stdout.strip() == "small: 1 files, 5 lines", out
     out = case(tmp, "notatest", {"contest.py": 101})

@@ -19,6 +19,8 @@ from pathlib import Path
 
 MAX_FILES = 3
 MAX_LINES = 100
+# Test lines do not count toward MAX_LINES, but a huge fixture still leaves the small route (owner, round 5).
+MAX_TEST_LINES = 400
 # A change to stored data or a wire format needs the contracts step, whatever its size.
 SCHEMA = ("*.sql", "*migration*", "*schema*", "*.proto", "*.graphql")
 TESTS = ("test_*", "*_test.*", "*.test.*", "*.spec.*", "*_spec.*", "*Test.*", "*Tests.*")
@@ -92,6 +94,8 @@ def main(argv):
         reason = f"{len(paths)} files changed (small allows {MAX_FILES})"
     elif lines > MAX_LINES:
         reason = f"{lines} non-test lines changed (small allows {MAX_LINES})"
+    elif tests > MAX_TEST_LINES:
+        reason = f"{tests} test lines changed (small allows {MAX_TEST_LINES})"
     else:
         print(f"small: {len(paths)} files, {lines} lines" + (f" (+{tests} test lines)" if tests else ""))
         return 0
