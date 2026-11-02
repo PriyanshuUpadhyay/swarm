@@ -31,7 +31,7 @@ with tempfile.TemporaryDirectory() as tmp:
     assert out.returncode == 0 and "Verdict: APPROVE" in (d / "file-review.md").read_text(), out
     (d / "file-review.md").unlink()
     # A kind cell that starts with the word fix counts, also with a label after it.
-    for kind in ("fix: broken", "fix - broken", "fix."):
+    for kind in ("fix: broken", "fix - broken", "fix.", "fix, broken"):
         (d / "file-review.md").write_text(f"| a | {kind} | e |\n", encoding="utf-8")
         assert run(d, "--close").returncode == 1, kind
     (d / "file-review.md").unlink()

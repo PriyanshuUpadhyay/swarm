@@ -40,8 +40,10 @@ def read(run):
     fixes = []
     for n, line in enumerate(lines, 1):
         cells = [c.strip() for c in re.split(r"(?<!\\)\|", line)[1:-1]] if line.startswith("|") else []
-        # A fix row with an unescaped pipe still counts, so a split row never turns into an approval.
-        if len(cells) >= 2 and re.match(r"fix\b(?!\s*,)", cells[1].lower().strip("`*")):
+        # A header row is the one right above a |---| line; its kind cell may list "fix, pass, or note".
+        header = n < len(lines) and re.fullmatch(r"\|(\s*:?-+:?\s*\|)+", lines[n].strip())
+        # A fix row with an unescaped pipe, or a reason after the word fix, still counts as a fix.
+        if not header and len(cells) >= 2 and re.match(r"fix\b", cells[1].lower().strip("`*")):
             fixes.append(cells[0])
         if cells and len(cells) != 3:
             raise SystemExit(f"file-review.md line {n} has {len(cells)} cells, not 3; write a | in a cell as \\| and end the row with |")
