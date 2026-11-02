@@ -128,4 +128,8 @@ with tempfile.TemporaryDirectory() as tmp:
     winner = ("agent-d", "agent-e")[next(i for i, child in enumerate(children) if child.returncode == 0)]
     assert claimed.read_text(encoding="utf-8").startswith(f"Status: active {winner} #")
     assert lock.exists()
+    # change-review's file-review stop has its own script and test.
+    review = subprocess.run([sys.executable, "-I", str(SCRIPT.parents[1] / "blocks/change-review/scripts/test_file_review.py")],
+                            capture_output=True, text=True)
+    assert review.returncode == 0 and review.stdout.strip() == "ok", review
     print("ok")

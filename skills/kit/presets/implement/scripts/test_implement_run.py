@@ -257,4 +257,7 @@ with tempfile.TemporaryDirectory() as tmp:
     test_headless_shot_checks(tmp)
     test_block_ascii_locale(tmp)
     test_review_read_encoding(tmp)
+    # The small-route size gate has its own script and test (ADR 0133).
+    gate = subprocess.run([sys.executable, "-I", str(Path(__file__).with_name("test_size_gate.py"))], capture_output=True, text=True)
+    assert gate.returncode == 0 and gate.stdout.strip() == "ok", gate
     print("ok")
