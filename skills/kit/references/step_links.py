@@ -6,6 +6,7 @@ when any block or hash differs, and prints the Rules and Example text where the 
 stays short, and the worker still reads the full rules once, at take.
 """
 
+import re
 from pathlib import Path
 
 FROM = "Rules from: "
@@ -33,9 +34,10 @@ def rules_for(folder, step, text, table, resolve, skills_head):
     lines = text.split("\n")
     at = link_at(lines)
     if at is None:
-        # A step with blocks and a link line but no head had its head edited, so the worker would get no rules.
-        # A step with no blocks has no Skills read line, so a brief line with the link words still passes.
-        if RULES_HEAD not in lines and any(l.startswith(FROM) for l in lines) and any(l.startswith(skills_head) for l in lines):
+        # start writes the link as an absolute path to a .md table, so such a line with no exact head means the head
+        # was edited or lost and the worker would get no rules. A brief or a copied rule ("Rules from: the notes")
+        # names no such path, and an implement step's longer head with copied rules never holds a link.
+        if RULES_HEAD not in lines and any(re.fullmatch(re.escape(FROM) + r"/.*\.md", l) for l in lines):
             raise SystemExit(f"{step} links its rules but has no `{RULES_HEAD}` line; restore it or start a new run folder")
         return None
     source = Path(lines[at].removeprefix(FROM))

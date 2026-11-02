@@ -58,6 +58,13 @@ def test_linked_rules(tmp):
     # A step with no blocks may hold a brief line with the link words; it has no rules to refuse.
     import step_links
     assert step_links.rules_for(folder, "03-x", "Status: open\nRules from: the owner's notes\n## Todo\n", None, None, "Skills read: ") is None
+    long_head = "Skills read: none\n## Rules for this step (written by implement_run.py start)\nRules from: the style guide\n"
+    assert step_links.rules_for(folder, "03-x", long_head, None, None, "Skills read: ") is None, "copied rules never refuse"
+    try:
+        step_links.rules_for(folder, "03-x", f"Status: open\nRules from: {folder / 'plan.md'}\n## Todo\n", None, None, "Skills read: ")
+        raise AssertionError("a link with no head and no Skills read line took")
+    except SystemExit as error:
+        assert "links its rules but has no" in str(error), error
     # The rules are read before the claim, so a block edit after the claim cannot fail a take that claimed.
     (folder / "plan-gone.md").rename(folder / "plan.md")
     block.write_text(block.read_text(encoding="utf-8").replace("NEW RULE", "LINKED RULE TEXT"), encoding="utf-8")

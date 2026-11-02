@@ -45,6 +45,9 @@ def test_crash_note():
             review("it no longer crashes on an empty list")
             assert rc.verdict(run.name) == 0
             assert "0 fix, 0 ask, 1 note" in (run / "03-verdict.md").read_text(), "a denial one word before stays a note"
+            review("a file with no newline crashes")
+            assert rc.verdict(run.name) == 0
+            assert "1 fix, 0 ask, 0 note" in (run / "03-verdict.md").read_text(), "a denial of a noun is not a denial of the crash"
             review("no guard, crashes on an empty list")
             assert rc.verdict(run.name) == 0
             assert "1 fix, 0 ask, 0 note" in (run / "03-verdict.md").read_text(), "a denial of another word is still a crash"

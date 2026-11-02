@@ -40,8 +40,9 @@ def read(run):
     fixes = []
     for n, line in enumerate(lines, 1):
         cells = [c.strip() for c in re.split(r"(?<!\\)\|", line)[1:-1]] if line.startswith("|") else []
-        # A header row is the one right above a |---| line; its kind cell may list "fix, pass, or note".
-        header = n < len(lines) and re.fullmatch(r"\|(\s*:?-+:?\s*\|)+", lines[n].strip())
+        # A header row is right above a |---| line and its kind cell lists the kinds ("fix, pass, or note").
+        header = (n < len(lines) and re.fullmatch(r"\|(\s*:?-+:?\s*\|)+", lines[n].strip())
+                  and len(cells) >= 2 and re.search(r"\b(pass|note)\b", cells[1].lower()))
         # A fix row with an unescaped pipe, or a reason after the word fix, still counts as a fix.
         if not header and len(cells) >= 2 and re.match(r"fix\b", cells[1].lower().strip("`*")):
             fixes.append(cells[0])

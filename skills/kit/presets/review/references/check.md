@@ -104,7 +104,8 @@ Write each row as `| unit | rule | file:line | quote | kind | problem | proof |`
   A `note` whose problem names a crash (`crash`, `traceback`, `panic`, `uncaught`, `non-zero exit`,
   `exits 1`) and that quotes a new line counts as a `fix`: `verdict` changes its kind, and only an
   owner's `limit:` answer closes it, as a limit. A crash word right after a denial (`cannot crash`,
-  `no traceback`) names no crash, so that note stays a note.
+  `no traceback`), or after a denial and one linking word such as `longer` or `raise`
+  (`no longer crashes`), names no crash, so that note stays a note.
   The script sets `answered` when an answer closes an `ask`, or `limit` when the user accepts a
   `fix` as a known limit; a seat never writes those kinds.
 - `quote` is an exact part of one line. A `pass` or `n/a` quotes a line of its unit. Other kinds

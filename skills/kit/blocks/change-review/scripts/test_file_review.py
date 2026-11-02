@@ -30,6 +30,9 @@ with tempfile.TemporaryDirectory() as tmp:
     out = run(d, "--close")
     assert out.returncode == 0 and "Verdict: APPROVE" in (d / "file-review.md").read_text(), out
     (d / "file-review.md").unlink()
+    # A first row with no header above its |---| line is a row, not a header.
+    (d / "file-review.md").write_text("| a | fix | e |\n|---|---|---|\n| b | pass | ok |\n", encoding="utf-8")
+    assert run(d, "--close").returncode == 1, "a fix row above the separator stays open"
     # A kind cell that starts with the word fix counts, also with a label after it.
     for kind in ("fix: broken", "fix - broken", "fix.", "fix, broken"):
         (d / "file-review.md").write_text(f"| a | {kind} | e |\n", encoding="utf-8")
