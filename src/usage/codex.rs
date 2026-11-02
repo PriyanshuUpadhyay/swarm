@@ -91,6 +91,7 @@ pub(super) fn normalize_limits(
                 reason_code: None,
                 as_of_seconds: Some(now),
                 reset_credits: credits.clone(),
+                plan: None,
             });
         }
     }

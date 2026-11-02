@@ -158,6 +158,41 @@ fn refresh_uses_stdin_headers_and_nonsecret_cache() {
 }
 
 #[test]
+fn each_claude_meter_carries_the_plan_of_its_sign_in_into_the_cache() {
+    let home = fixture("plan");
+    tool(
+        &home,
+        "security",
+        &format!(
+            "echo '{{\"claudeAiOauth\":{{\"accessToken\":\"{TOKEN}\",\"subscriptionType\":\"Max\"}}}}'"
+        ),
+    );
+    let (url, request) = server(
+        "200 OK",
+        "",
+        r#"{"five_hour":null,"seven_day":{"utilization":40,"resets_at":1791766923},"seven_day_fable":{"utilization":10,"resets_at":1791766923}}"#,
+    );
+    let fresh = usage(&run(
+        &home,
+        &url,
+        &["usage", "--refresh", "--provider", "claude", "--json"],
+    ));
+    request.join().unwrap();
+    let cached = usage(&run(&home, &url, &["usage", "--json"]));
+    for value in [fresh, cached] {
+        let meters: Vec<_> = value["meters"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|meter| meter["provider"] == "claude")
+            .collect();
+        let windows: Vec<_> = meters.iter().map(|meter| meter["window"].clone()).collect();
+        assert_eq!(windows, ["7d", "fb"], "{value}");
+        assert!(meters.iter().all(|meter| meter["plan"] == "max"), "{value}");
+    }
+}
+
+#[test]
 fn auth_failure_clears_old_usage_and_keeps_sign_in_reason() {
     for code in ["401 Unauthorized", "403 Forbidden"] {
         let home = fixture(&code[..3]);

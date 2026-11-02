@@ -40,4 +40,3 @@ Each trial records elapsed awake time, chair tokens, and rework in its task file
 ## Liveness
 
 The host owns liveness. Run `swarm sweep` as the `swarm-orchestrator` skill says.
-The chair adds no sleep or timer.

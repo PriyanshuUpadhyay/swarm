@@ -12,10 +12,32 @@ struct AccountName: View {
     var body: some View {
         // The mark names the provider, so the name stands alone.
         VStack(alignment: .leading, spacing: 2) {
-            Text(account.name).font(.system(size: 13, weight: .medium)).foregroundStyle(color)
-                .lineLimit(1).truncationMode(.middle)
-                .help(denseName)
-                .accessibilityLabel(denseName)
+            HStack(spacing: 6) {
+                Text(account.name).font(.system(size: 13, weight: .medium)).foregroundStyle(color)
+                    .lineLimit(1).truncationMode(.middle)
+                    .help(denseName)
+                    .accessibilityLabel(denseName)
+                if let plan = account.plan {
+                    Text(plan.uppercased())
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(Palette.secondary)
+                        .padding(.horizontal, 4)
+                        .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.white.opacity(0.18)))
+                        .fixedSize()
+                        .accessibilityLabel("\(plan) plan")
+                }
+                // A one-line row has no line under the name, so the resets keep a count here.
+                if dense, let credits = account.resetCredits, credits.available > 0 {
+                    Text("↻ \(credits.available)")
+                        .font(.system(size: 10.5, weight: .semibold).monospacedDigit())
+                        .foregroundStyle(Palette.resets)
+                        .padding(.horizontal, 6).padding(.vertical, 1)
+                        .background(Capsule().fill(Palette.resets.opacity(0.13)))
+                        .fixedSize()
+                        .help("\(credits.text() ?? "")\nRedeem one in ChatGPT settings.")
+                        .accessibilityHidden(true)
+                }
+            }
             // A Codex account's resets sit under its name, where the row has a free second line.
             if !dense, let credits = account.resetCredits, let short = credits.short() {
                 let full = credits.text() ?? short
@@ -47,29 +69,46 @@ struct AccountRow: View {
     let readAt: Date?
 
     var body: some View {
+        let full = account.full
         HStack(spacing: Layout.gap) {
             // The mark's label is the only place the row names its provider.
             ProviderMark(provider: account.provider, size: 16).frame(width: Layout.markColumn)
-            AccountName(account: account, color: Palette.primary, dense: dense)
-            if showsReading {
-                reading.font(.system(size: 11)).lineLimit(1).frame(width: Layout.readingColumn, alignment: .leading)
-            }
-            ForEach(kinds, id: \.self) { kind in
-                if let window = account.windows.first(where: { $0.kind == kind }) {
-                    WindowCell(window: window, pace: pace(account: account, window: window, history: history, now: now),
-                               theme: theme, now: now, dense: dense)
-                } else {
-                    // The column is shared, so this provider may have no such limit, or its read
-                    // failed; "reading" is true for both.
-                    Text("—").font(.system(size: 12)).foregroundStyle(Palette.tertiary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .help("No \(kind.title) reading")
-                        .accessibilityLabel("\(kind.title) no reading")
+            Group {
+                AccountName(account: account, color: Palette.primary, dense: dense)
+                if showsReading {
+                    reading.font(.system(size: 11)).lineLimit(1).frame(width: Layout.readingColumn, alignment: .leading)
                 }
+            }
+            .opacity(full == nil ? 1 : 0.45)
+            if let full {
+                // A full account cannot run, so one pill over every limit column says when it can.
+                FullPill(full: full, now: now)
+            } else {
+                cells
             }
         }
         .accessibilityElement(children: .combine)
         .frame(height: Layout.row(dense: dense))
+    }
+
+    @ViewBuilder private var cells: some View {
+        ForEach(kinds, id: \.self) { kind in
+            if let window = account.windows.first(where: { $0.kind == kind }) {
+                WindowCell(window: window, pace: pace(account: account, window: window, history: history, now: now),
+                           theme: theme, now: now, dense: dense)
+            } else if kind == .session && account.hasNoSessionLimit {
+                Text("no 5h limit").font(.system(size: 11.5)).foregroundStyle(Palette.tertiary.opacity(0.8))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .help("This Claude plan has no 5-hour limit")
+            } else {
+                // The column is shared, so this provider may have no such limit, or its read
+                // failed; "reading" is true for both.
+                Text("—").font(.system(size: 12)).foregroundStyle(Palette.tertiary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .help("No \(kind.title) reading")
+                    .accessibilityLabel("\(kind.title) no reading")
+            }
+        }
     }
 
     @ViewBuilder private var reading: some View {
@@ -157,6 +196,31 @@ struct WindowCell: View {
                 .lineLimit(1)
                 .frame(width: Layout.resetColumn, alignment: .trailing)
         }
+    }
+}
+
+/// "Full · back Wed 12:10 PM (in 1d 23h) · 3 resets ready" across a full account's limit columns.
+struct FullPill: View {
+    let full: FullAccount
+    let now: Date
+
+    var body: some View {
+        let text = full.text(now: now)
+        HStack(spacing: 0) {
+            Text("Full").fontWeight(.semibold).foregroundStyle(Palette.critical)
+            Text(text.dropFirst("Full".count)).foregroundStyle(Palette.criticalSoft)
+                .monospacedDigit()
+            Spacer(minLength: 0)
+        }
+        .font(.system(size: 12))
+        .lineLimit(1).truncationMode(.tail)
+        .padding(.horizontal, 10)
+        .frame(height: 24)
+        .background(RoundedRectangle(cornerRadius: 7).fill(Palette.critical.opacity(0.10)))
+        .overlay(RoundedRectangle(cornerRadius: 7).stroke(Palette.critical.opacity(0.28)))
+        .frame(maxWidth: .infinity)
+        .help(full.resets > 0 ? "\(text)\nRedeem a reset in ChatGPT settings." : text)
+        .accessibilityLabel(text)
     }
 }
 

@@ -19,7 +19,7 @@ You are one child agent. The orchestrator spawned your pane. `swarm` is on PATH.
    - A question or note goes to a named agent: `printf '%s' '<text>' | swarm send <recipient> <kind>`.
      In lane mode a child can reach only the orchestrator; in relay mode the orchestrator forwards.
 4. Run `swarm ack <seq>` for each message you handled.
-5. End your turn. The next message rings you again; do not poll in a loop.
+5. End your turn. The next message rings you again.
 
 ## Project board
 
