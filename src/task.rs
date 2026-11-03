@@ -273,13 +273,15 @@ pub fn start(
     slug: &str,
     owner: (Option<String>, Option<String>),
 ) -> Result<(Task, Option<String>), String> {
+    // A leading `-` would read as an option, so `start --help` makes no task.
     if slug.is_empty()
+        || slug.starts_with('-')
         || !slug
             .chars()
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
     {
         return Err(format!(
-            "task name {slug:?} must use a-z, 0-9, and -, like fix-login"
+            "task name {slug:?} must use a-z, 0-9, and -, start with a letter or digit, like fix-login"
         ));
     }
     let hub = hub(cwd).ok_or("this folder is not in a worktree hub (a bare .bare with wt/)")?;

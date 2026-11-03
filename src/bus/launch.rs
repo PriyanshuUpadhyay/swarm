@@ -112,8 +112,10 @@ pub fn argv(
                     // ADR 0135: a chat in a hub's main worktree reads main and writes only its
                     // `tmp/` and the task worktrees beside it, which Worktrunk makes there. The
                     // workspace root must say `read` itself; a path entry for it does not win.
-                    let main = crate::task::main_target(cwd, std::path::Path::new("."))
-                        .map(|hub| hub.main);
+                    // Main's `tmp/` counts as main here, so its chat does not get main's git dir.
+                    let here = crate::task::resolve(cwd, std::path::Path::new("."));
+                    let hub = crate::task::hub(cwd).filter(|hub| here.starts_with(&hub.main));
+                    let main = hub.as_ref().map(|hub| hub.main.clone());
                     let roots = if main.is_some() {
                         r#""."="read",".codex"="read",".agents"="read""#
                     } else {
@@ -143,6 +145,21 @@ pub fn argv(
                             quote(&format!("{common}/config")),
                             quote(&format!("{common}/modules"))
                         );
+                        // On main, the files that move or retarget the default branch are read.
+                        // Only existing ones are named; a packed default ref is not covered.
+                        if let Some(hub) = &hub {
+                            for name in [
+                                format!("refs/heads/{}", hub.default),
+                                "HEAD".into(),
+                                "refs/remotes/origin/HEAD".into(),
+                            ] {
+                                let file = hub.common.join(name);
+                                if file.exists() {
+                                    filesystem +=
+                                        &format!(r#",{}="read""#, quote(&file.to_string_lossy()));
+                                }
+                            }
+                        }
                         if git_dir != common {
                             // Main's own git dir holds its index and HEAD, so it is read-only too.
                             let access = if main.is_some() { "read" } else { "write" };

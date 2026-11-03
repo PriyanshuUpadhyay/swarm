@@ -286,6 +286,7 @@ mod tests {
         );
         assert!(profile.contains(&format!(r#""{wt}"="write","{wt}/main/tmp"="write""#)));
         assert!(profile.contains(&format!(r#""{common}/worktrees/main"="read""#)));
+        assert!(profile.contains(&format!(r#""{common}/HEAD"="read""#)));
         let _ = std::fs::remove_dir_all(&dir);
     }
 

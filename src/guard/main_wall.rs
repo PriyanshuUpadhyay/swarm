@@ -302,6 +302,8 @@ fn wt_writes_main(hubs: &Hubs, cwd: &Path, args: &[&str]) -> bool {
             if let Some(path) = rest.next() {
                 dir = task::resolve(&dir, Path::new(path));
             }
+        } else if *arg == "--config" {
+            rest.next();
         } else if !arg.starts_with('-') {
             plain.push(*arg);
         }
@@ -316,7 +318,12 @@ fn wt_writes_main(hubs: &Hubs, cwd: &Path, args: &[&str]) -> bool {
         ["step", ..] => in_main,
         // `wt remove` with no branch removes the worktree it runs in.
         ["remove"] => in_main,
-        ["remove", branches @ ..] => branches.contains(&hub.default.as_str()),
+        // A branch, `@` (the worktree it runs in), or a path can name main.
+        ["remove", targets @ ..] => targets.iter().any(|target| {
+            *target == hub.default
+                || (*target == "@" && in_main)
+                || task::resolve(&dir, Path::new(target)) == hub.main
+        }),
         _ => false,
     }
 }
