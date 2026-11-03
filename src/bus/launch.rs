@@ -112,10 +112,7 @@ pub fn argv(
                     // ADR 0135: a chat in a hub's main worktree reads main and writes only its
                     // `tmp/` and the task worktrees beside it, which Worktrunk makes there. The
                     // workspace root must say `read` itself; a path entry for it does not win.
-                    let main = crate::task::hub(cwd)
-                        .filter(|hub| {
-                            hub.guards(&crate::task::resolve(cwd, std::path::Path::new(".")))
-                        })
+                    let main = crate::task::main_target(cwd, std::path::Path::new("."))
                         .map(|hub| hub.main);
                     let roots = if main.is_some() {
                         r#""."="read",".codex"="read",".agents"="read""#

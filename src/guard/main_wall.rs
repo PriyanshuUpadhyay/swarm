@@ -15,7 +15,8 @@ use shell::{Token, commands};
 pub const MAIN_READ_ONLY: &str = "swarm guard: main is read-only for agents. Run `swarm task start <name>`, edit and commit in the worktree it prints, then run `swarm task land <name>`; so the call is blocked";
 
 /// Git subcommands that change a worktree, its index, or its branch.
-const GIT_WRITES: [&str; 18] = [
+/// `update-ref` is not here: it writes no worktree, and the match below checks the ref it moves.
+const GIT_WRITES: [&str; 17] = [
     "add",
     "am",
     "apply",
@@ -33,7 +34,6 @@ const GIT_WRITES: [&str; 18] = [
     "rm",
     "stash",
     "switch",
-    "update-ref",
 ];
 /// Shell programs whose plain arguments are files they write.
 const WRITERS: [&str; 12] = [
@@ -118,7 +118,8 @@ impl Hubs {
     }
 }
 
-fn strings(value: &serde_json::Value, out: &mut String) {
+/// Each string in a JSON value, one per line.
+pub(super) fn strings(value: &serde_json::Value, out: &mut String) {
     match value {
         serde_json::Value::String(text) => {
             out.push_str(text);
@@ -175,7 +176,7 @@ fn shell_writes_main(hubs: &Hubs, cwd: &Path, text: &str) -> bool {
     // A path the shell expands at run time (`$P/a`, a backtick) cannot be read here, so it passes.
     let guarded = |in_hub: bool, dir: &Path, path: &str| {
         !path.contains(['$', '`'])
-            && (in_hub || path.starts_with('/'))
+            && (in_hub || path.starts_with(['/', '~']))
             && hubs.main_target(dir, path)
     };
     for command in commands(text) {
@@ -265,9 +266,11 @@ fn shell_writes_main(hubs: &Hubs, cwd: &Path, text: &str) -> bool {
         } else if COPIERS.contains(&program) {
             plain.last().copied().into_iter().collect()
         } else if ["sed", "perl"].contains(&program)
-            && args
-                .iter()
-                .any(|arg| arg.starts_with("-i") || *arg == "--in-place")
+            && args.iter().any(|arg| {
+                // `-i`, `-Ei`, `-pi`, `-i.bak`: a short-flag cluster that holds `i`.
+                (arg.starts_with('-') && !arg.starts_with("--") && arg.contains('i'))
+                    || arg.starts_with("--in-place")
+            })
         {
             // The first plain argument is the script.
             plain.iter().skip(1).copied().collect()
@@ -309,7 +312,11 @@ fn git_writes_main(hubs: &Hubs, cwd: &Path, args: &[&str]) -> bool {
         return false;
     };
     // Main's `tmp/` is scratch for files, but a git write there still changes main.
-    if GIT_WRITES.contains(sub) && task::resolve(&dir, Path::new(".")).starts_with(&hub.main) {
+    let reads = *sub == "stash" && matches!(sub_args.first(), Some(&"list" | &"show"));
+    if GIT_WRITES.contains(sub)
+        && !reads
+        && task::resolve(&dir, Path::new(".")).starts_with(&hub.main)
+    {
         return true;
     }
     // A hooks path set or unset turns the ref hook off (or on) for the whole hub.
@@ -332,17 +339,17 @@ fn git_writes_main(hubs: &Hubs, cwd: &Path, args: &[&str]) -> bool {
             || arg.ends_with(&format!(":{default}"))
             || arg.ends_with(&format!(":{full}"))
     };
+    // The ref a command writes is its first plain argument; a later one is only read.
+    let first_plain = sub_args.iter().find(|arg| !arg.starts_with('-'));
+    let has = |flags: &[&str]| sub_args.iter().any(|arg| flags.contains(arg));
     match *sub {
-        "update-ref" => sub_args.iter().any(names_default),
+        "update-ref" => first_plain.is_some_and(names_default),
         "push" | "fetch" => sub_args.contains(&".") && sub_args.iter().any(names_default),
-        "branch" => {
-            sub_args.iter().any(|arg| {
-                [
-                    "-f", "--force", "-M", "-m", "-D", "-d", "-C", "--delete", "--move",
-                ]
-                .contains(arg)
-            }) && sub_args.iter().any(names_default)
+        // A rename or a delete changes the default branch when it names it anywhere.
+        "branch" if has(&["-M", "-m", "-D", "-d", "--delete", "--move"]) => {
+            sub_args.iter().any(names_default)
         }
+        "branch" if has(&["-f", "--force", "-C"]) => first_plain.is_some_and(names_default),
         _ => false,
     }
 }

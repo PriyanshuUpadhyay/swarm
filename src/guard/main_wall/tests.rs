@@ -71,6 +71,16 @@ fn writes_into_main_are_denied_and_writes_elsewhere_pass() {
         ("Bash", bash("rm -r src"), main.as_ref()),
         (
             "Bash",
+            bash("perl -pi -e s/a/b/ a.txt; sed -Ei s/a/b/ a.txt"),
+            main.as_ref(),
+        ),
+        (
+            "Bash",
+            bash(&format!("rm {main}/a.txt").replace(&std::env::var("HOME").unwrap(), "~")),
+            "/",
+        ),
+        (
+            "Bash",
             bash("git commit --allow-empty -m x"),
             &format!("{main}/tmp"),
         ),
@@ -133,6 +143,11 @@ fn writes_into_main_are_denied_and_writes_elsewhere_pass() {
             main.as_ref(),
         ),
         ("Bash", bash("rg core.hooksPath docs"), main.as_ref()),
+        (
+            "Bash",
+            bash("git stash list; git update-ref refs/heads/swarm/task main"),
+            main.as_ref(),
+        ),
         (
             "Bash",
             bash("chmod +x /tmp/run.sh; dd if=/dev/zero of=/tmp/x; touch ~/x"),

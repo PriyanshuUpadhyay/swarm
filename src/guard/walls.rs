@@ -25,20 +25,9 @@ pub fn wall(provider: Provider, event: &str, payload: &str) -> Option<Verdict> {
 /// during a tool call waits until the call ends. So a shell call that sleeps and then reads the
 /// inbox, the agent list, or the board only holds the ring back, and it is denied.
 pub fn inbox_wait(provider: Provider, event: &str, payload: &str) -> Option<Verdict> {
-    fn text(value: &serde_json::Value, out: &mut String) {
-        match value {
-            serde_json::Value::String(text) => {
-                out.push_str(text);
-                out.push('\n');
-            }
-            serde_json::Value::Array(items) => items.iter().for_each(|item| text(item, out)),
-            serde_json::Value::Object(map) => map.values().for_each(|item| text(item, out)),
-            _ => {}
-        }
-    }
     let payload: serde_json::Value = serde_json::from_str(payload).ok()?;
     let mut command = String::new();
-    text(&normalize(provider, event, &payload)["input"], &mut command);
+    super::main_wall::strings(&normalize(provider, event, &payload)["input"], &mut command);
     let words: Vec<&str> = command
         .split(|c: char| c.is_whitespace() || ";&|()`$".contains(c))
         .filter(|word| !word.is_empty())
