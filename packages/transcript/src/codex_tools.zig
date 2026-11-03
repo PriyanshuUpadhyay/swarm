@@ -12,6 +12,7 @@ pub fn append(
     payload: std.json.ObjectMap,
     payload_type: []const u8,
     line: []const u8,
+    state: ?*q.State,
 ) !bool {
     if (std.mem.eql(u8, payload_type, "web_search_call") or std.mem.eql(u8, payload_type, "tool_search_call")) {
         const is_web = std.mem.eql(u8, payload_type, "web_search_call");
@@ -71,6 +72,7 @@ pub fn append(
             return true;
         }
         if (root.oneOf(name.string, &.{ "request_user_input_async", "request_user_input" })) {
+            if (state) |questions| try questions.open(call_id.string, parsed_input);
             try events.append(arena, .{ .elicitation = .{
                 .meta = meta,
                 .tool_call_id = call_id.string,
@@ -140,7 +142,8 @@ pub fn append(
             try events.append(arena, try root.unknownEvent(arena, meta, line));
             return true;
         }
-        if (is_function_output and output == .string) switch (try q.questionOutput(arena, content)) {
+        const ids = if (state) |questions| try questions.take(arena, call_id.string) else null;
+        if (is_function_output and output == .string) switch (try q.questionOutput(arena, content, ids)) {
             .none => {},
             .accepted => {
                 try events.append(arena, .{ .ignored = .{ .meta = meta, .kind = "question_accepted" } });

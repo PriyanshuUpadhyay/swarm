@@ -4,6 +4,11 @@ const q = @import("codex_questions.zig");
 const tools = @import("codex_tools.zig");
 
 pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]root.Event {
+    return parseLineState(arena, line, null);
+}
+
+/// `parseLine` with the question calls that earlier lines opened, which the `Translator` keeps.
+pub fn parseLineState(arena: std.mem.Allocator, line: []const u8, state: ?*q.State) ![]root.Event {
     var events: std.ArrayList(root.Event) = .empty;
     const value = std.json.parseFromSliceLeaky(std.json.Value, arena, line, .{}) catch {
         try events.append(arena, try root.unknownEvent(arena, null, line));
@@ -278,7 +283,7 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]root.Event {
         return events.items;
     }
 
-    if (try tools.append(arena, &events, meta, payload, payload_type, line)) return events.items;
+    if (try tools.append(arena, &events, meta, payload, payload_type, line, state)) return events.items;
 
     try events.append(arena, try root.unknownEvent(arena, meta, line));
     return events.items;

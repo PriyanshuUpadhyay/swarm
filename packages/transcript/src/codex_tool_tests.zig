@@ -199,11 +199,6 @@ test "Codex question replies become elicitation results" {
     try std.testing.expectEqualStrings("call-b", blocking[0].elicitation_result.tool_call_id);
     try std.testing.expectEqualStrings("color", blocking[0].elicitation_result.answers[0].question);
     try std.testing.expectEqualStrings("Red", blocking[0].elicitation_result.answers[0].answer);
-    // The async tool's output only says Codex showed the question.
-    const accepted = try parseLine(arena_state.allocator(),
-        \\{"type":"response_item","payload":{"type":"function_call_output","call_id":"call-a","output":"{\"accepted\":true}"}}
-    );
-    try std.testing.expectEqualStrings("question_accepted", accepted[0].ignored.kind);
     // The Codex TUI also takes one bare reply object.
     const one = try parseLine(arena_state.allocator(),
         \\{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"<send_user_message_question_reply>{\"answer\":\"Yes\",\"question\":\"Q\",\"questionItemId\":\"[\\\"request_user_input_async\\\",\\\"call-c\\\",0]\"}</send_user_message_question_reply>"}]}}

@@ -74,15 +74,75 @@ pub fn questionReply(arena: std.mem.Allocator, text: []const u8) !?QuestionReply
     return .{ .tool_call_id = tool_call_id, .answers = answers.items };
 }
 
+/// The question ids of each open Codex question call, so its tool output maps only for that call
+/// and in question order. The `Translator` owns it across lines. A window that starts after the
+/// call has no entry, so the output text decides alone there.
+pub const State = struct {
+    gpa: std.mem.Allocator,
+    calls: std.StringHashMapUnmanaged([]u8) = .empty,
+
+    pub fn init(gpa: std.mem.Allocator) State {
+        return .{ .gpa = gpa };
+    }
+
+    pub fn deinit(state: *State) void {
+        var entries = state.calls.iterator();
+        while (entries.next()) |entry| {
+            state.gpa.free(entry.key_ptr.*);
+            state.gpa.free(entry.value_ptr.*);
+        }
+        state.calls.deinit(state.gpa);
+    }
+
+    /// Keeps the call's question ids, joined by newlines.
+    pub fn open(state: *State, call_id: []const u8, input: std.json.Value) !void {
+        var ids: std.ArrayList(u8) = .empty;
+        errdefer ids.deinit(state.gpa);
+        if (input == .object) if (input.object.get("questions")) |items| if (items == .array) for (items.array.items, 0..) |item, index| {
+            if (index != 0) try ids.append(state.gpa, '\n');
+            if (item == .object) try ids.appendSlice(state.gpa, root.str(item.object, "id"));
+        };
+        const value = try ids.toOwnedSlice(state.gpa);
+        errdefer state.gpa.free(value);
+        const entry = try state.calls.getOrPut(state.gpa, call_id);
+        if (entry.found_existing) {
+            state.gpa.free(entry.value_ptr.*);
+        } else {
+            entry.key_ptr.* = state.gpa.dupe(u8, call_id) catch |err| {
+                state.calls.removeByPtr(entry.key_ptr);
+                return err;
+            };
+        }
+        entry.value_ptr.* = value;
+    }
+
+    /// The call's question ids, copied to the arena, and the call is closed. Null when the call
+    /// is no open question call.
+    pub fn take(state: *State, arena: std.mem.Allocator, call_id: []const u8) !?[]const []const u8 {
+        const entry = state.calls.fetchRemove(call_id) orelse return null;
+        defer state.gpa.free(entry.key);
+        defer state.gpa.free(entry.value);
+        var ids: std.ArrayList([]const u8) = .empty;
+        var parts = std.mem.splitScalar(u8, entry.value, '\n');
+        while (parts.next()) |id| try ids.append(arena, try arena.dupe(u8, id));
+        return ids.items;
+    }
+};
+
 pub const QuestionOutput = union(enum) { none, accepted, answers: []root.Answer };
 
 /// What a Codex question tool's output says: `{"accepted":true}` from `request_user_input_async`,
 /// which only says the question shows, or `{"answers":{id:{"answers":[…]}}}` from
 /// `request_user_input`, which holds the owner's answer (codex-rs/core/src/tools/handlers).
-pub fn questionOutput(arena: std.mem.Allocator, text: []const u8) !QuestionOutput {
+/// `ids` are the open question call's ids, null when the call is unknown. `{"accepted":true}`
+/// counts only for a question call, because `send_message_to_user_async` returns it too. The
+/// answers follow `ids`, because Codex writes them from a HashMap.
+pub fn questionOutput(arena: std.mem.Allocator, text: []const u8, ids: ?[]const []const u8) !QuestionOutput {
+    // Codex's serde output is compact, so a prefix check skips the parse of other tool output.
+    if (std.mem.eql(u8, text, "{\"accepted\":true}")) return if (ids != null) .accepted else .none;
+    if (!std.mem.startsWith(u8, text, "{\"answers\":")) return .none;
     const value = std.json.parseFromSliceLeaky(std.json.Value, arena, text, .{}) catch return .none;
     if (value != .object or value.object.count() != 1) return .none;
-    if (value.object.get("accepted")) |accepted| return if (accepted == .bool and accepted.bool) .accepted else .none;
     const answers = value.object.get("answers") orelse return .none;
     if (answers != .object) return .none;
     var list: std.ArrayList(root.Answer) = .empty;
@@ -97,5 +157,14 @@ pub fn questionOutput(arena: std.mem.Allocator, text: []const u8) !QuestionOutpu
         }
         try list.append(arena, .{ .question = entry.key_ptr.*, .answer = try std.mem.join(arena, "\n", text_parts.items) });
     }
+    if (ids) |order| std.mem.sort(root.Answer, list.items, order, struct {
+        fn rank(names: []const []const u8, answer: root.Answer) usize {
+            for (names, 0..) |name, index| if (std.mem.eql(u8, name, answer.question)) return index;
+            return names.len;
+        }
+        fn lessThan(names: []const []const u8, a: root.Answer, b: root.Answer) bool {
+            return rank(names, a) < rank(names, b);
+        }
+    }.lessThan);
     return .{ .answers = list.items };
 }
