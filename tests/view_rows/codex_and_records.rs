@@ -307,3 +307,75 @@ fn absorbed_queued_message() {
     assert!(transcript::is_active(&rows[..rows.len() - 1]));
     assert!(!transcript::is_active(&rows));
 }
+
+#[test]
+fn codex_question_shows_its_question_and_answer_without_a_stray_result() {
+    // Codex 0.162.1 writes a tool output for each question call besides the answer.
+    const LINES: [&str; 5] = [
+        r#"{"type":"response_item","payload":{"type":"function_call","name":"request_user_input_async","arguments":"{\"questions\":[{\"title\":\"Sign in now?\",\"options\":[\"Yes\",\"Later\"]}]}","call_id":"call-a"}}"#,
+        r#"{"type":"response_item","payload":{"type":"function_call_output","call_id":"call-a","output":"{\"accepted\":true}"}}"#,
+        r#"{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"<send_user_message_question_reply>[{\"answer\":\"Later\",\"question\":\"Sign in now?\",\"questionItemId\":\"[\\\"request_user_input_async\\\",\\\"call-a\\\",0]\"}]</send_user_message_question_reply>"}]}}"#,
+        r#"{"type":"response_item","payload":{"type":"function_call","name":"request_user_input","arguments":"{\"questions\":[{\"question\":\"Red or blue?\",\"options\":[{\"label\":\"Red\",\"description\":\"\"}]}]}","call_id":"call-b"}}"#,
+        r#"{"type":"response_item","payload":{"type":"function_call_output","call_id":"call-b","output":"{\"answers\":{\"color\":{\"answers\":[\"Red\"]}}}"}}"#,
+    ];
+    let mut events = inline_fixture("codex", &LINES);
+    events.push(
+        inline_fixture(
+            "codex",
+            &[
+                r#"{"type":"retained_context","payload":{"type":"verified_answer","call_id":"call-b","questions":[{"question":"Red or blue?","answer":"Red"}]}}"#,
+            ],
+        )
+        .remove(0),
+    );
+    let rows: Vec<_> = transcript::rows(&records(events, true), false, true)
+        .into_iter()
+        .filter(|row| !row.collapsed)
+        .collect();
+    assert_eq!(
+        kinds(&rows),
+        vec![
+            RowKind::Question,
+            RowKind::Result,
+            RowKind::Question,
+            RowKind::Result
+        ]
+    );
+    assert_eq!(
+        texts(&rows),
+        vec!["Sign in now?", "Later", "Red or blue?", "Red"]
+    );
+}
+
+#[test]
+fn cancelled_codex_question_keeps_its_tool_output() {
+    // Codex writes this output and no answer record when the owner cancels the question
+    // (codex-rs/core/src/tools/handlers/request_user_input.rs).
+    const LINES: [&str; 2] = [
+        r#"{"type":"response_item","payload":{"type":"function_call","name":"request_user_input","arguments":"{\"questions\":[{\"question\":\"Red or blue?\",\"options\":[{\"label\":\"Red\",\"description\":\"\"}]}]}","call_id":"call-b"}}"#,
+        r#"{"type":"response_item","payload":{"type":"function_call_output","call_id":"call-b","output":"request_user_input was cancelled before receiving a response"}}"#,
+    ];
+    let rows = transcript::rows(&records(inline_fixture("codex", &LINES), true), false, true);
+    assert_eq!(
+        texts(&rows),
+        vec![
+            "Red or blue?",
+            "request_user_input was cancelled before receiving a response"
+        ]
+    );
+}
+
+#[test]
+fn open_codex_async_question_hides_its_accepted_output() {
+    // Codex answers every async question call with this output before the owner replies.
+    const LINES: [&str; 2] = [
+        r#"{"type":"response_item","payload":{"type":"function_call","name":"request_user_input_async","arguments":"{\"questions\":[{\"title\":\"Sign in now?\",\"options\":[\"Yes\"]}]}","call_id":"call-a"}}"#,
+        r#"{"type":"response_item","payload":{"type":"function_call_output","call_id":"call-a","output":"{\"accepted\":true}"}}"#,
+    ];
+    let rows: Vec<_> =
+        transcript::rows(&records(inline_fixture("codex", &LINES), true), false, true)
+            .into_iter()
+            .filter(|row| !row.collapsed)
+            .collect();
+    assert_eq!(texts(&rows), vec!["Sign in now?"]);
+}

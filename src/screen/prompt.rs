@@ -19,6 +19,10 @@ pub struct Prompt {
     /// screen.
     #[serde(skip)]
     pub cut: bool,
+    /// The Codex `questionItemId` of an async question read from the log. The answer goes as
+    /// a typed reply that names it, not as keys (codex-rs/tui/src/async_question_reply.rs).
+    #[serde(skip)]
+    pub reply: Option<String>,
 }
 
 /// Rows that end a choice list on every prompt seen: Claude permission and AskUserQuestion,
@@ -234,6 +238,7 @@ fn prompt_above(lines: &[&str], footer: usize) -> Option<Prompt> {
         cursor,
         id,
         cut: !bounded,
+        reply: None,
     })
 }
 

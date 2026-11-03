@@ -34,15 +34,17 @@ impl ScreenState {
 }
 
 mod classify;
+mod codex_question;
 mod composer;
 mod live;
 mod log_prompt;
 mod prompt;
 
 pub use classify::{failure_detail, herdr_state, read_pane, screen_state};
+pub use codex_question::codex_reply;
 pub use composer::{
-    QueuedMessage, claude_composer, codex_composer, composer, holds, pi_composer, pi_queue, queue,
-    reads_composer,
+    QueuedMessage, claude_composer, codex_composer, codex_input_ready, composer, holds,
+    pi_composer, pi_queue, queue, reads_composer,
 };
 pub use live::turn_text;
 pub use log_prompt::agent_prompt;
@@ -53,7 +55,7 @@ pub use prompt::{Prompt, prompt, whole_prompt};
 pub fn screen_gap(provider: Option<&str>, screen: ScreenState) -> bool {
     matches!(
         (provider, screen),
-        (Some("codex"), ScreenState::Failed)
+        (Some("codex"), ScreenState::Failed | ScreenState::Waiting)
             | (Some("agy"), ScreenState::Waiting)
             | (_, ScreenState::Idle)
     )
@@ -77,7 +79,7 @@ pub fn held_by_send(
 
 /// What the listing shows for one agent, and the state to write, if any.
 ///
-/// A hook report younger than `HOOK_AUTHORITY_S` wins. Until `STALE_S`, only a state in
+/// A hook report younger than `HOOK_AUTHORITY_S` wins, except over a Codex approval box. Until `STALE_S`, only a state in
 /// `screen_gap` may replace it. Then a differing screen result is written with source `screen`.
 /// An idle screen agrees with a hook's `failed`, because a failed
 /// turn also ends at the idle prompt, but not with a `failed` the screen wrote. A `working` or `waiting` report older than `STALE_S` that the
@@ -94,7 +96,10 @@ pub fn resolve(
     // A stored host record reaches here only when its read failed, and an agent's own report
     // stands over the screen the same way, whether a hook or its host gave it (ADR 0070).
     let own = matches!(source, Some("hook" | "host"));
-    if own && age.is_some_and(|age| age < HOOK_AUTHORITY_S) {
+    // No Codex hook reports its approval box, since its PermissionRequest fires before the
+    // auto-reviewer, so the box on screen wins at once (ADR 0021).
+    let codex_approval = provider == Some("codex") && screen == Some(ScreenState::Waiting);
+    if own && age.is_some_and(|age| age < HOOK_AUTHORITY_S) && !codex_approval {
         return (state.map(str::to_string), None);
     }
     if own

@@ -143,18 +143,9 @@ mod cases {
             r#"{{"hook_event_name":"PermissionRequest","transcript_path":{}}}"#,
             path(&log)
         );
+        // A Codex permission request fires before its auto-reviewer, so it names no state.
         let codex = reported(&["codex"], codex).unwrap();
-        assert_eq!(
-            (codex.state, codex.log),
-            (
-                Some(swarm::host::HookState {
-                    state: "waiting",
-                    detail: None,
-                    kind: Some("permission"),
-                }),
-                Some(log.clone())
-            )
-        );
+        assert_eq!((codex.state, codex.log), (None, Some(log.clone())));
         let agy = reported(
             &["agy", "PreInvocation"],
             format!(r#"{{"transcriptPath":{}}}"#, path(&log)),

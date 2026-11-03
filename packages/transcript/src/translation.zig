@@ -90,6 +90,7 @@ pub const Translator = struct {
     offset: u64 = 0,
     unknown_log: ?*std.Io.Writer = null,
     progress_pages: bool = false,
+    codex_questions: @import("codex_questions.zig").State,
 
     pub fn init(gpa: std.mem.Allocator, format: Format, session_id: []const u8) Translator {
         return .{
@@ -98,12 +99,14 @@ pub const Translator = struct {
             .gpa = gpa,
             .format = format,
             .session_id = session_id,
+            .codex_questions = .init(gpa),
         };
     }
 
     pub fn deinit(translator: *Translator) void {
         translator.line_buffer.deinit();
         translator.arena_state.deinit();
+        translator.codex_questions.deinit();
         if (translator.owned_session_id) |session_id| translator.gpa.free(session_id);
     }
 
@@ -123,7 +126,7 @@ pub const Translator = struct {
             const line = std.mem.trimEnd(u8, translator.line_buffer.written(), "\r");
             const events = try switch (translator.format) {
                 .claude => parseLine(translator.arena_state.allocator(), line),
-                .codex => @import("codex.zig").parseLine(translator.arena_state.allocator(), line),
+                .codex => @import("codex.zig").parseLineState(translator.arena_state.allocator(), line, &translator.codex_questions),
                 .agy => @import("agy.zig").parseLine(translator.arena_state.allocator(), line),
                 .pi => @import("pi.zig").parseLine(translator.arena_state.allocator(), line),
             };

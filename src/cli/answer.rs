@@ -66,6 +66,30 @@ pub(crate) fn answer(
             }
             .into());
         }
+        if prompt.reply.is_some() {
+            let answer = prompt
+                .choices
+                .get(choice)
+                .ok_or(format!("swarm: the question has no choice {choice}"))?;
+            // The pane rows, not the `screen` verb, which on Herdr prints status JSON.
+            let screen = adapter
+                .capture_within(
+                    &[("pane", pane.as_str())],
+                    std::time::Duration::from_secs(1),
+                )
+                .ok_or(format!("swarm: cannot read {agent_id}'s screen"))?;
+            if !swarm::screen::codex_input_ready(&screen) {
+                return Err(format!(
+                    "swarm: {agent_id}'s input box is not on screen, so the reply would go \
+                     nowhere; answer in its pane"
+                )
+                .into());
+            }
+            let text = swarm::screen::codex_reply(&prompt, answer)
+                .ok_or("swarm: the question has no reply id")?;
+            super::ring::type_text(connection, &adapter, &session, agent_id, &pane, &text)?;
+            return Ok(Some(()));
+        }
         let keys = prompt
             .keys(choice)
             .ok_or(format!("swarm: the question has no choice {choice}"))?;

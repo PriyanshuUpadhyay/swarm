@@ -1,7 +1,14 @@
 const std = @import("std");
 const root = @import("root.zig");
+const q = @import("codex_questions.zig");
+const tools = @import("codex_tools.zig");
 
 pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]root.Event {
+    return parseLineState(arena, line, null);
+}
+
+/// `parseLine` with the question calls that earlier lines opened, which the `Translator` keeps.
+pub fn parseLineState(arena: std.mem.Allocator, line: []const u8, state: ?*q.State) ![]root.Event {
     var events: std.ArrayList(root.Event) = .empty;
     const value = std.json.parseFromSliceLeaky(std.json.Value, arena, line, .{}) catch {
         try events.append(arena, try root.unknownEvent(arena, null, line));
@@ -97,6 +104,12 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]root.Event {
         try events.append(arena, .{ .system_message = .{ .meta = meta, .kind = "compaction", .text = root.str(payload, "message") } });
         return events.items;
     }
+    if (std.mem.eql(u8, record_type, "retained_context")) {
+        // `verified_answer` repeats the blocking question's answer, which its tool output carries
+        // whether or not Codex's GuardianApproval feature writes this record.
+        try events.append(arena, .{ .ignored = .{ .meta = meta, .kind = try std.fmt.allocPrint(arena, "retained_context/{s}", .{payload_type}) } });
+        return events.items;
+    }
     if (root.oneOf(record_type, &.{ "token_usage_record", "world_state", "inter_agent_communication_metadata" })) {
         try events.append(arena, .{ .ignored = .{ .meta = meta, .kind = record_type } });
         return events.items;
@@ -105,7 +118,8 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]root.Event {
         try events.append(arena, try root.unknownEvent(arena, meta, line));
         return events.items;
     }
-    if (std.mem.eql(u8, payload_type, "ghost_snapshot")) {
+    // `additional_tools` is the tool list Codex sends the model, not chat.
+    if (root.oneOf(payload_type, &.{ "ghost_snapshot", "additional_tools" })) {
         try events.append(arena, .{ .ignored = .{ .meta = meta, .kind = payload_type } });
         return events.items;
     }
@@ -141,8 +155,7 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]root.Event {
             }
             const part_type = root.str(part.object, "type");
             if (std.mem.eql(u8, part_type, "input_image")) {
-                const media_type = root.str(part.object, "media_type");
-                try events.append(arena, .{ .image = .{ .meta = meta, .role = if (is_user) .user else if (is_context) .tool else .agent, .media_type = media_type } });
+                try events.append(arena, .{ .image = .{ .meta = meta, .role = if (is_user) .user else if (is_context) .tool else .agent, .media_type = q.imageMediaType(part.object) } });
                 continue;
             }
             if (!root.oneOf(part_type, &.{ "input_text", "output_text" }) and
@@ -193,7 +206,9 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]root.Event {
                         break;
                     }
                 }
-                if (is_tagged_context) {
+                if (try q.questionReply(arena, trimmed)) |reply| {
+                    try events.append(arena, .{ .elicitation_result = .{ .meta = meta, .tool_call_id = reply.tool_call_id, .answers = reply.answers } });
+                } else if (is_tagged_context) {
                     try events.append(arena, .{ .system_message = .{ .meta = meta, .kind = "context", .text = text.string } });
                 } else if (root.isSwarmRing(text.string)) {
                     try events.append(arena, .{ .system_message = .{ .meta = meta, .kind = "swarm_ring", .text = text.string } });
@@ -268,140 +283,7 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]root.Event {
         return events.items;
     }
 
-    if (std.mem.eql(u8, payload_type, "web_search_call") or std.mem.eql(u8, payload_type, "tool_search_call")) {
-        const is_web = std.mem.eql(u8, payload_type, "web_search_call");
-        const input = payload.get(if (is_web) "action" else "arguments") orelse .null;
-        if (!root.valueFitsDepth(input, root.max_event_input_depth)) {
-            try events.append(arena, try root.unknownEvent(arena, meta, line));
-            return events.items;
-        }
-        try events.append(arena, .{ .tool_call = .{
-            .meta = meta,
-            .tool_call_id = root.str(payload, "call_id"),
-            .name = if (is_web) "web_search" else "tool_search",
-            .input = input,
-            .status = if (is_web) .completed else .pending,
-        } });
-        return events.items;
-    }
-
-    if (std.mem.eql(u8, payload_type, "tool_search_output")) {
-        const tools = payload.get("tools") orelse .null;
-        if (!root.valueFitsDepth(tools, root.max_event_input_depth)) {
-            try events.append(arena, try root.unknownEvent(arena, meta, line));
-            return events.items;
-        }
-        const content = if (tools == .null) "" else try std.json.Stringify.valueAlloc(arena, tools, .{});
-        try events.append(arena, .{ .tool_call_update = .{
-            .meta = meta,
-            .tool_call_id = root.str(payload, "call_id"),
-            .status = .completed,
-            .content = content,
-        } });
-        return events.items;
-    }
-
-    const is_function_call = std.mem.eql(u8, payload_type, "function_call");
-    const is_custom_call = std.mem.eql(u8, payload_type, "custom_tool_call");
-    if (is_function_call or is_custom_call) {
-        const call_id = payload.get("call_id") orelse {
-            try events.append(arena, try root.unknownEvent(arena, meta, line));
-            return events.items;
-        };
-        const name = payload.get("name") orelse {
-            try events.append(arena, try root.unknownEvent(arena, meta, line));
-            return events.items;
-        };
-        const input = payload.get(if (is_function_call) "arguments" else "input") orelse {
-            try events.append(arena, try root.unknownEvent(arena, meta, line));
-            return events.items;
-        };
-        if (call_id != .string or name != .string or input != .string) {
-            try events.append(arena, try root.unknownEvent(arena, meta, line));
-            return events.items;
-        }
-        const parsed_input = std.json.parseFromSliceLeaky(std.json.Value, arena, input.string, .{}) catch std.json.Value{ .string = input.string };
-        if (!root.valueFitsDepth(parsed_input, root.max_event_input_depth)) {
-            try events.append(arena, try root.unknownEvent(arena, meta, line));
-            return events.items;
-        }
-        try events.append(arena, .{ .tool_call = .{
-            .meta = meta,
-            .tool_call_id = call_id.string,
-            .name = name.string,
-            .input = parsed_input,
-            .status = .pending,
-        } });
-        return events.items;
-    }
-
-    const is_function_output = std.mem.eql(u8, payload_type, "function_call_output");
-    const is_custom_output = std.mem.eql(u8, payload_type, "custom_tool_call_output");
-    if (is_function_output or is_custom_output) {
-        const call_id = payload.get("call_id") orelse {
-            try events.append(arena, try root.unknownEvent(arena, meta, line));
-            return events.items;
-        };
-        const output = payload.get("output") orelse {
-            try events.append(arena, try root.unknownEvent(arena, meta, line));
-            return events.items;
-        };
-        if (call_id != .string) {
-            try events.append(arena, try root.unknownEvent(arena, meta, line));
-            return events.items;
-        }
-        var content: []const u8 = "";
-        var has_unknown = false;
-        if (output == .string) {
-            content = output.string;
-        } else if (output == .array) {
-            var total: usize = 0;
-            for (output.array.items) |part| {
-                if (part == .object and std.mem.eql(u8, root.str(part.object, "type"), "input_image")) continue;
-                if (part != .object or
-                    (!std.mem.eql(u8, root.str(part.object, "type"), "text") and
-                        !std.mem.eql(u8, root.str(part.object, "type"), "input_text")) or
-                    part.object.get("text") == null or part.object.get("text").? != .string)
-                {
-                    has_unknown = true;
-                    continue;
-                }
-                total += part.object.get("text").?.string.len;
-            }
-            const joined = try arena.alloc(u8, total);
-            var offset: usize = 0;
-            for (output.array.items) |part| {
-                if (part != .object or
-                    (!std.mem.eql(u8, root.str(part.object, "type"), "text") and
-                        !std.mem.eql(u8, root.str(part.object, "type"), "input_text")) or
-                    part.object.get("text") == null or part.object.get("text").? != .string)
-                {
-                    continue;
-                }
-                const text = part.object.get("text").?.string;
-                @memcpy(joined[offset..][0..text.len], text);
-                offset += text.len;
-            }
-            content = joined;
-        } else {
-            try events.append(arena, try root.unknownEvent(arena, meta, line));
-            return events.items;
-        }
-        try events.append(arena, .{ .tool_call_update = .{
-            .meta = meta,
-            .tool_call_id = call_id.string,
-            .status = .completed,
-            .content = content,
-        } });
-        if (output == .array) {
-            for (output.array.items) |part| {
-                if (part != .object or !std.mem.eql(u8, root.str(part.object, "type"), "input_image")) continue;
-                try events.append(arena, .{ .image = .{ .meta = meta, .role = .tool, .media_type = root.str(part.object, "media_type") } });
-            }
-        }
-        if (has_unknown) try events.append(arena, try root.unknownEvent(arena, meta, line));
-        return events.items;
-    }
+    if (try tools.append(arena, &events, meta, payload, payload_type, line, state)) return events.items;
 
     try events.append(arena, try root.unknownEvent(arena, meta, line));
     return events.items;

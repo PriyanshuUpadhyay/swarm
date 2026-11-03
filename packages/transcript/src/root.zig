@@ -186,4 +186,5 @@ test {
     _ = @import("translation_stream_tests.zig");
     _ = @import("codex_message_tests.zig");
     _ = @import("codex_tool_tests.zig");
+    _ = @import("codex_question_tests.zig");
 }
