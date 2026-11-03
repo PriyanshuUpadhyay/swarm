@@ -18,7 +18,7 @@ pub fn agent_prompt(
         return Some(found);
     }
     if provider == Some("codex") {
-        return super::codex_question::open_question(&log_tail(log?)?);
+        return super::codex_question::open_question(log?);
     }
     if provider != Some("claude") {
         return None;

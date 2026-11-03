@@ -41,6 +41,17 @@ fn codex_async_question_reads_from_the_log_until_its_reply_or_turn_end() {
     assert_eq!(read(&[&two]).unwrap().question, "Sign in now?");
     assert_eq!(read(&[&two, REPLY]).unwrap().question, "Then what?");
     assert_eq!(read(&[CALL, ended]), None);
+    // Codex keeps working after it asks; a real log held 9 MB of tool output before the reply.
+    let output = format!(
+        r#"{{"type":"response_item","payload":{{"type":"function_call_output","call_id":"x","output":"{}"}}}}"#,
+        "x".repeat(1024 * 1024)
+    );
+    let started = r#"{"type":"event_msg","payload":{"type":"task_started"}}"#;
+    let busy: Vec<&str> = [started, CALL]
+        .into_iter()
+        .chain(std::iter::repeat_n(output.as_str(), 3))
+        .collect();
+    assert_eq!(read(&busy).unwrap().question, "Sign in now?");
     std::fs::remove_dir_all(root).unwrap();
 }
 
