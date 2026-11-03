@@ -71,8 +71,9 @@ pub(crate) fn answer(
                 .choices
                 .get(choice)
                 .ok_or(format!("swarm: the question has no choice {choice}"))?;
+            // The pane rows, not the `screen` verb, which on Herdr prints status JSON.
             let screen = adapter
-                .screen(
+                .capture_within(
                     &[("pane", pane.as_str())],
                     std::time::Duration::from_secs(1),
                 )

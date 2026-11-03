@@ -113,5 +113,17 @@ fn answer_types_the_reply_only_when_the_codex_input_box_shows() {
         r#"<send_user_message_question_reply>[{"answer":"Later","question":"Sign in now?","questionItemId":"[\"request_user_input_async\",\"call-a\",0]"}]</send_user_message_question_reply>"#
     );
     assert!(!home.join("keys").exists());
+
+    // A Herdr pane's `screen` verb prints status JSON, so the box check reads the pane rows.
+    std::fs::remove_file(home.join("typed")).unwrap();
+    std::fs::write(home.join("rows"), IDLE).unwrap();
+    std::fs::write(root.join("adapters/fake.conf"), "self = true\nspawn = true\nring = printf '%s' \"$SWARM_TEXT\" >> \"$HOME/typed\"\nlist = printf pane\nclose = true\ncapture = cat \"$HOME/rows\"\nscreen = printf '{\"result\":{\"agent\":{\"agent_status\":\"idle\"}}}'\nkey = printf '%s' \"$SWARM_KEY\" >> \"$HOME/keys\"\n").unwrap();
+    let output = cli(&home, &session, &["answer", "coder", &id, "1"]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(home.join("typed").exists());
     std::fs::remove_dir_all(home).unwrap();
 }
