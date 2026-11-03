@@ -82,3 +82,11 @@ def test_done_refuses_a_written_back_claim(tmp):
     (folder / "01-ask.md").write_text(old, encoding="utf-8")
     out = run("done", folder, "01-ask", "1")
     assert out.returncode == 1 and "claim #1 is not the current one" in out.stderr, out
+
+
+def test_take_refuses_a_name_that_forges_a_line(tmp):
+    """A newline or tab in the agent name would add a false take row to events.log (trust boundary)."""
+    folder = gate_run(tmp, "forge", [])
+    for name in ("w\n2026-10-21T00:00:00\t02-work\ttake x", "w\tx"):
+        assert run("take", folder, "01-ask", name).returncode == 1, name
+    assert not (folder / "events.log").exists() or "take" not in (folder / "events.log").read_text(encoding="utf-8")

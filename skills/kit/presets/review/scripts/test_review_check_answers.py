@@ -33,6 +33,16 @@ def test_answers():
             assert verdict.splitlines()[2].startswith("Verdict: APPROVE"), verdict
             approved_uses = verdict.splitlines()[1]
 
+            # A row quotes reviewed source, so ESC, DEL and C1 bytes must not reach the terminal (trust boundary).
+            review = run / "02-review.md"
+            control_problem = "\x1b[31m\x7fmay\x85 change a caller"
+            review.write_text(review.read_text().replace("may change a caller", control_problem))
+            output = StringIO()
+            with redirect_stdout(output):
+                assert rc.verdict(run.name) == 0
+            assert not any(c in output.getvalue() for c in "\x1b\x7f\x85"), "terminal output must remove control bytes"
+            assert control_problem in (run / "03-verdict.md").read_text(), "the verdict file keeps the exact row text"
+
             ask(run, "return 2")
 
             (run / "answers.md").write_text("- util.py `return 2`: user approved `helper`: returns 2\n")

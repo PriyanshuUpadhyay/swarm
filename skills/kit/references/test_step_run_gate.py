@@ -99,13 +99,11 @@ def test_done_runs_script_checks(tmp):
 
 
 def test_kit_check_lines(tmp):
-    """Each kit `Check (script)` line is runnable or named as not run, and a runnable one prints `not run` when it needs a word that done does not fill."""
+    """Each kit `Check (script)` line matches a check that done can run."""
     import block_resolver
-    runnable, reader = [], []
     for file in sorted((step_checks.KIT / "blocks").glob("*/SKILL.md")):
         parts = block_resolver.sections(file.read_text(encoding="utf-8"))
         for line in block_resolver.check_lines(parts, "Check (script)"):
-            (runnable if step_checks.RUN_FORM.match(line) else reader).append(f"{file.parent.name}: {line[:40]}")
             filled = re.sub(r"\{\{\w+\}\}", "site/x", line)  # start fills a param in the command with one quoted word
             assert any(p.match(filled + ": ok") for _, p in step_checks.block_checks(file.parent.name)), line
     # The kit's own test scripts run through done with <kit root> filled and pass.

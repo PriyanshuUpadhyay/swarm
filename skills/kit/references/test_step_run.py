@@ -32,7 +32,7 @@ test_build_start_and_skip()
 test_start_refuses_bad_needs()
 for gate in (test_done_needs_the_current_claim, test_done_refuses_a_stale_input, test_done_runs_script_checks,
              test_kit_check_lines, test_change_review_file_rule, test_final_hash_after_export, test_linked_rules, test_check_slots_and_todos,
-             test_done_sees_an_edit_during_checks, test_done_refuses_a_written_back_claim,
+             test_done_sees_an_edit_during_checks, test_done_refuses_a_written_back_claim, test_take_refuses_a_name_that_forges_a_line,
              test_done_refuses_a_write_outside_scope, test_scope_needs_git_and_a_writes_line,
              test_scope_parallel_order_names_and_a_lost_base, test_a_step_does_not_change_blocks_toml, test_scope_skips_a_step_done_before_the_take,
              test_scope_counts_a_step_done_while_take_reads_the_tree,

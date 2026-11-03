@@ -42,8 +42,13 @@ def check_verify_recreated(run, verify, head):
 def check_verify_reset(run, verify):
     (verify / "value.txt").write_text("dirty verify tree\n")
     (verify / "output.txt").write_text("untracked output\n")
+    # check.md tells the user to put node_modules or .env here once, so an ignored file must survive the reset (data loss).
+    (verify / "ignored.txt").write_text("cached input\n")
+    with (Path(sh("git", "rev-parse", "--git-common-dir")) / "info" / "exclude").open("a") as file:
+        file.write("ignored.txt\n")
     rc.build(run.name, "--run")
     assert (verify / "value.txt").read_text() == "later\n" and not (verify / "output.txt").exists()
+    assert (verify / "ignored.txt").read_text() == "cached input\n"
     assert json.loads((run / "build.json").read_text())["conclusion"] == "success"
 
 
