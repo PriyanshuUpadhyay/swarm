@@ -362,7 +362,9 @@ pub fn request_landing(root: &Path, cwd: &Path) -> Result<PathBuf, String> {
     let dir = root.join("landings");
     let name = key(&task.repo, &task.branch);
     let request = dir.join(format!("{name}.json"));
-    if dir.join(format!("{name}.taking")).exists() {
+    // A land run again after its wait ran out keeps waiting on the first request.
+    if dir.join(format!("{name}.taking")).exists() || request.with_extension("result.json").exists()
+    {
         return Ok(request);
     }
     write_json(&request, &task).map_err(|error| error.to_string())?;
