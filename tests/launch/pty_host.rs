@@ -15,13 +15,14 @@ fn wait_for(mut done: impl FnMut() -> bool, what: &str) {
 fn a_chair_under_a_host_launches_drives_and_closes_a_pty_seat() {
     let home = scratch("pty-host");
     // The seat reports working on its terminal at start and for each line it reads, as Claude
-    // does under `swarm pty`. A probe of the CLI, with no model, ends at once.
+    // does under `swarm pty`, and draws an empty input box, so a ring need not wait out
+    // RING_READY_TIMEOUT. A probe of the CLI, with no model, ends at once.
     tool(
         &home,
         "claude",
         "case \"$*\" in *--model*) ;; *) exit 0 ;; esac\n\
          report() { printf '\\033]7501;state=working:app=claude\\007'; }\n\
-         report; while read -r line; do report; done",
+         report; printf '────\\n❯ \\n────\\n'; while read -r line; do report; done",
     );
     let app = [("SWARM_ADAPTER", "tmux-swarm")];
     let session = swarm(&home, &app, &["session", "new", "lane"]);

@@ -252,6 +252,7 @@ fn hung_captures_share_one_limit() {
         swarm::store::set_pane(&connection, &session, id, pane).unwrap();
         ids.push(id.to_string());
     }
+    CAPTURES_WAIT_FOR_TEST.with(|wait| wait.set(Some(std::time::Duration::from_secs(2))));
     let started = std::time::Instant::now();
 
     close_agents(
@@ -264,13 +265,9 @@ fn hung_captures_share_one_limit() {
     )
     .unwrap();
 
-    // Four reads of CAPTURE_WAIT each would take 60 s; the shared limit ends them after
-    // CAPTURES_WAIT, and the rest is time for the rings and closes on a loaded machine.
-    assert!(
-        started.elapsed() < 4 * CAPTURE_WAIT,
-        "{:?}",
-        started.elapsed()
-    );
+    // Four reads of CAPTURE_WAIT each would take 60 s; the shared 2 s limit ends them, and the
+    // rest is time for the rings and closes on a loaded machine.
+    assert!(started.elapsed() < CAPTURE_WAIT, "{:?}", started.elapsed());
     std::fs::remove_dir_all(root).unwrap();
 }
 

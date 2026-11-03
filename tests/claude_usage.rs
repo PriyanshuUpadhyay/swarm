@@ -42,7 +42,12 @@ fn fixture(name: &str) -> PathBuf {
 }
 
 fn run(home: &Path, url: &str, args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_swarm"))
+    command(home, url, args).output().unwrap()
+}
+
+fn command(home: &Path, url: &str, args: &[&str]) -> Command {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_swarm"));
+    command
         .env_clear()
         .env("HOME", home)
         .env("SWARM_HOME", home)
@@ -52,9 +57,8 @@ fn run(home: &Path, url: &str, args: &[&str]) -> Output {
         .env("SWARM_CURL_CMD", home.join("curl"))
         .env("SWARM_CLAUDE_USAGE_URL", url)
         .env("PATH", "/usr/bin:/bin")
-        .args(args)
-        .output()
-        .unwrap()
+        .args(args);
+    command
 }
 
 fn server(status: &str, headers: &str, body: &str) -> (String, std::thread::JoinHandle<String>) {
@@ -299,16 +303,21 @@ fn curl_timeout_uses_the_remaining_deadline() {
         "curl",
         "printf '%s\\n' \"$*\" > \"$HOME/curl-args\"\necho \"$$\" > \"$HOME/curl-pid\"\nexec /bin/sleep 25",
     );
-    let value = usage(&run(
-        &home,
-        "http://127.0.0.1:1/usage",
-        &["usage", "--refresh", "--provider", "claude", "--json"],
-    ));
+    let value = usage(
+        &command(
+            &home,
+            "http://127.0.0.1:1/usage",
+            &["usage", "--refresh", "--provider", "claude", "--json"],
+        )
+        .env("SWARM_TEST_NATIVE_READ_MS", "5000")
+        .output()
+        .unwrap(),
+    );
     let args = std::fs::read_to_string(home.join("curl-args")).unwrap();
     let words: Vec<_> = args.split_whitespace().collect();
     let index = words.iter().position(|word| *word == "--max-time").unwrap();
     let seconds: f64 = words[index + 1].parse().unwrap();
-    assert!(seconds > 0.0 && seconds < 17.9, "{seconds}");
+    assert!(seconds > 0.0 && seconds < 5.0, "{seconds}");
     assert_eq!(value["meters"][0]["state"], "failed");
     let pid = std::fs::read_to_string(home.join("curl-pid")).unwrap();
     assert!(

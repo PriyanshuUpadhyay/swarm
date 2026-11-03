@@ -323,10 +323,7 @@ pub(crate) fn commands_info(args: &[String]) -> Result<Option<()>, Box<dyn std::
         let provider = Provider::parse(provider).ok_or("swarm: unknown provider")?;
         return print_json(&Versioned {
             schema: swarm::profiles::ACCOUNTS_SCHEMA,
-            body: &swarm::profiles::native::load(
-                provider,
-                swarm::profiles::native::deadline(NATIVE_READ_TIMEOUT_SECONDS),
-            )?,
+            body: &swarm::profiles::native::load(provider, native_read_deadline())?,
         })
         .map(Some);
     }
@@ -351,9 +348,7 @@ pub(crate) fn commands_info(args: &[String]) -> Result<Option<()>, Box<dyn std::
     {
         return print_json(&Versioned {
             schema: swarm::usage::USAGE_SCHEMA,
-            body: &swarm::usage::read(swarm::profiles::native::deadline(
-                NATIVE_READ_TIMEOUT_SECONDS,
-            ))?,
+            body: &swarm::usage::read(native_read_deadline())?,
         })
         .map(Some);
     }
@@ -367,9 +362,7 @@ pub(crate) fn commands_info(args: &[String]) -> Result<Option<()>, Box<dyn std::
             )
             .into());
         }
-        let usage = swarm::usage::read(swarm::profiles::native::deadline(
-            NATIVE_READ_TIMEOUT_SECONDS,
-        ))?;
+        let usage = swarm::usage::read(native_read_deadline())?;
         return print_json(&swarm::usage::openusage(
             &usage,
             swarm::usage::now_seconds(),
@@ -382,7 +375,7 @@ pub(crate) fn commands_info(args: &[String]) -> Result<Option<()>, Box<dyn std::
         && provider_flag == "--provider"
         && json == "--json"
     {
-        let deadline = swarm::profiles::native::deadline(NATIVE_READ_TIMEOUT_SECONDS);
+        let deadline = native_read_deadline();
         return print_json(&Versioned {
             schema: swarm::usage::USAGE_SCHEMA,
             body: &match provider.as_str() {

@@ -348,7 +348,29 @@ pub(crate) fn account_pick_deadline() -> std::time::Instant {
 pub(crate) const USAGE_PICK_REFRESH_TIMEOUT_SECONDS: u64 = 8;
 // Leave time for CLI output before SwarmCLIProfileSource kills its process at 20 seconds.
 pub(crate) const NATIVE_READ_TIMEOUT_SECONDS: u64 = 18;
+const _: () = assert!(NATIVE_READ_TIMEOUT_SECONDS < 20);
+
+/// The native usage and account read deadline. A debug build takes `SWARM_TEST_NATIVE_READ_MS`
+/// instead, so a test of a hung CLI ends in seconds, not after the full 18 s.
+pub(crate) fn native_read_deadline() -> std::time::Instant {
+    test_deadline("SWARM_TEST_NATIVE_READ_MS", NATIVE_READ_TIMEOUT_SECONDS)
+}
+
+/// The native login adapter deadline; a debug build takes `SWARM_TEST_LOGIN_ADAPTER_MS` instead.
+pub(crate) fn login_adapter_deadline() -> std::time::Instant {
+    test_deadline("SWARM_TEST_LOGIN_ADAPTER_MS", LOGIN_ADAPTER_TIMEOUT_SECONDS)
+}
+
+fn test_deadline(name: &str, seconds: u64) -> std::time::Instant {
+    let millis = env::var(name)
+        .ok()
+        .filter(|_| cfg!(debug_assertions))
+        .and_then(|millis| millis.parse().ok())
+        .unwrap_or(seconds * 1000);
+    std::time::Instant::now() + std::time::Duration::from_millis(millis)
+}
 pub(crate) const LOGIN_ADAPTER_TIMEOUT_SECONDS: u64 = 18;
+const _: () = assert!(LOGIN_ADAPTER_TIMEOUT_SECONDS < 20);
 pub(crate) const LOGIN_PANE_CLOSE_TIMEOUT_SECONDS: u64 = 1;
 
 /// `swarm guard <provider> <event>`: the rule list's verdict on one tool call, in the CLI's own

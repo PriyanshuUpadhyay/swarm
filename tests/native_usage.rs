@@ -31,7 +31,12 @@ fn tool(home: &Path, name: &str, body: &str) {
 }
 
 fn run(home: &Path, args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_swarm"))
+    command(home, args).output().unwrap()
+}
+
+fn command(home: &Path, args: &[&str]) -> Command {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_swarm"));
+    command
         .env_clear()
         .env("HOME", home)
         .env("SWARM_HOME", home)
@@ -41,9 +46,8 @@ fn run(home: &Path, args: &[&str]) -> Output {
         )
         // The account pick budget a debug build takes, long enough for fake CLIs on a loaded Mac.
         .env("SWARM_TEST_ACCOUNT_PICK_MS", "30000")
-        .args(args)
-        .output()
-        .unwrap()
+        .args(args);
+    command
 }
 
 fn json(output: Output) -> serde_json::Value {

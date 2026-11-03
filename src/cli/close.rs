@@ -69,6 +69,21 @@ const CAPTURE_WAIT: std::time::Duration =
 const CAPTURES_WAIT: std::time::Duration =
     std::time::Duration::from_secs(if cfg!(test) { 18 } else { 15 });
 
+#[cfg(test)]
+thread_local! {
+    /// A test of hung captures sets a short shared limit here, so it does not wait the full 18 s.
+    static CAPTURES_WAIT_FOR_TEST: std::cell::Cell<Option<std::time::Duration>> =
+        const { std::cell::Cell::new(None) };
+}
+
+fn captures_wait() -> std::time::Duration {
+    #[cfg(test)]
+    if let Some(wait) = CAPTURES_WAIT_FOR_TEST.with(std::cell::Cell::get) {
+        return wait;
+    }
+    CAPTURES_WAIT
+}
+
 /// How often `close` looks for the wrap-ups.
 const WRAP_UP_POLL: std::time::Duration = std::time::Duration::from_millis(200);
 
@@ -138,7 +153,7 @@ fn wrap_up(
         }
         std::thread::sleep(WRAP_UP_POLL);
     }
-    let captures_end = std::time::Instant::now() + CAPTURES_WAIT;
+    let captures_end = std::time::Instant::now() + captures_wait();
     for (id, pane, _) in waiting {
         let log = root.join(format!("runs/{session_id}/{id}.log"));
         let left = captures_end.saturating_duration_since(std::time::Instant::now());

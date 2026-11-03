@@ -296,7 +296,7 @@ pub(crate) fn account_login(args: &[String]) -> Result<(), Box<dyn std::error::E
         return Err("swarm: --cwd must be an existing absolute directory".into());
     }
     let cwd = std::fs::canonicalize(cwd).map_err(|_| "swarm: --cwd is unavailable")?;
-    let deadline = swarm::profiles::native::deadline(LOGIN_ADAPTER_TIMEOUT_SECONDS);
+    let deadline = login_adapter_deadline();
     let (entry, revision) = swarm::accounts::register(provider, name, expected)?;
     let root = swarm::paths::root_dir()?;
     let adapter = swarm::adapter::Adapter {
@@ -416,14 +416,5 @@ mod tests {
         assert!(pick(&list, "3\n").0.is_err());
         list.accounts.clear();
         assert!(pick(&list, "1\n").0.unwrap_err().contains("accounts login"));
-    }
-
-    #[test]
-    fn login_adapter_returns_before_the_swift_process_limit() {
-        let deadline = swarm::profiles::native::deadline(LOGIN_ADAPTER_TIMEOUT_SECONDS);
-        assert!(
-            deadline.duration_since(std::time::Instant::now())
-                <= std::time::Duration::from_secs(18)
-        );
     }
 }
