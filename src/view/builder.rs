@@ -59,7 +59,9 @@ pub(super) fn rows_with_context(
             session: meta(event, "session_id").into(),
             scope,
         };
-        if event_type == "tool_call" {
+        // A Codex question call also writes a tool output; anchoring the question hides it,
+        // because the answer row already shows the reply.
+        if matches!(event_type, "tool_call" | "elicitation") {
             calls
                 .entry(string(event, "tool_call_id").into())
                 .or_default()
