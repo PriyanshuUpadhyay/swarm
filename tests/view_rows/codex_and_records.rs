@@ -361,3 +361,14 @@ fn cancelled_codex_question_keeps_its_tool_output() {
         ]
     );
 }
+
+#[test]
+fn open_codex_async_question_hides_its_accepted_output() {
+    // Codex answers every async question call with this output before the owner replies.
+    const LINES: [&str; 2] = [
+        r#"{"type":"response_item","payload":{"type":"function_call","name":"request_user_input_async","arguments":"{\"questions\":[{\"title\":\"Sign in now?\",\"options\":[\"Yes\"]}]}","call_id":"call-a"}}"#,
+        r#"{"type":"response_item","payload":{"type":"function_call_output","call_id":"call-a","output":"{\"accepted\":true}"}}"#,
+    ];
+    let rows = transcript::rows(&records(inline_fixture("codex", &LINES), true), false, true);
+    assert_eq!(texts(&rows), vec!["Sign in now?"]);
+}

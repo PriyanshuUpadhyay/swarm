@@ -44,9 +44,16 @@ pub(super) fn rows_with_context(
     let mut commands = HashMap::<String, Vec<Anchor>>::new();
     let mut shells = HashMap::<String, Vec<Anchor>>::new();
     let mut endings = HashMap::new();
+    // A question has an answer row, or is an async one whose `{"accepted":true}` output only
+    // says Codex showed it; either way its tool output adds nothing.
     let answered: HashSet<&str> = records
         .iter()
-        .filter(|record| string(&record.event, "type") == "elicitation_result")
+        .filter(|record| {
+            let event = &record.event;
+            string(event, "type") == "elicitation_result"
+                || (string(event, "type") == "tool_call_update"
+                    && string(event, "content") == r#"{"accepted":true}"#)
+        })
         .map(|record| string(&record.event, "tool_call_id"))
         .collect();
     for (index, record) in records.iter().enumerate() {
@@ -64,9 +71,8 @@ pub(super) fn rows_with_context(
             session: meta(event, "session_id").into(),
             scope,
         };
-        // A Codex question call also writes a tool output; anchoring an answered question hides
-        // it, because the answer row already shows the reply. A cancelled Codex question or a
-        // failed Claude one has no answer row, so its tool output stays.
+        // A Codex question call also writes a tool output; anchoring the question hides it. A
+        // cancelled Codex question or a failed Claude one has no answer row, so its output stays.
         if event_type == "tool_call"
             || (is_codex
                 && event_type == "elicitation"
