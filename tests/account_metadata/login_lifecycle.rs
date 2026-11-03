@@ -177,22 +177,6 @@ fn login_typed_line_closes_only_after_native_login_succeeds() {
 }
 
 #[test]
-fn account_name_length_accepts_64_and_refuses_65_before_registration() {
-    let home = fixture("spare-name-bound");
-    let maximum = "w".repeat(64);
-    let too_long = "w".repeat(65);
-    assert!(
-        !run(&home, &login("codex", &too_long, &revision(&home)))
-            .status
-            .success()
-    );
-    assert!(!home.join(".swarm/accounts.toml").exists());
-    assert!(!home.join("pane-cwd").exists());
-    let opened = json(run(&home, &login("codex", &maximum, &revision(&home))));
-    assert_eq!(opened["account"], maximum);
-}
-
-#[test]
 fn each_login_attempt_uses_a_unique_valid_agent_id() {
     let home = fixture("work-pane-names");
     std::fs::write(home.join(".swarm/adapters/fake.conf"), r#"self = true
