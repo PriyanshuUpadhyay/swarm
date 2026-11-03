@@ -67,6 +67,7 @@ fn writes_into_main_are_denied_and_writes_elsewhere_pass() {
             task.as_ref(),
         ),
         ("Bash", bash("cat <<< x\necho y > a.txt"), main.as_ref()),
+        ("Bash", bash("echo $((x<<n))\nrm a.txt"), main.as_ref()),
         ("Bash", bash("env -i rm a.txt"), main.as_ref()),
         ("Bash", bash("rm -r src"), main.as_ref()),
         ("Bash", bash("echo x >& a.txt"), main.as_ref()),

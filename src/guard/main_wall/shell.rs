@@ -181,7 +181,10 @@ pub(super) fn commands(text: &str) -> Vec<Vec<Token>> {
                         .iter()
                         .find(|c| !matches!(c, '-' | ' ' | '\t'))
                         .is_some_and(|c| c.is_ascii_digit());
-                    if chars.get(i + 1) == Some(&'<') && !shift {
+                    // Inside `$(( … ))` or `(( … ))`, `<<` is a shift.
+                    let before: String = chars[..i].iter().collect();
+                    let arithmetic = before.matches("((").count() > before.matches("))").count();
+                    if chars.get(i + 1) == Some(&'<') && !shift && !arithmetic {
                         i += 2;
                         if chars.get(i) == Some(&'-') {
                             i += 1;

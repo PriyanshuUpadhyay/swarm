@@ -147,13 +147,6 @@ impl Hub {
     }
 }
 
-/// The hub whose main worktree holds `path` (resolved against `cwd`), when that path is main's
-/// own content.
-pub fn main_target(cwd: &Path, path: &Path) -> Option<Hub> {
-    let resolved = resolve(cwd, path);
-    hub(&resolved).filter(|hub| hub.guards(&resolved))
-}
-
 /// A task's ownership record, one JSON file in `<swarm home>/tasks/`.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Task {
@@ -202,9 +195,7 @@ fn write_json(path: &Path, value: &impl serde::Serialize) -> std::io::Result<()>
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let tmp = path.with_extension("part");
-    std::fs::write(&tmp, serde_json::to_string_pretty(value)? + "\n")?;
-    std::fs::rename(tmp, path)
+    crate::store::write_atomic(path, &(serde_json::to_string_pretty(value)? + "\n"))
 }
 
 /// Worktrunk. `wt` on PATH comes first, because the owner may wrap it with a policy; a server
