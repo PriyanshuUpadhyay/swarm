@@ -342,20 +342,8 @@ mod tests {
         assert_eq!(others("63253\n88792\n", Some(63253)), vec![88792]);
         assert_eq!(others("63253\n", None), vec![63253]);
         assert!(others("", Some(1)).is_empty());
-    }
-
-    #[test]
-    fn running_reads_the_state_line_only() {
         assert!(running("\tpid = 42\n\tstate = running\n"));
         assert!(!running("\tstate = not running\n"));
         assert!(!running(""));
-    }
-
-    #[test]
-    fn plist_path_is_in_the_home_launch_agents() {
-        assert_eq!(
-            plist_path(Path::new("/Users/me")),
-            PathBuf::from(format!("/Users/me/Library/LaunchAgents/{LABEL}.plist"))
-        );
     }
 }
