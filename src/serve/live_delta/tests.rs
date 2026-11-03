@@ -15,31 +15,6 @@ fn live_rows_closed_turn_soak() {
 fn live_rows_open_turn_soak() {
     live_soak(1, true);
 }
-#[test]
-#[ignore = "release baseline for the previous full-history rebuild"]
-fn live_rows_full_rebuild_baseline() {
-    for count in [1000, 30000] {
-        let mut state = LiveRows::empty(0, false);
-        for index in 0..count {
-            state.ingest(
-                index as u64,
-                index as u64 + 1,
-                &[synthetic_event(index, false)],
-            );
-        }
-        let mut samples = Vec::new();
-        for _ in 0..20 {
-            let timer = std::time::Instant::now();
-            let frame = reference_delta(&mut state, "chat");
-            std::hint::black_box(frame.to_string());
-            samples.push(timer.elapsed().as_nanos());
-        }
-        println!(
-            "full_rebuild records={count} p95_ns={}",
-            percentile(&mut samples)
-        );
-    }
-}
 #[tokio::test(flavor = "current_thread")]
 #[ignore = "release cadence check during a 30000-tool turn-end rebuild"]
 async fn large_turn_end_keeps_other_keys_running() {
