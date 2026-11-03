@@ -195,3 +195,15 @@ test "Claude queue operations keep operation, content, and reason" {
     try std.testing.expectEqualStrings("popAll", pop_all[0].queue_operation.operation);
     try std.testing.expectEqualStrings("keep the old name", pop_all[0].queue_operation.content.?);
 }
+
+test "Claude API error record becomes an error with its retry count" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    // Claude Code 2.1.306 to 2.1.316 write one per failed API call that it retries.
+    const retried = try parseLine(arena, "{\"type\":\"system\",\"subtype\":\"api_error\",\"level\":\"error\",\"error\":{\"message\":\"Connection error.\",\"formatted\":\"Connection lost while your computer was asleep\"},\"retryInMs\":519,\"retryAttempt\":1,\"maxRetries\":10,\"uuid\":\"u1\"}");
+    try std.testing.expectEqual(1, retried.len);
+    try std.testing.expectEqualStrings("Connection lost while your computer was asleep (retry 1 of 10)", retried[0].@"error".message);
+    const plain = try parseLine(arena, "{\"type\":\"system\",\"subtype\":\"api_error\",\"error\":{\"message\":\"Overloaded\"}}");
+    try std.testing.expectEqualStrings("Overloaded", plain[0].@"error".message);
+}
