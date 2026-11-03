@@ -474,12 +474,18 @@ fn git_writes_main(hubs: &Hubs, cwd: &Path, args: &[&str]) -> bool {
             .filter(|arg| !arg.starts_with('-'))
             .any(|arg| task::resolve(&dir, Path::new(arg)) == hub.main),
         "update-ref" => first_plain.is_some_and(names_default),
-        // Setting the hub's or main's HEAD changes which branch is the default; a task worktree's
-        // HEAD is its own.
+        // Setting the hub's or main's HEAD, or origin/HEAD from anywhere, changes which branch is
+        // the default; a task worktree's HEAD is its own.
         "symbolic-ref" => {
             let here = task::resolve(&dir, Path::new("."));
-            (here.starts_with(&hub.main) || here.starts_with(&hub.common))
-                && sub_args.iter().filter(|arg| !arg.starts_with('-')).count() > 1
+            let plain: Vec<_> = sub_args
+                .iter()
+                .filter(|arg| !arg.starts_with('-'))
+                .collect();
+            plain.len() > 1
+                && (here.starts_with(&hub.main)
+                    || here.starts_with(&hub.common)
+                    || plain[0].ends_with("origin/HEAD"))
         }
         "remote" => sub_args.first() == Some(&"set-head"),
         "push" | "fetch" => sub_args.contains(&".") && sub_args.iter().any(names_default),

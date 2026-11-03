@@ -154,12 +154,18 @@ pub fn argv(
                         // it; packed-refs is named in that case too.
                         if let Some(hub) = &in_hub {
                             let loose = hub.common.join(format!("refs/heads/{}", hub.default));
-                            // A new origin/HEAD does not move main, and git 2.48 `fetch` may create
-                            // one, so it is named only when it exists.
-                            let mut files = vec![hub.common.join("HEAD")];
-                            let origin = hub.common.join("refs/remotes/origin/HEAD");
-                            if origin.exists() {
-                                files.push(origin);
+                            // `default_branch` reads origin/HEAD and `hub` reads main's HEAD, so
+                            // a write to either can turn the wall off; both are named even when
+                            // missing, so a `fetch` that would create origin/HEAD fails in Codex.
+                            let mut files = vec![
+                                hub.common.join("HEAD"),
+                                hub.common.join("refs/remotes/origin/HEAD"),
+                            ];
+                            // On main, its git dir is named below; a TOML key may not repeat.
+                            if let Some((main_git_dir, _)) =
+                                outside_git_dirs(&hub.main).filter(|_| main.is_none())
+                            {
+                                files.push(main_git_dir.into());
                             }
                             if !loose.exists() {
                                 files.push(hub.common.join("packed-refs"));

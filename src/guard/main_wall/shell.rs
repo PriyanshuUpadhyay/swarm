@@ -37,6 +37,7 @@ pub(super) fn commands(text: &str) -> Vec<Vec<Token>> {
         word.clear();
         *started = false;
     };
+    let mut arithmetic = 0usize;
     while i < chars.len() {
         let c = chars[i];
         if single {
@@ -85,6 +86,14 @@ pub(super) fn commands(text: &str) -> Vec<Vec<Token>> {
                     &mut heredocs,
                 ),
                 '\n' | ';' | '|' | '&' | '(' | ')' | '`' => {
+                    // Unquoted `((` and `))` open and close arithmetic, where `<<` is a shift.
+                    if c == '(' && chars.get(i + 1) == Some(&'(') {
+                        arithmetic += 1;
+                        i += 1;
+                    } else if c == ')' && chars.get(i + 1) == Some(&')') && arithmetic > 0 {
+                        arithmetic -= 1;
+                        i += 1;
+                    }
                     if c == '&' && chars.get(i + 1) == Some(&'>') {
                         push(
                             &mut all,
@@ -181,15 +190,7 @@ pub(super) fn commands(text: &str) -> Vec<Vec<Token>> {
                         .iter()
                         .find(|c| !matches!(c, '-' | ' ' | '\t'))
                         .is_some_and(|c| c.is_ascii_digit());
-                    // Inside `$(( … ))` or `(( … ))`, `<<` is a shift.
-                    // Only this line counts, so a here-doc body or an earlier line cannot turn it off.
-                    let line_start = chars[..i]
-                        .iter()
-                        .rposition(|c| *c == '\n')
-                        .map_or(0, |at| at + 1);
-                    let before: String = chars[line_start..i].iter().collect();
-                    let arithmetic = before.matches("((").count() > before.matches("))").count();
-                    if chars.get(i + 1) == Some(&'<') && !shift && !arithmetic {
+                    if chars.get(i + 1) == Some(&'<') && !shift && arithmetic == 0 {
                         i += 2;
                         if chars.get(i) == Some(&'-') {
                             i += 1;

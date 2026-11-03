@@ -73,6 +73,21 @@ fn writes_into_main_are_denied_and_writes_elsewhere_pass() {
             main.as_ref(),
         ),
         ("Bash", bash("perl -0777pi -e s/a/b/ a.txt"), main.as_ref()),
+        (
+            "Bash",
+            bash("echo '))'; echo $((x<<n))\nrm a.txt"),
+            main.as_ref(),
+        ),
+        (
+            "Bash",
+            bash("echo '(('; cat <<EOF\nit's\nEOF\nrm a.txt"),
+            main.as_ref(),
+        ),
+        (
+            "Bash",
+            bash("git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/zzz"),
+            task.as_ref(),
+        ),
         ("Bash", bash("sed -I '' s/a/b/ a.txt"), main.as_ref()),
         ("Bash", bash("env -i rm a.txt"), main.as_ref()),
         ("Bash", bash("rm -r src"), main.as_ref()),
