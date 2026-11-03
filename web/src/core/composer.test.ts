@@ -50,16 +50,18 @@ describe("queue rows", () => {
 
 describe("chair input", () => {
   it("names why the composer cannot send", () => {
-    expect(agentInput(session({ adapter: null }), [chair()]).disabled).toBe(MISSING_ADAPTER);
-    expect(agentInput(session(), []).disabled).toBe("The chair has no pane to receive input.");
+    const noAdapter = agentInput(session({ adapter: null }), [chair()]).disabled;
+    const noPane = agentInput(session(), []).disabled;
     const closed = agentInput(session(), [chair({ alive: false })]);
-    expect(closed.disabled).toBe("This chat's pane has closed. Start a new chat or switch model.");
-    expect(closed.unreachable).toBe(true);
     const asking = agentInput(session(), [chair({ state: "waiting", prompt: waitingPrompt })]);
-    expect(asking.disabled).toBe("The agent is asking a question. Answer it first.");
+    const askingInPane = agentInput(session(), [chair({ state: "waiting" })]).disabled;
+    const reasons = [noAdapter, noPane, closed.disabled, asking.disabled, askingInPane];
+    expect(noAdapter).toBe(MISSING_ADAPTER);
+    for (const reason of reasons) expect(reason).toBeTruthy();
+    expect(new Set(reasons).size).toBe(reasons.length);
+    expect(closed.unreachable).toBe(true);
     expect(asking.unreachable).toBe(false);
     expect(asking.prompt).toEqual(waitingPrompt);
-    expect(agentInput(session(), [chair({ state: "waiting" })]).disabled).toBe("The agent is asking a question. Answer it first in its pane.");
   });
 
   it("offers Branch only on an idle chair of a CLI that can branch", () => {

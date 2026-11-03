@@ -13,10 +13,6 @@ SCRIPT = Path(__file__).with_name("land.py")
 
 
 class LandTests(unittest.TestCase):
-    def test_shared_plain(self):
-        self.assertEqual(land.plain.__module__, "step_run")
-        self.assertEqual(land.plain("\tindent\nline\r\x1b\x85"), "\tindentline")
-
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)

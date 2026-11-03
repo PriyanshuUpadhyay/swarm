@@ -21,7 +21,8 @@ def test_done_takes_blocks_from_the_plan(tmp):
     out = run("take", folder, "01-a", "x")
     assert out.returncode == 1 and "its blocks changed after start (" in out.stderr and "block:plan-review@" in out.stderr, out
     tick_without("- [ ] block plan-review script: ")
-    assert run("take", folder, "01-a", "x").returncode == 0
+    out = run("take", folder, "01-a", "x")
+    assert out.returncode == 0, out
     # After the take, the worker deletes `Skills read:`; done still finds the block in plan.md.
     f.write_text("\n".join(l for l in f.read_text(encoding="utf-8").splitlines() if not l.startswith("Skills read: ")) + "\n",
                  encoding="utf-8")

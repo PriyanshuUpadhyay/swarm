@@ -320,56 +320,6 @@ mod tests {
     }
 
     #[test]
-    fn openusage_leaves_out_a_window_length_that_does_not_fit_in_seconds() {
-        let mut meter = status_meter(
-            "claude",
-            Some(&work()),
-            "fresh",
-            ReasonCode::ReadFailed,
-            None,
-        );
-        meter.clear_reason();
-        meter.window = Some("5h".into());
-        meter.window_minutes = Some(i64::MAX);
-        meter.used_pct = Some(10);
-        meter.as_of_seconds = Some(1000);
-        let value = openusage(
-            &Usage {
-                meters: vec![meter],
-            },
-            1000,
-        );
-        let session = &value["providers"]["claude@work"]["resources"]["session"];
-        assert_eq!(session["used"], 10);
-        assert!(session.get("windowSeconds").is_none(), "{session}");
-    }
-
-    #[test]
-    fn a_cached_reading_with_half_a_reason_reads_back_as_a_kept_reading() {
-        for (reason, code) in [
-            (json!(null), json!("relogin_required")),
-            (json!("x"), json!(null)),
-        ] {
-            let stored: UsageMeter = serde_json::from_value(json!({
-                "provider": "claude", "account": "work", "label": "work", "window": "5h",
-                "window_minutes": 300, "used_pct": 20, "reset_time_seconds": null, "state": "fresh",
-                "source": "claude_api", "reason": reason, "reason_code": code, "as_of_seconds": 1000
-            }))
-            .unwrap();
-            let cached = normalize_meter(&stored, 1000);
-            assert_eq!(cached.used_pct, Some(20));
-            assert_eq!(
-                (cached.reason_code, cached.reason.as_deref()),
-                (
-                    Some(ReasonCode::RefreshFailed),
-                    Some(ReasonCode::RefreshFailed.text())
-                ),
-                "{reason} {code}"
-            );
-        }
-    }
-
-    #[test]
     fn a_reset_time_past_year_9999_is_invalid_from_codex_and_from_the_cache() {
         // The Claude path rejects the same value (see claude_reset_seconds).
         let reply = json!({"rateLimits":{"primary":{"usedPercent":5,"windowDurationMins":300,"resetsAt":1791766923000_i64}}});

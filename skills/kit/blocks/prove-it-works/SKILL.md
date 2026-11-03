@@ -16,11 +16,18 @@ metadata:
 ## Rules
 - This block answers how a claim was proven. For source agreement, see `blocks/cite-sources/SKILL.md`; for the claim-to-proof map, see `blocks/done-when-evidence/SKILL.md`.
 - Check the real thing. A build, a green lint, a file timestamp, a cached screenshot, a tool's success message, or a worker's summary is a proxy, and a proxy does not prove the change. A receipt is not the new state, so for a file result, open the saved file and read its values.
-- Choose the expected result from the requested behavior, the repository's contracts, and the standards that apply, before you use the code as evidence. Include failure and boundary cases.
+- Choose the expected result from the requested behavior, the repository's contracts, and the standards that apply, before you use the code as evidence. Do not list every edge case; the test rule below says which failure cases get a test.
+- The test rule (ADR 0134). It applies to every test an agent writes or a review asks for:
+  1. For each behavior, write one test of its main path through its public entry point: a CLI command, an HTTP route, or the function that callers use.
+  2. Add a failure test only for a bug that a user hit, or for a guard on auth, data loss, a trust boundary, or the owner gate. A review finding about an input that no real caller sends gets a note, not a test.
+  3. Check the outcome: exit code, verdict, file state, or what the user sees. Do not check message wording, internal counts, where code lives, patches of the module under test, or test helpers.
+  4. For a new case of a tested behavior, add a value to the existing test. Do not guard one fix in two layers, such as a unit test and an e2e test.
+  5. Do not use real waits over 1 second or asserts on how long something took. Make a deadline a test setting.
+  6. Never edit or delete a test to make a change pass. Stop and report the conflict.
 - Shape a test so it reaches the code through its public interface. Mock only system boundaries, such as the network, the clock, or a paid API. Never compute the expected value the same way the code does.
 - Control clocks, randomness, and outside responses where they would make a test unstable. Use the real local boundary when a mock would hide the behavior you claim.
 - Run the smallest relevant check after each behavior change, while the cause is still clear. You run the checks and fix the failures inside the task's scope. Never make a manual trial by the user a condition of done.
-- Choose the check by layer. Logic or a bug: a red/green test that fails before the change and passes after it. UI: a screenshot loop plus runnable checks, such as an overflow test, a contrast check, or a lag limit. Unclear idea: a throwaway prototype.
+- Choose the check by layer. Logic or a bug: a red/green test of the main path, or of the bug, that fails before the change and passes after it. UI: a screenshot loop plus runnable checks, such as an overflow test, a contrast check, or a lag limit. Unclear idea: a throwaway prototype.
 - For UI, the runnable checks decide done. Report taste as "awaiting the user's review", never as passed.
 - A change to model routes, rule loading, or standards selection runs the existing loader checks and keeps a case from the failure it fixes. A selection test proves selection only. Its cases include near-miss prompts that must not select, each case runs more than once, and the cases stay apart from the text being tuned. A claim about how a model behaves also needs an agent run against the expected behavior, under the active host contract. When an edit changes how a skill, rule, or model route behaves, run the kept case on the old text and on the new text, with the same model and host, and record the model, the rule version, both results, and the limits in the task record.
 - For a filter, a selector, or an agent instruction, keep a small fixed case set before the change: one case that must match, one near miss that must not, and one empty or edge case. For review rules, the cases are a known defect that the review must find and a false alarm that it must reject. Run the set on the old and the new version.
@@ -43,3 +50,4 @@ Result: the evidence line reads `pytest tests/test_parse.py -q -> 1 failed` then
 - Does any claim cite only a build, a lint, or a self-report as proof? Quote it, or write "none".
 - Does each claim name its ladder step, and is anything below step 4 marked unproven? Quote the claims.
 - Do taste items read "awaiting the user's review"? Quote them.
+- Does any new or changed test break the test rule (a wording pin, an edge case with no user bug or guard, a real wait, a second layer for one fix)? Quote it, or write "none".

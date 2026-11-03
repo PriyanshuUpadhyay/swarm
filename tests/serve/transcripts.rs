@@ -269,32 +269,6 @@ fn row_routes_guard_input_cap_output_and_stream_stable_ids() {
     );
 }
 
-#[test]
-fn a_pi_chair_log_reads_as_rows() {
-    let server = Server::new();
-    let log = server.dir.join("pi.jsonl");
-    fs::copy(
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("packages/transcript/src/fixtures/pi-chat.jsonl"),
-        &log,
-    )
-    .unwrap();
-    let connection = swarm::store::open(&server.dir.join("home/.swarm/swarm.db")).unwrap();
-    swarm::store::set_chair(&connection, &server.session, Some(("pi", "s1"))).unwrap();
-    swarm::store::set_chair_log(&connection, &server.session, &log).unwrap();
-    let path = format!("/api/rows?session={}&agent=chair&tail=200", server.session);
-    let (status, _, body) = server.request("GET", &path, "", "", true);
-    assert_eq!(status, 200, "{body}");
-    for text in [
-        "Run the tests",
-        "One test fails.",
-        "cargo test",
-        "overloaded",
-    ] {
-        assert!(body.contains(text), "{text} missing from {body}");
-    }
-}
-
 /// pi has no hook to report its log, so the server finds it by the session id that `launch` gave
 /// pi, `<session>-<agent>` (ADR 0086).
 #[test]
@@ -331,7 +305,14 @@ fn a_pi_log_is_found_by_its_session_id() {
         );
         let (status, _, body) = server.request("GET", &path, "", "", true);
         assert_eq!(status, 200, "{agent}: {body}");
-        assert!(body.contains("One test fails."), "{agent}: {body}");
+        for text in [
+            "Run the tests",
+            "One test fails.",
+            "cargo test",
+            "overloaded",
+        ] {
+            assert!(body.contains(text), "{agent}: {text} missing from {body}");
+        }
     }
 }
 

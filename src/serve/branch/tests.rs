@@ -360,35 +360,6 @@ esac
     }
 
     #[tokio::test]
-    async fn a_request_dropped_during_the_cut_write_removes_the_file() {
-        let fixture = action_fixture();
-        with_second_message(&fixture);
-        let rows = handoff_rows(&fixture.app, &fixture.session).await.unwrap();
-        let second = rows
-            .iter()
-            .filter(|r| r.kind == view::RowKind::User)
-            .nth(1)
-            .unwrap();
-        let offset = line_offset(&second.anchor_source_id).unwrap();
-        let log = resolve_log(&fixture.app.root, &fixture.session, "chair").unwrap();
-        let before = logs_in(&fixture);
-        // One poll starts the write on the blocking pool; the drop leaves it to finish alone.
-        let mut write = Box::pin(cut_guarded(
-            log.path.clone(),
-            offset,
-            "claude".into(),
-            "dropped-cut".into(),
-        ));
-        let mut cx = std::task::Context::from_waker(std::task::Waker::noop());
-        // A blocking thread can finish the write before this first poll; the guard it returns
-        // is dropped here then, and removes the file the same way.
-        let _ = write.as_mut().poll(&mut cx);
-        drop(write);
-        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-        assert_eq!(logs_in(&fixture), before);
-    }
-
-    #[tokio::test]
     async fn a_failed_branch_from_the_first_message_reads_no_new_chair() {
         let fixture = action_fixture();
         // No cut file exists for the first message, so there is nothing to keep or remove.

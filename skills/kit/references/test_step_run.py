@@ -20,19 +20,6 @@ from test_step_run_links import *
 from test_step_run_chain import CASES as CHAIN_CASES
 
 
-def test_explicit_text_encoding():
-    import ast
-    for name in ("test_step_run.py", "test_step_run_support.py", "test_step_run_commands.py",
-                 "test_step_run_todos.py", "test_step_run_build.py",
-                 "test_step_run_gate.py", "test_step_run_gate_attacks.py", "test_step_run_scope.py",
-                 "test_step_run_amend.py", "test_step_run_chain.py"):
-        tree = ast.parse(Path(__file__).with_name(name).read_text(encoding="utf-8"))
-        missing = [node.lineno for node in ast.walk(tree) if isinstance(node, ast.Call)
-                   and isinstance(node.func, ast.Attribute) and node.func.attr in ("read_text", "write_text", "open")
-                   and not any(kw.arg == "encoding" for kw in node.keywords)]
-        assert not missing, f"text operations without UTF-8 encoding at {missing}"
-
-
 test_table_blocks()
 test_build_start_without_tomllib()
 test_build_piece_repo_paths()
@@ -44,12 +31,8 @@ test_build_start_and_skip()
 
 test_start_refuses_bad_needs()
 for gate in (test_done_needs_the_current_claim, test_done_refuses_a_stale_input, test_done_runs_script_checks,
-             test_kit_check_lines, test_change_review_file_rule, test_final_hash_after_export, test_linked_rules, test_claim_survives_odd_logs, test_check_slots_and_todos,
-             test_check_runs_in_the_piece, test_check_results,
-             test_take_logs_inside_the_lock, test_check_text_from_the_worker,
-             test_done_sees_an_edit_during_checks, test_done_refuses_a_written_back_claim,
-             test_timeout_wait_is_bounded, test_done_sees_an_input_edit_during_checks,
-             test_take_refuses_a_name_that_forges_a_line, test_check_odd_system_answers,
+             test_kit_check_lines, test_change_review_file_rule, test_final_hash_after_export, test_linked_rules, test_check_slots_and_todos,
+             test_done_sees_an_edit_during_checks, test_done_refuses_a_written_back_claim, test_take_refuses_a_name_that_forges_a_line,
              test_done_refuses_a_write_outside_scope, test_scope_needs_git_and_a_writes_line,
              test_scope_parallel_order_names_and_a_lost_base, test_a_step_does_not_change_blocks_toml, test_scope_skips_a_step_done_before_the_take,
              test_scope_counts_a_step_done_while_take_reads_the_tree,
@@ -74,11 +57,8 @@ with tempfile.TemporaryDirectory() as tmp:
     f.write_text(f.read_text(encoding="utf-8").replace("- [ ] the question: ", "- [x] the question: why is the sky blue"), encoding="utf-8")
     assert run("take", folder, "01-ask", "a").returncode == 0
     assert run("done", folder, "01-ask", claim(folder, "01-ask")).returncode == 0 and f.read_text(encoding="utf-8").startswith("Status: done ")
-    test_explicit_text_encoding()
-    test_command_wrong_count()
     test_plain_controls()
-    test_done_wrong_count(folder)
-    test_done_rejects_force(folder)
+    test_command_wrong_count(folder)
     test_lock_holder_failed_handshake(folder)
     test_process_lock(folder)
     test_dead_run_unlock(folder)

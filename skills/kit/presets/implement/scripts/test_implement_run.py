@@ -88,15 +88,11 @@ with tempfile.TemporaryDirectory() as tmp:
     test_second_same_day_close(tmp)
     test_close_archives_run(tmp)
     test_catalog_uses_running_kit(tmp)
-    test_skip_text_encoding()
     test_kit_pointers()
     test_kit_block_frontmatter()
-    test_command_wrong_count(run, folder)
-    test_done_wrong_count(run, folder)
     test_take_force(run, folder)
     test_take_requires_who(run, folder)
-    test_done_rejects_force(run, folder)
-    test_closed_stdout(repo, env, folder)
+    test_command_wrong_count(run, folder)
 
     blocked = run("take", folder, "05-build", "a")
     assert blocked.returncode != 0 and "needs 04-impact, 02-design" in blocked.stderr
@@ -106,7 +102,6 @@ with tempfile.TemporaryDirectory() as tmp:
     assert "skip <folder> <step> <why>" in run("skip", folder, "02-design").stderr
     test_skip_plain_reason(run, folder)
     test_skip_lock(run, folder)
-    test_skip_rejects_force(run, folder)
     test_atomic_skip(folder)
     assert run("skip", folder, "02-design", "no", "UI").returncode == 0
     assert (folder / "02-design.md").read_text().startswith("Status: skipped no UI\n")
@@ -120,18 +115,7 @@ with tempfile.TemporaryDirectory() as tmp:
 
     # take 04-impact writes the places that name each code name of the contracts.
     test_callers_after_claim(run, folder)
-    test_impact_closed_stdout(repo, env, folder)
-    test_impact_utf8(repo, env, folder)
-    test_callers_timeout(folder)
-    test_callers_long_stderr(folder)
-    test_callers_stdout_utf8_cut(folder)
-    test_callers_stderr_utf8_cut(folder)
-    test_callers_large_output(folder)
-    test_callers_long_line(folder)
     test_callers_failure(folder)
-    test_callers_deadline(folder)
-    test_callers_name_cap(folder)
-    test_callers_below_rules(folder)
     test_callers_cut_list(folder)
     test_callers_end_only_in_impact(tmp)
     test_callers_controls(repo, run, folder)
@@ -256,7 +240,6 @@ with tempfile.TemporaryDirectory() as tmp:
     test_web_ui_basics_checks(tmp)
     test_headless_shot_checks(tmp)
     test_block_ascii_locale(tmp)
-    test_review_read_encoding(tmp)
     # The small-route size gate has its own script and test (ADR 0133).
     gate = subprocess.run([sys.executable, "-I", str(Path(__file__).with_name("test_size_gate.py"))], capture_output=True, text=True)
     assert gate.returncode == 0 and gate.stdout.strip() == "ok", gate

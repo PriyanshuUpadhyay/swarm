@@ -144,7 +144,6 @@ test("a new workspace clears a selected issue when the project changes and uses 
   await expect(dialog.getByTestId("nw-folder")).not.toHaveValue("");
   await dialog.getByTestId("nw-create").click();
   await expect(dialog.getByRole("button", { name: "Hide", exact: true })).toBeVisible();
-  await expect(dialog).toContainText("Setup continues when you hide this dialog.");
   await screenshot(page, "workspace-working");
 });
 
@@ -165,18 +164,6 @@ test("Settings shows notice health after Home dismissal and Home includes setup"
   await expect(dialog.getByRole("region", { name: "System notification status" })).toContainText("Focus holds notices");
   await expect(dialog.getByRole("button", { name: "Send a test notice" })).toBeVisible();
   await screenshot(page, "notice-settings");
-});
-
-test("the Skills catalog focuses and keeps its filter across a view switch", async ({ page }) => {
-  await open(page);
-  await page.getByTestId("skills-button").click();
-  const filter = page.getByTestId("skills-filter");
-  await expect(filter).toBeFocused();
-  await filter.fill("review");
-  await page.getByTestId("skills-view-composer").click();
-  await page.getByTestId("skills-view-catalog").click();
-  await expect(filter).toHaveValue("review");
-  await screenshot(page, "skills-filter");
 });
 
 test("Later leaves the installed update available in Settings", async ({ page }) => {

@@ -126,7 +126,7 @@ test("a new skill copies a whole SKILL.md", async ({ page }) => {
   const row = page.getByTestId("draft-row").first();
   await row.locator('[data-col="Holds"]').fill("the goal and the done-when");
   await row.locator('[data-col="Why"]').fill("the fix rests on them");
-  await expect(page.getByTestId("draft-status")).toHaveText("the last step 01-frame has no voice- block");
+  await expect(page.getByTestId("draft-status")).toContainText("01-frame");
   await row.locator('[data-col="Block"]').fill("requirements, voice-reply");
   await expect(page.getByTestId("draft-text")).toContainText('---\nname: triage\ndescription: "Use when a bug report arrives."\n---\n\n# triage\n\n## Preset');
   await expect(page.getByTestId("draft-status")).toHaveText("Python passed this text.");

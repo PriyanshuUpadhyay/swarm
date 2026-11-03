@@ -2,21 +2,11 @@
 from test_implement_run_support import *
 
 
-def test_skip_text_encoding():
-    import ast
-    tree = ast.parse(Path(__file__).read_text(encoding="utf-8"))
-    missing = [call.lineno for node in tree.body if isinstance(node, ast.FunctionDef)
-               and node.name in ("test_skip_lock", "test_skip_rejects_force")
-               for call in ast.walk(node) if isinstance(call, ast.Call)
-               and isinstance(call.func, ast.Attribute) and call.func.attr in ("read_text", "write_text")
-               and not any(kw.arg == "encoding" for kw in call.keywords)]
-    assert not missing, f"skip test reads or writes without UTF-8 encoding at {missing}"
-
-
 def test_command_wrong_count(run, folder):
     for command, args in (("start", ("extra",)), ("start", ("--profile",)), ("status", (folder, "extra")),
                           ("take", ()), ("take", (folder, "01-frame", "a", "extra")),
-                          ("done", ()), ("skip", ()), ("skip", (folder,)),
+                          ("done", ()), ("done", (folder, "01-frame")), ("done", (folder, "01-frame", "#1", "extra")),
+                          ("skip", ()), ("skip", (folder,)),
                           ("skip", (folder, "02-design"))):
         out = run(command, *args)
         usage = next(line.strip() for line in implement_run.__doc__.splitlines()
@@ -24,13 +14,24 @@ def test_command_wrong_count(run, folder):
         assert out.returncode == 1 and usage in out.stderr, out.stderr
         assert "Traceback" not in out.stderr, out.stderr
     assert run("status").returncode == 0, "status without a folder must use the latest run"
-
-
-def test_done_wrong_count(run, folder):
-    for args in ((folder, "01-frame"), (folder, "01-frame", "#1", "extra")):
-        out = run("done", *args)
-        assert out.returncode == 1 and "done <folder> <step>" in out.stderr, out.stderr
-        assert "--force" not in out.stderr and "Traceback" not in out.stderr, out.stderr
+    # done and skip never take --force, and a refused call changes neither the step file nor events.log.
+    events = (folder / "events.log").read_text(encoding="utf-8")
+    for step, command, forced in (("01-frame", "done", ((folder, "01-frame", "#1", "--force"), ("--force", folder, "01-frame", "#1"))),
+                                  ("02-design", "skip", ((folder, "02-design", "no", "UI", "--force"),
+                                                         ("--force", folder, "02-design", "no", "UI")))):
+        file = folder / f"{step}.md"
+        original = file.read_text(encoding="utf-8")
+        try:
+            if command == "done":
+                fill(file)
+            held = file.read_text(encoding="utf-8")
+            for args in forced:
+                out = run(command, *args)
+                assert out.returncode == 1 and "Traceback" not in out.stderr, out.stderr
+                assert file.read_text(encoding="utf-8") == held
+                assert (folder / "events.log").read_text(encoding="utf-8") == events
+        finally:
+            file.write_text(original, encoding="utf-8")
 
 
 def test_skip_plain_reason(run, folder):
@@ -80,24 +81,6 @@ def test_take_requires_who(run, folder):
         assert (folder / "events.log").read_text() == events
 
 
-def test_done_rejects_force(run, folder):
-    file = folder / "01-frame.md"
-    original = file.read_text(encoding="utf-8")
-    events = (folder / "events.log").read_text(encoding="utf-8")
-    try:
-        fill(file)
-        filled = file.read_text(encoding="utf-8")
-        for args in ((folder, "01-frame", "#1", "--force"), ("--force", folder, "01-frame", "#1")):
-            out = run("done", *args)
-            assert out.returncode == 1, "done must refuse --force"
-            assert "done <folder> <step>" in out.stderr and "Traceback" not in out.stderr, out.stderr
-            assert file.read_text(encoding="utf-8") == filled
-            assert (folder / "events.log").read_text(encoding="utf-8") == events
-    finally:
-        file.write_text(original, encoding="utf-8")
-        (folder / "events.log").write_text(events, encoding="utf-8")
-
-
 def test_atomic_skip(folder):
     file = folder / "02-design.md"
     original = file.read_text()
@@ -133,21 +116,3 @@ def test_skip_lock(run, folder):
         assert out.returncode == 1 and "02-design is locked by a running skip; wait for it" in out.stderr, out
         assert file.read_text(encoding="utf-8") == original
         assert (folder / "events.log").read_text(encoding="utf-8") == events
-
-
-def test_skip_rejects_force(run, folder):
-    file = folder / "02-design.md"
-    original = file.read_text(encoding="utf-8")
-    events = (folder / "events.log").read_text(encoding="utf-8")
-    try:
-        for args in ((folder, "02-design", "no", "UI", "--force"),
-                     ("--force", folder, "02-design", "no", "UI")):
-            file.write_text(original.replace("Status: open", "Status: active dead-owner"), encoding="utf-8")
-            out = run("skip", *args)
-            assert out.returncode == 1, "skip must refuse --force"
-            assert "skip accepts no --force" in out.stderr and "Traceback" not in out.stderr, out.stderr
-            assert file.read_text(encoding="utf-8") == original.replace("Status: open", "Status: active dead-owner")
-            assert (folder / "events.log").read_text(encoding="utf-8") == events
-    finally:
-        file.write_text(original, encoding="utf-8")
-        (folder / "events.log").write_text(events, encoding="utf-8")

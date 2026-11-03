@@ -6,14 +6,14 @@ import { expect, test } from "@playwright/test";
 
 const server = () => new URL(process.env.SWARM_SERVE_URL!);
 
-// A 502 (the HUD's one try) and a 500 (the new server) each drop the HUD from the toast, so each
-// comes first in one run.
+// A 502 (the HUD's one try) and a 500 (the new server) each drop the HUD from the toast; one
+// order covers both.
 const tries = {
   502: { error: "the HUD did not restart: no job", text: "Restart: the HUD did not restart: no job" },
   500: { error: "Permission denied (os error 13)", text: "Restart: Permission denied (os error 13)" },
 };
 
-for (const [first, later] of [[502, 500], [500, 502]] as const) test(`an update upgrades, then restarts the server and the HUD, in two asks (${first} first)`, async ({ page: tab }) => {
+for (const [first, later] of [[502, 500]] as const) test(`an update upgrades, then restarts the server and the HUD, in two asks (${first} first)`, async ({ page: tab }) => {
   const errors: string[] = [];
   tab.on("pageerror", (e) => errors.push(e.message));
   const calls: string[] = [];

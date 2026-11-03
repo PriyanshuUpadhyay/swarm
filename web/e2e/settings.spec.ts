@@ -239,7 +239,7 @@ test("a profile edit saves through swarm roles, a stale page shows a conflict an
   await dialog.getByTestId("profile-new").click();
   await dialog.getByTestId("profile-name").fill(mine);
   await dialog.getByTestId("profile-name").press("Enter");
-  await expect(dialog.getByTestId("settings-error")).toHaveText("Profiles changed elsewhere. The page was reloaded; try again.");
+  await expect(dialog.getByTestId("settings-error")).toContainText("changed elsewhere");
   await expect(row(other)).toBeVisible();
   await expect(row(mine)).toHaveCount(0);
   await dialog.getByTestId("profile-name").press("Enter");

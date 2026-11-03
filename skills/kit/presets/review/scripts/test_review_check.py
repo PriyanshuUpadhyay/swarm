@@ -10,7 +10,6 @@ from test_review_check_support import *
 from test_review_check_loop_snapshots import *
 from test_review_check_loop_ledger import *
 from test_review_check_catalog import *
-from test_review_check_build_process import *
 from test_review_check_build_timeout import *
 from test_review_check_answers import *
 from test_review_check_history import *
@@ -150,25 +149,13 @@ def test_limits():
 if __name__ == "__main__":
     test_loop_cap()
     test_loop_default_key()
-    test_loop_patch_budget()
-    test_loop_uncertain_match()
     test_loop_answers()
     test_loop_snapshots()
-    test_loop_callers()
-    test_loop_new_problem_same_evidence()
     test_loop_broken_snapshot()
-    test_loop_snapshot_atomic_without_lock()
-    test_loop_readonly_common_dir()
-    test_loop_start_waits_for_sibling()
-    test_loop_readonly_shared_budget()
     test_loop_writable_after_readonly_rounds()
     test_loop_broken_ledger()
     test_loop_shared_worktree_budget()
     test_loop_deleted_run_budget()
-    test_loop_import_budget_on_refusal()
-    test_loop_spent_extension_message()
-    test_pid_helpers()
-    test_build_ignored_hangup()
     test_shards()
     test_rust_function_range()
     test_catalog()
@@ -182,7 +169,6 @@ if __name__ == "__main__":
         sh("git", "config", "user.email", "t@t")
         sh("git", "config", "user.name", "t")
         main()
-        test_patch_errors()
         test_build_gate()
         test_repo_rules_origin()
         test_seat_gaps()

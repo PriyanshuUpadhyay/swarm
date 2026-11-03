@@ -84,26 +84,6 @@ test("a terminal ticket failure can reconnect to the same target with a fresh ti
   await expect(panel.getByRole("button", { name: "Reconnect", exact: true })).toHaveCount(0);
 });
 
-test("a successful shell create with a failed list read retains its id and offers a read-only retry", async ({ page: tab }) => {
-  let creates = 0;
-  await tab.route("**/api/shells", async (route) => { creates++; return route.fulfill({ json: { id: "created-shell" } }); });
-  let fail = false;
-  await tab.route("**/api/shells?*", (route) => route.fulfill(fail ? { status: 503, body: "List offline" } : { json: { shells: creates ? [{ id: "created-shell", command: "zsh" }] : [] } }));
-  await tab.route("**/api/terminal/ticket", (route) => route.fulfill({ status: 503, body: "No mock terminal" }));
-  await open(tab);
-  await tab.keyboard.press("Meta+j");
-  const panel = tab.getByTestId("background-panel").last();
-  await expect(panel.getByTestId("new-shell")).toBeVisible();
-  fail = true;
-  await panel.getByTestId("new-shell").click();
-  await expect(panel.getByRole("alert")).toContainText("Shell created. Could not refresh");
-  await expect(panel.locator('[aria-current="true"]')).toContainText("Shell");
-  fail = false;
-  await panel.getByRole("button", { name: "Refresh shells", exact: true }).click();
-  await expect(panel.getByRole("alert")).toHaveCount(0);
-  expect(creates).toBe(1);
-});
-
 test("a visible Changes panel refreshes on window focus and keeps the selected file and editor", async ({ page: tab }) => {
   let reads = 0;
   await tab.route("**/api/changes?*", async (route) => { reads++; return route.continue(); });

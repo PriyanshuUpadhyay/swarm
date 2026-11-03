@@ -2,27 +2,29 @@
 use super::*;
 
 #[test]
-fn model_refusal_lists_accounts_and_models_in_order() {
-    assert_eq!(
-        model_refusal(
-            "codex",
-            "missing",
-            Some("work"),
-            &["personal".into(), "backup".into()],
-            &["model-b".into(), "model-a".into()],
-        ),
-        "swarm: model missing is not in the codex model list for account work\n\
-fixes that might work:\n  - another account: --account personal, --account backup\n  - another model: model-b, model-a"
+fn model_refusal_names_the_accounts_and_models_and_omits_empty_accounts() {
+    let listed = model_refusal(
+        "codex",
+        "missing",
+        Some("work"),
+        &["personal".into(), "backup".into()],
+        &["model-b".into(), "model-a".into()],
     );
-}
-
-#[test]
-fn model_refusal_uses_cli_login_and_omits_empty_accounts() {
-    assert_eq!(
-        model_refusal("claude", "missing", None, &[], &["opus".into()]),
-        "swarm: model missing is not in the claude model list for the CLI's own login\n\
-fixes that might work:\n  - another model: opus"
+    assert!(
+        listed.contains("missing") && listed.contains("work"),
+        "{listed}"
     );
+    assert!(
+        listed.contains("--account personal, --account backup"),
+        "{listed}"
+    );
+    assert!(listed.contains("model-b, model-a"), "{listed}");
+    let own_login = model_refusal("claude", "missing", None, &[], &["opus".into()]);
+    assert!(
+        own_login.contains("missing") && own_login.contains("opus"),
+        "{own_login}"
+    );
+    assert!(!own_login.contains("--account"), "{own_login}");
 }
 
 mod tests {

@@ -148,24 +148,6 @@ mod tests {
     }
 
     #[test]
-    fn action_fixture_removes_its_directory_and_backups() {
-        let folder;
-        {
-            let mut fixture = ActionFixture::new("cleanup");
-            folder = fixture.path.parent().unwrap().to_path_buf();
-            fixture.apply(ProfileAction::New("custom"), None).unwrap();
-            assert!(std::fs::read_dir(&folder).unwrap().any(|entry| {
-                entry
-                    .unwrap()
-                    .path()
-                    .extension()
-                    .is_some_and(|extension| extension == "bak")
-            }));
-        }
-        assert!(!folder.exists());
-    }
-
-    #[test]
     fn new_copies_only_the_first_chat_runner_and_rejects_existing_or_invalid_names() {
         let mut fixture = ActionFixture::new("new");
         let primary = fixture.config.profile("chat").unwrap().runners[0].clone();
@@ -356,27 +338,20 @@ mod tests {
                 chat(),
             ],
         };
-        assert_eq!(
-            validate(&broken),
-            [
-                "version must be 1, not 2.",
-                "min_usage_left_pct must be 0 to 100.",
-                "The first profile must be 'chat'.",
-                "Profile name 'Code' must use a-z, 0-9, '.', '_', '-'.",
-                "Profile 'Code' runner 1 has invalid model '--yolo'.",
-                "Profile 'Code' runner 1 has effort 'huge', which Codex does not take.",
-                "Profile 'Code' runner 1 has invalid sandbox 'two words'.",
-                "Profile 'Code' runner 1: Codex has no permission.",
-                "Profile 'Code' runner 2: Fable is allowed only in a review.* or council.* profile.",
-                "Profile 'chat' must have at least one runner.",
-                "Profile 'chat' is defined twice.",
-            ]
-        );
+        // Settings shows these lines: one line per broken rule, each naming its profile and runner.
+        let lines = validate(&broken);
+        assert_eq!(lines.len(), 11, "{lines:#?}");
+        let of = |prefix: &str| lines.iter().filter(|l| l.starts_with(prefix)).count();
+        assert_eq!(of("Profile 'Code' runner 1"), 4, "{lines:#?}");
+        assert_eq!(of("Profile 'Code' runner 2"), 1, "{lines:#?}");
+        assert_eq!(of("Profile 'chat'"), 2, "{lines:#?}");
         let mut repeated = chat();
         repeated.runners.push(runner(Provider::Claude, "opus"));
-        assert_eq!(
-            validate(&config(vec![repeated])),
-            ["Profile 'chat' runner 2 repeats an earlier runner."]
+        let lines = validate(&config(vec![repeated]));
+        assert_eq!(lines.len(), 1, "{lines:#?}");
+        assert!(
+            lines[0].starts_with("Profile 'chat' runner 2"),
+            "{lines:#?}"
         );
     }
 
