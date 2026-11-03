@@ -142,11 +142,72 @@ test "Codex user and tool images emit image events" {
     var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena_state.deinit();
     const user = try parseLine(arena_state.allocator(), "{\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"type\":\"input_image\",\"media_type\":\"image/png\",\"image_url\":\"secret\"},{\"type\":\"input_text\",\"text\":\"look\"}]}}");
-    const tool = try parseLine(arena_state.allocator(), "{\"type\":\"response_item\",\"payload\":{\"type\":\"custom_tool_call_output\",\"call_id\":\"c\",\"output\":[{\"type\":\"input_image\",\"image_url\":\"secret\"},{\"type\":\"input_text\",\"text\":\"ok\"}]}}");
+    const tool = try parseLine(arena_state.allocator(), "{\"type\":\"response_item\",\"payload\":{\"type\":\"custom_tool_call_output\",\"call_id\":\"c\",\"output\":[{\"type\":\"input_image\",\"image_url\":\"data:image/png;base64,iVBO\"},{\"type\":\"input_text\",\"text\":\"ok\"}]}}");
     try std.testing.expect(user[0].image.role == .user);
+    try std.testing.expectEqualStrings("image/png", user[0].image.media_type);
     try std.testing.expectEqualStrings("look", user[1].user_message_chunk.text);
     try std.testing.expectEqualStrings("ok", tool[0].tool_call_update.content);
     try std.testing.expect(tool[1].image.role == .tool);
+    // Codex 0.162 writes a screenshot with no media_type; its data URL names the type.
+    try std.testing.expectEqualStrings("image/png", tool[1].image.media_type);
+}
+
+test "Codex question tools become elicitation" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    // Measured in a Codex 0.162.1 rollout on 2026-11-03 and 2026-10-23.
+    const async_line =
+        \\{"type":"response_item","payload":{"type":"function_call","name":"request_user_input_async","arguments":"{\"questions\":[{\"title\":\"Sign in now?\",\"options\":[\"Yes\",\"Later\"]}]}","call_id":"call-a"}}
+    ;
+    const blocking_line =
+        \\{"type":"response_item","payload":{"type":"function_call","name":"request_user_input","arguments":"{\"questions\":[{\"header\":\"Color\",\"id\":\"color\",\"question\":\"Red or blue?\",\"options\":[{\"label\":\"Red\",\"description\":\"Choose red.\"},{\"label\":\"Blue\",\"description\":\"Choose blue.\"}]}]}","call_id":"call-b"}}
+    ;
+    const asked = try parseLine(arena_state.allocator(), async_line);
+    try std.testing.expectEqual(1, asked.len);
+    try std.testing.expectEqualStrings("call-a", asked[0].elicitation.tool_call_id);
+    try std.testing.expectEqualStrings("Sign in now?", asked[0].elicitation.questions[0].question);
+    try std.testing.expectEqualStrings("Later", asked[0].elicitation.questions[0].options[1].label);
+    const blocking = try parseLine(arena_state.allocator(), blocking_line);
+    try std.testing.expectEqualStrings("call-b", blocking[0].elicitation.tool_call_id);
+    try std.testing.expectEqualStrings("Red or blue?", blocking[0].elicitation.questions[0].question);
+    try std.testing.expectEqualStrings("Color", blocking[0].elicitation.questions[0].header);
+    try std.testing.expectEqualStrings("Choose blue.", blocking[0].elicitation.questions[0].options[1].description);
+}
+
+test "Codex question replies become elicitation results" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const reply_line =
+        \\{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"<send_user_message_question_reply>\n[{\"answer\":\"Later\",\"question\":\"Sign in now?\",\"questionItemId\":\"[\\\"request_user_input_async\\\",\\\"call-a\\\",0]\"}]\n</send_user_message_question_reply>"}]}}
+    ;
+    const verified_line =
+        \\{"type":"retained_context","payload":{"type":"verified_answer","call_id":"call-b","questions":[{"question":"Red or blue?\nRed: Choose red.","answer":"Red"}]}}
+    ;
+    const reply = try parseLine(arena_state.allocator(), reply_line);
+    try std.testing.expectEqual(1, reply.len);
+    try std.testing.expectEqualStrings("call-a", reply[0].elicitation_result.tool_call_id);
+    try std.testing.expectEqualStrings("Sign in now?", reply[0].elicitation_result.answers[0].question);
+    try std.testing.expectEqualStrings("Later", reply[0].elicitation_result.answers[0].answer);
+    const verified = try parseLine(arena_state.allocator(), verified_line);
+    try std.testing.expectEqual(1, verified.len);
+    try std.testing.expectEqualStrings("call-b", verified[0].elicitation_result.tool_call_id);
+    try std.testing.expectEqualStrings("Red", verified[0].elicitation_result.answers[0].answer);
+    // A user who types the tag by hand, with no reply in it, keeps their message.
+    const typed = try parseLine(arena_state.allocator(),
+        \\{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"<send_user_message_question_reply> is the tag"}]}}
+    );
+    try std.testing.expectEqualStrings("<send_user_message_question_reply> is the tag", typed[0].user_message_chunk.text);
+}
+
+test "Codex tool list for the model becomes ignored" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const line =
+        \\{"type":"response_item","payload":{"type":"additional_tools","id":"at_1","role":"developer","tools":[]}}
+    ;
+    const events = try parseLine(arena_state.allocator(), line);
+    try std.testing.expectEqual(1, events.len);
+    try std.testing.expectEqualStrings("additional_tools", events[0].ignored.kind);
 }
 
 test "Codex web and tool search calls keep inputs and ids" {
