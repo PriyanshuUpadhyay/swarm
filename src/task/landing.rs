@@ -80,20 +80,16 @@ pub fn serve_landings(root: &Path, wt: &Path) {
     if requests.is_empty() && takings(&dir).is_empty() {
         return;
     }
-    let lock = dir.join(".lock");
-    // A server that died mid-landing leaves its lock; a landing never takes this long.
-    if std::fs::metadata(&lock)
-        .and_then(|meta| meta.modified())
-        .is_ok_and(|at| at.elapsed().is_ok_and(|age| age.as_secs() > 1800))
-    {
-        let _ = std::fs::remove_file(&lock);
-    }
-    if std::fs::OpenOptions::new()
+    // The OS drops the lock when its server stops, so a stopped server blocks no landing.
+    let Ok(lock) = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
         .write(true)
-        .create_new(true)
-        .open(&lock)
-        .is_err()
-    {
+        .open(dir.join(".lock"))
+    else {
+        return;
+    };
+    if lock.try_lock().is_err() {
         return;
     }
     // This server holds the lock, so a `.taking` file is from a server that stopped mid-landing;
@@ -112,12 +108,15 @@ pub fn serve_landings(root: &Path, wt: &Path) {
         }
         let answer = match land(root, wt, &taking) {
             Ok((task, output)) => {
-                let _ = write_json(
+                // After the answer, so a land run again finds either the record or the answer.
+                if write_json(
                     &request.with_extension("result.json"),
                     &serde_json::json!({"ok": true, "output": output}),
-                );
-                // After the answer, so a land run again finds either the record or the answer.
-                let _ = std::fs::remove_file(record_path(root, &task.repo, &task.branch));
+                )
+                .is_ok()
+                {
+                    let _ = std::fs::remove_file(record_path(root, &task.repo, &task.branch));
+                }
                 None
             }
             Err(error) => Some(serde_json::json!({"ok": false, "error": error})),
@@ -127,7 +126,7 @@ pub fn serve_landings(root: &Path, wt: &Path) {
         }
         let _ = std::fs::remove_file(&taking);
     }
-    let _ = std::fs::remove_file(&lock);
+    std::mem::drop(lock);
 }
 
 fn takings(dir: &Path) -> Vec<PathBuf> {

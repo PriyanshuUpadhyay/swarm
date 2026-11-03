@@ -338,8 +338,9 @@ pub fn install_hook(hub: &Hub) -> Option<String> {
         ));
     }
     let file = hub.common.join("hooks").join("reference-transaction");
-    if let Ok(text) = std::fs::read_to_string(&file)
-        && !text.contains(HOOK_MARK)
+    // Read as bytes, so a hook that is not UTF-8 still counts as another tool's.
+    if let Ok(bytes) = std::fs::read(&file)
+        && !String::from_utf8_lossy(&bytes).contains(HOOK_MARK)
     {
         return Some(format!(
             "{} is another tool's hook, so swarm's ref hook is not set",
