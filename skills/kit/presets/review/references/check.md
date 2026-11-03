@@ -131,8 +131,11 @@ line in `<run>/answers.md` with this shape:
 
 The user closes an `ask`. The chair may close one only by citing a record the user approved,
 such as the frame's done-when, contracts, an ADR, or an earlier user answer.
-Anyone may turn an `ask` into a `fix` with a failing test. Write the answer as
-`fix: <test> fails at <head7>`.
+Anyone may turn an `ask` into a `fix` with a failing test, when the ask is a behavior bug that a
+real caller can hit, or a guard on auth, data loss, a trust boundary, or the owner gate. Write the
+answer as `fix: <test> fails at <head7>`. For any other ask, follow the test rule in the kit's
+`blocks/prove-it-works/SKILL.md`: fix the code without a new test, or leave a note. A seat writes a
+`note` for a test that breaks that rule, and does not ask for more edge-case tests.
 
 The user can accept a `fix` as a known limit. Write this line only with the user's words:
 
