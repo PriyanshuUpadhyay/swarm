@@ -61,18 +61,6 @@ test "USER_INPUT keeps metadata and settings after request as context" {
     try std.testing.expectEqualStrings("<ADDITIONAL_METADATA>data</ADDITIONAL_METADATA>\n<USER_SETTINGS_CHANGE>settings</USER_SETTINGS_CHANGE>", events[1].system_message.text);
 }
 
-test "USER_INPUT keeps metadata after request as context" {
-    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
-    defer arena_state.deinit();
-    const line =
-        \\{"type":"USER_INPUT","status":"DONE","source":"USER_EXPLICIT","step_index":12,"created_at":"t","content":"<USER_REQUEST>hello</USER_REQUEST>\n<ADDITIONAL_METADATA>data</ADDITIONAL_METADATA>"}
-    ;
-    const events = try parseLine(arena_state.allocator(), line);
-    try std.testing.expectEqual(2, events.len);
-    try std.testing.expectEqualStrings("hello", events[0].user_message_chunk.text);
-    try std.testing.expectEqualStrings("<ADDITIONAL_METADATA>data</ADDITIONAL_METADATA>", events[1].system_message.text);
-}
-
 test "USER_INPUT keeps artifact tags inside request" {
     var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena_state.deinit();

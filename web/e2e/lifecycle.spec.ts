@@ -260,6 +260,12 @@ test("holding ⌘ over a row shows its actions as icons, and releasing ⌘ hides
 
 test("Tab reaches an agent pane's header buttons", async ({ page: tab }, info) => {
   const errors = await open(tab);
+  // The tree is one Tab stop, and Enter on a focused row button still acts.
+  expect(await tab.getByTestId("sidebar").locator("button").evaluateAll((buttons) => buttons.every((button) => button.tabIndex === -1))).toBe(true);
+  await workspace(tab, "ws-build").getByRole("button", { name: "New chat in ws-build", exact: true }).focus();
+  await tab.keyboard.press("Enter");
+  await expect(tab.getByTestId("new-chat-menu")).toBeVisible();
+  await tab.keyboard.press("Escape");
   await tab.setViewportSize({ width: 1600, height: 900 });
   await tab.locator(`[data-testid="tree-row"][data-session="${process.env[`SWARM_E2E_PANES_${info.project.name}`]}"]`).click();
   await expect(tab.getByTestId("pane")).toHaveCount(2);

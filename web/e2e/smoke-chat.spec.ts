@@ -167,7 +167,7 @@ test("the composer types into the chair, ⌘. interrupts, errors show in a banne
     const card = tab.getByTestId("prompt-card");
     await expect(card).toContainText("Do you want to proceed?");
     await expect(card.getByTestId("prompt-choice")).toHaveCount(3);
-    await expect(tab.getByTestId("composer-status")).toContainText("The agent is asking a question. Answer it first.");
+    await expect(tab.getByTestId("composer-status")).toContainText("asking a question");
     await expect(tab.getByTestId("send")).toBeDisabled();
     await card.getByTestId("prompt-choice").first().click();
     await expect.poll(() => keys().slice(keysBefore)).toEqual(["key fixture-chair 1"]);

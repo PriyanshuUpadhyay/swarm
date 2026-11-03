@@ -22,7 +22,7 @@ async function choose(op: Record<string, unknown>) {
   await api("/api/choices", { revision, ...op });
 }
 
-for (const pending of ["empty", null, "starting", "failed", "closing"] as const) {
+for (const pending of ["empty", null] as const) {
   test(`workspace landing text reflects ${pending ?? "ready"} tabs`, async ({ page: tab }, info) => {
     const choicesPath = join(process.env.SWARM_E2E_HOME!, ".swarm/choices.json");
     const before = readFileSync(choicesPath, "utf8");

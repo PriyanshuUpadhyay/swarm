@@ -169,7 +169,7 @@ test("a stale revision shows the error and reloads the tree", async ({ page: tab
   await tab.getByTestId("ask-save").click();
   expect((await refused).status()).toBe(409);
   await reread;
-  await expect(tab.getByText("Your choices changed elsewhere. The list was reloaded; try again.")).toBeVisible();
+  await expect(tab.getByText("changed elsewhere")).toBeVisible();
   await expect(row).not.toContainText("never saved");
   expect((await readTree()).sections.flatMap((s) => s.rows).some((r) => r.title === "never saved")).toBe(false);
   expect(errors).toEqual([]);

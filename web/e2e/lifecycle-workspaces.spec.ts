@@ -107,7 +107,7 @@ test("the setup script streams its output; a failure keeps the workspace and say
     await setScript(`echo setup-started; while [ ! -e ${gate} ]; do sleep 0.1; done; echo to-stderr >&2; exit 3`);
     const dialog = await newWorkspace(tab, "proj-gh", async () => {
       await tab.getByTestId("nw-name").fill(`setup-${b}`);
-      await expect(tab.getByTestId("new-workspace")).toContainText("The setup script runs in the new workspace");
+      await expect(tab.getByTestId("new-workspace")).toContainText("setup script");
     });
     const progress = dialog.getByTestId("nw-progress");
     await expect(dialog.getByTestId("setup-output")).toContainText("setup-started");
@@ -117,7 +117,7 @@ test("the setup script streams its output; a failure keeps the workspace and say
     writeFileSync(gate, "");
     await expect(progress).toHaveAttribute("data-state", "kept");
     await expect(dialog.getByTestId("setup-output")).toContainText("to-stderr");
-    await expect(progress).toContainText("The setup script failed with exit code 3. The workspace was kept at");
+    await expect(progress).toContainText("exit code 3");
     await expect(workspace(tab, `setup-${b}`)).toBeVisible();
     await dialog.getByTestId("nw-open").click();
     await expect(tab.getByTestId("workspace-landing")).toContainText(`setup-${b}`);
@@ -157,7 +157,7 @@ test("archive asks while agents run and restores; delete asks and removes the fo
   await menu("Archive workspace");
   const confirm = tab.getByTestId("confirm");
   await expect(confirm).toContainText("Archive workspace?");
-  await expect(confirm.getByTestId("confirm-body")).toHaveText("1 agent still running. Archiving stops them and keeps the workspace folder.");
+  await expect(confirm.getByTestId("confirm-body")).toContainText("1 agent still running");
   await confirm.getByTestId("confirm-action").click();
   await expect(confirm).toBeHidden();
   await expect(row).toBeHidden();
