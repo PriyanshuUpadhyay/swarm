@@ -60,8 +60,9 @@ pub(super) fn rows_with_context(
             scope,
         };
         // A Codex question call also writes a tool output; anchoring the question hides it,
-        // because the answer row already shows the reply.
-        if matches!(event_type, "tool_call" | "elicitation") {
+        // because the answer row already shows the reply. A Claude question's tool result is
+        // its only row when the answer fails, so it stays.
+        if event_type == "tool_call" || (is_codex && event_type == "elicitation") {
             calls
                 .entry(string(event, "tool_call_id").into())
                 .or_default()

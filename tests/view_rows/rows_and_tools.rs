@@ -48,6 +48,15 @@ fn question_label() {
     assert_eq!(texts(&rows), ["Which color?"]);
 }
 #[test]
+fn failed_claude_question_keeps_its_result_row() {
+    // Only a Codex question hides its tool output; a Claude failure is the answer row.
+    let rows = build(vec![
+        json!({"type":"elicitation","tool_call_id":"ask-1","questions":[{"question":"Which color?"}]}),
+        update("ask-1", "failed", "failed answer"),
+    ]);
+    assert_eq!(texts(&rows), ["Which color?", "failed answer"]);
+}
+#[test]
 fn action_rows() {
     let rows = build(vec![
         call("call-1", "ls", json!({})),
