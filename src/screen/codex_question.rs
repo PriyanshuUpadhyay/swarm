@@ -12,8 +12,8 @@ const CLOSE: &str = "</send_user_message_question_reply>";
 /// so the screen cannot name it. A reply that names its `questionItemId` answers it, and the
 /// turn's end drops it, as the Codex TUI clears its pending questions then.
 pub(super) fn open_question(tail: &[u8]) -> Option<Prompt> {
-    // (questionItemId, question, choices) in log order.
-    let mut open: Vec<(String, String, Vec<String>)> = Vec::new();
+    // (call_id, questionItemId, question, choices) in log order.
+    let mut open: Vec<(String, String, String, Vec<String>)> = Vec::new();
     for line in tail.split(|&byte| byte == b'\n') {
         let Ok(record) = serde_json::from_slice::<Value>(line) else {
             continue;
@@ -48,7 +48,7 @@ pub(super) fn open_question(tail: &[u8]) -> Option<Prompt> {
                     let id = serde_json::to_string(&("request_user_input_async", call_id, index))
                         .ok()?;
                     let title = question["title"].as_str().unwrap_or_default();
-                    open.push((id, title.to_string(), choices));
+                    open.push((call_id.to_string(), id, title.to_string(), choices));
                 }
             }
             (Some("response_item"), Some("message")) if payload["role"] == "user" => {
@@ -59,16 +59,18 @@ pub(super) fn open_question(tail: &[u8]) -> Option<Prompt> {
                     .filter_map(|part| part["text"].as_str())
                 {
                     for answered in replied_ids(text) {
-                        open.retain(|(id, _, _)| *id != answered);
+                        open.retain(|(_, id, _, _)| *id != answered);
                     }
                 }
             }
             _ => {}
         }
     }
-    let (reply, question, choices) = open.into_iter().rev().find(|(_, question, choices)| {
+    open.retain(|(_, _, question, choices)| {
         !question.trim().is_empty() && choices.iter().all(|choice| !choice.trim().is_empty())
-    })?;
+    });
+    let newest = open.last()?.0.clone();
+    let (_, reply, question, choices) = open.into_iter().find(|(call, ..)| *call == newest)?;
     let id = prompt_id(&question, &choices);
     Some(Prompt {
         question,

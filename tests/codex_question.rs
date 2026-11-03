@@ -33,6 +33,13 @@ fn codex_async_question_reads_from_the_log_until_its_reply_or_turn_end() {
         Some(r#"["request_user_input_async","call-a",0]"#)
     );
     assert_eq!(read(&[CALL, REPLY]), None);
+    // A call with two questions shows the first one first, as the Codex TUI does.
+    let two = CALL.replace(
+        r#"]}]}"#,
+        r#"]},{\"title\":\"Then what?\",\"options\":[\"Stop\"]}]}"#,
+    );
+    assert_eq!(read(&[&two]).unwrap().question, "Sign in now?");
+    assert_eq!(read(&[&two, REPLY]).unwrap().question, "Then what?");
     assert_eq!(read(&[CALL, ended]), None);
     std::fs::remove_dir_all(root).unwrap();
 }
