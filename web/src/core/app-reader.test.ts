@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Row } from "./api";
-import { liveRow } from "./app-reader";
+import { liveRow, liveRows } from "./app-reader";
 
 const row = (kind: Row["kind"], text: string): Row => ({ id: text, kind, text, order: [0, 0] });
 
@@ -20,5 +20,14 @@ describe("liveRow", () => {
   it("never hides a short text that an earlier row happens to contain", () => {
     const rows = [row("user", "go"), row("assistant", "Everything is done except the tests.")];
     expect(liveRow(rows, "done")?.id).toBe("live");
+  });
+});
+
+describe("liveRows", () => {
+  it("drops pi's live thinking once the log's thought row holds it, though the turn still runs a tool", () => {
+    const thinking = "I need to check that each anchor string appears as a new line in the diff.";
+    expect(liveRows([row("user", "review it")], null, thinking).map((r) => r.kind)).toEqual(["thought"]);
+    const landed = [row("user", "review it"), row("thought", thinking), row("toolUse", "python3 check.py")];
+    expect(liveRows(landed, null, thinking)).toEqual([]);
   });
 });
