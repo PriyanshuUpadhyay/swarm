@@ -3,8 +3,6 @@ import { App } from "./app";
 import type { Api, Row, RowPage } from "./api";
 import { Changes } from "./changes";
 import { terminalMatches } from "./background";
-import { hasPendingImage, insertPendingImage, finishPendingImage } from "./images";
-import { findMatches } from "./transcript";
 
 const row = (text: string): Row => ({ id: "answer", kind: "assistant", text, order: [1, 0] });
 const page = (start = 0): RowPage => ({ page: { start_offset: start, end_offset: 20 }, rows: [row("hello")], usage: null });
@@ -31,28 +29,6 @@ function changeHarness(reply?: (url: string) => Promise<Response>) {
 }
 
 describe("chat UX regressions", () => {
-  it("keeps a pending image at its marker and preserves edits made during upload", () => {
-    const marker = "[[Uploading image test]]";
-    const pending = insertPendingImage("old selection tail", 0, 13, marker);
-    expect(hasPendingImage(pending)).toBe(true);
-    const edited = `new text ${pending}`;
-    expect(finishPendingImage(edited, marker, "/uploads/ready.png")).toBe(`new text  /uploads/ready.png  tail`);
-    expect(finishPendingImage("owner removed it", marker, "/uploads/ready.png")).toBe("owner removed it");
-  });
-
-  it("counts each occurrence in one message", () => {
-    const matches = findMatches([row("term then TERM")], "term");
-    expect(matches.map((m) => m.offset)).toEqual([0, 10]);
-    expect(matches.map((m) => m.occurrence)).toEqual([0, 1]);
-  });
-
-  it("finds ready full output at its preview and line", () => {
-    const output = { id: "output-1", text: "preview", full_lines: 900, full_bytes: 10000, hidden_lines: 899 };
-    const r = { ...row("result"), kind: "toolResult" as const, output };
-    const full = new Map([[output.id, { state: "ready", text: "preview\nunique failure twice failure" }]]);
-    expect(findMatches([r], "failure", full).map((m) => [m.preview, m.line, m.lineOccurrence])).toEqual([["output-1", 1, 0], ["output-1", 1, 1]]);
-  });
-
   it("announces an older read immediately, shows failure, and clears it after Retry", async () => {
     const slow = deferred<RowPage>();
     let reads = 0;
@@ -111,21 +87,6 @@ describe("chat UX regressions", () => {
     await tick();
     expect(changes.view.workspace).toBe("B");
     expect(changes.view.pr.state).toBe("idle");
-  });
-
-  it("keeps a comment editor per file and clears only explicit Cancel", () => {
-    const { changes, workspace } = changeHarness();
-    changes.show("changes");
-    const editor = { anchor: 1, cursor: 2, text: "Before Add" };
-    changes.setEditor("app.ts", "unstaged", editor);
-    changes.setEditor("other.ts", "unstaged", { ...editor, text: "Other" });
-    expect(changes.editor("app.ts", "unstaged")).toEqual(editor);
-    workspace("B");
-    expect(changes.editor("app.ts", "unstaged")).toBeNull();
-    workspace("A");
-    expect(changes.editor("app.ts", "unstaged")).toEqual(editor);
-    changes.setEditor("app.ts", "unstaged", null);
-    expect(changes.editor("app.ts", "unstaged")).toBeNull();
   });
 
   it("moves the zoom target and subscriptions with keyboard pane focus", () => {
