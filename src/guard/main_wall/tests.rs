@@ -69,6 +69,12 @@ fn writes_into_main_are_denied_and_writes_elsewhere_pass() {
         ("Bash", bash("cat <<< x\necho y > a.txt"), main.as_ref()),
         ("Bash", bash("env -i rm a.txt"), main.as_ref()),
         ("Bash", bash("rm -r src"), main.as_ref()),
+        ("Bash", bash("echo x >& a.txt"), main.as_ref()),
+        (
+            "Write",
+            write(format!("{common}/worktrees/main/HEAD")),
+            task.as_ref(),
+        ),
         (
             "Bash",
             bash("perl -pi -e s/a/b/ a.txt; sed -Ei s/a/b/ a.txt"),

@@ -137,6 +137,9 @@ impl Hub {
         (resolved.starts_with(&self.main) && !resolved.starts_with(self.main.join(SCRATCH)))
             || common(&format!("refs/heads/{}", self.default))
             || common("packed-refs")
+            // Main's HEAD and index live here; a write there can take main off the default branch.
+            || common("worktrees")
+            || common("HEAD")
             || common("hooks")
             || common("config")
     }

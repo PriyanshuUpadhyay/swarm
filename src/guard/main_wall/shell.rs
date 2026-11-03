@@ -134,9 +134,18 @@ pub(super) fn commands(text: &str) -> Vec<Vec<Token>> {
                     while let Some(next) = chars.get(i) {
                         match next {
                             '>' | '|' => i += 1,
+                            // `>&2` copies a fd, but `>& file` writes the file.
                             '&' => {
-                                token = Token::In;
                                 i += 1;
+                                let fd = chars
+                                    .get(i..)
+                                    .unwrap_or_default()
+                                    .iter()
+                                    .find(|c| **c != ' ')
+                                    .is_some_and(|c| c.is_ascii_digit() || *c == '-');
+                                if fd {
+                                    token = Token::In;
+                                }
                             }
                             _ => break,
                         }
