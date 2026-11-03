@@ -94,6 +94,7 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]Event {
             "date_change",            "dynamic_skill",             "task_status",
             "plan_mode_exit",         "thinking_stripped",         "read_truncation_notice",
             "plan_mode",              "credential_org",            "thinking_drop",
+            "skill_mention",
         })) {
             try events.append(arena, .{ .ignored = .{ .meta = meta, .kind = try std.fmt.allocPrint(arena, "attachment/{s}", .{kind}) } });
         } else {
@@ -155,6 +156,8 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]Event {
         "artifact-autoreact-ledger", "artifact-comment-monitor", "continued-in",      "worktree-state",  "relocated",
         // Claude Code 2.1.300 keeps each raw model request; the user and assistant records hold the chat.
         "api-request",               "api-request-blob",         "api-request-shape",
+        // Account and tool bookkeeping, seen on 2026-11-03.
+        "tools-used",      "session-owner",
     })) {
         try events.append(arena, .{ .ignored = .{ .meta = meta, .kind = record_type } });
         return events.items;

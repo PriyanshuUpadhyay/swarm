@@ -126,6 +126,19 @@ test "Claude 2.1.300 request records and dropped thinking are ignored" {
     try std.testing.expectEqualStrings("attachment/thinking_drop", drop[0].ignored.kind);
 }
 
+test "Claude tool-use, session-owner, and skill mention records are ignored" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    // Seen in Claude Code logs from 2026-10-20 to 2026-11-03; the user record holds the prompt.
+    const tools = try parseLine(arena, "{\"type\":\"tools-used\",\"tools\":[\"Bash\"],\"sessionId\":\"s1\"}");
+    const owner = try parseLine(arena, "{\"type\":\"session-owner\",\"accountUuid\":\"a\",\"organizationUuid\":\"o\",\"sessionId\":\"s1\"}");
+    const mention = try parseLine(arena, "{\"type\":\"attachment\",\"uuid\":\"u1\",\"attachment\":{\"type\":\"skill_mention\",\"skillName\":\"swarm:research\"}}");
+    try std.testing.expectEqualStrings("tools-used", tools[0].ignored.kind);
+    try std.testing.expectEqualStrings("session-owner", owner[0].ignored.kind);
+    try std.testing.expectEqualStrings("attachment/skill_mention", mention[0].ignored.kind);
+}
+
 test "Claude assistant model is reported without treating synthetic messages as models" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
