@@ -395,6 +395,17 @@ pub fn request_landing(root: &Path, cwd: &Path, name: Option<&str>) -> Result<Pa
     {
         return Err("commit your changes first; land takes only commits".into());
     }
+    let ahead = git(
+        path,
+        &["rev-list", "--count", &format!("{}..HEAD", task.default)],
+    )
+    .ok_or("git rev-list failed")?;
+    if ahead == "0" {
+        return Err(format!(
+            "{} has no commit that {} lacks, so there is nothing to land; commit first, or run `swarm task drop`",
+            task.branch, task.default
+        ));
+    }
     let dir = root.join("landings");
     let name = key(&task.repo, &task.branch);
     let request = dir.join(format!("{name}.json"));
