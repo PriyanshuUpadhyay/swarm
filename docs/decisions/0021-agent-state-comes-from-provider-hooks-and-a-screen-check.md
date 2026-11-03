@@ -49,6 +49,11 @@ wins.
   upkeep.
 - Bad: Codex shows no hook state until the user trusts the hook in `/hooks`.
 - Bad: swarm writes a group into the user's global AGY `hooks.json`.
+- Amended 2026-11-03: a Codex `PermissionRequest` hook maps to no state, because Codex fires it
+  before its auto-reviewer, which approves most requests unseen. The approval box on screen owns
+  Codex Waiting, and the screen result wins at once for it. An open Codex async question comes
+  from the rollout log, since its TUI shows only a collapsed row, and `swarm answer` types the
+  reply envelope into the input box.
 
 ## Pros and Cons of the Options
 
