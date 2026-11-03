@@ -108,7 +108,6 @@ fn hook_waits_carry_the_permission_or_question_kind() {
     use serde_json::json;
     for (provider, event, payload, expected) in [
         ("claude", "PermissionRequest", json!({}), Some("permission")),
-        ("codex", "PermissionRequest", json!({}), Some("permission")),
         ("claude", "Elicitation", json!({}), Some("question")),
         (
             "claude",
@@ -249,12 +248,8 @@ fn maps_every_hook_event_in_the_state_table() {
             empty.clone(),
             Some(("working", None)),
         ),
-        (
-            "codex",
-            "PermissionRequest",
-            empty.clone(),
-            Some(("waiting", None)),
-        ),
+        // Codex runs this hook before its auto-reviewer, so the approval box on screen owns it.
+        ("codex", "PermissionRequest", empty.clone(), None),
         ("codex", "Stop", empty.clone(), Some(("done", None))),
         ("codex", "Interrupt", empty.clone(), Some(("done", None))),
         ("codex", "StopFailure", empty.clone(), None),
@@ -294,7 +289,6 @@ fn a_codex_question_waits_through_its_sleeps_until_the_reply() {
         hook_state("codex", event, &payload).map(|s| (s.state, s.kind))
     };
     let ask = json!({"tool_name": "request_user_input_async"});
-    let sleep = json!({"tool_name": "clocksleep"});
     assert_eq!(
         state("PreToolUse", ask.clone()),
         Some(("waiting", Some("question")))
@@ -303,8 +297,12 @@ fn a_codex_question_waits_through_its_sleeps_until_the_reply() {
         state("PostToolUse", ask),
         Some(("waiting", Some("question")))
     );
-    assert_eq!(state("PreToolUse", sleep.clone()), None);
-    assert_eq!(state("PostToolUse", sleep), None);
+    // Codex 0.162 names the tool `sleep`; earlier builds named it `clocksleep`.
+    for name in ["sleep", "clocksleep"] {
+        let sleep = json!({ "tool_name": name });
+        assert_eq!(state("PreToolUse", sleep.clone()), None);
+        assert_eq!(state("PostToolUse", sleep), None);
+    }
     let reply = json!({"prompt": "<send_user_message_question_reply>\n[]"});
     assert_eq!(state("UserPromptSubmit", reply), Some(("working", None)));
     assert_eq!(

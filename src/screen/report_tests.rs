@@ -97,6 +97,7 @@ mod tests {
             for screen in [ScreenState::Idle, ScreenState::Failed, ScreenState::Waiting] {
                 let gap = screen == ScreenState::Idle
                     || (provider == Some("codex") && screen == ScreenState::Failed)
+                    || (provider == Some("codex") && screen == ScreenState::Waiting)
                     || (provider == Some("agy") && screen == ScreenState::Waiting);
                 assert_eq!(screen_gap(provider, screen), gap);
                 assert_eq!(

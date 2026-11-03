@@ -53,7 +53,7 @@ pub use prompt::{Prompt, prompt, whole_prompt};
 pub fn screen_gap(provider: Option<&str>, screen: ScreenState) -> bool {
     matches!(
         (provider, screen),
-        (Some("codex"), ScreenState::Failed)
+        (Some("codex"), ScreenState::Failed | ScreenState::Waiting)
             | (Some("agy"), ScreenState::Waiting)
             | (_, ScreenState::Idle)
     )

@@ -17,16 +17,23 @@ pub fn hook_state(provider: &str, event: &str, payload: &serde_json::Value) -> O
     let (state, kind) = match (provider, event) {
         // An in-process Claude subagent's events are not the pane's state.
         ("claude", _) if text("agent_id").is_some_and(|id| !id.is_empty()) => return None,
-        // Codex asks with a tool that returns at once, then waits in `clocksleep` calls until the
-        // owner's reply arrives as a UserPromptSubmit, so a sleep keeps the question's state.
+        // Codex asks with a tool that returns at once, then waits in `sleep` calls (`clocksleep`
+        // before 0.162) until the owner's reply arrives as a UserPromptSubmit, so a sleep keeps
+        // the question's state.
         ("codex", "PreToolUse" | "PostToolUse") if tool == Some("request_user_input_async") => {
             ("waiting", Some("question"))
         }
-        ("codex", "PreToolUse" | "PostToolUse") if tool == Some("clocksleep") => return None,
+        ("codex", "PreToolUse" | "PostToolUse") if matches!(tool, Some("sleep" | "clocksleep")) => {
+            return None;
+        }
+        // Codex runs this hook before its auto-reviewer, which may approve with no person, and
+        // the payload does not say which reviewer decides. The approval box on screen owns the
+        // wait (`screen_gap`).
+        ("codex", "PermissionRequest") => return None,
         ("claude" | "codex", "UserPromptSubmit" | "PreToolUse" | "PostToolUse") => {
             ("working", None)
         }
-        ("claude" | "codex", "PermissionRequest") => ("waiting", Some("permission")),
+        ("claude", "PermissionRequest") => ("waiting", Some("permission")),
         ("claude", "Elicitation") => ("waiting", Some("question")),
         ("claude" | "codex", "Stop") | ("codex", "Interrupt") => ("done", None),
         ("claude", "StopFailure") => ("failed", None),

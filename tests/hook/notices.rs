@@ -251,21 +251,24 @@ fn a_change_to_waiting_stores_one_notice_and_starts_the_helper_not_the_app() {
         ("SWARM_AGENT_ID", "coder"),
         ("SWARM_NOTIFY_APP", helper.to_str().unwrap()),
     ];
-    for event in [
-        "PermissionRequest",
-        "PermissionRequest",
-        "PreToolUse",
-        "PermissionRequest",
+    // Codex runs PermissionRequest before its auto-reviewer, so that hook is no wait (ADR 0021).
+    for (cli, event) in [
+        ("claude", "PermissionRequest"),
+        ("claude", "PermissionRequest"),
+        ("claude", "PreToolUse"),
+        ("claude", "PermissionRequest"),
+        ("claude", "PreToolUse"),
+        ("codex", "PermissionRequest"),
     ] {
         let reported = swarm(
             &home,
             &as_coder,
-            &["hook", "claude"],
+            &["hook", cli],
             &format!(r#"{{"hook_event_name":"{event}"}}"#),
         );
-        assert_eq!(stdout(&reported), "{}\n", "{reported:?}");
+        assert!(reported.status.success(), "{reported:?}");
     }
-    assert_eq!(coder_state(&home, &session)["state"], "waiting");
+    assert_eq!(coder_state(&home, &session)["state"], "working");
     assert_eq!(
         opened(&home, 2).unwrap(),
         helper_start(&home, &helper).repeat(2)
