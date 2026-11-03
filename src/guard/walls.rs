@@ -16,6 +16,11 @@ pub fn board_wall(provider: Provider, event: &str, payload: &str) -> Option<Verd
     })
 }
 
+/// The walls every caller meets, before the worker-only board wall and the owner's rules.
+pub fn wall(provider: Provider, event: &str, payload: &str) -> Option<Verdict> {
+    inbox_wait(provider, event, payload).or_else(|| super::main_wall(provider, event, payload))
+}
+
 /// A swarm agent learns of a message when the ring starts its next turn, and a ring that comes
 /// during a tool call waits until the call ends. So a shell call that sleeps and then reads the
 /// inbox, the agent list, or the board only holds the ring back, and it is denied.

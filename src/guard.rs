@@ -119,7 +119,9 @@ mod runner;
 use runner::{Outcome, run};
 
 mod walls;
-pub use walls::{INBOX_WAIT, board_wall, inbox_wait};
+pub use walls::{INBOX_WAIT, board_wall, inbox_wait, wall};
+mod main_wall;
+pub use main_wall::{MAIN_READ_ONLY, main_wall};
 
 #[cfg(test)]
 mod tests {

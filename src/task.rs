@@ -485,4 +485,4 @@ pub fn drop(root: &Path, wt: &Path, cwd: &Path, branch: Option<&str>) -> Result<
 
 #[cfg(test)]
 #[path = "task/tests.rs"]
-mod tests;
+pub(crate) mod tests;
