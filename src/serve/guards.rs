@@ -9,10 +9,6 @@ use super::*;
 const DRAIN_LIMIT: usize = 1024 * 1024;
 const DRAIN_TIME: std::time::Duration = std::time::Duration::from_secs(1);
 
-async fn drain(body: Body) {
-    drain_stream(body.into_data_stream()).await;
-}
-
 async fn drain_stream(mut stream: axum::body::BodyDataStream) {
     let mut left = DRAIN_LIMIT;
     let _ = tokio::time::timeout(DRAIN_TIME, async {
@@ -30,10 +26,14 @@ pub(super) async fn guard(State(app): State<App>, request: Request, next: Next) 
     if !request.uri().path().starts_with("/api/") {
         return next.run(request).await;
     }
-    let response = check(&app, &request);
-    if let Some(response) = response {
-        drain(request.into_body()).await;
-        return response;
+    if let Some(refusal) = refusal(&app, &request) {
+        // A client that sent `Expect: 100-continue` waits for the server before it sends the
+        // body, so a refusal that goes out first means it sends none. Reading would make hyper
+        // send the 100 and draw the upload.
+        if !request.headers().contains_key(header::EXPECT) {
+            drain_stream(request.into_body().into_data_stream()).await;
+        }
+        return refusal;
     }
     // Not through `record_errors`, whose log would keep the ticket in the URI.
     if request.uri().path() == SOCKET_PATH {
@@ -43,7 +43,7 @@ pub(super) async fn guard(State(app): State<App>, request: Request, next: Next) 
 }
 
 /// The refusal for a request that fails a guard, or None when it passes them all.
-fn check(app: &App, request: &Request) -> Option<Response> {
+fn refusal(app: &App, request: &Request) -> Option<Response> {
     // A WebSocket cannot send the bearer header; its single-use ticket stands in for it, and the
     // Host and a required Origin still apply (terminal.rs).
     let socket = request.uri().path() == SOCKET_PATH;
@@ -89,6 +89,7 @@ fn check(app: &App, request: &Request) -> Option<Response> {
         return Some(error(StatusCode::FORBIDDEN, "origin required").into_response());
     }
     if request.method() == Method::POST
+        && !socket
         && !request
             .headers()
             .get(header::CONTENT_TYPE)
