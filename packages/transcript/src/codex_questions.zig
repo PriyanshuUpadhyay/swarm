@@ -67,7 +67,8 @@ pub fn questionReply(arena: std.mem.Allocator, text: []const u8) !?QuestionReply
     const value = std.json.parseFromSliceLeaky(std.json.Value, arena, body, .{}) catch return null;
     const items: []const std.json.Value = switch (value) {
         .array => |array| array.items,
-        .object => &.{value},
+        // One reply may come bare; copy it into the arena so the slice outlives this switch.
+        .object => try arena.dupe(std.json.Value, &.{value}),
         else => return null,
     };
     if (items.len == 0) return null;

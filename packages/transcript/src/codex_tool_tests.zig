@@ -192,6 +192,12 @@ test "Codex question replies become elicitation results" {
     try std.testing.expectEqual(1, verified.len);
     try std.testing.expectEqualStrings("call-b", verified[0].elicitation_result.tool_call_id);
     try std.testing.expectEqualStrings("Red", verified[0].elicitation_result.answers[0].answer);
+    // The Codex TUI also takes one bare reply object.
+    const one = try parseLine(arena_state.allocator(),
+        \\{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"<send_user_message_question_reply>{\"answer\":\"Yes\",\"question\":\"Q\",\"questionItemId\":\"[\\\"request_user_input_async\\\",\\\"call-c\\\",0]\"}</send_user_message_question_reply>"}]}}
+    );
+    try std.testing.expectEqualStrings("call-c", one[0].elicitation_result.tool_call_id);
+    try std.testing.expectEqualStrings("Yes", one[0].elicitation_result.answers[0].answer);
     // A user who types the tag by hand, with no reply in it, keeps their message.
     const typed = try parseLine(arena_state.allocator(),
         \\{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"<send_user_message_question_reply> is the tag"}]}}
