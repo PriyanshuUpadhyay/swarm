@@ -78,7 +78,14 @@ fn a_task_starts_lands_into_main_and_is_removed() {
     commit(&path, "b.txt");
 
     let request = request_landing(&root, &main, Some("fix-x")).unwrap();
+    // A server that stopped mid-landing left the request claimed; the next pass lands it.
+    std::fs::rename(&request, request.with_extension("taking")).unwrap();
     serve_landings(&root, &wt);
+    // A land run again after its wait ran out finds the answer, though the record is gone.
+    assert_eq!(
+        request_landing(&root, &main, Some("fix-x")),
+        Ok(request.clone())
+    );
     let answer = take_result(&request).unwrap();
     assert_eq!(answer["ok"], true, "{answer}");
     assert!(main.join("b.txt").is_file(), "main did not get the commit");
