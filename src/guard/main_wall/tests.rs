@@ -67,7 +67,13 @@ fn writes_into_main_are_denied_and_writes_elsewhere_pass() {
             task.as_ref(),
         ),
         ("Bash", bash("cat <<< x\necho y > a.txt"), main.as_ref()),
-        ("Bash", bash("echo $((x<<n))\nrm a.txt"), main.as_ref()),
+        (
+            "Bash",
+            bash("cat <<EOF\nfoo(bar(x))\nEOF\necho $((x<<n))\nrm a.txt"),
+            main.as_ref(),
+        ),
+        ("Bash", bash("perl -0777pi -e s/a/b/ a.txt"), main.as_ref()),
+        ("Bash", bash("sed -I '' s/a/b/ a.txt"), main.as_ref()),
         ("Bash", bash("env -i rm a.txt"), main.as_ref()),
         ("Bash", bash("rm -r src"), main.as_ref()),
         ("Bash", bash("echo x >& a.txt"), main.as_ref()),
@@ -178,7 +184,7 @@ fn writes_into_main_are_denied_and_writes_elsewhere_pass() {
             main.as_ref(),
         ),
         ("Bash", bash("rg core.hooksPath docs"), main.as_ref()),
-        ("Bash", bash("chmod 644 /tmp/é.txt"), main.as_ref()),
+        ("Bash", bash("chmod 644 é.txt"), task.as_ref()),
         (
             "Bash",
             bash(&format!(

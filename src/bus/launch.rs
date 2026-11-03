@@ -149,25 +149,25 @@ pub fn argv(
                             quote(&format!("{common}/modules"))
                         );
                         // In a hub, the files that move or retarget the default branch are read,
-                        // on main and in a task worktree. Only existing ones are named, and
-                        // packed-refs only when it holds the default ref.
+                        // on main and in a task worktree. Codex also refuses to create a `read`
+                        // file, so the loose default ref is named even when only packed-refs holds
+                        // it; packed-refs is named in that case too.
                         if let Some(hub) = &in_hub {
                             let loose = hub.common.join(format!("refs/heads/{}", hub.default));
-                            let packed = if loose.exists() { "" } else { "packed-refs" };
-                            for name in [
-                                format!("refs/heads/{}", hub.default),
-                                "HEAD".into(),
-                                "refs/remotes/origin/HEAD".into(),
-                                packed.into(),
-                            ] {
-                                if name.is_empty() {
-                                    continue;
-                                }
-                                let file = hub.common.join(name);
-                                if file.exists() {
-                                    filesystem +=
-                                        &format!(r#",{}="read""#, quote(&file.to_string_lossy()));
-                                }
+                            // A new origin/HEAD does not move main, and git 2.48 `fetch` may create
+                            // one, so it is named only when it exists.
+                            let mut files = vec![hub.common.join("HEAD")];
+                            let origin = hub.common.join("refs/remotes/origin/HEAD");
+                            if origin.exists() {
+                                files.push(origin);
+                            }
+                            if !loose.exists() {
+                                files.push(hub.common.join("packed-refs"));
+                            }
+                            files.push(loose);
+                            for file in files {
+                                filesystem +=
+                                    &format!(r#",{}="read""#, quote(&file.to_string_lossy()));
                             }
                         }
                         if git_dir != common {

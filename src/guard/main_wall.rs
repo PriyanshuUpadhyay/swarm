@@ -354,15 +354,17 @@ fn in_place(program: &str, arg: &str) -> bool {
     if flags.starts_with("-in-place") {
         return true;
     }
-    let plain_flags = if program == "sed" {
-        "Enrsuz"
+    // After a letter that takes the rest of the word as its value (`perl -Mstrict`, `sed -es/i/j/`),
+    // an `i` is not the flag; before it, any `i` is (`perl -0777pi`, `-CSDpi`, `sed -bi`, BSD `-I`).
+    let (value_letters, flag_letters) = if program == "sed" {
+        ("efl", "iI")
     } else {
-        "acnpsTtuUwWXl0"
+        ("MmIeExdF", "i")
     };
     flags
-        .trim_start_matches(|c| plain_flags.contains(c))
-        .starts_with('i')
-        && !flags.starts_with('-')
+        .chars()
+        .take_while(|c| !value_letters.contains(*c))
+        .any(|c| flag_letters.contains(c))
 }
 
 /// The files an in-place `sed` or `perl` edits: its plain words, without the script, which is the
