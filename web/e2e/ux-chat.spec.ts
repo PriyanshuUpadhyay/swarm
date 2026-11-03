@@ -162,6 +162,8 @@ test("modified Up keeps queued messages", async ({ page: tab }) => {
   let pulls = 0;
   await tab.route("**/api/chat/pull-back", (route) => { pulls++; return route.fulfill({ json: { outcome: "pulled", text: "queued text" } }); });
   await open(tab);
+  // Up pulls back only when the chair can take it; the hint shows that state, so wait for it before the first key.
+  await expect(tab.getByText("↑ to edit queued messages")).toBeVisible();
   const composer = tab.getByTestId("composer");
   await composer.focus();
   await composer.press("Meta+ArrowUp");
@@ -177,7 +179,10 @@ test("returning to a chat keeps its reading position", async ({ page: tab }) => 
   await mockRows(tab, Array.from({ length: 80 }, (_, i) => row(`a${i}`, `message ${i} ` + "paragraph ".repeat(35))));
   await open(tab);
   const transcript = tab.getByTestId("transcript");
-  await transcript.evaluate((el) => { el.scrollTop = 1200; });
+  // Scroll as a user does, after the last row shows: a scrollTop set during the first layout can be undone by the stick-to-bottom pass.
+  await expect(tab.getByText("message 79", { exact: false })).toBeVisible();
+  await transcript.hover();
+  await tab.mouse.wheel(0, -2000);
   await expect(tab.getByTestId("jump-latest")).toBeVisible();
   const offset = await transcript.evaluate((el) => el.scrollTop);
   await tab.locator(`[data-testid="tree-row"][data-session="${process.env.SWARM_E2E_GIT!}"]`).click();
