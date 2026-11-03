@@ -343,3 +343,21 @@ fn codex_question_shows_its_question_and_answer_without_a_stray_result() {
         vec!["Sign in now?", "Later", "Red or blue?", "Red"]
     );
 }
+
+#[test]
+fn cancelled_codex_question_keeps_its_tool_output() {
+    // Codex writes this output and no answer record when the owner cancels the question
+    // (codex-rs/core/src/tools/handlers/request_user_input.rs).
+    const LINES: [&str; 2] = [
+        r#"{"type":"response_item","payload":{"type":"function_call","name":"request_user_input","arguments":"{\"questions\":[{\"question\":\"Red or blue?\",\"options\":[{\"label\":\"Red\",\"description\":\"\"}]}]}","call_id":"call-b"}}"#,
+        r#"{"type":"response_item","payload":{"type":"function_call_output","call_id":"call-b","output":"request_user_input was cancelled before receiving a response"}}"#,
+    ];
+    let rows = transcript::rows(&records(inline_fixture("codex", &LINES), true), false, true);
+    assert_eq!(
+        texts(&rows),
+        vec![
+            "Red or blue?",
+            "request_user_input was cancelled before receiving a response"
+        ]
+    );
+}

@@ -44,6 +44,11 @@ pub(super) fn rows_with_context(
     let mut commands = HashMap::<String, Vec<Anchor>>::new();
     let mut shells = HashMap::<String, Vec<Anchor>>::new();
     let mut endings = HashMap::new();
+    let answered: HashSet<&str> = records
+        .iter()
+        .filter(|record| string(&record.event, "type") == "elicitation_result")
+        .map(|record| string(&record.event, "tool_call_id"))
+        .collect();
     for (index, record) in records.iter().enumerate() {
         let event = &record.event;
         let event_type = string(event, "type");
@@ -59,10 +64,14 @@ pub(super) fn rows_with_context(
             session: meta(event, "session_id").into(),
             scope,
         };
-        // A Codex question call also writes a tool output; anchoring the question hides it,
-        // because the answer row already shows the reply. A Claude question's tool result is
-        // its only row when the answer fails, so it stays.
-        if event_type == "tool_call" || (is_codex && event_type == "elicitation") {
+        // A Codex question call also writes a tool output; anchoring an answered question hides
+        // it, because the answer row already shows the reply. A cancelled Codex question or a
+        // failed Claude one has no answer row, so its tool output stays.
+        if event_type == "tool_call"
+            || (is_codex
+                && event_type == "elicitation"
+                && answered.contains(string(event, "tool_call_id")))
+        {
             calls
                 .entry(string(event, "tool_call_id").into())
                 .or_default()
