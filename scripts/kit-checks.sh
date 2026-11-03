@@ -53,6 +53,9 @@ for check in checks:
     lines = log.read_text(errors="replace").strip().splitlines()
     tail = lines[-1] if lines else "(no output)"
     print(f"{name} | exit {code} | {tail}", flush=True)
+    if code != 0:
+        # A CI log keeps no files, so a failure shows the end of its traceback here.
+        print("\n".join(lines[-30:]), flush=True)
     failed |= code != 0
 sys.exit(1 if failed else 0)
 PY
