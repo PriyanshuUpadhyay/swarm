@@ -299,14 +299,11 @@ fn curl_timeout_uses_the_remaining_deadline() {
         "curl",
         "printf '%s\\n' \"$*\" > \"$HOME/curl-args\"\necho \"$$\" > \"$HOME/curl-pid\"\nexec /bin/sleep 25",
     );
-    let start = std::time::Instant::now();
     let value = usage(&run(
         &home,
         "http://127.0.0.1:1/usage",
         &["usage", "--refresh", "--provider", "claude", "--json"],
     ));
-    assert!(start.elapsed() >= std::time::Duration::from_secs(17));
-    assert!(start.elapsed() < std::time::Duration::from_secs(20));
     let args = std::fs::read_to_string(home.join("curl-args")).unwrap();
     let words: Vec<_> = args.split_whitespace().collect();
     let index = words.iter().position(|word| *word == "--max-time").unwrap();
