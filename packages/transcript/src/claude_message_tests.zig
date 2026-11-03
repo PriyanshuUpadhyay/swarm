@@ -126,6 +126,19 @@ test "Claude 2.1.300 request records and dropped thinking are ignored" {
     try std.testing.expectEqualStrings("attachment/thinking_drop", drop[0].ignored.kind);
 }
 
+test "Claude tool-use, session-owner, and skill mention records are ignored" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    // Seen in Claude Code logs from 2026-10-20 to 2026-11-03; the user record holds the prompt.
+    const tools = try parseLine(arena, "{\"type\":\"tools-used\",\"tools\":[\"Bash\"],\"sessionId\":\"s1\"}");
+    const owner = try parseLine(arena, "{\"type\":\"session-owner\",\"accountUuid\":\"a\",\"organizationUuid\":\"o\",\"sessionId\":\"s1\"}");
+    const mention = try parseLine(arena, "{\"type\":\"attachment\",\"uuid\":\"u1\",\"attachment\":{\"type\":\"skill_mention\",\"skillName\":\"swarm:research\"}}");
+    try std.testing.expectEqualStrings("tools-used", tools[0].ignored.kind);
+    try std.testing.expectEqualStrings("session-owner", owner[0].ignored.kind);
+    try std.testing.expectEqualStrings("attachment/skill_mention", mention[0].ignored.kind);
+}
+
 test "Claude assistant model is reported without treating synthetic messages as models" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
@@ -181,4 +194,16 @@ test "Claude queue operations keep operation, content, and reason" {
     try std.testing.expectEqualStrings("absorbed_mid_turn", remove[0].queue_operation.reason.?);
     try std.testing.expectEqualStrings("popAll", pop_all[0].queue_operation.operation);
     try std.testing.expectEqualStrings("keep the old name", pop_all[0].queue_operation.content.?);
+}
+
+test "Claude API error record becomes an error with its retry count" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    // Claude Code 2.1.306 to 2.1.316 write one per failed API call that it retries.
+    const retried = try parseLine(arena, "{\"type\":\"system\",\"subtype\":\"api_error\",\"level\":\"error\",\"error\":{\"message\":\"Connection error.\",\"formatted\":\"Connection lost while your computer was asleep\"},\"retryInMs\":519,\"retryAttempt\":1,\"maxRetries\":10,\"uuid\":\"u1\"}");
+    try std.testing.expectEqual(1, retried.len);
+    try std.testing.expectEqualStrings("Connection lost while your computer was asleep (retry 1 of 10)", retried[0].@"error".message);
+    const plain = try parseLine(arena, "{\"type\":\"system\",\"subtype\":\"api_error\",\"error\":{\"message\":\"Overloaded\"}}");
+    try std.testing.expectEqualStrings("Overloaded", plain[0].@"error".message);
 }

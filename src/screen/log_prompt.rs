@@ -17,6 +17,9 @@ pub fn agent_prompt(
     if let Some(found) = whole_prompt(screen, history) {
         return Some(found);
     }
+    if provider == Some("codex") {
+        return super::codex_question::open_question(log?);
+    }
     if provider != Some("claude") {
         return None;
     }
@@ -58,6 +61,7 @@ pub fn agent_prompt(
             cursor,
             id,
             cut: false,
+            reply: None,
         })
     });
     let found = matches.next()?;
@@ -139,24 +143,7 @@ struct Choice {
 }
 
 fn open_questions(path: &Path) -> Option<Vec<Question>> {
-    if !std::fs::metadata(path).ok()?.is_file() {
-        return None;
-    }
-    let mut file = std::fs::File::open(path).ok()?;
-    let metadata = file.metadata().ok()?;
-    if !metadata.is_file() {
-        return None;
-    }
-    let start = metadata.len().saturating_sub(LOG_TAIL_BYTES);
-    file.seek(SeekFrom::Start(start)).ok()?;
-    let mut tail = Vec::new();
-    file.take(LOG_TAIL_BYTES).read_to_end(&mut tail).ok()?;
-    // The cap can land in the middle of a record, which must not count as a complete record.
-    let tail = if start > 0 {
-        &tail[tail.iter().position(|&byte| byte == b'\n')? + 1..]
-    } else {
-        &tail[..]
-    };
+    let tail = log_tail(path)?;
     let mut answered = std::collections::HashSet::new();
     for line in tail.rsplit(|&byte| byte == b'\n') {
         let Ok(record) = serde_json::from_slice::<serde_json::Value>(line) else {
@@ -181,4 +168,26 @@ fn open_questions(path: &Path) -> Option<Vec<Question>> {
         }
     }
     None
+}
+
+/// The last whole records of a log, up to `LOG_TAIL_BYTES`.
+fn log_tail(path: &Path) -> Option<Vec<u8>> {
+    if !std::fs::metadata(path).ok()?.is_file() {
+        return None;
+    }
+    let mut file = std::fs::File::open(path).ok()?;
+    let metadata = file.metadata().ok()?;
+    if !metadata.is_file() {
+        return None;
+    }
+    let start = metadata.len().saturating_sub(LOG_TAIL_BYTES);
+    file.seek(SeekFrom::Start(start)).ok()?;
+    let mut tail = Vec::new();
+    file.take(LOG_TAIL_BYTES).read_to_end(&mut tail).ok()?;
+    // The cap can land in the middle of a record, which must not count as a complete record.
+    Some(if start > 0 {
+        tail[tail.iter().position(|&byte| byte == b'\n')? + 1..].to_vec()
+    } else {
+        tail
+    })
 }

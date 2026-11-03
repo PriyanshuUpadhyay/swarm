@@ -94,6 +94,7 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]Event {
             "date_change",            "dynamic_skill",             "task_status",
             "plan_mode_exit",         "thinking_stripped",         "read_truncation_notice",
             "plan_mode",              "credential_org",            "thinking_drop",
+            "skill_mention",
         })) {
             try events.append(arena, .{ .ignored = .{ .meta = meta, .kind = try std.fmt.allocPrint(arena, "attachment/{s}", .{kind}) } });
         } else {
@@ -121,6 +122,8 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]Event {
             const is_command = std.mem.eql(u8, command_kind, "command") or std.mem.eql(u8, command_kind, "command_output");
             const kind: []const u8 = if (is_command) command_kind else if (std.mem.eql(u8, subtype, "compact_boundary")) "compaction" else if (std.mem.eql(u8, subtype, "model_refusal_fallback")) "model_fallback" else subtype;
             try events.append(arena, .{ .system_message = .{ .meta = meta, .kind = kind, .text = if (content.len != 0) content else str(rec, "summary") } });
+        } else if (std.mem.eql(u8, subtype, "api_error")) {
+            try events.append(arena, .{ .@"error" = .{ .meta = meta, .message = try apiErrorMessage(arena, rec) } });
         } else {
             try events.append(arena, try unknownEvent(arena, meta, line));
         }
@@ -155,6 +158,8 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]Event {
         "artifact-autoreact-ledger", "artifact-comment-monitor", "continued-in",      "worktree-state",  "relocated",
         // Claude Code 2.1.300 keeps each raw model request; the user and assistant records hold the chat.
         "api-request",               "api-request-blob",         "api-request-shape",
+        // Account and tool bookkeeping, seen on 2026-11-03.
+        "tools-used",      "session-owner",
     })) {
         try events.append(arena, .{ .ignored = .{ .meta = meta, .kind = record_type } });
         return events.items;
@@ -317,4 +322,16 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]Event {
         }
     }
     return events.items;
+}
+
+/// A Claude `api_error` record's text, with its retry count when Claude retries the call, so a
+/// retried error does not read as the end of the turn.
+fn apiErrorMessage(arena: std.mem.Allocator, rec: std.json.ObjectMap) ![]const u8 {
+    const err = rec.get("error") orelse .null;
+    const formatted = if (err == .object) str(err.object, "formatted") else "";
+    const message = if (formatted.len != 0) formatted else if (err == .object) str(err.object, "message") else "";
+    const attempt = rec.get("retryAttempt") orelse .null;
+    const most = rec.get("maxRetries") orelse .null;
+    if (attempt != .integer or most != .integer) return message;
+    return std.fmt.allocPrint(arena, "{s} (retry {d} of {d})", .{ message, attempt.integer, most.integer });
 }
