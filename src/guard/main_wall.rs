@@ -295,14 +295,9 @@ fn shell_writes_main(hubs: &Hubs, cwd: &Path, text: &str) -> bool {
         } else if COPIERS.contains(&program) {
             plain.last().copied().into_iter().collect()
         } else if ["sed", "perl"].contains(&program)
-            && args.iter().any(|arg| {
-                // `-i`, `-Ei`, `-pi`, `-i.bak`: a short-flag cluster that holds `i`.
-                (arg.starts_with('-') && !arg.starts_with("--") && arg.contains('i'))
-                    || arg.starts_with("--in-place")
-            })
+            && args.iter().any(|arg| in_place(program, arg))
         {
-            // The first plain argument is the script.
-            plain.iter().skip(1).copied().collect()
+            in_place_files(args)
         } else {
             Vec::new()
         };
@@ -348,6 +343,46 @@ fn wt_writes_main(hubs: &Hubs, cwd: &Path, args: &[&str]) -> bool {
         }),
         _ => false,
     }
+}
+
+/// Whether `arg` turns on in-place editing: `-i`, `-i.bak`, `--in-place`, or a short-flag cluster
+/// whose flags come before `i` (`sed -Ei`, `perl -pi`); `perl -Mstrict` is a module, not `-i`.
+fn in_place(program: &str, arg: &str) -> bool {
+    let Some(flags) = arg.strip_prefix('-') else {
+        return false;
+    };
+    if flags.starts_with("-in-place") {
+        return true;
+    }
+    let plain_flags = if program == "sed" {
+        "Enrsuz"
+    } else {
+        "acnpsTtuUwWXl0"
+    };
+    flags
+        .trim_start_matches(|c| plain_flags.contains(c))
+        .starts_with('i')
+        && !flags.starts_with('-')
+}
+
+/// The files an in-place `sed` or `perl` edits: its plain words, without the script, which is the
+/// value of `-e` or `-f`, or else the first plain word.
+fn in_place_files<'a>(args: &[&'a str]) -> Vec<&'a str> {
+    let mut files = Vec::new();
+    let mut script_option = false;
+    let mut words = args.iter();
+    while let Some(arg) = words.next() {
+        if ["-e", "-f", "--expression", "--file"].contains(arg) {
+            script_option = true;
+            words.next();
+        } else if !arg.starts_with('-') {
+            files.push(*arg);
+        }
+    }
+    if !script_option && !files.is_empty() {
+        files.remove(0);
+    }
+    files
 }
 
 /// A git command that writes main's worktree, or that moves the default branch from anywhere

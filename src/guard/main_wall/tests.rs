@@ -179,6 +179,13 @@ fn writes_into_main_are_denied_and_writes_elsewhere_pass() {
         ("Bash", bash("rg core.hooksPath docs"), main.as_ref()),
         (
             "Bash",
+            bash(&format!(
+                "perl -Mstrict -e 'print 1' a.txt; sed -e s/a/b/ -e s/c/d/ -i {task}/f.txt"
+            )),
+            main.as_ref(),
+        ),
+        (
+            "Bash",
             bash("git config --local core.hooksPath"),
             main.as_ref(),
         ),
