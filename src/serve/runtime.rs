@@ -135,6 +135,20 @@ pub(super) fn start(
                 }
             }
         });
+        // ADR 0135: an agent asks to land its task with a file, and the server merges it, because
+        // the agent's sandbox cannot write main. A request waits for the next pass.
+        let landing_root = app.root.clone();
+        tokio::spawn(async move {
+            let wt = swarm::task::wt_program();
+            let mut timer = tokio::time::interval(Duration::from_secs(2));
+            loop {
+                timer.tick().await;
+                let (root, wt) = (landing_root.clone(), wt.clone());
+                let _ =
+                    tokio::task::spawn_blocking(move || swarm::task::serve_landings(&root, &wt))
+                        .await;
+            }
+        });
         use std::future::IntoFuture;
         tokio::select! {
             result = axum::serve(listener, router(app.clone())).into_future() => result,

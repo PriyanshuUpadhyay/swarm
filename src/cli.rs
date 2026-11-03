@@ -90,6 +90,9 @@ pub(crate) use pty_host::{ensure as ensure_pty_host, headless as pty_host_headle
 mod ring;
 pub(crate) use ring::*;
 
+mod task;
+pub(crate) use task::*;
+
 mod roles;
 pub(crate) use roles::*;
 

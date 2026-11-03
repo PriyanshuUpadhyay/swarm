@@ -23,6 +23,9 @@ pub(crate) fn commands_info(args: &[String]) -> Result<Option<()>, Box<dyn std::
         Some("pages") => return serve::pages(&args[1..]).map(Some),
         _ => {}
     }
+    if args.first().is_some_and(|arg| arg == "task") {
+        return task(&args[1..]).map(Some);
+    }
     if let [cmd, session_id, agent_id] = args
         && cmd == "focus"
     {
