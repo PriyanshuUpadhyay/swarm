@@ -104,8 +104,9 @@ def functions(path):
                              capture_output=True, text=True, timeout=30).stdout
     except (OSError, subprocess.TimeoutExpired):
         return []
-    tags = [json.loads(l) for l in out.splitlines() if l.startswith("{")]
-    lines = Path(path).read_text(errors="replace").splitlines()
+    # split("\n"), not splitlines(): a tag pattern may hold U+2028 or U+0085, which splitlines() breaks on.
+    tags = [json.loads(l) for l in out.split("\n") if l.startswith("{")]
+    lines = Path(path).read_text(errors="replace").split("\n")
     return [(t["name"], t["line"], t.get("end") or brace_end(lines, t["line"])) for t in tags
             if t.get("_type") == "tag" and t.get("kind") in FUNC_KINDS and t.get("line")]
 

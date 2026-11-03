@@ -206,7 +206,8 @@ def test_rust_function_range():
     or a pass row that quotes a body line fails its quote check."""
     with tempfile.TemporaryDirectory() as d:
         src = Path(d) / "notice.rs"
-        src.write_text('fn waiting_notice(new: &str) -> Option<String> {\n'
+        # The U+2028 in the tag line once split the ctags JSON (a bug hit on a fixture file).
+        src.write_text('fn waiting_notice(new: &str) -> Option<String> { // \u2028\n'
                        '    if new != "waiting" {\n        return None;\n    }\n'
                        '    Some(format!("{} needs you", new))\n}\n\nfn other() {}\n')
         assert ("waiting_notice", 1, 6) in rc.functions(src), rc.functions(src)
