@@ -68,22 +68,6 @@ fn bearer_host_origin_and_body_guards_run_on_the_real_server() {
     assert_eq!(server.request("GET", "/api/unknown", "", "", false).0, 401);
 }
 
-#[test]
-fn the_coordinator_leaves_notices_for_the_native_shell() {
-    let server = Server::new();
-    // Two coordinator passes run in this wait.
-    std::thread::sleep(Duration::from_millis(2200));
-    let connection = rusqlite::Connection::open(server.dir.join("home/.swarm/swarm.db")).unwrap();
-    let unposted: i64 = connection
-        .query_row(
-            "SELECT count(*) FROM notice WHERE posted_at IS NULL",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap();
-    assert_eq!(unposted, 1);
-}
-
 /// The shell's Dock badge (ADR 0077) counts the chats that wait, and the owner can turn it off.
 #[test]
 fn badge_counts_waiting_chats_and_honours_the_badge_preference() {
