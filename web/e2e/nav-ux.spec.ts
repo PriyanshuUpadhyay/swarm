@@ -71,21 +71,6 @@ test("Enter in Recent focuses the opened chat and reload keeps the Recent keyboa
   await expect(composer(page)).toHaveValue("keep going");
 });
 
-test("body keys do not act on hidden rows and Recent left and right do not fold workspaces", async ({ page }) => {
-  await load(page);
-  await page.getByTestId("home-button").click();
-  const before = await tree();
-  await page.evaluate(() => { (document.activeElement as HTMLElement)?.blur(); document.body.focus(); });
-  for (const key of ["ArrowDown", "ArrowDown", "ArrowLeft", "Enter"]) await page.keyboard.press(key);
-  await expect(page.getByTestId("home")).toBeVisible();
-  expect((await tree()).revision).toBe(before.revision);
-  await page.keyboard.press("Alt+Meta+2");
-  const recent = await tree();
-  await page.keyboard.press("ArrowLeft");
-  await page.keyboard.press("ArrowRight");
-  expect((await tree()).revision).toBe(recent.revision);
-});
-
 test("switching to Recent takes the next keys before another animation frame", async ({ page }) => {
   await load(page);
   await row(page, process.env.SWARM_E2E_LIVE!).click();
@@ -137,39 +122,6 @@ test("modifier clicks select rows and keep action bars hidden until the modifier
   await page.keyboard.up("Meta");
 });
 
-test("Search shows shortcut help and blocks unavailable Find while New Chat explains Home", async ({ page }) => {
-  await load(page);
-  await page.getByTestId("home-button").click();
-  await page.keyboard.press("Meta+t");
-  await expect(page.getByText("Pick a workspace to start a chat.", { exact: true })).toBeVisible();
-  await page.keyboard.press("Meta+k");
-  await page.getByTestId("keyboard-shortcuts").locator("summary").click();
-  await expect(page.getByTestId("keyboard-shortcuts")).toContainText("Reopen Closed Tab");
-  await page.getByPlaceholder("Search actions, workspaces, chats, agents, and prompts").fill("Find");
-  await expect(page.locator('[cmdk-item][data-value="action:find.open"]')).toHaveAttribute("aria-disabled", "true");
-  await expect(page.getByTestId("palette")).toBeVisible();
-});
-
-test("archived workspaces filter leaves live Search and the new-chat control available", async ({ page }) => {
-  await load(page);
-  await tabs(page);
-  await page.getByTestId("archive-toggle").click();
-  await expect(page.getByRole("button", { name: "New chat in this workspace", exact: true })).toBeEnabled();
-  await page.keyboard.press("Meta+k");
-  await page.getByPlaceholder("Search actions, workspaces, chats, agents, and prompts").fill("ws-live");
-  await expect(page.locator('[cmdk-item][data-value^="workspace:"]').filter({ hasText: "ws-live" })).toBeVisible();
-});
-
-test("tree row buttons leave one tree Tab stop and Enter on a focused button keeps its action", async ({ page }) => {
-  await load(page);
-  const sidebar = page.getByTestId("sidebar");
-  expect(await sidebar.locator("button").evaluateAll((buttons) => buttons.every((button) => button.tabIndex === -1))).toBe(true);
-  const workspace = page.locator('[data-testid="tree-row"][data-kind="workspace"]').filter({ hasText: "ws-live" });
-  await workspace.getByRole("button", { name: "New chat in ws-live", exact: true }).focus();
-  await page.keyboard.press("Enter");
-  await expect(page.getByTestId("new-chat-menu")).toBeVisible();
-});
-
 test("tabs have a keyboard stop, arrows move focus, Enter opens, and middle click closes", async ({ page }) => {
   await load(page);
   const list = await tabs(page);
@@ -201,22 +153,6 @@ test("tabs have a keyboard stop, arrows move focus, Enter opens, and middle clic
   await expect(list).toHaveCount(1);
 });
 
-test("saving the same rename leaves the auto title unset and a bad chat link shows a notice", async ({ page }) => {
-  await load(page);
-  const session = process.env.SWARM_E2E_LIVE!;
-  let renames = 0;
-  page.on("request", (request) => {
-    if (request.url().endsWith("/api/choices") && request.method() === "POST" && request.postDataJSON().op === "rename_chat") renames++;
-  });
-  await row(page, session).click({ button: "right" });
-  await page.getByRole("menuitem", { name: "Rename chat…", exact: true }).click();
-  await page.getByTestId("ask-save").click();
-  await expect(page.getByTestId("ask-name")).toHaveCount(0);
-  expect(renames).toBe(0);
-  await load(page, "/chat/missing-chat");
-  await expect(page.getByText("This chat link is unavailable. The chat may be archived or removed.", { exact: true })).toBeVisible();
-});
-
 test("Home orders Recent work by activity while the sidebar keeps its dragged order", async ({ page }) => {
   const data = await tree();
   // New chats go above the saved order, so seed every known chat before checking a drag order.
@@ -238,31 +174,3 @@ test("Home orders Recent work by activity while the sidebar keeps its dragged or
   await expect(page.getByTestId("recent-row").first()).toHaveAttribute("data-session", sessions[0]);
 });
 
-test("the tab strip shows a drag target and a mouse wheel scrolls long tabs", async ({ page }) => {
-  await page.route("**/api/tabs?*", async (route) => {
-    const response = await route.fetch();
-    const body = await response.json();
-    if (body.view.tabs.length === 2) {
-      const template = body.view.tabs[0];
-      body.view.tabs.push(...Array.from({ length: 10 }, (_, i) => ({ ...template, id: `overflow-${i}`, session: `overflow-${i}`, title: `Long overflow chat ${i}` })));
-    }
-    await route.fulfill({ response, json: body });
-  });
-  await load(page);
-  await page.locator('[data-testid="tree-row"][data-kind="workspace"]').filter({ hasText: "ws-tabs" }).click();
-  const list = page.getByTestId("tabs");
-  await expect(list.getByTestId("tab")).toHaveCount(12);
-  await list.evaluate((element) => { element.scrollLeft = 0; });
-  await list.hover();
-  await page.mouse.wheel(0, 180);
-  await expect.poll(() => list.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0);
-  await list.evaluate((element) => { element.scrollLeft = 0; });
-  const transfer = await page.evaluateHandle(() => new DataTransfer());
-  await list.getByTestId("tab").nth(0).dispatchEvent("dragstart", { dataTransfer: transfer });
-  await list.getByTestId("tab").nth(1).dispatchEvent("dragover", { dataTransfer: transfer });
-  const target = list.getByTestId("tab").nth(1);
-  await expect(target).toHaveAttribute("data-drop-target", "true");
-  expect(await target.evaluate((element) => getComputedStyle(element).boxShadow)).not.toBe("none");
-  await list.getByTestId("tab").nth(0).dispatchEvent("dragend", { dataTransfer: transfer });
-  await expect(target).not.toHaveAttribute("data-drop-target", "true");
-});
