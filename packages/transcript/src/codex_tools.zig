@@ -140,6 +140,17 @@ pub fn append(
             try events.append(arena, try root.unknownEvent(arena, meta, line));
             return true;
         }
+        if (is_function_output and output == .string) switch (try q.questionOutput(arena, content)) {
+            .none => {},
+            .accepted => {
+                try events.append(arena, .{ .ignored = .{ .meta = meta, .kind = "question_accepted" } });
+                return true;
+            },
+            .answers => |answers| {
+                try events.append(arena, .{ .elicitation_result = .{ .meta = meta, .tool_call_id = call_id.string, .answers = answers } });
+                return true;
+            },
+        };
         try events.append(arena, .{ .tool_call_update = .{
             .meta = meta,
             .tool_call_id = call_id.string,

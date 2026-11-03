@@ -299,32 +299,3 @@ fn failed_source_reads_fall_back_to_page_positions() {
     assert_eq!(state.records[&(1, 0)].event, events[0]);
     assert_eq!(state.end, 9);
 }
-
-#[test]
-fn live_codex_question_hides_its_accepted_and_answers_outputs_only() {
-    let mut live = LiveRows::empty(0, true);
-    let events = [
-        json!({"type":"elicitation","tool_call_id":"a","questions":[{"question":"Sign in now?","options":[{"label":"Yes"}]}]}),
-        json!({"type":"tool_call_update","tool_call_id":"a","status":"completed","content":"{\"accepted\":true}"}),
-        json!({"type":"elicitation_result","tool_call_id":"a","answers":[{"question":"Sign in now?","answer":"Yes"}]}),
-        json!({"type":"elicitation","tool_call_id":"b","questions":[{"question":"Red or blue?","options":[{"label":"Red"}]}]}),
-        json!({"type":"tool_call_update","tool_call_id":"b","status":"completed","content":"{\"answers\":{\"color\":{\"answers\":[\"Red\"]}}}"}),
-        json!({"type":"elicitation","tool_call_id":"c","questions":[{"question":"Stop?","options":[{"label":"Yes"}]}]}),
-        json!({"type":"tool_call_update","tool_call_id":"c","status":"failed","content":"request_user_input was cancelled before receiving a response"}),
-    ];
-    for (index, event) in events.iter().enumerate() {
-        live.ingest(index as u64, index as u64 + 1, std::slice::from_ref(event));
-        live.delta("chat");
-    }
-    let texts: Vec<String> = live.rows().into_iter().map(|row| row.text).collect();
-    assert_eq!(
-        texts,
-        [
-            "Sign in now?",
-            "Yes",
-            "Red or blue?",
-            "Stop?",
-            "request_user_input was cancelled before receiving a response"
-        ]
-    );
-}

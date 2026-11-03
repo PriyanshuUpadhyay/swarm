@@ -41,16 +41,6 @@ pub fn questions(arena: std.mem.Allocator, input: std.json.Value) ![]root.Questi
     return list.items;
 }
 
-pub fn verifiedAnswers(arena: std.mem.Allocator, value: std.json.Value) ![]root.Answer {
-    var list: std.ArrayList(root.Answer) = .empty;
-    if (value != .array) return list.items;
-    for (value.array.items) |item| {
-        if (item != .object) continue;
-        try list.append(arena, .{ .question = root.str(item.object, "question"), .answer = root.str(item.object, "answer") });
-    }
-    return list.items;
-}
-
 pub const QuestionReply = struct { tool_call_id: []const u8, answers: []root.Answer };
 
 /// The owner's answer to an async question, as the Codex TUI and desktop send it:
@@ -82,4 +72,30 @@ pub fn questionReply(arena: std.mem.Allocator, text: []const u8) !?QuestionReply
         try answers.append(arena, .{ .question = root.str(item.object, "question"), .answer = root.str(item.object, "answer") });
     }
     return .{ .tool_call_id = tool_call_id, .answers = answers.items };
+}
+
+pub const QuestionOutput = union(enum) { none, accepted, answers: []root.Answer };
+
+/// What a Codex question tool's output says: `{"accepted":true}` from `request_user_input_async`,
+/// which only says the question shows, or `{"answers":{id:{"answers":[…]}}}` from
+/// `request_user_input`, which holds the owner's answer (codex-rs/core/src/tools/handlers).
+pub fn questionOutput(arena: std.mem.Allocator, text: []const u8) !QuestionOutput {
+    const value = std.json.parseFromSliceLeaky(std.json.Value, arena, text, .{}) catch return .none;
+    if (value != .object or value.object.count() != 1) return .none;
+    if (value.object.get("accepted")) |accepted| return if (accepted == .bool and accepted.bool) .accepted else .none;
+    const answers = value.object.get("answers") orelse return .none;
+    if (answers != .object) return .none;
+    var list: std.ArrayList(root.Answer) = .empty;
+    var entries = answers.object.iterator();
+    while (entries.next()) |entry| {
+        const picked = if (entry.value_ptr.* == .object) entry.value_ptr.object.get("answers") orelse return .none else return .none;
+        if (picked != .array) return .none;
+        var text_parts: std.ArrayList([]const u8) = .empty;
+        for (picked.array.items) |item| {
+            if (item != .string) return .none;
+            try text_parts.append(arena, item.string);
+        }
+        try list.append(arena, .{ .question = entry.key_ptr.*, .answer = try std.mem.join(arena, "\n", text_parts.items) });
+    }
+    return .{ .answers = list.items };
 }

@@ -287,11 +287,6 @@ impl LiveRows {
         }
         let anchor = match event_type {
             "tool_call" => Some(format!("tool:{}", view::string(event, "tool_call_id"))),
-            // A Codex question's tool output joins its chunk, and the row builder decides if it
-            // shows.
-            "elicitation" if self.is_codex => {
-                Some(format!("tool:{}", view::string(event, "tool_call_id")))
-            }
             "system_message" if view::string(event, "kind") == "shell_input" => Some(format!(
                 "shell:{}",
                 event["meta"]["uuid"].as_str().unwrap_or("")

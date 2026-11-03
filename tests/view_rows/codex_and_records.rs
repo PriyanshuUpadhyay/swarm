@@ -328,7 +328,10 @@ fn codex_question_shows_its_question_and_answer_without_a_stray_result() {
         )
         .remove(0),
     );
-    let rows = transcript::rows(&records(events, true), false, true);
+    let rows: Vec<_> = transcript::rows(&records(events, true), false, true)
+        .into_iter()
+        .filter(|row| !row.collapsed)
+        .collect();
     assert_eq!(
         kinds(&rows),
         vec![
@@ -369,6 +372,10 @@ fn open_codex_async_question_hides_its_accepted_output() {
         r#"{"type":"response_item","payload":{"type":"function_call","name":"request_user_input_async","arguments":"{\"questions\":[{\"title\":\"Sign in now?\",\"options\":[\"Yes\"]}]}","call_id":"call-a"}}"#,
         r#"{"type":"response_item","payload":{"type":"function_call_output","call_id":"call-a","output":"{\"accepted\":true}"}}"#,
     ];
-    let rows = transcript::rows(&records(inline_fixture("codex", &LINES), true), false, true);
+    let rows: Vec<_> =
+        transcript::rows(&records(inline_fixture("codex", &LINES), true), false, true)
+            .into_iter()
+            .filter(|row| !row.collapsed)
+            .collect();
     assert_eq!(texts(&rows), vec!["Sign in now?"]);
 }

@@ -44,20 +44,6 @@ pub(super) fn rows_with_context(
     let mut commands = HashMap::<String, Vec<Anchor>>::new();
     let mut shells = HashMap::<String, Vec<Anchor>>::new();
     let mut endings = HashMap::new();
-    // Codex answers a question call with `{"accepted":true}` (async) or `{"answers":…}`
-    // (blocking), which the question and answer rows already show. The output text decides, so
-    // a page or a live chunk without the answer record decides the same way.
-    let answered: HashSet<&str> = records
-        .iter()
-        .filter(|record| {
-            let event = &record.event;
-            string(event, "type") == "tool_call_update"
-                && serde_json::from_str::<Value>(string(event, "content")).is_ok_and(|output| {
-                    output == serde_json::json!({"accepted": true}) || output["answers"].is_object()
-                })
-        })
-        .map(|record| string(&record.event, "tool_call_id"))
-        .collect();
     for (index, record) in records.iter().enumerate() {
         let event = &record.event;
         let event_type = string(event, "type");
@@ -73,13 +59,7 @@ pub(super) fn rows_with_context(
             session: meta(event, "session_id").into(),
             scope,
         };
-        // A Codex question call also writes a tool output; anchoring the question hides it. A
-        // cancelled Codex question or a failed Claude one has no answer row, so its output stays.
-        if event_type == "tool_call"
-            || (is_codex
-                && event_type == "elicitation"
-                && answered.contains(string(event, "tool_call_id")))
-        {
+        if event_type == "tool_call" {
             calls
                 .entry(string(event, "tool_call_id").into())
                 .or_default()

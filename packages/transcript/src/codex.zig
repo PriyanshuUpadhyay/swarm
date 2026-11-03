@@ -100,16 +100,9 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]root.Event {
         return events.items;
     }
     if (std.mem.eql(u8, record_type, "retained_context")) {
-        // A blocking `request_user_input` answer: `{call_id, questions:[{question, answer}]}`.
-        if (std.mem.eql(u8, payload_type, "verified_answer")) {
-            try events.append(arena, .{ .elicitation_result = .{
-                .meta = meta,
-                .tool_call_id = root.str(payload, "call_id"),
-                .answers = try q.verifiedAnswers(arena, payload.get("questions") orelse .null),
-            } });
-        } else {
-            try events.append(arena, .{ .ignored = .{ .meta = meta, .kind = try std.fmt.allocPrint(arena, "retained_context/{s}", .{payload_type}) } });
-        }
+        // `verified_answer` repeats the blocking question's answer, which its tool output carries
+        // whether or not Codex's GuardianApproval feature writes this record.
+        try events.append(arena, .{ .ignored = .{ .meta = meta, .kind = try std.fmt.allocPrint(arena, "retained_context/{s}", .{payload_type}) } });
         return events.items;
     }
     if (root.oneOf(record_type, &.{ "token_usage_record", "world_state", "inter_agent_communication_metadata" })) {
