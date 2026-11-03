@@ -132,12 +132,19 @@ fn refresh_finishes_before_the_swift_timeout_and_reaps_its_process() {
 echo "$$" >> "$HOME/child-pids"
 exec /bin/sleep 25"#,
     );
+    // A 5 s deadline in place of 18 s; a const assert in src/cli/context.rs keeps 18 s under Swift's 20 s.
     let start = std::time::Instant::now();
-    let usage = json(run(
-        &home,
-        &["usage", "--refresh", "--provider", "codex", "--json"],
-    ));
-    assert!(start.elapsed() < std::time::Duration::from_secs(20));
+    let usage = json(
+        command(
+            &home,
+            &["usage", "--refresh", "--provider", "codex", "--json"],
+        )
+        .env("SWARM_TEST_NATIVE_READ_MS", "5000")
+        .output()
+        .unwrap(),
+    );
+    // The fake codex sleeps 25 s, so an early end shows that the deadline stopped it.
+    assert!(start.elapsed() < std::time::Duration::from_secs(12));
     assert!(
         usage["meters"]
             .as_array()

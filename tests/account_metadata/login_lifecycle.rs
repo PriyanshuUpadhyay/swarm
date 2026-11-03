@@ -204,7 +204,6 @@ capture = true
 
 #[test]
 fn a_timed_out_ring_still_closes_its_spawned_pane_before_the_process_limit() {
-    const SWIFT_PROCESS_LIMIT_SECONDS: u64 = 20;
     let home = fixture("spare-ring-timeout");
     std::fs::write(
         home.join(".swarm/adapters/fake.conf"),
@@ -226,11 +225,16 @@ capture = true
         holder.unlock().unwrap();
     });
     let started = std::time::Instant::now();
-    let output = run(&home, &login("codex", "spare", &initial));
+    // A 5 s adapter deadline in place of 18 s. It starts before the 3 s lock wait, so the login
+    // ends near 5 s; a deadline that started after the lock would end near 8 s.
+    let output = command(&home, &login("codex", "spare", &initial))
+        .env("SWARM_TEST_LOGIN_ADAPTER_MS", "5000")
+        .output()
+        .unwrap();
     release.join().unwrap();
     assert!(!output.status.success());
     assert!(started.elapsed() >= lock_wait);
-    assert!(started.elapsed() < std::time::Duration::from_secs(SWIFT_PROCESS_LIMIT_SECONDS));
+    assert!(started.elapsed() < std::time::Duration::from_millis(7500));
     assert!(String::from_utf8_lossy(&output.stderr).contains("cannot start native login"));
     assert_eq!(
         std::fs::read_to_string(home.join("closed-pane")).unwrap(),

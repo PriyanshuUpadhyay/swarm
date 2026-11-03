@@ -22,6 +22,19 @@ fn bearer_host_origin_and_body_guards_run_on_the_real_server() {
     );
     assert_eq!(status, 401);
     assert!(headers.contains("error=\"invalid_token\""));
+    // A refused body is read before the socket closes, so a client with no token or a stale one
+    // and a large upload sees the 401, not a connection reset.
+    let upload = "x".repeat(200_000);
+    for _ in 0..10 {
+        let refused = server.request(
+            "POST",
+            "/api/chat/send",
+            "Content-Type: application/json\r\n",
+            &upload,
+            false,
+        );
+        assert_eq!(refused.0, 401);
+    }
     let mut stream = server.connection();
     write!(stream, "GET /api/snapshot HTTP/1.1\r\nHost: evil.test\r\nAuthorization: Bearer {}\r\nConnection: close\r\n\r\n", server.token).unwrap();
     let mut response = String::new();
@@ -52,19 +65,18 @@ fn bearer_host_origin_and_body_guards_run_on_the_real_server() {
     );
     assert_eq!(status, 200);
     assert!(!headers.to_ascii_lowercase().contains("access-control-"));
-    let body = json!({"stream": "unknown", "keys": [], "padding": "x".repeat(65536)}).to_string();
-    assert_eq!(
-        server
-            .request(
-                "POST",
-                "/api/subscribe",
-                "Content-Type: application/json\r\n",
-                &body,
-                true
-            )
-            .0,
-        413
-    );
+    // Each of 10 sends sees the 413; the rest of a body over the limit is read, not left to reset.
+    let body = json!({"stream": "unknown", "keys": [], "padding": "x".repeat(300_000)}).to_string();
+    for _ in 0..10 {
+        let too_large = server.request(
+            "POST",
+            "/api/subscribe",
+            "Content-Type: application/json\r\n",
+            &body,
+            true,
+        );
+        assert_eq!(too_large.0, 413);
+    }
     assert_eq!(server.request("GET", "/api/unknown", "", "", false).0, 401);
 }
 
