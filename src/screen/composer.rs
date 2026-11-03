@@ -31,10 +31,13 @@ pub fn codex_composer(rows: &str) -> Option<String> {
     Some(text.join(" ").trim_start_matches('›').trim().to_string())
 }
 
-/// True when Codex draws its input box and no question box holds the keys, so typed text and
-/// Enter reach the box.
+/// True when Codex draws its input box in the bottom `ROWS` rows and no question box holds the
+/// keys, so typed text and Enter reach the box. A tmux capture holds the whole scrollback, where
+/// an old `›` history row would match.
 pub fn codex_input_ready(rows: &str) -> bool {
-    prompt(rows).is_none() && codex_composer(rows).is_some()
+    let lines: Vec<&str> = rows.trim_end().lines().collect();
+    let bottom = lines[lines.len().saturating_sub(super::ROWS)..].join("\n");
+    prompt(&bottom).is_none() && codex_composer(&bottom).is_some()
 }
 
 /// The text in pi's input box: the rows between the last two rules, joined. Pi draws its folder

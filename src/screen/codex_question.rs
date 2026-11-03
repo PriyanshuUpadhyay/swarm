@@ -10,9 +10,10 @@ const OPEN: &str = "<send_user_message_question_reply>";
 const CLOSE: &str = "</send_user_message_question_reply>";
 
 /// The first unanswered question of the newest open `request_user_input_async` call in a
-/// Codex log tail. Codex 0.162.1 shows such a question only as a collapsed `? 1 question` row,
-/// so the screen cannot name it. A reply that names its `questionItemId` answers it, and the
-/// turn's end drops it, as the Codex TUI clears its pending questions then.
+/// Codex log, read from the current turn's start (`turn_lines`). Codex 0.162.1 shows such a
+/// question only as a collapsed `? 1 question` row, so the screen cannot name it. A reply that
+/// names its `questionItemId` answers it, and the turn's end drops it, as the Codex TUI clears
+/// its pending questions then.
 pub(super) fn open_question(path: &Path) -> Option<Prompt> {
     // (call_id, questionItemId, question, choices) in log order.
     let mut open: Vec<(String, String, String, Vec<String>)> = Vec::new();

@@ -76,8 +76,13 @@ fn answer_types_the_reply_only_when_the_codex_input_box_shows() {
     let root = home.join(".swarm");
     std::fs::create_dir_all(root.join("adapters")).unwrap();
     std::fs::write(root.join("swarm-home"), "swarm\n").unwrap();
-    // A redraw with no input box, where typed text would go nowhere or into another view.
-    std::fs::write(home.join("screen"), "• Working (3s • esc to interrupt)\n").unwrap();
+    // A redraw with no input box, where typed text would go nowhere or into another view. The
+    // tmux capture holds the whole scrollback, so an old `›` history row must not count.
+    let frame = format!(
+        "› Run the tests\n{}• Working (3s • esc to interrupt)\n",
+        "• Ran cargo test\n".repeat(20)
+    );
+    std::fs::write(home.join("screen"), frame).unwrap();
     let log = home.join("rollout.jsonl");
     std::fs::write(&log, format!("{CALL}\n")).unwrap();
     std::fs::write(root.join("adapters/fake.conf"), "self = true\nspawn = true\nring = printf '%s' \"$SWARM_TEXT\" >> \"$HOME/typed\"\nlist = printf pane\nclose = true\ncapture = cat \"$HOME/screen\"\nscreen = cat \"$HOME/screen\"\nkey = printf '%s' \"$SWARM_KEY\" >> \"$HOME/keys\"\n").unwrap();
