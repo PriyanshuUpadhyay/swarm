@@ -71,6 +71,12 @@ pub(super) fn commands(text: &str) -> Vec<Vec<Token>> {
                     word.push(chars[i]);
                     started = true;
                 }
+                // A `#` that starts a word starts a comment, up to the end of the line.
+                '#' if !started => {
+                    while chars.get(i + 1).is_some_and(|next| *next != '\n') {
+                        i += 1;
+                    }
+                }
                 ' ' | '\t' => push(
                     &mut all,
                     &mut word,

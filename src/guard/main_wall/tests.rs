@@ -108,11 +108,6 @@ fn writes_into_main_are_denied_and_writes_elsewhere_pass() {
         ),
         (
             "Bash",
-            bash(&format!("rm {main}/a.txt").replace(&std::env::var("HOME").unwrap(), "~")),
-            "/",
-        ),
-        (
-            "Bash",
             bash("git commit --allow-empty -m x"),
             &format!("{main}/tmp"),
         ),
@@ -177,6 +172,11 @@ fn writes_into_main_are_denied_and_writes_elsewhere_pass() {
         ("Bash", bash("rg core.hooksPath docs"), main.as_ref()),
         (
             "Bash",
+            bash("rg -n foo src # result -> list"),
+            main.as_ref(),
+        ),
+        (
+            "Bash",
             bash("git stash list; git update-ref refs/heads/swarm/task main"),
             main.as_ref(),
         ),
@@ -192,6 +192,12 @@ fn writes_into_main_are_denied_and_writes_elsewhere_pass() {
             "{tool} {input} in {cwd}"
         );
     }
+    // The fixture is not under the home folder, so `~` is checked on `resolve` itself.
+    let home = std::fs::canonicalize(std::env::var("HOME").unwrap()).unwrap();
+    assert_eq!(
+        crate::task::resolve(Path::new("/"), Path::new("~/swarm-no-such-file")),
+        home.join("swarm-no-such-file")
+    );
     // Codex sends an argument list and its own folder; its patch names files in headers.
     let codex = serde_json::json!({"tool_name": "apply_patch", "cwd": "/", "tool_input":
         {"command": format!("*** Begin Patch\n*** Update File: {main}/a.txt\n*** End Patch")}});
