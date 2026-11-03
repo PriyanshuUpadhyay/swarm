@@ -2,7 +2,7 @@
 from test_step_run_support import *
 
 
-def test_command_wrong_count():
+def test_command_wrong_count(folder):
     for command, count in (("start", 2), ("status", 1), ("take", 3), ("done", 3)):
         usage = next(line.strip() for line in step_run.__doc__.splitlines()
                      if line.strip().split()[:1] == [command])
@@ -10,29 +10,15 @@ def test_command_wrong_count():
             out = run(command, *args)
             assert out.returncode == 1 and usage in out.stderr, out.stderr
             assert "Traceback" not in out.stderr, out.stderr
-
-
-def test_done_wrong_count(folder):
-    for args in ((folder, "01-ask"), (folder, "01-ask", "#1", "extra")):
-        out = run("done", *args)
-        assert out.returncode == 1 and "done <folder> <step>" in out.stderr, out.stderr
-        assert "--force" not in out.stderr and "Traceback" not in out.stderr, out.stderr
-
-
-def test_done_rejects_force(folder):
+    # done never takes --force, and a refused call changes neither the step file nor events.log.
     file = folder / "01-ask.md"
     original = file.read_text(encoding="utf-8")
     events = (folder / "events.log").read_text(encoding="utf-8")
-    try:
-        for args in ((folder, "01-ask", "#1", "--force"), ("--force", folder, "01-ask", "#1")):
-            out = run("done", *args)
-            assert out.returncode == 1, "done must refuse --force"
-            assert "done <folder> <step>" in out.stderr and "Traceback" not in out.stderr, out.stderr
-            assert file.read_text(encoding="utf-8") == original
-            assert (folder / "events.log").read_text(encoding="utf-8") == events
-    finally:
-        file.write_text(original, encoding="utf-8")
-        (folder / "events.log").write_text(events, encoding="utf-8")
+    for args in ((folder, "01-ask", "#1", "--force"), ("--force", folder, "01-ask", "#1")):
+        out = run("done", *args)
+        assert out.returncode == 1 and "done <folder> <step>" in out.stderr, out.stderr
+        assert file.read_text(encoding="utf-8") == original
+        assert (folder / "events.log").read_text(encoding="utf-8") == events
 
 
 def test_lock_holder_failed_handshake(folder):

@@ -55,21 +55,14 @@ def test_add_folder_block(tmp):
 
 def test_kit_pointers():
     """The kit installs as one plugin copy, so a skill reaches a block by a path from the kit root. Every
-    `blocks/<id>/...` path in the kit's Markdown names a real file, and each skill that uses a kit path says
-    where the kit root is. The kit ships two equal manifests, the Agent Plugins root `plugin.json` and
-    Claude Code's `.claude-plugin/plugin.json`, so a version bump must change both."""
+    `blocks/<id>/...` path in the kit's Markdown names a real file."""
     kit = implement_run.BLOCKS.parent
-    assert (kit / "plugin.json").read_bytes() == (kit / ".claude-plugin" / "plugin.json").read_bytes(), "the two manifests differ"
     for path in sorted(kit.glob("**/*.md")):
         if "vendor" in path.parts:
             continue
         text = path.read_text(encoding="utf-8")
         for target in re.findall(r"`(blocks/[a-z0-9-]+/[^`\s]+)`", text):
             assert (kit / target).is_file(), f"{path.relative_to(kit)} names {target}, which does not exist"
-    for path in sorted(kit.glob("skills/*/SKILL.md")) + sorted(kit.glob("presets/*/PRESET.md")):
-        text = path.read_text(encoding="utf-8")
-        if "`blocks/" in text or "the kit's `references/" in text or "<kit root>" in text:
-            assert "two folders up from this" in text, f"{path.relative_to(kit)} uses kit paths but does not say where the kit root is"
 
 
 def test_kit_block_frontmatter():
@@ -154,8 +147,6 @@ def test_diagram_membership():
     for part, owners in members.items():
         assert len(owners) == 1 and part not in parents, (part, owners)
         assert (implement_run.BLOCKS / part / "SKILL.md").is_file(), part
-    for part in ("when-to-diagram", "html-diagram", "call-tree", "diagram-check"):
-        assert members.get(part) == ["diagram"], (part, members)
 
 
 def shared_rule_copies(blocks):

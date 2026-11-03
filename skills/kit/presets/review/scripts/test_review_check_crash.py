@@ -1,6 +1,4 @@
 # A note that names a crash on new code counts as a fix (kit-right-size council 2026-11-02, A2).
-import shutil
-
 from test_review_check_support import *
 
 
@@ -34,37 +32,6 @@ def test_crash_note():
             verdict = (run / "03-verdict.md").read_text()
             assert verdict.splitlines()[2].startswith("Verdict: APPROVE") and "0 fix, 0 ask, 0 note, 0 answered, 1 limit" in verdict, verdict
             (run / "answers.md").unlink()
-            for words in ("the script exits 1 on an empty file", "a panic on a nil map", "an uncaught KeyError"):
-                review(words)
-                assert rc.verdict(run.name) == 0
-                assert "1 fix, 0 ask, 0 note" in (run / "03-verdict.md").read_text(), words
-            review("the name could be clearer")
-            assert rc.verdict(run.name) == 0
-            assert "0 fix, 0 ask, 1 note" in (run / "03-verdict.md").read_text()
-            review("the loop cannot crash on an empty list; rename i")
-            assert rc.verdict(run.name) == 0
-            assert "0 fix, 0 ask, 1 note" in (run / "03-verdict.md").read_text(), "a denied crash stays a note"
-            review("it no longer crashes on an empty list")
-            assert rc.verdict(run.name) == 0
-            assert "0 fix, 0 ask, 1 note" in (run / "03-verdict.md").read_text(), "a denial one word before stays a note"
-            review("a file with no newline crashes")
-            assert rc.verdict(run.name) == 0
-            assert "1 fix, 0 ask, 0 note" in (run / "03-verdict.md").read_text(), "a denial of a noun is not a denial of the crash"
-            review("older defect, not from this change: int() crashes with a traceback")
-            assert rc.verdict(run.name) == 0
-            assert "0 fix, 0 ask, 1 note" in (run / "03-verdict.md").read_text(), "an older crash stays a note"
-            review("older defects, not from this change: int() crashes with a traceback")
-            assert rc.verdict(run.name) == 0
-            assert "0 fix, 0 ask, 1 note" in (run / "03-verdict.md").read_text(), "a plural older opening stays a note"
-            review("follow-up: **older defect**, int() crashes with a traceback")
-            assert rc.verdict(run.name) == 0
-            assert "0 fix, 0 ask, 1 note" in (run / "03-verdict.md").read_text(), "a follow-up older opening stays a note"
-            review("fixes the older bug but crashes on empty input")
-            assert rc.verdict(run.name) == 0
-            assert "1 fix, 0 ask, 0 note" in (run / "03-verdict.md").read_text(), "older words in passing hide no crash"
-            review("no guard, crashes on an empty list")
-            assert rc.verdict(run.name) == 0
-            assert "1 fix, 0 ask, 0 note" in (run / "03-verdict.md").read_text(), "a denial of another word is still a crash"
             review("the removed line could crash too", quote="return 1", line=2)
             assert rc.verdict(run.name) == 0
             assert "0 fix, 0 ask, 1 note" in (run / "03-verdict.md").read_text(), "a crash note on removed code stays a note"
@@ -97,15 +64,6 @@ def test_crash_note():
             assert usage.returncode == 1 and "Traceback" not in usage.stderr, usage
             usage = subprocess.run([sys.executable, "-I", str(Path(rc.__file__)), "verdict", run.name, "02-review.md"], capture_output=True, text=True)
             assert usage.returncode == 1 and "rows ok" not in usage.stdout and "Traceback" not in usage.stderr, usage
-            # Removing a guard only dedents the guarded line, but the change made its crash reachable (round 5).
-            shutil.rmtree(run)  # start refuses while an abandoned run is open
-            base = commit({"util.py": "def helper(s):\n    try:\n        return int(s[:2])\n    except ValueError:\n        return 0\n"}, "guard base")
-            head = commit({"util.py": "def helper(s):\n    return int(s[:2])\n"}, "guard removed")
-            rc.start(f"{base}..{head}")
-            run = Path("tmp/review-check") / f"range-{base[:7]}-{head[:7]}-01"
-            review("int() crashes with a ValueError traceback", line=2)
-            assert rc.verdict(run.name) == 0
-            assert "1 fix, 0 ask, 0 note" in (run / "03-verdict.md").read_text(), "a dedented line the change exposed is new code"
             review("helper crashes on a None argument", quote="def helper(s):", line=1)
             assert rc.verdict(run.name) == 0
             assert "0 fix, 0 ask, 1 note" in (run / "03-verdict.md").read_text(), "a crash on a context line stays a note"

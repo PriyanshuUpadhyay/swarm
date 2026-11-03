@@ -97,24 +97,23 @@ def loop_refused(base, head, key, reason, *options):
 
 
 
-def wait_pid(pidfile, process, message):
-    deadline = time.monotonic() + 5
-    while True:
-        text = pidfile.read_text(encoding="utf-8").strip() if pidfile.exists() else ""
-        if text:
-            return int(text)
-        assert process.poll() is None and time.monotonic() < deadline, message
-        time.sleep(0.01)
-
-
-
-def kill_pid(pidfile, pid=None, *, group=False):
-    if pid is None:
-        text = pidfile.read_text(encoding="utf-8").strip() if pidfile.exists() else ""
-        pid = int(text) if text else None
-    if pid is not None:
+@contextmanager
+def scratch_repo(name=None):
+    """A temp git repo and a temp HOME, so a test is safe when it runs alone."""
+    previous, old_home = Path.cwd(), os.environ.get("HOME")
+    with tempfile.TemporaryDirectory() as folder, tempfile.TemporaryDirectory() as home:
+        repo = Path(folder) / name if name else Path(folder)
+        repo.mkdir(exist_ok=True)
         try:
-            (os.killpg if group else os.kill)(pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-
+            os.chdir(repo)
+            os.environ["HOME"] = home
+            sh("git", "init", "-qb", "main")
+            sh("git", "config", "user.email", "t@t")
+            sh("git", "config", "user.name", "t")
+            yield repo
+        finally:
+            os.chdir(previous)
+            if old_home is None:
+                os.environ.pop("HOME", None)
+            else:
+                os.environ["HOME"] = old_home

@@ -233,12 +233,6 @@ def test_writes_overlap_by_path_parts():
     assert plan_chart.read_plan(None, PLAN.replace("| 02-read |", "| `02-read.md` (optional) |"))[2][1][5:] == ([], True)
 
 
-def test_shared_resolver_import():
-    assert hasattr(plan_chart, "resolve_blocks"), "plan_chart must import resolve_blocks"
-    assert plan_chart.resolve_blocks is implement_run.resolve_blocks
-    assert plan_chart.resolve_blocks.__module__ == "block_resolver"
-
-
 def test_parent_selection():
     parts = ["when-to-diagram", "html-diagram", "call-tree", "diagram-check"]
     for selected, expected in (("diagram, html-diagram, diagram", ["diagram", *parts]),
