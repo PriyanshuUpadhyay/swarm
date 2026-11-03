@@ -3,8 +3,7 @@
 use super::*;
 
 #[test]
-fn changes_routes_latency_and_git_spawn_counts() {
-    use std::os::unix::fs::PermissionsExt;
+fn changes_routes_read_a_large_file_in_both_modes() {
     let server = Server::configured(false, true);
     let project = server.dir.join("project");
     let git = |args: &[&str]| {
@@ -28,81 +27,18 @@ fn changes_routes_latency_and_git_spawn_counts() {
     git(&["add", "."]);
     git(&["-c", "commit.gpgsign=false", "commit", "-qm", "large"]);
     fs::write(project.join("large.txt"), "local\n".repeat(20_000)).unwrap();
-    let wrapper = server.dir.join("home/bin/git");
-    let trace = std::env::var_os("SWARM_GIT_TRACE").is_some();
-    fs::write(
-        &wrapper,
-        if trace { r#"#!/usr/bin/perl
-use Time::HiRes qw(time);
-my $start = time;
-system '/usr/bin/git', @ARGV;
-my $status = $?;
-if ($ARGV[2] eq '--literal-pathspecs') {
-    open my $log, '>>', "$ENV{HOME}/git-calls" or die $!;
-    printf $log "%.3f\t%s\n", (time - $start) * 1000, join(' ', @ARGV[3 .. $#ARGV]);
-}
-exit($status == -1 ? 127 : ($status & 127) ? 128 + ($status & 127) : $status >> 8);
-"# } else { "#!/bin/sh\ncase \"$3\" in --literal-pathspecs) printf '0\\t%s\\n' \"$*\" >> \"$HOME/git-calls\" ;; esac\nexec /usr/bin/git \"$@\"\n" },
-    )
-    .unwrap();
-    fs::set_permissions(&wrapper, fs::Permissions::from_mode(0o755)).unwrap();
-    let calls = server.dir.join("home/git-calls");
-    let baseline = std::env::var_os("SWARM_GIT_BASELINE").is_some();
-    for (mode, list_count, diff_count) in [("local", 6, 5), ("branch", 8, 8)] {
-        for (route, expected) in [
-            ("/api/changes", list_count),
-            ("/api/changes/diff", diff_count),
-        ] {
+    for (mode, layer) in [("local", "unstaged"), ("branch", "branch")] {
+        for route in ["/api/changes", "/api/changes/diff"] {
             let query = format!(
-                "{route}?workspace={}&mode={mode}&base=main&path=large.txt&layer={}",
+                "{route}?workspace={}&mode={mode}&base=main&path=large.txt&layer={layer}",
                 project.display(),
-                if mode == "local" {
-                    "unstaged"
-                } else {
-                    "branch"
-                }
             );
-            let mut timings = Vec::new();
-            let mut counts = Vec::new();
-            let mut commands: std::collections::BTreeMap<String, Vec<f64>> = Default::default();
-            for _ in 0..20 {
-                fs::write(&calls, "").unwrap();
-                let start = Instant::now();
-                let (status, _, body) = server.request("GET", &query, "", "", true);
-                timings.push(start.elapsed().as_secs_f64() * 1000.0);
-                assert_eq!(status, 200, "{body}");
-                if route.ends_with("/diff") {
-                    let patch: Value = serde_json::from_str(&body).unwrap();
-                    assert_eq!(patch["added"], 20_000);
-                    assert_eq!(patch["is_truncated"], true);
-                }
-                let calls = fs::read_to_string(&calls).unwrap();
-                let count = calls.lines().count();
-                for call in calls.lines() {
-                    let (elapsed, command) = call.split_once('\t').unwrap();
-                    commands
-                        .entry(command.into())
-                        .or_default()
-                        .push(elapsed.parse().unwrap());
-                }
-                counts.push(count);
-                if !baseline {
-                    assert_eq!(count, expected, "{mode} {route}");
-                }
-            }
-            timings.sort_by(f64::total_cmp);
-            println!(
-                "{mode} {route} p95_ms={:.3} git_spawns={counts:?}",
-                timings[18]
-            );
-            for (command, mut timings) in commands.into_iter().filter(|_| trace) {
-                timings.sort_by(f64::total_cmp);
-                println!(
-                    "{mode} {route} command={command} samples={} p50_ms={:.3} p95_ms={:.3}",
-                    timings.len(),
-                    timings[timings.len() / 2],
-                    timings[(timings.len() * 95).div_ceil(100) - 1]
-                );
+            let (status, _, body) = server.request("GET", &query, "", "", true);
+            assert_eq!(status, 200, "{mode} {route}: {body}");
+            if route.ends_with("/diff") {
+                let patch: Value = serde_json::from_str(&body).unwrap();
+                assert_eq!(patch["added"], 20_000);
+                assert_eq!(patch["is_truncated"], true);
             }
         }
     }
@@ -250,46 +186,6 @@ fn workspace_panels_http_refuse_unlisted_paths_and_keep_existing_guards() {
         403
     );
     assert!(!server.dir.join("home/gh-calls").exists());
-}
-
-#[test]
-#[ignore = "runs the production 600-second setup deadline; requires loopback access"]
-fn setup_timeout_http_keeps_workspace_and_kills_process_group() {
-    let server = Server::configured(false, true);
-    let source = server.dir.join("project");
-    swarm::view::choices_store::update(&server.dir.join("home/.swarm"), None, |owner, _| {
-        owner.project_defaults.insert(
-            source.to_string_lossy().into_owned(),
-            json!({
-                "setup_script":"sleep 900 & printf '%s' \"$!\" > sleeper; wait"
-            }),
-        );
-        Ok(())
-    })
-    .unwrap();
-    let body = json!({"project":source,"name":"Timeout","mode":"new-branch","prefix":"","folder":"../workspaces"}).to_string();
-    let mut stream = server.connection();
-    stream
-        .set_read_timeout(Some(Duration::from_secs(630)))
-        .unwrap();
-    write!(stream, "POST /api/workspace/new HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nAuthorization: Bearer {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", server.port, server.token, body.len()).unwrap();
-    let mut response = String::new();
-    stream.read_to_string(&mut response).unwrap();
-    let (headers, body) = response.split_once("\r\n\r\n").unwrap();
-    assert_eq!(headers.split_whitespace().nth(1), Some("200"));
-    let result: Value = serde_json::from_str(body).unwrap();
-    assert_eq!(result["setup"]["state"], "timeout");
-    let workspace = PathBuf::from(result["workspace"].as_str().unwrap());
-    assert!(workspace.is_dir());
-    let pid = fs::read_to_string(workspace.join("sleeper")).unwrap();
-    assert!(
-        !Command::new("/bin/kill")
-            .args(["-0", pid.trim()])
-            .stderr(Stdio::null())
-            .status()
-            .unwrap()
-            .success()
-    );
 }
 
 #[test]

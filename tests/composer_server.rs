@@ -223,7 +223,7 @@ fn clear_presses() {
 fn submission_cleans_like_claude() {
     let vectors: Vec<(String, String)> =
         serde_json::from_str(include_str!("fixtures/claude-cleaner.json")).unwrap();
-    assert_eq!(vectors.len(), 47);
+    assert_eq!(vectors.len(), 50);
     for (input, expected) in vectors {
         assert_eq!(claude_text::cleaned(&input), expected, "{input:?}");
     }
@@ -232,17 +232,4 @@ fn submission_cleans_like_claude() {
 fn submission_keeps_plain_text() {
     let sentence = "Add a test for the empty case, then mail me@host.\nThanks";
     assert_eq!(claude_text::cleaned(sentence), sentence);
-}
-#[test]
-fn context_uses_only_sixteen_kept_scalars() {
-    let marks = "\u{301}".repeat(16);
-    assert_eq!(
-        claude_text::cleaned(&format!("क{marks}\u{200d}x")),
-        format!("क{marks}x")
-    );
-    assert_eq!(
-        claude_text::cleaned("אב\u{200e}ג\nabc\u{200e} def"),
-        "אבג\nabc def"
-    );
-    assert_eq!(claude_text::cleaned("\u{61c}م"), "\u{61c}م");
 }

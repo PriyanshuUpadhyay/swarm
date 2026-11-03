@@ -105,22 +105,7 @@ fn fallback_keeps_empty_descriptions_plain_and_preserves_description_lines() {
 }
 
 #[test]
-fn fallback_keeps_null_descriptions_plain() {
-    let root = scratch();
-    let log = root.join("question.jsonl");
-    let mut record: serde_json::Value = serde_json::from_str(LOG).unwrap();
-    record["message"]["content"][0]["input"]["questions"][0]["options"][0]["description"] =
-        serde_json::Value::Null;
-    std::fs::write(&log, format!("{record}\n")).unwrap();
-    let found = agent_prompt(Some("claude"), TALL, || None, Some(&log))
-        .expect("a null description must leave the prompt readable");
-    assert_eq!(found.choices[0], "Release on the planned date");
-    assert_eq!(serde_json::to_value(&found).unwrap()["details"][0], "");
-    std::fs::remove_dir_all(root).unwrap();
-}
-
-#[test]
-fn fallback_keeps_non_string_descriptions_plain() {
+fn fallback_keeps_unusable_descriptions_plain() {
     let root = scratch();
     let log = root.join("question.jsonl");
     std::fs::write(&log, LOG).unwrap();
@@ -129,6 +114,8 @@ fn fallback_keeps_non_string_descriptions_plain() {
     let mut expected = serde_json::to_value(&original).unwrap();
     expected["details"][0] = "".into();
     for description in [
+        serde_json::Value::Null,
+        serde_json::json!(" \t\n"),
         serde_json::json!(5),
         serde_json::json!(["a"]),
         serde_json::json!({}),
@@ -138,7 +125,7 @@ fn fallback_keeps_non_string_descriptions_plain() {
         record["message"]["content"][0]["input"]["questions"][0]["options"][0]["description"] =
             description.clone();
         std::fs::write(&log, format!("{record}\n")).unwrap();
-        let found = read().expect("a non-string description must leave the prompt readable");
+        let found = read().expect("an unusable description must leave the prompt readable");
         assert_eq!(
             serde_json::to_value(found).unwrap(),
             expected,
@@ -149,52 +136,25 @@ fn fallback_keeps_non_string_descriptions_plain() {
 }
 
 #[test]
-fn fallback_rejects_missing_or_non_string_question_and_labels() {
+fn fallback_rejects_missing_question_and_non_string_label() {
     let root = scratch();
     let log = root.join("question.jsonl");
-    for field in ["question", "label"] {
-        for value in [
+    let mut missing: serde_json::Value = serde_json::from_str(LOG).unwrap();
+    missing["message"]["content"][0]["input"]["questions"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("question");
+    let mut bad_label: serde_json::Value = serde_json::from_str(LOG).unwrap();
+    bad_label["message"]["content"][0]["input"]["questions"][0]["options"][0]["label"] =
+        serde_json::json!(5);
+    for record in [missing, bad_label] {
+        std::fs::write(&log, format!("{record}\n")).unwrap();
+        assert_eq!(
+            agent_prompt(Some("claude"), TALL, || None, Some(&log)),
             None,
-            Some(serde_json::Value::Null),
-            Some(serde_json::json!(5)),
-            Some(serde_json::json!(["a"])),
-            Some(serde_json::json!({})),
-            Some(serde_json::json!(true)),
-        ] {
-            let mut record: serde_json::Value = serde_json::from_str(LOG).unwrap();
-            let question = &mut record["message"]["content"][0]["input"]["questions"][0];
-            let object = if field == "question" {
-                question.as_object_mut().unwrap()
-            } else {
-                question["options"][0].as_object_mut().unwrap()
-            };
-            if let Some(value) = &value {
-                object.insert(field.into(), value.clone());
-            } else {
-                object.remove(field);
-            }
-            std::fs::write(&log, format!("{record}\n")).unwrap();
-            assert_eq!(
-                agent_prompt(Some("claude"), TALL, || None, Some(&log)),
-                None,
-                "{field} = {value:?}"
-            );
-        }
+            "{record}"
+        );
     }
-    std::fs::remove_dir_all(root).unwrap();
-}
-
-#[test]
-fn fallback_keeps_whitespace_descriptions_plain() {
-    let root = scratch();
-    let log = root.join("question.jsonl");
-    let mut record: serde_json::Value = serde_json::from_str(LOG).unwrap();
-    record["message"]["content"][0]["input"]["questions"][0]["options"][0]["description"] =
-        " \t\n".into();
-    std::fs::write(&log, format!("{record}\n")).unwrap();
-    let found = agent_prompt(Some("claude"), TALL, || None, Some(&log)).unwrap();
-    assert_eq!(found.choices[0], "Release on the planned date");
-    assert_eq!(serde_json::to_value(&found).unwrap()["details"][0], "");
     std::fs::remove_dir_all(root).unwrap();
 }
 

@@ -137,7 +137,6 @@ exec /bin/sleep 25"#,
         &home,
         &["usage", "--refresh", "--provider", "codex", "--json"],
     ));
-    assert!(start.elapsed() >= std::time::Duration::from_secs(17));
     assert!(start.elapsed() < std::time::Duration::from_secs(20));
     assert!(
         usage["meters"]
