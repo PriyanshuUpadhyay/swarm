@@ -57,6 +57,13 @@ prune`, and the owner's own worktrees are never removed by swarm.
   needs. `srt` was not used, because it blocks the CLIs' own Seatbelt.
 - Bad: a hub with `core.hooksPath`, such as swarm's own, gets no ref hook.
 - Bad: landing needs a running swarm server. Without one, `swarm task land` says so.
+- Bad: when git cannot run, the wall reads the folder as outside every hub and lets the call
+  pass, because a wall that blocks on a git failure would block every call (owner, 2026-11-03).
+- Bad: `wt merge` and the wall have no time limit of their own, because pre-merge hooks run
+  tests that can take long; a hung hook stops landings until the owner sees it.
+- Neutral: the server lands with the project's hooks, outside the agent's sandbox; Worktrunk
+  runs a hook only after the owner approves it, and without a prompt it refuses an unapproved
+  one.
 - Open: pi's bash calls meet the wall, but its edit and write tools do not (ADR 0086), so a pi
   chat on main can still edit main's files with them.
 - Open: sidebar groups and a chat's task badge come in a later change.
