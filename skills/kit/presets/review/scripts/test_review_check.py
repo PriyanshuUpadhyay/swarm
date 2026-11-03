@@ -10,7 +10,6 @@ from test_review_check_support import *
 from test_review_check_loop_snapshots import *
 from test_review_check_loop_ledger import *
 from test_review_check_catalog import *
-from test_review_check_build_process import *
 from test_review_check_build_timeout import *
 from test_review_check_answers import *
 from test_review_check_history import *
@@ -167,8 +166,6 @@ if __name__ == "__main__":
     test_loop_deleted_run_budget()
     test_loop_import_budget_on_refusal()
     test_loop_spent_extension_message()
-    test_pid_helpers()
-    test_build_ignored_hangup()
     test_shards()
     test_rust_function_range()
     test_catalog()

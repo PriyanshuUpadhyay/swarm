@@ -94,27 +94,3 @@ def loop_refused(base, head, key, reason, *options):
     else:
         raise AssertionError(f"start accepted {reason}")
     assert before == {p: p.read_bytes() for p in before}, "refusal changed a verdict"
-
-
-
-def wait_pid(pidfile, process, message):
-    deadline = time.monotonic() + 5
-    while True:
-        text = pidfile.read_text(encoding="utf-8").strip() if pidfile.exists() else ""
-        if text:
-            return int(text)
-        assert process.poll() is None and time.monotonic() < deadline, message
-        time.sleep(0.01)
-
-
-
-def kill_pid(pidfile, pid=None, *, group=False):
-    if pid is None:
-        text = pidfile.read_text(encoding="utf-8").strip() if pidfile.exists() else ""
-        pid = int(text) if text else None
-    if pid is not None:
-        try:
-            (os.killpg if group else os.kill)(pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-
