@@ -28,16 +28,20 @@ checks = [
     "skills/kit/presets/review/scripts/test_review_check.py",
     "skills/kit/scripts/test_build_checks.py",
     "skills/kit/presets/review/scripts/test_review_walk.py",
+    "skills/kit/presets/review/scripts/test_validate_citations.py",
+    "skills/kit/presets/implement/scripts/test_land.py",
+    "scripts/test_owner_scripts.py",
 ]
+# These suites import their sibling modules through PYTHONPATH, which -I ignores.
+sibling_imports = {"test_review_walk", "test_validate_citations", "test_land"}
 failed = False
 for check in checks:
     name = Path(check).stem
     command = [sys.executable, "-I", check]
     check_env = env.copy()
-    if name == "test_review_walk":
-        # This suite imports siblings through PYTHONPATH, which -I ignores.
+    if name in sibling_imports:
         command = [sys.executable, check]
-        check_env["PYTHONPATH"] = "skills/kit/presets/review/scripts"
+        check_env["PYTHONPATH"] = str(Path(check).parent)
     log = logs / f"{name}.log"
     with log.open("wb") as output:
         try:
