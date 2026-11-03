@@ -72,6 +72,16 @@ fn writes_into_main_are_denied_and_writes_elsewhere_pass() {
         ("Bash", bash("echo x >& a.txt"), main.as_ref()),
         (
             "Bash",
+            bash(&format!("wt -C {task} merge; wt remove -D main")),
+            task.as_ref(),
+        ),
+        (
+            "Bash",
+            bash(&format!("git worktree remove {main}")),
+            task.as_ref(),
+        ),
+        (
+            "Bash",
             bash(&format!("git -C {common} symbolic-ref HEAD refs/heads/zzz")),
             task.as_ref(),
         ),

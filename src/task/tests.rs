@@ -78,14 +78,15 @@ fn a_task_starts_lands_into_main_and_is_removed() {
     let path = PathBuf::from(&task.path);
     commit(&path, "b.txt");
 
-    let request = request_landing(&root, &main, Some("fix-x")).unwrap();
+    let (request, branch) = request_landing(&root, &main, Some("fix-x")).unwrap();
+    assert_eq!(branch, "swarm/fix-x");
     // A server that stopped mid-landing left the request claimed; the next pass lands it.
     std::fs::rename(&request, request.with_extension("taking")).unwrap();
     serve_landings(&root, &wt);
     // A land run again after its wait ran out finds the answer, though the record is gone.
     assert_eq!(
         request_landing(&root, &main, Some("fix-x")),
-        Ok(request.clone())
+        Ok((request.clone(), branch.clone()))
     );
     let answer = take_result(&request).unwrap();
     assert_eq!(answer["ok"], true, "{answer}");

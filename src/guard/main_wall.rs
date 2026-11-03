@@ -230,13 +230,10 @@ fn shell_writes_main(hubs: &Hubs, cwd: &Path, text: &str) -> bool {
             }
             continue;
         }
-        if program == "wt" && in_hub {
-            let plain: Vec<&&str> = args.iter().filter(|arg| !arg.starts_with('-')).collect();
-            if matches!(plain.as_slice(), [first, ..] if **first == "merge")
-                || matches!(plain.as_slice(), [first, second, ..] if **first == "step" && **second == "push")
-            {
-                return true;
-            }
+        if program == "wt" && wt_writes_main(hubs, &cwd, args) {
+            return true;
+        }
+        if program == "wt" {
             continue;
         }
         // Plain arguments, without an option's value (`truncate -s 10`, `mkdir -m 700`).
@@ -282,6 +279,36 @@ fn shell_writes_main(hubs: &Hubs, cwd: &Path, text: &str) -> bool {
         }
     }
     false
+}
+
+/// A Worktrunk command that lands into main, writes in it, or removes it. An agent lands with
+/// `swarm task land`, so `wt merge` is denied anywhere in a hub.
+fn wt_writes_main(hubs: &Hubs, cwd: &Path, args: &[&str]) -> bool {
+    let mut dir = cwd.to_path_buf();
+    let mut plain = Vec::new();
+    let mut rest = args.iter();
+    while let Some(arg) = rest.next() {
+        if *arg == "-C" {
+            if let Some(path) = rest.next() {
+                dir = task::resolve(&dir, Path::new(path));
+            }
+        } else if !arg.starts_with('-') {
+            plain.push(*arg);
+        }
+    }
+    let Some(hub) = hubs.of(&dir) else {
+        return false;
+    };
+    let in_main = task::resolve(&dir, Path::new(".")).starts_with(&hub.main);
+    match plain.as_slice() {
+        ["merge" | "promote" | "for-each", ..] => true,
+        ["step", "push", ..] => true,
+        ["step", ..] => in_main,
+        // `wt remove` with no branch removes the worktree it runs in.
+        ["remove"] => in_main,
+        ["remove", branches @ ..] => branches.contains(&hub.default.as_str()),
+        _ => false,
+    }
 }
 
 /// A git command that writes main's worktree, or that moves the default branch from anywhere
@@ -343,6 +370,10 @@ fn git_writes_main(hubs: &Hubs, cwd: &Path, args: &[&str]) -> bool {
     let first_plain = sub_args.iter().find(|arg| !arg.starts_with('-'));
     let has = |flags: &[&str]| sub_args.iter().any(|arg| flags.contains(arg));
     match *sub {
+        "worktree" if matches!(sub_args.first(), Some(&"remove" | &"move")) => sub_args[1..]
+            .iter()
+            .filter(|arg| !arg.starts_with('-'))
+            .any(|arg| task::resolve(&dir, Path::new(arg)) == hub.main),
         "update-ref" => first_plain.is_some_and(names_default),
         // Setting the hub's or main's HEAD changes which branch is the default; a task worktree's
         // HEAD is its own.

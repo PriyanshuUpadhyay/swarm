@@ -121,7 +121,12 @@ pub fn argv(
                     };
                     let mut filesystem =
                         format!(r#"":workspace_roots"={{{roots}}},{}="write""#, quote(&root));
-                    if let Some(main) = &main {
+                    // In a subfolder of main, `.` is only that subfolder, so a write root above
+                    // main would open the rest of main; such a chat gets no write roots here.
+                    let at_main = main.as_ref().is_some_and(|main| {
+                        crate::task::resolve(cwd, std::path::Path::new(".")) == *main
+                    });
+                    if let Some(main) = main.as_ref().filter(|_| at_main) {
                         let path = |path: &std::path::Path| quote(&path.to_string_lossy());
                         filesystem += &format!(
                             r#",{}="write",{}="write""#,

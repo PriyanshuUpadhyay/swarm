@@ -23,7 +23,7 @@ pub(crate) fn task(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         }
         [verb, rest @ ..] if verb == "land" && rest.len() <= 1 => {
             let name = rest.first().map(String::as_str);
-            let request = swarm::task::request_landing(&root, &cwd, name)?;
+            let (request, branch) = swarm::task::request_landing(&root, &cwd, name)?;
             let deadline = Instant::now() + LAND_WAIT;
             loop {
                 if let Some(answer) = swarm::task::take_result(&request) {
@@ -38,11 +38,12 @@ pub(crate) fn task(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 }
                 if Instant::now() >= deadline {
                     let why = if request.exists() {
-                        "no swarm server took the request; open the Swarm app, then run the same `swarm task land` again"
+                        "no swarm server took the request; open the Swarm app, then run"
                     } else {
-                        "swarm is still landing it; run the same `swarm task land` again to keep waiting"
+                        "swarm is still landing it; to keep waiting, run"
                     };
-                    return Err(format!("swarm: {why}").into());
+                    // With the name, the command works again after the worktree is gone.
+                    return Err(format!("swarm: {why} `swarm task land {}` again", branch).into());
                 }
                 std::thread::sleep(Duration::from_millis(500));
             }

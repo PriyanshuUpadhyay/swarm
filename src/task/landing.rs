@@ -3,8 +3,13 @@
 
 use super::*;
 
-/// `swarm task land`, agent side: check the task and leave a request for the server.
-pub fn request_landing(root: &Path, cwd: &Path, name: Option<&str>) -> Result<PathBuf, String> {
+/// `swarm task land`, agent side: check the task and leave a request for the server. It returns
+/// the request and the task's branch.
+pub fn request_landing(
+    root: &Path,
+    cwd: &Path,
+    name: Option<&str>,
+) -> Result<(PathBuf, String), String> {
     let dir = root.join("landings");
     let (_, task) = match find_task(root, cwd, name) {
         Ok(found) => found,
@@ -17,7 +22,7 @@ pub fn request_landing(root: &Path, cwd: &Path, name: Option<&str>) -> Result<Pa
                     key(&hub.common.to_string_lossy(), &branch)
                 ));
                 if request.with_extension("result.json").exists() {
-                    return Ok(request);
+                    return Ok((request, branch));
                 }
             }
             return Err(error);
@@ -45,13 +50,13 @@ pub fn request_landing(root: &Path, cwd: &Path, name: Option<&str>) -> Result<Pa
     let request = dir.join(format!("{name}.json"));
     // A land run again after its wait ran out keeps waiting on the first request.
     if dir.join(format!("{name}.taking")).exists() {
-        return Ok(request);
+        return Ok((request, task.branch));
     }
     // The record is still here, so an answer left here is from an earlier task of this name, or a
     // failed landing that this run tries again.
     let _ = std::fs::remove_file(request.with_extension("result.json"));
     write_json(&request, &task).map_err(|error| error.to_string())?;
-    Ok(request)
+    Ok((request, task.branch))
 }
 
 /// The server's answer to one request, once it is there. Reading it removes it.
