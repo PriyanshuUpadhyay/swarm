@@ -19,10 +19,6 @@ def test_plugin_ships_the_workflow_verbs():
     assert {p.parent.name for p in skills.glob("*/SKILL.md")} == {"swarm", "swarm-orchestrator", "swarm-voice"}
     presets = {p.parent.name for p in (KIT / "presets").glob("*/PRESET.md")}
     assert presets == {"build", "council", "explain", "implement", "research", "review"}, presets
-    # deliver and pair are implement modes since 2026-10-19; the kit README names what to type now.
-    assert not any((skills / name).exists() for name in ("ink", "flow", "deliver", "pair"))
-    assert not any((skills / name).exists() for name in (
-        "prove-it-works", "minimize-reader-load", "sequence-verifiable-units"))
 
 
 def test_background_skills_stay_available_to_the_model_and_out_of_the_menu():

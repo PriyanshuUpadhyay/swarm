@@ -17,7 +17,6 @@ import implement_run  # noqa: E402
 import block_resolver  # noqa: E402
 
 SCRIPT = Path(__file__).resolve().with_name("implement_run.py")  # the kit path, also when run through a linked skill folder
-CALLERS_MEMORY_LIMIT = 1_000_000
 
 
 def fill(f, evidence="evidence"):
