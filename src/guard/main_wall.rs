@@ -83,9 +83,21 @@ pub fn main_wall(provider: Provider, event: &str, payload: &str) -> Option<Verdi
     {
         // Only the command is shell text; a description or a prompt is prose.
         let mut text = String::new();
-        ["command", "cmd", "CommandLine", "commandLine"]
-            .iter()
-            .for_each(|key| strings(&input[key], &mut text));
+        for key in ["command", "cmd", "CommandLine", "commandLine"] {
+            match input[key].as_array() {
+                // Codex can send an argument list; quoted, it reads as one command.
+                Some(words) => {
+                    let words: Vec<String> = words
+                        .iter()
+                        .filter_map(|word| word.as_str())
+                        .map(|word| format!("'{}'", word.replace('\'', r"'\''")))
+                        .collect();
+                    text.push_str(&words.join(" "));
+                    text.push('\n');
+                }
+                None => strings(&input[key], &mut text),
+            }
+        }
         shell_writes_main(&hubs, &cwd, &text)
     } else {
         false
@@ -266,8 +278,18 @@ fn shell_writes_main(hubs: &Hubs, cwd: &Path, text: &str) -> bool {
                 .filter_map(|arg| arg.strip_prefix("of="))
                 .collect()
         } else if ["chmod", "chown"].contains(&program) {
-            // The first plain argument is the mode or the owner.
-            plain.iter().skip(1).copied().collect()
+            // The first plain argument is the mode or the owner, unless a mode such as `-x`
+            // came as an option word.
+            let dash_mode = args.iter().any(|arg| {
+                arg.len() > 1
+                    && arg[1..].chars().all(|c| "rwxXst".contains(c))
+                    && arg.starts_with('-')
+            });
+            plain
+                .iter()
+                .skip(usize::from(!dash_mode))
+                .copied()
+                .collect()
         } else if WRITERS.contains(&program) {
             plain
         } else if COPIERS.contains(&program) {
@@ -383,7 +405,8 @@ fn git_writes_main(hubs: &Hubs, cwd: &Path, args: &[&str]) -> bool {
         && sub_args
             .iter()
             .all(|arg| !["--get", "--list", "-l"].contains(arg))
-        && (sub_args.len() > 1 || sub_args.contains(&"--unset"))
+        && (sub_args.iter().filter(|arg| !arg.starts_with('-')).count() > 1
+            || sub_args.contains(&"--unset"))
     {
         return true;
     }
@@ -396,7 +419,17 @@ fn git_writes_main(hubs: &Hubs, cwd: &Path, args: &[&str]) -> bool {
             || arg.ends_with(&format!(":{full}"))
     };
     // The ref a command writes is its first plain argument; a later one is only read.
-    let first_plain = sub_args.iter().find(|arg| !arg.starts_with('-'));
+    // `-m <reason>` takes a value, so that word is not the ref.
+    let mut words = sub_args.iter();
+    let mut first_plain = None;
+    while let Some(arg) = words.next() {
+        if *arg == "-m" {
+            words.next();
+        } else if !arg.starts_with('-') {
+            first_plain = Some(arg);
+            break;
+        }
+    }
     let has = |flags: &[&str]| sub_args.iter().any(|arg| flags.contains(arg));
     match *sub {
         "worktree" if matches!(sub_args.first(), Some(&"remove" | &"move")) => sub_args[1..]

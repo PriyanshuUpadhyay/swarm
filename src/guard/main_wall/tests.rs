@@ -82,6 +82,12 @@ fn writes_into_main_are_denied_and_writes_elsewhere_pass() {
         ),
         ("Bash", bash(&format!("wt remove -D {main}")), task.as_ref()),
         ("Bash", bash("bash -lc 'rm a.txt'"), main.as_ref()),
+        ("Bash", bash("chmod -x a.txt"), main.as_ref()),
+        (
+            "Bash",
+            bash("git update-ref -m land refs/heads/main HEAD"),
+            task.as_ref(),
+        ),
         (
             "Bash",
             bash(&format!("git --work-tree={main} checkout -- .")),
@@ -173,6 +179,11 @@ fn writes_into_main_are_denied_and_writes_elsewhere_pass() {
         ("Bash", bash("rg core.hooksPath docs"), main.as_ref()),
         (
             "Bash",
+            bash("git config --local core.hooksPath"),
+            main.as_ref(),
+        ),
+        (
+            "Bash",
             bash("rg -n foo src # result -> list"),
             main.as_ref(),
         ),
@@ -206,4 +217,7 @@ fn writes_into_main_are_denied_and_writes_elsewhere_pass() {
     let shell = serde_json::json!({"tool_name": "exec_command", "cwd": "/", "tool_input":
         {"cmd": ["bash", "-lc", "rm a.txt"], "workdir": main}});
     assert!(main_wall(Provider::Codex, "PreToolUse", &shell.to_string()).is_some());
+    let argv = serde_json::json!({"tool_name": "exec_command", "cwd": "/", "tool_input":
+        {"cmd": ["touch", "b.txt"], "workdir": main}});
+    assert!(main_wall(Provider::Codex, "PreToolUse", &argv.to_string()).is_some());
 }
