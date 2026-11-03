@@ -11,32 +11,40 @@ const letters = (text: string) => text.replace(/[^\p{L}\p{N}]/gu, "");
 /** The fewest letters a screen text needs before a log row may hide it. */
 const MATCHED = 20;
 
-/** The running turn's screen text as a row, or null once a recent log row holds it. The screen
- *  drops markdown marks and wraps lines, so only letters and digits are compared. Rows of earlier
- *  turns count too, because pi's screen can still show the last turn's answer. A text shorter
- *  than 20 letters, such as a spinner's "Working", is never matched, so it cannot hide itself. */
-export function liveRow(rows: readonly Row[], text: string | null): Row | null {
-  if (!text) return null;
+/** Whether one of the last 50 log rows of `kind` holds `text`. The screen drops markdown marks
+ *  and wraps lines, so only letters and digits are compared. Rows of earlier turns count too,
+ *  because pi's screen can still show the last turn's answer. A text shorter than 20 letters, such
+ *  as a spinner's "Working", never matches, so it cannot hide itself. */
+function landed(rows: readonly Row[], text: string, kind: Row["kind"]): boolean {
   const head = letters(text).slice(0, 80);
-  if (!head) return null;
-  if (head.length >= MATCHED)
-    for (let i = rows.length - 1; i >= Math.max(0, rows.length - 50); i--)
-      if (rows[i].kind === "assistant" && letters(rows[i].text).includes(head)) return null;
+  if (head.length < MATCHED) return false;
+  for (let i = rows.length - 1; i >= Math.max(0, rows.length - 50); i--)
+    if (rows[i].kind === kind && letters(rows[i].text).includes(head)) return true;
+  return false;
+}
+
+/** The running turn's screen text as a row, or null once a recent log row holds it. */
+export function liveRow(rows: readonly Row[], text: string | null): Row | null {
+  if (!text || !letters(text) || landed(rows, text, "assistant")) return null;
   return { id: "live", kind: "assistant", text, order: [Number.MAX_SAFE_INTEGER, -1] };
 }
 
-/** The live rows under the log's rows: pi's streaming thinking, open while it streams, and the
- *  answer text. */
+/** pi's streaming thinking as an open thought row, or null once a recent log row holds it. The
+ *  log's row can land while the turn runs a tool, before the next row clears the live text. */
+function liveThought(rows: readonly Row[], thinking: string | null): Row | null {
+  if (!thinking || landed(rows, thinking, "thought")) return null;
+  return { id: LIVE_THOUGHT, kind: "thought", text: thinking, order: [Number.MAX_SAFE_INTEGER, -2] };
+}
+
+/** The live rows under the log's rows: pi's streaming thinking and the answer text. */
 export function liveRows(rows: readonly Row[], text: string | null, thinking: string | null): Row[] {
-  const live = liveRow(rows, text);
-  const thought: Row | null = thinking ? { id: LIVE_THOUGHT, kind: "thought", text: thinking, order: [Number.MAX_SAFE_INTEGER, -2] } : null;
-  return [thought, live].filter((row) => row !== null);
+  return [liveThought(rows, thinking), liveRow(rows, text)].filter((row) => row !== null);
 }
 
 /** Whether an ended turn's text stays until the log's rows land: only a text that a landed row
  *  will hide, and that none hides yet. A spinner's short text never matches, so it goes at once. */
-export function keepsEnded(rows: readonly Row[], text: string | null): boolean {
-  return text !== null && letters(text).length >= MATCHED && liveRow(rows, text) !== null;
+export function keepsEnded(rows: readonly Row[], text: string | null, thinking: string | null): boolean {
+  return (text !== null && letters(text).length >= MATCHED && liveRow(rows, text) !== null) || liveThought(rows, thinking) !== null;
 }
 
 export class AppReader {

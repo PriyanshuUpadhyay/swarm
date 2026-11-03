@@ -95,7 +95,7 @@ export class AppStream {
         // would follow the end before a reader's scroll up registers.
         if (text === chat.live && thinking === chat.liveThinking && !chat.liveEnded) break;
         // A message can end seconds before its log's rows land, so its text stays until they do.
-        if (text === null && thinking === null && (keepsEnded(chat.rows, chat.live) || chat.liveThinking)) {
+        if (text === null && thinking === null && keepsEnded(chat.rows, chat.live, chat.liveThinking)) {
           chat.liveEnded = true;
           chat.liveShown = chat.live?.length ?? 0;
         } else {
