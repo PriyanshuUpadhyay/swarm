@@ -10,4 +10,4 @@ Inside this repo, Claude Code finds them through `.claude/skills` and AGY throug
 
 When you write or review a test, follow the test rule in `skills/kit/blocks/prove-it-works/SKILL.md` (ADR 0134): one main-path test per behavior, a failure test only for a real bug or a guard, and no edge-case lists.
 
-To change files when your folder is a hub's main worktree, run `swarm task start <name>`, edit and commit in the worktree it prints, then run `swarm task land` (ADR 0135). The guard blocks edits to main.
+To change files when your folder is a hub's main worktree, run `swarm task start <name>`, edit and commit in the worktree it prints, then run `swarm task land <name>` from any folder of the hub (ADR 0135). The guard blocks edits to main.

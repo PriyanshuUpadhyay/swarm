@@ -4,7 +4,7 @@
 use super::*;
 use std::time::{Duration, Instant};
 
-const TASK_USAGE: &str = "usage: swarm task start <name> | land | drop [<branch>] | list";
+const TASK_USAGE: &str = "usage: swarm task start <name> | land [<name>] | drop [<name>] | list";
 /// A Claude shell call stops at 2 minutes, so land waits less, and running it again keeps waiting.
 const LAND_WAIT: Duration = Duration::from_secs(100);
 
@@ -21,8 +21,9 @@ pub(crate) fn task(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             let (task, warning) = swarm::task::start(&root, &wt, &cwd, name, owner)?;
             serde_json::json!({"branch": task.branch, "path": task.path, "warning": warning})
         }
-        [verb] if verb == "land" => {
-            let request = swarm::task::request_landing(&root, &cwd)?;
+        [verb, rest @ ..] if verb == "land" && rest.len() <= 1 => {
+            let name = rest.first().map(String::as_str);
+            let request = swarm::task::request_landing(&root, &cwd, name)?;
             let deadline = Instant::now() + LAND_WAIT;
             loop {
                 if let Some(answer) = swarm::task::take_result(&request) {
@@ -37,9 +38,9 @@ pub(crate) fn task(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 }
                 if Instant::now() >= deadline {
                     let why = if request.exists() {
-                        "no swarm server took the request; open the Swarm app, then run `swarm task land` again"
+                        "no swarm server took the request; open the Swarm app, then run the same `swarm task land` again"
                     } else {
-                        "swarm is still landing it; run `swarm task land` again to keep waiting"
+                        "swarm is still landing it; run the same `swarm task land` again to keep waiting"
                     };
                     return Err(format!("swarm: {why}").into());
                 }

@@ -77,7 +77,7 @@ fn a_task_starts_lands_into_main_and_is_removed() {
     let path = PathBuf::from(&task.path);
     commit(&path, "b.txt");
 
-    let request = request_landing(&root, &path).unwrap();
+    let request = request_landing(&root, &main, Some("fix-x")).unwrap();
     serve_landings(&root, &wt);
     let answer = take_result(&request).unwrap();
     assert_eq!(answer["ok"], true, "{answer}");
@@ -95,7 +95,7 @@ fn drop_refuses_a_task_with_commits_main_lacks() {
     let root = dir.join("home");
     let (task, _) = start(&root, &wt, &dir.join("wt/main"), "keep", (None, None)).unwrap();
     commit(Path::new(&task.path), "c.txt");
-    let refused = drop(&root, &wt, &dir.join("wt/main"), Some("swarm/keep")).unwrap_err();
+    let refused = drop(&root, &wt, &dir.join("wt/main"), Some("keep")).unwrap_err();
     assert!(refused.contains("1 commit(s)"), "{refused}");
     assert!(Path::new(&task.path).is_dir());
 }

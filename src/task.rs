@@ -354,6 +354,23 @@ fn task_here(root: &Path, cwd: &Path) -> Result<(Hub, Task), String> {
     Ok((hub, task))
 }
 
+/// The task that `name` (`fix-x` or `swarm/fix-x`) names in the hub of `cwd`, or, with no name,
+/// the task worktree that holds `cwd`. A name lets an agent act from main without `cd`.
+fn find_task(root: &Path, cwd: &Path, name: Option<&str>) -> Result<(Hub, Task), String> {
+    let Some(name) = name else {
+        return task_here(root, cwd);
+    };
+    let branch = if name.starts_with(PREFIX) {
+        name.to_string()
+    } else {
+        format!("{PREFIX}{name}")
+    };
+    let hub = hub(cwd).ok_or("this folder is not in a worktree hub")?;
+    let task = read_record(root, &hub.common.to_string_lossy(), &branch)
+        .ok_or_else(|| format!("{branch} is not a task that `swarm task start` made here"))?;
+    Ok((hub, task))
+}
+
 /// Why a task worktree still holds work the default branch lacks, or None.
 fn unlanded(path: &Path, branch: &str, default: &str) -> Result<Option<String>, String> {
     let status = git(path, &["status", "--porcelain"]).ok_or("git status failed")?;
@@ -369,8 +386,8 @@ fn unlanded(path: &Path, branch: &str, default: &str) -> Result<Option<String>, 
 }
 
 /// `swarm task land`, agent side: check the task and leave a request for the server.
-pub fn request_landing(root: &Path, cwd: &Path) -> Result<PathBuf, String> {
-    let (_, task) = task_here(root, cwd)?;
+pub fn request_landing(root: &Path, cwd: &Path, name: Option<&str>) -> Result<PathBuf, String> {
+    let (_, task) = find_task(root, cwd, name)?;
     let path = Path::new(&task.path);
     if !git(path, &["status", "--porcelain"])
         .ok_or("git status failed")?
@@ -472,18 +489,10 @@ fn land(root: &Path, wt: &Path, request: &Path) -> Result<String, String> {
     Ok(output)
 }
 
-/// `swarm task drop [<branch>]`: remove a task worktree that holds no work the default branch
+/// `swarm task drop [<name>]`: remove a task worktree that holds no work the default branch
 /// lacks, and its record.
-pub fn drop(root: &Path, wt: &Path, cwd: &Path, branch: Option<&str>) -> Result<Task, String> {
-    let (hub, task) = match branch {
-        None => task_here(root, cwd)?,
-        Some(branch) => {
-            let hub = hub(cwd).ok_or("this folder is not in a worktree hub")?;
-            let task = read_record(root, &hub.common.to_string_lossy(), branch)
-                .ok_or_else(|| format!("{branch} is not a task that `swarm task start` made"))?;
-            (hub, task)
-        }
-    };
+pub fn drop(root: &Path, wt: &Path, cwd: &Path, name: Option<&str>) -> Result<Task, String> {
+    let (hub, task) = find_task(root, cwd, name)?;
     if Path::new(&task.path).is_dir()
         && let Some(why) = unlanded(Path::new(&task.path), &task.branch, &hub.default)?
     {
