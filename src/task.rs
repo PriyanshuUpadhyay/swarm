@@ -130,9 +130,15 @@ pub fn default_branch(dir: &Path) -> Option<String> {
 }
 
 impl Hub {
-    /// Whether a resolved path is main's own content: inside main and outside its scratch.
+    /// Whether a resolved path is main's own content (inside main and outside its scratch), or a
+    /// file of the common dir that moves the default branch or turns the ref hook off.
     pub fn guards(&self, resolved: &Path) -> bool {
-        resolved.starts_with(&self.main) && !resolved.starts_with(self.main.join(SCRATCH))
+        let common = |name: &str| resolved.starts_with(self.common.join(name));
+        (resolved.starts_with(&self.main) && !resolved.starts_with(self.main.join(SCRATCH)))
+            || common(&format!("refs/heads/{}", self.default))
+            || common("packed-refs")
+            || common("hooks")
+            || common("config")
     }
 }
 
@@ -312,6 +318,17 @@ pub fn install_hook(hub: &Hub) -> Option<String> {
     if let Some(path) = git(&hub.common, &["config", "--get", "core.hooksPath"]) {
         return Some(format!(
             "core.hooksPath is {path}, so the ref hook is not set; the guard wall still blocks agent moves of {}",
+            hub.default
+        ));
+    }
+    // The name goes into a shell script, so only plain branch names are written there.
+    if !hub
+        .default
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || "._/-".contains(c))
+    {
+        return Some(format!(
+            "the default branch {:?} has characters a hook script would read as shell, so the ref hook is not set",
             hub.default
         ));
     }

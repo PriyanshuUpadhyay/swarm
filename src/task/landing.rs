@@ -148,12 +148,23 @@ fn land(root: &Path, wt: &Path, request: &Path) -> Result<(Task, String), String
     let task = read_record(root, &asked.repo, &asked.branch)
         .filter(|task| task.path == asked.path && task.branch.starts_with(PREFIX))
         .ok_or("no task record matches this request")?;
+    // The record is a file an agent can write, so the hub, the target branch, and the task's
+    // branch come from git, not from it.
+    let path = Path::new(&task.path);
+    let hub = hub(path)
+        .filter(|hub| hub.common.to_string_lossy() == task.repo)
+        .ok_or("the task folder is not in the hub its record names")?;
+    if git(path, &["symbolic-ref", "-q", "--short", "HEAD"]).as_deref() != Some(&task.branch) {
+        return Err(format!("the task folder is not on {}", task.branch));
+    }
+    // The server writes the ref hook too, because a sandboxed agent cannot write the hub's hooks.
+    let _ = install_hook(&hub);
     let output = run(
         wt,
-        Path::new(&task.path),
+        path,
         &[
             "merge",
-            &task.default,
+            &hub.default,
             "--no-squash",
             "--no-commit",
             "--format",

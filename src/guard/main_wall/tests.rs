@@ -18,6 +18,8 @@ fn writes_into_main_are_denied_and_writes_elsewhere_pass() {
     // `link/..` is main itself, as the OS reads it, not the task folder.
     std::fs::create_dir(main.join("sub")).unwrap();
     std::os::unix::fs::symlink(main.join("sub"), task.join("link")).unwrap();
+    let common = std::fs::canonicalize(dir.join(".bare")).unwrap();
+    let common = common.to_string_lossy();
     let (main, task) = (main.to_string_lossy(), task.to_string_lossy());
     let claude = |tool: &str, input: serde_json::Value, cwd: &str| {
         let payload = serde_json::json!({"tool_name": tool, "tool_input": input, "cwd": cwd});
@@ -75,6 +77,11 @@ fn writes_into_main_are_denied_and_writes_elsewhere_pass() {
         (
             "Bash",
             bash("git config core.hooksPath /dev/null"),
+            task.as_ref(),
+        ),
+        (
+            "Bash",
+            bash(&format!("echo x > {common}/refs/heads/main")),
             task.as_ref(),
         ),
     ] {

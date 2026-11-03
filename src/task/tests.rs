@@ -52,6 +52,7 @@ fn commit(dir: &Path, file: &str) {
     ] {
         assert!(
             Command::new("git")
+                .env("GIT_CONFIG_GLOBAL", "/dev/null")
                 .arg("-C")
                 .arg(dir)
                 .args(&args)
