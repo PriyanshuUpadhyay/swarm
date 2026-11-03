@@ -442,6 +442,22 @@ pub fn removal_blocker(path: &str) -> Result<Option<String>> {
                 .into(),
         ));
     }
+    // ADR 0135: swarm lands a task into the local default branch without a push.
+    if let Some(default) = crate::task::default_branch(std::path::Path::new(path))
+        && git(
+            path,
+            &[
+                "merge-base",
+                "--is-ancestor",
+                "HEAD",
+                &format!("refs/heads/{default}"),
+            ],
+        )?
+        .status
+        .success()
+    {
+        return Ok(None);
+    }
     let upstream = git(path, &["rev-parse", "--verify", "@{upstream}"])?;
     if upstream.status.success() {
         let count = check_git(path, &["rev-list", "--count", "@{upstream}..HEAD"])?;

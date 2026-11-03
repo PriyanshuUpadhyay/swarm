@@ -60,6 +60,20 @@ isolated!(dirty_unpushed_and_clean_removal, |f| {
     assert!(!PathBuf::from(&path).exists());
     assert!(lifecycle::removal_blocker(&path).is_err());
 });
+isolated!(a_branch_merged_into_the_local_default_branch_is_landed, |f| {
+    f.commit();
+    f.git(&["update-ref", "refs/remotes/origin/main", "HEAD"]);
+    f.git(&["symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main"]);
+    let path = f.create("Landed", json!({}));
+    lifecycle::check_git(
+        &path,
+        &["-c", "user.name=F", "-c", "user.email=f@example.com", "commit", "--allow-empty", "-qm", "local"],
+    )
+    .unwrap();
+    assert!(lifecycle::removal_blocker(&path).unwrap().unwrap().contains("no upstream"));
+    f.git(&["merge", "-q", "--ff-only", "swarm/landed"]);
+    assert!(lifecycle::removal_blocker(&path).unwrap().is_none());
+});
 isolated!(ignored_items_and_delete_policy, |f| {
     f.commit();
     f.git(&["update-ref", "refs/remotes/origin/main", "HEAD"]);

@@ -76,12 +76,7 @@ pub fn hub(path: &Path) -> Option<Hub> {
     if git(&common, &["config", "--bool", "core.bare"]).as_deref() != Some("true") {
         return None;
     }
-    let default = git(
-        &common,
-        &["symbolic-ref", "-q", "--short", "refs/remotes/origin/HEAD"],
-    )
-    .and_then(|name| name.split_once('/').map(|(_, branch)| branch.to_string()))
-    .or_else(|| git(&common, &["symbolic-ref", "-q", "--short", "HEAD"]))?;
+    let default = default_branch(&common)?;
     let listing = git(&common, &["worktree", "list", "--porcelain"])?;
     let want = format!("branch refs/heads/{default}");
     let main = listing.split("\n\n").find_map(|block| {
@@ -97,6 +92,30 @@ pub fn hub(path: &Path) -> Option<Hub> {
         common,
         default,
         main: std::fs::canonicalize(main).ok()?,
+    })
+}
+
+/// The repository's default branch: the one `origin/HEAD` names, or else, in a bare hub, the
+/// one its `HEAD` names. A plain clone's `HEAD` is whatever its main checkout has, so it does not
+/// count.
+pub fn default_branch(dir: &Path) -> Option<String> {
+    git(
+        dir,
+        &["symbolic-ref", "-q", "--short", "refs/remotes/origin/HEAD"],
+    )
+    .and_then(|name| name.split_once('/').map(|(_, branch)| branch.to_string()))
+    .or_else(|| {
+        let common = git(
+            dir,
+            &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+        )?;
+        (git(Path::new(&common), &["config", "--bool", "core.bare"]).as_deref() == Some("true"))
+            .then(|| {
+                git(
+                    Path::new(&common),
+                    &["symbolic-ref", "-q", "--short", "HEAD"],
+                )
+            })?
     })
 }
 
