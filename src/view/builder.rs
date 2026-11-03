@@ -44,15 +44,17 @@ pub(super) fn rows_with_context(
     let mut commands = HashMap::<String, Vec<Anchor>>::new();
     let mut shells = HashMap::<String, Vec<Anchor>>::new();
     let mut endings = HashMap::new();
-    // A question has an answer row, or is an async one whose `{"accepted":true}` output only
-    // says Codex showed it; either way its tool output adds nothing.
+    // Codex answers a question call with `{"accepted":true}` (async) or `{"answers":…}`
+    // (blocking), which the question and answer rows already show. The output text decides, so
+    // a page or a live chunk without the answer record decides the same way.
     let answered: HashSet<&str> = records
         .iter()
         .filter(|record| {
             let event = &record.event;
-            string(event, "type") == "elicitation_result"
-                || (string(event, "type") == "tool_call_update"
-                    && string(event, "content") == r#"{"accepted":true}"#)
+            string(event, "type") == "tool_call_update"
+                && serde_json::from_str::<Value>(string(event, "content")).is_ok_and(|output| {
+                    output == serde_json::json!({"accepted": true}) || output["answers"].is_object()
+                })
         })
         .map(|record| string(&record.event, "tool_call_id"))
         .collect();
