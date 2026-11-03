@@ -274,25 +274,6 @@ fn hung_captures_share_one_limit() {
     std::fs::remove_dir_all(root).unwrap();
 }
 
-/// A screen capture that hangs does not hold `close` past its limit.
-#[test]
-fn a_hung_capture_does_not_hold_close() {
-    let (root, mut connection, session) = closing("close-hung");
-    std::fs::write(
-        root.join("adapters/fake.conf"),
-        "self = true\nspawn = true\nring = true\nlist = echo %1 %2\nclose = true\n\
-         capture = sleep 120\n",
-    )
-    .unwrap();
-    let started = std::time::Instant::now();
-
-    close(&mut connection, &root, &session, Some(1));
-
-    // The capture hangs for 120 s.
-    assert!(started.elapsed() < std::time::Duration::from_secs(100));
-    std::fs::remove_dir_all(root).unwrap();
-}
-
 #[test]
 fn a_child_with_no_wrap_up_in_time_leaves_its_screen_and_a_note() {
     let (root, mut connection, session) = closing("close-silent");
