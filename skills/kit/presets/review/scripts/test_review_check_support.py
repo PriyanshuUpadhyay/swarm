@@ -94,3 +94,26 @@ def loop_refused(base, head, key, reason, *options):
     else:
         raise AssertionError(f"start accepted {reason}")
     assert before == {p: p.read_bytes() for p in before}, "refusal changed a verdict"
+
+
+
+@contextmanager
+def scratch_repo(name=None):
+    """A temp git repo and a temp HOME, so a test is safe when it runs alone."""
+    previous, old_home = Path.cwd(), os.environ.get("HOME")
+    with tempfile.TemporaryDirectory() as folder, tempfile.TemporaryDirectory() as home:
+        repo = Path(folder) / name if name else Path(folder)
+        repo.mkdir(exist_ok=True)
+        try:
+            os.chdir(repo)
+            os.environ["HOME"] = home
+            sh("git", "init", "-qb", "main")
+            sh("git", "config", "user.email", "t@t")
+            sh("git", "config", "user.name", "t")
+            yield repo
+        finally:
+            os.chdir(previous)
+            if old_home is None:
+                os.environ.pop("HOME", None)
+            else:
+                os.environ["HOME"] = old_home
