@@ -205,7 +205,14 @@ key = printf 'key %s %s\n' "$SWARM_PANE" "$SWARM_KEY" >> "$HOME/actions"
         } else {
             String::new()
         };
-        write!(stream, "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\n{token}{headers}Content-Length: {}\r\nConnection: close\r\n\r\n{body}", self.port, body.len()).unwrap();
+        // One write: `write!` sends each fragment by itself, and a guard answers on the headers. A
+        // body that lands after the server closes draws a reset, which can replace the response.
+        let request = format!(
+            "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\n{token}{headers}Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            self.port,
+            body.len()
+        );
+        stream.write_all(request.as_bytes()).unwrap();
         let mut response = String::new();
         stream.read_to_string(&mut response).unwrap();
         let (headers, body) = response.split_once("\r\n\r\n").unwrap();
