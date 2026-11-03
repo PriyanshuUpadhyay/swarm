@@ -186,18 +186,28 @@ fn probe_reply(response: &str) -> (bool, String) {
     (accepted, server.join().unwrap())
 }
 
-#[test]
-fn pages_probe_refuses_http_200_without_pid() {
-    let (accepted, _) = probe_reply("HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n");
-    assert!(
-        !accepted,
-        "HTTP 200 without the recorded pid must be refused"
-    );
-}
-
-#[test]
-fn pages_probe_accepts_matching_pid_on_a_cheap_path() {
+#[tokio::test]
+async fn pages_probe_checks_pid_against_stub_replies_and_the_real_router() {
     let pid = std::process::id();
+    let wrong = format!("X-Swarm-Pages-Pid: {}\r\n", pid + 1);
+    // Each stub reply is a row: the probe takes only the recorded pid, whatever the status or policy.
+    let refused = [
+        "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n".to_owned(),
+        format!(
+            "HTTP/1.1 200 OK\r\nContent-Security-Policy: {}\r\n\r\n",
+            pages_hub::CSP
+        ),
+        format!(
+            "HTTP/1.1 200 OK\r\nContent-Security-Policy: {}\r\n{wrong}\r\n",
+            pages_hub::CSP
+        ),
+    ];
+    for reply in refused {
+        assert!(
+            !probe_reply(&reply).0,
+            "a missing or wrong pid must be refused: {reply}"
+        );
+    }
     for status in ["200 OK", "404 Not Found"] {
         let (accepted, request) = probe_reply(&format!(
             "HTTP/1.1 {status}\r\nx-SwArM-pAgEs-PiD: {pid}\r\nContent-Length: 0\r\n\r\n"
@@ -209,24 +219,7 @@ fn pages_probe_accepts_matching_pid_on_a_cheap_path() {
         "HTTP/1.1 404 Not Found\r\nX-Swarm-Pages-Pid: {pid}\r\nContent-Security-Policy: sandbox allow-scripts\r\n\r\n"
     ));
     assert!(accepted, "pid proof must survive a changed sandbox policy");
-}
 
-#[test]
-fn pages_probe_refuses_missing_or_wrong_pid_even_with_shelf_csp() {
-    for pid_header in [
-        String::new(),
-        format!("X-Swarm-Pages-Pid: {}\r\n", std::process::id() + 1),
-    ] {
-        let (accepted, _) = probe_reply(&format!(
-            "HTTP/1.1 200 OK\r\nContent-Security-Policy: {}\r\n{pid_header}\r\n",
-            pages_hub::CSP
-        ));
-        assert!(!accepted, "a missing or wrong pid must be refused");
-    }
-}
-
-#[tokio::test]
-async fn pages_probe_checks_pid_against_the_real_router() {
     let root = temporary();
     let listener = tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
         .await
