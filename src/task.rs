@@ -316,7 +316,11 @@ pub fn start(
         agent: owner.1,
         created_unix_s: now(),
     };
-    write_json(&record_path(root, &repo, &branch), &task).map_err(|error| error.to_string())?;
+    if let Err(error) = write_json(&record_path(root, &repo, &branch), &task) {
+        // A worktree with no record could not be landed or dropped, so it goes too.
+        let _ = run(wt, &hub.main, &["remove", &branch, "--foreground"], false);
+        return Err(format!("cannot write the task record: {error}"));
+    }
     Ok((task, install_hook(&hub)))
 }
 
@@ -429,6 +433,24 @@ fn unlanded(path: &Path, branch: &str, default: &str) -> Result<Option<String>, 
 /// lacks, and its record.
 pub fn drop(root: &Path, wt: &Path, cwd: &Path, name: Option<&str>) -> Result<Task, String> {
     let (hub, task) = find_task(root, cwd, name)?;
+    // The record is a file an agent can write, so the folder must be this hub's worktree of a
+    // task branch before Worktrunk removes it.
+    if !task.branch.starts_with(PREFIX)
+        || Path::new(&task.path).is_dir()
+            && (self::hub(Path::new(&task.path)).map(|found| found.common)
+                != Some(hub.common.clone())
+                || git(
+                    Path::new(&task.path),
+                    &["symbolic-ref", "-q", "--short", "HEAD"],
+                )
+                .as_deref()
+                    != Some(&task.branch))
+    {
+        return Err(format!(
+            "the record of {} does not match its folder",
+            task.branch
+        ));
+    }
     if Path::new(&task.path).is_dir()
         && let Some(why) = unlanded(Path::new(&task.path), &task.branch, &hub.default)?
     {

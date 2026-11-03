@@ -28,6 +28,13 @@ pub fn request_landing(
             return Err(error);
         }
     };
+    let name = key(&task.repo, &task.branch);
+    let request = dir.join(format!("{name}.json"));
+    // A land run again after its wait ran out keeps waiting on the first request, before the
+    // checks below, which a landing in progress can change.
+    if dir.join(format!("{name}.taking")).exists() {
+        return Ok((request, task.branch));
+    }
     let path = Path::new(&task.path);
     if !git(path, &["status", "--porcelain"])
         .ok_or("git status failed")?
@@ -45,12 +52,6 @@ pub fn request_landing(
             "{} has no commit that {} lacks, so there is nothing to land; commit first, or run `swarm task drop`",
             task.branch, task.default
         ));
-    }
-    let name = key(&task.repo, &task.branch);
-    let request = dir.join(format!("{name}.json"));
-    // A land run again after its wait ran out keeps waiting on the first request.
-    if dir.join(format!("{name}.taking")).exists() {
-        return Ok((request, task.branch));
     }
     // The record is still here, so an answer left here is from an earlier task of this name, or a
     // failed landing that this run tries again.
