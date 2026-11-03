@@ -281,9 +281,9 @@ fn shell_writes_main(hubs: &Hubs, cwd: &Path, text: &str) -> bool {
             // The first plain argument is the mode or the owner, unless a mode such as `-x`
             // came as an option word.
             let dash_mode = args.iter().any(|arg| {
-                arg.len() > 1
-                    && arg[1..].chars().all(|c| "rwxXst".contains(c))
-                    && arg.starts_with('-')
+                arg.strip_prefix('-').is_some_and(|mode| {
+                    !mode.is_empty() && mode.chars().all(|c| "rwxXst".contains(c))
+                })
             });
             plain
                 .iter()

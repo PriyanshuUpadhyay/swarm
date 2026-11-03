@@ -114,8 +114,11 @@ pub fn argv(
                     // workspace root must say `read` itself; a path entry for it does not win.
                     // Main's `tmp/` counts as main here, so its chat does not get main's git dir.
                     let here = crate::task::resolve(cwd, std::path::Path::new("."));
-                    let hub = crate::task::hub(cwd).filter(|hub| here.starts_with(&hub.main));
-                    let main = hub.as_ref().map(|hub| hub.main.clone());
+                    let in_hub = crate::task::hub(cwd);
+                    let main = in_hub
+                        .as_ref()
+                        .filter(|hub| here.starts_with(&hub.main))
+                        .map(|hub| hub.main.clone());
                     let roots = if main.is_some() {
                         r#""."="read",".codex"="read",".agents"="read""#
                     } else {
@@ -145,14 +148,21 @@ pub fn argv(
                             quote(&format!("{common}/config")),
                             quote(&format!("{common}/modules"))
                         );
-                        // On main, the files that move or retarget the default branch are read.
-                        // Only existing ones are named; a packed default ref is not covered.
-                        if let Some(hub) = &hub {
+                        // In a hub, the files that move or retarget the default branch are read,
+                        // on main and in a task worktree. Only existing ones are named, and
+                        // packed-refs only when it holds the default ref.
+                        if let Some(hub) = &in_hub {
+                            let loose = hub.common.join(format!("refs/heads/{}", hub.default));
+                            let packed = if loose.exists() { "" } else { "packed-refs" };
                             for name in [
                                 format!("refs/heads/{}", hub.default),
                                 "HEAD".into(),
                                 "refs/remotes/origin/HEAD".into(),
+                                packed.into(),
                             ] {
+                                if name.is_empty() {
+                                    continue;
+                                }
                                 let file = hub.common.join(name);
                                 if file.exists() {
                                     filesystem +=

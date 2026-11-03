@@ -177,6 +177,7 @@ fn writes_into_main_are_denied_and_writes_elsewhere_pass() {
             main.as_ref(),
         ),
         ("Bash", bash("rg core.hooksPath docs"), main.as_ref()),
+        ("Bash", bash("chmod 644 /tmp/é.txt"), main.as_ref()),
         (
             "Bash",
             bash(&format!(
