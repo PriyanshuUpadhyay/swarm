@@ -27,10 +27,16 @@ pub(super) async fn guard(State(app): State<App>, request: Request, next: Next) 
         return next.run(request).await;
     }
     if let Some(refusal) = refusal(&app, &request) {
-        // A client that sent `Expect: 100-continue` waits for the server before it sends the
-        // body, so a refusal that goes out first means it sends none. Reading would make hyper
-        // send the 100 and draw the upload.
-        if !request.headers().contains_key(header::EXPECT) {
+        // A client that sent `Expect: 100-continue` over HTTP/1.1 waits for the server before it
+        // sends the body, so a refusal that goes out first means it sends none. Reading would make
+        // hyper send the 100 and draw the upload. Other Expect values and HTTP/1.0 do not wait,
+        // as hyper reads them.
+        let waits = request.version() >= axum::http::Version::HTTP_11
+            && request
+                .headers()
+                .get(header::EXPECT)
+                .is_some_and(|value| value.as_bytes().eq_ignore_ascii_case(b"100-continue"));
+        if !waits {
             drain_stream(request.into_body().into_data_stream()).await;
         }
         return refusal;
