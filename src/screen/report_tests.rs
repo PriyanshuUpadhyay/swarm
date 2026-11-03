@@ -116,7 +116,9 @@ mod tests {
                     },
                     "{provider:?} {screen:?}"
                 );
-                // Even a gap cannot replace a hook inside its initial authority window.
+                // A gap cannot replace a hook inside its initial authority window, except a
+                // Codex approval box, which no Codex hook reports (ADR 0021).
+                let at_once = provider == Some("codex") && screen == ScreenState::Waiting;
                 assert_eq!(
                     resolve(
                         provider,
@@ -126,7 +128,12 @@ mod tests {
                         Some(screen),
                         now
                     ),
-                    (Some("working".into()), None)
+                    if at_once {
+                        (Some("waiting".into()), Some("waiting"))
+                    } else {
+                        (Some("working".into()), None)
+                    },
+                    "{provider:?} {screen:?}"
                 );
             }
             assert!(!screen_gap(provider, ScreenState::Working));

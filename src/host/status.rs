@@ -28,7 +28,7 @@ pub fn hook_state(provider: &str, event: &str, payload: &serde_json::Value) -> O
         }
         // Codex runs this hook before its auto-reviewer, which may approve with no person, and
         // the payload does not say which reviewer decides. The approval box on screen owns the
-        // wait (`screen_gap`).
+        // wait, at once (`screen::resolve`).
         ("codex", "PermissionRequest") => return None,
         ("claude" | "codex", "UserPromptSubmit" | "PreToolUse" | "PostToolUse") => {
             ("working", None)
