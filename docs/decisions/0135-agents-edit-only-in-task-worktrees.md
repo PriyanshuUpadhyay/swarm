@@ -57,7 +57,8 @@ prune`, and the owner's own worktrees are never removed by swarm.
   needs. `srt` was not used, because it blocks the CLIs' own Seatbelt.
 - Bad: a hub with `core.hooksPath`, such as swarm's own, gets no ref hook.
 - Bad: landing needs a running swarm server. Without one, `swarm task land` says so.
-- Open: pi has no swarm guard (ADR 0086), so the wall does not cover it.
+- Open: pi's bash calls meet the wall, but its edit and write tools do not (ADR 0086), so a pi
+  chat on main can still edit main's files with them.
 - Open: sidebar groups and a chat's task badge come in a later change.
 
 Supersedes ADR 0019 for chats in a hub's main worktree.

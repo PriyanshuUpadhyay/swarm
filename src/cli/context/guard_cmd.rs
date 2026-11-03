@@ -28,12 +28,7 @@ pub(crate) fn guard(args: &[String]) -> (String, String, i32) {
                     ))
                 }
                 (_, Some(payload))
-                    if let Some(wait) = swarm::guard::wall(provider, event, &payload) =>
-                {
-                    wait
-                }
-                (_, Some(payload))
-                    if let Some(wall) = swarm::guard::main_wall(provider, event, &payload) =>
+                    if let Some(wall) = swarm::guard::wall(provider, event, &payload) =>
                 {
                     wall
                 }

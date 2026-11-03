@@ -152,7 +152,19 @@ pub(super) fn commands(text: &str) -> Vec<Vec<Token>> {
                         &mut want_delimiter,
                         &mut heredocs,
                     );
-                    if chars.get(i + 1) == Some(&'<') && chars.get(i + 2) != Some(&'<') {
+                    // `<<<` is a here-string and `1<<20` a shift; neither starts a here-doc.
+                    if chars.get(i + 1) == Some(&'<') && chars.get(i + 2) == Some(&'<') {
+                        i += 3;
+                        all.last_mut().unwrap().push(Token::In);
+                        continue;
+                    }
+                    let shift = chars
+                        .get(i + 2..)
+                        .unwrap_or_default()
+                        .iter()
+                        .find(|c| !matches!(c, '-' | ' ' | '\t'))
+                        .is_some_and(|c| c.is_ascii_digit());
+                    if chars.get(i + 1) == Some(&'<') && !shift {
                         i += 2;
                         if chars.get(i) == Some(&'-') {
                             i += 1;

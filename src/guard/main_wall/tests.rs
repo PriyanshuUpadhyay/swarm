@@ -15,6 +15,9 @@ fn writes_into_main_are_denied_and_writes_elsewhere_pass() {
             .unwrap()
             .success()
     );
+    // `link/..` is main itself, as the OS reads it, not the task folder.
+    std::fs::create_dir(main.join("sub")).unwrap();
+    std::os::unix::fs::symlink(main.join("sub"), task.join("link")).unwrap();
     let (main, task) = (main.to_string_lossy(), task.to_string_lossy());
     let claude = |tool: &str, input: serde_json::Value, cwd: &str| {
         let payload = serde_json::json!({"tool_name": tool, "tool_input": input, "cwd": cwd});
@@ -53,6 +56,25 @@ fn writes_into_main_are_denied_and_writes_elsewhere_pass() {
         (
             "Bash",
             bash(&format!("cd {main} && echo x >> a.txt")),
+            task.as_ref(),
+        ),
+        ("Bash", bash(&format!("cd {main} && echo x > a.txt")), "/"),
+        (
+            "Write",
+            write(format!("{task}/link/../f.txt")),
+            task.as_ref(),
+        ),
+        ("Bash", bash("cat <<< x\necho y > a.txt"), main.as_ref()),
+        ("Bash", bash("env -i rm a.txt"), main.as_ref()),
+        ("Bash", bash("rm -r src"), main.as_ref()),
+        (
+            "Bash",
+            bash("git commit --allow-empty -m x"),
+            &format!("{main}/tmp"),
+        ),
+        (
+            "Bash",
+            bash("git config core.hooksPath /dev/null"),
             task.as_ref(),
         ),
     ] {
@@ -98,6 +120,17 @@ fn writes_into_main_are_denied_and_writes_elsewhere_pass() {
             main.as_ref(),
         ),
         ("Bash", bash("P=x; printf 'x' >> $P/a.txt"), main.as_ref()),
+        (
+            "Grep",
+            serde_json::json!({"pattern": "fn .* -> Result", "path": "src"}),
+            main.as_ref(),
+        ),
+        ("Bash", bash("rg core.hooksPath docs"), main.as_ref()),
+        (
+            "Bash",
+            bash("chmod +x /tmp/run.sh; dd if=/dev/zero of=/tmp/x; touch ~/x"),
+            main.as_ref(),
+        ),
     ] {
         assert_eq!(
             claude(tool, input.clone(), cwd),

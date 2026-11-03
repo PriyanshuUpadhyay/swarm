@@ -5,6 +5,8 @@
 
 use super::*;
 use crate::task;
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 mod shell;
@@ -38,6 +40,15 @@ const WRITERS: [&str; 12] = [
     "rm", "rmdir", "mv", "touch", "mkdir", "tee", "truncate", "chmod", "chown", "unlink", "patch",
     "dd",
 ];
+/// The options of a writer that take the next word as their value.
+fn value_options(program: &str) -> &'static [&'static str] {
+    match program {
+        "truncate" => &["-s", "-r", "--size", "--reference"],
+        "mkdir" => &["-m", "--mode"],
+        "touch" => &["-t", "-d", "-r"],
+        _ => &[],
+    }
+}
 /// Shell programs that write only their last argument.
 const COPIERS: [&str; 3] = ["cp", "ln", "install"];
 /// Words that start a command without being the command.
@@ -58,19 +69,53 @@ pub fn main_wall(provider: Provider, event: &str, payload: &str) -> Option<Verdi
     {
         cwd = task::resolve(&cwd, Path::new(dir));
     }
+    let hubs = Hubs::default();
     let denied = if ["write", "edit", "replace", "patch"]
         .iter()
         .any(|word| tool.contains(word))
     {
         edit_paths(input)
             .iter()
-            .any(|path| task::main_target(&cwd, Path::new(path)).is_some())
-    } else {
+            .any(|path| hubs.main_target(&cwd, path))
+    } else if ["bash", "shell", "command", "exec"]
+        .iter()
+        .any(|word| tool.contains(word))
+    {
+        // Only the command is shell text; a description or a prompt is prose.
         let mut text = String::new();
-        strings(input, &mut text);
-        shell_writes_main(&cwd, &text)
+        ["command", "cmd", "CommandLine", "commandLine"]
+            .iter()
+            .for_each(|key| strings(&input[key], &mut text));
+        shell_writes_main(&hubs, &cwd, &text)
+    } else {
+        false
     };
     denied.then(|| Verdict::Deny(MAIN_READ_ONLY.into()))
+}
+
+/// Hub lookups for one call, by folder, because each costs several git runs and a call can name
+/// hundreds of files in a few folders.
+#[derive(Default)]
+struct Hubs(RefCell<HashMap<PathBuf, Option<task::Hub>>>);
+
+impl Hubs {
+    fn of(&self, path: &Path) -> Option<task::Hub> {
+        let mut dir = path.to_path_buf();
+        while !dir.is_dir() {
+            dir = dir.parent()?.to_path_buf();
+        }
+        self.0
+            .borrow_mut()
+            .entry(dir)
+            .or_insert_with_key(|dir| task::hub(dir))
+            .clone()
+    }
+
+    /// Whether `path` (resolved against `cwd`) is main's own content.
+    fn main_target(&self, cwd: &Path, path: &str) -> bool {
+        let resolved = task::resolve(cwd, Path::new(path));
+        self.of(&resolved).is_some_and(|hub| hub.guards(&resolved))
+    }
 }
 
 fn strings(value: &serde_json::Value, out: &mut String) {
@@ -120,22 +165,19 @@ fn base(word: &str) -> &str {
     word.rsplit('/').next().unwrap_or(word)
 }
 
-fn shell_writes_main(cwd: &Path, text: &str) -> bool {
+fn shell_writes_main(hubs: &Hubs, cwd: &Path, text: &str) -> bool {
     if text.is_empty() {
         return false;
     }
-    // Each hub check runs git, so a call outside every hub pays one check at most.
-    let in_hub = task::hub(cwd).is_some();
+    let mut cwd = cwd.to_path_buf();
+    // Outside every hub only an absolute path is looked up, so such a call runs few git checks.
+    let mut in_hub = hubs.of(&cwd).is_some();
     // A path the shell expands at run time (`$P/a`, a backtick) cannot be read here, so it passes.
-    let guarded = |dir: &Path, path: &str| {
+    let guarded = |in_hub: bool, dir: &Path, path: &str| {
         !path.contains(['$', '`'])
             && (in_hub || path.starts_with('/'))
-            && task::main_target(dir, Path::new(path)).is_some()
+            && hubs.main_target(dir, path)
     };
-    if in_hub && text.to_ascii_lowercase().contains("core.hookspath") {
-        return true;
-    }
-    let mut cwd = cwd.to_path_buf();
     for command in commands(text) {
         // Redirect targets, wherever they sit in the command.
         let mut words = Vec::new();
@@ -145,7 +187,7 @@ fn shell_writes_main(cwd: &Path, text: &str) -> bool {
                 Token::Out => {
                     if let Some(Token::Word(target)) = tokens.next()
                         && !target.starts_with("/dev/")
-                        && guarded(&cwd, target)
+                        && guarded(in_hub, &cwd, target)
                     {
                         return true;
                     }
@@ -156,12 +198,19 @@ fn shell_writes_main(cwd: &Path, text: &str) -> bool {
                 Token::Word(word) => words.push(word.as_str()),
             }
         }
-        let start = words
-            .iter()
-            .position(|word| {
-                !PREFIXES.contains(word) && (!word.contains('=') || word.starts_with('-'))
-            })
-            .unwrap_or(words.len());
+        // Skip prefix words, their options (`env -i`, `time -p`), and `NAME=value` words.
+        let mut start = 0;
+        let mut after_prefix = false;
+        while let Some(word) = words.get(start) {
+            if PREFIXES.contains(word) {
+                after_prefix = true;
+            } else if !(after_prefix && word.starts_with('-'))
+                && (!word.contains('=') || word.starts_with('-'))
+            {
+                break;
+            }
+            start += 1;
+        }
         let Some((program, args)) = words[start..].split_first() else {
             continue;
         };
@@ -170,11 +219,12 @@ fn shell_writes_main(cwd: &Path, text: &str) -> bool {
         if program == "cd" {
             if let Some(dir) = args.iter().find(|arg| !arg.starts_with('-')) {
                 cwd = task::resolve(&cwd, Path::new(dir));
+                in_hub = hubs.of(&cwd).is_some();
             }
             continue;
         }
         if program == "git" {
-            if git_writes_main(&cwd, args) {
+            if git_writes_main(hubs, &cwd, args) {
                 return true;
             }
             continue;
@@ -188,16 +238,30 @@ fn shell_writes_main(cwd: &Path, text: &str) -> bool {
             }
             continue;
         }
-        let plain: Vec<&str> = args
-            .iter()
-            .copied()
-            .filter(|arg| !arg.starts_with('-'))
-            .collect();
-        let targets: Vec<&str> = if WRITERS.contains(&program) {
+        // Plain arguments, without an option's value (`truncate -s 10`, `mkdir -m 700`).
+        let mut plain: Vec<&str> = Vec::new();
+        let takes_value = value_options(program);
+        let mut skip = false;
+        for arg in args {
+            if std::mem::take(&mut skip) {
+                continue;
+            }
+            if arg.starts_with('-') {
+                skip = takes_value.contains(arg);
+            } else {
+                plain.push(arg);
+            }
+        }
+        let targets: Vec<&str> = if program == "dd" {
             plain
                 .iter()
-                .map(|arg| arg.strip_prefix("of=").unwrap_or(arg))
+                .filter_map(|arg| arg.strip_prefix("of="))
                 .collect()
+        } else if ["chmod", "chown"].contains(&program) {
+            // The first plain argument is the mode or the owner.
+            plain.iter().skip(1).copied().collect()
+        } else if WRITERS.contains(&program) {
+            plain
         } else if COPIERS.contains(&program) {
             plain.last().copied().into_iter().collect()
         } else if ["sed", "perl"].contains(&program)
@@ -210,7 +274,7 @@ fn shell_writes_main(cwd: &Path, text: &str) -> bool {
         } else {
             Vec::new()
         };
-        if targets.iter().any(|target| guarded(&cwd, target)) {
+        if targets.iter().any(|target| guarded(in_hub, &cwd, target)) {
             return true;
         }
     }
@@ -219,7 +283,7 @@ fn shell_writes_main(cwd: &Path, text: &str) -> bool {
 
 /// A git command that writes main's worktree, or that moves the default branch from anywhere
 /// in the hub.
-fn git_writes_main(cwd: &Path, args: &[&str]) -> bool {
+fn git_writes_main(hubs: &Hubs, cwd: &Path, args: &[&str]) -> bool {
     let mut dir = cwd.to_path_buf();
     let mut rest = args;
     while let Some((first, tail)) = rest.split_first() {
@@ -241,10 +305,23 @@ fn git_writes_main(cwd: &Path, args: &[&str]) -> bool {
     let Some((sub, sub_args)) = rest.split_first() else {
         return false;
     };
-    let Some(hub) = task::hub(&dir) else {
+    let Some(hub) = hubs.of(&dir) else {
         return false;
     };
-    if GIT_WRITES.contains(sub) && hub.guards(&task::resolve(&dir, Path::new("."))) {
+    // Main's `tmp/` is scratch for files, but a git write there still changes main.
+    if GIT_WRITES.contains(sub) && task::resolve(&dir, Path::new(".")).starts_with(&hub.main) {
+        return true;
+    }
+    // A hooks path set or unset turns the ref hook off (or on) for the whole hub.
+    if *sub == "config"
+        && sub_args
+            .iter()
+            .any(|arg| arg.eq_ignore_ascii_case("core.hookspath"))
+        && sub_args
+            .iter()
+            .all(|arg| !["--get", "--list", "-l"].contains(arg))
+        && (sub_args.len() > 1 || sub_args.contains(&"--unset"))
+    {
         return true;
     }
     let default = hub.default.as_str();
