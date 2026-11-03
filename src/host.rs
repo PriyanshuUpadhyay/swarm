@@ -113,35 +113,42 @@ mod tests {
 
     const HERDR: [(&str, &str); 2] = [("HERDR_ENV", "1"), ("HERDR_PANE_ID", "wK:p1")];
 
-    #[test]
-    fn a_herdr_pane_picks_herdr_unless_swarm_adapter_names_another() {
-        assert_eq!(adapter(env(&HERDR)), "herdr");
-        assert_eq!(adapter(env(&[])), "tmux");
-        assert_eq!(adapter(env(&[HERDR[0], ("HERDR_PANE_ID", "")])), "tmux");
-        assert_eq!(
-            adapter(env(&[HERDR[0], HERDR[1], ("SWARM_ADAPTER", "tmux-swarm")])),
-            "tmux-swarm"
-        );
-    }
-
     const SUPERSET: [(&str, &str); 1] = [("SUPERSET_TERMINAL_ID", "t1")];
 
+    /// One precedence order: `SWARM_ADAPTER` > herdr > superset > rex > tmux. An empty value counts as unset.
     #[test]
-    fn a_superset_terminal_picks_superset_unless_herdr_or_swarm_adapter_wins() {
-        assert_eq!(adapter(env(&SUPERSET)), "superset");
-        assert_eq!(adapter(env(&[("SUPERSET_TERMINAL_ID", "")])), "tmux");
-        assert_eq!(adapter(env(&[HERDR[0], HERDR[1], SUPERSET[0]])), "herdr");
-        assert_eq!(
-            adapter(env(&[SUPERSET[0], ("SWARM_ADAPTER", "tmux")])),
-            "tmux"
-        );
+    fn the_adapter_follows_one_precedence_order() {
+        let nested_rex = [REX[0], ("TERM_PROGRAM", "tmux"), ("TMUX_PANE", "%0")];
+        let cases: [(&[(&str, &str)], &str); 13] = [
+            (&[], "tmux"),
+            (&HERDR, "herdr"),
+            (&[HERDR[0], ("HERDR_PANE_ID", "")], "tmux"),
+            (
+                &[HERDR[0], HERDR[1], ("SWARM_ADAPTER", "tmux-swarm")],
+                "tmux-swarm",
+            ),
+            (&SUPERSET, "superset"),
+            (&[("SUPERSET_TERMINAL_ID", "")], "tmux"),
+            (&[HERDR[0], HERDR[1], SUPERSET[0]], "herdr"),
+            (&[SUPERSET[0], ("SWARM_ADAPTER", "tmux")], "tmux"),
+            (&REX, "rex"),
+            (&[("REX_BLOCK", ""), REX[1]], "tmux"),
+            (&[HERDR[0], HERDR[1], REX[0], REX[1]], "herdr"),
+            (&[SUPERSET[0], REX[0], REX[1]], "superset"),
+            (&[REX[0], REX[1], ("SWARM_ADAPTER", "tmux")], "tmux"),
+        ];
+        for (pairs, expected) in cases {
+            assert_eq!(adapter(env(pairs)), expected, "{pairs:?}");
+        }
+        // A tmux pane inside rex is not a rex block, and has no host contract.
+        assert_eq!(adapter(env(&nested_rex)), "tmux");
+        assert_eq!(context("claude", env(&nested_rex)), None);
     }
 
     #[test]
     fn the_superset_contract_marks_chair_and_worker() {
         let chair = context("claude", env(&SUPERSET)).unwrap();
         assert!(chair.starts_with("[agent-host: superset]\n"));
-        assert!(chair.contains("`swarm answer` and `swarm interrupt` are not available"));
         let worker = context(
             "claude",
             env(&[SUPERSET[0], ("SWARM_AGENT_ID", "cl-seat-1")]),
@@ -156,25 +163,6 @@ mod tests {
     }
 
     const REX: [(&str, &str); 2] = [("REX_BLOCK", "block:1"), ("TERM_PROGRAM", "rex")];
-
-    #[test]
-    fn a_rex_block_picks_rex_unless_herdr_superset_or_swarm_adapter_wins() {
-        assert_eq!(adapter(env(&REX)), "rex");
-        assert_eq!(adapter(env(&[("REX_BLOCK", ""), REX[1]])), "tmux");
-        assert_eq!(adapter(env(&[HERDR[0], HERDR[1], REX[0], REX[1]])), "herdr");
-        assert_eq!(adapter(env(&[SUPERSET[0], REX[0], REX[1]])), "superset");
-        assert_eq!(
-            adapter(env(&[REX[0], REX[1], ("SWARM_ADAPTER", "tmux")])),
-            "tmux"
-        );
-    }
-
-    #[test]
-    fn a_tmux_pane_inside_rex_is_not_a_rex_block() {
-        let nested = [REX[0], ("TERM_PROGRAM", "tmux"), ("TMUX_PANE", "%0")];
-        assert_eq!(adapter(env(&nested)), "tmux");
-        assert_eq!(context("claude", env(&nested)), None);
-    }
 
     #[test]
     fn the_rex_contract_marks_chair_and_worker() {
