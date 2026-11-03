@@ -25,8 +25,9 @@ jobs:
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test
       - run: python3 -I scripts/test_stamp_kit.py
-      # The review suite reads function ranges from universal-ctags, which the runner image lacks.
-      - run: sudo apt-get update -q && sudo apt-get install -yq universal-ctags
+      # The review suite reads function ranges from universal-ctags, and the kit scripts search with
+      # ripgrep; the runner image lacks both.
+      - run: sudo apt-get update -q && sudo apt-get install -yq universal-ctags ripgrep
       - run: bash scripts/kit-checks.sh
 
   web:
