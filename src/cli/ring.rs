@@ -256,6 +256,7 @@ pub(crate) fn wait_for_input_box(provider: &str, read: &impl Fn() -> String) -> 
 pub(crate) fn type_text(
     connection: &rusqlite::Connection,
     adapter: &swarm::adapter::Adapter,
+    root: &std::path::Path,
     session_id: &str,
     agent_id: &str,
     pane: &str,
@@ -278,6 +279,8 @@ pub(crate) fn type_text(
         if swarm::screen::prompt(&rows).is_some() {
             return Err("swarm: pi's screen shows a question; answer it first".into());
         }
+        // A ring that pi kept unsent is swarm's own text, so Enter sends it before the owner's.
+        let rows = send_held_ring(adapter, root, pane, rows, &read)?;
         // pi puts its queued messages back in its box on a stop, and the text would join them. An
         // unread box types as before.
         if swarm::screen::composer("pi", &rows).is_some_and(|held| !held.is_empty()) {
@@ -296,6 +299,30 @@ pub(crate) fn type_text(
         adapter.run("key", &[("pane", pane), ("key", "Enter")])?;
     }
     Ok(())
+}
+
+/// While pi's box holds only the ring text, press Enter, up to `RING_ENTER_RETRIES` times, and
+/// return the last rows read. A box with other text is left as it is.
+fn send_held_ring(
+    adapter: &swarm::adapter::Adapter,
+    root: &std::path::Path,
+    pane: &str,
+    mut rows: String,
+    read: &impl Fn() -> String,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let squash = |text: &str| text.split_whitespace().collect::<String>();
+    let ring = squash(&ring_text(root));
+    for _ in 0..RING_ENTER_RETRIES {
+        let only_ring =
+            swarm::screen::composer("pi", &rows).is_some_and(|held| squash(&held) == ring);
+        if !only_ring || adapter.key.is_none() {
+            break;
+        }
+        adapter.run("key", &[("pane", pane), ("key", "Enter")])?;
+        std::thread::sleep(RING_POLL);
+        rows = read();
+    }
+    Ok(rows)
 }
 
 /// Empty pi's input box in `pane`, for `swarm clear-box`. With `dequeue`, M-Up first puts pi's
