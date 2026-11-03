@@ -7,7 +7,7 @@ use super::*;
 use crate::task;
 use std::path::{Path, PathBuf};
 
-pub const MAIN_READ_ONLY: &str = "swarm guard: main is read-only for agents. Run `swarm task start <name>`, edit in the worktree it prints, commit, then run `swarm task land`; so the call is blocked";
+pub const MAIN_READ_ONLY: &str = "swarm guard: main is read-only for agents. Run `swarm task start <name>`, edit and commit in the worktree it prints, then run `swarm task land <name>`; so the call is blocked";
 
 /// Git subcommands that change a worktree, its index, or its branch.
 const GIT_WRITES: [&str; 18] = [
@@ -310,6 +310,7 @@ fn shell_writes_main(cwd: &Path, text: &str) -> bool {
     if in_hub && text.to_ascii_lowercase().contains("core.hookspath") {
         return true;
     }
+    let mut cwd = cwd.to_path_buf();
     for command in commands(text) {
         // Redirect targets, wherever they sit in the command.
         let mut words = Vec::new();
@@ -319,7 +320,7 @@ fn shell_writes_main(cwd: &Path, text: &str) -> bool {
                 Token::Out => {
                     if let Some(Token::Word(target)) = tokens.next()
                         && !target.starts_with("/dev/")
-                        && guarded(cwd, target)
+                        && guarded(&cwd, target)
                     {
                         return true;
                     }
@@ -340,8 +341,15 @@ fn shell_writes_main(cwd: &Path, text: &str) -> bool {
             continue;
         };
         let program = base(program);
+        // `cd <dir> && …` moves the rest of the call; `cd` with no folder or `-` is not followed.
+        if program == "cd" {
+            if let Some(dir) = args.iter().find(|arg| !arg.starts_with('-')) {
+                cwd = task::resolve(&cwd, Path::new(dir));
+            }
+            continue;
+        }
         if program == "git" {
-            if git_writes_main(cwd, args) {
+            if git_writes_main(&cwd, args) {
                 return true;
             }
             continue;
@@ -377,7 +385,7 @@ fn shell_writes_main(cwd: &Path, text: &str) -> bool {
         } else {
             Vec::new()
         };
-        if targets.iter().any(|target| guarded(cwd, target)) {
+        if targets.iter().any(|target| guarded(&cwd, target)) {
             return true;
         }
     }
@@ -491,6 +499,11 @@ mod tests {
                 main.as_ref(),
             ),
             ("Bash", bash("wt merge"), task.as_ref()),
+            (
+                "Bash",
+                bash(&format!("cd {main} && echo x >> a.txt")),
+                task.as_ref(),
+            ),
         ] {
             assert_eq!(
                 claude(tool, input.clone(), cwd),
@@ -525,6 +538,13 @@ mod tests {
                 "Bash",
                 bash("git commit -qam fix && swarm task land"),
                 task.as_ref(),
+            ),
+            (
+                "Bash",
+                bash(&format!(
+                    "cd {task} && printf 'x' >> a.txt && git commit -qam x"
+                )),
+                main.as_ref(),
             ),
         ] {
             assert_eq!(
