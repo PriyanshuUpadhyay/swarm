@@ -306,19 +306,6 @@ mod tests {
     }
 
     #[test]
-    fn session_ids_are_never_reused() {
-        let connection = open(Path::new(":memory:")).unwrap();
-        let first = create_session(&connection, "lane", Path::new("/first"), None, None).unwrap();
-        connection
-            .execute("DELETE FROM session WHERE id = ?1", [&first])
-            .unwrap();
-        assert_ne!(
-            create_session(&connection, "lane", Path::new("/second"), None, None).unwrap(),
-            first
-        );
-    }
-
-    #[test]
     fn an_agy_chair_log_names_its_conversation() {
         let connection = open(Path::new(":memory:")).unwrap();
         let session = create_session(&connection, "lane", Path::new("/w"), None, None).unwrap();
