@@ -140,6 +140,8 @@ impl Hub {
             // Main's HEAD and index live here; a write there can take main off the default branch.
             || common("worktrees")
             || common("HEAD")
+            // `default_branch` reads these; a write there points the hub at another branch.
+            || common("refs/remotes/origin/HEAD")
             || common("hooks")
             || common("config")
     }
@@ -384,8 +386,7 @@ fn task_here(root: &Path, cwd: &Path) -> Result<(Hub, Task), String> {
     Ok((hub, task))
 }
 
-/// The task that `name` (`fix-x` or `swarm/fix-x`) names in the hub of `cwd`, or, with no name,
-/// the task worktree that holds `cwd`. A name lets an agent act from main without `cd`.
+/// The branch of a task name: `fix-x` and `swarm/fix-x` both give `swarm/fix-x`.
 fn branch_name(name: &str) -> String {
     if name.starts_with(PREFIX) {
         name.to_string()
@@ -394,6 +395,8 @@ fn branch_name(name: &str) -> String {
     }
 }
 
+/// The task that `name` names in the hub of `cwd`, or, with no name, the task worktree that holds
+/// `cwd`. A name lets an agent act from main without `cd`.
 fn find_task(root: &Path, cwd: &Path, name: Option<&str>) -> Result<(Hub, Task), String> {
     let Some(name) = name else {
         return task_here(root, cwd);

@@ -64,6 +64,8 @@ pub(super) fn commands(text: &str) -> Vec<Vec<Token>> {
                     double = true;
                     started = true;
                 }
+                // A backslash before a newline joins the lines, as the shell does.
+                '\\' if chars.get(i + 1) == Some(&'\n') => i += 1,
                 '\\' if i + 1 < chars.len() => {
                     i += 1;
                     word.push(chars[i]);

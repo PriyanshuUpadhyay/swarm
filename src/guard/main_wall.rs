@@ -344,6 +344,14 @@ fn git_writes_main(hubs: &Hubs, cwd: &Path, args: &[&str]) -> bool {
     let has = |flags: &[&str]| sub_args.iter().any(|arg| flags.contains(arg));
     match *sub {
         "update-ref" => first_plain.is_some_and(names_default),
+        // Setting the hub's or main's HEAD changes which branch is the default; a task worktree's
+        // HEAD is its own.
+        "symbolic-ref" => {
+            let here = task::resolve(&dir, Path::new("."));
+            (here.starts_with(&hub.main) || here.starts_with(&hub.common))
+                && sub_args.iter().filter(|arg| !arg.starts_with('-')).count() > 1
+        }
+        "remote" => sub_args.first() == Some(&"set-head"),
         "push" | "fetch" => sub_args.contains(&".") && sub_args.iter().any(names_default),
         // A rename or a delete changes the default branch when it names it anywhere.
         "branch" if has(&["-M", "-m", "-D", "-d", "--delete", "--move"]) => {
