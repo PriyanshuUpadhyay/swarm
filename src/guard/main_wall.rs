@@ -224,6 +224,16 @@ fn shell_writes_main(hubs: &Hubs, cwd: &Path, text: &str) -> bool {
             }
             continue;
         }
+        // `bash -c '<script>'` and `sh -lc …`: the script is shell text too.
+        if ["bash", "sh", "zsh", "dash"].contains(&program)
+            && let Some(at) = args
+                .iter()
+                .position(|arg| arg.starts_with('-') && !arg.starts_with("--") && arg.contains('c'))
+            && let Some(script) = args.get(at + 1)
+            && shell_writes_main(hubs, &cwd, script)
+        {
+            return true;
+        }
         if program == "git" {
             if git_writes_main(hubs, &cwd, args) {
                 return true;
@@ -325,7 +335,19 @@ fn git_writes_main(hubs: &Hubs, cwd: &Path, args: &[&str]) -> bool {
                 dir = task::resolve(&dir, Path::new(path));
                 rest = tail;
             }
-            "-c" | "--git-dir" | "--work-tree" | "--namespace" => {
+            // The work tree a git write changes is the one `--work-tree` names.
+            "--work-tree" => {
+                let Some((path, tail)) = tail.split_first() else {
+                    return false;
+                };
+                dir = task::resolve(&dir, Path::new(path));
+                rest = tail;
+            }
+            option if option.starts_with("--work-tree=") => {
+                dir = task::resolve(&dir, Path::new(&option["--work-tree=".len()..]));
+                rest = tail;
+            }
+            "-c" | "--git-dir" | "--namespace" => {
                 rest = tail.get(1..).unwrap_or_default();
             }
             option if option.starts_with('-') => rest = tail,

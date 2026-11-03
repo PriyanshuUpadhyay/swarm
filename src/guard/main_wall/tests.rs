@@ -80,6 +80,12 @@ fn writes_into_main_are_denied_and_writes_elsewhere_pass() {
             bash(&format!("git worktree remove {main}")),
             task.as_ref(),
         ),
+        ("Bash", bash("bash -lc 'rm a.txt'"), main.as_ref()),
+        (
+            "Bash",
+            bash(&format!("git --work-tree={main} checkout -- .")),
+            task.as_ref(),
+        ),
         (
             "Bash",
             bash(&format!("git -C {common} symbolic-ref HEAD refs/heads/zzz")),
