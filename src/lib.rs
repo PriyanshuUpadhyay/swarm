@@ -16,5 +16,6 @@ pub mod profiles;
 pub mod providers;
 pub mod screen;
 pub mod store;
+pub mod task;
 pub mod usage;
 pub mod view;
