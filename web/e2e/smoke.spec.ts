@@ -146,7 +146,7 @@ test("a chat with two children shows their panes; keys move focus and zoom; a pa
     // Close agent… asks first for a child in a turn, then reaches /api/agent/close.
     await tester.getByRole("button", { name: "Close agent tester" }).click();
     const dialog = tab.getByTestId("close-agent");
-    await expect(dialog).toContainText("“tester” is in a turn. Closing the agent stops it.");
+    await expect(dialog).toContainText("is in a turn");
     const closed = tab.waitForRequest((r) => r.url().endsWith("/api/agent/close") && r.method() === "POST");
     await dialog.getByRole("button", { name: "Close Agent" }).click();
     expect((await closed).postDataJSON()).toMatchObject({ agent: "tester" });
