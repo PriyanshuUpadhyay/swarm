@@ -30,7 +30,7 @@ mod cases {
             ),
         )
         .unwrap();
-        type_text(&connection, &adapter, &session, CODER, "%2", "hi").unwrap();
+        type_text(&connection, &adapter, &dir, &session, CODER, "%2", "hi").unwrap();
         assert_eq!(
             std::fs::read_to_string(dir.join("log")).unwrap(),
             "read\nread\nread\nread\nring\nread\nEnter\nread\n"
@@ -38,7 +38,7 @@ mod cases {
         // A pi that drew its box before the send takes the text and its Enter, so no read follows.
         std::fs::remove_file(dir.join("log")).unwrap();
         std::fs::copy(dir.join("empty"), dir.join("screen")).unwrap();
-        type_text(&connection, &adapter, &session, CODER, "%2", "hi").unwrap();
+        type_text(&connection, &adapter, &dir, &session, CODER, "%2", "hi").unwrap();
         assert_eq!(
             std::fs::read_to_string(dir.join("log")).unwrap(),
             "read\nread\nring\n"
@@ -46,7 +46,8 @@ mod cases {
         // pi puts queued text back in its box on a stop, and a send would join it.
         std::fs::remove_file(dir.join("log")).unwrap();
         std::fs::write(dir.join("screen"), box_rows("steer four")).unwrap();
-        let refused = type_text(&connection, &adapter, &session, CODER, "%2", "hi").unwrap_err();
+        let refused =
+            type_text(&connection, &adapter, &dir, &session, CODER, "%2", "hi").unwrap_err();
         assert!(
             refused.to_string().contains("input box holds text"),
             "{refused}"
@@ -55,13 +56,23 @@ mod cases {
             std::fs::read_to_string(dir.join("log")).unwrap(),
             "read\nread\n"
         );
+        // A ring that pi kept unsent is swarm's own text, so Enter sends it and the text follows.
+        std::fs::remove_file(dir.join("log")).unwrap();
+        std::fs::write(dir.join("screen"), box_rows(&ring_text(&dir))).unwrap();
+        type_text(&connection, &adapter, &dir, &session, CODER, "%2", "hi").unwrap();
+        assert_eq!(
+            std::fs::read_to_string(dir.join("log")).unwrap(),
+            "read\nread\nEnter\nread\nring\n"
+        );
         // pi's folder trust screen is a question, so typed text and its Enter would pick a choice.
+        std::fs::remove_file(dir.join("log")).unwrap();
         std::fs::write(
             dir.join("screen"),
             include_str!("../../../tests/fixtures/screens/pi-trust.txt"),
         )
         .unwrap();
-        let refused = type_text(&connection, &adapter, &session, CODER, "%2", "hi").unwrap_err();
+        let refused =
+            type_text(&connection, &adapter, &dir, &session, CODER, "%2", "hi").unwrap_err();
         assert!(
             refused.to_string().contains("shows a question"),
             "{refused}"

@@ -198,6 +198,15 @@ pub(crate) fn settle_rings(
             None => (String::new(), Some(String::new())),
         };
         let held = provider.is_some_and(|provider| swarm::screen::holds(provider, &rows, &text));
+        // A listing ring presses Enter once, and a CLI that reads it as part of a paste keeps
+        // the ring unsent, so each pass presses Enter again until the ring's deadline settles it.
+        if held
+            && adapter.key.is_some()
+            && let Some(pane) = swarm::store::pane_of(connection, session_id, &agent)?
+            && let Err(error) = adapter.run("key", &[("pane", &pane), ("key", "Enter")])
+        {
+            eprintln!("swarm: ring Enter failed: {error}");
+        }
         let proven = (!held)
             .then(|| {
                 ring_proof(
