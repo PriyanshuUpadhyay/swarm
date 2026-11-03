@@ -31,6 +31,12 @@ pub fn codex_composer(rows: &str) -> Option<String> {
     Some(text.join(" ").trim_start_matches('›').trim().to_string())
 }
 
+/// True when Codex draws its input box and no question box holds the keys, so typed text and
+/// Enter reach the box.
+pub fn codex_input_ready(rows: &str) -> bool {
+    prompt(rows).is_none() && codex_composer(rows).is_some()
+}
+
 /// The text in pi's input box: the rows between the last two rules, joined. Pi draws its folder
 /// and model rows under the box, and while a turn runs the top rule reads `── ⠋ Working ──`.
 /// None until the box is drawn, and while a question such as pi's folder trust screen sits

@@ -34,15 +34,17 @@ impl ScreenState {
 }
 
 mod classify;
+mod codex_question;
 mod composer;
 mod live;
 mod log_prompt;
 mod prompt;
 
 pub use classify::{failure_detail, herdr_state, read_pane, screen_state};
+pub use codex_question::codex_reply;
 pub use composer::{
-    QueuedMessage, claude_composer, codex_composer, composer, holds, pi_composer, pi_queue, queue,
-    reads_composer,
+    QueuedMessage, claude_composer, codex_composer, codex_input_ready, composer, holds,
+    pi_composer, pi_queue, queue, reads_composer,
 };
 pub use live::turn_text;
 pub use log_prompt::agent_prompt;
