@@ -109,10 +109,29 @@ pub fn argv(
                     let root = format!("{swarm_home}/.swarm");
                     let root = std::fs::canonicalize(&root)
                         .map_or(root, |path| path.to_string_lossy().into_owned());
-                    let mut filesystem = format!(
-                        r#"":workspace_roots"={{".git"="write",".git/hooks"="read",".git/config"="read",".git/modules"="read",".codex"="read",".agents"="read"}},{}="write""#,
-                        quote(&root)
-                    );
+                    // ADR 0135: a chat in a hub's main worktree reads main and writes only its
+                    // `tmp/` and the task worktrees beside it, which Worktrunk makes there. The
+                    // workspace root must say `read` itself; a path entry for it does not win.
+                    let main = crate::task::hub(cwd)
+                        .filter(|hub| {
+                            hub.guards(&crate::task::resolve(cwd, std::path::Path::new(".")))
+                        })
+                        .map(|hub| hub.main);
+                    let roots = if main.is_some() {
+                        r#""."="read",".codex"="read",".agents"="read""#
+                    } else {
+                        r#"".git"="write",".git/hooks"="read",".git/config"="read",".git/modules"="read",".codex"="read",".agents"="read""#
+                    };
+                    let mut filesystem =
+                        format!(r#"":workspace_roots"={{{roots}}},{}="write""#, quote(&root));
+                    if let Some(main) = &main {
+                        let path = |path: &std::path::Path| quote(&path.to_string_lossy());
+                        filesystem += &format!(
+                            r#",{}="write",{}="write""#,
+                            path(main.parent().unwrap_or(main)),
+                            path(&main.join(crate::task::SCRATCH))
+                        );
+                    }
                     // A linked worktree keeps its git dir in the common dir, outside the workspace.
                     if let Some((git_dir, common)) = outside_git_dirs(cwd) {
                         filesystem += &format!(
@@ -123,8 +142,10 @@ pub fn argv(
                             quote(&format!("{common}/modules"))
                         );
                         if git_dir != common {
+                            // Main's own git dir holds its index and HEAD, so it is read-only too.
+                            let access = if main.is_some() { "read" } else { "write" };
                             filesystem += &format!(
-                                r#",{}="write",{}="read""#,
+                                r#",{}="{access}",{}="read""#,
                                 quote(&git_dir),
                                 quote(&format!("{git_dir}/config.worktree"))
                             );
