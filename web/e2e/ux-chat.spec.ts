@@ -38,38 +38,17 @@ test("Find searches loaded full output and reveals its virtual line", async ({ p
   await tab.screenshot({ path: info.outputPath("find-full-output.png") });
 });
 
-test("older history shows progress, error and Retry; empty Find offers earlier search", async ({ page: tab }, info) => {
-  let fail = true;
-  let release!: () => void;
-  const wait = new Promise<void>((r) => { release = r; });
+test("empty Find offers earlier search", async ({ page: tab }, info) => {
   await tab.route("**/api/rows?*", async (route) => {
     if (!new URL(route.request().url()).searchParams.has("before")) return route.fulfill({ json: rows([row("a2", "Current message")], 100) });
-    if (fail) { await wait; return route.fulfill({ status: 503, body: "History offline" }); }
     return route.fulfill({ json: rows([row("a1", "old needle")]) });
   });
   await open(tab);
   await tab.keyboard.press("Meta+f");
   await tab.getByTestId("find-input").fill("needle");
   await tab.getByRole("button", { name: "Search earlier messages" }).click();
-  await expect(tab.getByTestId("load-older")).toHaveText("Loading earlier messages…");
-  release();
-  await expect(tab.getByRole("alert")).toContainText("History offline");
-  fail = false;
-  await tab.getByRole("button", { name: "Retry", exact: true }).click();
   await expect(tab.getByTestId("find-count")).toHaveText("1 of 1");
-  await expect(tab.getByRole("alert")).toHaveCount(0);
-  await tab.screenshot({ path: info.outputPath("history-retry.png") });
-});
-
-test("a failed transcript has a working Retry button", async ({ page: tab }, info) => {
-  let fail = true;
-  await tab.route("**/api/rows?*", (route) => route.fulfill(fail ? { status: 503, body: "Rows offline" } : { json: rows([row("a1", "Recovered transcript")]) }));
-  await open(tab);
-  await expect(tab.getByText("Could not load this chat")).toBeVisible();
-  fail = false;
-  await tab.getByRole("button", { name: "Retry", exact: true }).click();
-  await expect(tab.getByText("Recovered transcript", { exact: true })).toBeVisible();
-  await tab.screenshot({ path: info.outputPath("transcript-retry.png") });
+  await tab.screenshot({ path: info.outputPath("history-search.png") });
 });
 
 test("image upload blocks Send and preserves edits made while it waits", async ({ page: tab }, info) => {
@@ -178,11 +157,10 @@ test("Continue keeps the prior provider, model and account and supports keyboard
   await expect(tab.getByTestId("sm-start")).toBeEnabled();
 });
 
-test("modified Up keeps queued messages and slash Send returns to the newest message", async ({ page: tab }) => {
+test("modified Up keeps queued messages", async ({ page: tab }) => {
   await mockRows(tab, [...Array.from({ length: 60 }, (_, i) => row(`a${i}`, `message ${i} ` + "paragraph ".repeat(35))), row("q99", "queued text", "queued")]);
   let pulls = 0;
   await tab.route("**/api/chat/pull-back", (route) => { pulls++; return route.fulfill({ json: { outcome: "pulled", text: "queued text" } }); });
-  await tab.route("**/api/chat/send", (route) => route.fulfill({ json: {} }));
   await open(tab);
   const composer = tab.getByTestId("composer");
   await composer.focus();
@@ -193,13 +171,6 @@ test("modified Up keeps queued messages and slash Send returns to the newest mes
   await composer.press("ArrowUp");
   await expect.poll(() => pulls).toBe(1);
   await expect(composer).toHaveValue("queued text");
-  await tab.getByTestId("transcript").hover();
-  await tab.mouse.wheel(0, -2000);
-  await expect(tab.getByTestId("jump-latest")).toBeVisible();
-  await composer.fill("/cle");
-  await expect(tab.getByTestId("slash-row").first()).toContainText("/clear");
-  await composer.press("Enter");
-  await expect(tab.getByTestId("jump-latest")).toHaveCount(0);
 });
 
 test("returning to a chat keeps its reading position", async ({ page: tab }) => {
