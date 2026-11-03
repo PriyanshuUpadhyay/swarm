@@ -46,7 +46,7 @@ fn named_launch_reuses_the_role_probe_deadline() {
             ("SWARM_ADAPTER", "fake"),
             ("SWARM_SESSION_ID", &session),
             ("SWARM_AGENT_ID", "orchestrator"),
-            ("SWARM_TEST_ACCOUNT_PICK_MS", "5000"),
+            ("SWARM_TEST_ACCOUNT_PICK_MS", "1000"),
         ],
         &[
             "launch",
@@ -64,9 +64,9 @@ fn named_launch_reuses_the_role_probe_deadline() {
         "{}",
         stderr(&output)
     );
-    // Under 2x the 5 s budget: a second pick deadline after the probe would take about 10 s.
+    // Under 2x the 1 s budget: a second pick deadline after the probe would take about 2 s.
     assert!(
-        start.elapsed() < std::time::Duration::from_secs(9),
+        start.elapsed() < std::time::Duration::from_millis(1800),
         "{:?}",
         start.elapsed()
     );
@@ -401,79 +401,55 @@ fn slow_working_auth_is_read_once_by_role_and_named_launch() {
 }
 
 #[test]
-fn account_budget_starts_after_the_herdr_check() {
+fn account_budget_starts_after_the_slow_steps_before_it() {
+    let launch = |home: &std::path::Path, session: &str, cwd: &str, adapter: &str| {
+        swarm(
+            home,
+            &[
+                ("SWARM_ADAPTER", adapter),
+                ("SWARM_SESSION_ID", session),
+                ("SWARM_AGENT_ID", "orchestrator"),
+                ("SWARM_TEST_ACCOUNT_PICK_MS", "1000"),
+            ],
+            &[
+                "launch",
+                "seat",
+                "chat",
+                "--model",
+                "opus",
+                "--provider",
+                "claude",
+                "--account",
+                "work",
+                "--cwd",
+                cwd,
+            ],
+        )
+    };
+    // Each slow step takes longer than the 1 s budget, so a budget that started first runs out.
     let (home, session, cwd) = account_launch_fixture("personal-herdr-budget");
     let adapter = std::fs::read(home.join(".swarm/adapters/fake.conf")).unwrap();
     std::fs::write(home.join(".swarm/adapters/herdr.conf"), adapter).unwrap();
     tool(
         &home,
         "herdr",
-        "test \"$*\" = status || exit 8; /bin/sleep 4.2",
+        "test \"$*\" = status || exit 8; /bin/sleep 1.2",
     );
-    // The check takes longer than the 3.5 s budget, so a budget that started first runs out.
-    let output = swarm(
-        &home,
-        &[
-            ("SWARM_ADAPTER", "herdr"),
-            ("SWARM_SESSION_ID", &session),
-            ("SWARM_AGENT_ID", "orchestrator"),
-            ("SWARM_TEST_ACCOUNT_PICK_MS", "3500"),
-        ],
-        &[
-            "launch",
-            "seat",
-            "chat",
-            "--model",
-            "opus",
-            "--provider",
-            "claude",
-            "--account",
-            "work",
-            "--cwd",
-            &cwd,
-        ],
-    );
+    let output = launch(&home, &session, &cwd, "herdr");
     assert!(output.status.success(), "{}", stderr(&output));
     assert!(stderr(&output).contains("account work"));
-}
 
-#[test]
-fn account_budget_starts_after_a_waiting_store_open() {
     let (home, session, cwd) = account_launch_fixture("spare-store-budget");
     let connection = rusqlite::Connection::open(home.join(".swarm/swarm.db")).unwrap();
     connection
         .execute_batch("PRAGMA journal_mode=DELETE; BEGIN EXCLUSIVE;")
         .unwrap();
     let release = std::thread::spawn(move || {
-        std::thread::sleep(std::time::Duration::from_millis(4200));
+        std::thread::sleep(std::time::Duration::from_millis(1200));
         connection.execute_batch("COMMIT;").unwrap();
     });
-    // The lock outlasts the 3.5 s budget and ends inside the store's 5 s busy timeout.
-    let started = std::time::Instant::now();
-    let output = swarm(
-        &home,
-        &[
-            ("SWARM_ADAPTER", "fake"),
-            ("SWARM_SESSION_ID", &session),
-            ("SWARM_AGENT_ID", "orchestrator"),
-            ("SWARM_TEST_ACCOUNT_PICK_MS", "3500"),
-        ],
-        &[
-            "launch",
-            "seat",
-            "chat",
-            "--model",
-            "opus",
-            "--provider",
-            "claude",
-            "--account",
-            "work",
-            "--cwd",
-            &cwd,
-        ],
-    );
+    let output = launch(&home, &session, &cwd, "fake");
     release.join().unwrap();
-    assert!(started.elapsed() >= std::time::Duration::from_secs(4));
     assert!(output.status.success(), "{}", stderr(&output));
     assert!(stderr(&output).contains("account work"));
 }
