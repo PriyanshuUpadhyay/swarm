@@ -793,7 +793,7 @@ dependencies = [
 
 [[package]]
 name = "swarm"
-version = "0.0.57"
+version = "0.0.58"
 dependencies = [
  "axum",
  "libc",
