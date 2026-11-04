@@ -148,7 +148,7 @@ AGY has no account source yet.
 
 ### Bundled workflow skills
 
-The plugin `swarm` holds three skills in `skills/kit/skills/`, the verb presets in
+The plugin `swarm` holds four skills in `skills/kit/skills/`, the verb presets in
 `skills/kit/presets/`, and the blocks in `skills/kit/blocks/`. `swarm` is the one workflow skill: it
 matches the task to a preset, or plans from the blocks with no preset. A block is never called by
 itself; the `swarm` skill puts blocks into the steps of a run. Claude Code shows a skill as `/swarm:<name>`, pi
@@ -164,6 +164,7 @@ as `/skill:<name>`.
 | `build` | Pictures, films, and sites drawn by code |
 | `explain` | Explain a subject with one running example |
 | `swarm-orchestrator`, `swarm-voice` (skills) | The parent and child sides of a swarm session |
+| `skill-eval` (skill) | Test whether a skill helps, with a cold name check and blind runs with and without it (ADR 0136) |
 
 `skills/kit/README.md` lists the removed skill names and what to type now.
 
