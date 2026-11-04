@@ -1,0 +1,1 @@
+{"page":{"start_offset":0,"end_offset":214},"rows":[{"id":"toolu-num:call@raw-0-0","kind":"toolUse","text":"Read","detail":"{\"n\":1.8446744073709552e+19}","tool":{"name":"Read","input":{"n":1.8446744073709552e+19},"state":"waiting","header_title":""},"tool_status":"pending","source_ids":["raw-0-0"],"order":[0,0]}],"usage":null,"remove":[]}

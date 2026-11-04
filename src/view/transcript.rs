@@ -4,9 +4,12 @@ use serde::Serialize;
 use serde_json::Value;
 
 mod events;
+mod normalize;
 mod records;
 mod shell;
+pub mod source;
 mod state;
+pub mod worker_protocol;
 
 pub use events::row;
 pub use records::Record;

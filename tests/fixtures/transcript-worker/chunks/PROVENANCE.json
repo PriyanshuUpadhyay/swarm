@@ -1,0 +1,21 @@
+{
+ "source.jsonl": {
+  "origin": "derived Claude fixture: literal UTF-8/emoji, 2 complete CRLF lines, 1 unterminated valid-JSON fragment (unit01/chunks/scripts/old_capture.py)",
+  "sha256": "0d0b68f7d0a6a586892215f82f2313f792c1b9d7f44424ee519e396b425851bb",
+  "bytes": 162
+ },
+ "expected.json": {
+  "origin": "OLD native stdout of the source and of its complete-line prefix (prefix sha256 0b3a9db3bf3fc67c838bd6f094093ae3e9e6f2c22b1cd6644d4821f807034ee1), twice equal; positions from OLD --tail page markers; read/complete ends from the ABI",
+  "old_exe_sha256": "15a293ed34f8aa05579eecb0e83e981760fa8c5b00fd92ec71e739c2c6c66535",
+  "old_stdout_sha256": {
+   "source.full": "69eb33e2d19d1a56c1a69afeaed0fed2d367c788f732a41f4cd06f4beb87aee0",
+   "source.tail1": "3ab407d6fb3ec114c336f2a74a1b8dfb9d51c90a4a6bb450517f4eb20aeb3c31",
+   "source.tail2": "150cd9eb430cdb6f7725ab3117c591a12e39a6e2b46e110b208d0068c6f5b135",
+   "prefix.full": "bea2c8be287363706018e8107cb9550be48357815e6772719fe71e1694c934af",
+   "prefix.tail1": "710a0464dd8d5f6adcd18bfaa5c96c71eadeea9ab8721b5ccdc2a84737d653f2",
+   "prefix.tail2": "6151a29bb4e31fb8fcb17c99c1791f1fa7917ecebd4b8745c25c2450a844a430"
+  },
+  "sha256": "284ea96e5bccc89d3d329b2c36eadb2ebea09ded8a62e2050da1bc2f0f336d73"
+ },
+ "capture": "tmp/flow/<run>/unit01/chunks/old/capture.json"
+}

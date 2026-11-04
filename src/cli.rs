@@ -49,7 +49,20 @@ mod delivery;
 pub(crate) use delivery::*;
 
 mod dispatch;
-pub(crate) use dispatch::*;
+mod transcript_worker;
+
+pub(crate) fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    if let [command, rest @ ..] = args
+        && command == "_transcript-worker"
+    {
+        let status = transcript_worker::run(rest);
+        if status != 0 {
+            std::process::exit(status);
+        }
+        return Ok(());
+    }
+    dispatch::run(args)
+}
 
 mod doctor;
 pub(crate) use doctor::*;
