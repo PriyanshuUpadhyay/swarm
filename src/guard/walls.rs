@@ -42,9 +42,10 @@ pub fn inbox_wait(provider: Provider, event: &str, payload: &str) -> Option<Verd
     (sleeps && reads).then(|| Verdict::Deny(INBOX_WAIT.into()))
 }
 
-/// Swarm's pi extension ends the turn on a reason that starts with "swarm guard: end your turn".
-pub const INBOX_WAIT: &str = "swarm guard: end your turn now. Each reply starts your next turn as \
-     the prompt `swarm: new message`, so the call is blocked";
+/// The whole call is blocked, so the reason tells the agent to run the rest again without the wait.
+pub const INBOX_WAIT: &str = "swarm guard: this call did not run. If you are trying to do something, \
+     do it again without sleeping. You cannot wait on the swarm inbox or agent state, because the \
+     agents will ping you: each reply starts your next turn as the prompt `swarm: new message`.";
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -75,10 +76,6 @@ mod tests {
         ] {
             assert_eq!(call(passes), None, "{passes}");
         }
-        assert!(crate::bus::PI_LIVE_EXTENSION.contains(&format!(
-            "startsWith(\"{}\")",
-            &INBOX_WAIT[..INBOX_WAIT.find(" now").unwrap()]
-        )));
         // Codex sends the command as an argument list.
         let codex = r#"{"tool_name":"shell","tool_input":{"command":["bash","-lc","sleep 240; swarm inbox"]}}"#;
         assert!(matches!(

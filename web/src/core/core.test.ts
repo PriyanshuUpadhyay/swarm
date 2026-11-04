@@ -233,7 +233,33 @@ describe("diffs in plain text", () => {
     const unified = html.slice(0, html.indexOf('<div class="split">'));
     expect(unified.match(/<td class="d2h-del/g)).toHaveLength(3);
     expect(unified.match(/<td class="d2h-ins/g)).toHaveLength(1);
-    expect(unified).toContain("@@ -9,1 +9,1 @@");
+    expect(unified).toContain("@@ -9,1 +9,0 @@");
+  });
+
+  it("counts an agent's hunks again, so a too-big count does not swallow the next file", () => {
+    // From a real chair reply: the first hunk says 7 lines but has 3, and the second file has a
+    // change line before its first `@@` and then a bare `@@`.
+    const patch = [
+      "--- a.ts",
+      "+++ a.ts",
+      "@@ -102,7 +102,7 @@",
+      " export function make(",
+      "-    old: A,",
+      "+    old: B,",
+      "--- b.ts",
+      "+++ b.ts",
+      '-import type { A } from "x";',
+      "@@",
+      "-    const a = {} as A;",
+      "+    const a = { b: 1 };",
+    ].join("\n");
+    const html = renderMarkdown("```diff\n" + patch + "\n```");
+    const unified = html.slice(0, html.indexOf('<div class="split">'));
+    expect([...unified.matchAll(/class="d2h-file-name"[^>]*>([^<]*)</g)].map((m) => m[1])).toEqual(["a.ts", "b.ts"]);
+    expect(unified).toContain("@@ -102,2 +102,2 @@");
+    expect(unified).toContain("@@ -1,1 +1,0 @@");
+    expect(unified).toContain("@@ -2,1 +1,1 @@");
+    expect(unified).not.toContain("+++ b.ts</span>");
   });
 });
 

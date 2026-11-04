@@ -12,13 +12,67 @@ const esc = new MarkdownIt().utils.escapeHtml;
 const head = (label: string, what: string) =>
   `<div class="md-head"><span>${esc(label)}</span><button type="button" data-copy="${what}" aria-label="Copy ${what}">Copy</button></div>`;
 
+/** An agent's hand-written patch with each hunk header counted again from the hunk's own lines.
+ *  diff2html reads as many lines as a header says, so a count that is too big takes in the next
+ *  file's `---`/`+++` header. A hunk ends at the next `@@`, at a `---`/`+++` pair, or at
+ *  `diff --git`. A bare `@@`, or a change line before any `@@`, opens a hunk that goes on from the
+ *  numbers of the hunk before it in the same file. */
+function recountHunks(patch: string): string {
+  const lines = patch.replace(/\n$/, "").split("\n");
+  const out: string[] = [];
+  let head = -1;
+  let from = 1;
+  let to = 1;
+  let olds = 0;
+  let news = 0;
+  let title = "";
+  const close = () => {
+    if (head >= 0) out[head] = `@@ -${from},${olds} +${to},${news} @@${title}`;
+    head = -1;
+  };
+  const open = (oldStart: number, newStart: number, text: string) => {
+    close();
+    [from, to, olds, news, title, head] = [oldStart, newStart, 0, 0, text, out.length];
+    out.push("");
+  };
+  lines.forEach((line, i) => {
+    if ((line.startsWith("--- ") && lines[i + 1]?.startsWith("+++ ")) || line.startsWith("diff --git")) {
+      close();
+      [from, to, olds, news] = [1, 1, 0, 0];
+      out.push(line);
+      return;
+    }
+    const hunk = /^@@(?: -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@(.*))?/.exec(line);
+    if (hunk) {
+      open(hunk[1] ? Number(hunk[1]) : from + olds, hunk[2] ? Number(hunk[2]) : to + news, hunk[3] ?? "");
+      return;
+    }
+    if (head < 0) {
+      if (line.startsWith("+++ ") || !/^[-+]/.test(line)) {
+        out.push(line);
+        return;
+      }
+      open(from + olds, to + news, "");
+    }
+    out.push(line);
+    if (line.startsWith("-")) olds++;
+    else if (line.startsWith("+")) news++;
+    else if (!line.startsWith("\\")) {
+      olds++;
+      news++;
+    }
+  });
+  close();
+  return out.join("\n");
+}
+
 /** A diff fence with hunks, rendered by diff2html in both layouts. CSS shows the layout that the
- *  `data-diff-split` attribute on <html> picks. Agents often write hunks with wrong counts or with
- *  no `---`/`+++` header. diff2html still reads wrong counts, but it drops a hunk that has no file
- *  header, so a bare fence gets a placeholder header, which CSS hides. */
+ *  `data-diff-split` attribute on <html> picks. diff2html drops a hunk that has no file header,
+ *  so a bare fence gets a placeholder header, which CSS hides. */
 function diffFence(lang: string, patch: string): string {
-  const headed = /^--- /m.test(patch.slice(0, patch.search(/^@@ /m)));
-  const src = headed ? patch : `--- a/patch\n+++ b/patch\n${patch}`;
+  const counted = recountHunks(patch);
+  const headed = /^--- /m.test(counted.slice(0, counted.search(/^@@ /m)));
+  const src = headed ? counted : `--- a/patch\n+++ b/patch\n${counted}`;
   const layout = (outputFormat: "line-by-line" | "side-by-side") => diffHtml(src, { drawFileList: false, outputFormat });
   const seg =
     '<div class="seg" role="group" aria-label="Diff layout"><button type="button" data-diff-layout="0">Unified</button><button type="button" data-diff-layout="1">Split</button></div>';
