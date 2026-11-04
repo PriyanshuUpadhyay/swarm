@@ -5,6 +5,7 @@
 use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::process::{Child, ChildStdin, Command, Stdio};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
@@ -17,6 +18,31 @@ pub(super) const WORK_MS: u64 = 500;
 const WAIT: Duration = Duration::from_millis(900);
 const EXIT_POLLS: u32 = 180;
 const EXIT_POLL_STEP: Duration = Duration::from_millis(5);
+
+// Tests of one binary run in parallel inside one process, so the process id alone does not name a root.
+static SCRATCH_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+// A fixed bound on name attempts: a leftover root of an older process can take a name, never the same
+// name twice in one process.
+const SCRATCH_ATTEMPTS: u32 = 64;
+
+/// Creates a private scratch root that this worker alone owns: the name is the process id plus a
+/// process-wide counter, and creation is exclusive, so two workers can never share a root and
+/// `Drop` removes only the root its own worker created.
+fn create_scratch() -> PathBuf {
+    for _ in 0..SCRATCH_ATTEMPTS {
+        let sequence = SCRATCH_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        let scratch = std::env::temp_dir().join(format!(
+            "swarm-transcript-readers-{}-{sequence}",
+            std::process::id()
+        ));
+        match std::fs::create_dir(&scratch) {
+            Ok(()) => return scratch,
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => panic!("scratch root {}: {error}", scratch.display()),
+        }
+    }
+    panic!("no free scratch root name after {SCRATCH_ATTEMPTS} attempts");
+}
 
 type Frames = Receiver<Result<Option<Vec<u8>>, String>>;
 
@@ -34,14 +60,7 @@ impl Worker {
     /// Starts the executable with an empty environment and a private HOME, so no live state,
     /// store or app can be touched. Both pipes are drained for the whole life of the child.
     pub(super) fn start() -> Worker {
-        let scratch = std::env::temp_dir().join(format!(
-            "swarm-transcript-readers-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_nanos())
-                .unwrap_or(0)
-        ));
+        let scratch = create_scratch();
         let home = scratch.join("home");
         std::fs::create_dir_all(&home).expect("scratch home");
         let mut child = Command::new(env!("CARGO_BIN_EXE_swarm"))
