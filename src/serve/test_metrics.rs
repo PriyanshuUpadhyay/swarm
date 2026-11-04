@@ -46,7 +46,7 @@ pub(super) fn live_soak(keys: usize, tools_only: bool) {
             let event = synthetic_event(index, tools_only);
             let timer = std::time::Instant::now();
             state.ingest(index as u64, index as u64 + 1, &[event]);
-            let frame = state.delta("chat");
+            let frame = row_frame("chat", state.delta());
             let elapsed = timer.elapsed().as_nanos();
             if (1000..2000).contains(&index) {
                 start_times.push(elapsed);
@@ -57,7 +57,7 @@ pub(super) fn live_soak(keys: usize, tools_only: bool) {
                 end_bytes.push(frame.data.len() as u128);
             }
             if index % 4 == 3 {
-                let idle = state.delta("chat");
+                let idle = row_frame("chat", state.delta());
                 let payload: Value = serde_json::from_str(&idle.data).unwrap();
                 assert_eq!(payload["upsert"], json!([]));
             }
@@ -89,7 +89,7 @@ pub(super) fn live_soak(keys: usize, tools_only: bool) {
             30_001,
             &[json!({"type":"turn_ended","reason":"completed"})],
         );
-        let frame = state.delta("chat");
+        let frame = row_frame("chat", state.delta());
         println!(
             "turn_ended_ms={} frame_bytes={} retained_heap_bytes={} records={}",
             timer.elapsed().as_secs_f64() * 1000.,

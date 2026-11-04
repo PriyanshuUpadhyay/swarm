@@ -1,0 +1,143 @@
+{
+ "0-245": {
+  "end_byte": 245,
+  "events": [
+   {
+    "meta": {
+     "parent_uuid": null,
+     "session_id": "s1",
+     "source_tool_use_id": null,
+     "timestamp": "2026-09-27T08:30:00.000Z",
+     "uuid": "u-prompt"
+    },
+    "text": "Check the worker inbox and fix the failing build.",
+    "type": "user_message_chunk"
+   }
+  ],
+  "start_byte": 0,
+  "terminated": true
+ },
+ "1050-1353": {
+  "end_byte": 1353,
+  "events": [
+   {
+    "kind": "model",
+    "meta": {
+     "parent_uuid": "u-build",
+     "session_id": "s1",
+     "source_tool_use_id": null,
+     "timestamp": "2026-09-27T08:30:10.000Z",
+     "uuid": "a-3"
+    },
+    "type": "session_info",
+    "value": "claude-opus-4-6"
+   },
+   {
+    "input": {
+     "file_path": "/workspace/ui/Makefile",
+     "limit": 20,
+     "offset": 1
+    },
+    "meta": {
+     "parent_uuid": "u-build",
+     "session_id": "s1",
+     "source_tool_use_id": null,
+     "timestamp": "2026-09-27T08:30:10.000Z",
+     "uuid": "a-3"
+    },
+    "name": "Read",
+    "status": "pending",
+    "tool_call_id": "toolu-read",
+    "type": "tool_call"
+   }
+  ],
+  "start_byte": 1050,
+  "terminated": true
+ },
+ "245-485": {
+  "end_byte": 485,
+  "events": [
+   {
+    "kind": "model",
+    "meta": {
+     "parent_uuid": "u-prompt",
+     "session_id": "s1",
+     "source_tool_use_id": null,
+     "timestamp": "2026-09-27T08:30:02.000Z",
+     "uuid": "a-1"
+    },
+    "type": "session_info",
+    "value": "claude-opus-4-6"
+   },
+   {
+    "meta": {
+     "parent_uuid": "u-prompt",
+     "session_id": "s1",
+     "source_tool_use_id": null,
+     "timestamp": "2026-09-27T08:30:02.000Z",
+     "uuid": "a-1"
+    },
+    "text": "I will look at the build first.",
+    "type": "agent_message_chunk"
+   }
+  ],
+  "start_byte": 245,
+  "terminated": true
+ },
+ "485-792": {
+  "end_byte": 792,
+  "events": [
+   {
+    "kind": "model",
+    "meta": {
+     "parent_uuid": "a-1",
+     "session_id": "s1",
+     "source_tool_use_id": null,
+     "timestamp": "2026-09-27T08:30:03.000Z",
+     "uuid": "a-2"
+    },
+    "type": "session_info",
+    "value": "claude-opus-4-6"
+   },
+   {
+    "input": {
+     "command": "make -C ui build",
+     "description": "Build the UI package"
+    },
+    "meta": {
+     "parent_uuid": "a-1",
+     "session_id": "s1",
+     "source_tool_use_id": null,
+     "timestamp": "2026-09-27T08:30:03.000Z",
+     "uuid": "a-2"
+    },
+    "name": "Bash",
+    "status": "pending",
+    "tool_call_id": "toolu-build",
+    "type": "tool_call"
+   }
+  ],
+  "start_byte": 485,
+  "terminated": true
+ },
+ "792-1050": {
+  "end_byte": 1050,
+  "events": [
+   {
+    "content": "Exit code 1\nerror: missing file",
+    "meta": {
+     "parent_uuid": "a-2",
+     "session_id": "s1",
+     "source_tool_use_id": null,
+     "timestamp": "2026-09-27T08:30:09.000Z",
+     "uuid": "u-build"
+    },
+    "status": "failed",
+    "tool_call_id": "toolu-build",
+    "type": "tool_call_update"
+   }
+  ],
+  "start_byte": 792,
+  "terminated": true
+ }
+}

@@ -5,9 +5,12 @@ use serde_json::Value;
 
 mod events;
 mod normalize;
+pub mod reader_rows;
 mod records;
 mod shell;
 pub mod source;
+pub mod source_follow;
+pub mod source_readers;
 mod state;
 pub mod worker_protocol;
 

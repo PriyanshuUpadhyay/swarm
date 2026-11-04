@@ -1,10 +1,11 @@
 //! Runs the private snapshot worker over framed standard input and output.
 
 use std::fs::File;
-use std::io::{self, Read, Seek, SeekFrom, Write};
+use std::io::{self, Read, Write};
 use std::path::Path;
 use std::time::{Duration, Instant};
-use swarm::view::transcript::source::{EndPolicy, SnapshotError, SnapshotReader, SourceMeta, Work};
+use swarm::view::transcript::source::{EndPolicy, SnapshotError, SourceMeta, Work};
+use swarm::view::transcript::source_follow::{SourceError, SourceFollow};
 use swarm::view::transcript::worker_protocol::{
     Binding, FaultCode, MAX_FRAME_BYTES, MAX_PART_BYTES, MAX_SOURCE_ID_BYTES, PROTOCOL, Reply,
     Request,
@@ -41,7 +42,7 @@ impl Work for Budget {
 }
 
 struct Source {
-    file: File,
+    follow: SourceFollow,
     binding: Binding,
 }
 
@@ -131,6 +132,26 @@ fn serve(input: &mut impl Read, output: &mut impl Write) -> Result<(), Failure> 
                 binding,
                 ..
             }
+            | Request::BindReader {
+                request_id,
+                binding,
+                ..
+            }
+            | Request::ReplayReader {
+                request_id,
+                binding,
+                ..
+            }
+            | Request::Advance {
+                request_id,
+                binding,
+                ..
+            }
+            | Request::CloseReader {
+                request_id,
+                binding,
+                ..
+            }
             | Request::Close {
                 request_id,
                 binding,
@@ -168,6 +189,18 @@ fn process(
             remaining_work_ms, ..
         }
         | Request::Snapshot {
+            remaining_work_ms, ..
+        }
+        | Request::BindReader {
+            remaining_work_ms, ..
+        }
+        | Request::ReplayReader {
+            remaining_work_ms, ..
+        }
+        | Request::Advance {
+            remaining_work_ms, ..
+        }
+        | Request::CloseReader {
             remaining_work_ms, ..
         }
         | Request::Close {
@@ -231,7 +264,10 @@ fn process(
                 },
                 &mut work,
             )?;
-            session.source = Some(Source { file, binding });
+            session.source = Some(Source {
+                follow: SourceFollow::new(file),
+                binding,
+            });
         }
         Request::Snapshot {
             request_id,
@@ -246,6 +282,61 @@ fn process(
             snapshot(
                 source, request_id, start_byte, end_byte, end_policy, output, &mut work,
             )?;
+        }
+        Request::BindReader {
+            request_id,
+            binding,
+            reader,
+            from_byte,
+            ..
+        } => {
+            check_request(session, request_id)?;
+            let source = bound_source(session, &binding)?;
+            let batch = source
+                .follow
+                .bind_reader(reader, from_byte, &mut work)
+                .map_err(source_fault)?;
+            send_payload(&source.binding, request_id, &batch, output, &mut work)?;
+        }
+        Request::ReplayReader {
+            request_id,
+            binding,
+            reader,
+            start_byte,
+            end_byte,
+            ..
+        } => {
+            check_request(session, request_id)?;
+            let source = bound_source(session, &binding)?;
+            let batch = source
+                .follow
+                .replay_reader(reader, start_byte, end_byte, &mut work)
+                .map_err(source_fault)?;
+            send_payload(&source.binding, request_id, &batch, output, &mut work)?;
+        }
+        Request::Advance {
+            request_id,
+            binding,
+            ..
+        } => {
+            check_request(session, request_id)?;
+            let source = bound_source(session, &binding)?;
+            let batch = source.follow.advance(&mut work).map_err(source_fault)?;
+            send_payload(&source.binding, request_id, &batch, output, &mut work)?;
+        }
+        Request::CloseReader {
+            request_id,
+            binding,
+            reader,
+            ..
+        } => {
+            check_request(session, request_id)?;
+            let source = bound_source(session, &binding)?;
+            let batch = source
+                .follow
+                .close_reader(reader, &mut work)
+                .map_err(source_fault)?;
+            send_payload(&source.binding, request_id, &batch, output, &mut work)?;
         }
         Request::Close {
             request_id,
@@ -305,58 +396,37 @@ fn snapshot(
     output: &mut impl Write,
     work: &mut Budget,
 ) -> Result<(), FaultCode> {
+    let snapshot = source
+        .follow
+        .snapshot(
+            SourceMeta {
+                source_id: source.binding.source_id.clone(),
+            },
+            start_byte,
+            end_byte,
+            end_policy,
+            work,
+        )
+        .map_err(source_fault)?;
+    send_payload(&source.binding, request_id, &snapshot, output, work)
+}
+
+fn send_payload(
+    binding: &Binding,
+    request_id: u64,
+    value: &impl serde::Serialize,
+    output: &mut impl Write,
+    work: &mut Budget,
+) -> Result<(), FaultCode> {
     work.check_work()?;
-    let length = source.file.metadata().map_err(|_| FaultCode::Io)?.len();
-    let end_byte = end_byte.unwrap_or(length);
-    if start_byte > end_byte || end_byte > length {
-        return Err(FaultCode::InvalidRange);
-    }
-    work.check_work()?;
-    if start_byte != 0 {
-        source
-            .file
-            .seek(SeekFrom::Start(start_byte - 1))
-            .map_err(|_| FaultCode::Io)?;
-        let mut previous = [0];
-        read_source(&mut source.file, &mut previous, work)?;
-        if previous[0] != b'\n' {
-            return Err(FaultCode::InvalidRange);
-        }
-    }
-    work.check_work()?;
-    source
-        .file
-        .seek(SeekFrom::Start(start_byte))
-        .map_err(|_| FaultCode::Io)?;
-    let mut reader = SnapshotReader::new(
-        SourceMeta {
-            source_id: source.binding.source_id.clone(),
-        },
-        start_byte,
-        end_policy,
-    );
-    let mut remaining = end_byte - start_byte;
-    let mut chunk = [0; MAX_PART_BYTES];
-    let chunk_bytes = u64::try_from(chunk.len()).map_err(|_| FaultCode::Core)?;
-    while remaining != 0 {
-        let count = usize::try_from(remaining.min(chunk_bytes)).map_err(|_| FaultCode::Core)?;
-        read_source(&mut source.file, &mut chunk[..count], work)?;
-        reader.push(&chunk[..count], work).map_err(core_fault)?;
-        remaining = remaining
-            .checked_sub(u64::try_from(count).map_err(|_| FaultCode::Core)?)
-            .ok_or(FaultCode::Core)?;
-    }
-    work.check_work()?;
-    let snapshot = reader.finish(work).map_err(core_fault)?;
-    work.check_work()?;
-    let payload = serde_json::to_vec(&snapshot).map_err(|_| FaultCode::Encode)?;
+    let payload = serde_json::to_vec(value).map_err(|_| FaultCode::Encode)?;
     work.check_work()?;
     let payload_bytes = u64::try_from(payload.len()).map_err(|_| FaultCode::Encode)?;
     send(
         output,
         &Reply::Begin {
             request_id,
-            binding: source.binding.clone(),
+            binding: binding.clone(),
         },
         work,
     )?;
@@ -366,7 +436,7 @@ fn snapshot(
             output,
             &Reply::Part {
                 request_id,
-                binding: source.binding.clone(),
+                binding: binding.clone(),
                 part_index: part_count,
                 bytes: bytes.to_vec(),
             },
@@ -378,7 +448,7 @@ fn snapshot(
         output,
         &Reply::Commit {
             request_id,
-            binding: source.binding.clone(),
+            binding: binding.clone(),
             part_count,
             payload_bytes,
         },
@@ -386,16 +456,14 @@ fn snapshot(
     )
 }
 
-fn read_source(file: &mut File, bytes: &mut [u8], work: &mut Budget) -> Result<(), FaultCode> {
-    work.check_work()?;
-    file.read_exact(bytes).map_err(|error| {
-        if error.kind() == io::ErrorKind::UnexpectedEof {
-            FaultCode::InputChanged
-        } else {
-            FaultCode::Io
-        }
-    })?;
-    work.check_work()
+fn source_fault(error: SourceError) -> FaultCode {
+    match error {
+        SourceError::InvalidRange => FaultCode::InvalidRange,
+        SourceError::BindingMismatch => FaultCode::BindingMismatch,
+        SourceError::Io => FaultCode::Io,
+        SourceError::InputChanged => FaultCode::InputChanged,
+        SourceError::Work(error) => core_fault(error),
+    }
 }
 
 fn core_fault(error: SnapshotError) -> FaultCode {

@@ -68,7 +68,7 @@ pub(super) async fn read_row_window(
                         "history file changed; reopen this chat",
                     ));
                 }
-                state.ingest_log_line(&source, cursor, next, &events);
+                view::source_follow::ingest_log_line(&mut state, &source, cursor, next, &events);
                 events.clear();
                 cursor = next;
                 if next == end {
@@ -163,19 +163,13 @@ pub(super) async fn transcript_rows(
                     .find(|(cached, _)| cached == &key)
                     .map(|(_, state)| state)
             });
-        if let Some(state) = cached
-            && state.initialized
-            && !state.rebuild
-            && state.dirty.is_empty()
-            && state
-                .records
-                .first_key_value()
-                .is_some_and(|(key, _)| key.0 <= start)
-            && state.end == end
-        {
-            return Ok(Json(
-                json!({"page":{"start_offset":start,"end_offset":end},"rows":state.chunks.values().filter(|chunk|state.records.len()<=ROW_RECORD_LIMIT || chunk.records.iter().any(|key|key.0>=start)).flat_map(|chunk|chunk.rows.iter()).chain(state.last_queued.iter()).collect::<Vec<_>>(),"usage":state.usage.value(),"remove":[]}),
-            ));
+        if let Some(page) = cached.and_then(|state| state.cached_tail(start, end)) {
+            return Ok(Json(json!({
+                "page": {"start_offset": start, "end_offset": end},
+                "rows": page.rows,
+                "usage": page.usage,
+                "remove": page.remove,
+            })));
         }
     }
     let recovery = if query.before.is_some() {
@@ -189,13 +183,7 @@ pub(super) async fn transcript_rows(
                     .find(|(cached, _)| cached == &key)
                     .map(|(_, state)| state)
             })
-            .filter(|state| {
-                state
-                    .records
-                    .first_key_value()
-                    .is_some_and(|(key, _)| key.0 > state.start)
-            })
-            .map(|state| (state.start, state.end))
+            .and_then(|state| state.recovery_range())
     } else {
         None
     };
@@ -219,36 +207,15 @@ pub(super) async fn transcript_rows(
     });
     let mut state = active.or(history).unwrap_or_else(|| page.clone());
     if let Some(recovery) = recovery {
-        state.records.extend(recovery.records);
-        state.reindex();
+        state.recover(recovery);
     }
-    let previous = state.rows();
-    state.records.extend(page.records);
-    state.start = state.start.min(start);
-    state.end = state.end.max(end);
-    state.reindex();
-    let rows = state.rows();
-    let ids: HashSet<_> = rows.iter().map(|row| &row.id).collect();
-    let remove: Vec<_> = previous
-        .iter()
-        .filter(|row| !ids.contains(&row.id))
-        .map(|row| &row.id)
-        .collect();
-    let usage = state.usage.value();
-    let previous: HashMap<_, _> = previous.iter().map(|row| (&row.id, row)).collect();
-    let upsert: Vec<_> = rows
-        .iter()
-        .filter(|row| {
-            query.before.is_none() || previous.get(&row.id).is_none_or(|old| *old != *row)
-        })
-        .collect();
-    let response = json!({"page": {"start_offset": start, "end_offset": end}, "rows": upsert, "usage": usage, "remove": remove});
-    state.last_usage = usage;
-    state.remember_shown(&rows);
-    state.prepare(rows.clone());
-    state.last_rows = rows;
-    state.compact();
-    state.last_rows = state.rows();
+    let page = state.merge_page(page, query.before.is_some());
+    let response = json!({
+        "page": {"start_offset": start, "end_offset": end},
+        "rows": page.rows,
+        "usage": page.usage,
+        "remove": page.remove,
+    });
     let subscribed = hub
         .streams
         .values()

@@ -26,7 +26,7 @@ pub(super) async fn flush_transcript(
             if let Some(state) = &mut follower.rows {
                 let mut start = follower.from;
                 for (end, events) in batches.iter() {
-                    state.ingest_log_line(source, start, *end, events);
+                    view::source_follow::ingest_log_line(state, source, start, *end, events);
                     start = *end;
                 }
             }
@@ -38,7 +38,10 @@ pub(super) async fn flush_transcript(
                 follower.rendering_rows = true;
                 follower.rows.take().map(Err)
             } else {
-                let frame = follower.rows.as_mut().map(|state| state.delta(key));
+                let frame = follower
+                    .rows
+                    .as_mut()
+                    .map(|state| row_frame(key, state.delta()));
                 frame.map(Ok)
             }
         };
@@ -50,7 +53,7 @@ pub(super) async fn flush_transcript(
                 let render_key = key.to_owned();
                 let (mut state, frame) = tokio::task::spawn_blocking(move || {
                     let mut state = state;
-                    let frame = state.delta(&render_key);
+                    let frame = row_frame(&render_key, state.delta());
                     (state, frame)
                 })
                 .await
@@ -76,16 +79,7 @@ pub(super) async fn flush_transcript(
                     };
                     if let Some(incoming) = incoming {
                         let merged = tokio::task::spawn_blocking(move || {
-                            let usage = state.usage.clone();
-                            state.records.extend(incoming.records);
-                            state.shown.extend(incoming.shown);
-                            state.start = state.start.min(incoming.start);
-                            state.end = state.end.max(incoming.end);
-                            state.reindex();
-                            state.usage = usage;
-                            let rows = state.rows_full();
-                            state.prepare(rows);
-                            state.compact();
+                            state.merge_incoming(incoming);
                             state
                         })
                         .await

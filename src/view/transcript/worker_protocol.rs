@@ -16,6 +16,13 @@ pub struct Binding {
     pub generation: u64,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReaderBinding {
+    pub reader_id: u64,
+    pub generation: u64,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Request {
@@ -36,6 +43,32 @@ pub enum Request {
         start_byte: u64,
         end_byte: Option<u64>,
         end_policy: EndPolicy,
+        remaining_work_ms: u64,
+    },
+    BindReader {
+        request_id: u64,
+        binding: Binding,
+        reader: ReaderBinding,
+        from_byte: u64,
+        remaining_work_ms: u64,
+    },
+    ReplayReader {
+        request_id: u64,
+        binding: Binding,
+        reader: ReaderBinding,
+        start_byte: u64,
+        end_byte: u64,
+        remaining_work_ms: u64,
+    },
+    Advance {
+        request_id: u64,
+        binding: Binding,
+        remaining_work_ms: u64,
+    },
+    CloseReader {
+        request_id: u64,
+        binding: Binding,
+        reader: ReaderBinding,
         remaining_work_ms: u64,
     },
     Close {

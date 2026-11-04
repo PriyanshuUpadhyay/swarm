@@ -1,5 +1,6 @@
 //! Pure, independent Claude snapshots with physical source positions.
 
+use super::source_follow::{PhysicalFramer, PhysicalLine};
 use super::{Record, Row, view_rows_with_context};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, value::RawValue};
@@ -17,7 +18,7 @@ pub enum EndPolicy {
     CompleteLines,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct LineEvents {
     pub start_byte: u64,
     pub end_byte: u64,
@@ -26,7 +27,7 @@ pub struct LineEvents {
 }
 
 /// A provider event whose copied input keeps OLD's exact numeric tokens.
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 #[serde(transparent)]
 pub struct NormalizedEvent(Box<RawValue>);
 
@@ -36,7 +37,7 @@ impl NormalizedEvent {
         Self(serde_json::value::to_raw_value(value).expect("normalized event is valid JSON"))
     }
 
-    fn row_input(&self) -> Option<Value> {
+    pub(crate) fn row_input(&self) -> Option<Value> {
         let mut de = serde_json::Deserializer::from_str(self.0.get());
         // Canonical events contain only shallow fields and input already bounded to 255.
         // Keep that private depth policy while retaining the row consumer's number parser.
@@ -92,10 +93,8 @@ pub trait Work {
 pub struct SnapshotReader {
     meta: SourceMeta,
     start_byte: u64,
-    read_end_byte: u64,
-    complete_end_byte: u64,
+    framer: PhysicalFramer,
     end: EndPolicy,
-    pending: Vec<u8>,
     lines: Vec<LineEvents>,
 }
 
@@ -104,73 +103,32 @@ impl SnapshotReader {
         Self {
             meta,
             start_byte,
-            read_end_byte: start_byte,
-            complete_end_byte: start_byte,
+            framer: PhysicalFramer::new(start_byte),
             end,
-            pending: Vec::new(),
             lines: Vec::new(),
         }
     }
 
     pub fn push(&mut self, bytes: &[u8], work: &mut dyn Work) -> Result<(), SnapshotError> {
-        work.check()?;
-        let count = u64::try_from(bytes.len()).map_err(|_| SnapshotError::OffsetOverflow)?;
-        let read_end = self
-            .read_end_byte
-            .checked_add(count)
-            .ok_or(SnapshotError::OffsetOverflow)?;
-        let mut rest = bytes;
-        while let Some(index) = rest.iter().position(|byte| *byte == b'\n') {
-            work.check()?;
-            self.pending.extend_from_slice(&rest[..index]);
-            let count =
-                u64::try_from(self.pending.len()).map_err(|_| SnapshotError::OffsetOverflow)?;
-            let end = self
-                .complete_end_byte
-                .checked_add(count)
-                .and_then(|end| end.checked_add(1))
-                .ok_or(SnapshotError::OffsetOverflow)?;
-            self.line(end, true, work)?;
-            self.complete_end_byte = end;
-            rest = &rest[index + 1..];
-        }
-        self.pending.extend_from_slice(rest);
-        self.read_end_byte = read_end;
-        Ok(())
-    }
-
-    fn line(
-        &mut self,
-        end_byte: u64,
-        terminated: bool,
-        work: &mut dyn Work,
-    ) -> Result<(), SnapshotError> {
-        let length = self
-            .pending
-            .iter()
-            .rposition(|byte| *byte != b'\r')
-            .map_or(0, |i| i + 1);
-        let events = super::normalize::claude_line(&self.pending[..length], work)?;
-        self.lines.push(LineEvents {
-            start_byte: self.complete_end_byte,
-            end_byte,
-            terminated,
-            events,
-        });
-        self.pending.clear();
-        Ok(())
+        self.framer.push(bytes, work, |line, work| {
+            self.lines.push(normalize_line(line, work)?);
+            Ok(())
+        })
     }
 
     pub fn finish(mut self, work: &mut dyn Work) -> Result<Snapshot, SnapshotError> {
         work.check()?;
-        if matches!(self.end, EndPolicy::SnapshotEof) && !self.pending.is_empty() {
-            self.line(self.read_end_byte, false, work)?;
+        if matches!(self.end, EndPolicy::SnapshotEof) {
+            self.framer.eof(work, |line, work| {
+                self.lines.push(normalize_line(line, work)?);
+                Ok(())
+            })?;
         }
         let rows = self.project_rows(work)?;
         Ok(Snapshot {
             source_id: self.meta.source_id,
-            read_end_byte: self.read_end_byte,
-            complete_end_byte: self.complete_end_byte,
+            read_end_byte: self.framer.read_end_byte(),
+            complete_end_byte: self.framer.complete_end_byte(),
             lines: self.lines,
             rows,
         })
@@ -201,4 +159,16 @@ impl SnapshotReader {
         work.check()?;
         Ok(RowProjection::Rows(rows))
     }
+}
+
+pub(crate) fn normalize_line(
+    line: PhysicalLine<'_>,
+    work: &mut dyn Work,
+) -> Result<LineEvents, SnapshotError> {
+    Ok(LineEvents {
+        start_byte: line.start_byte,
+        end_byte: line.end_byte,
+        terminated: line.terminated,
+        events: super::normalize::claude_line(line.content_from(line.start_byte), work)?,
+    })
 }

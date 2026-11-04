@@ -1,9 +1,9 @@
-//! Server live render.
+//! Chunk rendering and soft retention for retained transcript rows.
 
 use super::*;
 
-impl LiveRows {
-    pub(super) fn rows(&self) -> Vec<Row> {
+impl ReaderRows {
+    pub fn rows(&self) -> Vec<Row> {
         if !self.initialized || self.rebuild {
             return self.rows_full();
         }
@@ -13,7 +13,7 @@ impl LiveRows {
             .chain(self.last_queued.clone())
             .collect()
     }
-    pub(super) fn remember_shown(&mut self, rows: &[Row]) {
+    pub fn remember_shown(&mut self, rows: &[Row]) {
         for row in rows {
             if row.kind != view::RowKind::Fold {
                 self.shown.insert(row.id.clone());
@@ -23,7 +23,7 @@ impl LiveRows {
             }
         }
     }
-    pub(super) fn prepare(&mut self, rows: Vec<Row>) {
+    pub fn prepare(&mut self, rows: Vec<Row>) {
         self.clear_row = rows
             .iter()
             .find(|row| row.kind == view::RowKind::Divider)
@@ -46,11 +46,11 @@ impl LiveRows {
             .into_iter()
             .filter(|row| row.kind != view::RowKind::Queued)
         {
-            let step = swarm::view::is_step(&row);
+            let step = crate::view::is_step(&row);
             let can_append = step
                 && row.kind != view::RowKind::Fold
                 && self.chunks.last_key_value().is_some_and(|(_, chunk)| {
-                    chunk.rows.iter().all(swarm::view::is_step)
+                    chunk.rows.iter().all(crate::view::is_step)
                         && chunk
                             .rows
                             .iter()
@@ -62,7 +62,7 @@ impl LiveRows {
                                 }
                             })
                             .sum::<usize>()
-                            < swarm::view::FOLD_STEP_LIMIT
+                            < crate::view::FOLD_STEP_LIMIT
                 });
             let id = if can_append {
                 *self.chunks.last_key_value().unwrap().0
@@ -71,7 +71,7 @@ impl LiveRows {
                 self.next_chunk += 1;
                 self.chunks.insert(
                     id,
-                    LiveChunk {
+                    ReaderChunk {
                         records: Vec::new(),
                         rows: Vec::new(),
                         context: (self.start == 0, self.start > 0),
@@ -120,7 +120,7 @@ impl LiveRows {
             if chunk
                 .rows
                 .iter()
-                .all(|row| row.kind == view::RowKind::Fold || swarm::view::is_step(row))
+                .all(|row| row.kind == view::RowKind::Fold || crate::view::is_step(row))
             {
                 chunk
                     .rows
@@ -153,7 +153,7 @@ impl LiveRows {
         self.rebuild = false;
         self.queue_dirty = false;
     }
-    pub(super) fn compact(&mut self) {
+    pub fn compact(&mut self) {
         // shortcut: one open turn can exceed 2000 records; spill it only if its memory becomes a problem.
         while self.records.len() > ROW_RECORD_LIMIT {
             let Some((&key, _)) = self.records.first_key_value() else {
@@ -184,5 +184,7 @@ impl LiveRows {
                 self.contexts.remove(&key);
             }
         }
+        self.unavailable
+            .retain(|key| self.records.contains_key(key));
     }
 }

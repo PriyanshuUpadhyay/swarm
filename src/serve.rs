@@ -25,7 +25,9 @@ use std::{
     task::{Context, Poll, Waker},
     time::Duration,
 };
-use swarm::view::transcript::{self as view, Record, Row};
+#[cfg(test)]
+use swarm::view::transcript::Record;
+use swarm::view::transcript::{self as view, Row};
 use swarm::view::{
     changes, choices, choices_store, claude_text, discovery, fields, handoff, lifecycle,
     navigation, queue, tabs, tree, workspace_panel,
@@ -273,8 +275,7 @@ mod lifecycle_routes;
 use lifecycle_routes::*;
 
 mod live_delta;
-
-mod live_render;
+use live_delta::row_frame;
 
 mod live_rows;
 use live_rows::*;
