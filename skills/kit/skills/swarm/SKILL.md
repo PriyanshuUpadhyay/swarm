@@ -6,7 +6,7 @@ description: Plan and run any task from kit blocks, starting from a preset when 
 # Swarm
 
 Example. The owner types `/swarm:swarm research which state library`. The task matches the `research`
-preset, so the agent reads `presets/research/PRESET.md` in full. The planner copies its preset into
+preset, so the agent reads `skills/research/SKILL.md` in full. The planner copies its preset into
 `plan.md`, adds no block, and the chart shows five steps. The preset says `Stop: owner`, so the
 owner clicks approve in Plannotator, and `start_plan.py` makes the five step files.
 
@@ -26,7 +26,7 @@ the task mixes verbs, plan from the block catalog with no preset.
 | `build` | make a picture, film, or site where code draws every frame: a reel, a loop, a generative still, a landing page, or a portfolio |
 | `implement` | build one change, in pair or auto mode; a change with no new decision or risk in about 3 files takes the small route in `presets/implement/references/small.md`, with no plan page |
 | `review` | check a range, walk a GitHub PR, or run a cleanup pass |
-| `research` | answer one question from evidence in a short report |
+| `research` | answer one question from evidence in a short report; it is a skill, so read `skills/research/SKILL.md` |
 | `explain` | explain how something works |
 | `council` | get a visible debate between Gemini, GPT, and Claude seats on one question; it is a skill, so read `skills/council/SKILL.md` |
 

@@ -241,7 +241,7 @@ def test_start_refuses_bad_needs():
         out = run("start", Path(tmp) / "run", skill)
         assert out.returncode == 0, out.stderr
         assert (Path(tmp) / "run" / "03-reply.md").read_text(encoding="utf-8").splitlines()[1] == "Uses: 01-review"
-    for skill in ("skills/council/SKILL.md", "presets/build/PRESET.md", "presets/research/PRESET.md",
+    for skill in ("skills/council/SKILL.md", "presets/build/PRESET.md", "skills/research/SKILL.md",
                   "blocks/web-search/SKILL.md", "presets/implement/PRESET.md"):
         with tempfile.TemporaryDirectory() as tmp:
             out = run("start", Path(tmp) / "run", SCRIPT.parents[1] / skill)
