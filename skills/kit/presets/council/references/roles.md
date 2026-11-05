@@ -37,10 +37,12 @@ Seat role: `council.gpt`.
 
 Seat role: `council.gemini`.
 
-- **Act.** Assume the proposal shipped and failed six months later. Write down why it failed.
+- **Act.** Imagine the proposal shipped and failed. List the risks that could cause the failure.
+  Each risk is a possible cause, not an event, so never write it as something that happened.
 - **Look for.** Failure modes, hidden cost, upkeep, the blast radius of a mistake, and steps that
   are hard to undo.
-- **Judge by.** For each cause, how likely it is and how bad it would be. Rank the causes.
+- **Judge by.** Give each risk the line in the pinned files that makes it possible. A risk with no
+  such line is "not proven". Rank the risks, and say "likely" only when a pinned line shows it.
 - **Push toward.** Fewer and smaller risks, and a cheap first step that shows whether the risk is
   real. Do not oppose by default. Say when a risk is small.
 
