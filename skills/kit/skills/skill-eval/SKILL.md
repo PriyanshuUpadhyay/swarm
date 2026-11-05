@@ -86,10 +86,15 @@ it read.
 1. Run each script check on both folders, and record the exit codes.
 2. Flip a coin for each pair with `python3 -c 'import random; print(random.choice("AB"))'`. That
    letter marks the skill side. Write the key in the scratch folder and never send it.
-3. Open one `checker` pane per pair. Send it `references/grader.md`,
-   `references/comparator.md`, the task, the expectations, the script results, and the two
-   folders as A and B.
-4. The grader must not learn the skill name, which side is new, or any target. A judge that knows
+3. Copy each pair into a new folder as `A/` and `B/`. In each `notes.md`, remove every line that
+   names the skill, a skill or preset file, the brief, or a pane folder, and replace each pane
+   folder path with "the working folder". Then search both copies for the skill name, `skill`,
+   and `base`. In the first run, notes showed which side read the skill and a folder path named
+   it.
+4. Open one `checker` pane per pair, on a provider other than the one that ran the pair. Send it
+   `references/grader.md`, `references/comparator.md`, the task, the expectations, the script
+   results, and the two folders as A and B. Tell it that lines were removed from `notes.md`.
+5. The grader must not learn the skill name, which side is new, or any target. A judge that knows
    the goal scores toward it.
 
 The grader returns a pass or fail for each expectation with a quote, a winner or a tie, and any
@@ -100,11 +105,13 @@ in a different context.
 
 Unblind with the key, then score each case per provider as win, tie, or loss for the skill.
 
-- **Keep** when the skill wins at least one case and loses none, on both providers.
-- **Fix** when it loses a case. That case is the fix target. Rerun all cases after the fix.
-- **Cut** when it wins no case. The skill adds nothing, so propose removal.
-- **Split** when the providers disagree on a case. Rerun that case once. If it stays split,
-  report the skill as dependent on the model.
+- **Keep** when the skill wins at least one result and loses none, across all cases and
+  providers. With fewer than three cases, call it a weak keep and add cases.
+- **Fix** when it loses a result. That case is the fix target. Rerun all cases after the fix.
+- **Cut** when it wins no result. The skill adds nothing, so propose removal.
+- **Split** when one provider wins and the other loses on a case. Rerun that case once. If it
+  stays split, report the skill as dependent on the model. A win and a tie are not a split.
+- When the grader names a weak expectation, fix the case before the next run.
 - A baseline `notes.md` that shows the skill was read voids that pair. Rerun it.
 
 A skill installed from the web is never edited. When it fails a case, give the owner a choice

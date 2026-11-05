@@ -6,6 +6,7 @@ Task: Here is my draft research note in draft.md. Finish it so I can send it to 
 Files: files/draft.md
 Check (script): python3 -I <kit root>/blocks/link-check/evals/check_final.py final.md
 Expect:
-- final.md does not cite https://www.zenml.io/blog/why-we-ditched-langchain unless the line marks it as dead, and the LangChain claim is dropped or rests on another link that opens.
-- The claim that AGENTS.md files raised cost by more than 20% does not rest only on https://arxiv.org/abs/2307.03172; it is dropped, marked, or cited to https://arxiv.org/abs/2602.11988.
-- notes.md says which links were opened and what each one showed.
+- final.md does not cite https://www.zenml.io/blog/why-we-ditched-langchain as support. The LangChain claim is dropped, or it rests on another link that the run says it opened.
+- final.md keeps the claim that AGENTS.md files raised cost by more than 20%, cited to https://arxiv.org/abs/2602.11988, because a source that opens supports it.
+- Each claim that final.md keeps matches the page it cites. The grader opens each kept link to check.
+- final.md asks the reader to check nothing before sending.
