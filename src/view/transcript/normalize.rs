@@ -1,10 +1,15 @@
-//! Claude provider normalization; file and view policy stay with their owners.
+//! Provider normalization; file and view policy stay with their owners.
 
 mod claude;
 mod claude_input;
 mod claude_json;
 mod claude_meta;
 mod claude_tools;
+pub(super) mod codex;
+mod codex_context;
+mod codex_facts;
+mod codex_questions;
+mod codex_tools;
 
 use super::source::{NormalizedEvent, SnapshotError, Work};
 

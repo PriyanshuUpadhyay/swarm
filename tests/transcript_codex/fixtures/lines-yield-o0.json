@@ -1,0 +1,193 @@
+{
+ "0-204": {
+  "end_byte": 204,
+  "events": [
+   {
+    "input": {
+     "cmd": "sleep 5; exit 3"
+    },
+    "meta": {
+     "parent_uuid": null,
+     "session_id": "",
+     "source_tool_use_id": null,
+     "timestamp": "2026-11-05T10:00:00.000Z",
+     "uuid": "fc-call-y1"
+    },
+    "name": "exec_command",
+    "status": "pending",
+    "tool_call_id": "call-y1",
+    "type": "tool_call"
+   }
+  ],
+  "start_byte": 0,
+  "terminated": true
+ },
+ "1143-1405": {
+  "end_byte": 1405,
+  "events": [
+   {
+    "content": "Chunk ID: y2\nWall time: 4.0 seconds\nProcess exited with code 3\nOriginal token count: 2\nOutput:\ndone\n",
+    "meta": {
+     "parent_uuid": null,
+     "session_id": "",
+     "source_tool_use_id": null,
+     "timestamp": "2026-11-05T10:00:05.000Z",
+     "uuid": "fo-call-y2"
+    },
+    "status": "completed",
+    "tool_call_id": "call-y2",
+    "type": "tool_call_update"
+   }
+  ],
+  "start_byte": 1143,
+  "terminated": true
+ },
+ "1405-1636": {
+  "end_byte": 1636,
+  "events": [
+   {
+    "input": "text(await tools.exec_command({cmd:\"exit 3\"}));",
+    "meta": {
+     "parent_uuid": null,
+     "session_id": "",
+     "source_tool_use_id": null,
+     "timestamp": "2026-11-05T10:00:06.000Z",
+     "uuid": "ctc-c1"
+    },
+    "name": "exec",
+    "status": "pending",
+    "tool_call_id": "call-c1",
+    "type": "tool_call"
+   }
+  ],
+  "start_byte": 1405,
+  "terminated": true
+ },
+ "1636-1887": {
+  "end_byte": 1887,
+  "events": [
+   {
+    "content": "Script running with cell ID 9\nWall time 1.0 seconds\nOutput:\n",
+    "meta": {
+     "parent_uuid": null,
+     "session_id": "",
+     "source_tool_use_id": null,
+     "timestamp": "2026-11-05T10:00:07.000Z",
+     "uuid": "ctco-c1a"
+    },
+    "status": "completed",
+    "tool_call_id": "call-c1",
+    "type": "tool_call_update"
+   }
+  ],
+  "start_byte": 1636,
+  "terminated": true
+ },
+ "1887-2196": {
+  "end_byte": 2196,
+  "events": [
+   {
+    "content": "Script completed\nWall time 2.0 seconds\nOutput:\n{\"exit_code\":3,\"output\":\"bad\\n\"}",
+    "meta": {
+     "parent_uuid": null,
+     "session_id": "",
+     "source_tool_use_id": null,
+     "timestamp": "2026-11-05T10:00:09.000Z",
+     "uuid": "ctco-c1b"
+    },
+    "status": "completed",
+    "tool_call_id": "call-c1",
+    "type": "tool_call_update"
+   }
+  ],
+  "start_byte": 1887,
+  "terminated": true
+ },
+ "204-480": {
+  "end_byte": 480,
+  "events": [
+   {
+    "content": "Chunk ID: y1\nWall time: 1.0 seconds\nProcess running with session ID 4242\nOriginal token count: 5\nOutput:\nstarting\n",
+    "meta": {
+     "parent_uuid": null,
+     "session_id": "",
+     "source_tool_use_id": null,
+     "timestamp": "2026-11-05T10:00:01.000Z",
+     "uuid": "fo-call-y1"
+    },
+    "status": "completed",
+    "tool_call_id": "call-y1",
+    "type": "tool_call_update"
+   }
+  ],
+  "start_byte": 204,
+  "terminated": true
+ },
+ "480-675": {
+  "end_byte": 675,
+  "events": [
+   {
+    "input": {
+     "cmd": "exit 3"
+    },
+    "meta": {
+     "parent_uuid": null,
+     "session_id": "",
+     "source_tool_use_id": null,
+     "timestamp": "2026-11-05T10:00:02.000Z",
+     "uuid": "fc-call-x1"
+    },
+    "name": "exec_command",
+    "status": "pending",
+    "tool_call_id": "call-x1",
+    "type": "tool_call"
+   }
+  ],
+  "start_byte": 480,
+  "terminated": true
+ },
+ "675-931": {
+  "end_byte": 931,
+  "events": [
+   {
+    "content": "Chunk ID: x1\nWall time: 0.0 seconds\nProcess exited with code 3\nOriginal token count: 0\nOutput:\n",
+    "meta": {
+     "parent_uuid": null,
+     "session_id": "",
+     "source_tool_use_id": null,
+     "timestamp": "2026-11-05T10:00:03.000Z",
+     "uuid": "fo-call-x1"
+    },
+    "status": "completed",
+    "tool_call_id": "call-x1",
+    "type": "tool_call_update"
+   }
+  ],
+  "start_byte": 675,
+  "terminated": true
+ },
+ "931-1143": {
+  "end_byte": 1143,
+  "events": [
+   {
+    "input": {
+     "chars": "",
+     "session_id": 4242
+    },
+    "meta": {
+     "parent_uuid": null,
+     "session_id": "",
+     "source_tool_use_id": null,
+     "timestamp": "2026-11-05T10:00:04.000Z",
+     "uuid": "fc-call-y2"
+    },
+    "name": "write_stdin",
+    "status": "pending",
+    "tool_call_id": "call-y2",
+    "type": "tool_call"
+   }
+  ],
+  "start_byte": 931,
+  "terminated": true
+ }
+}

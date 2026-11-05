@@ -1,8 +1,10 @@
-//! Reader epochs and retained Claude views contain no file handles or paths.
+//! Reader epochs and retained provider views contain no file handles or paths.
 
 use super::Record;
 use super::reader_rows::ReaderRows;
-use super::source::{LineEvents, RowProjection, SnapshotError, Work, normalize_line};
+use super::source::{
+    LineEvents, NativeContext, NativeFacts, NativeFormat, RowProjection, SnapshotError, Work,
+};
 use super::source_follow::{PhysicalLine, SourceError};
 use super::worker_protocol::ReaderBinding;
 use serde::Serialize;
@@ -32,30 +34,32 @@ pub(crate) struct ReaderState {
     next_complete_byte: u64,
     observed_read_end_byte: u64,
     rows: ReaderRows,
+    context: NativeContext,
 }
 
 #[derive(Debug, Default)]
 pub(crate) struct ReaderSet {
+    format: NativeFormat,
     readers: BTreeMap<u64, ReaderState>,
     last_generation: BTreeMap<u64, u64>,
 }
 
 impl ReaderState {
-    pub fn new(binding: ReaderBinding, origin_byte: u64) -> Self {
+    pub fn new(binding: ReaderBinding, origin_byte: u64, format: NativeFormat) -> Self {
         Self {
             binding,
             origin_byte,
             next_complete_byte: origin_byte,
             observed_read_end_byte: origin_byte,
-            rows: ReaderRows::empty(origin_byte, false),
+            rows: ReaderRows::empty(origin_byte, format.is_codex()),
+            context: NativeContext::new(format),
         }
     }
 
     fn accept(
         &mut self,
         line: PhysicalLine<'_>,
-        native: &LineEvents,
-        facts: &[Option<Record>],
+        facts: &NativeFacts<'_>,
         whole: bool,
         work: &mut dyn Work,
     ) -> Result<Option<LineEvents>, SnapshotError> {
@@ -65,19 +69,30 @@ impl ReaderState {
         }
         let start = line.start_byte.max(self.next_complete_byte);
         let events = if start == line.start_byte {
+            let native = LineEvents {
+                start_byte: start,
+                end_byte: line.end_byte,
+                terminated: line.terminated,
+                events: self.context.project(facts, work)?,
+            };
             if whole {
-                self.rows.ingest_prepared(start, line.end_byte, facts);
+                let records = prepare_records(&native, self.context.format(), work)?;
+                self.rows.ingest_prepared(start, line.end_byte, &records);
             } else {
                 self.rows.ingest(start, line.end_byte, &[]);
             }
-            native.clone()
+            native
         } else {
             self.rows.ingest(start, line.end_byte, &[]);
+            let suffix = self
+                .context
+                .format()
+                .parse_facts(line.content_from(start), work)?;
             LineEvents {
                 start_byte: start,
                 end_byte: line.end_byte,
                 terminated: true,
-                events: super::normalize::claude_line(line.content_from(start), work)?,
+                events: self.context.project(&suffix, work)?,
             }
         };
         self.next_complete_byte = line.end_byte;
@@ -93,9 +108,11 @@ impl ReaderState {
         if line.end_byte <= self.next_complete_byte {
             return Ok(None);
         }
-        let native = normalize_line(line, work)?;
-        let facts = prepare_records(&native, work)?;
-        self.accept(line, &native, &facts, true, work)
+        let facts = self
+            .context
+            .format()
+            .parse_facts(line.content_from(line.start_byte), work)?;
+        self.accept(line, &facts, true, work)
     }
 
     fn update(
@@ -124,6 +141,13 @@ impl ReaderState {
 }
 
 impl ReaderSet {
+    pub fn new(format: NativeFormat) -> Self {
+        Self {
+            format,
+            ..Self::default()
+        }
+    }
+
     pub fn check_bind(&self, binding: ReaderBinding) -> Result<(), SourceError> {
         if self
             .last_generation
@@ -177,10 +201,11 @@ impl ReaderSet {
         {
             return Ok(());
         }
-        let native = normalize_line(line, work)?;
-        let facts = prepare_records(&native, work)?;
+        let facts = self
+            .format
+            .parse_facts(line.content_from(line.start_byte), work)?;
         for (id, state) in &mut self.readers {
-            if let Some(event) = state.accept(line, &native, &facts, whole, work)? {
+            if let Some(event) = state.accept(line, &facts, whole, work)? {
                 lines.entry(*id).or_default().push(event);
             }
         }
@@ -238,16 +263,19 @@ impl ReaderSet {
 
 pub(crate) fn prepare_records(
     line: &LineEvents,
+    format: NativeFormat,
     work: &mut dyn Work,
 ) -> Result<Vec<Option<Record>>, SnapshotError> {
     let mut facts = Vec::with_capacity(line.events.len());
     for (ordinal, event) in line.events.iter().enumerate() {
         work.check()?;
-        facts.push(
-            event.row_input().map(|input| {
-                Record::new(input, format!("raw-{}-{ordinal}", line.start_byte), false)
-            }),
-        );
+        facts.push(event.row_input().map(|input| {
+            Record::new(
+                input,
+                format!("raw-{}-{ordinal}", line.start_byte),
+                format.is_codex(),
+            )
+        }));
         work.check()?;
     }
     Ok(facts)

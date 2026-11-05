@@ -1,4 +1,4 @@
-//! Pure, independent Claude snapshots with physical source positions.
+//! Pure, independent provider snapshots with physical source positions.
 
 use super::source_follow::{PhysicalFramer, PhysicalLine};
 use super::{Record, Row, view_rows_with_context};
@@ -89,6 +89,84 @@ pub trait Work {
     fn check(&mut self) -> Result<(), SnapshotError>;
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum NativeFormat {
+    #[default]
+    Claude,
+    Codex,
+}
+
+impl NativeFormat {
+    pub const ALL: [Self; 2] = [Self::Claude, Self::Codex];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Claude => "claude",
+            Self::Codex => "codex",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|format| format.name() == name)
+    }
+
+    pub(crate) fn is_codex(self) -> bool {
+        self == Self::Codex
+    }
+
+    pub(crate) fn parse_facts<'a>(
+        self,
+        line: &'a [u8],
+        work: &mut dyn Work,
+    ) -> Result<NativeFacts<'a>, SnapshotError> {
+        match self {
+            Self::Claude => super::normalize::claude_line(line, work).map(NativeFacts::Claude),
+            Self::Codex => super::normalize::codex::parse_fact(line, work).map(NativeFacts::Codex),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub(crate) enum NativeFacts<'a> {
+    Claude(Vec<NormalizedEvent>),
+    Codex(super::normalize::codex::Fact<'a>),
+}
+
+#[derive(Debug)]
+pub(crate) enum NativeContext {
+    Claude,
+    Codex(super::normalize::codex::ReaderContext),
+}
+
+impl NativeContext {
+    pub(crate) fn new(format: NativeFormat) -> Self {
+        match format {
+            NativeFormat::Claude => Self::Claude,
+            NativeFormat::Codex => Self::Codex(super::normalize::codex::ReaderContext::new()),
+        }
+    }
+
+    pub(crate) fn format(&self) -> NativeFormat {
+        match self {
+            Self::Claude => NativeFormat::Claude,
+            Self::Codex(_) => NativeFormat::Codex,
+        }
+    }
+
+    pub(crate) fn project(
+        &mut self,
+        facts: &NativeFacts<'_>,
+        work: &mut dyn Work,
+    ) -> Result<Vec<NormalizedEvent>, SnapshotError> {
+        work.check()?;
+        match (self, facts) {
+            (Self::Claude, NativeFacts::Claude(events)) => Ok(events.clone()),
+            (Self::Codex(context), NativeFacts::Codex(fact)) => context.project(fact, work),
+            _ => unreachable!("reader context and facts belong to the same bound format"),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct SnapshotReader {
     meta: SourceMeta,
@@ -96,22 +174,34 @@ pub struct SnapshotReader {
     framer: PhysicalFramer,
     end: EndPolicy,
     lines: Vec<LineEvents>,
+    context: NativeContext,
 }
 
 impl SnapshotReader {
     pub fn new(meta: SourceMeta, start_byte: u64, end: EndPolicy) -> Self {
+        Self::with_format(meta, start_byte, end, NativeFormat::Claude)
+    }
+
+    pub(crate) fn with_format(
+        meta: SourceMeta,
+        start_byte: u64,
+        end: EndPolicy,
+        format: NativeFormat,
+    ) -> Self {
         Self {
             meta,
             start_byte,
             framer: PhysicalFramer::new(start_byte),
             end,
             lines: Vec::new(),
+            context: NativeContext::new(format),
         }
     }
 
     pub fn push(&mut self, bytes: &[u8], work: &mut dyn Work) -> Result<(), SnapshotError> {
         self.framer.push(bytes, work, |line, work| {
-            self.lines.push(normalize_line(line, work)?);
+            self.lines
+                .push(normalize_line(line, &mut self.context, work)?);
             Ok(())
         })
     }
@@ -120,7 +210,8 @@ impl SnapshotReader {
         work.check()?;
         if matches!(self.end, EndPolicy::SnapshotEof) {
             self.framer.eof(work, |line, work| {
-                self.lines.push(normalize_line(line, work)?);
+                self.lines
+                    .push(normalize_line(line, &mut self.context, work)?);
                 Ok(())
             })?;
         }
@@ -150,12 +241,17 @@ impl SnapshotReader {
                 records.push(Record::new(
                     input,
                     format!("raw-{}-{ordinal}", line.start_byte),
-                    false,
+                    self.context.format().is_codex(),
                 ));
             }
         }
-        let rows =
-            view_rows_with_context(&records, self.start_byte != 0, false, &HashSet::new(), None);
+        let rows = view_rows_with_context(
+            &records,
+            self.start_byte != 0,
+            self.context.format().is_codex(),
+            &HashSet::new(),
+            None,
+        );
         work.check()?;
         Ok(RowProjection::Rows(rows))
     }
@@ -163,12 +259,16 @@ impl SnapshotReader {
 
 pub(crate) fn normalize_line(
     line: PhysicalLine<'_>,
+    context: &mut NativeContext,
     work: &mut dyn Work,
 ) -> Result<LineEvents, SnapshotError> {
+    let facts = context
+        .format()
+        .parse_facts(line.content_from(line.start_byte), work)?;
     Ok(LineEvents {
         start_byte: line.start_byte,
         end_byte: line.end_byte,
         terminated: line.terminated,
-        events: super::normalize::claude_line(line.content_from(line.start_byte), work)?,
+        events: context.project(&facts, work)?,
     })
 }

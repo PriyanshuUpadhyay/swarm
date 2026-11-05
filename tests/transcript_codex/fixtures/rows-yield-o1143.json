@@ -1,0 +1,54 @@
+[
+ {
+  "id": "call-y2:result@raw-1143-0",
+  "kind": "toolResult",
+  "order": [
+   1143,
+   0
+  ],
+  "output": {
+   "full_bytes": 100,
+   "full_lines": 6,
+   "hidden_lines": 0,
+   "id": "raw-1143-0:output",
+   "text": "Chunk ID: y2\nWall time: 4.0 seconds\nProcess exited with code 3\nOriginal token count: 2\nOutput:\ndone\n"
+  },
+  "source_ids": [
+   "raw-1143-0"
+  ],
+  "text": "Chunk ID: y2\nWall time: 4.0 seconds\nProcess exited with code 3\nOriginal token count: 2\nOutput:\ndone\n",
+  "tool_status": "completed"
+ },
+ {
+  "detail": "\"text(await tools.exec_command({cmd:\\\"exit 3\\\"}));\"",
+  "id": "call-c1:call@raw-1405-0",
+  "kind": "toolUse",
+  "order": [
+   1405,
+   0
+  ],
+  "source_ids": [
+   "raw-1405-0",
+   "raw-1636-0",
+   "raw-1887-0"
+  ],
+  "text": "exec \u00b7 exit 3",
+  "tool": {
+   "command": "exit 3",
+   "duration_seconds": 3.0,
+   "exit_code": 3,
+   "header_title": "exit 3",
+   "input": "text(await tools.exec_command({cmd:\"exit 3\"}));",
+   "name": "exec",
+   "output": {
+    "full_bytes": 79,
+    "full_lines": 4,
+    "hidden_lines": 0,
+    "id": "raw-1887-0:output",
+    "text": "Script completed\nWall time 2.0 seconds\nOutput:\n{\"exit_code\":3,\"output\":\"bad\\n\"}"
+   },
+   "state": "failed"
+  },
+  "tool_status": "pending"
+ }
+]

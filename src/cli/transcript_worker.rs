@@ -4,7 +4,7 @@ use std::fs::File;
 use std::io::{self, Read, Write};
 use std::path::Path;
 use std::time::{Duration, Instant};
-use swarm::view::transcript::source::{EndPolicy, SnapshotError, SourceMeta, Work};
+use swarm::view::transcript::source::{EndPolicy, NativeFormat, SnapshotError, SourceMeta, Work};
 use swarm::view::transcript::source_follow::{SourceError, SourceFollow};
 use swarm::view::transcript::worker_protocol::{
     Binding, FaultCode, MAX_FRAME_BYTES, MAX_PART_BYTES, MAX_SOURCE_ID_BYTES, PROTOCOL, Reply,
@@ -221,7 +221,10 @@ fn process(
                 output,
                 &Reply::Ready {
                     protocol: PROTOCOL,
-                    formats: vec!["claude".to_owned()],
+                    formats: NativeFormat::ALL
+                        .into_iter()
+                        .map(|format| format.name().to_owned())
+                        .collect(),
                 },
                 &mut work,
             )?;
@@ -238,9 +241,7 @@ fn process(
             if session.source.is_some() || !valid_binding(&binding) {
                 return Err(FaultCode::BadRequest);
             }
-            if format != "claude" {
-                return Err(FaultCode::UnsupportedFormat);
-            }
+            let format = NativeFormat::from_name(&format).ok_or(FaultCode::UnsupportedFormat)?;
             let path = Path::new(&path);
             if !path.is_absolute() {
                 return Err(FaultCode::BadRequest);
@@ -265,7 +266,7 @@ fn process(
                 &mut work,
             )?;
             session.source = Some(Source {
-                follow: SourceFollow::new(file),
+                follow: SourceFollow::with_format(file, format),
                 binding,
             });
         }

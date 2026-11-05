@@ -38,7 +38,7 @@ fn claude_snapshots_through_the_worker_match_the_old_translator_and_rows() {
         let ready = worker.hello(1, WORK_MS);
         assert_eq!(
             ready,
-            json!({"op": "ready", "protocol": 1, "formats": ["claude"]}),
+            json!({"op": "ready", "protocol": 1, "formats": ["claude", "codex"]}),
             "{name}: handshake"
         );
         let opened = worker.open(1, &binding, "claude", &file);
@@ -149,7 +149,7 @@ fn bad_requests_end_the_worker_with_a_fault_and_the_documented_status() {
                 );
                 match kind {
                     "format" => (
-                        worker.open(1, &good, "codex", "claude-chair-run.jsonl"),
+                        worker.open(1, &good, "agy", "claude-chair-run.jsonl"),
                         Some(2),
                     ),
                     "label" => (

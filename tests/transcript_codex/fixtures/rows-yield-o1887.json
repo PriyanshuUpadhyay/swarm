@@ -1,0 +1,22 @@
+[
+ {
+  "id": "call-c1:result@raw-1887-0",
+  "kind": "toolResult",
+  "order": [
+   1887,
+   0
+  ],
+  "output": {
+   "full_bytes": 79,
+   "full_lines": 4,
+   "hidden_lines": 0,
+   "id": "raw-1887-0:output",
+   "text": "Script completed\nWall time 2.0 seconds\nOutput:\n{\"exit_code\":3,\"output\":\"bad\\n\"}"
+  },
+  "source_ids": [
+   "raw-1887-0"
+  ],
+  "text": "Script completed\nWall time 2.0 seconds\nOutput:\n{\"exit_code\":3,\"output\":\"bad\\n\"}",
+  "tool_status": "completed"
+ }
+]

@@ -1,7 +1,9 @@
 //! Explicit source operations share framing and do not reopen the source path.
 
 use super::super::reader_rows::ReaderRows;
-use super::super::source::{EndPolicy, Snapshot, SnapshotReader, SourceMeta, normalize_line};
+use super::super::source::{
+    EndPolicy, NativeContext, Snapshot, SnapshotReader, SourceMeta, normalize_line,
+};
 use super::super::source_readers::{ReaderBatch, ReaderState, prepare_records};
 use super::super::worker_protocol::ReaderBinding;
 use super::file::{boundary, length, physical_start, read_chunks};
@@ -22,7 +24,7 @@ impl SourceFollow {
         if start > end || end > length || !boundary(&self.file, start, work)? {
             return Err(SourceError::InvalidRange);
         }
-        let mut reader = SnapshotReader::new(meta, start, policy);
+        let mut reader = SnapshotReader::with_format(meta, start, policy, self.format);
         read_chunks(&self.file, start, end, work, |bytes, work| {
             reader.push(bytes, work).map_err(Into::into)
         })?;
@@ -40,7 +42,7 @@ impl SourceFollow {
         let origin = from.min(end);
         let start = physical_start(&self.file, origin, work)?;
         let mut framer = PhysicalFramer::new(start);
-        let mut state = ReaderState::new(binding, origin);
+        let mut state = ReaderState::new(binding, origin, self.format);
         let mut lines = Vec::new();
         read_chunks(&self.file, start, end, work, |bytes, work| {
             framer.push(bytes, work, |line, work| {
@@ -70,12 +72,13 @@ impl SourceFollow {
             return Err(SourceError::InvalidRange);
         }
         let mut framer = PhysicalFramer::new(start);
-        let mut page = ReaderRows::empty(start, false);
+        let mut context = NativeContext::new(self.format);
+        let mut page = ReaderRows::empty(start, self.format.is_codex());
         let mut lines = Vec::new();
         read_chunks(&self.file, start, end, work, |bytes, work| {
             framer.push(bytes, work, |line, work| {
-                let native = normalize_line(line, work)?;
-                let facts = prepare_records(&native, work)?;
+                let native = normalize_line(line, &mut context, work)?;
+                let facts = prepare_records(&native, self.format, work)?;
                 page.ingest_prepared(line.start_byte, line.end_byte, &facts);
                 lines.push(native);
                 Ok(())

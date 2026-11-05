@@ -33,7 +33,7 @@ fn two_readers_share_one_held_file_and_match_the_old_translator_and_rows() {
     let ready = worker.hello();
     assert_eq!(
         ready,
-        json!({"op": "ready", "protocol": 1, "formats": ["claude"]})
+        json!({"op": "ready", "protocol": 1, "formats": ["claude", "codex"]})
     );
     let opened = worker.open(&scenario.binding, path.to_str().expect("utf-8 path"));
     assert_eq!(opened["op"], "opened", "open: {opened}");

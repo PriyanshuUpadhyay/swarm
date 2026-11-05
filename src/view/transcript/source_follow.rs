@@ -1,6 +1,6 @@
 //! Physical framing and the single held-file boundary for transcript readers.
 
-use super::source::{SnapshotError, Work};
+use super::source::{NativeFormat, SnapshotError, Work};
 use super::source_readers::ReaderSet;
 use std::fs::File;
 
@@ -26,6 +26,7 @@ impl From<SnapshotError> for SourceError {
 
 #[derive(Debug)]
 pub struct SourceFollow {
+    format: NativeFormat,
     file: File,
     framer: PhysicalFramer,
     readers: ReaderSet,
@@ -33,10 +34,15 @@ pub struct SourceFollow {
 
 impl SourceFollow {
     pub fn new(file: File) -> Self {
+        Self::with_format(file, NativeFormat::Claude)
+    }
+
+    pub fn with_format(file: File, format: NativeFormat) -> Self {
         Self {
+            format,
             file,
             framer: PhysicalFramer::new(0),
-            readers: ReaderSet::default(),
+            readers: ReaderSet::new(format),
         }
     }
 }
