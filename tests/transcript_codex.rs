@@ -18,6 +18,8 @@ use serde_json::{Value, json};
 mod client;
 #[path = "transcript_codex/fixtures.rs"]
 mod fixtures;
+#[path = "transcript_codex/numeric_tokens.rs"]
+mod numeric_tokens;
 
 use client::Worker;
 
@@ -188,6 +190,9 @@ fn codex_logs_through_the_worker_match_the_old_translator_and_rows() {
     );
     // Tool JSON inside a tool_search output keeps the OLD number spelling (42, not 42.0).
     run_snapshot_groups(&binding, &fixtures::steps_tool_search()["snapshot_groups"]);
+    // The exact tokens -0 and 100 in a tool input, and a scalar duration of -0, read at the raw
+    // response boundary.
+    numeric_tokens::numeric_values_are_exact();
 }
 
 /// Runs one reader phase over a growing copy of a tracked Codex file. Every step is a literal

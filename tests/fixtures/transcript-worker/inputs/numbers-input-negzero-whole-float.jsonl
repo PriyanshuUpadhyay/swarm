@@ -1,0 +1,1 @@
+{"type":"assistant","sessionId":"s-add","uuid":"c1","timestamp":"2026-11-05T00:00:00.000Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"T","input":{"negzero":-0,"whole_float":1E2}}]}}

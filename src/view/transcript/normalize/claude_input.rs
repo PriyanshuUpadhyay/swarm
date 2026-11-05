@@ -17,6 +17,13 @@ pub(super) enum Input {
 impl Serialize for Input {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match self {
+            Self::Scalar(Value::Number(number)) if number.is_f64() => {
+                let raw = RawValue::from_string(
+                    number.as_f64().expect("finite parsed float").to_string(),
+                )
+                .map_err(<S::Error as serde::ser::Error>::custom)?;
+                raw.serialize(serializer)
+            }
             Self::Scalar(value) => value.serialize(serializer),
             Self::Number(raw) => raw.serialize(serializer),
             Self::Array(items) => {
@@ -73,7 +80,7 @@ pub(super) fn parse(
         }
         Some(b'-' | b'0'..=b'9') => {
             let text = raw.get();
-            if text.contains(['.', 'e', 'E']) {
+            if !claude_json::integer_formatted(text) {
                 match text
                     .parse::<f64>()
                     .ok()

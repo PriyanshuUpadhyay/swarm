@@ -1,9 +1,12 @@
-//! Two native numbers that a plain `serde_json::Value` cannot hold, through the same CLI main path.
+//! Native numbers that a plain `serde_json::Value` cannot hold or spells differently, through the
+//! same CLI main path.
 //!
-//! The OLD Zig translator keeps `1e400` and `18446744073709551616` in a tool input exactly. The
-//! expected bytes are the OLD native stdout of round 9 (`PROVENANCE.json` lists the source and
-//! hash). Nothing here parses those numbers to a float or an integer: the payload is read with
-//! vendor `RawValue` fields, and the `input` field is compared as raw text.
+//! The OLD Zig translator keeps `1e400` and `18446744073709551616` in a tool input exactly, keeps
+//! `-0`, writes `1E2` as `100`, turns a `-0` duration into `null`, and writes a cost of `0` and of
+//! `15.275728604913303` with those exact digits. The expected bytes are the OLD native stdout
+//! (`PROVENANCE*.json` list the source and hash). Nothing here parses those numbers to a float or an
+//! integer: the payload is read with vendor `RawValue` fields, and a named `input` field or a named
+//! top-level field is compared as raw text before any semantic decoding.
 
 use std::collections::BTreeMap;
 
@@ -36,9 +39,11 @@ struct RawLine {
 
 enum Rows {
     /// The OLD `/api/rows` body for the same input (round 9). Its `rows` array is the expected value.
-    OldHttpRows(&'static str),
+    OldHttp(&'static str),
     /// A valid native event that the row owner's number type cannot hold: the amended ABI shape.
     Unavailable,
+    /// No OLD row set was captured for this value-set, so none is asserted.
+    NotCaptured,
 }
 
 struct Case {
@@ -46,20 +51,69 @@ struct Case {
     input: &'static str,
     native_stdout: &'static str,
     rows: Rows,
+    /// Empty: the whole `input` text is compared. Otherwise only these input fields are compared,
+    /// each as its raw token.
+    tokens: &'static [&'static str],
+    /// Top-level event fields compared as raw text before the other fields are decoded.
+    raw_fields: &'static [&'static str],
 }
 
-const CASES: [Case; 2] = [
+const CASES: [Case; 6] = [
     Case {
         name: "number-1e400",
         input: "numbers-input-1e400.jsonl",
         native_stdout: "numbers/native-1e400.stdout",
         rows: Rows::Unavailable,
+        tokens: &[],
+        raw_fields: &[],
     },
     Case {
         name: "number-2-pow-64",
         input: "numbers-input-u64-plus-1.jsonl",
         native_stdout: "numbers/native-u64-plus-1.stdout",
-        rows: Rows::OldHttpRows("numbers/old-http-rows-u64-plus-1.body"),
+        rows: Rows::OldHttp("numbers/old-http-rows-u64-plus-1.body"),
+        tokens: &[],
+        raw_fields: &[],
+    },
+    // Source `{"negzero":-0,"whole_float":1E2}`: the OLD native input keeps `-0` and writes `100`.
+    // Data: Pi checker's ORIGINAL capture (`PROVENANCE-numeric-tokens.json`).
+    Case {
+        name: "number-negzero-whole-float",
+        input: "numbers-input-negzero-whole-float.jsonl",
+        native_stdout: "numbers/native-negzero-whole-float.stdout",
+        rows: Rows::NotCaptured,
+        tokens: &["negzero", "whole_float"],
+        raw_fields: &[],
+    },
+    // Source `durationMs:-0` on a turn_duration record: the OLD native event has `duration_ms:null`
+    // (the other fields are compared as in every case). Data: Pi checker's ORIGINAL capture
+    // (`PROVENANCE-scalar-negzero.json`).
+    Case {
+        name: "number-duration-negzero",
+        input: "numbers-input-duration-negzero.jsonl",
+        native_stdout: "numbers/native-duration-negzero.stdout",
+        rows: Rows::NotCaptured,
+        tokens: &[],
+        raw_fields: &[],
+    },
+    // Claude `cost-state` with `totalCostUSD:0`: the OLD native `cost_usd` is the token `0`.
+    // Data: ORIGINAL capture of round 6 (`PROVENANCE-cost-v4.json`).
+    Case {
+        name: "number-cost-zero",
+        input: "numbers-input-cost-zero.jsonl",
+        native_stdout: "numbers/native-cost-zero.stdout",
+        rows: Rows::NotCaptured,
+        tokens: &[],
+        raw_fields: &["cost_usd"],
+    },
+    // The same field with `15.275728604913303`: the OLD native `cost_usd` keeps those digits.
+    Case {
+        name: "number-cost-decimal",
+        input: "numbers-input-cost-decimal.jsonl",
+        native_stdout: "numbers/native-cost-decimal.stdout",
+        rows: Rows::NotCaptured,
+        tokens: &[],
+        raw_fields: &["cost_usd"],
     },
 ];
 
@@ -71,7 +125,27 @@ fn short(raw: &str) -> String {
     raw.chars().take(160).collect()
 }
 
-/// Runs both values and reports every mismatch, so one wrong value cannot hide the other.
+/// Compares the named input fields as raw text, so `-0` cannot pass as `0` and `100` cannot pass as
+/// `1E2` or `100.0`. A name missing on the OLD side fails the test.
+fn selected_tokens(case: &Case, got: &str, want: &str) {
+    let (got, want) = (fields(got), fields(want));
+    let mut differences = Vec::new();
+    for name in case.tokens {
+        let want_raw = want.get(*name).expect("the OLD input has the field").get();
+        let got_raw = got.get(*name).map(|raw| raw.get());
+        if got_raw != Some(want_raw) {
+            differences.push(format!("{name}: got {got_raw:?}, OLD {want_raw:?}"));
+        }
+    }
+    assert!(
+        differences.is_empty(),
+        "{}: input raw tokens differ from OLD: {}",
+        case.name,
+        differences.join("; ")
+    );
+}
+
+/// Runs every value and reports every mismatch, so one wrong value cannot hide another.
 pub fn numeric_values_are_exact() {
     let mut failures = Vec::new();
     for case in &CASES {
@@ -157,11 +231,20 @@ fn check(case: &Case) {
         );
         for (key, want_raw) in &old_fields {
             let got_raw = &event[key];
-            if key == "input" {
+            if key == "input" && !case.tokens.is_empty() {
+                selected_tokens(case, got_raw.get(), want_raw.get());
+            } else if key == "input" {
                 assert_eq!(
                     got_raw.get(),
                     want_raw.get(),
                     "{}: the native tool input differs from OLD",
+                    case.name
+                );
+            } else if case.raw_fields.contains(&key.as_str()) {
+                assert_eq!(
+                    got_raw.get(),
+                    want_raw.get(),
+                    "{}: event field {key} differs from the OLD raw token",
                     case.name
                 );
             } else {
@@ -181,7 +264,8 @@ fn check(case: &Case) {
                     case.name
                 );
             }
-            Rows::OldHttpRows(path) => {
+            Rows::NotCaptured => {}
+            Rows::OldHttp(path) => {
                 let body =
                     decode_deep(&std::fs::read(fixture_dir().join(path)).expect("OLD rows body"));
                 assert_same(case.name, "rows", &rows, &body["rows"]);

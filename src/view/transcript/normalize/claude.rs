@@ -1,8 +1,11 @@
 //! Normalizes all Claude record branches, without expanding unused source trees.
 
+use super::claude_input::Input;
 use super::claude_json::{self, Object};
 use super::claude_meta::{event, ignored, meta, ring, text_event, text_kind, unknown, usage};
 use super::{NormalizedEvent, SnapshotError, Work};
+use serde::ser::SerializeMap;
+use serde::{Serialize, Serializer};
 use serde_json::{Value, json, value::RawValue};
 
 pub(super) fn line(
@@ -32,14 +35,7 @@ pub(super) fn line(
         }))),
         "agent-name" => events.push(event("session_info", &meta, json!({"kind":"agent_name", "value":rec.text("agentName")}))),
         "system" => events.push(system(&rec, &meta, line)),
-        "cost-state" => {
-            let mut value = usage(&meta, "cost");
-            value["cost_usd"] = json!(rec.nonnegative_number("totalCostUSD"));
-            value["cost_completeness"] = json!(match rec.boolean("hasUnknownModelCost") {
-                Some(true) => "partial", Some(false) => "complete", None => "unknown",
-            });
-            events.push(NormalizedEvent::new(&value));
-        }
+        "cost-state" => events.push(cost(&rec, &meta)),
         "queue-operation" => events.push(event("queue_operation", &meta, json!({
             "operation": rec.text("operation"), "content": rec.optional_text("content"), "reason":rec.optional_text("reason"),
         }))),
@@ -53,6 +49,39 @@ pub(super) fn line(
         _ => events.push(unknown(line, &meta)),
     }
     Ok(events)
+}
+
+fn cost(rec: &Object<'_>, meta: &Value) -> NormalizedEvent {
+    let mut value = usage(meta, "cost");
+    value["cost_completeness"] = json!(match rec.boolean("hasUnknownModelCost") {
+        Some(true) => "partial",
+        Some(false) => "complete",
+        None => "unknown",
+    });
+    let cost = Input::Scalar(json!(rec.nonnegative_number("totalCostUSD")));
+    NormalizedEvent::new(&CostUsage {
+        fields: value.as_object().expect("usage event is an object"),
+        cost,
+    })
+}
+
+struct CostUsage<'a> {
+    fields: &'a serde_json::Map<String, Value>,
+    cost: Input,
+}
+
+impl Serialize for CostUsage<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut map = serializer.serialize_map(Some(self.fields.len()))?;
+        for (key, value) in self.fields {
+            if key == "cost_usd" {
+                map.serialize_entry(key, &self.cost)?;
+            } else {
+                map.serialize_entry(key, value)?;
+            }
+        }
+        map.end()
+    }
 }
 
 fn attachment(rec: &Object<'_>, meta: &Value, line: &[u8]) -> NormalizedEvent {

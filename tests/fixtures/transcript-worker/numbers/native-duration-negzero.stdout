@@ -1,0 +1,1 @@
+{"type":"turn_ended","duration_ms":null,"reason":"completed","meta":{"session_id":"s1","uuid":"sys-1","timestamp":"2026-09-27T08:30:20.100Z","parent_uuid":"a-5","source_tool_use_id":null}}

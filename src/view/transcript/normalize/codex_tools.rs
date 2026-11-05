@@ -123,11 +123,8 @@ fn write_tool_list(
 ) -> Result<(), SnapshotError> {
     work.check()?;
     match input {
-        Input::Scalar(Value::Number(number)) if number.is_f64() => {
-            content.push_str(&number.as_f64().expect("finite parsed float").to_string());
-        }
-        Input::Scalar(value) => {
-            content.push_str(&serde_json::to_string(value).expect("validated tool list scalar"));
+        Input::Scalar(_) => {
+            content.push_str(&serde_json::to_string(input).expect("validated tool list scalar"));
         }
         Input::Number(raw) => content.push_str(raw.get()),
         Input::Array(items) => {

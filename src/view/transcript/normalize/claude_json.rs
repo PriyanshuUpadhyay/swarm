@@ -5,6 +5,11 @@ use serde::de::{MapAccess, Visitor};
 use serde::{Deserialize, Deserializer};
 use serde_json::value::RawValue;
 
+// OLD treats negative zero as a float even without a fraction or exponent.
+pub(super) fn integer_formatted(text: &str) -> bool {
+    text != "-0" && !text.contains(['.', 'e', 'E'])
+}
+
 pub(super) struct Object<'a>(Vec<(String, &'a RawValue)>);
 
 impl<'de> Deserialize<'de> for Object<'de> {
@@ -53,15 +58,19 @@ impl<'a> Object<'a> {
         array(self.get(key)?)
     }
     pub(super) fn integer(&self, key: &str) -> Option<i64> {
-        self.get(key)?.get().parse().ok()
+        let raw = self.get(key)?.get();
+        if !integer_formatted(raw) {
+            return None;
+        }
+        raw.parse().ok()
     }
     pub(super) fn token(&self, key: &str) -> Option<i64> {
         self.integer(key).filter(|value| *value >= 0)
     }
     pub(super) fn nonnegative_number(&self, key: &str) -> Option<f64> {
         let raw = self.get(key)?.get();
-        let value = if raw.contains(['.', 'e', 'E']) {
-            serde_json::from_str::<f64>(raw).ok()?
+        let value = if !integer_formatted(raw) {
+            raw.parse::<f64>().ok()?
         } else {
             raw.parse::<i64>().ok()? as f64
         };
