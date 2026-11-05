@@ -24,7 +24,6 @@ start list of steps and blocks; the planner may add or drop blocks for the task.
 |---|---|
 | `implement` | Run one change through frame, design, contracts, impact, build, review, and close, in `pair` or `auto` mode (on trial) |
 | `research` | Answer one question from evidence in a short report; its `03-web` step loads the `web-search` block |
-| `council` | A visible debate between Claude, GPT and Gemini voices that ends in a verdict |
 | `review` | Check a range with a script verdict, walk a PR into a pending review, or run a cleanup pass on request |
 | `build` | Pictures, generative plates, films, and websites drawn by code, from a story or a visual reference |
 | `explain` | Explain a subject with one running example, using the `voice-teach` block |
@@ -40,7 +39,8 @@ holds each runtime's lines. Run folders stay where they were.
 | `/implement`, `/pair`, `/deliver` | `/swarm:swarm implement`, then choose `pair` or `auto` mode |
 | `/review`, `/review-check`, `/review-walk`, `/cleanup-gate` | `/swarm:swarm review`, then choose `check`, `walk`, or `cleanup` |
 | `/research`, `/web-search` | `/swarm:swarm research` |
-| `/build`, `/explain`, `/council` | `/swarm:swarm build`, `/swarm:swarm explain`, `/swarm:swarm council` |
+| `/build`, `/explain` | `/swarm:swarm build`, `/swarm:swarm explain` |
+| `/council` | `/swarm:council`, a skill again since 2026-11-05 (ADR 0137) |
 
 The rules for proof, checked units, and code extraction live directly in
 `blocks/prove-it-works/SKILL.md`, `blocks/checked-units/SKILL.md`, and

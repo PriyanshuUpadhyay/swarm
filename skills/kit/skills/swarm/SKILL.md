@@ -28,7 +28,7 @@ the task mixes verbs, plan from the block catalog with no preset.
 | `review` | check a range, walk a GitHub PR, or run a cleanup pass |
 | `research` | answer one question from evidence in a short report |
 | `explain` | explain how something works |
-| `council` | get a visible debate between Gemini, GPT, and Claude seats on one question |
+| `council` | get a visible debate between Gemini, GPT, and Claude seats on one question; it is a skill, so read `skills/council/SKILL.md` |
 
 ## Presets
 

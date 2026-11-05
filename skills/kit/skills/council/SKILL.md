@@ -12,7 +12,7 @@ synthesize. Do not vote as a fourth voice.
 The council never makes the user's final design decision and never starts implementation. Seats
 inspect evidence and write only council scratch artifacts. Briefs and seats follow the kit block
 `blocks/worker-brief/SKILL.md`, and the chair runs seats as the kit block `blocks/run-workers/SKILL.md`
-says. The kit root, with its `blocks/` and `references/` folders, is two folders up from this preset's folder. End with the options, evidence, disagreement, and the decision
+says. The kit root, with its `blocks/` and `references/` folders, is two folders up from this skill's folder. End with the options, evidence, disagreement, and the decision
 that remains with the user.
 
 ## Start or continue
@@ -20,7 +20,9 @@ that remains with the user.
 A council is a step run, so the kit's `references/step-run.md` owns the status line, pick-up,
 close, and when a step waits for the user. Choose the council run and log paths by
 `references/run-folder.md`. "council continue <folder>" picks it up. Make the folder with the
-front door in `skills/swarm/SKILL.md` and the preset below, and close each step with `done`.
+front door in `skills/swarm/SKILL.md`, with `Preset: council` and the preset below, and close each
+step with `done`. This skill is tested by `skills/skill-eval/SKILL.md`, with its cases and results
+in `evals/`.
 
 ## Preset
 
