@@ -44,7 +44,9 @@ Round-0 questions that survive the filter, and a split after Round 3, set the st
 
 - Every voice is a persistent, visible, interactive pane rooted at the invoking surface. A native
   subagent does not replace a voice.
-- The roles are `council.claude`, `council.gpt`, and `council.gemini`.
+- The roles are `council.claude`, `council.gpt`, and `council.gemini`. Each seat role also has a
+  method card in `references/roles.md`. The card stays with the seat, so a seat on a fallback
+  runner keeps its card.
 - Every seat is report-only, as `blocks/worker-brief/SKILL.md` says; its result file is its council
   scratch result.
 - Reuse the same three seats for every round, and never start the next round while a seat is
@@ -70,6 +72,8 @@ streams into the chair context.
 ## Pinned brief
 
 Every voice receives the same brief, pinned for a judgment as `blocks/worker-brief/SKILL.md` says.
+Each brief adds the shared rule and that seat's card from `references/roles.md`, word for word.
+The seats differ by method, so their positions do not repeat one another.
 
 ## Protocol
 
@@ -89,8 +93,9 @@ Include the same pinned brief and the following output shape in the combined ask
 see one another.
 
 ```text
+ROLE: first-principles | evidence-check | pre-mortem
 VERDICT: GO | GO-WITH-CHANGES | NO-GO
-TOP REASONS: at most 3, ranked
+TOP REASONS: at most 3, ranked, each from the seat's role and with its proof
 BIGGEST RISK
 WHAT WOULD CHANGE YOUR MIND
 ```
@@ -111,7 +116,8 @@ or an open objection, not a ritual.
 
 Run only when the convergence check fails. Round 2 and 3 asks send only the brief path, the other
 seats' latest position files, and the list of points still split. The path lets a resumed seat
-re-read its coordinates. Do not resend the brief text. After each round, the
+re-read its coordinates. Do not resend the brief text. A seat keeps its role in every round, and
+changes its position only for new evidence, which it names. Agreement alone is not a reason. After each round, the
 chair writes settled points as `Resolved:` lines in `03-cross.md`. Each line cites the position
 file of each seat that agrees, or the user's decision. A point that any seat still contests stays
 in the split list. Each next ask names the resolved points as
@@ -132,8 +138,11 @@ present the split and ask the user to break the tie. Send no fourth round. Do no
 Consensus reasoning: 2–4 sentences.
 Required changes: all accepted changes, when applicable.
 Dissent / residual risk: anything still contested.
-Per-model trail: one line each for GEMINI, GPT, and CLAUDE.
+Per-model trail: one line each for GEMINI (pre-mortem), GPT (evidence-check), and CLAUDE (first-principles).
 ```
+
+Weigh the positions by their proof, not by the count of seats. A claim that the evidence-check
+seat marked not proven carries no weight in the consensus reasoning.
 
 The reply opens with the first screen in the kit's `references/plan-layout.md`. The verdict heading
 is its verdict line. Its table holds the required changes and the open dissent, grouped, and Read
