@@ -19,3 +19,18 @@ method added length, process text, and claims, and each loss came from one of th
 
 Limits: solo mode tests the method, not the web seats. Two cases only, both with a known answer
 that plain search finds.
+
+## Full mode, 2026-11-05
+
+The skill side was a real research run (plan, local step, three web seats, gate, merge, report) with
+the chair on claude opus. The baseline was one chat pane (claude opus) with no kit. One checker
+(codex gpt-6.1-sol) graded the pair blind.
+
+| date | skill commit | baseline | case | provider | grader | result | grader note |
+|---|---|---|---|---|---|---|---|
+| 2026-11-05 | 8d617a9e | no skill | agents-md | claude (full mode) | checker codex | loss | both 3/4; skill 13 links, base 5, both 0 dead; skill had 8 wrong or narrowed claims (odds read as compliance, a sample count not on the page, the 471.5K-token total given to one file, wrong issue dates), base had 2 (venue label, a speed cause not tested) |
+
+Verdict 2026-11-05: still do not build `research` as a skill. The seats found five real sources the
+baseline missed, and the gate dropped two false seat claims. But the merge copied seat and local
+numbers without a second read, so more sources gave more wrong claims. The grader picked the
+baseline because its fewer claims were exact.
