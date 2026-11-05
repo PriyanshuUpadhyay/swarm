@@ -99,7 +99,8 @@ Write each row as `| unit | rule | file:line | quote | kind | problem | proof |`
 - `kind` is `pass` (the unit follows the rule), `n/a` (the rule cannot apply, for example "no SQL
   in this hunk"), `fix` (a proved defect or a rule break), `ask` (a question, or a defect that is
   not proved), or `note` (optional cleanup). An unproved defect is an `ask`, never a `fix`. A `fix` also needs a defect that this change
-  introduced and that its author would fix; an older defect or a matter of taste is a `note`. Start
+  introduced and that its author would fix; an older defect or a matter of taste is a `note`, unless
+  the change says it fixes or bounds that defect (`L-15`). Start
   its problem with "potential issue, not confirmed:" and name the input that would trigger it.
   A `note` whose problem names a crash (`crash`, `traceback`, `panic`, `uncaught`, `non-zero exit`,
   `exits 1`) and that quotes a line the change added counts as a `fix`: `verdict` changes its kind, and only an
@@ -247,4 +248,5 @@ must not write files, so check that its type checker sets `noEmit`.
 ## Output
 
 In chat, give line 3 of `03-verdict.md`, then each `fix`, `ask`, `note`, and `limit` row with its
-`file:line`, then the run folder.
+`file:line`, then one line for each changed file that says what was checked and how, such as a
+test run or a probe input, then the run folder.
