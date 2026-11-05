@@ -25,3 +25,21 @@ Verdict 2026-11-05: fix. Two wins, one tie, three losses. The fix targets:
   with what was checked.
 - Weak expectation: `test-misses-path` expectation 2 passed on an unrelated condition; it now names
   the test.
+
+Round 2, after `L-14`, `L-15` and the per-file output line. New skill-side runs; the round-1 base
+reports were reused. The first round-2 grading deleted whole lines that held a rule id, which
+removed findings and merge lines from both sides, so it was discarded. These rows come from blind
+copies that replace method words inside each line (`blind3.py`).
+
+| date | skill commit | baseline | case | provider | result | grader note |
+|---|---|---|---|---|---|---|
+| 2026-11-05 | b541a3b3 | no skill | utf8-cap | claude | win | 2/2 vs 1/2; the refute seat kept the 196,608-byte reason |
+| 2026-11-05 | b541a3b3 | no skill | utf8-cap | codex | win | 2/2 vs 1/2; both found the overflow, only the skill side blocked the merge |
+| 2026-11-05 | b541a3b3 | no skill | test-misses-path | claude | loss | 0/2 each; the skill side wrote that reverting the anchor "would break it, by reading the code", which is false |
+| 2026-11-05 | b541a3b3 | no skill | test-misses-path | codex | win | 2/2 vs 0/2; the skill side reverted the anchor and the test still passed; the base side found the builder.rs:55 defect instead |
+| 2026-11-05 | b541a3b3 | no skill | crlf-not-a-bug | claude | loss | 1/2 vs 2/2; the skill side raised an `L-14` ask on a test-only change, so it did not say "can merge" |
+| 2026-11-05 | b541a3b3 | no skill | crlf-not-a-bug | codex | win (narrow) | 2/2 each; the skill side ran the suite and a negative test, and covered all four files |
+
+Verdict round 2: fix. Both losses are `L-14` on the Claude side. `L-14` now asks for a run revert
+and its quoted result, says reading the code is not proof, and leaves out a diff that only adds a
+check. Only the two lost pairs run again.
