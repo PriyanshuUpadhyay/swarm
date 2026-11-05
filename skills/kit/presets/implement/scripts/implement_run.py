@@ -49,7 +49,7 @@ def rev(folder, step):
 
 
 def review(folder, target, *opts):
-    script = BLOCKS.parent / "presets" / "review" / "scripts" / "review_check.py"
+    script = BLOCKS.parent / "skills" / "code-review" / "scripts" / "review_check.py"
     result = subprocess.run([sys.executable, str(script), "start", target, "--parent-loop", loop_key(folder), *opts])
     if result.returncode:
         raise SystemExit(result.returncode)

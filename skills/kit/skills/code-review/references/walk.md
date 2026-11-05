@@ -1,6 +1,6 @@
 # review mode: walk
 
-The `review` preset owns the mode choice. This file owns the PR walk, its steps, and its GitHub writes.
+The `code-review` skill owns the mode choice. This file owns the PR walk, its steps, and its GitHub writes.
 
 Example. A walk of PR 42 (`review_walk.py start 42`) makes `<repo>/tmp/review-walk/pr-42-01/` with five step files.
 The agent maps the files into groups, runs check mode on the PR range, and drafts 15
@@ -12,7 +12,7 @@ viewed it, and marks the unchanged files viewed again on GitHub after you say ye
 ## Preset
 
 Stop: owner
-Start: python3 <kit root>/presets/review/scripts/review_walk.py start <pr-number|url|local|base..head>
+Start: python3 <kit root>/skills/code-review/scripts/review_walk.py start <pr-number|url|local|base..head>
 Offers: html-diagram, diagram-check, prove-it-works, headless-shot, drive-app
 
 | File | Needs | Holds | Block | Why |
@@ -42,7 +42,7 @@ Offers: html-diagram, diagram-check, prove-it-works, headless-shot, drive-app
 to `.git/info/exclude`, so no one else sees the folder.
 
 ```sh
-W=<kit root>/presets/review/scripts/review_walk.py
+W=<kit root>/skills/code-review/scripts/review_walk.py
 python3 $W start <pr-number|url|local|base..head>   # makes the run and writes 01-scope.md
 python3 $W status [<run>]                            # status, ready, stale, and each problem it can prove
 python3 $W post <run> <run>/comments.json            # drafts into your pending review
@@ -56,7 +56,7 @@ ready step.
 ## Status line
 
 A review walk is a step run, so the kit's `references/step-run.md` (the kit root is
-two folders up from the `review` preset's folder) owns the status line, ready
+two folders up from the `code-review` skill's folder) owns the status line, ready
 and stale steps, pick-up, close, and when a step waits for the user. The script reads the same
 status line.
 
@@ -88,7 +88,7 @@ status line.
    as that file says for the place it is read.
 
    Cite new-side lines with the repo-relative path, and cite a removed line as `deleted`. Then run
-   `python3 <kit root>/presets/review/scripts/validate_citations.py <run>/diff.patch <run>/02-map.md`. Fix or
+   `python3 <kit root>/skills/code-review/scripts/validate_citations.py <run>/diff.patch <run>/02-map.md`. Fix or
    drop each citation that it rejects, because a wrong citation looks as sure as a right one. The
    map explains and never judges. Findings belong to step 03.
 3. **Check.** Run check mode on `<Base>..<Head>` from `01-scope.md`, or `local` for a local

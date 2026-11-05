@@ -32,7 +32,7 @@ only the user can give.
    Later rows go to the same fix seat as one more ask. A `fix` row whose fix is one line goes to the
    agent that built the change, not to the fix seat or a new seat. The verdict word and the next review start
    wait for every review seat. Fix each `fix` row in one more iteration, then review the
-   new range. Handle each `ask` as the Asks section of the `review` preset's `references/check.md` says: answer-only work keeps
+   new range. Handle each `ask` as the Asks section of the `code-review` skill's `references/check.md` says: answer-only work keeps
    HEAD and the range fixed, then run `verdict` again on the same run. In an implement run, you also hold
    the review step, and the last verdict goes in
    `06-review.md`, because it covers the build range. Then print the implement workflow's `Next:` line for the

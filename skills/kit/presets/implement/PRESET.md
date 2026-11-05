@@ -114,10 +114,10 @@ Offers: local-research, tool-trial, when-to-diagram, html-diagram, diagram-check
 
 `take 07-close` reads line 3 of the last run's own `03-verdict.md` and refuses unless it is APPROVE
 and the run's head is `HEAD`. A NEEDS DISCUSSION verdict closes only after the user's words go into
-the run's `answers.md` as answers or `limit:` lines per the Asks section of the `review` preset's `references/check.md`, and `verdict`
+the run's `answers.md` as answers or `limit:` lines per the Asks section of the `code-review` skill's `references/check.md`, and `verdict`
 runs again to APPROVE. A REQUEST CHANGES verdict goes to the user, who starts a `pair` or `auto` build for the
 findings. That run moves the build revision, so the review is stale and runs again on the new
-range. Answer each `ask` in the run's `answers.md` per the Asks section of the `review` preset's `references/check.md`.
+range. Answer each `ask` in the run's `answers.md` per the Asks section of the `code-review` skill's `references/check.md`.
 
 Start reviews with `python3 <kit root>/presets/implement/scripts/implement_run.py review <folder> <Base>..HEAD`.
 It passes the saved `loop.json` parent-loop key to `review_check.py start`, which owns the loop stop.
@@ -139,7 +139,7 @@ Its script uses `references/step_run.py` for the shared status commands in
 `references/step-run.md`.
 The mode file owns the chunks, the commits, and the build loop; the `implement` preset never starts `auto`
 mode by itself.
-The `review` preset's check mode owns the review and its verdict; the `implement` preset never fixes a finding itself. An `INCOMPLETE` verdict is no review.
+The `code-review` skill's check mode owns the review and its verdict; the `implement` preset never fixes a finding itself. An `INCOMPLETE` verdict is no review.
 The kit root, with its `blocks/` and `references/` folders, is two folders up from this preset's folder. The kit block
 `blocks/prove-it-works/SKILL.md` owns the choice of check and the evidence.
 The kit block `blocks/checked-units/SKILL.md` owns the unit order. The repo's decision log owns the ADRs. The `implement` preset never pushes.

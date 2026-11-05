@@ -11,8 +11,8 @@ sys.path.insert(0, str(HERE))
 import preset  # noqa: E402
 
 # Owner decision 2026-10-16: these verbs wait for the Plannotator click; explain and council go on in chat.
-STOPS = {"implement": "owner", "build": "owner", "research": "owner", "review check": "owner",
-         "review walk": "owner", "review cleanup": "owner", "explain": "chat", "council": "chat"}
+STOPS = {"implement": "owner", "build": "owner", "research": "owner", "code-review check": "owner",
+         "code-review walk": "owner", "code-review cleanup": "owner", "explain": "chat", "council": "chat"}
 
 
 def presets():

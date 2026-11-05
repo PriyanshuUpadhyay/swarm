@@ -176,6 +176,7 @@ if __name__ == "__main__":
         test_cli_encoding()
         test_superseded_run()
         test_answers()
+        test_refuted_fix()
         test_limits()
         test_crash_note()
         test_stale_verdict_guard()

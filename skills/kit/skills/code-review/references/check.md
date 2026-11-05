@@ -1,6 +1,6 @@
 # review mode: check
 
-The `review` preset owns the mode choice. This file owns the review gate, its script, and its verdict.
+The `code-review` skill owns the mode choice. This file owns the review gate, its script, and its verdict.
 
 Example. An `auto` build finishes on `feat-x` and runs a check of `a1b2c3d..HEAD`. The script finds 14
 units in 6 files. For `index.ts` `hunk 2365-2380` it lists 23 checks: the lens rules whose `Files:`
@@ -43,7 +43,7 @@ For a gate to new seats and the `implement` handoff from a leaf, apply `blocks/w
 ## Run
 
 ```sh
-C=<kit root>/presets/review/scripts/review_check.py
+C=<kit root>/skills/code-review/scripts/review_check.py
 python3 $C start <base>..<head> --parent-loop <task-key> # or `local`; --patch FILE for a part
 python3 $C start <base>..<head> --parent-loop <task-key> --continue <user-file>
 python3 $C build <run>              # when 01-units.md has a Build line: the CI check for the head
@@ -62,7 +62,7 @@ A CI descendant that starts its own session escapes the group kill and must be s
 
 Run it from the repo root. The run folder is `<repo-root>/tmp/review-check/<run>/`, where `<run>`
 is `range-<base7>-<head7>-NN` or `local-NN`, as the kit's `references/run-folder.md` describes. The kit
-root is two folders up from the `review` preset's folder; a bare `references/` path below is that skill's own.
+root is two folders up from the `code-review` skill's folder; a bare `references/` path below is that skill's own.
 
 | File | Who | Holds |
 |---|---|---|
@@ -193,7 +193,7 @@ Dispatch and gap follow-ups follow [the kit's fan-out.md](../../../references/fa
 150 checks rounded up, at most three. Units stay whole and in order. The split balances check
 counts. One shard keeps the aspect name; more shards use `<aspect>-1`, `<aspect>-2`, and
 `<aspect>-3`. Each seat writes `02-review-<seat>.md`. Before it reports, the seat runs
-`python3 <kit root>/presets/review/scripts/review_check.py lint <run> 02-review-<seat>.md`, which checks
+`python3 <kit root>/skills/code-review/scripts/review_check.py lint <run> 02-review-<seat>.md`, which checks
 only that file's rows (cells, IDs, quotes, and proofs), and fixes each row that it names.
 
 | Seat | Route | IDs | Writes |
@@ -210,6 +210,21 @@ each caller, and it must search past the first 20 references on its own.
 It lists missing results together for each seat. One review session writes the named seat files.
 The chair uses `02-review.md` for findings without an owner; `verdict <run>` checks ownership.
 Older runs without a seat map still use `02-review*.md`.
+
+## Refute findings
+
+Example. The `lang` seat writes a `fix` for `util.py:2` `return 2`, because a caller expects 1. A
+new `refute` seat on the other provider gets only that row, the diff, and `head/`. It finds no
+caller that reads the value, so it writes `| util.py:2 | \`return 2\` | refuted | rg finds no use of
+helper |`. `verdict` then shows the row as `ask` with `refuted:` in front of its problem, and the
+owner decides.
+
+When the first `verdict` shows a `fix` row, open one new seat on `review.deep`, on a provider
+that wrote no seat file. Give it each `fix` row with its unit, and no other row. It tries to
+disprove each one from the code, and writes one row for each in `02-refute.md`:
+`| file:line | quote | kept or refuted | proof |`. The file and quote are copied from the `fix` row. A
+`refuted` proof names the input, caller, or line that shows the row is wrong. Then run `verdict`
+again. A refuted `fix` becomes an `ask`, never a pass, so only the owner can close it.
 
 ## Rules for each repo
 

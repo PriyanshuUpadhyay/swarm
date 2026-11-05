@@ -10,7 +10,7 @@ def test_loop_cap():
             (run / "snapshot.json").unlink(missing_ok=True)
             assert json.loads((run / "target.json").read_text())["parent_loop"] == "task-a"
         loop_refused(base, head, "task-a", "cap")
-        script = HERE.parents[1] / "implement" / "scripts" / "implement_run.py"
+        script = HERE.parents[2] / "presets" / "implement" / "scripts" / "implement_run.py"
         folder = Path("tmp/flow/implement-replan")
         folder.mkdir(parents=True)
         (folder / "loop.json").write_text(json.dumps({"parent_loop": "task-a"}))
@@ -72,7 +72,7 @@ def test_loop_snapshots():
         folder.mkdir(parents=True)
         (folder / "06-review.md").write_text(f"Status: done x\nUses:\n\nRun: tmp/review-check/{final.name}\n")
         (folder / "07-close.md").write_text("Status: open\nUses: 06-review\n\n## Result\n")
-        script = HERE.parents[1] / "implement" / "scripts" / "implement_run.py"
+        script = HERE.parents[2] / "presets" / "implement" / "scripts" / "implement_run.py"
         out = subprocess.run([sys.executable, str(script), "take", str(folder), "07-close", "test"], capture_output=True, text=True)
         assert out.returncode == 0, out.stderr
         assert rc.verdict(final.name) == 0, "answer-only verdict must not spend another round"

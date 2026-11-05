@@ -23,7 +23,6 @@ start list of steps and blocks; the planner may add or drop blocks for the task.
 | Preset | Use |
 |---|---|
 | `implement` | Run one change through frame, design, contracts, impact, build, review, and close, in `pair` or `auto` mode (on trial) |
-| `review` | Check a range with a script verdict, walk a PR into a pending review, or run a cleanup pass on request |
 | `build` | Pictures, generative plates, films, and websites drawn by code, from a story or a visual reference |
 | `explain` | Explain a subject with one running example, using the `voice-teach` block |
 
@@ -36,7 +35,7 @@ holds each runtime's lines. Run folders stay where they were.
 | You typed | Type now |
 |---|---|
 | `/implement`, `/pair`, `/deliver` | `/swarm:swarm implement`, then choose `pair` or `auto` mode |
-| `/review`, `/review-check`, `/review-walk`, `/cleanup-gate` | `/swarm:swarm review`, then choose `check`, `walk`, or `cleanup` |
+| `/review`, `/review-check`, `/review-walk`, `/cleanup-gate` | `/swarm:code-review`, then choose `check`, `walk`, or `cleanup`; a skill since 2026-11-05 (ADR 0137) |
 | `/research`, `/web-search` | `/swarm:research`, a skill again since 2026-11-05 (ADR 0137) |
 | `/build`, `/explain` | `/swarm:swarm build`, `/swarm:swarm explain` |
 | `/council` | `/swarm:council`, a skill again since 2026-11-05 (ADR 0137) |

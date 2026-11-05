@@ -1,6 +1,6 @@
 # review mode: cleanup
 
-The `review` preset owns the mode choice. This file owns the cleanup pass and when it activates.
+The `code-review` skill owns the mode choice. This file owns the cleanup pass and when it activates.
 
 One pass over the working tree, run BEFORE a substantial diff, patch, or pull request is presented.
 It replaces the three after-the-fact passes the user otherwise pays for one at a time — readability

@@ -167,7 +167,7 @@ def meta(path):
 def preset_files():
     """Each verb preset file, and each skill's SKILL.md (ADR 0136); callers keep those with a ## Preset section."""
     return (sorted((KIT / "presets").glob("*/PRESET.md")) + sorted((KIT / "presets").glob("*/references/*.md"))
-            + sorted((KIT / "skills").glob("*/SKILL.md")))
+            + sorted((KIT / "skills").glob("*/SKILL.md")) + sorted((KIT / "skills").glob("*/references/*.md")))
 
 
 def kit_json():

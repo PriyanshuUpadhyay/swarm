@@ -200,3 +200,32 @@ def test_answers():
         finally:
             os.chdir(previous)
 
+
+
+def test_refuted_fix():
+    """A fix that a second seat refutes in 02-refute.md becomes an open ask; the owner still decides."""
+    previous = Path.cwd()
+    with tempfile.TemporaryDirectory() as d:
+        try:
+            os.chdir(d)
+            sh("git", "init", "-qb", "main")
+            sh("git", "config", "user.email", "t@t")
+            sh("git", "config", "user.name", "t")
+            base = commit({"util.py": "def helper():\n    return 1\n"}, "refute base")
+            head = commit({"util.py": "def helper():\n    return 2\n"}, "refute change")
+            rc.start(f"{base}..{head}")
+            run = Path("tmp/review-check") / f"range-{base[:7]}-{head[:7]}-01"
+            uid, checks = next(iter(load_checklist(run).items()))
+            rows(run, f"| {uid} | {', '.join(checks['rules']) or '-'} | x | `return 2` | n/a | | "
+                 "the test code has no case these rules name |",
+                 f"| {uid} | - | util.py:2 | `return 2` | fix | breaks a caller | caller expects 1 |")
+            assert rc.verdict(run.name) == 0
+            assert "Verdict: REQUEST CHANGES" in (run / "03-verdict.md").read_text()
+            (run / "02-refute.md").write_text("| file:line | quote | result | proof |\n|---|---|---|---|\n"
+                                              "| util.py:2 | `return 2` | refuted | no caller reads the value; rg finds no use of helper |\n")
+            assert rc.verdict(run.name) == 0
+            verdict = (run / "03-verdict.md").read_text()
+            assert verdict.splitlines()[2].startswith("Verdict: NEEDS DISCUSSION (1 of 1 units"), verdict
+            assert "- ask `util.py:2` refuted: breaks a caller (proof: no caller reads the value" in verdict, verdict
+        finally:
+            os.chdir(previous)

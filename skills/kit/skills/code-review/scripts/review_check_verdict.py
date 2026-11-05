@@ -55,6 +55,16 @@ def answers(path):
 
 
 
+def refuted(path):
+    """{(file, quote): proof} for each `refuted` row of 02-refute.md: `| file:line | quote | kept or refuted | proof |`."""
+    out = {}
+    for line in path.read_text(encoding="utf-8").split("\n") if path.exists() else []:
+        cells = [c.strip().replace("\\|", "|") for c in re.split(r"(?<!\\)\|", line)[1:-1]]
+        if len(cells) == 4 and cells[2].lower() == "refuted":
+            out[(cells[0].split(":")[0].strip("`"), cells[1].strip("`"))] = cells[3]
+    return out
+
+
 def verdict(name, only=None):
     """Gate the rows and write 03-verdict.md; with `only` (a seat file name), check only that file's rows and write nothing."""
     from review_check import GENERIC, KINDS, answers, home, parse_diff, revision, rows, step_run, tree_digest
@@ -71,6 +81,7 @@ def verdict(name, only=None):
     if len(set(symbols)) != len(symbols):
         snapshot["certain"] = False
     replied = answers(d / "answers.md")
+    disproved = refuted(d / "02-refute.md")
     past, history = answers(d / "answers-before.md"), []
     closed = [0] * len(replied)
     selected = [alternatives[0] for alternatives in replied]
@@ -183,6 +194,11 @@ def verdict(name, only=None):
                     proof = answer[6:].strip()
                 else:
                     proof = answer
+            # A second, fresh seat that disproves a fix turns it into an ask, so the owner decides; it never drops it.
+            if kind == "fix" and (why := disproved.get((path, quote))):
+                if why.lower().strip(". ") in GENERIC:
+                    problems.append(f"02-refute.md {path} `{quote}`: a refuted row needs a proof that names the input or the code")
+                kind, problem, proof = "ask", f"refuted: {problem}", why
             kept.append((uid, loc, quote, kind, problem, proof))
         evidence = sorted({line.strip() for line in scope if quote in line})
         if len(evidence) != 1 or u["symbol"].startswith(("hunk ", "deleted ")):
@@ -228,7 +244,7 @@ def verdict(name, only=None):
     line3 = (f"Verdict: {word} ({len(seen)} of {len(units)} units, {checked} of {checks} checks; {count['fix']} fix, {count['ask']} ask, "
              f"{count['note']} note, {count['answered']} answered, {count['limit']} limit; rules: {'none' if rules == 'none' else Path(rules).name}; build: {built})")
     uses = ", ".join(f"{f.stem}@{revision(f)}" for f in [d / "01-units.md", *sorted(d.glob("02-review*.md")),
-                                                          *[f for f in [d / "build.json", d / "answers.md"] if f.exists()]])
+                                                          *[f for f in [d / "02-refute.md", d / "build.json", d / "answers.md"] if f.exists()]])
     body = [line3, "", *(f"- {p}" for p in problems),
             *(f"- {k} `{loc}` {problem} ({'answer' if k == 'answered' else 'limit' if k == 'limit' else 'proof'}: {proof})"
               for _, loc, _, k, problem, proof in kept),

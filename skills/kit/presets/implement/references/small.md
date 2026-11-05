@@ -25,9 +25,9 @@ Take the small route only when all of these hold. Otherwise run the `implement` 
 3. Run `python3 -I <kit root>/presets/implement/scripts/size_gate.py <base>` from the repo root.
    On `raise: <reason>`, stop the small route, tell the owner the reason, and run the `implement`
    preset in full on the same change. Its review covers the same `<base>..HEAD`.
-4. Commit. Run `python3 <kit root>/presets/review/scripts/review_check.py start <base>..HEAD`, and
+4. Commit. Run `python3 <kit root>/skills/code-review/scripts/review_check.py start <base>..HEAD`, and
    send the run's seat map to one fresh seat that the `run-workers` block starts. One seat writes
-   every named seat file, as the Seats section of the `review` preset's `references/check.md`
+   every named seat file, as the Seats section of the `code-review` skill's `references/check.md`
    allows. The agent that wrote the change never fills the rows.
 5. Run `verdict`. On `REQUEST CHANGES`, fix each `fix` row and review the new range once more. On
    `NEEDS DISCUSSION`, bring the asks to the owner. A second `REQUEST CHANGES` goes to the owner.
