@@ -1,0 +1,27 @@
+{"type":"session","version":3,"id":"u04-s","timestamp":"2026-11-05T00:00:00.000Z","cwd":"/work/u04"}
+{"type":"model_change","id":"m1","parentId":null,"timestamp":"2026-11-05T00:00:00.000Z","provider":"p","modelId":"model-u04"}
+{"type":"message","id":"u1","parentId":"m1","timestamp":"2026-11-05T00:00:00.000Z","message":{"role":"user","content":[{"type":"text","text":"<skill name=\"plan\" location=\"/s/plan/SKILL.md\">\nBody line.\n</skill>\n\nfix this now"}]}}
+{"type":"message","id":"u2","parentId":"u1","timestamp":"2026-11-05T00:00:00.000Z","message":{"role":"user","content":[{"type":"text","text":"look at ü 😀"},{"type":"image","data":"AAAA","mimeType":"image/png"}]}}
+{"type":"message","id":"a1","parentId":"u2","timestamp":"2026-11-05T00:00:00.000Z","message":{"role":"assistant","content":[{"type":"thinking","thinking":"Plan it."},{"type":"text","text":"First."},{"type":"text","text":"Second \u0001 é 😀."},{"type":"toolCall","id":"call-1","name":"bash","arguments":{"command":"echo é 😀","nested":{"a":[1,2,{"b":null}]},"flag":true}},{"type":"toolCall","id":"call-2","name":"read","arguments":{"path":"/w/a.txt"}}],"model":"model-u04","stopReason":"toolUse","usage":{"input":10,"output":2,"cacheRead":100,"cacheWrite":5,"totalTokens":117}}}
+{"type":"message","id":"r1","parentId":"a1","timestamp":"2026-11-05T00:00:00.000Z","message":{"role":"toolResult","toolCallId":"call-1","content":[{"type":"text","text":"out"},{"type":"image","data":"AAAA","mimeType":"image/jpeg"}],"isError":false}}
+{"type":"message","id":"r2","parentId":"r1","timestamp":"2026-11-05T00:00:00.000Z","message":{"role":"toolResult","toolCallId":"call-2","content":"denied","isError":true}}
+{"type":"message","id":"a2","parentId":"r2","timestamp":"2026-11-05T00:00:00.000Z","message":{"role":"assistant","content":[{"type":"text","text":"Done."}],"model":"model-u04","stopReason":"length","usage":{"input":7,"output":1,"cacheRead":0}}}
+{"type":"message","id":"a3","parentId":"a2","timestamp":"2026-11-05T00:00:00.000Z","message":{"role":"assistant","content":[],"model":"model-u04","stopReason":"error","errorMessage":"Operation aborted"}}
+{"type":"message","id":"a4","parentId":"a3","timestamp":"2026-11-05T00:00:00.000Z","message":{"role":"assistant","content":[{"type":"redacted_thinking","data":"x"},{"type":"text","text":"After."}],"model":"model-u04","stopReason":"stop"}}
+{"type":"custom_message","id":"c1","parentId":"a4","timestamp":"2026-11-05T00:00:00.000Z","customType":"x","content":"Injected note.","display":true}
+{"type":"branch_summary","id":"b1","parentId":"c1","timestamp":"2026-11-05T00:00:00.000Z","fromId":"u1","summary":"Branch work."}
+{"type":"message","id":"e1","parentId":"b1","timestamp":"2026-11-05T00:00:00.000Z","message":{"role":"bashExecution","command":"sleep 9","output":"","cancelled":true}}
+{"type":"message","id":"g1","parentId":"e1","timestamp":"2026-11-05T00:00:00.000Z","message":{"role":"custom","customType":"x","content":"c","display":false}}
+{"type":"message","id":"g2","parentId":"g1","timestamp":"2026-11-05T00:00:00.000Z","message":{"role":"branchSummary","summary":"s"}}
+{"type":"message","id":"g3","parentId":"g2","timestamp":"2026-11-05T00:00:00.000Z","message":{"role":"compactionSummary","summary":"s"}}
+{"type":"label","id":"k0","parentId":"g3","timestamp":"2026-11-05T00:00:00.000Z"}
+{"type":"context_edit","id":"k1","parentId":"g3","timestamp":"2026-11-05T00:00:00.000Z"}
+{"type":"usage","id":"k2","parentId":"g3","timestamp":"2026-11-05T00:00:00.000Z"}
+{"type":"custom","id":"k3","parentId":"g3","timestamp":"2026-11-05T00:00:00.000Z"}
+{"type":"future_kind","id":"f1","parentId":"g3","timestamp":"2026-11-05T00:00:00.000Z","note":"x"}
+{"type":"message","id":"x1","parentId":"f1","timestamp":"2026-11-05T00:00:00.000Z","message":"oops"}
+{"type":"message","id":"x2","parentId":"x1","timestamp":"2026-11-05T00:00:00.000Z","message":{"role":"mystery","content":"z"}}
+[1,2]
+not json
+{"type":"message","id":"z1","parentId":"x2","timestamp":"2026-11-05T00:00:00.000Z","message":{"role":"user","content":"bye"}}
+{"type":"message","id":"z2","parentId":"z1","timestamp":"2026-11-05T00:00:00.000Z","message":{"role":"user","content":""}}

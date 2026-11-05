@@ -242,17 +242,17 @@ fn process(
                 return Err(FaultCode::BadRequest);
             }
             let format = NativeFormat::from_name(&format).ok_or(FaultCode::UnsupportedFormat)?;
-            let path = Path::new(&path);
-            if !path.is_absolute() {
+            let file_path = Path::new(&path);
+            if !file_path.is_absolute() {
                 return Err(FaultCode::BadRequest);
             }
             work.check_work()?;
             // Reject ordinary non-files before opening, then verify the actual bound handle.
-            if !path.metadata().map_err(|_| FaultCode::Io)?.is_file() {
+            if !file_path.metadata().map_err(|_| FaultCode::Io)?.is_file() {
                 return Err(FaultCode::BadRequest);
             }
             work.check_work()?;
-            let file = File::open(path).map_err(|_| FaultCode::Io)?;
+            let file = File::open(file_path).map_err(|_| FaultCode::Io)?;
             work.check_work()?;
             if !file.metadata().map_err(|_| FaultCode::Io)?.is_file() {
                 return Err(FaultCode::BadRequest);
@@ -266,7 +266,7 @@ fn process(
                 &mut work,
             )?;
             session.source = Some(Source {
-                follow: SourceFollow::with_format(file, format),
+                follow: SourceFollow::with_open_path(file, format, &path),
                 binding,
             });
         }
@@ -469,7 +469,7 @@ fn source_fault(error: SourceError) -> FaultCode {
 
 fn core_fault(error: SnapshotError) -> FaultCode {
     match error {
-        SnapshotError::OffsetOverflow => FaultCode::Core,
+        SnapshotError::OffsetOverflow | SnapshotError::NativeTokenOverflow => FaultCode::Core,
         SnapshotError::Deadline => FaultCode::Deadline,
     }
 }

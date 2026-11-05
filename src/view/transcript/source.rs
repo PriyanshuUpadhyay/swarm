@@ -72,6 +72,7 @@ pub struct Snapshot {
 pub enum SnapshotError {
     OffsetOverflow,
     Deadline,
+    NativeTokenOverflow,
 }
 
 impl std::fmt::Display for SnapshotError {
@@ -79,6 +80,7 @@ impl std::fmt::Display for SnapshotError {
         f.write_str(match self {
             Self::OffsetOverflow => "snapshot byte offset overflow",
             Self::Deadline => "snapshot work deadline reached",
+            Self::NativeTokenOverflow => "native token count overflow",
         })
     }
 }
@@ -94,20 +96,32 @@ pub enum NativeFormat {
     #[default]
     Claude,
     Codex,
+    Agy,
+    Pi,
 }
 
 impl NativeFormat {
-    pub const ALL: [Self; 2] = [Self::Claude, Self::Codex];
+    pub const ALL: [Self; 4] = [Self::Claude, Self::Codex, Self::Agy, Self::Pi];
 
     pub fn name(self) -> &'static str {
         match self {
             Self::Claude => "claude",
             Self::Codex => "codex",
+            Self::Agy => "agy",
+            Self::Pi => "pi",
         }
     }
 
     pub fn from_name(name: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|format| format.name() == name)
+    }
+
+    pub(crate) fn session_id_from_path(self, path: &str) -> String {
+        match self {
+            Self::Agy => super::normalize::agy::session_id_from_path(path),
+            Self::Pi => super::normalize::pi::session_id_from_path(path),
+            Self::Claude | Self::Codex => String::new(),
+        }
     }
 
     pub(crate) fn is_codex(self) -> bool {
@@ -122,6 +136,8 @@ impl NativeFormat {
         match self {
             Self::Claude => super::normalize::claude_line(line, work).map(NativeFacts::Claude),
             Self::Codex => super::normalize::codex::parse_fact(line, work).map(NativeFacts::Codex),
+            Self::Agy => super::normalize::agy::parse_fact(line, work).map(NativeFacts::Agy),
+            Self::Pi => super::normalize::pi::parse_fact(line, work).map(NativeFacts::Pi),
         }
     }
 }
@@ -130,19 +146,25 @@ impl NativeFormat {
 pub(crate) enum NativeFacts<'a> {
     Claude(Vec<NormalizedEvent>),
     Codex(super::normalize::codex::Fact<'a>),
+    Agy(super::normalize::agy::Fact),
+    Pi(super::normalize::pi::Fact),
 }
 
 #[derive(Debug)]
 pub(crate) enum NativeContext {
     Claude,
     Codex(super::normalize::codex::ReaderContext),
+    Agy(String),
+    Pi(String),
 }
 
 impl NativeContext {
-    pub(crate) fn new(format: NativeFormat) -> Self {
+    pub(crate) fn new(format: NativeFormat, session_id: &str) -> Self {
         match format {
             NativeFormat::Claude => Self::Claude,
             NativeFormat::Codex => Self::Codex(super::normalize::codex::ReaderContext::new()),
+            NativeFormat::Agy => Self::Agy(session_id.to_owned()),
+            NativeFormat::Pi => Self::Pi(session_id.to_owned()),
         }
     }
 
@@ -150,6 +172,8 @@ impl NativeContext {
         match self {
             Self::Claude => NativeFormat::Claude,
             Self::Codex(_) => NativeFormat::Codex,
+            Self::Agy(_) => NativeFormat::Agy,
+            Self::Pi(_) => NativeFormat::Pi,
         }
     }
 
@@ -162,6 +186,8 @@ impl NativeContext {
         match (self, facts) {
             (Self::Claude, NativeFacts::Claude(events)) => Ok(events.clone()),
             (Self::Codex(context), NativeFacts::Codex(fact)) => context.project(fact, work),
+            (Self::Agy(session_id), NativeFacts::Agy(fact)) => fact.project(session_id, work),
+            (Self::Pi(session_id), NativeFacts::Pi(fact)) => fact.project(session_id, work),
             _ => unreachable!("reader context and facts belong to the same bound format"),
         }
     }
@@ -188,13 +214,23 @@ impl SnapshotReader {
         end: EndPolicy,
         format: NativeFormat,
     ) -> Self {
+        Self::with_session_id(meta, start_byte, end, format, "")
+    }
+
+    pub(crate) fn with_session_id(
+        meta: SourceMeta,
+        start_byte: u64,
+        end: EndPolicy,
+        format: NativeFormat,
+        session_id: &str,
+    ) -> Self {
         Self {
             meta,
             start_byte,
             framer: PhysicalFramer::new(start_byte),
             end,
             lines: Vec::new(),
-            context: NativeContext::new(format),
+            context: NativeContext::new(format, session_id),
         }
     }
 

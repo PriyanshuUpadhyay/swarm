@@ -27,6 +27,7 @@ impl From<SnapshotError> for SourceError {
 #[derive(Debug)]
 pub struct SourceFollow {
     format: NativeFormat,
+    session_id: String,
     file: File,
     framer: PhysicalFramer,
     readers: ReaderSet,
@@ -38,8 +39,13 @@ impl SourceFollow {
     }
 
     pub fn with_format(file: File, format: NativeFormat) -> Self {
+        Self::with_open_path(file, format, "")
+    }
+
+    pub fn with_open_path(file: File, format: NativeFormat, open_path: &str) -> Self {
         Self {
             format,
+            session_id: format.session_id_from_path(open_path),
             file,
             framer: PhysicalFramer::new(0),
             readers: ReaderSet::new(format),

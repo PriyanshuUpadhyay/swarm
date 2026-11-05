@@ -24,7 +24,8 @@ impl SourceFollow {
         if start > end || end > length || !boundary(&self.file, start, work)? {
             return Err(SourceError::InvalidRange);
         }
-        let mut reader = SnapshotReader::with_format(meta, start, policy, self.format);
+        let mut reader =
+            SnapshotReader::with_session_id(meta, start, policy, self.format, &self.session_id);
         read_chunks(&self.file, start, end, work, |bytes, work| {
             reader.push(bytes, work).map_err(Into::into)
         })?;
@@ -42,7 +43,7 @@ impl SourceFollow {
         let origin = from.min(end);
         let start = physical_start(&self.file, origin, work)?;
         let mut framer = PhysicalFramer::new(start);
-        let mut state = ReaderState::new(binding, origin, self.format);
+        let mut state = ReaderState::new(binding, origin, self.format, &self.session_id);
         let mut lines = Vec::new();
         read_chunks(&self.file, start, end, work, |bytes, work| {
             framer.push(bytes, work, |line, work| {
@@ -72,7 +73,7 @@ impl SourceFollow {
             return Err(SourceError::InvalidRange);
         }
         let mut framer = PhysicalFramer::new(start);
-        let mut context = NativeContext::new(self.format);
+        let mut context = NativeContext::new(self.format, &self.session_id);
         let mut page = ReaderRows::empty(start, self.format.is_codex());
         let mut lines = Vec::new();
         read_chunks(&self.file, start, end, work, |bytes, work| {

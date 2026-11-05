@@ -45,14 +45,19 @@ pub(crate) struct ReaderSet {
 }
 
 impl ReaderState {
-    pub fn new(binding: ReaderBinding, origin_byte: u64, format: NativeFormat) -> Self {
+    pub fn new(
+        binding: ReaderBinding,
+        origin_byte: u64,
+        format: NativeFormat,
+        session_id: &str,
+    ) -> Self {
         Self {
             binding,
             origin_byte,
             next_complete_byte: origin_byte,
             observed_read_end_byte: origin_byte,
             rows: ReaderRows::empty(origin_byte, format.is_codex()),
-            context: NativeContext::new(format),
+            context: NativeContext::new(format, session_id),
         }
     }
 

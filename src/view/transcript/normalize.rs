@@ -1,5 +1,6 @@
 //! Provider normalization; file and view policy stay with their owners.
 
+pub(super) mod agy;
 mod claude;
 mod claude_input;
 mod claude_json;
@@ -10,6 +11,8 @@ mod codex_context;
 mod codex_facts;
 mod codex_questions;
 mod codex_tools;
+pub(super) mod pi;
+mod pi_text;
 
 use super::source::{NormalizedEvent, SnapshotError, Work};
 
