@@ -43,3 +43,17 @@ copies that replace method words inside each line (`blind3.py`).
 Verdict round 2: fix. Both losses are `L-14` on the Claude side. `L-14` now asks for a run revert
 and its quoted result, says reading the code is not proof, and leaves out a diff that only adds a
 check. Only the two lost pairs run again.
+
+Round 3, only the two lost Claude pairs, after the `L-14` change. Graded blind by Codex.
+
+| date | skill commit | baseline | case | provider | result | grader note |
+|---|---|---|---|---|---|---|
+| 2026-11-05 | 113e3da2 | no skill | test-misses-path | claude | win (weak) | 1/2 vs 0/2; the skill side ran the revert and named the gap, but filed it as an ask and said it can merge after the answer |
+| 2026-11-05 | 113e3da2 | no skill | crlf-not-a-bug | claude | loss (narrow) | 2/2 each; the skill side approved and covered all four files, but claimed a body with no closing `---` cannot reach the test, which a scratch call disproved |
+
+Latest result per pair: 5 wins, 1 narrow loss. The loss is one wrong side claim on a case where both
+sides give the right answer; the owner decides between keep and another fix.
+
+Limits: eval panes cannot start seats, so each skill pane wrote every seat file itself; the round-1
+base reports were reused in rounds 2 and 3; `crlf-not-a-bug` expectations pass a blanket approval,
+so completeness decides it.
