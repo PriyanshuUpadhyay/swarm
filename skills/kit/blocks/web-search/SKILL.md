@@ -76,31 +76,30 @@ Exa "find similar" from a primary source, whichever its tools can reach.
 
 **Reach tools.**
 
-Agent Reach installs command-line readers for sites that block a plain fetch. Before the chair
-writes the brief, it runs every row below once in one command, with a short query from the question.
-It keeps only the rows that return content. `agent-reach doctor` is not enough, because it skips live checks and
-leaves Exa and GitHub unmarked even when they work. Then the chair pastes the kept rows into every
-seat's brief word for word, because a paraphrase loses the exact commands and the seat stops at the
-first 403.
+`scripts/reach.py` holds the known route for each site and its fallbacks, in a fixed order. It
+prints the first route that gives content, logs each route that failed, and ends with a `blocked:`
+line when all fail, so that line is the seat's blocked log. Before the chair writes the brief, it
+runs each row below once with a short query from the question, and keeps only the rows that return
+content. Then the chair pastes the kept rows into every seat's brief word for word, because a
+paraphrase loses the exact commands and the seat stops at the first 403.
 
 ```
-Public page:  curl -s "https://r.jina.ai/<url>"
-Browser page: python3 <kit root>/blocks/web-search/scripts/browser_read.py "<url>"
-           reads any page in the user's own signed-in browser: X posts, Reddit threads, login walls, JS-only pages
-Search:    mcporter call exa.web_search_exa query="<query>" numResults=10
-Reddit:    python3 <kit root>/blocks/web-search/scripts/browser_read.py "https://www.reddit.com/r/<sub>/search/?q=<query>&sort=new"
-           then the same command on each post URL, for the post and its comments
-X:         python3 <kit root>/blocks/web-search/scripts/browser_read.py x "<query>"
-           then the same command on each post URL, for the thread
-YouTube:   yt-dlp --write-auto-sub --skip-download -o "/tmp/%(id)s" "<url>"
-GitHub:    gh search issues "<query>" --sort updated --limit 30
+Search:  python3 <kit root>/blocks/web-search/scripts/reach.py search <site> "<query>" [--days N]
+         site: hn, reddit, x, lobsters, github, youtube, web
+Page:    python3 <kit root>/blocks/web-search/scripts/reach.py read "<url>"
+         an X post, a Reddit thread, a login wall, a JS-only page, an arXiv abstract
+Paper:   python3 <kit root>/blocks/web-search/scripts/reach.py paper <arxiv id> refs|cites
+         the papers it cites, or the papers that cite it, for origins and forward search
+YouTube: yt-dlp --write-auto-sub --skip-download -o "/tmp/%(id)s" "<url>"
 ```
 
-Write `<kit root>` as the kit's real folder in the brief. The browser rows need `playwriter` on
-the PATH, its extension on in the user's browser, and a seat that may reach local addresses. The
-Seat mechanics section names the launch flag for a Codex seat, whose sandbox blocks them. They only read, so a seat never signs in, posts,
-likes, follows, or types into a page there. If `agent-reach` is not installed, say so in the
-coverage table and use the fallback ladder in the method only.
+Write `<kit root>` as the kit's real folder in the brief. The browser route (Reddit, X, Lobsters,
+and pages that block a reader) needs `playwriter` on the PATH, its extension on in the user's
+browser, and a seat that may reach local addresses. The Seat mechanics section names the launch
+flag for a Codex seat, whose sandbox blocks them. The routes only read, so a seat never signs in,
+posts, likes, follows, or types into a page there. The Reddit and X rows try the pinned last30days
+engine first (`~/.local/share/swarm-vendor/last30days-v3.31.0`, never edited) and use the browser
+when it gives nothing.
 
 **Depth, a hard rule.**
 
@@ -129,15 +128,14 @@ section per seat, with these search-specific fields:
 4. **depth** — the deep-search block and the Yield and Floor rules above, quoted in full, with the
    known list and the seeds filled in;
 5. **method** — use your own native search and fetch tools and the Reach tools block; when a
-   site blocks you, try in order the Reach tool for that site, the
-   browser row, the Jina reader, the search snippet, `old.reddit.com`, `<url>.json`, a public mirror,
-   `web.archive.org`, and `archive.ph`; cite as `blocks/cite-sources/SKILL.md` says, with that
+   site blocks you, run the `reach.py` row for it, then try the search snippet, a public mirror,
+   and `archive.ph`; cite as `blocks/cite-sources/SKILL.md` says, with that
    block's Rules and the Rules of its parent `blocks/sources/SKILL.md` quoted; when the question is about how or why something works, follow each lead to
    its origin as `blocks/primary-sources/SKILL.md` says, with that block's Rules quoted; stop after
    about 20 minutes;
 6. **blocked log** — a seat may call a site blocked only when its Coverage lists, for that site,
-   each step it tried and the error each step gave, for example
-   `reddit: browser_read → no extension; r.jina.ai → 403; old.reddit.com → 403; archive.ph → no copy`;
+   each step it tried and the error each step gave, as the `blocked:` line of `reach.py` gives it,
+   for example `blocked: reddit: last30days → no results; reddit_browser → empty or bot wall`;
 7. **output shape** — `Coverage` with a matrix row per sub-question (sources found, gap or not),
    `Findings` with a quote or paraphrase plus its link and source-agreement tag, `Origins` with rows
    as `blocks/primary-sources/SKILL.md` says, `What is contested`, `Sources` newest first, under

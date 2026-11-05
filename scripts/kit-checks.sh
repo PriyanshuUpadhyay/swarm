@@ -30,6 +30,7 @@ checks = [
     "skills/kit/presets/review/scripts/test_review_walk.py",
     "skills/kit/presets/review/scripts/test_validate_citations.py",
     "skills/kit/presets/implement/scripts/test_land.py",
+    "skills/kit/blocks/web-search/scripts/test_reach.py",
     "scripts/test_owner_scripts.py",
 ]
 # These suites import their sibling modules through PYTHONPATH, which -I ignores.
