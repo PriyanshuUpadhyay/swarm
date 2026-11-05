@@ -36,6 +36,10 @@ Pattern over four runs:
   unsupported added claims. Positions with cards are about twice as long, so they hold more claims
   to get wrong. Each grader also said the expectations do not test unsupported claims.
 
+Owner decision 2026-11-05: weak keep, landed. This is an owner override, because the skill-eval
+rule needs no loss. Known cost: seats with cards add more unsupported claims. Fix it only when real
+councils show the same failure.
+
 Notes:
 - All 12 seats gave NO-GO, and both sides caught each planted false claim. The cards changed the
   quality of the reasons, not the verdict.
