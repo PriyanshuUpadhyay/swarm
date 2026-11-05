@@ -44,8 +44,8 @@ Round-0 questions that survive the filter, and a split after Round 3, set the st
 
 - Every voice is a persistent, visible, interactive pane rooted at the invoking surface. A native
   subagent does not replace a voice.
-- The roles are `council.claude`, `council.gpt`, and `council.gemini`. Each seat role also has a
-  method card in `references/roles.md`. The card stays with the seat, so a seat on a fallback
+- The roles are `council.claude`, `council.gpt`, and `council.gemini`. `references/roles.md` gives
+  each seat the shared rule, and the Claude and GPT seats also get a method card. The card stays with the seat, so a seat on a fallback
   runner keeps its card.
 - Every seat is report-only, as `blocks/worker-brief/SKILL.md` says; its result file is its council
   scratch result.
@@ -93,7 +93,7 @@ Include the same pinned brief and the following output shape in the combined ask
 see one another.
 
 ```text
-ROLE: first-principles | evidence-check | pre-mortem
+ROLE: first-principles | evidence-check | none
 VERDICT: GO | GO-WITH-CHANGES | NO-GO
 TOP REASONS: at most 3, ranked, each from the seat's role and with its proof
 BIGGEST RISK
@@ -138,7 +138,7 @@ present the split and ask the user to break the tie. Send no fourth round. Do no
 Consensus reasoning: 2–4 sentences.
 Required changes: all accepted changes, when applicable.
 Dissent / residual risk: anything still contested.
-Per-model trail: one line each for GEMINI (pre-mortem), GPT (evidence-check), and CLAUDE (first-principles).
+Per-model trail: one line each for GEMINI, GPT (evidence-check), and CLAUDE (first-principles).
 ```
 
 Weigh the positions by their proof, not by the count of seats. A claim that the evidence-check

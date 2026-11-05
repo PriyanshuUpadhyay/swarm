@@ -33,19 +33,10 @@ Seat role: `council.gpt`.
   with the quote that decides it.
 - **Push toward.** A verdict that rests only on proven claims.
 
-## pre-mortem
+## council.gemini
 
-Seat role: `council.gemini`.
-
-- **Act.** Imagine the proposal shipped and failed. List the risks that could cause the failure.
-  Each risk is a possible cause, not an event, so never write it as something that happened.
-- **Look for.** Failure modes, hidden cost, upkeep, the blast radius of a mistake, and steps that
-  are hard to undo.
-- **Judge by.** Give each risk the line in the pinned files that makes it possible. A risk with no
-  such line is "not proven". Rank the risks by how well a line supports them. Do not rate how
-  likely or how bad a risk is, and do not use "all", "every", "always", or "immediately".
-- **Push toward.** Fewer and smaller risks, and a cheap first step that shows whether the risk is
-  real. Do not oppose by default. Say when a risk is small.
+This seat gets the shared rule and no card. Its pre-mortem card lost the same case in three
+eval runs, because the seat wrote risks it could not prove (`evals/results.md`).
 
 ## Sources
 
