@@ -246,10 +246,34 @@ pub fn raw(tokenizer: &mut Tokenizer) -> State {
 ///       ^
 /// ```
 pub fn raw_escape(tokenizer: &mut Tokenizer) -> State {
+    // Finish the escaped physical TAB before returning to ordinary raw grammar.
+    if tokenizer.point.vs > 0
+        && (tokenizer.parse_state.options.normalize_link.is_some()
+            || tokenizer.parse_state.options.validate_link.is_some())
+    {
+        tokenizer.consume();
+        return State::Next(if tokenizer.point.vs > 0 {
+            StateName::DestinationRawEscape
+        } else {
+            StateName::DestinationRaw
+        });
+    }
+
     match tokenizer.current {
         Some(b'(' | b')' | b'\\') => {
             tokenizer.consume();
             State::Next(StateName::DestinationRaw)
+        }
+        Some(0x01..=0x09 | 0x0B..=0x0C | 0x0E..=0x1F | 0x7F)
+            if tokenizer.parse_state.options.normalize_link.is_some()
+                || tokenizer.parse_state.options.validate_link.is_some() =>
+        {
+            tokenizer.consume();
+            State::Next(if tokenizer.point.vs > 0 {
+                StateName::DestinationRawEscape
+            } else {
+                StateName::DestinationRaw
+            })
         }
         _ => State::Retry(StateName::DestinationRaw),
     }

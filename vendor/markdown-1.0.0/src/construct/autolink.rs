@@ -239,6 +239,13 @@ pub fn url_inside(tokenizer: &mut Tokenizer) -> State {
             tokenizer.exit(Name::Autolink);
             State::Ok
         }
+        Some(b'\0' | 0x7F)
+            if tokenizer.parse_state.options.normalize_link.is_some()
+                || tokenizer.parse_state.options.validate_link.is_some() =>
+        {
+            tokenizer.consume();
+            State::Next(StateName::AutolinkUrlInside)
+        }
         // ASCII control, space, or `<`.
         None | Some(b'\0'..=0x1F | b' ' | b'<' | 0x7F) => State::Nok,
         Some(_) => {

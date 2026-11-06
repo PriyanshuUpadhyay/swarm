@@ -43,6 +43,18 @@ Node/config differential. This first core leaves B2 Q1/Q2, B3 grammar/control/de
 extra OLD entity names, NUL outside href copies, angle display text, bare links,
 word/hunk/DOM/UTF16/source mapping and public adoption gates OPEN.
 
+The bounded grammar V1 patch uses the same optional hook gate. It rejects shortcut
+fallback only at EOF before a resource destination starts, admits escaped non-line
+controls and DEL in raw destinations, drains escaped TAB virtual steps, caps raw
+definition nesting at the existing resource limit, and admits DEL and NUL in angle
+URL bodies. Source bytes and points stay under tokenizer control. The retained
+href still uses the existing policy hooks; validate-only NUL keeps its raw value.
+Both-None grammar stays unchanged. Rebase review must check the private EOF flag
+through attempt rollback and label cleanup, TAB boundaries, hook rejection and
+retained event ownership. Rerun the frozen four grammar groups, old destination
+tests, and both full default Node/config captures. Q1 fallback positions, linked
+String line continuations, NUL display text, and the other gates above remain OPEN.
+
 The local numeric code derives from MarkdownIt 15.0.2 dist/markdown-it.cjs.js
 (isValidEntityCode and unescapeAll), and entities 8.1.0 src/decode-codepoint.ts.
 The entities C1/replacement logic carries its upstream adaptation pointer,

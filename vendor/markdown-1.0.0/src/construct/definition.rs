@@ -107,6 +107,7 @@ use crate::event::Name;
 use crate::state::{Name as StateName, State};
 use crate::tokenizer::Tokenizer;
 use crate::util::{
+    constant::RESOURCE_DESTINATION_BALANCE_MAX,
     normalize_identifier::normalize_identifier,
     skip,
     slice::{Position, Slice},
@@ -234,7 +235,13 @@ pub fn destination_before(tokenizer: &mut Tokenizer) -> State {
     tokenizer.tokenize_state.token_3 = Name::DefinitionDestinationLiteralMarker;
     tokenizer.tokenize_state.token_4 = Name::DefinitionDestinationRaw;
     tokenizer.tokenize_state.token_5 = Name::DefinitionDestinationString;
-    tokenizer.tokenize_state.size_b = usize::MAX;
+    tokenizer.tokenize_state.size_b = if tokenizer.parse_state.options.normalize_link.is_some()
+        || tokenizer.parse_state.options.validate_link.is_some()
+    {
+        RESOURCE_DESTINATION_BALANCE_MAX
+    } else {
+        usize::MAX
+    };
     tokenizer.attempt(
         State::Next(StateName::DefinitionDestinationAfter),
         State::Next(StateName::DefinitionDestinationMissing),

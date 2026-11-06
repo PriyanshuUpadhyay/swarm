@@ -282,14 +282,20 @@ pub fn after(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         // Resource (`[asd](fgh)`)?
         Some(b'(') => {
-            tokenizer.attempt(
-                State::Next(StateName::LabelEndOk),
+            tokenizer.tokenize_state.resource_eof = false;
+            let nok = if defined
+                && (tokenizer.parse_state.options.normalize_link.is_some()
+                    || tokenizer.parse_state.options.validate_link.is_some())
+            {
+                State::Next(StateName::LabelEndResourceNok)
+            } else {
                 State::Next(if defined {
                     StateName::LabelEndOk
                 } else {
                     StateName::LabelEndNok
-                }),
-            );
+                })
+            };
+            tokenizer.attempt(State::Next(StateName::LabelEndOk), nok);
             State::Retry(StateName::LabelEndResourceStart)
         }
         // Full (`[asd][fgh]`) or collapsed (`[asd][]`) reference?
@@ -344,6 +350,7 @@ pub fn reference_not_full(tokenizer: &mut Tokenizer) -> State {
 ///        ^
 /// ```
 pub fn ok(tokenizer: &mut Tokenizer) -> State {
+    tokenizer.tokenize_state.resource_eof = false;
     // Remove the start.
     let label_start = tokenizer.tokenize_state.label_starts.pop().unwrap();
 
@@ -385,6 +392,7 @@ pub fn ok(tokenizer: &mut Tokenizer) -> State {
 ///        ^
 /// ```
 pub fn nok(tokenizer: &mut Tokenizer) -> State {
+    tokenizer.tokenize_state.resource_eof = false;
     let start = tokenizer.tokenize_state.label_starts.pop().unwrap();
     tokenizer.tokenize_state.label_starts_loose.push(start);
     tokenizer.tokenize_state.end = 0;
@@ -437,6 +445,12 @@ pub fn resource_before(tokenizer: &mut Tokenizer) -> State {
 pub fn resource_open(tokenizer: &mut Tokenizer) -> State {
     if let Some(b')') = tokenizer.current {
         State::Retry(StateName::LabelEndResourceEnd)
+    } else if tokenizer.current.is_none()
+        && (tokenizer.parse_state.options.normalize_link.is_some()
+            || tokenizer.parse_state.options.validate_link.is_some())
+    {
+        tokenizer.tokenize_state.resource_eof = true;
+        State::Nok
     } else {
         tokenizer.tokenize_state.token_1 = Name::ResourceDestination;
         tokenizer.tokenize_state.token_2 = Name::ResourceDestinationLiteral;
@@ -451,6 +465,17 @@ pub fn resource_open(tokenizer: &mut Tokenizer) -> State {
         );
         State::Retry(StateName::DestinationStart)
     }
+}
+
+/// Keep the captured label cleanup after an EOF-only resource failure.
+pub fn resource_nok(tokenizer: &mut Tokenizer) -> State {
+    let eof = tokenizer.tokenize_state.resource_eof;
+    tokenizer.tokenize_state.resource_eof = false;
+    State::Retry(if eof {
+        StateName::LabelEndNok
+    } else {
+        StateName::LabelEndOk
+    })
 }
 
 /// In resource, after destination, at optional whitespace.

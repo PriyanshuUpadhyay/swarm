@@ -222,6 +222,8 @@ pub struct TokenizeState<'a> {
     ///
     /// Used when tokenizing [text content][crate::construct::text].
     pub label_starts_loose: Vec<LabelStart>,
+    /// Resource EOF must survive local attempt rollback until label cleanup.
+    pub(crate) resource_eof: bool,
     /// Stack of images and links.
     ///
     /// Used when tokenizing [text content][crate::construct::text].
@@ -358,6 +360,7 @@ impl<'a> Tokenizer<'a> {
                 end: 0,
                 label_starts: vec![],
                 label_starts_loose: vec![],
+                resource_eof: false,
                 marker: 0,
                 marker_b: 0,
                 markers: &[],

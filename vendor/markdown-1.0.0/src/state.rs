@@ -306,6 +306,7 @@ pub enum Name {
     LabelEndResourceStart,
     LabelEndResourceBefore,
     LabelEndResourceOpen,
+    LabelEndResourceNok,
     LabelEndResourceDestinationAfter,
     LabelEndResourceDestinationMissing,
     LabelEndResourceBetween,
@@ -790,6 +791,7 @@ pub fn call(tokenizer: &mut Tokenizer, name: Name) -> State {
         Name::LabelEndResourceStart => construct::label_end::resource_start,
         Name::LabelEndResourceBefore => construct::label_end::resource_before,
         Name::LabelEndResourceOpen => construct::label_end::resource_open,
+        Name::LabelEndResourceNok => construct::label_end::resource_nok,
         Name::LabelEndResourceDestinationAfter => construct::label_end::resource_destination_after,
         Name::LabelEndResourceDestinationMissing => {
             construct::label_end::resource_destination_missing
