@@ -10,7 +10,8 @@ or page text from a page route. Stderr holds one line per route tried, then a `b
 every route failed. Exit 0 on content, 3 when blocked, 2 on a usage error.
 
 Routes only read. The browser route uses the user's signed-in browser through browser_read.py.
-Keys are optional and read from the environment: S2_API_KEY (Semantic Scholar), OPENALEX_API_KEY.
+Keys are optional: S2_API_KEY (Semantic Scholar) and OPENALEX_API_KEY. Each is read from the
+environment, else from the macOS Keychain entry `swarm-<name>`, so every pane finds it.
 """
 
 import json
@@ -89,6 +90,15 @@ def text(page):
 
 def q(s):
     return urllib.parse.quote(s)
+
+
+def api_key(name):
+    if os.environ.get(name):
+        return os.environ[name]
+    try:
+        return run(["security", "find-generic-password", "-s", f"swarm-{name}", "-w"], timeout=10).strip() or None
+    except Fail:
+        return None
 
 
 # --- search routes ---------------------------------------------------------------------------
@@ -210,7 +220,7 @@ READ = [read_jina, read_browser, read_wayback]
 
 def paper_s2(aid, kind):
     field = "citedPaper" if kind == "refs" else "citingPaper"
-    key = os.environ.get("S2_API_KEY")
+    key = api_key("S2_API_KEY")
     data = get_json(f"https://api.semanticscholar.org/graph/v1/paper/arXiv:{aid}/"
                     f"{'references' if kind == 'refs' else 'citations'}?fields=title,year,externalIds,url&limit=100",
                     [f"x-api-key: {key}"] if key else ())
@@ -221,7 +231,7 @@ def paper_s2(aid, kind):
 
 
 def paper_openalex(aid, kind):
-    key = os.environ.get("OPENALEX_API_KEY")
+    key = api_key("OPENALEX_API_KEY")
     auth = f"&api_key={key}" if key else ""
     work = get_json(f"https://api.openalex.org/works/doi:10.48550/arXiv.{aid.split('v')[0]}?select=id,referenced_works{auth}")
     wid = work["id"].rsplit("/", 1)[-1]
