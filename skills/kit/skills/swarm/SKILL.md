@@ -27,6 +27,7 @@ the task mixes verbs, plan from the block catalog with no preset.
 | `implement` | build one change, in pair or auto mode; a change with no new decision or risk in about 3 files takes the small route in `skills/implement/references/small.md`, with no plan page; it is a skill, so read `skills/implement/SKILL.md` |
 | `pair-programming` | write code with the owner one approved diff at a time, with no frame or review steps; it is a skill, so read `skills/pair-programming/SKILL.md` |
 | `simplest-design` | propose a design or plan with the fewest parts that meets the stated needs; it is a skill, so read `skills/simplest-design/SKILL.md` |
+| `root-cause-analysis` | find why a production issue happened from existing logs and tables, naming what broke before any fix; it is a skill, so read `skills/root-cause-analysis/SKILL.md` |
 | `code-review` | check a range, walk a GitHub PR, or run a cleanup pass; it is a skill, so read `skills/code-review/SKILL.md` |
 | `research` | answer one question from evidence in a short report; it is a skill, so read `skills/research/SKILL.md` |
 | `explain` | explain how something works |

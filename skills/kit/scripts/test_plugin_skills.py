@@ -16,7 +16,7 @@ def test_plugin_ships_the_workflow_verbs():
     assert (KIT / source).resolve() == KIT
     skills = KIT / "skills"  # Each plugin uses its default skills/ folder.
     # ADR 0132: swarm is the one workflow skill, and the verbs are presets. ADR 0136: chosen standalone skills ship beside it.
-    assert {p.parent.name for p in skills.glob("*/SKILL.md")} == {"swarm", "swarm-orchestrator", "swarm-voice", "skill-eval", "council", "research", "code-review", "pair-programming", "simplest-design", "implement"}
+    assert {p.parent.name for p in skills.glob("*/SKILL.md")} == {"swarm", "swarm-orchestrator", "swarm-voice", "skill-eval", "council", "research", "code-review", "pair-programming", "simplest-design", "implement", "root-cause-analysis"}
     presets = {p.parent.name for p in (KIT / "presets").glob("*/PRESET.md")}
     # ADR 0137: a verb that becomes a skill leaves presets/ in the same change.
     assert presets == {"build", "explain"}, presets

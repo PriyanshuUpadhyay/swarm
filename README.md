@@ -148,7 +148,7 @@ AGY has no account source yet.
 
 ### Bundled workflow skills
 
-The plugin `swarm` holds ten skills in `skills/kit/skills/`, the verb presets in
+The plugin `swarm` holds eleven skills in `skills/kit/skills/`, the verb presets in
 `skills/kit/presets/`, and the blocks in `skills/kit/blocks/`. `swarm` is the one workflow skill: it
 matches the task to a preset, or plans from the blocks with no preset. A block is never called by
 itself; the `swarm` skill puts blocks into the steps of a run. Claude Code shows a skill as `/swarm:<name>`, pi
@@ -162,6 +162,7 @@ as `/skill:<name>`.
 | `implement` (skill) | Run one change through frame, design, contracts, impact, build, review, and close, in `pair` mode (one approved diff at a time) or `auto` mode (stops before a push or merge) (ADR 0137) |
 | `pair-programming` (skill) | Write code with you one approved diff of up to about 100 related lines at a time, after a check that the branch is not behind its upstream; the `implement` skill's `pair` mode uses it (ADR 0137) |
 | `simplest-design` (skill) | Propose the design with the fewest parts that meets your needs, with each part traced to a need, existing code reused, and one walked input as proof |
+| `root-cause-analysis` (skill) | Find why a production issue happened from existing data, with one real instance, each claim checked by a quoted query, and what broke named before any fix; private repo sources go in `~/.root-cause-analysis/rules/<repo>.md` |
 | `code-review` (skill) | Judge a diff with a script verdict, walk a PR into a pending review, or run a cleanup pass; a second seat tries to refute each fix (ADR 0137) |
 | `build` | Pictures, films, and sites drawn by code |
 | `explain` | Explain a subject with one running example |
