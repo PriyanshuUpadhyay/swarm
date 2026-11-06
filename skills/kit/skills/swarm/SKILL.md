@@ -26,6 +26,7 @@ the task mixes verbs, plan from the block catalog with no preset.
 | `build` | make a picture, film, or site where code draws every frame: a reel, a loop, a generative still, a landing page, or a portfolio |
 | `implement` | build one change, in pair or auto mode; a change with no new decision or risk in about 3 files takes the small route in `presets/implement/references/small.md`, with no plan page |
 | `pair-programming` | write code with the owner one approved diff at a time, with no frame or review steps; it is a skill, so read `skills/pair-programming/SKILL.md` |
+| `simplest-design` | propose a design or plan with the fewest parts that meets the stated needs; it is a skill, so read `skills/simplest-design/SKILL.md` |
 | `code-review` | check a range, walk a GitHub PR, or run a cleanup pass; it is a skill, so read `skills/code-review/SKILL.md` |
 | `research` | answer one question from evidence in a short report; it is a skill, so read `skills/research/SKILL.md` |
 | `explain` | explain how something works |

@@ -161,6 +161,7 @@ as `/skill:<name>`.
 | `council` (skill) | Claude, GPT, and Gemini voices debate in panes and end in one verdict; Claude and GPT seats carry method cards (ADR 0137) |
 | `implement` | Run one change through frame, design, contracts, impact, build, review, and close, in `pair` mode (one approved diff at a time) or `auto` mode (stops before a push or merge) |
 | `pair-programming` (skill) | Write code with you one approved diff of up to about 100 related lines at a time, after a check that the branch is not behind its upstream; the `implement` preset's `pair` mode uses it (ADR 0137) |
+| `simplest-design` (skill) | Propose the design with the fewest parts that meets your needs, with each part traced to a need, existing code reused, and one walked input as proof |
 | `code-review` (skill) | Judge a diff with a script verdict, walk a PR into a pending review, or run a cleanup pass; a second seat tries to refute each fix (ADR 0137) |
 | `build` | Pictures, films, and sites drawn by code |
 | `explain` | Explain a subject with one running example |
