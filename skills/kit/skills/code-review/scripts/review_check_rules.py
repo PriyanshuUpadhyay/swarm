@@ -28,12 +28,12 @@ def globs_of(text):
 
 
 
-def load_rules(files, repo_file=None):
-    """[{id, files, applies, source, aspect}] from rule lines, with the repo file identified by its caller."""
+def load_rules(files, repo_files=()):
+    """[{id, files, applies, source, aspect}] from rule lines; the owner's files, named by the caller, get the repo seat."""
     from review_check import RULE, globs_of
     rules = []
     for f in files:
-        aspect = "repo" if f == repo_file else "lens" if f.name == "lens.md" else "lang"
+        aspect = "repo" if f in repo_files else "lens" if f.name == "lens.md" else "lang"
         default = ["**/*"]
         for line in f.read_text(encoding="utf-8").splitlines():
             head = re.match(r"^Files: `([^`]+)`", line)

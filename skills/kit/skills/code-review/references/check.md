@@ -89,11 +89,9 @@ The rules live in `references/lens.md`, `references/lens-<name>.md`, and the rep
 repo's own convention docs, and the `review` paths of each domain in `~/.flow/domains.md` whose `Signals:`
 line matches the file. A defect that no rule names is still a finding, with rule `-`.
 
-When `~/.review-walk/taste.md` exists, read it before the first unit. It says what the owner
-flags, and each of its patterns that a unit shows is a finding, with rule `-` and a problem that
-starts with `taste:`. A copy that the change
+When `~/.review-walk/taste.md` exists, `start` loads its `TASTE-` rules with the repo rules, so
+each matching unit's checklist holds them. They say what the owner flags. A copy that the change
 adds of a type, schema, or helper that already exists is a `fix`, because its author would fix it.
-With no taste file, the lens rules are the whole list.
 
 `REF` means the change can break a place that names its symbol. Check each listed place against
 the new signature, return shape, and meaning. For a removed symbol, each listed place is a

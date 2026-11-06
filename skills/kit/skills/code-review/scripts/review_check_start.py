@@ -193,8 +193,10 @@ def start_locked(target, *opts, ledger_home, ledger_writable):
     (d / "units.json").write_text(json.dumps(units, indent=2) + "\n", encoding="utf-8")
 
     rules = Path.home() / ".review-check" / "rules" / f"{repo_name()}.md"
-    catalog = load_rules(sorted((Path(__file__).resolve().parent.parent / "references").glob("lens*.md"))
-                         + ([rules] if rules.exists() else []), repo_file=rules)
+    taste = Path.home() / ".review-walk" / "taste.md"  # the owner's review taste, loaded in every repo
+    owner = [f for f in (rules, taste) if f.exists()]
+    catalog = load_rules(sorted((Path(__file__).resolve().parent.parent / "references").glob("lens*.md")) + owner,
+                         repo_files=owner)
     ci = ci_of(rules)
     cfg = lint_config(ci, head)
     (d / "target.json").write_text(json.dumps({"target": target, "base": base, "head": head, "ci": ci,

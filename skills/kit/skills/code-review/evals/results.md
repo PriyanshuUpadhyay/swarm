@@ -57,3 +57,29 @@ sides give the right answer; the owner decides between keep and another fix.
 Limits: eval panes cannot start seats, so each skill pane wrote every seat file itself; the round-1
 base reports were reused in rounds 2 and 3; `crlf-not-a-bug` expectations pass a blanket approval,
 so completeness decides it.
+
+Round 4, after the owner's taste file (`~/.review-walk/taste.md`, from 304 of their own PR
+comments) and three planted taste cases. Skill side on all six cases; base side new on the three
+taste cases, round-1 base reports reused for the old three. The first base runs on
+`hand-synced-shape` were voided, because their brief barred the folder of the changed file.
+Every refute seat kept every fix (10 seats).
+
+| date | skill commit | baseline | case | provider | result | grader note |
+|---|---|---|---|---|---|---|
+| 2026-11-06 | 4018d584 | no skill | utf8-cap | claude | win | 2/2 vs 1/2 |
+| 2026-11-06 | 4018d584 | no skill | utf8-cap | codex | win | the skill side says it cannot merge |
+| 2026-11-06 | 4018d584 | no skill | test-misses-path | claude | win | 2/2 vs 0/2; the gap is now a fix |
+| 2026-11-06 | 4018d584 | no skill | test-misses-path | codex | win | 2/2 vs 0/2 |
+| 2026-11-06 | 4018d584 | no skill | crlf-not-a-bug | claude | loss (narrow) | 2/2 each; the base side had one more checked point |
+| 2026-11-06 | 4018d584 | no skill | crlf-not-a-bug | codex | win (narrow) | 2/2 each |
+| 2026-11-06 | 4018d584 | no skill | dup-helper | claude | win | 1/2 each; neither flagged the missing blank lines |
+| 2026-11-06 | 4018d584 | no skill | dup-helper | codex | loss | 1/2 each; the base side also found that a blank line in the metadata block makes `block_kind` reject a rule block |
+| 2026-11-06 | 4018d584 | no skill | check-the-type-owns | claude | loss (narrow) | 2/2 each; the skill side cited a wrong caller line |
+| 2026-11-06 | 4018d584 | no skill | check-the-type-owns | codex | loss | 1/2 vs 2/2; the skill side did not say a new variant would be rejected |
+| 2026-11-06 | 4018d584 | no skill | hand-synced-shape | claude | loss | 1/2 each; neither asked for one source of the comment keys |
+| 2026-11-06 | 4018d584 | no skill | hand-synced-shape | codex | loss | 1/2 each; the same miss |
+
+Verdict round 4: fix (6-6). The skill panes read the taste file, but they answered only the rule
+ids in each unit's checklist, so no taste pattern became a finding. `start` now loads the
+`TASTE-` rules of `~/.review-walk/taste.md` with the repo rules, so each matching unit's checklist
+holds them and the repo seat must answer each one. Only the six lost pairs run again.
