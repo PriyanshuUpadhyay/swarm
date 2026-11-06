@@ -1,0 +1,106 @@
+{
+ "about": "CLI task inputs per group; each group is one 'CANDIDATE task INPUTS --composed [] --out DIR' run (render/find empty).",
+ "groups": {
+  "legit": {
+   "render": [],
+   "find": [],
+   "patch": [
+    {
+     "id": "p-core",
+     "text": "diff --git \"a/x\" \"b/x\"\n--- \"a/x\"\n+++ \"b/x\"\n@@ -3,3 +3,3 @@\n keep\n-old\n+new\n tail\n"
+    },
+    {
+     "id": "p-two-hunks",
+     "text": "diff --git a/f b/f\nindex 1..2 100644\n--- a/f\n+++ b/f\n@@ -1,2 +1,2 @@\n keep\n--- old comment\n+-- new comment\n\\ No newline at end of file\n@@ -10 +10,3 @@\n x\n-y\n+y2\n+y3\n"
+    },
+    {
+     "id": "p-runs",
+     "text": "@@ -1,5 +1,6 @@\n a\n-b\n-c\n+B\n+C\n+D\n d\n-e\n\\ No newline at end of file\n@@ -20 +21 @@\n+z\n"
+    },
+    {
+     "id": "l-diff-u",
+     "lines": [
+      "--- a.sql\t2026",
+      "+++ a.sql\t2026",
+      "@@ -1,2 +1,2 @@",
+      " keep",
+      "--- old comment",
+      "+-- new comment",
+      "done"
+     ]
+    },
+    {
+     "id": "l-git-two",
+     "lines": [
+      "diff --git a/a b/a",
+      "index 1..2 100644",
+      "--- a/a",
+      "+++ b/a",
+      "@@ -1 +1 @@",
+      "-x",
+      "+y",
+      "\\ No newline at end of file",
+      "diff --git a/b b/b",
+      "new file mode 100644",
+      "--- /dev/null",
+      "+++ b/b",
+      "@@ -0,0 +1,2 @@",
+      "+p",
+      "+q",
+      "tail text"
+     ]
+    }
+   ],
+   "comment": [
+    {
+     "id": "c-mixed",
+     "patch": "diff --git a/f b/f\nindex 1..2 100644\n--- a/f\n+++ b/f\n@@ -1,2 +1,2 @@\n keep\n--- old comment\n+-- new comment\n\\ No newline at end of file\n@@ -10 +10,3 @@\n x\n-y\n+y2\n+y3\n",
+     "from": 1,
+     "to": 3
+    },
+    {
+     "id": "c-removed-only",
+     "patch": "diff --git a/f b/f\nindex 1..2 100644\n--- a/f\n+++ b/f\n@@ -1,2 +1,2 @@\n keep\n--- old comment\n+-- new comment\n\\ No newline at end of file\n@@ -10 +10,3 @@\n x\n-y\n+y2\n+y3\n",
+     "from": 2,
+     "to": 2
+    }
+   ]
+  },
+  "over": {
+   "render": [],
+   "find": [],
+   "patch": [
+    {
+     "id": "p-oversized-header",
+     "text": "@@ -99999999999999999999 +5 @@\n a\n-b\n+c\n"
+    }
+   ],
+   "comment": [
+    {
+     "id": "c-oversized-removed",
+     "patch": "@@ -99999999999999999999 +5 @@\n a\n-b\n+c\n",
+     "from": 2,
+     "to": 2
+    }
+   ]
+  },
+  "inf": {
+   "render": [],
+   "find": [],
+   "patch": [
+    {
+     "id": "p-infinite-header",
+     "text": "@@ -9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999 +5 @@\n a\n-b\n+c\n"
+    }
+   ],
+   "comment": [
+    {
+     "id": "c-infinite-removed",
+     "patch": "@@ -9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999 +5 @@\n a\n-b\n+c\n",
+     "from": 2,
+     "to": 2
+    }
+   ]
+  }
+ }
+}
