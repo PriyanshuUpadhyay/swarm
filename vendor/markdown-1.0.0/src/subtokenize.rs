@@ -22,14 +22,16 @@ use crate::message;
 use crate::parser::ParseState;
 use crate::state::{Name as StateName, State};
 use crate::tokenizer::Tokenizer;
-use crate::util::{edit_map::EditMap, skip};
-use alloc::{string::String, vec, vec::Vec};
+use crate::util::{edit_map::EditMap, link_string, skip};
+use alloc::{collections::BTreeMap, string::String, vec, vec::Vec};
 
 #[derive(Debug)]
 pub struct Subresult {
     pub done: bool,
     pub gfm_footnote_definitions: Vec<String>,
     pub definitions: Vec<String>,
+    /// Owned titles survive event-index changes by their source byte keys.
+    pub link_titles: BTreeMap<usize, String>,
 }
 
 /// Link two [`Event`][]s.
@@ -86,6 +88,7 @@ pub fn subtokenize(
         done: true,
         gfm_footnote_definitions: vec![],
         definitions: vec![],
+        link_titles: BTreeMap::new(),
     };
     let mut acc = (0, 0);
 
@@ -104,6 +107,19 @@ pub fn subtokenize(
                 let mut link_index = Some(index);
                 // Subtokenizer.
                 let mut tokenizer = Tokenizer::new(event.point.clone(), parse_state);
+                let title_role = if parse_state.link_compat()
+                    && link.content == Content::String
+                    && index > 0
+                    && events[index - 1].kind == Kind::Enter
+                    && matches!(
+                        events[index - 1].name,
+                        Name::ResourceTitleString | Name::DefinitionTitleString
+                    ) {
+                    Some(events[index - 1].name == Name::ResourceTitleString)
+                } else {
+                    None
+                };
+                tokenizer.destination_string = title_role.is_some();
                 debug_assert!(
                     !matches!(link.content, Content::Flow),
                     "cannot use flow as subcontent yet"
@@ -165,10 +181,23 @@ pub fn subtokenize(
                 }
 
                 let mut result = tokenizer.flush(state, true)?;
+                if let Some(line_start_space) = title_role {
+                    value.link_titles.insert(
+                        events[index - 1].point.index,
+                        link_string::compile(
+                            parse_state.bytes,
+                            &tokenizer.events,
+                            0,
+                            tokenizer.events.len(),
+                            line_start_space,
+                        ),
+                    );
+                }
                 value
                     .gfm_footnote_definitions
                     .append(&mut result.gfm_footnote_definitions);
                 value.definitions.append(&mut result.definitions);
+                value.link_titles.append(&mut result.link_titles);
                 value.done = false;
 
                 acc = divide_events(&mut map, events, index, &mut tokenizer.events, acc);

@@ -126,7 +126,7 @@ pub fn to_html(value: &str) -> String {
 /// # }
 /// ```
 pub fn to_html_with_options(value: &str, options: &Options) -> Result<String, message::Message> {
-    let (events, parse_state) = parser::parse(value, &options.parse)?;
+    let (events, parse_state) = parser::parse(value, &options.parse, false)?;
     Ok(to_html::compile(
         &events,
         parse_state.bytes,
@@ -158,7 +158,12 @@ pub fn to_html_with_options(value: &str, options: &Options) -> Result<String, me
 /// # }
 /// ```
 pub fn to_mdast(value: &str, options: &ParseOptions) -> Result<mdast::Node, message::Message> {
-    let (events, parse_state) = parser::parse(value, options)?;
-    let node = to_mdast::compile(&events, parse_state.bytes)?;
+    let (events, parse_state) = parser::parse(value, options, true)?;
+    let node = to_mdast::compile(
+        &events,
+        parse_state.bytes,
+        parse_state.link_compat(),
+        parse_state.link_titles,
+    )?;
     Ok(node)
 }

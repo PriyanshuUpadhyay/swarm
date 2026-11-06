@@ -262,6 +262,10 @@ pub fn destination_after(tokenizer: &mut Tokenizer) -> State {
     tokenizer.tokenize_state.token_4 = Name::Data;
     tokenizer.tokenize_state.token_5 = Name::Data;
     tokenizer.tokenize_state.size_b = 0;
+    if tokenizer.tokenize_state.destination_definition_eol {
+        tokenizer.tokenize_state.destination_definition_eol = false;
+        return State::Retry(StateName::DefinitionAfterWhitespace);
+    }
     tokenizer.attempt(
         State::Next(StateName::DefinitionAfter),
         State::Next(StateName::DefinitionAfter),
@@ -271,6 +275,7 @@ pub fn destination_after(tokenizer: &mut Tokenizer) -> State {
 
 /// Without destination.
 pub fn destination_missing(tokenizer: &mut Tokenizer) -> State {
+    tokenizer.tokenize_state.destination_definition_eol = false;
     tokenizer.tokenize_state.token_1 = Name::Data;
     tokenizer.tokenize_state.token_2 = Name::Data;
     tokenizer.tokenize_state.token_3 = Name::Data;

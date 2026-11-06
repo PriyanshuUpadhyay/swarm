@@ -111,8 +111,10 @@ pub enum Name {
     DestinationEnclosedBefore,
     DestinationEnclosed,
     DestinationEnclosedEscape,
+    DestinationEnclosedAfterEol,
     DestinationRaw,
     DestinationRawEscape,
+    DestinationRawAfterEol,
 
     DocumentStart,
     DocumentBeforeFrontmatter,
@@ -543,8 +545,10 @@ pub fn call(tokenizer: &mut Tokenizer, name: Name) -> State {
         Name::DestinationEnclosedBefore => construct::partial_destination::enclosed_before,
         Name::DestinationEnclosed => construct::partial_destination::enclosed,
         Name::DestinationEnclosedEscape => construct::partial_destination::enclosed_escape,
+        Name::DestinationEnclosedAfterEol => construct::partial_destination::enclosed_after_eol,
         Name::DestinationRaw => construct::partial_destination::raw,
         Name::DestinationRawEscape => construct::partial_destination::raw_escape,
+        Name::DestinationRawAfterEol => construct::partial_destination::raw_after_eol,
 
         Name::DocumentStart => construct::document::start,
         Name::DocumentBeforeFrontmatter => construct::document::before_frontmatter,

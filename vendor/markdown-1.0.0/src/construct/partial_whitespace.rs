@@ -68,11 +68,17 @@ use alloc::vec;
 /// Resolve whitespace.
 pub fn resolve_whitespace(tokenizer: &mut Tokenizer, hard_break: bool, trim_whole: bool) {
     let mut index = 0;
+    let keep_title = tokenizer.parse_state.link_compat();
+    let mut in_title = false;
 
     while index < tokenizer.events.len() {
         let event = &tokenizer.events[index];
 
-        if event.kind == Kind::Exit && event.name == Name::Data {
+        if keep_title && event.name == Name::ResourceTitleString {
+            in_title = event.kind == Kind::Enter;
+        }
+
+        if event.kind == Kind::Exit && event.name == Name::Data && !in_title {
             let trim_start = (trim_whole && index == 1)
                 || (index > 1 && tokenizer.events[index - 2].name == Name::LineEnding);
             let trim_end = (trim_whole && index == tokenizer.events.len() - 1)

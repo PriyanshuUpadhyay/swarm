@@ -22,6 +22,7 @@ use crate::util::{
 };
 use alloc::{
     boxed::Box,
+    collections::BTreeMap,
     format,
     string::{String, ToString},
     vec,
@@ -90,6 +91,12 @@ struct CompileContext<'a> {
     events: &'a [Event],
     /// List of bytes.
     bytes: &'a [u8],
+    /// Compile selected title children before the general reference decoder.
+    link_compat: bool,
+    /// Values compiled in owned String children, before container reinsertion.
+    link_titles: BTreeMap<usize, String>,
+    /// One jump to a selected title exit; other handlers keep their old cursor.
+    next_title_exit: Option<usize>,
     // Fields used by handlers to track the things they need to track to
     // compile markdown.
     character_reference_marker: u8,
@@ -109,7 +116,12 @@ struct CompileContext<'a> {
 
 impl<'a> CompileContext<'a> {
     /// Create a new compile context.
-    fn new(events: &'a [Event], bytes: &'a [u8]) -> CompileContext<'a> {
+    fn new(
+        events: &'a [Event],
+        bytes: &'a [u8],
+        link_compat: bool,
+        link_titles: BTreeMap<usize, String>,
+    ) -> CompileContext<'a> {
         let tree = Node::Root(Root {
             children: vec![],
             position: Some(Position {
@@ -129,6 +141,9 @@ impl<'a> CompileContext<'a> {
         CompileContext {
             events,
             bytes,
+            link_compat,
+            link_titles,
+            next_title_exit: None,
             character_reference_marker: 0,
             gfm_table_inside: false,
             hard_break_after: false,
@@ -225,13 +240,18 @@ impl<'a> CompileContext<'a> {
 }
 
 /// Turn events and bytes into a syntax tree.
-pub fn compile(events: &[Event], bytes: &[u8]) -> Result<Node, message::Message> {
-    let mut context = CompileContext::new(events, bytes);
+pub fn compile(
+    events: &[Event],
+    bytes: &[u8],
+    link_compat: bool,
+    link_titles: BTreeMap<usize, String>,
+) -> Result<Node, message::Message> {
+    let mut context = CompileContext::new(events, bytes, link_compat, link_titles);
 
     let mut index = 0;
     while index < events.len() {
         handle(&mut context, index)?;
-        index += 1;
+        index = context.next_title_exit.take().unwrap_or(index + 1);
     }
 
     debug_assert_eq!(context.trees.len(), 1, "expected 1 final tree");
@@ -261,6 +281,9 @@ fn handle(context: &mut CompileContext, index: usize) -> Result<(), message::Mes
 /// Handle [`Enter`][Kind::Enter].
 fn enter(context: &mut CompileContext) -> Result<(), message::Message> {
     match context.events[context.index].name {
+        Name::ResourceTitleString | Name::DefinitionTitleString if context.link_compat => {
+            on_enter_link_title(context);
+        }
         Name::AutolinkEmail
         | Name::AutolinkProtocol
         | Name::CharacterEscapeValue
@@ -441,6 +464,30 @@ fn exit(context: &mut CompileContext) -> Result<(), message::Message> {
 /// Handle [`Enter`][Kind::Enter]:`*`.
 fn on_enter_buffer(context: &mut CompileContext) {
     context.buffer();
+}
+
+/// Move an owned title into its existing buffer, then handle its exit once.
+fn on_enter_link_title(context: &mut CompileContext) {
+    let name = context.events[context.index].name.clone();
+    let exit = context.events[context.index + 1..]
+        .iter()
+        .position(|event| event.kind == Kind::Exit && event.name == name)
+        .map(|offset| context.index + 1 + offset)
+        .expect("owned title exit");
+    context.buffer();
+    let value = context
+        .link_titles
+        .remove(&context.events[context.index].point.index)
+        .expect("owned title value");
+    context
+        .tail_mut()
+        .children_mut()
+        .expect("title buffer")
+        .push(Node::Text(Text {
+            value,
+            position: None,
+        }));
+    context.next_title_exit = Some(exit);
 }
 
 /// Handle [`Enter`][Kind::Enter]:[`Data`][Name::Data] (and many text things).

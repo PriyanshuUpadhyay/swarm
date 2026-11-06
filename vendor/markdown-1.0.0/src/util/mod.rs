@@ -9,6 +9,7 @@ pub mod gfm_tagfilter;
 pub mod identifier;
 pub mod infer;
 pub mod line_ending;
+pub(crate) mod link_string;
 pub mod location;
 pub mod mdx;
 pub mod mdx_collect;

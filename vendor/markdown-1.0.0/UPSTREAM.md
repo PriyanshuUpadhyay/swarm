@@ -53,7 +53,41 @@ Both-None grammar stays unchanged. Rebase review must check the private EOF flag
 through attempt rollback and label cleanup, TAB boundaries, hook rejection and
 retained event ownership. Rerun the frozen four grammar groups, old destination
 tests, and both full default Node/config captures. Q1 fallback positions, linked
-String line continuations, NUL display text, and the other gates above remain OPEN.
+String line continuations, NUL display text, and the other gates above remain OPEN
+at that grammar unit's boundary.
+
+The private linked String V2 patch additionally requires an mdast caller and at
+least one URL hook. Resource destinations can continue after escaped physical
+line endings through their linked String pieces. Definition destinations keep
+their physical line bound; an available escaped terminal LF enters the decoded
+value without taking the next line or its title. A shared pure fold preserves
+owned whitespace and maps physical CR/CRLF to LF before reference decoding.
+Definition titles alone omit continuation indentation. Selected title chains use
+the existing local numeric compatibility mode. Their resolved child events are
+folded before container reinsertion. A private title map moves each value through
+Subresult and ParseState into the mdast compiler, keyed by its title-string
+Enter's source byte index. The compiler removes that value into the existing
+title buffer and bypasses the global reference decoder. The owning title exit still
+runs once. Both-None options and all HTML routes keep their existing behavior,
+including the earlier Some-hook grammar. Public options and signatures do not
+change, and the standalone trial remains the only caller.
+
+The private V3 producer repairs preserve resource title Data inside its existing
+ResourceTitleString range before Text whitespace trimming. This guard uses the
+same mdast and URL-hook gate; other String ranges keep their existing trim.
+Enclosed resource destinations after escaped LF use the standard linked
+SpaceOrTab helper for owned continuation whitespace before the next Data piece.
+No global link-index or off-mode failure behavior changes.
+
+Rebase review must check the private mdast context, linked feed and container
+skips, nonempty Data boundaries, definition completion flag cleanup, shared fold,
+title mode, all three title-map aggregation paths, stable source byte keys and
+buffer/cursor balance, the gated resource-title trim guard and linked enclosed
+continuation whitespace. Rerun the frozen linked String groups,
+HTML scope guard, old destination/grammar groups and full None/default captures.
+Keep the three captured per-input None and HTML outcomes unchanged.
+Q1, NUL display text, full identifier normalization, renderer parity, public
+adoption and the other unselected gates remain OPEN.
 
 The local numeric code derives from MarkdownIt 15.0.2 dist/markdown-it.cjs.js
 (isValidEntityCode and unescapeAll), and entities 8.1.0 src/decode-codepoint.ts.

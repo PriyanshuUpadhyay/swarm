@@ -19,7 +19,7 @@ use crate::subtokenize::Subresult;
 use crate::util::char::format_byte_opt;
 
 use crate::util::{constant::TAB_SIZE, edit_map::EditMap};
-use alloc::{boxed::Box, string::String, vec, vec::Vec};
+use alloc::{boxed::Box, collections::BTreeMap, string::String, vec, vec::Vec};
 
 /// Containers.
 ///
@@ -224,6 +224,8 @@ pub struct TokenizeState<'a> {
     pub label_starts_loose: Vec<LabelStart>,
     /// Resource EOF must survive local attempt rollback until label cleanup.
     pub(crate) resource_eof: bool,
+    /// A hooked mdast definition ended before its escaped physical line ending.
+    pub(crate) destination_definition_eol: bool,
     /// Stack of images and links.
     ///
     /// Used when tokenizing [text content][crate::construct::text].
@@ -275,7 +277,7 @@ pub struct TokenizeState<'a> {
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Debug)]
 pub struct Tokenizer<'a> {
-    /// OLD numeric decoding is confined to a local destination String pass.
+    /// OLD numeric decoding is confined to destinations and selected mdast titles.
     pub(crate) destination_string: bool,
     /// Jump between line endings.
     column_start: Vec<(usize, usize)>,
@@ -361,6 +363,7 @@ impl<'a> Tokenizer<'a> {
                 label_starts: vec![],
                 label_starts_loose: vec![],
                 resource_eof: false,
+                destination_definition_eol: false,
                 marker: 0,
                 marker_b: 0,
                 markers: &[],
@@ -643,6 +646,7 @@ impl<'a> Tokenizer<'a> {
             done: false,
             gfm_footnote_definitions: self.tokenize_state.gfm_footnote_definitions.split_off(0),
             definitions: self.tokenize_state.definitions.split_off(0),
+            link_titles: BTreeMap::new(),
         };
 
         if resolve {
@@ -654,6 +658,7 @@ impl<'a> Tokenizer<'a> {
                 if let Some(mut result) = call_resolve(self, resolvers[index])? {
                     fn_defs.append(&mut result.gfm_footnote_definitions);
                     defs.append(&mut result.definitions);
+                    value.link_titles.append(&mut result.link_titles);
                 }
                 index += 1;
             }

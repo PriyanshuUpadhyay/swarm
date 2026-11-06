@@ -81,13 +81,14 @@
 //! [label_end]: crate::construct::label_end
 //! [sanitize_uri]: crate::util::sanitize_uri
 
+use crate::construct::partial_space_or_tab::{
+    space_or_tab_with_options, Options as SpaceOrTabOptions,
+};
 use crate::event::{Content, Kind, Link, Name};
 use crate::state::{Name as StateName, State};
+use crate::subtokenize::link;
 use crate::tokenizer::Tokenizer;
-use crate::util::{
-    character_reference::{decode_named, destination_numeric},
-    slice::{Position, Slice},
-};
+use crate::util::link_string;
 use alloc::string::String;
 
 /// Start of destination.
@@ -99,6 +100,7 @@ use alloc::string::String;
 ///     ^
 /// ```
 pub fn start(tokenizer: &mut Tokenizer) -> State {
+    tokenizer.tokenize_state.destination_definition_eol = false;
     match tokenizer.current {
         Some(b'<') => {
             tokenizer.enter(tokenizer.tokenize_state.token_1.clone());
@@ -188,11 +190,90 @@ pub fn enclosed(tokenizer: &mut Tokenizer) -> State {
 /// ```
 pub fn enclosed_escape(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
+        Some(b'\n')
+            if tokenizer.parse_state.link_compat()
+                && tokenizer.tokenize_state.token_1 == Name::ResourceDestination =>
+        {
+            tokenizer.exit(Name::Data);
+            continuation(tokenizer, Name::LineEnding);
+            tokenizer.consume();
+            tokenizer.exit(Name::LineEnding);
+            State::Next(StateName::DestinationEnclosedAfterEol)
+        }
         Some(b'<' | b'>' | b'\\') => {
             tokenizer.consume();
             State::Next(StateName::DestinationEnclosed)
         }
         _ => State::Retry(StateName::DestinationEnclosed),
+    }
+}
+
+/// Open a new enclosed piece after the tokenizer applied its container skip.
+pub fn enclosed_after_eol(tokenizer: &mut Tokenizer) -> State {
+    match tokenizer.current {
+        None | Some(b'\n' | b'<') => State::Nok,
+        Some(b'>') => {
+            tokenizer.exit(tokenizer.tokenize_state.token_5.clone());
+            State::Retry(StateName::DestinationEnclosedBefore)
+        }
+        Some(b'\t' | b' ') => {
+            tokenizer.attempt(
+                State::Next(StateName::DestinationEnclosedAfterEol),
+                State::Nok,
+            );
+            State::Retry(space_or_tab_with_options(
+                tokenizer,
+                SpaceOrTabOptions {
+                    kind: Name::SpaceOrTab,
+                    min: 1,
+                    max: usize::MAX,
+                    content: Some(Content::String),
+                    connect: true,
+                },
+            ))
+        }
+        _ => {
+            continuation(tokenizer, Name::Data);
+            State::Retry(StateName::DestinationEnclosed)
+        }
+    }
+}
+
+/// Connect only canonical source pieces, never the container prefix between them.
+fn continuation(tokenizer: &mut Tokenizer, name: Name) {
+    tokenizer.enter_link(
+        name,
+        Link {
+            previous: None,
+            next: None,
+            content: Content::String,
+        },
+    );
+    let index = tokenizer.events.len() - 1;
+    link(&mut tokenizer.events, index);
+}
+
+/// Close the raw owner after its last nonempty Data piece has closed.
+fn raw_end(tokenizer: &mut Tokenizer) -> State {
+    tokenizer.exit(tokenizer.tokenize_state.token_5.clone());
+    tokenizer.exit(tokenizer.tokenize_state.token_4.clone());
+    tokenizer.exit(tokenizer.tokenize_state.token_1.clone());
+    tokenizer.tokenize_state.size = 0;
+    destination_policy(tokenizer)
+}
+
+/// Resume raw grammar without creating empty Data at a closing delimiter.
+pub fn raw_after_eol(tokenizer: &mut Tokenizer) -> State {
+    if tokenizer.tokenize_state.size == 0
+        && matches!(tokenizer.current, None | Some(b'\t' | b'\n' | b' ' | b')'))
+    {
+        raw_end(tokenizer)
+    } else if matches!(tokenizer.current, None | Some(0x01..=0x1F | b' ' | 0x7F)) {
+        tokenizer.tokenize_state.size = 0;
+        State::Nok
+    } else {
+        continuation(tokenizer, Name::Data);
+        State::Retry(StateName::DestinationRaw)
     }
 }
 
@@ -207,11 +288,7 @@ pub fn raw(tokenizer: &mut Tokenizer) -> State {
         && matches!(tokenizer.current, None | Some(b'\t' | b'\n' | b' ' | b')'))
     {
         tokenizer.exit(Name::Data);
-        tokenizer.exit(tokenizer.tokenize_state.token_5.clone());
-        tokenizer.exit(tokenizer.tokenize_state.token_4.clone());
-        tokenizer.exit(tokenizer.tokenize_state.token_1.clone());
-        tokenizer.tokenize_state.size = 0;
-        destination_policy(tokenizer)
+        raw_end(tokenizer)
     } else if tokenizer.tokenize_state.size < tokenizer.tokenize_state.size_b
         && tokenizer.current == Some(b'(')
     {
@@ -229,6 +306,7 @@ pub fn raw(tokenizer: &mut Tokenizer) -> State {
         None | Some(0x01..=0x1F | b' ' | b'(' | 0x7F)
     ) {
         tokenizer.tokenize_state.size = 0;
+        tokenizer.tokenize_state.destination_definition_eol = false;
         State::Nok
     } else if tokenizer.current == Some(b'\\') {
         tokenizer.consume();
@@ -260,6 +338,23 @@ pub fn raw_escape(tokenizer: &mut Tokenizer) -> State {
     }
 
     match tokenizer.current {
+        Some(b'\n')
+            if tokenizer.parse_state.link_compat()
+                && tokenizer.tokenize_state.token_1 == Name::ResourceDestination =>
+        {
+            tokenizer.exit(Name::Data);
+            continuation(tokenizer, Name::LineEnding);
+            tokenizer.consume();
+            tokenizer.exit(Name::LineEnding);
+            State::Next(StateName::DestinationRawAfterEol)
+        }
+        Some(b'\n')
+            if tokenizer.parse_state.link_compat()
+                && tokenizer.tokenize_state.token_1 == Name::DefinitionDestination =>
+        {
+            tokenizer.tokenize_state.destination_definition_eol = true;
+            State::Retry(StateName::DestinationRaw)
+        }
         Some(b'(' | b')' | b'\\') => {
             tokenizer.consume();
             State::Next(StateName::DestinationRaw)
@@ -291,6 +386,7 @@ pub(crate) fn retain_href(tokenizer: &mut Tokenizer, decoded: String) -> State {
         decoded
     };
     if matches!(options.validate_link, Some(validate) if !validate(&href)) {
+        tokenizer.tokenize_state.destination_definition_eol = false;
         return State::Nok;
     }
     tokenizer
@@ -301,7 +397,7 @@ pub(crate) fn retain_href(tokenizer: &mut Tokenizer, decoded: String) -> State {
     State::Ok
 }
 
-/// Decode only this destination's existing String chunk, before admission.
+/// Decode this destination's complete String chain once, before admission.
 fn destination_policy(tokenizer: &mut Tokenizer) -> State {
     let options = &tokenizer.parse_state.options;
     if options.normalize_link.is_none() && options.validate_link.is_none() {
@@ -313,60 +409,51 @@ fn destination_policy(tokenizer: &mut Tokenizer) -> State {
         .rposition(|event| event.kind == Kind::Enter && event.name == tokenizer.events[exit].name)
         .expect("owning destination enter");
     let mut decoded = String::new();
-    // The current destination has at most one String chunk. Empty <> has none.
+    // Empty <> has no String chain.
     let span = tokenizer.events[enter + 1..exit]
         .iter()
         .enumerate()
         .find(|(_, event)| {
             event.kind == Kind::Enter
                 && event.name == Name::Data
-                && event
-                    .link
-                    .as_ref()
-                    .map_or(false, |link| link.content == Content::String)
+                && event.link.as_ref().map_or(false, |link| {
+                    link.content == Content::String && link.previous.is_none()
+                })
         });
     if let Some((index, event)) = span {
         let mut local = Tokenizer::new(event.point.clone(), tokenizer.parse_state);
         local.destination_string = true;
-        let end = &tokenizer.events[enter + index + 2].point;
-        let state = local.push(
-            (event.point.index, event.point.vs),
-            (end.index, end.vs),
-            State::Next(StateName::StringStart),
-        );
+        let mut link_index = Some(enter + index + 1);
+        let mut state = State::Next(StateName::StringStart);
+        while let Some(index) = link_index {
+            let event = &tokenizer.events[index];
+            let link = event.link.as_ref().expect("owned String link");
+            debug_assert!(index > enter && index + 1 < exit);
+            if link.previous.is_some() {
+                local.define_skip(event.point.clone());
+            }
+            let end = &tokenizer.events[index + 1].point;
+            state = local.push(
+                (event.point.index, event.point.vs),
+                (end.index, end.vs),
+                state,
+            );
+            link_index = link.next;
+        }
         if let Err(error) = local.flush(state, true) {
+            tokenizer.tokenize_state.destination_definition_eol = false;
             return State::Error(error);
         }
-        let mut marker = b'&';
-        for (index, event) in local.events.iter().enumerate() {
-            if event.kind != Kind::Exit {
-                continue;
-            }
-            match event.name {
-                Name::CharacterReferenceMarker => marker = b'&',
-                Name::CharacterReferenceMarkerNumeric => marker = b'#',
-                Name::CharacterReferenceMarkerHexadecimal => marker = b'x',
-                Name::Data | Name::CharacterEscapeValue | Name::CharacterReferenceValue => {
-                    let slice = Slice::from_position(
-                        local.parse_state.bytes,
-                        &Position::from_exit_event(&local.events, index),
-                    );
-                    if event.name == Name::CharacterReferenceValue {
-                        let value = if marker == b'&' {
-                            decode_named(slice.as_str(), true)
-                        } else {
-                            destination_numeric(slice.as_str(), marker)
-                        };
-                        if let Some(value) = value {
-                            decoded.push_str(&value);
-                        }
-                    } else {
-                        decoded.push_str(&slice.serialize());
-                    }
-                }
-                _ => {}
-            }
-        }
+        decoded = link_string::compile(
+            local.parse_state.bytes,
+            &local.events,
+            0,
+            local.events.len(),
+            true,
+        );
+    }
+    if tokenizer.tokenize_state.destination_definition_eol {
+        decoded.push('\n');
     }
     retain_href(tokenizer, decoded)
 }
