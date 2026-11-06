@@ -26,8 +26,8 @@ Ask the user to choose the mode in the reply that shows `01-frame.md`, unless th
 
 The mode sets how the build step runs. The steps and the review stay the same.
 
-- `pair`: one diff of about 40 lines at a time, and the owner approves each. Follow
-  [references/pair.md](references/pair.md).
+- `pair`: one diff of about 40 lines at a time, and the owner approves each. Follow the
+  `pair-programming` skill, `<kit root>/skills/pair-programming/SKILL.md`.
 - `auto`: no stops after plan approval, up to a merge, a push, or another irreversible action.
   Follow [references/auto.md](references/auto.md).
 

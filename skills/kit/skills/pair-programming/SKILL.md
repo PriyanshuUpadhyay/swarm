@@ -1,10 +1,20 @@
-# implement mode: pair
+---
+name: pair-programming
+description: Write code with the user one approved diff at a time, committing each finished behavior. Use when the user says pair, pair with me, or let's pair, or when an implement run builds in pair mode.
+---
 
-The owner chose `pair` for the build step of an `implement` run. The `implement` preset owns the run, the steps, and the review.
+# Pair programming
+
+Example. The user says "pair with me: reject an empty phone number in the parser". The branch is 2
+commits behind `origin/develop`, and one of them adds `isBlank()` in `src/text.ts`. The first reply
+says so and asks to rebase. After the rebase, the reply shows one behavior and one `diff -u` chunk
+that calls `isBlank()`. The user types `approve`. The chunk is applied, one test runs, and the
+behavior is committed as `parse: reject empty phone number`.
 
 Write the code together, one small chunk at a time. The user approves every chunk before it touches
 a file, and every finished behavior is committed at once. The user keeps the mental model; the agent
-does the typing. The kit root, with its `blocks/` and `references/` folders, is three folders up from this file.
+does the typing. The kit root, with its `blocks/` and `references/` folders, is two folders up from
+this skill's folder.
 
 ## One task file per task
 
@@ -15,6 +25,7 @@ Keep the task file as the kit block `blocks/task-file/SKILL.md` says, at
 - `Status: active`, on its own line, flipped to `Status: done` after the last behavior. The
   edit gate hook reads `Repository:` and `Status:` and denies Edit and Write inside that
   repository while the status is active, so a chunk can land only through `patch`;
+- `Base: <upstream ref> <short hash>`, from the base check below;
 - the behaviors as the block's steps, each one testable sentence;
 - a chunk log with the chunk number, its intent, its `file:line`, and its outcome
   (`approved`, `changed`, or `denied`).
@@ -22,16 +33,30 @@ Keep the task file as the kit block `blocks/task-file/SKILL.md` says, at
 The status block after a resume also names the current chunk. Apply the loaded agent instructions
 to user-facing output. The chunk loop below owns the diff shown for approval.
 
+## Base check first
+
+In two real runs the branch was behind the shared branch: one chunk later conflicted, and another
+wrote a helper that the shared branch already had. So before the behavior list:
+
+1. Find the upstream branch: the branch's tracked upstream, else `origin/<default branch>`.
+2. Run `git fetch` for it, then `git rev-list --count HEAD..<upstream>`.
+3. When the count is 0, write `Base: <upstream> up to date` in the reply. When it is more than 0,
+   run `git log --oneline HEAD..<upstream>` and `git diff --stat HEAD...<upstream>`. Name the
+   commits and any helper, type, or file in them that the task touches, and ask to rebase or merge
+   before chunk 1. The rebase is the user's choice; do not run it before they say so.
+
+When the fetch fails, say so in one line and go on.
+
 ## Plan first, short
 
 Read the code the task touches. Write 3-7 behaviors, each one testable sentence in dependency
 order. Show the list inline in the chat and wait for the user's approval or edits; the copy in the
 task file is a record, not the reply. No design essay, no option survey.
 
-The front door has started the `implement` run. Take the behaviors from the done-when of its `01-frame.md`
-and the contracts in its `03-contracts.md`, and hold its build step. Before the first chunk, apply
-the rules and the todo list in its `05-build.md`. The implement workflow's review step follows the
-last behavior, so pair itself still has no closing pass.
+When an `implement` run calls this skill for its build step, take the behaviors from the done-when
+of its `01-frame.md` and the contracts in its `03-contracts.md`, and hold its build step. Before the
+first chunk, apply the rules and the todo list in its `05-build.md`. The implement workflow's review
+step follows the last behavior, so pair itself still has no closing pass.
 
 Every behavior ends with `Standards: <row ids>` or `Standards: none`. Select them using
 the kit's `blocks/engineering-standards/SKILL.md`. The agent checks this selection against the
@@ -44,7 +69,8 @@ lines, several hunks and files allowed when the behavior needs them. Do not walk
 steps of 10, 20, then 40 lines; go straight to one chunk. A behavior that needs much more than 40
 lines is two behaviors, so split the list, not the chunk. Show three things and then stop:
 
-1. one line of intent;
+1. one line of intent that names each input case the chunk handles, for example "reject an empty
+   name (`""`)";
 2. the exact target `file:line`;
 3. the change as a unified diff in a `diff` fence, made by a CLI tool, never a prose
    description of the change.
@@ -55,10 +81,14 @@ edit types only the changed lines. For a new file, write it in the scratchpad an
 `/dev/null`. Paste the output as is; the `-` lines show what goes away and the `+` lines show
 what comes in. Keep the diff to the hunks of the chunk.
 
-A chunk touches only what its behavior sentence names. No new helper, field, export, flag, or
-todo goes in unless the sentence names it. Apply the kit block `blocks/checked-units/SKILL.md`
-for a new symbol and its caller. An edited function stays where it is, so the diff
-shows an edit, not a delete plus an add; a move is its own chunk.
+A chunk touches only what its behavior sentence names. No new helper, field, export, flag, case, or
+todo goes in unless the sentence names it. In two real runs the user removed handling the behavior
+did not ask for, a cache key and an edge case they called useless. A case that the sentence does not
+name, such as a whitespace-only or very long value next to "reject an empty name", is a question in
+one line under the diff, never code in it. Before you write a helper, search the repository for one
+that does the same job, and call it. Apply the kit block `blocks/checked-units/SKILL.md` for a new
+symbol and its caller. An edited function stays where it is, so the diff shows an edit, not a delete
+plus an add; a move is its own chunk.
 
 Code stays inline by default. Before a chunk adds or splits out a function, file, or module, apply
 the kit block `blocks/when-to-extract/SKILL.md`, and name the reason that holds in the
@@ -76,7 +106,7 @@ Then wait for one of three replies:
 | `change: <text>` | revise the same chunk and show it again |
 | `deny` | drop the chunk without argument, ask at most one question, then propose the next chunk |
 
-Example. The intent is "reject an empty phone number in the parser". The target is
+Example. The intent is "reject an empty phone number (`""`) in the parser". The target is
 `src/parse.py:88`. The reply shows a `diff` fence with 2 `-` lines and 12 `+` lines from
 `diff -u`. The user types `approve`. The chunk is applied, `pytest tests/test_parse.py -q`
 runs, and the reply is one line: `1 passed`. When the last chunk of the behavior passes, the
@@ -107,16 +137,20 @@ When every chunk of the current behavior is applied and its check passes, show, 
 3. the test command and its result.
 
 Then propose the first chunk of the next behavior. No commit question; the behavior commits
-are the record. After the last behavior, set `Status: done` in the task file, print the implement workflow's `Next:` line for
-the review step, and stop. There is no closing pass:
-no cleanup gate, no readability review, no extra tooling to set up or tear down.
+are the record. After the last behavior, set `Status: done` in the task file and stop. Inside an
+`implement` run, print the implement workflow's `Next:` line for the review step; do not start the
+review. There is no closing pass: no cleanup gate, no readability review, no extra tooling to set up
+or tear down.
 
 ## Guards
 
 - No edit before `approve`.
+- The base check runs before the behavior list, and a branch behind its upstream is named with
+  its commits.
 - One chunk is one behavior as one diff, about 40 changed lines, several hunks allowed. A bigger
   behavior is split in the list, never walked up in stages.
-- A chunk touches only what its behavior names. Apply `blocks/checked-units/SKILL.md` to new symbols. An
+- A chunk touches only what its behavior names, and its intent line names each case it handles.
+  An unnamed case is a one-line question. Apply `blocks/checked-units/SKILL.md` to new symbols. An
   edited function stays in place.
 - Code stays inline unless the kit block `blocks/when-to-extract/SKILL.md` allows the
   extraction.

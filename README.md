@@ -160,6 +160,7 @@ as `/skill:<name>`.
 | `research` (skill) | Answer one question in a short report, with recent underrated finds and the origin of each claim; `reach.py` runs each site's routes (ADR 0137) |
 | `council` (skill) | Claude, GPT, and Gemini voices debate in panes and end in one verdict; Claude and GPT seats carry method cards (ADR 0137) |
 | `implement` | Run one change through frame, design, contracts, impact, build, review, and close, in `pair` mode (one approved diff of about 40 lines at a time) or `auto` mode (stops before a push or merge) |
+| `pair-programming` (skill) | Write code with you one approved diff of about 40 lines at a time, after a check that the branch is not behind its upstream; the `implement` preset's `pair` mode uses it (ADR 0137) |
 | `code-review` (skill) | Judge a diff with a script verdict, walk a PR into a pending review, or run a cleanup pass; a second seat tries to refute each fix (ADR 0137) |
 | `build` | Pictures, films, and sites drawn by code |
 | `explain` | Explain a subject with one running example |

@@ -162,7 +162,7 @@ below. The proof, checked-unit, and extraction rules live directly in
 | Skill | Blocks it points to | Stays in the skill |
 |---|---|---|
 | engineering-standards | decision-with-default (trade-off form) | the rule tables and the procedure |
-| implement `pair` mode (`references/pair.md`) | task-file, checked-units, when-to-extract | the chunk loop, its guards, commit per behavior |
+| `pair-programming` skill, also implement `pair` mode | task-file, checked-units, when-to-extract | the chunk loop, its guards, commit per behavior |
 | implement `auto` mode (`references/auto.md`) | task-file, checked-units, prove-it-works | the predicate loop, the commit gate, the review stop |
 | research | sources (parent of deep-search, primary-sources, cite-sources, link-check), local-research, deep-search, primary-sources, cite-sources, tool-trial, report, link-check, worker-brief (no-user gate) | the step table, the web seat triggers and timing |
 | web-search | sources (parent), deep-search, primary-sources, cite-sources, link-check, worker-brief, run-workers | seats, site sets, reach tools, Yield and Floor, the depth gate, the merge |

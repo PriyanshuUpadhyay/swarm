@@ -34,7 +34,8 @@ holds each runtime's lines. Run folders stay where they were.
 
 | You typed | Type now |
 |---|---|
-| `/implement`, `/pair`, `/deliver` | `/swarm:swarm implement`, then choose `pair` or `auto` mode |
+| `/implement`, `/deliver` | `/swarm:swarm implement`, then choose `pair` or `auto` mode |
+| `/pair` | `/swarm:pair-programming`, a skill again since 2026-11-06 (ADR 0137) |
 | `/review`, `/review-check`, `/review-walk`, `/cleanup-gate` | `/swarm:code-review`, then choose `check`, `walk`, or `cleanup`; a skill since 2026-11-05 (ADR 0137) |
 | `/research`, `/web-search` | `/swarm:research`, a skill again since 2026-11-05 (ADR 0137) |
 | `/build`, `/explain` | `/swarm:swarm build`, `/swarm:swarm explain` |
