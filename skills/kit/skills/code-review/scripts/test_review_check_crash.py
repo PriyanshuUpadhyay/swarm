@@ -69,3 +69,34 @@ def test_crash_note():
             assert "0 fix, 0 ask, 1 note" in (run / "03-verdict.md").read_text(), "a crash on a context line stays a note"
         finally:
             os.chdir(previous)
+
+
+def test_taste_note():
+    """A note on the owner's TASTE- rule at an added line counts as a fix."""
+    previous, old_home = Path.cwd(), os.environ.get("HOME")
+    with tempfile.TemporaryDirectory() as d:
+        try:
+            os.environ["HOME"] = d
+            (Path(d) / ".review-walk").mkdir()
+            (Path(d) / ".review-walk" / "taste.md").write_text(
+                "# Taste\n\nFiles: `**/*.py`\n\n- `TASTE-13` Keys kept in sync by hand with another place → one source.\n")
+            os.mkdir(Path(d) / "repo")
+            os.chdir(Path(d) / "repo")
+            sh("git", "init", "-qb", "main")
+            sh("git", "config", "user.email", "t@t")
+            sh("git", "config", "user.name", "t")
+            base = commit({"util.py": "def helper(c):\n    return c\n"}, "taste base")
+            head = commit({"util.py": "KEYS = {'path', 'body'}\n\n\ndef helper(c):\n    return c\n"}, "taste change")
+            rc.start(f"{base}..{head}")
+            run = Path("tmp/review-check") / f"range-{base[:7]}-{head[:7]}-01"
+            uid, checks = next(iter(load_checklist(run).items()))
+            assert "TASTE-13" in checks["rules"], checks
+            rest = [r for r in checks["rules"] if r != "TASTE-13"]
+            rows(run, f"| {uid} | {', '.join(rest) or '-'} | x | `def helper(c):` | n/a | | the unit has no case these rules name |",
+                 f"| {uid} | TASTE-13 | util.py:1 | `KEYS = {{'path', 'body'}}` | note | KEYS repeats the keys post reads | post reads c['path'] |")
+            assert rc.verdict(run.name) == 0
+            verdict = (run / "03-verdict.md").read_text()
+            assert "1 fix, 0 ask, 0 note" in verdict, verdict
+        finally:
+            os.chdir(previous)
+            os.environ["HOME"] = old_home

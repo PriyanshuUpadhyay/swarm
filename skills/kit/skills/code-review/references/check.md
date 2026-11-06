@@ -105,7 +105,8 @@ Write each row as `| unit | rule | file:line | quote | kind | problem | proof |`
   not proved), or `note` (optional cleanup). An unproved defect is an `ask`, never a `fix`. A test
   that a run shows passes with and without its change is proved, so it is a `fix` (`L-14`), never an `ask`. A `fix` also needs a defect that this change
   introduced and that its author would fix; an older defect or a matter of taste is a `note`, unless
-  the change says it fixes or bounds that defect (`L-15`). Start
+  the change says it fixes or bounds that defect (`L-15`). A `TASTE-` row that the change breaks is
+  the owner's rule, not a matter of taste, so it is a `fix` that asks for the remedy the row names. Start
   its problem with "potential issue, not confirmed:" and name the input that would trigger it.
   A `note` whose problem names a crash (`crash`, `traceback`, `panic`, `uncaught`, `non-zero exit`,
   `exits 1`) and that quotes a line the change added counts as a `fix`: `verdict` changes its kind, and only an

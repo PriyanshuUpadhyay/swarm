@@ -179,6 +179,7 @@ if __name__ == "__main__":
         test_refuted_fix()
         test_limits()
         test_crash_note()
+        test_taste_note()
         test_stale_verdict_guard()
         test_merge_guard()
         test_same_head_carry()

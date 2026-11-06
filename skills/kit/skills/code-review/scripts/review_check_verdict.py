@@ -159,6 +159,10 @@ def verdict(name, only=None):
             made = [new[n] for n in numbers if n in diff.get(path, {}).get("added", ())]
             if kind == "note" and crashes(problem) and any(quote in line for line in made):
                 kind = "fix"
+            # A TASTE- row is the owner's rule, so its break on added code is a fix (eval round 5: seats kept
+            # filing a hand-synced key list as a note after check.md said fix).
+            if kind == "note" and any(i.startswith("TASTE-") for i in ids) and any(quote in line for line in made):
+                kind = "fix"
             matches = [(i, match) for i, alternatives in enumerate(replied)
                        if (match := next((alt for alt in alternatives if alt[0] == path
                                           and any(alt[1] == source.strip() for source in new_lines)
