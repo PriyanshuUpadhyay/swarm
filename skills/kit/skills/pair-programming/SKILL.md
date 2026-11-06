@@ -64,9 +64,11 @@ behavior and repository; the user does not have to catch a wrong `none` or write
 
 ## Chunk loop
 
-For the current behavior, propose one chunk: the whole behavior as one diff, about 40 changed
-lines, several hunks and files allowed when the behavior needs them. Do not walk a behavior up in
-steps of 10, 20, then 40 lines; go straight to one chunk. A behavior that needs much more than 40
+For the current behavior, propose one chunk: the whole behavior as one diff, up to about 100
+changed lines, give or take. Put related changes in the same chunk, such as the code, its caller,
+and its test, with several hunks and files when the behavior needs them, so that the user reviews
+them in one read. Do not pad a small behavior to reach the size. Do not walk a behavior up in
+steps of 10, 20, then 40 lines; go straight to one chunk. A behavior that needs much more than 100
 lines is two behaviors, so split the list, not the chunk. Show three things and then stop:
 
 1. one line of intent that names each input case the chunk handles, for example "reject an empty
@@ -147,7 +149,7 @@ or tear down.
 - No edit before `approve`.
 - The base check runs before the behavior list, and a branch behind its upstream is named with
   its commits.
-- One chunk is one behavior as one diff, about 40 changed lines, several hunks allowed. A bigger
+- One chunk is one behavior as one diff, up to about 100 changed lines of related changes. A bigger
   behavior is split in the list, never walked up in stages.
 - A chunk touches only what its behavior names, and its intent line names each case it handles.
   An unnamed case is a one-line question. Apply `blocks/checked-units/SKILL.md` to new symbols. An
