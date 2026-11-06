@@ -83,3 +83,25 @@ Verdict round 4: fix (6-6). The skill panes read the taste file, but they answer
 ids in each unit's checklist, so no taste pattern became a finding. `start` now loads the
 `TASTE-` rules of `~/.review-walk/taste.md` with the repo rules, so each matching unit's checklist
 holds them and the repo seat must answer each one. Only the six lost pairs run again.
+
+Round 5 reran the skill side of the six round-4 losses after `start` loaded the `TASTE-` rules,
+against the same base reports. Two pairs then ran again: `dup-helper` (Codex) after `TASTE-11` asked
+for a line count, and `hand-synced-shape` (Claude) after `verdict` turned a `TASTE-` note on added
+code into a fix. The Claude pane filed `TASTE-13` as a note three times, even after check.md said
+fix, so code owns that rule now. `universal-ctags` was missing for part of the round and was
+reinstalled before the last two runs. Every refute seat kept every fix it got.
+
+| date | skill commit | baseline | case | provider | result | grader note |
+|---|---|---|---|---|---|---|
+| 2026-11-06 | 6bf15b39 | no skill | crlf-not-a-bug | claude | tie | 2/2 each |
+| 2026-11-06 | 6bf15b39 | no skill | check-the-type-owns | claude | win (narrow) | 2/2 each; more correct points |
+| 2026-11-06 | 6bf15b39 | no skill | check-the-type-owns | codex | tie | 2/2 each, regraded after the blinding garbled text |
+| 2026-11-06 | 6bf15b39 | no skill | hand-synced-shape | codex | win | the skill side files the hand-kept key set as a fix |
+| 2026-11-06 | 6bf15b39 + taste count | no skill | dup-helper | codex | win | 2/2 vs 1/2; "21 consecutive lines without a blank line" |
+| 2026-11-06 | ee83a100 | no skill | hand-synced-shape | claude | win | 1/2 each; only the skill side calls the key list a defect |
+
+Verdict: keep. The latest result for each of the 12 pairs is 10 wins and 2 ties. Weak expectation:
+`hand-synced-shape` exp 1 needs the words "one source" in review.md. The seat row asked for it, but
+the summary dropped it. Known side effect: the `TASTE-` upgrade also makes a fix of a note on a long
+function that was long before the change, if the note quotes an added line, and no refute seat
+checks those rows.
