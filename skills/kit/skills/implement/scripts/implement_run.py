@@ -15,7 +15,7 @@ only a path often does not open it (Sonnet workers opened 0 of 4 pointer skills,
 again. A catalog item `block:<id>` names a block of the kit's blocks/ folder; blocks/blocks.toml owns
 the block, alias, and profile format, and the repo's .blocks.toml adds params, repo blocks, and off.
 
-The step graph is the step table in ../PRESET.md. `start` writes the need names and marks 05-build.md
+The step graph is the step table in ../SKILL.md. `start` writes the need names and marks 05-build.md
 with `Revision: HEAD`, as references/step-run.md describes. The kit's references/step_run.py
 owns status, ready, stale, take, done, and events.log. This script adds the implement rules: the revision
 of 05-build is HEAD, take 04-impact lists the places that name the contracts' code names, and take

@@ -14,7 +14,7 @@ def test_installed_kit_paths(tmp):
     out = run("start")
     assert out.returncode == 0, out.stderr
     text = step_text(folder, "05-build")
-    assert "Take with: python3 ~/.swarm/kit/presets/implement/scripts/implement_run.py take " in text, text
+    assert "Take with: python3 ~/.swarm/kit/skills/implement/scripts/implement_run.py take " in text, text
     assert "Skills read: ~/.swarm/kit/blocks/prove-it-works/SKILL.md" in text, text
     assert "under ~/.swarm/kit (the kit root)" in text, text
     assert str(SCRIPT.parents[3]) not in text and str(SCRIPT) not in out.stdout, out
@@ -76,7 +76,7 @@ def test_start_plan_needs_approval(tmp):
     refused = run("start", "--plan", other)
     assert refused.returncode == 1 and f"01-frame (plan: was {plan.resolve()}, now {other.resolve()})" in refused.stderr, refused
     # A chat preset passes the stop rule with no round, but it is not an implement plan.
-    explain = SCRIPT.parents[1].parent / "explain" / "PRESET.md"
+    explain = SCRIPT.parents[3] / "presets" / "explain" / "PRESET.md"
     chat = Path(tmp, "chat-run")
     chat.mkdir()
     table = explain.read_text(encoding="utf-8").split("## Preset\n", 1)[1].split("\n\n", 2)[1]
@@ -113,7 +113,7 @@ def test_plan_drift_quotes_the_move(tmp):
 
 def implement_table():
     """The implement preset's step table, as a plan copies it."""
-    preset = (SCRIPT.parents[1] / "PRESET.md").read_text(encoding="utf-8").split("## Preset\n", 1)[1]
+    preset = (SCRIPT.parents[1] / "SKILL.md").read_text(encoding="utf-8").split("## Preset\n", 1)[1]
     return "| File" + preset.split("\n| File", 1)[1].split("\n\n", 1)[0] + "\n"
 
 

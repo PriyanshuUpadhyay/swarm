@@ -22,7 +22,7 @@ Take the small route only when all of these hold. Otherwise run the `implement` 
 1. Write the request, the done-when, and `Base: <commit>` in the reply before the first edit.
 2. Write a failing test, or name the existing check that will prove the change, by
    `blocks/prove-it-works/SKILL.md`. Make the change. Run the test and paste its output.
-3. Run `python3 -I <kit root>/presets/implement/scripts/size_gate.py <base>` from the repo root.
+3. Run `python3 -I <kit root>/skills/implement/scripts/size_gate.py <base>` from the repo root.
    On `raise: <reason>`, stop the small route, tell the owner the reason, and run the `implement`
    preset in full on the same change. Its review covers the same `<base>..HEAD`.
 4. Commit. Run `python3 <kit root>/skills/code-review/scripts/review_check.py start <base>..HEAD`, and

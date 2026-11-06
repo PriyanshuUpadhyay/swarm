@@ -23,8 +23,8 @@ def test_start_without_tomllib(tmp):
 def test_start_kit_without_blocks(tmp):
     """A kit copy without blocks still starts without tomllib, with empty choice tables."""
     kit = Path(tmp, "kit-no-blocks")
-    for part in ("presets/implement/scripts/implement_run.py", "presets/implement/scripts/implement_context.py",
-                 "presets/implement/PRESET.md", "references/step_run.py", "references/step_checks.py",
+    for part in ("skills/implement/scripts/implement_run.py", "skills/implement/scripts/implement_context.py",
+                 "skills/implement/SKILL.md", "references/step_run.py", "references/step_checks.py",
                  "references/step_scope.py", "references/step_brief.py", "references/step_inputs.py", "references/step_links.py",
                  "references/block_ledger.py", "references/block_resolver.py"):
         (kit / part).parent.mkdir(parents=True, exist_ok=True)
@@ -33,7 +33,7 @@ def test_start_kit_without_blocks(tmp):
     _, made, repo, _ = blocks_start(tmp, "no-block-b", "", None)
     shutil.rmtree(made)
     code = "import runpy, sys; sys.modules['tomllib'] = None; sys.argv = sys.argv[1:]; runpy.run_path(sys.argv[0], run_name='__main__')"
-    out = subprocess.run([sys.executable, "-I", "-c", code, str(kit / "presets/implement/scripts/implement_run.py"), "start"], cwd=repo,
+    out = subprocess.run([sys.executable, "-I", "-c", code, str(kit / "skills/implement/scripts/implement_run.py"), "start"], cwd=repo,
                          env={**git_env(), "HOME": str(Path(tmp, "no-block-b", "home"))}, capture_output=True, text=True)
     assert out.returncode == 0 and out.stderr == "", out
     assert "### Chosen\n\n| Block | Why |\n|---|---|\n\n### Rejected\n\n| Block | Why |\n|---|---|" in out.stdout

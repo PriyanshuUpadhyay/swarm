@@ -260,7 +260,7 @@ def main(argv):
     body = text.split(START)[0] + text.split(END)[-1] if START in text else text
     if research(plan):
         check_layout(body, rows, uses)
-    elif preset_of(plan) == KIT / "presets" / "implement" / "PRESET.md":
+    elif preset_of(plan) == KIT / "skills" / "implement" / "SKILL.md":
         check_briefs(body, rows, uses, skip_optional=True)
     render(text, rows, ledger)  # its refusals, such as an unsafe html fence, come before plan.md is written
     put_chart(plan, mermaid(rows, uses))

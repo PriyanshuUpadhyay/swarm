@@ -23,7 +23,7 @@ only the user can give.
 4. Keep the task file as the kit block `blocks/task-file/SKILL.md` says, at
    `<repo-root>/tmp/deliver/<YYYY-MM-DD>-<slug>.md`, with the predicate as its goal and one
    evidence line per iteration.
-5. When the predicate holds, run `python3 <kit root>/presets/implement/scripts/implement_run.py review <folder> <base>..HEAD`,
+5. When the predicate holds, run `python3 <kit root>/skills/implement/scripts/implement_run.py review <folder> <base>..HEAD`,
    where `<folder>` is the run from step 1 and `<base>` is the commit before this run's first commit.
    The command passes its saved parent-loop key to `review_check.py start`, which owns the loop stop.
    Fixes use the same folder; a re-plan starts with `start --parent-loop <saved-key>`.
@@ -64,7 +64,7 @@ that does not match keeps the current gate; the chair runs the check before comm
 
 Only when the user opts in for this run, use fix seats within the coding-seat cap in `references/fan-out.md`. Before launch, the chair
 declares each seat's file set and the shared interfaces that stay frozen. Each seat uses its own
-worktree. Run `python3 <kit root>/presets/implement/scripts/land.py <decl.json> <worktree>...`, where the declaration
+worktree. Run `python3 <kit root>/skills/implement/scripts/land.py <decl.json> <worktree>...`, where the declaration
 maps each worktree to its file list and names the frozen files; it refuses overlapping files.
 The chair lands in the declared order and runs each unit's check at its stack position.
 Feature units stay serial. Without opt-in, use one fix seat. The kit's `references/fan-out.md`

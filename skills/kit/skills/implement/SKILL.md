@@ -5,7 +5,7 @@ description: Build one change through seven steps (frame, design, contracts, imp
 
 # Implement
 
-Use the `implement` preset for a change that needs a decision, touches a contract, stored data, or
+Use this skill for a change that needs a decision, touches a contract, stored data, or
 security, or that the owner wants planned. Any other change of about 3 files takes the small route in
 [references/small.md](references/small.md), whose `size_gate.py` sends it back here when the real diff is
 larger. A change that reads stored data adds `worst-case-data` to `04-impact`, so a bad stored value is
@@ -51,7 +51,7 @@ the git common dir (`git rev-parse --git-common-dir`), not the worktree folder n
    that close runs), and `Needs:` (the tools that a step uses). Show the draft, and write
    `~/.flow/<repo>/profile.md` only after the user confirms it. Tell the user that the new profile
    is not in version control yet.
-2. Run the script from the repo root. `F=<kit root>/presets/implement/scripts/implement_run.py`.
+2. Run the script from the repo root. `F=<kit root>/skills/implement/scripts/implement_run.py`.
 
    ```sh
    python3 $F start [--profile <name>] [--domains <a,b>] # makes the folder and step files, writes each step's skills and blocks into its file in full
@@ -88,7 +88,7 @@ the git common dir (`git rev-parse --git-common-dir`), not the worktree folder n
 
 ## Status line
 
-A run of the `implement` preset is a step run, so the kit's `references/step-run.md` owns the status
+A run of `implement` is a step run, so the kit's `references/step-run.md` owns the status
 line, the `Uses:` line, pick-up, close, and when a step waits for the user. The step table below is the step graph that
 the script reads. The revision of `05-build` is `HEAD`, so a new commit makes `06-review` stale.
 `start` marks `05-build.md` with the `Revision: HEAD` line that step-run.md describes.
@@ -96,7 +96,7 @@ the script reads. The revision of `05-build` is `HEAD`, so a new commit makes `0
 ## Preset
 
 Stop: owner
-Start: python3 <kit root>/presets/implement/scripts/implement_run.py start --plan <run> [--domains <a,b>]
+Start: python3 <kit root>/skills/implement/scripts/implement_run.py start --plan <run> [--domains <a,b>]
 Offers: local-research, tool-trial, when-to-diagram, html-diagram, diagram-check, design-tokens, web-ui-basics, headless-shot, look-check, when-to-extract, lean-ladder, worst-case-data, diagnose, drive-app, agent-doc
 
 `02-design` and `03-contracts` need only frame, so both run by the pick-up rule in
@@ -106,7 +106,7 @@ Offers: local-research, tool-trial, when-to-diagram, html-diagram, diagram-check
 |---|---|---|---|---|
 | `01-frame.md` | none | `Worktree:`, `Branch:`, `Plan:`, `Mode:`, goal, user, out of scope, done-when, and shared assumptions for design and contracts | requirements | the claims say when the change is done |
 | `02-design.md` (optional) | frame | UX flow and screens, or `skipped: no UI` | decision-with-default | each UX fork gets a marked default |
-| `03-contracts.md` (optional) | frame | APIs, data model, integrations, and the prior decisions in the repo's decision log that the topic touches | decision-with-default | each contract fork gets a marked default |
+| `03-contracts.md` (optional) | frame | APIs, data model, integrations, and the prior decisions in the repo's decision log that the topic touches, proposed with the fewest parts per `skills/simplest-design/SKILL.md` | decision-with-default | each contract fork gets a marked default |
 | `04-impact.md` (optional) | contracts | the existing features that change, or "independent", judged from the `## Callers` section that `take` writes with the places that name each code name in backticks in `03-contracts.md` | call-tree | the callers show what the change breaks |
 | `05-build.md` | impact, and design unless skipped | the task-file path of the `pair` or `auto` mode run, and `Base:`, the commit before its first commit | checked-units, prove-it-works, task-file | small checked units, kept in a task file |
 | `06-review.md` | build | the `review` check runs on `<Base>..<build revision>`, line 3 of the newest run's `03-verdict.md`, each `fix` row with its fix or the reason it stays, and one `Run: tmp/review-check/<run>` line per round, newest last | change-review | new seats judge the commits |
@@ -119,7 +119,7 @@ runs again to APPROVE. A REQUEST CHANGES verdict goes to the user, who starts a 
 findings. That run moves the build revision, so the review is stale and runs again on the new
 range. Answer each `ask` in the run's `answers.md` per the Asks section of the `code-review` skill's `references/check.md`.
 
-Start reviews with `python3 <kit root>/presets/implement/scripts/implement_run.py review <folder> <Base>..HEAD`.
+Start reviews with `python3 <kit root>/skills/implement/scripts/implement_run.py review <folder> <Base>..HEAD`.
 It passes the saved `loop.json` parent-loop key to `review_check.py start`, which owns the loop stop.
 For a re-plan, run `start --parent-loop <saved-key>` to keep the parent key.
 Pass an owner's saved line with `review <folder> <range> --continue <user-file>`.
@@ -134,15 +134,15 @@ Release is a separate action that the user asks for.
 For owner gates in `pair` or `auto` mode, and the build-to-review handoff when this session cannot start seats, apply `blocks/worker-brief/SKILL.md`.
 
 
-The `implement` preset owns the step list, the order, the profiles, and the domain catalog.
+The `implement` skill owns the step list, the order, the profiles, and the domain catalog.
 Its script uses `references/step_run.py` for the shared status commands in
 `references/step-run.md`.
-The mode file owns the chunks, the commits, and the build loop; the `implement` preset never starts `auto`
+The mode file owns the chunks, the commits, and the build loop; the `implement` skill never starts `auto`
 mode by itself.
-The `code-review` skill's check mode owns the review and its verdict; the `implement` preset never fixes a finding itself. An `INCOMPLETE` verdict is no review.
-The kit root, with its `blocks/` and `references/` folders, is two folders up from this preset's folder. The kit block
+The `code-review` skill's check mode owns the review and its verdict; the `implement` skill never fixes a finding itself. An `INCOMPLETE` verdict is no review.
+The kit root, with its `blocks/` and `references/` folders, is two folders up from this skill's folder. The kit block
 `blocks/prove-it-works/SKILL.md` owns the choice of check and the evidence.
-The kit block `blocks/checked-units/SKILL.md` owns the unit order. The repo's decision log owns the ADRs. The `implement` preset never pushes.
+The kit block `blocks/checked-units/SKILL.md` owns the unit order. The repo's decision log owns the ADRs. The `implement` skill never pushes.
 
 ## Trial log
 

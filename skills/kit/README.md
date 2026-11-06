@@ -12,6 +12,7 @@ swarm panes. ADR 0136 says how a new skill earns its place.
 |---|---|
 | `swarm` | Plan any task from kit blocks, starting from a preset when one fits; draw it, get approval, run the steps |
 | `swarm-orchestrator` | Run a swarm session as the parent agent |
+| `implement` | Run one change through frame, design, contracts, impact, build, review, and close, in `pair` or `auto` mode |
 | `swarm-voice` | Act as one child agent in a swarm session |
 | `skill-eval` | Test whether a skill helps: a cold name check, runs with and without it, and a blind grade |
 
@@ -22,7 +23,6 @@ start list of steps and blocks; the planner may add or drop blocks for the task.
 
 | Preset | Use |
 |---|---|
-| `implement` | Run one change through frame, design, contracts, impact, build, review, and close, in `pair` or `auto` mode (on trial) |
 | `build` | Pictures, generative plates, films, and websites drawn by code, from a story or a visual reference |
 | `explain` | Explain a subject with one running example, using the `voice-teach` block |
 

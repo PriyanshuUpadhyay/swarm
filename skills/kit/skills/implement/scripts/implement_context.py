@@ -11,7 +11,7 @@ import step_run
 from step_run import kit_path, plain
 from block_resolver import BLOCKS, CAP, read_utf8
 
-SKILL_MD = Path(__file__).resolve().parents[1] / "PRESET.md"
+SKILL_MD = Path(__file__).resolve().parents[1] / "SKILL.md"
 
 
 def git(*args):
@@ -27,7 +27,7 @@ def repo_name():
 
 
 def graph():
-    """Each step file and the steps it needs, from the step table in PRESET.md."""
+    """Each step file and the steps it needs, from the step table in SKILL.md."""
     rows = step_run.table(SKILL_MD)
     names = [r[0] for r in rows]
     return {name: step_run.need_files(need, names) for name, need, *_ in rows}

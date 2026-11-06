@@ -123,7 +123,7 @@ On 2026-10-17, the owner settled the voice-file part of #70 in `blocks/voice-rev
 On 2026-10-17, the owner chose `blocks/worker-brief/SKILL.md` as the owner of gates with no user present.
 
 On 2026-10-17, the owner approved domain selection by `implement_run.py start --domains`;
-`skills/kit/presets/implement/PRESET.md` names the command and its saved choice.
+`skills/kit/skills/implement/SKILL.md` names the command and its saved choice.
 
 On 2026-10-19, the owner made every work verb a preset, the Template above: a start list of steps
 and blocks that the planner copies. `skills/swarm/SKILL.md` owns the preset format and the front door,

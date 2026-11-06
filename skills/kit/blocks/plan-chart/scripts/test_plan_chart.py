@@ -9,7 +9,7 @@ KIT = Path(__file__).resolve().parents[3]
 STEP_RUN = KIT / "references" / "step_run.py"
 START_PLAN = KIT / "blocks" / "plan-review" / "scripts" / "start_plan.py"
 sys.path.insert(0, str(SCRIPT.parent))
-sys.path.insert(0, str(KIT / "presets" / "implement" / "scripts"))
+sys.path.insert(0, str(KIT / "skills" / "implement" / "scripts"))
 import implement_run
 import block_resolver
 import plan_chart

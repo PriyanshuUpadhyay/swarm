@@ -174,7 +174,7 @@ def test_build_repo_additions():
 
 
 def test_block_command():
-    for script in (SCRIPT, SCRIPT.parents[1] / "presets/implement/scripts/implement_run.py"):
+    for script in (SCRIPT, SCRIPT.parents[1] / "skills/implement/scripts/implement_run.py"):
         with tempfile.TemporaryDirectory() as tmp:
             folder = Path(tmp)
             step = "01-ask" if script == SCRIPT else "01-frame"
@@ -242,7 +242,7 @@ def test_start_refuses_bad_needs():
         assert out.returncode == 0, out.stderr
         assert (Path(tmp) / "run" / "03-reply.md").read_text(encoding="utf-8").splitlines()[1] == "Uses: 01-review"
     for skill in ("skills/council/SKILL.md", "presets/build/PRESET.md", "skills/research/SKILL.md",
-                  "blocks/web-search/SKILL.md", "presets/implement/PRESET.md"):
+                  "blocks/web-search/SKILL.md", "skills/implement/SKILL.md"):
         with tempfile.TemporaryDirectory() as tmp:
             out = run("start", Path(tmp) / "run", SCRIPT.parents[1] / skill)
             assert out.returncode == 0, (skill, out.stderr)

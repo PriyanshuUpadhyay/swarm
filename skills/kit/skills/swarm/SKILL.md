@@ -24,7 +24,7 @@ the task mixes verbs, plan from the block catalog with no preset.
 | Preset | Use when the task is to |
 |---|---|
 | `build` | make a picture, film, or site where code draws every frame: a reel, a loop, a generative still, a landing page, or a portfolio |
-| `implement` | build one change, in pair or auto mode; a change with no new decision or risk in about 3 files takes the small route in `presets/implement/references/small.md`, with no plan page |
+| `implement` | build one change, in pair or auto mode; a change with no new decision or risk in about 3 files takes the small route in `skills/implement/references/small.md`, with no plan page; it is a skill, so read `skills/implement/SKILL.md` |
 | `pair-programming` | write code with the owner one approved diff at a time, with no frame or review steps; it is a skill, so read `skills/pair-programming/SKILL.md` |
 | `simplest-design` | propose a design or plan with the fewest parts that meets the stated needs; it is a skill, so read `skills/simplest-design/SKILL.md` |
 | `code-review` | check a range, walk a GitHub PR, or run a cleanup pass; it is a skill, so read `skills/code-review/SKILL.md` |
@@ -45,7 +45,7 @@ each step with the blocks it resolves to. A task with no verb has no preset.
 
 ## Steps
 
-The small route of `implement` (`presets/implement/references/small.md`) skips this whole list and runs its own steps.
+The small route of `implement` (`skills/implement/references/small.md`) skips this whole list and runs its own steps.
 
 1. Write the plan by `blocks/planner/SKILL.md`.
 2. Check it and draw it by `blocks/plan-chart/SKILL.md`.
