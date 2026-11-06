@@ -68,6 +68,14 @@ pub struct Snapshot {
     pub rows: RowProjection,
 }
 
+#[derive(Debug, Serialize)]
+pub struct NativeSnapshot {
+    pub source_id: String,
+    pub read_end_byte: u64,
+    pub complete_end_byte: u64,
+    pub lines: Vec<LineEvents>,
+}
+
 #[derive(Debug)]
 pub enum SnapshotError {
     OffsetOverflow,
@@ -204,6 +212,22 @@ pub struct SnapshotReader {
 }
 
 impl SnapshotReader {
+    pub fn with_open_path(
+        meta: SourceMeta,
+        start_byte: u64,
+        end: EndPolicy,
+        format: NativeFormat,
+        original_open_path: &str,
+    ) -> Self {
+        Self::with_session_id(
+            meta,
+            start_byte,
+            end,
+            format,
+            &format.session_id_from_path(original_open_path),
+        )
+    }
+
     pub fn new(meta: SourceMeta, start_byte: u64, end: EndPolicy) -> Self {
         Self::with_format(meta, start_byte, end, NativeFormat::Claude)
     }
@@ -242,7 +266,7 @@ impl SnapshotReader {
         })
     }
 
-    pub fn finish(mut self, work: &mut dyn Work) -> Result<Snapshot, SnapshotError> {
+    fn finish_eof(&mut self, work: &mut dyn Work) -> Result<(), SnapshotError> {
         work.check()?;
         if matches!(self.end, EndPolicy::SnapshotEof) {
             self.framer.eof(work, |line, work| {
@@ -251,6 +275,21 @@ impl SnapshotReader {
                 Ok(())
             })?;
         }
+        Ok(())
+    }
+
+    pub fn finish_native(mut self, work: &mut dyn Work) -> Result<NativeSnapshot, SnapshotError> {
+        self.finish_eof(work)?;
+        Ok(NativeSnapshot {
+            source_id: self.meta.source_id,
+            read_end_byte: self.framer.read_end_byte(),
+            complete_end_byte: self.framer.complete_end_byte(),
+            lines: self.lines,
+        })
+    }
+
+    pub fn finish(mut self, work: &mut dyn Work) -> Result<Snapshot, SnapshotError> {
+        self.finish_eof(work)?;
         let rows = self.project_rows(work)?;
         Ok(Snapshot {
             source_id: self.meta.source_id,

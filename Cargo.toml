@@ -25,3 +25,7 @@ vt100 = "0.16"
 [features]
 # `swarm serve`, the local HTTP server for the web UI. Off by default, so hook calls keep a small CLI.
 serve = ["dep:axum", "dep:tokio", "dep:tokio-stream", "dep:portable-pty"]
+
+[[example]]
+name = "transcript_caller_trial"
+required-features = ["serve"]
