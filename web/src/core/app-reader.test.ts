@@ -29,5 +29,8 @@ describe("liveRows", () => {
     expect(liveRows([row("user", "review it")], null, thinking).map((r) => r.kind)).toEqual(["thought"]);
     const landed = [row("user", "review it"), row("thought", thinking), row("toolUse", "python3 check.py")];
     expect(liveRows(landed, null, thinking)).toEqual([]);
+    // A thought beside tool calls lands inside a fold; it once stayed pinned above the composer.
+    const fold: Row = { ...row("fold", "1 command"), steps: [row("thought", thinking), row("toolUse", "python3 check.py")] };
+    expect(liveRows([row("user", "review it"), fold], null, thinking)).toEqual([]);
   });
 });

@@ -14,12 +14,14 @@ const MATCHED = 20;
 /** Whether one of the last 50 log rows of `kind` holds `text`. The screen drops markdown marks
  *  and wraps lines, so only letters and digits are compared. Rows of earlier turns count too,
  *  because pi's screen can still show the last turn's answer. A text shorter than 20 letters, such
- *  as a spinner's "Working", never matches, so it cannot hide itself. */
+ *  as a spinner's "Working", never matches, so it cannot hide itself. A thought beside tool
+ *  calls lands as a step of a fold, so the steps count too. */
 function landed(rows: readonly Row[], text: string, kind: Row["kind"]): boolean {
   const head = letters(text).slice(0, 80);
   if (head.length < MATCHED) return false;
+  const holds = (row: Row) => row.kind === kind && letters(row.text).includes(head);
   for (let i = rows.length - 1; i >= Math.max(0, rows.length - 50); i--)
-    if (rows[i].kind === kind && letters(rows[i].text).includes(head)) return true;
+    if (holds(rows[i]) || rows[i].steps?.some(holds)) return true;
   return false;
 }
 
