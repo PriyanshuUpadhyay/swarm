@@ -27,6 +27,11 @@ skill, check that the same failure happened in at least two real runs.
 Scratch work goes in `~/.swarm/ws/skill-eval/<skill>-<YYYY-MM-DD>/`. Each pane gets its own empty
 `mktemp -d` folder as its working folder, so no run edits a repository.
 
+An eval spans many turns, so keep a task file as `<kit root>/blocks/task-file/SKILL.md` says, at
+`tmp/skill-eval/<YYYY-MM-DD>-<skill>.md`. Besides the block's fields, it holds the scratch path, the
+round, the pane and grader names with their ask numbers, the grades received so far, and each
+result after unblinding.
+
 ## Steps
 
 ### 1. Name check

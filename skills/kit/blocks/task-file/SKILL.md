@@ -9,7 +9,7 @@ metadata:
   needs: "a task that spans turns"
   gives: "a task file and a status block on resume"
   conflicts: ""
-  users: "implement, pair-programming"
+  users: "implement, pair-programming, root-cause-analysis, skill-eval"
   source: "presets/implement/references/pair.md, now skills/pair-programming/SKILL.md (One task file per task, moved here 2026-10-13); presets/implement/references/auto.md step 4; references/run-folder.md (where the folder is)"
 ---
 
