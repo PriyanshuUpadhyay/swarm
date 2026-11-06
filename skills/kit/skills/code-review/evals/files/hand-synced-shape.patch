@@ -1,0 +1,47 @@
+From 031c63a4deefb8c4282bc6b9d00895d98b3c498d Mon Sep 17 00:00:00 2001
+From: eval <eval@example.invalid>
+Date: Fri, 6 Nov 2026 00:00:00 +0000
+Subject: [PATCH] review-walk: status checks comments.json before post
+
+---
+ .../kit/presets/review/scripts/review_walk.py | 24 +++++++++++++++++++
+ 1 file changed, 24 insertions(+)
+
+diff --git a/skills/kit/presets/review/scripts/review_walk.py b/skills/kit/presets/review/scripts/review_walk.py
+index 2f33e663..80a5f430 100644
+--- a/skills/kit/presets/review/scripts/review_walk.py
++++ b/skills/kit/presets/review/scripts/review_walk.py
+@@ -196,6 +196,30 @@ def checks(d, state):
+             out.append("03-check: the review-check run is for another head")
+         elif state["04-comments"].startswith("done") and text["04-comments"].splitlines()[2:3] != verdict[2:3]:
+             out.append("04-comments: line 3 is not the review-check verdict")
++    if state["04-comments"].startswith("done"):
++        out += comment_problems(d)
++    return out
++
++
++COMMENT_KEYS = {"path", "body", "first", "last"}
++
++
++def comment_problems(d):
++    """Problems in <run>/comments.json that post would hit: unknown keys, no body, or a quote not on the new side."""
++    file = d / "comments.json"
++    if not file.exists():
++        return ["04-comments: done, but there is no comments.json"]
++    out = []
++    patch = (d / "diff.patch").read_text()
++    for i, c in enumerate(json.loads(file.read_text())):
++        if extra := set(c) - COMMENT_KEYS:
++            out.append(f"04-comments: comment {i} has unknown keys {', '.join(sorted(extra))}")
++        if not c.get("path") or not c.get("body"):
++            out.append(f"04-comments: comment {i} needs path and body")
++        added = [l[1:] for l in patch.splitlines() if l.startswith("+") and not l.startswith("+++")]
++        for key in ("first", "last"):
++            if c.get(key) and not any(c[key] in l for l in added):
++                out.append(f"04-comments: comment {i} {key} is not a quote on the new side")
+     return out
+ 
+ 
+-- 
+2.54.0 (Apple Git-157)
+

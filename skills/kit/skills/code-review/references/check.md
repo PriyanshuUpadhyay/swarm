@@ -89,6 +89,12 @@ The rules live in `references/lens.md`, `references/lens-<name>.md`, and the rep
 repo's own convention docs, and the `review` paths of each domain in `~/.flow/domains.md` whose `Signals:`
 line matches the file. A defect that no rule names is still a finding, with rule `-`.
 
+When `~/.review-walk/taste.md` exists, read it before the first unit. It says what the owner
+flags, and each of its patterns that a unit shows is a finding, with rule `-` and a problem that
+starts with `taste:`. A copy that the change
+adds of a type, schema, or helper that already exists is a `fix`, because its author would fix it.
+With no taste file, the lens rules are the whole list.
+
 `REF` means the change can break a place that names its symbol. Check each listed place against
 the new signature, return shape, and meaning. For a removed symbol, each listed place is a
 leftover reference.
@@ -98,7 +104,8 @@ Write each row as `| unit | rule | file:line | quote | kind | problem | proof |`
 - `rule` is one ID, a comma list of IDs for a `pass` or an `n/a` row, or `-`.
 - `kind` is `pass` (the unit follows the rule), `n/a` (the rule cannot apply, for example "no SQL
   in this hunk"), `fix` (a proved defect or a rule break), `ask` (a question, or a defect that is
-  not proved), or `note` (optional cleanup). An unproved defect is an `ask`, never a `fix`. A `fix` also needs a defect that this change
+  not proved), or `note` (optional cleanup). An unproved defect is an `ask`, never a `fix`. A test
+  that a run shows passes with and without its change is proved, so it is a `fix` (`L-14`), never an `ask`. A `fix` also needs a defect that this change
   introduced and that its author would fix; an older defect or a matter of taste is a `note`, unless
   the change says it fixes or bounds that defect (`L-15`). Start
   its problem with "potential issue, not confirmed:" and name the input that would trigger it.
