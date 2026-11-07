@@ -287,12 +287,7 @@ pub fn after(tokenizer: &mut Tokenizer) -> State {
             && tokenizer.tokenize_state.label_starts[start_index].kind == LabelKind::Link
             && {
                 let folded = fold_es_whitespace(&id);
-                !folded.is_empty()
-                    && tokenizer
-                        .parse_state
-                        .definitions
-                        .iter()
-                        .any(|key| fold_es_whitespace(key) == folded)
+                !folded.is_empty() && tokenizer.parse_state.es_definition_folds.contains(&folded)
             });
 
     match tokenizer.current {
@@ -659,12 +654,7 @@ pub fn reference_full_after(tokenizer: &mut Tokenizer) -> State {
                 == LabelKind::Link
             && {
                 let folded = fold_es_whitespace(&id);
-                !folded.is_empty()
-                    && tokenizer
-                        .parse_state
-                        .definitions
-                        .iter()
-                        .any(|key| fold_es_whitespace(key) == folded)
+                !folded.is_empty() && tokenizer.parse_state.es_definition_folds.contains(&folded)
             })
     {
         State::Ok

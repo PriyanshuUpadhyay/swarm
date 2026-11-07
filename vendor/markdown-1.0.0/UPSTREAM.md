@@ -137,6 +137,17 @@ also remain OPEN: a miss scans stored keys, with no cache, cap or deadline and n
 performance claim. This patch does not widen the earlier ASCII-separator
 exception or close renderer parity or public adoption gates.
 
+The Unit12c patch follows `EMPTY-LABEL-V3.md` under the same gate. A definition
+whose normalized label has an empty W25 fold fails and stays paragraph text.
+`parser.rs` builds one nonempty folded-key set per parse, and both `label_end.rs`
+sites use it for fallback membership. This supersedes the Unit12b sentences that
+empty folds keep exact matching, E1 grammar remains OPEN, and a miss scans stored
+keys with no cache. Rebase review must keep the `definition.rs` rejection and
+`parser.rs` set in step with both `label_end.rs` sites and compiler binding,
+preserve the gate and source-first order, and rerun the frozen regressions and
+owner-gate guard. Other OPEN items and the exact-key lookup stay unchanged; no
+general performance claim is made.
+
 The local numeric code derives from MarkdownIt 15.0.2 dist/markdown-it.cjs.js
 (isValidEntityCode and unescapeAll), and entities 8.1.0 src/decode-codepoint.ts.
 The entities C1/replacement logic carries its upstream adaptation pointer,

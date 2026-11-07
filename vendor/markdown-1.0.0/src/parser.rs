@@ -5,9 +5,14 @@ use crate::message;
 use crate::state::{Name as StateName, State};
 use crate::subtokenize::subtokenize;
 use crate::tokenizer::Tokenizer;
-use crate::util::location::Location;
+use crate::util::{location::Location, normalize_identifier::fold_es_whitespace};
 use crate::ParseOptions;
-use alloc::{collections::BTreeMap, string::String, vec, vec::Vec};
+use alloc::{
+    collections::{BTreeMap, BTreeSet},
+    string::String,
+    vec,
+    vec::Vec,
+};
 
 /// Info needed, in all content types, when parsing markdown.
 ///
@@ -27,6 +32,8 @@ pub struct ParseState<'a> {
     pub bytes: &'a [u8],
     /// Set of defined definition identifiers.
     pub definitions: Vec<String>,
+    /// Nonempty folded definition identifiers for the private linked value extension.
+    pub es_definition_folds: BTreeSet<String>,
     /// Set of defined GFM footnote definition identifiers.
     pub gfm_footnote_definitions: Vec<String>,
 }
@@ -60,6 +67,7 @@ pub fn parse<'a>(
             None
         },
         definitions: vec![],
+        es_definition_folds: BTreeSet::new(),
         gfm_footnote_definitions: vec![],
     };
 
@@ -80,6 +88,15 @@ pub fn parse<'a>(
     let mut events = tokenizer.events;
 
     loop {
+        if parse_state.link_compat() && !options.constructs.gfm_label_start_footnote {
+            for key in &result.definitions {
+                let folded = fold_es_whitespace(key);
+                if !folded.is_empty() {
+                    parse_state.es_definition_folds.insert(folded);
+                }
+            }
+        }
+
         let fn_defs = &mut parse_state.gfm_footnote_definitions;
         let defs = &mut parse_state.definitions;
         fn_defs.append(&mut result.gfm_footnote_definitions);

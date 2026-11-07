@@ -108,7 +108,7 @@ use crate::state::{Name as StateName, State};
 use crate::tokenizer::Tokenizer;
 use crate::util::{
     constant::RESOURCE_DESTINATION_BALANCE_MAX,
-    normalize_identifier::normalize_identifier,
+    normalize_identifier::{fold_es_whitespace, normalize_identifier},
     skip,
     slice::{Position, Slice},
 };
@@ -186,6 +186,26 @@ pub fn label_after(tokenizer: &mut Tokenizer) -> State {
                 tokenizer.events.len() - 1,
                 &[Name::DefinitionLabelString],
             );
+
+            if tokenizer.parse_state.link_compat()
+                && !tokenizer
+                    .parse_state
+                    .options
+                    .constructs
+                    .gfm_label_start_footnote
+            {
+                let id = normalize_identifier(
+                    Slice::from_position(
+                        tokenizer.parse_state.bytes,
+                        &Position::from_exit_event(&tokenizer.events, tokenizer.tokenize_state.end),
+                    )
+                    .as_str(),
+                );
+                if fold_es_whitespace(&id).is_empty() {
+                    tokenizer.tokenize_state.end = 0;
+                    return State::Nok;
+                }
+            }
 
             tokenizer.enter(Name::DefinitionMarker);
             tokenizer.consume();
