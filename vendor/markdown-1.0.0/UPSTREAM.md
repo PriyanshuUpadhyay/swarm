@@ -89,6 +89,33 @@ Keep the three captured per-input None and HTML outcomes unchanged.
 Q1, NUL display text, full identifier normalization, renderer parity, public
 adoption and the other unselected gates remain OPEN.
 
+The coordinated identifier-separator patch is the first local patch that
+intentionally changes default/None and native HTML outcomes. Earlier preservation
+statements apply to their own destination, grammar and linked String patches.
+The shared normalizer now retains the first internal ASCII space when its input
+is nonempty, starts outside TAB, LF, CR and SPACE, and contains at least two runs
+outside those four bytes. Its loop, slices, capacity and lower-then-upper case
+tail stay unchanged. Restored separators split formerly merged identities, such
+as `a b` and `ab`, and merge formerly separate identities, such as `a b` and
+` a b`. Existing public lowercase context, including final Sigma, can also change.
+Only the resulting normalized identities and existing lookups may differ; no new
+panic, error or failure status is allowed in any mode.
+
+After the unchanged true-footnote suffix lookup misses, the existing undefined
+footnote fallback now normalizes the whole raw caret label from its marker to
+the closing bracket. Parser admission and both compilers therefore use the same
+source range. An isolated separator repair could instead cause a missing HTML
+lookup and panic, or lose a valid fallback match; these are source predictions,
+not executed isolated-patch results. Rebase review must compare both the upstream
+normalizer and fallback construction, preserve this same-source key agreement,
+and rerun the frozen public-API separator regression and GFM safety guard. Keep
+the ORIGINAL `SHA256SUMS`, archive/source pins, license and earlier patch history
+unchanged, including the original normalizer checksum
+`cd881e566b346de5b2f4b41f30c7acae24ccd4e7827ab059de736c323837f302`.
+Full identifier normalization, Q1, renderer parity, public adoption and the other
+unselected gates remain OPEN. This key agreement does not prove full GFM or
+JavaScript parity.
+
 The local numeric code derives from MarkdownIt 15.0.2 dist/markdown-it.cjs.js
 (isValidEntityCode and unescapeAll), and entities 8.1.0 src/decode-codepoint.ts.
 The entities C1/replacement logic carries its upstream adaptation pointer,

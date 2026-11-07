@@ -191,7 +191,7 @@ use crate::util::{
     skip,
     slice::{Position, Slice},
 };
-use alloc::{string::String, vec};
+use alloc::vec;
 
 /// Start of label end.
 ///
@@ -270,11 +270,11 @@ pub fn after(tokenizer: &mut Tokenizer) -> State {
         }
 
         // Nope, this might be a normal link?
+        let caret_index = tokenizer.events[start.start.1 - 2].point.index;
         tokenizer.tokenize_state.label_starts[start_index].kind = LabelKind::GfmUndefinedFootnote;
-        let mut new_id = String::new();
-        new_id.push('^');
-        new_id.push_str(&id);
-        id = new_id;
+        id = normalize_identifier(
+            Slice::from_indices(tokenizer.parse_state.bytes, caret_index, indices.1).as_str(),
+        );
     }
 
     let defined = tokenizer.parse_state.definitions.contains(&id);
