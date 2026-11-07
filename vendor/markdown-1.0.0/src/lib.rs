@@ -29,6 +29,9 @@
 #![allow(clippy::must_use_candidate)]
 #![allow(clippy::too_many_lines)]
 #![allow(clippy::result_large_err)]
+// Clippy 1.96 flags unchanged upstream `util/char.rs` (`index - 4` after a bound check);
+// allowed here so the pinned upstream file stays byte-identical to SHA256SUMS.
+#![allow(clippy::implicit_saturating_sub)]
 #![doc(
     html_logo_url = "https://raw.githubusercontent.com/wooorm/markdown-rs/8924580/media/logo-monochromatic.svg?sanitize=true"
 )]

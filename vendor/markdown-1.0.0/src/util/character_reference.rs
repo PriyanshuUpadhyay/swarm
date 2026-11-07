@@ -216,7 +216,7 @@ pub fn parse(value: &str) -> String {
     result
 }
 
-/// OLD MarkdownIt 15.0.2 short-numeric validity and entities 8.1.0 long decode.
+/// OLD `MarkdownIt` 15.0.2 short-numeric validity and entities 8.1.0 long decode.
 /// The C1 table is adapted from he revision 36afe179; see UPSTREAM.md notices.
 pub(crate) fn destination_numeric(value: &str, marker: u8) -> Option<String> {
     let radix = if marker == b'x' { 16 } else { 10 };
@@ -234,7 +234,7 @@ pub(crate) fn destination_numeric(value: &str, marker: u8) -> Option<String> {
         // Exact isValidEntityCode, including noncharacters and C0/C1 controls.
         if matches!(code, 0..=8 | 11 | 14..=31 | 127..=159 | 0xd800..=0xdfff | 0xfdd0..=0xfdef)
             || code & 0xffff >= 0xfffe
-            || code > 0x10ffff
+            || code > 0x0010_ffff
         {
             return None;
         }
