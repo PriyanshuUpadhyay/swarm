@@ -163,6 +163,7 @@ pub fn to_mdast(value: &str, options: &ParseOptions) -> Result<mdast::Node, mess
         &events,
         parse_state.bytes,
         parse_state.link_compat(),
+        parse_state.link_compat() && !options.constructs.gfm_label_start_footnote,
         parse_state.link_titles,
     )?;
     Ok(node)

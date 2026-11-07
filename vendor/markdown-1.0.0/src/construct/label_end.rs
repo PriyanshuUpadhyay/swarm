@@ -187,7 +187,7 @@ use crate::subtokenize::Subresult;
 use crate::tokenizer::{Label, LabelKind, LabelStart, Tokenizer};
 use crate::util::{
     constant::RESOURCE_DESTINATION_BALANCE_MAX,
-    normalize_identifier::normalize_identifier,
+    normalize_identifier::{fold_es_whitespace, normalize_identifier},
     skip,
     slice::{Position, Slice},
 };
@@ -277,7 +277,23 @@ pub fn after(tokenizer: &mut Tokenizer) -> State {
         );
     }
 
-    let defined = tokenizer.parse_state.definitions.contains(&id);
+    let defined = tokenizer.parse_state.definitions.contains(&id)
+        || (tokenizer.parse_state.link_compat()
+            && !tokenizer
+                .parse_state
+                .options
+                .constructs
+                .gfm_label_start_footnote
+            && tokenizer.tokenize_state.label_starts[start_index].kind == LabelKind::Link
+            && {
+                let folded = fold_es_whitespace(&id);
+                !folded.is_empty()
+                    && tokenizer
+                        .parse_state
+                        .definitions
+                        .iter()
+                        .any(|key| fold_es_whitespace(key) == folded)
+            });
 
     match tokenizer.current {
         // Resource (`[asd](fgh)`)?
@@ -615,24 +631,41 @@ pub fn reference_full_after(tokenizer: &mut Tokenizer) -> State {
     tokenizer.tokenize_state.token_2 = Name::Data;
     tokenizer.tokenize_state.token_3 = Name::Data;
 
-    if tokenizer
-        .parse_state
-        .definitions
-        // We don’t care about virtual spaces, so `as_str` is fine.
-        .contains(&normalize_identifier(
-            Slice::from_position(
-                tokenizer.parse_state.bytes,
-                &Position::from_exit_event(
+    // We don’t care about virtual spaces, so `as_str` is fine.
+    let id = normalize_identifier(
+        Slice::from_position(
+            tokenizer.parse_state.bytes,
+            &Position::from_exit_event(
+                &tokenizer.events,
+                skip::to_back(
                     &tokenizer.events,
-                    skip::to_back(
-                        &tokenizer.events,
-                        tokenizer.events.len() - 1,
-                        &[Name::ReferenceString],
-                    ),
+                    tokenizer.events.len() - 1,
+                    &[Name::ReferenceString],
                 ),
-            )
-            .as_str(),
-        ))
+            ),
+        )
+        .as_str(),
+    );
+    if tokenizer.parse_state.definitions.contains(&id)
+        || (tokenizer.parse_state.link_compat()
+            && !tokenizer
+                .parse_state
+                .options
+                .constructs
+                .gfm_label_start_footnote
+            && tokenizer.tokenize_state.label_starts
+                [tokenizer.tokenize_state.label_starts.len() - 1]
+                .kind
+                == LabelKind::Link
+            && {
+                let folded = fold_es_whitespace(&id);
+                !folded.is_empty()
+                    && tokenizer
+                        .parse_state
+                        .definitions
+                        .iter()
+                        .any(|key| fold_es_whitespace(key) == folded)
+            })
     {
         State::Ok
     } else {

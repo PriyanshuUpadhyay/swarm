@@ -116,6 +116,27 @@ Full identifier normalization, Q1, renderer parity, public adoption and the othe
 unselected gates remain OPEN. This key agreement does not prove full GFM or
 JavaScript parity.
 
+The ES-whitespace reference patch applies only when `ParseState::link_compat()`
+is true (an mdast caller with at least one URL hook) and
+`constructs.gfm_label_start_footnote` is off. It folds stored native keys by
+trimming and collapsing exactly W25, the Node 22.23.2 single-scalar `/\s/u` set
+recorded in `unit12/data-facts/report.md`: U+0009..U+000D, U+0020, U+00A0,
+U+1680, U+2000..U+200A, U+2028, U+2029, U+202F, U+205F, U+3000 and U+FEFF.
+The fold adds no case conversion or decoder. Ordinary references with a nonempty
+fold can match definitions by that fold. Every eligible LinkReference, including
+an exact hit, binds to the existing identifier of the source-first definition
+with the same fold. The compiler builds this map for one compile call only.
+Images, empty folds, footnote-on callers, None and native HTML keep exact matching.
+An empty fold stays outside the map; a map miss keeps the current identifier.
+Rebase review must keep both parser membership sites and compiler binding in
+step, preserve the gate and source-first order, and rerun the frozen regression
+and owner-gate guard. The empty-fold definition grammar (E1), Rust versus JS case
+tables (E2), NUL versus U+FFFD (E3), whole-string `/\s+/g` and `trim()` behavior,
+and the shipped browser engine's Unicode version remain OPEN. Q1 and lookup cost
+also remain OPEN: a miss scans stored keys, with no cache, cap or deadline and no
+performance claim. This patch does not widen the earlier ASCII-separator
+exception or close renderer parity or public adoption gates.
+
 The local numeric code derives from MarkdownIt 15.0.2 dist/markdown-it.cjs.js
 (isValidEntityCode and unescapeAll), and entities 8.1.0 src/decode-codepoint.ts.
 The entities C1/replacement logic carries its upstream adaptation pointer,

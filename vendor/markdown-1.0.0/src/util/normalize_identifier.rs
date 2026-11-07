@@ -76,3 +76,36 @@ pub fn normalize_identifier(value: &str) -> String {
 
     result.to_lowercase().to_uppercase()
 }
+
+/// Trim and collapse ECMAScript whitespace without changing case or decoding.
+pub(crate) fn fold_es_whitespace(value: &str) -> String {
+    let mut result = String::with_capacity(value.len());
+    let mut in_whitespace = false;
+
+    for character in value.chars() {
+        if matches!(
+            character,
+            '\u{0009}'..='\u{000d}'
+                | '\u{0020}'
+                | '\u{00a0}'
+                | '\u{1680}'
+                | '\u{2000}'..='\u{200a}'
+                | '\u{2028}'
+                | '\u{2029}'
+                | '\u{202f}'
+                | '\u{205f}'
+                | '\u{3000}'
+                | '\u{feff}'
+        ) {
+            in_whitespace = true;
+        } else {
+            if in_whitespace && !result.is_empty() {
+                result.push(' ');
+            }
+            result.push(character);
+            in_whitespace = false;
+        }
+    }
+
+    result
+}

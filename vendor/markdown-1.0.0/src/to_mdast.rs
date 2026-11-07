@@ -17,7 +17,7 @@ use crate::util::{
     },
     infer::{gfm_table_align, list_item_loose, list_loose},
     mdx_collect::{collect, Result as CollectResult},
-    normalize_identifier::normalize_identifier,
+    normalize_identifier::{fold_es_whitespace, normalize_identifier},
     slice::{Position as SlicePosition, Slice},
 };
 use alloc::{
@@ -36,6 +36,7 @@ struct Reference {
     #[allow(clippy::struct_field_names)]
     reference_kind: Option<ReferenceKind>,
     identifier: String,
+    key: String,
     label: String,
 }
 
@@ -77,6 +78,7 @@ impl Reference {
             // Assume shortcut: removed on a resource, changed on a reference.
             reference_kind: Some(ReferenceKind::Shortcut),
             identifier: String::new(),
+            key: String::new(),
             label: String::new(),
         }
     }
@@ -93,6 +95,8 @@ struct CompileContext<'a> {
     bytes: &'a [u8],
     /// Compile selected title children before the general reference decoder.
     link_compat: bool,
+    es_reference_matching: bool,
+    es_definitions: BTreeMap<String, String>,
     /// Values compiled in owned String children, before container reinsertion.
     link_titles: BTreeMap<usize, String>,
     /// One jump to a selected title exit; other handlers keep their old cursor.
@@ -120,6 +124,7 @@ impl<'a> CompileContext<'a> {
         events: &'a [Event],
         bytes: &'a [u8],
         link_compat: bool,
+        es_reference_matching: bool,
         link_titles: BTreeMap<usize, String>,
     ) -> CompileContext<'a> {
         let tree = Node::Root(Root {
@@ -142,6 +147,8 @@ impl<'a> CompileContext<'a> {
             events,
             bytes,
             link_compat,
+            es_reference_matching,
+            es_definitions: BTreeMap::new(),
             link_titles,
             next_title_exit: None,
             character_reference_marker: 0,
@@ -244,9 +251,33 @@ pub fn compile(
     events: &[Event],
     bytes: &[u8],
     link_compat: bool,
+    es_reference_matching: bool,
     link_titles: BTreeMap<usize, String>,
 ) -> Result<Node, message::Message> {
-    let mut context = CompileContext::new(events, bytes, link_compat, link_titles);
+    let mut context = CompileContext::new(
+        events,
+        bytes,
+        link_compat,
+        es_reference_matching,
+        link_titles,
+    );
+
+    if es_reference_matching {
+        for (index, event) in events.iter().enumerate() {
+            if event.kind == Kind::Exit && event.name == Name::DefinitionLabelString {
+                let slice =
+                    Slice::from_position(bytes, &SlicePosition::from_exit_event(events, index));
+                let key = normalize_identifier(slice.as_str());
+                let folded = fold_es_whitespace(&key);
+                if !folded.is_empty() {
+                    context
+                        .es_definitions
+                        .entry(folded)
+                        .or_insert_with(|| key.to_lowercase());
+                }
+            }
+        }
+    }
 
     let mut index = 0;
     while index < events.len() {
@@ -1341,7 +1372,8 @@ fn on_exit_label_text(context: &mut CompileContext) {
         context.bytes,
         &SlicePosition::from_exit_event(context.events, context.index),
     );
-    let identifier = normalize_identifier(slice.as_str()).to_lowercase();
+    let key = normalize_identifier(slice.as_str());
+    let identifier = key.to_lowercase();
 
     let reference = context
         .media_reference_stack
@@ -1349,6 +1381,7 @@ fn on_exit_label_text(context: &mut CompileContext) {
         .expect("expected reference on media stack");
     reference.label.clone_from(&label);
     reference.identifier = identifier;
+    reference.key = key;
 
     match context.tail_mut() {
         Node::Link(node) => node.children = children,
@@ -1441,13 +1474,26 @@ fn on_exit_media(context: &mut CompileContext) -> Result<(), message::Message> {
             Node::Link(_) => {
                 // Need to swap it with a reference version of the node.
                 if let Some(Node::Link(node)) = siblings.pop() {
-                    siblings.push(Node::LinkReference(LinkReference {
-                        reference_kind: kind,
-                        identifier: reference.identifier,
-                        label: Some(reference.label),
-                        children: node.children,
-                        position: node.position,
-                    }));
+                    let mut identifier = reference.identifier;
+                    if context.es_reference_matching {
+                        if let Some(matched) = context
+                            .es_definitions
+                            .get(&fold_es_whitespace(&reference.key))
+                        {
+                            identifier.clone_from(matched);
+                        }
+                    }
+                    context
+                        .tail_mut()
+                        .children_mut()
+                        .unwrap()
+                        .push(Node::LinkReference(LinkReference {
+                            reference_kind: kind,
+                            identifier,
+                            label: Some(reference.label),
+                            children: node.children,
+                            position: node.position,
+                        }));
                 } else {
                     unreachable!("impossible: it’s a link")
                 }
@@ -1727,7 +1773,8 @@ fn on_exit_reference_string(context: &mut CompileContext) {
         context.bytes,
         &SlicePosition::from_exit_event(context.events, context.index),
     );
-    let identifier = normalize_identifier(slice.as_str()).to_lowercase();
+    let key = normalize_identifier(slice.as_str());
+    let identifier = key.to_lowercase();
     let reference = context
         .media_reference_stack
         .last_mut()
@@ -1735,6 +1782,7 @@ fn on_exit_reference_string(context: &mut CompileContext) {
     reference.reference_kind = Some(ReferenceKind::Full);
     reference.label = label;
     reference.identifier = identifier;
+    reference.key = key;
 }
 
 /// Handle [`Exit`][Kind::Exit]:[`ResourceDestinationString`][Name::ResourceDestinationString].
