@@ -8,8 +8,6 @@ mod code_blocks;
 mod depth;
 #[path = "markdown/destination.rs"]
 mod destination;
-#[path = "markdown/display.rs"]
-mod display;
 #[path = "markdown/display_tree.rs"]
 mod display_tree;
 #[path = "markdown/empty_label.rs"]

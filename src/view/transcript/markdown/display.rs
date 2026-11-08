@@ -1,46 +1,6 @@
-//! Code heads and table copy sources in document order.
+//! The display tree for one Markdown text, with code heads and table copy sources.
 
 use markdown::mdast::Node;
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Head {
-    Code { label: String },
-    Table { source: String },
-}
-
-/// Collect fenced code labels and original table source lines at any depth.
-///
-/// # Errors
-///
-/// Returns the parser's original diagnostic if parsing fails.
-pub fn heads(source: &str) -> Result<Vec<Head>, markdown::message::Message> {
-    let tree = super::parse(source)?;
-    let offset_text = super::prelude(source);
-    let mut pending = vec![&tree];
-    let mut heads = Vec::new();
-
-    while let Some(node) = pending.pop() {
-        match node {
-            Node::Code(code) => {
-                if let Some(label) = code_label(code, &offset_text) {
-                    heads.push(Head::Code { label });
-                }
-            }
-            Node::Table(table) => {
-                if let Some(source) = table_source(table, source) {
-                    heads.push(Head::Table { source });
-                }
-            }
-            _ => {}
-        }
-
-        if let Some(children) = node.children() {
-            pending.extend(children.iter().rev());
-        }
-    }
-
-    Ok(heads)
-}
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct Display {
