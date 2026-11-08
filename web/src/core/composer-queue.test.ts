@@ -48,7 +48,7 @@ describe("pi's queue back in the draft", () => {
       path === "/api/chat/pull-back" ? { outcome: box === "cleared" ? "pulled" : "alreadySent", text: null, held } : path === "/api/chat/interrupt" ? { ok: true, box, held } : null,
     );
     // pi's screen cuts and joins the lines, so only the typed texts come back exact.
-    snapshot({ provider: "pi", state: "working", queue: [{ mode: "steering", text: "steer one", id: "queue-0", detail: "Steering" }, { mode: "steering", text: "steer two second line", id: "queue-1", detail: "Steering" }] });
+    snapshot({ provider: "pi", state: "working", queue: [{ mode: "steering", text: "steer one", id: "queue-0", detail: "Steering", images: [] }, { mode: "steering", text: "steer two second line", id: "queue-1", detail: "Steering", images: [] }] });
     app.openChat("chat");
     await settle();
     expect(app.chair("chat").pullBack).toBe(true);

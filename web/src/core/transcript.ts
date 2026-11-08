@@ -36,6 +36,20 @@ export function textRows(entry: PatchInfo | undefined, text: string): { kind: Pa
   return text.split("\n").map((text, i) => ({ kind: kinds?.[i] ?? null, text }));
 }
 
+const images = new WeakMap<Row, string[]>();
+
+/** Keep only served paths on each row, including steps. A missing entry clears its previews. */
+export function noteImages(rows: Row[], map: Record<string, string[]> | undefined): void {
+  const stack = [...rows];
+  while (stack.length) {
+    const row = stack.pop()!;
+    images.set(row, map?.[row.id] ?? []);
+    for (const step of row.steps ?? []) stack.push(step);
+  }
+}
+
+export const imagesOf = (row: Row): string[] => images.get(row) ?? [];
+
 const displays = new WeakMap<Row, Display | null>();
 
 export function noteDisplay(rows: Row[], display: Record<string, Display> | undefined): void {

@@ -1,7 +1,7 @@
 import { ArrowUpIcon, Maximize2Icon, Minimize2Icon, SquareIcon } from "lucide-react";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { SENT, type App, type Composer } from "../core/app";
-import { hasPendingImage } from "../core/images";
+import { hasPendingImage, imagePaths } from "../core/images";
 import { historyStep, type Browse } from "../core/history";
 import { canBranch, outgoing, sends, usageLabel, usageTitle } from "../core/composer";
 import { editPicks, matches, menuAt, moved, offered, pick, picksAndSends, showsEmpty, skillFirst, skillNames, toSend, type CommandList, type MenuRow, type SkillPick } from "../core/slash";
@@ -317,7 +317,7 @@ export function ComposerBox({ app, composer }: { app: App; composer: Composer })
             {shownList?.note && <div className="px-2 py-1 text-xs text-failed">{shownList.note}</div>}
           </div>
         )}
-        <ImageThumbs text={text} load={app.imageUrl} remove={(path) => change(text.split(path).join("").replace(/  +/g, " "))} />
+        <ImageThumbs paths={imagePaths(text)} load={app.imageUrl} remove={(path) => change(text.split(path).join("").replace(/  +/g, " "))} />
         <div className="relative">
           {chips.length > 0 && (
             <div ref={highlights} aria-hidden="true" data-testid="composer-highlights" className="composer-text composer-highlights">

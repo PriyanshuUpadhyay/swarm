@@ -423,3 +423,6 @@ mod s6b_changes;
 
 #[path = "serve/s8c_queue.rs"]
 mod s8c_queue;
+
+#[path = "serve/s8d_images.rs"]
+mod s8d_images;

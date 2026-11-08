@@ -248,7 +248,7 @@ describe("chat actions", () => {
       ["user", "hello", undefined],
       ["notice", "Working…", undefined],
     ]);
-    pi({ state: "working", queue: [{ mode: "steering", text: "note typed during compaction", id: "queue-0", detail: "Steering" }] });
+    pi({ state: "working", queue: [{ mode: "steering", text: "note typed during compaction", id: "queue-0", detail: "Steering", images: [] }] });
     app.openChat("chat");
     expect(lines()).toEqual([
       ["user", "hello", undefined],

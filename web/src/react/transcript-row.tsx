@@ -2,7 +2,7 @@
 import { CheckIcon, ChevronDownIcon, ChevronRightIcon, CircleStopIcon, CopyIcon, FileCodeIcon, GitBranchIcon, LoaderCircleIcon, MailIcon, PencilIcon } from "lucide-react";
 import type { Row, TextPreview } from "../core/api";
 import type { FullText, Reader } from "../core/app";
-import { bodyOf, duration, wordAt, type Line } from "../core/transcript";
+import { bodyOf, duration, imagesOf, wordAt, type Line } from "../core/transcript";
 import { copyText } from "./copy";
 import { ImageThumbs } from "./images";
 import { MarkdownView } from "./markdown-view";
@@ -100,7 +100,7 @@ function RowBody(ctx: Ctx) {
         branch={row.kind === "user" && ctx.branches && app.branch ? () => app.branch?.(row.id) : undefined}
       >
         <MdBody row={row} />
-        <ImageThumbs text={row.text} load={app.imageUrl} />
+        <ImageThumbs paths={imagesOf(row)} load={app.imageUrl} />
       </Bubble>
     );
   }

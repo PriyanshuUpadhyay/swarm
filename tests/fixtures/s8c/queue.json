@@ -50,7 +50,8 @@
         ]
       },
       "id": "queue-0",
-      "detail": "Steering"
+      "detail": "Steering",
+      "images": []
     },
     {
       "mode": "follow-up",
@@ -69,7 +70,8 @@
         ]
       },
       "id": "queue-1",
-      "detail": "Follow-up"
+      "detail": "Follow-up",
+      "images": []
     }
   ],
   "empty": []

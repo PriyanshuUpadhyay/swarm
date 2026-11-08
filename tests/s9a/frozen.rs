@@ -33,7 +33,13 @@ pub fn bytes(key: &str) -> Vec<u8> {
 
 pub fn parse(name: &str, text: &str) -> Value {
     if name.ends_with(".json") {
-        return serde_json::from_str(text).unwrap();
+        let mut value: Value = serde_json::from_str(text).unwrap();
+        for key in ["rows", "raw"] {
+            if let Some(frames) = value[key].as_array_mut() {
+                frames.retain(|frame| frame["event"] != "ping");
+            }
+        }
+        return value;
     }
     let (locator, text) = if name.starts_with("output-") {
         let (id, rest) = text.split_once('\n').unwrap();
@@ -53,16 +59,27 @@ pub fn parse(name: &str, text: &str) -> Value {
 pub fn expected(prefixes: &[&str]) -> Value {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/s9a");
     let manifest = manifest(&root);
+    let images: Value = serde_json::from_str(include_str!("../fixtures/s9a/images.json")).unwrap();
     let mut result = serde_json::Map::new();
     for key in manifest.as_object().unwrap().keys() {
         if let Some(relative) = key.strip_prefix("out-1/")
             && (prefixes.is_empty() || prefixes.iter().any(|p| relative.starts_with(p)))
         {
             let name = relative.rsplit('/').next().unwrap();
-            result.insert(
-                relative.into(),
-                parse(name, &String::from_utf8(bytes(key)).unwrap()),
-            );
+            let mut value = parse(name, &String::from_utf8(bytes(key)).unwrap());
+            if let Some(additions) = images.get(relative) {
+                if let Some(paths) = additions.get("page") {
+                    value["body"]["images"] = paths.clone();
+                }
+                if let Some(paths) = additions["rows"].as_array() {
+                    let frames = value["rows"].as_array_mut().unwrap();
+                    assert_eq!(frames.len(), paths.len());
+                    for (frame, paths) in frames.iter_mut().zip(paths) {
+                        frame["data"]["images"] = paths.clone();
+                    }
+                }
+            }
+            result.insert(relative.into(), value);
         }
     }
     Value::Object(result)

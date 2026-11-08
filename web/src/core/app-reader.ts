@@ -1,7 +1,7 @@
 
 
 import type { Usage } from "./composer";
-import { FoldChoices, LIVE_THOUGHT, cut, findMatches, lines, mergeRows, noteDisplay, noteFind, notePatch, type Line } from "./transcript";
+import { FoldChoices, LIVE_THOUGHT, cut, findMatches, lines, mergeRows, noteDisplay, noteFind, noteImages, notePatch, type Line } from "./transcript";
 import type { Row } from "./api";
 import { TAIL, LRU_SIZE, type FullText, type Chat, type Find, type Reader, paneId } from "./app-types";
 import type { App } from "./app";
@@ -65,6 +65,7 @@ export class AppReader {
       order: [Number.MAX_SAFE_INTEGER, i],
     }));
     chat.queue.forEach((row, i) => {
+      noteImages([row], { [row.id]: queue[i].images ?? [] });
       const display = queue[i].display;
       if (display !== undefined) noteDisplay([row], display === null ? {} : { [row.id]: display });
     });
@@ -94,6 +95,7 @@ export class AppReader {
       noteDisplay(page.rows, page.display);
       notePatch(page.rows, page.patch);
       noteFind(page.rows, page.find);
+      noteImages(page.rows, page.images);
       chat.rows = mergeRows([], page.rows);
       chat.older = page.page.start_offset;
       chat.end = page.page.end_offset;
@@ -236,6 +238,7 @@ export class AppReader {
       noteDisplay(page.rows, page.display);
       notePatch(page.rows, page.patch);
       noteFind(page.rows, page.find);
+      noteImages(page.rows, page.images);
       chat.rows = mergeRows(chat.rows, page.rows, page.remove);
       chat.older = page.page.start_offset;
       chat.version++;

@@ -7,6 +7,7 @@ pub(super) fn row_frame(key: &str, delta: RowDelta) -> Frame {
     let display = view::markdown::row_displays(&delta.upsert);
     let patch = view::patch_wire::row_patches(&delta.upsert);
     let find = view::find_wire::row_finds(&delta.upsert);
+    let images = view::image_paths::row_images(&delta.upsert);
     let mut payload = json!({
         "key": key,
         "upsert": delta.upsert,
@@ -15,6 +16,7 @@ pub(super) fn row_frame(key: &str, delta: RowDelta) -> Frame {
         "display": display,
         "patch": patch,
         "find": find,
+        "images": images,
     });
     if let Some(usage) = delta.usage {
         payload["usage"] = json!(usage);

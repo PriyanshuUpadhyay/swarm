@@ -2,7 +2,6 @@
 import { XIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogTitle } from "../components/ui/dialog";
-import { imagePaths } from "../core/images";
 
 type Load = (path: string) => Promise<string>;
 
@@ -53,9 +52,8 @@ function Thumb({ path, load, onRemove }: { path: string; load: Load; onRemove?: 
   );
 }
 
-/** The previews for the images that `text` names. `remove` drops one path from a draft. */
-export function ImageThumbs({ text, load, remove }: { text: string; load: Load; remove?: (path: string) => void }) {
-  const paths = imagePaths(text);
+/** Paint selected paths. `remove` drops one path from a draft. */
+export function ImageThumbs({ paths, load, remove }: { paths: string[]; load: Load; remove?: (path: string) => void }) {
   if (!paths.length) return null;
   return (
     <div className="flex flex-wrap gap-2 px-3 pt-2">

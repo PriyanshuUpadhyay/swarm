@@ -102,9 +102,9 @@ describe("live display", () => {
 
 describe("queue display", () => {
   const queue = [
-    { mode: "steering", text: "**b**", display: bold, id: "queue-0", detail: "Steering" },
-    { mode: "steering", text: "plain note", display: null, id: "queue-1", detail: "Steering" },
-    { mode: "steering", text: "from an older server", id: "queue-2", detail: "Steering" },
+    { images: [], mode: "steering", text: "**b**", display: bold, id: "queue-0", detail: "Steering" },
+    { images: [], mode: "steering", text: "plain note", display: null, id: "queue-1", detail: "Steering" },
+    { images: [], mode: "steering", text: "from an older server", id: "queue-2", detail: "Steering" },
   ];
   const bodies = (chat: Chat) => chat.queue.map((row) => bodyOf(row));
   const expected = [{ kind: "tree", display: bold }, { kind: "plain" }, { kind: "plain" }];
@@ -129,10 +129,10 @@ describe("queue display", () => {
 // OLD q-two supplies complete Rows; no candidate function computes expectations.
 describe("S8c queue wire", () => {
   it("uses served queue ids and labels for first paint, refresh and clear", () => {
-    let items: { mode: string; text: string; id: string; detail: string; display?: Display | null }[] = [
-      { mode: "steering", text: "**b**", id: "served-7", detail: "From wire", display: bold },
-      { mode: "follow-up", text: "plain note", id: "served-9", detail: "Kept label", display: null },
-      { mode: "steering", text: "without display", id: "served-11", detail: "Third label" },
+    let items: { mode: string; text: string; id: string; detail: string; images: string[]; display?: Display | null }[] = [
+      { images: [], mode: "steering", text: "**b**", id: "served-7", detail: "From wire", display: bold },
+      { images: [], mode: "follow-up", text: "plain note", id: "served-9", detail: "Kept label", display: null },
+      { images: [], mode: "steering", text: "without display", id: "served-11", detail: "Third label" },
     ];
     const app = { chats: new Map(), composing: { chair: () => ({ queue: items }) }, inputs: new Map(), reading: {}, visible: [], liveAll: false };
     const reader = new AppReader(app as unknown as App);

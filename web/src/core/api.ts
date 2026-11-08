@@ -141,10 +141,10 @@ export type PatchInfo = { lines: PatchLineWire[]; split: PatchSplitWire[] } | { 
 
 export type FindPart = { f: string; p?: string } | { t: string };
 
-export type RowPage = { page: Page; rows: Row[]; usage: unknown; remove?: string[]; display?: Record<string, Display>; patch?: Record<string, PatchInfo>; find?: Record<string, FindPart[]> };
+export type RowPage = { page: Page; rows: Row[]; usage: unknown; remove?: string[]; display?: Record<string, Display>; patch?: Record<string, PatchInfo>; find?: Record<string, FindPart[]>; images?: Record<string, string[]> };
 
 /** One `rows` stream frame. `usage` is there only when it changed; null clears it. */
-export type RowFrame = { key: string; upsert?: Row[]; remove?: string[]; end_offset: number; usage?: unknown; display?: Record<string, Display>; patch?: Record<string, PatchInfo>; find?: Record<string, FindPart[]> };
+export type RowFrame = { key: string; upsert?: Row[]; remove?: string[]; end_offset: number; usage?: unknown; display?: Record<string, Display>; patch?: Record<string, PatchInfo>; find?: Record<string, FindPart[]>; images?: Record<string, string[]> };
 
 export type SubscribeKey = { key: string; from: number; view: "rows" };
 

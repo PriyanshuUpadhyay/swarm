@@ -176,6 +176,7 @@ pub(super) async fn transcript_rows(
             let display = view::markdown::row_displays(&page.rows);
             let patch = view::patch_wire::row_patches(&page.rows);
             let find = view::find_wire::row_finds(&page.rows);
+            let images = view::image_paths::row_images(&page.rows);
             Json(json!({
                 "page": {"start_offset": start, "end_offset": end},
                 "rows": page.rows,
@@ -184,6 +185,7 @@ pub(super) async fn transcript_rows(
                 "display": display,
             "patch": patch,
                 "find": find,
+                "images": images,
             }))
         })
         .await
@@ -243,6 +245,7 @@ pub(super) async fn transcript_rows(
         let display = view::markdown::row_displays(&page.rows);
         let patch = view::patch_wire::row_patches(&page.rows);
         let find = view::find_wire::row_finds(&page.rows);
+        let images = view::image_paths::row_images(&page.rows);
         Json(json!({
             "page": {"start_offset": start, "end_offset": end},
             "rows": page.rows,
@@ -251,6 +254,7 @@ pub(super) async fn transcript_rows(
             "display": display,
             "patch": patch,
             "find": find,
+            "images": images,
         }))
     })
     .await

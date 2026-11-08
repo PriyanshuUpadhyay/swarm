@@ -33,7 +33,7 @@ export function submission(text: string): string {
 }
 
 /** One message that the agent's CLI holds, as its screen lists it (ADR 0130). */
-export type QueuedMessage = { mode: string; text: string; id: string; detail: string; display?: Display | null };
+export type QueuedMessage = { mode: string; text: string; id: string; detail: string; display?: Display | null; images?: string[] };
 
 /** What the composer can do for one agent of a chat, from the snapshot. */
 export type AgentInput = {

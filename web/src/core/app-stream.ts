@@ -1,7 +1,7 @@
 import { sleep, type Display, type Row, type RowFrame, type Snapshot, type SubscribeKey } from "./api";
 import type { Usage } from "./composer";
 import { readSse, type SseEvent } from "./sse";
-import { mergeRows, noteDisplay, noteFind, notePatch, units } from "./transcript";
+import { imagesOf, mergeRows, noteDisplay, noteFind, noteImages, notePatch, units } from "./transcript";
 import { MAX_KEYS, type Chat, paneId } from "./app-types";
 import type { App } from "./app";
 
@@ -33,9 +33,11 @@ export class AppStream {
         detail: q.detail,
         order: [Number.MAX_SAFE_INTEGER, i],
       }));
-      if (JSON.stringify(queue) === JSON.stringify(chat.queue)) continue;
+      if (JSON.stringify(queue) === JSON.stringify(chat.queue)
+        && queue.every((_, i) => JSON.stringify(items[i].images ?? []) === JSON.stringify(imagesOf(chat.queue[i])))) continue;
       chat.queue = queue;
       queue.forEach((row, i) => {
+        noteImages([row], { [row.id]: items[i].images ?? [] });
         const display = items[i].display;
         if (display !== undefined) noteDisplay([row], display === null ? {} : { [row.id]: display });
       });
@@ -198,6 +200,7 @@ export class AppStream {
         noteDisplay(f.upsert ?? [], f.display);
         notePatch(f.upsert ?? [], f.patch);
         noteFind(f.upsert ?? [], f.find);
+        noteImages(f.upsert ?? [], f.images);
         chat.rows = mergeRows(chat.rows, f.upsert, f.remove);
         chat.end = Math.max(chat.end, Number(f.end_offset));
         // Absent usage leaves the shown value; null clears it.

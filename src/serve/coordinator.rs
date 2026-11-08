@@ -160,6 +160,9 @@ fn agent_snapshot(
                         );
                         item["id"] = json!(id);
                         item["detail"] = json!(detail);
+                        item["images"] = json!(view::image_paths::image_paths(
+                            item["text"].as_str().unwrap_or_default(),
+                        ));
                         item["display"] = json!(
                             item["text"]
                                 .as_str()
