@@ -2,6 +2,8 @@
 mod app_constructs;
 #[path = "markdown/autolink.rs"]
 mod autolink;
+#[path = "markdown/code_blocks.rs"]
+mod code_blocks;
 #[path = "markdown/destination.rs"]
 mod destination;
 #[path = "markdown/display.rs"]
@@ -18,6 +20,8 @@ mod fence_word;
 mod gfm_blocks;
 #[path = "markdown/grammar.rs"]
 mod grammar;
+#[path = "markdown/heads_tables.rs"]
+mod heads_tables;
 #[path = "markdown/line_endings.rs"]
 mod line_endings;
 #[path = "markdown/link_string.rs"]

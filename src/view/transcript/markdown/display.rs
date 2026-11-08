@@ -21,28 +21,13 @@ pub fn heads(source: &str) -> Result<Vec<Head>, markdown::message::Message> {
 
     while let Some(node) = pending.pop() {
         match node {
-            Node::Code(code)
-                if code.position.as_ref().is_some_and(|position| {
-                    matches!(
-                        offset_text.as_bytes().get(position.start.offset),
-                        Some(b'`' | b'~')
-                    )
-                }) =>
-            {
-                heads.push(Head::Code {
-                    label: code.lang.clone().unwrap_or_else(|| "code".to_owned()),
-                });
+            Node::Code(code) => {
+                if let Some(label) = code_label(code, &offset_text) {
+                    heads.push(Head::Code { label });
+                }
             }
             Node::Table(table) => {
-                if let Some(position) = &table.position {
-                    let start = position.start.line.saturating_sub(1);
-                    // Keep raw CR and NUL bytes; parser offsets use the prelude text.
-                    let source = source
-                        .split('\n')
-                        .skip(start)
-                        .take(position.end.line.saturating_sub(start))
-                        .collect::<Vec<_>>()
-                        .join("\n");
+                if let Some(source) = table_source(table, source) {
                     heads.push(Head::Table { source });
                 }
             }
@@ -78,9 +63,24 @@ pub enum Block {
         items: Vec<Vec<Block>>,
     },
     Code {
+        label: Option<String>,
         text: String,
     },
+    Table {
+        source: String,
+        align: Vec<Align>,
+        head: Vec<Vec<Inline>>,
+        rows: Vec<Vec<Vec<Inline>>>,
+    },
     Later(&'static str),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Align {
+    None,
+    Left,
+    Center,
+    Right,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -132,13 +132,14 @@ fn map_display(source: &str, breaks: bool) -> Result<Display, markdown::message:
     }
     let children = tree.children().map_or(&[][..], Vec::as_slice);
     Ok(Display {
-        blocks: map_blocks(children, &offset_text, &definitions, breaks),
+        blocks: map_blocks(children, source, &offset_text, &definitions, breaks),
     })
 }
 
 fn map_blocks(
     nodes: &[Node],
     source: &str,
+    offset_text: &str,
     definitions: &[&markdown::mdast::Definition],
     breaks: bool,
 ) -> Vec<Block> {
@@ -154,9 +155,13 @@ fn map_blocks(
                     children: map_inlines(&heading.children, definitions, breaks),
                 },
                 Node::ThematicBreak(_) => Block::ThematicBreak,
-                Node::Blockquote(quote) => {
-                    Block::Blockquote(map_blocks(&quote.children, source, definitions, breaks))
-                }
+                Node::Blockquote(quote) => Block::Blockquote(map_blocks(
+                    &quote.children,
+                    source,
+                    offset_text,
+                    definitions,
+                    breaks,
+                )),
                 Node::List(list) => Block::List {
                     ordered: list.ordered,
                     start: list.ordered.then(|| list.start.unwrap_or(1)),
@@ -169,17 +174,56 @@ fn map_blocks(
                         .children
                         .iter()
                         .filter_map(|item| match item {
-                            Node::ListItem(item) => {
-                                Some(map_blocks(&item.children, source, definitions, breaks))
-                            }
+                            Node::ListItem(item) => Some(map_blocks(
+                                &item.children,
+                                source,
+                                offset_text,
+                                definitions,
+                                breaks,
+                            )),
                             _ => None,
                         })
                         .collect(),
                 },
                 Node::Code(code) => Block::Code {
-                    text: code_text(code, source),
+                    label: code_label(code, offset_text),
+                    text: code_text(code, offset_text),
                 },
-                Node::Table(_) => Block::Later("table"),
+                Node::Table(table) => {
+                    let mut rows = table
+                        .children
+                        .iter()
+                        .filter_map(Node::children)
+                        .map(|cells| {
+                            cells
+                                .iter()
+                                .filter_map(Node::children)
+                                .map(|inlines| map_inlines(inlines, definitions, breaks))
+                                .collect::<Vec<_>>()
+                        });
+                    let head = rows.next().unwrap_or_default();
+                    let rows = rows
+                        .map(|mut row| {
+                            row.resize(head.len(), Vec::new());
+                            row
+                        })
+                        .collect();
+                    Block::Table {
+                        source: table_source(table, source).unwrap_or_default(),
+                        align: table
+                            .align
+                            .iter()
+                            .map(|align| match align {
+                                markdown::mdast::AlignKind::None => Align::None,
+                                markdown::mdast::AlignKind::Left => Align::Left,
+                                markdown::mdast::AlignKind::Center => Align::Center,
+                                markdown::mdast::AlignKind::Right => Align::Right,
+                            })
+                            .collect(),
+                        head,
+                        rows,
+                    }
+                }
                 Node::Definition(_) => return None,
                 _ => Block::Later("block"),
             })
@@ -242,6 +286,31 @@ fn map_inlines(
         inlines.push(inline);
     }
     inlines
+}
+
+fn code_label(code: &markdown::mdast::Code, offset_text: &str) -> Option<String> {
+    code.position
+        .as_ref()
+        .filter(|position| {
+            matches!(
+                offset_text.as_bytes().get(position.start.offset),
+                Some(b'`' | b'~')
+            )
+        })
+        .map(|_| code.lang.clone().unwrap_or_else(|| "code".to_owned()))
+}
+
+fn table_source(table: &markdown::mdast::Table, source: &str) -> Option<String> {
+    table.position.as_ref().map(|position| {
+        let start = position.start.line.saturating_sub(1);
+        // Keep raw CR and NUL bytes; parser offsets use the prelude text.
+        source
+            .split('\n')
+            .skip(start)
+            .take(position.end.line.saturating_sub(start))
+            .collect::<Vec<_>>()
+            .join("\n")
+    })
 }
 
 fn code_text(code: &markdown::mdast::Code, source: &str) -> String {
