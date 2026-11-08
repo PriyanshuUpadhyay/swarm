@@ -1,0 +1,70 @@
+{
+ "inputs/guard-claude-non-ascii-escape.jsonl": {
+  "sha256": "4eae902fc6b7ef593f7e8368d6958b545249c36c32aeef44be877f281973b92e",
+  "parts": [
+   "1d20fc64640ade09-000.json"
+  ]
+ },
+ "inputs/guard-claude-unknown-log.jsonl": {
+  "sha256": "453ab57979685cc49a0689f7f8591bb27ab33e7aef712b5aae0d2b4b8aaa52fb",
+  "parts": [
+   "992b3a3f5f723725-000.json"
+  ]
+ },
+ "inputs/long-line-claude.jsonl": {
+  "sha256": "65d9f60d5f51b158bdb963fe1a6b31216c88eeaf289f1777651d87601d7c0c6a",
+  "parts": [
+   "a9d70d4b4ea807bd-000.json",
+   "a9d70d4b4ea807bd-001.json",
+   "a9d70d4b4ea807bd-002.json",
+   "a9d70d4b4ea807bd-003.json",
+   "a9d70d4b4ea807bd-004.json",
+   "a9d70d4b4ea807bd-005.json",
+   "a9d70d4b4ea807bd-006.json",
+   "a9d70d4b4ea807bd-007.json",
+   "a9d70d4b4ea807bd-008.json"
+  ]
+ },
+ "inputs/numbers-input-1e400.jsonl": {
+  "sha256": "4aad608a069ef1e699855ff959740c0458e48b277946bdd302904473ed0842bf",
+  "parts": [
+   "de5bd731bfaf8c94-000.json"
+  ]
+ },
+ "inputs/numbers-input-cost-decimal.jsonl": {
+  "sha256": "15a8d4f4503ee3915cf26eb75bc1b26505aaec1b0ee5d1e1f237551d6c186dd5",
+  "parts": [
+   "a3d4195e1d80c55f-000.json"
+  ]
+ },
+ "inputs/numbers-input-cost-zero.jsonl": {
+  "sha256": "e06706807fe76a68040a03b34ba09447fb69fb508f683df7de9f2020a584dd6f",
+  "parts": [
+   "b99873b5640e7d82-000.json"
+  ]
+ },
+ "inputs/numbers-input-duration-negzero.jsonl": {
+  "sha256": "ff79122c1a08c6f699b0af8f6365a198ab43c01f234a3d36b8544cd6a30c583b",
+  "parts": [
+   "f069418b62d5e286-000.json"
+  ]
+ },
+ "inputs/numbers-input-negzero-whole-float.jsonl": {
+  "sha256": "f0645668ece00e11dd64545419c9d9fbabbe37c2a44f1c66e828d0183009cbc0",
+  "parts": [
+   "ae3b2fd04679768d-000.json"
+  ]
+ },
+ "inputs/numbers-input-u64-plus-1.jsonl": {
+  "sha256": "aa04e6307e52db9a244cf634eddd710c88c61ca9b87202ee32ca8cc424efcea1",
+  "parts": [
+   "6d19ef1195939714-000.json"
+  ]
+ },
+ "out-1/append-unterminated/raw-full.txt": {
+  "sha256": "7447839c165cbb0ce9bafc6aa475de5acb17178731ccce3f0f9de69b4b04d489",
+  "parts": [
+   "e81b43d51c09f565-000.json"
+  ]
+ }
+}

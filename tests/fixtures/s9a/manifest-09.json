@@ -1,0 +1,87 @@
+{
+ "out-1/guard-claude-invalid-utf8/rows-full.txt": {
+  "sha256": "91e63ed396601fa0329edbc415ec99d63a766176d71479106d53f61cd7e49e9e",
+  "parts": [
+   "64e560064fbb89c2-000.json"
+  ]
+ },
+ "out-1/guard-claude-non-ascii-escape/raw-full.txt": {
+  "sha256": "fffa41ad7358d9d551fc6c3cc34322a4dda25f4977680e617d2fea68e565a525",
+  "parts": [
+   "7bb1c909d8274531-000.json"
+  ]
+ },
+ "out-1/guard-claude-non-ascii-escape/rows-full.txt": {
+  "sha256": "bdb0239ad4d724ee10151090337be6a752102996afd9c7f781f036971b5480a7",
+  "parts": [
+   "fdda9b9d895adee2-000.json"
+  ]
+ },
+ "out-1/guard-claude-unknown-log/output-00.txt": {
+  "sha256": "6b1aebe6faabe038fa0821310af71d686f823dc4615c8980b8dea854c95dbe4d",
+  "parts": [
+   "cc700815f3b09ae6-000.json"
+  ]
+ },
+ "out-1/guard-claude-unknown-log/raw-full.txt": {
+  "sha256": "3042962fd6ffaa836bde227d4720f2365fecb33c78cb1f54399bd027d9d5efd6",
+  "parts": [
+   "02f6a7da03706b9a-000.json"
+  ]
+ },
+ "out-1/guard-claude-unknown-log/rows-full.txt": {
+  "sha256": "966a296f53d3f53f764bae9f87863ce75cf16aa03739eac06ac96e9fee4585ef",
+  "parts": [
+   "041f716a96790acb-000.json"
+  ]
+ },
+ "out-1/long-line-claude/raw-full.txt": {
+  "sha256": "5bc708a5a9de7358f5d319570b761d25c9c597ff1bcbb644a22abf8d42d96c2c",
+  "parts": [
+   "316ebc524afde01b-000.json",
+   "316ebc524afde01b-001.json",
+   "316ebc524afde01b-002.json",
+   "316ebc524afde01b-003.json",
+   "316ebc524afde01b-004.json",
+   "316ebc524afde01b-005.json",
+   "316ebc524afde01b-006.json",
+   "316ebc524afde01b-007.json",
+   "316ebc524afde01b-008.json"
+  ]
+ },
+ "out-1/long-line-claude/rows-full.txt": {
+  "sha256": "4c04a6a4da965f65dee4b216f62b8299f14471b25002ebe9de447cd9bf11b36a",
+  "parts": [
+   "f4e067fa5ef8125e-000.json",
+   "f4e067fa5ef8125e-001.json",
+   "f4e067fa5ef8125e-002.json",
+   "f4e067fa5ef8125e-003.json",
+   "f4e067fa5ef8125e-004.json",
+   "f4e067fa5ef8125e-005.json",
+   "f4e067fa5ef8125e-006.json",
+   "f4e067fa5ef8125e-007.json",
+   "f4e067fa5ef8125e-008.json",
+   "f4e067fa5ef8125e-009.json",
+   "f4e067fa5ef8125e-010.json",
+   "f4e067fa5ef8125e-011.json",
+   "f4e067fa5ef8125e-012.json",
+   "f4e067fa5ef8125e-013.json",
+   "f4e067fa5ef8125e-014.json",
+   "f4e067fa5ef8125e-015.json",
+   "f4e067fa5ef8125e-016.json",
+   "f4e067fa5ef8125e-017.json"
+  ]
+ },
+ "out-1/numbers-input-1e400/raw-full.txt": {
+  "sha256": "f6d63f53a303ddbf54333720101e9d6f800d5a59c7fb87378d9b921253aef2a5",
+  "parts": [
+   "5860e5b1ba4ca935-000.json"
+  ]
+ },
+ "out-1/numbers-input-1e400/rows-full.txt": {
+  "sha256": "f6d63f53a303ddbf54333720101e9d6f800d5a59c7fb87378d9b921253aef2a5",
+  "parts": [
+   "0e12d7839721f5f2-000.json"
+  ]
+ }
+}

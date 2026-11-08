@@ -11,6 +11,10 @@ use swarm::view::transcript::worker_protocol::{
     Request,
 };
 
+#[cfg(feature = "serve")]
+#[path = "transcript_worker_v2.rs"]
+mod v2;
+
 struct Budget {
     deadline: Instant,
 }
@@ -70,6 +74,10 @@ impl Failure {
 }
 
 pub(crate) fn run(args: &[String]) -> i32 {
+    #[cfg(feature = "serve")]
+    if args.get(1).is_some_and(|version| version == "2") {
+        return v2::run(args);
+    }
     let input = io::stdin();
     let output = io::stdout();
     let mut input = input.lock();

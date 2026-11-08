@@ -301,6 +301,8 @@ mod prompt_actions;
 use prompt_actions::*;
 
 mod row_pages;
+#[allow(dead_code)]
+mod transcript_caller;
 use row_pages::*;
 
 mod runtime;
