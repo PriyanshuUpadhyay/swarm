@@ -2,6 +2,7 @@
 //! (ADR 0131).
 
 use super::*;
+use swarm::view::transcript::markdown::display;
 
 /// How often a working agent's pane is read. One capture is one adapter process, or one socket
 /// read on a PTY host.
@@ -103,12 +104,21 @@ pub(super) async fn watch_turn(
             continue;
         }
         last = Some(live.clone());
+        let text = live.text.clone();
+        let display = tokio::task::spawn_blocking(move || {
+            text.as_deref()
+                .filter(|text| !text.is_empty())
+                .and_then(|text| display::display(text).ok())
+        })
+        .await
+        .ok()
+        .flatten();
         let Some(server) = app.upgrade() else {
             return;
         };
         let frame = Frame::new(
             "live",
-            json!({"key": key, "text": live.text, "thinking": live.thinking}),
+            json!({"key": key, "text": live.text, "thinking": live.thinking, "display": display}),
             Some(&key),
         );
         // ponytail: a client that joins a running follower sees the text from its next change;
