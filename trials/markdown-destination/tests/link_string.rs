@@ -200,7 +200,15 @@ fn failed_definition(source: &str) -> Result<(), String> {
             "expected two paragraphs and no definition: {found:?}"
         ));
     };
-    let starts_as_text = matches!(first.first(), Some(Piece::Text(value)) if value.starts_with("[d]: <https://e.test/a"));
+    let starts_as_text = first
+        .iter()
+        .map(|piece| match piece {
+            Piece::Text(value) => value.as_str(),
+            Piece::Link { label, .. } => label.as_str(),
+            Piece::Reference(_) | Piece::Other(_) => "",
+        })
+        .collect::<String>()
+        .starts_with("[d]: <https://e.test/a");
     let keeps_tail = matches!(first.last(), Some(Piece::Text(value)) if value.ends_with("b>"));
     if !starts_as_text || !keeps_tail || last != &vec![text("[d]")] {
         return Err(format!("definition was not rejected as text: {found:?}"));

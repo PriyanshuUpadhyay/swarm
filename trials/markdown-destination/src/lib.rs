@@ -2,7 +2,7 @@
 
 mod normalize_link;
 
-/// Parse CommonMark with tables and strikethrough, raw HTML and images off, href hooks and NUL as U+FFFD.
+/// Parse CommonMark with tables, strikethrough and autolinks, raw HTML and images off, href hooks and NUL as U+FFFD.
 ///
 /// # Errors
 ///
@@ -24,6 +24,7 @@ pub fn parse(source: &str) -> Result<markdown::mdast::Node, markdown::message::M
         &source,
         &markdown::ParseOptions {
             constructs: markdown::Constructs {
+                gfm_autolink_literal: true,
                 gfm_footnote_definition: false,
                 gfm_label_start_footnote: false,
                 gfm_strikethrough: true,
