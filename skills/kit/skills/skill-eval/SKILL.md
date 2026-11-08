@@ -91,11 +91,14 @@ it read.
 1. Run each script check on both folders, and record the exit codes.
 2. Flip a coin for each pair with `python3 -c 'import random; print(random.choice("AB"))'`. That
    letter marks the skill side. Write the key in the scratch folder and never send it.
-3. Copy each pair into a new folder as `A/` and `B/`. In each `notes.md`, remove every line that
-   names the skill, a skill or preset file, the brief, or a pane folder, and replace each pane
-   folder path with "the working folder". Then search both copies for the skill name, `skill`,
-   and `base`. In the first run, notes showed which side read the skill and a folder path named
-   it.
+3. Copy each pair into a new `mktemp -d` folder as `A/` and `B/`, because a path under the
+   scratch folder names the skill. In each `notes.md`, replace the skill name, each skill,
+   preset, or brief file, and each pane folder path with a neutral phrase such as "the guide"
+   or "the working folder". Keep the rest of the line, because an expectation can depend on it.
+   Remove a line only when it says that the skill was read or not read. Then search both copies
+   for the skill name, `skill`, and `base`. In the first run, notes showed which side read the
+   skill and a folder path named it. In a later run, removing whole lines deleted the evidence
+   that one expectation checked.
 4. Open one `checker` pane per pair, on a provider other than the one that ran the pair. Send it
    `references/grader.md`, `references/comparator.md`, the task, the expectations, the script
    results, and the two folders as A and B. Tell it that lines were removed from `notes.md`.
