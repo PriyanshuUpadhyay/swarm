@@ -10,7 +10,7 @@
 
 use markdown::mdast::Node;
 use markdown::{Options, ParseOptions, to_html_with_options, to_mdast};
-use markdown_destination::parse;
+use swarm::view::transcript::markdown::parse;
 
 const ORIGIN: &str = "https://e.test/";
 

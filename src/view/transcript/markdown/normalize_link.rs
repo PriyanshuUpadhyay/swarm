@@ -1,7 +1,7 @@
 //! Pinned MarkdownIt 15.0.2 normalizeLink and the application's HTTP(S) gate.
 //!
 //! The pure URL routines retain mdurl 2.1.0 and punycode.js 2.3.1 semantics.
-//! Their notices and source pins are in ../NOTICES.md.
+//! Their notices and source pins are in NOTICES.md.
 
 mod mdurl;
 mod punycode;

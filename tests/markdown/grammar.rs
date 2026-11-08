@@ -9,7 +9,7 @@
 //! Not covered here, by design: bare-URL linkify of the rejected depth-33 line, and the NUL child text.
 
 use markdown::mdast::Node;
-use markdown_destination::parse;
+use swarm::view::transcript::markdown::parse;
 
 #[derive(Debug, PartialEq)]
 enum Piece {

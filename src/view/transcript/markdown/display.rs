@@ -14,8 +14,8 @@ pub enum Head {
 ///
 /// Returns the parser's original diagnostic if parsing fails.
 pub fn heads(source: &str) -> Result<Vec<Head>, markdown::message::Message> {
-    let tree = crate::parse(source)?;
-    let offset_text = crate::prelude(source);
+    let tree = super::parse(source)?;
+    let offset_text = super::prelude(source);
     let mut pending = vec![&tree];
     let mut heads = Vec::new();
 
@@ -105,8 +105,8 @@ pub enum Inline {
 ///
 /// Returns the parser's original diagnostic if parsing fails.
 pub fn display(source: &str) -> Result<Display, markdown::message::Message> {
-    let tree = crate::parse(source)?;
-    let offset_text = crate::prelude(source);
+    let tree = super::parse(source)?;
+    let offset_text = super::prelude(source);
     let children = tree.children().map_or(&[][..], Vec::as_slice);
     Ok(Display {
         blocks: map_blocks(children, &offset_text),

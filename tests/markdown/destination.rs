@@ -7,7 +7,7 @@
 //! the simple paragraph and top-level definition cases below, not for nested or general documents.
 
 use markdown::mdast::Node;
-use markdown_destination::parse;
+use swarm::view::transcript::markdown::parse;
 
 #[derive(Debug, PartialEq)]
 enum Piece {

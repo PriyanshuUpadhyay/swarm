@@ -160,7 +160,7 @@ fn first_paragraph_pieces(root: &Node) -> Vec<Piece> {
 
 /// The tables of one input through the trial entry. A parse error becomes `None`.
 fn table_outcome(source: &str) -> Option<Vec<TableOutcome>> {
-    let tree = markdown_destination::parse(source).ok()?;
+    let tree = swarm::view::transcript::markdown::parse(source).ok()?;
     let mut found = Vec::new();
     tables(&tree, &mut found);
     Some(found)
@@ -168,14 +168,14 @@ fn table_outcome(source: &str) -> Option<Vec<TableOutcome>> {
 
 /// The pieces of the first Paragraph of one input through the trial entry. A parse error becomes `None`.
 fn piece_outcome(source: &str) -> Option<Vec<Piece>> {
-    let tree = markdown_destination::parse(source).ok()?;
+    let tree = swarm::view::transcript::markdown::parse(source).ok()?;
     Some(first_paragraph_pieces(&tree))
 }
 
 /// `(any footnote node, the pieces of the first Paragraph)` of one input through the trial entry. A
 /// parse error becomes `None`.
 fn footnote_outcome(source: &str) -> Option<(bool, Vec<Piece>)> {
-    let tree = markdown_destination::parse(source).ok()?;
+    let tree = swarm::view::transcript::markdown::parse(source).ok()?;
     Some((contains(&tree, is_footnote), first_paragraph_pieces(&tree)))
 }
 

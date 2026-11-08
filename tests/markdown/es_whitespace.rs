@@ -31,7 +31,7 @@ fn identifiers(tree: &Node) -> (Vec<String>, Vec<String>) {
 /// One input through the trial Some path: the link-reference identifiers and the first Definition identifier.
 /// A parse error becomes `None`; no message is compared.
 fn through_parse(source: &str) -> Option<(Vec<String>, Option<String>)> {
-    let tree = markdown_destination::parse(source).ok()?;
+    let tree = swarm::view::transcript::markdown::parse(source).ok()?;
     let (definitions, references) = identifiers(&tree);
     Some((references, definitions.first().cloned()))
 }

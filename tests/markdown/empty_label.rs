@@ -45,7 +45,7 @@ fn paragraphs(node: &Node, out: &mut Vec<String>) {
 /// `(Definition identifiers, visible text per Paragraph)` of one input through the trial entry.
 /// A parse error becomes `None`; no message is compared.
 fn through_parse(source: &str) -> Option<(Vec<String>, Vec<String>)> {
-    let tree = markdown_destination::parse(source).ok()?;
+    let tree = swarm::view::transcript::markdown::parse(source).ok()?;
     let (mut found, mut visible) = (Vec::new(), Vec::new());
     definitions(&tree, &mut found);
     paragraphs(&tree, &mut visible);

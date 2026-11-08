@@ -7,6 +7,7 @@ description = "Message bus and pane control for a tree of agent CLIs"
 repository = "https://github.com/PriyanshuUpadhyay/swarm"
 
 [dependencies]
+markdown = { version = "=1.0.0", path = "vendor/markdown-1.0.0" }
 rusqlite = { version = "0.37", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 # preserve_order keeps ~/.claude.json and the AGY settings in their own key order on a trust write.

@@ -1,6 +1,6 @@
 //! mdurl 2.1.0 parse(url, true), format, and default encode, ported to Rust.
 //!
-//! See ../../NOTICES.md for the mdurl and Joyent notices.
+//! See ../NOTICES.md for the mdurl and Joyent notices.
 
 use super::es_space;
 

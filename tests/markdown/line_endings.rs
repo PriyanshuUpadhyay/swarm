@@ -49,7 +49,7 @@ fn blocks(node: &Node, out: &mut Vec<Block>) {
 
 /// The blocks of one input through the trial entry. A parse error becomes `None`.
 fn outcome(source: &str) -> Option<Vec<Block>> {
-    let tree = markdown_destination::parse(source).ok()?;
+    let tree = swarm::view::transcript::markdown::parse(source).ok()?;
     let mut found = Vec::new();
     blocks(&tree, &mut found);
     Some(found)

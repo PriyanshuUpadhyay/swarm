@@ -9,7 +9,7 @@
 //!
 //! Escapes: `\n` is LF (0x0A), `\\` is one backslash, `\"` is a quote, `\u{a9}` is U+00A9. Positions are not compared.
 
-use markdown_destination::display::{Block, Display, Inline, display};
+use swarm::view::transcript::markdown::display::{Block, Display, Inline, display};
 
 /// What one input gives.
 #[derive(Debug, PartialEq)]

@@ -60,7 +60,7 @@ fn first_paragraph(node: &Node) -> Option<&markdown::mdast::Paragraph> {
 
 /// The pieces of the first Paragraph of one input through the trial entry.
 fn observe(source: &str) -> Observed {
-    let Ok(tree) = markdown_destination::parse(source) else {
+    let Ok(tree) = swarm::view::transcript::markdown::parse(source) else {
         return Observed::ParseError;
     };
     let Some(paragraph) = first_paragraph(&tree) else {

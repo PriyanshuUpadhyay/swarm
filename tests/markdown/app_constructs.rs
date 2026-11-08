@@ -131,7 +131,7 @@ fn first_paragraph_pieces(root: &Node) -> Vec<Piece> {
 /// `(any Html node, the text of each Paragraph)` of one input through the trial entry. A parse error
 /// becomes `None`.
 fn html_outcome(source: &str) -> Option<(bool, Vec<String>)> {
-    let tree = markdown_destination::parse(source).ok()?;
+    let tree = swarm::view::transcript::markdown::parse(source).ok()?;
     let mut paragraphs = Vec::new();
     paragraph_texts(&tree, &mut paragraphs);
     Some((contains(&tree, is_html), paragraphs))
@@ -140,7 +140,7 @@ fn html_outcome(source: &str) -> Option<(bool, Vec<String>)> {
 /// `(any Image or ImageReference node, the pieces of the first Paragraph)` of one input through the
 /// trial entry. A parse error becomes `None`.
 fn image_outcome(source: &str) -> Option<(bool, Vec<Piece>)> {
-    let tree = markdown_destination::parse(source).ok()?;
+    let tree = swarm::view::transcript::markdown::parse(source).ok()?;
     Some((contains(&tree, is_image), first_paragraph_pieces(&tree)))
 }
 

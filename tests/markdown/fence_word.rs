@@ -34,7 +34,7 @@ fn first_code(node: &Node) -> Option<&markdown::mdast::Code> {
 
 /// The `lang` of the first Code node of one input through the trial entry.
 fn observe(source: &str) -> Observed {
-    match markdown_destination::parse(source) {
+    match swarm::view::transcript::markdown::parse(source) {
         Err(_) => Observed::ParseError,
         Ok(tree) => {
             first_code(&tree).map_or(Observed::NoCode, |code| Observed::Lang(code.lang.clone()))

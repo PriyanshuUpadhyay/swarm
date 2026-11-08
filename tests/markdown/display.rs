@@ -9,7 +9,7 @@
 //!
 //! Escapes: `\n` is LF (0x0A). Positions are not compared.
 
-use markdown_destination::display::{Head, heads};
+use swarm::view::transcript::markdown::display::{Head, heads};
 
 /// What one input gives.
 #[derive(Debug, PartialEq)]

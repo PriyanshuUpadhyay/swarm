@@ -51,7 +51,7 @@ fn hrefs(html: &str) -> Vec<String> {
 #[test]
 fn an_ordinary_label_keeps_its_internal_separator() {
     let source = "[a b]\n\n[ab]: https://e.test/first\n[a b]: https://e.test/second";
-    let with_hooks = markdown_destination::parse(source)
+    let with_hooks = swarm::view::transcript::markdown::parse(source)
         .map(|tree| identifiers(&tree))
         .map_err(|error| error.to_string());
     let default_mode = markdown::to_mdast(source, &ParseOptions::default())

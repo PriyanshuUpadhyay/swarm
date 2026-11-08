@@ -1,4 +1,4 @@
-//! Inert destination policy trial over the maintained pinned parser.
+//! App Markdown producer over the maintained pinned parser.
 
 mod normalize_link;
 

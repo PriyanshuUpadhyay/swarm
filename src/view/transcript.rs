@@ -4,6 +4,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 mod events;
+pub mod markdown;
 mod normalize;
 pub mod reader_rows;
 mod records;

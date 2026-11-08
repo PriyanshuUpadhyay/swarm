@@ -1,4 +1,4 @@
-//! Reachable toASCII path from punycode.js 2.3.1; see ../../NOTICES.md.
+//! Reachable toASCII path from punycode.js 2.3.1; see ../NOTICES.md.
 
 const MAX_INT: u64 = 2_147_483_647;
 

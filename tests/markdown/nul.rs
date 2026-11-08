@@ -53,7 +53,7 @@ fn references(
 
 /// The InlineCode values of one input through the trial entry. A parse error becomes `None`.
 fn code_values(source: &str) -> Option<Vec<String>> {
-    let tree = markdown_destination::parse(source).ok()?;
+    let tree = swarm::view::transcript::markdown::parse(source).ok()?;
     let mut values = Vec::new();
     inline_code(&tree, &mut values);
     Some(values)
@@ -62,7 +62,7 @@ fn code_values(source: &str) -> Option<Vec<String>> {
 /// `(LinkReference count, Definition count, the two identifier lists are equal, text per LinkReference)`.
 /// A parse error becomes `None`. The identifier case form is not hard-coded; the two lists are compared.
 fn link_outcome(source: &str) -> Option<(usize, usize, bool, Vec<String>)> {
-    let tree = markdown_destination::parse(source).ok()?;
+    let tree = swarm::view::transcript::markdown::parse(source).ok()?;
     let (mut definitions, mut link_references, mut link_texts) =
         (Vec::new(), Vec::new(), Vec::new());
     references(
