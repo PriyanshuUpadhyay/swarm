@@ -35,6 +35,34 @@ pub fn text_patch(text: &str, diff: bool) -> Option<Value> {
     Some(patch_value(&utf16, diff))
 }
 
+fn line_value(line: &display_patch::PatchLine<'_>) -> Value {
+    let mut value = Map::new();
+    value.insert("kind".into(), json!(kind(line.kind)));
+    value.insert("text".into(), json!(String::from_utf16_lossy(line.text)));
+    for (key, n) in [("old", line.old), ("new", line.new)] {
+        if let Some(n) = n.and_then(number) {
+            value.insert(key.into(), Value::Number(n));
+        }
+    }
+    Value::Object(value)
+}
+
+/// Encode only the displayed Changes lines from the capped preview.
+pub fn changes_patch(text: &str) -> Value {
+    let utf16: Vec<_> = text.encode_utf16().collect();
+    let lines: Vec<_> = display_patch::comment_lines(&utf16)
+        .iter()
+        .map(|line| {
+            let mut value = line_value(line);
+            if let Some(quote) = display_patch::quote(line) {
+                value["quote"] = json!(String::from_utf16_lossy(&quote));
+            }
+            value
+        })
+        .collect();
+    json!({"lines": lines})
+}
+
 fn patch_value(utf16: &[u16], diff: bool) -> Value {
     if !diff {
         let lines: Vec<_> = utf16.split(|&c| c == 10).collect();
@@ -45,20 +73,7 @@ fn patch_value(utf16: &[u16], diff: bool) -> Value {
         return json!({"kinds": kinds});
     }
     let parsed = display_patch::parse_patch(utf16);
-    let lines: Vec<_> = parsed
-        .iter()
-        .map(|line| {
-            let mut value = Map::new();
-            value.insert("kind".into(), json!(kind(line.kind)));
-            value.insert("text".into(), json!(String::from_utf16_lossy(line.text)));
-            for (key, n) in [("old", line.old), ("new", line.new)] {
-                if let Some(n) = n.and_then(number) {
-                    value.insert(key.into(), Value::Number(n));
-                }
-            }
-            Value::Object(value)
-        })
-        .collect();
+    let lines: Vec<_> = parsed.iter().map(line_value).collect();
     let mut hunks = parsed
         .iter()
         .enumerate()

@@ -78,6 +78,7 @@ fn bearer_host_origin_and_body_guards_run_on_the_real_server() {
         assert_eq!(too_large.0, 413);
     }
     assert_eq!(server.request("GET", "/api/unknown", "", "", false).0, 401);
+    super::s6b_changes::comment_guards(&server);
 }
 
 /// The shell's Dock badge (ADR 0077) counts the chats that wait, and the owner can turn it off.

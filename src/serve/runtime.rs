@@ -157,6 +157,7 @@ pub(super) fn router(app: App) -> Router {
         .route("/api/choices", post(choice_write))
         .route("/api/changes", get(panel_read))
         .route("/api/changes/diff", get(panel_read))
+        .route("/api/changes/comment-range", post(comment_range))
         .route("/api/changes/file", get(panel_read))
         .route("/api/pr", get(panel_read))
         .route("/api/issues", get(panel_read))

@@ -1,5 +1,9 @@
+// The example includes the whole module but calls only part of it.
+#[allow(dead_code)]
 #[path = "../src/view/transcript/display_comments.rs"]
 mod display_comments;
+// The example includes the whole module but calls only part of it.
+#[allow(dead_code)]
 #[path = "../src/view/transcript/display_patch.rs"]
 mod display_patch;
 

@@ -2,11 +2,10 @@
 // and diff line comments that go to the open chat's agent as one message. It follows `App`'s
 // workspace and keeps its own view; `App` stays unaware of it.
 
-import type { TextPreview } from "./api";
+import type { PatchLineWire, TextPreview } from "./api";
 import type { App } from "./app";
 import { readStore, writeStore } from "./app-types";
 import type { Command } from "./commands";
-import { parsePatch, type PatchLine } from "./transcript";
 
 export type Layer = "staged" | "unstaged" | "untracked" | "conflicted" | "branch";
 export type Mode = "local" | "branch";
@@ -20,6 +19,7 @@ export type FileDiff = {
   path: string;
   layer?: Layer;
   patch?: string;
+  display?: { lines: PatchLineWire[] };
   is_truncated?: boolean;
   full_lines?: number;
   hidden_lines?: number;
@@ -86,9 +86,6 @@ const LOADING = { state: "loading" } as const;
 const NO_COMMENTS: DiffComment[] = [];
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
-/** A patch's lines as the diff shows them: hunks and code, no file headers. */
-export const diffLines = (patch: string) => parsePatch(patch).filter((l) => l.kind !== "meta");
-
 export const fileKey = (f: Pick<ChangeFile, "path" | "layer">) => `${f.layer}\n${f.path}`;
 
 /** The base a branch comparison starts on: the remote default branch, else a local main or master. */
@@ -97,27 +94,6 @@ export function defaultBase(refs: readonly string[], branch: string | null): str
   for (const name of ["refs/remotes/origin/HEAD", "refs/remotes/origin/main", "refs/remotes/origin/master", "refs/heads/main", "refs/heads/master"])
     if (refs.includes(name) && name !== own) return name;
   return refs.find((r) => r !== own) ?? null;
-}
-
-/** The comment's line label and quoted lines for display lines `from`..`to` of a parsed patch. New
- *  line numbers name the range; a range of only removed lines uses the old numbers. */
-export function commentRange(lines: readonly PatchLine[], from: number, to: number): { lines: string; quoted: string[] } {
-  const picked = lines.slice(Math.min(from, to), Math.max(from, to) + 1).filter((l) => l.kind === "add" || l.kind === "del" || l.kind === "ctx");
-  const news = picked.flatMap((l) => (l.new === undefined || l.kind === "del" ? [] : [l.new]));
-  const olds = picked.flatMap((l) => (l.old === undefined ? [] : [l.old]));
-  const [nums, prefix] = news.length ? [news, "line"] : [olds, "old line"];
-  const lo = Math.min(...nums);
-  const hi = Math.max(...nums);
-  return {
-    lines: !nums.length ? "" : lo === hi ? `${prefix} ${lo}` : `${prefix}s ${lo}-${hi}`,
-    quoted: picked.map((l) => `${l.kind === "add" ? "+" : l.kind === "del" ? "-" : " "}${l.text}`),
-  };
-}
-
-/** The one message that carries every draft: file, line range, quoted lines, then the comment. */
-export function commentMessage(comments: readonly DiffComment[]): string {
-  const parts = comments.map((c) => [`${c.path} (${c.lines}):`, ...c.quoted.map((q) => `> ${q}`), c.text].join("\n"));
-  return [`Review comments on the diff (${comments.length}):`, ...parts].join("\n\n");
 }
 
 /** A check's state as one word, from a GitHub CheckRun or StatusContext. */
@@ -148,6 +124,7 @@ export class Changes {
   private drafts = new Map<string, DiffComment[]>();
   private commentSeq = 0;
   private sending = false;
+  private adding = false;
   private pr: Load<PrView> = IDLE;
   /** Bumped by each list, diff, file or PR read; an older reply is dropped. */
   private seq = { list: 0, diff: 0, file: 0, pr: 0 };
@@ -421,15 +398,28 @@ export class Changes {
   // ---- diff line comments ----
 
   /** Adds a draft for display lines `from`..`to` of the shown diff. */
-  addComment(from: number, to: number, text: string) {
+  async addComment(from: number, to: number, text: string): Promise<boolean> {
     const ws = this.workspace;
     const d = this.diff.state === "ready" ? this.diff.data : null;
-    if (!ws || !d?.patch || !text.trim()) return;
-    const range = commentRange(diffLines(d.patch), from, to);
-    if (!range.lines) return;
-    const comment: DiffComment = { id: ++this.commentSeq, path: d.path, layer: d.layer ?? "branch", ...range, text: text.trim(), at: Math.max(from, to) };
-    this.drafts.set(ws, [...(this.drafts.get(ws) ?? []), comment]);
-    this.notify();
+    if (!ws || !d?.patch || !d.display || !text.trim() || this.adding) return false;
+    const layer = d.layer ?? "branch";
+    const editor = this.editor(d.path, layer);
+    const seq = this.seq.diff;
+    this.adding = true;
+    try {
+      const range = await this.app.api.post<{ lines: string; quoted: string[] }>("/api/changes/comment-range", { op: "range", patch: d.patch, from, to });
+      if (ws !== this.workspace || ws !== this.app.view.workspace || seq !== this.seq.diff || this.diff.state !== "ready" || this.diff.data !== d || this.editor(d.path, layer) !== editor) return false;
+      if (!range.lines) return false;
+      const comment: DiffComment = { id: ++this.commentSeq, path: d.path, layer, ...range, text: text.trim(), at: Math.max(from, to) };
+      this.drafts.set(ws, [...(this.drafts.get(ws) ?? []), comment]);
+      this.notify();
+      return true;
+    } catch (err) {
+      this.app.notice(message(err), true);
+      return false;
+    } finally {
+      this.adding = false;
+    }
   }
 
   removeComment(id: number) {
@@ -454,15 +444,23 @@ export class Changes {
     if (!ws || !chat || !comments?.length || this.sending || this.sendBlocked()) return;
     this.sending = true;
     this.notify();
-    const text = commentMessage(comments);
-    const sent = await this.app.send(chat, text, text, false);
-    this.sending = false;
-    if (sent) {
-      const left = (this.drafts.get(ws) ?? []).filter((c) => !comments.includes(c));
-      this.drafts.set(ws, left);
-      this.app.notice(`Sent ${comments.length === 1 ? "1 comment" : `${comments.length} comments`} to the agent.`);
-    } else this.app.notice("The comments were not sent. The chat shows why.", true);
-    this.notify();
+    try {
+      const { message: text } = await this.app.api.post<{ message: string }>("/api/changes/comment-range", {
+        op: "message", comments: comments.map(({ path, lines, quoted, text }) => ({ path, lines, quoted, text })),
+      });
+      if (ws !== this.workspace || ws !== this.app.view.workspace || chat !== this.app.view.openId || this.sendBlocked()) return;
+      const sent = await this.app.send(chat, text, text, false);
+      if (sent) {
+        const left = (this.drafts.get(ws) ?? []).filter((c) => !comments.includes(c));
+        this.drafts.set(ws, left);
+        this.app.notice(`Sent ${comments.length === 1 ? "1 comment" : `${comments.length} comments`} to the agent.`);
+      } else this.app.notice("The comments were not sent. The chat shows why.", true);
+    } catch (err) {
+      this.app.notice(message(err), true);
+    } finally {
+      this.sending = false;
+      this.notify();
+    }
   }
 
   commands(): Command[] {

@@ -3,6 +3,7 @@ use super::{builder, fold_rows, queue};
 use serde::Serialize;
 use serde_json::Value;
 
+pub mod display_comments;
 mod display_patch;
 mod events;
 pub mod find_wire;

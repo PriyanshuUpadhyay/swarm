@@ -417,3 +417,6 @@ mod kit;
 mod transcripts;
 #[path = "serve/workspace.rs"]
 mod workspace;
+
+#[path = "serve/s6b_changes.rs"]
+mod s6b_changes;

@@ -135,7 +135,7 @@ export type Inline =
 
 export type Align = "none" | "left" | "center" | "right";
 
-export type PatchLineWire = { kind: "add" | "del" | "ctx" | "hunk" | "meta"; text: string; old?: number; new?: number };
+export type PatchLineWire = { kind: "add" | "del" | "ctx" | "hunk" | "meta"; text: string; old?: number; new?: number; quote?: string };
 export type PatchSplitWire = { h: number } | { l: number | null; r: number | null };
 export type PatchInfo = { lines: PatchLineWire[]; split: PatchSplitWire[] } | { kinds: PatchLineWire["kind"][] };
 

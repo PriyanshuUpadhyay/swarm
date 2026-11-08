@@ -169,3 +169,25 @@ pub fn split_patch<'a>(lines: &[PatchLine<'a>]) -> Vec<SplitRow<'a>> {
     }
     out
 }
+
+/// Changes selections index the filtered display, without file headers or notices.
+pub fn comment_lines(text: &[u16]) -> Vec<PatchLine<'_>> {
+    parse_patch(text)
+        .into_iter()
+        .filter(|line| line.kind != PatchKind::Meta)
+        .collect()
+}
+
+pub fn quote(line: &PatchLine<'_>) -> Option<Vec<u16>> {
+    let prefix = match line.kind {
+        PatchKind::Add => 43,
+        PatchKind::Del => 45,
+        PatchKind::Ctx => 32,
+        _ => return None,
+    };
+    Some(
+        std::iter::once(prefix)
+            .chain(line.text.iter().copied())
+            .collect(),
+    )
+}

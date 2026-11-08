@@ -1,4 +1,6 @@
-use super::display_patch::{PatchKind, PatchLine};
+use super::display_patch::{self, PatchKind, PatchLine};
+use serde::Deserialize;
+use serde_json::{Value, json};
 
 #[derive(Debug)]
 pub struct CommentRange {
@@ -77,16 +79,37 @@ pub fn comment_range(lines: &[PatchLine<'_>], from: usize, to: usize) -> Comment
         label: label.encode_utf16().collect(),
         quoted: picked
             .iter()
-            .map(|l| {
-                let prefix = match l.kind {
-                    PatchKind::Add => 43,
-                    PatchKind::Del => 45,
-                    _ => 32,
-                };
-                std::iter::once(prefix)
-                    .chain(l.text.iter().copied())
-                    .collect()
-            })
+            .filter_map(|line| display_patch::quote(line))
             .collect(),
     }
+}
+
+pub fn range_value(patch: &str, from: usize, to: usize) -> Value {
+    let utf16: Vec<_> = patch.encode_utf16().collect();
+    let lines = display_patch::comment_lines(&utf16);
+    let range = comment_range(&lines, from, to);
+    json!({
+        "lines": String::from_utf16_lossy(&range.label),
+        "quoted": range.quoted.iter().map(|line| String::from_utf16_lossy(line)).collect::<Vec<_>>()
+    })
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Comment {
+    path: String,
+    lines: String,
+    quoted: Vec<String>,
+    text: String,
+}
+
+pub fn comment_message(comments: &[Comment]) -> String {
+    let mut blocks = vec![format!("Review comments on the diff ({}):", comments.len())];
+    for comment in comments {
+        let mut lines = vec![format!("{} ({}):", comment.path, comment.lines)];
+        lines.extend(comment.quoted.iter().map(|quote| format!("> {quote}")));
+        lines.push(comment.text.clone());
+        blocks.push(lines.join("\n"));
+    }
+    blocks.join("\n\n")
 }

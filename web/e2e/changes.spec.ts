@@ -124,6 +124,10 @@ test("a 20,000-line diff opens inside the 150 ms budget @perf", async ({ page: t
 });
 
 test("a range comment and a line comment go to the chat's agent as one message", async ({ page: tab }, info) => {
+  const operations: string[] = [];
+  tab.on("request", (request) => {
+    if (new URL(request.url()).pathname === "/api/changes/comment-range" && request.method() === "POST") operations.push(request.postDataJSON().op);
+  });
   const errors = await openGitChat(tab);
   const who = info.project.name;
   await tab.getByTestId("show-changes").click();
@@ -170,6 +174,7 @@ test("a range comment and a line comment go to the chat's agent as one message",
   ].join("\n");
   await expect.poll(() => read("typed")).toContain(`${message}\n`);
   await expect(tab.getByTestId("drafts")).toBeHidden();
+  expect(operations).toEqual(["range", "range", "message"]);
   expect(errors).toEqual([]);
 });
 
@@ -223,4 +228,80 @@ test("the PR panel shows the branch's PR with passing, then failing checks", asy
     rmSync(join(home(), "pr-list"), { force: true });
     rmSync(join(home(), "pr-view"), { force: true });
   }
+});
+
+
+test("late Add keeps newer editor text and failed Send keeps the draft", async ({ page: tab }) => {
+  await openGitChat(tab);
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  let started!: () => void;
+  const entered = new Promise<void>((resolve) => { started = resolve; });
+  let first = true;
+  await tab.route("**/api/changes/comment-range", async (route) => {
+    const body = route.request().postDataJSON();
+    if (body.op === "message") {
+      await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "offline" }) });
+      return;
+    }
+    if (first) {
+      first = false;
+      started();
+      await held;
+    }
+    await route.continue();
+  });
+  await tab.getByTestId("show-changes").click();
+  await row(tab, "README.md").click();
+  await expect(diffPath(tab)).toHaveText("README.md");
+  await tab.getByTestId("diff-line").filter({ hasText: "A test repository, changed." }).locator("[data-pick]").last().click();
+  const input = tab.getByTestId("comment-input");
+  await input.fill("Old draft");
+  await tab.getByTestId("comment-add").click();
+  await entered;
+  await input.fill("Newer draft");
+  release();
+  await expect(tab.getByTestId("comment-add")).toBeEnabled();
+  await expect(input).toHaveValue("Newer draft");
+  await expect(tab.getByTestId("comment-card")).toHaveCount(0);
+  await tab.getByTestId("comment-add").click();
+  await expect(tab.getByTestId("comment-card")).toContainText("Newer draft");
+  const send = tab.getByTestId("send-comments");
+  await send.click();
+  await expect(send).toBeEnabled();
+  await expect(tab.getByTestId("drafts")).toContainText("1 comment");
+  await expect(tab.getByTestId("comment-card")).toContainText("Newer draft");
+});
+
+
+test("diff paints supplied text and quote anchors, then plain text without display", async ({ page: tab }) => {
+  const errors = await openGitChat(tab);
+  let supplied = true;
+  await tab.route("**/api/changes/diff?**", async (route) => {
+    const response = await route.fetch();
+    const data = await response.json();
+    data.patch = "@@ -1 +1 @@\n+parser text";
+    if (supplied) data.display = { lines: [{ kind: "add", text: "<img src=x> wire paint", new: 71, quote: "+saved anchor" }] };
+    else delete data.display;
+    await route.fulfill({ response, json: data });
+  });
+  await tab.route("**/api/changes/comment-range", async (route) => {
+    await route.fulfill({ json: { lines: "line 71", quoted: ["+saved anchor"] } });
+  });
+  await tab.getByTestId("show-changes").click();
+  await row(tab, "README.md").click();
+  const body = tab.getByTestId("diff-body");
+  await expect(body).toContainText("<img src=x> wire paint");
+  await expect(body).not.toContainText("parser text");
+  await expect(body.locator("img")).toHaveCount(0);
+  await tab.getByTestId("diff-line").locator("[data-pick]").last().click();
+  await tab.getByTestId("comment-input").fill("<script>draft</script>");
+  await tab.getByTestId("comment-add").click();
+  await expect(tab.getByTestId("comment-card")).toContainText("<script>draft</script>");
+  await expect(tab.getByTestId("comment-card").locator("script")).toHaveCount(0);
+  supplied = false;
+  await row(tab, "big.txt").click();
+  await expect(tab.getByTestId("diff-pane")).toContainText("parser text");
+  await expect(tab.getByTestId("diff-pane").locator("[data-pick]")).toHaveCount(0);
+  expect(errors).toEqual([]);
 });
