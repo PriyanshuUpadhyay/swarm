@@ -222,6 +222,8 @@ pub(super) async fn subscribe(
                     stop,
                     done,
                     rendering_rows: false,
+                    rows_version: 0,
+                    rows_changed: watch::channel(()).0,
                     rows: if needs_rows {
                         seed.or_else(|| Some(LiveRows::empty(entry.from, log.format == "codex")))
                     } else {

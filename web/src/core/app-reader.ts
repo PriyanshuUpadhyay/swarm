@@ -6,44 +6,12 @@ import type { Row } from "./api";
 import { TAIL, LRU_SIZE, type FullText, type Chat, type Find, type Reader, paneId } from "./app-types";
 import type { App } from "./app";
 
-const letters = (text: string) => text.replace(/[^\p{L}\p{N}]/gu, "");
-/** The fewest letters a screen text needs before a log row may hide it. */
-const MATCHED = 20;
-
-/** Whether one of the last 50 log rows of `kind` holds `text`. The screen drops markdown marks
- *  and wraps lines, so only letters and digits are compared. Rows of earlier turns count too,
- *  because pi's screen can still show the last turn's answer. A text shorter than 20 letters, such
- *  as a spinner's "Working", never matches, so it cannot hide itself. */
-function landed(rows: readonly Row[], text: string, kind: Row["kind"]): boolean {
-  const head = letters(text).slice(0, 80);
-  if (head.length < MATCHED) return false;
-  for (let i = rows.length - 1; i >= Math.max(0, rows.length - 50); i--)
-    if (rows[i].kind === kind && letters(rows[i].text).includes(head)) return true;
-  return false;
-}
-
-/** The running turn's screen text as a row, or null once a recent log row holds it. */
-export function liveRow(rows: readonly Row[], text: string | null): Row | null {
-  if (!text || !letters(text) || landed(rows, text, "assistant")) return null;
-  return { id: "live", kind: "assistant", text, order: [Number.MAX_SAFE_INTEGER, -1] };
-}
-
-/** pi's streaming thinking as an open thought row, or null once a recent log row holds it. The
- *  log's row can land while the turn runs a tool, before the next row clears the live text. */
-function liveThought(rows: readonly Row[], thinking: string | null): Row | null {
-  if (!thinking || landed(rows, thinking, "thought")) return null;
-  return { id: LIVE_THOUGHT, kind: "thought", text: thinking, order: [Number.MAX_SAFE_INTEGER, -2] };
-}
-
-/** The live rows under the log's rows: pi's streaming thinking and the answer text. */
-export function liveRows(rows: readonly Row[], text: string | null, thinking: string | null): Row[] {
-  return [liveThought(rows, thinking), liveRow(rows, text)].filter((row) => row !== null);
-}
-
-/** Whether an ended turn's text stays until the log's rows land: only a text that a landed row
- *  will hide, and that none hides yet. A spinner's short text never matches, so it goes at once. */
-export function keepsEnded(rows: readonly Row[], text: string | null, thinking: string | null): boolean {
-  return (text !== null && letters(text).length >= MATCHED && liveRow(rows, text) !== null) || liveThought(rows, thinking) !== null;
+/** Builds only the live rows that the server says to show. */
+export function liveRows(text: string | null, thinking: string | null, hides: { hideText: boolean; hideThinking: boolean }): Row[] {
+  const rows: Row[] = [];
+  if (thinking && !hides.hideThinking) rows.push({ id: LIVE_THOUGHT, kind: "thought", text: thinking, order: [Number.MAX_SAFE_INTEGER, -2] });
+  if (text && !hides.hideText) rows.push({ id: "live", kind: "assistant", text, order: [Number.MAX_SAFE_INTEGER, -1] });
+  return rows;
 }
 
 export class AppReader {
@@ -52,7 +20,7 @@ export class AppReader {
   build(chat: Chat) {
     const display = chat.liveDisplay ?? null;
     const text = chat.liveShown === 0 ? null : display === null ? chat.live?.slice(0, chat.liveShown) ?? null : chat.live;
-    const live = liveRows(chat.rows, text, chat.liveThinking);
+    const live = liveRows(text, chat.liveThinking, chat);
     const row = live.find((row) => row.id === "live");
     if (row && display !== null) noteDisplay([row], { live: cut(display, chat.liveShown) });
     const rows = live.length || chat.queue.length ? [...chat.rows, ...live, ...chat.queue] : chat.rows;
@@ -104,6 +72,8 @@ export class AppReader {
 
   freshReaderState() {
     return {
+      hideText: false,
+      hideThinking: false,
       folds: new FoldChoices(),
       opened: new Map<string, boolean>(),
       full: new Map<string, FullText>(),

@@ -51,6 +51,8 @@ async fn large_turn_end_keeps_other_keys_running() {
                     done,
                     rows: Some(rows),
                     rendering_rows: false,
+                    rows_version: 0,
+                    rows_changed: watch::channel(()).0,
                 },
             );
         }

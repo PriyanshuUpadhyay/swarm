@@ -2,7 +2,6 @@ import { sleep, type Display, type RowFrame, type Snapshot, type SubscribeKey } 
 import { queueRows, type Usage } from "./composer";
 import { readSse, type SseEvent } from "./sse";
 import { mergeRows, noteDisplay, noteFind, notePatch, units } from "./transcript";
-import { keepsEnded } from "./app-reader";
 import { MAX_KEYS, type Chat, paneId } from "./app-types";
 import type { App } from "./app";
 
@@ -97,30 +96,11 @@ export class AppStream {
         break;
       }
       case "live": {
-        const chat = this.byKey(String(data.key));
-        if (!chat) break;
-        const text = typeof data.text === "string" ? data.text : null;
-        const display = data.display !== null && typeof data.display === "object" ? data.display as Display : null;
-        const thinking = typeof data.thinking === "string" ? data.thinking : null;
         // Each new watcher sends its first read, often a null that changes nothing. A redraw then
         // would follow the end before a reader's scroll up registers.
-        if (text === chat.live && thinking === chat.liveThinking && !chat.liveEnded) break;
-        // A message can end seconds before its log's rows land, so its text stays until they do.
-        if (text === null && thinking === null && keepsEnded(chat.rows, chat.live, chat.liveThinking)) {
-          chat.liveEnded = true;
-          chat.liveShown = shown(chat).length;
-        } else {
-          const before = shown(chat).slice(0, chat.liveShown);
-          const next = display === null ? text ?? "" : units(display);
-          let same = 0;
-          while (same < before.length && before[same] === next[same]) same++;
-          // Only text past what shows types out. A change inside it, such as a digit or a table
-          // that aligns again, shows at once; a text with nothing in common is a new block.
-          const from = same === 0 ? 0 : Math.max(same, chat.liveShown);
-          [chat.live, chat.liveDisplay, chat.liveShown, chat.liveThinking, chat.liveEnded] = [text, display, Math.min(next.length, from), thinking, false];
-          if (text !== null && chat.liveShown < next.length) this.typeLive();
-        }
-        this.app.reading.changed(chat);
+        const slot = this.app.pending.get(String(data.key));
+        if (slot) slot.push({ live: data });
+        else this.applyLive(data);
         break;
       }
       case "reset":
@@ -138,6 +118,38 @@ export class AppStream {
         this.app.life.onFrame(e.event, data);
         break;
     }
+  }
+
+  private applyLive(data: Record<string, unknown>) {
+    const chat = this.byKey(String(data.key));
+    if (!chat) return;
+    const text = typeof data.text === "string" ? data.text : null;
+    const display = data.display !== null && typeof data.display === "object" ? data.display as Display : null;
+    const thinking = typeof data.thinking === "string" ? data.thinking : null;
+    const hideText = data.hide_text === true;
+    const hideThinking = data.hide_thinking === true;
+    const hidesChanged = chat.hideText !== hideText || chat.hideThinking !== hideThinking;
+    [chat.hideText, chat.hideThinking] = [hideText, hideThinking];
+    const ended = data.ended === true;
+    if (text === chat.live && thinking === chat.liveThinking && !chat.liveEnded && !ended) {
+      if (hidesChanged) this.app.reading.changed(chat);
+      return;
+    }
+    if (ended) {
+      [chat.live, chat.liveDisplay, chat.liveThinking, chat.liveEnded] = [text, display, thinking, true];
+      chat.liveShown = shown(chat).length;
+    } else {
+      const before = shown(chat).slice(0, chat.liveShown);
+      const next = display === null ? text ?? "" : units(display);
+      let same = 0;
+      while (same < before.length && before[same] === next[same]) same++;
+      // Only text past what shows types out. A change inside it, such as a digit or a table
+      // that aligns again, shows at once; a text with nothing in common is a new block.
+      const from = same === 0 ? 0 : Math.max(same, chat.liveShown);
+      [chat.live, chat.liveDisplay, chat.liveShown, chat.liveThinking, chat.liveEnded] = [text, display, Math.min(next.length, from), thinking, false];
+      if (text !== null && chat.liveShown < next.length) this.typeLive();
+    }
+    this.app.reading.changed(chat);
   }
 
   /** Shows more of each chat's live text every `TYPE_MS` until all of it shows. */
@@ -173,6 +185,10 @@ export class AppStream {
       if (!chat || chat.state !== "ready") continue;
       const before = chat.rows;
       for (const f of frames) {
+        if ("live" in f) {
+          this.applyLive(f.live);
+          continue;
+        }
         noteDisplay(f.upsert ?? [], f.display);
         notePatch(f.upsert ?? [], f.patch);
         noteFind(f.upsert ?? [], f.find);
@@ -186,7 +202,6 @@ export class AppStream {
         }
       }
       if (chat.rows !== before) {
-        if (chat.liveEnded) [chat.live, chat.liveDisplay, chat.liveThinking, chat.liveEnded] = [null, null, null, false];
         chat.version++;
         chat.shift = false;
         if (chat.sessionId === this.app.openId) render = true;

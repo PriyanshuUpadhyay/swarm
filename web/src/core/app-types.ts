@@ -48,6 +48,8 @@ export type Chat = {
   liveThinking: string | null;
   /** The turn ended; `live` stays shown until the log's next rows land. */
   liveEnded: boolean;
+  hideText: boolean;
+  hideThinking: boolean;
   /** The newest texts typed into this chat, never shown. A stop or Up on pi puts them back exact,
    *  because pi's box joins lines and its queue cuts them (ADR 0130). Each is its own object, so a
    *  restore drops the entries it matched and not a text sent while the stop was on its way. */

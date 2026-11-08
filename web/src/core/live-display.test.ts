@@ -24,7 +24,7 @@ const short: Display = paragraph(strong("ab"), text(" c"));
 // "**b**"
 const bold: Display = paragraph(strong("b"));
 
-const frame = (data: Record<string, unknown>) => ({ event: "live", data: JSON.stringify({ key: "s:chair", ...data }) });
+const frame = (data: Record<string, unknown>) => ({ event: "live", data: JSON.stringify({ key: "s:chair", thinking: null, ended: false, hide_text: false, hide_thinking: false, ...data }) });
 /** The field the code adds to Chat. Read through a cast, so this file compiles before it exists. */
 const shownDisplay = (chat: Chat) => (chat as unknown as { liveDisplay?: Display | null }).liveDisplay ?? null;
 
@@ -32,7 +32,7 @@ const shownDisplay = (chat: Chat) => (chat as unknown as { liveDisplay?: Display
 function liveApp() {
   const chat = {
     id: "s", key: "s:chair", sessionId: "s", state: "ready", rows: [], end: 0, version: 0, shift: false,
-    live: null, liveShown: 0, liveThinking: null, liveEnded: false, liveDisplay: null,
+    live: null, liveShown: 0, liveThinking: null, liveEnded: false, liveDisplay: null, hideText: false, hideThinking: false,
     queue: [], folds: new FoldChoices(), opened: new Map(),
   } as unknown as Chat;
   const app = { chats: new Map([["s", chat]]), pending: new Map(), openId: "s", notify: () => {}, reading: { changed: (c: Chat) => c.version++ } };
@@ -70,7 +70,7 @@ describe("live display", () => {
       const { stream, chat, liveLine } = liveApp();
       stream.onSse(frame({ text: source, display: full }));
       vi.advanceTimersByTime(1000);
-      stream.onSse(frame({ text: null, display: null }));
+      stream.onSse(frame({ text: source, display: full, ended: true }));
       const row = liveLine();
       expect({ live: chat.live, display: shownDisplay(chat), body: row && bodyOf(row) }).toEqual({
         live: source,

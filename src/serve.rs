@@ -160,6 +160,8 @@ struct Follower {
     done: watch::Receiver<bool>,
     rows: Option<LiveRows>,
     rendering_rows: bool,
+    rows_version: u64,
+    rows_changed: watch::Sender<()>,
 }
 
 impl Hub {

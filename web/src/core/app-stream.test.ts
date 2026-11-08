@@ -1,9 +1,11 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { App } from "./app";
 import { AppStream } from "./app-stream";
 import type { Chat } from "./app-types";
-import { liveRows } from "./app-reader";
-import { FoldChoices, lines } from "./transcript";
+import { AppReader } from "./app-reader";
+import { FoldChoices } from "./transcript";
+
+beforeEach(() => { vi.stubGlobal("requestAnimationFrame", (callback: () => void) => setTimeout(callback, 16)); });
 
 /** An App stand-in whose snapshot lists `ids`, and lists `later` too after one refresh. */
 function fakeApp(ids: string[], later: string[] = []) {
@@ -45,7 +47,7 @@ describe("show frame", () => {
 describe("live frame", () => {
   /** An App stand-in that holds one ready chair chat with live text on screen. */
   function liveApp() {
-    const chat = { id: "s", key: "s:chair", sessionId: "s", state: "ready", rows: [], end: 0, version: 0, shift: false, live: "The history of the bicycle", liveShown: 26, liveThinking: null, liveEnded: false } as unknown as Chat;
+    const chat = { id: "s", key: "s:chair", sessionId: "s", state: "ready", rows: [], end: 0, version: 0, shift: false, live: "The history of the bicycle", liveShown: 26, liveThinking: null, liveEnded: false, liveDisplay: null, hideText: false, hideThinking: false, queue: [], folds: new FoldChoices(), opened: new Map() } as unknown as Chat;
     const app = {
       chats: new Map([["s", chat]]),
       pending: new Map(),
@@ -58,16 +60,17 @@ describe("live frame", () => {
 
   it("keeps the turn's text after the turn ends, until the log's rows land", () => {
     const { stream, app, chat } = liveApp();
-    stream.onSse({ event: "live", data: JSON.stringify({ key: "s:chair", text: null }) });
+    stream.onSse({ event: "live", data: JSON.stringify({ key: "s:chair", text: "The history of the bicycle", thinking: null, display: null, ended: true, hide_text: false, hide_thinking: false }) });
     expect(chat.live).toBe("The history of the bicycle");
     app.pending.set("s:chair", [{ key: "s:chair", upsert: [{ id: "a", kind: "assistant", text: "The history of the bicycle starts in 1817.", order: [1, 0] }], end_offset: 10 }]);
+    stream.onSse({ event: "live", data: JSON.stringify({ key: "s:chair", text: null, thinking: null, display: null, ended: false, hide_text: false, hide_thinking: false }) });
     stream.flush();
     expect(chat.live).toBeNull();
   });
 
   it("a new turn's text replaces an ended one, and a later row does not clear it", () => {
     const { stream, app, chat } = liveApp();
-    stream.onSse({ event: "live", data: JSON.stringify({ key: "s:chair", text: null }) });
+    stream.onSse({ event: "live", data: JSON.stringify({ key: "s:chair", text: "The history of the bicycle", thinking: null, display: null, ended: true, hide_text: false, hide_thinking: false }) });
     stream.onSse({ event: "live", data: JSON.stringify({ key: "s:chair", text: "Next turn" }) });
     app.pending.set("s:chair", [{ key: "s:chair", upsert: [{ id: "u", kind: "user", text: "go on", order: [1, 0] }], end_offset: 10 }]);
     stream.flush();
@@ -88,7 +91,7 @@ describe("live frame", () => {
       expect(chat.liveShown).toBe(next.length);
       stream.onSse({ event: "live", data: JSON.stringify({ key: "s:chair", text: "Another block." }) });
       expect(chat.liveShown).toBe(0);
-      stream.onSse({ event: "live", data: JSON.stringify({ key: "s:chair", text: null }) });
+      stream.onSse({ event: "live", data: JSON.stringify({ key: "s:chair", text: null, thinking: null, display: null, ended: false, hide_text: false, hide_thinking: false }) });
       expect(chat.live).toBeNull();
     } finally {
       vi.useRealTimers();
@@ -98,9 +101,9 @@ describe("live frame", () => {
 
 describe("live typing", () => {
   function typingApp(live: string) {
-    const chat = { id: "s", key: "s:chair", sessionId: "s", state: "ready", rows: [], end: 0, version: 0, shift: false, live, liveShown: live.length, liveThinking: null, liveEnded: false } as unknown as Chat;
+    const chat = { id: "s", key: "s:chair", sessionId: "s", state: "ready", rows: [], end: 0, version: 0, shift: false, live, liveShown: live.length, liveThinking: null, liveEnded: false, liveDisplay: null, hideText: false, hideThinking: false, queue: [], folds: new FoldChoices(), opened: new Map() } as unknown as Chat;
     const app = { chats: new Map([["s", chat]]), pending: new Map(), openId: "s", notify: () => {}, reading: { changed: (c: Chat) => c.version++ } };
-    return { stream: new AppStream(app as unknown as App), chat };
+    return { stream: new AppStream(app as unknown as App), chat, reader: new AppReader(app as unknown as App) };
   }
 
   it("shows a change inside the shown text at once, and types only the text past it", () => {
@@ -112,14 +115,14 @@ describe("live typing", () => {
   });
 
   it("shows pi's thinking at once as an open thought row above the answer, and keeps both until the log's rows land", () => {
-    const { stream, chat } = typingApp("");
+    const { stream, chat, reader } = typingApp("");
     stream.onSse({ event: "live", data: JSON.stringify({ key: "s:chair", text: null, thinking: "Check the daily chart first." }) });
     expect(chat.liveThinking).toBe("Check the daily chart first.");
-    const rows = liveRows(chat.rows, chat.live, chat.liveThinking);
-    expect(rows.map((r) => r.kind)).toEqual(["thought"]);
-    expect(lines(rows, { folds: new FoldChoices(), opened: new Map() })[0].open).toBe(true);
+    const built = reader.build(chat);
+    expect(built.map((line) => line.row.kind)).toEqual(["thought"]);
+    expect(built[0].open).toBe(true);
     // pi empties its file when the message ends, before the log has the message.
-    stream.onSse({ event: "live", data: JSON.stringify({ key: "s:chair", text: null }) });
+    stream.onSse({ event: "live", data: JSON.stringify({ key: "s:chair", text: null, thinking: "Check the daily chart first.", display: null, ended: true, hide_text: false, hide_thinking: false }) });
     expect(chat.liveThinking).toBe("Check the daily chart first.");
     expect(chat.liveEnded).toBe(true);
   });
@@ -127,21 +130,21 @@ describe("live typing", () => {
 
 describe("live frame at turn end", () => {
   it("drops a short spinner text, and a text the log already holds, at once", () => {
-    const chat = { id: "s", key: "s:chair", sessionId: "s", state: "ready", rows: [], end: 0, version: 0, shift: false, live: "Working...", liveShown: 10, liveThinking: null, liveEnded: false } as unknown as Chat;
+    const chat = { id: "s", key: "s:chair", sessionId: "s", state: "ready", rows: [], end: 0, version: 0, shift: false, live: "Working...", liveShown: 10, liveThinking: null, liveEnded: false, liveDisplay: null, hideText: false, hideThinking: false, queue: [], folds: new FoldChoices(), opened: new Map() } as unknown as Chat;
     const app = { chats: new Map([["s", chat]]), pending: new Map(), openId: "s", notify: () => {}, reading: { changed: (c: Chat) => c.version++ } };
     const stream = new AppStream(app as unknown as App);
-    stream.onSse({ event: "live", data: JSON.stringify({ key: "s:chair", text: null }) });
+    stream.onSse({ event: "live", data: JSON.stringify({ key: "s:chair", text: null, thinking: null, display: null, ended: false, hide_text: false, hide_thinking: false }) });
     expect(chat.live).toBeNull();
     chat.rows = [{ id: "a", kind: "assistant", text: "The umbrella began more than four thousand years ago.", order: [1, 0] }];
     chat.live = "The umbrella began more than four thousand years ago.";
-    stream.onSse({ event: "live", data: JSON.stringify({ key: "s:chair", text: null }) });
+    stream.onSse({ event: "live", data: JSON.stringify({ key: "s:chair", text: null, thinking: null, display: null, ended: false, hide_text: false, hide_thinking: false }) });
     expect(chat.live).toBeNull();
   });
 
   it("a frame that changes nothing does not redraw the chat, so a reader who just scrolled up stays there", () => {
-    const chat = { id: "s", key: "s:chair", sessionId: "s", state: "ready", rows: [], end: 0, version: 0, shift: false, live: null, liveShown: 0, liveThinking: null, liveEnded: false } as unknown as Chat;
+    const chat = { id: "s", key: "s:chair", sessionId: "s", state: "ready", rows: [], end: 0, version: 0, shift: false, live: null, liveShown: 0, liveThinking: null, liveEnded: false, liveDisplay: null, hideText: false, hideThinking: false, queue: [], folds: new FoldChoices(), opened: new Map() } as unknown as Chat;
     const app = { chats: new Map([["s", chat]]), pending: new Map(), openId: "s", notify: () => {}, reading: { changed: (c: Chat) => c.version++ } };
-    new AppStream(app as unknown as App).onSse({ event: "live", data: JSON.stringify({ key: "s:chair", text: null }) });
+    new AppStream(app as unknown as App).onSse({ event: "live", data: JSON.stringify({ key: "s:chair", text: null, thinking: null, display: null, ended: false, hide_text: false, hide_thinking: false }) });
     expect(chat.version).toBe(0);
   });
 });

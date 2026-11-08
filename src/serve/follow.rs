@@ -23,6 +23,8 @@ pub(super) async fn flush_transcript(
                 batches.clear();
                 return Ok(());
             };
+            // Keep the new tail unavailable until its rows frame is queued.
+            follower.rendering_rows = follower.rows.is_some();
             if let Some(state) = &mut follower.rows {
                 let mut start = follower.from;
                 for (end, events) in batches.iter() {
@@ -41,16 +43,19 @@ pub(super) async fn flush_transcript(
                 follower.rows.as_mut().map(LiveRows::delta).map(Ok)
             }
         };
-        let row_frame = if let Some(pending) = pending {
+        let (row_frame, changed_rows, restored_rows) = if let Some(pending) = pending {
             if let Ok(delta) = pending {
-                Some(row_frame(key, delta))
+                let changed = !delta.upsert.is_empty() || !delta.remove.is_empty();
+                (Some(row_frame(key, delta)), changed, false)
             } else {
                 let state = pending.err().unwrap();
                 let render_key = key.to_owned();
-                let (mut state, frame) = tokio::task::spawn_blocking(move || {
+                let (mut state, frame, changed) = tokio::task::spawn_blocking(move || {
                     let mut state = state;
-                    let frame = row_frame(&render_key, state.delta());
-                    (state, frame)
+                    let delta = state.delta();
+                    let changed = !delta.upsert.is_empty() || !delta.remove.is_empty();
+                    let frame = row_frame(&render_key, delta);
+                    (state, frame, changed)
                 })
                 .await
                 .map_err(std::io::Error::other)?;
@@ -69,7 +74,6 @@ pub(super) async fn flush_transcript(
                             Some(incoming)
                         } else {
                             follower.rows = Some(state);
-                            follower.rendering_rows = false;
                             break;
                         }
                     };
@@ -83,10 +87,10 @@ pub(super) async fn flush_transcript(
                         state = merged;
                     }
                 }
-                Some(frame)
+                (Some(frame), changed, true)
             }
         } else {
-            None
+            (None, false, false)
         };
         let mut hub = app.hub.lock().unwrap();
         if hub
@@ -130,6 +134,15 @@ pub(super) async fn flush_transcript(
             }
         }
         if let Some(follower) = hub.followers.get_mut(key) {
+            follower.rendering_rows = false;
+            if changed_rows {
+                follower.rows_version += 1;
+                follower.rows_changed.send_replace(());
+            }
+            if restored_rows {
+                follower.rows_version += 1;
+                follower.rows_changed.send_replace(());
+            }
             follower.from = batches.last().unwrap().0;
         }
     }

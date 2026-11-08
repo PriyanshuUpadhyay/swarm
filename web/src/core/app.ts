@@ -86,7 +86,7 @@ export class App {
   /** The server build of the first stream; a later stream from another build reloads the page. */
   serverBuild: string | null = null;
   sentKeys = "";
-  pending = new Map<string, RowFrame[]>();
+  pending = new Map<string, (RowFrame | { live: Record<string, unknown> })[]>();
   find: Find = NO_FIND;
   /** The chat that Find searches: the focused pane's when Find opened, else the chair's. */
   findId: string | null = null;

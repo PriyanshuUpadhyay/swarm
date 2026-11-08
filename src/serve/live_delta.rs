@@ -22,6 +22,26 @@ pub(super) fn row_frame(key: &str, delta: RowDelta) -> Frame {
     Frame::new("rows", payload, Some(key))
 }
 
+pub(super) fn live_frame(
+    key: &str,
+    shown: view::live_shown::Shown,
+    display: Option<view::markdown::display::Display>,
+) -> Frame {
+    Frame::new(
+        "live",
+        json!({
+            "key": key,
+            "text": shown.raw.text,
+            "thinking": shown.raw.thinking,
+            "display": display,
+            "ended": shown.ended,
+            "hide_text": shown.hide_text,
+            "hide_thinking": shown.hide_thinking,
+        }),
+        Some(key),
+    )
+}
+
 #[cfg(test)]
 #[path = "live_delta/tests.rs"]
 // Run locally with `cargo test --features serve performance_tests -- --ignored --test-threads=1`.

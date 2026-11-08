@@ -1,0 +1,101 @@
+use serde_json::{Value, json};
+use swarm::view::transcript::{
+    RowKind,
+    live_shown::{keeps_ended, letters, live_text, live_thought},
+    reader_rows::ReaderRows,
+};
+
+fn kind(value: &str) -> RowKind {
+    match value {
+        "assistant" => RowKind::Assistant,
+        "thought" => RowKind::Thought,
+        "user" => RowKind::User,
+        "toolUse" => RowKind::ToolUse,
+        other => panic!("unexpected fixture kind {other}"),
+    }
+}
+fn live_row(text: Option<&str>, thought: bool) -> Value {
+    text.map_or(Value::Null, |text| {
+        json!({
+            "id": if thought { "live-thought" } else { "live" },
+            "kind": if thought { "thought" } else { "assistant" },
+            "text": text,
+            "order": [9_007_199_254_740_991_i64, if thought { -2 } else { -1 }]
+        })
+    })
+}
+
+#[test]
+fn matches_the_original_browser_decision_table() {
+    let inputs: Value =
+        serde_json::from_str(include_str!("fixtures/live-shown/inputs.json")).unwrap();
+    let capture: Value =
+        serde_json::from_str(include_str!("fixtures/live-shown/capture.json")).unwrap();
+    let actual: Vec<_> = inputs["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|case| {
+            let rows: Vec<_> = case["rows"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|row| {
+                    (
+                        kind(row["kind"].as_str().unwrap()),
+                        row["text"].as_str().unwrap().to_owned(),
+                    )
+                })
+                .collect();
+            let text = live_row(live_text(&rows, case["text"].as_str()), false);
+            let thought = live_row(live_thought(&rows, case["thinking"].as_str()), true);
+            let live_rows: Vec<_> = [thought, text.clone()]
+                .into_iter()
+                .filter(|row| !row.is_null())
+                .collect();
+            json!({ "id": case["id"], "liveRow": text, "liveRows": live_rows,
+            "keepsEnded": keeps_ended(&rows, case["text"].as_str(), case["thinking"].as_str()) })
+        })
+        .collect();
+    assert_eq!(json!({"node": "v22.23.2", "cases": actual}), capture);
+}
+
+#[test]
+fn letters_match_the_regex_edge_fixture_in_utf16_units() {
+    for fixture in [
+        include_str!("fixtures/live-shown/edges-0.json"),
+        include_str!("fixtures/live-shown/edges-1.json"),
+    ] {
+        let pairs: Vec<(u32, u8)> = serde_json::from_str(fixture).unwrap();
+        let actual: Vec<_> = pairs
+            .iter()
+            .map(|&(point, _)| {
+                let units = char::from_u32(point)
+                    .map(|c| letters(&c.to_string()))
+                    .unwrap_or_default();
+                (point, units)
+            })
+            .collect();
+        let expected: Vec<_> = pairs
+            .iter()
+            .map(|&(point, included)| {
+                let units = if included == 1 {
+                    char::from_u32(point)
+                        .unwrap()
+                        .to_string()
+                        .encode_utf16()
+                        .collect::<Vec<u16>>()
+                } else {
+                    Vec::new()
+                };
+                (point, units)
+            })
+            .collect();
+        assert_eq!(actual, expected);
+    }
+}
+
+#[test]
+fn tail_is_unavailable_before_the_first_delta() {
+    assert_eq!(ReaderRows::empty(0, false).tail(50), None);
+}

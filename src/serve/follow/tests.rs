@@ -199,6 +199,8 @@ async fn a_page_end_without_a_newline_keeps_the_follower() {
             done,
             rows: Some(LiveRows::empty(1, false)),
             rendering_rows: false,
+            rows_version: 0,
+            rows_changed: watch::channel(()).0,
         },
     );
     let event = json!({"type":"user_message_chunk","text":"fallback"});

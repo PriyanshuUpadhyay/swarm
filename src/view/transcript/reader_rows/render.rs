@@ -13,6 +13,27 @@ impl ReaderRows {
             .chain(self.last_queued.clone())
             .collect()
     }
+    /// Copies the visible tail without rendering or cloning the rest of the page.
+    pub fn tail(&self, count: usize) -> Option<Vec<(view::RowKind, String)>> {
+        if !self.initialized || self.rebuild {
+            return None;
+        }
+        let mut rows: Vec<_> = self
+            .last_queued
+            .iter()
+            .rev()
+            .chain(
+                self.chunks
+                    .values()
+                    .rev()
+                    .flat_map(|chunk| chunk.rows.iter().rev()),
+            )
+            .take(count)
+            .map(|row| (row.kind, row.text.clone()))
+            .collect();
+        rows.reverse();
+        Some(rows)
+    }
     pub fn remember_shown(&mut self, rows: &[Row]) {
         for row in rows {
             if row.kind != view::RowKind::Fold {
