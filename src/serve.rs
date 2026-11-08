@@ -48,6 +48,7 @@ fn error(status: StatusCode, message: &str) -> ApiError {
 
 struct Server {
     root: PathBuf,
+    sources: source_backend::Sources,
     tool: PathBuf,
     port: u16,
     /// A `swarm ui` server, which writes its record; only it can restart on a new build.
@@ -301,6 +302,7 @@ mod prompt_actions;
 use prompt_actions::*;
 
 mod row_pages;
+mod source_backend;
 #[allow(dead_code)]
 mod transcript_caller;
 use row_pages::*;
@@ -365,3 +367,7 @@ mod tests {
 
     include!("../tests/serve_handoff/mod.rs");
 }
+
+#[cfg(test)]
+#[path = "serve/tests/s9a_routes.rs"]
+mod s9a_routes;

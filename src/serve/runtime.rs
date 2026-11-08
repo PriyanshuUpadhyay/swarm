@@ -71,6 +71,7 @@ pub(super) fn start(
         });
     let (actions, action_queue) = mpsc::channel(64);
     let app = Arc::new(Server {
+        sources: source_backend::Sources::default(),
         root,
         tool,
         port,

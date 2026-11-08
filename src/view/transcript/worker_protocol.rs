@@ -135,6 +135,15 @@ pub enum FaultCode {
 /// The saved-page supervisor has its own envelope; v1 remains unchanged.
 #[cfg(feature = "serve")]
 pub mod v2 {
+    #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+    #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+    pub enum Operation {
+        Window { start: u64, end: u64 },
+        Raw { tail: u16, before: Option<u64> },
+        Line { offset: u64 },
+        Follow { from: Option<u64> },
+    }
+
     use super::{Binding, MAX_FRAME_BYTES};
     use serde::{Deserialize, Serialize};
     use std::{future::Future, time::Duration};
@@ -223,6 +232,12 @@ pub mod v2 {
             before: Option<u64>,
             remaining_work_ms: u64,
         },
+        Native {
+            request_id: u64,
+            binding: Binding,
+            operation: Operation,
+            remaining_work_ms: u64,
+        },
         Cancel {
             request_id: u64,
             binding: Binding,
@@ -248,6 +263,12 @@ pub mod v2 {
                     ..
                 }
                 | Self::Page {
+                    request_id,
+                    binding,
+                    remaining_work_ms,
+                    ..
+                }
+                | Self::Native {
                     request_id,
                     binding,
                     remaining_work_ms,

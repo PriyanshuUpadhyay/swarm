@@ -18,6 +18,8 @@ pub(super) struct Job {
     pub start_byte: u64,
     pub end_byte: u64,
     pub remaining_work_ms: u64,
+    #[serde(default)]
+    pub eof: bool,
 }
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -191,6 +193,23 @@ pub(super) fn range(
     before: Option<u64>,
     budget: Budget,
 ) -> Result<(u64, u64)> {
+    range_inner(file, tail, before, budget, true)
+}
+pub(super) fn raw_range(
+    file: &File,
+    tail: u16,
+    before: Option<u64>,
+    budget: Budget,
+) -> Result<(u64, u64)> {
+    range_inner(file, tail, before, budget, false)
+}
+fn range_inner(
+    file: &File,
+    tail: u16,
+    before: Option<u64>,
+    budget: Budget,
+    complete: bool,
+) -> Result<(u64, u64)> {
     let mut end = file
         .metadata()
         .map_err(|_| Code::Io)?
@@ -198,7 +217,7 @@ pub(super) fn range(
         .min(before.unwrap_or(u64::MAX));
     let mut buffer = [0; MAX_PART_BYTES];
     let mut cursor = end;
-    while cursor > 0 {
+    while complete && cursor > 0 {
         budget.check()?;
         let count = cursor.min(buffer.len() as u64) as usize;
         let start = cursor - count as u64;
@@ -210,7 +229,7 @@ pub(super) fn range(
         }
         cursor = start;
     }
-    if cursor == 0 {
+    if complete && cursor == 0 {
         end = 0;
     }
     let (mut cursor, mut lines) = (end, 0);
@@ -234,6 +253,26 @@ pub(super) fn range(
     Ok((0, end))
 }
 
+pub(super) fn line_end(file: &File, start: u64, budget: Budget) -> Result<u64> {
+    let length = file.metadata().map_err(|_| Code::Io)?.len();
+    if start >= length {
+        return Err(Code::BadRequest);
+    }
+    let mut offset = start;
+    let mut buffer = [0; MAX_PART_BYTES];
+    while offset < length {
+        budget.check()?;
+        let count = (length - offset).min(buffer.len() as u64) as usize;
+        file.read_exact_at(&mut buffer[..count], offset)
+            .map_err(|_| Code::Io)?;
+        if let Some(i) = buffer[..count].iter().position(|b| *b == b'\n') {
+            return Ok(offset + i as u64 + 1);
+        }
+        offset += count as u64;
+    }
+    Ok(length)
+}
+
 pub(super) async fn execute(text: &str) -> Result<()> {
     let job: Job = serde_json::from_str(text).map_err(|_| Code::BadRequest)?;
     let mut budget = Budget::new(Duration::from_millis(job.remaining_work_ms))?;
@@ -251,7 +290,7 @@ pub(super) async fn execute(text: &str) -> Result<()> {
         return Err(Code::BadRequest);
     }
     for offset in [job.start_byte, job.end_byte] {
-        if offset != 0 {
+        if offset != 0 && (offset == job.start_byte || !job.eof) {
             let mut byte = [0];
             file.read_exact_at(&mut byte, offset - 1)
                 .map_err(|_| Code::Io)?;
@@ -265,7 +304,11 @@ pub(super) async fn execute(text: &str) -> Result<()> {
             source_id: job.tag.binding.source_id.clone(),
         },
         job.start_byte,
-        EndPolicy::CompleteLines,
+        if job.eof {
+            EndPolicy::SnapshotEof
+        } else {
+            EndPolicy::CompleteLines
+        },
         NativeFormat::Claude,
         &job.path,
     );

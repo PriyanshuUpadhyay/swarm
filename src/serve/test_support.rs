@@ -70,6 +70,7 @@ impl Fixture {
         swarm::store::add_agent(&connection, &session, "worker", "chat").unwrap();
         let (actions, action_queue) = mpsc::channel(64);
         let app = Arc::new(Server {
+            sources: source_backend::Sources::default(),
             root,
             tool: Path::new(env!("CARGO_MANIFEST_DIR"))
                 .join("packages/transcript/zig-out/bin/transcript"),

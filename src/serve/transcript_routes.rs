@@ -81,8 +81,26 @@ pub(super) async fn transcript(
     if !(1..=2000).contains(&query.tail) {
         return Err(error(StatusCode::BAD_REQUEST, "tail must be 1..2000"));
     }
+    let log = resolve_log(&app.root, &query.session, &query.agent)?;
+    if let Some(source) =
+        source_backend::acquire(&app, &format!("{}:{}", query.session, query.agent), &log).await?
+    {
+        use swarm::view::transcript::worker_protocol::v2::Operation;
+        let payload = source
+            .read(Operation::Raw {
+                tail: query.tail,
+                before: query.before,
+            })
+            .await?;
+        let events: Vec<_> = source_backend::lines(&payload)?
+            .into_iter()
+            .flat_map(|(_, _, events)| events)
+            .collect();
+        return Ok(Json(
+            json!({"page": {"start_offset": payload["start_byte"], "end_offset": payload["end_byte"]}, "events": events}),
+        ));
+    }
     tokio::task::spawn_blocking(move || {
-        let log = resolve_log(&app.root, &query.session, &query.agent)?;
         let mut command = std::process::Command::new(&app.tool);
         command.args(["--format", &log.format, "--tail", &query.tail.to_string()]);
         if let Some(before) = query.before {

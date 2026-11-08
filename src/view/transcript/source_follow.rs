@@ -6,8 +6,10 @@ use std::fs::File;
 
 mod file;
 mod legacy;
+mod native;
 mod operations;
 pub use legacy::ingest_log_line;
+pub use native::NativeStream;
 
 #[derive(Debug)]
 pub enum SourceError {

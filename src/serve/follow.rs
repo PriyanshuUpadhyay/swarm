@@ -40,7 +40,7 @@ pub(super) async fn flush_transcript(
                 follower.rendering_rows = true;
                 follower.rows.take().map(Err)
             } else {
-                follower.rows.as_mut().map(LiveRows::delta).map(Ok)
+                follower.rows.as_mut().map(|rows| rows.delta()).map(Ok)
             }
         };
         let (row_frame, changed_rows, restored_rows) = if let Some(pending) = pending {
@@ -152,19 +152,23 @@ pub(super) async fn flush_transcript(
 
 pub(super) async fn follow(
     app: Weak<Server>,
-    tool: PathBuf,
+    reader: (PathBuf, Option<Arc<source_backend::Lease>>),
     entry: SubscriptionKey,
     log: Log,
     generation: String,
     mut stop: watch::Receiver<bool>,
     done: watch::Sender<bool>,
 ) {
+    let (tool, rust) = reader;
     let result = async {
         if *stop.borrow() { return Ok(()); }
         if entry.view.as_deref() == Some("rows") {
             tokio::spawn(watch_turn(app.clone(), entry.key.clone(), generation.clone(), stop.clone()));
         }
         let source = std::fs::File::open(&log.path)?;
+        if let Some(rust) = rust {
+            return native_follow(&app, &entry, &generation, &source, rust, &mut stop).await;
+        }
         let mut child = tokio::process::Command::new(tool)
             .args(["--follow", "--from", &entry.from.to_string(), "--format", &log.format])
             .arg(log.path).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::inherit()).kill_on_drop(true).spawn()?;
@@ -222,6 +226,33 @@ pub(super) async fn follow(
         }
     }
     let _ = done.send(true);
+}
+
+async fn native_follow(
+    app: &Weak<Server>,
+    entry: &SubscriptionKey,
+    generation: &str,
+    source: &std::fs::File,
+    rust: Arc<source_backend::Lease>,
+    stop: &mut watch::Receiver<bool>,
+) -> std::io::Result<()> {
+    use swarm::view::transcript::worker_protocol::v2::Operation;
+    let mut from = Some(entry.from);
+    let mut timer = tokio::time::interval(Duration::from_millis(16));
+    timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    loop {
+        tokio::select! {
+            biased;
+            _ = stop.changed() => return Ok(()),
+            _ = timer.tick() => {
+                // Follow runs inline in the worker, so finish this bounded read before stopping.
+                let payload = rust.read(Operation::Follow { from: from.take() }).await
+                    .map_err(|_| std::io::Error::other("transcript follower ended"))?;
+                let mut batches = source_backend::lines(&payload).map_err(|_| std::io::Error::other("invalid transcript output"))?.into_iter().map(|(_,end,events)| (end,events)).collect();
+                flush_transcript(app, &entry.key, generation, &mut batches, source).await?;
+            }
+        }
+    }
 }
 
 #[cfg(test)]

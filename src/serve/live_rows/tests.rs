@@ -93,9 +93,15 @@ async fn partial_append_and_overlapping_page_keep_one_question() {
         path: fixture.log.clone(),
         format: "claude".into(),
     };
-    let mut reference = read_row_window(&fixture.app.tool, &log, 0, end)
-        .await
-        .unwrap();
+    let mut reference = read_row_window(
+        &fixture.app,
+        &format!("{}:chair", fixture.session),
+        &log,
+        0,
+        end,
+    )
+    .await
+    .unwrap();
     {
         let hub = fixture.app.hub.lock().unwrap();
         let live = hub.followers[&key].rows.as_ref().unwrap();
@@ -223,9 +229,15 @@ async fn synthetic_provider_logs_match_full_rebuild() {
         let mut start = 0;
         for line in &lines {
             let end = start + line.len() as u64 + 1;
-            let page = read_row_window(&fixture.app.tool, &log, start, end)
-                .await
-                .unwrap();
+            let page = read_row_window(
+                &fixture.app,
+                &format!("{}:chair", fixture.session),
+                &log,
+                start,
+                end,
+            )
+            .await
+            .unwrap();
             state.ingest(
                 start,
                 end,
@@ -238,9 +250,15 @@ async fn synthetic_provider_logs_match_full_rebuild() {
             row_frame("chat", state.delta());
             start = end;
         }
-        let mut full = read_row_window(&fixture.app.tool, &log, 0, start)
-            .await
-            .unwrap();
+        let mut full = read_row_window(
+            &fixture.app,
+            &format!("{}:chair", fixture.session),
+            &log,
+            0,
+            start,
+        )
+        .await
+        .unwrap();
         full.shown = state.shown.clone();
         assert_eq!(state.rows(), full.rows_full());
         assert_eq!(

@@ -99,13 +99,27 @@ pub(super) async fn tool_output(
             )
         })?
         .map_err(|_| error(StatusCode::NOT_FOUND, "unknown tool output"))?;
-        let mut window = read_row_window(&app.tool, &log, offset, end).await?;
+        let mut window = read_row_window(
+            &app,
+            &format!("{}:{}", query.session, query.agent),
+            &log,
+            offset,
+            end,
+        )
+        .await?;
         if output_locator(&window.rows(), &query.row).is_none() {
             let full_end = std::fs::metadata(&log.path)
                 .map_err(|_| error(StatusCode::NOT_FOUND, "unknown tool output"))?
                 .len();
             if end < full_end {
-                window = read_row_window(&app.tool, &log, offset, full_end).await?;
+                window = read_row_window(
+                    &app,
+                    &format!("{}:{}", query.session, query.agent),
+                    &log,
+                    offset,
+                    full_end,
+                )
+                .await?;
             }
         }
         query.row = output_locator(&window.rows(), &query.row)
@@ -132,6 +146,18 @@ pub(super) async fn tool_output(
         return Err(error(StatusCode::NOT_FOUND, "unknown tool output"));
     }
     let component = component.to_owned();
+    let log = resolve_log(&app.root, &query.session, &query.agent)?;
+    let native = if let Some(source) =
+        source_backend::acquire(&app, &format!("{}:{}", query.session, query.agent), &log).await?
+    {
+        Some(
+            source
+                .read(swarm::view::transcript::worker_protocol::v2::Operation::Line { offset })
+                .await,
+        )
+    } else {
+        None
+    };
     let text = tokio::task::spawn_blocking(move || {
         use std::io::{BufRead, Seek, SeekFrom};
         use std::os::unix::fs::OpenOptionsExt;
@@ -156,51 +182,59 @@ pub(super) async fn tool_output(
         if line.is_empty() {
             return Err(error(StatusCode::NOT_FOUND, "unknown tool output"));
         }
-        // The translator still owns parsing. A private one-line copy keeps on-demand work bounded.
-        let temporary =
-            std::env::temp_dir().join(format!("swarm-output-{}.jsonl", uuid::Uuid::now_v7()));
-        let scratch = std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(0o600)
-            .open(&temporary)
-            .and_then(|mut file| file.write_all(line.as_bytes()));
-        if scratch.is_err() {
-            let _ = std::fs::remove_file(&temporary);
-            return Err(error(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "output scratch write failed",
-            ));
-        }
-        let output = std::process::Command::new(&app.tool)
-            .args(["--format", &log.format])
-            .arg(&temporary)
-            .output();
-        let _ = std::fs::remove_file(temporary);
-        let output = output.map_err(|_| {
-            error(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "transcript tool unavailable",
-            )
-        })?;
-        if !output.status.success() {
-            return Err(error(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "transcript tool failed",
-            ));
-        }
-        let events: Vec<Value> = output
-            .stdout
-            .split(|byte| *byte == b'\n')
-            .filter(|line| !line.is_empty())
-            .map(serde_json::from_slice)
-            .collect::<Result<_, _>>()
-            .map_err(|_| {
+        let events = if let Some(native) = native {
+            source_backend::lines(&native?)?
+                .into_iter()
+                .flat_map(|(_, _, events)| events)
+                .collect()
+        } else {
+            // The translator still owns parsing. A private one-line copy keeps on-demand work bounded.
+            let temporary =
+                std::env::temp_dir().join(format!("swarm-output-{}.jsonl", uuid::Uuid::now_v7()));
+            let scratch = std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(0o600)
+                .open(&temporary)
+                .and_then(|mut file| file.write_all(line.as_bytes()));
+            if scratch.is_err() {
+                let _ = std::fs::remove_file(&temporary);
+                return Err(error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "output scratch write failed",
+                ));
+            }
+            let output = std::process::Command::new(&app.tool)
+                .args(["--format", &log.format])
+                .arg(&temporary)
+                .output();
+            let _ = std::fs::remove_file(temporary);
+            let output = output.map_err(|_| {
                 error(
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    "invalid transcript output",
+                    "transcript tool unavailable",
                 )
             })?;
+            if !output.status.success() {
+                return Err(error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "transcript tool failed",
+                ));
+            }
+            let events: Vec<Value> = output
+                .stdout
+                .split(|byte| *byte == b'\n')
+                .filter(|line| !line.is_empty())
+                .map(serde_json::from_slice)
+                .collect::<Result<_, _>>()
+                .map_err(|_| {
+                    error(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "invalid transcript output",
+                    )
+                })?;
+            events
+        };
         let event = events
             .get(index)
             .ok_or_else(|| error(StatusCode::NOT_FOUND, "unknown tool output"))?;

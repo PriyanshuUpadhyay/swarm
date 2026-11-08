@@ -2,6 +2,8 @@
 use std::{fs::File, os::fd::AsFd, path::Path, time::Duration};
 use swarm::view::transcript::{
     reader_rows::ReaderRows,
+    source::NativeFormat,
+    source_follow::NativeStream,
     worker_protocol::{Binding, MAX_PART_BYTES, MAX_SOURCE_ID_BYTES, v2::*},
 };
 use tokio::sync::mpsc;
@@ -15,11 +17,13 @@ struct Held {
     path: String,
     format: String,
     rows: Option<ReaderRows>,
+    native: Option<NativeStream>,
 }
 struct Active {
     tag: Tag,
     budget: Budget,
     before: bool,
+    native: bool,
     running: saved::Running,
     terminal: Option<Terminal>,
 }
@@ -148,7 +152,7 @@ impl Session {
             Err(Code::BindingMismatch)
         }
     }
-    async fn control(&mut self, request: Request, budget: Budget) -> Result<bool> {
+    async fn control(&mut self, request: Request, mut budget: Budget) -> Result<bool> {
         budget.check()?;
         let (id, binding, _) = request.context();
         if let Some(id) = id {
@@ -210,6 +214,7 @@ impl Session {
                     path,
                     format,
                     rows: None,
+                    native: None,
                 });
                 self.send(
                     Reply::Opened {
@@ -245,6 +250,7 @@ impl Session {
                     start_byte,
                     end_byte,
                     remaining_work_ms: budget.remaining_ms()?,
+                    eof: false,
                 };
                 let running = saved::spawn(
                     source.file.try_clone().map_err(|_| Code::Io)?,
@@ -256,10 +262,88 @@ impl Session {
                     tag: tag.clone(),
                     budget,
                     before: before.is_some(),
+                    native: false,
                     running,
                     terminal: None,
                 });
                 self.send(Reply::Begin { tag }, budget).await?;
+            }
+            Request::Native {
+                request_id,
+                binding,
+                operation,
+                ..
+            } => {
+                if self.active.is_some() {
+                    return Err(Code::BadRequest);
+                }
+                let source = self.held.as_mut().ok_or(Code::BadRequest)?;
+                self.transport = self.transport.checked_add(1).ok_or(Code::Core)?;
+                let tag = Tag {
+                    request_id,
+                    binding,
+                    transport_id: self.transport,
+                };
+                if let Operation::Follow { from } = operation {
+                    if let Some(from) = from {
+                        let from = from.min(source.file.metadata().map_err(|_| Code::Io)?.len());
+                        source.native = Some(NativeStream::new(
+                            source.file.try_clone().map_err(|_| Code::Io)?,
+                            from,
+                            NativeFormat::Claude,
+                            &source.path,
+                        ));
+                    }
+                    let mut native = source.native.take().ok_or(Code::BadRequest)?;
+                    let payload = native
+                        .advance(&source.binding.source_id, &mut budget)
+                        .map_err(|_| Code::Core)?;
+                    let bytes = serde_json::to_vec(&payload).map_err(|_| Code::Core)?;
+                    budget.check()?;
+                    self.send(Reply::Begin { tag: tag.clone() }, budget).await?;
+                    self.publish(tag, bytes, budget).await?;
+                    self.held.as_mut().ok_or(Code::BadRequest)?.native = Some(native);
+                } else {
+                    let (start_byte, end_byte, eof) = match operation {
+                        Operation::Window { start, end } => (start, end, false),
+                        Operation::Raw { tail, before } => {
+                            if !(1..=2000).contains(&tail) {
+                                return Err(Code::BadRequest);
+                            }
+                            let (start, end) =
+                                saved::raw_range(&source.file, tail, before, budget)?;
+                            (start, end, true)
+                        }
+                        Operation::Line { offset } => {
+                            (offset, saved::line_end(&source.file, offset, budget)?, true)
+                        }
+                        Operation::Follow { .. } => return Err(Code::BadRequest),
+                    };
+                    let job = saved::Job {
+                        tag: tag.clone(),
+                        path: source.path.clone(),
+                        format: source.format.clone(),
+                        start_byte,
+                        end_byte,
+                        remaining_work_ms: budget.remaining_ms()?,
+                        eof,
+                    };
+                    let running = saved::spawn(
+                        source.file.try_clone().map_err(|_| Code::Io)?,
+                        job,
+                        budget,
+                        self.events.clone(),
+                    )?;
+                    self.active = Some(Active {
+                        tag: tag.clone(),
+                        budget,
+                        before: false,
+                        native: true,
+                        running,
+                        terminal: None,
+                    });
+                    self.send(Reply::Begin { tag }, budget).await?;
+                }
             }
             Request::Cancel {
                 request_id,
@@ -351,7 +435,11 @@ impl Session {
         }
         let result = completion.result.and_then(|payload| {
             active.budget.check()?;
-            self.page(payload, active.before, active.budget)
+            if active.native {
+                serde_json::to_vec(&payload).map_err(|_| Code::Core)
+            } else {
+                self.page(payload, active.before, active.budget)
+            }
         });
         let bytes = match result {
             Ok(bytes) => bytes,
@@ -368,29 +456,33 @@ impl Session {
                 return Ok(false);
             }
         };
+        self.publish(active.tag, bytes, active.budget).await?;
+        Ok(false)
+    }
+    async fn publish(&mut self, tag: Tag, bytes: Vec<u8>, budget: Budget) -> Result<()> {
         let mut part_count = 0;
         for bytes in bytes.chunks(MAX_PART_BYTES) {
             self.send(
                 Reply::Part {
-                    tag: active.tag.clone(),
+                    tag: tag.clone(),
                     part_index: part_count,
                     bytes: bytes.into(),
                 },
-                active.budget,
+                budget,
             )
             .await?;
             part_count += 1;
         }
         self.send(
             Reply::Commit {
-                tag: active.tag,
+                tag,
                 part_count,
                 payload_bytes: bytes.len() as u64,
             },
-            active.budget,
+            budget,
         )
         .await?;
-        Ok(false)
+        Ok(())
     }
     fn page(&mut self, payload: saved::Payload, before: bool, budget: Budget) -> Result<Vec<u8>> {
         let held = self.held.as_mut().ok_or(Code::Core)?;

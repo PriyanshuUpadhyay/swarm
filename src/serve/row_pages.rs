@@ -4,18 +4,22 @@ use super::*;
 
 // Source positions come from the existing follower's per-line page markers, not provider JSON.
 pub(super) async fn read_row_window(
-    tool: &Path,
+    app: &App,
+    key: &str,
     log: &Log,
     start: u64,
     end: u64,
 ) -> Result<LiveRows, ApiError> {
+    if let Some(state) = source_backend::window(app, key, log, start, end).await? {
+        return Ok(state);
+    }
     let mut state = LiveRows::empty(start, log.format == "codex");
     if start == end {
         return Ok(state);
     }
     let source = std::fs::File::open(&log.path)
         .map_err(|_| error(StatusCode::NOT_FOUND, "transcript log unavailable"))?;
-    let mut child = tokio::process::Command::new(tool)
+    let mut child = tokio::process::Command::new(&app.tool)
         .args([
             "--follow",
             "--from",
@@ -201,11 +205,11 @@ pub(super) async fn transcript_rows(
         None
     };
     let recovery = if let Some((start, end)) = recovery {
-        Some(read_row_window(&app.tool, &log, start, end).await?)
+        Some(read_row_window(&app, &key, &log, start, end).await?)
     } else {
         None
     };
-    let page = read_row_window(&app.tool, &log, start, end).await?;
+    let page = read_row_window(&app, &key, &log, start, end).await?;
     let key = format!("{}:{}", query.session, query.agent);
     let page = {
         let mut hub = app.hub.lock().unwrap();
