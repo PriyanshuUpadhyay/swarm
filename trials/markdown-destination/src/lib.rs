@@ -2,7 +2,7 @@
 
 mod normalize_link;
 
-/// Parse with CommonMark constructs and the two OLD href policy hooks, replacing NUL with U+FFFD first.
+/// Parse CommonMark, raw HTML and images off as in the OLD app, with href hooks and NUL as U+FFFD.
 ///
 /// # Errors
 ///
@@ -17,6 +17,12 @@ pub fn parse(source: &str) -> Result<markdown::mdast::Node, markdown::message::M
     markdown::to_mdast(
         &source,
         &markdown::ParseOptions {
+            constructs: markdown::Constructs {
+                html_flow: false,
+                html_text: false,
+                label_start_image: false,
+                ..markdown::Constructs::default()
+            },
             normalize_link: Some(normalize_link::normalize),
             validate_link: Some(normalize_link::validate),
             ..markdown::ParseOptions::default()
