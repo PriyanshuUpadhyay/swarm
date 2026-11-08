@@ -2,6 +2,12 @@ import { expect, test } from "@playwright/test";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { row, rows, open, mockRows } from "./ux-helpers";
+import type { PatchInfo } from "../src/core/api";
+import previewPatch from "./fixtures/s6a-preview.json" with { type: "json" };
+import fullLines0 from "./fixtures/s6a-full-lines-0.json" with { type: "json" };
+import fullLines1 from "./fixtures/s6a-full-lines-1.json" with { type: "json" };
+import fullLines2 from "./fixtures/s6a-full-lines-2.json" with { type: "json" };
+import fullSplit0 from "./fixtures/s6a-full-split-0.json" with { type: "json" };
 
 
 test("Find steps through occurrences inside a long answer and paints the selected word", async ({ page: tab }, info) => {
@@ -193,9 +199,9 @@ test("returning to a chat keeps its reading position", async ({ page: tab }) => 
 test("Find reaches repeated matches in a loaded full patch in Unified and Split views", async ({ page: tab }) => {
   const r = row("d1", "", "diff");
   r.diff = { id: "patch-output", path: "app.ts", patch: "@@ -1 +1 @@\n-old\n+preview", added: 1, removed: 1, omitted_lines: 900, shortened_lines: 0, full_lines: 1001, full_bytes: 20000 };
-  await mockRows(tab, [r]);
+  await mockRows(tab, [r], 0, previewPatch as Record<string, PatchInfo>);
   const patch = ["@@ -1,1000 +1,1000 @@", ...Array.from({ length: 1000 }, (_, i) => ` ${i === 100 || i === 900 ? "repeated needle" : `line ${i}`}`)].join("\n");
-  await tab.route("**/api/tool-output?*", (route) => route.fulfill({ json: { text: patch } }));
+  await tab.route("**/api/tool-output?*", (route) => route.fulfill({ json: { text: patch, patch: { lines: fullLines0.concat(fullLines1, fullLines2), split: fullSplit0 } } }));
   await open(tab);
   await tab.getByRole("button", { name: "Show full patch", exact: true }).click();
   for (const mode of ["Unified", "Split"]) {

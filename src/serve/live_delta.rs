@@ -5,12 +5,14 @@ use swarm::view::transcript::reader_rows::RowDelta;
 
 pub(super) fn row_frame(key: &str, delta: RowDelta) -> Frame {
     let display = view::markdown::row_displays(&delta.upsert);
+    let patch = view::patch_wire::row_patches(&delta.upsert);
     let mut payload = json!({
         "key": key,
         "upsert": delta.upsert,
         "remove": delta.remove,
         "end_offset": delta.end_offset,
         "display": display,
+        "patch": patch,
     });
     if let Some(usage) = delta.usage {
         payload["usage"] = json!(usage);

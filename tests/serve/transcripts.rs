@@ -399,3 +399,63 @@ fn a_claude_chair_log_is_found_by_its_id_before_its_hook_stores_it() {
     let (status, _, body) = server.request("GET", &rows, "", "", true);
     assert_eq!(status, 200, "{body}");
 }
+
+#[test]
+fn patch_entries_cover_tool_diffs_fold_steps_and_full_output() {
+    let fixture: Value = serde_json::from_str(include_str!("patch-wire.json")).unwrap();
+    let server = Server::new();
+    let log = fixture["log"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(Value::to_string)
+        .collect::<Vec<_>>()
+        .join("\n")
+        + "\n";
+    fs::write(&server.log, log).unwrap();
+    let path = format!("/api/rows?session={}&agent=chair&tail=200", server.session);
+    let (status, _, body) = server.request("GET", &path, "", "", true);
+    assert_eq!(status, 200, "{body}");
+    let page: Value = serde_json::from_str(&body).unwrap();
+    let mut expected = serde_json::Map::new();
+    let mut full = Vec::new();
+    let mut wanted = Vec::new();
+    let mut direct = false;
+    let mut nested = false;
+    let mut text = false;
+    let mut stack: Vec<_> = page["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| (r, false))
+        .collect();
+    while let Some((row, step)) = stack.pop() {
+        if let Some(steps) = row["steps"].as_array() {
+            stack.extend(steps.iter().map(|r| (r, true)));
+        }
+        if let Some(diffs) = row["tool"]["diffs"].as_array() {
+            for diff in diffs {
+                direct |= !step;
+                nested |= step;
+                let id = diff["id"].as_str().unwrap();
+                expected.insert(id.to_owned(), fixture["diff"].clone());
+                let path = format!(
+                    "/api/tool-output?session={}&agent=chair&row={id}",
+                    server.session
+                );
+                let (status, _, body) = server.request("GET", &path, "", "", true);
+                assert_eq!(status, 200, "{body}");
+                full.push(serde_json::from_str::<Value>(&body).unwrap()["patch"].clone());
+                wanted.push(fixture["diff"].clone());
+            }
+        }
+        if row["tool"]["name"] == "Bash" {
+            text = true;
+            let id = row["tool"]["output"]["id"].as_str().unwrap();
+            expected.insert(id.to_owned(), fixture["text"].clone());
+        }
+    }
+    assert!(direct && nested && text);
+    assert_eq!(page["patch"], Value::Object(expected));
+    assert_eq!(full, wanted);
+}

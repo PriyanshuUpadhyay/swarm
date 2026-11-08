@@ -9,7 +9,7 @@ import { prefixHtml } from "./markdown";
 import { paletteSections, type TreeView } from "./nav";
 import { MAX_RECORDS, measure } from "./perf";
 import { SseParser } from "./sse";
-import { FoldChoices, isPatch, lines, mergeRows, parsePatch, patchKinds, promptIndex, splitPatch, wordAt } from "./transcript";
+import { FoldChoices, isPatch, lines, mergeRows, parsePatch, promptIndex, wordAt } from "./transcript";
 
 // A row as the server sends it; `order` is [source offset, event ordinal].
 const row = (id: string, offset: number, extra: Partial<Row> = {}): Row => ({ id, kind: "assistant", text: id, order: [offset, 0], ...extra });
@@ -57,8 +57,6 @@ describe("patch", () => {
       ["add", null, 4],
       ["ctx", 5, 5],
     ]);
-    const split = splitPatch(parsed);
-    expect(split[2]).toEqual({ left: parsed[5], right: parsed[6] });
   });
 });
 
@@ -189,7 +187,6 @@ describe("diffs in plain text", () => {
   it("colours `diff -u` output by hunk counts, so a removed `-- comment` is not a file header", () => {
     const out = ["--- a.sql\t2026", "+++ a.sql\t2026", "@@ -1,2 +1,2 @@", " keep", "--- old comment", "+-- new comment", "done"];
     expect(isPatch(out.join("\n"))).toBe(true);
-    expect(patchKinds(out)).toEqual(["meta", "meta", "hunk", "ctx", "del", "add", "ctx"]);
     expect(isPatch("a + b\n- item")).toBe(false);
   });
 

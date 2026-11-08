@@ -272,8 +272,8 @@ pub(super) fn reference_delta(state: &mut LiveRows, key: &str) -> Value {
         .collect();
     let usage = view::usage(&state.records.values().cloned().collect::<Vec<_>>());
     let display = view::markdown::row_displays(&upsert);
-    let mut payload =
-        json!({"key":key,"upsert":upsert,"remove":remove,"end_offset":state.end,"display":display});
+    let patch = view::patch_wire::row_patches(&upsert);
+    let mut payload = json!({"key":key,"upsert":upsert,"remove":remove,"end_offset":state.end,"display":display,"patch":patch});
     if usage != state.last_usage {
         payload["usage"] = json!(usage);
     }

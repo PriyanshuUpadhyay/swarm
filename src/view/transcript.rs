@@ -3,9 +3,11 @@ use super::{builder, fold_rows, queue};
 use serde::Serialize;
 use serde_json::Value;
 
+mod display_patch;
 mod events;
 pub mod markdown;
 mod normalize;
+pub mod patch_wire;
 pub mod reader_rows;
 mod records;
 mod shell;

@@ -135,10 +135,14 @@ export type Inline =
 
 export type Align = "none" | "left" | "center" | "right";
 
-export type RowPage = { page: Page; rows: Row[]; usage: unknown; remove?: string[]; display?: Record<string, Display> };
+export type PatchLineWire = { kind: "add" | "del" | "ctx" | "hunk" | "meta"; text: string; old?: number; new?: number };
+export type PatchSplitWire = { h: number } | { l: number | null; r: number | null };
+export type PatchInfo = { lines: PatchLineWire[]; split: PatchSplitWire[] } | { kinds: PatchLineWire["kind"][] };
+
+export type RowPage = { page: Page; rows: Row[]; usage: unknown; remove?: string[]; display?: Record<string, Display>; patch?: Record<string, PatchInfo> };
 
 /** One `rows` stream frame. `usage` is there only when it changed; null clears it. */
-export type RowFrame = { key: string; upsert?: Row[]; remove?: string[]; end_offset: number; usage?: unknown; display?: Record<string, Display> };
+export type RowFrame = { key: string; upsert?: Row[]; remove?: string[]; end_offset: number; usage?: unknown; display?: Record<string, Display>; patch?: Record<string, PatchInfo> };
 
 export type SubscribeKey = { key: string; from: number; view: "rows" };
 
@@ -219,9 +223,9 @@ export class Api {
   }
 
   /** The full text behind a capped preview: a tool or shell output, or a diff's whole patch. */
-  async toolOutput(session: string, agent: string, row: string): Promise<string> {
+  async toolOutput(session: string, agent: string, row: string): Promise<{ text: string; patch?: PatchInfo }> {
     const q = new URLSearchParams({ session, agent, row });
-    return (await this.json<{ text: string }>(`/api/tool-output?${q}`)).text;
+    return this.json(`/api/tool-output?${q}`);
   }
 
   tree(view: TreeName): Promise<TreeView> {

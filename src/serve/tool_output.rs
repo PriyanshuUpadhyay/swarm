@@ -223,7 +223,12 @@ pub(super) async fn tool_output(
             (_, "output") => view::record_text(event),
             _ => return Err(error(StatusCode::NOT_FOUND, "unknown tool output")),
         };
-        Ok(Json(json!({"text": text})))
+        let patch = view::patch_wire::text_patch(&text, component == "diff");
+        let mut body = json!({"text": text});
+        if let Some(patch) = patch {
+            body["patch"] = patch;
+        }
+        Ok(Json(body))
     })
     .await
     .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "tool output task failed"))??;

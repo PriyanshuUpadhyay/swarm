@@ -1,7 +1,7 @@
 
 
 import { queueRows, type Usage } from "./composer";
-import { FoldChoices, LIVE_THOUGHT, cut, findMatches, lines, mergeRows, noteDisplay, type Line } from "./transcript";
+import { FoldChoices, LIVE_THOUGHT, cut, findMatches, lines, mergeRows, noteDisplay, notePatch, type Line } from "./transcript";
 import type { Row } from "./api";
 import { TAIL, LRU_SIZE, type FullText, type Chat, type Find, type Reader, paneId } from "./app-types";
 import type { App } from "./app";
@@ -116,6 +116,7 @@ export class AppReader {
     try {
       const page = await this.app.api.rows(chat.sessionId, chat.agent, TAIL);
       noteDisplay(page.rows, page.display);
+      notePatch(page.rows, page.patch);
       chat.rows = mergeRows([], page.rows);
       chat.older = page.page.start_offset;
       chat.end = page.page.end_offset;
@@ -205,8 +206,8 @@ export class AppReader {
     this.changed(chat);
     let next: FullText;
     try {
-      const text = await this.app.api.toolOutput(chat.sessionId, chat.agent, previewId);
-      next = { state: "ready", text, lines: text.split("\n") };
+      const { text, patch } = await this.app.api.toolOutput(chat.sessionId, chat.agent, previewId);
+      next = { state: "ready", text, lines: text.split("\n"), patch };
     } catch (err) {
       next = { state: "error", error: String(err) };
     }
@@ -232,7 +233,7 @@ export class AppReader {
     const have = chat?.full.get(previewId);
     if (have?.state === "ready") return have.text;
     if (!chat) throw new Error("no chat open");
-    return this.app.api.toolOutput(chat.sessionId, chat.agent, previewId);
+    return (await this.app.api.toolOutput(chat.sessionId, chat.agent, previewId)).text;
   }
 
   async retryRows(id?: string) {
@@ -256,6 +257,7 @@ export class AppReader {
     try {
       const page = await this.app.api.rows(chat.sessionId, chat.agent, TAIL, chat.older);
       noteDisplay(page.rows, page.display);
+      notePatch(page.rows, page.patch);
       chat.rows = mergeRows(chat.rows, page.rows, page.remove);
       chat.older = page.page.start_offset;
       chat.version++;

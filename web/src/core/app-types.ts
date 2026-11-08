@@ -1,4 +1,4 @@
-import { type Display, type Row } from "./api";
+import { type Display, type PatchInfo, type Row } from "./api";
 import { type AgentInput, type SendKey, type Usage } from "./composer";
 import { type PaneCell } from "./panes";
 import { FoldChoices, type Line, type Match } from "./transcript";
@@ -9,7 +9,7 @@ export const LRU_SIZE = 4;
 export const MAX_KEYS = 32;
 
 /** The full text behind a capped preview, fetched on demand. */
-export type FullText = { state: "loading" } | { state: "ready"; text: string; lines: string[] } | { state: "error"; error: string };
+export type FullText = { state: "loading" } | { state: "ready"; text: string; lines: string[]; patch?: PatchInfo } | { state: "error"; error: string };
 
 export type Chat = {
   /** The session id for the chair's chat, and `paneId` for a child agent's. */

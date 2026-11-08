@@ -2,7 +2,39 @@
 // skips rows the server marks `collapsed`, merges rows by id, places them by `order`, and keeps
 // the reader's open and closed choices.
 
-import type { Block, Display, Inline, Row } from "./api";
+import type { Block, DiffPreview, Display, Inline, PatchInfo, PatchSplitWire, Row, TextPreview } from "./api";
+
+const patches = new WeakMap<TextPreview | DiffPreview, PatchInfo>();
+
+/** Keep wire data on the preview object that the painter receives. */
+export function notePatch(rows: Row[], patch: Record<string, PatchInfo> | undefined): void {
+  if (patch === undefined) return;
+  const stack = [...rows];
+  while (stack.length) {
+    const row = stack.pop()!;
+    for (const step of row.steps ?? []) stack.push(step);
+    const previews = [row.diff, ...(row.tool?.diffs ?? []), row.output, row.tool?.output, row.shell?.output, row.command?.output];
+    for (const preview of previews) {
+      if (!preview) continue;
+      const entry = patch[preview.id];
+      if (entry) patches.set(preview, entry);
+      else patches.delete(preview);
+    }
+  }
+}
+
+export const patchOf = (preview: TextPreview | DiffPreview): PatchInfo | undefined => patches.get(preview);
+
+/** The list keeps source indices when unified hides metadata. */
+export function patchRows(info: Extract<PatchInfo, { lines: unknown }>, split: boolean): ({ i: number } | PatchSplitWire)[] {
+  return split ? info.split : info.lines.flatMap((line, i) => line.kind === "meta" ? [] : [{ i }]);
+}
+
+/** Text keeps each source line; an absent entry has no colour. */
+export function textRows(entry: PatchInfo | undefined, text: string): { kind: PatchLine["kind"] | null; text: string }[] {
+  const kinds = entry && "kinds" in entry ? entry.kinds : undefined;
+  return text.split("\n").map((text, i) => ({ kind: kinds?.[i] ?? null, text }));
+}
 
 const displays = new WeakMap<Row, Display | null>();
 
@@ -358,33 +390,8 @@ export function parsePatch(patch: string): PatchLine[] {
   return out;
 }
 
-const HUNK = /^@@ -\d+(?:,(\d+))? \+\d+(?:,(\d+))? @@/;
-
 /** True when the text holds a unified diff, such as `diff -u` or `git diff` output. */
 export const isPatch = (text: string) => /^@@ -\d+(?:,\d+)? \+\d+(?:,\d+)? @@/m.test(text);
-
-/** The colour class of each line of a text that holds unified diffs. Inside a hunk the header's
- *  counts decide where it ends, so a removed `-- comment` line is not read as a `---` header. */
-export function patchKinds(lines: readonly string[]): PatchLine["kind"][] {
-  let old = 0;
-  let added = 0;
-  return lines.map((text) => {
-    if (old > 0 || added > 0) {
-      if (text.startsWith("\\")) return "meta";
-      const kind = text.startsWith("+") ? "add" : text.startsWith("-") ? "del" : "ctx";
-      if (kind !== "add") old--;
-      if (kind !== "del") added--;
-      return kind;
-    }
-    const h = HUNK.exec(text);
-    if (h) {
-      old = Number(h[1] ?? 1);
-      added = Number(h[2] ?? 1);
-      return "hunk";
-    }
-    return /^(diff |index |--- |\+\+\+ |new file|deleted file|similarity|rename )/.test(text) ? "meta" : "ctx";
-  });
-}
 
 /** Where `token` stands as its own word in `text`, or -1. */
 export function wordAt(text: string, token: string): number {
@@ -393,30 +400,6 @@ export function wordAt(text: string, token: string): number {
     if ((i === 0 || /[\s([]/.test(text[i - 1])) && (end === text.length || /\s/.test(text[end]))) return i;
   }
   return -1;
-}
-
-export type SplitRow = { left: PatchLine | null; right: PatchLine | null } | { hunk: string };
-
-/** Side by side: context on both sides; a run of removals pairs with the run of additions after it. */
-export function splitPatch(lines: readonly PatchLine[]): SplitRow[] {
-  const out: SplitRow[] = [];
-  for (let i = 0; i < lines.length; ) {
-    const l = lines[i];
-    if (l.kind === "hunk") {
-      out.push({ hunk: l.text });
-      i++;
-    } else if (l.kind === "ctx") {
-      out.push({ left: l, right: l });
-      i++;
-    } else if (l.kind === "del" || l.kind === "add") {
-      const dels: PatchLine[] = [];
-      const adds: PatchLine[] = [];
-      while (lines[i]?.kind === "del") dels.push(lines[i++]);
-      while (lines[i]?.kind === "add") adds.push(lines[i++]);
-      for (let k = 0; k < Math.max(dels.length, adds.length); k++) out.push({ left: dels[k] ?? null, right: adds[k] ?? null });
-    } else i++;
-  }
-  return out;
 }
 
 /** The line of the owner's prompt before or after line `from`, for ⌃⌥↑ and ⌃⌥↓; -1 when none. */
