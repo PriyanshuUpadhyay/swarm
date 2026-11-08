@@ -261,6 +261,7 @@ pub(super) fn reference_delta(state: &mut LiveRows, key: &str) -> Value {
     let upsert: Vec<_> = rows
         .iter()
         .filter(|row| previous.get(&row.id).is_none_or(|old| *old != *row))
+        .cloned()
         .collect();
     let current: HashSet<_> = rows.iter().map(|row| &row.id).collect();
     let remove: Vec<_> = state
@@ -270,7 +271,9 @@ pub(super) fn reference_delta(state: &mut LiveRows, key: &str) -> Value {
         .map(|row| &row.id)
         .collect();
     let usage = view::usage(&state.records.values().cloned().collect::<Vec<_>>());
-    let mut payload = json!({"key":key,"upsert":upsert,"remove":remove,"end_offset":state.end});
+    let display = view::markdown::row_displays(&upsert);
+    let mut payload =
+        json!({"key":key,"upsert":upsert,"remove":remove,"end_offset":state.end,"display":display});
     if usage != state.last_usage {
         payload["usage"] = json!(usage);
     }

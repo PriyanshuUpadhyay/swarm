@@ -269,6 +269,63 @@ fn row_routes_guard_input_cap_output_and_stream_stable_ids() {
     );
 }
 
+/// A RowPage holds a `display` map beside `rows` (Step 5(g) slice S3, contract V1 R3 and V2 item 4). Its keys are the
+/// ids of the rows the painter shows as Markdown: the assistant row has an entry and the tool row has none. The
+/// first request has no follower and is built from the merged page. The second request comes after a subscription
+/// with the rows view has made a running follower, and is served from its cached tail. Only keys are read.
+#[test]
+fn row_pages_hold_display_keys_for_the_merged_page_and_the_cached_tail() {
+    let server = Server::new();
+    let answer = json!({"type":"assistant","uuid":"display-answer","message":{"content":[{"type":"text","text":"**bold** answer"}]}}).to_string()+"\n";
+    let call = json!({"type":"assistant","uuid":"display-call","message":{"content":[{"type":"tool_use","id":"display-tool","name":"Bash","input":{"command":"print"}}]}}).to_string()+"\n";
+    fs::write(&server.log, format!("{answer}{call}")).unwrap();
+    let page_path = format!("/api/rows?session={}&agent=chair&tail=200", server.session);
+    let keys = |server: &Server| {
+        let (status, _, body) = server.request("GET", &page_path, "", "", true);
+        assert_eq!(status, 200, "{body}");
+        let page: Value = serde_json::from_str(&body).unwrap();
+        let rows = page["rows"].as_array().unwrap();
+        let assistant_ids = rows
+            .iter()
+            .filter(|row| row["kind"] == "assistant")
+            .map(|row| row["id"].as_str().unwrap().to_owned())
+            .collect::<Vec<_>>();
+        let mut shown = page["display"]
+            .as_object()
+            .map(|map| map.keys().cloned().collect::<Vec<_>>())
+            .unwrap_or_default();
+        shown.sort();
+        (rows.len(), assistant_ids, shown)
+    };
+
+    let merged = keys(&server);
+    let mut live = server.sse();
+    let stream_id = named_event(&mut live, "hello")["stream"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let subscription = json!({"stream":stream_id,"keys":[{"key":format!("{}:chair",server.session),"from":fs::metadata(&server.log).unwrap().len(),"view":"rows"}]}).to_string();
+    let (status, _, body) = server.request(
+        "POST",
+        "/api/subscribe",
+        "Content-Type: application/json\r\n",
+        &subscription,
+        true,
+    );
+    assert_eq!(status, 200, "{body}");
+    let cached = keys(&server);
+
+    let observed = vec![("merged page", merged), ("cached tail", cached)];
+    let answer_id = observed[0].1.1.clone();
+    assert_eq!(
+        observed,
+        vec![
+            ("merged page", (2, answer_id.clone(), answer_id.clone())),
+            ("cached tail", (2, answer_id.clone(), answer_id)),
+        ]
+    );
+}
+
 /// pi has no hook to report its log, so the server finds it by the session id that `launch` gave
 /// pi, `<session>-<agent>` (ADR 0086).
 #[test]

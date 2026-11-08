@@ -42,12 +42,13 @@ pub fn heads(source: &str) -> Result<Vec<Head>, markdown::message::Message> {
     Ok(heads)
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct Display {
     pub blocks: Vec<Block>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "type", content = "value", rename_all = "snake_case")]
 pub enum Block {
     Paragraph(Vec<Inline>),
     Heading {
@@ -75,7 +76,8 @@ pub enum Block {
     Later(&'static str),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Align {
     None,
     Left,
@@ -83,7 +85,8 @@ pub enum Align {
     Right,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "type", content = "value", rename_all = "snake_case")]
 pub enum Inline {
     Text(String),
     Emphasis(Vec<Inline>),
@@ -103,7 +106,8 @@ pub enum Inline {
 ///
 /// # Errors
 ///
-/// Returns the parser's original diagnostic if parsing fails.
+/// Returns the parser's original diagnostic if parsing fails, or a diagnostic if
+/// any block or inline is more than 100 levels below the root.
 pub fn display(source: &str) -> Result<Display, markdown::message::Message> {
     map_display(source, false)
 }
@@ -112,7 +116,8 @@ pub fn display(source: &str) -> Result<Display, markdown::message::Message> {
 ///
 /// # Errors
 ///
-/// Returns the parser's original diagnostic if parsing fails.
+/// Returns the parser's original diagnostic if parsing fails, or a diagnostic if
+/// any block or inline is more than 100 levels below the root.
 pub fn display_with_breaks(source: &str) -> Result<Display, markdown::message::Message> {
     map_display(source, true)
 }
@@ -121,13 +126,21 @@ fn map_display(source: &str, breaks: bool) -> Result<Display, markdown::message:
     let tree = super::parse(source)?;
     let offset_text = super::prelude(source);
     let mut definitions = Vec::new();
-    let mut pending = vec![&tree];
-    while let Some(node) = pending.pop() {
+    let mut pending = vec![(&tree, 0)];
+    while let Some((node, level)) = pending.pop() {
+        if level > 100 {
+            return Err(markdown::message::Message {
+                place: None,
+                reason: "markdown nests deeper than 100 levels".to_owned(),
+                rule_id: Box::new("nesting".to_owned()),
+                source: Box::new("swarm".to_owned()),
+            });
+        }
         if let Node::Definition(definition) = node {
             definitions.push(definition);
         }
         if let Some(children) = node.children() {
-            pending.extend(children.iter().rev());
+            pending.extend(children.iter().rev().map(|child| (child, level + 1)));
         }
     }
     let children = tree.children().map_or(&[][..], Vec::as_slice);

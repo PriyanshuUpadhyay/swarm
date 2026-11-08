@@ -111,10 +111,34 @@ export type Row = {
   order: [number, number];
 };
 
-export type RowPage = { page: Page; rows: Row[]; usage: unknown; remove?: string[] };
+export type Display = { blocks: Block[] };
+
+export type Block =
+  | { type: "paragraph"; value: Inline[] }
+  | { type: "heading"; value: { depth: number; children: Inline[] } }
+  | { type: "thematic_break" }
+  | { type: "blockquote"; value: Block[] }
+  | { type: "list"; value: { ordered: boolean; start: number | null; tight: boolean; items: Block[][] } }
+  | { type: "code"; value: { label: string | null; text: string } }
+  | { type: "table"; value: { source: string; align: Align[]; head: Inline[][]; rows: Inline[][][] } }
+  | { type: "later"; value: string };
+
+export type Inline =
+  | { type: "text"; value: string }
+  | { type: "emphasis"; value: Inline[] }
+  | { type: "strong"; value: Inline[] }
+  | { type: "delete"; value: Inline[] }
+  | { type: "code"; value: string }
+  | { type: "break" }
+  | { type: "link"; value: { url: string; title: string | null; children: Inline[] } }
+  | { type: "later"; value: string };
+
+export type Align = "none" | "left" | "center" | "right";
+
+export type RowPage = { page: Page; rows: Row[]; usage: unknown; remove?: string[]; display?: Record<string, Display> };
 
 /** One `rows` stream frame. `usage` is there only when it changed; null clears it. */
-export type RowFrame = { key: string; upsert?: Row[]; remove?: string[]; end_offset: number; usage?: unknown };
+export type RowFrame = { key: string; upsert?: Row[]; remove?: string[]; end_offset: number; usage?: unknown; display?: Record<string, Display> };
 
 export type SubscribeKey = { key: string; from: number; view: "rows" };
 

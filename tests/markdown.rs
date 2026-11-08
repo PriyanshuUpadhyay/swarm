@@ -4,6 +4,8 @@ mod app_constructs;
 mod autolink;
 #[path = "markdown/code_blocks.rs"]
 mod code_blocks;
+#[path = "markdown/depth.rs"]
+mod depth;
 #[path = "markdown/destination.rs"]
 mod destination;
 #[path = "markdown/display.rs"]
@@ -32,5 +34,7 @@ mod nul;
 mod owner_breaks;
 #[path = "markdown/references.rs"]
 mod references;
+#[path = "markdown/row_displays.rs"]
+mod row_displays;
 #[path = "markdown/separator.rs"]
 mod separator;

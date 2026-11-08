@@ -4,6 +4,42 @@ mod normalize_link;
 
 pub mod display;
 
+/// Build display entries for Markdown rows and their steps in painter order.
+/// Later entries replace earlier entries with the same row id.
+pub fn row_displays(rows: &[super::Row]) -> std::collections::BTreeMap<String, display::Display> {
+    use super::RowKind;
+
+    let mut displays = std::collections::BTreeMap::new();
+    let mut pending: Vec<_> = rows.iter().rev().collect();
+    while let Some(row) = pending.pop() {
+        pending.extend(row.steps.iter().rev());
+        let system_kind = row.system_kind.as_deref();
+        let tree = if row.kind == RowKind::Fold
+            || row.tool.is_some()
+            || row.kind == RowKind::Divider
+            || matches!(system_kind, Some("working" | "swarm_ring"))
+        {
+            None
+        } else if matches!(system_kind, Some("compaction" | "compact_summary")) {
+            row.text.contains('\n').then(|| display::display(&row.text))
+        } else if row.shell.is_some() || row.command.is_some() {
+            None
+        } else if matches!(row.kind, RowKind::User | RowKind::Queued) {
+            Some(display::display_with_breaks(&row.text))
+        } else if row.ends_turn {
+            None
+        } else if row.kind == RowKind::Assistant {
+            Some(display::display(&row.text))
+        } else {
+            None
+        };
+        if let Some(Ok(tree)) = tree {
+            displays.insert(row.id.clone(), tree);
+        }
+    }
+    displays
+}
+
 fn prelude(source: &str) -> std::borrow::Cow<'_, str> {
     // Each CRLF makes later byte offsets 1 smaller; each NUL adds 2.
     // Later columns on a NUL's line can move too (tabs snap to 4-column stops).

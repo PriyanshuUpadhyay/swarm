@@ -35,7 +35,7 @@ rm -rf "$stage"
 mkdir -p "$stage/bin" "$stage/libexec"
 cp "$repo/target/release/swarm" "$stage/bin/swarm"
 cp "$repo/packages/transcript/zig-out/bin/transcript" "$stage/libexec/transcript"
-cat "$repo/web/NOTICE" "$root/MASCOT-NOTICE" > "$stage/libexec/NOTICE"
+cat "$repo/web/NOTICE" "$root/MASCOT-NOTICE" "$repo/vendor/markdown-1.0.0/license" "$repo/vendor/markdown-1.0.0/UPSTREAM.md" "$repo/src/view/transcript/markdown/NOTICES.md" > "$stage/libexec/NOTICE"
 skills="$stage/libexec/skills"
 mkdir -p "$skills"
 # The whole kit, because it is the plugin swarm: its skills read blocks/ two folders up, and

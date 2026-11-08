@@ -38,16 +38,12 @@ pub(super) async fn flush_transcript(
                 follower.rendering_rows = true;
                 follower.rows.take().map(Err)
             } else {
-                let frame = follower
-                    .rows
-                    .as_mut()
-                    .map(|state| row_frame(key, state.delta()));
-                frame.map(Ok)
+                follower.rows.as_mut().map(LiveRows::delta).map(Ok)
             }
         };
         let row_frame = if let Some(pending) = pending {
-            if let Ok(frame) = pending {
-                Some(frame)
+            if let Ok(delta) = pending {
+                Some(row_frame(key, delta))
             } else {
                 let state = pending.err().unwrap();
                 let render_key = key.to_owned();

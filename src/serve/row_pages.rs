@@ -151,7 +151,7 @@ pub(super) async fn transcript_rows(
     .await
     .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "rows task failed"))??;
     let key = format!("{}:{}", query.session, query.agent);
-    if query.before.is_none() {
+    let cached_page = if query.before.is_none() {
         let hub = app.hub.lock().unwrap();
         let cached = hub
             .followers
@@ -163,14 +163,23 @@ pub(super) async fn transcript_rows(
                     .find(|(cached, _)| cached == &key)
                     .map(|(_, state)| state)
             });
-        if let Some(page) = cached.and_then(|state| state.cached_tail(start, end)) {
-            return Ok(Json(json!({
+        cached.and_then(|state| state.cached_tail(start, end))
+    } else {
+        None
+    };
+    if let Some(page) = cached_page {
+        return tokio::task::spawn_blocking(move || {
+            let display = view::markdown::row_displays(&page.rows);
+            Json(json!({
                 "page": {"start_offset": start, "end_offset": end},
                 "rows": page.rows,
                 "usage": page.usage,
                 "remove": page.remove,
-            })));
-        }
+                "display": display,
+            }))
+        })
+        .await
+        .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "rows task failed"));
     }
     let recovery = if query.before.is_some() {
         let hub = app.hub.lock().unwrap();
@@ -194,38 +203,46 @@ pub(super) async fn transcript_rows(
     };
     let page = read_row_window(&app.tool, &log, start, end).await?;
     let key = format!("{}:{}", query.session, query.agent);
-    let mut hub = app.hub.lock().unwrap();
-    let active = hub
-        .followers
-        .get(&key)
-        .and_then(|follower| follower.rows.clone());
-    let history = query.before.and_then(|_| {
-        hub.row_cache
-            .iter()
-            .find(|(cached, _)| cached == &key)
-            .map(|(_, state)| state.clone())
-    });
-    let mut state = active.or(history).unwrap_or_else(|| page.clone());
-    if let Some(recovery) = recovery {
-        state.recover(recovery);
-    }
-    let page = state.merge_page(page, query.before.is_some());
-    let response = json!({
-        "page": {"start_offset": start, "end_offset": end},
-        "rows": page.rows,
-        "usage": page.usage,
-        "remove": page.remove,
-    });
-    let subscribed = hub
-        .streams
-        .values()
-        .any(|client| client.row_keys.contains(&key));
-    if subscribed && let Some(follower) = hub.followers.get_mut(&key) {
-        follower.rows = Some(state);
-    } else {
-        hub.cache_rows(key, state);
-    }
-    Ok(Json(response))
+    let page = {
+        let mut hub = app.hub.lock().unwrap();
+        let active = hub
+            .followers
+            .get(&key)
+            .and_then(|follower| follower.rows.clone());
+        let history = query.before.and_then(|_| {
+            hub.row_cache
+                .iter()
+                .find(|(cached, _)| cached == &key)
+                .map(|(_, state)| state.clone())
+        });
+        let mut state = active.or(history).unwrap_or_else(|| page.clone());
+        if let Some(recovery) = recovery {
+            state.recover(recovery);
+        }
+        let page = state.merge_page(page, query.before.is_some());
+        let subscribed = hub
+            .streams
+            .values()
+            .any(|client| client.row_keys.contains(&key));
+        if subscribed && let Some(follower) = hub.followers.get_mut(&key) {
+            follower.rows = Some(state);
+        } else {
+            hub.cache_rows(key, state);
+        }
+        page
+    };
+    tokio::task::spawn_blocking(move || {
+        let display = view::markdown::row_displays(&page.rows);
+        Json(json!({
+            "page": {"start_offset": start, "end_offset": end},
+            "rows": page.rows,
+            "usage": page.usage,
+            "remove": page.remove,
+            "display": display,
+        }))
+    })
+    .await
+    .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "rows task failed"))
 }
 
 #[cfg(test)]
