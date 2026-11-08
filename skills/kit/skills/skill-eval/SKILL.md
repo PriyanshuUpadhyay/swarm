@@ -95,7 +95,7 @@ it read.
    scratch folder names the skill. In each `notes.md`, replace the skill name, each skill,
    preset, or brief file, and each pane folder path with a neutral phrase such as "the guide"
    or "the working folder". Keep the rest of the line, because an expectation can depend on it.
-   Remove a line only when it says that the skill was read or not read. Then search both copies
+   Remove only the sentence that says the skill was read or not read. Then search both copies
    for the skill name, `skill`, and `base`. In the first run, notes showed which side read the
    skill and a folder path named it. In a later run, removing whole lines deleted the evidence
    that one expectation checked.
