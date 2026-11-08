@@ -2,7 +2,7 @@
 
 import { queueRows, type Usage } from "./composer";
 import { MarkdownCache } from "./markdown";
-import { FoldChoices, LIVE_THOUGHT, findMatches, lines, mergeRows, type Line } from "./transcript";
+import { FoldChoices, LIVE_THOUGHT, findMatches, lines, mergeRows, noteDisplay, type Line } from "./transcript";
 import type { Row } from "./api";
 import { TAIL, LRU_SIZE, type FullText, type Chat, type Find, type Reader, paneId } from "./app-types";
 import type { App } from "./app";
@@ -107,6 +107,7 @@ export class AppReader {
   async loadTail(chat: Chat) {
     try {
       const page = await this.app.api.rows(chat.sessionId, chat.agent, TAIL);
+      noteDisplay(page.rows, page.display);
       chat.rows = mergeRows([], page.rows);
       chat.older = page.page.start_offset;
       chat.end = page.page.end_offset;
@@ -246,6 +247,7 @@ export class AppReader {
     this.app.notify();
     try {
       const page = await this.app.api.rows(chat.sessionId, chat.agent, TAIL, chat.older);
+      noteDisplay(page.rows, page.display);
       chat.rows = mergeRows(chat.rows, page.rows, page.remove);
       chat.older = page.page.start_offset;
       chat.version++;

@@ -16,24 +16,21 @@ const head = (label: string, what: string) =>
  *  `data-diff-split` attribute on <html> picks. Agents often write hunks with wrong counts or with
  *  no `---`/`+++` header. diff2html still reads wrong counts, but it drops a hunk that has no file
  *  header, so a bare fence gets a placeholder header, which CSS hides. */
-function diffFence(lang: string, patch: string): string {
+export function diffFence(patch: string): { headed: boolean; html: string } {
   const headed = /^--- /m.test(patch.slice(0, patch.search(/^@@ /m)));
   const src = headed ? patch : `--- a/patch\n+++ b/patch\n${patch}`;
   const layout = (outputFormat: "line-by-line" | "side-by-side") => diffHtml(src, { drawFileList: false, outputFormat });
-  const seg =
-    '<div class="seg" role="group" aria-label="Diff layout"><button type="button" data-diff-layout="0">Unified</button><button type="button" data-diff-layout="1">Split</button></div>';
-  // The rendered table is not the patch text, so Copy reads `data-raw`.
-  return (
-    `<div class="md-code" data-raw="${esc(patch)}">${head(lang, "code").replace("<button", `${seg}<button`)}` +
-    `<div class="d2h${headed ? "" : " bare"}"><div class="unified">${layout("line-by-line")}</div><div class="split">${layout("side-by-side")}</div></div></div>`
-  );
+  return {
+    headed,
+    html: `<div class="unified">${layout("line-by-line")}</div><div class="split">${layout("side-by-side")}</div>`,
+  };
 }
 
-/** A diff fence with no hunk: one `<pre>` whose lines are coloured by their first character. */
-function prefixHtml(patch: string): string {
+/** Inner HTML for a diff fence with no hunk; lines are coloured by their first character. */
+export function prefixHtml(patch: string): string {
   const kind = (l: string) => (l.startsWith("+") ? "add" : l.startsWith("-") ? "del" : l.startsWith("@@") ? "hunk" : "ctx");
   const lines = patch.replace(/\n$/, "").split("\n");
-  return `<pre><code>${lines.map((l) => `<span class="dl ${kind(l)}">${esc(l)}\n</span>`).join("")}</code></pre>`;
+  return `<code>${lines.map((l) => `<span class="dl ${kind(l)}">${esc(l)}\n</span>`).join("")}</code>`;
 }
 
 function make(breaks: boolean) {
@@ -52,8 +49,14 @@ function make(breaks: boolean) {
   md.renderer.rules.fence = (tokens, i, opts, env, self) => {
     const lang = tokens[i].info.trim().split(/\s+/)[0];
     const diff = lang === "diff" || lang === "patch";
-    if (diff && isPatch(tokens[i].content)) return diffFence(lang, tokens[i].content);
-    const body = diff ? prefixHtml(tokens[i].content) : defaultFence(tokens, i, opts, env, self);
+    if (diff && isPatch(tokens[i].content)) {
+      const { headed, html } = diffFence(tokens[i].content);
+      const seg =
+        '<div class="seg" role="group" aria-label="Diff layout"><button type="button" data-diff-layout="0">Unified</button><button type="button" data-diff-layout="1">Split</button></div>';
+      // The rendered table is not the patch text, so Copy reads `data-raw`.
+      return `<div class="md-code" data-raw="${esc(tokens[i].content)}">${head(lang, "code").replace("<button", `${seg}<button`)}<div class="d2h${headed ? "" : " bare"}">${html}</div></div>`;
+    }
+    const body = diff ? `<pre>${prefixHtml(tokens[i].content)}</pre>` : defaultFence(tokens, i, opts, env, self);
     return `<div class="md-code">${head(lang || "code", "code")}${body}</div>`;
   };
 

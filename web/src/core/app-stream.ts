@@ -1,7 +1,7 @@
 import { sleep, type RowFrame, type Snapshot, type SubscribeKey } from "./api";
 import { queueRows, type Usage } from "./composer";
 import { readSse, type SseEvent } from "./sse";
-import { mergeRows } from "./transcript";
+import { mergeRows, noteDisplay } from "./transcript";
 import { keepsEnded } from "./app-reader";
 import { MAX_KEYS, type Chat, paneId } from "./app-types";
 import type { App } from "./app";
@@ -161,6 +161,7 @@ export class AppStream {
       if (!chat || chat.state !== "ready") continue;
       const before = chat.rows;
       for (const f of frames) {
+        noteDisplay(f.upsert ?? [], f.display);
         chat.rows = mergeRows(chat.rows, f.upsert, f.remove);
         chat.end = Math.max(chat.end, Number(f.end_offset));
         // Absent usage leaves the shown value; null clears it.

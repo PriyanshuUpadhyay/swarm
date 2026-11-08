@@ -2,7 +2,56 @@
 // skips rows the server marks `collapsed`, merges rows by id, places them by `order`, and keeps
 // the reader's open and closed choices.
 
-import type { Row } from "./api";
+import type { Block, Display, Inline, Row } from "./api";
+
+const displays = new WeakMap<Row, Display | null>();
+
+export function noteDisplay(rows: Row[], display: Record<string, Display> | undefined): void {
+  if (display === undefined) return;
+  const stack = [...rows];
+  while (stack.length) {
+    const row = stack.pop()!;
+    displays.set(row, display[row.id] ?? null);
+    for (const step of row.steps ?? []) stack.push(step);
+  }
+}
+
+export function displayOf(row: Row): Display | null | undefined {
+  return displays.get(row);
+}
+
+export function bodyOf(row: Row): { kind: "html" } | { kind: "plain" } | { kind: "tree"; display: Display } {
+  const display = displayOf(row);
+  if (display === undefined) return { kind: "html" };
+  if (display === null) return { kind: "plain" };
+  const stack: (Block | Inline)[] = [...display.blocks];
+  while (stack.length) {
+    const node = stack.pop()!;
+    switch (node.type) {
+      case "later":
+        return { kind: "html" };
+      case "paragraph":
+      case "blockquote":
+      case "emphasis":
+      case "strong":
+      case "delete":
+        for (const child of node.value) stack.push(child);
+        break;
+      case "heading":
+      case "link":
+        for (const child of node.value.children) stack.push(child);
+        break;
+      case "list":
+        for (const item of node.value.items) for (const child of item) stack.push(child);
+        break;
+      case "table":
+        for (const cell of node.value.head) for (const child of cell) stack.push(child);
+        for (const cells of node.value.rows) for (const cell of cells) for (const child of cell) stack.push(child);
+        break;
+    }
+  }
+  return { kind: "tree", display };
+}
 
 /** A queued row waits for the agent, so it sits after every logged row. */
 function compare(a: Row, b: Row): number {

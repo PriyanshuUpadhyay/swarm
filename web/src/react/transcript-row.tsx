@@ -3,9 +3,10 @@ import { CheckIcon, ChevronDownIcon, ChevronRightIcon, CircleStopIcon, CopyIcon,
 import type { Row, TextPreview } from "../core/api";
 import type { FullText, Reader } from "../core/app";
 import type { MarkdownCache } from "../core/markdown";
-import { duration, wordAt, type Line } from "../core/transcript";
+import { bodyOf, duration, wordAt, type Line } from "../core/transcript";
 import { copyText } from "./copy";
 import { ImageThumbs } from "./images";
+import { MarkdownView } from "./markdown-view";
 import { DiffView, OutputBox } from "./transcript-output";
 import { ShellRow, StatusGlyph, ToolCard } from "./transcript-tool";
 
@@ -39,6 +40,18 @@ const LABEL: Partial<Record<Row["kind"], string>> = {
   toolUse: "Tool",
 };
 
+function MdBody({ row, md, breaks = false }: { row: Row; md: MarkdownCache; breaks?: boolean }) {
+  const body = bodyOf(row);
+  switch (body.kind) {
+    case "html":
+      return <div className="md" dangerouslySetInnerHTML={{ __html: md.html(row.id, row.text, breaks) }} />;
+    case "plain":
+      return <div className="whitespace-pre-wrap">{row.text}</div>;
+    case "tree":
+      return <div className="md"><MarkdownView display={body.display} /></div>;
+  }
+}
+
 function RowBody(ctx: Ctx) {
   const { app, line, md } = ctx;
   const { row } = line;
@@ -68,7 +81,7 @@ function RowBody(ctx: Ctx) {
   if (row.system_kind === "compaction" || row.system_kind === "compact_summary")
     return row.text.includes("\n") ? (
       <Disclosure app={app} line={line} title={row.system_kind === "compaction" ? "Context compacted" : "Compaction summary"}>
-        <div className="md" dangerouslySetInnerHTML={{ __html: md.html(row.id, row.text) }} />
+        <MdBody row={row} md={md} />
       </Disclosure>
     ) : (
       <div className="quiet">Context compacted</div>
@@ -89,7 +102,7 @@ function RowBody(ctx: Ctx) {
         reuse={row.kind === "user" && composerId ? () => app.reuse(composerId, row.text) : undefined}
         branch={row.kind === "user" && ctx.branches && app.branch ? () => app.branch?.(row.id) : undefined}
       >
-        <div className="md" dangerouslySetInnerHTML={{ __html: md.html(row.id, row.text, true) }} />
+        <MdBody row={row} md={md} breaks />
         <ImageThumbs text={row.text} load={app.imageUrl} />
       </Bubble>
     );
@@ -108,7 +121,7 @@ function RowBody(ctx: Ctx) {
     return (
       <div className="msg">
         <CopyMessage row={row} />
-        <div className="md" dangerouslySetInnerHTML={{ __html: md.html(row.id, row.text) }} />
+        <MdBody row={row} md={md} />
       </div>
     );
   const label = <div className="row-label">{LABEL[row.kind] ?? row.kind}</div>;
