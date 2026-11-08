@@ -105,26 +105,58 @@ pub enum Inline {
 ///
 /// Returns the parser's original diagnostic if parsing fails.
 pub fn display(source: &str) -> Result<Display, markdown::message::Message> {
+    map_display(source, false)
+}
+
+/// Map parsed blocks and inlines, with text line ends displayed as breaks.
+///
+/// # Errors
+///
+/// Returns the parser's original diagnostic if parsing fails.
+pub fn display_with_breaks(source: &str) -> Result<Display, markdown::message::Message> {
+    map_display(source, true)
+}
+
+fn map_display(source: &str, breaks: bool) -> Result<Display, markdown::message::Message> {
     let tree = super::parse(source)?;
     let offset_text = super::prelude(source);
+    let mut definitions = Vec::new();
+    let mut pending = vec![&tree];
+    while let Some(node) = pending.pop() {
+        if let Node::Definition(definition) = node {
+            definitions.push(definition);
+        }
+        if let Some(children) = node.children() {
+            pending.extend(children.iter().rev());
+        }
+    }
     let children = tree.children().map_or(&[][..], Vec::as_slice);
     Ok(Display {
-        blocks: map_blocks(children, &offset_text),
+        blocks: map_blocks(children, &offset_text, &definitions, breaks),
     })
 }
 
-fn map_blocks(nodes: &[Node], source: &str) -> Vec<Block> {
+fn map_blocks(
+    nodes: &[Node],
+    source: &str,
+    definitions: &[&markdown::mdast::Definition],
+    breaks: bool,
+) -> Vec<Block> {
     nodes
         .iter()
         .filter_map(|node| {
             Some(match node {
-                Node::Paragraph(paragraph) => Block::Paragraph(map_inlines(&paragraph.children)),
+                Node::Paragraph(paragraph) => {
+                    Block::Paragraph(map_inlines(&paragraph.children, definitions, breaks))
+                }
                 Node::Heading(heading) => Block::Heading {
                     depth: heading.depth,
-                    children: map_inlines(&heading.children),
+                    children: map_inlines(&heading.children, definitions, breaks),
                 },
                 Node::ThematicBreak(_) => Block::ThematicBreak,
-                Node::Blockquote(quote) => Block::Blockquote(map_blocks(&quote.children, source)),
+                Node::Blockquote(quote) => {
+                    Block::Blockquote(map_blocks(&quote.children, source, definitions, breaks))
+                }
                 Node::List(list) => Block::List {
                     ordered: list.ordered,
                     start: list.ordered.then(|| list.start.unwrap_or(1)),
@@ -137,7 +169,9 @@ fn map_blocks(nodes: &[Node], source: &str) -> Vec<Block> {
                         .children
                         .iter()
                         .filter_map(|item| match item {
-                            Node::ListItem(item) => Some(map_blocks(&item.children, source)),
+                            Node::ListItem(item) => {
+                                Some(map_blocks(&item.children, source, definitions, breaks))
+                            }
                             _ => None,
                         })
                         .collect(),
@@ -153,22 +187,56 @@ fn map_blocks(nodes: &[Node], source: &str) -> Vec<Block> {
         .collect()
 }
 
-fn map_inlines(nodes: &[Node]) -> Vec<Inline> {
+fn map_inlines(
+    nodes: &[Node],
+    definitions: &[&markdown::mdast::Definition],
+    breaks: bool,
+) -> Vec<Inline> {
     let mut inlines = Vec::new();
     for node in nodes {
         let inline = match node {
+            Node::Text(text) if breaks => {
+                for (index, piece) in text.value.split('\n').enumerate() {
+                    if index > 0 {
+                        inlines.push(Inline::Break);
+                    }
+                    if !piece.is_empty() {
+                        inlines.push(Inline::Text(piece.to_owned()));
+                    }
+                }
+                continue;
+            }
             Node::Text(text) => Inline::Text(text.value.clone()),
-            Node::Emphasis(emphasis) => Inline::Emphasis(map_inlines(&emphasis.children)),
-            Node::Strong(strong) => Inline::Strong(map_inlines(&strong.children)),
-            Node::Delete(delete) => Inline::Delete(map_inlines(&delete.children)),
-            Node::InlineCode(code) => Inline::Code(code.value.clone()),
+            Node::Emphasis(emphasis) => {
+                Inline::Emphasis(map_inlines(&emphasis.children, definitions, breaks))
+            }
+            Node::Strong(strong) => {
+                Inline::Strong(map_inlines(&strong.children, definitions, breaks))
+            }
+            Node::Delete(delete) => {
+                Inline::Delete(map_inlines(&delete.children, definitions, breaks))
+            }
+            Node::InlineCode(code) => Inline::Code(code.value.replace('\n', " ")),
             Node::Break(_) => Inline::Break,
             Node::Link(link) => Inline::Link {
                 url: link.url.clone(),
                 title: link.title.clone(),
-                children: map_inlines(&link.children),
+                children: map_inlines(&link.children, definitions, breaks),
             },
-            Node::LinkReference(_) => Inline::Later("reference"),
+            Node::LinkReference(reference) => {
+                if let Some(definition) = definitions
+                    .iter()
+                    .find(|definition| definition.identifier == reference.identifier)
+                {
+                    Inline::Link {
+                        url: definition.url.clone(),
+                        title: definition.title.clone(),
+                        children: map_inlines(&reference.children, definitions, breaks),
+                    }
+                } else {
+                    Inline::Later("reference")
+                }
+            }
             _ => Inline::Later("inline"),
         };
         inlines.push(inline);

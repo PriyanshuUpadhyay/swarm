@@ -24,5 +24,9 @@ mod line_endings;
 mod link_string;
 #[path = "markdown/nul.rs"]
 mod nul;
+#[path = "markdown/owner_breaks.rs"]
+mod owner_breaks;
+#[path = "markdown/references.rs"]
+mod references;
 #[path = "markdown/separator.rs"]
 mod separator;
