@@ -1,4 +1,4 @@
-import { type Row } from "./api";
+import { type Display, type Row } from "./api";
 import { type AgentInput, type SendKey, type Usage } from "./composer";
 import { MarkdownCache } from "./markdown";
 import { type PaneCell } from "./panes";
@@ -41,7 +41,9 @@ export type Chat = {
   queue: Row[];
   /** The running turn's text on the agent's screen, a preview the log replaces (ADR 0131). */
   live: string | null;
-  /** How many characters of `live` show. The screen grows a line at a time, so new text types
+  /** The live text's tree; it is set, kept and cleared with live. */
+  liveDisplay: Display | null;
+  /** How many visible units show, or text characters without a display. New text types
    *  out over a few steps. */
   liveShown: number;
   /** The thinking of pi's streaming message, from its extension (ADR 0131). It shows at once. */

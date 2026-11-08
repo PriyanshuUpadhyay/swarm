@@ -1,7 +1,7 @@
-import { sleep, type RowFrame, type Snapshot, type SubscribeKey } from "./api";
+import { sleep, type Display, type RowFrame, type Snapshot, type SubscribeKey } from "./api";
 import { queueRows, type Usage } from "./composer";
 import { readSse, type SseEvent } from "./sse";
-import { mergeRows, noteDisplay } from "./transcript";
+import { mergeRows, noteDisplay, units } from "./transcript";
 import { keepsEnded } from "./app-reader";
 import { MAX_KEYS, type Chat, paneId } from "./app-types";
 import type { App } from "./app";
@@ -9,6 +9,11 @@ import type { App } from "./app";
 /** How often live text types out, and in how many steps it catches up with the screen. */
 const TYPE_MS = 30;
 const TYPE_STEPS = 8;
+
+const shown = (chat: Chat): string => {
+  const display = chat.liveDisplay ?? null;
+  return display === null ? chat.live ?? "" : units(display);
+};
 
 export class AppStream {
   private typing: ReturnType<typeof setInterval> | null = null;
@@ -21,9 +26,14 @@ export class AppStream {
     for (const [id, input] of this.app.inputs)
       if (input.answering && this.app.composing.chair(id).prompt?.id !== input.answering.prompt) input.answering = null;
     for (const chat of this.app.chats.values()) {
-      const queue = queueRows(this.app.composing.chair(chat.id).queue);
+      const items = this.app.composing.chair(chat.id).queue;
+      const queue = queueRows(items);
       if (JSON.stringify(queue) === JSON.stringify(chat.queue)) continue;
       chat.queue = queue;
+      queue.forEach((row, i) => {
+        const display = items[i].display;
+        if (display !== undefined) noteDisplay([row], display === null ? {} : { [row.id]: display });
+      });
       chat.version++;
     }
     // A chair's and a child's log can show up after the chat opens.
@@ -64,7 +74,7 @@ export class AppStream {
         // A frame sent while the stream was down is lost, so live text could be stale.
         for (const chat of this.app.chats.values()) {
           if (chat.live === null && chat.liveThinking === null) continue;
-          [chat.live, chat.liveThinking] = [null, null];
+          [chat.live, chat.liveDisplay, chat.liveThinking] = [null, null, null];
           chat.version++;
           chat.shift = false;
         }
@@ -90,6 +100,7 @@ export class AppStream {
         const chat = this.byKey(String(data.key));
         if (!chat) break;
         const text = typeof data.text === "string" ? data.text : null;
+        const display = data.display !== null && typeof data.display === "object" ? data.display as Display : null;
         const thinking = typeof data.thinking === "string" ? data.thinking : null;
         // Each new watcher sends its first read, often a null that changes nothing. A redraw then
         // would follow the end before a reader's scroll up registers.
@@ -97,16 +108,17 @@ export class AppStream {
         // A message can end seconds before its log's rows land, so its text stays until they do.
         if (text === null && thinking === null && keepsEnded(chat.rows, chat.live, chat.liveThinking)) {
           chat.liveEnded = true;
-          chat.liveShown = chat.live?.length ?? 0;
+          chat.liveShown = shown(chat).length;
         } else {
-          const shown = chat.live?.slice(0, chat.liveShown) ?? "";
+          const before = shown(chat).slice(0, chat.liveShown);
+          const next = display === null ? text ?? "" : units(display);
           let same = 0;
-          while (same < shown.length && text !== null && shown[same] === text[same]) same++;
+          while (same < before.length && before[same] === next[same]) same++;
           // Only text past what shows types out. A change inside it, such as a digit or a table
           // that aligns again, shows at once; a text with nothing in common is a new block.
           const from = same === 0 ? 0 : Math.max(same, chat.liveShown);
-          [chat.live, chat.liveShown, chat.liveThinking, chat.liveEnded] = [text, Math.min(text?.length ?? 0, from), thinking, false];
-          if (text !== null && chat.liveShown < text.length) this.typeLive();
+          [chat.live, chat.liveDisplay, chat.liveShown, chat.liveThinking, chat.liveEnded] = [text, display, Math.min(next.length, from), thinking, false];
+          if (text !== null && chat.liveShown < next.length) this.typeLive();
         }
         this.app.reading.changed(chat);
         break;
@@ -133,7 +145,7 @@ export class AppStream {
     this.typing ??= setInterval(() => {
       let left = false;
       for (const chat of this.app.chats.values()) {
-        const length = chat.live?.length ?? 0;
+        const length = shown(chat).length;
         if (chat.liveShown >= length) continue;
         chat.liveShown += Math.max(1, Math.ceil((length - chat.liveShown) / TYPE_STEPS));
         left ||= chat.liveShown < length;
@@ -172,7 +184,7 @@ export class AppStream {
         }
       }
       if (chat.rows !== before) {
-        if (chat.liveEnded) [chat.live, chat.liveThinking, chat.liveEnded] = [null, null, false];
+        if (chat.liveEnded) [chat.live, chat.liveDisplay, chat.liveThinking, chat.liveEnded] = [null, null, null, false];
         chat.version++;
         chat.shift = false;
         if (chat.sessionId === this.app.openId) render = true;

@@ -53,6 +53,115 @@ export function bodyOf(row: Row): { kind: "html" } | { kind: "plain" } | { kind:
   return { kind: "tree", display };
 }
 
+/** The visible UTF-16 units, in reading order, without source marks or added separators. */
+export function units(d: Display): string {
+  const read = (nodes: readonly (Block | Inline)[]): string => nodes.map((node): string => {
+    switch (node.type) {
+      case "text": return node.value;
+      case "code": return typeof node.value === "string" ? node.value : node.value.text;
+      case "break": return "\n";
+      case "paragraph":
+      case "blockquote":
+      case "emphasis":
+      case "strong":
+      case "delete": return read(node.value);
+      case "heading":
+      case "link": return read(node.value.children);
+      case "list": return node.value.items.map(read).join("");
+      case "table": return node.value.head.map(read).join("") + node.value.rows.map((row) => row.map(read).join("")).join("");
+      case "thematic_break":
+      case "later": return "";
+    }
+  }).join("");
+  return read(d.blocks);
+}
+
+/** Keeps the first n visible units; containers before the cut keep their positions. */
+export function cut(d: Display, n: number): Display {
+  if (n >= units(d).length) return d;
+  let left = Math.max(0, n);
+  const text = (value: string): string => {
+    const kept = value.slice(0, left);
+    left -= kept.length;
+    return kept;
+  };
+  const takeGroups = <T extends Block | Inline>(groups: T[][]): T[][] => {
+    const out: T[][] = [];
+    for (const group of groups) {
+      if (left <= 0) break;
+      out.push(take(group));
+    }
+    return out;
+  };
+  const take = <T extends Block | Inline>(nodes: T[]): T[] => {
+    const out: (Block | Inline)[] = [];
+    for (const node of nodes) {
+      if (left <= 0) break;
+      switch (node.type) {
+        case "text": {
+          const value = text(node.value);
+          if (value) out.push({ ...node, value });
+          break;
+        }
+        case "code": {
+          const value = text(typeof node.value === "string" ? node.value : node.value.text);
+          if (value) out.push(typeof node.value === "string" ? { type: "code", value } : { type: "code", value: { ...node.value, text: value } });
+          break;
+        }
+        case "break":
+          out.push(node);
+          left--;
+          break;
+        case "paragraph":
+        case "emphasis":
+        case "strong":
+        case "delete": {
+          const value = take(node.value);
+          if (value.length) out.push({ ...node, value });
+          break;
+        }
+        case "blockquote": {
+          const value = take(node.value);
+          if (value.length) out.push({ ...node, value });
+          break;
+        }
+        case "heading": {
+          const children = take(node.value.children);
+          if (children.length) out.push({ ...node, value: { ...node.value, children } });
+          break;
+        }
+        case "link": {
+          const children = take(node.value.children);
+          if (children.length) out.push({ ...node, value: { ...node.value, children } });
+          break;
+        }
+        case "list": {
+          const items = takeGroups(node.value.items);
+          if (items.length) out.push({ ...node, value: { ...node.value, items } });
+          break;
+        }
+        case "table": {
+          const head = takeGroups(node.value.head);
+          const rows: Inline[][][] = [];
+          for (const row of node.value.rows) {
+            if (left <= 0) break;
+            rows.push(takeGroups(row));
+          }
+          if (head.length || rows.length) out.push({ ...node, value: { ...node.value, head, rows } });
+          break;
+        }
+        case "thematic_break":
+        case "later":
+          out.push(node);
+          break;
+      }
+    }
+    // A cut changes contents, never the node kind, so the input array's type is preserved.
+    return out as T[];
+  };
+  return { blocks: take(d.blocks) };
+}
+
 /** A queued row waits for the agent, so it sits after every logged row. */
 function compare(a: Row, b: Row): number {
   const qa = a.kind === "queued" ? 1 : 0;

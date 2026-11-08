@@ -2,7 +2,7 @@
 
 import { queueRows, type Usage } from "./composer";
 import { MarkdownCache } from "./markdown";
-import { FoldChoices, LIVE_THOUGHT, findMatches, lines, mergeRows, noteDisplay, type Line } from "./transcript";
+import { FoldChoices, LIVE_THOUGHT, cut, findMatches, lines, mergeRows, noteDisplay, type Line } from "./transcript";
 import type { Row } from "./api";
 import { TAIL, LRU_SIZE, type FullText, type Chat, type Find, type Reader, paneId } from "./app-types";
 import type { App } from "./app";
@@ -51,7 +51,11 @@ export class AppReader {
   constructor(private readonly app: App) {}
 
   build(chat: Chat) {
-    const live = liveRows(chat.rows, chat.live?.slice(0, chat.liveShown) ?? null, chat.liveThinking);
+    const display = chat.liveDisplay ?? null;
+    const text = chat.liveShown === 0 ? null : display === null ? chat.live?.slice(0, chat.liveShown) ?? null : chat.live;
+    const live = liveRows(chat.rows, text, chat.liveThinking);
+    const row = live.find((row) => row.id === "live");
+    if (row && display !== null) noteDisplay([row], { live: cut(display, chat.liveShown) });
     const rows = live.length || chat.queue.length ? [...chat.rows, ...live, ...chat.queue] : chat.rows;
     return lines(rows, { folds: chat.folds, opened: chat.opened });
   }
@@ -76,6 +80,7 @@ export class AppReader {
       usage: null,
       queue: [],
       live: null,
+      liveDisplay: null,
       liveShown: 0,
       liveThinking: null,
       liveEnded: false,
@@ -84,7 +89,12 @@ export class AppReader {
     };
     this.app.chats.set(chat.id, chat);
     // Later snapshots update it (applySnapshot).
-    chat.queue = queueRows(this.app.composing.chair(chat.id).queue);
+    const queue = this.app.composing.chair(chat.id).queue;
+    chat.queue = queueRows(queue);
+    chat.queue.forEach((row, i) => {
+      const display = queue[i].display;
+      if (display !== undefined) noteDisplay([row], display === null ? {} : { [row.id]: display });
+    });
     return chat;
   }
 
