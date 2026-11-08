@@ -1,7 +1,6 @@
 
 
 import { queueRows, type Usage } from "./composer";
-import { MarkdownCache } from "./markdown";
 import { FoldChoices, LIVE_THOUGHT, cut, findMatches, lines, mergeRows, noteDisplay, type Line } from "./transcript";
 import type { Row } from "./api";
 import { TAIL, LRU_SIZE, type FullText, type Chat, type Find, type Reader, paneId } from "./app-types";
@@ -108,7 +107,6 @@ export class AppReader {
       folds: new FoldChoices(),
       opened: new Map<string, boolean>(),
       full: new Map<string, FullText>(),
-      md: new MarkdownCache(),
       built: null,
       memo: null,
     };

@@ -1,6 +1,5 @@
 import { type Display, type Row } from "./api";
 import { type AgentInput, type SendKey, type Usage } from "./composer";
-import { MarkdownCache } from "./markdown";
 import { type PaneCell } from "./panes";
 import { FoldChoices, type Line, type Match } from "./transcript";
 import { type NavRow, type RecentChat, type Tabs, type TreeName, type TreeView } from "./nav";
@@ -34,7 +33,6 @@ export type Chat = {
   folds: FoldChoices;
   opened: Map<string, boolean>;
   full: Map<string, FullText>;
-  md: MarkdownCache;
   built: { version: number; lines: Line[] } | null;
   usage: Usage;
   /** The queue that the agent's CLI shows, as rows after the log's rows. */
@@ -95,7 +93,6 @@ export type Pane = {
   hasOlder: boolean;
   loadingOlder: boolean;
   shift: boolean;
-  md: MarkdownCache | null;
   full: ReadonlyMap<string, FullText>;
   find: Find;
   composer: Composer | null;
@@ -195,7 +192,6 @@ export const NO_PANE: Pane = {
   hasOlder: false,
   loadingOlder: false,
   shift: false,
-  md: null,
   full: NO_FULL,
   find: NO_FIND,
   composer: null,

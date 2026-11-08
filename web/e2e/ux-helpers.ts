@@ -1,8 +1,24 @@
 import { expect, type Page } from "@playwright/test";
-import type { Row, RowPage } from "../src/core/api";
+import type { Display, Row, RowPage } from "../src/core/api";
 
 export const row = (id: string, text: string, kind: Row["kind"] = "assistant"): Row => ({ id, kind, text, order: [Number(id.replace(/\D/g, "")) || 1, 0] });
-export const rows = (items: Row[], older = 0): RowPage => ({ rows: items, page: { start_offset: older, end_offset: 500 }, usage: null });
+function displayOf(item: Row): Display {
+  if (item.text.startsWith("| CLI | Name form | Note |\n")) {
+    return { blocks: [{ type: "table", value: {
+      source: item.text,
+      align: ["none", "none", "none"],
+      head: [[{ type: "text", value: "CLI" }], [{ type: "text", value: "Name form" }], [{ type: "text", value: "Note" }]],
+      rows: [[[{ type: "text", value: "Claude" }], [{ type: "code", value: "swarm:plan" }], [{ type: "text", value: "plain words that wrap ".repeat(40).trimEnd() }]]],
+    } }] };
+  }
+  return { blocks: item.text.split(/\n[ \t]*\n/).filter(Boolean).map((text) => ({ type: "paragraph", value: [{ type: "text", value: text }] })) };
+}
+export const rows = (items: Row[], older = 0): RowPage => ({
+  rows: items,
+  page: { start_offset: older, end_offset: 500 },
+  usage: null,
+  display: Object.fromEntries(items.map((item) => [item.id, displayOf(item)])),
+});
 export async function open(tab: Page, session = process.env.SWARM_E2E_LIVE!) {
   const url = new URL(process.env.SWARM_SERVE_URL!);
   await tab.goto(`${url.origin}/${url.hash}`);

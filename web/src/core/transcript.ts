@@ -20,16 +20,16 @@ export function displayOf(row: Row): Display | null | undefined {
   return displays.get(row);
 }
 
-export function bodyOf(row: Row): { kind: "html" } | { kind: "plain" } | { kind: "tree"; display: Display } {
+export function bodyOf(row: Row): { kind: "plain" } | { kind: "tree"; display: Display } {
   const display = displayOf(row);
-  if (display === undefined) return { kind: "html" };
+  if (display === undefined) return { kind: "plain" };
   if (display === null) return { kind: "plain" };
   const stack: (Block | Inline)[] = [...display.blocks];
   while (stack.length) {
     const node = stack.pop()!;
     switch (node.type) {
       case "later":
-        return { kind: "html" };
+        return { kind: "plain" };
       case "paragraph":
       case "blockquote":
       case "emphasis":

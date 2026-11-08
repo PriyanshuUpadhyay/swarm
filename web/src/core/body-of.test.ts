@@ -67,10 +67,10 @@ describe("bodyOf", () => {
         ["replaced", { kind: "tree", display: say("second") }],
         ["untouched", { kind: "tree", display: say("kept") }],
         ["no-entry", { kind: "plain" }],
-        ["later-inline", { kind: "html" }],
-        ["later-block", { kind: "html" }],
+        ["later-inline", { kind: "plain" }],
+        ["later-block", { kind: "plain" }],
         ["fold-step", { kind: "tree", display: say("step") }],
-        ["older", { kind: "html" }],
+        ["older", { kind: "plain" }],
       ],
     });
   });

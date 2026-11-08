@@ -106,7 +106,7 @@ describe("queue display", () => {
     { mode: "steering", text: "from an older server" },
   ];
   const bodies = (chat: Chat) => chat.queue.map((row) => bodyOf(row));
-  const expected = [{ kind: "tree", display: bold }, { kind: "plain" }, { kind: "html" }];
+  const expected = [{ kind: "tree", display: bold }, { kind: "plain" }, { kind: "plain" }];
 
   it("paints a queue row from its display when the chat is built", () => {
     const app = { chats: new Map(), composing: { chair: () => ({ queue }) } };

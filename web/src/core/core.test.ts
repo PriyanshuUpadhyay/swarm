@@ -2,7 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 import { takeToken, type Api, type Row, type RowPage, type Snapshot } from "./api";
 import { App } from "./app";
 import { eventKey, installKeys, parseChord, Registry } from "./commands";
-import { renderMarkdown } from "./markdown";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { MarkdownView } from "../react/markdown-view";
+import { prefixHtml } from "./markdown";
 import { paletteSections, type TreeView } from "./nav";
 import { MAX_RECORDS, measure } from "./perf";
 import { SseParser } from "./sse";
@@ -97,7 +100,7 @@ describe("command registry", () => {
 
   it("parses chords and reads keys", () => {
     expect(parseChord("Ctrl+Meta+ArrowUp")).toEqual({ ctrl: true, meta: true, shift: false, alt: false, key: "arrowup" });
-    expect(eventKey(key({ key: "¡", code: "Digit1" }))).toBe("1");
+    expect(eventKey(key({ key: "\u00a1", code: "Digit1" }))).toBe("1");
   });
 });
 
@@ -131,32 +134,6 @@ describe("token", () => {
   });
 });
 
-describe("markdown", () => {
-  it("does not render raw HTML or script", () => {
-    const html = renderMarkdown('hi <script>alert(1)</script> <img src=x onerror="alert(1)">');
-    expect(html).not.toContain("<script");
-    expect(html).not.toContain("<img");
-    expect(html).toContain("&lt;script&gt;");
-  });
-
-  it("links only http(s) destinations", () => {
-    const html = renderMarkdown("[a](javascript:alert(1)) [b](data:text/html,x) [c](https://example.com) [d](ftp://x) [e](/local)");
-    expect(html.match(/href=/g)).toHaveLength(1);
-    expect(html).toContain('<a href="https://example.com" target="_blank" rel="noopener noreferrer">c</a>');
-  });
-
-  it("gives code blocks and tables a Copy header; a table keeps its markdown source", () => {
-    const html = renderMarkdown("```sh\nmake build\n```\n\n| a | b |\n|---|---|\n| 1 | <2> |\n");
-    expect(html).toContain('<div class="md-code"><div class="md-head"><span>sh</span><button type="button" data-copy="code"');
-    expect(html).toContain('data-raw="| a | b |\n|---|---|\n| 1 | &lt;2&gt; |"');
-    expect(html).toContain('data-copy="table"');
-  });
-
-  it("does not load images", () => {
-    expect(renderMarkdown("![x](https://example.com/a.png)")).not.toContain("<img");
-  });
-});
-
 describe("chat LRU", () => {
   it("drops the reader state and older pages of the least recent chat when a fifth chat opens", async () => {
     const fetched: string[] = [];
@@ -173,7 +150,6 @@ describe("chat LRU", () => {
     await settle();
     await app.loadOlder();
     app.toggleLine(app.view.lines[1]);
-    const firstMarkdown = app.view.md;
     expect(app.view.lines.map((l) => [l.id, l.open])).toEqual([
       ["first-old", false],
       ["first-cat", false],
@@ -188,7 +164,6 @@ describe("chat LRU", () => {
 
     expect(fetched.filter((f) => f.startsWith("first"))).toEqual(["first tail", "first before 100", "first tail"]);
     expect(app.view.lines.map((l) => [l.id, l.open])).toEqual([["first-cat", true]]);
-    expect(app.view.md).not.toBe(firstMarkdown);
   });
 });
 
@@ -219,13 +194,16 @@ describe("diffs in plain text", () => {
   });
 
   it("colours a diff fence and keeps its text", () => {
-    const html = renderMarkdown("```diff\n-old\n+new\n```");
+    const html = prefixHtml("-old\n+new\n");
     expect(html).toContain('<span class="dl del">-old\n</span><span class="dl add">+new\n</span>');
+    expect(prefixHtml('-old "<&>\n+new\n')).toBe('<code><span class="dl del">-old &quot;&lt;&amp;&gt;\n</span><span class="dl add">+new\n</span></code>');
   });
 
   it("renders a hunk fence with wrong counts and no file header in both layouts, escaped", () => {
     // The counts say 1 line, but four follow and a second hunk comes after them.
-    const html = renderMarkdown("```diff\n@@ -1,1 +1,1 @@\n keep\n-<script>x</script>\n+new\n-gone\n@@ -9,1 +9,1 @@\n-late\n```");
+    const html = renderToStaticMarkup(createElement(MarkdownView, {
+      display: { blocks: [{ type: "code", value: { label: "diff", text: "@@ -1,1 +1,1 @@\n keep\n-<script>x</script>\n+new\n-gone\n@@ -9,1 +9,1 @@\n-late\n" } }] },
+    }));
     expect(html).toContain('<div class="d2h bare"><div class="unified">');
     expect(html).toContain('<div class="split">');
     expect(html).not.toContain("<script>");
@@ -238,11 +216,6 @@ describe("diffs in plain text", () => {
 });
 
 describe("owner messages and skill chips", () => {
-  it("keeps the owner's typed line breaks, and agent text stays plain markdown", () => {
-    expect(renderMarkdown("one\ntwo", true)).toContain("one<br>\ntwo");
-    expect(renderMarkdown("one\ntwo")).not.toContain("<br>");
-  });
-
   it("finds a skill token only as its own word", () => {
     expect(wordAt("please use /skill:plan now", "/skill:plan")).toBe(11);
     expect(wordAt("see /skill:plans and (/skill:plan)", "/skill:plan")).toBe(-1);
@@ -295,13 +268,13 @@ describe("prompt history", () => {
     expect(app.draft("b")).toBe("run the tests");
     expect(app.stashed("b")).toBe("half typed");
 
-    // ⌘K lists the prompts only for a query.
+    // \u2318K lists the prompts only for a query.
     app.openChat("b");
     const sections = (q: string) => paletteSections(app.paletteItems(), q).map((s) => [s.title, s.items.map((i) => i.title)]);
     expect(sections("tests")).toContainEqual(["Prompts", ["run the tests"]]);
     // A long first line is cut by whole characters, so an emoji at the cut is not split.
-    expect(await app.send("b", `${"x".repeat(119)}😀 tail`)).toBe(true);
-    expect(app.paletteItems().find((i) => i.group === "prompt")?.title).toBe(`${"x".repeat(119)}😀`);
+    expect(await app.send("b", `${"x".repeat(119)}\u{1f600} tail`)).toBe(true);
+    expect(app.paletteItems().find((i) => i.group === "prompt")?.title).toBe(`${"x".repeat(119)}\u{1f600}`);
     // Every kept prompt is a search target, not only the newest ones.
     for (let i = 0; i < 60; i++) expect(await app.send("b", `filler ${i}`)).toBe(true);
     expect(sections("tests")).toContainEqual(["Prompts", ["run the tests"]]);
@@ -317,7 +290,7 @@ describe("openWaiting", () => {
     const session = (id: string, workspace = "w") => ({ id, cwd: `/${workspace}`, created_at: 0, chair_provider: "claude", adapter: "tmux", project: "p", workspace });
     const chair = (pane: string | null) => ({ id: "orchestrator", role: "orchestrator", state: "waiting", alive: true, pane });
     // The tree lists workspace w with no chat rows, as when it is collapsed or its chats are under
-    // "… more". The archived workspace "gone" is not in it, as the Dock badge skips it.
+    // "\u2026 more". The archived workspace "gone" is not in it, as the Dock badge skips it.
     const workspace = { id: "w", kind: "workspace", archived: false, selection: { workspace: "w", chat: null, agentSession: null, agent: null } };
     (app as unknown as { tree: TreeView }).tree = { view: "workspaces", sections: [{ rows: [workspace] }] } as unknown as TreeView;
     (app as unknown as { applySnapshot(s: Snapshot): void }).applySnapshot({

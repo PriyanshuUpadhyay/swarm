@@ -144,7 +144,7 @@ function Transcript({ app, view, testid = "transcript", empty }: { app: Reader; 
     return () => window.removeEventListener(SENT, onSent);
   });
 
-  // Copy buttons inside markdown HTML: one listener for the whole list.
+  // Copy buttons in code blocks and tables share one listener for the whole list.
   const onClick = (e: React.MouseEvent) => {
     const layout = (e.target as Element).closest<HTMLElement>("[data-diff-layout]");
     if (layout) return setSplit(layout.dataset.diffLayout === "1");
@@ -186,7 +186,7 @@ function Transcript({ app, view, testid = "transcript", empty }: { app: Reader; 
                 <button type="button" className="t-link" onClick={() => void (testid === "transcript" ? (app as App).reading.retryRows() : app.retryRows?.())}>Retry</button>
               </ChatState>
             )}
-            {chatState === "ready" && view.md && (
+            {chatState === "ready" && (
               <>
                 <Head app={app} view={view} />
                 <Virtualizer
@@ -204,7 +204,6 @@ function Transcript({ app, view, testid = "transcript", empty }: { app: Reader; 
                       app={app}
                       line={line}
                       index={index}
-                      md={view.md!}
                       full={view.full}
                       // An unreachable agent shows no text box, so its rows offer no Reuse.
                       composerId={view.composer && !view.composer.agent.unreachable ? view.composer.id : undefined}

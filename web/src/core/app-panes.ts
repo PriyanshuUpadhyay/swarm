@@ -62,7 +62,6 @@ export class AppPanes {
       hasOlder: chat.older > 0,
       loadingOlder: chat.loadingOlder,
       shift: chat.shift,
-      md: chat.md,
       full: chat.full,
       find,
       composer: this.app.composing.composerView(chat, sendKey),
