@@ -148,6 +148,17 @@ preserve the gate and source-first order, and rerun the frozen regressions and
 owner-gate guard. Other OPEN items and the exact-key lookup stay unchanged; no
 general performance claim is made.
 
+The G4 fence-word patch uses the existing mdast URL-hook gate
+(`ParseState::link_compat()`). The compiler reads the raw opening fence line from
+the info start through its meta, folds it with the existing ES-whitespace helper,
+and keeps the first word as `Code.lang`, or None for an empty word. It preserves
+entities and backslash escapes in that word. This follows the OLD fence label
+`info.trim().split(/\s+/)[0]`; it does not change `Code.meta` or vendor default
+behavior. Rebase review must preserve the gate, raw range, shared whitespace set,
+and buffer balance, rerun the frozen `fence_word` public-API regression, and compare
+default `Code.lang` for its nine inputs against the base. Fence markup, the diff
+route, renderer parity and public adoption remain OPEN.
+
 The local numeric code derives from MarkdownIt 15.0.2 dist/markdown-it.cjs.js
 (isValidEntityCode and unescapeAll), and entities 8.1.0 src/decode-codepoint.ts.
 The entities C1/replacement logic carries its upstream adaptation pointer,

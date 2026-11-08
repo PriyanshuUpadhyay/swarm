@@ -1082,8 +1082,27 @@ fn on_exit_character_reference_value(context: &mut CompileContext) {
 /// Handle [`Exit`][Kind::Exit]:[`CodeFencedFenceInfo`][Name::CodeFencedFenceInfo].
 fn on_exit_code_fenced_fence_info(context: &mut CompileContext) {
     let value = context.resume().to_string();
+    let lang = if context.link_compat {
+        // The raw label can start in meta when the info token is only ES whitespace.
+        let start = SlicePosition::from_exit_event(context.events, context.index)
+            .start
+            .index;
+        let bytes = &context.bytes[start..];
+        let end = bytes
+            .iter()
+            .position(|byte| matches!(byte, b'\r' | b'\n'))
+            .unwrap_or(bytes.len());
+        let slice = Slice::from_indices(bytes, 0, end);
+        fold_es_whitespace(slice.as_str())
+            .split(' ')
+            .next()
+            .filter(|word| !word.is_empty())
+            .map(ToString::to_string)
+    } else {
+        Some(value)
+    };
     if let Node::Code(node) = context.tail_mut() {
-        node.lang = Some(value);
+        node.lang = lang;
     } else {
         unreachable!("expected code on stack");
     }
