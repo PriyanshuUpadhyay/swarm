@@ -4,7 +4,8 @@
 //! (`capture-1.stdout` = `capture-2.stdout`, sha256 8afdb30f06bf0570acc605e18f91879b179dde7a91b123aa8cd0e8cea3a19652).
 //! `observe` reads the public parse tree only and never repairs a destination. It is valid for the
 //! simple paragraph and top-level definition inputs below. The ORIGINAL returns HTML, so the span
-//! check asserts the public AST end offset on the raw source bytes, not an ORIGINAL position.
+//! check asserts the public AST end offset on the parsed text (the source with each U+0000 replaced
+//! by U+FFFD), not an ORIGINAL position.
 //! Not covered here, by design: bare-URL linkify of the rejected depth-33 line, and the NUL child text.
 
 use markdown::mdast::Node;
@@ -182,20 +183,21 @@ fn definition_paren_depth_32_is_accepted_and_33_is_rejected() {
 
 #[test]
 fn angle_autolink_admits_del_and_nul_with_the_normalized_href() {
-    // The link text is not asserted: ORIGINAL shows U+FFFD for NUL, which is a separate open gate.
+    // The link text is not asserted: the nul test owns the U+FFFD text of a NUL. The span counts the
+    // parsed text, in which each U+0000 (1 byte) is already U+FFFD (3 bytes).
     let mut failed = Vec::new();
     for (source, href) in [
         ("<https://e.test/a\u{7f}b>", "https://e.test/a%7Fb"),
         ("<https://e.test/a\0b>", "https://e.test/a%EF%BF%BDb"),
     ] {
+        let end = source.len() + 2 * source.matches('\0').count();
         let node = parse(source).expect("source parses");
         let span = link_span(&node);
         let observed = observe_node(node);
         let href_ok = matches!(observed.as_slice(), [one] if matches!(one.as_slice(), [Piece::Link { href: got, .. }] if got == href));
-        if !href_ok || span != Some((0, source.len())) {
+        if !href_ok || span != Some((0, end)) {
             failed.push(format!(
-                "{source:?} expected link {href:?} over bytes 0..{}, actual {observed:?} span {span:?}",
-                source.len()
+                "{source:?} expected link {href:?} over bytes 0..{end}, actual {observed:?} span {span:?}"
             ));
         }
     }
