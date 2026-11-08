@@ -2,7 +2,7 @@
 
 mod normalize_link;
 
-/// Parse CommonMark, raw HTML and images off as in the OLD app, with href hooks and NUL as U+FFFD.
+/// Parse CommonMark with tables and strikethrough, raw HTML and images off, href hooks and NUL as U+FFFD.
 ///
 /// # Errors
 ///
@@ -18,11 +18,16 @@ pub fn parse(source: &str) -> Result<markdown::mdast::Node, markdown::message::M
         &source,
         &markdown::ParseOptions {
             constructs: markdown::Constructs {
+                gfm_footnote_definition: false,
+                gfm_label_start_footnote: false,
+                gfm_strikethrough: true,
+                gfm_table: true,
                 html_flow: false,
                 html_text: false,
                 label_start_image: false,
                 ..markdown::Constructs::default()
             },
+            gfm_strikethrough_single_tilde: false,
             normalize_link: Some(normalize_link::normalize),
             validate_link: Some(normalize_link::validate),
             ..markdown::ParseOptions::default()
