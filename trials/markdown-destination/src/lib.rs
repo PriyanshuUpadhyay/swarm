@@ -8,9 +8,15 @@ mod normalize_link;
 ///
 /// Returns the parser's original diagnostic if parsing fails.
 pub fn parse(source: &str) -> Result<markdown::mdast::Node, markdown::message::Message> {
-    // Each NUL adds 2 to later byte offsets; later columns on its line can move too (tabs snap to 4-column stops).
-    let source = if source.contains('\0') {
-        std::borrow::Cow::Owned(source.replace('\0', "\u{fffd}"))
+    // Each CRLF makes later byte offsets 1 smaller; each NUL adds 2.
+    // Later columns on a NUL's line can move too (tabs snap to 4-column stops).
+    let source = if source.contains('\r') || source.contains('\0') {
+        std::borrow::Cow::Owned(
+            source
+                .replace("\r\n", "\n")
+                .replace('\r', "\n")
+                .replace('\0', "\u{fffd}"),
+        )
     } else {
         std::borrow::Cow::Borrowed(source)
     };
