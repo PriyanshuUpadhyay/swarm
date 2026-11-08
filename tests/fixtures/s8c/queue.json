@@ -1,0 +1,76 @@
+{
+  "source": "ORIGINAL queueRows at 8571f6dc q-two/q-empty; HAND S8C-QUEUE-V2 wire/display literals",
+  "input": [
+    {
+      "mode": "steering",
+      "text": "first"
+    },
+    {
+      "mode": "follow-up",
+      "text": "second"
+    }
+  ],
+  "rows": [
+    {
+      "id": "queue-0",
+      "kind": "queued",
+      "text": "first",
+      "detail": "Steering",
+      "order": [
+        9007199254740991,
+        0
+      ]
+    },
+    {
+      "id": "queue-1",
+      "kind": "queued",
+      "text": "second",
+      "detail": "Follow-up",
+      "order": [
+        9007199254740991,
+        1
+      ]
+    }
+  ],
+  "wire": [
+    {
+      "mode": "steering",
+      "text": "first",
+      "display": {
+        "blocks": [
+          {
+            "type": "paragraph",
+            "value": [
+              {
+                "type": "text",
+                "value": "first"
+              }
+            ]
+          }
+        ]
+      },
+      "id": "queue-0",
+      "detail": "Steering"
+    },
+    {
+      "mode": "follow-up",
+      "text": "second",
+      "display": {
+        "blocks": [
+          {
+            "type": "paragraph",
+            "value": [
+              {
+                "type": "text",
+                "value": "second"
+              }
+            ]
+          }
+        ]
+      },
+      "id": "queue-1",
+      "detail": "Follow-up"
+    }
+  ],
+  "empty": []
+}

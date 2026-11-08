@@ -1,5 +1,5 @@
-import { sleep, type Display, type RowFrame, type Snapshot, type SubscribeKey } from "./api";
-import { queueRows, type Usage } from "./composer";
+import { sleep, type Display, type Row, type RowFrame, type Snapshot, type SubscribeKey } from "./api";
+import type { Usage } from "./composer";
 import { readSse, type SseEvent } from "./sse";
 import { mergeRows, noteDisplay, noteFind, notePatch, units } from "./transcript";
 import { MAX_KEYS, type Chat, paneId } from "./app-types";
@@ -26,7 +26,13 @@ export class AppStream {
       if (input.answering && this.app.composing.chair(id).prompt?.id !== input.answering.prompt) input.answering = null;
     for (const chat of this.app.chats.values()) {
       const items = this.app.composing.chair(chat.id).queue;
-      const queue = queueRows(items);
+      const queue = items.map<Row>((q, i) => ({
+        id: q.id,
+        kind: "queued",
+        text: q.text,
+        detail: q.detail,
+        order: [Number.MAX_SAFE_INTEGER, i],
+      }));
       if (JSON.stringify(queue) === JSON.stringify(chat.queue)) continue;
       chat.queue = queue;
       queue.forEach((row, i) => {

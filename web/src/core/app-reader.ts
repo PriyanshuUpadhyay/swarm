@@ -1,6 +1,6 @@
 
 
-import { queueRows, type Usage } from "./composer";
+import type { Usage } from "./composer";
 import { FoldChoices, LIVE_THOUGHT, cut, findMatches, lines, mergeRows, noteDisplay, noteFind, notePatch, type Line } from "./transcript";
 import type { Row } from "./api";
 import { TAIL, LRU_SIZE, type FullText, type Chat, type Find, type Reader, paneId } from "./app-types";
@@ -57,7 +57,13 @@ export class AppReader {
     this.app.chats.set(chat.id, chat);
     // Later snapshots update it (applySnapshot).
     const queue = this.app.composing.chair(chat.id).queue;
-    chat.queue = queueRows(queue);
+    chat.queue = queue.map((q, i) => ({
+      id: q.id,
+      kind: "queued",
+      text: q.text,
+      detail: q.detail,
+      order: [Number.MAX_SAFE_INTEGER, i],
+    }));
     chat.queue.forEach((row, i) => {
       const display = queue[i].display;
       if (display !== undefined) noteDisplay([row], display === null ? {} : { [row.id]: display });

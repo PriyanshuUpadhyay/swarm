@@ -1,7 +1,7 @@
 // Composer rules ported from the SwiftUI app (ComposerState, ComposerQueue, QueuedMessages,
 // SwarmSessionInteraction, ChatUsage). Pure, so vitest covers them.
 
-import type { Agent, Display, Row, Session } from "./api";
+import type { Agent, Display, Session } from "./api";
 import type { Meter } from "./settings";
 
 /** `swarm agents --json` `prompt`: a question on the agent's screen (ADR 0029). */
@@ -33,18 +33,7 @@ export function submission(text: string): string {
 }
 
 /** One message that the agent's CLI holds, as its screen lists it (ADR 0130). */
-export type QueuedMessage = { mode: string; text: string; display?: Display | null };
-
-/** The CLI's queue as chat rows, each labelled with the CLI's own word for when it joins. */
-export function queueRows(queue: readonly QueuedMessage[]): Row[] {
-  return queue.map((q, i) => ({
-    id: `queue-${i}`,
-    kind: "queued",
-    text: q.text,
-    detail: q.mode.charAt(0).toUpperCase() + q.mode.slice(1),
-    order: [Number.MAX_SAFE_INTEGER, i],
-  }));
-}
+export type QueuedMessage = { mode: string; text: string; id: string; detail: string; display?: Display | null };
 
 /** What the composer can do for one agent of a chat, from the snapshot. */
 export type AgentInput = {

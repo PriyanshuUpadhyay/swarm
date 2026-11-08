@@ -163,6 +163,17 @@ fn a_queued_message_carries_its_display_and_a_missing_listing_keeps_it() {
     let expected = serde_json::to_value(display).unwrap();
     let shown = |snapshot: &Value| snapshot[&fixture.session][0]["queue"][0]["display"].clone();
     assert_eq!([shown(&first), shown(&kept)], [expected.clone(), expected]);
+    // S8C-QUEUE-V2: HAND values from the named private pi screen fixture.
+    let queue = json!([
+        {"mode":"steering","text":"**b**","id":"queue-0","detail":"Steering",
+         "display":{"blocks":[{"type":"paragraph","value":[{"type":"strong","value":[{"type":"text","value":"b"}]}]}]}},
+        {"mode":"steering","text":"second queued note that is quite long so that it will need to be cut by the truncated...","id":"queue-1","detail":"Steering",
+         "display":{"blocks":[{"type":"paragraph","value":[{"type":"text","value":"second queued note that is quite long so that it will need to be cut by the truncated..."}]}]}}
+    ]);
+    assert_eq!(
+        json!({"first":first[&fixture.session][0]["queue"],"kept":kept[&fixture.session][0]["queue"]}),
+        json!({"first":queue,"kept":queue})
+    );
 }
 
 #[test]

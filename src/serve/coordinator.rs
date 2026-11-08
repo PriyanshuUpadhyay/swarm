@@ -1,7 +1,7 @@
 //! Server coordinator.
 
 use super::*;
-use swarm::view::transcript::markdown::display;
+use swarm::view::transcript::{markdown::display, queue_wire};
 
 pub(super) fn start_coordinator(app: &App, action_queue: mpsc::Receiver<ActionJob>) {
     start_action_queue(app, action_queue);
@@ -147,12 +147,19 @@ fn agent_snapshot(
             };
             if let Ok(mut rows) = rows {
                 for agent in rows.as_array_mut().into_iter().flatten() {
-                    for item in agent
+                    for (index, item) in agent
                         .get_mut("queue")
                         .and_then(Value::as_array_mut)
                         .into_iter()
                         .flatten()
+                        .enumerate()
                     {
+                        let (id, detail) = queue_wire::queue_labels(
+                            index,
+                            item["mode"].as_str().unwrap_or_default(),
+                        );
+                        item["id"] = json!(id);
+                        item["detail"] = json!(detail);
                         item["display"] = json!(
                             item["text"]
                                 .as_str()

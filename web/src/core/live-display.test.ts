@@ -2,6 +2,7 @@
 // rows are painted from their display. Every expected tree is written by hand, so these cases compile and fail
 // by assertion before the code exists. The setup is the one of app-stream.test.ts.
 import { describe, expect, it, vi } from "vitest";
+import frozenQueue from "../../../tests/fixtures/s8c/queue.json";
 import type { Display, Snapshot } from "./api";
 import type { App } from "./app";
 import { AppReader } from "./app-reader";
@@ -101,9 +102,9 @@ describe("live display", () => {
 
 describe("queue display", () => {
   const queue = [
-    { mode: "steering", text: "**b**", display: bold },
-    { mode: "steering", text: "plain note", display: null },
-    { mode: "steering", text: "from an older server" },
+    { mode: "steering", text: "**b**", display: bold, id: "queue-0", detail: "Steering" },
+    { mode: "steering", text: "plain note", display: null, id: "queue-1", detail: "Steering" },
+    { mode: "steering", text: "from an older server", id: "queue-2", detail: "Steering" },
   ];
   const bodies = (chat: Chat) => chat.queue.map((row) => bodyOf(row));
   const expected = [{ kind: "tree", display: bold }, { kind: "plain" }, { kind: "plain" }];
@@ -121,5 +122,43 @@ describe("queue display", () => {
     items = queue;
     new AppStream(app as unknown as App).applySnapshot({ version: 2, sessions: [], agents: {} } as Snapshot);
     expect(bodies(chat)).toEqual(expected);
+  });
+});
+
+// S8C-QUEUE-V2 T2. HAND network metadata deliberately differs from mode/index.
+// OLD q-two supplies complete Rows; no candidate function computes expectations.
+describe("S8c queue wire", () => {
+  it("uses served queue ids and labels for first paint, refresh and clear", () => {
+    let items: { mode: string; text: string; id: string; detail: string; display?: Display | null }[] = [
+      { mode: "steering", text: "**b**", id: "served-7", detail: "From wire", display: bold },
+      { mode: "follow-up", text: "plain note", id: "served-9", detail: "Kept label", display: null },
+      { mode: "steering", text: "without display", id: "served-11", detail: "Third label" },
+    ];
+    const app = { chats: new Map(), composing: { chair: () => ({ queue: items }) }, inputs: new Map(), reading: {}, visible: [], liveAll: false };
+    const reader = new AppReader(app as unknown as App);
+    const chat = reader.newChat("s");
+    const first = { rows: chat.queue, bodies: chat.queue.map(bodyOf) };
+    const stream = new AppStream(app as unknown as App);
+    // HAND: the refresh labels differ from their modes, so a browser that rebuilds detail from mode fails.
+    items = frozenQueue.wire.map(q => ({ ...q, detail: `Served ${q.detail}` })) as typeof items;
+    stream.applySnapshot({ version: 2, sessions: [], agents: {} } as Snapshot);
+    const refreshed = { rows: chat.queue, bodies: chat.queue.map(bodyOf) };
+    items = [];
+    stream.applySnapshot({ version: 3, sessions: [], agents: {} } as Snapshot);
+    expect({ first, refreshed, cleared: chat.queue }).toEqual({
+      first: {
+        rows: [
+          { id: "served-7", kind: "queued", text: "**b**", detail: "From wire", order: [9007199254740991, 0] },
+          { id: "served-9", kind: "queued", text: "plain note", detail: "Kept label", order: [9007199254740991, 1] },
+          { id: "served-11", kind: "queued", text: "without display", detail: "Third label", order: [9007199254740991, 2] },
+        ],
+        bodies: [{ kind: "tree", display: bold }, { kind: "plain" }, { kind: "plain" }],
+      },
+      refreshed: {
+        rows: frozenQueue.rows.map(r => ({ ...r, detail: `Served ${r.detail}` })),
+        bodies: frozenQueue.wire.map(q => ({ kind: "tree", display: q.display })),
+      },
+      cleared: [],
+    });
   });
 });

@@ -11,6 +11,7 @@ pub mod live_shown;
 pub mod markdown;
 mod normalize;
 pub mod patch_wire;
+pub mod queue_wire;
 pub mod reader_rows;
 mod records;
 mod shell;

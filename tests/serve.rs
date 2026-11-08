@@ -420,3 +420,6 @@ mod workspace;
 
 #[path = "serve/s6b_changes.rs"]
 mod s6b_changes;
+
+#[path = "serve/s8c_queue.rs"]
+mod s8c_queue;
