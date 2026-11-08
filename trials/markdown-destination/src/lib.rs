@@ -2,15 +2,12 @@
 
 mod normalize_link;
 
-/// Parse CommonMark with tables, strikethrough and autolinks, raw HTML and images off, href hooks and NUL as U+FFFD.
-///
-/// # Errors
-///
-/// Returns the parser's original diagnostic if parsing fails.
-pub fn parse(source: &str) -> Result<markdown::mdast::Node, markdown::message::Message> {
+pub mod display;
+
+fn prelude(source: &str) -> std::borrow::Cow<'_, str> {
     // Each CRLF makes later byte offsets 1 smaller; each NUL adds 2.
     // Later columns on a NUL's line can move too (tabs snap to 4-column stops).
-    let source = if source.contains('\r') || source.contains('\0') {
+    if source.contains('\r') || source.contains('\0') {
         std::borrow::Cow::Owned(
             source
                 .replace("\r\n", "\n")
@@ -19,7 +16,16 @@ pub fn parse(source: &str) -> Result<markdown::mdast::Node, markdown::message::M
         )
     } else {
         std::borrow::Cow::Borrowed(source)
-    };
+    }
+}
+
+/// Parse CommonMark with tables, strikethrough and autolinks, raw HTML and images off, href hooks and NUL as U+FFFD.
+///
+/// # Errors
+///
+/// Returns the parser's original diagnostic if parsing fails.
+pub fn parse(source: &str) -> Result<markdown::mdast::Node, markdown::message::Message> {
+    let source = prelude(source);
     markdown::to_mdast(
         &source,
         &markdown::ParseOptions {
