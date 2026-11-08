@@ -2,7 +2,7 @@
 // skips rows the server marks `collapsed`, merges rows by id, places them by `order`, and keeps
 // the reader's open and closed choices.
 
-import type { Block, DiffPreview, Display, Inline, PatchInfo, PatchSplitWire, Row, TextPreview } from "./api";
+import type { Block, DiffPreview, Display, FindPart, Inline, PatchInfo, PatchSplitWire, Row, TextPreview } from "./api";
 
 const patches = new WeakMap<TextPreview | DiffPreview, PatchInfo>();
 
@@ -276,23 +276,30 @@ export function lines(rows: readonly Row[], s: LineState): Line[] {
   return out;
 }
 
-const searchCache = new WeakMap<Row, string>();
+const finds = new WeakMap<Row, FindPart[]>();
 
-/** Everything a reader can see in a row, opened, in lower case. */
-export function searchText(row: Row): string {
-  let t = searchCache.get(row);
-  if (t !== undefined) return t;
-  if (row.system_kind === "swarm_ring") t = "new swarm message";
-  else {
-    const parts: (string | undefined)[] = [row.kind === "fold" ? row.fold?.text : row.text, row.detail, row.output?.text, row.diff?.patch];
-    const tool = row.tool;
-    if (tool) parts.push(tool.name, tool.header_title, tool.command, tool.path, tool.output?.text, tool.skill_body?.text, ...(tool.diffs ?? []).map((d) => d.patch));
-    if (row.shell) parts.push(row.shell.command, row.shell.output.text);
-    if (row.command) parts.push(row.command.name, row.command.arguments, row.command.skill_body?.text, row.command.output?.text);
-    t = parts.filter(Boolean).join("\n").toLowerCase();
+/** Keep the server's search parts on each row object, including steps. */
+export function noteFind(rows: Row[], find: Record<string, FindPart[]> | undefined): void {
+  if (find === undefined) return;
+  const stack = [...rows];
+  while (stack.length) {
+    const row = stack.pop()!;
+    finds.set(row, find[row.id] ?? []);
+    for (const step of row.steps ?? []) stack.push(step);
   }
-  searchCache.set(row, t);
-  return t;
+}
+
+export const partsOf = (row: Row): readonly FindPart[] => finds.get(row) ?? [];
+
+/** Resolve a server-chosen path within this row; only strings are searchable. */
+export function partText(row: Row, part: FindPart): string {
+  if ("t" in part) return part.t;
+  let value: unknown = row;
+  for (const key of part.f.split(".")) {
+    if (value === null || typeof value !== "object" || !Object.hasOwn(value, key)) return "";
+    value = (value as Record<string, unknown>)[key];
+  }
+  return typeof value === "string" ? value : "";
 }
 
 /** A find match: the row, and the fold that holds it when it is a step. */
@@ -307,49 +314,18 @@ export function findMatches(rows: readonly Row[], query: string, full?: LoadedTe
   const out: Match[] = [];
   const visit = (row: Row, fold: Row | null) => {
     if (row.collapsed) return;
-    const parts: { text: string; preview?: string }[] = [];
-    const add = (text?: string, preview?: string) => {
-      const loaded = preview ? full?.get(preview) : undefined;
-      const value = loaded?.state === "ready" ? loaded.text : text;
-      if (value) parts.push({ text: value, preview });
-    };
-    const output = (p?: { id: string; text: string }) => p && add(p.text, p.id);
-    const diff = (p?: { id: string; patch: string }) => p && add(p.patch, p.id);
-    if (row.system_kind === "swarm_ring") add("New swarm message");
-    else if (row.kind === "fold") add(row.fold?.text ?? row.text);
-    else if (row.tool) {
-      add(row.tool.name);
-      add(row.tool.header_title ?? row.text);
-      add(row.tool.command);
-      add(row.tool.path);
-      output(row.tool.output);
-      output(row.tool.skill_body);
-      row.tool.diffs?.forEach(diff);
-    } else if (row.shell) {
-      add(row.shell.command);
-      output(row.shell.output);
-    } else if (row.command) {
-      add(row.command.arguments.includes(row.command.name) ? row.command.arguments : `${row.command.name} ${row.command.arguments}`);
-      output(row.command.skill_body);
-      output(row.command.output);
-    } else if (row.kind === "toolResult") {
-      if (row.output) output(row.output);
-      else add(row.text);
-    } else if (row.kind === "diff") diff(row.diff);
-    else {
-      add(row.text);
-      add(row.detail);
-      output(row.output);
-      diff(row.diff);
-    }
     let occurrence = 0;
-    for (const part of parts) {
-      const text = part.text.toLowerCase();
+    for (const part of partsOf(row)) {
+      const preview = "f" in part ? part.p : undefined;
+      const loaded = preview ? full?.get(preview) : undefined;
+      const value = loaded?.state === "ready" ? loaded.text : partText(row, part);
+      if (!value) continue;
+      const text = value.toLowerCase();
       for (let offset = text.indexOf(q); offset >= 0; offset = text.indexOf(q, offset + q.length)) {
         const before = text.slice(0, offset);
         const line = before.split("\n").length - 1;
         const onLine = before.slice(before.lastIndexOf("\n") + 1);
-        out.push({ id: row.id, fold, offset, occurrence: occurrence++, ...(part.preview ? { preview: part.preview, line, lineOccurrence: onLine.split(q).length - 1 } : {}) });
+        out.push({ id: row.id, fold, offset, occurrence: occurrence++, ...(preview ? { preview, line, lineOccurrence: onLine.split(q).length - 1 } : {}) });
       }
     }
     for (const step of row.steps ?? []) visit(step, row);

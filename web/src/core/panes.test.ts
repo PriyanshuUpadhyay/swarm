@@ -129,7 +129,7 @@ function harness(agents: Agent[] = [chair, agent("reviewer", { created_at: 1 }),
   const api = {
     rows: async (_session: string, who: string): Promise<RowPage> => {
       rowCalls.push(who);
-      return { page: { start_offset: 0, end_offset: 10 }, rows: [row(`${who}-first`, `${who} says hello`)], usage: null };
+      return { page: { start_offset: 0, end_offset: 10 }, rows: [row(`${who}-first`, `${who} says hello`)], usage: null, find: { [`${who}-first`]: [{ f: "text" }] } };
     },
     action: log,
     // The child's Stop is the composer's interrupt, which posts and reads the reply.

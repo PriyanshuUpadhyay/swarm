@@ -139,10 +139,12 @@ export type PatchLineWire = { kind: "add" | "del" | "ctx" | "hunk" | "meta"; tex
 export type PatchSplitWire = { h: number } | { l: number | null; r: number | null };
 export type PatchInfo = { lines: PatchLineWire[]; split: PatchSplitWire[] } | { kinds: PatchLineWire["kind"][] };
 
-export type RowPage = { page: Page; rows: Row[]; usage: unknown; remove?: string[]; display?: Record<string, Display>; patch?: Record<string, PatchInfo> };
+export type FindPart = { f: string; p?: string } | { t: string };
+
+export type RowPage = { page: Page; rows: Row[]; usage: unknown; remove?: string[]; display?: Record<string, Display>; patch?: Record<string, PatchInfo>; find?: Record<string, FindPart[]> };
 
 /** One `rows` stream frame. `usage` is there only when it changed; null clears it. */
-export type RowFrame = { key: string; upsert?: Row[]; remove?: string[]; end_offset: number; usage?: unknown; display?: Record<string, Display>; patch?: Record<string, PatchInfo> };
+export type RowFrame = { key: string; upsert?: Row[]; remove?: string[]; end_offset: number; usage?: unknown; display?: Record<string, Display>; patch?: Record<string, PatchInfo>; find?: Record<string, FindPart[]> };
 
 export type SubscribeKey = { key: string; from: number; view: "rows" };
 

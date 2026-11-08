@@ -171,6 +171,7 @@ pub(super) async fn transcript_rows(
         return tokio::task::spawn_blocking(move || {
             let display = view::markdown::row_displays(&page.rows);
             let patch = view::patch_wire::row_patches(&page.rows);
+            let find = view::find_wire::row_finds(&page.rows);
             Json(json!({
                 "page": {"start_offset": start, "end_offset": end},
                 "rows": page.rows,
@@ -178,6 +179,7 @@ pub(super) async fn transcript_rows(
                 "remove": page.remove,
                 "display": display,
             "patch": patch,
+                "find": find,
             }))
         })
         .await
@@ -236,6 +238,7 @@ pub(super) async fn transcript_rows(
     tokio::task::spawn_blocking(move || {
         let display = view::markdown::row_displays(&page.rows);
         let patch = view::patch_wire::row_patches(&page.rows);
+        let find = view::find_wire::row_finds(&page.rows);
         Json(json!({
             "page": {"start_offset": start, "end_offset": end},
             "rows": page.rows,
@@ -243,6 +246,7 @@ pub(super) async fn transcript_rows(
             "remove": page.remove,
             "display": display,
             "patch": patch,
+            "find": find,
         }))
     })
     .await

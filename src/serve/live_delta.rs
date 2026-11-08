@@ -6,6 +6,7 @@ use swarm::view::transcript::reader_rows::RowDelta;
 pub(super) fn row_frame(key: &str, delta: RowDelta) -> Frame {
     let display = view::markdown::row_displays(&delta.upsert);
     let patch = view::patch_wire::row_patches(&delta.upsert);
+    let find = view::find_wire::row_finds(&delta.upsert);
     let mut payload = json!({
         "key": key,
         "upsert": delta.upsert,
@@ -13,6 +14,7 @@ pub(super) fn row_frame(key: &str, delta: RowDelta) -> Frame {
         "end_offset": delta.end_offset,
         "display": display,
         "patch": patch,
+        "find": find,
     });
     if let Some(usage) = delta.usage {
         payload["usage"] = json!(usage);

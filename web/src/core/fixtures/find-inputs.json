@@ -1,0 +1,953 @@
+{
+ "queries": [
+  {
+   "id": "alpha",
+   "q": "alpha"
+  },
+  {
+   "id": "upper",
+   "q": "ALPHA"
+  },
+  {
+   "id": "padded",
+   "q": "  alpha  "
+  },
+  {
+   "id": "needle",
+   "q": "needle"
+  },
+  {
+   "id": "gamma",
+   "q": "gamma"
+  },
+  {
+   "id": "delta",
+   "q": "delta"
+  },
+  {
+   "id": "delta-alpha",
+   "q": "delta alpha"
+  },
+  {
+   "id": "swarm",
+   "q": "swarm"
+  },
+  {
+   "id": "inbox",
+   "q": "inbox"
+  },
+  {
+   "id": "nomatch",
+   "q": "nomatch"
+  },
+  {
+   "id": "empty",
+   "q": ""
+  },
+  {
+   "id": "blank",
+   "q": "   "
+  }
+ ],
+ "row_sets": [
+  {
+   "id": "s7a-served",
+   "rows": [
+    {
+     "id": "u1@raw-0-0",
+     "kind": "user",
+     "text": "Find alpha please",
+     "source_ids": [
+      "raw-0-0"
+     ],
+     "order": [
+      0,
+      0
+     ]
+    },
+    {
+     "id": "u2@raw-139-0",
+     "kind": "user",
+     "text": "ALPHA IN CAPITALS and alpha",
+     "source_ids": [
+      "raw-139-0"
+     ],
+     "order": [
+      139,
+      0
+     ]
+    },
+    {
+     "id": "a1@raw-288-0",
+     "kind": "assistant",
+     "text": "alphalpha **alpha** here",
+     "source_ids": [
+      "raw-288-0"
+     ],
+     "order": [
+      288,
+      0
+     ]
+    },
+    {
+     "id": "fold:t1:call@raw-288-1",
+     "kind": "fold",
+     "text": "1 command \u00b7 Read",
+     "source_ids": [
+      "raw-288-1",
+      "raw-572-0",
+      "raw-776-0",
+      "raw-988-0"
+     ],
+     "fold": {
+      "commands": 1,
+      "waits": 0,
+      "other_tools": [
+       {
+        "name": "Read",
+        "count": 1
+       }
+      ],
+      "rings": 0,
+      "failed": 0,
+      "interrupted": 0,
+      "unreported": 0,
+      "latest_title": "",
+      "duration_seconds": 2.0,
+      "state": "finished",
+      "text": "1 command \u00b7 Read"
+     },
+     "steps": [
+      {
+       "id": "t1:call@raw-288-1",
+       "kind": "toolUse",
+       "text": "Bash \u00b7 say alpha",
+       "detail": "{\"command\":\"echo alpha\",\"description\":\"say alpha\"}",
+       "tool": {
+        "name": "Bash",
+        "input": {
+         "command": "echo alpha",
+         "description": "say alpha"
+        },
+        "output": {
+         "id": "raw-572-0:output",
+         "text": "line alpha\nalpha alpha\nend",
+         "full_lines": 3,
+         "full_bytes": 26,
+         "hidden_lines": 0
+        },
+        "state": "finished",
+        "command": "echo alpha",
+        "duration_seconds": 1.0,
+        "header_title": "say alpha"
+       },
+       "tool_status": "pending",
+       "source_ids": [
+        "raw-288-1",
+        "raw-572-0"
+       ],
+       "order": [
+        288,
+        1
+       ]
+      },
+      {
+       "id": "t2:call@raw-776-0",
+       "kind": "toolUse",
+       "text": "Read \u00b7 alpha.txt",
+       "detail": "{\"file_path\":\"/x/alpha.txt\"}",
+       "tool": {
+        "name": "Read",
+        "input": {
+         "file_path": "/x/alpha.txt"
+        },
+        "output": {
+         "id": "raw-988-0:output",
+         "text": "",
+         "full_lines": 1,
+         "full_bytes": 0,
+         "hidden_lines": 0
+        },
+        "state": "finished",
+        "path": "/x/alpha.txt",
+        "duration_seconds": 1.0,
+        "header_title": "alpha.txt"
+       },
+       "tool_status": "pending",
+       "source_ids": [
+        "raw-776-0",
+        "raw-988-0"
+       ],
+       "order": [
+        776,
+        0
+       ]
+      }
+     ],
+     "order": [
+      288,
+      1
+     ]
+    },
+    {
+     "id": "ghost:result@raw-1164-0",
+     "kind": "toolResult",
+     "text": "alpha ghost result",
+     "tool_status": "completed",
+     "source_ids": [
+      "raw-1164-0"
+     ],
+     "output": {
+      "id": "raw-1164-0:output",
+      "text": "alpha ghost result",
+      "full_lines": 1,
+      "full_bytes": 18,
+      "hidden_lines": 0
+     },
+     "order": [
+      1164,
+      0
+     ]
+    },
+    {
+     "id": "e1:call@raw-1361-0",
+     "kind": "toolUse",
+     "text": "Edit \u00b7 a.ts",
+     "detail": "{\"file_path\":\"src/a.ts\",\"old_string\":\"a\",\"new_string\":\"b\"}",
+     "tool": {
+      "name": "Edit",
+      "input": {
+       "file_path": "src/a.ts",
+       "old_string": "a",
+       "new_string": "b"
+      },
+      "output": {
+       "id": "raw-2036-0:output",
+       "text": "ok again",
+       "full_lines": 1,
+       "full_bytes": 8,
+       "hidden_lines": 0
+      },
+      "diffs": [
+       {
+        "id": "raw-1603-1:diff",
+        "path": "src/a.ts",
+        "patch": "diff --git \"a/src/a.ts\" \"b/src/a.ts\"\n--- \"a/src/a.ts\"\n+++ \"b/src/a.ts\"\n@@ -1,3 +1,3 @@\n ctx\n-old alpha\n+new alpha\n end\n",
+        "full_lines": 4,
+        "full_bytes": 119,
+        "omitted_lines": 0,
+        "shortened_lines": 0,
+        "added": 1,
+        "removed": 1
+       },
+       {
+        "id": "raw-2036-1:diff",
+        "path": "src/a.ts",
+        "patch": "diff --git \"a/src/a.ts\" \"b/src/a.ts\"\n--- \"a/src/a.ts\"\n+++ \"b/src/a.ts\"\n@@ -20,3 +20,3 @@\n ctx\n-old alpha\n+new alpha\n end\n",
+        "full_lines": 4,
+        "full_bytes": 121,
+        "omitted_lines": 0,
+        "shortened_lines": 0,
+        "added": 1,
+        "removed": 1
+       }
+      ],
+      "state": "finished",
+      "path": "src/a.ts",
+      "duration_seconds": 1.0,
+      "header_title": "a.ts"
+     },
+     "tool_status": "pending",
+     "source_ids": [
+      "raw-1361-0",
+      "raw-1603-0",
+      "raw-1603-1",
+      "raw-2036-0",
+      "raw-2036-1"
+     ],
+     "order": [
+      1361,
+      0
+     ]
+    },
+    {
+     "id": "ghost-edit:result@raw-2477-0",
+     "kind": "toolResult",
+     "text": "orphan edit",
+     "tool_status": "completed",
+     "source_ids": [
+      "raw-2477-0"
+     ],
+     "output": {
+      "id": "raw-2477-0:output",
+      "text": "orphan edit",
+      "full_lines": 1,
+      "full_bytes": 11,
+      "hidden_lines": 0
+     },
+     "order": [
+      2477,
+      0
+     ]
+    },
+    {
+     "id": "ghost-edit:diff@raw-2477-1",
+     "kind": "diff",
+     "text": "a.ts \u00b7 +1 \u22121",
+     "detail": "src/a.ts",
+     "diff": {
+      "id": "raw-2477-1:diff",
+      "path": "src/a.ts",
+      "patch": "diff --git \"a/src/a.ts\" \"b/src/a.ts\"\n--- \"a/src/a.ts\"\n+++ \"b/src/a.ts\"\n@@ -40,3 +40,3 @@\n ctx\n-old alpha\n+new alpha\n end\n",
+      "full_lines": 4,
+      "full_bytes": 121,
+      "omitted_lines": 0,
+      "shortened_lines": 0,
+      "added": 1,
+      "removed": 1
+     },
+     "source_ids": [
+      "raw-2477-1"
+     ],
+     "order": [
+      2477,
+      1
+     ]
+    },
+    {
+     "id": "h1:hook@raw-2929-0",
+     "kind": "notice",
+     "text": "hook_success: PreToolUse:Bash",
+     "source_ids": [
+      "raw-2929-0"
+     ],
+     "collapsed": true,
+     "order": [
+      2929,
+      0
+     ]
+    },
+    {
+     "id": "c1:system@raw-3139-0",
+     "kind": "system",
+     "text": "<command-name>/alpha</command-name>\n<command-message>alpha</command-message>\n<command-args>/alpha now</command-args>",
+     "system_kind": "command",
+     "command": {
+      "name": "/alpha",
+      "arguments": "/alpha now",
+      "skill_body": {
+       "id": "raw-3379-0:output",
+       "text": "Base directory for this skill: /x/alpha\n\nalpha skill body line",
+       "full_lines": 3,
+       "full_bytes": 62,
+       "hidden_lines": 0
+      },
+      "output": {
+       "id": "raw-3628-0:output",
+       "text": "alpha command output",
+       "full_lines": 1,
+       "full_bytes": 20,
+       "hidden_lines": 0
+      }
+     },
+     "source_ids": [
+      "raw-3139-0",
+      "raw-3379-0",
+      "raw-3628-0"
+     ],
+     "starts_turn": true,
+     "output": {
+      "id": "raw-3139-0:output",
+      "text": "<command-name>/alpha</command-name>\n<command-message>alpha</command-message>\n<command-args>/alpha now</command-args>",
+      "full_lines": 3,
+      "full_bytes": 116,
+      "hidden_lines": 0
+     },
+     "order": [
+      3139,
+      0
+     ]
+    },
+    {
+     "id": "c2:system@raw-3837-0",
+     "kind": "system",
+     "text": "<command-name>/beta</command-name>\n<command-message>beta</command-message>\n<command-args>alpha only</command-args>",
+     "system_kind": "command",
+     "command": {
+      "name": "/beta",
+      "arguments": "alpha only"
+     },
+     "source_ids": [
+      "raw-3837-0"
+     ],
+     "output": {
+      "id": "raw-3837-0:output",
+      "text": "<command-name>/beta</command-name>\n<command-message>beta</command-message>\n<command-args>alpha only</command-args>",
+      "full_lines": 3,
+      "full_bytes": 114,
+      "hidden_lines": 0
+     },
+     "order": [
+      3837,
+      0
+     ]
+    },
+    {
+     "id": "s1:shell@raw-4075-0",
+     "kind": "shell",
+     "text": "$ ls alpha\nalpha out",
+     "shell": {
+      "command": "ls alpha",
+      "output": {
+       "id": "raw-4230-0:output",
+       "text": "alpha out",
+       "full_lines": 1,
+       "full_bytes": 9,
+       "hidden_lines": 0
+      }
+     },
+     "source_ids": [
+      "raw-4075-0",
+      "raw-4230-0"
+     ],
+     "starts_turn": true,
+     "order": [
+      4075,
+      0
+     ]
+    },
+    {
+     "id": "g1:ring@raw-4433-0",
+     "kind": "system",
+     "text": "swarm: new message. Run swarm inbox and read each body.",
+     "system_kind": "swarm_ring",
+     "source_ids": [
+      "raw-4433-0"
+     ],
+     "output": {
+      "id": "raw-4433-0:output",
+      "text": "swarm: new message. Run swarm inbox and read each body.",
+      "full_lines": 1,
+      "full_bytes": 55,
+      "hidden_lines": 0
+     },
+     "order": [
+      4433,
+      0
+     ]
+    },
+    {
+     "id": "a9@raw-4610-0",
+     "kind": "thought",
+     "text": "alpha thought",
+     "source_ids": [
+      "raw-4610-0"
+     ],
+     "order": [
+      4610,
+      0
+     ]
+    },
+    {
+     "id": "a9@raw-4610-1",
+     "kind": "assistant",
+     "text": "done alpha",
+     "source_ids": [
+      "raw-4610-1"
+     ],
+     "order": [
+      4610,
+      1
+     ]
+    }
+   ],
+   "fulls": [
+    {
+     "id": "none",
+     "entries": null
+    },
+    {
+     "id": "ready-bash",
+     "entries": [
+      [
+       "raw-572-0:output",
+       {
+        "state": "ready",
+        "text": "line alpha\nFULL ALPHA here\nalpha alpha alpha\nend"
+       }
+      ]
+     ]
+    },
+    {
+     "id": "loading-bash",
+     "entries": [
+      [
+       "raw-572-0:output",
+       {
+        "state": "loading"
+       }
+      ]
+     ]
+    },
+    {
+     "id": "ready-empty-bash",
+     "entries": [
+      [
+       "raw-572-0:output",
+       {
+        "state": "ready",
+        "text": ""
+       }
+      ]
+     ]
+    },
+    {
+     "id": "ready-read",
+     "entries": [
+      [
+       "raw-988-0:output",
+       {
+        "state": "ready",
+        "text": "loaded alpha line\nnext line"
+       }
+      ]
+     ]
+    },
+    {
+     "id": "ready-edit",
+     "entries": [
+      [
+       "raw-1603-1:diff",
+       {
+        "state": "ready",
+        "text": "@@ -1,3 +1,3 @@\n ctx\n-old alpha\n+new alpha\n end\n-alpha again\n+alpha alpha"
+       }
+      ]
+     ]
+    },
+    {
+     "id": "ready-chip-skill",
+     "entries": [
+      [
+       "raw-3379-0:output",
+       {
+        "state": "ready",
+        "text": "Base directory\n\nalpha skill line one\nalpha skill line two"
+       }
+      ]
+     ]
+    },
+    {
+     "id": "ready-chip-out",
+     "entries": [
+      [
+       "raw-3628-0:output",
+       {
+        "state": "ready",
+        "text": "alpha command output\nsecond alpha"
+       }
+      ]
+     ]
+    },
+    {
+     "id": "ready-shell",
+     "entries": [
+      [
+       "raw-4230-0:output",
+       {
+        "state": "ready",
+        "text": "alpha out\nmore alpha"
+       }
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "s7a-hand",
+   "rows": [
+    {
+     "id": "h-user",
+     "kind": "user",
+     "text": "Alpha ALPHA alpha\nsecond line alpha",
+     "order": [
+      1,
+      0
+     ]
+    },
+    {
+     "id": "h-ring",
+     "kind": "system",
+     "text": "swarm: new message. Run swarm inbox and read each body.",
+     "order": [
+      2,
+      0
+     ],
+     "system_kind": "swarm_ring",
+     "output": {
+      "id": "h-ring:out",
+      "text": "swarm: new message. Run swarm inbox",
+      "full_lines": 1,
+      "full_bytes": 35,
+      "hidden_lines": 0
+     }
+    },
+    {
+     "id": "h-shell",
+     "kind": "shell",
+     "text": "$ ls needle needle",
+     "order": [
+      3,
+      0
+     ],
+     "shell": {
+      "command": "ls needle needle",
+      "output": {
+       "id": "h-shell:out",
+       "text": "first line\nneedle here\nneedle again needle",
+       "full_lines": 3,
+       "full_bytes": 42,
+       "hidden_lines": 0
+      }
+     }
+    },
+    {
+     "id": "h-chip-named",
+     "kind": "system",
+     "text": "/gamma",
+     "order": [
+      4,
+      0
+     ],
+     "system_kind": "command",
+     "command": {
+      "name": "/gamma",
+      "arguments": "/gamma now gamma",
+      "skill_body": {
+       "id": "h-chip:skill",
+       "text": "gamma body\nsecond gamma",
+       "full_lines": 2,
+       "full_bytes": 23,
+       "hidden_lines": 0
+      },
+      "output": {
+       "id": "h-chip:out",
+       "text": "gamma out",
+       "full_lines": 1,
+       "full_bytes": 9,
+       "hidden_lines": 0
+      }
+     }
+    },
+    {
+     "id": "h-chip-plain",
+     "kind": "system",
+     "text": "/delta",
+     "order": [
+      5,
+      0
+     ],
+     "system_kind": "command",
+     "command": {
+      "name": "/delta",
+      "arguments": "alpha only"
+     }
+    },
+    {
+     "id": "h-toolresult",
+     "kind": "toolResult",
+     "text": "result needle",
+     "order": [
+      6,
+      0
+     ],
+     "output": {
+      "id": "h-result:out",
+      "text": "result needle\nand needle",
+      "full_lines": 2,
+      "full_bytes": 24,
+      "hidden_lines": 0
+     }
+    },
+    {
+     "id": "h-diff",
+     "kind": "diff",
+     "text": "a.ts",
+     "order": [
+      7,
+      0
+     ],
+     "diff": {
+      "id": "h-diff:patch",
+      "path": "a.ts",
+      "patch": "@@ -1 +1 @@\n-alpha old\n+alpha new alpha",
+      "full_lines": 3,
+      "full_bytes": 39,
+      "omitted_lines": 0,
+      "shortened_lines": 0,
+      "added": 1,
+      "removed": 1
+     }
+    },
+    {
+     "id": "h-empty",
+     "kind": "toolUse",
+     "text": "Read",
+     "order": [
+      8,
+      0
+     ],
+     "tool": {
+      "name": "Read",
+      "input": {},
+      "state": "finished",
+      "header_title": "Read x",
+      "output": {
+       "id": "h-empty:out",
+       "text": "",
+       "full_lines": 1,
+       "full_bytes": 0,
+       "hidden_lines": 0
+      }
+     }
+    },
+    {
+     "id": "h-tool",
+     "kind": "toolUse",
+     "text": "run gamma",
+     "order": [
+      9,
+      0
+     ],
+     "tool": {
+      "name": "gamma-tool",
+      "input": {},
+      "state": "finished",
+      "header_title": "run gamma",
+      "command": "gamma --go",
+      "path": "src/gamma.ts",
+      "output": {
+       "id": "h-tool:out",
+       "text": "gamma output",
+       "full_lines": 1,
+       "full_bytes": 12,
+       "hidden_lines": 0
+      },
+      "skill_body": {
+       "id": "h-tool:skill",
+       "text": "gamma skill",
+       "full_lines": 1,
+       "full_bytes": 11,
+       "hidden_lines": 0
+      },
+      "diffs": [
+       {
+        "id": "h-tool:d0",
+        "path": "a.ts",
+        "patch": "-gamma\n+x",
+        "full_lines": 2,
+        "full_bytes": 9,
+        "omitted_lines": 0,
+        "shortened_lines": 0,
+        "added": 1,
+        "removed": 1
+       },
+       {
+        "id": "h-tool:d1",
+        "path": "a.ts",
+        "patch": "-y\n+gamma",
+        "full_lines": 2,
+        "full_bytes": 9,
+        "omitted_lines": 0,
+        "shortened_lines": 0,
+        "added": 1,
+        "removed": 1
+       }
+      ]
+     }
+    },
+    {
+     "id": "h-detail",
+     "kind": "assistant",
+     "text": "plain",
+     "order": [
+      10,
+      0
+     ],
+     "detail": "alpha in detail",
+     "output": {
+      "id": "h-detail:out",
+      "text": "alpha in output",
+      "full_lines": 1,
+      "full_bytes": 15,
+      "hidden_lines": 0
+     },
+     "diff": {
+      "id": "h-detail:patch",
+      "path": "a.ts",
+      "patch": "-alpha\n+beta",
+      "full_lines": 2,
+      "full_bytes": 12,
+      "omitted_lines": 0,
+      "shortened_lines": 0,
+      "added": 1,
+      "removed": 1
+     }
+    },
+    {
+     "id": "h-collapsed",
+     "kind": "notice",
+     "text": "alpha hidden",
+     "order": [
+      11,
+      0
+     ],
+     "collapsed": true
+    },
+    {
+     "id": "h-fold",
+     "kind": "fold",
+     "text": "2 steps . delta",
+     "order": [
+      12,
+      0
+     ],
+     "fold": {
+      "commands": 2,
+      "waits": 0,
+      "rings": 0,
+      "failed": 0,
+      "interrupted": 0,
+      "unreported": 0,
+      "latest_title": "x",
+      "state": "finished",
+      "text": "2 steps . delta"
+     },
+     "steps": [
+      {
+       "id": "h-step-1",
+       "kind": "toolUse",
+       "text": "Bash",
+       "order": [
+        13,
+        0
+       ],
+       "tool": {
+        "name": "Bash",
+        "input": {},
+        "state": "finished",
+        "header_title": "run delta",
+        "output": {
+         "id": "h-step-1:out",
+         "text": "delta out\nalpha",
+         "full_lines": 2,
+         "full_bytes": 15,
+         "hidden_lines": 0
+        }
+       }
+      },
+      {
+       "id": "h-step-2",
+       "kind": "toolUse",
+       "text": "Read",
+       "order": [
+        14,
+        0
+       ],
+       "tool": {
+        "name": "Read",
+        "input": {},
+        "state": "finished",
+        "header_title": "Read",
+        "output": {
+         "id": "h-step-2:out",
+         "text": "",
+         "full_lines": 1,
+         "full_bytes": 0,
+         "hidden_lines": 0
+        }
+       }
+      }
+     ]
+    }
+   ],
+   "fulls": [
+    {
+     "id": "none",
+     "entries": null
+    },
+    {
+     "id": "ready-shell",
+     "entries": [
+      [
+       "h-shell:out",
+       {
+        "state": "ready",
+        "text": "needle new\nneedle needle\nx"
+       }
+      ]
+     ]
+    },
+    {
+     "id": "loading-shell",
+     "entries": [
+      [
+       "h-shell:out",
+       {
+        "state": "loading"
+       }
+      ]
+     ]
+    },
+    {
+     "id": "ready-empty-shell",
+     "entries": [
+      [
+       "h-shell:out",
+       {
+        "state": "ready",
+        "text": ""
+       }
+      ]
+     ]
+    },
+    {
+     "id": "ready-empty-preview",
+     "entries": [
+      [
+       "h-empty:out",
+       {
+        "state": "ready",
+        "text": "alpha loaded"
+       }
+      ]
+     ]
+    },
+    {
+     "id": "ready-step",
+     "entries": [
+      [
+       "h-step-2:out",
+       {
+        "state": "ready",
+        "text": "delta in step\nnext delta"
+       }
+      ]
+     ]
+    },
+    {
+     "id": "ready-diff",
+     "entries": [
+      [
+       "h-tool:d1",
+       {
+        "state": "ready",
+        "text": "-y\n+gamma\n+gamma gamma"
+       }
+      ]
+     ]
+    }
+   ]
+  }
+ ]
+}

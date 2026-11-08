@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Api, Row, RowPage } from "./api";
 import { App } from "./app";
-import { FoldChoices, findMatches, lines } from "./transcript";
+import { FoldChoices, findMatches, lines, noteFind } from "./transcript";
 
 // A row as the server sends it; `order` is [source offset, event ordinal].
 const row = (id: string, offset: number, extra: Partial<Row> = {}): Row => ({ id, kind: "assistant", text: id, order: [offset, 0], ...extra });
@@ -55,6 +55,9 @@ describe("folds and lines", () => {
 describe("find", () => {
   it("finds a step inside a closed fold and names the fold that holds it", () => {
     const rows = [row("intro", 1, { text: "Running the parser tests" }), fold("run", [tool("read-config", 10), tool("parser-check", 11)])];
+    noteFind(rows, { intro: [{ f: "text" }], run: [{ f: "fold.text" }],
+      "read-config": [{ f: "tool.name" }, { f: "tool.header_title" }],
+      "parser-check": [{ f: "tool.name" }, { f: "tool.header_title" }] });
     const matches = findMatches(rows, "PARSER");
     expect(matches.map((m) => [m.id, m.fold?.id ?? null])).toEqual([
       ["intro", null],
@@ -65,6 +68,8 @@ describe("find", () => {
   it("skips collapsed rows and fold steps while finding visible rows in order", () => {
     const hidden = row("model-notice", 1, { kind: "notice", text: "model: opus", collapsed: true });
     const rows = [hidden, row("opus-intro", 2), fold("run", [hidden, tool("opus-check", 3)]), row("opus-end", 4)];
+    noteFind(rows, { "opus-intro": [{ f: "text" }], run: [{ f: "fold.text" }],
+      "opus-check": [{ f: "tool.name" }, { f: "tool.header_title" }], "opus-end": [{ f: "text" }] });
     expect(findMatches(rows, "opus").map((m) => [m.id, m.fold?.id ?? null])).toEqual([
       ["opus-intro", null],
       ["opus-check", "run"],
@@ -74,7 +79,9 @@ describe("find", () => {
 
   it("opens the fold and the card of the match the reader steps to", async () => {
     const step = { ...tool("parser-check", 11), tool: { name: "Bash", input: {}, state: "finished" as const, header_title: "cargo test parser" } };
-    const page: RowPage = { page: { start_offset: 0, end_offset: 20 }, rows: [fold("run", [tool("read-config", 10), step])], usage: null };
+    const page: RowPage = { page: { start_offset: 0, end_offset: 20 }, rows: [fold("run", [tool("read-config", 10), step])], usage: null,
+      find: { run: [{ f: "fold.text" }], "read-config": [{ f: "tool.name" }, { f: "tool.header_title" }],
+        "parser-check": [{ f: "tool.name" }, { f: "tool.header_title" }] } };
     const app = new App({ rows: async () => page } as unknown as Api);
     const g = globalThis as unknown as { requestAnimationFrame?: unknown; document?: unknown };
     g.requestAnimationFrame = () => 0;
