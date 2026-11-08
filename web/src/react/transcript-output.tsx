@@ -1,12 +1,12 @@
 // Output previews, virtual text lists, and unified or split patches.
 import { CopyIcon } from "lucide-react";
-import { useEffect, useMemo, useRef, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { VList, type VListHandle } from "virtua";
-import type { DiffPreview, PatchInfo, PatchLineWire, TextPreview } from "../core/api";
+import type { DiffPreview, PatchInfo, TextPreview } from "../core/api";
 import type { FullText, Reader } from "../core/app";
-import { patchOf, patchRows, textRows } from "../core/transcript";
+import { patchOf, textRows } from "../core/transcript";
 import { copyText } from "./copy";
-import { store } from "./store";
+import { ColoredRow, PatchBody, setSplit, useSplit } from "./patch-body";
 
 const plural = (n: number, word: string) => `${n.toLocaleString("en-US")} ${word}${n === 1 ? "" : "s"}`;
 
@@ -50,10 +50,10 @@ function PatchText({ text, entry }: { text: string; entry?: PatchInfo }) {
   return (
     <pre className="out">
       {rows.map((row, i) => (
-        <span key={i} data-output-line={i} className={row.kind ? `dl ${row.kind}` : undefined}>
+        <ColoredRow key={i} sourceLine={i} kind={row.kind}>
           {row.text}
           {"\n"}
-        </span>
+        </ColoredRow>
       ))}
     </pre>
   );
@@ -85,28 +85,9 @@ function TextLines({ text, entry, previewId, testid }: { text: string; entry?: P
   );
 }
 
-// One Unified/Split choice for every diff, kept across sessions. The markdown diff fences are
-// static HTML, so CSS reads the choice from `data-diff-split` on <html>.
-const SPLIT_KEY = "swarm.diff.split";
-const splitSubs = new Set<() => void>();
-let splitNow = store.getItem(SPLIT_KEY) === "1";
-document.documentElement.dataset.diffSplit = splitNow ? "1" : "0";
-
-function setSplit(v: boolean) {
-  splitNow = v;
-  store.setItem(SPLIT_KEY, v ? "1" : "0");
-  document.documentElement.dataset.diffSplit = v ? "1" : "0";
-  splitSubs.forEach((f) => f());
-}
-
-const subscribeSplit = (f: () => void) => {
-  splitSubs.add(f);
-  return () => splitSubs.delete(f);
-};
-
 /** A patch: Unified or Split, the capped preview, Show full patch, Copy patch, and its counts. */
 function DiffView({ app, diff, full }: { app: Reader; diff: DiffPreview; full: ReadonlyMap<string, FullText> }) {
-  const split = useSyncExternalStore(subscribeSplit, () => splitNow);
+  const split = useSplit();
   const f = full.get(diff.id);
   const patch = f?.state === "ready" ? f.text : diff.patch;
   const capped = diff.omitted_lines > 0 || diff.shortened_lines > 0;
@@ -147,59 +128,6 @@ function DiffView({ app, diff, full }: { app: Reader; diff: DiffPreview; full: R
         </div>
       )}
     </div>
-  );
-}
-
-function PatchBody({ patch, info, split, previewId }: { patch: string; info?: PatchInfo; split: boolean; previewId: string }) {
-  const handle = useRef<VListHandle>(null);
-  const diff = info && "lines" in info ? info : undefined;
-  const rows = useMemo(() => diff ? patchRows(diff, split) : [], [diff, split]);
-  useEffect(() => {
-    const find = (e: Event) => {
-      const match = (e as CustomEvent<{ preview: string; line: number }>).detail;
-      if (match.preview !== previewId) return;
-      const i = rows.findIndex((r) => "i" in r ? r.i === match.line : "h" in r ? r.h === match.line : r.l === match.line || r.r === match.line);
-      if (i >= 0) handle.current?.scrollToIndex(i, { align: "center" });
-    };
-    window.addEventListener("swarm:find-output", find);
-    return () => window.removeEventListener("swarm:find-output", find);
-  }, [rows, previewId]);
-  if (!diff) return <pre className="out">{patch.split("\n").map((text, i, lines) => <span key={i} data-output-line={i}>{text}{i < lines.length - 1 ? "\n" : ""}</span>)}</pre>;
-  const height = Math.min(BOX_HEIGHT, rows.length * LINE_HEIGHT + 4);
-  return (
-    <VList ref={handle} className="patch" style={{ height }} itemSize={LINE_HEIGHT} data={rows}>
-      {(r: ReturnType<typeof patchRows>[number], i: number) => {
-        if ("h" in r) return <div key={i} data-output-line={r.h} className="pl hunk">{diff.lines[r.h].text}</div>;
-        if ("i" in r) {
-          const line = diff.lines[r.i];
-          return (
-            <div key={i} data-output-line={r.i} className={`pl ${line.kind}`}>
-              <span className="ln">{line.old ?? ""}</span>
-              <span className="ln">{line.new ?? ""}</span>
-              <span className="mark">{line.kind === "add" ? "+" : line.kind === "del" ? "\u2212" : line.kind === "hunk" ? "" : " "}</span>
-              <span className="code">{line.text}</span>
-            </div>
-          );
-        }
-        return (
-          <div key={i} className="pl split">
-            <Half line={r.l === null ? null : diff.lines[r.l]} sourceLine={r.l ?? undefined} side="old" />
-            <Half line={r.r === null ? null : diff.lines[r.r]} sourceLine={r.r ?? undefined} side="new" />
-          </div>
-        );
-      }}
-    </VList>
-  );
-}
-
-function Half({ line, side, sourceLine }: { line: PatchLineWire | null; side: "old" | "new"; sourceLine?: number }) {
-  if (!line) return <span className="half empty" />;
-  const kind = line.kind === "ctx" ? "ctx" : line.kind;
-  return (
-    <span data-output-line={sourceLine} className={`half ${kind}`}>
-      <span className="ln">{side === "old" ? line.old : line.new}</span>
-      <span className="code">{line.text}</span>
-    </span>
   );
 }
 

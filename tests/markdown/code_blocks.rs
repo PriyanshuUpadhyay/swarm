@@ -37,6 +37,7 @@ fn code(label: Option<&str>, text: &str) -> Block {
     Block::Code {
         label: label.map(str::to_owned),
         text: text.to_owned(),
+        diff: None,
     }
 }
 

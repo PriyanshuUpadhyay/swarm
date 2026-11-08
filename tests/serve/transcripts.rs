@@ -459,3 +459,6 @@ fn patch_entries_cover_tool_diffs_fold_steps_and_full_output() {
     assert_eq!(page["patch"], Value::Object(expected));
     assert_eq!(full, wanted);
 }
+
+#[path = "fence_wire.rs"]
+mod fence_wire;

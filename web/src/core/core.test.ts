@@ -2,14 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 import { takeToken, type Api, type Row, type RowPage, type Snapshot } from "./api";
 import { App } from "./app";
 import { eventKey, installKeys, parseChord, Registry } from "./commands";
-import { createElement } from "react";
-import { renderToStaticMarkup } from "react-dom/server";
-import { MarkdownView } from "../react/markdown-view";
-import { prefixHtml } from "./markdown";
 import { paletteSections, type TreeView } from "./nav";
 import { MAX_RECORDS, measure } from "./perf";
 import { SseParser } from "./sse";
-import { FoldChoices, isPatch, lines, mergeRows, parsePatch, promptIndex, wordAt } from "./transcript";
+import { FoldChoices, lines, mergeRows, promptIndex, wordAt } from "./transcript";
 
 // A row as the server sends it; `order` is [source offset, event ordinal].
 const row = (id: string, offset: number, extra: Partial<Row> = {}): Row => ({ id, kind: "assistant", text: id, order: [offset, 0], ...extra });
@@ -41,22 +37,6 @@ describe("row merge", () => {
   it("returns the same array when a frame changes nothing", () => {
     const rows = [row("answer", 1)];
     expect(mergeRows(rows, [], [])).toBe(rows);
-  });
-});
-
-describe("patch", () => {
-  it("numbers unified lines and pairs removals with additions side by side", () => {
-    const parsed = parsePatch('diff --git "a/x" "b/x"\n--- "a/x"\n+++ "b/x"\n@@ -3,3 +3,3 @@\n keep\n-old\n+new\n tail\n');
-    expect(parsed.map((l) => [l.kind, l.old ?? null, l.new ?? null])).toEqual([
-      ["meta", null, null],
-      ["meta", null, null],
-      ["meta", null, null],
-      ["hunk", null, null],
-      ["ctx", 3, 3],
-      ["del", 4, null],
-      ["add", null, 4],
-      ["ctx", 5, 5],
-    ]);
   });
 });
 
@@ -180,35 +160,6 @@ describe("perf records", () => {
       delete g.window;
       delete g.requestAnimationFrame;
     }
-  });
-});
-
-describe("diffs in plain text", () => {
-  it("colours `diff -u` output by hunk counts, so a removed `-- comment` is not a file header", () => {
-    const out = ["--- a.sql\t2026", "+++ a.sql\t2026", "@@ -1,2 +1,2 @@", " keep", "--- old comment", "+-- new comment", "done"];
-    expect(isPatch(out.join("\n"))).toBe(true);
-    expect(isPatch("a + b\n- item")).toBe(false);
-  });
-
-  it("colours a diff fence and keeps its text", () => {
-    const html = prefixHtml("-old\n+new\n");
-    expect(html).toContain('<span class="dl del">-old\n</span><span class="dl add">+new\n</span>');
-    expect(prefixHtml('-old "<&>\n+new\n')).toBe('<code><span class="dl del">-old &quot;&lt;&amp;&gt;\n</span><span class="dl add">+new\n</span></code>');
-  });
-
-  it("renders a hunk fence with wrong counts and no file header in both layouts, escaped", () => {
-    // The counts say 1 line, but four follow and a second hunk comes after them.
-    const html = renderToStaticMarkup(createElement(MarkdownView, {
-      display: { blocks: [{ type: "code", value: { label: "diff", text: "@@ -1,1 +1,1 @@\n keep\n-<script>x</script>\n+new\n-gone\n@@ -9,1 +9,1 @@\n-late\n" } }] },
-    }));
-    expect(html).toContain('<div class="d2h bare"><div class="unified">');
-    expect(html).toContain('<div class="split">');
-    expect(html).not.toContain("<script>");
-    expect(html).toContain('data-raw="@@ -1,1 +1,1 @@\n keep\n-&lt;script&gt;');
-    const unified = html.slice(0, html.indexOf('<div class="split">'));
-    expect(unified.match(/<td class="d2h-del/g)).toHaveLength(3);
-    expect(unified.match(/<td class="d2h-ins/g)).toHaveLength(1);
-    expect(unified).toContain("@@ -9,1 +9,1 @@");
   });
 });
 

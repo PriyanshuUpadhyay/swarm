@@ -2,7 +2,7 @@
 // skips rows the server marks `collapsed`, merges rows by id, places them by `order`, and keeps
 // the reader's open and closed choices.
 
-import type { Block, DiffPreview, Display, FindPart, Inline, PatchInfo, PatchSplitWire, Row, TextPreview } from "./api";
+import type { Block, DiffPreview, Display, FindPart, Inline, PatchInfo, PatchLineWire, PatchSplitWire, Row, TextPreview } from "./api";
 
 const patches = new WeakMap<TextPreview | DiffPreview, PatchInfo>();
 
@@ -31,7 +31,7 @@ export function patchRows(info: Extract<PatchInfo, { lines: unknown }>, split: b
 }
 
 /** Text keeps each source line; an absent entry has no colour. */
-export function textRows(entry: PatchInfo | undefined, text: string): { kind: PatchLine["kind"] | null; text: string }[] {
+export function textRows(entry: PatchInfo | undefined, text: string): { kind: PatchLineWire["kind"] | null; text: string }[] {
   const kinds = entry && "kinds" in entry ? entry.kinds : undefined;
   return text.split("\n").map((text, i) => ({ kind: kinds?.[i] ?? null, text }));
 }
@@ -340,34 +340,6 @@ export function duration(seconds: number): string {
   const m = Math.floor(seconds / 60);
   return `${m}m ${Math.round(seconds - m * 60)}s`;
 }
-
-export type PatchLine = { kind: "add" | "del" | "ctx" | "hunk" | "meta"; text: string; old?: number; new?: number };
-
-/** Parses a unified patch into numbered lines. Header lines before the first hunk are "meta". */
-export function parsePatch(patch: string): PatchLine[] {
-  const out: PatchLine[] = [];
-  let o = 0;
-  let n = 0;
-  let inHunk = false;
-  for (const text of patch.split("\n")) {
-    const h = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(text);
-    if (h) {
-      o = Number(h[1]);
-      n = Number(h[2]);
-      inHunk = true;
-      out.push({ kind: "hunk", text });
-    } else if (!inHunk) {
-      if (text) out.push({ kind: "meta", text });
-    } else if (text.startsWith("+")) out.push({ kind: "add", text: text.slice(1), new: n++ });
-    else if (text.startsWith("-")) out.push({ kind: "del", text: text.slice(1), old: o++ });
-    else if (text.startsWith(" ")) out.push({ kind: "ctx", text: text.slice(1), old: o++, new: n++ });
-    else if (text.startsWith("\\")) out.push({ kind: "meta", text });
-  }
-  return out;
-}
-
-/** True when the text holds a unified diff, such as `diff -u` or `git diff` output. */
-export const isPatch = (text: string) => /^@@ -\d+(?:,\d+)? \+\d+(?:,\d+)? @@/m.test(text);
 
 /** Where `token` stands as its own word in `text`, or -1. */
 export function wordAt(text: string, token: string): number {

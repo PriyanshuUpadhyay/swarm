@@ -1,7 +1,6 @@
 import { Fragment, createElement, type ReactNode } from "react";
 import type { Block, Display, Inline } from "../core/api";
-import { diffFence, prefixHtml } from "../core/markdown";
-import { isPatch } from "../core/transcript";
+import { ColoredRow, PatchBody, useSplit } from "./patch-body";
 
 function Head({ label, what, diff = false }: { label: string; what: "code" | "table"; diff?: boolean }) {
   return (
@@ -45,24 +44,26 @@ function inlines(nodes: Inline[]): ReactNode[] {
   });
 }
 
-function Code({ value: { label, text } }: { value: Extract<Block, { type: "code" }>["value"] }) {
+function HunkCode({ label, text, diff }: { label: string; text: string; diff: Extract<NonNullable<Extract<Block, { type: "code" }>["value"]["diff"]>, { lines: unknown }> }) {
+  const split = useSplit();
+  return (
+    <div className="md-code" data-raw={text}>
+      <Head label={label} what="code" diff />
+      <PatchBody patch={text} info={diff} split={split} />
+    </div>
+  );
+}
+
+function Code({ value: { label, text, diff } }: { value: Extract<Block, { type: "code" }>["value"] }) {
   if (label === null) return <><pre><code>{text}</code></pre>{"\n"}</>;
-  if (label === "diff" || label === "patch") {
-    if (isPatch(text)) {
-      const { headed, html } = diffFence(text);
-      return (
-        <div className="md-code" data-raw={text}>
-          <Head label={label} what="code" diff />
-          <div className={`d2h${headed ? "" : " bare"}`} dangerouslySetInnerHTML={{ __html: html }} />
-        </div>
-      );
-    }
-    return <div className="md-code"><Head label={label} what="code" /><pre dangerouslySetInnerHTML={{ __html: prefixHtml(text) }} /></div>;
+  if (diff && "lines" in diff) return <HunkCode label={label} text={text} diff={diff} />;
+  if (diff && "prefix" in diff) {
+    return <div className="md-code"><Head label={label} what="code" /><pre><code>{diff.prefix.map((row, i) => <ColoredRow key={i} kind={row.kind}>{row.text}</ColoredRow>)}</code></pre></div>;
   }
   return (
     <div className="md-code">
       <Head label={label} what="code" />
-      <pre><code className={label === "code" ? undefined : `language-${label}`}>{text}</code></pre>{"\n"}
+      <pre><code className={label === "code" ? undefined : `language-${label}`}>{text}</code></pre>{label === "diff" || label === "patch" ? null : "\n"}
     </div>
   );
 }

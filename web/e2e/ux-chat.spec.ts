@@ -2,7 +2,8 @@ import { expect, test } from "@playwright/test";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { row, rows, open, mockRows } from "./ux-helpers";
-import type { PatchInfo } from "../src/core/api";
+import fencePainter from "../../tests/fixtures/s6c/painter.json" with { type: "json" };
+import type { Display, PatchInfo } from "../src/core/api";
 import previewPatch from "./fixtures/s6a-preview.json" with { type: "json" };
 import fullLines0 from "./fixtures/s6a-full-lines-0.json" with { type: "json" };
 import fullLines1 from "./fixtures/s6a-full-lines-1.json" with { type: "json" };
@@ -236,4 +237,52 @@ test("a table column keeps its longest word and a wide table scrolls inside its 
     expect(wide, `${word} column is as wide as its longest word`).toBe(true);
   }
   expect(await tab.locator(".md-table td").first().evaluate((el) => getComputedStyle(el).overflowWrap)).toBe("normal");
+});
+
+// S6C-FENCES-V1 T2. Written only; no native clipboard and no browser run.
+test("a fence and a tool share wire rows and layout while Copy keeps full text", async ({ page: tab }) => {
+  await tab.addInitScript(() => {
+    localStorage.setItem("swarm.diff.split", "0");
+    const captured: string[] = [];
+    Object.defineProperty(window, "s6cCopies", { value: captured });
+    Object.defineProperty(navigator, "clipboard", { value: { writeText: async (text: string) => { captured.push(text); } } });
+  });
+  const fence = row("fence1", "raw Markdown deliberately differs from display");
+  const tool = row("tool2", "", "diff");
+  tool.diff = { id: "fence-tool", path: "x", patch: "@@ -1 +1 @@\n-tool-raw\n+tool-raw\n", added: 1, removed: 1, omitted_lines: 0, shortened_lines: 0, full_lines: 5, full_bytes: 48 };
+  const page = rows([fence, tool], 0, { "fence-tool": fencePainter.patch as PatchInfo });
+  page.display![fence.id] = fencePainter.display as Display;
+  await tab.route("**/api/rows?*", route => route.fulfill({ json: page }));
+  await open(tab);
+  const hunk = tab.locator('[data-id="fence1"] .md-code').nth(0);
+  const prefix = tab.locator('[data-id="fence1"] .md-code').nth(1);
+  const card = tab.getByTestId("diff");
+  for (const box of [hunk, card]) {
+    await expect(box.locator(".patch")).toBeVisible();
+    await expect(box.locator(".pl.del .code")).toHaveText("<script>x</script>");
+    await expect(box.locator(".pl.add .code")).toHaveText("<b>&new</b>");
+    await expect(box.locator(".pl.del .ln")).toHaveText(["1", ""]);
+    await expect(box.locator(".pl.add .ln")).toHaveText(["", "1"]);
+    await expect(box.locator("script, b")).toHaveCount(0);
+  }
+  await hunk.locator('[data-diff-layout="1"]').click();
+  await expect(card.getByRole("button", { name: "Split", exact: true })).toHaveAttribute("aria-pressed", "true");
+  for (const box of [hunk, card]) {
+    await expect(box.locator(".pl.split")).toHaveCount(1);
+    await expect(box.locator(".half.del .ln")).toHaveText("1");
+    await expect(box.locator(".half.add .ln")).toHaveText("1");
+    await expect(box.locator(".half.del .code")).toHaveText("<script>x</script>");
+    await expect(box.locator(".half.add .code")).toHaveText("<b>&new</b>");
+  }
+  await card.getByRole("button", { name: "Unified", exact: true }).click();
+  for (const box of [hunk, card]) {
+    await expect(box.locator(".pl.split")).toHaveCount(0);
+    await expect(box.locator(".pl.del .code")).toHaveText("<script>x</script>");
+  }
+  await expect(prefix.locator("[data-diff-layout]")).toHaveCount(0);
+  await expect(prefix.locator("pre")).toHaveText(fencePainter.prefixCopy);
+  await hunk.getByRole("button", { name: "Copy code", exact: true }).click();
+  await prefix.getByRole("button", { name: "Copy code", exact: true }).click();
+  expect(await tab.evaluate(() => (window as unknown as { s6cCopies: string[] }).s6cCopies))
+    .toEqual([fencePainter.raw, fencePainter.prefixCopy]);
 });

@@ -2,6 +2,8 @@
 
 use markdown::mdast::Node;
 
+use super::super::{display_patch, patch_wire};
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct Display {
     pub blocks: Vec<Block>,
@@ -26,6 +28,8 @@ pub enum Block {
     Code {
         label: Option<String>,
         text: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        diff: Option<serde_json::Value>,
     },
     Table {
         source: String,
@@ -158,10 +162,12 @@ fn map_blocks(
                         })
                         .collect(),
                 },
-                Node::Code(code) => Block::Code {
-                    label: code_label(code, offset_text),
-                    text: code_text(code, offset_text),
-                },
+                Node::Code(code) => {
+                    let label = code_label(code, offset_text);
+                    let text = code_text(code, offset_text);
+                    let diff = code_diff(label.as_deref(), &text);
+                    Block::Code { label, text, diff }
+                }
                 Node::Table(table) => {
                     let mut rows = table
                         .children
@@ -202,6 +208,34 @@ fn map_blocks(
             })
         })
         .collect()
+}
+
+fn code_diff(label: Option<&str>, text: &str) -> Option<serde_json::Value> {
+    if !matches!(label, Some("diff" | "patch")) {
+        return None;
+    }
+    let utf16: Vec<_> = text.encode_utf16().collect();
+    if display_patch::is_patch(&utf16) {
+        return patch_wire::text_patch(text, true);
+    }
+    let prefix: Vec<_> = text
+        .strip_suffix('\n')
+        .unwrap_or(text)
+        .split('\n')
+        .map(|line| {
+            let kind = if line.starts_with('+') {
+                "add"
+            } else if line.starts_with('-') {
+                "del"
+            } else if line.starts_with("@@") {
+                "hunk"
+            } else {
+                "ctx"
+            };
+            serde_json::json!({"kind": kind, "text": format!("{line}\n")})
+        })
+        .collect();
+    Some(serde_json::json!({"prefix": prefix}))
 }
 
 fn map_inlines(

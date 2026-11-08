@@ -119,7 +119,7 @@ export type Block =
   | { type: "thematic_break" }
   | { type: "blockquote"; value: Block[] }
   | { type: "list"; value: { ordered: boolean; start: number | null; tight: boolean; items: Block[][] } }
-  | { type: "code"; value: { label: string | null; text: string } }
+  | { type: "code"; value: { label: string | null; text: string; diff?: Extract<PatchInfo, { lines: unknown }> | { prefix: { kind: PatchLineWire["kind"]; text: string }[] } } }
   | { type: "table"; value: { source: string; align: Align[]; head: Inline[][]; rows: Inline[][][] } }
   | { type: "later"; value: string };
 

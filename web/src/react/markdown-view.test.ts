@@ -6,6 +6,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { Display } from "../core/api";
+import painter from "../../../tests/fixtures/s6c/painter.json";
 import { MarkdownView } from "./markdown-view";
 
 type Case = { name: string; display: Display; html: string };
@@ -40,18 +41,6 @@ const cases: Case[] = [
     name: "fence_with_markup_chars",
     display: {"blocks": [{"type": "code", "value": {"label": "js", "text": "</script><b>&amp;\n"}}]},
     html: "<div class=\"md-code\"><div class=\"md-head\"><span>js</span><button type=\"button\" data-copy=\"code\" aria-label=\"Copy code\">Copy</button></div><pre><code class=\"language-js\">&lt;/script&gt;&lt;b&gt;&amp;amp;\n</code></pre>\n</div>",
-  },
-  // s4x-diff-no-hunk: a diff fence with no hunk: coloured lines
-  {
-    name: "diff_fence_without_hunk",
-    display: {"blocks": [{"type": "code", "value": {"label": "diff", "text": "+a\n-b\n ctx\n@@ note\n"}}]},
-    html: "<div class=\"md-code\"><div class=\"md-head\"><span>diff</span><button type=\"button\" data-copy=\"code\" aria-label=\"Copy code\">Copy</button></div><pre><code><span class=\"dl add\">+a\n</span><span class=\"dl del\">-b\n</span><span class=\"dl ctx\"> ctx\n</span><span class=\"dl hunk\">@@ note\n</span></code></pre></div>",
-  },
-  // s4x-diff-bare-hunk: a diff fence with a hunk: diff2html in both layouts
-  {
-    name: "diff_fence_with_hunk",
-    display: {"blocks": [{"type": "code", "value": {"label": "diff", "text": "@@ -1 +1 @@\n-a\n+b\n"}}]},
-    html: "<div class=\"md-code\" data-raw=\"@@ -1 +1 @@\n-a\n+b\n\"><div class=\"md-head\"><span>diff</span><div class=\"seg\" role=\"group\" aria-label=\"Diff layout\"><button type=\"button\" data-diff-layout=\"0\">Unified</button><button type=\"button\" data-diff-layout=\"1\">Split</button></div><button type=\"button\" data-copy=\"code\" aria-label=\"Copy code\">Copy</button></div><div class=\"d2h bare\"><div class=\"unified\"><div class=\"d2h-wrapper d2h-light-color-scheme\">\n    <div id=\"d2h-438728\" class=\"d2h-file-wrapper\" data-lang=\"\">\n    <div class=\"d2h-file-header\">\n    <span class=\"d2h-file-name-wrapper\">\n    <svg aria-hidden=\"true\" class=\"d2h-icon\" height=\"16\" version=\"1.1\" viewBox=\"0 0 12 16\" width=\"12\">\n        <path d=\"M6 5H2v-1h4v1zM2 8h7v-1H2v1z m0 2h7v-1H2v1z m0 2h7v-1H2v1z m10-7.5v9.5c0 0.55-0.45 1-1 1H1c-0.55 0-1-0.45-1-1V2c0-0.55 0.45-1 1-1h7.5l3.5 3.5z m-1 0.5L8 2H1v12h10V5z\"></path>\n    </svg>    <span class=\"d2h-file-name\">patch</span>\n    <span class=\"d2h-tag d2h-changed d2h-changed-tag\">CHANGED</span></span>\n<label class=\"d2h-file-collapse\">\n    <input class=\"d2h-file-collapse-input\" type=\"checkbox\" name=\"viewed\" value=\"viewed\">\n    Viewed\n</label>\n    </div>\n    <div class=\"d2h-file-diff\">\n        <div class=\"d2h-code-wrapper\">\n            <table class=\"d2h-diff-table\">\n                <tbody class=\"d2h-diff-tbody\">\n                <tr>\n    <td class=\"d2h-code-linenumber d2h-info\"></td>\n    <td class=\"d2h-info\">\n        <div class=\"d2h-code-line\">@@ -1 +1 @@</div>\n    </td>\n</tr><tr>\n    <td class=\"d2h-code-linenumber d2h-del d2h-change\">\n      <div class=\"line-num1\">1</div>\n<div class=\"line-num2\"></div>\n    </td>\n    <td class=\"d2h-del d2h-change\">\n        <div class=\"d2h-code-line\">\n            <span class=\"d2h-code-line-prefix\">-</span>\n            <span class=\"d2h-code-line-ctn\"><del>a</del></span>\n        </div>\n    </td>\n</tr><tr>\n    <td class=\"d2h-code-linenumber d2h-ins d2h-change\">\n      <div class=\"line-num1\"></div>\n<div class=\"line-num2\">1</div>\n    </td>\n    <td class=\"d2h-ins d2h-change\">\n        <div class=\"d2h-code-line\">\n            <span class=\"d2h-code-line-prefix\">+</span>\n            <span class=\"d2h-code-line-ctn\"><ins>b</ins></span>\n        </div>\n    </td>\n</tr>\n                </tbody>\n            </table>\n        </div>\n    </div>\n</div>\n</div></div><div class=\"split\"><div class=\"d2h-wrapper d2h-light-color-scheme\">\n    <div id=\"d2h-438728\" class=\"d2h-file-wrapper\" data-lang=\"\">\n    <div class=\"d2h-file-header\">\n      <span class=\"d2h-file-name-wrapper\">\n    <svg aria-hidden=\"true\" class=\"d2h-icon\" height=\"16\" version=\"1.1\" viewBox=\"0 0 12 16\" width=\"12\">\n        <path d=\"M6 5H2v-1h4v1zM2 8h7v-1H2v1z m0 2h7v-1H2v1z m0 2h7v-1H2v1z m10-7.5v9.5c0 0.55-0.45 1-1 1H1c-0.55 0-1-0.45-1-1V2c0-0.55 0.45-1 1-1h7.5l3.5 3.5z m-1 0.5L8 2H1v12h10V5z\"></path>\n    </svg>    <span class=\"d2h-file-name\">patch</span>\n    <span class=\"d2h-tag d2h-changed d2h-changed-tag\">CHANGED</span></span>\n<label class=\"d2h-file-collapse\">\n    <input class=\"d2h-file-collapse-input\" type=\"checkbox\" name=\"viewed\" value=\"viewed\">\n    Viewed\n</label>\n    </div>\n    <div class=\"d2h-files-diff\">\n        <div class=\"d2h-file-side-diff\">\n            <div class=\"d2h-code-wrapper\">\n                <table class=\"d2h-diff-table\">\n                    <tbody class=\"d2h-diff-tbody\">\n                    <tr>\n    <td class=\"d2h-code-side-linenumber d2h-info\"></td>\n    <td class=\"d2h-info\">\n        <div class=\"d2h-code-side-line\">@@ -1 +1 @@</div>\n    </td>\n</tr><tr>\n    <td class=\"d2h-code-side-linenumber d2h-del d2h-change\">\n      1\n    </td>\n    <td class=\"d2h-del d2h-change\">\n        <div class=\"d2h-code-side-line\">\n            <span class=\"d2h-code-line-prefix\">-</span>\n            <span class=\"d2h-code-line-ctn\"><del>a</del></span>\n        </div>\n    </td>\n</tr>\n                    </tbody>\n                </table>\n            </div>\n        </div>\n        <div class=\"d2h-file-side-diff\">\n            <div class=\"d2h-code-wrapper\">\n                <table class=\"d2h-diff-table\">\n                    <tbody class=\"d2h-diff-tbody\">\n                    <tr>\n    <td class=\"d2h-code-side-linenumber d2h-info\"></td>\n    <td class=\"d2h-info\">\n        <div class=\"d2h-code-side-line\">&nbsp;</div>\n    </td>\n</tr><tr>\n    <td class=\"d2h-code-side-linenumber d2h-ins d2h-change\">\n      1\n    </td>\n    <td class=\"d2h-ins d2h-change\">\n        <div class=\"d2h-code-side-line\">\n            <span class=\"d2h-code-line-prefix\">+</span>\n            <span class=\"d2h-code-line-ctn\"><ins>b</ins></span>\n        </div>\n    </td>\n</tr>\n                    </tbody>\n                </table>\n            </div>\n        </div>\n    </div>\n</div>\n</div></div></div></div>",
   },
   // s4x-table-align: table: data-raw, head, text-align only on aligned cells
   {
@@ -152,5 +141,34 @@ describe("MarkdownView", () => {
     const actual = cases.map((c) => [c.name, normalize(renderToStaticMarkup(createElement(MarkdownView, { display: c.display })))]);
     const expected = cases.map((c) => [c.name, normalize(c.html)]);
     expect(actual).toEqual(expected);
+  });
+});
+
+// S6C-FENCES-V1 T2. HAND entries differ from raw text to catch reparsing.
+// SSR checks the box and prefix text; written browser coverage checks VList rows.
+describe("S6c fence painter", () => {
+  it("diff_fence_without_hunk paints literal prefix rows without layout controls", () => {
+    const display = { blocks: [painter.display.blocks[1]] } as Display;
+    const html = renderToStaticMarkup(createElement(MarkdownView, { display }));
+    expect(normalize(html)).toEqual('<div class="md-code"><div class="md-head"><span>patch</span><button type="button" data-copy="code" aria-label="Copy code">Copy</button></div><pre><code><span class="dl del">--- &lt;old&gt;\n</span><span class="dl add">+++ &amp;new\n</span><span class="dl ctx"> complete\n</span></code></pre></div>');
+  });
+  it("diff_fence_with_hunk uses the shared patch box and keeps raw Copy text", () => {
+    const display = { blocks: [painter.display.blocks[0]] } as Display;
+    const html = renderToStaticMarkup(createElement(MarkdownView, { display }));
+    const missing = renderToStaticMarkup(createElement(MarkdownView, {
+      display: { blocks: [{ type: "code", value: { label: "diff", text: "@@ -1 +1 @@\n-a\n+b\n" } }] },
+    }));
+    expect({
+      missing: normalize(missing),
+      patch: /class="patch"/.test(html),
+      raw: html.includes('data-raw="' + painter.raw + '"'),
+      unified: html.includes('data-diff-layout="0"'),
+      split: html.includes('data-diff-layout="1"'),
+      copy: html.includes('data-copy="code"'),
+      oldPainter: /d2h/.test(html),
+    }).toEqual({
+      missing: '<div class="md-code"><div class="md-head"><span>diff</span><button type="button" data-copy="code" aria-label="Copy code">Copy</button></div><pre><code class="language-diff">@@ -1 +1 @@\n-a\n+b\n</code></pre></div>',
+      patch: true, raw: true, unified: true, split: true, copy: true, oldPainter: false,
+    });
   });
 });
