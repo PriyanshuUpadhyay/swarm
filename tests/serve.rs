@@ -449,3 +449,6 @@ mod s9b_switch;
 
 #[path = "serve/s9c_switch.rs"]
 mod s9c_switch;
+
+#[path = "serve/s9d_switch.rs"]
+mod s9d_switch;

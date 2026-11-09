@@ -70,29 +70,3 @@ mod captured {
 fn g3_codex_switch_matches_the_old_public_values_without_zig() {
     captured::journey();
 }
-fn pi_page(server: &Server) -> Value {
-    let connection = swarm::store::open(&server.dir.join("home/.swarm/swarm.db")).unwrap();
-    connection
-        .execute(
-            "UPDATE session SET chair_provider='pi' WHERE id=?1",
-            [&server.session],
-        )
-        .unwrap();
-    fs::write(
-        &server.log,
-        include_bytes!("../fixtures/s9b/pi-control-input.jsonl"),
-    )
-    .unwrap();
-    let path = format!("/api/rows?session={}&agent=chair&tail=2000", server.session);
-    let (status, _, body) = server.request("GET", &path, "", "", true);
-    json!({"status":status,"body":serde_json::from_str::<Value>(&body).unwrap()})
-}
-#[test]
-fn g3_pi_uses_real_zig_and_fails_without_it() {
-    let real = Server::new();
-    let absent = captured::Server::new();
-    assert_eq!(
-        json!({"real":pi_page(&real),"without":pi_page(&absent)}),
-        serde_json::from_str::<Value>(include_str!("../fixtures/s9b/pi-control.json")).unwrap()
-    );
-}
