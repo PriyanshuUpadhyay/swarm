@@ -61,10 +61,10 @@ impl Server {
     fn connection(&self) -> TcpStream {
         let stream = TcpStream::connect(("127.0.0.1", self.port)).unwrap();
         stream
-            .set_read_timeout(Some(Duration::from_millis(900)))
+            .set_read_timeout(Some(Duration::from_millis(30000)))
             .unwrap();
         stream
-            .set_write_timeout(Some(Duration::from_millis(900)))
+            .set_write_timeout(Some(Duration::from_millis(30000)))
             .unwrap();
         stream
     }
