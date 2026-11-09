@@ -53,3 +53,5 @@ with failures turns back into many rows.
 - Neutral: a fold's open state is gone when its chat is freed (ADR 0024, 0025).
 - Neutral: an open fold's steps are rows of the upside-down list (ADR 0028), so a long open fold
   and Show Source build only what is on screen; the owner checks the window.
+
+- Amended 2026-11-10: the Rust transcript worker (`swarm _transcript-worker`, `src/view/transcript`) replaced the Zig tool; `libexec/transcript` is no longer shipped.

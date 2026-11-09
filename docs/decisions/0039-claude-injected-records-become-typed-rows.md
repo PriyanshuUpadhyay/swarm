@@ -43,3 +43,5 @@ and the skill name, and a typed prompt that starts with `<` would vanish.
   by itself (ADR 0028).
 - Bad: every event carries two more `meta` fields, about 40 bytes each.
 - Neutral: Textual stays out; a markdown package needs its own spike and ADR.
+
+- Amended 2026-11-10: the Rust transcript worker (`swarm _transcript-worker`, `src/view/transcript`) replaced the Zig tool; `libexec/transcript` is no longer shipped.

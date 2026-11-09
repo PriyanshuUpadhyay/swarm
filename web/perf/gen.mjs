@@ -28,7 +28,7 @@ function sentence(n) {
   return out.join(" ") + ".";
 }
 
-// One "event" is one JSONL line in Claude's log format, as in tests/fixtures/provider-logs.
+// Each input is a physical Claude JSONL record, read by swarm _transcript-worker.
 function* turnLines(session, parent) {
   const user = id("u");
   yield { parentUuid: parent, type: "user", message: { role: "user", content: sentence(12) }, uuid: user, timestamp: ts(), sessionId: session };

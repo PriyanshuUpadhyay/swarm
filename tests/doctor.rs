@@ -22,15 +22,7 @@ fn doctor_json_has_one_row_per_item_and_an_empty_home_needs_setup() {
     assert_eq!(doctor["schema"], "swarm.doctor.v1");
     let items = doctor["items"].as_array().unwrap();
     let ids: Vec<_> = items.iter().map(|i| i["id"].as_str().unwrap()).collect();
-    let mut expected = vec![
-        "hooks",
-        "guard",
-        "trust",
-        "plugin",
-        "hud",
-        "transcript",
-        "notices",
-    ];
+    let mut expected = vec!["hooks", "guard", "trust", "plugin", "hud", "notices"];
     if cfg!(feature = "serve") {
         expected.push("ui");
     }

@@ -1,6 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
 
-// Needs `pnpm build`, `cargo build --features serve` and the zig transcript tool first.
+// Needs `pnpm build` and `cargo build --features serve --bins` first.
 export default defineConfig({
   testDir: "e2e",
   globalSetup: "./e2e/serve.ts",

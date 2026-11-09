@@ -75,3 +75,5 @@ surface, and no app bundle needs a window, a signature for Gatekeeper, or a DMG.
 ## Links
 
 - Supersedes: 0078. Amends: 0048, 0077. Related: 0027, 0062, 0075.
+
+- Amended 2026-11-10: the Rust transcript worker (`swarm _transcript-worker`, `src/view/transcript`) replaced the Zig tool; `libexec/transcript` is no longer shipped.
