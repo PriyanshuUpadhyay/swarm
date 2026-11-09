@@ -177,7 +177,7 @@ impl Session {
                 self.send(
                     Reply::Ready {
                         protocol: PROTOCOL,
-                        formats: vec!["claude".into(), "codex".into(), "agy".into()],
+                        formats: vec!["claude".into(), "codex".into(), "agy".into(), "pi".into()],
                     },
                     budget,
                 )
@@ -194,7 +194,7 @@ impl Session {
                 if self.held.is_some()
                     || binding.source_id.is_empty()
                     || binding.source_id.len() > MAX_SOURCE_ID_BYTES
-                    || !matches!(format.as_str(), "claude" | "codex" | "agy")
+                    || !matches!(format.as_str(), "claude" | "codex" | "agy" | "pi")
                     || !Path::new(&path).is_absolute()
                 {
                     return Err(Code::BadRequest);

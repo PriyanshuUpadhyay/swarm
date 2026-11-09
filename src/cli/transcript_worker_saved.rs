@@ -280,6 +280,7 @@ pub(super) async fn execute(text: &str) -> Result<()> {
         "claude" => NativeFormat::Claude,
         "codex" => NativeFormat::Codex,
         "agy" => NativeFormat::Agy,
+        "pi" => NativeFormat::Pi,
         _ => return Err(Code::BadRequest),
     };
     let file = File::from(
