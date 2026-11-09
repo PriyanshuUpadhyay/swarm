@@ -30,11 +30,8 @@ impl Server {
         app.cli = std::env::var_os("S9D_SWARM")
             .expect("built real swarm binary")
             .into();
-        app.tool = fixture.dir.join("unavailable-zig");
         let (actions, action_queue) = mpsc::channel(64);
         app.actions = actions;
-        // This cfg(test) selector chooses the real Rust caller; it injects no failure.
-        source_backend::select_for_test(&fixture.app, "pi", source_backend::Backend::Rust);
 
         let app = fixture.app.clone();
         let (stop, stopped) = oneshot::channel();

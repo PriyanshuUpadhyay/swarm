@@ -21,6 +21,17 @@ pub(super) struct Fixture {
     pub(super) log: PathBuf,
 }
 
+fn real_worker() -> PathBuf {
+    let path: PathBuf = std::env::var_os("S9A_SWARM")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("target/debug/swarm"));
+    assert!(
+        path.is_file(),
+        "build the real swarm worker with cargo build --features serve --bins; S9A_SWARM may name that binary"
+    );
+    path
+}
+
 impl Fixture {
     /// A new chat in `src`, a folder of the workspace that the owner archived (the crate root).
     pub(super) fn chat_in_archived_workspace(&self) -> String {
@@ -69,11 +80,12 @@ impl Fixture {
         swarm::store::set_chair_log(&connection, &session, &log).unwrap();
         swarm::store::add_agent(&connection, &session, "worker", "chat").unwrap();
         let (actions, action_queue) = mpsc::channel(64);
+        let mut sources = source_backend::Sources::default();
+        sources.worker_cli = Some(real_worker());
         let app = Arc::new(Server {
-            sources: source_backend::Sources::default(),
+            sources,
             root,
-            tool: Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("packages/transcript/zig-out/bin/transcript"),
+            tool: dir.join("unused-transcript"),
             port: 1,
             ui: true,
             token: "test".into(),
@@ -97,8 +109,6 @@ impl Fixture {
             usage_refresh: Mutex::new(HashMap::new()),
             commands: Mutex::new(HashMap::new()),
         });
-        source_backend::select_for_test(&app, "claude", source_backend::Backend::Zig);
-        source_backend::select_for_test(&app, "codex", source_backend::Backend::Zig);
         // Most row tests need no action worker and may not run inside a Tokio runtime.
         drop(action_queue);
         Self {

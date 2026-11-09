@@ -29,9 +29,6 @@ impl Server {
         app.cli = std::env::var_os("S9A_SWARM")
             .expect("built real swarm binary")
             .into();
-        app.tool = fixture.dir.join("unavailable-zig");
-        // This cfg(test) selector chooses the real Rust caller; it injects no failure.
-        source_backend::select_for_test(&fixture.app, "claude", source_backend::Backend::Rust);
         let app = fixture.app.clone();
         let (stop, stopped) = oneshot::channel();
         let task = std::thread::spawn(move || {

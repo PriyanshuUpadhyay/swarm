@@ -15,25 +15,13 @@ type Key = (String, PathBuf, String);
 pub(super) struct Sources {
     held: tokio::sync::Mutex<HashMap<Key, Weak<Lease>>>,
     #[cfg(test)]
-    selected: Mutex<HashMap<String, Backend>>,
+    pub(super) worker_cli: Option<PathBuf>,
 }
 pub(super) struct Lease {
     source: transcript_caller::Source,
     serial: tokio::sync::Mutex<()>,
 }
-#[cfg(test)]
-pub(super) fn select_for_test(app: &App, format: &str, backend: Backend) {
-    app.sources
-        .selected
-        .lock()
-        .unwrap()
-        .insert(format.into(), backend);
-}
 fn selected(app: &App, format: &str) -> Backend {
-    #[cfg(test)]
-    if let Some(backend) = app.sources.selected.lock().unwrap().get(format) {
-        return *backend;
-    }
     let _ = app;
     if matches!(format, "claude" | "codex" | "agy" | "pi") {
         Backend::Rust
@@ -58,6 +46,10 @@ pub(super) async fn acquire(
         return Ok(Some(source));
     }
     let mut command = tokio::process::Command::new(&app.cli);
+    #[cfg(test)]
+    if let Some(worker) = &app.sources.worker_cli {
+        command = tokio::process::Command::new(worker);
+    }
     command.args(["_transcript-worker", "--protocol", "2"]);
     let source = transcript_caller::Source::open(
         command,

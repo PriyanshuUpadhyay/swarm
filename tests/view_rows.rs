@@ -2,7 +2,6 @@ use serde_json::{Value, json};
 use std::{
     collections::{HashMap, HashSet},
     path::Path,
-    process::Command,
 };
 use swarm::view::transcript::{self as transcript, Record, Row, RowKind};
 use swarm::view::{self, DiffPreview, TextPreview, ToolState};
@@ -72,20 +71,40 @@ fn shell_input(command: &str, uuid: &str) -> Value {
 fn shell_output(output: &str, parent: &str) -> Value {
     system("shell_output", output, "", parent)
 }
-fn fixture(format: &str, name: &str) -> Vec<Value> {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let output = Command::new(root.join("packages/transcript/zig-out/bin/transcript"))
-        .args(["--format", format])
-        .arg(root.join("tests/fixtures/provider-logs").join(name))
-        .output()
-        .expect("cannot run transcript; run `zig build` in packages/transcript first");
-    assert!(output.status.success());
-    output
-        .stdout
-        .split(|byte| *byte == b'\n')
-        .filter(|line| !line.is_empty())
-        .map(|line| serde_json::from_slice(line).unwrap())
+fn translated(format: &str, path: &Path, bytes: &[u8]) -> Vec<Value> {
+    use transcript::source::{
+        EndPolicy, NativeFormat, SnapshotError, SnapshotReader, SourceMeta, Work,
+    };
+    struct Ready;
+    impl Work for Ready {
+        fn check(&mut self) -> Result<(), SnapshotError> {
+            Ok(())
+        }
+    }
+    let mut reader = SnapshotReader::with_open_path(
+        SourceMeta {
+            source_id: "fixture".into(),
+        },
+        0,
+        EndPolicy::SnapshotEof,
+        NativeFormat::from_name(format).expect("fixture format"),
+        path.to_str().unwrap(),
+    );
+    reader.push(bytes, &mut Ready).unwrap();
+    reader
+        .finish_native(&mut Ready)
+        .unwrap()
+        .lines
+        .into_iter()
+        .flat_map(|line| line.events)
+        .map(|event| serde_json::to_value(event).unwrap())
         .collect()
+}
+fn fixture(format: &str, name: &str) -> Vec<Value> {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/provider-logs")
+        .join(name);
+    translated(format, &path, &std::fs::read(&path).unwrap())
 }
 
 fn in_session(mut event: Value, session: &str) -> Value {
@@ -100,25 +119,7 @@ fn skill_body(kind: &str, text: &str, call_id: &str) -> Value {
 const RING: &str =
     "swarm: new message. Run swarm inbox and read each body at /home/owner/.swarm/<body_path>.";
 fn inline_fixture(format: &str, lines: &[&str]) -> Vec<Value> {
-    let path =
-        std::env::temp_dir().join(format!("swarm-rows-fixture-{}.jsonl", uuid::Uuid::now_v7()));
-    std::fs::write(&path, lines.join("\n") + "\n").unwrap();
-    let output = Command::new(
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("packages/transcript/zig-out/bin/transcript"),
-    )
-    .args(["--format", format])
-    .arg(&path)
-    .output();
-    std::fs::remove_file(path).unwrap();
-    let output =
-        output.expect("cannot run transcript; run `zig build` in packages/transcript first");
-    assert!(output.status.success());
-    output
-        .stdout
-        .split(|byte| *byte == b'\n')
-        .filter(|line| !line.is_empty())
-        .map(|line| serde_json::from_slice(line).unwrap())
-        .collect()
+    translated(format, Path::new(""), (lines.join("\n") + "\n").as_bytes())
 }
 
 #[path = "view_rows/codex_and_records.rs"]
@@ -131,3 +132,6 @@ mod previews_and_labels;
 mod rows_and_tools;
 #[path = "view_rows/turns_and_folds.rs"]
 mod turns_and_folds;
+
+#[path = "view_rows/native_main.rs"]
+mod native_main;
