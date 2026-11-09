@@ -1,16 +1,16 @@
 ---
-description: Owner rule for the visual form (table, text diagram, or local HTML page) of a report, plan, review, status, or explanation with more than three facts. Read when a skill or AGENTS.md points here, before you write a map, a report, a plan, a status, or a reply that explains how something works.
+description: Choose a useful visual form for a comparison, relation, or flow. Read when a visual could help explain a report, plan, review, status, or explanation.
 ---
 
 # Explain formats
 
-A report, plan, review, status, or explanation with more than three facts carries a visual form,
-which is a table, a text diagram, or a local HTML page. Prose alone is for a result of three facts
-or fewer. The session's agent instructions own the reply and whether it carries the whole result.
+Use a table, a text diagram, or a local HTML page when it helps the reader compare items or follow
+a relation or flow. Ordinary prose is allowed without counting facts. The loaded session reply
+rules own the reply and whether it carries the whole result.
 
 | Content shape | Form |
 |---|---|
-| calls over time, across three or more parts | sequence diagram |
+| calls over time, where their order matters | sequence diagram |
 | decisions, branches, or a retry flow | flowchart |
 | dates, order, or phases | timeline |
 | a lifecycle or a status | state diagram |
@@ -32,15 +32,10 @@ With a table, the reader sees the state of all four at once.
 
 ## Diagram
 
-Draw one when the subject does at least one of these:
-
-- calls across three or more parts in an order that matters;
-- adds, removes, or reorders a branch, a guard, or an async step;
-- moves through a lifecycle, a status, or a retry flow;
-- changes a schema or a data model.
-
-Skip it for one file, a rename, a config value, or a list. The text already shows those. A list of
-more than three items with the same attributes gets a table.
+Draw a diagram when it makes an actual relation or flow easier to understand than prose.
+For example, a retry flow with two outcomes can show where each path ends. A change to one
+config value is usually clear in a sentence. A branch, lifecycle, or schema change alone does
+not require a diagram. Use a table when shared attributes make items easier to compare.
 
 Pick the type from the table above. `blocks/diagram/SKILL.md` owns the shared diagram rules.
 

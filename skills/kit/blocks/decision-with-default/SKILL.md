@@ -1,10 +1,10 @@
 ---
 name: decision-with-default
-description: "Ask about a real fork as one short question with your pick marked, or write the trade-off form when a choice is open. Use when a choice changes what gets built."
+description: "Ask about a real fork with your recommendation marked and keep consent with the owner. Use when a choice changes what gets built."
 license: MIT
 metadata:
   kind: rule
-  owns: "a real fork asked with a default, and the form of an open trade-off"
+  owns: "when to ask about a real fork, its recommended default, and owner consent"
   serves: "contracts, design"
   needs: "a claim or step id"
   gives: "one answer line per decision"
@@ -20,21 +20,15 @@ metadata:
 - Mark the option you would pick. The marked option is your recommendation, so "I changed nothing" is a full answer. Never leave a choice with no default.
 - When the task states the rule, the default is that rule as the frame's `Task rules:` line quotes it, by `blocks/requirements/SKILL.md`.
 - If an option removes a claim, say so: "claim 4 goes".
-- The question is 15 words at most.
 - An answer of "not opened; default kept" is not agreement. If the decision is important, ask about it in chat.
 - An unanswered choice is never treated as accepted.
-- When a scope forks, two rules conflict, or the question is open, write the trade-off form and stop. It recommends and never rules. Write it only for a trade-off that is really open, not for a fork that a known fact settles.
-
-  ```text
-  Fork:            <the choice, in one line>
-  Options:         <two or three, named>
-  Cost of each:    <what each one buys and what it spends>
-  Who is hurt:     <which caller, user, or operator feels it>
-  Reversibility:   <cheap to undo, or one-way>
-  What would settle it: <the measurement or fact that decides it>
-  Recommendation:  <one option, with the reason>
-  Owner:           human
-  ```
+- When a scope forks, two rules conflict, or a direction-changing choice remains open, explain the
+  trade-off and stop the work that depends on it. Recommend an option and leave the decision with
+  the human owner. A fork that a known fact settles needs no question.
+- Give the relevant facts in concise prose or options, following the loaded session reply rules.
+  Include what changes between the options and why you recommend one. Cost, affected users,
+  reversibility, and evidence that could settle the choice are useful when they affect the decision;
+  they are not fields to fill for every question.
 - Record a decision once it is made, in the repo's decision log when it has one. This block writes no ADR.
 
 ## Example
@@ -51,5 +45,6 @@ Result: the user answers "kept as proposed". The builder draws one static diagra
 ## Check (judge)
 - Are there 5 claim decisions or fewer, and does each have exactly one `(x)` option? A trade-off form is not a claim decision. Quote each question with its options, or write "no fork".
 - Does each claim decision sit on the claim it changes, after that claim's exhibit and before its child claims? Quote the decision and the claim.
-- Is each claim decision's question 15 words or fewer? Quote each question with its word count.
+- Does each open direction-changing choice state the relevant trade-off and recommendation, leave
+  the decision with the human owner, and stop dependent work? Quote the choice and the stopped work.
 - Does each "not opened" answer on an important claim decision have a follow-up question in chat, or a line that says why none was needed? Quote both.
