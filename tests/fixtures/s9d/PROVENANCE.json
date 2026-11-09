@@ -1,0 +1,9 @@
+{
+  "OLD": "a8c2b3dc347e99f2e06ff7493123349aabdf3ab9",
+  "owner": "ORIGINAL Zig and Rust public rows/serve; no S9d implementation",
+  "source": "original-s9d/",
+  "comparison": "out-1 and out-2 are byte-equal after SESSION normalization; pings are omitted",
+  "native": "native per-line capture retains stdout/status; abort diagnostics are not public values",
+  "private_page": "G1 removes HTTP adapter display/patch/find/images; G2/G3 compare complete public fields",
+  "files": 754
+}

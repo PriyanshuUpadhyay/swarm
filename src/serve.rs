@@ -379,3 +379,7 @@ mod s9b_routes;
 #[cfg(test)]
 #[path = "serve/tests/s9c_routes.rs"]
 mod s9c_routes;
+
+#[cfg(test)]
+#[path = "serve/tests/s9d_routes.rs"]
+mod s9d_routes;

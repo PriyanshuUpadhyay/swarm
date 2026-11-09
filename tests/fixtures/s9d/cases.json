@@ -1,0 +1,55 @@
+[
+  {
+    "name": "pi-chat",
+    "file": "pi-chat.jsonl",
+    "deep": true
+  },
+  {
+    "name": "pi-skills",
+    "file": "pi-skills.jsonl",
+    "deep": true
+  },
+  {
+    "name": "pi-images",
+    "file": "pi-images.jsonl",
+    "deep": true
+  },
+  {
+    "name": "pi-main",
+    "file": "2026-11-05T00-00-00-000Z_pi-u04-main.jsonl",
+    "input": "2026-11-05T00-00-00-000Z_pi-u04-main.jsonl",
+    "deep": true
+  },
+  {
+    "name": "pi-prefix-1265",
+    "file": "2026-11-05T00-00-00-000Z_pi-u04-main.jsonl",
+    "input": "prefix-1265.jsonl",
+    "deep": true
+  },
+  {
+    "name": "pi-prefix-1687",
+    "file": "2026-11-05T00-00-00-000Z_pi-u04-main.jsonl",
+    "input": "prefix-1687.jsonl",
+    "deep": true
+  },
+  {
+    "name": "num-digits30",
+    "file": "num-digits30.jsonl",
+    "deep": false
+  },
+  {
+    "name": "num-f1e400",
+    "file": "num-f1e400.jsonl",
+    "deep": false
+  },
+  {
+    "name": "num-fE2",
+    "file": "num-fE2.jsonl",
+    "deep": false
+  },
+  {
+    "name": "usage-sum-three-2pow62",
+    "file": "usage-sum-three-2pow62.jsonl",
+    "deep": false
+  }
+]
