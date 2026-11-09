@@ -35,7 +35,7 @@ fn selected(app: &App, format: &str) -> Backend {
         return *backend;
     }
     let _ = app;
-    if format == "claude" {
+    if matches!(format, "claude" | "codex") {
         Backend::Rust
     } else {
         Backend::Zig

@@ -98,6 +98,7 @@ impl Fixture {
             commands: Mutex::new(HashMap::new()),
         });
         source_backend::select_for_test(&app, "claude", source_backend::Backend::Zig);
+        source_backend::select_for_test(&app, "codex", source_backend::Backend::Zig);
         // Most row tests need no action worker and may not run inside a Tokio runtime.
         drop(action_queue);
         Self {
