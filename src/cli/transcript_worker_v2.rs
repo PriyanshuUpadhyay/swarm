@@ -177,7 +177,7 @@ impl Session {
                 self.send(
                     Reply::Ready {
                         protocol: PROTOCOL,
-                        formats: vec!["claude".into()],
+                        formats: vec!["claude".into(), "codex".into()],
                     },
                     budget,
                 )
@@ -194,7 +194,7 @@ impl Session {
                 if self.held.is_some()
                     || binding.source_id.is_empty()
                     || binding.source_id.len() > MAX_SOURCE_ID_BYTES
-                    || format != "claude"
+                    || !matches!(format.as_str(), "claude" | "codex")
                     || !Path::new(&path).is_absolute()
                 {
                     return Err(Code::BadRequest);
@@ -290,7 +290,7 @@ impl Session {
                         source.native = Some(NativeStream::new(
                             source.file.try_clone().map_err(|_| Code::Io)?,
                             from,
-                            NativeFormat::Claude,
+                            NativeFormat::from_name(&source.format).ok_or(Code::BadRequest)?,
                             &source.path,
                         ));
                     }
@@ -486,7 +486,7 @@ impl Session {
     }
     fn page(&mut self, payload: saved::Payload, before: bool, budget: Budget) -> Result<Vec<u8>> {
         let held = self.held.as_mut().ok_or(Code::Core)?;
-        let mut page = ReaderRows::empty(payload.start_byte, false);
+        let mut page = ReaderRows::empty(payload.start_byte, held.format == "codex");
         for line in payload.lines {
             budget.check()?;
             page.ingest(line.start_byte, line.end_byte, &line.events);

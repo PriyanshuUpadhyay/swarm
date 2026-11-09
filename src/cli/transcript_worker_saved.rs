@@ -276,9 +276,11 @@ pub(super) fn line_end(file: &File, start: u64, budget: Budget) -> Result<u64> {
 pub(super) async fn execute(text: &str) -> Result<()> {
     let job: Job = serde_json::from_str(text).map_err(|_| Code::BadRequest)?;
     let mut budget = Budget::new(Duration::from_millis(job.remaining_work_ms))?;
-    if job.format != "claude" {
-        return Err(Code::BadRequest);
-    }
+    let format = match job.format.as_str() {
+        "claude" => NativeFormat::Claude,
+        "codex" => NativeFormat::Codex,
+        _ => return Err(Code::BadRequest),
+    };
     let file = File::from(
         std::io::stdin()
             .as_fd()
@@ -309,7 +311,7 @@ pub(super) async fn execute(text: &str) -> Result<()> {
         } else {
             EndPolicy::CompleteLines
         },
-        NativeFormat::Claude,
+        format,
         &job.path,
     );
     let mut offset = job.start_byte;

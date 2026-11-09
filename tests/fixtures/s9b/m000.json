@@ -1,0 +1,597 @@
+{
+  "inputs/codex-chair-run.jsonl": {
+    "parts": [
+      "b0000-000.json"
+    ],
+    "bytes": 5661,
+    "sha256": "fcf7397352f13e2f6db673636158a2ac82b26c7e04706b52f100937f3db68eba"
+  },
+  "inputs/codex-depth254.jsonl": {
+    "parts": [
+      "b0001-000.json"
+    ],
+    "bytes": 683,
+    "sha256": "5c37136e3717346ede5bcc4def367bc9f8a74f440cc5dc29adf03e96663fff43"
+  },
+  "inputs/codex-duration-negzero.jsonl": {
+    "parts": [
+      "b0002-000.json"
+    ],
+    "bytes": 131,
+    "sha256": "b431a192f3e931e5aba79d3c8f3814192ef35b7c81ff54635ca35c6cf472ba10"
+  },
+  "inputs/codex-exec-edit.jsonl": {
+    "parts": [
+      "b0003-000.json"
+    ],
+    "bytes": 602,
+    "sha256": "a198d6834f0b0ff3b27e21f4f758bb9e89d61c7552135dfa34fbfa1d752e0b22"
+  },
+  "inputs/codex-kernel.jsonl": {
+    "parts": [
+      "b0004-000.json"
+    ],
+    "bytes": 3836,
+    "sha256": "883faaaece7f82302c0d9a28ad236fdad243c66e5ef7ff6327fad6de8da9c3ac"
+  },
+  "inputs/codex-negzero-whole.jsonl": {
+    "parts": [
+      "b0005-000.json"
+    ],
+    "bytes": 176,
+    "sha256": "d6f7614bc0a72597d2e61f05964b6d8fd0c9fc63d64ae1a7a3da55f1e06ce85d"
+  },
+  "inputs/codex-numbers-nodeep.jsonl": {
+    "parts": [
+      "b0006-000.json"
+    ],
+    "bytes": 1872,
+    "sha256": "e2bf43914cc946b3f0d97dfbf0c8f91ff54a3b0c4fb7200dcb0f93589fff4bfb"
+  },
+  "inputs/codex-tool-search.jsonl": {
+    "parts": [
+      "b0007-000.json"
+    ],
+    "bytes": 470,
+    "sha256": "743c7fef5ed37bb4e45f8ddc40179a949143e2bbbfa66f39dd803dc3e1413fd1"
+  },
+  "inputs/codex-yield.jsonl": {
+    "parts": [
+      "b0008-000.json"
+    ],
+    "bytes": 2196,
+    "sha256": "73a7c94614e5dea1e555f45b2afb888ce1fc3f8d52e6b9aafaf6bcd5d9b2280d"
+  },
+  "inputs/kernel-prefix-1752.jsonl": {
+    "parts": [
+      "b0009-000.json"
+    ],
+    "bytes": 1752,
+    "sha256": "91f0ed19df20b68b4ed67de1e66ee9e3de8603368cb7f5ffef27d6ff3bc7ec70"
+  },
+  "inputs/kernel-prefix-2771.jsonl": {
+    "parts": [
+      "b0010-000.json"
+    ],
+    "bytes": 2771,
+    "sha256": "208a9e5f3fa7c72a7d26e6fee953ba8151f03d595e6dd7e05e47f49b20bab7a6"
+  },
+  "inputs/question-cancel.jsonl": {
+    "parts": [
+      "b0011-000.json"
+    ],
+    "bytes": 384,
+    "sha256": "eb044dd4dd6dbde96e28fc249919b2dd9f5a59ded3750613bc1ab4cccea93680"
+  },
+  "out-1/account-managed-chair/raw-full.txt": {
+    "parts": [
+      "b0012-000.json"
+    ],
+    "bytes": 5659,
+    "sha256": "e78a7b54d5f0a4141120389b0e520dab5c1d0d8a1589e8b92c8f64cce1db3203"
+  },
+  "out-1/account-managed-chair/rows-full.txt": {
+    "parts": [
+      "b0013-000.json"
+    ],
+    "bytes": 7532,
+    "sha256": "cd74758ac9f8939301d74d8d7d2728d1f3b21200977c18c537e528d88553c559"
+  },
+  "out-1/account-managed-worker/raw-full.txt": {
+    "parts": [
+      "b0014-000.json"
+    ],
+    "bytes": 5659,
+    "sha256": "e78a7b54d5f0a4141120389b0e520dab5c1d0d8a1589e8b92c8f64cce1db3203"
+  },
+  "out-1/account-managed-worker/rows-full.txt": {
+    "parts": [
+      "b0015-000.json"
+    ],
+    "bytes": 7532,
+    "sha256": "cd74758ac9f8939301d74d8d7d2728d1f3b21200977c18c537e528d88553c559"
+  },
+  "out-1/account-native-chair/raw-full.txt": {
+    "parts": [
+      "b0016-000.json"
+    ],
+    "bytes": 5659,
+    "sha256": "e78a7b54d5f0a4141120389b0e520dab5c1d0d8a1589e8b92c8f64cce1db3203"
+  },
+  "out-1/account-native-chair/rows-full.txt": {
+    "parts": [
+      "b0017-000.json"
+    ],
+    "bytes": 7532,
+    "sha256": "cd74758ac9f8939301d74d8d7d2728d1f3b21200977c18c537e528d88553c559"
+  },
+  "out-1/account-native-worker/raw-full.txt": {
+    "parts": [
+      "b0018-000.json"
+    ],
+    "bytes": 5659,
+    "sha256": "e78a7b54d5f0a4141120389b0e520dab5c1d0d8a1589e8b92c8f64cce1db3203"
+  },
+  "out-1/account-native-worker/rows-full.txt": {
+    "parts": [
+      "b0019-000.json"
+    ],
+    "bytes": 7532,
+    "sha256": "cd74758ac9f8939301d74d8d7d2728d1f3b21200977c18c537e528d88553c559"
+  },
+  "out-1/account-override-chair/raw-full.txt": {
+    "parts": [
+      "b0020-000.json"
+    ],
+    "bytes": 5659,
+    "sha256": "e78a7b54d5f0a4141120389b0e520dab5c1d0d8a1589e8b92c8f64cce1db3203"
+  },
+  "out-1/account-override-chair/rows-full.txt": {
+    "parts": [
+      "b0021-000.json"
+    ],
+    "bytes": 7532,
+    "sha256": "cd74758ac9f8939301d74d8d7d2728d1f3b21200977c18c537e528d88553c559"
+  },
+  "out-1/account-override-worker/raw-full.txt": {
+    "parts": [
+      "b0022-000.json"
+    ],
+    "bytes": 5659,
+    "sha256": "e78a7b54d5f0a4141120389b0e520dab5c1d0d8a1589e8b92c8f64cce1db3203"
+  },
+  "out-1/account-override-worker/rows-full.txt": {
+    "parts": [
+      "b0023-000.json"
+    ],
+    "bytes": 7532,
+    "sha256": "cd74758ac9f8939301d74d8d7d2728d1f3b21200977c18c537e528d88553c559"
+  },
+  "out-1/account-profile-chair/raw-full.txt": {
+    "parts": [
+      "b0024-000.json"
+    ],
+    "bytes": 5659,
+    "sha256": "e78a7b54d5f0a4141120389b0e520dab5c1d0d8a1589e8b92c8f64cce1db3203"
+  },
+  "out-1/account-profile-chair/rows-full.txt": {
+    "parts": [
+      "b0025-000.json"
+    ],
+    "bytes": 7532,
+    "sha256": "cd74758ac9f8939301d74d8d7d2728d1f3b21200977c18c537e528d88553c559"
+  },
+  "out-1/account-profile-worker/raw-full.txt": {
+    "parts": [
+      "b0026-000.json"
+    ],
+    "bytes": 5659,
+    "sha256": "e78a7b54d5f0a4141120389b0e520dab5c1d0d8a1589e8b92c8f64cce1db3203"
+  },
+  "out-1/account-profile-worker/rows-full.txt": {
+    "parts": [
+      "b0027-000.json"
+    ],
+    "bytes": 7532,
+    "sha256": "cd74758ac9f8939301d74d8d7d2728d1f3b21200977c18c537e528d88553c559"
+  },
+  "out-1/agy-control/rows-full.txt": {
+    "parts": [
+      "b0028-000.json"
+    ],
+    "bytes": 328,
+    "sha256": "bd719dee26b41013ef575c7e5d7ea822334c99c276ca2cd746578babab67db42"
+  },
+  "out-1/codex-chair-run/error-raw-tail-0.txt": {
+    "parts": [
+      "b0029-000.json"
+    ],
+    "bytes": 36,
+    "sha256": "9abfdd769ce0fef31403dcf1f7bb4a1c96c8c22c1cf6a135112156d0a1435a33"
+  },
+  "out-1/codex-chair-run/error-tail-0.txt": {
+    "parts": [
+      "b0030-000.json"
+    ],
+    "bytes": 36,
+    "sha256": "9abfdd769ce0fef31403dcf1f7bb4a1c96c8c22c1cf6a135112156d0a1435a33"
+  },
+  "out-1/codex-chair-run/error-unknown-agent.txt": {
+    "parts": [
+      "b0031-000.json"
+    ],
+    "bytes": 29,
+    "sha256": "aa42d000abea0f86cbbd4ae0bc4966f2ec840231d74d7b890cac8e70c2515bf5"
+  },
+  "out-1/codex-chair-run/error-unknown-output.txt": {
+    "parts": [
+      "b0032-000.json"
+    ],
+    "bytes": 35,
+    "sha256": "7ed88c319501abd801d4e08d8107368c65e7a0bbce773bcfa9726b1eea7583a3"
+  },
+  "out-1/codex-chair-run/error-unknown-session.txt": {
+    "parts": [
+      "b0033-000.json"
+    ],
+    "bytes": 31,
+    "sha256": "4bca491c069d998477811a1871474108d68b6d9e36ef7ae527fe1475436cdbed"
+  },
+  "out-1/codex-chair-run/output-00.txt": {
+    "parts": [
+      "b0034-000.json"
+    ],
+    "bytes": 245,
+    "sha256": "02eb841c1f152bc76262275b0aeb33f6e87421370d565f49cb0208d5146029d6"
+  },
+  "out-1/codex-chair-run/output-01.txt": {
+    "parts": [
+      "b0035-000.json"
+    ],
+    "bytes": 76,
+    "sha256": "0fcab829ac1da0312aca218f9de481b682e52dfe23546afcf6ac9cfccd83a1f9"
+  },
+  "out-1/codex-chair-run/output-02.txt": {
+    "parts": [
+      "b0036-000.json"
+    ],
+    "bytes": 140,
+    "sha256": "fa9761cbd64bee55161a97567912a4757634978aeba4e2a09043da5a893d76d0"
+  },
+  "out-1/codex-chair-run/output-03.txt": {
+    "parts": [
+      "b0037-000.json"
+    ],
+    "bytes": 144,
+    "sha256": "0003fa2b07079b39346e3383011d30de5dc8ad6089d889e64a504de474590477"
+  },
+  "out-1/codex-chair-run/output-04.txt": {
+    "parts": [
+      "b0038-000.json"
+    ],
+    "bytes": 197,
+    "sha256": "0c1d12e6c664eb7304050adc1573e1ba8432d7ee61aa6c282f52bba33d3455c8"
+  },
+  "out-1/codex-chair-run/output-05.txt": {
+    "parts": [
+      "b0039-000.json"
+    ],
+    "bytes": 243,
+    "sha256": "8c96042a2dc518a3506d21818a0764807c83d43571e67e31e2c6875eb32107cb"
+  },
+  "out-1/codex-chair-run/output-06.txt": {
+    "parts": [
+      "b0040-000.json"
+    ],
+    "bytes": 141,
+    "sha256": "79b11776ba85236b76a21a24b8a2d0e08db1fb1ce34290655233614be2f57680"
+  },
+  "out-1/codex-chair-run/output-07.txt": {
+    "parts": [
+      "b0041-000.json"
+    ],
+    "bytes": 156,
+    "sha256": "309e838b45bd26ac790bd69dc6d7ee4e5a98e7a5c5fd11ce8b511ac7f6e37208"
+  },
+  "out-1/codex-chair-run/output-08.txt": {
+    "parts": [
+      "b0042-000.json"
+    ],
+    "bytes": 85,
+    "sha256": "6b7d86c96eba3adcb6b95857a9cdca85623897403809f7f31d601755e5bd07f7"
+  },
+  "out-1/codex-chair-run/raw-back-00.txt": {
+    "parts": [
+      "b0043-000.json"
+    ],
+    "bytes": 465,
+    "sha256": "6614027ecdef04056e8a11516333f0d66b828ba047ac96e5b6bd47d0fe97805d"
+  },
+  "out-1/codex-chair-run/raw-back-01.txt": {
+    "parts": [
+      "b0044-000.json"
+    ],
+    "bytes": 691,
+    "sha256": "1198cdad750d7e0cba70bed19b2723808a6c32f52b56f3ae3b5a7897d51b0c2b"
+  },
+  "out-1/codex-chair-run/raw-back-02.txt": {
+    "parts": [
+      "b0045-000.json"
+    ],
+    "bytes": 854,
+    "sha256": "532f5e039ddeed3f3dc3c09601bc7520bcf0074007a161518ed95da7a5e4870f"
+  },
+  "out-1/codex-chair-run/raw-back-03.txt": {
+    "parts": [
+      "b0046-000.json"
+    ],
+    "bytes": 781,
+    "sha256": "999682dc1b6279e82f073b5e6cfb130e988922891c74e2b37ecbca4c96414e64"
+  },
+  "out-1/codex-chair-run/raw-back-04.txt": {
+    "parts": [
+      "b0047-000.json"
+    ],
+    "bytes": 735,
+    "sha256": "7e6f78bd287bbb4285f30944cd9611582bd3b3dd151c28e9e71b338e68a323fe"
+  },
+  "out-1/codex-chair-run/raw-back-05.txt": {
+    "parts": [
+      "b0048-000.json"
+    ],
+    "bytes": 741,
+    "sha256": "27875bf4b79d8be9a0de15289660d5aaf667563c409734746785f0d659f7447e"
+  },
+  "out-1/codex-chair-run/raw-back-06.txt": {
+    "parts": [
+      "b0049-000.json"
+    ],
+    "bytes": 777,
+    "sha256": "93a14d319d03e0a7ebf911d11235f340e63a800815c3bbdefb36eda2eaab671a"
+  },
+  "out-1/codex-chair-run/raw-back-07.txt": {
+    "parts": [
+      "b0050-000.json"
+    ],
+    "bytes": 613,
+    "sha256": "a57f97183902d99de1a8c2e3e9b0a67dd4179d0af9f465c4f833509235d061b5"
+  },
+  "out-1/codex-chair-run/raw-back-08.txt": {
+    "parts": [
+      "b0051-000.json"
+    ],
+    "bytes": 493,
+    "sha256": "e443e61169a59f1c64ec1ca43215ae9b0b62239cb2b6b4cd3a6019914ed1a1f1"
+  },
+  "out-1/codex-chair-run/raw-back-09.txt": {
+    "parts": [
+      "b0052-000.json"
+    ],
+    "bytes": 388,
+    "sha256": "e2f72eef821aa14813df1a828e258b84cd03d3d46a540ef7d6198d5255b8ba3c"
+  },
+  "out-1/codex-chair-run/raw-full.txt": {
+    "parts": [
+      "b0053-000.json"
+    ],
+    "bytes": 5975,
+    "sha256": "9fe5388f8ae9c7092098091ee629be0edc843fe027f13808eb97600806e8da5b"
+  },
+  "out-1/codex-chair-run/raw-tail-1.txt": {
+    "parts": [
+      "b0054-000.json"
+    ],
+    "bytes": 246,
+    "sha256": "0cc53ec64205e67c2d849ab336376023be2779064d5f113acb91e2c370946815"
+  },
+  "out-1/codex-chair-run/raw-tail-11.txt": {
+    "parts": [
+      "b0055-000.json"
+    ],
+    "bytes": 3651,
+    "sha256": "3f08277083831aeac46caff8dd55e99e72bcb7b8f2bbb156eb50c2bdfe6ca3aa"
+  },
+  "out-1/codex-chair-run/raw-tail-3.txt": {
+    "parts": [
+      "b0056-000.json"
+    ],
+    "bytes": 736,
+    "sha256": "60e2d1b3256d09bfaae7ce03c13fd6c90ae5a5cb054254617030e08d7b1494e6"
+  },
+  "out-1/codex-chair-run/raw-tail-4.txt": {
+    "parts": [
+      "b0057-000.json"
+    ],
+    "bytes": 1093,
+    "sha256": "9def5ee769c27fb8ac1e2b9a077ad1cd55800a1ac6b96e474bc50320932517c0"
+  },
+  "out-1/codex-chair-run/raw-tail-8.txt": {
+    "parts": [
+      "b0058-000.json"
+    ],
+    "bytes": 2602,
+    "sha256": "3cc149701960785eaad5dc51dea6e8151b39b0617d07de36a8cfa7681ee01a3c"
+  },
+  "out-1/codex-chair-run/rows-back-00.txt": {
+    "parts": [
+      "b0059-000.json",
+      "b0059-001.json"
+    ],
+    "bytes": 10495,
+    "sha256": "7d486d378f4301f8993d417271fca7d1d04072cc715042f1267e23fb6691dfc6"
+  },
+  "out-1/codex-chair-run/rows-back-01.txt": {
+    "parts": [
+      "b0060-000.json"
+    ],
+    "bytes": 121,
+    "sha256": "11b79b81571f8f17ac7e3eee13f26e3bfafc17d5309dd99bbb2c409660fe2db3"
+  },
+  "out-1/codex-chair-run/rows-back-02.txt": {
+    "parts": [
+      "b0061-000.json"
+    ],
+    "bytes": 121,
+    "sha256": "743bbe2004b0c2abea1e7511757b4c8c698fadf302a7210e3af0213a75446ab2"
+  },
+  "out-1/codex-chair-run/rows-back-03.txt": {
+    "parts": [
+      "b0062-000.json"
+    ],
+    "bytes": 121,
+    "sha256": "eabdfb8fa5e3c5ed714024274a8b37129fdda158a6936281eaf77d0547aa9d80"
+  },
+  "out-1/codex-chair-run/rows-back-04.txt": {
+    "parts": [
+      "b0063-000.json"
+    ],
+    "bytes": 121,
+    "sha256": "5ceb691923feeca28ab1cb897bf8c1f2be3111428562a352754127fe7b5d6433"
+  },
+  "out-1/codex-chair-run/rows-back-05.txt": {
+    "parts": [
+      "b0064-000.json"
+    ],
+    "bytes": 121,
+    "sha256": "6e839892232659e1b992277a966f464f17e46dd2a2f65e9f8418a7139938152f"
+  },
+  "out-1/codex-chair-run/rows-back-06.txt": {
+    "parts": [
+      "b0065-000.json"
+    ],
+    "bytes": 121,
+    "sha256": "16b0a9cfbd53da7487db025dd5917765b6697e7563b797eb10ed37efdea75022"
+  },
+  "out-1/codex-chair-run/rows-back-07.txt": {
+    "parts": [
+      "b0066-000.json"
+    ],
+    "bytes": 120,
+    "sha256": "a2c23817a3b056053986529cb23123de62e2d6261aaadde893a880673bc62691"
+  },
+  "out-1/codex-chair-run/rows-back-08.txt": {
+    "parts": [
+      "b0067-000.json"
+    ],
+    "bytes": 119,
+    "sha256": "4e72c28f58f90a80b936bc14617889435c7f2deb699e9230ecc0dd4811c7d4c8"
+  },
+  "out-1/codex-chair-run/rows-back-09.txt": {
+    "parts": [
+      "b0068-000.json"
+    ],
+    "bytes": 117,
+    "sha256": "40179c4372ba5216bc2d4bd79f1c64999656695b236f29289e90b34ec7007312"
+  },
+  "out-1/codex-chair-run/rows-full.txt": {
+    "parts": [
+      "b0069-000.json",
+      "b0069-001.json"
+    ],
+    "bytes": 10492,
+    "sha256": "a48dbe3ce5d9f0603046ff1c52bd8d6c7973e1e6eeb31ae6fc1b21fdf11b326e"
+  },
+  "out-1/codex-chair-run/rows-tail-1.txt": {
+    "parts": [
+      "b0070-000.json",
+      "b0070-001.json"
+    ],
+    "bytes": 10495,
+    "sha256": "169029a6035db9cae4e69c88eff4f3cdba1f96ffc0d33e70d514c5893586a127"
+  },
+  "out-1/codex-chair-run/rows-tail-11.txt": {
+    "parts": [
+      "b0071-000.json",
+      "b0071-001.json"
+    ],
+    "bytes": 10495,
+    "sha256": "80d58e1020130d3d9389c2064bb6387cfc53d714092fde71235bfe589762da84"
+  },
+  "out-1/codex-chair-run/rows-tail-3.txt": {
+    "parts": [
+      "b0072-000.json",
+      "b0072-001.json"
+    ],
+    "bytes": 10495,
+    "sha256": "4ac81fe98a3f422e6e7c40b1fa21d195ccdb0118ea0227aee89c1d4788dd804f"
+  },
+  "out-1/codex-chair-run/rows-tail-4.txt": {
+    "parts": [
+      "b0073-000.json",
+      "b0073-001.json"
+    ],
+    "bytes": 10495,
+    "sha256": "8d3ee9ca03127400f1fdf7035d8e15bf3f6458de6e1b9ab828d2f2bb0eb7069c"
+  },
+  "out-1/codex-chair-run/rows-tail-8.txt": {
+    "parts": [
+      "b0074-000.json",
+      "b0074-001.json"
+    ],
+    "bytes": 10495,
+    "sha256": "46249f593dba557e08c5ffbd5d31906f3ddcf785c59f1b36cf7a187894af0d9c"
+  },
+  "out-1/codex-depth254/raw-full.txt": {
+    "parts": [
+      "b0075-000.json"
+    ],
+    "bytes": 41,
+    "sha256": "f6d63f53a303ddbf54333720101e9d6f800d5a59c7fb87378d9b921253aef2a5"
+  },
+  "out-1/codex-depth254/rows-full.txt": {
+    "parts": [
+      "b0076-000.json"
+    ],
+    "bytes": 41,
+    "sha256": "f6d63f53a303ddbf54333720101e9d6f800d5a59c7fb87378d9b921253aef2a5"
+  },
+  "out-1/codex-duration-negzero/raw-full.txt": {
+    "parts": [
+      "b0077-000.json"
+    ],
+    "bytes": 240,
+    "sha256": "23f4042525e7e68588b66048116b06e43fc89a1fbc096c959b03e97c4897d49d"
+  },
+  "out-1/codex-duration-negzero/rows-full.txt": {
+    "parts": [
+      "b0078-000.json"
+    ],
+    "bytes": 276,
+    "sha256": "29a953ab1502d56bbbc8f7b226d746393934f74857f44c25a46ed9f10bb54b00"
+  },
+  "out-1/codex-exec-edit/error-raw-tail-0.txt": {
+    "parts": [
+      "b0079-000.json"
+    ],
+    "bytes": 36,
+    "sha256": "9abfdd769ce0fef31403dcf1f7bb4a1c96c8c22c1cf6a135112156d0a1435a33"
+  },
+  "out-1/codex-exec-edit/error-tail-0.txt": {
+    "parts": [
+      "b0080-000.json"
+    ],
+    "bytes": 36,
+    "sha256": "9abfdd769ce0fef31403dcf1f7bb4a1c96c8c22c1cf6a135112156d0a1435a33"
+  },
+  "out-1/codex-exec-edit/error-unknown-agent.txt": {
+    "parts": [
+      "b0081-000.json"
+    ],
+    "bytes": 29,
+    "sha256": "aa42d000abea0f86cbbd4ae0bc4966f2ec840231d74d7b890cac8e70c2515bf5"
+  },
+  "out-1/codex-exec-edit/error-unknown-output.txt": {
+    "parts": [
+      "b0082-000.json"
+    ],
+    "bytes": 35,
+    "sha256": "7ed88c319501abd801d4e08d8107368c65e7a0bbce773bcfa9726b1eea7583a3"
+  },
+  "out-1/codex-exec-edit/error-unknown-session.txt": {
+    "parts": [
+      "b0083-000.json"
+    ],
+    "bytes": 31,
+    "sha256": "4bca491c069d998477811a1871474108d68b6d9e36ef7ae527fe1475436cdbed"
+  }
+}
