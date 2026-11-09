@@ -182,7 +182,7 @@ fn shared_live_followers_send_complete_line_offsets_within_one_second() {
 
 #[test]
 fn row_routes_guard_input_cap_output_and_stream_stable_ids() {
-    let server = Server::without_zig();
+    let server = Server::new();
     let call = json!({"type":"assistant","uuid":"row-call","message":{"content":[{"type":"tool_use","id":"output-call","name":"Bash","input":{"command":"print"}}]}}).to_string()+"\n";
     fs::write(&server.log, &call).unwrap();
     let page_path = format!("/api/rows?session={}&agent=chair&tail=200", server.session);

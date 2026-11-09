@@ -239,7 +239,7 @@ pub(super) async fn subscribe(
                     },
                 },
             );
-            let source = sources.remove(&entry.key).flatten();
+            let source = sources.remove(&entry.key).unwrap();
             launch.push((entry, log, generation, receiver, done_sender, source));
         }
     }
@@ -249,7 +249,7 @@ pub(super) async fn subscribe(
     for (entry, log, generation, stop, done, source) in launch {
         tokio::spawn(follow(
             Arc::downgrade(&app),
-            (app.tool.clone(), source),
+            source,
             entry,
             log,
             generation,

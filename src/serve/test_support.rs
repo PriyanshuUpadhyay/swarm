@@ -96,7 +96,6 @@ impl Fixture {
         let app = Arc::new(Server {
             sources,
             root,
-            tool: dir.join("unused-transcript"),
             port: 1,
             ui: true,
             token: "test".into(),

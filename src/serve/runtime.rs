@@ -62,18 +62,10 @@ pub(super) fn start(
     )?;
     listener.set_nonblocking(true)?;
     let port = listener.local_addr()?.port();
-    let tool = std::env::var_os("SWARM_TRANSCRIPT_TOOL")
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
-        .or_else(|| swarm::paths::bundled("transcript"))
-        .unwrap_or_else(|| {
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("packages/transcript/zig-out/bin/transcript")
-        });
     let (actions, action_queue) = mpsc::channel(64);
     let app = Arc::new(Server {
         sources: source_backend::Sources::default(),
         root,
-        tool,
         port,
         ui: record.is_some(),
         token,

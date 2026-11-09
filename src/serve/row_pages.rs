@@ -2,7 +2,7 @@
 
 use super::*;
 
-// Source positions come from the existing follower's per-line page markers, not provider JSON.
+// Source positions come from the held log's Rust worker.
 pub(super) async fn read_row_window(
     app: &App,
     key: &str,
@@ -10,84 +10,7 @@ pub(super) async fn read_row_window(
     start: u64,
     end: u64,
 ) -> Result<LiveRows, ApiError> {
-    if let Some(state) = source_backend::window(app, key, log, start, end).await? {
-        return Ok(state);
-    }
-    let mut state = LiveRows::empty(start, log.format == "codex");
-    if start == end {
-        return Ok(state);
-    }
-    let source = std::fs::File::open(&log.path)
-        .map_err(|_| error(StatusCode::NOT_FOUND, "transcript log unavailable"))?;
-    let mut child = tokio::process::Command::new(&app.tool)
-        .args([
-            "--follow",
-            "--from",
-            &start.to_string(),
-            "--format",
-            &log.format,
-        ])
-        .arg(&log.path)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .kill_on_drop(true)
-        .spawn()
-        .map_err(|_| {
-            error(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "transcript tool unavailable",
-            )
-        })?;
-    let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
-    let read = tokio::time::timeout(Duration::from_secs(10), async {
-        let mut first = true;
-        let mut cursor = start;
-        let mut events = Vec::new();
-        loop {
-            let line = lines
-                .next_line()
-                .await
-                .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "transcript read failed"))?
-                .ok_or_else(|| error(StatusCode::INTERNAL_SERVER_ERROR, "transcript tool ended"))?;
-            let value: Value = serde_json::from_str(&line).map_err(|_| {
-                error(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "invalid transcript output",
-                )
-            })?;
-            if value["type"] == "page" {
-                if first {
-                    first = false;
-                    continue;
-                }
-                let next = value["end_offset"].as_u64().ok_or_else(|| {
-                    error(
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        "transcript offset missing",
-                    )
-                })?;
-                if next > end {
-                    return Err(error(
-                        StatusCode::CONFLICT,
-                        "history file changed; reopen this chat",
-                    ));
-                }
-                view::source_follow::ingest_log_line(&mut state, &source, cursor, next, &events);
-                events.clear();
-                cursor = next;
-                if next == end {
-                    return Ok(state);
-                }
-            } else {
-                events.push(value);
-            }
-        }
-    })
-    .await
-    .map_err(|_| error(StatusCode::GATEWAY_TIMEOUT, "transcript read timed out"));
-    let _ = child.kill().await;
-    let _ = child.wait().await;
-    read?
+    source_backend::window(app, key, log, start, end).await
 }
 
 pub(super) fn row_offsets(

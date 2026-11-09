@@ -19,6 +19,7 @@ impl Server {
         s.child.kill().unwrap();
         s.child.wait().unwrap();
         let home = s.dir.join("home");
+        eprintln!("serve test binary: {}", env!("CARGO_BIN_EXE_swarm"));
         let mut cmd = Command::new(env!("CARGO_BIN_EXE_swarm"));
         cmd.env_clear()
             .env("HOME", &home)
@@ -28,7 +29,6 @@ impl Server {
             )
             .env("SWARM_HOME", &home)
             .env("GIT_CEILING_DIRECTORIES", "/")
-            .env("SWARM_TRANSCRIPT_TOOL", s.dir.join("unavailable-zig"))
             .args(["serve", "--port", "0", "--assets"])
             .arg(s.dir.join("assets"))
             .args(["--dev-origin", "http://127.0.0.1:5173"])

@@ -13,7 +13,7 @@ mod captured {
     }
     impl Server {
         fn new() -> Self {
-            Self(super::super::Server::without_zig())
+            Self(super::super::Server::new())
         }
     }
     include!("../s9a/routes_switch.rs");

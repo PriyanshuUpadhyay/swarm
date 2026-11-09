@@ -32,10 +32,7 @@ use swarm::view::{
     changes, choices, choices_store, claude_text, discovery, fields, handoff, lifecycle,
     navigation, queue, tabs, tree, workspace_panel,
 };
-use tokio::{
-    io::{AsyncBufReadExt, BufReader},
-    sync::{mpsc, oneshot, watch},
-};
+use tokio::sync::{mpsc, oneshot, watch};
 use tokio_stream::Stream;
 
 const QUEUE_LIMIT: usize = 1024;
@@ -49,7 +46,6 @@ fn error(status: StatusCode, message: &str) -> ApiError {
 struct Server {
     root: PathBuf,
     sources: source_backend::Sources,
-    tool: PathBuf,
     port: u16,
     /// A `swarm ui` server, which writes its record; only it can restart on a new build.
     ui: bool,

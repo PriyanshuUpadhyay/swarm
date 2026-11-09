@@ -152,55 +152,29 @@ pub(super) async fn flush_transcript(
 
 pub(super) async fn follow(
     app: Weak<Server>,
-    reader: (PathBuf, Option<Arc<source_backend::Lease>>),
+    rust: Arc<source_backend::Lease>,
     entry: SubscriptionKey,
     log: Log,
     generation: String,
     mut stop: watch::Receiver<bool>,
     done: watch::Sender<bool>,
 ) {
-    let (tool, rust) = reader;
     let result = async {
-        if *stop.borrow() { return Ok(()); }
+        if *stop.borrow() {
+            return Ok(());
+        }
         if entry.view.as_deref() == Some("rows") {
-            tokio::spawn(watch_turn(app.clone(), entry.key.clone(), generation.clone(), stop.clone()));
+            tokio::spawn(watch_turn(
+                app.clone(),
+                entry.key.clone(),
+                generation.clone(),
+                stop.clone(),
+            ));
         }
         let source = std::fs::File::open(&log.path)?;
-        if let Some(rust) = rust {
-            return native_follow(&app, &entry, &generation, &source, rust, &mut stop).await;
-        }
-        let mut child = tokio::process::Command::new(tool)
-            .args(["--follow", "--from", &entry.from.to_string(), "--format", &log.format])
-            .arg(log.path).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::inherit()).kill_on_drop(true).spawn()?;
-        let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
-        let mut events = Vec::new();
-        let mut batches = Vec::new();
-        let mut first = true;
-        let mut timer = tokio::time::interval(Duration::from_millis(16));
-        timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-        let result = async { loop {
-            tokio::select! {
-                biased;
-                _ = stop.changed() => break Ok::<_, std::io::Error>(()),
-                _ = timer.tick() => {
-                    flush_transcript(&app, &entry.key, &generation, &mut batches, &source).await?;
-                    timer.reset();
-                }
-                line = lines.next_line() => {
-                    let Some(line) = line? else { break Err(std::io::Error::other("transcript follower ended")); };
-                    let value: Value = serde_json::from_str(&line)?;
-                    if value["type"] == "page" {
-                        if first { first = false; continue; }
-                        let end = value["end_offset"].as_u64().ok_or_else(|| std::io::Error::other("transcript offset missing"))?;
-                        batches.push((end, std::mem::take(&mut events)));
-                    } else { events.push(value); }
-                }
-            }
-        } }.await;
-        let killed = child.kill().await;
-        let _ = child.wait().await;
-        result.and(killed)
-    }.await;
+        native_follow(&app, &entry, &generation, &source, rust, &mut stop).await
+    }
+    .await;
     if let Err(err) = result {
         eprintln!("swarm serve: follower {}: {err}", entry.key);
         if let Some(app) = app.upgrade() {

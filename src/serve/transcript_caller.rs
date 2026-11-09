@@ -1,4 +1,4 @@
-//! Private saved-page caller. Production routes still use the Zig path.
+//! Private Rust worker caller for saved and live transcript reads.
 use serde_json::Value;
 use std::{path::Path, process::Stdio, time::Duration};
 use swarm::view::transcript::worker_protocol::{

@@ -1,15 +1,10 @@
-//! One source choice and weak registry; requests, followers and row slots own leases.
+//! Weak worker registry; requests, followers and row slots own leases.
 use super::*;
 use swarm::view::transcript::worker_protocol::{
     Binding,
     v2::{Budget, Operation},
 };
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) enum Backend {
-    Zig,
-    Rust,
-}
 type Key = (String, PathBuf, String);
 #[derive(Default)]
 pub(super) struct Sources {
@@ -21,29 +16,14 @@ pub(super) struct Lease {
     source: transcript_caller::Source,
     serial: tokio::sync::Mutex<()>,
 }
-fn selected(app: &App, format: &str) -> Backend {
-    let _ = app;
-    if matches!(format, "claude" | "codex" | "agy" | "pi") {
-        Backend::Rust
-    } else {
-        Backend::Zig
-    }
-}
-pub(super) async fn acquire(
-    app: &App,
-    key: &str,
-    log: &Log,
-) -> Result<Option<Arc<Lease>>, ApiError> {
-    if selected(app, &log.format) != Backend::Rust {
-        return Ok(None);
-    }
+pub(super) async fn acquire(app: &App, key: &str, log: &Log) -> Result<Arc<Lease>, ApiError> {
     let mut held = app.sources.held.lock().await;
     held.retain(|_, source| source.strong_count() > 0);
     let key = (key.to_owned(), log.path.clone(), log.format.clone());
     if let Some(source) = held.get(&key).and_then(Weak::upgrade)
         && !source.source.is_closed()
     {
-        return Ok(Some(source));
+        return Ok(source);
     }
     let mut command = tokio::process::Command::new(&app.cli);
     #[cfg(test)]
@@ -68,7 +48,7 @@ pub(super) async fn acquire(
         serial: tokio::sync::Mutex::new(()),
     });
     held.insert(key, Arc::downgrade(&lease));
-    Ok(Some(lease))
+    Ok(lease)
 }
 fn unavailable() -> ApiError {
     error(
@@ -125,10 +105,8 @@ pub(super) async fn window(
     log: &Log,
     start: u64,
     end: u64,
-) -> Result<Option<LiveRows>, ApiError> {
-    let Some(source) = acquire(app, key, log).await? else {
-        return Ok(None);
-    };
+) -> Result<LiveRows, ApiError> {
+    let source = acquire(app, key, log).await?;
     let payload = source.read(Operation::Window { start, end }).await?;
     if payload["start_byte"] != start || payload["end_byte"] != end {
         return Err(invalid());
@@ -138,5 +116,5 @@ pub(super) async fn window(
         state.ingest(start, end, &events);
     }
     state.source = Some(source);
-    Ok(Some(state))
+    Ok(state)
 }

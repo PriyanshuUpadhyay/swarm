@@ -28,19 +28,7 @@ impl Server {
         Self::configured(actions, false)
     }
 
-    fn without_zig() -> Self {
-        Self::configured_tool(
-            false,
-            false,
-            Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tmp/s9a-unavailable-zig")),
-        )
-    }
-
     fn configured(actions: bool, lifecycle: bool) -> Self {
-        Self::configured_tool(actions, lifecycle, None)
-    }
-
-    fn configured_tool(actions: bool, lifecycle: bool, tool: Option<PathBuf>) -> Self {
         let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let dir = if lifecycle {
             std::env::temp_dir()
@@ -134,6 +122,7 @@ key = printf 'key %s %s\n' "$SWARM_PANE" "$SWARM_KEY" >> "$HOME/actions"
         fs::write(assets.join("index.html"), "<h1>pilot</h1>").unwrap();
         fs::write(assets.join("app.js"), "console.log('pilot');").unwrap();
         std::os::unix::fs::symlink(&log, assets.join("escape.jsonl")).unwrap();
+        eprintln!("serve test binary: {}", env!("CARGO_BIN_EXE_swarm"));
         let mut child = Command::new(env!("CARGO_BIN_EXE_swarm"))
             .env_clear()
             .env("HOME", &home)
@@ -155,10 +144,6 @@ key = printf 'key %s %s\n' "$SWARM_PANE" "$SWARM_KEY" >> "$HOME/actions"
             .arg(assets)
             .args(["--dev-origin", "http://127.0.0.1:5173"])
             .env("SWARM_HOME", home)
-            .env(
-                "SWARM_TRANSCRIPT_TOOL",
-                tool.unwrap_or_else(|| repo.join("packages/transcript/zig-out/bin/transcript")),
-            )
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
