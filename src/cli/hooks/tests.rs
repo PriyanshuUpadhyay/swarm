@@ -222,7 +222,7 @@ mod cases {
     fn stop_hook_claude_replaces_cumulative_cost_and_model() {
         let log = format!(
             "{}\n{}\n{}\n{}\n",
-            include_str!("../../../packages/transcript/src/fixtures/claude-chair-run.jsonl"),
+            include_str!("../../../tests/fixtures/provider-logs/claude-chair-run.jsonl"),
             r#"{"type":"cost-state","totalCostUSD":1.25,"hasUnknownModelCost":false}"#,
             r#"{"type":"assistant","message":{"model":"claude-new"}}"#,
             r#"{"type":"cost-state","totalCostUSD":2.5,"hasUnknownModelCost":false}"#
@@ -303,7 +303,7 @@ mod cases {
         let second = first.replace("m1", "m2");
         let log = format!(
             "{}\n{first}\n{first}\n",
-            include_str!("../../../packages/transcript/src/fixtures/claude-chair-run.jsonl")
+            include_str!("../../../tests/fixtures/provider-logs/claude-chair-run.jsonl")
         );
         let (home, connection, session) = stop_fixture("claude-growing", Some(&log));
         run_stop_hook(&home, &session, "claude", "Stop", "{}");
@@ -327,7 +327,7 @@ mod cases {
     fn stop_hook_codex_uses_total_tokens_and_latest_model() {
         let log = format!(
             "{}\n{}\n{}\n{}\n",
-            include_str!("../../../packages/transcript/src/fixtures/codex-chair-run.jsonl"),
+            include_str!("../../../tests/fixtures/provider-logs/codex-chair-run.jsonl"),
             r#"{"type":"turn_context","payload":{"model":"gpt-old"}}"#,
             r#"{"type":"turn_context","payload":{"model":"gpt-new"}}"#,
             r#"{"type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"total_tokens":12},"total_token_usage":{"input_tokens":90,"output_tokens":10,"total_tokens":100}}}}"#

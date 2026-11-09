@@ -335,7 +335,7 @@ fn a_pi_log_is_found_by_its_session_id() {
     let sessions = server.dir.join("home/.pi/agent/sessions/--work--");
     fs::create_dir_all(&sessions).unwrap();
     let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("packages/transcript/src/fixtures/pi-chat.jsonl");
+        .join("tests/fixtures/provider-logs/pi-chat.jsonl");
     let connection = swarm::store::open(&server.dir.join("home/.swarm/swarm.db")).unwrap();
     let chair = format!("{}-orchestrator", server.session);
     swarm::store::set_chair(&connection, &server.session, Some(("pi", &chair))).unwrap();

@@ -70,7 +70,7 @@ impl Server {
         };
         let log = dir.join("chair.jsonl");
         fs::copy(
-            repo.join("packages/transcript/src/fixtures/claude-chair-run.jsonl"),
+            repo.join("tests/fixtures/provider-logs/claude-chair-run.jsonl"),
             &log,
         )
         .unwrap();

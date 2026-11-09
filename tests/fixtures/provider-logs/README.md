@@ -29,9 +29,10 @@ warning about partial file context are retained. Paths, text, argument values,
 and timestamps were replaced; the result's introductory sentence was shortened.
 The provider version was not recorded in these source records.
 
-The Swift process tests run both fixtures through the real Zig executable and
-check full input/result preservation, matching tool IDs, and the absence of a
-structured diff row. AGY's textual patch is not yet extracted as `tool_diff`.
+`tests/view_rows/rows_and_tools.rs::provider_edit_results` runs both fixtures
+through the real Zig executable. It checks full input/result preservation,
+matching tool IDs, and the absence of a structured diff row.
+AGY's textual patch is not yet extracted as `tool_diff`.
 Some inspected AGY results have `truncated_fields: ["content"]`; their full-log
 counterparts are longer. A future extractor must account for this before
 claiming a complete patch. These fixtures do not establish all provider versions
@@ -62,7 +63,8 @@ the `PLANNER_RESPONSE` and `GENERIC` shapes of `agy-edit.jsonl`. Its first ring 
 mid-turn; its second follows a final reply with no tool call, where the parser ends the turn, so
 that ring wakes an idle agent.
 
-`ChairRunFixtureTests` runs all three through the real Zig executable.
+`claude-chair-run.jsonl` and `codex-chair-run.jsonl` are read by Rust test
+helpers. The Zig translation window test also embeds `claude-chair-run.jsonl`.
 
 ## Pi
 

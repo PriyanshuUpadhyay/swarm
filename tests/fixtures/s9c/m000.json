@@ -48,13 +48,6 @@
     "bytes": 1358,
     "sha256": "3a60287c519b308cefd692491eac7e384a9956d3c1f9e8601db369572861e9a1"
   },
-  "inputs/pi-control.jsonl": {
-    "parts": [
-      "b0007-000.json"
-    ],
-    "bytes": 3653,
-    "sha256": "cb034517a3bbf9fcb803a8673a00805568718854691fe815c718e1cf2b45565e"
-  },
   "out-1/native-commands.json": {
     "parts": [
       "b0008-000.json"
@@ -99,15 +92,6 @@
     ],
     "bytes": 127210,
     "sha256": "a1973e89a0f7d2dc3ffdfcf8d0ef79e8b00392a179a99b7eba6a0d0bff61bd96"
-  },
-  "out-1/pi-control.json": {
-    "parts": [
-      "b0011-000.json",
-      "b0011-001.json",
-      "b0011-002.json"
-    ],
-    "bytes": 16007,
-    "sha256": "cf0a4b4d9ad1c5284a4fc47cf53dc12125aa1a77903e2fbefc345b7b1786e22c"
   },
   "out-1/routes.json": {
     "parts": [
@@ -302,15 +286,6 @@
     ],
     "bytes": 127210,
     "sha256": "a1973e89a0f7d2dc3ffdfcf8d0ef79e8b00392a179a99b7eba6a0d0bff61bd96"
-  },
-  "out-2/pi-control.json": {
-    "parts": [
-      "b0016-000.json",
-      "b0016-001.json",
-      "b0016-002.json"
-    ],
-    "bytes": 16007,
-    "sha256": "cf0a4b4d9ad1c5284a4fc47cf53dc12125aa1a77903e2fbefc345b7b1786e22c"
   },
   "out-2/routes.json": {
     "parts": [

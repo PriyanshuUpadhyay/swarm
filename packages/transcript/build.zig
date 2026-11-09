@@ -8,6 +8,15 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    mod.addAnonymousImport("fixture-claude-edit", .{
+        .root_source_file = b.path("../../tests/fixtures/provider-logs/claude-edit.jsonl"),
+    });
+    mod.addAnonymousImport("fixture-pi-chat", .{
+        .root_source_file = b.path("../../tests/fixtures/provider-logs/pi-chat.jsonl"),
+    });
+    mod.addAnonymousImport("fixture-claude-chair-run", .{
+        .root_source_file = b.path("../../tests/fixtures/provider-logs/claude-chair-run.jsonl"),
+    });
     const exe = b.addExecutable(.{
         .name = "transcript",
         .root_module = b.createModule(.{

@@ -76,7 +76,7 @@ fn fixture(format: &str, name: &str) -> Vec<Value> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let output = Command::new(root.join("packages/transcript/zig-out/bin/transcript"))
         .args(["--format", format])
-        .arg(root.join("packages/transcript/src/fixtures").join(name))
+        .arg(root.join("tests/fixtures/provider-logs").join(name))
         .output()
         .expect("cannot run transcript; run `zig build` in packages/transcript first");
     assert!(output.status.success());

@@ -6,7 +6,7 @@ const sessionIdFromPath = @import("pi.zig").sessionIdFromPath;
 
 fn fixtureEvents(arena: std.mem.Allocator) ![]root.Event {
     var all: std.ArrayList(root.Event) = .empty;
-    var lines = std.mem.splitScalar(u8, @embedFile("fixtures/pi-chat.jsonl"), '\n');
+    var lines = std.mem.splitScalar(u8, @embedFile("fixture-pi-chat"), '\n');
     while (lines.next()) |line| {
         if (line.len == 0) continue;
         try all.appendSlice(arena, try parseLine(arena, line));

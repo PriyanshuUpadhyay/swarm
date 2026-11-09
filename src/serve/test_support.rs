@@ -52,7 +52,7 @@ impl Fixture {
         let log = dir.join("chair.jsonl");
         std::fs::copy(
             Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("packages/transcript/src/fixtures/claude-chair-run.jsonl"),
+                .join("tests/fixtures/provider-logs/claude-chair-run.jsonl"),
             &log,
         )
         .unwrap();

@@ -12,7 +12,7 @@ import { createInterface } from "node:readline";
 const repo = resolve(import.meta.dirname, "../..");
 const swarm = resolve(repo, process.env.E2E_SWARM ?? "target/debug/swarm");
 const tool = resolve(repo, process.env.E2E_TOOL ?? "packages/transcript/zig-out/bin/transcript");
-const fixtures = join(repo, "packages/transcript/src/fixtures");
+const fixtures = join(repo, "tests/fixtures/provider-logs");
 
 /** A synthetic Claude log: one prompt, then one Bash call whose output has `lines` lines. */
 function giantLog(session: string, lines: number): string {

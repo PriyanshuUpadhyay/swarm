@@ -48,7 +48,7 @@ test "saved Claude Edit retains result and adds exact structured patch" {
     var state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer state.deinit();
     const arena = state.allocator();
-    const events = try root.parseLine(arena, @embedFile("fixtures/claude-edit.jsonl"));
+    const events = try root.parseLine(arena, @embedFile("fixture-claude-edit"));
     try std.testing.expectEqual(@as(usize, 2), events.len);
     const update = events[0].tool_call_update;
     try std.testing.expectEqual(root.ToolStatus.completed, update.status);
@@ -68,7 +68,7 @@ test "failed absent malformed and ambiguous saved patches keep tool output" {
         var state = std.heap.ArenaAllocator.init(std.testing.allocator);
         defer state.deinit();
         const arena = state.allocator();
-        var record = try std.json.parseFromSliceLeaky(std.json.Value, arena, @embedFile("fixtures/claude-edit.jsonl"), .{});
+        var record = try std.json.parseFromSliceLeaky(std.json.Value, arena, @embedFile("fixture-claude-edit"), .{});
         const result = record.object.getPtr("toolUseResult").?;
         const content = record.object.getPtr("message").?.object.getPtr("content").?;
         const block = &content.array.items[0];

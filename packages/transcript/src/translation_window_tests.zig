@@ -10,7 +10,7 @@ const Translator = translation.Translator;
 const fromWindow = translation.fromWindow;
 
 test "from window emits only later fixture events and clamps beyond the end" {
-    const fixture = @embedFile("fixtures/claude-chair-run.jsonl");
+    const fixture = @embedFile("fixture-claude-chair-run");
     const start = std.mem.lastIndexOfScalar(u8, fixture[0 .. fixture.len / 2], '\n').? + 1;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
