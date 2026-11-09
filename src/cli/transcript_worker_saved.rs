@@ -279,6 +279,7 @@ pub(super) async fn execute(text: &str) -> Result<()> {
     let format = match job.format.as_str() {
         "claude" => NativeFormat::Claude,
         "codex" => NativeFormat::Codex,
+        "agy" => NativeFormat::Agy,
         _ => return Err(Code::BadRequest),
     };
     let file = File::from(
