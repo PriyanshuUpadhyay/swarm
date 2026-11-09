@@ -28,7 +28,19 @@ impl Server {
         Self::configured(actions, false)
     }
 
+    fn without_zig() -> Self {
+        Self::configured_tool(
+            false,
+            false,
+            Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tmp/s9a-unavailable-zig")),
+        )
+    }
+
     fn configured(actions: bool, lifecycle: bool) -> Self {
+        Self::configured_tool(actions, lifecycle, None)
+    }
+
+    fn configured_tool(actions: bool, lifecycle: bool, tool: Option<PathBuf>) -> Self {
         let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let dir = if lifecycle {
             std::env::temp_dir()
@@ -145,7 +157,7 @@ key = printf 'key %s %s\n' "$SWARM_PANE" "$SWARM_KEY" >> "$HOME/actions"
             .env("SWARM_HOME", home)
             .env(
                 "SWARM_TRANSCRIPT_TOOL",
-                repo.join("packages/transcript/zig-out/bin/transcript"),
+                tool.unwrap_or_else(|| repo.join("packages/transcript/zig-out/bin/transcript")),
             )
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -426,3 +438,8 @@ mod s8c_queue;
 
 #[path = "serve/s8d_images.rs"]
 mod s8d_images;
+
+#[path = "s9a/frozen.rs"]
+mod s9a_frozen;
+#[path = "serve/s9a_switch.rs"]
+mod s9a_switch;
