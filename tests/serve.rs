@@ -443,3 +443,6 @@ mod s8d_images;
 mod s9a_frozen;
 #[path = "serve/s9a_switch.rs"]
 mod s9a_switch;
+
+#[path = "serve/s9b_switch.rs"]
+mod s9b_switch;
