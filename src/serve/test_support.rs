@@ -60,6 +60,17 @@ impl Fixture {
     pub(super) fn at(dir: PathBuf) -> Self {
         let root = dir.join("home/.swarm");
         std::fs::create_dir_all(&root).unwrap();
+        let worker = real_worker();
+        let executable = swarm::adapter::shell_line(&[worker.to_string_lossy().into_owned()]);
+        std::fs::create_dir_all(root.join("adapters")).unwrap();
+        // Adapter callbacks must run the CLI, not this unit test harness.
+        std::fs::write(
+            root.join("adapters/tmux-swarm.conf"),
+            swarm::adapter::shipped("tmux-swarm")
+                .unwrap()
+                .replace("\"$SWARM_EXE\"", &executable),
+        )
+        .unwrap();
         let log = dir.join("chair.jsonl");
         std::fs::copy(
             Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -81,7 +92,7 @@ impl Fixture {
         swarm::store::add_agent(&connection, &session, "worker", "chat").unwrap();
         let (actions, action_queue) = mpsc::channel(64);
         let mut sources = source_backend::Sources::default();
-        sources.worker_cli = Some(real_worker());
+        sources.worker_cli = Some(worker);
         let app = Arc::new(Server {
             sources,
             root,
