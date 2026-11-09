@@ -34,8 +34,12 @@ fn selected(app: &App, format: &str) -> Backend {
     if let Some(backend) = app.sources.selected.lock().unwrap().get(format) {
         return *backend;
     }
-    let _ = (app, format);
-    Backend::Zig
+    let _ = app;
+    if format == "claude" {
+        Backend::Rust
+    } else {
+        Backend::Zig
+    }
 }
 pub(super) async fn acquire(
     app: &App,
