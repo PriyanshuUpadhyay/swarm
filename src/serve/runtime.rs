@@ -190,7 +190,11 @@ pub(super) fn router(app: App) -> Router {
         .route("/api/project/import", post(lifecycle_write))
         .route("/api/project/remove", post(lifecycle_write))
         .route("/api/transcript", get(transcript))
-        .route("/api/rows", get(transcript_rows))
+        .route(
+            "/api/rows",
+            get(transcript_rows)
+                .merge(post(find_rows).layer(DefaultBodyLimit::max(ROWS_FIND_LIMIT))),
+        )
         .route("/api/tool-output", get(tool_output))
         .route("/api/background", get(background))
         .route("/api/terminal/ticket", post(terminal_ticket))

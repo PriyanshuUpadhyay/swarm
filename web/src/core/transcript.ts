@@ -305,48 +305,8 @@ export function noteFind(rows: Row[], find: Record<string, FindPart[]> | undefin
 
 export const partsOf = (row: Row): readonly FindPart[] => finds.get(row) ?? [];
 
-/** Resolve a server-chosen path within this row; only strings are searchable. */
-export function partText(row: Row, part: FindPart): string {
-  if ("t" in part) return part.t;
-  let value: unknown = row;
-  for (const key of part.f.split(".")) {
-    if (value === null || typeof value !== "object" || !Object.hasOwn(value, key)) return "";
-    value = (value as Record<string, unknown>)[key];
-  }
-  return typeof value === "string" ? value : "";
-}
-
-/** A find match: the row, and the fold that holds it when it is a step. */
-export type Match = { id: string; fold: Row | null; offset: number; occurrence: number; preview?: string; line?: number; lineOccurrence?: number };
-
-type LoadedText = ReadonlyMap<string, { state: string; text?: string }>;
-
-/** Every occurrence in the loaded content, including text behind an expanded preview. */
-export function findMatches(rows: readonly Row[], query: string, full?: LoadedText): Match[] {
-  const q = query.trim().toLowerCase();
-  if (!q) return [];
-  const out: Match[] = [];
-  const visit = (row: Row, fold: Row | null) => {
-    if (row.collapsed) return;
-    let occurrence = 0;
-    for (const part of partsOf(row)) {
-      const preview = "f" in part ? part.p : undefined;
-      const loaded = preview ? full?.get(preview) : undefined;
-      const value = loaded?.state === "ready" ? loaded.text : partText(row, part);
-      if (!value) continue;
-      const text = value.toLowerCase();
-      for (let offset = text.indexOf(q); offset >= 0; offset = text.indexOf(q, offset + q.length)) {
-        const before = text.slice(0, offset);
-        const line = before.split("\n").length - 1;
-        const onLine = before.slice(before.lastIndexOf("\n") + 1);
-        out.push({ id: row.id, fold, offset, occurrence: occurrence++, ...(preview ? { preview, line, lineOccurrence: onLine.split(q).length - 1 } : {}) });
-      }
-    }
-    for (const step of row.steps ?? []) visit(step, row);
-  };
-  for (const row of rows) visit(row, null);
-  return out;
-}
+/** A server match with its parent resolved against the submitted snapshot. */
+export type Match = Omit<import("./api").FindMatch, "fold"> & { fold: Row | null };
 
 /** "0.4s", "8.6s", "2m 5s". */
 export function duration(seconds: number): string {

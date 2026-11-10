@@ -83,7 +83,7 @@ export type Composer = {
   sendKey: SendKey;
 };
 
-export type Find = { open: boolean; query: string; matches: Match[]; index: number; seq: number };
+export type Find = { open: boolean; query: string; matches: Match[]; index: number; seq: number; pending?: boolean; error?: string | null };
 
 /** One transcript with its composer: the chair's chat, or a child agent's column. */
 export type Pane = {

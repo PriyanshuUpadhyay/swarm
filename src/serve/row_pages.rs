@@ -2,6 +2,24 @@
 
 use super::*;
 
+pub(super) const ROWS_FIND_LIMIT: usize = 16 * 1024 * 1024;
+
+pub(super) async fn find_rows(
+    body: Result<axum::body::Bytes, axum::extract::rejection::BytesRejection>,
+) -> Result<Json<view::find_matches::Reply>, ApiError> {
+    let bytes = body.map_err(|rejection| error(rejection.status(), &rejection.body_text()))?;
+    tokio::task::spawn_blocking(move || {
+        let request: view::find_matches::Request = serde_json::from_slice(&bytes)
+            .map_err(|_| error(StatusCode::BAD_REQUEST, "invalid find snapshot"))?;
+        if request.version != 1 {
+            return Err(error(StatusCode::BAD_REQUEST, "unsupported find version"));
+        }
+        Ok(Json(view::find_matches::find(request)))
+    })
+    .await
+    .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "find task failed"))?
+}
+
 // Source positions come from the held log's Rust worker.
 pub(super) async fn read_row_window(
     app: &App,

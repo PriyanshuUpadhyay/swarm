@@ -6,6 +6,7 @@ use serde_json::Value;
 pub mod display_comments;
 mod display_patch;
 mod events;
+pub mod find_matches;
 pub mod find_wire;
 pub mod image_paths;
 pub mod live_shown;

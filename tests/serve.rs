@@ -402,6 +402,8 @@ fn chat_routes_run_the_real_cli_against_a_fake_provider_and_adapter() {
 mod chat;
 #[path = "serve/choices.rs"]
 mod choices;
+#[path = "serve/find_rows.rs"]
+mod find_rows;
 #[path = "serve/find_wire.rs"]
 mod find_wire;
 #[path = "serve/guards.rs"]

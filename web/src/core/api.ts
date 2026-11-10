@@ -140,6 +140,12 @@ export type PatchSplitWire = { h: number } | { l: number | null; r: number | nul
 export type PatchInfo = { lines: PatchLineWire[]; split: PatchSplitWire[] } | { kinds: PatchLineWire["kind"][] };
 
 export type FindPart = { f: string; p?: string } | { t: string };
+/** Zero-based UTF-16 offset into lowercase text; fold is the submitted parent row ID. */
+export type FindMatch = { id: string; fold: string | null; offset: number; occurrence: number; preview?: string; line?: number; lineOccurrence?: number };
+export type FindSnapshot = { version: 1; query: string; rows: readonly Row[]; find: Record<string, readonly FindPart[]>; full: Record<string, string> };
+
+// Keep equal to ROWS_FIND_LIMIT in src/serve/row_pages.rs.
+export const FIND_ROWS_LIMIT_BYTES = 16 * 1024 * 1024;
 
 export type RowPage = { page: Page; rows: Row[]; usage: unknown; remove?: string[]; display?: Record<string, Display>; patch?: Record<string, PatchInfo>; find?: Record<string, FindPart[]>; images?: Record<string, string[]> };
 
@@ -212,6 +218,16 @@ export class Api {
     const body = await res.text();
     if (!res.ok) throw new ApiError(res.status, `${path}: ${res.status} ${body}`);
     return (body ? JSON.parse(body) : null) as T;
+  }
+
+  findRows(snapshot: FindSnapshot, signal: AbortSignal): Promise<{ version: 1; matches: FindMatch[] }> {
+    const body = JSON.stringify(snapshot);
+    if (new TextEncoder().encode(body).byteLength > FIND_ROWS_LIMIT_BYTES) {
+      return Promise.reject(new ApiError(413, "find snapshot exceeds size limit"));
+    }
+    return this.json("/api/rows", {
+      method: "POST", signal, headers: { "Content-Type": "application/json" }, body,
+    });
   }
 
   snapshot(): Promise<Snapshot> {

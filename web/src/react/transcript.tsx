@@ -246,7 +246,7 @@ function Head({ app, view }: { app: Reader; view: Pane }) {
 
 function FindBar({ app, view, listRef }: { app: Reader; view: Pane; listRef: React.RefObject<HTMLDivElement | null> }) {
   const { find } = view;
-  const count = find.query.trim() ? (find.matches.length ? `${find.matches.length - find.index} of ${find.matches.length}` : "No matches") : "";
+  const count = find.pending ? "Searching..." : find.error ? find.error : find.query.trim() ? (find.matches.length ? `${find.matches.length - find.index} of ${find.matches.length}` : "No matches") : "";
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter") {
       e.preventDefault();

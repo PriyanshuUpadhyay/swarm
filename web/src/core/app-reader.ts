@@ -1,8 +1,8 @@
 
 
 import type { Usage } from "./composer";
-import { FoldChoices, LIVE_THOUGHT, cut, findMatches, lines, mergeRows, noteDisplay, noteFind, noteImages, notePatch, type Line } from "./transcript";
-import type { Row } from "./api";
+import { FoldChoices, LIVE_THOUGHT, cut, lines, mergeRows, noteDisplay, noteFind, noteImages, notePatch, partsOf, type Line } from "./transcript";
+import { ApiError, type Row } from "./api";
 import { TAIL, LRU_SIZE, type FullText, type Chat, type Find, type Reader, paneId } from "./app-types";
 import type { App } from "./app";
 
@@ -15,6 +15,8 @@ export function liveRows(text: string | null, thinking: string | null, hides: { 
 }
 
 export class AppReader {
+  private findRequest: { chat: Chat; rows: Row[]; full: Map<string, FullText>; query: string; version: number; abort: AbortController } | null = null;
+
   constructor(private readonly app: App) {}
 
   build(chat: Chat) {
@@ -253,22 +255,56 @@ export class AppReader {
 
   // ---- find ----
 
-  /** Matches follow the rows; the current match stays on its row when rows change. */
+  /** Match only the current loaded snapshot. Reader choices alone do not start another request. */
   refind(chat: Chat | undefined) {
     const f = this.app.find;
     const sig = `${chat?.id}:${chat?.version}:${f.open}:${f.query}`;
     if (sig === this.app.findVersion) return;
     this.app.findVersion = sig;
-    if (!f.open || !chat) {
-      if (f.matches.length) this.app.find = { ...f, matches: [], index: -1 };
+    if (!f.open || !chat || !f.query.trim()) {
+      this.findRequest?.abort.abort();
+      this.findRequest = null;
+      this.app.find = { ...f, matches: [], index: -1, pending: false, error: null };
       return;
     }
-    const current = f.matches[f.index];
-    const matches = findMatches(chat.rows, f.query, chat.full);
-    const kept = current === undefined ? -1 : matches.findIndex((m) => m.id === current.id && m.occurrence === current.occurrence);
-    this.app.find = { ...f, matches, index: kept >= 0 ? kept : matches.length ? matches.length - 1 : -1 };
-    // A new current match must come into view.
-    if (kept < 0 && matches.length) this.reveal(chat, this.app.find);
+    const previous = this.findRequest;
+    if (previous && previous.chat === chat && previous.rows === chat.rows && previous.full === chat.full && previous.query === f.query) {
+      previous.version = chat.version;
+      return;
+    }
+    previous?.abort.abort();
+    const request = { chat, rows: chat.rows, full: chat.full, query: f.query, version: chat.version, abort: new AbortController() };
+    this.findRequest = request;
+    this.app.find = { ...f, pending: true, error: null };
+    const rows = new Map<string, Row>();
+    const stack = [...request.rows];
+    while (stack.length) {
+      const row = stack.pop()!;
+      rows.set(row.id, row);
+      stack.push(...(row.steps ?? []));
+    }
+    const find = Object.fromEntries([...rows].map(([id, row]) => [id, partsOf(row)]));
+    const full = Object.fromEntries([...request.full].flatMap(([id, entry]) => entry.state === "ready" ? [[id, entry.text]] : []));
+    const current = () => this.findRequest === request && !request.abort.signal.aborted
+      && this.app.find.open && this.app.find.query === request.query
+      && (this.app.findId ?? this.app.openId) === chat.id && this.app.chats.get(chat.id) === chat
+      && chat.version === request.version && chat.rows === request.rows && chat.full === request.full;
+    void this.app.api.findRows({ version: 1, query: request.query, rows: request.rows, find, full }, request.abort.signal).then((reply) => {
+      if (!current()) return;
+      if (reply.version !== 1) throw new Error("Unsupported search reply");
+      const matches = reply.matches.map((m) => ({ ...m, fold: m.fold === null ? null : rows.get(m.fold) ?? null }));
+      const f = this.app.find;
+      const selected = f.matches[f.index];
+      const kept = selected === undefined ? -1 : matches.findIndex((m) => m.id === selected.id && m.occurrence === selected.occurrence);
+      this.app.find = { ...f, pending: false, error: null, matches, index: kept >= 0 ? kept : matches.length ? matches.length - 1 : -1 };
+      if (kept < 0 && matches.length) this.reveal(chat, this.app.find);
+      this.app.notify();
+    }).catch((err: unknown) => {
+      if (!current()) return;
+      const error = err instanceof ApiError && err.status === 413 ? "Output too large to search" : "Search failed. " + String(err);
+      this.app.find = { ...this.app.find, matches: [], index: -1, pending: false, error };
+      this.app.notify();
+    });
   }
 
   /** Opens the fold or card that holds the current match, and asks the list to scroll to it. */
@@ -280,6 +316,7 @@ export class AppReader {
     chat.version++;
     chat.shift = false;
     chat.built = { version: chat.version, lines: this.build(chat) };
+    if (this.findRequest?.chat === chat) this.findRequest.version = chat.version;
     this.app.findVersion = `${chat.id}:${chat.version}:${f.open}:${f.query}`;
     this.app.find = { ...f, seq: f.seq + 1 };
   }
