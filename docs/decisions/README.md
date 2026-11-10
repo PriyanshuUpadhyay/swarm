@@ -5,6 +5,9 @@ reversals supersede, never edit. Add one row, newest first, with each new record
 
 | #    | Title                                                                | Tier | Status     | Date       | Refs                    |
 |------|----------------------------------------------------------------------|------|------------|------------|-------------------------|
+| 0137 | A verb that becomes a skill leaves presets in the same change | 2 | accepted | 2026-11-05 | →0132 →0136 |
+| 0136 | The plugin ships chosen standalone skills, each tested by skill-eval | 2 | accepted | 2026-11-05 | ↑0132 →0133 |
+| 0135 | Agents edit only in task worktrees, and main is read-only for them | 3 | accepted | 2026-11-03 | ↑0019 →0040 →0042 →0046 →0055 |
 | 0134 | Tests cover the main path and real bugs, not every edge case | 2 | accepted | 2026-11-03 | →0133 |
 | 0133 | A small change takes a short route with one review seat | 2 | accepted | 2026-11-02 | →0132 |
 | 0132 | The swarm skill is the one workflow skill, and the verbs are its presets | 2 | accepted | 2026-10-31 | →0080 →0111 →0113 |

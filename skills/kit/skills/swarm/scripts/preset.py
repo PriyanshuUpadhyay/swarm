@@ -28,6 +28,8 @@ def path(verb, mode=None):
     if not re.fullmatch(r"[a-z0-9-]+", verb + (mode or "")):
         raise SystemExit(f"no preset file for {verb} {mode or ''}".strip())
     skill = KIT / "presets" / verb / "PRESET.md"
+    if not skill.is_file():  # ADR 0136: a verb that became a skill keeps its preset in its SKILL.md
+        skill = KIT / "skills" / verb / "SKILL.md"
     if mode and skill.is_file() and "\n## Preset\n" in skill.read_text(encoding="utf-8"):
         raise SystemExit(f"{verb} has no mode presets; write `Preset: {verb}`")
     file = skill.parent / "references" / f"{mode}.md" if mode else skill
@@ -162,15 +164,21 @@ def meta(path):
     return found
 
 
+def preset_files():
+    """Each verb preset file, and each skill's SKILL.md (ADR 0136); callers keep those with a ## Preset section."""
+    return (sorted((KIT / "presets").glob("*/PRESET.md")) + sorted((KIT / "presets").glob("*/references/*.md"))
+            + sorted((KIT / "skills").glob("*/SKILL.md")) + sorted((KIT / "skills").glob("*/references/*.md")))
+
+
 def kit_json():
     """Every block with the presets that use it, and every preset with its step facts."""
     files = {p.parent.name: p for p in sorted((KIT / "blocks").glob("*/SKILL.md"))}
     parents = plan_chart.parents()
     parent_of = {part: parent for parent, parts in parents.items() for part in parts}
     presets = []
-    for file in sorted((KIT / "presets").glob("*/PRESET.md")) + sorted((KIT / "presets").glob("*/references/*.md")):
+    for file in preset_files():
         if "\n## Preset\n" in file.read_text(encoding="utf-8"):
-            verb, mode = (file.parent.name, None) if file.name == "PRESET.md" else (file.parents[1].name, file.stem)
+            verb, mode = (file.parent.name, None) if file.name in ("PRESET.md", "SKILL.md") else (file.parents[1].name, file.stem)
             presets.append(facts(file, verb, mode))
     used = {}
     for p in presets:

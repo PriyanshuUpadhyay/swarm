@@ -2,7 +2,7 @@
 
 use markdown::mdast::Node;
 
-use super::super::{display_patch, patch_wire};
+use super::super::display_patch;
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct Display {
@@ -216,7 +216,7 @@ fn code_diff(label: Option<&str>, text: &str) -> Option<serde_json::Value> {
     }
     let utf16: Vec<_> = text.encode_utf16().collect();
     if display_patch::is_patch(&utf16) {
-        return patch_wire::text_patch(text, true);
+        return Some(super::diff_fence::patch(text));
     }
     let prefix: Vec<_> = text
         .strip_suffix('\n')

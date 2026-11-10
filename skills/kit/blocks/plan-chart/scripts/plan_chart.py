@@ -226,7 +226,7 @@ def chat_preset(plan):
 
 def research(plan):
     """True when the plan starts from the research preset, whose page sections are all checked; an implement plan has only its briefs checked."""
-    return preset_of(plan) == KIT / "presets" / "research" / "PRESET.md"
+    return preset_of(plan) == KIT / "skills" / "research" / "SKILL.md"
 
 
 def main(argv):
@@ -260,7 +260,7 @@ def main(argv):
     body = text.split(START)[0] + text.split(END)[-1] if START in text else text
     if research(plan):
         check_layout(body, rows, uses)
-    elif preset_of(plan) == KIT / "presets" / "implement" / "PRESET.md":
+    elif preset_of(plan) == KIT / "skills" / "implement" / "SKILL.md":
         check_briefs(body, rows, uses, skip_optional=True)
     render(text, rows, ledger)  # its refusals, such as an unsafe html fence, come before plan.md is written
     put_chart(plan, mermaid(rows, uses))

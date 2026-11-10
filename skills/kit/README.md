@@ -5,13 +5,16 @@ Workflow skills for coding agents (Claude Code, Codex, Antigravity). Each skill 
 
 ## Skills
 
-The plugin ships three skills. `swarm` is the one workflow skill; the others serve swarm panes.
+The plugin ships four skills. `swarm` is the one workflow skill, `skill-eval` tests skills, and the others serve
+swarm panes. ADR 0136 says how a new skill earns its place.
 
 | Skill | Use |
 |---|---|
 | `swarm` | Plan any task from kit blocks, starting from a preset when one fits; draw it, get approval, run the steps |
 | `swarm-orchestrator` | Run a swarm session as the parent agent |
+| `implement` | Run one change through frame, design, contracts, impact, build, review, and close, in `pair` or `auto` mode |
 | `swarm-voice` | Act as one child agent in a swarm session |
+| `skill-eval` | Test whether a skill helps: a cold name check, runs with and without it, and a blind grade |
 
 ## Presets
 
@@ -20,10 +23,6 @@ start list of steps and blocks; the planner may add or drop blocks for the task.
 
 | Preset | Use |
 |---|---|
-| `implement` | Run one change through frame, design, contracts, impact, build, review, and close, in `pair` or `auto` mode (on trial) |
-| `research` | Answer one question from evidence in a short report; its `03-web` step loads the `web-search` block |
-| `council` | A visible debate between Claude, GPT and Gemini voices that ends in a verdict |
-| `review` | Check a range with a script verdict, walk a PR into a pending review, or run a cleanup pass on request |
 | `build` | Pictures, generative plates, films, and websites drawn by code, from a story or a visual reference |
 | `explain` | Explain a subject with one running example, using the `voice-teach` block |
 
@@ -35,10 +34,12 @@ holds each runtime's lines. Run folders stay where they were.
 
 | You typed | Type now |
 |---|---|
-| `/implement`, `/pair`, `/deliver` | `/swarm:swarm implement`, then choose `pair` or `auto` mode |
-| `/review`, `/review-check`, `/review-walk`, `/cleanup-gate` | `/swarm:swarm review`, then choose `check`, `walk`, or `cleanup` |
-| `/research`, `/web-search` | `/swarm:swarm research` |
-| `/build`, `/explain`, `/council` | `/swarm:swarm build`, `/swarm:swarm explain`, `/swarm:swarm council` |
+| `/implement`, `/deliver` | `/swarm:swarm implement`, then choose `pair` or `auto` mode |
+| `/pair` | `/swarm:pair-programming`, a skill again since 2026-11-06 (ADR 0137) |
+| `/review`, `/review-check`, `/review-walk`, `/cleanup-gate` | `/swarm:code-review`, then choose `check`, `walk`, or `cleanup`; a skill since 2026-11-05 (ADR 0137) |
+| `/research`, `/web-search` | `/swarm:research`, a skill again since 2026-11-05 (ADR 0137) |
+| `/build`, `/explain` | `/swarm:swarm build`, `/swarm:swarm explain` |
+| `/council` | `/swarm:council`, a skill again since 2026-11-05 (ADR 0137) |
 
 The rules for proof, checked units, and code extraction live directly in
 `blocks/prove-it-works/SKILL.md`, `blocks/checked-units/SKILL.md`, and

@@ -36,3 +36,6 @@ mod references;
 mod row_displays;
 #[path = "markdown/separator.rs"]
 mod separator;
+
+#[path = "markdown/diff_fence.rs"]
+mod diff_fence;

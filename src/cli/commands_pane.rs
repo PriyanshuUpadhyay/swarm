@@ -81,7 +81,15 @@ pub(crate) fn commands_pane(
             .duration_since(std::time::UNIX_EPOCH)?
             .as_secs() as i64;
         swarm::store::mark_sent(connection, &session_id, agent_id, Some(now))?;
-        let typed = type_text(connection, &adapter, &session_id, agent_id, &pane, &text);
+        let typed = type_text(
+            connection,
+            &adapter,
+            root,
+            &session_id,
+            agent_id,
+            &pane,
+            &text,
+        );
         if typed.is_err() {
             swarm::store::mark_sent(connection, &session_id, agent_id, None)?;
         }

@@ -87,7 +87,7 @@ pub(crate) fn answer(
             }
             let text = swarm::screen::codex_reply(&prompt, answer)
                 .ok_or("swarm: the question has no reply id")?;
-            super::ring::type_text(connection, &adapter, &session, agent_id, &pane, &text)?;
+            super::ring::type_text(connection, &adapter, root, &session, agent_id, &pane, &text)?;
             return Ok(Some(()));
         }
         let keys = prompt

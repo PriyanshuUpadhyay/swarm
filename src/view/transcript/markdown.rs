@@ -1,5 +1,6 @@
 //! App Markdown producer over the maintained pinned parser.
 
+mod diff_fence;
 mod normalize_link;
 
 pub mod display;

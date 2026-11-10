@@ -14,7 +14,7 @@ impl ReaderRows {
             .collect()
     }
     /// Copies the visible tail without rendering or cloning the rest of the page.
-    pub fn tail(&self, count: usize) -> Option<Vec<(view::RowKind, String)>> {
+    pub fn tail(&self, count: usize) -> Option<Vec<Row>> {
         if !self.initialized || self.rebuild {
             return None;
         }
@@ -29,7 +29,7 @@ impl ReaderRows {
                     .flat_map(|chunk| chunk.rows.iter().rev()),
             )
             .take(count)
-            .map(|row| (row.kind, row.text.clone()))
+            .cloned()
             .collect();
         rows.reverse();
         Some(rows)

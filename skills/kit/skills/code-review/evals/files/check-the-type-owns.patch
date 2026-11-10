@@ -1,0 +1,30 @@
+From d7a82a1b7a111cf34c9eef7cbe9d874c0a5a1622 Mon Sep 17 00:00:00 2001
+From: eval <eval@example.invalid>
+Date: Fri, 6 Nov 2026 00:00:00 +0000
+Subject: [PATCH] profiles: reject an unknown provider before an account lookup
+
+---
+ src/profiles/native.rs | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/src/profiles/native.rs b/src/profiles/native.rs
+index c0b0c277..d3945d49 100644
+--- a/src/profiles/native.rs
++++ b/src/profiles/native.rs
+@@ -209,6 +209,13 @@ pub fn discover(provider: Provider, home: &Path, active: Option<PathBuf>) -> Dis
+ 
+ /// The account variables a chat launched on account `name` got, found with no CLI read.
+ pub fn launch_env(provider: Provider, name: &str) -> Result<BTreeMap<String, String>, String> {
++    let id = provider.id();
++    if !["claude", "codex", "agy", "pi"].contains(&id) {
++        return Err(format!("unknown provider {id}"));
++    }
++    if name.trim().is_empty() {
++        return Err(format!("no {id} account name"));
++    }
+     let home = PathBuf::from(std::env::var_os("HOME").ok_or("HOME is not set")?);
+     let metadata = crate::accounts::load()?;
+     crate::accounts::merge(
+-- 
+2.54.0 (Apple Git-157)
+

@@ -1,0 +1,55 @@
+From 4e2fa855c251a45cf87bf846c9768802b20fd9e7 Mon Sep 17 00:00:00 2001
+From: eval <eval@example.invalid>
+Date: Fri, 6 Nov 2026 00:00:00 +0000
+Subject: [PATCH] plan-chart: the last step's voice block must be a rule block
+
+---
+ .../blocks/plan-chart/scripts/plan_chart.py   | 27 +++++++++++++++++++
+ 1 file changed, 27 insertions(+)
+
+diff --git a/skills/kit/blocks/plan-chart/scripts/plan_chart.py b/skills/kit/blocks/plan-chart/scripts/plan_chart.py
+index a3a5c974..72b72940 100644
+--- a/skills/kit/blocks/plan-chart/scripts/plan_chart.py
++++ b/skills/kit/blocks/plan-chart/scripts/plan_chart.py
+@@ -143,11 +143,38 @@ def check(title, done, rows):
+     end = next(r for r in rows if r[0] == ends[0])
+     if not any(b.startswith("voice-") for b in end[3]):
+         raise SystemExit(f"the last step {end[0]} has no voice- block")
++    voice = next(b for b in end[3] if b.startswith("voice-"))
++    if block_kind(voice) != "rule":
++        raise SystemExit(f"the last step {end[0]} names {voice}, which is not a rule block")
+     if any(len(r) > 5 and r[5] is not None for r in rows):
+         check_writes(rows, uses, selected)
+     return uses
+ 
+ 
++def block_kind(block):
++    """The `kind` under `metadata:` in a block's SKILL.md front matter, or "" when it has none."""
++    path = KIT / "blocks" / block / "SKILL.md"
++    text = path.read_text(encoding="utf-8")
++    if not text.startswith("---\n"):
++        return ""
++    head = text[4:].split("\n---\n", 1)[0]
++    in_metadata = False
++    kind = ""
++    for line in head.splitlines():
++        if line.startswith("metadata:"):
++            in_metadata = True
++            continue
++        if in_metadata and not line.startswith("  "):
++            in_metadata = False
++        if in_metadata and line.startswith("  kind:"):
++            value = line.split(":", 1)[1].strip()
++            if value.startswith('"') and value.endswith('"'):
++                value = value[1:-1]
++            kind = value
++            break
++    return kind
++
++
+ def stages(uses):
+     """Steps grouped by stage: a step runs one stage after the last step it needs, so a stage runs in parallel."""
+     stage = {}
+-- 
+2.54.0 (Apple Git-157)
+

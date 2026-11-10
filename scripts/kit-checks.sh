@@ -19,17 +19,18 @@ env = dict(os.environ, TMPDIR=str(root / "tmp"))
 checks = [
     "skills/kit/scripts/test_block_refs.py",
     "skills/kit/scripts/test_plugin_skills.py",
-    "skills/kit/presets/implement/scripts/test_implement_run.py",
+    "skills/kit/skills/implement/scripts/test_implement_run.py",
     "skills/kit/references/test_step_run.py",
     "skills/kit/blocks/plan-chart/scripts/test_plan_chart.py",
     "skills/kit/blocks/plan-chart/scripts/test_plan_page.py",
     "skills/kit/blocks/plan-review/scripts/test_start_plan.py",
     "skills/kit/skills/swarm/scripts/test_preset.py",
-    "skills/kit/presets/review/scripts/test_review_check.py",
+    "skills/kit/skills/code-review/scripts/test_review_check.py",
     "skills/kit/scripts/test_build_checks.py",
-    "skills/kit/presets/review/scripts/test_review_walk.py",
-    "skills/kit/presets/review/scripts/test_validate_citations.py",
-    "skills/kit/presets/implement/scripts/test_land.py",
+    "skills/kit/skills/code-review/scripts/test_review_walk.py",
+    "skills/kit/skills/code-review/scripts/test_validate_citations.py",
+    "skills/kit/skills/implement/scripts/test_land.py",
+    "skills/kit/blocks/web-search/scripts/test_reach.py",
     "scripts/test_owner_scripts.py",
 ]
 # These suites import their sibling modules through PYTHONPATH, which -I ignores.

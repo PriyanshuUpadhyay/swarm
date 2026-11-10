@@ -27,7 +27,7 @@ pub(crate) fn init() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-pub(crate) const USAGE: &str = "usage: swarm --version | init | doctor [--json] | kit (--json | check) | import conductor [--json | --digest <digest>] [--db <path>] | setup [--json] | setup status --json | setup <all|hooks,trust,plugin,hud> [--plan [--json] | --digest <digest> | --yes] [--cwd <dir>] [--consent <standing|ask>] [--resume] | hooks status --json | managed list [--json] | managed revert (<id>... | --all) [--plan [--json] | --digest <digest>] | adapter check <name> | session new <talk_mode> [--chair <claude|codex|pi>:<id>] (cwd: pwd -P) | session chair <claude|codex|pi>:<id> | session continue <new_id> <old_id> | session branch <new_id> <old_id> [<claude|pi>:<id>] | session archive <id>... | session unarchive <id>... | sessions --json [--archived] | agent add <agent_id> <role> | serve [--port N] [--assets DIR] | ui [stop | --foreground] [--port N] [--assets DIR] | pages [publish <folder> [--slug <slug>] | stop | --foreground [--port N]] | herdr-split | notify <title> [--body <text>] | hud <uninstall|restart|status> [--json] | notices --json | notices --due | notices <health|allow|test> --json | notices settings <notifications|focus> | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | status-feed | pty [--host] -- <cmd> [args...] | pty host | pty <spawn|list|ring|interrupt|key|screen|capture|close|attach> (adapter only) | guard <claude|codex|agy> PreToolUse | roles --json | roles get <role> [--provider <claude|codex|agy|pi>] | roles check --json | roles save --revision <revision> <profile-json> | roles new <name> --revision <revision> | roles rename <old> <new> --revision <revision> | roles copy <from> <to> --revision <revision> | roles delete <name> --revision <revision> | roles reset --revision <revision> | roles set-min-usage <pct> --revision <revision> | providers --json | models --provider <claude|codex|agy|pi> --json | accounts --provider <claude|codex|agy|pi> --json | accounts login --provider <claude|codex> --name <name> --revision <revision> --json [--cwd <dir>] | accounts reset --revision <revision> --json | accounts pick --provider <claude|codex> [--account <auto|menu|NAME> | --session <id> | --last [--all]] [--model <model>] --json | usage --json | usage --format openusage | working --json | usage --refresh --provider <claude|codex> --json | agents --json [--all] | messages --json [--after <seq>] | run <claude|codex> [--account [auto|menu|NAME]] [-- <args>...] | launch <agent_id> <role> [--provider <claude|codex|agy|pi>] [--model <model> --effort <level> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | launch orchestrator <role> --resume [--model <model>] [--effort <level>] [--account <auto|name>] [--cwd <dir>] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | answer <agent_id> <prompt_id> <choice> | interrupt <agent_id> | key <agent_id> <Up|C-u> | clear-box <agent_id> [--dequeue] | attach <agent_id> | focus <session_id> <agent_id> | close [--now] <agent_id>... | send <recipient> <kind> | commands <agent_id> --json | finish | exited | sweep [--every <secs>] | inbox | ack <seq> | board <post|answer|read|relink> ... (swarm board --help)";
+pub(crate) const USAGE: &str = "usage: swarm --version | init | doctor [--json] | kit (--json | check) | import conductor [--json | --digest <digest>] [--db <path>] | setup [--json] | setup status --json | setup <all|hooks,trust,plugin,hud> [--plan [--json] | --digest <digest> | --yes] [--cwd <dir>] [--consent <standing|ask>] [--resume] | hooks status --json | managed list [--json] | managed revert (<id>... | --all) [--plan [--json] | --digest <digest>] | adapter check <name> | session new <talk_mode> [--chair <claude|codex|pi>:<id>] (cwd: pwd -P) | session chair <claude|codex|pi>:<id> | session continue <new_id> <old_id> | session branch <new_id> <old_id> [<claude|pi>:<id>] | session archive <id>... | session unarchive <id>... | sessions --json [--archived] | agent add <agent_id> <role> | serve [--port N] [--assets DIR] | ui [stop | --foreground] [--port N] [--assets DIR] | pages [publish <folder> [--slug <slug>] | stop | --foreground [--port N]] | herdr-split | notify <title> [--body <text>] | hud <uninstall|restart|status> [--json] | notices --json | notices --due | notices <health|allow|test> --json | notices settings <notifications|focus> | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | status-feed | pty [--host] -- <cmd> [args...] | pty host | pty <spawn|list|ring|interrupt|key|screen|capture|close|attach> (adapter only) | guard <claude|codex|agy> PreToolUse | task start <name> | task land [<name>] | task drop [<name>] | task list | roles --json | roles get <role> [--provider <claude|codex|agy|pi>] | roles check --json | roles save --revision <revision> <profile-json> | roles new <name> --revision <revision> | roles rename <old> <new> --revision <revision> | roles copy <from> <to> --revision <revision> | roles delete <name> --revision <revision> | roles reset --revision <revision> | roles set-min-usage <pct> --revision <revision> | providers --json | models --provider <claude|codex|agy|pi> --json | accounts --provider <claude|codex|agy|pi> --json | accounts login --provider <claude|codex> --name <name> --revision <revision> --json [--cwd <dir>] | accounts reset --revision <revision> --json | accounts pick --provider <claude|codex> [--account <auto|menu|NAME> | --session <id> | --last [--all]] [--model <model>] --json | usage --json | usage --format openusage | working --json | usage --refresh --provider <claude|codex> --json | agents --json [--all] | messages --json [--after <seq>] | run <claude|codex> [--account [auto|menu|NAME]] [-- <args>...] | launch <agent_id> <role> [--provider <claude|codex|agy|pi>] [--model <model> --effort <level> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | launch orchestrator <role> --resume [--model <model>] [--effort <level>] [--account <auto|name>] [--cwd <dir>] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | answer <agent_id> <prompt_id> <choice> | interrupt <agent_id> | key <agent_id> <Up|C-u> | clear-box <agent_id> [--dequeue] | attach <agent_id> | focus <session_id> <agent_id> | close [--now] <agent_id>... | send <recipient> <kind> | commands <agent_id> --json | finish | exited | sweep [--every <secs>] | inbox | ack <seq> | board <post|answer|read|relink> ... (swarm board --help)";
 
 pub(crate) fn env_var(name: &str) -> Result<String, String> {
     env::var(name).map_err(|_| format!("swarm: {name} not set"))
@@ -373,62 +373,8 @@ pub(crate) const LOGIN_ADAPTER_TIMEOUT_SECONDS: u64 = 18;
 const _: () = assert!(LOGIN_ADAPTER_TIMEOUT_SECONDS < 20);
 pub(crate) const LOGIN_PANE_CLOSE_TIMEOUT_SECONDS: u64 = 1;
 
-/// `swarm guard <provider> <event>`: the rule list's verdict on one tool call, in the CLI's own
-/// reply format (ADR 0040). It never opens the store, so a busy bus cannot slow a tool call.
-pub(crate) fn guard(args: &[String]) -> (String, String, i32) {
-    let [provider, event] = args else {
-        return (String::new(), format!("{USAGE}\n"), 2);
-    };
-    let Some(provider) = Provider::parse(provider) else {
-        return (String::new(), format!("{USAGE}\n"), 2);
-    };
-    let deadline = std::time::Instant::now() + swarm::guard::DEADLINE;
-    let verdict = match (swarm::paths::guards_file(), env::var("HOME")) {
-        (Ok(path), Ok(home)) => {
-            let path = path.to_string_lossy();
-            let payload = read_within(std::io::stdin(), std::time::Duration::from_secs(2));
-            match (std::fs::read_to_string(path.as_ref()), payload) {
-                (_, None) => swarm::guard::Verdict::Deny(
-                    "swarm guard: cannot read the hook payload on stdin within 2 s, so the call is blocked".into(),
-                ),
-                (Err(error), _)
-                    if error.kind() != std::io::ErrorKind::NotFound && provider != Provider::Pi =>
-                {
-                    swarm::guard::Verdict::Deny(format!(
-                        "swarm guard: cannot read {path}: {error}, so the call is blocked"
-                    ))
-                }
-                (_, Some(payload))
-                    if let Some(wait) = swarm::guard::inbox_wait(provider, event, &payload) =>
-                {
-                    wait
-                }
-                (_, Some(payload))
-                    if swarm::host::is_worker(|name| env::var(name).ok())
-                        && let Some(wall) = swarm::guard::board_wall(provider, event, &payload) =>
-                {
-                    wall
-                }
-                // Swarm's pi extension calls the guard for swarm's own walls only; the owner's
-                // pi extensions run the owner's rules (ADR 0086).
-                (_, Some(_)) if provider == Provider::Pi => swarm::guard::Verdict::Allow,
-                (list, Some(payload)) => swarm::guard::decide(
-                    list.ok().as_deref(),
-                    &path,
-                    provider,
-                    event,
-                    &payload,
-                    &home,
-                    deadline,
-                ),
-            }
-        }
-        _ => swarm::guard::Verdict::Deny(
-            "swarm guard: HOME is not set, so the call is blocked".into(),
-        ),
-    };
-    swarm::guard::render(provider, &verdict)
-}
+mod guard_cmd;
+pub(crate) use guard_cmd::guard;
 
 #[cfg(test)]
 #[path = "context/tests.rs"]

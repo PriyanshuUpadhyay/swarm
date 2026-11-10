@@ -10,7 +10,7 @@ metadata:
   gives: "a call tree"
   conflicts: ""
   users: "implement"
-  source: "html-plan pack: skills/html-plan/references/blocks.md:101-106 (doc-calls), :5 (+ - ~ convention); presets/implement/PRESET.md (step table, 04-impact row)"
+  source: "html-plan pack: skills/html-plan/references/blocks.md:101-106 (doc-calls), :5 (+ - ~ convention); skills/implement/SKILL.md (step table, 04-impact row)"
 ---
 
 ## Rules

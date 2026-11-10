@@ -148,7 +148,7 @@ AGY has no account source yet.
 
 ### Bundled workflow skills
 
-The plugin `swarm` holds three skills in `skills/kit/skills/`, the verb presets in
+The plugin `swarm` holds eleven skills in `skills/kit/skills/`, the verb presets in
 `skills/kit/presets/`, and the blocks in `skills/kit/blocks/`. `swarm` is the one workflow skill: it
 matches the task to a preset, or plans from the blocks with no preset. A block is never called by
 itself; the `swarm` skill puts blocks into the steps of a run. Claude Code shows a skill as `/swarm:<name>`, pi
@@ -157,13 +157,17 @@ as `/skill:<name>`.
 | Skill or preset | Use |
 |---|---|
 | `swarm` (skill) | Plan any task from blocks, starting from a preset; show the flowchart, run it after approval |
-| `research` | Answer one question in a short report; its web step loads the `web-search` block |
-| `council` | Claude, GPT, and Gemini voices debate in panes and end in one verdict |
-| `implement` | Run one change through frame, design, contracts, impact, build, review, and close, in `pair` mode (one approved diff of about 40 lines at a time) or `auto` mode (stops before a push or merge) |
-| `review` | Judge a diff with a script verdict, walk a PR into a pending review, or run a cleanup pass on request |
+| `research` (skill) | Answer one question in a short report, with recent underrated finds and the origin of each claim; `reach.py` runs each site's routes (ADR 0137) |
+| `council` (skill) | Claude, GPT, and Gemini voices debate in panes and end in one verdict; Claude and GPT seats carry method cards (ADR 0137) |
+| `implement` (skill) | Run one change through frame, design, contracts, impact, build, review, and close, in `pair` mode (one approved diff at a time) or `auto` mode (stops before a push or merge) (ADR 0137) |
+| `pair-programming` (skill) | Write code with you one approved diff of up to about 100 related lines at a time, after a check that the branch is not behind its upstream; the `implement` skill's `pair` mode uses it (ADR 0137) |
+| `simplest-design` (skill) | Propose the design with the fewest parts that meets your needs, with each part traced to a need, existing code reused, and one walked input as proof |
+| `root-cause-analysis` (skill) | Find why a production issue happened from existing data, with one real instance, each claim checked by a quoted query, and what broke named before any fix; private repo sources go in `~/.root-cause-analysis/rules/<repo>.md` |
+| `code-review` (skill) | Judge a diff with a script verdict, walk a PR into a pending review, or run a cleanup pass; a second seat tries to refute each fix (ADR 0137) |
 | `build` | Pictures, films, and sites drawn by code |
 | `explain` | Explain a subject with one running example |
 | `swarm-orchestrator`, `swarm-voice` (skills) | The parent and child sides of a swarm session |
+| `skill-eval` (skill) | Test whether a skill helps, with a cold name check and blind runs with and without it (ADR 0136) |
 
 `skills/kit/README.md` lists the removed skill names and what to type now.
 

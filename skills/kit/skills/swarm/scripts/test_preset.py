@@ -11,16 +11,16 @@ sys.path.insert(0, str(HERE))
 import preset  # noqa: E402
 
 # Owner decision 2026-10-16: these verbs wait for the Plannotator click; explain and council go on in chat.
-STOPS = {"implement": "owner", "build": "owner", "research": "owner", "review check": "owner",
-         "review walk": "owner", "review cleanup": "owner", "explain": "chat", "council": "chat"}
+STOPS = {"implement": "owner", "build": "owner", "research": "owner", "code-review check": "owner",
+         "code-review walk": "owner", "code-review cleanup": "owner", "explain": "chat", "council": "chat"}
 
 
 def presets():
     """{"<verb>[ <mode>]": file} for each file with a ## Preset section."""
     found = {}
-    for file in sorted((KIT / "presets").glob("*/PRESET.md")) + sorted((KIT / "presets").glob("*/references/*.md")):
+    for file in preset.preset_files():
         if "\n## Preset\n" in file.read_text(encoding="utf-8"):
-            verb = file.parent.name if file.name == "PRESET.md" else f"{file.parents[1].name} {file.stem}"
+            verb = file.parent.name if file.name in ("PRESET.md", "SKILL.md") else f"{file.parents[1].name} {file.stem}"
             found[verb] = file
     return found
 

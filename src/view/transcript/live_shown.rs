@@ -1,6 +1,6 @@
 //! Live visibility uses the browser's letter class and UTF-16 comparison units.
 
-use super::RowKind;
+use super::{Row, RowKind};
 
 #[rustfmt::skip]
 mod letter_class;
@@ -26,27 +26,29 @@ pub fn letters(text: &str) -> Vec<u16> {
         .collect()
 }
 
-pub fn landed(rows: &[(RowKind, String)], text: &str, kind: RowKind) -> bool {
+pub fn landed(rows: &[Row], text: &str, kind: RowKind) -> bool {
     let letters = letters(text);
     let head = &letters[..letters.len().min(80)];
     head.len() >= 20
-        && rows.iter().rev().take(50).any(|(row_kind, text)| {
-            *row_kind == kind
-                && self::letters(text)
-                    .windows(head.len())
-                    .any(|part| part == head)
+        && rows.iter().rev().take(50).any(|row| {
+            std::iter::once(row).chain(&row.steps).any(|row| {
+                row.kind == kind
+                    && self::letters(&row.text)
+                        .windows(head.len())
+                        .any(|part| part == head)
+            })
         })
 }
 
-pub fn live_text<'a>(rows: &[(RowKind, String)], text: Option<&'a str>) -> Option<&'a str> {
+pub fn live_text<'a>(rows: &[Row], text: Option<&'a str>) -> Option<&'a str> {
     text.filter(|text| !letters(text).is_empty() && !landed(rows, text, RowKind::Assistant))
 }
 
-pub fn live_thought<'a>(rows: &[(RowKind, String)], thinking: Option<&'a str>) -> Option<&'a str> {
+pub fn live_thought<'a>(rows: &[Row], thinking: Option<&'a str>) -> Option<&'a str> {
     thinking.filter(|text| !text.is_empty() && !landed(rows, text, RowKind::Thought))
 }
 
-pub fn keeps_ended(rows: &[(RowKind, String)], text: Option<&str>, thinking: Option<&str>) -> bool {
+pub fn keeps_ended(rows: &[Row], text: Option<&str>, thinking: Option<&str>) -> bool {
     (text.is_some_and(|text| letters(text).len() >= 20) && live_text(rows, text).is_some())
         || live_thought(rows, thinking).is_some()
 }
@@ -76,7 +78,7 @@ impl LiveShown {
     /// A read is supplied only on a changed capture. A rows signal clears a kept ended turn.
     pub fn step(
         &mut self,
-        rows: &[(RowKind, String)],
+        rows: &[Row],
         read: Option<LiveRaw>,
         rows_changed: bool,
     ) -> Option<Shown> {

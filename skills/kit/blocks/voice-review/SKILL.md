@@ -10,7 +10,7 @@ metadata:
   gives: "comments in the reviewer's voice"
   conflicts: ""
   users: "swarm"
-  source: "presets/review/references/walk.md, step 4 (Comments) and Voice"
+  source: "skills/code-review/references/walk.md, step 4 (Comments) and Voice"
 ---
 
 ## Rules

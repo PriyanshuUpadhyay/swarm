@@ -123,7 +123,7 @@ On 2026-10-17, the owner settled the voice-file part of #70 in `blocks/voice-rev
 On 2026-10-17, the owner chose `blocks/worker-brief/SKILL.md` as the owner of gates with no user present.
 
 On 2026-10-17, the owner approved domain selection by `implement_run.py start --domains`;
-`skills/kit/presets/implement/PRESET.md` names the command and its saved choice.
+`skills/kit/skills/implement/SKILL.md` names the command and its saved choice.
 
 On 2026-10-19, the owner made every work verb a preset, the Template above: a start list of steps
 and blocks that the planner copies. `skills/swarm/SKILL.md` owns the preset format and the front door,
@@ -162,7 +162,7 @@ below. The proof, checked-unit, and extraction rules live directly in
 | Skill | Blocks it points to | Stays in the skill |
 |---|---|---|
 | engineering-standards | decision-with-default (trade-off form) | the rule tables and the procedure |
-| implement `pair` mode (`references/pair.md`) | task-file, checked-units, when-to-extract | the chunk loop, its guards, commit per behavior |
+| `pair-programming` skill, also implement `pair` mode | task-file, checked-units, when-to-extract | the chunk loop, its guards, commit per behavior |
 | implement `auto` mode (`references/auto.md`) | task-file, checked-units, prove-it-works | the predicate loop, the commit gate, the review stop |
 | research | sources (parent of deep-search, primary-sources, cite-sources, link-check), local-research, deep-search, primary-sources, cite-sources, tool-trial, report, link-check, worker-brief (no-user gate) | the step table, the web seat triggers and timing |
 | web-search | sources (parent), deep-search, primary-sources, cite-sources, link-check, worker-brief, run-workers | seats, site sets, reach tools, Yield and Floor, the depth gate, the merge |

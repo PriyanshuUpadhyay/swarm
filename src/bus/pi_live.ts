@@ -30,8 +30,7 @@ export default function (pi: ExtensionAPI) {
     });
     if (run.status === 0) return;
     const reason = run.stderr?.trim() || `swarm guard could not run (${run.error ?? `exit ${run.status}`}), so the call is blocked`;
-    // `INBOX_WAIT` in src/guard.rs: the turn ends here, and the next ring starts a new one.
-    return { block: true, reason, terminate: reason.startsWith("swarm guard: end your turn") };
+    return { block: true, reason };
   });
   let written = "";
   let next = "";

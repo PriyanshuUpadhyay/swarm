@@ -109,10 +109,36 @@ pub fn argv(
                     let root = format!("{swarm_home}/.swarm");
                     let root = std::fs::canonicalize(&root)
                         .map_or(root, |path| path.to_string_lossy().into_owned());
-                    let mut filesystem = format!(
-                        r#"":workspace_roots"={{".git"="write",".git/hooks"="read",".git/config"="read",".git/modules"="read",".codex"="read",".agents"="read"}},{}="write""#,
-                        quote(&root)
-                    );
+                    // ADR 0135: a chat in a hub's main worktree reads main and writes only its
+                    // `tmp/` and the task worktrees beside it, which Worktrunk makes there. The
+                    // workspace root must say `read` itself; a path entry for it does not win.
+                    // Main's `tmp/` counts as main here, so its chat does not get main's git dir.
+                    let here = crate::task::resolve(cwd, std::path::Path::new("."));
+                    let in_hub = crate::task::hub(cwd);
+                    let main = in_hub
+                        .as_ref()
+                        .filter(|hub| here.starts_with(&hub.main))
+                        .map(|hub| hub.main.clone());
+                    let roots = if main.is_some() {
+                        r#""."="read",".codex"="read",".agents"="read""#
+                    } else {
+                        r#"".git"="write",".git/hooks"="read",".git/config"="read",".git/modules"="read",".codex"="read",".agents"="read""#
+                    };
+                    let mut filesystem =
+                        format!(r#"":workspace_roots"={{{roots}}},{}="write""#, quote(&root));
+                    // In a subfolder of main, `.` is only that subfolder, so a write root above
+                    // main would open the rest of main; such a chat gets no write roots here.
+                    let at_main = main.as_ref().is_some_and(|main| {
+                        crate::task::resolve(cwd, std::path::Path::new(".")) == *main
+                    });
+                    if let Some(main) = main.as_ref().filter(|_| at_main) {
+                        let path = |path: &std::path::Path| quote(&path.to_string_lossy());
+                        filesystem += &format!(
+                            r#",{}="write",{}="write""#,
+                            path(main.parent().unwrap_or(main)),
+                            path(&main.join(crate::task::SCRATCH))
+                        );
+                    }
                     // A linked worktree keeps its git dir in the common dir, outside the workspace.
                     if let Some((git_dir, common)) = outside_git_dirs(cwd) {
                         filesystem += &format!(
@@ -122,9 +148,39 @@ pub fn argv(
                             quote(&format!("{common}/config")),
                             quote(&format!("{common}/modules"))
                         );
+                        // In a hub, the files that move or retarget the default branch are read,
+                        // on main and in a task worktree. Codex also refuses to create a `read`
+                        // file, so the loose default ref is named even when only packed-refs holds
+                        // it; packed-refs is named in that case too.
+                        if let Some(hub) = &in_hub {
+                            let loose = hub.common.join(format!("refs/heads/{}", hub.default));
+                            // `default_branch` reads origin/HEAD and `hub` reads main's HEAD, so
+                            // a write to either can turn the wall off; both are named even when
+                            // missing, so a `fetch` that would create origin/HEAD fails in Codex.
+                            let mut files = vec![
+                                hub.common.join("HEAD"),
+                                hub.common.join("refs/remotes/origin/HEAD"),
+                            ];
+                            // On main, its git dir is named below; a TOML key may not repeat.
+                            if let Some((main_git_dir, _)) =
+                                outside_git_dirs(&hub.main).filter(|_| main.is_none())
+                            {
+                                files.push(main_git_dir.into());
+                            }
+                            if !loose.exists() {
+                                files.push(hub.common.join("packed-refs"));
+                            }
+                            files.push(loose);
+                            for file in files {
+                                filesystem +=
+                                    &format!(r#",{}="read""#, quote(&file.to_string_lossy()));
+                            }
+                        }
                         if git_dir != common {
+                            // Main's own git dir holds its index and HEAD, so it is read-only too.
+                            let access = if main.is_some() { "read" } else { "write" };
                             filesystem += &format!(
-                                r#",{}="write",{}="read""#,
+                                r#",{}="{access}",{}="read""#,
                                 quote(&git_dir),
                                 quote(&format!("{git_dir}/config.worktree"))
                             );

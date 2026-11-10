@@ -1,6 +1,6 @@
 use serde_json::{Value, json};
 use swarm::view::transcript::{
-    RowKind,
+    Row, RowKind,
     live_shown::{keeps_ended, letters, live_text, live_thought},
     reader_rows::ReaderRows,
 };
@@ -41,9 +41,10 @@ fn matches_the_original_browser_decision_table() {
                 .unwrap()
                 .iter()
                 .map(|row| {
-                    (
+                    Row::new(
                         kind(row["kind"].as_str().unwrap()),
                         row["text"].as_str().unwrap().to_owned(),
+                        "fixture".into(),
                     )
                 })
                 .collect();
@@ -98,4 +99,31 @@ fn letters_match_the_regex_edge_fixture_in_utf16_units() {
 #[test]
 fn tail_is_unavailable_before_the_first_delta() {
     assert_eq!(ReaderRows::empty(0, false).tail(50), None);
+}
+
+#[test]
+fn a_thought_inside_a_fold_hides_the_live_thought() {
+    let thinking = "I need to check that each anchor string appears as a new line in the diff.";
+    let mut rows = ReaderRows::empty(0, false);
+    let row = |kind, text: &str| {
+        swarm::view::transcript::Row::new(kind, text.to_owned(), "fixture".into())
+    };
+    let mut fold = row(RowKind::Fold, "1 command");
+    fold.steps = vec![
+        row(RowKind::Thought, thinking),
+        row(RowKind::ToolUse, "python3 check.py"),
+    ];
+    rows.prepare(vec![row(RowKind::User, "review it"), fold]);
+    let mut shown = swarm::view::transcript::live_shown::LiveShown::default();
+    let frame = shown
+        .step(
+            &rows.tail(50).unwrap(),
+            Some(swarm::view::transcript::live_shown::LiveRaw {
+                text: None,
+                thinking: Some(thinking.to_owned()),
+            }),
+            false,
+        )
+        .unwrap();
+    assert!(frame.hide_thinking);
 }

@@ -270,6 +270,27 @@ mod tests {
     }
 
     #[test]
+    fn a_codex_chat_on_a_hubs_main_reads_main_and_writes_the_worktrees_beside_it() {
+        let dir = crate::task::tests::hub_fixture("launch");
+        let mut codex = role("codex");
+        codex.sandbox = Some("workspace-write".into());
+        let args = argv("coder", "coder", &codex, "/home", &dir.join("wt/main")).unwrap();
+        let profile = args
+            .iter()
+            .find(|arg| arg.starts_with("permissions.swarm-code="))
+            .unwrap();
+        let (wt, common) = (dir.join("wt"), dir.join(".bare"));
+        let (wt, common) = (wt.to_string_lossy(), common.to_string_lossy());
+        assert!(
+            profile.contains(r#"":workspace_roots"={"."="read",".codex"="read",".agents"="read"}"#)
+        );
+        assert!(profile.contains(&format!(r#""{wt}"="write","{wt}/main/tmp"="write""#)));
+        assert!(profile.contains(&format!(r#""{common}/worktrees/main"="read""#)));
+        assert!(profile.contains(&format!(r#""{common}/HEAD"="read""#)));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn only_a_building_codex_seat_may_reach_the_package_hosts() {
         let mut codex = role("codex");
         codex.sandbox = Some("workspace-write".into());

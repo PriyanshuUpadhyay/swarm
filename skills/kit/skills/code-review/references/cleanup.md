@@ -1,0 +1,126 @@
+# review mode: cleanup
+
+The `code-review` skill owns the mode choice. This file owns the cleanup pass and when it activates.
+
+One pass over the working tree, run BEFORE a substantial diff, patch, or pull request is presented.
+It replaces the three after-the-fact passes the user otherwise pays for one at a time — readability
+review, simplification, review-bot triage. The diff the user opens should already be the cleaned
+diff, so the review budget goes to design instead of style churn.
+
+**Activation.** The six-step pass runs only when the user explicitly asked for a cleanup,
+readability, simplification, dead-code, or review-comment pass over work already written, or when a
+substantial branch or pull-request diff has reached its delivery gate. A routine diff does not
+activate this pass, and an `implement` build in `pair` mode never does; its per-chunk `approve` is the gate. This preset
+owns that decision — no other instruction file states it — and six
+emitted steps over a two-file edit cost more than they return. When the pass is not activated, do
+not emit its steps and do not announce that it was skipped.
+
+**Entry contract.** Run this pass ONLY after scope and design are confirmed. Cleanup on unconfirmed
+architecture is worse than no cleanup — a polished diff reads as finished and buys the wrong design
+a pass through review. If any part of the scope or the design is unconfirmed, stop, name the
+unconfirmed part, and get it confirmed before running step 1.
+
+**Emission rule.** Each step below emits its result before the next step starts: either a list of
+edits, one per line as `path:line — what changed — which rule`, or the literal word `none`. A step
+that emitted nothing did not run. The six emissions are presented together, above the diff.
+
+**Working set.** Only files this task changed. A file this task never touched is out of scope for
+every step, including step 3 and step 4.
+
+**Rules.** The global coding rules are authoritative for the smallest clear change, comments,
+direct control flow and plain data, dead code, and unrelated cleanup. `references/cleanup-rules.md` adds
+only the rules the global file does not state, public contracts among them.
+
+## Preset
+
+Stop: owner
+Offers: call-tree, lean-review
+
+| File | Needs | Holds | Block | Why |
+|---|---|---|---|---|
+| 01-scope-delta | none | each changed file mapped to a scope item, and the ride-alongs | requirements | step 1 decides what later steps may touch |
+| 02-dead-weight | scope-delta | each removal with its reason, or `none` | when-to-extract | remove what no requirement needs |
+| 03-readability | dead-weight | each edit, or `none` | when-to-extract | collapse indirection that only an old iteration needed |
+| 04-comments | readability | comments added and deleted, or `none` | base-rules | comments only for what code cannot say |
+| 05-constants | comments | each constant moved, renamed, or kept, or `none` | base-rules | a constant lives next to its consumers |
+| 06-triage | constants | each test, fixture, and bot comment with its verdict | prove-it-works | keep required tests and settle each bot comment |
+| 07-reply | triage | the six emissions above the diff | voice-reply | the owner reads the cleaned diff |
+
+## The pass
+
+Run in order. Do not reorder; step 1 decides what the later steps are allowed to touch.
+
+### 1 — Scope delta
+
+Map every changed file to a stated scope item. Emit the mapping.
+
+Any file or hunk that no scope item requires is a ride-along: **report it, do not polish it.** For
+each ride-along, offer two choices — revert it, or keep it with the one-line reason that promotes it
+into scope — and wait for that answer before step 2 runs. Never clean a file you have just reported
+as out of scope; cleaning it is what makes unrequested work look requested.
+
+Emit: `<file> → <scope item>` per changed file, then the ride-along list, or `none`.
+
+### 2 — Dead weight
+
+Remove, within the working set: unreachable code, types and interfaces this task introduced and
+nothing consumes, exports with no importer, wrapper layers with one caller and no behavior of their
+own, and scaffolding left over from iteration.
+
+Also inspect each dependency, configuration item, abstraction, service, retry, and compatibility path
+introduced by the task. Remove it if it maps to no confirmed requirement and prevents no concrete
+current failure. If removal would change the confirmed design, report the conflict and return to the
+entry contract. Never use this test to remove required verification, security controls,
+checks for irreversible actions, explicit user requirements, or established repository structure.
+
+Emit: one line per removal with its reason, or `none`.
+
+### 3 — Readability
+
+Apply `references/cleanup-rules.md` and the global coding rules. Collapse indirection that exists only
+because an earlier iteration needed it.
+
+Emit: one line per edit, or `none`.
+
+### 4 — Comments and documentation
+
+Apply the global comment rule and section 5 of `references/cleanup-rules.md` to the working set.
+
+Emit two lists — added (each with the reason it is not obvious) and deleted — or `none`.
+
+### 5 — Constant locality
+
+Apply section 3 of `references/cleanup-rules.md` to every constant this task introduced.
+
+Emit: one line per constant moved, renamed, or kept shared with the consumer count, or `none`.
+
+### 6 — Test and review triage
+
+Classify each test, fixture, and scratch file in the working set by section 1 of
+`references/cleanup-rules.md`.
+
+Review bots: implement or refute each open automated review comment on this change, in one line
+naming the `path:line` or the rule that settles it. Every comment gets a verdict here; do not
+forward an untriaged comment to the user.
+
+Emit: one line per test or fixture — `removed: <reason>` or `kept: <reason>` — and one line per
+comment — `implemented: <what changed>` or `refuted: <reason>` — or `none`.
+
+## Output
+
+Present the six emissions first, then the diff. State plainly which steps found nothing. The user
+should never be the first person to notice an item on this list.
+
+## Red flags — stop and go back
+
+| Signal | Action |
+|---|---|
+| The pass ran on a routine diff nobody asked to clean | It should not have activated. See **Activation**. |
+| A rule attributed to the global file that is not in it | Fix the attribution, or move the rule into `references/cleanup-rules.md`. |
+| A step you ran "mentally" with nothing emitted | It did not run. Run it and emit. |
+| A ride-along file you improved instead of reported | Revert the improvement; report the file. |
+| Scope confirmed only by your own inference | Not confirmed. Return to the entry contract. |
+| A comment added because the code looked bare | Delete it. Bare is the default. |
+| A hand-rolled validator beside an existing schema library | Replace it. See `references/cleanup-rules.md`. |
+| An edit in a file this task never otherwise touched | Unrelated cleanup. Revert it. |
+| A required regression test dropped from the diff | Restore it. Step 6 removes only temporary or out-of-scope tests. |
