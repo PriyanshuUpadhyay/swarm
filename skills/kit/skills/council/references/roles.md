@@ -4,6 +4,9 @@ Each seat gets the same pinned brief and one role card from this file. The role 
 the seat does, what it looks for, how it judges, and what it pushes toward. It is not a job title,
 because a persona alone did not improve answers in tests.
 
+The identity contract in `../SKILL.md` owns how seats report their actual provider and model.
+The role IDs below stay the same when routing changes; each seat keeps its method on a fallback.
+
 ## Shared rule for every seat
 
 Start from first principles. Name the basic facts and limits of the question before you judge.
@@ -34,6 +37,9 @@ Seat role: `council.gpt`.
 - **Push toward.** A verdict that rests only on proven claims.
 
 ## council.gemini
+
+This is the historical role ID, not a promise of a Gemini runner. Report the actual runner as
+the identity contract requires.
 
 This seat gets the shared rule and no card. Its pre-mortem card lost the same case in three
 eval runs, because the seat wrote risks it could not prove (`evals/results.md`).

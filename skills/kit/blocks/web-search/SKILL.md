@@ -1,6 +1,6 @@
 ---
 name: web-search
-description: "Wide web search by three visible seats (GPT, Gemini, Claude) on separate sites, which dig past the known answers and report to files. Use when a research step needs forums or community views, or this session's fetches are blocked."
+description: "Wide web search by three visible seats on separate sites, which dig past the known answers and report to files. Use when a research step needs forums or community views, or this session's fetches are blocked."
 license: MIT
 metadata:
   kind: step
@@ -50,6 +50,9 @@ The chair runs the seats as the kit block `blocks/run-workers/SKILL.md` says, on
 `search.web` route, and every seat is a visible pane. Share one brief. Completion on swarm is the
 seat's ring and its report file.
 
+Record the actual routed models as `blocks/run-workers/SKILL.md` requires. The site-set seat
+names below describe search purposes, not provider identities.
+
 These four details differ from a council run.
 
 - Agent names are `ws-<voice>-<run>`, so a search and a council can run at the same time.
@@ -66,9 +69,9 @@ These four details differ from a council run.
 
 | Seat | Sites |
 |---|---|
-| GPT | Reddit — name the exact subreddits in the brief — the OpenAI Developer Community, the Cursor forum, and other Discourse forums |
-| GEMINI | GitHub issues and discussions, blogs and newsletters, X and Bluesky through their search |
-| CLAUDE | Hacker News through the Algolia API sorted by date, Lobsters, Tildes, Mastodon, Marginalia Search, and the blogs those threads link to |
+| forums | Reddit — name the exact subreddits in the brief — the OpenAI Developer Community, the Cursor forum, and other Discourse forums |
+| code/long-form | GitHub issues and discussions, blogs and newsletters, X and Bluesky through their search |
+| independent communities | Hacker News through the Algolia API sorted by date, Lobsters, Tildes, Mastodon, Marginalia Search, and the blogs those threads link to |
 
 The caller may replace any of these sets. Write the set each seat gets into that seat's brief.
 Every seat also gets one non-SEO index for the long tail: Marginalia Search, Kagi Small Web, or
@@ -180,10 +183,11 @@ words.
 
 ## Example
 Initial state: a research question about practice, with three seats briefed.
-Action: GPT reads 19 Reddit threads, GEMINI is blocked by Reddit with a 403 and reads 18 GitHub
-issues, and CLAUDE reads 12 Hacker News and Lobsters threads. The chair applies
+Action: the forums seat reads 19 Reddit threads, the code/long-form seat is blocked by Reddit
+with a 403 and reads 18 GitHub issues, and the independent communities seat reads 12 Hacker
+News and Lobsters threads. The chair applies
 `blocks/link-check/SKILL.md` to those links and puts the counts in the coverage table.
-Result: the merged report has three coverage rows, and the Gemini row names Reddit as blocked with its blocked log.
+Result: the merged report has three coverage rows, and the code/long-form row names Reddit as blocked with its blocked log.
 
 ## Check (script)
 - none: the seat reports and the merged report live in the run folder, which differs for each run.
