@@ -38,17 +38,18 @@ fn wrong_hunk_counts_do_not_take_in_the_next_file() {
         .map(|line| line["text"].clone())
         .collect();
     assert_eq!(files, vec!["a.ts", "b.ts"]);
+    assert!(
+        !lines
+            .iter()
+            .any(|line| (line["kind"] == "add" && line["text"] == "++ b.ts")
+                || (line["kind"] == "del" && line["text"] == "-- b.ts"))
+    );
     assert_eq!(
         hunks,
         json!(["@@ -102,2 +102,2 @@", "@@ -1,1 +1,0 @@", "@@ -2,1 +1,1 @@"])
             .as_array()
             .unwrap()
             .clone()
-    );
-    assert!(
-        !lines
-            .iter()
-            .any(|line| line["kind"] != "meta" && line["text"] == "+++ b.ts")
     );
     assert!(lines.iter().any(|line| line["kind"] == "del"
         && line["text"] == "import type { A } from \"x\";"
