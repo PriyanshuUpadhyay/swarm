@@ -382,6 +382,7 @@ fn with_no_file_the_built_in_profiles_show_and_nothing_is_written() {
             );
         }
     }
+
     let bin = clis(&home, &["codex", "claude", "agy"]);
     for (role, model) in [
         ("search.web", "gpt-6.1-sol"),
@@ -394,6 +395,7 @@ fn with_no_file_the_built_in_profiles_show_and_nothing_is_written() {
         assert_eq!(profile["runners"][0]["effort"], "high", "{role}");
         assert_eq!(profile["runners"][0]["sandbox"], "workspace-write");
         assert_eq!(profile["runners"][0]["approval"], "never");
+
         for _ in 0..2 {
             let selected = json(&swarm(&home, &[("PATH", &bin)], &["roles", "get", role]));
             assert_eq!(selected["provider"], "codex", "{role}");
