@@ -102,6 +102,10 @@ describe("swarm skills first", () => {
     ];
     expect(matches(mixed, "").map((r) => r.insert)).toEqual(["/swarm:plan", "/swarm:research", "/clear", "/other:plan", "/review"]);
     expect(matches(mixed, "plan").map((r) => r.insert)).toEqual(["/swarm:plan", "/other:plan"]);
+    // Nine swarm skills fill no more than their own cut, so a built-in still shows with no filter.
+    const builtins = ["/clear", "/compact", "/config", "/help", "/model"].map((n) => row(n, { kind: "builtin", source: "built-in" }));
+    const many = [...Array.from({ length: 9 }, (_, i) => row(`/swarm:s${i}`, { source: "swarm" })), ...builtins];
+    expect(matches(many, "").map((r) => r.insert)).toEqual(many.map((r) => r.insert));
   });
 });
 

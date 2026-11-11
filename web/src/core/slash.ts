@@ -131,15 +131,16 @@ export function fileRows(files: readonly string[], note: string | null): Command
 export const isSwarmRow = (r: MenuRow) => r.source === "swarm";
 
 /** The rows that match the query: the swarm plugin's rows first, then the rest. Inside each group
- *  the best come first: the exact name, then names that start with it, then jean's fuzzy order. */
+ *  the best come first: the exact name, then names that start with it, then jean's fuzzy order.
+ *  The cut applies to each group, so many swarm skills never push the built-ins out of the menu. */
 export function matches(rows: readonly MenuRow[], query: string, limit = 12): MenuRow[] {
   const q = query.toLowerCase();
   const rank = (r: MenuRow) => (r.name.toLowerCase() === q ? 0 : r.name.toLowerCase().startsWith(q) ? 1 : 2);
-  return fuzzySearchItems([...rows], query, 50)
+  const ranked = fuzzySearchItems([...rows], query, 50)
     .map((r, i) => ({ r, i }))
-    .sort((a, b) => Number(!isSwarmRow(a.r)) - Number(!isSwarmRow(b.r)) || rank(a.r) - rank(b.r) || a.i - b.i)
-    .slice(0, limit)
+    .sort((a, b) => rank(a.r) - rank(b.r) || a.i - b.i)
     .map(({ r }) => r);
+  return [...ranked.filter(isSwarmRow).slice(0, limit), ...ranked.filter((r) => !isSwarmRow(r)).slice(0, limit)];
 }
 
 /** The draft after a pick, and where the caret goes. A space follows unless one is already there. */
