@@ -23,6 +23,15 @@ pub(super) fn tool(home: &Path, name: &str, body: &str) {
 /// Runs the built binary with only HOME, PATH, and the given variables set. SWARM_HOME pins the
 /// data to HOME, so a branch build (ADR 0027) reads the same place as a `main` one.
 pub(super) fn swarm(home: &Path, env: &[(&str, &str)], args: &[&str]) -> Output {
+    swarm_input(home, env, args, None)
+}
+
+pub(super) fn swarm_input(
+    home: &Path,
+    env: &[(&str, &str)],
+    args: &[&str],
+    body: Option<&str>,
+) -> Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_swarm"));
     command
         .env_clear()
@@ -39,7 +48,18 @@ pub(super) fn swarm(home: &Path, env: &[(&str, &str)], args: &[&str]) -> Output 
     for (name, value) in env {
         command.env(name, value);
     }
-    command.output().unwrap()
+    if let Some(body) = body {
+        let mut child = command
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        std::io::Write::write_all(&mut child.stdin.take().unwrap(), body.as_bytes()).unwrap();
+        child.wait_with_output().unwrap()
+    } else {
+        command.output().unwrap()
+    }
 }
 
 pub(super) fn stderr(output: &Output) -> String {
