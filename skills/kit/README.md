@@ -52,8 +52,9 @@ pi lists `sourceInfo.path`, and Codex lists `path`. Claude's initialize command 
 path, so its own visibility filter and plugin label apply. The web composer uses each command
 row's `source`; a file under the Swarm plugin's `skills/` folder gets `swarm` from its manifest.
 
-`references/plan-layout.md` is the plan shape and the first screen of a long result that several
-skills point to.
+`references/plan-layout.md` owns execution plan layout. Loaded session reply rules own user-facing
+reply defaults; skills add their required task content. `references/explain-formats.md` helps choose
+a visual when it aids a comparison, relation, or flow.
 `contracts/orchestration-requirements.schema.json` describes what a preset may ask of `blocks/run-workers/SKILL.md`.
 
 ## Install

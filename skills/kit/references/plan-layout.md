@@ -1,13 +1,12 @@
 ---
-description: Section order and layout rules for a substantial execution plan or a long reply that carries one, and the first screen of a long result. Read when AGENTS.md or a skill points here.
+description: Section order and layout rules for a substantial execution plan or a reply that carries one. Read when preparing an execution plan.
 ---
 
 # Plan layout
 
-One owner file for the shape of a substantial execution plan and of a long reply that carries one.
-Short plans keep the 3-7 behavior list of `implement` in `pair` mode. Research reports, reviews, and council
-verdicts keep their own section order under the first screen below. Codex and AGY seats never load
-this file, so a brief that needs it quotes it.
+This file owns the shape of a substantial execution plan and of a reply that carries one.
+Short plans keep the 3-7 behavior list of `implement` in `pair` mode. Reports, reviews, council
+verdicts, and other results follow the loaded session reply rules and their task's required content.
 
 The checked `plan.md` file made by `blocks/planner/SKILL.md` uses the section order that block owns,
 and the owner reads it as the page that `blocks/plan-chart/SKILL.md` draws. This is the exception to
@@ -48,28 +47,6 @@ the opening. Do not repeat it as a Goal section.
 - A worker brief keeps its own owner (the kit block `blocks/worker-brief/SKILL.md`, from the kit root
   one folder up from this file) and is not a plan.
 - A table, a diagram, or a local HTML page follows `explain-formats.md` in this folder.
-
-## First screen of a long result
-
-A long review, council verdict, or report opens with a first screen of about 20 lines, before its
-own sections. A plan keeps the opening above.
-
-1. The verdict or result, with its counts.
-2. **Read first**, at most five items, ranked by risk.
-3. One table of at most seven rows, grouped.
-
-Each status line starts with one symbol, then the key noun, and the path last. The symbols differ
-in shape, so they read without color.
-
-| Symbol | Meaning |
-|---|---|
-| ⛔ | blocker |
-| ⚠️ | finding that does not block |
-| ❓ | open question or decision |
-| ✅ | done, agreed, or no finding found |
-| ➖ | not checked or deferred |
-
-Then the line `Reference below`, then the rest in the result's own section order.
 
 Sources: Codex plan template, Spec Kit tasks, Google style guide procedures, GOV.UK structure
 guidance, NN/g scanning research, SwarmForge role prompts; council log

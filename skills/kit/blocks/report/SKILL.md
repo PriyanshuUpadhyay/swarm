@@ -10,7 +10,7 @@ metadata:
   gives: "a report file and a reply that holds it"
   conflicts: ""
   users: "research"
-  source: "presets/research/PRESET.md (05-report and 06-close, moved here 2026-10-13); references/plan-layout.md (first screen)"
+  source: "presets/research/PRESET.md (05-report and 06-close, moved here 2026-10-13); loaded session reply rules (reply presentation)"
 ---
 
 ## Rules

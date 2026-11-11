@@ -146,10 +146,9 @@ Per-model trail: one line each for GEMINI, GPT (evidence-check), and CLAUDE (fir
 Weigh the positions by their proof, not by the count of seats. A claim that the evidence-check
 seat marked not proven carries no weight in the consensus reasoning.
 
-The reply opens with the first screen in the kit's `references/plan-layout.md`. The verdict heading
-is its verdict line. Its table holds the required changes and the open dissent, grouped, and Read
-first names the top ones. The consensus reasoning, the full required changes and dissent, and
-the per-model trail go below `Reference below`.
+Follow the loaded session reply rules. Include the verdict, consensus reasoning, all required
+changes, dissent or residual risk, and per-model trail in the reply. The Output block names the
+required content; it does not add a separate summary or table before it.
 
 ## Decision log
 
