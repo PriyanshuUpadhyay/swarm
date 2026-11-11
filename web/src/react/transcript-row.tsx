@@ -57,6 +57,16 @@ function RowBody(ctx: Ctx) {
         <LoaderCircleIcon className="glyph working" /> {row.text}
       </div>
     );
+  if (row.system_kind === "unmapped")
+    return (
+      <div className="quiet" data-testid="unmapped">
+        <Disclosure app={app} line={line} title={row.text}>
+          <div className="grid gap-1">
+            {(row.steps ?? []).map((step) => step.output && <OutputBox key={step.id} app={app} preview={step.output} full={ctx.full} title="Unmapped record" />)}
+          </div>
+        </Disclosure>
+      </div>
+    );
   if (row.system_kind === "swarm_ring")
     return (
       <div className="quiet">
