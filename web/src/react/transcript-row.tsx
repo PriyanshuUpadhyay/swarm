@@ -125,7 +125,7 @@ function RowBody(ctx: Ctx) {
   switch (row.kind) {
     case "thought":
       // The CLI wrote no summary, so the row only shows that the agent thought.
-      if (!row.text.trim()) return <div className="quiet">Thinking</div>;
+      if (!row.text.trim()) return <div className="quiet">{LABEL.thought}</div>;
       return (
         <Disclosure app={app} line={line} title="Thinking">
           <pre className="plain">{row.text}</pre>
