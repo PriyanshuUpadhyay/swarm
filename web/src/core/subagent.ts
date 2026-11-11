@@ -1,10 +1,8 @@
 // The open subagent chat: a subagent's own log, read-only (ADR 0140).
-import { paneId } from "./app-types";
-
 /** Joins the parent agent and the call id; the server's `subagent::MARK` splits it. */
 export const subagentAgent = (agent: string, callId: string) => `${agent}~sub~${callId}`;
 
-export type OpenSubagent = { chatId: string; callId: string; title: string };
+export type OpenSubagent = { chatId: string; callId: string; title: string; running: boolean };
 
 let current: OpenSubagent | null = null;
 const listeners = new Set<() => void>();
@@ -21,6 +19,3 @@ function set(next: OpenSubagent | null) {
   current = next;
   for (const fn of listeners) fn();
 }
-
-/** The chat id of the child chat that a parent chat's call opens. */
-export const subagentChatId = (sessionId: string, agent: string, callId: string) => paneId(sessionId, subagentAgent(agent, callId));
