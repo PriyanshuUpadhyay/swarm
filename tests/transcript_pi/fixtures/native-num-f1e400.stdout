@@ -1,0 +1,3 @@
+{"type":"user_message_chunk","text":"before","meta":{"session_id":"","uuid":"p0","timestamp":"2026-11-05T00:00:00.000Z","parent_uuid":null,"source_tool_use_id":null}}
+{"type":"tool_call","tool_call_id":"c","name":"t","input":{"n":1e400},"status":"pending","meta":{"session_id":"","uuid":"n1","timestamp":"2026-11-05T00:00:00.000Z","parent_uuid":null,"source_tool_use_id":null}}
+{"type":"user_message_chunk","text":"after","meta":{"session_id":"","uuid":"p9","timestamp":"2026-11-05T00:00:00.000Z","parent_uuid":null,"source_tool_use_id":null}}

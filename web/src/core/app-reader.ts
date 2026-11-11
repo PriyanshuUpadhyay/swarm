@@ -1,59 +1,38 @@
 
 
-import { queueRows, type Usage } from "./composer";
-import { MarkdownCache } from "./markdown";
-import { FoldChoices, LIVE_THOUGHT, findMatches, lines, mergeRows, type Line } from "./transcript";
-import type { Row } from "./api";
+import type { Usage } from "./composer";
+import { FoldChoices, LIVE_THOUGHT, cut, lines, mergeRows, noteBody, noteDisplay, noteFind, noteImages, notePatch, partsOf, type Line } from "./transcript";
+import { ApiError, type Row } from "./api";
 import { TAIL, LRU_SIZE, type FullText, type Chat, type Find, type Reader, paneId } from "./app-types";
 import type { App } from "./app";
 
-const letters = (text: string) => text.replace(/[^\p{L}\p{N}]/gu, "");
-/** The fewest letters a screen text needs before a log row may hide it. */
-const MATCHED = 20;
-
-/** Whether one of the last 50 log rows of `kind` holds `text`. The screen drops markdown marks
- *  and wraps lines, so only letters and digits are compared. Rows of earlier turns count too,
- *  because pi's screen can still show the last turn's answer. A text shorter than 20 letters, such
- *  as a spinner's "Working", never matches, so it cannot hide itself. A thought beside tool
- *  calls lands as a step of a fold, so the steps count too. */
-function landed(rows: readonly Row[], text: string, kind: Row["kind"]): boolean {
-  const head = letters(text).slice(0, 80);
-  if (head.length < MATCHED) return false;
-  const holds = (row: Row) => row.kind === kind && letters(row.text).includes(head);
-  for (let i = rows.length - 1; i >= Math.max(0, rows.length - 50); i--)
-    if (holds(rows[i]) || rows[i].steps?.some(holds)) return true;
-  return false;
-}
-
-/** The running turn's screen text as a row, or null once a recent log row holds it. */
-export function liveRow(rows: readonly Row[], text: string | null): Row | null {
-  if (!text || !letters(text) || landed(rows, text, "assistant")) return null;
-  return { id: "live", kind: "assistant", text, order: [Number.MAX_SAFE_INTEGER, -1] };
-}
-
-/** pi's streaming thinking as an open thought row, or null once a recent log row holds it. The
- *  log's row can land while the turn runs a tool, before the next row clears the live text. */
-function liveThought(rows: readonly Row[], thinking: string | null): Row | null {
-  if (!thinking || landed(rows, thinking, "thought")) return null;
-  return { id: LIVE_THOUGHT, kind: "thought", text: thinking, order: [Number.MAX_SAFE_INTEGER, -2] };
-}
-
-/** The live rows under the log's rows: pi's streaming thinking and the answer text. */
-export function liveRows(rows: readonly Row[], text: string | null, thinking: string | null): Row[] {
-  return [liveThought(rows, thinking), liveRow(rows, text)].filter((row) => row !== null);
-}
-
-/** Whether an ended turn's text stays until the log's rows land: only a text that a landed row
- *  will hide, and that none hides yet. A spinner's short text never matches, so it goes at once. */
-export function keepsEnded(rows: readonly Row[], text: string | null, thinking: string | null): boolean {
-  return (text !== null && letters(text).length >= MATCHED && liveRow(rows, text) !== null) || liveThought(rows, thinking) !== null;
+/** Builds only the live rows that the server says to show. */
+export function liveRows(text: string | null, thinking: string | null, hides: { hideText: boolean; hideThinking: boolean }): Row[] {
+  const rows: Row[] = [];
+  if (thinking && !hides.hideThinking) rows.push({ id: LIVE_THOUGHT, kind: "thought", text: thinking, order: [Number.MAX_SAFE_INTEGER, -2] });
+  if (text && !hides.hideText) rows.push({ id: "live", kind: "assistant", text, order: [Number.MAX_SAFE_INTEGER, -1] });
+  return rows;
 }
 
 export class AppReader {
+  private findRequest: { chat: Chat; rows: Row[]; full: Map<string, FullText>; query: string; version: number; abort: AbortController } | null = null;
+
   constructor(private readonly app: App) {}
 
   build(chat: Chat) {
-    const live = liveRows(chat.rows, chat.live?.slice(0, chat.liveShown) ?? null, chat.liveThinking);
+    const display = chat.liveDisplay ?? null;
+    const text = chat.liveShown === 0 ? null : display === null ? chat.live?.slice(0, chat.liveShown) ?? null : chat.live;
+    const live = liveRows(text, chat.liveThinking, chat);
+    const row = live.find((row) => row.id === "live");
+    if (row) {
+      const body = chat.liveBody;
+      const tree = body !== null && typeof body === "object" && "kind" in body
+        && (body.kind === "tree" || (body.kind === "plain_from" && "shown_utf16" in body
+          && typeof body.shown_utf16 === "number" && Number.isSafeInteger(body.shown_utf16)
+          && body.shown_utf16 >= 0 && chat.liveShown < body.shown_utf16));
+      noteDisplay([row], display === null ? {} : { [row.id]: cut(display, chat.liveShown) });
+      noteBody([row], { [row.id]: tree ? "tree" : "plain" });
+    }
     const rows = live.length || chat.queue.length ? [...chat.rows, ...live, ...chat.queue] : chat.rows;
     return lines(rows, { folds: chat.folds, opened: chat.opened });
   }
@@ -78,6 +57,8 @@ export class AppReader {
       usage: null,
       queue: [],
       live: null,
+      liveDisplay: null,
+      liveBody: undefined,
       liveShown: 0,
       liveThinking: null,
       liveEnded: false,
@@ -86,7 +67,20 @@ export class AppReader {
     };
     this.app.chats.set(chat.id, chat);
     // Later snapshots update it (applySnapshot).
-    chat.queue = queueRows(this.app.composing.chair(chat.id).queue);
+    const queue = this.app.composing.chair(chat.id).queue;
+    chat.queue = queue.map((q, i) => ({
+      id: q.id,
+      kind: "queued",
+      text: q.text,
+      detail: q.detail,
+      order: [Number.MAX_SAFE_INTEGER, i],
+    }));
+    chat.queue.forEach((row, i) => {
+      noteImages([row], { [row.id]: queue[i].images ?? [] });
+      noteBody([row], { [row.id]: queue[i].body ?? null });
+      const display = queue[i].display;
+      if (display !== undefined) noteDisplay([row], display === null ? {} : { [row.id]: display });
+    });
     return chat;
   }
 
@@ -97,10 +91,11 @@ export class AppReader {
 
   freshReaderState() {
     return {
+      hideText: false,
+      hideThinking: false,
       folds: new FoldChoices(),
       opened: new Map<string, boolean>(),
       full: new Map<string, FullText>(),
-      md: new MarkdownCache(),
       built: null,
       memo: null,
     };
@@ -109,6 +104,11 @@ export class AppReader {
   async loadTail(chat: Chat) {
     try {
       const page = await this.app.api.rows(chat.sessionId, chat.agent, TAIL);
+      noteDisplay(page.rows, page.display);
+      noteBody(page.rows, page.body);
+      notePatch(page.rows, page.patch);
+      noteFind(page.rows, page.find);
+      noteImages(page.rows, page.images);
       chat.rows = mergeRows([], page.rows);
       chat.older = page.page.start_offset;
       chat.end = page.page.end_offset;
@@ -198,8 +198,8 @@ export class AppReader {
     this.changed(chat);
     let next: FullText;
     try {
-      const text = await this.app.api.toolOutput(chat.sessionId, chat.agent, previewId);
-      next = { state: "ready", text, lines: text.split("\n") };
+      const { text, patch } = await this.app.api.toolOutput(chat.sessionId, chat.agent, previewId);
+      next = { state: "ready", text, lines: text.split("\n"), patch };
     } catch (err) {
       next = { state: "error", error: String(err) };
     }
@@ -225,7 +225,7 @@ export class AppReader {
     const have = chat?.full.get(previewId);
     if (have?.state === "ready") return have.text;
     if (!chat) throw new Error("no chat open");
-    return this.app.api.toolOutput(chat.sessionId, chat.agent, previewId);
+    return (await this.app.api.toolOutput(chat.sessionId, chat.agent, previewId)).text;
   }
 
   async retryRows(id?: string) {
@@ -248,6 +248,11 @@ export class AppReader {
     this.app.notify();
     try {
       const page = await this.app.api.rows(chat.sessionId, chat.agent, TAIL, chat.older);
+      noteDisplay(page.rows, page.display);
+      noteBody(page.rows, page.body);
+      notePatch(page.rows, page.patch);
+      noteFind(page.rows, page.find);
+      noteImages(page.rows, page.images);
       chat.rows = mergeRows(chat.rows, page.rows, page.remove);
       chat.older = page.page.start_offset;
       chat.version++;
@@ -262,22 +267,56 @@ export class AppReader {
 
   // ---- find ----
 
-  /** Matches follow the rows; the current match stays on its row when rows change. */
+  /** Match only the current loaded snapshot. Reader choices alone do not start another request. */
   refind(chat: Chat | undefined) {
     const f = this.app.find;
     const sig = `${chat?.id}:${chat?.version}:${f.open}:${f.query}`;
     if (sig === this.app.findVersion) return;
     this.app.findVersion = sig;
-    if (!f.open || !chat) {
-      if (f.matches.length) this.app.find = { ...f, matches: [], index: -1 };
+    if (!f.open || !chat || !f.query.trim()) {
+      this.findRequest?.abort.abort();
+      this.findRequest = null;
+      this.app.find = { ...f, matches: [], index: -1, pending: false, error: null };
       return;
     }
-    const current = f.matches[f.index];
-    const matches = findMatches(chat.rows, f.query, chat.full);
-    const kept = current === undefined ? -1 : matches.findIndex((m) => m.id === current.id && m.occurrence === current.occurrence);
-    this.app.find = { ...f, matches, index: kept >= 0 ? kept : matches.length ? matches.length - 1 : -1 };
-    // A new current match must come into view.
-    if (kept < 0 && matches.length) this.reveal(chat, this.app.find);
+    const previous = this.findRequest;
+    if (previous && previous.chat === chat && previous.rows === chat.rows && previous.full === chat.full && previous.query === f.query) {
+      previous.version = chat.version;
+      return;
+    }
+    previous?.abort.abort();
+    const request = { chat, rows: chat.rows, full: chat.full, query: f.query, version: chat.version, abort: new AbortController() };
+    this.findRequest = request;
+    this.app.find = { ...f, pending: true, error: null };
+    const rows = new Map<string, Row>();
+    const stack = [...request.rows];
+    while (stack.length) {
+      const row = stack.pop()!;
+      rows.set(row.id, row);
+      stack.push(...(row.steps ?? []));
+    }
+    const find = Object.fromEntries([...rows].map(([id, row]) => [id, partsOf(row)]));
+    const full = Object.fromEntries([...request.full].flatMap(([id, entry]) => entry.state === "ready" ? [[id, entry.text]] : []));
+    const current = () => this.findRequest === request && !request.abort.signal.aborted
+      && this.app.find.open && this.app.find.query === request.query
+      && (this.app.findId ?? this.app.openId) === chat.id && this.app.chats.get(chat.id) === chat
+      && chat.version === request.version && chat.rows === request.rows && chat.full === request.full;
+    void this.app.api.findRows({ version: 1, query: request.query, rows: request.rows, find, full }, request.abort.signal).then((reply) => {
+      if (!current()) return;
+      if (reply.version !== 1) throw new Error("Unsupported search reply");
+      const matches = reply.matches.map((m) => ({ ...m, fold: m.fold === null ? null : rows.get(m.fold) ?? null }));
+      const f = this.app.find;
+      const selected = f.matches[f.index];
+      const kept = selected === undefined ? -1 : matches.findIndex((m) => m.id === selected.id && m.occurrence === selected.occurrence);
+      this.app.find = { ...f, pending: false, error: null, matches, index: kept >= 0 ? kept : matches.length ? matches.length - 1 : -1 };
+      if (kept < 0 && matches.length) this.reveal(chat, this.app.find);
+      this.app.notify();
+    }).catch((err: unknown) => {
+      if (!current()) return;
+      const error = err instanceof ApiError && err.status === 413 ? "Output too large to search" : "Search failed. " + String(err);
+      this.app.find = { ...this.app.find, matches: [], index: -1, pending: false, error };
+      this.app.notify();
+    });
   }
 
   /** Opens the fold or card that holds the current match, and asks the list to scroll to it. */
@@ -289,6 +328,7 @@ export class AppReader {
     chat.version++;
     chat.shift = false;
     chat.built = { version: chat.version, lines: this.build(chat) };
+    if (this.findRequest?.chat === chat) this.findRequest.version = chat.version;
     this.app.findVersion = `${chat.id}:${chat.version}:${f.open}:${f.query}`;
     this.app.find = { ...f, seq: f.seq + 1 };
   }

@@ -30,12 +30,23 @@ async fn older_page_sends_only_new_and_changed_rows_in_thousand_row_history() {
             .iter()
             .all(|row| !first["rows"].as_array().unwrap().contains(row))
     );
-    let mut old_response = older.clone();
+    let mut measured = older.clone();
+    measured.as_object_mut().unwrap().remove("body");
+    let mut old_response = measured.clone();
     old_response["rows"] = json!(fixture.app.hub.lock().unwrap().row_cache[0].1.last_rows);
-    let new_bytes = older.to_string().len();
+    let new_bytes = measured.to_string().len();
     let old_bytes = old_response.to_string().len();
     println!("older-page bytes {new_bytes}; old full-page bytes {old_bytes}");
     assert!(new_bytes * 5 < old_bytes);
+    let mut full = row_page(&fixture, 2000, None).await.unwrap();
+    let rows = full["body"].as_object().unwrap().len();
+    let total = full.to_string().len();
+    full.as_object_mut().unwrap().remove("body");
+    let cost = total - full.to_string().len();
+    println!(
+        "body map costs {cost} bytes for {rows} row and step entries; {} bytes per entry; full page {total} bytes",
+        cost as f64 / rows as f64
+    );
 }
 #[tokio::test]
 async fn older_page_replaces_changed_fold_and_omits_unchanged_prose() {

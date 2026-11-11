@@ -1,0 +1,109 @@
+{
+  "source": "HAND S6C-FENCES-V1; raw text differs from wire text to catch reparsing",
+  "raw": "--- a/x\n+++ b/x\n@@ -1 +1 @@\n-raw-old\n+raw-new\n",
+  "prefixCopy": "--- <old>\n+++ &new\n complete\n",
+  "patch": {
+    "lines": [
+      {
+        "kind": "meta",
+        "text": "--- a/x"
+      },
+      {
+        "kind": "meta",
+        "text": "+++ b/x"
+      },
+      {
+        "kind": "hunk",
+        "text": "@@ -1 +1 @@"
+      },
+      {
+        "kind": "del",
+        "text": "<script>x</script>",
+        "old": 1
+      },
+      {
+        "kind": "add",
+        "text": "<b>&new</b>",
+        "new": 1
+      }
+    ],
+    "split": [
+      {
+        "h": 2
+      },
+      {
+        "l": 3,
+        "r": 4
+      }
+    ]
+  },
+  "display": {
+    "blocks": [
+      {
+        "type": "code",
+        "value": {
+          "label": "diff",
+          "text": "--- a/x\n+++ b/x\n@@ -1 +1 @@\n-raw-old\n+raw-new\n",
+          "diff": {
+            "lines": [
+              {
+                "kind": "meta",
+                "text": "--- a/x"
+              },
+              {
+                "kind": "meta",
+                "text": "+++ b/x"
+              },
+              {
+                "kind": "hunk",
+                "text": "@@ -1 +1 @@"
+              },
+              {
+                "kind": "del",
+                "text": "<script>x</script>",
+                "old": 1
+              },
+              {
+                "kind": "add",
+                "text": "<b>&new</b>",
+                "new": 1
+              }
+            ],
+            "split": [
+              {
+                "h": 2
+              },
+              {
+                "l": 3,
+                "r": 4
+              }
+            ]
+          }
+        }
+      },
+      {
+        "type": "code",
+        "value": {
+          "label": "patch",
+          "text": "raw prefix must not be parsed\n",
+          "diff": {
+            "prefix": [
+              {
+                "kind": "del",
+                "text": "--- <old>\n"
+              },
+              {
+                "kind": "add",
+                "text": "+++ &new\n"
+              },
+              {
+                "kind": "ctx",
+                "text": " complete\n"
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

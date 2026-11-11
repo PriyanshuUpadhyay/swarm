@@ -126,6 +126,8 @@ fn refusal(app: &App, request: &Request) -> Option<Response> {
 /// `<root>/errors.jsonl`, so an error that the page showed can be diagnosed later.
 pub(super) async fn record_errors(app: &App, request: Request, next: Next) -> Response {
     const LIMIT: usize = 64 * 1024;
+    let rows_find = request.method() == Method::POST && request.uri().path() == "/api/rows";
+    let request_limit = if rows_find { ROWS_FIND_LIMIT } else { LIMIT };
     let method = request.method().to_string();
     let uri = request.uri().to_string();
     let json_body = request
@@ -139,7 +141,9 @@ pub(super) async fn record_errors(app: &App, request: Request, next: Next) -> Re
         let mut bytes = Vec::new();
         while let Some(chunk) = tokio_stream::StreamExt::next(&mut stream).await {
             match chunk {
-                Ok(chunk) if bytes.len() + chunk.len() <= LIMIT => bytes.extend_from_slice(&chunk),
+                Ok(chunk) if bytes.len() + chunk.len() <= request_limit => {
+                    bytes.extend_from_slice(&chunk)
+                }
                 Ok(_) => {
                     drain_stream(stream).await;
                     return error(StatusCode::PAYLOAD_TOO_LARGE, "length limit exceeded")
@@ -177,7 +181,9 @@ pub(super) async fn record_errors(app: &App, request: Request, next: Next) -> Re
             "uri": uri,
             "status": parts.status.as_u16(),
             "reply": value(&reply),
-            "request": sent.as_deref().map(value),
+            // Search snapshots can hold 16 MiB of cached output. Keep them out of error logs.
+            "request": if rows_find { None } else { sent.as_deref().map(value) },
+            "request_bytes": sent.as_ref().map(|bytes| bytes.len()),
         }),
     );
     Response::from_parts(parts, Body::from(reply))

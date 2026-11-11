@@ -1,7 +1,7 @@
-import { describe, expect, it } from "vitest";
-import type { Api, Row, RowPage } from "./api";
-import { App } from "./app";
-import { FoldChoices, findMatches, lines } from "./transcript";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Row } from "./api";
+import { ORIGINAL_PARSER, findHarness, matchesReply, stubBrowser, waitFor } from "./find-harness";
+import { FoldChoices, lines } from "./transcript";
 
 // A row as the server sends it; `order` is [source offset, event ordinal].
 const row = (id: string, offset: number, extra: Partial<Row> = {}): Row => ({ id, kind: "assistant", text: id, order: [offset, 0], ...extra });
@@ -31,7 +31,6 @@ describe("folds and lines", () => {
     const hiddenTool = { ...tool("hidden-failed", 200, "failed"), collapsed: true };
     const rows = [row("before", 1), hiddenFold, hiddenTool, row("after", 300)];
     expect(ids(lines(rows, { folds: new FoldChoices(), opened: new Map() }))).toEqual(["before", "after"]);
-    expect(findMatches([hiddenFold], "read-config")).toEqual([]);
   });
 
   it("keeps the reader's choice when the run gains a step and the fold id changes", () => {
@@ -52,46 +51,28 @@ describe("folds and lines", () => {
   });
 });
 
+// The matcher cases that lived here (closed fold, collapsed rows, collapsed parent) are ORIGINAL cases
+// lines-closed-fold, lines-collapsed and lines-collapsed-parent in tests/serve/find_rows.rs.
 describe("find", () => {
-  it("finds a step inside a closed fold and names the fold that holds it", () => {
-    const rows = [row("intro", 1, { text: "Running the parser tests" }), fold("run", [tool("read-config", 10), tool("parser-check", 11)])];
-    const matches = findMatches(rows, "PARSER");
-    expect(matches.map((m) => [m.id, m.fold?.id ?? null])).toEqual([
-      ["intro", null],
-      ["parser-check", "run"],
-    ]);
-  });
-
-  it("skips collapsed rows and fold steps while finding visible rows in order", () => {
-    const hidden = row("model-notice", 1, { kind: "notice", text: "model: opus", collapsed: true });
-    const rows = [hidden, row("opus-intro", 2), fold("run", [hidden, tool("opus-check", 3)]), row("opus-end", 4)];
-    expect(findMatches(rows, "opus").map((m) => [m.id, m.fold?.id ?? null])).toEqual([
-      ["opus-intro", null],
-      ["opus-check", "run"],
-      ["opus-end", null],
-    ]);
-  });
+  beforeEach(stubBrowser);
+  afterEach(() => vi.unstubAllGlobals());
 
   it("opens the fold and the card of the match the reader steps to", async () => {
-    const step = { ...tool("parser-check", 11), tool: { name: "Bash", input: {}, state: "finished" as const, header_title: "cargo test parser" } };
-    const page: RowPage = { page: { start_offset: 0, end_offset: 20 }, rows: [fold("run", [tool("read-config", 10), step])], usage: null };
-    const app = new App({ rows: async () => page } as unknown as Api);
-    const g = globalThis as unknown as { requestAnimationFrame?: unknown; document?: unknown };
-    g.requestAnimationFrame = () => 0;
-    g.document = { querySelector: () => null };
-    try {
-      app.openChat("chat");
-      await new Promise((r) => setTimeout(r, 0));
-      expect(ids(app.view.lines)).toEqual(["run"]);
-      app.openFind();
-      app.setFindQuery("parser");
-      expect(ids(app.view.lines)).toEqual(["run", "read-config", "parser-check"]);
-      expect(app.view.lines[2].open).toBe(true);
-      expect(app.view.find.matches[app.view.find.index].id).toBe("parser-check");
-    } finally {
-      delete g.requestAnimationFrame;
-      delete g.document;
-    }
+    const h = findHarness();
+    await h.open();
+    expect(ids(h.app.view.lines)).toEqual(["run"]);
+    h.app.openFind();
+    h.app.setFindQuery("parser");
+    expect(await waitFor(() => !!h.sent("parser")), "the browser sends POST /api/rows").toBe(true);
+    const request = h.sent("parser")!.body;
+    expect(request.version).toBe(1);
+    expect(ids(request.rows)).toEqual(["run"]);
+    // Nothing opens until the server answers.
+    expect(ids(h.app.view.lines)).toEqual(["run"]);
+    h.sent("parser")!.answer(matchesReply(ORIGINAL_PARSER));
+    expect(await waitFor(() => h.app.view.find.matches.length === 1), "the answer is applied").toBe(true);
+    expect(ids(h.app.view.lines)).toEqual(["run", "read-config", "parser-check"]);
+    expect(h.app.view.lines[2].open).toBe(true);
+    expect(h.app.view.find.matches[h.app.view.find.index].id).toBe("parser-check");
   });
 });
-

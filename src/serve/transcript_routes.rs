@@ -81,49 +81,21 @@ pub(super) async fn transcript(
     if !(1..=2000).contains(&query.tail) {
         return Err(error(StatusCode::BAD_REQUEST, "tail must be 1..2000"));
     }
-    tokio::task::spawn_blocking(move || {
-        let log = resolve_log(&app.root, &query.session, &query.agent)?;
-        let mut command = std::process::Command::new(&app.tool);
-        command.args(["--format", &log.format, "--tail", &query.tail.to_string()]);
-        if let Some(before) = query.before {
-            command.args(["--before", &before.to_string()]);
-        }
-        let output = command.arg(log.path).output().map_err(|_| {
-            error(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "transcript tool unavailable",
-            )
-        })?;
-        if !output.status.success() {
-            return Err(error(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "transcript tool failed",
-            ));
-        }
-        let mut events = Vec::new();
-        let mut page = None;
-        for line in output
-            .stdout
-            .split(|byte| *byte == b'\n')
-            .filter(|line| !line.is_empty())
-        {
-            let mut value: Value = serde_json::from_slice(line).map_err(|_| {
-                error(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "invalid transcript output",
-                )
-            })?;
-            if value["type"] == "page" {
-                value.as_object_mut().unwrap().remove("type");
-                page = Some(value);
-            } else {
-                events.push(value);
-            }
-        }
-        let page = page
-            .ok_or_else(|| error(StatusCode::INTERNAL_SERVER_ERROR, "transcript page missing"))?;
-        Ok(Json(json!({"page": page, "events": events})))
-    })
-    .await
-    .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "transcript task failed"))?
+    let log = resolve_log(&app.root, &query.session, &query.agent)?;
+    let source =
+        source_backend::acquire(&app, &format!("{}:{}", query.session, query.agent), &log).await?;
+    use swarm::view::transcript::worker_protocol::v2::Operation;
+    let payload = source
+        .read(Operation::Raw {
+            tail: query.tail,
+            before: query.before,
+        })
+        .await?;
+    let events: Vec<_> = source_backend::lines(&payload)?
+        .into_iter()
+        .flat_map(|(_, _, events)| events)
+        .collect();
+    Ok(Json(
+        json!({"page": {"start_offset": payload["start_byte"], "end_offset": payload["end_byte"]}, "events": events}),
+    ))
 }

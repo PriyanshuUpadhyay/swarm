@@ -51,7 +51,9 @@ pub(super) async fn interrupt_claude(app: &App, body: ActionTarget) -> Result<Va
     };
     // A first turn can be stopped before its log is stored, and the stop must still run.
     let prompt = match resolve_log(&app.root, &body.session, log_agent) {
-        Ok(log) => last_prompt(app, &log).await.unwrap_or_default(),
+        Ok(log) => last_prompt(app, &format!("{}:{log_agent}", body.session), &log)
+            .await
+            .unwrap_or_default(),
         Err(_) => String::new(),
     };
     run_cli(app, call.args(&["interrupt", &agent]), None).await?;
@@ -90,10 +92,10 @@ fn cleared_box(output: &str) -> (&'static str, Option<&str>) {
     }
 }
 
-pub(super) async fn last_prompt(app: &App, log: &Log) -> Result<String, ApiError> {
+pub(super) async fn last_prompt(app: &App, key: &str, log: &Log) -> Result<String, ApiError> {
     let (start, end) = row_offsets(&log.path, 200, None)
         .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "transcript read failed"))?;
-    let state = read_row_window(&app.tool, log, start, end).await?;
+    let state = read_row_window(app, key, log, start, end).await?;
     Ok(state
         .records
         .values()
@@ -132,7 +134,8 @@ pub(super) async fn pull_back(app: &App, body: ActionTarget) -> Result<Value, Ap
     let log = resolve_log(&app.root, &body.session, log_agent)?;
     let (_, mut end) = row_offsets(&log.path, 1, None)
         .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "transcript read failed"))?;
-    let state = read_row_window(&app.tool, &log, 0, end).await?;
+    let state =
+        read_row_window(app, &format!("{}:{log_agent}", body.session), &log, 0, end).await?;
     let pending = queue::replay(state.records.values().map(|record| &record.event));
     let Some(last) = pending.iter().rfind(|text| queue::is_owner(text)) else {
         return Ok(json!({"ok":true,"outcome":"alreadySent","text":null}));
@@ -155,9 +158,21 @@ pub(super) async fn pull_back(app: &App, body: ActionTarget) -> Result<Value, Ap
         // Records that landed before the deadline are read to the end, even on a slow Mac;
         // the deadline only limits the wait for new records.
         if next > end {
-            match read_row_window(&app.tool, &log, end, next).await {
-                Ok(state) => {
-                    after.extend(state.records.into_values().map(|record| record.event));
+            match read_row_window(
+                app,
+                &format!("{}:{log_agent}", body.session),
+                &log,
+                end,
+                next,
+            )
+            .await
+            {
+                Ok(mut state) => {
+                    after.extend(
+                        std::mem::take(&mut state.records)
+                            .into_values()
+                            .map(|record| record.event),
+                    );
                     end = next;
                 }
                 Err(_) => break queue::PullBack::Unconfirmed,

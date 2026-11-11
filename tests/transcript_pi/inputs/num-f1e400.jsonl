@@ -1,0 +1,3 @@
+{"type":"message","id":"p0","parentId":null,"timestamp":"2026-11-05T00:00:00.000Z","message":{"role":"user","content":"before"}}
+{"type":"message","id":"n1","parentId":null,"timestamp":"2026-11-05T00:00:00.000Z","message":{"role":"assistant","content":[{"type":"toolCall","id":"c","name":"t","arguments":{"n":1e400}}],"stopReason":"toolUse"}}
+{"type":"message","id":"p9","parentId":null,"timestamp":"2026-11-05T00:00:00.000Z","message":{"role":"user","content":"after"}}

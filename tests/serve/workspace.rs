@@ -27,6 +27,8 @@ fn changes_routes_read_a_large_file_in_both_modes() {
     git(&["add", "."]);
     git(&["-c", "commit.gpgsign=false", "commit", "-qm", "large"]);
     fs::write(project.join("large.txt"), "local\n".repeat(20_000)).unwrap();
+    let mut observed = Vec::new();
+    let mut expected = Vec::new();
     for (mode, layer) in [("local", "unstaged"), ("branch", "branch")] {
         for route in ["/api/changes", "/api/changes/diff"] {
             let query = format!(
@@ -39,9 +41,12 @@ fn changes_routes_read_a_large_file_in_both_modes() {
                 let patch: Value = serde_json::from_str(&body).unwrap();
                 assert_eq!(patch["added"], 20_000);
                 assert_eq!(patch["is_truncated"], true);
+                observed.push(patch);
+                expected.push(super::s6b_changes::capped_display(mode));
             }
         }
     }
+    assert_eq!(json!(observed), json!(expected));
 }
 
 #[test]

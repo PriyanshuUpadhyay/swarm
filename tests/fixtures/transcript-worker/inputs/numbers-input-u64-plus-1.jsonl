@@ -1,0 +1,1 @@
+{"type":"assistant","uuid":"a1","sessionId":"s1","timestamp":"2026-11-04T00:00:01Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu-num","name":"Read","input":{"n":18446744073709551616}}]}}

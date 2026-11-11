@@ -147,7 +147,7 @@ pub(super) async fn handoff_rows(app: &App, old: &str) -> Result<Vec<Row>, ApiEr
     let end = row_offsets(&log.path, 1, None)
         .map_err(|e| error(StatusCode::CONFLICT, &e.to_string()))?
         .1;
-    let state = read_row_window(&app.tool, &log, 0, end).await?;
+    let state = read_row_window(app, &format!("{old}:chair"), &log, 0, end).await?;
     Ok(view::rows(
         &state.records.values().cloned().collect::<Vec<_>>(),
         false,

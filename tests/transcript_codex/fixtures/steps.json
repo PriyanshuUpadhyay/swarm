@@ -1,0 +1,469 @@
+{
+ "binding": {
+  "generation": 1,
+  "source_id": "codex"
+ },
+ "readers": {
+  "initial_end": 2771,
+  "input": "codex-kernel.jsonl",
+  "steps": [
+   {
+    "expect": [
+     {
+      "complete_end_byte": 2771,
+      "lines": [
+       "0-130",
+       "130-249",
+       "249-362",
+       "362-541",
+       "541-744",
+       "744-1039",
+       "1039-1252",
+       "1252-1518",
+       "1518-1752",
+       "1752-1920",
+       "1920-2272",
+       "2272-2549",
+       "2549-2771"
+      ],
+      "lines_from": "o0",
+      "next_complete_byte": 2771,
+      "origin_byte": 0,
+      "read_end_byte": 2771,
+      "reader": [
+       1,
+       0
+      ],
+      "rows": "rows-kernel-o0-at2771.json",
+      "start_byte": 0
+     }
+    ],
+    "from_byte": 0,
+    "name": "bind-a-origin-0-knows-the-question-call",
+    "op": "bind_reader",
+    "reader": [
+     1,
+     0
+    ]
+   },
+   {
+    "expect": [
+     {
+      "complete_end_byte": 2771,
+      "lines": [
+       "1752-1920",
+       "1920-2272",
+       "2272-2549",
+       "2549-2771"
+      ],
+      "lines_from": "o1752",
+      "next_complete_byte": 2771,
+      "origin_byte": 1752,
+      "read_end_byte": 2771,
+      "reader": [
+       2,
+       0
+      ],
+      "rows": "rows-kernel-o1752-at2771.json",
+      "start_byte": 1752
+     }
+    ],
+    "from_byte": 1752,
+    "name": "bind-b-origin-1752-output-only-question",
+    "op": "bind_reader",
+    "reader": [
+     2,
+     0
+    ]
+   },
+   {
+    "expect": [
+     {
+      "complete_end_byte": 2771,
+      "lines": [
+       "2549-2771"
+      ],
+      "lines_from": "o2549",
+      "next_complete_byte": 2771,
+      "origin_byte": 2549,
+      "read_end_byte": 2771,
+      "reader": [
+       3,
+       0
+      ],
+      "rows": "rows-kernel-o2549-at2771.json",
+      "start_byte": 2549
+     }
+    ],
+    "from_byte": 2549,
+    "name": "bind-c-origin-2549-answers-without-call",
+    "op": "bind_reader",
+    "reader": [
+     3,
+     0
+    ]
+   },
+   {
+    "append": [
+     2771,
+     3836
+    ],
+    "expect": [
+     {
+      "complete_end_byte": 3836,
+      "lines": [
+       "2771-2973",
+       "2973-3141",
+       "3141-3322",
+       "3322-3427",
+       "3427-3544",
+       "3544-3701",
+       "3701-3836"
+      ],
+      "lines_from": "o0",
+      "next_complete_byte": 3836,
+      "origin_byte": 0,
+      "read_end_byte": 3836,
+      "reader": [
+       1,
+       0
+      ],
+      "rows": "rows-kernel-o0-at3836.json",
+      "start_byte": 0
+     },
+     {
+      "complete_end_byte": 3836,
+      "lines": [
+       "2771-2973",
+       "2973-3141",
+       "3141-3322",
+       "3322-3427",
+       "3427-3544",
+       "3544-3701",
+       "3701-3836"
+      ],
+      "lines_from": "o1752",
+      "next_complete_byte": 3836,
+      "origin_byte": 1752,
+      "read_end_byte": 3836,
+      "reader": [
+       2,
+       0
+      ],
+      "rows": "rows-kernel-o1752-at3836.json",
+      "start_byte": 1752
+     },
+     {
+      "complete_end_byte": 3836,
+      "lines": [
+       "2771-2973",
+       "2973-3141",
+       "3141-3322",
+       "3322-3427",
+       "3427-3544",
+       "3544-3701",
+       "3701-3836"
+      ],
+      "lines_from": "o2549",
+      "next_complete_byte": 3836,
+      "origin_byte": 2549,
+      "read_end_byte": 3836,
+      "reader": [
+       3,
+       0
+      ],
+      "rows": "rows-kernel-o2549-at3836.json",
+      "start_byte": 2549
+     }
+    ],
+    "name": "append-rest-continues-each-readers-own-context",
+    "op": "advance"
+   },
+   {
+    "end_byte": 1752,
+    "expect": [
+     {
+      "complete_end_byte": 1752,
+      "lines": [
+       "0-130",
+       "130-249",
+       "249-362",
+       "362-541",
+       "541-744",
+       "744-1039",
+       "1039-1252",
+       "1252-1518",
+       "1518-1752"
+      ],
+      "lines_from": "o0",
+      "next_complete_byte": 3836,
+      "origin_byte": 1752,
+      "read_end_byte": 1752,
+      "reader": [
+       2,
+       0
+      ],
+      "rows": "rows-kernel-replay-b.json",
+      "start_byte": 0
+     }
+    ],
+    "name": "replay-older-range-for-b",
+    "op": "replay_reader",
+    "reader": [
+     2,
+     0
+    ],
+    "start_byte": 0
+   },
+   {
+    "expect": [
+     {
+      "complete_end_byte": 3836,
+      "lines": [],
+      "lines_from": "o0",
+      "next_complete_byte": 3836,
+      "origin_byte": 0,
+      "read_end_byte": 3836,
+      "reader": [
+       1,
+       0
+      ],
+      "rows": "rows-kernel-o0-at3836.json",
+      "start_byte": 0
+     },
+     {
+      "complete_end_byte": 3836,
+      "lines": [],
+      "lines_from": "o1752",
+      "next_complete_byte": 3836,
+      "origin_byte": 1752,
+      "read_end_byte": 3836,
+      "reader": [
+       2,
+       0
+      ],
+      "rows": "rows-kernel-replay-b.json",
+      "start_byte": 0
+     },
+     {
+      "complete_end_byte": 3836,
+      "lines": [],
+      "lines_from": "o2549",
+      "next_complete_byte": 3836,
+      "origin_byte": 2549,
+      "read_end_byte": 3836,
+      "reader": [
+       3,
+       0
+      ],
+      "rows": "rows-kernel-o2549-at3836.json",
+      "start_byte": 2549
+     }
+    ],
+    "name": "advance-with-no-change-leaves-live-contexts-alone",
+    "op": "advance"
+   }
+  ]
+ },
+ "snapshot_groups": [
+  {
+   "input": "codex-kernel.jsonl",
+   "lines_files": {
+    "o0": [
+     "lines-kernel-o0-a.json",
+     "lines-kernel-o0-b.json"
+    ],
+    "o1752": [
+     "lines-kernel-o1752.json"
+    ],
+    "o2549": [
+     "lines-kernel-o2549.json"
+    ]
+   },
+   "name": "kernel",
+   "snapshots": [
+    {
+     "end": 3836,
+     "label": "origin-0",
+     "lines": [
+      "0-130",
+      "130-249",
+      "249-362",
+      "362-541",
+      "541-744",
+      "744-1039",
+      "1039-1252",
+      "1252-1518",
+      "1518-1752",
+      "1752-1920",
+      "1920-2272",
+      "2272-2549",
+      "2549-2771",
+      "2771-2973",
+      "2973-3141",
+      "3141-3322",
+      "3322-3427",
+      "3427-3544",
+      "3544-3701",
+      "3701-3836"
+     ],
+     "lines_from": "o0",
+     "rows": "rows-kernel-o0-at3836.json",
+     "start": 0
+    },
+    {
+     "end": 3836,
+     "label": "origin-1752-question-output-without-its-call",
+     "lines": [
+      "1752-1920",
+      "1920-2272",
+      "2272-2549",
+      "2549-2771",
+      "2771-2973",
+      "2973-3141",
+      "3141-3322",
+      "3322-3427",
+      "3427-3544",
+      "3544-3701",
+      "3701-3836"
+     ],
+     "lines_from": "o1752",
+     "rows": "rows-kernel-o1752-at3836.json",
+     "start": 1752
+    },
+    {
+     "end": 3836,
+     "label": "origin-2549-answers-without-their-call",
+     "lines": [
+      "2549-2771",
+      "2771-2973",
+      "2973-3141",
+      "3141-3322",
+      "3322-3427",
+      "3427-3544",
+      "3544-3701",
+      "3701-3836"
+     ],
+     "lines_from": "o2549",
+     "rows": "rows-kernel-o2549-at3836.json",
+     "start": 2549
+    }
+   ]
+  },
+  {
+   "input": "codex-numbers-nodeep.jsonl",
+   "lines_files": {
+    "o0": [
+     "lines-numbers-nodeep.json"
+    ]
+   },
+   "name": "numbers",
+   "snapshots": [
+    {
+     "end": 1872,
+     "label": "exact-and-null-counts",
+     "lines": [
+      "0-331",
+      "331-644",
+      "644-776",
+      "776-903",
+      "903-1043",
+      "1043-1187",
+      "1187-1872"
+     ],
+     "lines_from": "o0",
+     "payload_has": [
+      "9007199254740993",
+      "9223372036854775807"
+     ],
+     "payload_lacks": [
+      "9007199254740992",
+      "9.007199254740993e15",
+      "9.223372036854776e18"
+     ],
+     "rows": "rows-numbers-nodeep.json",
+     "start": 0
+    }
+   ]
+  },
+  {
+   "input": "codex-depth254.jsonl",
+   "lines_files": {
+    "o0": [
+     "lines-depth254.json"
+    ]
+   },
+   "name": "depth-254",
+   "snapshots": [
+    {
+     "end": 683,
+     "label": "object-plus-254-arrays-is-accepted",
+     "lines": [
+      "0-683"
+     ],
+     "lines_from": "o0",
+     "rows": null,
+     "start": 0
+    }
+   ]
+  },
+  {
+   "input": "codex-yield.jsonl",
+   "lines_files": {
+    "o0": [
+     "lines-yield-o0.json"
+    ],
+    "o1143": [
+     "lines-yield-o1143.json"
+    ],
+    "o1887": [
+     "lines-yield-o1887.json"
+    ]
+   },
+   "name": "yield",
+   "snapshots": [
+    {
+     "end": 2196,
+     "label": "origin-0",
+     "lines": [
+      "0-204",
+      "204-480",
+      "480-675",
+      "675-931",
+      "931-1143",
+      "1143-1405",
+      "1405-1636",
+      "1636-1887",
+      "1887-2196"
+     ],
+     "lines_from": "o0",
+     "rows": "rows-yield-o0.json",
+     "start": 0
+    },
+    {
+     "end": 2196,
+     "label": "origin-1143-poll-completion",
+     "lines": [
+      "1143-1405",
+      "1405-1636",
+      "1636-1887",
+      "1887-2196"
+     ],
+     "lines_from": "o1143",
+     "rows": "rows-yield-o1143.json",
+     "start": 1143
+    },
+    {
+     "end": 2196,
+     "label": "origin-1887-late-script-completion",
+     "lines": [
+      "1887-2196"
+     ],
+     "lines_from": "o1887",
+     "rows": "rows-yield-o1887.json",
+     "start": 1887
+    }
+   ]
+  }
+ ]
+}

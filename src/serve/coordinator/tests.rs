@@ -1,5 +1,7 @@
 //! Tests for coordinator agent snapshots.
 
+include!("../../../tests/serve/legacy_body.rs");
+
 use super::*;
 use crate::all_agent_listings;
 use crate::serve::test_support::Fixture;
@@ -124,6 +126,56 @@ fn a_pi_listing_carries_its_screen_queue_and_a_missing_listing_keeps_it() {
     .unwrap();
     let moved = agent_snapshot(&connection, &BTreeMap::new(), &mut previous);
     assert!(moved[&fixture.session][0]["queue"].is_null());
+}
+
+#[test]
+fn a_queued_message_carries_its_display_and_a_missing_listing_keeps_it() {
+    let fixture = Fixture::new();
+    let root = &fixture.app.root;
+    std::fs::create_dir_all(root.join("adapters")).unwrap();
+    let screen = swarm::adapter::shell_line(&[fixture.dir.join("screen").display().to_string()]);
+    // The pi screen with its first queue line written as Markdown.
+    std::fs::write(
+        fixture.dir.join("screen"),
+        include_str!("../../../tests/fixtures/screens/pi-queued.txt")
+            .replace("Steering: first queued note", "Steering: **b**"),
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("adapters/fake.conf"),
+        format!(
+            "self = true\nspawn = true\nring = true\nlist = printf pane\nclose = true\ncapture = true\nscreen = cat {screen}\n"
+        ),
+    )
+    .unwrap();
+    let mut connection = swarm::store::open(&root.join("swarm.db")).unwrap();
+    connection
+        .execute(
+            "UPDATE session SET adapter = 'fake' WHERE id = ?1",
+            [&fixture.session],
+        )
+        .unwrap();
+    swarm::store::set_pane(&connection, &fixture.session, "worker", "pane").unwrap();
+    swarm::store::set_provider(&connection, &fixture.session, "worker", "pi").unwrap();
+    let mut previous = BTreeMap::new();
+    let listings = all_agent_listings(&mut connection, root, Duration::from_secs(30)).unwrap();
+    let first = agent_snapshot(&connection, &listings, &mut previous);
+    let kept = agent_snapshot(&connection, &BTreeMap::new(), &mut previous);
+    let display = swarm::view::transcript::markdown::display::display_with_breaks("**b**").unwrap();
+    let expected = serde_json::to_value(display).unwrap();
+    let shown = |snapshot: &Value| snapshot[&fixture.session][0]["queue"][0]["display"].clone();
+    assert_eq!([shown(&first), shown(&kept)], [expected.clone(), expected]);
+    // S8C-QUEUE-V2: HAND values from the named private pi screen fixture.
+    let queue = json!([
+        {"mode":"steering","text":"**b**","id":"queue-0","detail":"Steering","images":[],
+         "display":{"blocks":[{"type":"paragraph","value":[{"type":"strong","value":[{"type":"text","value":"b"}]}]}]}},
+        {"mode":"steering","text":"second queued note that is quite long so that it will need to be cut by the truncated...","id":"queue-1","detail":"Steering","images":[],
+         "display":{"blocks":[{"type":"paragraph","value":[{"type":"text","value":"second queued note that is quite long so that it will need to be cut by the truncated..."}]}]}}
+    ]);
+    let actual = without_body(
+        json!({"first":first[&fixture.session][0]["queue"],"kept":kept[&fixture.session][0]["queue"]}),
+    );
+    assert_eq!(actual, json!({"first":queue,"kept":queue}));
 }
 
 #[test]

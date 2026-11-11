@@ -1,0 +1,8 @@
+{
+ "builder": "tmp/flow/transcript-source-u02/red/scripts/build_fixtures.py",
+ "expected_source": "ORIGINAL c8ca837e1b70cbb4479bfda387f3bace2931749e only; no candidate code",
+ "native_lines": "tests/fixtures/transcript-worker/expected/claude-chair-run.0-whole.json lines; a real OLD `transcript --follow --from F` capture at origins 0, 245 and 485 gave equal events per line (tmp/flow/transcript-source-u02/red/data/native-origins-run*.json)",
+ "offsets": "line ends 245,485,792,1050,1353 of that file; offsets on Advance/Replay/Bind come from the frozen unit02 CONTRACT, not from a candidate",
+ "rows": "real OLD server GET /api/rows bodies, captured twice byte-equal (red/data/old-rows-run*/red-origin*.json); origin0_at1050 also equals the OLD rows after a replay of the older page",
+ "source_bytes": "tests/fixtures/transcript-worker/inputs/claude-chair-run.jsonl (git c8 sha256 e7928bdc97959ab32b7c5985fe16a688b1f3a9a6feace87d30d20fbf997f493d)"
+}

@@ -149,11 +149,19 @@ pub(super) async fn subscribe(
                     .await
                     .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "rows seed task failed"))?
                     .map_err(|_| error(StatusCode::NOT_FOUND, "transcript log unavailable"))?;
-            let mut seed = read_row_window(&app.tool, log, start, end).await?;
+            let mut seed = read_row_window(&app, &entry.key, log, start, end).await?;
             seed.last_rows = seed.rows();
-            seed.prepare(seed.last_rows.clone());
+            let previous = seed.last_rows.clone();
+            seed.prepare(previous);
             seeds.insert(entry.key.clone(), seed);
         }
+    }
+    let mut sources = HashMap::new();
+    for (entry, log) in &keys {
+        sources.insert(
+            entry.key.clone(),
+            source_backend::acquire(&app, &entry.key, log).await?,
+        );
     }
     let mut launch = Vec::new();
     let mut wait = Vec::new();
@@ -222,6 +230,8 @@ pub(super) async fn subscribe(
                     stop,
                     done,
                     rendering_rows: false,
+                    rows_version: 0,
+                    rows_changed: watch::channel(()).0,
                     rows: if needs_rows {
                         seed.or_else(|| Some(LiveRows::empty(entry.from, log.format == "codex")))
                     } else {
@@ -229,16 +239,17 @@ pub(super) async fn subscribe(
                     },
                 },
             );
-            launch.push((entry, log, generation, receiver, done_sender));
+            let source = sources.remove(&entry.key).unwrap();
+            launch.push((entry, log, generation, receiver, done_sender, source));
         }
     }
     for mut done in wait {
         let _ = done.wait_for(|finished| *finished).await;
     }
-    for (entry, log, generation, stop, done) in launch {
+    for (entry, log, generation, stop, done, source) in launch {
         tokio::spawn(follow(
             Arc::downgrade(&app),
-            app.tool.clone(),
+            source,
             entry,
             log,
             generation,

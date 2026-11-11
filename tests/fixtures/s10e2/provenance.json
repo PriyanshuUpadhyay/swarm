@@ -1,0 +1,20 @@
+{
+  "base": "67195656f4fb425c1d9fb66a80a76c38d09ff4ce",
+  "owner_ruling": "E2-1",
+  "original_sha256": {
+    "inputs-existing.json": "40b06a7e1b070ad49941d4389fdaed390be9c199e3f3647029c89a7ecc2d1e12",
+    "matches-existing.json": "d563d25c24da4a0a28370d797d1b68e00848c3489a430f72b0df5aea09976a3b",
+    "inputs-hand.json": "a191d0420f23c273b8cfce5b7eb5d1d149f720431e943d89dd7eb2d3e5235a3a",
+    "hand-expected.json": "1a972dc3bbcbad42fc686317f3ca3cdb29fe790676cdcd20c474714ddfbf41cd"
+  },
+  "hand_filter": "Remove only the two hand-live-* rows. Preserve all other JSON values.",
+  "http": "http.json mode strings are copied from the named ORIGINAL/HAND kind. Its real text reproduces the mode and supported container kinds, not byte-identical synthetic metadata or table source.",
+  "direct": "body_mode_hand.rs constructs and serializes exact hand-later-block, hand-later-inline, hand-mixed-patch-later and hand-mixed-patch trees before comparing frozen kinds.",
+  "web": "Saved seven bodies come from matches-existing.json. New served mode guards apply BODY-V1 absence/null/unknown rules to frozen HAND present displays; expected plain is the frozen absence kind.",
+  "queue": "Keep the old queue body outcomes. Supply tree for valid entries. Give an old-server row a Display without a body; it remains plain. For mode-only snapshots plain/null/missing/unknown all select the frozen plain kind.",
+  "faults_not_run": [
+    "always choose a present Display",
+    "ignore nested Later"
+  ],
+  "api": "pub fn body_mode(display: Option<&Display>) -> BodyMode; pub enum BodyMode { Plain, Tree }; BodyMode: Debug + PartialEq. Module swarm::view::transcript::markdown::display."
+}

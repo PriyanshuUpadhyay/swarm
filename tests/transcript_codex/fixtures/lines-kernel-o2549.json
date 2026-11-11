@@ -1,0 +1,171 @@
+{
+ "2549-2771": {
+  "end_byte": 2771,
+  "events": [
+   {
+    "answers": [
+     {
+      "answer": "B1",
+      "question": "b"
+     },
+     {
+      "answer": "A1",
+      "question": "a"
+     }
+    ],
+    "meta": {
+     "parent_uuid": null,
+     "session_id": "",
+     "source_tool_use_id": null,
+     "timestamp": "2026-11-05T09:00:12.000Z",
+     "uuid": "fo-b"
+    },
+    "tool_call_id": "call-b",
+    "type": "elicitation_result"
+   }
+  ],
+  "start_byte": 2549,
+  "terminated": true
+ },
+ "2771-2973": {
+  "end_byte": 2973,
+  "events": [
+   {
+    "input": {
+     "message": "hi"
+    },
+    "meta": {
+     "parent_uuid": null,
+     "session_id": "",
+     "source_tool_use_id": null,
+     "timestamp": "2026-11-05T09:00:13.000Z",
+     "uuid": "fc-m"
+    },
+    "name": "send_message_to_user_async",
+    "status": "pending",
+    "tool_call_id": "call-m",
+    "type": "tool_call"
+   }
+  ],
+  "start_byte": 2771,
+  "terminated": true
+ },
+ "2973-3141": {
+  "end_byte": 3141,
+  "events": [
+   {
+    "content": "{\"accepted\":true}",
+    "meta": {
+     "parent_uuid": null,
+     "session_id": "",
+     "source_tool_use_id": null,
+     "timestamp": "2026-11-05T09:00:14.000Z",
+     "uuid": "fo-m"
+    },
+    "status": "completed",
+    "tool_call_id": "call-m",
+    "type": "tool_call_update"
+   }
+  ],
+  "start_byte": 2973,
+  "terminated": true
+ },
+ "3141-3322": {
+  "end_byte": 3322,
+  "events": [
+   {
+    "input": "not json {",
+    "meta": {
+     "parent_uuid": null,
+     "session_id": "",
+     "source_tool_use_id": null,
+     "timestamp": "2026-11-05T09:00:15.000Z",
+     "uuid": "fc-bad"
+    },
+    "name": "exec_command",
+    "status": "pending",
+    "tool_call_id": "call-bad",
+    "type": "tool_call"
+   }
+  ],
+  "start_byte": 3141,
+  "terminated": true
+ },
+ "3322-3427": {
+  "end_byte": 3427,
+  "events": [
+   {
+    "kind": "event_msg/token_count",
+    "meta": {
+     "parent_uuid": null,
+     "session_id": "",
+     "source_tool_use_id": null,
+     "timestamp": "2026-11-05T09:00:16.000Z",
+     "uuid": ""
+    },
+    "raw": "{\"timestamp\":\"2026-11-05T09:00:16.000Z\",\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\",\"info\":null}}",
+    "type": "ignored"
+   }
+  ],
+  "start_byte": 3322,
+  "terminated": true
+ },
+ "3427-3544": {
+  "end_byte": 3544,
+  "events": [
+   {
+    "kind": "event_msg/exec_command_end",
+    "meta": {
+     "parent_uuid": null,
+     "session_id": "",
+     "source_tool_use_id": null,
+     "timestamp": "2026-11-05T09:00:17.000Z",
+     "uuid": ""
+    },
+    "raw": "{\"timestamp\":\"2026-11-05T09:00:17.000Z\",\"type\":\"event_msg\",\"payload\":{\"type\":\"exec_command_end\",\"call_id\":\"exec-1\"}}",
+    "type": "ignored"
+   }
+  ],
+  "start_byte": 3427,
+  "terminated": true
+ },
+ "3544-3701": {
+  "end_byte": 3701,
+  "events": [
+   {
+    "content": "boom",
+    "meta": {
+     "parent_uuid": null,
+     "session_id": "",
+     "source_tool_use_id": null,
+     "timestamp": "2026-11-05T09:00:18.000Z",
+     "uuid": "fo-bad"
+    },
+    "status": "completed",
+    "tool_call_id": "call-bad",
+    "type": "tool_call_update"
+   }
+  ],
+  "start_byte": 3544,
+  "terminated": true
+ },
+ "3701-3836": {
+  "end_byte": 3836,
+  "events": [
+   {
+    "duration_ms": 140100,
+    "meta": {
+     "parent_uuid": null,
+     "session_id": "",
+     "source_tool_use_id": null,
+     "timestamp": "2026-11-05T09:00:19.000Z",
+     "uuid": ""
+    },
+    "reason": "completed",
+    "type": "turn_ended"
+   }
+  ],
+  "start_byte": 3701,
+  "terminated": true
+ }
+}

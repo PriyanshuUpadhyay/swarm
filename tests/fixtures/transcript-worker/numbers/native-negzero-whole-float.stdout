@@ -1,0 +1,1 @@
+{"type":"tool_call","tool_call_id":"t1","name":"T","input":{"negzero":-0,"whole_float":100},"status":"pending","meta":{"session_id":"s-add","uuid":"c1","timestamp":"2026-11-05T00:00:00.000Z","parent_uuid":null,"source_tool_use_id":null}}

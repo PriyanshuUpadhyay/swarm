@@ -1,0 +1,62 @@
+{
+ "out-1/claude-chair-run/raw-back-00.txt": {
+  "sha256": "e2a0956b9a780f83965f276f302230c9e6b1a366d7d389379de392ad1956a298",
+  "parts": [
+   "b37d6aba9ea78f8d-000.json"
+  ]
+ },
+ "out-1/claude-chair-run/raw-back-01.txt": {
+  "sha256": "789f489a2e21ab3e8e66aa4901fb82378de9689c995fe06e84f9cbae7dc3d628",
+  "parts": [
+   "30536ae8465c6dce-000.json"
+  ]
+ },
+ "out-1/claude-chair-run/raw-back-02.txt": {
+  "sha256": "ef81dac567b3059f01988614bbb8d1c3ea9dd2e286a88e8f2895dcc10ac431e8",
+  "parts": [
+   "9a58ea09d2223e6e-000.json"
+  ]
+ },
+ "out-1/claude-chair-run/raw-back-03.txt": {
+  "sha256": "5b4c5011f3d4c6fed038dbbef7ffcc9b264854458378dfd96862366b76fa86d1",
+  "parts": [
+   "f2d4f3a9cdac60bc-000.json"
+  ]
+ },
+ "out-1/claude-chair-run/raw-back-04.txt": {
+  "sha256": "78d6006c9601ff8e62a78b4ca61f88040e9aea10d18b1195ad8d5e468c03032b",
+  "parts": [
+   "5daf0f7220bb5170-000.json"
+  ]
+ },
+ "out-1/claude-chair-run/raw-back-05.txt": {
+  "sha256": "60be7150eeb5f3b375b764833c27ca66a56522d5f98b94f3d9269a4761d0d321",
+  "parts": [
+   "2917629a74853489-000.json"
+  ]
+ },
+ "out-1/claude-chair-run/raw-full.txt": {
+  "sha256": "65d50c25fd9c5483ad28dda5a7b10892d7979726e3a375c4e9dd4d82ea7ad333",
+  "parts": [
+   "c838748272e0dd76-000.json"
+  ]
+ },
+ "out-1/claude-chair-run/rows-back-00.txt": {
+  "sha256": "a27bb4adc14a0a338085fc4ab714d59ea304774fe2e0e1a932f838ebbcbf85eb",
+  "parts": [
+   "16715d27976ad600-000.json"
+  ]
+ },
+ "out-1/claude-chair-run/rows-back-01.txt": {
+  "sha256": "6ffdded40c0daa24f7cb30da1702da40ebe1a7a1220a73d5292df7e07aca4b60",
+  "parts": [
+   "0b9dbb79f9b7f9f8-000.json"
+  ]
+ },
+ "out-1/claude-chair-run/rows-back-02.txt": {
+  "sha256": "9ddd1ce2b1dbf707762e8f07faeefba8b71bb828e3a1e64c849e8fdd43a88b2c",
+  "parts": [
+   "dd24b2b9e65f2e83-000.json"
+  ]
+ }
+}

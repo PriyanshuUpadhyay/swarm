@@ -1,0 +1,361 @@
+//! Wire client for the Pi test (a copy of the Codex test's client; shared helpers stay unedited):
+//! starts the real `swarm _transcript-worker --protocol 1` executable
+//! and speaks its frame protocol with literal JSON (same transaction discipline as the reader tests:
+//! length-prefixed frames, begin / ordered parts / commit, one total 900 ms bound per logical wait).
+//! It is a system boundary (child, pipes, frames) and holds no domain knowledge.
+
+use std::io::{Read, Write};
+use std::path::PathBuf;
+use std::process::{Child, ChildStdin, Command, Stdio};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
+use std::thread::JoinHandle;
+use std::time::{Duration, Instant};
+
+use serde::Deserialize as _;
+use serde_json::{Value, json};
+
+const MAX_FRAME_BYTES: usize = 1_048_576;
+// A caller budget sent with each request. It is a setting, never a measured time.
+pub(super) const WORK_MS: u64 = 500;
+const WAIT: Duration = Duration::from_millis(900);
+const EXIT_POLL_STEP: Duration = Duration::from_millis(5);
+const SCRATCH_ATTEMPTS: u32 = 64;
+
+static SCRATCH_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+/// Decodes a payload that may nest deeper than serde_json's default limit (the 254-array tool input).
+pub(super) fn decode_deep(bytes: &[u8]) -> Value {
+    let mut de = serde_json::Deserializer::from_slice(bytes);
+    de.disable_recursion_limit();
+    let value = Value::deserialize(&mut de).expect("valid JSON");
+    de.end().expect("one JSON value");
+    value
+}
+
+/// A private scratch root this worker alone owns: exclusive creation, so two workers never share it.
+fn create_scratch() -> PathBuf {
+    for _ in 0..SCRATCH_ATTEMPTS {
+        let sequence = SCRATCH_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        let scratch = std::env::temp_dir().join(format!(
+            "swarm-transcript-pi-{}-{sequence}",
+            std::process::id()
+        ));
+        match std::fs::create_dir(&scratch) {
+            Ok(()) => return scratch,
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => panic!("scratch root {}: {error}", scratch.display()),
+        }
+    }
+    panic!("no free scratch root name after {SCRATCH_ATTEMPTS} attempts");
+}
+
+type Frames = Receiver<Result<Option<Vec<u8>>, String>>;
+
+pub(super) struct Worker {
+    child: Child,
+    stdin: Option<ChildStdin>,
+    frames: Frames,
+    stderr: Receiver<String>,
+    threads: Vec<JoinHandle<()>>,
+    pub(super) scratch: PathBuf,
+    request_id: u64,
+}
+
+/// A committed reply: the decoded payload. Digit-exact checks read the raw text instead
+/// (`snapshot_raw`), because a decoded `Value` cannot hold every native number token.
+pub(super) struct Committed {
+    pub(super) value: Value,
+}
+
+impl Worker {
+    /// Starts the executable with an empty environment and a private HOME, so no live state, store
+    /// or app can be touched. Both pipes are drained for the whole life of the child.
+    pub(super) fn start() -> Worker {
+        let scratch = create_scratch();
+        let home = scratch.join("home");
+        std::fs::create_dir_all(&home).expect("scratch home");
+        let mut child = Command::new(env!("CARGO_BIN_EXE_swarm"))
+            .args(["_transcript-worker", "--protocol", "1"])
+            .env_clear()
+            .env("PATH", "/usr/bin:/bin")
+            .env("HOME", &home)
+            .env("XDG_CONFIG_HOME", home.join("config"))
+            .env("XDG_CACHE_HOME", home.join("cache"))
+            .env("XDG_STATE_HOME", home.join("state"))
+            .env("XDG_DATA_HOME", home.join("data"))
+            .env("TMPDIR", &scratch)
+            .env("TMP", &scratch)
+            .env("TEMP", &scratch)
+            .current_dir(&scratch)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("spawn the swarm executable");
+        let stdin = child.stdin.take();
+        let mut stdout = child.stdout.take().expect("piped stdout");
+        let mut stderr = child.stderr.take().expect("piped stderr");
+        let (frame_tx, frames) = mpsc::channel();
+        let (err_tx, err_rx) = mpsc::channel();
+        let out_thread = std::thread::spawn(move || {
+            loop {
+                let mut prefix = [0u8; 4];
+                match read_exact_or_eof(&mut stdout, &mut prefix) {
+                    Ok(false) => {
+                        let _ = frame_tx.send(Ok(None));
+                        return;
+                    }
+                    Err(error) => {
+                        let _ = frame_tx.send(Err(error));
+                        return;
+                    }
+                    Ok(true) => {}
+                }
+                let len = u32::from_be_bytes(prefix) as usize;
+                if len == 0 || len > MAX_FRAME_BYTES {
+                    let _ = frame_tx.send(Err(format!("stdout is not a frame: length {len}")));
+                    return;
+                }
+                let mut body = vec![0u8; len];
+                if let Err(error) = stdout.read_exact(&mut body) {
+                    let _ = frame_tx.send(Err(format!("truncated frame: {error}")));
+                    return;
+                }
+                if frame_tx.send(Ok(Some(body))).is_err() {
+                    return;
+                }
+            }
+        });
+        let err_thread = std::thread::spawn(move || {
+            let mut text = Vec::new();
+            let _ = stderr.read_to_end(&mut text);
+            let _ = err_tx.send(String::from_utf8_lossy(&text).into_owned());
+        });
+        Worker {
+            child,
+            stdin,
+            frames,
+            stderr: err_rx,
+            threads: vec![out_thread, err_thread],
+            scratch,
+            request_id: 0,
+        }
+    }
+
+    /// Stops the child and ends the test with what the executable actually did.
+    fn fail(&mut self, what: &str) -> ! {
+        self.stdin.take();
+        let _ = self.child.kill();
+        let status = self.child.wait();
+        // The stderr thread ends when the child's pipe closes; take what it has already sent.
+        let stderr = self.stderr.try_recv().unwrap_or_default();
+        panic!("{what}: worker status {status:?}, stderr {stderr:?}");
+    }
+
+    fn send(&mut self, request: &Value) {
+        let body = serde_json::to_vec(request).expect("request JSON");
+        let mut frame = (body.len() as u32).to_be_bytes().to_vec();
+        frame.extend_from_slice(&body);
+        let sent = match self.stdin.as_mut() {
+            Some(stdin) => stdin.write_all(&frame).and_then(|()| stdin.flush()),
+            None => Err(std::io::Error::other("stdin already closed")),
+        };
+        if let Err(error) = sent {
+            self.fail(&format!("worker did not accept {}: {error}", request["op"]));
+        }
+    }
+
+    /// One frame before `deadline`; `None` means the worker closed stdout.
+    fn frame_by(&mut self, deadline: Instant) -> Option<Value> {
+        let left = deadline.saturating_duration_since(Instant::now());
+        match self.frames.recv_timeout(left) {
+            Ok(Ok(Some(body))) => Some(decode_deep(&body)),
+            Ok(Ok(None)) => None,
+            Ok(Err(error)) => self.fail(&error),
+            Err(RecvTimeoutError::Timeout) => self.fail("worker sent no frame within 900 ms"),
+            Err(RecvTimeoutError::Disconnected) => self.fail("frame reader ended"),
+        }
+    }
+
+    pub(super) fn frame(&mut self) -> Option<Value> {
+        self.frame_by(Instant::now() + WAIT)
+    }
+
+    pub(super) fn hello(&mut self) -> Value {
+        self.send(&json!({"op": "hello", "protocol": 1, "remaining_work_ms": WORK_MS}));
+        self.frame()
+            .unwrap_or_else(|| self.fail("closed before ready"))
+    }
+
+    pub(super) fn open(&mut self, binding: &Value, format: &str, path: &str) -> Value {
+        self.request_id += 1;
+        self.send(
+            &json!({"op": "open", "request_id": self.request_id, "binding": binding,
+            "format": format, "path": path, "remaining_work_ms": WORK_MS}),
+        );
+        self.frame()
+            .unwrap_or_else(|| self.fail("closed before opened"))
+    }
+
+    pub(super) fn last_request_id(&self) -> u64 {
+        self.request_id
+    }
+
+    /// Sends a request that is answered with begin, ordered parts and commit; returns the committed
+    /// payload text, undecoded, or the fault frame. Begin, part order, commit totals and UTF-8 are
+    /// checked here.
+    fn transact_raw(&mut self, op: &str, binding: &Value, fields: Value) -> Result<String, Value> {
+        self.request_id += 1;
+        let id = self.request_id;
+        let mut request = json!({"op": op, "request_id": id, "binding": binding,
+            "remaining_work_ms": WORK_MS});
+        for (key, value) in fields.as_object().expect("fields object") {
+            request[key] = value.clone();
+        }
+        self.send(&request);
+        let deadline = Instant::now() + WAIT;
+        let begin = self
+            .frame_by(deadline)
+            .unwrap_or_else(|| self.fail(&format!("{op}: closed before begin")));
+        if begin["op"] == "fault" {
+            return Err(begin);
+        }
+        assert_eq!(
+            begin,
+            json!({"op": "begin", "request_id": id, "binding": binding})
+        );
+        let mut payload = Vec::new();
+        let mut parts = 0u64;
+        loop {
+            let frame = self
+                .frame_by(deadline)
+                .unwrap_or_else(|| self.fail(&format!("{op}: closed before commit")));
+            match frame["op"].as_str() {
+                Some("part") => {
+                    assert_eq!(frame["request_id"], json!(id));
+                    assert_eq!(frame["binding"], *binding, "a part carries its binding");
+                    assert_eq!(frame["part_index"], json!(parts), "parts are contiguous");
+                    payload.extend(
+                        frame["bytes"]
+                            .as_array()
+                            .expect("part bytes")
+                            .iter()
+                            .map(|b| u8::try_from(b.as_u64().expect("byte")).expect("byte")),
+                    );
+                    parts += 1;
+                }
+                Some("commit") => {
+                    assert_eq!(
+                        frame,
+                        json!({"op": "commit", "request_id": id, "binding": binding,
+                            "part_count": parts, "payload_bytes": payload.len()})
+                    );
+                    return Ok(String::from_utf8(payload).expect("payload is UTF-8 JSON"));
+                }
+                other => self.fail(&format!("{op}: unexpected frame {other:?}")),
+            }
+        }
+    }
+
+    /// The same transaction with the payload decoded as a JSON value.
+    fn transact(&mut self, op: &str, binding: &Value, fields: Value) -> Result<Committed, Value> {
+        self.transact_raw(op, binding, fields)
+            .map(|text| Committed {
+                value: decode_deep(text.as_bytes()),
+            })
+    }
+
+    fn snapshot_request(start_byte: u64) -> Value {
+        json!({"start_byte": start_byte, "end_byte": null, "end_policy": "snapshot_eof"})
+    }
+
+    pub(super) fn snapshot(
+        &mut self,
+        binding: &Value,
+        start_byte: u64,
+    ) -> Result<Committed, Value> {
+        self.transact("snapshot", binding, Self::snapshot_request(start_byte))
+    }
+
+    /// The snapshot payload as committed text, for raw number-token checks.
+    pub(super) fn snapshot_raw(
+        &mut self,
+        binding: &Value,
+        start_byte: u64,
+    ) -> Result<String, Value> {
+        self.transact_raw("snapshot", binding, Self::snapshot_request(start_byte))
+    }
+
+    /// A reader request; returns the committed `updates`, or the fault frame.
+    pub(super) fn reader_op(
+        &mut self,
+        op: &str,
+        binding: &Value,
+        fields: Value,
+    ) -> Result<Value, Value> {
+        self.transact(op, binding, fields)
+            .map(|committed| committed.value["updates"].clone())
+    }
+
+    /// Closes the source; the worker answers `closed` and exits zero.
+    pub(super) fn close_source(&mut self, binding: &Value) {
+        self.request_id += 1;
+        let id = self.request_id;
+        self.send(&json!({"op": "close", "request_id": id, "binding": binding,
+            "remaining_work_ms": WORK_MS}));
+        let closed = self
+            .frame()
+            .unwrap_or_else(|| self.fail("closed before closed"));
+        assert_eq!(
+            closed,
+            json!({"op": "closed", "request_id": id, "binding": binding})
+        );
+        assert_eq!(
+            self.exit_code(),
+            0,
+            "Close releases the file and exits zero"
+        );
+    }
+
+    pub(super) fn exit_code(&mut self) -> i32 {
+        self.stdin.take();
+        // One deadline for the whole wait; each sleep is at most the time that is left.
+        let deadline = Instant::now() + WAIT;
+        loop {
+            if let Ok(Some(status)) = self.child.try_wait() {
+                return status.code().unwrap_or(-1);
+            }
+            let left = deadline.saturating_duration_since(Instant::now());
+            if left.is_zero() {
+                self.fail("worker did not exit within 900 ms");
+            }
+            std::thread::sleep(EXIT_POLL_STEP.min(left));
+        }
+    }
+}
+
+impl Drop for Worker {
+    fn drop(&mut self) {
+        self.stdin.take();
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+        for thread in self.threads.drain(..) {
+            let _ = thread.join();
+        }
+        let _ = std::fs::remove_dir_all(&self.scratch);
+    }
+}
+
+fn read_exact_or_eof(input: &mut impl Read, buf: &mut [u8]) -> Result<bool, String> {
+    let mut filled = 0;
+    while filled < buf.len() {
+        match input.read(&mut buf[filled..]) {
+            Ok(0) if filled == 0 => return Ok(false),
+            Ok(0) => return Err("stdout ended inside a length prefix".to_string()),
+            Ok(n) => filled += n,
+            Err(error) => return Err(format!("stdout read failed: {error}")),
+        }
+    }
+    Ok(true)
+}

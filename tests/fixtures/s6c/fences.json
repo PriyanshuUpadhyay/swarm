@@ -1,0 +1,355 @@
+[
+  {
+    "id": "s4x-diff-headed",
+    "source": "ORIGINAL s4 inputs.json s4x-diff-headed; HAND S6C-FENCES-V1 row rules",
+    "markdown": "```diff\n--- a/f\n+++ b/f\n@@ -1 +1 @@\n-a\n+b\n```",
+    "code": {
+      "type": "code",
+      "value": {
+        "label": "diff",
+        "text": "--- a/f\n+++ b/f\n@@ -1 +1 @@\n-a\n+b\n",
+        "diff": {
+          "lines": [
+            {
+              "kind": "meta",
+              "text": "--- a/f"
+            },
+            {
+              "kind": "meta",
+              "text": "+++ b/f"
+            },
+            {
+              "kind": "hunk",
+              "text": "@@ -1,1 +1,1 @@"
+            },
+            {
+              "kind": "del",
+              "text": "a",
+              "old": 1
+            },
+            {
+              "kind": "add",
+              "text": "b",
+              "new": 1
+            }
+          ],
+          "split": [
+            {
+              "h": 2
+            },
+            {
+              "l": 3,
+              "r": 4
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "id": "s4x-diff-bare-hunk",
+    "source": "ORIGINAL s4 inputs.json s4x-diff-bare-hunk; HAND S6C-FENCES-V1 row rules",
+    "markdown": "```diff\n@@ -1 +1 @@\n-a\n+b\n```",
+    "code": {
+      "type": "code",
+      "value": {
+        "label": "diff",
+        "text": "@@ -1 +1 @@\n-a\n+b\n",
+        "diff": {
+          "lines": [
+            {
+              "kind": "hunk",
+              "text": "@@ -1,1 +1,1 @@"
+            },
+            {
+              "kind": "del",
+              "text": "a",
+              "old": 1
+            },
+            {
+              "kind": "add",
+              "text": "b",
+              "new": 1
+            }
+          ],
+          "split": [
+            {
+              "h": 0
+            },
+            {
+              "l": 1,
+              "r": 2
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "id": "s4x-patch-headed",
+    "source": "ORIGINAL s4 inputs.json s4x-patch-headed; HAND S6C-FENCES-V1 row rules",
+    "markdown": "```patch\n--- a/f\n+++ b/f\n@@ -1,2 +1,2 @@\n ctx\n-a\n+b\n```",
+    "code": {
+      "type": "code",
+      "value": {
+        "label": "patch",
+        "text": "--- a/f\n+++ b/f\n@@ -1,2 +1,2 @@\n ctx\n-a\n+b\n",
+        "diff": {
+          "lines": [
+            {
+              "kind": "meta",
+              "text": "--- a/f"
+            },
+            {
+              "kind": "meta",
+              "text": "+++ b/f"
+            },
+            {
+              "kind": "hunk",
+              "text": "@@ -1,2 +1,2 @@"
+            },
+            {
+              "kind": "ctx",
+              "text": "ctx",
+              "old": 1,
+              "new": 1
+            },
+            {
+              "kind": "del",
+              "text": "a",
+              "old": 2
+            },
+            {
+              "kind": "add",
+              "text": "b",
+              "new": 2
+            }
+          ],
+          "split": [
+            {
+              "h": 2
+            },
+            {
+              "l": 3,
+              "r": 3
+            },
+            {
+              "l": 4,
+              "r": 5
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "id": "s4x-diff-no-hunk",
+    "source": "ORIGINAL s4 inputs.json s4x-diff-no-hunk; HAND S6C-FENCES-V1 row rules",
+    "markdown": "```diff\n+a\n-b\n ctx\n@@ note\n```",
+    "code": {
+      "type": "code",
+      "value": {
+        "label": "diff",
+        "text": "+a\n-b\n ctx\n@@ note\n",
+        "diff": {
+          "prefix": [
+            {
+              "kind": "add",
+              "text": "+a\n"
+            },
+            {
+              "kind": "del",
+              "text": "-b\n"
+            },
+            {
+              "kind": "ctx",
+              "text": " ctx\n"
+            },
+            {
+              "kind": "hunk",
+              "text": "@@ note\n"
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "id": "s4x-diff-wrong-counts",
+    "source": "ORIGINAL s4 inputs.json s4x-diff-wrong-counts; HAND S6C-FENCES-V1 row rules",
+    "markdown": "```diff\n@@ -1,5 +1,5 @@\n-a\n+b\n```",
+    "code": {
+      "type": "code",
+      "value": {
+        "label": "diff",
+        "text": "@@ -1,5 +1,5 @@\n-a\n+b\n",
+        "diff": {
+          "lines": [
+            {
+              "kind": "hunk",
+              "text": "@@ -1,1 +1,1 @@"
+            },
+            {
+              "kind": "del",
+              "text": "a",
+              "old": 1
+            },
+            {
+              "kind": "add",
+              "text": "b",
+              "new": 1
+            }
+          ],
+          "split": [
+            {
+              "h": 0
+            },
+            {
+              "l": 1,
+              "r": 2
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "id": "prefix-headers",
+    "source": "HAND S6C-FENCES-V1; HAND S6C-FENCES-V1 row rules",
+    "markdown": "```patch\n--- a\n+++ b\n```",
+    "code": {
+      "type": "code",
+      "value": {
+        "label": "patch",
+        "text": "--- a\n+++ b\n",
+        "diff": {
+          "prefix": [
+            {
+              "kind": "del",
+              "text": "--- a\n"
+            },
+            {
+              "kind": "add",
+              "text": "+++ b\n"
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "id": "prefix-empty",
+    "source": "HAND S6C-FENCES-V1; HAND S6C-FENCES-V1 row rules",
+    "markdown": "```diff\n```",
+    "code": {
+      "type": "code",
+      "value": {
+        "label": "diff",
+        "text": "",
+        "diff": {
+          "prefix": [
+            {
+              "kind": "ctx",
+              "text": "\n"
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "id": "s6a-p-core",
+    "source": "ORIGINAL s6/original-02 p-core; drop display-only at index",
+    "markdown": "```patch\ndiff --git \"a/x\" \"b/x\"\n--- \"a/x\"\n+++ \"b/x\"\n@@ -3,3 +3,3 @@\n keep\n-old\n+new\n tail\n```",
+    "code": {
+      "type": "code",
+      "value": {
+        "label": "patch",
+        "text": "diff --git \"a/x\" \"b/x\"\n--- \"a/x\"\n+++ \"b/x\"\n@@ -3,3 +3,3 @@\n keep\n-old\n+new\n tail\n",
+        "diff": {
+          "lines": [
+            {
+              "kind": "meta",
+              "text": "diff --git \"a/x\" \"b/x\""
+            },
+            {
+              "kind": "meta",
+              "text": "--- \"a/x\""
+            },
+            {
+              "kind": "meta",
+              "text": "+++ \"b/x\""
+            },
+            {
+              "kind": "hunk",
+              "text": "@@ -3,3 +3,3 @@"
+            },
+            {
+              "kind": "ctx",
+              "text": "keep",
+              "old": 3,
+              "new": 3
+            },
+            {
+              "kind": "del",
+              "text": "old",
+              "old": 4
+            },
+            {
+              "kind": "add",
+              "text": "new",
+              "new": 4
+            },
+            {
+              "kind": "ctx",
+              "text": "tail",
+              "old": 5,
+              "new": 5
+            }
+          ],
+          "split": [
+            {
+              "h": 3
+            },
+            {
+              "l": 4,
+              "r": 4
+            },
+            {
+              "l": 5,
+              "r": 6
+            },
+            {
+              "l": 7,
+              "r": 7
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "id": "ordinary-rust",
+    "source": "HAND exact-label guard",
+    "markdown": "```rust\n@@ -1 +1 @@\n-a\n+b\n```",
+    "code": {
+      "type": "code",
+      "value": {
+        "label": "rust",
+        "text": "@@ -1 +1 @@\n-a\n+b\n"
+      }
+    }
+  },
+  {
+    "id": "ordinary-Diff",
+    "source": "HAND exact-label guard",
+    "markdown": "```Diff\n@@ -1 +1 @@\n-a\n+b\n```",
+    "code": {
+      "type": "code",
+      "value": {
+        "label": "Diff",
+        "text": "@@ -1 +1 @@\n-a\n+b\n"
+      }
+    }
+  }
+]

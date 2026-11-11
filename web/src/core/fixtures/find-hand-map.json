@@ -1,0 +1,138 @@
+{
+  "h-user": [
+    {
+      "f": "text"
+    }
+  ],
+  "h-ring": [
+    {
+      "t": "New swarm message"
+    }
+  ],
+  "h-shell": [
+    {
+      "f": "shell.command"
+    },
+    {
+      "f": "shell.output.text",
+      "p": "h-shell:out"
+    }
+  ],
+  "h-chip-named": [
+    {
+      "t": "/gamma now gamma"
+    },
+    {
+      "f": "command.skill_body.text",
+      "p": "h-chip:skill"
+    },
+    {
+      "f": "command.output.text",
+      "p": "h-chip:out"
+    }
+  ],
+  "h-chip-plain": [
+    {
+      "t": "/delta alpha only"
+    }
+  ],
+  "h-toolresult": [
+    {
+      "f": "output.text",
+      "p": "h-result:out"
+    }
+  ],
+  "h-diff": [
+    {
+      "f": "diff.patch",
+      "p": "h-diff:patch"
+    }
+  ],
+  "h-empty": [
+    {
+      "f": "tool.name"
+    },
+    {
+      "f": "tool.header_title"
+    },
+    {
+      "f": "tool.output.text",
+      "p": "h-empty:out"
+    }
+  ],
+  "h-tool": [
+    {
+      "f": "tool.name"
+    },
+    {
+      "f": "tool.header_title"
+    },
+    {
+      "f": "tool.command"
+    },
+    {
+      "f": "tool.path"
+    },
+    {
+      "f": "tool.output.text",
+      "p": "h-tool:out"
+    },
+    {
+      "f": "tool.skill_body.text",
+      "p": "h-tool:skill"
+    },
+    {
+      "f": "tool.diffs.0.patch",
+      "p": "h-tool:d0"
+    },
+    {
+      "f": "tool.diffs.1.patch",
+      "p": "h-tool:d1"
+    }
+  ],
+  "h-detail": [
+    {
+      "f": "text"
+    },
+    {
+      "f": "detail"
+    },
+    {
+      "f": "output.text",
+      "p": "h-detail:out"
+    },
+    {
+      "f": "diff.patch",
+      "p": "h-detail:patch"
+    }
+  ],
+  "h-fold": [
+    {
+      "f": "fold.text"
+    }
+  ],
+  "h-step-1": [
+    {
+      "f": "tool.name"
+    },
+    {
+      "f": "tool.header_title"
+    },
+    {
+      "f": "tool.output.text",
+      "p": "h-step-1:out"
+    }
+  ],
+  "h-step-2": [
+    {
+      "f": "tool.name"
+    },
+    {
+      "f": "tool.header_title"
+    },
+    {
+      "f": "tool.output.text",
+      "p": "h-step-2:out"
+    }
+  ]
+}

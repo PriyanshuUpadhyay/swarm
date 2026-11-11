@@ -1,6 +1,7 @@
 //! Server coordinator.
 
 use super::*;
+use swarm::view::transcript::{markdown::display, queue_wire};
 
 pub(super) fn start_coordinator(app: &App, action_queue: mpsc::Receiver<ActionJob>) {
     start_action_queue(app, action_queue);
@@ -144,7 +145,31 @@ fn agent_snapshot(
                     rows
                 })
             };
-            if let Ok(rows) = rows {
+            if let Ok(mut rows) = rows {
+                for agent in rows.as_array_mut().into_iter().flatten() {
+                    for (index, item) in agent
+                        .get_mut("queue")
+                        .and_then(Value::as_array_mut)
+                        .into_iter()
+                        .flatten()
+                        .enumerate()
+                    {
+                        let (id, detail) = queue_wire::queue_labels(
+                            index,
+                            item["mode"].as_str().unwrap_or_default(),
+                        );
+                        item["id"] = json!(id);
+                        item["detail"] = json!(detail);
+                        item["images"] = json!(view::image_paths::image_paths(
+                            item["text"].as_str().unwrap_or_default(),
+                        ));
+                        let tree = item["text"]
+                            .as_str()
+                            .and_then(|text| display::display_with_breaks(text).ok());
+                        item["body"] = json!(display::body_mode(tree.as_ref()));
+                        item["display"] = json!(tree);
+                    }
+                }
                 agents.insert(session.id, rows);
             }
         }

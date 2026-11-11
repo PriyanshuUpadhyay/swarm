@@ -1,0 +1,135 @@
+{
+ "claude-chair-run.jsonl": {
+  "source": "<c8ca837e archive>/packages/transcript/src/fixtures/claude-chair-run.jsonl",
+  "sha256": "e7928bdc97959ab32b7c5985fe16a688b1f3a9a6feace87d30d20fbf997f493d",
+  "bytes": 2831
+ },
+ "claude-edit.jsonl": {
+  "source": "<c8ca837e archive>/packages/transcript/src/fixtures/claude-edit.jsonl",
+  "sha256": "7e6c0606971beab616a65efa88f96f6af519a7f1a03f1365689bcfde728e9aec",
+  "bytes": 732
+ },
+ "crlf-claude.jsonl": {
+  "source": "tmp/flow/<run>/reference-native/inputs/inputs/crlf-claude.jsonl",
+  "sha256": "6b9469ad9196f968700642be2f5cdef58495776eea4fd69fe49cc515bb7b142e",
+  "bytes": 90
+ },
+ "append-unterminated.jsonl": {
+  "source": "tmp/flow/<run>/unit01/old-extension/inputs/append-unterminated.jsonl",
+  "sha256": "efafed8b8348ada842999dbefbf5765b26311c3eb9c6cdf520f9b73532bb495f",
+  "bytes": 92
+ },
+ "long-line-claude.jsonl": {
+  "source": "tmp/flow/<run>/reference-native/inputs/inputs/long-line-claude.jsonl",
+  "sha256": "65d9f60d5f51b158bdb963fe1a6b31216c88eeaf289f1777651d87601d7c0c6a",
+  "bytes": 70125,
+  "storage": "logical input only: the 70125 bytes are NOT stored in the repo since round 13 (file size gate). The test rebuilds them from the recipe in expected.json (group long-line, field materialize) and asserts this sha256 and byte count before the worker opens the file. The canonical OLD copy stays in tmp evidence (reference-native/inputs/inputs/long-line-claude.jsonl)."
+ },
+ "guard-claude-invalid-json.jsonl": {
+  "source": "tmp/flow/<run>/reference-native/inputs/inputs/guard-claude-invalid-json.jsonl",
+  "sha256": "3c48773b404d850071dff4006d4ef0d7302d1343aefc58fbc84d730753de8831",
+  "bytes": 9
+ },
+ "guard-claude-invalid-utf8.jsonl": {
+  "source": "tmp/flow/<run>/reference-native/inputs/inputs/guard-claude-invalid-utf8.jsonl",
+  "sha256": "ca737c1b949627d91a013ab79d109f85cfec4fcf5a9c7cce2d673c2ed9afe8e8",
+  "bytes": 5
+ },
+ "guard-claude-unknown-log.jsonl": {
+  "source": "tmp/flow/<run>/reference-native/inputs/inputs/guard-claude-unknown-log.jsonl",
+  "sha256": "453ab57979685cc49a0689f7f8591bb27ab33e7aef712b5aae0d2b4b8aaa52fb",
+  "bytes": 65
+ },
+ "guard-claude-non-ascii-escape.jsonl": {
+  "source": "tmp/flow/<run>/reference-native/inputs/inputs/guard-claude-non-ascii-escape.jsonl",
+  "sha256": "4eae902fc6b7ef593f7e8368d6958b545249c36c32aeef44be877f281973b92e",
+  "bytes": 77
+ },
+ "claude-input-depth-200.jsonl": {
+  "source": "tmp/flow/<run>/reference-depth/inputs/claude-input-depth-200.jsonl",
+  "sha256": "98d73d9d725135f02f315a6c7dd20028584832ffbcfe3aa67228ce8cc08b3522",
+  "bytes": 501
+ },
+ "claude-input-depth-255.jsonl": {
+  "source": "tmp/flow/<run>/reference-depth/inputs/claude-input-depth-255.jsonl",
+  "sha256": "8a7c3d35f86a4fd0dcf18a412bf0383540d4eab61fda049fb2283d0e07dc6fd4",
+  "bytes": 611
+ },
+ "claude-input-depth-256.jsonl": {
+  "source": "tmp/flow/<run>/reference-depth/inputs/claude-input-depth-256.jsonl",
+  "sha256": "f12f73d0901f23b81e994643b41b5acbbf6f21b16e84f7e078b61b8cda1a3a15",
+  "bytes": 613
+ },
+ "expected.json": {
+  "source": "round 7 groups unchanged + one round-8 group 'giant-output' (see giant-output entry)",
+  "sha256": "2b5c86eb34091b62c601277104167109729de0bd841c1c86e581072fdb77f527",
+  "bytes": 14777,
+  "round7_sha256": "eef0751afe78d69f39aac24594473a3c27b8d5213819de017c6802b5fd9ada84",
+  "round8_sha256_before_split": "a4ac2eedee91d6cfdff626080dfec9688abced11c0e0696ffd2058c836b4c0cc",
+  "split": "round 13: expected.json is now an index. Snapshots larger than 3000 bytes live in expected/*.json and are replaced at load time by their content; the loader (load_expected) rebuilds the round-8 value. Group long-line gains materialize+work_ms (the recipe for its source)."
+ },
+ "giant-output (recipe, no checked-in blob)": {
+  "source": "unit01/old-extension/large/{capture-events.json,rows.json,large_capture.py}; shape of src/serve/row_pages/tests.rs:238",
+  "source_sha256": "2ec5309eb70f7fd471f6f1fb048634684fb800d1058601781b752903d71cfdd6",
+  "source_bytes": 1189138,
+  "full_text_sha256": "64e7e9a948dc51933023f96589871e5eee1cece3b1537066a4cd02a5e7b51777",
+  "full_text_bytes": 1088890,
+  "old_zig_stdout_sha256": "89c27c020b278b6ad3a746bba93438e7a26816a299ffc7e0bbe33609de3ab032",
+  "old_rows_json_sha256": "baa858844e308c42d4bb2496207c419b689fcbd395613b11c942483324fa11ff"
+ },
+ "inputs/numbers-input-1e400.jsonl": {
+  "source": "tmp/flow/<run>/unit01/numbers-reference/inputs/input-1e400.jsonl",
+  "sha256": "4aad608a069ef1e699855ff959740c0458e48b277946bdd302904473ed0842bf",
+  "bytes": 199,
+  "round9_manifest_sha256": "6a898cf71dcb00ac7cb2bfc9bf105a7e9a23df1e155c54d5ee8243658cb55a6c",
+  "note": "byte copy, never parsed to float"
+ },
+ "inputs/numbers-input-u64-plus-1.jsonl": {
+  "source": "tmp/flow/<run>/unit01/numbers-reference/inputs/input-u64-plus-1.jsonl",
+  "sha256": "aa04e6307e52db9a244cf634eddd710c88c61ca9b87202ee32ca8cc424efcea1",
+  "bytes": 214,
+  "round9_manifest_sha256": "6a898cf71dcb00ac7cb2bfc9bf105a7e9a23df1e155c54d5ee8243658cb55a6c",
+  "note": "byte copy, never parsed to float"
+ },
+ "numbers/native-1e400.stdout": {
+  "source": "tmp/flow/<run>/unit01/numbers-reference/data/input-1e400/native/run1/stdout.raw",
+  "sha256": "491672ac1358819118b646ead975465b4386aca8e0456a65ca5db25fcfeefb65",
+  "bytes": 220,
+  "round9_manifest_sha256": "6a898cf71dcb00ac7cb2bfc9bf105a7e9a23df1e155c54d5ee8243658cb55a6c",
+  "note": "byte copy, never parsed to float"
+ },
+ "numbers/native-u64-plus-1.stdout": {
+  "source": "tmp/flow/<run>/unit01/numbers-reference/data/input-u64-plus-1/native/run1/stdout.raw",
+  "sha256": "00e739bbc5549417df56881d588b0d8047b75d76fdacd14f390cb0465f40ac73",
+  "bytes": 235,
+  "round9_manifest_sha256": "6a898cf71dcb00ac7cb2bfc9bf105a7e9a23df1e155c54d5ee8243658cb55a6c",
+  "note": "byte copy, never parsed to float"
+ },
+ "numbers/old-http-rows-u64-plus-1.body": {
+  "source": "tmp/flow/<run>/unit01/numbers-reference/data/input-u64-plus-1/http/rows/run1.body.raw",
+  "sha256": "b20d1c0f8b6238317523bbdc108b27f85c8fb89ebc56f1eb66acb3bc56ce0613",
+  "bytes": 342,
+  "round9_manifest_sha256": "6a898cf71dcb00ac7cb2bfc9bf105a7e9a23df1e155c54d5ee8243658cb55a6c",
+  "note": "byte copy, never parsed to float"
+ },
+ "expected/claude-chair-run.0-whole.json": {
+  "origin": "snapshot 0 of group claude-chair-run, byte-faithful split of the round-8 expected.json (sha256 a4ac2eedee91d6cfdff626080dfec9688abced11c0e0696ffd2058c836b4c0cc)",
+  "sha256": "e34b7542c6d63a0318707cd1d66eb7f4f4b3fc99eeb2e5c9b91c0575a1867e94",
+  "bytes": 8425
+ },
+ "expected/claude-chair-run.1-prefix.json": {
+  "origin": "snapshot 1 of group claude-chair-run, byte-faithful split of the round-8 expected.json (sha256 a4ac2eedee91d6cfdff626080dfec9688abced11c0e0696ffd2058c836b4c0cc)",
+  "sha256": "7ada13b7817aea3a1bb38560a4d418e8d16068646865355a3cda4a431a102aad",
+  "bytes": 4435
+ },
+ "expected/claude-chair-run.2-continuation.json": {
+  "origin": "snapshot 2 of group claude-chair-run, byte-faithful split of the round-8 expected.json (sha256 a4ac2eedee91d6cfdff626080dfec9688abced11c0e0696ffd2058c836b4c0cc)",
+  "sha256": "78fb4ba9ff15edc868d2ca73eb3b75de65d3b6a58748dfc95dee14ada55976d7",
+  "bytes": 4545
+ },
+ "expected/claude-chair-run.4-whole-again-on-the-same-binding.json": {
+  "origin": "snapshot 4 of group claude-chair-run, byte-faithful split of the round-8 expected.json (sha256 a4ac2eedee91d6cfdff626080dfec9688abced11c0e0696ffd2058c836b4c0cc)",
+  "sha256": "e1eb13a690404a2e9a75e2c981a5b9f9e00fa7a37dfd4c73bdaac65474e89921",
+  "bytes": 8451
+ }
+}

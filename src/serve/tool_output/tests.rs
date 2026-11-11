@@ -7,7 +7,7 @@ async fn full_diff_uses_source_ordinal_and_retains_all_lines() {
     let fixture = Fixture::new();
     std::fs::copy(
         Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("packages/transcript/src/fixtures/claude-edit.jsonl"),
+            .join("tests/fixtures/provider-logs/claude-edit.jsonl"),
         &fixture.log,
     )
     .unwrap();

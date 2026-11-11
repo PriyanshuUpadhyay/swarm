@@ -7,10 +7,11 @@ description = "Message bus and pane control for a tree of agent CLIs"
 repository = "https://github.com/PriyanshuUpadhyay/swarm"
 
 [dependencies]
+markdown = { version = "=1.0.0", path = "vendor/markdown-1.0.0" }
 rusqlite = { version = "0.37", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 # preserve_order keeps ~/.claude.json and the AGY settings in their own key order on a trust write.
-serde_json = { version = "1", features = ["preserve_order"] }
+serde_json = { version = "1", features = ["preserve_order", "raw_value", "unbounded_depth"] }
 sha2 = "0.10"
 toml_edit = "0.25.15"
 uuid = { version = "1", features = ["v7"] }
@@ -25,3 +26,7 @@ vt100 = "0.16"
 [features]
 # `swarm serve`, the local HTTP server for the web UI. Off by default, so hook calls keep a small CLI.
 serve = ["dep:axum", "dep:tokio", "dep:tokio-stream", "dep:portable-pty"]
+
+[[example]]
+name = "transcript_caller_trial"
+required-features = ["serve"]

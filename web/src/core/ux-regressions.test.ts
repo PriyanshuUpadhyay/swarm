@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./app";
-import type { Api, Row, RowPage } from "./api";
+import { Api, type Row, type RowPage } from "./api";
 import { Changes } from "./changes";
 import { terminalMatches } from "./background";
 
@@ -22,7 +22,11 @@ afterEach(() => vi.unstubAllGlobals());
 
 function changeHarness(reply?: (url: string) => Promise<Response>) {
   const callbacks: (() => void)[] = [];
-  const api = { headers: () => ({}), fetch: (url: string) => reply?.(url) ?? Promise.resolve(Response.json(url.startsWith("/api/changes/diff") ? { ...file, patch } : url.startsWith("/api/pr") ? { pullRequest: null, checks: [] } : list)) };
+  const api = new Api("token", (async (input) => {
+    const url = String(input);
+    if (url === "/api/changes/comment-range") return Response.json({ lines: "line 1", quoted: ["+new"] });
+    return reply?.(url) ?? Response.json(url.startsWith("/api/changes/diff") ? { ...file, patch, display: { lines: [{ kind: "hunk", text: "@@ -1 +1 @@" }, { kind: "del", text: "old", old: 1, quote: "-old" }, { kind: "add", text: "new", new: 1, quote: "+new" }] } } : url.startsWith("/api/pr") ? { pullRequest: null, checks: [] } : list);
+  }) as typeof fetch);
   const app = { view: { workspace: "A", openId: "chat" }, api, subscribe: (fn: () => void) => callbacks.push(fn), chair: () => ({ disabled: null }), send: async () => true, notice: () => {} };
   const changes = new Changes(app as unknown as App);
   return { app, changes, workspace: (id: string) => { app.view.workspace = id; callbacks.forEach((fn) => fn()); } };
@@ -66,7 +70,7 @@ describe("chat UX regressions", () => {
     changes.show("changes");
     await tick();
     changes.setBase("refs/heads/main");
-    changes.addComment(2, 2, "Keep this draft");
+    await changes.addComment(2, 2, "Keep this draft");
     changes.show("pr");
     const restored = new Changes(app as unknown as App);
     restored.show("pr");

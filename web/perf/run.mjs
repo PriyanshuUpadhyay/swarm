@@ -1,8 +1,8 @@
 // Web pilot budget suite. Builds nothing; run `pnpm -C web perf` after the release builds.
 // usage: node web/perf/run.mjs [--apps react] [--live-seconds 60]
 //        [--only cold,warm,key,scroll,giant,live,pane]
-// Needs: target/release/swarm built with --features serve, the ReleaseSafe transcript tool, web/dist.
-// PERF_SWARM and PERF_TOOL point at other builds of the two binaries; PERF_DIST at another web build.
+// Needs: target/release/swarm built with --features serve, and web/dist.
+// PERF_SWARM points at another swarm build; PERF_DIST at another web build.
 import { spawn, execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -18,7 +18,6 @@ const liveSeconds = Number(args["live-seconds"] ?? 60);
 const only = new Set((args.only ?? "cold,warm,key,scroll,giant,live,pane").split(","));
 const dist = path.resolve(repo, process.env.PERF_DIST ?? "web/dist");
 const swarm = path.resolve(repo, process.env.PERF_SWARM ?? "target/release/swarm");
-const tool = path.resolve(repo, process.env.PERF_TOOL ?? "packages/transcript/zig-out/bin/transcript");
 const home = path.join(repo, "tmp/web-pilot/perf-home");
 
 const log = (...m) => console.error(new Date().toISOString().slice(11, 19), ...m);
@@ -46,7 +45,6 @@ function startServer() {
     env: {
       ...process.env,
       SWARM_HOME: home,
-      SWARM_TRANSCRIPT_TOOL: tool,
       HOME: home,
       CLAUDE_CONFIG_DIR: path.join(home, ".claude"),
       CODEX_HOME: path.join(home, ".codex"),

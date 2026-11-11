@@ -1,0 +1,225 @@
+{
+ "readers": {
+  "initial_end": 1752,
+  "input": "codex-kernel.jsonl",
+  "steps": [
+   {
+    "expect": [
+     {
+      "complete_end_byte": 1752,
+      "lines": [
+       "0-130",
+       "130-249",
+       "249-362",
+       "362-541",
+       "541-744",
+       "744-1039",
+       "1039-1252",
+       "1252-1518",
+       "1518-1752"
+      ],
+      "lines_from": "o0",
+      "next_complete_byte": 1752,
+      "origin_byte": 0,
+      "read_end_byte": 1752,
+      "reader": [
+       1,
+       0
+      ],
+      "rows": "rows-kernel-o0-at1752.json",
+      "start_byte": 0
+     }
+    ],
+    "from_byte": 0,
+    "name": "bind-a-origin-0-question-pending",
+    "op": "bind_reader",
+    "reader": [
+     1,
+     0
+    ]
+   },
+   {
+    "expect": [
+     {
+      "complete_end_byte": 1752,
+      "lines": [
+       "0-130",
+       "130-249",
+       "249-362",
+       "362-541",
+       "541-744",
+       "744-1039",
+       "1039-1252",
+       "1252-1518",
+       "1518-1752"
+      ],
+      "lines_from": "o0",
+      "next_complete_byte": 1752,
+      "origin_byte": 0,
+      "read_end_byte": 1752,
+      "reader": [
+       2,
+       0
+      ],
+      "rows": "rows-kernel-o0-at1752.json",
+      "start_byte": 0
+     }
+    ],
+    "from_byte": 0,
+    "name": "bind-b-origin-0-question-pending",
+    "op": "bind_reader",
+    "reader": [
+     2,
+     0
+    ]
+   },
+   {
+    "expect": [
+     {
+      "complete_end_byte": 1752,
+      "lines": [],
+      "lines_from": "o1752",
+      "next_complete_byte": 1752,
+      "origin_byte": 1752,
+      "read_end_byte": 1752,
+      "reader": [
+       3,
+       0
+      ],
+      "rows": "rows-empty-window.json",
+      "start_byte": 1752
+     }
+    ],
+    "from_byte": 1752,
+    "name": "bind-c-at-the-end-has-no-question-state",
+    "op": "bind_reader",
+    "reader": [
+     3,
+     0
+    ]
+   },
+   {
+    "end_byte": 1252,
+    "expect": [
+     {
+      "complete_end_byte": 1252,
+      "lines": [
+       "0-130",
+       "130-249",
+       "249-362",
+       "362-541",
+       "541-744",
+       "744-1039",
+       "1039-1252"
+      ],
+      "lines_from": "o0",
+      "next_complete_byte": 1752,
+      "origin_byte": 0,
+      "read_end_byte": 1252,
+      "reader": [
+       2,
+       0
+      ],
+      "rows": "rows-kernel-o0-at1752.json",
+      "start_byte": 0
+     }
+    ],
+    "name": "replay-b-window-without-the-question-call",
+    "op": "replay_reader",
+    "reader": [
+     2,
+     0
+    ],
+    "start_byte": 0
+   },
+   {
+    "append": [
+     1752,
+     3836
+    ],
+    "expect": [
+     {
+      "complete_end_byte": 3836,
+      "lines": [
+       "1752-1920",
+       "1920-2272",
+       "2272-2549",
+       "2549-2771",
+       "2771-2973",
+       "2973-3141",
+       "3141-3322",
+       "3322-3427",
+       "3427-3544",
+       "3544-3701",
+       "3701-3836"
+      ],
+      "lines_from": "o0",
+      "next_complete_byte": 3836,
+      "origin_byte": 0,
+      "read_end_byte": 3836,
+      "reader": [
+       1,
+       0
+      ],
+      "rows": "rows-kernel-o0-at3836.json",
+      "start_byte": 0
+     },
+     {
+      "complete_end_byte": 3836,
+      "lines": [
+       "1752-1920",
+       "1920-2272",
+       "2272-2549",
+       "2549-2771",
+       "2771-2973",
+       "2973-3141",
+       "3141-3322",
+       "3322-3427",
+       "3427-3544",
+       "3544-3701",
+       "3701-3836"
+      ],
+      "lines_from": "o0",
+      "next_complete_byte": 3836,
+      "origin_byte": 0,
+      "read_end_byte": 3836,
+      "reader": [
+       2,
+       0
+      ],
+      "rows": "rows-kernel-o0-at3836.json",
+      "start_byte": 0
+     },
+     {
+      "complete_end_byte": 3836,
+      "lines": [
+       "1752-1920",
+       "1920-2272",
+       "2272-2549",
+       "2549-2771",
+       "2771-2973",
+       "2973-3141",
+       "3141-3322",
+       "3322-3427",
+       "3427-3544",
+       "3544-3701",
+       "3701-3836"
+      ],
+      "lines_from": "o1752",
+      "next_complete_byte": 3836,
+      "origin_byte": 1752,
+      "read_end_byte": 3836,
+      "reader": [
+       3,
+       0
+      ],
+      "rows": "rows-kernel-o1752-at3836.json",
+      "start_byte": 1752
+     }
+    ],
+    "name": "append-accepted-output-and-rest",
+    "op": "advance"
+   }
+  ]
+ }
+}

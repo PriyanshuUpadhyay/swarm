@@ -1,0 +1,62 @@
+{
+ "out-1/numbers-input-cost-decimal/output-00.txt": {
+  "sha256": "6933a5f15090d6a371e0d120e03d5911f680cad4c5dce77623b5f7eb87bc10cf",
+  "parts": [
+   "888097a24f267e71-000.json"
+  ]
+ },
+ "out-1/numbers-input-cost-decimal/raw-full.txt": {
+  "sha256": "4120d21fe959a27764bc77e79da74fd88ed3fa4bf0f2f4dbdb77d651a1103a15",
+  "parts": [
+   "1aa000701f63ef5c-000.json"
+  ]
+ },
+ "out-1/numbers-input-cost-decimal/rows-full.txt": {
+  "sha256": "c83f34c8eaf0c69d2e866ad44b6259d208df13225401eb8c4c72cdee8d45e1a8",
+  "parts": [
+   "4cfc35477b884c63-000.json"
+  ]
+ },
+ "out-1/numbers-input-cost-zero/output-00.txt": {
+  "sha256": "5bf41d2333fd49d7bc411af668c7703a999152f0649b5531b16d9f7cea449816",
+  "parts": [
+   "cbec7cf15b4cb240-000.json"
+  ]
+ },
+ "out-1/numbers-input-cost-zero/raw-full.txt": {
+  "sha256": "08f761c50a8ed8c4d33a89d7721e910353cf4c723a234cfe1ad3dc8ed9053bf6",
+  "parts": [
+   "a388226d01476b97-000.json"
+  ]
+ },
+ "out-1/numbers-input-cost-zero/rows-full.txt": {
+  "sha256": "36dd1baf495ba2a55e8bc51982cb5f0abef7bb09a764988b4be6d5e4993b7236",
+  "parts": [
+   "9ca36f66264673ba-000.json"
+  ]
+ },
+ "out-1/numbers-input-duration-negzero/raw-full.txt": {
+  "sha256": "6c23fa6dd55796ba3b61efb544c1dcb8d731c293f95c7cd20d6aecdacc92005b",
+  "parts": [
+   "0e3a7edb662da7b0-000.json"
+  ]
+ },
+ "out-1/numbers-input-duration-negzero/rows-full.txt": {
+  "sha256": "222c9d004991d66782e18100a063ef93de1acf0a8d769cc408164d5764ae2938",
+  "parts": [
+   "5cd7448dc83e4f85-000.json"
+  ]
+ },
+ "out-1/numbers-input-negzero-whole-float/raw-full.txt": {
+  "sha256": "6ab80562539ea162906100d2a252f2d0b55a3a2a3b50612509901883463fc034",
+  "parts": [
+   "ca46d72ef3f390b2-000.json"
+  ]
+ },
+ "out-1/numbers-input-negzero-whole-float/rows-full.txt": {
+  "sha256": "cb6486c86420731609c57aba5a7c1ab3100ec6f6ae14a28a1634255c0762c4c2",
+  "parts": [
+   "c5ef44234f10ca79-000.json"
+  ]
+ }
+}

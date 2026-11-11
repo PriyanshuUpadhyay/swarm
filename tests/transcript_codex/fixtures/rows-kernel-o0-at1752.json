@@ -1,0 +1,165 @@
+[
+ {
+  "collapsed": true,
+  "id": "codex-u03:info@raw-0-0",
+  "kind": "notice",
+  "order": [
+   0,
+   0
+  ],
+  "source_ids": [
+   "raw-0-0"
+  ],
+  "text": "model: gpt-demo"
+ },
+ {
+  "collapsed": true,
+  "id": "codex-u03:info@raw-0-1",
+  "kind": "notice",
+  "order": [
+   0,
+   1
+  ],
+  "source_ids": [
+   "raw-0-1"
+  ],
+  "text": "cwd: /work/demo"
+ },
+ {
+  "collapsed": true,
+  "id": "event-raw-130-0@raw-130-0",
+  "kind": "notice",
+  "order": [
+   130,
+   0
+  ],
+  "source_ids": [
+   "raw-130-0"
+  ],
+  "text": "model: gpt-demo-2"
+ },
+ {
+  "collapsed": true,
+  "id": "event-raw-130-1@raw-130-1",
+  "kind": "notice",
+  "order": [
+   130,
+   1
+  ],
+  "source_ids": [
+   "raw-130-1"
+  ],
+  "text": "cwd: /work/demo/sub"
+ },
+ {
+  "collapsed": true,
+  "id": "record-raw-249-0@raw-249-0",
+  "kind": "system",
+  "order": [
+   249,
+   0
+  ],
+  "output": {
+   "full_bytes": 193,
+   "full_lines": 10,
+   "hidden_lines": 0,
+   "id": "raw-249-0:output",
+   "text": "{\n  \"type\": \"turn_started\",\n  \"meta\": {\n    \"session_id\": \"codex-u03\",\n    \"uuid\": \"\",\n    \"timestamp\": \"2026-11-05T09:00:02.000Z\",\n    \"parent_uuid\": null,\n    \"source_tool_use_id\": null\n  }\n}"
+  },
+  "source_ids": [
+   "raw-249-0"
+  ],
+  "system_kind": "record",
+  "text": "turn_started"
+ },
+ {
+  "id": "user-1@raw-362-0",
+  "kind": "user",
+  "order": [
+   362,
+   0
+  ],
+  "source_ids": [
+   "raw-362-0"
+  ],
+  "text": "list the files"
+ },
+ {
+  "id": "say-1@raw-541-0",
+  "kind": "assistant",
+  "order": [
+   541,
+   0
+  ],
+  "source_ids": [
+   "raw-541-0"
+  ],
+  "text": "I will look."
+ },
+ {
+  "collapsed": true,
+  "id": "record-raw-744-0@raw-744-0",
+  "kind": "system",
+  "order": [
+   744,
+   0
+  ],
+  "output": {
+   "full_bytes": 509,
+   "full_lines": 22,
+   "hidden_lines": 0,
+   "id": "raw-744-0:output",
+   "text": "{\n  \"type\": \"usage\",\n  \"source\": \"codex\",\n  \"kind\": \"context\",\n  \"context_tokens\": 120,\n  \"context_capacity_tokens\": 200,\n  \"input_tokens\": 100,\n  \"output_tokens\": 20,\n  \"cache_read_tokens\": 80,\n  \"cache_write_tokens\": null,\n  \"session_input_tokens\": 9000,\n  \"session_output_tokens\": 1000,\n  \"cost_usd\": null,\n  \"cost_completeness\": \"unknown\",\n  \"meta\": {\n    \"session_id\": \"codex-u03\",\n    \"uuid\": \"\",\n    \"timestamp\": \"2026-11-05T09:00:05.000Z\",\n    \"parent_uuid\": null,\n    \"source_tool_use_id\": null\n  }\n}"
+  },
+  "source_ids": [
+   "raw-744-0"
+  ],
+  "system_kind": "record",
+  "text": "usage \u00b7 context"
+ },
+ {
+  "detail": "{\"cmd\":\"ls -la\",\"yield_time_ms\":1000}",
+  "id": "exec-1:call@raw-1039-0",
+  "kind": "toolUse",
+  "order": [
+   1039,
+   0
+  ],
+  "source_ids": [
+   "raw-1039-0",
+   "raw-1518-0"
+  ],
+  "text": "exec_command \u00b7 ls -la",
+  "tool": {
+   "command": "ls -la",
+   "duration_seconds": 2.0,
+   "header_title": "ls -la",
+   "input": {
+    "cmd": "ls -la",
+    "yield_time_ms": 1000
+   },
+   "name": "exec_command",
+   "output": {
+    "full_bytes": 80,
+    "full_lines": 5,
+    "hidden_lines": 0,
+    "id": "raw-1518-0:output",
+    "text": "Chunk ID: c1\nWall time: 0.2 seconds\nProcess exited with code 0\nOutput:\nfile.txt\n"
+   },
+   "state": "finished"
+  },
+  "tool_status": "pending"
+ },
+ {
+  "id": "call-q:ask@raw-1252-0",
+  "kind": "question",
+  "order": [
+   1252,
+   0
+  ],
+  "source_ids": [
+   "raw-1252-0"
+  ],
+  "text": "Go?"
+ }
+]

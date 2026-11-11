@@ -111,10 +111,49 @@ export type Row = {
   order: [number, number];
 };
 
-export type RowPage = { page: Page; rows: Row[]; usage: unknown; remove?: string[] };
+// Unknown or absent body modes select plain text.
+export type BodyMode = string | null;
+
+export type Display = { blocks: Block[] };
+
+export type Block =
+  | { type: "paragraph"; value: Inline[] }
+  | { type: "heading"; value: { depth: number; children: Inline[] } }
+  | { type: "thematic_break" }
+  | { type: "blockquote"; value: Block[] }
+  | { type: "list"; value: { ordered: boolean; start: number | null; tight: boolean; items: Block[][] } }
+  | { type: "code"; value: { label: string | null; text: string; diff?: Extract<PatchInfo, { lines: unknown }> | { prefix: { kind: PatchLineWire["kind"]; text: string }[] } } }
+  | { type: "table"; value: { source: string; align: Align[]; head: Inline[][]; rows: Inline[][][] } }
+  | { type: "later"; value: string };
+
+export type Inline =
+  | { type: "text"; value: string }
+  | { type: "emphasis"; value: Inline[] }
+  | { type: "strong"; value: Inline[] }
+  | { type: "delete"; value: Inline[] }
+  | { type: "code"; value: string }
+  | { type: "break" }
+  | { type: "link"; value: { url: string; title: string | null; children: Inline[] } }
+  | { type: "later"; value: string };
+
+export type Align = "none" | "left" | "center" | "right";
+
+export type PatchLineWire = { kind: "add" | "del" | "ctx" | "hunk" | "meta"; text: string; old?: number; new?: number; quote?: string };
+export type PatchSplitWire = { h: number } | { l: number | null; r: number | null };
+export type PatchInfo = { lines: PatchLineWire[]; split: PatchSplitWire[] } | { kinds: PatchLineWire["kind"][] };
+
+export type FindPart = { f: string; p?: string } | { t: string };
+/** Zero-based UTF-16 offset into lowercase text; fold is the submitted parent row ID. */
+export type FindMatch = { id: string; fold: string | null; offset: number; occurrence: number; preview?: string; line?: number; lineOccurrence?: number };
+export type FindSnapshot = { version: 1; query: string; rows: readonly Row[]; find: Record<string, readonly FindPart[]>; full: Record<string, string> };
+
+// Keep equal to ROWS_FIND_LIMIT in src/serve/row_pages.rs.
+export const FIND_ROWS_LIMIT_BYTES = 16 * 1024 * 1024;
+
+export type RowPage = { page: Page; rows: Row[]; usage: unknown; remove?: string[]; display?: Record<string, Display>; body?: Record<string, BodyMode> | null; patch?: Record<string, PatchInfo>; find?: Record<string, FindPart[]>; images?: Record<string, string[]> };
 
 /** One `rows` stream frame. `usage` is there only when it changed; null clears it. */
-export type RowFrame = { key: string; upsert?: Row[]; remove?: string[]; end_offset: number; usage?: unknown };
+export type RowFrame = { key: string; upsert?: Row[]; remove?: string[]; end_offset: number; usage?: unknown; display?: Record<string, Display>; body?: Record<string, BodyMode> | null; patch?: Record<string, PatchInfo>; find?: Record<string, FindPart[]>; images?: Record<string, string[]> };
 
 export type SubscribeKey = { key: string; from: number; view: "rows" };
 
@@ -184,6 +223,16 @@ export class Api {
     return (body ? JSON.parse(body) : null) as T;
   }
 
+  findRows(snapshot: FindSnapshot, signal: AbortSignal): Promise<{ version: 1; matches: FindMatch[] }> {
+    const body = JSON.stringify(snapshot);
+    if (new TextEncoder().encode(body).byteLength > FIND_ROWS_LIMIT_BYTES) {
+      return Promise.reject(new ApiError(413, "find snapshot exceeds size limit"));
+    }
+    return this.json("/api/rows", {
+      method: "POST", signal, headers: { "Content-Type": "application/json" }, body,
+    });
+  }
+
   snapshot(): Promise<Snapshot> {
     return this.json("/api/snapshot");
   }
@@ -195,9 +244,9 @@ export class Api {
   }
 
   /** The full text behind a capped preview: a tool or shell output, or a diff's whole patch. */
-  async toolOutput(session: string, agent: string, row: string): Promise<string> {
+  async toolOutput(session: string, agent: string, row: string): Promise<{ text: string; patch?: PatchInfo }> {
     const q = new URLSearchParams({ session, agent, row });
-    return (await this.json<{ text: string }>(`/api/tool-output?${q}`)).text;
+    return this.json(`/api/tool-output?${q}`);
   }
 
   tree(view: TreeName): Promise<TreeView> {

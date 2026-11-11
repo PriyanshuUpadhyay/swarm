@@ -25,15 +25,14 @@ use std::{
     task::{Context, Poll, Waker},
     time::Duration,
 };
-use swarm::view::transcript::{self as view, Record, Row};
+#[cfg(test)]
+use swarm::view::transcript::Record;
+use swarm::view::transcript::{self as view, Row};
 use swarm::view::{
     changes, choices, choices_store, claude_text, discovery, fields, handoff, lifecycle,
     navigation, queue, tabs, tree, workspace_panel,
 };
-use tokio::{
-    io::{AsyncBufReadExt, BufReader},
-    sync::{mpsc, oneshot, watch},
-};
+use tokio::sync::{mpsc, oneshot, watch};
 use tokio_stream::Stream;
 
 const QUEUE_LIMIT: usize = 1024;
@@ -46,7 +45,7 @@ fn error(status: StatusCode, message: &str) -> ApiError {
 
 struct Server {
     root: PathBuf,
-    tool: PathBuf,
+    sources: source_backend::Sources,
     port: u16,
     /// A `swarm ui` server, which writes its record; only it can restart on a new build.
     ui: bool,
@@ -158,6 +157,8 @@ struct Follower {
     done: watch::Receiver<bool>,
     rows: Option<LiveRows>,
     rendering_rows: bool,
+    rows_version: u64,
+    rows_changed: watch::Sender<()>,
 }
 
 impl Hub {
@@ -273,8 +274,7 @@ mod lifecycle_routes;
 use lifecycle_routes::*;
 
 mod live_delta;
-
-mod live_render;
+use live_delta::row_frame;
 
 mod live_rows;
 use live_rows::*;
@@ -298,6 +298,9 @@ mod prompt_actions;
 use prompt_actions::*;
 
 mod row_pages;
+mod source_backend;
+#[allow(dead_code)]
+mod transcript_caller;
 use row_pages::*;
 
 mod runtime;
@@ -360,3 +363,19 @@ mod tests {
 
     include!("../tests/serve_handoff/mod.rs");
 }
+
+#[cfg(test)]
+#[path = "serve/tests/s9a_routes.rs"]
+mod s9a_routes;
+
+#[cfg(test)]
+#[path = "serve/tests/s9b_routes.rs"]
+mod s9b_routes;
+
+#[cfg(test)]
+#[path = "serve/tests/s9c_routes.rs"]
+mod s9c_routes;
+
+#[cfg(test)]
+#[path = "serve/tests/s9d_routes.rs"]
+mod s9d_routes;

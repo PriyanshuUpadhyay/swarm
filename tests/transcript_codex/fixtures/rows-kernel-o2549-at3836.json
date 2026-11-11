@@ -1,0 +1,168 @@
+[
+ {
+  "id": "call-b:answer@raw-2549-0",
+  "kind": "result",
+  "order": [
+   2549,
+   0
+  ],
+  "source_ids": [
+   "raw-2549-0"
+  ],
+  "text": "B1\nA1"
+ },
+ {
+  "fold": {
+   "commands": 1,
+   "duration_seconds": 4.0,
+   "failed": 0,
+   "interrupted": 0,
+   "latest_title": "",
+   "other_tools": [
+    {
+     "count": 1,
+     "name": "send_message_to_user_async"
+    }
+   ],
+   "rings": 0,
+   "state": "finished",
+   "text": "1 command \u00b7 send_message_to_user_async",
+   "unreported": 0,
+   "waits": 0
+  },
+  "id": "fold:call-m:call@raw-2771-0",
+  "kind": "fold",
+  "order": [
+   2771,
+   0
+  ],
+  "source_ids": [
+   "raw-2771-0",
+   "raw-2973-0",
+   "raw-3141-0",
+   "raw-3544-0",
+   "raw-3322-0",
+   "raw-3427-0"
+  ],
+  "steps": [
+   {
+    "detail": "{\"message\":\"hi\"}",
+    "id": "call-m:call@raw-2771-0",
+    "kind": "toolUse",
+    "order": [
+     2771,
+     0
+    ],
+    "source_ids": [
+     "raw-2771-0",
+     "raw-2973-0"
+    ],
+    "text": "send_message_to_user_async",
+    "tool": {
+     "duration_seconds": 1.0,
+     "header_title": "",
+     "input": {
+      "message": "hi"
+     },
+     "name": "send_message_to_user_async",
+     "output": {
+      "full_bytes": 17,
+      "full_lines": 1,
+      "hidden_lines": 0,
+      "id": "raw-2973-0:output",
+      "text": "{\"accepted\":true}"
+     },
+     "state": "finished"
+    },
+    "tool_status": "pending"
+   },
+   {
+    "detail": "\"not json {\"",
+    "id": "call-bad:call@raw-3141-0",
+    "kind": "toolUse",
+    "order": [
+     3141,
+     0
+    ],
+    "source_ids": [
+     "raw-3141-0",
+     "raw-3544-0"
+    ],
+    "text": "exec_command \u00b7 not json {",
+    "tool": {
+     "command": "not json {",
+     "duration_seconds": 3.0,
+     "header_title": "not json {",
+     "input": "not json {",
+     "name": "exec_command",
+     "output": {
+      "full_bytes": 4,
+      "full_lines": 1,
+      "hidden_lines": 0,
+      "id": "raw-3544-0:output",
+      "text": "boom"
+     },
+     "state": "finished"
+    },
+    "tool_status": "pending"
+   },
+   {
+    "collapsed": true,
+    "id": "record-raw-3322-0@raw-3322-0",
+    "kind": "system",
+    "order": [
+     3322,
+     0
+    ],
+    "output": {
+     "full_bytes": 132,
+     "full_lines": 8,
+     "hidden_lines": 0,
+     "id": "raw-3322-0:output",
+     "text": "{\n  \"timestamp\": \"2026-11-05T09:00:16.000Z\",\n  \"type\": \"event_msg\",\n  \"payload\": {\n    \"type\": \"token_count\",\n    \"info\": null\n  }\n}"
+    },
+    "source_ids": [
+     "raw-3322-0"
+    ],
+    "system_kind": "record",
+    "text": "ignored \u00b7 event_msg/token_count"
+   },
+   {
+    "collapsed": true,
+    "id": "record-raw-3427-0@raw-3427-0",
+    "kind": "system",
+    "order": [
+     3427,
+     0
+    ],
+    "output": {
+     "full_bytes": 144,
+     "full_lines": 8,
+     "hidden_lines": 0,
+     "id": "raw-3427-0:output",
+     "text": "{\n  \"timestamp\": \"2026-11-05T09:00:17.000Z\",\n  \"type\": \"event_msg\",\n  \"payload\": {\n    \"type\": \"exec_command_end\",\n    \"call_id\": \"exec-1\"\n  }\n}"
+    },
+    "source_ids": [
+     "raw-3427-0"
+    ],
+    "system_kind": "record",
+    "text": "ignored \u00b7 event_msg/exec_command_end"
+   }
+  ],
+  "text": "1 command \u00b7 send_message_to_user_async"
+ },
+ {
+  "detail": "2m 20s",
+  "ends_turn": true,
+  "id": "event-raw-3701-0@raw-3701-0",
+  "kind": "result",
+  "order": [
+   3701,
+   0
+  ],
+  "source_ids": [
+   "raw-3701-0"
+  ],
+  "text": "completed"
+ }
+]

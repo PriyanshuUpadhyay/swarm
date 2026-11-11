@@ -415,7 +415,7 @@ pub fn patch(
     }
     stable(&read, mode, base, Some(path), &before, &pair)?;
     Ok(
-        json!({"path":path,"layer":layer,"patch":preview.text,"is_truncated":preview.is_truncated,
+        json!({"path":path,"layer":layer,"patch":preview.text,"display":super::transcript::patch_wire::changes_patch(&preview.text),"is_truncated":preview.is_truncated,
         "full_lines":preview.full_lines,"full_bytes":preview.full_bytes,"hidden_lines":preview.hidden_lines,"added":file.added,"removed":file.removed}),
     )
 }

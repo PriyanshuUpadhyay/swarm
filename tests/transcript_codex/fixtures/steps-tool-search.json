@@ -1,0 +1,35 @@
+{
+ "snapshot_groups": [
+  {
+   "input": "codex-tool-search.jsonl",
+   "lines_files": {
+    "o0": [
+     "lines-tool-search.json"
+    ]
+   },
+   "name": "tool-search",
+   "snapshots": [
+    {
+     "end": 470,
+     "label": "tool-json-numbers-keep-the-old-spelling",
+     "lines": [
+      "0-149",
+      "149-470"
+     ],
+     "lines_from": "o0",
+     "payload_has": [
+      "\\\"default\\\":42,",
+      "\\\"minimum\\\":0.0000001}"
+     ],
+     "payload_lacks": [
+      "42.0",
+      "1e-7",
+      "1e-07"
+     ],
+     "rows": "rows-tool-search.json",
+     "start": 0
+    }
+   ]
+  }
+ ]
+}

@@ -267,6 +267,64 @@ fn row_routes_guard_input_cap_output_and_stream_stable_ids() {
             .0,
         404
     );
+    super::s9a_switch::journey();
+}
+
+/// A RowPage holds a `display` map beside `rows` (Step 5(g) slice S3, contract V1 R3 and V2 item 4). Its keys are the
+/// ids of the rows the painter shows as Markdown: the assistant row has an entry and the tool row has none. The
+/// first request has no follower and is built from the merged page. The second request comes after a subscription
+/// with the rows view has made a running follower, and is served from its cached tail. Only keys are read.
+#[test]
+fn row_pages_hold_display_keys_for_the_merged_page_and_the_cached_tail() {
+    let server = Server::new();
+    let answer = json!({"type":"assistant","uuid":"display-answer","message":{"content":[{"type":"text","text":"**bold** answer"}]}}).to_string()+"\n";
+    let call = json!({"type":"assistant","uuid":"display-call","message":{"content":[{"type":"tool_use","id":"display-tool","name":"Bash","input":{"command":"print"}}]}}).to_string()+"\n";
+    fs::write(&server.log, format!("{answer}{call}")).unwrap();
+    let page_path = format!("/api/rows?session={}&agent=chair&tail=200", server.session);
+    let keys = |server: &Server| {
+        let (status, _, body) = server.request("GET", &page_path, "", "", true);
+        assert_eq!(status, 200, "{body}");
+        let page: Value = serde_json::from_str(&body).unwrap();
+        let rows = page["rows"].as_array().unwrap();
+        let assistant_ids = rows
+            .iter()
+            .filter(|row| row["kind"] == "assistant")
+            .map(|row| row["id"].as_str().unwrap().to_owned())
+            .collect::<Vec<_>>();
+        let mut shown = page["display"]
+            .as_object()
+            .map(|map| map.keys().cloned().collect::<Vec<_>>())
+            .unwrap_or_default();
+        shown.sort();
+        (rows.len(), assistant_ids, shown)
+    };
+
+    let merged = keys(&server);
+    let mut live = server.sse();
+    let stream_id = named_event(&mut live, "hello")["stream"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let subscription = json!({"stream":stream_id,"keys":[{"key":format!("{}:chair",server.session),"from":fs::metadata(&server.log).unwrap().len(),"view":"rows"}]}).to_string();
+    let (status, _, body) = server.request(
+        "POST",
+        "/api/subscribe",
+        "Content-Type: application/json\r\n",
+        &subscription,
+        true,
+    );
+    assert_eq!(status, 200, "{body}");
+    let cached = keys(&server);
+
+    let observed = vec![("merged page", merged), ("cached tail", cached)];
+    let answer_id = observed[0].1.1.clone();
+    assert_eq!(
+        observed,
+        vec![
+            ("merged page", (2, answer_id.clone(), answer_id.clone())),
+            ("cached tail", (2, answer_id.clone(), answer_id)),
+        ]
+    );
 }
 
 /// pi has no hook to report its log, so the server finds it by the session id that `launch` gave
@@ -277,7 +335,7 @@ fn a_pi_log_is_found_by_its_session_id() {
     let sessions = server.dir.join("home/.pi/agent/sessions/--work--");
     fs::create_dir_all(&sessions).unwrap();
     let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("packages/transcript/src/fixtures/pi-chat.jsonl");
+        .join("tests/fixtures/provider-logs/pi-chat.jsonl");
     let connection = swarm::store::open(&server.dir.join("home/.swarm/swarm.db")).unwrap();
     let chair = format!("{}-orchestrator", server.session);
     swarm::store::set_chair(&connection, &server.session, Some(("pi", &chair))).unwrap();
@@ -342,3 +400,66 @@ fn a_claude_chair_log_is_found_by_its_id_before_its_hook_stores_it() {
     let (status, _, body) = server.request("GET", &rows, "", "", true);
     assert_eq!(status, 200, "{body}");
 }
+
+#[test]
+fn patch_entries_cover_tool_diffs_fold_steps_and_full_output() {
+    let fixture: Value = serde_json::from_str(include_str!("patch-wire.json")).unwrap();
+    let server = Server::new();
+    let log = fixture["log"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(Value::to_string)
+        .collect::<Vec<_>>()
+        .join("\n")
+        + "\n";
+    fs::write(&server.log, log).unwrap();
+    let path = format!("/api/rows?session={}&agent=chair&tail=200", server.session);
+    let (status, _, body) = server.request("GET", &path, "", "", true);
+    assert_eq!(status, 200, "{body}");
+    let page: Value = serde_json::from_str(&body).unwrap();
+    let mut expected = serde_json::Map::new();
+    let mut full = Vec::new();
+    let mut wanted = Vec::new();
+    let mut direct = false;
+    let mut nested = false;
+    let mut text = false;
+    let mut stack: Vec<_> = page["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| (r, false))
+        .collect();
+    while let Some((row, step)) = stack.pop() {
+        if let Some(steps) = row["steps"].as_array() {
+            stack.extend(steps.iter().map(|r| (r, true)));
+        }
+        if let Some(diffs) = row["tool"]["diffs"].as_array() {
+            for diff in diffs {
+                direct |= !step;
+                nested |= step;
+                let id = diff["id"].as_str().unwrap();
+                expected.insert(id.to_owned(), fixture["diff"].clone());
+                let path = format!(
+                    "/api/tool-output?session={}&agent=chair&row={id}",
+                    server.session
+                );
+                let (status, _, body) = server.request("GET", &path, "", "", true);
+                assert_eq!(status, 200, "{body}");
+                full.push(serde_json::from_str::<Value>(&body).unwrap()["patch"].clone());
+                wanted.push(fixture["diff"].clone());
+            }
+        }
+        if row["tool"]["name"] == "Bash" {
+            text = true;
+            let id = row["tool"]["output"]["id"].as_str().unwrap();
+            expected.insert(id.to_owned(), fixture["text"].clone());
+        }
+    }
+    assert!(direct && nested && text);
+    assert_eq!(page["patch"], Value::Object(expected));
+    assert_eq!(full, wanted);
+}
+
+#[path = "fence_wire.rs"]
+mod fence_wire;

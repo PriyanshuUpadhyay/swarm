@@ -1,0 +1,108 @@
+{
+ "source_id": "chunks",
+ "note": "events and positions are the OLD native values; read/complete ends follow the ABI (read end = bytes accepted, complete end = after the last LF)",
+ "policies": {
+  "snapshot_eof": {
+   "read_end_byte": 162,
+   "complete_end_byte": 113,
+   "lines": [
+    {
+     "start_byte": 0,
+     "end_byte": 57,
+     "terminated": true,
+     "events": [
+      {
+       "type": "user_message_chunk",
+       "text": "héllo 😀 one",
+       "meta": {
+        "session_id": "",
+        "uuid": "",
+        "timestamp": "",
+        "parent_uuid": null,
+        "source_tool_use_id": null
+       }
+      }
+     ]
+    },
+    {
+     "start_byte": 57,
+     "end_byte": 113,
+     "terminated": true,
+     "events": [
+      {
+       "type": "user_message_chunk",
+       "text": "two ✓ 日本",
+       "meta": {
+        "session_id": "",
+        "uuid": "",
+        "timestamp": "",
+        "parent_uuid": null,
+        "source_tool_use_id": null
+       }
+      }
+     ]
+    },
+    {
+     "start_byte": 113,
+     "end_byte": 162,
+     "terminated": false,
+     "events": [
+      {
+       "type": "user_message_chunk",
+       "text": "tail 😀",
+       "meta": {
+        "session_id": "",
+        "uuid": "",
+        "timestamp": "",
+        "parent_uuid": null,
+        "source_tool_use_id": null
+       }
+      }
+     ]
+    }
+   ]
+  },
+  "complete_lines": {
+   "read_end_byte": 162,
+   "complete_end_byte": 113,
+   "lines": [
+    {
+     "start_byte": 0,
+     "end_byte": 57,
+     "terminated": true,
+     "events": [
+      {
+       "type": "user_message_chunk",
+       "text": "héllo 😀 one",
+       "meta": {
+        "session_id": "",
+        "uuid": "",
+        "timestamp": "",
+        "parent_uuid": null,
+        "source_tool_use_id": null
+       }
+      }
+     ]
+    },
+    {
+     "start_byte": 57,
+     "end_byte": 113,
+     "terminated": true,
+     "events": [
+      {
+       "type": "user_message_chunk",
+       "text": "two ✓ 日本",
+       "meta": {
+        "session_id": "",
+        "uuid": "",
+        "timestamp": "",
+        "parent_uuid": null,
+        "source_tool_use_id": null
+       }
+      }
+     ]
+    }
+   ]
+  }
+ }
+}

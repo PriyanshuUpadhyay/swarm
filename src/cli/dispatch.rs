@@ -107,6 +107,9 @@ pub(crate) fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     match args {
         [cmd, recipient, kind] if cmd == "send" => {
             let body = std::io::read_to_string(std::io::stdin())?;
+            if body.trim().is_empty() {
+                return Err("swarm: send body is empty; pipe a non-empty body on stdin".into());
+            }
             let seq = deliver(
                 &mut connection,
                 &root,

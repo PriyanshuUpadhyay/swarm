@@ -25,7 +25,7 @@ formula=$tap/swarm
 if "$dry"; then
     printf '%s\n' \
         "Resolve $ref to $commit (package $version; Homebrew $local_version)." \
-        'Check macOS arm64, Zig 0.16.0, Node 22, pnpm 11.15.1, and the build tools.' \
+        'Check macOS arm64, Node 22, pnpm 11.15.1, and the build tools.' \
         "Create a clean temporary detached worktree at $commit." \
         'Run SWARM_RELEASE_BUILD=1 make -C <worktree>/ui package.' \
         "Run brew tap $tap; refuse a changed tap formula or an active local install." \
@@ -40,18 +40,17 @@ if "$dry"; then
 fi
 
 [ "$(uname -s)/$(uname -m)" = Darwin/arm64 ] || die 'the package needs an arm64 Mac'
-for tool in brew make zig node pnpm cargo swift jq python3 shasum; do
+for tool in brew make node pnpm cargo swift jq python3 shasum; do
     command -v "$tool" >/dev/null || die "missing tool $tool"
 done
 # The owner's own tools may be newer than release.yml's pins; mise can supply the pinned ones.
-case "$(zig version 2>/dev/null)/$(pnpm --version 2>/dev/null)/$(node --version 2>/dev/null)" in
-    0.16.0/11.15.1/v22.*) pinned=true ;;
+case "$(pnpm --version 2>/dev/null)/$(node --version 2>/dev/null)" in
+    11.15.1/v22.*) pinned=true ;;
     *) pinned=false ;;
 esac
 if ! "$pinned" && [ -z "${SWARM_INSTALL_LOCAL_PINNED:-}" ] && command -v mise >/dev/null; then
-    SWARM_INSTALL_LOCAL_PINNED=1 exec mise exec zig@0.16.0 pnpm@11.15.1 node@22 -- "$0" "$@"
+    SWARM_INSTALL_LOCAL_PINNED=1 exec mise exec pnpm@11.15.1 node@22 -- "$0" "$@"
 fi
-[ "$(zig version)" = 0.16.0 ] || die 'Release needs Zig 0.16.0'
 case "$(node --version)" in v22.*) ;; *) die 'Release needs Node 22' ;; esac
 [ "$(pnpm --version)" = 11.15.1 ] || die 'Release needs pnpm 11.15.1'
 export HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_ANALYTICS=1 HOMEBREW_NO_ASK=1

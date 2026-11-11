@@ -1,0 +1,189 @@
+[
+  {
+    "id": "hand-present",
+    "body": {
+      "kind": "tree",
+      "display": {
+        "blocks": [
+          {
+            "type": "heading",
+            "value": {
+              "depth": 2,
+              "children": [
+                {
+                  "type": "emphasis",
+                  "value": [
+                    {
+                      "type": "strong",
+                      "value": [
+                        {
+                          "type": "delete",
+                          "value": [
+                            {
+                              "type": "link",
+                              "value": {
+                                "url": "https://e.test",
+                                "title": null,
+                                "children": [
+                                  {
+                                    "type": "text",
+                                    "value": "ready"
+                                  }
+                                ]
+                              }
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "type": "list",
+            "value": {
+              "ordered": false,
+              "start": null,
+              "tight": true,
+              "items": [
+                [
+                  {
+                    "type": "blockquote",
+                    "value": [
+                      {
+                        "type": "paragraph",
+                        "value": [
+                          {
+                            "type": "code",
+                            "value": "x"
+                          },
+                          {
+                            "type": "break"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              ]
+            }
+          },
+          {
+            "type": "table",
+            "value": {
+              "source": "| h |",
+              "align": [
+                "none"
+              ],
+              "head": [
+                [
+                  {
+                    "type": "text",
+                    "value": "h"
+                  }
+                ]
+              ],
+              "rows": [
+                [
+                  [
+                    {
+                      "type": "text",
+                      "value": "v"
+                    }
+                  ]
+                ]
+              ]
+            }
+          },
+          {
+            "type": "thematic_break"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "hand-absent",
+    "body": {
+      "kind": "plain"
+    }
+  },
+  {
+    "id": "hand-missing-entry",
+    "body": {
+      "kind": "plain"
+    }
+  },
+  {
+    "id": "hand-later-inline",
+    "body": {
+      "kind": "plain"
+    }
+  },
+  {
+    "id": "hand-later-block",
+    "body": {
+      "kind": "plain"
+    }
+  },
+  {
+    "id": "hand-mixed-patch",
+    "body": {
+      "kind": "tree",
+      "display": {
+        "blocks": [
+          {
+            "type": "paragraph",
+            "value": [
+              {
+                "type": "text",
+                "value": "before"
+              }
+            ]
+          },
+          {
+            "type": "code",
+            "value": {
+              "label": "diff",
+              "text": "@@ -1 +1 @@\n-a\n+b\n",
+              "diff": {
+                "prefix": [
+                  {
+                    "kind": "ctx",
+                    "text": "later metadata is not a Display node"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "type": "paragraph",
+            "value": [
+              {
+                "type": "text",
+                "value": "after"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "hand-mixed-patch-later",
+    "body": {
+      "kind": "plain"
+    }
+  },
+  {
+    "id": "hand-empty-text",
+    "body": {
+      "kind": "tree",
+      "display": {
+        "blocks": []
+      }
+    }
+  }
+]

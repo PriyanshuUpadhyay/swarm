@@ -21,6 +21,18 @@ pub(super) struct Fixture {
     pub(super) log: PathBuf,
 }
 
+pub(super) fn real_worker(override_env: &str) -> PathBuf {
+    let path: PathBuf = std::env::var_os(override_env)
+        .map(PathBuf::from)
+        .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("target/debug/swarm"));
+    assert!(
+        path.is_file(),
+        "build the real swarm worker with cargo build --features serve --bins; {override_env} may name that binary ({})",
+        path.display()
+    );
+    path
+}
+
 impl Fixture {
     /// A new chat in `src`, a folder of the workspace that the owner archived (the crate root).
     pub(super) fn chat_in_archived_workspace(&self) -> String {
@@ -49,10 +61,21 @@ impl Fixture {
     pub(super) fn at(dir: PathBuf) -> Self {
         let root = dir.join("home/.swarm");
         std::fs::create_dir_all(&root).unwrap();
+        let worker = real_worker("S9A_SWARM");
+        let executable = swarm::adapter::shell_line(&[worker.to_string_lossy().into_owned()]);
+        std::fs::create_dir_all(root.join("adapters")).unwrap();
+        // Adapter callbacks must run the CLI, not this unit test harness.
+        std::fs::write(
+            root.join("adapters/tmux-swarm.conf"),
+            swarm::adapter::shipped("tmux-swarm")
+                .unwrap()
+                .replace("\"$SWARM_EXE\"", &executable),
+        )
+        .unwrap();
         let log = dir.join("chair.jsonl");
         std::fs::copy(
             Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("packages/transcript/src/fixtures/claude-chair-run.jsonl"),
+                .join("tests/fixtures/provider-logs/claude-chair-run.jsonl"),
             &log,
         )
         .unwrap();
@@ -69,10 +92,11 @@ impl Fixture {
         swarm::store::set_chair_log(&connection, &session, &log).unwrap();
         swarm::store::add_agent(&connection, &session, "worker", "chat").unwrap();
         let (actions, action_queue) = mpsc::channel(64);
+        let mut sources = source_backend::Sources::default();
+        sources.worker_cli = Some(worker);
         let app = Arc::new(Server {
+            sources,
             root,
-            tool: Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("packages/transcript/zig-out/bin/transcript"),
             port: 1,
             ui: true,
             token: "test".into(),
@@ -261,6 +285,7 @@ pub(super) fn reference_delta(state: &mut LiveRows, key: &str) -> Value {
     let upsert: Vec<_> = rows
         .iter()
         .filter(|row| previous.get(&row.id).is_none_or(|old| *old != *row))
+        .cloned()
         .collect();
     let current: HashSet<_> = rows.iter().map(|row| &row.id).collect();
     let remove: Vec<_> = state
@@ -270,7 +295,11 @@ pub(super) fn reference_delta(state: &mut LiveRows, key: &str) -> Value {
         .map(|row| &row.id)
         .collect();
     let usage = view::usage(&state.records.values().cloned().collect::<Vec<_>>());
-    let mut payload = json!({"key":key,"upsert":upsert,"remove":remove,"end_offset":state.end});
+    let display = view::markdown::row_displays(&upsert);
+    let patch = view::patch_wire::row_patches(&upsert);
+    let find = view::find_wire::row_finds(&upsert);
+    let images = view::image_paths::row_images(&upsert);
+    let mut payload = json!({"key":key,"upsert":upsert,"remove":remove,"end_offset":state.end,"display":display,"patch":patch,"find":find,"images":images});
     if usage != state.last_usage {
         payload["usage"] = json!(usage);
     }

@@ -1,0 +1,45 @@
+{
+ "0-149": {
+  "end_byte": 149,
+  "events": [
+   {
+    "input": {
+     "query": "limit"
+    },
+    "meta": {
+     "parent_uuid": null,
+     "session_id": "",
+     "source_tool_use_id": null,
+     "timestamp": "2026-11-05T11:00:00.000Z",
+     "uuid": ""
+    },
+    "name": "tool_search",
+    "status": "pending",
+    "tool_call_id": "ts-1",
+    "type": "tool_call"
+   }
+  ],
+  "start_byte": 0,
+  "terminated": true
+ },
+ "149-470": {
+  "end_byte": 470,
+  "events": [
+   {
+    "content": "[{\"type\":\"function\",\"name\":\"set_limit\",\"description\":\"Set a limit\",\"parameters\":{\"type\":\"object\",\"properties\":{\"limit\":{\"type\":\"number\",\"default\":42,\"minimum\":0.0000001}}}}]",
+    "meta": {
+     "parent_uuid": null,
+     "session_id": "",
+     "source_tool_use_id": null,
+     "timestamp": "2026-11-05T11:00:01.000Z",
+     "uuid": ""
+    },
+    "status": "completed",
+    "tool_call_id": "ts-1",
+    "type": "tool_call_update"
+   }
+  ],
+  "start_byte": 149,
+  "terminated": true
+ }
+}

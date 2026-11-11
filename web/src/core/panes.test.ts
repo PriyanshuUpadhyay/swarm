@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Agent, Api, Row, RowFrame, RowPage, Session, Snapshot, SubscribeKey } from "./api";
+import type { Agent, Api, FindSnapshot, Row, RowFrame, RowPage, Session, Snapshot, SubscribeKey } from "./api";
 import { App, paneId } from "./app";
 import { attachCommand, chatWidth, columns, columnWidth, MAX_SPLIT_CHATS, movePane, paneCells, paneStatus, saveSplit, splitShare } from "./panes";
 
@@ -129,8 +129,10 @@ function harness(agents: Agent[] = [chair, agent("reviewer", { created_at: 1 }),
   const api = {
     rows: async (_session: string, who: string): Promise<RowPage> => {
       rowCalls.push(who);
-      return { page: { start_offset: 0, end_offset: 10 }, rows: [row(`${who}-first`, `${who} says hello`)], usage: null };
+      return { page: { start_offset: 0, end_offset: 10 }, rows: [row(`${who}-first`, `${who} says hello`)], usage: null, find: { [`${who}-first`]: [{ f: "text" }] } };
     },
+    // Fixed answers for the existing "hello" focus case; matching belongs to the server.
+    findRows: async ({ rows }: FindSnapshot) => ({ version: 1, matches: [{ id: rows[0].id, fold: null, offset: rows[0].id === "chair-first" ? 11 : 14, occurrence: 0 }] }),
     action: log,
     // The child's Stop is the composer's interrupt, which posts and reads the reply.
     post: log,
@@ -297,11 +299,13 @@ describe("pane focus and zoom", () => {
       app.paneFocused("reviewer");
       app.openFind();
       app.setFindQuery("hello");
+      await settle();
       const pane = app.view.strip.panes.get("reviewer")!;
       expect(pane.find.matches.map((m) => m.id)).toEqual(["reviewer-first"]);
       expect(app.view.find.open).toBe(false);
       app.paneFocused(null);
       app.openFind();
+      await settle();
       expect(app.view.find.matches.map((m) => m.id)).toEqual(["chair-first"]);
       expect(app.view.strip.panes.get("reviewer")!.find.open).toBe(false);
     } finally {

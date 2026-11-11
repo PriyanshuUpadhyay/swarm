@@ -30,7 +30,7 @@ async fn large_turn_end_keeps_other_keys_running() {
             .map(|number| synthetic_event(number, true))
             .collect::<Vec<_>>(),
     );
-    state.delta("large");
+    row_frame("large", state.delta());
     {
         let mut hub = fixture.app.hub.lock().unwrap();
         let mut stream = client(&[("large", 30_000), ("small", 0)]);
@@ -51,6 +51,8 @@ async fn large_turn_end_keeps_other_keys_running() {
                     done,
                     rows: Some(rows),
                     rendering_rows: false,
+                    rows_version: 0,
+                    rows_changed: watch::channel(()).0,
                 },
             );
         }
