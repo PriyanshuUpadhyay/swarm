@@ -3,11 +3,13 @@ use super::{builder, fold_rows, queue};
 use serde::Serialize;
 use serde_json::Value;
 
+pub(super) mod checklist;
 mod events;
 mod records;
 mod shell;
 mod state;
 
+pub use checklist::TodoItem;
 pub use events::row;
 pub use records::Record;
 pub(super) use shell::shell_row;
@@ -34,6 +36,8 @@ pub enum RowKind {
     Divider,
     Fold,
     Queued,
+    TodoList,
+    ProposedPlan,
 }
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct CommandChip {
@@ -96,6 +100,9 @@ pub struct Row {
     pub fold: Option<super::FoldSummary>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub steps: Vec<Row>,
+    /// The checklist of a `todoList` row.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub todo: Vec<TodoItem>,
     #[serde(skip_serializing_if = "super::is_false")]
     pub default_open: bool,
     pub order: [u64; 2],
@@ -122,6 +129,7 @@ impl Row {
             output: None,
             fold: None,
             steps: Vec::new(),
+            todo: Vec::new(),
             default_open: false,
             order: [0, 0],
         }
@@ -154,6 +162,8 @@ impl Row {
             RowKind::Divider => "Context cleared".into(),
             RowKind::Fold => "Steps".into(),
             RowKind::Queued => "Queued".into(),
+            RowKind::TodoList => "To-do".into(),
+            RowKind::ProposedPlan => "Plan".into(),
         }
     }
     pub fn search_text(&self) -> String {
@@ -161,6 +171,7 @@ impl Row {
             return "New swarm message".into();
         }
         let mut parts = vec![self.text.as_str()];
+        parts.extend(self.todo.iter().map(|item| item.text.as_str()));
         if let Some(detail) = &self.detail {
             parts.push(detail);
         }

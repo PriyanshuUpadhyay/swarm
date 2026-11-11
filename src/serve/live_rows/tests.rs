@@ -317,3 +317,34 @@ fn failed_source_reads_fall_back_to_page_positions() {
     assert_eq!(state.records[&(1, 0)].event, events[0]);
     assert_eq!(state.end, 9);
 }
+
+#[test]
+fn live_checklists_match_the_stored_rows_and_show_only_the_newest() {
+    let fixture = Fixture::new();
+    std::fs::write(&fixture.log, "x\n".repeat(4)).unwrap();
+    let source = std::fs::File::open(&fixture.log).unwrap();
+    let list = |id: &str, status: &str| json!({"type":"tool_call","tool_call_id":id,"name":"TodoWrite","status":"pending","input":{"todos":[{"content":"Edit","status":status,"activeForm":"Editing"}]}});
+    let events = [
+        json!({"type":"turn_started"}),
+        list("t1", "in_progress"),
+        json!({"type":"tool_call_update","tool_call_id":"t1","status":"completed","content":"ok"}),
+        list("t2", "completed"),
+    ];
+    let mut live = LiveRows::empty(0, false);
+    let mut reference = LiveRows::empty(0, false);
+    for (index, event) in events.iter().enumerate() {
+        let (start, end) = (index as u64 * 2, index as u64 * 2 + 2);
+        reference.ingest(start, end, std::slice::from_ref(event));
+        live.ingest_log_line(&source, start, end, std::slice::from_ref(event));
+        live.delta("chat");
+    }
+    reference.shown = live.shown.clone();
+    let rows = live.rows();
+    assert_eq!(rows, reference.rows_full());
+    let lists: Vec<_> = rows
+        .iter()
+        .filter(|row| row.kind == view::RowKind::TodoList)
+        .collect();
+    assert_eq!(lists.len(), 2);
+    assert!(lists[0].collapsed && !lists[1].collapsed);
+}

@@ -1,6 +1,7 @@
 use super::tool;
+use super::transcript::checklist;
 use super::transcript::{
-    RECORD, Record, Row, RowKind, UNMAPPED, chip, meta, row, shell_row, string,
+    RECORD, Record, Row, RowKind, TodoItem, UNMAPPED, chip, meta, row, shell_row, string,
 };
 use super::{TextPreview, ToolActivity, ToolState};
 use serde_json::Value;
@@ -156,6 +157,7 @@ pub(super) fn rows_with_context(
             joined.insert(index);
         }
     }
+    let mut tasks: Vec<(String, TodoItem)> = Vec::new();
     let mut rows: Vec<Row> = Vec::new();
     let mut used = HashSet::new();
     let mut last_source_id = None;
@@ -172,6 +174,21 @@ pub(super) fn rows_with_context(
         let Some(mut row) = row(record) else {
             continue;
         };
+        if row.kind == RowKind::TodoList && checklist::is_task_change(string(event, "name")) {
+            let created_id = updates
+                .get(&index)
+                .and_then(|updates| updates.last())
+                .and_then(|update| records[*update].event["task_id"].as_str());
+            checklist::apply_task(
+                &mut tasks,
+                string(event, "name"),
+                &event["input"],
+                string(event, "tool_call_id"),
+                created_id,
+            );
+            row.todo = tasks.iter().map(|(_, item)| item.clone()).collect();
+            row.text = checklist::summary(&row.todo);
+        }
         if is_codex
             && (row.kind == RowKind::User || row.system_kind.as_deref() == Some("swarm_ring"))
         {
@@ -180,7 +197,9 @@ pub(super) fn rows_with_context(
             }
             prompt_expected = false;
         }
-        if string(event, "type") == "tool_call" {
+        if string(event, "type") == "tool_call"
+            && !matches!(row.kind, RowKind::TodoList | RowKind::ProposedPlan)
+        {
             let last_update = updates
                 .get(&index)
                 .and_then(|updates| updates.last())
@@ -336,6 +355,13 @@ pub(super) fn rows_with_context(
             turn_open = false;
         }
         row.collapsed = is_collapsed(row);
+    }
+    // The CLI shows only its current checklist, so an older one is hidden.
+    let current = rows.iter().rposition(|row| row.kind == RowKind::TodoList);
+    for (index, row) in rows.iter_mut().enumerate() {
+        if row.kind == RowKind::TodoList && Some(index) != current {
+            row.collapsed = true;
+        }
     }
     rows
 }

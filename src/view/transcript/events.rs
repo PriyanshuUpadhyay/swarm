@@ -1,6 +1,7 @@
 //! Transcript rows for individual events.
 
 use super::super::tool;
+use super::checklist;
 use super::{
     RECORD, Record, Row, RowKind, TextPreview, UNMAPPED, chip, is_record, key, meta, peer_text,
     record_text, shell_row, shell_run, string, tagged, task_summary,
@@ -10,6 +11,15 @@ pub fn row(record: &Record) -> Option<Row> {
     let event = &record.event;
     let event_type = string(event, "type");
     let text = string(event, "text");
+    if event_type == "tool_call"
+        && let Some(row) = checklist::tool_row(
+            string(event, "name"),
+            &event["input"],
+            format!("{}:call", string(event, "tool_call_id")),
+        )
+    {
+        return Some(row);
+    }
     let mut row = match event_type {
         "user_message_chunk" | "agent_message_chunk" | "agent_thought_chunk" => {
             let kind = match event_type {
@@ -19,6 +29,7 @@ pub fn row(record: &Record) -> Option<Row> {
             };
             Row::new(kind, text.into(), meta(event, "uuid").into())
         }
+        "proposed_plan" => Row::new(RowKind::ProposedPlan, text.into(), key(record, "plan")),
         "tool_call" => {
             let command = tool::command(&event["input"], string(event, "name"));
             let path = tool::path(&event["input"]);
