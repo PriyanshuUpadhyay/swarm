@@ -1,13 +1,10 @@
 // To-do list and plan rows: the checklist and the proposed plan that an agent CLI shows.
-import { CheckIcon, CircleIcon, LoaderCircleIcon } from "lucide-react";
 import type { Row, TodoItem } from "../core/api";
 import type { MarkdownCache } from "../core/markdown";
+import { todoText } from "../core/transcript";
+import { StatusGlyph, type Status } from "./status";
 
-function Glyph({ status }: { status: TodoItem["status"] }) {
-  if (status === "completed") return <CheckIcon aria-label="Done" className="glyph-slot text-done" />;
-  if (status === "in_progress") return <LoaderCircleIcon aria-label="In progress" className="glyph-slot working" />;
-  return <CircleIcon aria-label="Pending" className="glyph-slot text-muted-foreground" />;
-}
+const STATUS: Record<TodoItem["status"], Status> = { pending: "ended", in_progress: "working", completed: "done" };
 
 export function TodoRow({ row }: { row: Row }) {
   return (
@@ -16,8 +13,8 @@ export function TodoRow({ row }: { row: Row }) {
       <ul>
         {row.todo?.map((item, i) => (
           <li key={i} data-status={item.status}>
-            <Glyph status={item.status} />
-            <span className="todo-text">{item.status === "in_progress" && item.active_text ? item.active_text : item.text}</span>
+            <StatusGlyph status={STATUS[item.status]} />
+            <span className="todo-text">{todoText(item)}</span>
           </li>
         ))}
       </ul>

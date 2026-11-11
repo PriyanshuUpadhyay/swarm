@@ -2,7 +2,7 @@
 // skips rows the server marks `collapsed`, merges rows by id, places them by `order`, and keeps
 // the reader's open and closed choices.
 
-import type { Row } from "./api";
+import type { Row, TodoItem } from "./api";
 import { plural } from "./lifecycle-state";
 
 /** A queued row waits for the agent, so it sits after every logged row. */
@@ -115,7 +115,7 @@ export function searchText(row: Row): string {
     const parts: (string | undefined)[] = [row.kind === "fold" ? row.fold?.text : row.text, row.detail, row.output?.text, row.diff?.patch];
     const tool = row.tool;
     if (tool) parts.push(tool.name, tool.header_title, tool.command, tool.path, tool.output?.text, tool.skill_body?.text, ...(tool.diffs ?? []).map((d) => d.patch));
-    if (row.todo) parts.push(...row.todo.map((item) => item.text));
+    if (row.todo) parts.push(...row.todo.map(todoText));
     if (row.shell) parts.push(row.shell.command, row.shell.output.text);
     if (row.command) parts.push(row.command.name, row.command.arguments, row.command.skill_body?.text, row.command.output?.text);
     t = parts.filter(Boolean).join("\n").toLowerCase();
@@ -123,6 +123,9 @@ export function searchText(row: Row): string {
   searchCache.set(row, t);
   return t;
 }
+
+/** The text the page draws for a step: what it is doing now while it runs, else its name. */
+export const todoText = (item: TodoItem): string => (item.status === "in_progress" && item.active_text) || item.text;
 
 /** A find match: the row, and the fold that holds it when it is a step. */
 export type Match = { id: string; fold: Row | null; offset: number; occurrence: number; preview?: string; line?: number; lineOccurrence?: number };
@@ -167,7 +170,7 @@ export function findMatches(rows: readonly Row[], query: string, full?: LoadedTe
     } else if (row.kind === "diff") diff(row.diff);
     else {
       add(row.text);
-      row.todo?.forEach((item) => add(item.text));
+      row.todo?.forEach((item) => add(todoText(item)));
       add(row.detail);
       output(row.output);
       diff(row.diff);
