@@ -5,6 +5,7 @@ reversals supersede, never edit. Add one row, newest first, with each new record
 
 | #    | Title                                                                | Tier | Status     | Date       | Refs                    |
 |------|----------------------------------------------------------------------|------|------------|------------|-------------------------|
+| 0140 | A subagent call is a row, and its work opens as a read-only chat | 2 | accepted | 2026-11-11 | ↑0099 →0104 →0120 |
 | 0139 | The chat counts records no parser maps | 2 | accepted | 2026-11-11 | ↑0099 →0120 |
 | 0137 | A verb that becomes a skill leaves presets in the same change | 2 | accepted | 2026-11-05 | →0132 →0136 |
 | 0136 | The plugin ships chosen standalone skills, each tested by skill-eval | 2 | accepted | 2026-11-05 | ↑0132 →0133 |
