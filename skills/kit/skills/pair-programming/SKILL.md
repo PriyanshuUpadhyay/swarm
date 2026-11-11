@@ -66,7 +66,14 @@ settled, each with a default that `yes` accepts. There is no limit on rounds or 
   real run the agent asked "Print to stdout, with the line `size_gate 1` and nothing else?", which
   the task text already stated, and later asked again about a choice it had recorded as accepted.
 - Each number, size, or limit that the agent invents is a question, with the number as its default.
-- A task with no open choice gets no question.
+- Before any question, here and under a diff, test it: does the request text, an A-line, or the
+  current code already answer it? If yes, do not ask. State the fact with its source in one line,
+  such as "`*.lock` only, as the request says" or "extra arguments keep the usage error,
+  `size_gate.py:NN`". A question is for a choice whose answers lead to different code and that none
+  of the three sources settles.
+- A behavior the code already has is not a question. When it matters, name it as kept behavior in
+  the behavior list.
+- A task with no open choice gets no question round. See the small-task block below.
 - Ask one question alone when its answer controls the next ones, or when the user asks for single
   questions.
 - Align ends when no open question can change the behavior list, or when the user says `enough`.
@@ -76,11 +83,28 @@ settled, each with a default that `yes` accepts. There is no limit on rounds or 
 Write the answers in the task file as `A1..An`, each marked `typed` (the user wrote it) or
 `default` (the user accepted it), and a `Not built:` list.
 
-Before the behavior list, ask the user to write one acceptance example (start state, action,
-expected result) and one exclusion, in their own words. The agent never drafts them. When the task
-text already holds such an example, quote it and ask only for what is missing. Record them under
-`Acceptance:` and `Not built:`. They keep a run of `yes` answers from standing in for the user's
-intent.
+When Align had at least one open choice, ask the user, before the behavior list, to write one
+acceptance example (start state, action, expected result) and one exclusion, in their own words.
+The agent never drafts them. When the task text already holds such an example, quote it and ask
+only for what is missing. Record them under `Acceptance:` and `Not built:`. They keep a run of
+`yes` answers from standing in for the user's intent.
+
+Small task. When, after reading the code, no direction-changing choice is open, Align is one short
+block in the same reply as the behavior list, with no question round:
+
+```
+Align: no open choice
+Acceptance: "<quoted from the task text>"
+Not built: nothing beyond the request; add an exclusion if you have one.
+```
+
+Quote `Acceptance:` from the task text when it states a result; ask the owner for an example only
+when the task text states none. The owner's approval of the behavior list accepts the block, and
+the exclusion is not a required answer. In two blind eval runs on small, clear tasks (`*.lock`
+files not counted, and `--version` printing `size_gate 1`), the agent asked about `package-lock.json`
+and about `--version extra`, which the request and the existing `len(argv) != 1` branch already
+answered, and asked for an exclusion although the request defined the full scope. The grader
+counted all three as noise.
 
 ## Plan first, short
 
@@ -124,7 +148,9 @@ A chunk touches only what its behavior sentence names. No new helper, field, exp
 todo goes in unless the sentence names it. In two real runs the user removed handling the behavior
 did not ask for, a cache key and an edge case they called useless. A case that the sentence does not
 name, such as a whitespace-only or very long value next to "reject an empty name", is a question in
-one line under the diff, never code in it. Before you write a helper, search the repository for one
+one line under the diff, never code in it, and only after the Align test above finds that the
+request, an A-line, and the current code leave it open. Otherwise state the settled fact with its
+source in that line. Before you write a helper, search the repository for one
 that does the same job, and call it. Apply the kit block `blocks/checked-units/SKILL.md` for a new
 symbol and its caller. An edited function stays where it is, so the diff shows an edit, not a delete
 plus an add; a move is its own chunk.
