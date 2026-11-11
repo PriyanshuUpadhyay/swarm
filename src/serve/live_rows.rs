@@ -324,19 +324,20 @@ impl LiveRows {
         {
             self.context.1 = true;
         }
+
         // A checklist hides the older ones and replays task changes over every record, and a
         // task's id arrives with its call's result, so each of them needs a full build to make the
         // live rows equal to the stored rows.
-        let is_checklist = |record: &Record| {
-            view::row(record).is_some_and(|row| row.kind == view::RowKind::TodoList)
-        };
-        if row
-            .as_ref()
-            .is_some_and(|row| row.kind == view::RowKind::TodoList)
-            || target.is_some_and(|key| is_checklist(&self.records[&key]))
+        let is_todo_list = |row: &Row| row.kind == view::RowKind::TodoList;
+        if row.as_ref().is_some_and(is_todo_list)
+            || target
+                .and_then(|key| view::row(&self.records[&key]))
+                .as_ref()
+                .is_some_and(is_todo_list)
         {
             self.rebuild = true;
         }
+
         if !self.initialized {
             return;
         }

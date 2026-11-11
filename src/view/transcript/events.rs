@@ -46,6 +46,7 @@ pub fn row(record: &Record) -> Option<Row> {
                 },
                 call_row_id(event),
             );
+
             row.detail = Some(event["input"].to_string());
             row.tool_status = Some(string(event, "status").into());
             row

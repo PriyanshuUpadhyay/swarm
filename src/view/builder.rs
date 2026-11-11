@@ -178,6 +178,7 @@ pub(super) fn rows_with_context(
             .get(&index)
             .and_then(|updates| updates.last())
             .map(|index| &records[*index]);
+
         if row.kind == RowKind::TodoList && checklist::is_task_change(string(event, "name")) {
             let created_id = last_update.and_then(|update| update.event["task_id"].as_str());
             checklist::apply_task(
