@@ -25,7 +25,7 @@ Find the references
 - Record each rejected candidate with the user's reason, and leave it out of later searches.
 Inspect
 - Watch a whole video, and extract frames at scene boundaries, motion extremes, and loop seams. Inspect stills at full resolution and in useful crops.
-- Analyse every reference in the five passes below. Tie each observation to a frame, a timestamp, or a crop.
+- Run the passes below that match what each reference informs: look (passes 1-3), motion (pass 4), structure (pass 5). Tie each observation to a frame, a timestamp, or a crop.
 - Pass 1, composition and hierarchy: aspect ratio, focal path, positive and negative space, horizon or dominant axes, framing, overlap, depth order, visual weight, and safe areas. Note how the eye enters and travels through the frame.
 - Pass 2, shape and surface: silhouette families, geometric versus organic balance, contour weight, corner behavior, repeated motifs, fill behavior, texture scale, edge wear, material cues, and controlled imperfections. Distinguish drawn texture from image overlays when possible.
 - Pass 2 measures, not only describes. Crop a typical mass at the delivery size and record the light direction and the layers on the mass (base, lit plane, core shadow, tone, rim, contour, material marks); the contour width range in px, where it is heaviest, and its colour role; how tone is made (halftone cell and angle, hatch spacing, dither, or a gradient) and where it appears; the marks per area, the grain scale, the paper colour, and any misregistration offset in px; the number of depth layers and how far layers change.
