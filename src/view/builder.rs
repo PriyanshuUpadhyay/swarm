@@ -101,12 +101,34 @@ pub(super) fn rows_with_context(
     let mut updates = HashMap::<usize, Vec<usize>>::new();
     let mut diffs = HashMap::<usize, Vec<usize>>::new();
     let mut attached = HashMap::<usize, Vec<usize>>::new();
+    let mut activity = HashMap::<usize, Vec<usize>>::new();
+    let mut agents = HashMap::<String, Vec<Anchor>>::new();
+    for (index, record) in records.iter().enumerate() {
+        let event = &record.event;
+        let agent_id = string(event, "agent_thread_id");
+        if string(event, "type") == "tool_call_update"
+            && !agent_id.is_empty()
+            && let Some(call) =
+                anchor_match(string(event, "tool_call_id"), event, scopes[index], &calls)
+        {
+            agents.entry(agent_id.into()).or_default().push(Anchor {
+                index: call,
+                session: meta(event, "session_id").into(),
+                scope: 0,
+            });
+        }
+    }
     let mut joined = HashSet::new();
     for (index, record) in records.iter().enumerate() {
         let event = &record.event;
         let scope = scopes[index];
         let kind = string(event, "kind");
         let target = match string(event, "type") {
+            "subagent_activity" => {
+                anchor_match(string(event, "agent_thread_id"), event, 0, &agents).inspect(|&call| {
+                    activity.entry(call).or_default().push(index);
+                })
+            }
             "tool_call_update" => anchor_match(string(event, "tool_call_id"), event, scope, &calls)
                 .inspect(|&call| {
                     updates.entry(call).or_default().push(index);
@@ -234,6 +256,12 @@ pub(super) fn rows_with_context(
             };
             if row.kind == RowKind::Subagent {
                 let (agent_type, description) = subagent_labels(&input, name);
+                let state = activity
+                    .get(&index)
+                    .and_then(|items| items.last())
+                    .map_or(state, |index| {
+                        subagent_state(string(&records[*index].event, "kind"), state)
+                    });
 
                 row.subagent = Some(SubagentRun {
                     call_id: string(event, "tool_call_id").into(),
@@ -324,6 +352,7 @@ pub(super) fn rows_with_context(
         sources.extend(updates.get(&index).into_iter().flatten());
         sources.extend(diffs.get(&index).into_iter().flatten());
         sources.extend(attached.get(&index).into_iter().flatten());
+        sources.extend(activity.get(&index).into_iter().flatten());
         sources.sort_unstable();
         row.source_ids = sources
             .iter()
@@ -373,6 +402,15 @@ pub(super) fn rows_with_context(
         }
     }
     rows
+}
+
+pub(super) fn subagent_state(kind: &str, fallback: ToolState) -> ToolState {
+    match kind {
+        "started" | "interacted" => ToolState::Waiting,
+        "interrupted" => ToolState::Interrupted,
+        "completed" => ToolState::Finished,
+        _ => fallback,
+    }
 }
 
 pub fn is_collapsed(row: &Row) -> bool {

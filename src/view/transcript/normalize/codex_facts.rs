@@ -243,6 +243,14 @@ fn event_message(
             fact.push("proposed_plan", json!({"text":plan_text(payload).unwrap()}));
         }
         "patch_apply_end" => super::codex_changes::append(fact, payload, "call_id", work)?,
+        "sub_agent_activity" => subagent_activity(fact, payload),
+        "item_completed"
+            if payload
+                .object("item")
+                .is_some_and(|item| item.text("type") == "SubAgentActivity") =>
+        {
+            subagent_activity(fact, &payload.object("item").unwrap());
+        }
         "item_completed"
             if payload
                 .object("item")
@@ -256,11 +264,17 @@ fn event_message(
         | "mcp_tool_call_end"
         | "web_search_end"
         | "item_completed"
-        | "thread_settings_applied"
-        | "sub_agent_activity" => fact.push_ignored(&format!("event_msg/{kind}")),
+        | "thread_settings_applied" => fact.push_ignored(&format!("event_msg/{kind}")),
         _ => fact.push_unknown(),
     }
     Ok(())
+}
+
+pub(super) fn subagent_activity(fact: &mut Fact<'_>, payload: &Object<'_>) {
+    fact.push("subagent_activity", json!({
+        "agent_thread_id":payload.text("agent_thread_id"), "agent_path":payload.text("agent_path"),
+        "kind":payload.text("kind"),
+    }));
 }
 
 fn message(

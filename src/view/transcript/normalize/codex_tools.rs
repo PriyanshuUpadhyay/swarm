@@ -203,12 +203,16 @@ fn output(
         fact.push_unknown();
         return Ok(());
     };
-    let event = Template::new(
-        "tool_call_update",
-        json!({
-            "tool_call_id": call_id, "status": "completed", "content": content,
-        }),
-    );
+    let mut fields = json!({
+        "tool_call_id": call_id, "status": "completed", "content": content,
+    });
+    if let Some(agent_id) = serde_json::from_str::<Value>(&content)
+        .ok()
+        .and_then(|output| output["agent_id"].as_str().map(str::to_owned))
+    {
+        fields["agent_thread_id"] = json!(agent_id);
+    }
+    let event = Template::new("tool_call_update", fields);
     fact.actions.push(Action::Output {
         call_id,
         question,

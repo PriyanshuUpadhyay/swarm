@@ -52,6 +52,25 @@ pub fn row(record: &Record) -> Option<Row> {
         return Some(row);
     }
     let mut row = match event_type {
+        "subagent_activity" => {
+            let path = string(event, "agent_path");
+            let mut row = Row::new(
+                RowKind::Subagent,
+                format!("Subagent · {path}"),
+                key(record, "subagent"),
+            );
+            row.subagent = Some(super::SubagentRun {
+                call_id: string(event, "agent_thread_id").into(),
+                agent_type: path.into(),
+                description: String::new(),
+                state: super::super::builder::subagent_state(
+                    string(event, "kind"),
+                    super::super::ToolState::Waiting,
+                ),
+                result: None,
+            });
+            row
+        }
         "user_message_chunk" | "agent_message_chunk" | "agent_thought_chunk" => {
             let kind = match event_type {
                 "user_message_chunk" => RowKind::User,

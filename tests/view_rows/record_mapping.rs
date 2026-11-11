@@ -59,3 +59,36 @@ fn codex_file_changes_join_the_patch_call() {
         assert!(tool.diffs[2].patch.contains("-before\n+after"));
     }
 }
+
+#[test]
+fn codex_subagent_activity_updates_the_spawn_row() {
+    for (source, kind, expected) in [
+        ("sub_agent_activity", "started", ToolState::Waiting),
+        ("SubAgentActivity", "interrupted", ToolState::Interrupted),
+    ] {
+        let activity = json!({"type":source,"id":"activity", "event_id":"activity", "agent_thread_id":"child", "agent_path":"/worker", "kind":kind});
+        let activity = if source == "SubAgentActivity" {
+            completed(activity)
+        } else {
+            event(activity)
+        };
+        let rows = codex_rows(vec![
+            response(
+                json!({"type":"function_call", "call_id":"spawn", "name":"spawn_agent", "arguments":"{\"message\":\"Check the parser\"}"}),
+            ),
+            response(
+                json!({"type":"function_call_output", "call_id":"spawn", "output":"{\"agent_id\":\"child\"}"}),
+            ),
+            event(json!({"type":"task_complete"})),
+            activity,
+        ]);
+        let visible: Vec<_> = rows.iter().filter(|row| !row.collapsed).collect();
+        assert_eq!(visible.len(), 2, "{source}");
+        let run = visible[0].subagent.as_ref().unwrap();
+        assert_eq!(run.state, expected);
+        assert_eq!(
+            run.result.as_ref().unwrap().text,
+            "{\"agent_id\":\"child\"}"
+        );
+    }
+}
