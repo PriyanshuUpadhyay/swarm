@@ -81,6 +81,21 @@ fn a_log_names_shells_and_subagents_with_their_end_state() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// Each task as (id, title, status, start time), for one assert per reader.
+fn brief(found: &[Task]) -> Vec<(&str, &str, &str, Option<&str>)> {
+    found
+        .iter()
+        .map(|t| {
+            (
+                t.id.as_str(),
+                t.title.as_str(),
+                t.status.as_str(),
+                t.started_at.as_deref(),
+            )
+        })
+        .collect()
+}
+
 #[test]
 fn a_codex_log_names_a_running_background_terminal() {
     let record = |at: &str, payload: Value| {
@@ -114,19 +129,8 @@ fn a_codex_log_names_a_running_background_terminal() {
     .concat();
 
     let found = codex_tasks("chair", &log);
-    let brief: Vec<_> = found
-        .iter()
-        .map(|t| {
-            (
-                t.id.as_str(),
-                t.title.as_str(),
-                t.status.as_str(),
-                t.started_at.as_deref(),
-            )
-        })
-        .collect();
     assert_eq!(
-        brief,
+        brief(&found),
         [
             (
                 "1001",
@@ -146,7 +150,12 @@ fn a_codex_log_names_a_running_background_terminal() {
 
 #[test]
 fn an_agy_log_names_a_running_background_task_until_its_system_message() {
-    let id = "56a8a353-52b9-4882-94bc-9f2d683ce0ef/task-32";
+    let (done, failed, running) = (
+        "56a8a353-52b9-4882-94bc-9f2d683ce0ef/task-32",
+        "56a8a353-52b9-4882-94bc-9f2d683ce0ef/task-50",
+        "56a8a353-52b9-4882-94bc-9f2d683ce0ef/task-60",
+    );
+
     let start = |step: u32, id: &str, what: &str| {
         line(json!({
             "step_index": step, "source": "MODEL", "type": "GENERIC", "status": "RUNNING",
@@ -154,44 +163,32 @@ fn an_agy_log_names_a_running_background_task_until_its_system_message() {
             "content": format!("Created At: 2026-10-23T10:15:32+05:30\nTool is running as a background task with task id: {id}\nTask Description: {what}\nTask logs are available at: file:///x/.system_generated/tasks/task-32.log\nYOU MUST TAKE ONE OF THE FOLLOWING TWO ACTIONS: A) either proceed or, B) wait."),
         }))
     };
-    let end = line(json!({
-        "step_index": 40, "source": "SYSTEM", "type": "SYSTEM_MESSAGE", "status": "DONE",
-        "content": format!("[Message] timestamp=2026-10-23T04:46:12Z sender={id} priority=MESSAGE_PRIORITY_HIGH content=Task id \"{id}\" finished with result:\nCommand exited with code 0."),
-    }));
+
+    // AGY ends the exit code with a period.
+    let end = |id: &str, code: u32| {
+        line(json!({
+            "step_index": 40, "source": "SYSTEM", "type": "SYSTEM_MESSAGE", "status": "DONE",
+            "content": format!("[Message] timestamp=2026-10-23T04:46:12Z sender={id} priority=MESSAGE_PRIORITY_HIGH content=Task id \"{id}\" finished with result:\nCommand exited with code {code}."),
+        }))
+    };
 
     let log = [
-        start(32, id, "sleep 40"),
-        start(
-            50,
-            "56a8a353-52b9-4882-94bc-9f2d683ce0ef/task-50",
-            "npm run dev",
-        ),
-        end,
+        start(32, done, "sleep 40"),
+        start(50, failed, "make build"),
+        start(60, running, "npm run dev"),
+        end(done, 0),
+        end(failed, 1),
     ]
     .concat();
 
     let found = agy_tasks("chair", &log);
-    let brief: Vec<_> = found
-        .iter()
-        .map(|t| {
-            (
-                t.id.as_str(),
-                t.title.as_str(),
-                t.status.as_str(),
-                t.started_at.as_deref(),
-            )
-        })
-        .collect();
+    let at = Some("2026-10-23T04:45:32Z");
     assert_eq!(
-        brief,
+        brief(&found),
         [
-            (id, "sleep 40", "completed", Some("2026-10-23T04:45:32Z")),
-            (
-                "56a8a353-52b9-4882-94bc-9f2d683ce0ef/task-50",
-                "npm run dev",
-                "running",
-                Some("2026-10-23T04:45:32Z")
-            ),
+            (done, "sleep 40", "completed", at),
+            (failed, "make build", "failed", at),
+            (running, "npm run dev", "running", at),
         ]
     );
 }
