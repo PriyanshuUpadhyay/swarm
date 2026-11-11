@@ -252,13 +252,27 @@ test("a fence and a tool share wire rows and layout while Copy keeps full text",
   const tool = row("tool2", "", "diff");
   tool.diff = { id: "fence-tool", path: "x", patch: "@@ -1 +1 @@\n-tool-raw\n+tool-raw\n", added: 1, removed: 1, omitted_lines: 0, shortened_lines: 0, full_lines: 5, full_bytes: 48 };
   const page = rows([fence, tool], 0, { "fence-tool": fencePainter.patch as PatchInfo });
-  page.display![fence.id] = fencePainter.display as Display;
+  page.display![fence.id] = structuredClone(fencePainter.display) as Display;
+  page.display![fence.id].blocks.push({ type: "code", value: {
+    label: "diff", text: "multi-file raw copy text", diff: {
+      lines: [
+        { kind: "meta", text: "--- a/old-a.ts" }, { kind: "meta", text: "+++ b/a.ts" },
+        { kind: "hunk", text: "@@ -1,1 +1,1 @@" },
+        { kind: "del", text: "old-a", old: 1 }, { kind: "add", text: "new-a", new: 1 },
+        { kind: "meta", text: "--- a/old-b.ts" }, { kind: "meta", text: "+++ b/b.ts" },
+        { kind: "hunk", text: "@@ -1,1 +1,1 @@" },
+        { kind: "del", text: "old-b", old: 1 }, { kind: "add", text: "new-b", new: 1 },
+      ],
+      split: [{ h: 2 }, { l: 3, r: 4 }, { h: 7 }, { l: 8, r: 9 }],
+    },
+  } });
   page.body![fence.id] = bodyMode(page.display![fence.id]);
   await tab.route("**/api/rows?*", route => route.fulfill({ json: page }));
   await open(tab);
   const hunk = tab.locator('[data-id="fence1"] .md-code').nth(0);
   const prefix = tab.locator('[data-id="fence1"] .md-code').nth(1);
   const card = tab.getByTestId("diff");
+  await expect(tab.locator('[data-id="fence1"] .md-code').nth(2).locator(".pl.file")).toHaveText(["a.ts", "b.ts"]);
   for (const box of [hunk, card]) {
     await expect(box.locator(".patch")).toBeVisible();
     await expect(box.locator(".pl.del .code")).toHaveText("<script>x</script>");

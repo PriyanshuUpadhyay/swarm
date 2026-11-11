@@ -49,7 +49,7 @@ function HunkCode({ label, text, diff }: { label: string; text: string; diff: Ex
   return (
     <div className="md-code" data-raw={text}>
       <Head label={label} what="code" diff />
-      <PatchBody patch={text} info={diff} split={split} />
+      <PatchBody patch={text} info={diff} split={split} fileLabels />
     </div>
   );
 }

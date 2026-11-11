@@ -434,6 +434,11 @@ pre.plain {
   color: var(--muted-foreground);
   user-select: none;
 }
+.pl.file {
+  padding-left: 8px;
+  font-weight: 600;
+  background: var(--selected);
+}
 .pl.hunk {
   color: var(--muted-foreground);
   background: color-mix(in srgb, var(--status-working) 8%, transparent);

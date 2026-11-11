@@ -35,16 +35,32 @@ export function ColoredRow({ kind, sourceLine, children }: { kind: PatchLineWire
   return <span data-output-line={sourceLine} className={kind ? `dl ${kind}` : undefined}>{children}</span>;
 }
 
-export function PatchBody({ patch, info, split, previewId }: { patch: string; info?: PatchInfo; split: boolean; previewId?: string }) {
+export function PatchBody({ patch, info, split, previewId, fileLabels = false }: { patch: string; info?: PatchInfo; split: boolean; previewId?: string; fileLabels?: boolean }) {
   const handle = useRef<VListHandle>(null);
   const diff = info && "lines" in info ? info : undefined;
-  const rows = useMemo(() => diff ? patchRows(diff, split) : [], [diff, split]);
+  const rows = useMemo(() => {
+    if (!diff) return [];
+    const rows = patchRows(diff, split);
+    if (!fileLabels) return rows;
+    const targets = diff.lines.flatMap((line, i) => line.kind === "meta" && line.text.startsWith("+++ ")
+      ? [{ at: i, file: line.text.slice(4).replace(/^b\//, "") }] : []);
+    if (targets.length < 2) return rows;
+    const labeled: (typeof rows[number] | { file: string })[] = [];
+    let next = 0;
+    for (const row of rows) {
+      const source = "i" in row ? row.i : "h" in row ? row.h : Math.min(row.l ?? Infinity, row.r ?? Infinity);
+      while (next < targets.length && targets[next].at < source) labeled.push({ file: targets[next++].file });
+      labeled.push(row);
+    }
+    while (next < targets.length) labeled.push({ file: targets[next++].file });
+    return labeled;
+  }, [diff, split, fileLabels]);
   useEffect(() => {
     if (!previewId) return;
     const find = (e: Event) => {
       const match = (e as CustomEvent<{ preview: string; line: number }>).detail;
       if (match.preview !== previewId) return;
-      const i = rows.findIndex((r) => "i" in r ? r.i === match.line : "h" in r ? r.h === match.line : r.l === match.line || r.r === match.line);
+      const i = rows.findIndex((r) => "file" in r ? false : "i" in r ? r.i === match.line : "h" in r ? r.h === match.line : r.l === match.line || r.r === match.line);
       if (i >= 0) handle.current?.scrollToIndex(i, { align: "center" });
     };
     window.addEventListener("swarm:find-output", find);
@@ -54,7 +70,8 @@ export function PatchBody({ patch, info, split, previewId }: { patch: string; in
   const height = Math.min(BOX_HEIGHT, rows.length * LINE_HEIGHT + 4);
   return (
     <VList ref={handle} className="patch" style={{ height }} itemSize={LINE_HEIGHT} data={rows}>
-      {(r: ReturnType<typeof patchRows>[number], i: number) => {
+      {(r: typeof rows[number], i: number) => {
+        if ("file" in r) return <div key={i} className="pl file">{r.file}</div>;
         if ("h" in r) return <div key={i} data-output-line={r.h} className="pl hunk">{diff.lines[r.h].text}</div>;
         if ("i" in r) {
           const line = diff.lines[r.i];
