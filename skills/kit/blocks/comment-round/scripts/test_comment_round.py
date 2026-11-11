@@ -45,6 +45,7 @@ def test_rounds_bind_approval_to_the_reviewed_bytes():
     (root / "review" / "1-answers.md").write_text("> drop step 3\nremoved 03-tokens\n")
     (root / "plan.md").write_text("# Plan: x, no tokens\n", encoding="utf-8")
     assert "round 1 is annotated, not approved" in cr(root, "check").stderr
+
     assert cr(root, "run", note("approved")).returncode == 0
     out = cr(root, "check")
     assert out.returncode == 0, out

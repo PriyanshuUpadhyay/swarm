@@ -32,6 +32,7 @@ def test_auto_approval(plan):
     (run / "plan.md").write_text(signed, encoding="utf-8")
     out = auto(run, note)
     assert out.returncode == 1 and "run plan-chart first" in out.stderr, "a page drawn from an older plan.md refuses"
+
     draw(run, signed)
     out = auto(run, note)
     assert out.returncode == 0, out
@@ -41,16 +42,19 @@ def test_auto_approval(plan):
     assert approval["auto"]["words"] == WORDS, approval
     assert approval["auto"]["file"] == str(note.resolve()), approval
     assert approval["auto"]["plan_sha256"] == hashlib.sha256(signed.encode("utf-8")).hexdigest(), approval
+
     (run / "plan.md").write_text(signed.replace("it |", "it now |"), encoding="utf-8")
     out = subprocess.run([sys.executable, "-I", SCRIPT, run], capture_output=True, text=True)
     assert out.returncode == 1 and "plan.md changed after the owner approved plan.html" in out.stderr, out
     assert subprocess.run([sys.executable, "-I", SCRIPT, run, "--bad", note], capture_output=True).returncode != 0
+
     # A short quote refuses, even when it is inside another word of the file.
     short = Path(tempfile.mkdtemp())
     (short / "note.txt").write_text("book\n", encoding="utf-8")
     draw(short, plan.replace("Done when:", 'Auto approval: "ok"\n\nDone when:'))
     out = auto(short, short / "note.txt")
     assert out.returncode == 1 and "too short" in out.stderr and not (short / "plan-review").exists(), out
+
     # A plan.md with CRLF line ends matches the page drawn from it.
     crlf = Path(tempfile.mkdtemp())
     draw(crlf, signed)
