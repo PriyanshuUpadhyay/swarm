@@ -439,6 +439,10 @@ pub use hook::install_hook;
 mod landing;
 pub use landing::{request_landing, serve_landings, take_result};
 
+#[path = "task/sweep.rs"]
+mod sweep;
+pub use sweep::{SweepEntry, SweepReport, sweep};
+
 #[cfg(test)]
 #[path = "task/tests.rs"]
 pub(crate) mod tests;

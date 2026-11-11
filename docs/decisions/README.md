@@ -5,6 +5,7 @@ reversals supersede, never edit. Add one row, newest first, with each new record
 
 | #    | Title                                                                | Tier | Status     | Date       | Refs                    |
 |------|----------------------------------------------------------------------|------|------------|------------|-------------------------|
+| 0144 | Swarm task sweep removes merged worktrees and keeps branches | 2 | accepted | 2026-11-11 | ↑0055 ↑0135 →0134 →0142 |
 | 0143 | The main wall's shell part warns and never blocks | 2 | accepted | 2026-11-11 | ↑0135 →0040 |
 | 0142 | A taken branch opens or reopens, and the sidebar lists the worktrees in use | 2 | accepted | 2026-11-11 | ↑0135 ↑0055 →0049 |
 | 0141 | Reports live in one shared folder and pages have random IDs | 2 | accepted | 2026-11-11 | ↑0101 |

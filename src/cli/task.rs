@@ -1,16 +1,38 @@
-//! `swarm task start <name> | land | drop [<branch>] | list` (ADR 0135): an agent's own task
+//! `swarm task start <name> | land | drop [<branch>] | list | sweep [--apply]`: an agent's own task
 //! worktree, made from the default branch by Worktrunk and landed by the swarm server.
 
 use super::*;
 use std::time::{Duration, Instant};
 
-const TASK_USAGE: &str = "usage: swarm task start <name> | land [<name>] | drop [<name>] | list";
+const TASK_USAGE: &str =
+    "usage: swarm task start <name> | land [<name>] | drop [<name>] | list | sweep [--apply]";
 /// A Claude shell call stops at 2 minutes, so land waits less, and running it again keeps waiting.
 const LAND_WAIT: Duration = Duration::from_secs(100);
 
 pub(crate) fn task(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let root = swarm::paths::root_dir()?;
     let cwd = env::current_dir()?;
+    if let [verb, flags @ ..] = args
+        && verb == "sweep"
+        && (flags.is_empty() || matches!(flags, [flag] if flag == "--apply"))
+    {
+        let min_age = env::var("SWARM_TEST_SWEEP_MIN_AGE_SECONDS")
+            .ok()
+            .filter(|_| cfg!(debug_assertions))
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(3600);
+        let report =
+            swarm::task::sweep(&root, &cwd, !flags.is_empty(), Duration::from_secs(min_age))?;
+        print_json(&report)?;
+        if report
+            .worktrees
+            .iter()
+            .any(|entry| entry.verdict == "error")
+        {
+            return Err("swarm: some worktrees or task records could not be removed".into());
+        }
+        return Ok(());
+    }
     let wt = swarm::task::wt_program();
     let value = match args {
         [verb, name] if verb == "start" => {
