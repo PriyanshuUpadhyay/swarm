@@ -22,7 +22,7 @@ const POLL_MS = 3000;
 
 const readShells = (app: App, session: string) => app.api.get<{ shells: WorkspaceShell[] }>("/api/shells", { session });
 
-export function BackgroundPanel({ app, session, focusRequest = 0, pick }: { app: App; session: string; focusRequest?: number; pick?: { key: string; seq: number } }) {
+export function BackgroundPanel({ app, session, focusRequest = 0 }: { app: App; session: string; focusRequest?: number }) {
   const snapshot = useSyncExternalStore(app.subscribe, () => app.snapshot);
   const [tasks, setTasks] = useState<BackgroundTask[]>([]);
   const [shells, setShells] = useState<WorkspaceShell[]>([]);
@@ -54,10 +54,6 @@ export function BackgroundPanel({ app, session, focusRequest = 0, pick }: { app:
     };
   };
 
-  // The chat-end line's Open picks its row, also when the panel was already open.
-  useEffect(() => {
-    if (pick) choose(pick.key);
-  }, [pick?.seq]);
   useEffect(() => {
     let stop = false;
     // A failed poll keeps the last list, and the next tick tries again.
