@@ -48,7 +48,7 @@ function RowBody(ctx: Ctx) {
   if (row.kind === "fold") return <FoldLine app={app} line={line} />;
   if (row.kind === "todoList") return <TodoRow row={row} />;
   if (row.kind === "proposedPlan") return <PlanRow row={row} md={md} />;
-  if (row.subagent) return <SubagentRow {...ctx} />;
+  if (row.subagent) return <SubagentRow run={row.subagent} title={row.text} />;
   if (row.tool) return <ToolCard {...ctx} />;
   if (row.kind === "divider")
     return (

@@ -2,19 +2,18 @@
 import { ArrowLeftIcon } from "lucide-react";
 import { useEffect, useSyncExternalStore } from "react";
 import type { App } from "../core/app";
+import type { SubagentRun } from "../core/api";
 import { TAIL, paneId } from "../core/app-types";
 import { closeSubagent, currentSubagent, openSubagent, subagentAgent, subscribeSubagent } from "../core/subagent";
 import { Dialog, DialogContent, DialogTitle } from "../components/ui/dialog";
 import { PaneBody } from "./transcript";
 import { StatusGlyph } from "./transcript-tool";
-import type { Ctx } from "./transcript-row";
 
-/** How often a child chat of a running subagent reads its log again, since it follows no stream. */
+/** How often an open child chat reads its log again until its last row ends the turn, since it
+ *  follows no stream. */
 const REFRESH_MS = 3000;
 
-export function SubagentRow({ line }: Ctx) {
-  const run = line.row.subagent;
-  if (!run) return null;
+export function SubagentRow({ run, title }: { run: SubagentRun; title: string }) {
   const result = run.result?.text.trim().split("\n", 1)[0] ?? "";
 
   return (
@@ -26,11 +25,11 @@ export function SubagentRow({ line }: Ctx) {
         onClick={(e) => {
           // The transcript above names its chat; a pane column's rows open from their own chat.
           const chatId = e.currentTarget.closest<HTMLElement>("[data-chat]")?.dataset.chat;
-          if (chatId) openSubagent({ chatId, callId: run.call_id, title: line.row.text, running: run.state === "waiting" });
+          if (chatId) openSubagent({ chatId, callId: run.call_id, title });
         }}
       >
         <StatusGlyph state={run.state} />
-        <span className="truncate">{line.row.text}</span>
+        <span className="truncate">{title}</span>
         {result && <span className="truncate text-muted-foreground">{result}</span>}
       </button>
     </div>
@@ -44,13 +43,14 @@ export function SubagentOverlay({ app }: { app: App }) {
   const parent = open ? app.chats.get(open.chatId) : undefined;
   const agent = parent && open ? subagentAgent(parent.agent, open.callId) : undefined;
   const sessionId = parent?.sessionId;
-  const running = open?.running ?? false;
 
   useEffect(() => {
     if (!sessionId || !agent) return;
     const child = app.reading.childChat(sessionId, agent);
     // The overlay loads this chat itself, so the pane must not wait for a column to load it.
     child.loaded = true;
+    // The chat exists now, so the dialog can show its loading state while the first read runs.
+    app.notify();
     let stopped = false;
     let reading = false;
 
@@ -63,20 +63,19 @@ export function SubagentOverlay({ app }: { app: App }) {
     };
     void load();
 
-    // A finished subagent's log no longer grows, and a read that failed would fail again. A tail
-    // read drops older pages, so a reader who loaded them keeps the rows they have.
-    const timer = running
-      ? setInterval(() => {
-          if (child.state === "ready" && child.rows.length <= TAIL) void load();
-        }, REFRESH_MS)
-      : undefined;
+    // A subagent that started a moment ago may have no log yet, so a failed read tries again.
+    // A tail read drops older pages, so a reader who loaded them keeps the rows they have. A log
+    // whose last row ends the turn no longer grows. `load` never rejects: `loadTail` catches.
+    const timer = setInterval(() => {
+      if (!child.rows.at(-1)?.ends_turn && child.rows.length <= TAIL) void load();
+    }, REFRESH_MS);
 
     return () => {
       stopped = true;
       clearInterval(timer);
       app.chats.delete(child.id);
     };
-  }, [app, sessionId, agent, running]);
+  }, [app, sessionId, agent]);
 
   if (!open || !sessionId || !agent) return null;
 

@@ -2,7 +2,7 @@
 /** Joins the parent agent and the call id; the server's `subagent::MARK` splits it. */
 export const subagentAgent = (agent: string, callId: string) => `${agent}~sub~${callId}`;
 
-export type OpenSubagent = { chatId: string; callId: string; title: string; running: boolean };
+export type OpenSubagent = { chatId: string; callId: string; title: string };
 
 let current: OpenSubagent | null = null;
 const listeners = new Set<() => void>();
