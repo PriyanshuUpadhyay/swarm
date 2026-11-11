@@ -135,3 +135,6 @@ mod turns_and_folds;
 
 #[path = "view_rows/native_main.rs"]
 mod native_main;
+
+#[path = "view_rows/record_mapping.rs"]
+mod record_mapping;

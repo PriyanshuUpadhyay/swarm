@@ -7,6 +7,7 @@ mod claude_json;
 mod claude_meta;
 mod claude_tools;
 pub(super) mod codex;
+mod codex_changes;
 mod codex_context;
 mod codex_facts;
 mod codex_questions;

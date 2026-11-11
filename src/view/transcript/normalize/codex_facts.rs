@@ -146,7 +146,7 @@ pub(super) fn parse<'a>(line: &'a [u8], work: &mut dyn Work) -> Result<Fact<'a>,
                 fact.push_ignored(&record_type);
             }
         }
-        "event_msg" => event_message(&mut fact, &payload, &kind),
+        "event_msg" => event_message(&mut fact, &payload, &kind, work)?,
         "compacted" => fact.push(
             "system_message",
             json!({"kind": "compaction", "text": payload.text("message")}),
@@ -183,7 +183,12 @@ pub(super) fn parse<'a>(line: &'a [u8], work: &mut dyn Work) -> Result<Fact<'a>,
     Ok(fact)
 }
 
-fn event_message(fact: &mut Fact<'_>, payload: &Object<'_>, kind: &str) {
+fn event_message(
+    fact: &mut Fact<'_>,
+    payload: &Object<'_>,
+    kind: &str,
+    work: &mut dyn Work,
+) -> Result<(), SnapshotError> {
     match kind {
         "agent_reasoning" => {
             fact.push("agent_thought_chunk", json!({"text": payload.text("text")}))
@@ -216,7 +221,7 @@ fn event_message(fact: &mut Fact<'_>, payload: &Object<'_>, kind: &str) {
                         "session_output_tokens": total.as_ref().and_then(|obj| obj.token("output_tokens")),
                         "cost_usd": null, "cost_completeness": "unknown",
                     }));
-                return;
+                return Ok(());
             }
             fact.push_ignored("event_msg/token_count");
         }
@@ -237,10 +242,17 @@ fn event_message(fact: &mut Fact<'_>, payload: &Object<'_>, kind: &str) {
         "item_completed" if plan_text(payload).is_some() => {
             fact.push("proposed_plan", json!({"text":plan_text(payload).unwrap()}));
         }
+        "patch_apply_end" => super::codex_changes::append(fact, payload, "call_id", work)?,
+        "item_completed"
+            if payload
+                .object("item")
+                .is_some_and(|item| item.text("type") == "FileChange") =>
+        {
+            super::codex_changes::append(fact, &payload.object("item").unwrap(), "id", work)?;
+        }
         "user_message"
         | "agent_message"
         | "exec_command_end"
-        | "patch_apply_end"
         | "mcp_tool_call_end"
         | "web_search_end"
         | "item_completed"
@@ -248,6 +260,7 @@ fn event_message(fact: &mut Fact<'_>, payload: &Object<'_>, kind: &str) {
         | "sub_agent_activity" => fact.push_ignored(&format!("event_msg/{kind}")),
         _ => fact.push_unknown(),
     }
+    Ok(())
 }
 
 fn message(
