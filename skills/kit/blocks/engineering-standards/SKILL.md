@@ -1,6 +1,6 @@
 ---
 name: engineering-standards
-description: "Supply scoped engineering rules for API contracts, data models, queries, retries, deadlines, quotas, and entitlement failures, marked as protocol, project rule, or advice. Use when a change touches an API payload, a data model or query, a retry or deadline, a quota or limit counter, or an authorization or entitlement read."
+description: "Supply engineering rules, marked as protocol, project rule, or advice. Use when a change touches an API payload, a data model or query, a retry or deadline, a quota or limit counter, or an authorization or entitlement read."
 license: MIT
 metadata:
   kind: rule
