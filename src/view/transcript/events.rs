@@ -1,5 +1,6 @@
 //! Transcript rows for individual events.
 
+use super::super::builder::UNMAPPED;
 use super::super::tool;
 use super::{
     Record, Row, RowKind, TextPreview, chip, is_record, key, meta, peer_text, record_text,
@@ -181,14 +182,12 @@ pub fn row(record: &Record) -> Option<Row> {
                 format!("record-{}", record.source_id),
             );
             // `ignored` is a decision; `unknown` is a line no parser maps, which the chat counts.
-            row.system_kind = Some(
-                if event_type == "unknown" {
-                    "unmapped"
-                } else {
-                    "record"
-                }
-                .into(),
-            );
+            let kind = if event_type == "unknown" {
+                UNMAPPED
+            } else {
+                "record"
+            };
+            row.system_kind = Some(kind.into());
             row.output = record.text_preview.clone();
             row
         }
@@ -232,7 +231,7 @@ pub fn row(record: &Record) -> Option<Row> {
                 event_type.into(),
                 format!("record-{}", record.source_id),
             );
-            row.system_kind = Some("unmapped".into());
+            row.system_kind = Some(UNMAPPED.into());
             let mut preview = TextPreview::new(&record_text(event), 120);
             preview.id = format!("{}:output", record.source_id);
             row.output = Some(preview);
