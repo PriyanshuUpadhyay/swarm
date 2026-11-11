@@ -313,13 +313,6 @@ pub(super) fn queue_log(operation: &str, text: &str) -> String {
 }
 pub(super) fn pull_back_fixture(records: &str, after: &str) -> Fixture {
     let fixture = action_fixture();
-    let connection = swarm::store::open(&fixture.app.root.join("swarm.db")).unwrap();
-    connection
-        .execute(
-            "UPDATE session SET adapter = 'tmux-swarm' WHERE id = ?1",
-            [&fixture.session],
-        )
-        .unwrap();
     std::fs::write(&fixture.log, records).unwrap();
     std::fs::write(fixture.app.root.parent().unwrap().join("after"), after).unwrap();
     std::fs::write(
