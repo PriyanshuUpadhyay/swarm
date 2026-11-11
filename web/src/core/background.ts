@@ -1,4 +1,4 @@
-// The Cmd+J panel's list: the chat's live agents and their Claude background tasks (ADR 0104).
+// The Cmd+J panel's list: the chat's live agents and their Claude and Codex background tasks (ADR 0104).
 // Pure, so vitest covers it.
 
 import type { Agent, Session } from "./api";
@@ -55,6 +55,9 @@ export function runningLine(tasks: readonly BackgroundTask[]) {
     key: taskKey(newest.agent, newest.id),
   };
 }
+
+/** The localStorage key of the row that the Cmd+J panel shows for a chat. */
+export const pickedKey = (session: string) => `swarm.background.picked.${session}`;
 
 /** The line's Open asks the open chat to show the Cmd+J panel on this row key. */
 export const OPEN_BACKGROUND = "swarm:open-background";

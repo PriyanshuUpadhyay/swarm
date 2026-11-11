@@ -6,12 +6,11 @@ import type { App } from "../core/app";
 import { OPEN_BACKGROUND, elapsed, type OpenBackgroundDetail, poll, runningLine, type BackgroundTask } from "../core/background";
 import { Button } from "../components/ui/button";
 
-const POLL_MS = 3000;
+export const POLL_MS = 3000;
 
-export function BackgroundLine({ app, session }: { app: App; session: string }) {
+/** The chat's background tasks, read every `POLL_MS` while the page shows. */
+export function useBackgroundTasks(app: App, session: string): BackgroundTask[] {
   const [tasks, setTasks] = useState<BackgroundTask[]>([]);
-  const [now, setNow] = useState(() => Date.now());
-
   useEffect(() => {
     let stop = false;
     setTasks([]);
@@ -22,6 +21,12 @@ export function BackgroundLine({ app, session }: { app: App; session: string }) 
       end();
     };
   }, [app, session]);
+  return tasks;
+}
+
+export function BackgroundLine({ app, session }: { app: App; session: string }) {
+  const tasks = useBackgroundTasks(app, session);
+  const [now, setNow] = useState(() => Date.now());
 
   const line = runningLine(tasks);
 

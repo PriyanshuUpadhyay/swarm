@@ -26,7 +26,7 @@ import { store } from "./store";
 import { TabStrip } from "./tabs";
 import { applyAppearance, chooseTheme, followAppearance, useTheme } from "./appearance";
 import { copyText } from "./copy";
-import { OPEN_BACKGROUND, type OpenBackgroundDetail } from "../core/background";
+import { OPEN_BACKGROUND, pickedKey, type OpenBackgroundDetail } from "../core/background";
 import { writeStore } from "../core/app-types";
 import { watchUpdates } from "./update";
 
@@ -133,7 +133,7 @@ function ChatColumn({ app, openId }: { app: App; openId: string }) {
       if (session !== openId) return;
       store.setItem(BACKGROUND_KEY, "1");
       // The panel reads its picked row when it mounts, so a new key remounts it on that row.
-      writeStore(`swarm.background.picked.${session}`, key);
+      writeStore(pickedKey(session), key);
       setOpen(true);
       setPick((n) => n + 1);
     };
