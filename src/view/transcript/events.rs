@@ -71,7 +71,10 @@ pub fn row(record: &Record) -> Option<Row> {
             });
             row
         }
-        "user_message_chunk" | "agent_message_chunk" | "agent_thought_chunk" => {
+        "user_message_chunk"
+        | "agent_message_chunk"
+        | "agent_thought_chunk"
+        | "agent_thought_part" => {
             let kind = match event_type {
                 "user_message_chunk" => RowKind::User,
                 "agent_message_chunk" => RowKind::Assistant,

@@ -201,6 +201,9 @@ fn event_message(
         "agent_reasoning" => {
             fact.push("agent_thought_chunk", json!({"text": payload.text("text")}))
         }
+        "agent_reasoning_raw_content" => {
+            fact.push("agent_thought_part", json!({"text":payload.text("text")}))
+        }
         "task_started" => fact.push("turn_started", json!({})),
         "task_complete" | "turn_aborted" => fact.push(
             "turn_ended",

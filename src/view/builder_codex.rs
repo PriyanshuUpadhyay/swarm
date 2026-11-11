@@ -3,6 +3,41 @@
 use super::super::transcript::{Record, meta, string};
 use std::collections::HashMap;
 
+pub(super) fn thought_parts(records: &[Record], scopes: &[usize]) -> HashMap<usize, Vec<usize>> {
+    let mut thoughts = HashMap::<(usize, &str), Vec<usize>>::new();
+    for (index, record) in records.iter().enumerate() {
+        if string(&record.event, "type") == "agent_thought_chunk"
+            && record.event["codex_mirror"] != true
+        {
+            thoughts
+                .entry((scopes[index], meta(&record.event, "session_id")))
+                .or_default()
+                .push(index);
+        }
+    }
+    let mut parts = HashMap::<usize, Vec<usize>>::new();
+    for (index, record) in records.iter().enumerate() {
+        if string(&record.event, "type") != "agent_thought_part" {
+            continue;
+        }
+        let entries = thoughts
+            .entry((scopes[index], meta(&record.event, "session_id")))
+            .or_default();
+        let target = entries
+            .iter()
+            .rev()
+            .find(|&&other| other < index)
+            .or_else(|| entries.first())
+            .copied();
+        if let Some(target) = target {
+            parts.entry(target).or_default().push(index);
+        } else {
+            entries.push(index);
+        }
+    }
+    parts
+}
+
 pub(super) fn rolled_back(records: &[Record]) -> Vec<Record> {
     let mut turns: Vec<Vec<usize>> = Vec::new();
     let mut current = Vec::new();

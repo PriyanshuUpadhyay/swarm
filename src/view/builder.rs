@@ -143,6 +143,12 @@ pub(super) fn rows_with_context(
         }
     }
     let mut joined = mirror_joined;
+    let thought_parts = if is_codex {
+        codex::thought_parts(records, &scopes)
+    } else {
+        HashMap::new()
+    };
+    joined.extend(thought_parts.values().flatten().copied());
     for (index, record) in records.iter().enumerate() {
         if joined.contains(&index) {
             continue;
@@ -224,6 +230,13 @@ pub(super) fn rows_with_context(
         let Some(mut row) = row(record) else {
             continue;
         };
+        for part in thought_parts.get(&index).into_iter().flatten() {
+            let text = string(&records[*part].event, "text");
+            if !row.text.is_empty() && !text.is_empty() {
+                row.text.push('\n');
+            }
+            row.text.push_str(text);
+        }
         if string(event, "type") == "image"
             && string(event, "text").is_empty()
             && let Some(text) = mirror_parts
@@ -392,6 +405,7 @@ pub(super) fn rows_with_context(
         sources.extend(attached.get(&index).into_iter().flatten());
         sources.extend(activity.get(&index).into_iter().flatten());
         sources.extend(mirror_parts.get(&index).into_iter().flatten());
+        sources.extend(thought_parts.get(&index).into_iter().flatten());
         sources.sort_unstable();
         row.source_ids = sources
             .iter()

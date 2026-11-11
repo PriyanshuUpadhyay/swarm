@@ -255,3 +255,16 @@ fn codex_rollback_removes_the_last_turns_before_replay_continues() {
             .any(|row| row.system_kind.as_deref() == Some("unmapped"))
     );
 }
+
+#[test]
+fn codex_raw_reasoning_joins_the_thought_row() {
+    let rows = codex_rows(vec![
+        response(
+            json!({"type":"reasoning","id":"thought","summary":[{"type":"summary_text","text":"Plan the fix"}]}),
+        ),
+        event(json!({"type":"agent_reasoning_raw_content","text":"Check the public reader first"})),
+    ]);
+    assert_eq!(kinds(&rows), [RowKind::Thought]);
+    assert!(rows[0].text.contains("Plan the fix"));
+    assert!(rows[0].text.contains("Check the public reader first"));
+}
