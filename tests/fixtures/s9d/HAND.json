@@ -4,6 +4,6 @@
   "G1_native": "Use ORIGINAL native line events and fixture byte spans inside protocol 2 start_byte/end_byte/lines envelopes.",
   "G1_follow": "Use binding pi-live-binding, explicit read_end_byte and complete_end_byte from the scheduled input bytes, and terminated=true for complete lines. A partial line advances read_end_byte only.",
   "G1_fault": "Map OLD public failure status to the caller's Fault::Core. A cancelled PageJob returns Fault::Cancelled by its API contract.",
-  "G2_G3": "No hand-edited expected fields. Compare whole public objects, including images maps. Exclude ping heartbeat frames only.",
+  "G2_G3": "Compare whole public objects, including images maps. Exclude ping heartbeat frames only. HAND record-map values are listed in record-map-hand-000.json through record-map-hand-004.json and each changed manifest entry: brief items 9 and 12, ADR 0139, chair rounds 3 and 4 (2026-11-12). Original hashes and byte counts remain source-capture evidence.",
   "schedule": "For SSE follow after byte 1687, append one complete fixture line, then drain both reader pairs before the next line. Preserve all frames at each step."
 }

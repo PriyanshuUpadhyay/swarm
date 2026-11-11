@@ -6,7 +6,7 @@
     },
     "locator": "raw-1687-1:output"
   },
-  "native/follow/output-21.txt": {
+  "native/follow/output-22.txt": {
     "status": 200,
     "body": {
       "text": "{\n  \"type\": \"usage\",\n  \"source\": \"pi\",\n  \"kind\": \"context\",\n  \"context_tokens\": 115,\n  \"context_capacity_tokens\": null,\n  \"input_tokens\": 10,\n  \"output_tokens\": 2,\n  \"cache_read_tokens\": 100,\n  \"cache_write_tokens\": 5,\n  \"session_input_tokens\": null,\n  \"session_output_tokens\": null,\n  \"cost_usd\": null,\n  \"cost_completeness\": \"unknown\",\n  \"meta\": {\n    \"session_id\": \"pi-u04-main\",\n    \"uuid\": \"a1\",\n    \"timestamp\": \"2026-11-05T00:00:00.000Z\",\n    \"parent_uuid\": \"u2\",\n    \"source_tool_use_id\": null\n  }\n}"
@@ -20,7 +20,7 @@
     },
     "locator": "raw-1687-1:output"
   },
-  "native/pi-main/output-21.txt": {
+  "native/pi-main/output-22.txt": {
     "status": 200,
     "body": {
       "text": "{\n  \"type\": \"usage\",\n  \"source\": \"pi\",\n  \"kind\": \"context\",\n  \"context_tokens\": 115,\n  \"context_capacity_tokens\": null,\n  \"input_tokens\": 10,\n  \"output_tokens\": 2,\n  \"cache_read_tokens\": 100,\n  \"cache_write_tokens\": 5,\n  \"session_input_tokens\": null,\n  \"session_output_tokens\": null,\n  \"cost_usd\": null,\n  \"cost_completeness\": \"unknown\",\n  \"meta\": {\n    \"session_id\": \"pi-u04-main\",\n    \"uuid\": \"a1\",\n    \"timestamp\": \"2026-11-05T00:00:00.000Z\",\n    \"parent_uuid\": \"u2\",\n    \"source_tool_use_id\": null\n  }\n}"

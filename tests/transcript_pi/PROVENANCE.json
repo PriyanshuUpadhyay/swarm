@@ -70,6 +70,21 @@
    "sha256": "19d402c054dc11e6d4017f468289b52d08090efba0cf9b1f6b2f98f384b23699"
   }
  },
+  "HAND_RECORD_MAP_ITEM_12": {
+    "note": "HAND: tmp/build-brief.md item 12 and docs/decisions/0139-the-chat-counts-records-no-parser-maps-and-hides-nothing-else-silently.md. Chair approval round 4, 2026-11-12. Only the empty pi user record changes from zero events to unknown and gains its hidden unmapped row. All other expected bytes stay unchanged.",
+    "changes": [
+      {"file":"fixtures/lines-main-b.json","path":"[\"4056-4179\"].events","old":[],"new":"one unknown event with the original empty user record and z2 meta"},
+      {"file":"fixtures/rows-main-at-4179.json","path":"[37]","old":"absent","new":"hidden system row record-raw-4056-0@raw-4056-0, system_kind unmapped"}
+    ]
+  },
+  "HAND_RECORD_MAP_ITEM_9": {
+    "note": "HAND: tmp/build-brief.md item 9 and docs/decisions/0139-the-chat-counts-records-no-parser-maps-and-hides-nothing-else-silently.md. Chair approval round 3, 2026-11-12. Only the display:true custom_message changes below replace ORIGINAL values; all other bytes stay unchanged.",
+    "changes": [
+      {"file":"fixtures/lines-main-a.json","path":"[\"2375-2525\"].events[0].kind","old":"injected","new":"custom_message"},
+      {"file":"fixtures/rows-main-at-4179.json","path":"[21].system_kind","old":"injected","new":"custom_message"},
+      {"file":"fixtures/rows-main-at-4179.json","path":"[21].collapsed","old":true,"new":"absent (visible)"}
+    ]
+  },
   "HAND_ADR_0139": {
     "note": "HAND: ADR 0139 (docs/decisions/0139-the-chat-counts-records-no-parser-maps-and-hides-nothing-else-silently.md), owner answer a, 2026-11-11. Only unknown rows change system_kind from record to unmapped. Existing hashes describe the ORIGINAL source captures; all other expected bytes stay unchanged.",
     "values_per_file": {

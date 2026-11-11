@@ -1,0 +1,168 @@
+{
+  "out-1/native/overlap-1265/recovery.json": {
+    "note": "HAND: tmp/build-brief.md items 9 and 12; ADR 0139 record-end rule; chair rounds 3 and 4, 2026-11-12. bytes and sha256 still describe the ORIGINAL capture. Only the listed approved values change.",
+    "changes": [
+      {
+        "path": "/raw/0/data/events/26/kind",
+        "old": "injected",
+        "new": "custom_message"
+      },
+      {
+        "path": "/raw/0/data/events/43",
+        "old": "absent before after-overlap user record",
+        "new": "unknown event for the empty z2 record; later event shifts to index 44"
+      }
+    ]
+  },
+  "out-1/native/pi-main/initial-stream.json": {
+    "note": "HAND: tmp/build-brief.md items 9 and 12; ADR 0139 record-end rule; chair rounds 3 and 4, 2026-11-12. bytes and sha256 still describe the ORIGINAL capture. Only the listed approved values change.",
+    "changes": [
+      {
+        "path": "/rows/1/data/upsert/-",
+        "old": "absent",
+        "new": "hidden unmapped row record-raw-4056-0@raw-4056-0"
+      },
+      {
+        "path": "/raw/0/data/events/-",
+        "old": "absent",
+        "new": "unknown event for z2"
+      },
+      {
+        "path": "/raw/0/data/events/26/kind",
+        "old": "injected",
+        "new": "custom_message"
+      }
+    ]
+  },
+  "out-1/native/pi-main/raw-back-00.txt": {
+    "note": "HAND: tmp/build-brief.md items 9 and 12; ADR 0139 record-end rule; chair rounds 3 and 4, 2026-11-12. bytes and sha256 still describe the ORIGINAL capture. Only the listed approved values change.",
+    "changes": [
+      {
+        "path": "/events/-",
+        "old": "absent",
+        "new": "unknown event for z2"
+      }
+    ]
+  },
+  "out-1/native/pi-main/raw-back-08.txt": {
+    "note": "HAND: tmp/build-brief.md items 9 and 12; ADR 0139 record-end rule; chair rounds 3 and 4, 2026-11-12. bytes and sha256 still describe the ORIGINAL capture. Only the listed approved values change.",
+    "changes": [
+      {
+        "path": "/events/4/kind",
+        "old": "injected",
+        "new": "custom_message"
+      }
+    ]
+  },
+  "out-1/native/pi-main/raw-full.txt": {
+    "note": "HAND: tmp/build-brief.md items 9 and 12; ADR 0139 record-end rule; chair rounds 3 and 4, 2026-11-12. bytes and sha256 still describe the ORIGINAL capture. Only the listed approved values change.",
+    "changes": [
+      {
+        "path": "/events/-",
+        "old": "absent",
+        "new": "unknown event for z2"
+      },
+      {
+        "path": "/events/26/kind",
+        "old": "injected",
+        "new": "custom_message"
+      }
+    ]
+  },
+  "out-1/native/pi-main/raw-tail-1.txt": {
+    "note": "HAND: tmp/build-brief.md items 9 and 12; ADR 0139 record-end rule; chair rounds 3 and 4, 2026-11-12. bytes and sha256 still describe the ORIGINAL capture. Only the listed approved values change.",
+    "changes": [
+      {
+        "path": "/events/-",
+        "old": "absent",
+        "new": "unknown event for z2"
+      }
+    ]
+  },
+  "out-1/native/pi-main/raw-tail-3.txt": {
+    "note": "HAND: tmp/build-brief.md items 9 and 12; ADR 0139 record-end rule; chair rounds 3 and 4, 2026-11-12. bytes and sha256 still describe the ORIGINAL capture. Only the listed approved values change.",
+    "changes": [
+      {
+        "path": "/events/-",
+        "old": "absent",
+        "new": "unknown event for z2"
+      }
+    ]
+  },
+  "out-1/native/pi-main/raw-tail-8.txt": {
+    "note": "HAND: tmp/build-brief.md items 9 and 12; ADR 0139 record-end rule; chair rounds 3 and 4, 2026-11-12. bytes and sha256 still describe the ORIGINAL capture. Only the listed approved values change.",
+    "changes": [
+      {
+        "path": "/events/-",
+        "old": "absent",
+        "new": "unknown event for z2"
+      }
+    ]
+  },
+  "out-1/native/pi-main/rows-back-00.txt": {
+    "note": "HAND: tmp/build-brief.md items 9 and 12; ADR 0139 record-end rule; chair rounds 3 and 4, 2026-11-12. bytes and sha256 still describe the ORIGINAL capture. Only the listed approved values change.",
+    "changes": [
+      {
+        "path": "/rows/-",
+        "old": "absent",
+        "new": "hidden unmapped row record-raw-4056-0@raw-4056-0"
+      },
+      {
+        "path": "/find/c1:system@raw-2375-0",
+        "old": "absent",
+        "new": [
+          {
+            "f": "text"
+          },
+          {
+            "f": "output.text",
+            "p": "raw-2375-0:output"
+          }
+        ]
+      },
+      {
+        "path": "/rows/21/system_kind",
+        "old": "injected",
+        "new": "custom_message"
+      },
+      {
+        "path": "/rows/21/collapsed",
+        "old": true,
+        "new": "absent (visible)"
+      }
+    ]
+  },
+  "out-1/native/pi-main/rows-cached.txt": {
+    "note": "HAND: tmp/build-brief.md items 9 and 12; ADR 0139 record-end rule; chair rounds 3 and 4, 2026-11-12. bytes and sha256 still describe the ORIGINAL capture. Only the listed approved values change.",
+    "changes": [
+      {
+        "path": "/rows/-",
+        "old": "absent",
+        "new": "hidden unmapped row record-raw-4056-0@raw-4056-0"
+      },
+      {
+        "path": "/find/c1:system@raw-2375-0",
+        "old": "absent",
+        "new": [
+          {
+            "f": "text"
+          },
+          {
+            "f": "output.text",
+            "p": "raw-2375-0:output"
+          }
+        ]
+      },
+      {
+        "path": "/rows/21/system_kind",
+        "old": "injected",
+        "new": "custom_message"
+      },
+      {
+        "path": "/rows/21/collapsed",
+        "old": true,
+        "new": "absent (visible)"
+      }
+    ]
+  }
+}
