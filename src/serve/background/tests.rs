@@ -28,6 +28,21 @@ fn notification(id: &str, status: &str) -> String {
     }))
 }
 
+/// Each task as (id, title, status, start time), for one assert per reader.
+fn brief(found: &[Task]) -> Vec<(&str, &str, &str, Option<&str>)> {
+    found
+        .iter()
+        .map(|t| {
+            (
+                t.id.as_str(),
+                t.title.as_str(),
+                t.status.as_str(),
+                t.started_at.as_deref(),
+            )
+        })
+        .collect()
+}
+
 #[test]
 fn a_log_names_shells_and_subagents_with_their_end_state() {
     let dir = std::env::temp_dir().join(format!("swarm-bg-{}", std::process::id()));
@@ -79,21 +94,6 @@ fn a_log_names_shells_and_subagents_with_their_end_state() {
         Some(Path::new("/tmp/claude-1/x/s/tasks/a3.output"))
     );
     let _ = std::fs::remove_dir_all(&dir);
-}
-
-/// Each task as (id, title, status, start time), for one assert per reader.
-fn brief(found: &[Task]) -> Vec<(&str, &str, &str, Option<&str>)> {
-    found
-        .iter()
-        .map(|t| {
-            (
-                t.id.as_str(),
-                t.title.as_str(),
-                t.status.as_str(),
-                t.started_at.as_deref(),
-            )
-        })
-        .collect()
 }
 
 #[test]

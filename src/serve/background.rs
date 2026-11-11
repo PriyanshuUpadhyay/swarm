@@ -38,17 +38,25 @@ pub(super) struct Task {
 }
 
 impl Task {
-    /// A running shell with no log, as the Codex and AGY readers start one.
-    fn running(agent: &str, id: &str, title: &str, started_at: Option<&str>) -> Task {
+    /// A task that has just started, so `running`; the Claude reader sets its end state after it
+    /// has read the whole log.
+    fn new(
+        agent: &str,
+        id: &str,
+        kind: TaskKind,
+        title: &str,
+        started_at: Option<&str>,
+        output: Option<PathBuf>,
+    ) -> Task {
         Task {
             id: id.into(),
             agent: agent.into(),
-            kind: TaskKind::Shell,
+            kind,
             title: title_of(title),
             status: "running".into(),
             summary: None,
             started_at: started_at.map(str::to_string),
-            output: None,
+            output,
         }
     }
 }
@@ -121,12 +129,14 @@ pub(super) fn tasks(agent: &str, log: &str) -> Vec<Task> {
             .or_else(|| titles.get(call).cloned())
             .unwrap_or_default();
         found.retain(|task| task.id != id);
-        found.push(Task {
+        found.push(Task::new(
+            agent,
+            id,
             kind,
-            status: String::new(),
-            output: texts.iter().find_map(|text| output_path(text)),
-            ..Task::running(agent, id, &title, record["timestamp"].as_str())
-        });
+            &title,
+            record["timestamp"].as_str(),
+            texts.iter().find_map(|text| output_path(text)),
+        ));
     }
     for task in &mut found {
         (task.status, task.summary) = match ends.remove(&task.id) {
@@ -188,7 +198,14 @@ pub(super) fn codex_tasks(agent: &str, log: &str) -> Vec<Task> {
                     if let Some((cmd, started_at)) = commands.get(call)
                         && !found.iter().any(|task| task.id == id)
                     {
-                        found.push(Task::running(agent, &id, cmd, started_at.as_deref()));
+                        found.push(Task::new(
+                            agent,
+                            &id,
+                            TaskKind::Shell,
+                            cmd,
+                            started_at.as_deref(),
+                            None,
+                        ));
                     }
                 } else if let Some(id) = polls.get(call)
                     && let Some(code) = number_after(header, "Process exited with code ")
@@ -235,11 +252,13 @@ pub(super) fn agy_tasks(agent: &str, log: &str) -> Vec<Task> {
                 .split_once("Task Description: ")
                 .map_or("", |(_, rest)| rest);
 
-            found.push(Task::running(
+            found.push(Task::new(
                 agent,
                 id,
+                TaskKind::Shell,
                 described,
                 record["created_at"].as_str(),
+                None,
             ));
         } else if record["type"] == "SYSTEM_MESSAGE"
             && let Some((_, rest)) = text.split_once("sender=")
@@ -255,18 +274,15 @@ pub(super) fn agy_tasks(agent: &str, log: &str) -> Vec<Task> {
     found
 }
 
-/// The number that starts the word after `label`: its leading digits, with a minus sign. AGY ends
-/// its exit code with a period (`code 1.`).
+/// The number in the word after `label`. AGY ends its exit code with a period (`code 1.`).
 fn number_after(text: &str, label: &str) -> Option<String> {
     let word = text[text.find(label)? + label.len()..]
         .split_whitespace()
         .next()?;
-    let digits = word.strip_prefix('-').unwrap_or(word);
-    let end = digits
-        .find(|c: char| !c.is_ascii_digit())
-        .unwrap_or(digits.len());
-    let number = &word[..word.len() - digits.len() + end];
-    number.parse::<i64>().ok().map(|n| n.to_string())
+    word.trim_end_matches('.')
+        .parse::<i64>()
+        .ok()
+        .map(|n| n.to_string())
 }
 
 /// A task title keeps its first line, cut to `TITLE_CHARS` characters.
