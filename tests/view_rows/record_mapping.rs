@@ -284,3 +284,21 @@ fn codex_compaction_records_make_one_compaction_row() {
         assert!(!rows[0].collapsed);
     }
 }
+
+#[test]
+fn pi_custom_messages_follow_the_display_flag() {
+    for display in [true, false] {
+        let text = json!({"type":"custom_message","id":"custom","display":display,"content":"Extension message"}).to_string();
+        let rows = build(inline_fixture("pi", &[&text]));
+        assert_eq!(
+            rows.iter()
+                .any(|row| !row.collapsed && row.text == "Extension message"),
+            display
+        );
+        assert!(
+            !rows
+                .iter()
+                .any(|row| row.system_kind.as_deref() == Some("unmapped"))
+        );
+    }
+}

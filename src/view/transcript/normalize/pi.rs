@@ -176,7 +176,7 @@ pub(crate) fn parse_fact(line: &[u8], work: &mut dyn Work) -> Result<Fact, Snaps
         ),
         "custom_message" => {
             let text = pi_text::join_text(record.get("content"), work)?;
-            fact.push("system_message", json!({"kind": "injected", "text": text}));
+            fact.push("system_message", json!({"kind": if record.boolean("display") == Some(true) { "custom_message" } else { "injected" }, "text": text}));
         }
         "thinking_level_change"
         | "custom"
