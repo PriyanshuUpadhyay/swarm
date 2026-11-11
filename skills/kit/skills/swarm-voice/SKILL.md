@@ -23,8 +23,9 @@ You are one child agent. The orchestrator spawned your pane. `swarm` is on PATH.
 
 ## Project board
 
-The project keeps a board that outlives this session. Use `swarm board read` before you start,
-but a checker reads only the posts its brief names, as `blocks/worker-brief/SKILL.md` says. Use
+The project keeps a board that outlives this session. Read the posts your brief names, as
+`blocks/worker-brief/SKILL.md` says. Run `swarm board read` only when the brief has no board
+line. Use
 `swarm board post <kind>` to add a post, and `swarm board answer B-n` to answer an ask. Run
 `swarm board` for the flags; a refused post prints how to fix it.
 

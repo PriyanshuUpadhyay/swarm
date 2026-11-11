@@ -6,8 +6,8 @@ description: Run a swarm session as the parent agent. It creates the session, sp
 
 # Swarm orchestrator
 
-Needs `swarm` on PATH (`cargo install --path .`), `swarm init` run once, and a pane host: tmux
-(default, run inside tmux) or Herdr (run from a Herdr pane; swarm picks it there).
+Needs `swarm` on PATH, `swarm init` run once, and a pane host: tmux (the default), a Herdr pane,
+or the Swarm app, which opens the session for its chair.
 
 ## Session
 
