@@ -73,6 +73,19 @@ fn row_parts(row: &Row) -> Vec<Value> {
         }
     } else {
         field(&mut parts, "text", &row.text, None);
+        for (index, item) in row.todo.iter().enumerate() {
+            let key = if item.status == "in_progress" && !item.active_text.is_empty() {
+                "active_text"
+            } else {
+                "text"
+            };
+            let text = if key == "active_text" {
+                &item.active_text
+            } else {
+                &item.text
+            };
+            field(&mut parts, &format!("todo.{index}.{key}"), text, None);
+        }
         if let Some(detail) = &row.detail {
             field(&mut parts, "detail", detail, None);
         }

@@ -2,11 +2,13 @@
 import { CheckIcon, ChevronDownIcon, ChevronRightIcon, CircleStopIcon, CopyIcon, FileCodeIcon, GitBranchIcon, LoaderCircleIcon, MailIcon, PencilIcon } from "lucide-react";
 import type { Row, TextPreview } from "../core/api";
 import type { FullText, Reader } from "../core/app";
-import { duration, imagesOf, paintBodyOf, wordAt, type Line } from "../core/transcript";
+import { duration, imagesOf, paintBodyOf, UNMAPPED, wordAt, type Line } from "../core/transcript";
 import { copyText } from "./copy";
 import { ImageThumbs } from "./images";
 import { MarkdownView } from "./markdown-view";
 import { DiffView, OutputBox } from "./transcript-output";
+import { PlanRow, TodoRow } from "./transcript-todo";
+import { SubagentRow } from "./subagent-chat";
 import { ShellRow, StatusGlyph, ToolCard } from "./transcript-tool";
 
 type Ctx = { app: Reader; line: Line; full: ReadonlyMap<string, FullText>; composerId?: string; branches?: boolean };
@@ -37,6 +39,7 @@ const LABEL: Partial<Record<Row["kind"], string>> = {
   system: "System",
   result: "Result",
   toolUse: "Tool",
+  subagent: "Subagent",
 };
 
 function MdBody({ row }: { row: Row }) {
@@ -53,6 +56,9 @@ function RowBody(ctx: Ctx) {
   const { app, line } = ctx;
   const { row } = line;
   if (row.kind === "fold") return <FoldLine app={app} line={line} />;
+  if (row.kind === "todoList") return <TodoRow row={row} />;
+  if (row.kind === "proposedPlan") return <PlanRow row={row} />;
+  if (row.subagent) return <SubagentRow run={row.subagent} title={row.text} />;
   if (row.tool) return <ToolCard {...ctx} />;
   if (row.kind === "divider")
     return (
@@ -65,6 +71,16 @@ function RowBody(ctx: Ctx) {
     return (
       <div className="quiet" role="status" data-testid="working">
         <LoaderCircleIcon className="glyph working" /> {row.text}
+      </div>
+    );
+  if (row.system_kind === UNMAPPED)
+    return (
+      <div className="quiet" data-testid="unmapped">
+        <Disclosure app={app} line={line} title={row.text}>
+          <div className="grid gap-1">
+            {(row.steps ?? []).map((step) => step.output && <OutputBox key={step.id} app={app} preview={step.output} full={ctx.full} title="Unmapped record" />)}
+          </div>
+        </Disclosure>
       </div>
     );
   if (row.system_kind === "swarm_ring")
@@ -124,8 +140,10 @@ function RowBody(ctx: Ctx) {
   const label = <div className="row-label">{LABEL[row.kind] ?? row.kind}</div>;
   switch (row.kind) {
     case "thought":
+      // The CLI wrote no summary, so the row only shows that the agent thought.
+      if (!row.text.trim()) return <div className="quiet">{LABEL.thought}</div>;
       return (
-        <Disclosure app={app} line={line} title="Thinking">
+        <Disclosure app={app} line={line} title={LABEL.thought ?? row.kind}>
           <pre className="plain">{row.text}</pre>
         </Disclosure>
       );

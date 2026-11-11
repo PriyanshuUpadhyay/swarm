@@ -458,3 +458,113 @@ fn call_id_stays_fixed_when_an_older_result_precedes_it() {
     assert_eq!(joined[0].id, "ordered:call@raw-500-0");
     assert_eq!(tool(&joined[0]).state, ToolState::Finished);
 }
+
+fn items(row: &Row) -> Vec<(&str, &str)> {
+    row.todo
+        .iter()
+        .map(|item| (item.text.as_str(), item.status.as_str()))
+        .collect()
+}
+
+#[test]
+fn todo_write_draws_one_checklist_row() {
+    let rows = build(vec![
+        call(
+            "t1",
+            "TodoWrite",
+            json!({"todos":[
+                {"content":"Read","status":"completed","activeForm":"Reading"},
+                {"content":"Edit","status":"in_progress","activeForm":"Editing"},
+                {"content":"Test","status":"pending","activeForm":"Testing"}]}),
+        ),
+        update("t1", "completed", "Todos have been modified"),
+    ]);
+
+    assert_eq!(kinds(&rows), [RowKind::TodoList]);
+    assert_eq!(
+        items(&rows[0]),
+        [
+            ("Read", "completed"),
+            ("Edit", "in_progress"),
+            ("Test", "pending")
+        ]
+    );
+
+    assert_eq!(rows[0].todo[1].active_text, "Editing");
+    assert!(rows[0].tool.is_none() && !rows[0].collapsed);
+}
+
+#[test]
+fn task_tools_replay_into_the_current_list_and_hide_older_lists() {
+    let created = |id: &str, call_id: &str| {
+        let mut done = update(call_id, "completed", "created");
+        done["task_id"] = json!(id);
+        done
+    };
+
+    let rows = build(vec![
+        call(
+            "c1",
+            "TaskCreate",
+            json!({"subject":"Write","description":"d"}),
+        ),
+        created("1", "c1"),
+        call(
+            "c2",
+            "TaskCreate",
+            json!({"subject":"Ship","description":"d"}),
+        ),
+        created("2", "c2"),
+        call(
+            "u1",
+            "TaskUpdate",
+            json!({"taskId":"1","status":"completed"}),
+        ),
+        update("u1", "completed", "updated"),
+    ]);
+
+    let lists: Vec<&Row> = rows
+        .iter()
+        .filter(|row| row.kind == RowKind::TodoList)
+        .collect();
+    assert_eq!(lists.len(), 3);
+
+    assert_eq!(
+        items(lists[2]),
+        [("Write", "completed"), ("Ship", "pending")]
+    );
+    assert!(!lists[2].collapsed && lists[0].collapsed && lists[1].collapsed);
+}
+
+#[test]
+fn exit_plan_mode_draws_the_plan() {
+    let rows = build(vec![
+        call(
+            "p1",
+            "ExitPlanMode",
+            json!({"plan":"# Plan\n\n1. Add the row"}),
+        ),
+        update("p1", "completed", "User has approved your plan"),
+    ]);
+    assert_eq!(kinds(&rows), [RowKind::ProposedPlan]);
+    assert_eq!(rows[0].text, "# Plan\n\n1. Add the row");
+}
+
+#[test]
+fn codex_update_plan_and_plan_item_draw_rows() {
+    let rows = build(vec![
+        call(
+            "u1",
+            "update_plan",
+            json!({"explanation":"go","plan":[{"step":"Read","status":"completed"},{"step":"Edit","status":"pending"}]}),
+        ),
+        update("u1", "completed", "Plan updated"),
+        json!({"type":"proposed_plan","text":"# Plan\n\n1. Add the row","meta":{"uuid":"plan-1"}}),
+    ]);
+    assert_eq!(kinds(&rows), [RowKind::TodoList, RowKind::ProposedPlan]);
+    assert_eq!(
+        items(&rows[0]),
+        [("Read", "completed"), ("Edit", "pending")]
+    );
+    assert_eq!(rows[1].text, "# Plan\n\n1. Add the row");
+}

@@ -29,7 +29,7 @@ pub fn row_displays(rows: &[super::Row]) -> std::collections::BTreeMap<String, d
             Some(display::display_with_breaks(&row.text))
         } else if row.ends_turn {
             None
-        } else if row.kind == RowKind::Assistant {
+        } else if matches!(row.kind, RowKind::Assistant | RowKind::ProposedPlan) {
             Some(display::display(&row.text))
         } else {
             None

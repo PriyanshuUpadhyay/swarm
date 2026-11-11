@@ -34,6 +34,24 @@ fn overlapping_log_windows_keep_one_record_per_source_event() {
 }
 
 #[test]
+fn an_empty_thought_is_one_row_and_a_repeated_window_adds_no_second() {
+    let events = [
+        json!({"type":"agent_thought_chunk","text":"","meta":{"uuid":"think"}}),
+        json!({"type":"agent_message_chunk","text":"done","meta":{"uuid":"answer"}}),
+    ];
+    let mut state = LiveRows::empty(0, false);
+    state.ingest(0, 10, &events);
+    state.ingest(0, 10, &events);
+    let thoughts = state
+        .rows_full()
+        .into_iter()
+        .filter(|row| row.kind == view::RowKind::Thought)
+        .collect::<Vec<_>>();
+    assert_eq!(thoughts.len(), 1);
+    assert_eq!(thoughts[0].text, "");
+}
+
+#[test]
 fn source_positions_skip_fragments_and_preserve_identical_lines() {
     let fixture = Fixture::new();
     let line = format!("{}\r\n", "x".repeat(5000));
@@ -324,4 +342,43 @@ fn failed_source_reads_fall_back_to_page_positions() {
     ingest_log_line(&mut state, &source, 1, 9, &events);
     assert_eq!(state.records[&(1, 0)].event, events[0]);
     assert_eq!(state.end, 9);
+}
+
+#[test]
+fn live_task_checklist_matches_the_stored_rows_and_shows_only_the_newest() {
+    let fixture = Fixture::new();
+    std::fs::write(&fixture.log, "x\n".repeat(6)).unwrap();
+    let source = std::fs::File::open(&fixture.log).unwrap();
+
+    let create = |id: &str, subject: &str| json!({"type":"tool_call","tool_call_id":id,"name":"TaskCreate","status":"pending","input":{"subject":subject,"description":"d"}});
+    let created = |id: &str, task: &str| json!({"type":"tool_call_update","tool_call_id":id,"status":"completed","content":"ok","task_id":task});
+    let events = [
+        create("c1", "Write"),
+        created("c1", "1"),
+        create("c2", "Ship"),
+        created("c2", "2"),
+        json!({"type":"tool_call","tool_call_id":"u1","name":"TaskUpdate","status":"pending","input":{"taskId":"1","status":"completed"}}),
+        json!({"type":"tool_call_update","tool_call_id":"u1","status":"completed","content":"ok"}),
+    ];
+
+    // Start above 0, so each frame builds only its dirty chunks unless a full build is forced.
+    let mut live = LiveRows::empty(1, false);
+    let mut reference = LiveRows::empty(1, false);
+    for (index, event) in events.iter().enumerate() {
+        let (start, end) = (index as u64 * 2 + 1, index as u64 * 2 + 3);
+        reference.ingest(start, end, std::slice::from_ref(event));
+        ingest_log_line(&mut live, &source, start, end, std::slice::from_ref(event));
+        live.delta();
+    }
+    reference.shown = live.shown.clone();
+
+    let rows = live.rows();
+    assert_eq!(rows, reference.rows_full());
+    let lists: Vec<_> = rows
+        .iter()
+        .filter(|row| row.kind == view::RowKind::TodoList)
+        .collect();
+    assert_eq!(lists.len(), 3);
+    assert_eq!(lists[2].text, "1 of 2 done");
+    assert!(lists[0].collapsed && lists[1].collapsed && !lists[2].collapsed);
 }

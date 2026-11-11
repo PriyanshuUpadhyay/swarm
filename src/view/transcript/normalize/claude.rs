@@ -285,7 +285,7 @@ fn messages(
             "fallback" if !is_user => events.push(event("system_message", meta, json!({"kind":"model_fallback", "text":format!("{} -> {}", block.object("from").map_or(String::new(), |from| from.text("model")), block.object("to").map_or(String::new(), |to| to.text("model")))}))),
             "thinking" => {
                 let thought = block.text("thinking");
-                if !thought.is_empty() { events.push(event("agent_thought_chunk", meta, json!({"text":thought}))); }
+                events.push(event("agent_thought_chunk", meta, json!({"text":thought})));
             }
             "tool_use" if !is_user => super::claude_tools::call(&block, meta, line, events, &mut has_unknown, work)?,
             "tool_result" if is_user => super::claude_tools::result(&block, rec, meta, line, count, events, &mut has_unknown, work)?,

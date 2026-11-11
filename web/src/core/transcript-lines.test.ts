@@ -26,6 +26,16 @@ describe("folds and lines", () => {
     expect(lines([record], { folds: new FoldChoices(), opened: new Map([["record", true]]) })).toEqual([]);
   });
 
+  it("counts records no parser maps in one line at the end, also those inside a fold", () => {
+    const unknown = (id: string, offset: number) => row(id, offset, { kind: "system", system_kind: "unmapped", collapsed: true });
+    const inFold = fold("run", [tool("read-config", 100), unknown("unknown-in-fold", 101), tool("run-tests", 102)]);
+    const rows = [row("reply", 1), unknown("unknown-top", 2), inFold];
+    const counted = lines(rows, { folds: new FoldChoices(), opened: new Map() });
+    expect(ids(counted)).toEqual(["reply", "run", "unmapped"]);
+    expect(counted[2].row.text).toBe("2 items this app does not show yet");
+    expect(ids(counted[2].row.steps ?? [])).toEqual(["unknown-top", "unknown-in-fold"]);
+  });
+
   it("skips collapsed folds with all their steps, and collapsed failed tools", () => {
     const hiddenFold = fold("hidden-run", steps, { collapsed: true, default_open: true });
     const hiddenTool = { ...tool("hidden-failed", 200, "failed"), collapsed: true };

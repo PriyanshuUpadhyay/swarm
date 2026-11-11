@@ -8,10 +8,9 @@ For repository task state, use `<repo-root>/tmp/<skill>/`. `<repo-root>` is
 `git rev-parse --show-toplevel`, so each worktree has its own runs. The `implement` preset keeps
 `tmp/flow/` and `~/.flow/`, so existing runs and profiles still work.
 
-For research and web-search, `<reports>` is `~/.claude/reports/` under the claude runtime. Under
-any other runtime it is `<repo-root>/tmp/reports/` in a repo, or `<working-folder>/tmp/reports/`
-outside a repo. This file owns the rule and default for every runtime. Read older reports where
-they already exist; this rule moves no saved history.
+For research and web-search, `<reports>` is `~/.swarm/reports/` for every runtime, so a report
+from one agent CLI is there for the others and outlives a worktree (ADR 0141). The old Claude path
+`~/.claude/reports/` is a symlink to it, so older links still open. This file owns the rule.
 
 The following scopes use these paths, including when invoked from a repository.
 

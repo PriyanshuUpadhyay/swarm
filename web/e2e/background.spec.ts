@@ -135,3 +135,17 @@ test("a workspace shell takes keys, outlives the panel, and closes on request", 
   await expect(row).toHaveCount(0);
 });
 
+
+test("a running task shows a status line that opens its Cmd+J row", async ({ page: tab }, info) => {
+  // The fixture agents run no background work, so the server's answer is stood in for.
+  await tab.route(/\/api\/background\?/, (route) =>
+    route.fulfill({ json: { tasks: [{ id: "b1", agent: "reviewer", kind: "shell", title: "npm run dev", status: "running", started_at: new Date().toISOString(), output: false }] } }),
+  );
+  await openChat(tab, info);
+  const line = tab.getByTestId("background-line");
+  await expect(line).toContainText("Running · npm run dev");
+  await expect(tab.getByTestId("background-panel")).toHaveCount(0);
+  await line.getByRole("button", { name: "Open" }).click();
+  const row = tab.getByTestId("background-panel").getByRole("button", { name: /npm run dev/ });
+  await expect(row).toHaveAttribute("aria-current", "true");
+});

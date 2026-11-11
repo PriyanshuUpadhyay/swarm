@@ -147,7 +147,15 @@ pub(super) fn result(
     }
     let failed = block.boolean("is_error") == Some(true);
     let id = block.text("tool_use_id");
-    events.push(event("tool_call_update", meta, json!({"tool_call_id":id, "status":if failed {"failed"} else {"completed"}, "content":text})));
+    let task_id = result
+        .as_ref()
+        .and_then(|result| result.object("task"))
+        .and_then(|task| task.optional_text("id"));
+    let mut fields = json!({"tool_call_id":id, "status":if failed {"failed"} else {"completed"}, "content":text});
+    if let Some(task_id) = task_id {
+        fields["task_id"] = json!(task_id);
+    }
+    events.push(event("tool_call_update", meta, fields));
     if !failed && let Some(result) = result {
         match patch(&result, &id, result_count, work)? {
             Ok(Some((path, hunks))) => events.push(event(

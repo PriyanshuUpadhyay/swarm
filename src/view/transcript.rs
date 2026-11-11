@@ -3,6 +3,7 @@ use super::{builder, fold_rows, queue};
 use serde::Serialize;
 use serde_json::Value;
 
+pub(super) mod checklist;
 pub mod display_comments;
 mod display_patch;
 mod events;
@@ -23,7 +24,9 @@ pub mod source_readers;
 mod state;
 pub mod worker_protocol;
 
+pub use checklist::TodoItem;
 pub use events::row;
+pub(super) use events::subagent_labels;
 pub use records::Record;
 pub(super) use shell::shell_row;
 pub use shell::{clean_shell, command_output_text, shell_output_text, shell_run};
@@ -49,6 +52,9 @@ pub enum RowKind {
     Divider,
     Fold,
     Queued,
+    TodoList,
+    ProposedPlan,
+    Subagent,
 }
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct CommandChip {
@@ -59,6 +65,17 @@ pub struct CommandChip {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub output: Option<TextPreview>,
 }
+/// A subagent call: who it is, what it was asked, how far it got, and what it returned.
+/// `call_id` names the child log to the server (ADR 0140).
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct SubagentRun {
+    pub call_id: String,
+    pub agent_type: String,
+    pub description: String,
+    pub state: super::ToolState,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub result: Option<TextPreview>,
+}
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct ShellRun {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -67,6 +84,11 @@ pub struct ShellRun {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub exit_code: Option<i64>,
 }
+/// `Row.system_kind` of a hidden bookkeeping record, such as an `ignored` event.
+pub const RECORD: &str = "record";
+/// `Row.system_kind` of a record no parser maps; the web counts these rows (ADR 0139).
+pub const UNMAPPED: &str = "unmapped";
+
 /// Absent fields have the same meaning as null, false, or an empty array.
 /// `id`, `kind`, `text`, and `order` are always present.
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -88,6 +110,8 @@ pub struct Row {
     pub shell: Option<ShellRun>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub command: Option<CommandChip>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subagent: Option<SubagentRun>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub source_ids: Vec<String>,
     #[serde(skip)]
@@ -106,9 +130,18 @@ pub struct Row {
     pub fold: Option<super::FoldSummary>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub steps: Vec<Row>,
+    /// The checklist of a `todoList` row.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub todo: Vec<TodoItem>,
     #[serde(skip_serializing_if = "super::is_false")]
     pub default_open: bool,
     pub order: [u64; 2],
+}
+impl RowKind {
+    /// A to-do list or a plan: drawn as its own row, never as a tool step.
+    pub fn is_checklist(self) -> bool {
+        matches!(self, RowKind::TodoList | RowKind::ProposedPlan)
+    }
 }
 impl Row {
     pub fn new(kind: RowKind, text: String, id: String) -> Self {
@@ -123,6 +156,7 @@ impl Row {
             system_kind: None,
             shell: None,
             command: None,
+            subagent: None,
             source_ids: Vec::new(),
             anchor_source_id: String::new(),
             ends_turn: false,
@@ -132,6 +166,7 @@ impl Row {
             output: None,
             fold: None,
             steps: Vec::new(),
+            todo: Vec::new(),
             default_open: false,
             order: [0, 0],
         }
@@ -164,6 +199,9 @@ impl Row {
             RowKind::Divider => "Context cleared".into(),
             RowKind::Fold => "Steps".into(),
             RowKind::Queued => "Queued".into(),
+            RowKind::TodoList => "To-do".into(),
+            RowKind::ProposedPlan => "Plan".into(),
+            RowKind::Subagent => "Subagent".into(),
         }
     }
     pub fn search_text(&self) -> String {
@@ -171,6 +209,7 @@ impl Row {
             return "New swarm message".into();
         }
         let mut parts = vec![self.text.as_str()];
+        parts.extend(self.todo.iter().map(|item| item.text.as_str()));
         if let Some(detail) = &self.detail {
             parts.push(detail);
         }
@@ -190,6 +229,13 @@ impl Row {
             }
             if let Some(body) = &tool.skill_body {
                 parts.push(&body.text);
+            }
+        }
+        if let Some(run) = &self.subagent {
+            parts.push(&run.agent_type);
+            parts.push(&run.description);
+            if let Some(result) = &run.result {
+                parts.push(&result.text);
             }
         }
         if let Some(command) = &self.command {

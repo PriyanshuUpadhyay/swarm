@@ -17,11 +17,16 @@ fn pages_args_accept_only_the_declared_forms() {
     assert_eq!(parse(&args(&["stop"])).unwrap(), Command::Stop);
     assert_eq!(
         parse(&args(&["--foreground"])).unwrap(),
-        Command::Foreground(4748)
+        Command::Foreground(4748, Vec::new())
     );
     assert_eq!(
         parse(&args(&["--foreground", "--port", "9200"])).unwrap(),
-        Command::Foreground(9200)
+        Command::Foreground(9200, Vec::new())
+    );
+    let id = uuid::Uuid::new_v4().to_string();
+    assert_eq!(
+        parse(&args(&["--foreground", "--id", &id, "--port", "9200"])).unwrap(),
+        Command::Foreground(9200, vec![id])
     );
     assert_eq!(
         parse(&args(&["publish", "report"])).unwrap(),
@@ -36,6 +41,8 @@ fn pages_args_accept_only_the_declared_forms() {
         vec!["--port", "9200"],
         vec!["--foreground", "--port", "0"],
         vec!["--foreground", "--port", "65536"],
+        vec!["--foreground", "--id", "2026-10-21-page"],
+        vec!["--foreground", "--id"],
         vec!["publish"],
         vec!["publish", "report", "--slug"],
     ] {
@@ -140,26 +147,6 @@ fn pages_commit_line_marks_any_porcelain_change() {
     assert_eq!(commit_line("unexpected\noutput", ""), None);
 }
 
-#[test]
-fn pages_list_shows_only_page_folders_newest_first() {
-    let root = temporary();
-    fs::create_dir(root.join("2026-10-20-old")).unwrap();
-    fs::write(root.join("2026-10-20-old/index.html"), "old").unwrap();
-    std::thread::sleep(Duration::from_millis(20));
-    fs::create_dir(root.join("2026-10-21-new")).unwrap();
-    fs::write(root.join("2026-10-21-new/index.html"), "new").unwrap();
-    fs::create_dir(root.join(".tmp-hidden")).unwrap();
-    fs::create_dir(root.join("empty")).unwrap();
-    fs::write(root.join("file"), "not a folder").unwrap();
-    std::os::unix::fs::symlink(root.join("2026-10-21-new"), root.join("linked")).unwrap();
-    assert_eq!(
-        folders(&root).unwrap(),
-        vec!["2026-10-21-new", "2026-10-20-old"]
-    );
-    assert!(folders(&root.join("missing")).unwrap().is_empty());
-    fs::remove_dir_all(root).unwrap();
-}
-
 fn probe_reply(response: &str) -> (bool, String) {
     let listener = std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
     let port = listener.local_addr().unwrap().port();
@@ -225,7 +212,7 @@ async fn pages_probe_checks_pid_against_stub_replies_and_the_real_router() {
         .await
         .unwrap();
     let port = listener.local_addr().unwrap().port();
-    let router = pages_hub::router(root.clone(), port);
+    let router = pages_hub::router(root.clone(), port, None);
     let server = tokio::spawn(async move {
         axum::serve(listener, router).await.unwrap();
     });

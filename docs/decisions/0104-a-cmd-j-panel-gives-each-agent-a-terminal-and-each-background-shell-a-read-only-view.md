@@ -50,3 +50,29 @@ these sessions.
   AGY background work, a plain workspace shell, and other chats' tasks are out of v1.
 - Bad: shell rows depend on the wording of Claude Code's launch result and task notification, so
   a change to that wording hides the rows until the reader learns it.
+
+### Amendment 2026-11-11: a status line at the end of the chat
+
+The chat ends with one status line, "Running · <label>", while background work runs. It shows a
+count when several tasks run, a timer, and Open, which opens that task's row in this panel. It is a
+line of text, not a terminal, so ADR 0099 holds; the output stays in the panel. It reads the same
+`/api/background` list as the panel, so nothing is parsed twice.
+
+- Codex background terminals are now listed. The reader takes a unified-exec session from a
+  `Process running with session ID <n>` answer to `exec_command`, and ends it when a later
+  `write_stdin` poll answers `Process exited with code <c>`. A terminal that exits with no later poll
+  shows as running while its agent lives. This replaces the Codex part of "Codex and AGY background work, a plain workspace shell, and other chats' tasks are out of v1" above.
+  The record shape comes from Codex's public behavior, not a repo fixture, so a change to that
+  wording hides the rows.
+- AGY background tasks are listed. A `GENERIC` step with status `RUNNING` and the line `Tool is
+  running as a background task with task id: <conv>/task-<n>` starts a task; its label is the
+  `Task Description:` line (`sleep 40`, or `Timer: 8s, Prompt: ...` for a `schedule` timer). A later
+  `SYSTEM_MESSAGE` step with `sender=<that id>` ends it: `Command exited with code <c>` gives
+  completed or failed, and a timer's message, which has no exit code, gives completed. The row has no
+  log, because the task's `.log` file is under AGY's own folder and the panel's read-only view opens
+  only a file under `/tmp/claude-<uid>/`. The record shape was read from real AGY logs on
+  2026-10-23, so a change to that wording hides the rows. This replaces the AGY part of "Codex and AGY background work, a plain workspace shell, and other chats' tasks are out of v1" above.
+- pi draws nothing: 212 local pi sessions use only `bash`, `read`, `edit`, and `write`, so its log
+  holds no background record, and its core has no background command or agent.
+- There is no Stop button. Claude stops a task only through `/tasks`, and Codex has only a stop-all
+  API, so the contract has no per-task stop.

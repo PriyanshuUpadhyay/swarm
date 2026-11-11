@@ -20,7 +20,7 @@ metadata:
 
 ## Example
 Initial state: the step made `tmp/skill-blocks/index.html`, one self-contained page.
-Action: run `swarm pages publish tmp/skill-blocks`. It prints `http://127.0.0.1:4748/2026-10-21-skill-blocks/`, then `hash sha256:…`, `source …/tmp/skill-blocks`, and `commit eb10708c`.
+Action: run `swarm pages publish tmp/skill-blocks`. It prints `http://127.0.0.1:4748/<id>/` (`<id>` is a random UUID), then `hash sha256:…`, `source …/tmp/skill-blocks`, and `commit eb10708c`.
 Result: the reply gives that URL and the hash. The page opens after the worktree is removed, because the shelf keeps its own copy.
 
 ## Check (script)

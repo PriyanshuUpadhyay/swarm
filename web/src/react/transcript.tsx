@@ -6,6 +6,7 @@ import { canBranch } from "../core/composer";
 import { promptIndex, type Line } from "../core/transcript";
 import { ContextMenu, ContextMenuTrigger } from "../components/ui/context-menu";
 import { Kbd } from "../components/ui/kbd";
+import { BackgroundLine } from "./background-line";
 import { ChatInput } from "./chat-input";
 import { copyText } from "./copy";
 import { focusInputOf } from "../core/focus";
@@ -24,6 +25,7 @@ export function ChatView({ app }: { app: App }) {
   return (
     <>
       <Transcript app={app} view={view} empty={view.openId ? "No messages yet. Send the first one below." : undefined} />
+      {view.openId && <BackgroundLine app={app} session={view.openId} />}
       {view.composer && <ChatInput app={app} composer={view.composer} />}
     </>
   );

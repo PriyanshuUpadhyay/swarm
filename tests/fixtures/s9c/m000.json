@@ -241,7 +241,7 @@
     ],
     "bytes": 1000086,
     "sha256": "5c35f24958b1929dd5172fa0ed63689cd28c76cad23be9baeef18a10277a9cc3"
-  },
+  , "HAND": {"note": "HAND: ADR 0139 (docs/decisions/0139-the-chat-counts-records-no-parser-maps-and-hides-nothing-else-silently.md), owner answer a, 2026-11-11. Only unknown rows change system_kind from record to unmapped. sha256 and bytes describe the ORIGINAL source capture.", "values": 56, "parts": {"b0012-023.json": 1, "b0012-024.json": 2, "b0012-029.json": 2, "b0012-030.json": 1, "b0012-032.json": 2, "b0012-033.json": 1, "b0012-035.json": 2, "b0012-036.json": 1, "b0012-038.json": 1, "b0012-039.json": 2, "b0012-042.json": 2, "b0012-043.json": 1, "b0012-046.json": 2, "b0012-047.json": 1, "b0012-050.json": 2, "b0012-051.json": 1, "b0012-082.json": 1, "b0012-083.json": 2, "b0012-087.json": 1, "b0012-088.json": 2, "b0012-092.json": 2, "b0012-093.json": 1, "b0012-105.json": 1, "b0012-106.json": 1, "b0012-108.json": 1, "b0012-109.json": 1, "b0012-111.json": 1, "b0012-112.json": 1, "b0012-113.json": 2, "b0012-118.json": 2, "b0012-119.json": 1, "b0012-122.json": 1, "b0012-123.json": 2, "b0012-128.json": 1, "b0012-129.json": 2, "b0012-132.json": 1, "b0012-133.json": 1, "b0012-134.json": 1, "b0012-139.json": 2, "b0012-140.json": 1}}},
   "out-2/native-commands.json": {
     "parts": [
       "b0013-000.json"

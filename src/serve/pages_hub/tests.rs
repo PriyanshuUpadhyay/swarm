@@ -1,5 +1,5 @@
 use super::*;
-use std::{fs, os::unix::fs::symlink, time::SystemTime};
+use std::{fs, os::unix::fs::symlink};
 
 const CSP: &str =
     "sandbox allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads";
@@ -21,6 +21,16 @@ impl Fixture {
     }
 
     async fn request(&self, method: &str, path: &str, host: Option<&str>) -> Response {
+        self.request_only(None, method, path, host).await
+    }
+
+    async fn request_only(
+        &self,
+        only: Option<Vec<String>>,
+        method: &str,
+        path: &str,
+        host: Option<&str>,
+    ) -> Response {
         let mut request = Request::builder().method(method).uri(path);
         if let Some(host) = host {
             request = request.header(header::HOST, host);
@@ -29,6 +39,7 @@ impl Fixture {
             State(Shelf {
                 root: self.0.clone(),
                 port: 4748,
+                only,
             }),
             request.body(Body::empty()).unwrap(),
         )
@@ -38,6 +49,10 @@ impl Fixture {
     async fn get(&self, path: &str) -> Response {
         self.request("GET", path, Some("localhost:4748")).await
     }
+}
+
+fn new_id() -> String {
+    uuid::Uuid::new_v4().to_string()
 }
 
 impl Drop for Fixture {
@@ -85,7 +100,10 @@ async fn body(response: Response) -> String {
 #[tokio::test]
 async fn host_method_and_headers() {
     let fixture = Fixture::new();
-    fixture.page("2026-10-21-page", "<title>Page</title>");
+    let id = new_id();
+    fixture.page(&id, "<title>Page</title>");
+    let page = format!("/{id}/");
+    let bare = format!("/{id}");
     for (method, path, host, expected) in [
         ("GET", "/", Some("foreign.test:4748"), StatusCode::FORBIDDEN),
         ("GET", "/", Some("localhost:4747"), StatusCode::FORBIDDEN),
@@ -108,10 +126,10 @@ async fn host_method_and_headers() {
             Some("localhost:4748"),
             StatusCode::NOT_FOUND,
         ),
-        ("GET", "/", Some("127.0.0.1:4748"), StatusCode::OK),
+        ("GET", page.as_str(), Some("127.0.0.1:4748"), StatusCode::OK),
         (
             "GET",
-            "/2026-10-21-page",
+            bare.as_str(),
             Some("localhost:4748"),
             StatusCode::TEMPORARY_REDIRECT,
         ),
@@ -120,7 +138,7 @@ async fn host_method_and_headers() {
         assert_eq!(response.status(), expected, "{method} {path} {host:?}");
         headers(&response);
         if expected == StatusCode::TEMPORARY_REDIRECT {
-            assert_eq!(response.headers()[header::LOCATION], "/2026-10-21-page/");
+            assert_eq!(response.headers()[header::LOCATION], page.as_str());
         }
     }
 }
@@ -130,40 +148,43 @@ async fn paths_refuse_traversal_links_and_dot_entries() {
     let fixture = Fixture::new();
     let outside = Fixture::new();
     outside.page("secret", "secret");
-    fixture.page("page", "page");
-    fixture.page("no-index", "remove");
-    fs::remove_file(fixture.0.join("no-index/index.html")).unwrap();
+    let (page, no_index, linked) = (new_id(), new_id(), new_id());
+    fixture.page(&page, "page");
+    fixture.page(&no_index, "remove");
+    fs::remove_file(fixture.0.join(&no_index).join("index.html")).unwrap();
     fs::write(fixture.0.join(".env"), "secret").unwrap();
-    fs::write(fixture.0.join("page/.hidden"), "secret").unwrap();
+    fs::write(fixture.0.join(&page).join(".hidden"), "secret").unwrap();
+    fs::write(fixture.0.join(&page).join(".page.json"), "{}").unwrap();
     symlink(
         outside.0.join("secret/index.html"),
-        fixture.0.join("page/link.html"),
+        fixture.0.join(&page).join("link.html"),
     )
     .unwrap();
-    symlink(outside.0.join("secret"), fixture.0.join("linked")).unwrap();
+    symlink(outside.0.join("secret"), fixture.0.join(&linked)).unwrap();
     symlink(
-        fixture.0.join("page/index.html"),
-        fixture.0.join("page/internal.html"),
+        fixture.0.join(&page).join("index.html"),
+        fixture.0.join(&page).join("internal.html"),
     )
     .unwrap();
     for path in [
-        "/../x",
-        "/%2e%2e/x",
-        "/%252e%252e/x",
-        "/page/../index.html",
-        "/page/./index.html",
-        "/.env",
-        "/page/.hidden",
-        "/page/%2ehidden",
-        "/page/link.html",
-        "/page/internal.html",
-        "/linked/",
-        "/no-index/",
-        "/bad%zz",
-        "//page",
-        "/%2fpage",
+        "/../x".to_owned(),
+        "/%2e%2e/x".into(),
+        "/%252e%252e/x".into(),
+        format!("/{page}/../index.html"),
+        format!("/{page}/./index.html"),
+        "/.env".into(),
+        format!("/{page}/.hidden"),
+        format!("/{page}/.page.json"),
+        format!("/{page}/%2ehidden"),
+        format!("/{page}/link.html"),
+        format!("/{page}/internal.html"),
+        format!("/{linked}/"),
+        format!("/{no_index}/"),
+        "/bad%zz".into(),
+        format!("//{page}"),
+        format!("/%2f{page}"),
     ] {
-        let response = fixture.get(path).await;
+        let response = fixture.get(&path).await;
         assert_eq!(response.status(), StatusCode::NOT_FOUND, "{path}");
         headers(&response);
     }
@@ -172,10 +193,11 @@ async fn paths_refuse_traversal_links_and_dot_entries() {
 #[tokio::test]
 async fn files_head_and_percent_decoding() {
     let fixture = Fixture::new();
-    fixture.page("page", "<title>Page</title>");
-    fs::write(fixture.0.join("page/site.css"), "body {}").unwrap();
-    fs::write(fixture.0.join("page/a b.txt"), "space").unwrap();
-    let response = fixture.get("/page/").await;
+    let id = new_id();
+    fixture.page(&id, "<title>Page</title>");
+    fs::write(fixture.0.join(&id).join("site.css"), "body {}").unwrap();
+    fs::write(fixture.0.join(&id).join("a b.txt"), "space").unwrap();
+    let response = fixture.get(&format!("/{id}/")).await;
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(
         response.headers()[header::CONTENT_TYPE],
@@ -183,7 +205,7 @@ async fn files_head_and_percent_decoding() {
     );
     assert_eq!(body(response).await, "<title>Page</title>");
     let response = fixture
-        .request("HEAD", "/page/site.css", Some("localhost:4748"))
+        .request("HEAD", &format!("/{id}/site.css"), Some("localhost:4748"))
         .await;
     assert_eq!(response.status(), StatusCode::OK);
     headers(&response);
@@ -193,11 +215,9 @@ async fn files_head_and_percent_decoding() {
     );
     assert_eq!(response.headers()[header::CONTENT_LENGTH], "7");
     assert!(body(response).await.is_empty());
-    assert_eq!(body(fixture.get("/page/a%20b.txt").await).await, "space");
-    assert!(
-        body(fixture.request("HEAD", "/", Some("localhost:4748")).await)
-            .await
-            .is_empty()
+    assert_eq!(
+        body(fixture.get(&format!("/{id}/a%20b.txt")).await).await,
+        "space"
     );
 }
 
@@ -244,49 +264,52 @@ fn shared_content_type_preserves_existing_types() {
 }
 
 #[tokio::test]
-async fn index_newest_first_escapes_titles_and_names() {
+async fn home_lists_nothing_and_only_serves_the_named_ids() {
     let fixture = Fixture::new();
-    let old = fixture.page("2026-10-20-old", "<title>Old</title>");
-    let new = fixture.page(
-        "2026-10-21-new",
-        "<TITLE><img src=x onerror='bad'> & \"new\"</TITLE>",
+    let (shared, private) = (new_id(), new_id());
+    fixture.page(&shared, "shared");
+    fixture.page(&private, "private");
+    fixture.page("2026-10-21-guessable", "guessable");
+    for path in ["/", "/2026-10-21-guessable/"] {
+        let response = fixture.get(path).await;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND, "{path}");
+        headers(&response);
+    }
+    assert_eq!(
+        fixture.get(&format!("/{private}/")).await.status(),
+        StatusCode::OK
     );
-    fixture.page(".tmp-unpublished", "<title>Hidden</title>");
-    fixture.page("2026-10-21-a&b", "No title");
-    let set_time = |path: &Path, seconds| {
-        fs::File::open(path)
-            .unwrap()
-            .set_times(
-                fs::FileTimes::new()
-                    .set_modified(SystemTime::UNIX_EPOCH + Duration::from_secs(seconds)),
+    let only = Some(vec![shared.clone()]);
+    for (id, expected) in [(&shared, StatusCode::OK), (&private, StatusCode::NOT_FOUND)] {
+        let response = fixture
+            .request_only(
+                only.clone(),
+                "GET",
+                &format!("/{id}/"),
+                Some("localhost:4748"),
             )
-            .unwrap();
-    };
-    set_time(&old, 10);
-    set_time(&new, 20);
-    let response = fixture.get("/").await;
-    assert_eq!(response.status(), StatusCode::OK);
-    headers(&response);
-    let html = body(response).await;
-    assert!(html.find("2026-10-21-new").unwrap() < html.find("2026-10-20-old").unwrap());
-    assert!(html.contains("&lt;img src=x onerror=&#39;bad&#39;&gt; &amp; &quot;new&quot;"));
-    assert!(html.contains("2026-10-21-a&amp;b"));
-    assert!(!html.contains("<img"));
-    assert!(!html.contains("Hidden"));
-    for (name, seconds) in [("2026-10-21-new", 20), ("2026-10-20-old", 10)] {
-        assert!(html.contains(&format!(
-            "<a href=\"/{name}/\">{name}</a> <time>{seconds} seconds since 1970-01-01 UTC</time>"
-        )));
+            .await;
+        assert_eq!(response.status(), expected, "{id}");
     }
 }
 
-#[tokio::test]
-async fn index_includes_pages_with_non_utf8_html() {
+#[test]
+fn prepare_shelf_gives_old_pages_a_random_id_and_list_shows_them() {
     let fixture = Fixture::new();
-    let page = fixture.page("2026-10-21-latin1", "");
-    fs::write(page.join("index.html"), b"<title>Caf\xe9</title>").unwrap();
-    let html = body(fixture.get("/").await).await;
-    assert!(html.contains("<li>Caf\u{fffd} <a href=\"/2026-10-21-latin1/\">2026-10-21-latin1</a>"));
+    fixture.page("2026-10-21-old", "old");
+    prepare_shelf(&fixture.0).unwrap();
+    let pages = list(&fixture.0).unwrap();
+    assert_eq!(pages.len(), 1);
+    assert!(page_id(&pages[0].id));
+    assert_eq!(
+        (pages[0].date.as_str(), pages[0].slug.as_str()),
+        ("2026-10-21", "old")
+    );
+    assert_eq!(
+        fs::read_to_string(fixture.0.join(&pages[0].id).join("index.html")).unwrap(),
+        "old"
+    );
+    assert!(!fixture.0.join("2026-10-21-old").exists());
 }
 
 #[test]
@@ -368,9 +391,9 @@ fn publish_copies_regular_files_skips_dots_and_replaces() {
     fs::create_dir(source.join(".git")).unwrap();
     fs::write(source.join(".git/config"), "secret").unwrap();
     let first = publish(&shelf, &source, "page", "2026-10-21").unwrap();
-    assert_eq!(first.folder, "2026-10-21-page");
+    assert!(page_id(&first.id));
     assert_eq!(first.hash.len(), 64);
-    let target = shelf.join(&first.folder);
+    let target = shelf.join(&first.id);
     assert_eq!(
         fs::read_to_string(target.join("assets/a.css")).unwrap(),
         "style"
@@ -383,7 +406,9 @@ fn publish_copies_regular_files_skips_dots_and_replaces() {
     );
     fs::remove_file(source.join("assets/a.css")).unwrap();
     fs::write(source.join("index.html"), "second").unwrap();
-    let second = publish(&shelf, &source, "page", "2026-10-21").unwrap();
+    // A later day keeps the same ID, so a shared link stays valid.
+    let second = publish(&shelf, &source, "page", "2026-10-22").unwrap();
+    assert_eq!(second.id, first.id);
     assert_ne!(first.hash, second.hash);
     assert_eq!(
         fs::read_to_string(target.join("index.html")).unwrap(),

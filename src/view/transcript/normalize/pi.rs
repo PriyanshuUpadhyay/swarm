@@ -178,7 +178,16 @@ pub(crate) fn parse_fact(line: &[u8], work: &mut dyn Work) -> Result<Fact, Snaps
             let text = pi_text::join_text(record.get("content"), work)?;
             fact.push("system_message", json!({"kind": "injected", "text": text}));
         }
-        "thinking_level_change" | "custom" | "label" | "context_edit" | "usage" => {
+        "thinking_level_change"
+        | "custom"
+        | "label"
+        | "context_edit"
+        | "usage"
+        | "session_state"
+        | "agent_status"
+        | "git_state"
+        | "child_usage_attribution"
+        | "service_tier_change" => {
             fact.ignored(&kind, line);
         }
         "message" => {
@@ -316,9 +325,7 @@ fn parse_assistant(
                 }
                 "thinking" => {
                     let text = block.text("thinking");
-                    if !text.is_empty() {
-                        fact.push("agent_thought_chunk", json!({"text": text}));
-                    }
+                    fact.push("agent_thought_chunk", json!({"text": text}));
                 }
                 "toolCall" => {
                     let input = match block.get("arguments") {

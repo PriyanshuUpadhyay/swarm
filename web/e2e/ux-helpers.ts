@@ -3,6 +3,14 @@ import type { Block, Display, FindPart, Inline, PatchInfo, Row, RowPage } from "
 
 export const row = (id: string, text: string, kind: Row["kind"] = "assistant"): Row => ({ id, kind, text, order: [Number(id.replace(/\D/g, "")) || 1, 0] });
 function displayOf(item: Row): Display {
+  if (item.kind === "proposedPlan" && item.text === "## Steps\n\n1. Add the row") {
+    return { blocks: [
+      { type: "heading", value: { depth: 2, children: [{ type: "text", value: "Steps" }] } },
+      { type: "list", value: { ordered: true, start: 1, tight: true, items: [[
+        { type: "paragraph", value: [{ type: "text", value: "Add the row" }] },
+      ]] } },
+    ] };
+  }
   if (item.text.startsWith("| CLI | Name form | Note |\n")) {
     return { blocks: [{ type: "table", value: {
       source: item.text,
