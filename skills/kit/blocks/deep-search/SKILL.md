@@ -10,7 +10,7 @@ metadata:
   gives: "sub-questions, a known list, seeds, and off-path ideas with sources"
   conflicts: ""
   users: "research, web-search"
-  source: "presets/research/PRESET.md (Off the usual path, moved here 2026-10-13); skills/web-search/SKILL.md (Depth, a hard rule: sub-questions, known list, seeds, how to dig, moved here 2026-10-13)"
+  source: "skills/research/SKILL.md (03-web, off the usual path); blocks/web-search/SKILL.md (Depth: sub-questions, known list, seeds, how to dig)"
 ---
 
 ## Rules

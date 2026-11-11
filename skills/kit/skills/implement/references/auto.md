@@ -45,9 +45,8 @@ only the user can give.
    so it reaches the next run's `answers-before.md`. A dead end is reported with its evidence. Never
    relax the predicate to declare victory.
 
-The active host contract decides who types. Under a Fable chair the edits go to a routed coding
-seat, every worker is a visible foreground pane, and the chair verifies each returned diff itself.
-The Parallel fix seats (opt-in) section below names the exception.
+The active host contract decides who types, and the chair verifies each returned diff itself. The
+Parallel fix seats (opt-in) section below names the exception.
 Notifications are chair-owned.
 
 ## Commit gate

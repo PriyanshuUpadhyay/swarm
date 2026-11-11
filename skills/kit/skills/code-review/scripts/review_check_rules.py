@@ -29,7 +29,7 @@ def globs_of(text):
 
 
 def load_rules(files, repo_files=()):
-    """[{id, files, applies, source, aspect}] from rule lines; the owner's files, named by the caller, get the repo seat."""
+    """[{id, text, files, applies, source, aspect}] from rule lines; the owner's files, named by the caller, get the repo seat."""
     from review_check import RULE, globs_of
     rules = []
     for f in files:
@@ -46,7 +46,8 @@ def load_rules(files, repo_files=()):
             applies = re.search(r"Applies: `([^`]+)`", m.group(2))
             check = re.search(r"Check: `([^`]+)`", m.group(2))
             scope = re.search(r"Scope: (\w+)", m.group(2))
-            rules.append({"id": m.group(1), "source": f.name, "aspect": aspect,
+            text = re.split(r"\s+(?:Files: `|Applies: `|Check: `|Scope: \w|Source: )", m.group(2))[0]
+            rules.append({"id": m.group(1), "text": text, "source": f.name, "aspect": aspect,
                           "files": globs_of(globs.group(1)) if globs else default,
                           "applies": re.compile(applies.group(1)) if applies else None,
                           "check": [c.strip() for c in check.group(1).split(",")] if check else [],

@@ -58,7 +58,7 @@ def test_build_block_todos():
         file = folder / "04-style-frames.md"
         text = file.read_text(encoding="utf-8")
         for expected in ("block look-check script:", "block headless-shot script:",
-                         "block look-check judge:", "two or more rounds", "last round have no `miss`",
+                         "block look-check judge:", "one or more rounds", "last round have no `miss`",
                          "block visual-qa judge:"):
             assert expected in text, f"missing build check {expected}"
         assert "{{site}}" not in text and "{{shots}}" not in text

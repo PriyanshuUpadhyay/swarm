@@ -111,7 +111,7 @@ def test_seat_gaps():
             sh("git", "config", "user.name", "t")
             base = commit({"util.py": "value = 1\n", "README.md": "old docs\n"}, "base")
             head = commit({"util.py": "value = 2\n", "README.md": "new docs\n"}, "head")
-            catalog = [{"id": f"C-{n}", "source": "lens.md", "aspect": "lens", "files": ["**/*.py"], "applies": None,
+            catalog = [{"id": f"C-{n}", "text": "x", "source": "lens.md", "aspect": "lens", "files": ["**/*.py"], "applies": None,
                         "check": [], "scope": None} for n in range(1, 6)]
             with patch.object(rc, "load_rules", return_value=catalog):
                 rc.start(f"{base}..{head}")

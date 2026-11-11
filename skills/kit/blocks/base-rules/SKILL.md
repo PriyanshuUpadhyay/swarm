@@ -15,10 +15,8 @@ metadata:
 
 ## Rules
 - In pages and docs built from a repo, facts come only from {{source_of_truth}}.
-- Research and web-search follow their own evidence blocks: `blocks/primary-sources/SKILL.md`, `blocks/cite-sources/SKILL.md`, `blocks/deep-search/SKILL.md`, and `blocks/local-research/SKILL.md`.
 - Real over drawn. Cite the file and line for a fact or a code claim.
-- The session's agent instructions (`AGENTS.md`, `CLAUDE.md`) own scope, evidence for done, and how to explain. This block does not restate them.
-- If two rules disagree, say which two and which one you followed.
+- If two rules disagree and the task names which one wins, follow the task and say which rule you set aside. Otherwise name both and stop the work that depends on them: a worker publishes blocked by `blocks/worker-brief/SKILL.md`, and a chair explains the trade-off by `blocks/decision-with-default/SKILL.md`.
 
 ## Example
 Initial state: a doc built from a repo wants to write "the agent retries three times". Action: find the line in {{source_of_truth}} that says so and cite it. Result: the claim carries its `path:line`, or it is cut.

@@ -23,7 +23,7 @@ metadata:
 - The frame step's file holds what its caller lists in its step table or its plan's Holds cell.
 - On the line `Task rules:`, quote word for word, one after another, each rule, limit, or definition that the task states. A claim, a done-when, and a fork default never narrow or widen a quoted rule. A reading that changes it may be a fork option, never the default. A task with no stated rule gets `Task rules: none`.
 - Each done-when names the evidence that will prove it: a command, a screenshot, or a `file:line`.
-- Pre-mortem: imagine the page ships in 14 days and fails. Ask what went wrong, what you missed, and what you were overconfident about.
+- For a change that ships, run a pre-mortem; skip it for a question with no release. Imagine the change ships in 14 days and fails. Ask what went wrong, what you missed, and what you were overconfident about.
 - Sort each failure as a Tiger (a real risk, with evidence), a Paper Tiger (a concern that is overblown), or an Elephant (a risk that nobody is discussing or checking). When you are not sure which kind a failure is, call it a Tiger.
 - A launch-blocking Tiger is one that must be solved before launch. Each launch-blocking Tiger gets one concrete mitigation. Each Elephant gets one step that investigates it before launch.
 
@@ -40,7 +40,7 @@ Result: read aloud, the three claims tell the whole page.
 - none: the frame writes only its step file, which links this block's own Rules and Example.
 
 ## Check (judge)
-- Does the frame step's file give the goal, the user, out of scope, done-when, and shared assumptions? Quote each field's line.
+- Does the frame step's file give the level-1 claims, `Task rules:`, each done-when with its evidence, and, for a change that ships, the pre-mortem? Quote each.
 - Does `Task rules:` quote each rule the task states, and does every claim, done-when, and fork default keep each one unchanged? Quote each rule and any line that narrows or widens it.
 - Is each level-1 claim one sentence that can be false, in 12 words or fewer? Quote each claim with its word count.
 - Do the level-1 claims, read alone, tell the whole change, and is no claim a file, a layer, or a step? Quote the claims.

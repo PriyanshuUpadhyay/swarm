@@ -20,9 +20,8 @@ architecture is worse than no cleanup — a polished diff reads as finished and 
 a pass through review. If any part of the scope or the design is unconfirmed, stop, name the
 unconfirmed part, and get it confirmed before running step 1.
 
-**Emission rule.** Each step below emits its result before the next step starts: either a list of
-edits, one per line as `path:line — what changed — which rule`, or the literal word `none`. A step
-that emitted nothing did not run. The six emissions are presented together, above the diff.
+**Step list.** Above the diff, list each edit as `path:line — what changed — which rule`, grouped
+by step. Name the steps that found nothing in one line.
 
 **Working set.** Only files this task changed. A file this task never touched is out of scope for
 every step, including step 3 and step 4.
@@ -44,7 +43,7 @@ Offers: call-tree, lean-review
 | 04-comments | readability | comments added and deleted, or `none` | base-rules | comments only for what code cannot say |
 | 05-constants | comments | each constant moved, renamed, or kept, or `none` | base-rules | a constant lives next to its consumers |
 | 06-triage | constants | each test, fixture, and bot comment with its verdict | prove-it-works | keep required tests and settle each bot comment |
-| 07-reply | triage | the six emissions above the diff | voice-reply | the owner reads the cleaned diff |
+| 07-reply | triage | the step list above the diff | voice-reply | the owner reads the cleaned diff |
 
 ## The pass
 
@@ -59,12 +58,12 @@ each ride-along, offer two choices — revert it, or keep it with the one-line r
 into scope — and wait for that answer before step 2 runs. Never clean a file you have just reported
 as out of scope; cleaning it is what makes unrequested work look requested.
 
-Emit: `<file> → <scope item>` per changed file, then the ride-along list, or `none`.
+Emit: `<file> → <scope item>` per changed file, then the ride-along list.
 
 ### 2 — Dead weight
 
-Remove, within the working set: unreachable code, types and interfaces this task introduced and
-nothing consumes, exports with no importer, wrapper layers with one caller and no behavior of their
+Remove, within the working set: code that this task added or made unreachable, types and interfaces
+this task introduced and nothing consumes, exports with no importer, wrapper layers with one caller and no behavior of their
 own, and scaffolding left over from iteration.
 
 Also inspect each dependency, configuration item, abstraction, service, retry, and compatibility path
@@ -73,26 +72,26 @@ current failure. If removal would change the confirmed design, report the confli
 entry contract. Never use this test to remove required verification, security controls,
 checks for irreversible actions, explicit user requirements, or established repository structure.
 
-Emit: one line per removal with its reason, or `none`.
+Emit: one line per removal with its reason.
 
 ### 3 — Readability
 
 Apply `references/cleanup-rules.md` and the global coding rules. Collapse indirection that exists only
 because an earlier iteration needed it.
 
-Emit: one line per edit, or `none`.
+Emit: one line per edit.
 
 ### 4 — Comments and documentation
 
 Apply the global comment rule and section 5 of `references/cleanup-rules.md` to the working set.
 
-Emit two lists — added (each with the reason it is not obvious) and deleted — or `none`.
+Emit two lists — added (each with the reason it is not obvious) and deleted.
 
 ### 5 — Constant locality
 
 Apply section 3 of `references/cleanup-rules.md` to every constant this task introduced.
 
-Emit: one line per constant moved, renamed, or kept shared with the consumer count, or `none`.
+Emit: one line per constant moved, renamed, or kept shared with the consumer count.
 
 ### 6 — Test and review triage
 
@@ -104,23 +103,16 @@ naming the `path:line` or the rule that settles it. Every comment gets a verdict
 forward an untriaged comment to the user.
 
 Emit: one line per test or fixture — `removed: <reason>` or `kept: <reason>` — and one line per
-comment — `implemented: <what changed>` or `refuted: <reason>` — or `none`.
+comment — `implemented: <what changed>` or `refuted: <reason>`.
 
 ## Output
 
-Present the six emissions first, then the diff. State plainly which steps found nothing. The user
-should never be the first person to notice an item on this list.
+Present the step list first, then the diff.
 
 ## Red flags — stop and go back
 
 | Signal | Action |
 |---|---|
-| The pass ran on a routine diff nobody asked to clean | It should not have activated. See **Activation**. |
 | A rule attributed to the global file that is not in it | Fix the attribution, or move the rule into `references/cleanup-rules.md`. |
-| A step you ran "mentally" with nothing emitted | It did not run. Run it and emit. |
-| A ride-along file you improved instead of reported | Revert the improvement; report the file. |
-| Scope confirmed only by your own inference | Not confirmed. Return to the entry contract. |
 | A comment added because the code looked bare | Delete it. Bare is the default. |
-| A hand-rolled validator beside an existing schema library | Replace it. See `references/cleanup-rules.md`. |
-| An edit in a file this task never otherwise touched | Unrelated cleanup. Revert it. |
 | A required regression test dropped from the diff | Restore it. Step 6 removes only temporary or out-of-scope tests. |
