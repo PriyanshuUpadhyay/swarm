@@ -50,7 +50,8 @@ When the fetch fails, say so in one line and go on.
 ## Plan first, short
 
 Read the code the task touches. Write 3-7 behaviors, each one testable sentence in dependency
-order. Show the list inline in the chat and wait for the user's approval or edits; the copy in the
+order. A behavior is one thing the user can see work, so its usage text, help line, and test go
+with it, not into a later behavior. Show the list inline in the chat and wait for the user's approval or edits; the copy in the
 task file is a record, not the reply. No design essay, no option survey.
 
 When an `implement` run calls this skill for its build step, take the behaviors from the done-when
