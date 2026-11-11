@@ -20,6 +20,7 @@ pub(super) struct Log {
 
 pub(super) fn resolve_log(root: &Path, session: &str, agent: &str) -> Result<Log, ApiError> {
     // A subagent's chat is its own log, read-only (ADR 0140).
+    subagent::check_depth(agent)?;
     if let Some((parent, call)) = subagent::split(agent) {
         return subagent::child_log(&resolve_log(root, session, parent)?, call);
     }

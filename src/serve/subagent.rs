@@ -47,6 +47,17 @@ fn file_inside(root: &Path, log: &Path) -> Option<PathBuf> {
     (log.starts_with(root) && log.is_file()).then_some(log)
 }
 
+/// Most `~sub~` marks an agent id may hold; `resolve_log` recurses once per mark.
+const MARKS_MAX: usize = 4;
+
+/// Refuses an agent id with too many marks before any lookup, with the not-found answer.
+pub(super) fn check_depth(agent: &str) -> Result<(), ApiError> {
+    if agent.matches(MARK).count() > MARKS_MAX {
+        return Err(error(StatusCode::NOT_FOUND, "no subagent log"));
+    }
+    Ok(())
+}
+
 /// The parent agent and the call id of a child chat's agent id.
 pub(super) fn split(agent: &str) -> Option<(&str, &str)> {
     agent.rsplit_once(MARK)
@@ -224,6 +235,12 @@ mod tests {
         assert!(child_log(&parent, "toolu_none").is_err());
         assert!(child_log(&parent, "../x").is_err());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_agent_id_with_more_than_four_marks_is_refused() {
+        assert!(check_depth("chair~sub~a~sub~b~sub~c~sub~d").is_ok());
+        assert!(check_depth("chair~sub~a~sub~b~sub~c~sub~d~sub~e").is_err());
     }
 
     #[test]
