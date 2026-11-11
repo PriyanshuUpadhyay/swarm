@@ -13,8 +13,6 @@ export type BackgroundTask = {
   /** `running`, `unknown`, or the end state Claude Code reported; new values may appear. */
   status: string;
   summary?: string;
-  /** The CLI that owns the task. */
-  provider?: "claude" | "codex";
   /** The log's timestamp for the launch. */
   started_at?: string;
   /** True when the task has an output file to show. */

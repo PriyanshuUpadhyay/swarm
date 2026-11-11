@@ -6,6 +6,7 @@
 //! `toolUseResult.isAsync` (a subagent), and later a `<task-notification>` with the end state.
 
 use super::*;
+use swarm::providers::Provider;
 
 /// A task title keeps its first line, cut to this many characters.
 const TITLE_CHARS: usize = 200;
@@ -23,8 +24,6 @@ pub(super) enum TaskKind {
 pub(super) struct Task {
     pub(super) id: String,
     pub(super) agent: String,
-    /// The CLI that owns the task: `claude` or `codex`.
-    pub(super) provider: &'static str,
     pub(super) kind: TaskKind,
     pub(super) title: String,
     /// The notification's status (`completed`, `failed`, `killed`, ...), `running`, or `unknown`.
@@ -104,7 +103,6 @@ pub(super) fn tasks(agent: &str, log: &str) -> Vec<Task> {
         found.push(Task {
             id: id.into(),
             agent: agent.into(),
-            provider: "claude",
             kind,
             title: title_of(&title),
             status: String::new(),
@@ -176,7 +174,6 @@ pub(super) fn codex_tasks(agent: &str, log: &str) -> Vec<Task> {
                         found.push(Task {
                             id,
                             agent: agent.into(),
-                            provider: "codex",
                             kind: TaskKind::Shell,
                             title: title_of(cmd),
                             status: "running".into(),
@@ -268,16 +265,21 @@ pub(super) fn live_agents(agents: &Value) -> impl Iterator<Item = &Value> {
         .filter(|agent| agent["alive"] == true)
 }
 
-/// The live Claude and Codex agents of a session, as (agent id, provider, log path).
-fn agent_logs(app: &Server, session: &str) -> Vec<(String, String, PathBuf)> {
+/// The live Claude and Codex agents of a session, as (agent id, provider, log path). A provider with
+/// no background reader is left out; the match makes a new provider show here.
+fn agent_logs(app: &Server, session: &str) -> Vec<(String, Provider, PathBuf)> {
     let hub = app.hub.lock().unwrap();
     live_agents(&hub.agents[session])
-        .filter(|agent| agent["provider"] == "claude" || agent["provider"] == "codex")
         .filter_map(|agent| {
+            let provider = Provider::parse(agent["provider"].as_str()?)?;
+            match provider {
+                Provider::Claude | Provider::Codex => {}
+                Provider::Agy | Provider::Pi => return None,
+            }
             let log = agent["log"].as_str().filter(|log| !log.is_empty())?;
             Some((
                 agent["id"].as_str()?.to_string(),
-                agent["provider"].as_str()?.to_string(),
+                provider,
                 PathBuf::from(log),
             ))
         })
@@ -291,10 +293,9 @@ pub(super) fn session_tasks(app: &Server, session: &str) -> Vec<Task> {
         .flat_map(|(agent, provider, log)| {
             // ponytail: reads each whole log per call; keep an offset per log if a long chat lags.
             let text = std::fs::read_to_string(log).unwrap_or_default();
-            if provider == "codex" {
-                codex_tasks(&agent, &text)
-            } else {
-                tasks(&agent, &text)
+            match provider {
+                Provider::Codex => codex_tasks(&agent, &text),
+                _ => tasks(&agent, &text),
             }
         })
         .collect()

@@ -139,7 +139,7 @@ test("a workspace shell takes keys, outlives the panel, and closes on request", 
 test("a running task shows a status line that opens its Cmd+J row", async ({ page: tab }, info) => {
   // The fixture agents run no background work, so the server's answer is stood in for.
   await tab.route(/\/api\/background\?/, (route) =>
-    route.fulfill({ json: { tasks: [{ id: "b1", agent: "reviewer", kind: "shell", title: "npm run dev", status: "running", provider: "claude", started_at: new Date().toISOString(), output: false }] } }),
+    route.fulfill({ json: { tasks: [{ id: "b1", agent: "reviewer", kind: "shell", title: "npm run dev", status: "running", started_at: new Date().toISOString(), output: false }] } }),
   );
   await openChat(tab, info);
   const line = tab.getByTestId("background-line");
