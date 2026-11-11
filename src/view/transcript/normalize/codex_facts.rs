@@ -167,6 +167,12 @@ pub(super) fn parse<'a>(line: &'a [u8], work: &mut dyn Work) -> Result<Fact<'a>,
             "message" => message(&mut fact, &payload, work)?,
             "reasoning" => reasoning(&mut fact, &payload, work)?,
             "image_generation_call" => image_generation(&mut fact, &payload, "id", false),
+            "compaction" | "compaction_summary" | "context_compaction" => {
+                fact.push(
+                    "system_message",
+                    json!({"kind":"compaction","text":"Context compacted","codex_mirror":true}),
+                );
+            }
             "agent_message" => {
                 for raw in payload.array("content").unwrap_or_default() {
                     work.check()?;

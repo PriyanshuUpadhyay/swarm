@@ -123,7 +123,10 @@ pub(super) fn mirror_parts(records: &[Record]) -> HashMap<usize, Vec<usize>> {
     }
     for (index, record) in records.iter().enumerate() {
         let event = &record.event;
-        if event["codex_mirror"] != true || string(event, "type") == "tool_call_update" {
+        if event["codex_mirror"] != true
+            || string(event, "type") == "tool_call_update"
+            || string(event, "type") == "system_message" && string(event, "kind") == "compaction"
+        {
             continue;
         }
         let candidate = records
@@ -143,7 +146,42 @@ pub(super) fn mirror_parts(records: &[Record]) -> HashMap<usize, Vec<usize>> {
             parts.entry(target).or_default().push(index);
         }
     }
+    let mut group = Vec::new();
+    for (index, record) in records.iter().enumerate() {
+        let event = &record.event;
+        if string(event, "type") == "system_message" && string(event, "kind") == "compaction" {
+            group.push(index);
+        } else if !matches!(string(event, "type"), "ignored" | "usage" | "session_info")
+            && !(string(event, "type") == "system_message"
+                && matches!(string(event, "kind"), "developer" | "context"))
+        {
+            join_compactions(records, &mut group, &mut parts);
+        }
+    }
+    join_compactions(records, &mut group, &mut parts);
     parts
+}
+
+fn join_compactions(
+    records: &[Record],
+    group: &mut Vec<usize>,
+    parts: &mut HashMap<usize, Vec<usize>>,
+) {
+    let target = group.iter().copied().max_by_key(|&index| {
+        let event = &records[index].event;
+        let text = string(event, "text");
+        (
+            !text.is_empty() && text != "Context compacted",
+            !text.is_empty(),
+            event["codex_mirror"] != true,
+        )
+    });
+    if let Some(target) = target {
+        parts
+            .entry(target)
+            .or_default()
+            .extend(group.drain(..).filter(|&index| index != target));
+    }
 }
 
 fn same_item(event: &serde_json::Value, target: &serde_json::Value) -> bool {

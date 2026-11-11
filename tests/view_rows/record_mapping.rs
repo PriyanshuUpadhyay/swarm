@@ -268,3 +268,19 @@ fn codex_raw_reasoning_joins_the_thought_row() {
     assert!(rows[0].text.contains("Plan the fix"));
     assert!(rows[0].text.contains("Check the public reader first"));
 }
+
+#[test]
+fn codex_compaction_records_make_one_compaction_row() {
+    for kind in ["compaction", "compaction_summary", "context_compaction"] {
+        let rows = codex_rows(vec![
+            response(json!({"type":kind,"id":"encrypted","encrypted_content":"ciphertext"})),
+            completed(json!({"type":"ContextCompaction","id":"compaction"})),
+            json!({"type":"compacted","payload":{"message":"Kept the useful context"}}),
+            event(json!({"type":"context_compacted"})),
+        ]);
+        assert_eq!(rows.len(), 1, "{kind}");
+        assert_eq!(rows[0].system_kind.as_deref(), Some("compaction"));
+        assert_eq!(rows[0].text, "Kept the useful context");
+        assert!(!rows[0].collapsed);
+    }
+}
