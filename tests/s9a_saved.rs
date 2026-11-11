@@ -13,6 +13,8 @@ use std::{
 use swarm::view::transcript::worker_protocol::Binding;
 use tokio::process::Command;
 const WORK: Duration = Duration::from_millis(900);
+// Cold process startup has a separate bound from protocol work.
+const STARTUP: Duration = Duration::from_secs(10);
 
 struct Tree(PathBuf);
 impl Tree {
@@ -67,7 +69,7 @@ fn binding(name: &str) -> Binding {
     }
 }
 async fn open(command: Command, path: &Path, name: &str) -> Result<Source, Fault> {
-    Source::open(command, binding(name), "claude", path, WORK).await
+    Source::open(command, binding(name), "claude", path, STARTUP).await
 }
 fn core(mut page: Value) -> Value {
     for key in ["display", "patch", "find"] {
