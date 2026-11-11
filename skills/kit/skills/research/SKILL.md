@@ -13,7 +13,7 @@ folders up from this skill's folder. `reach` below means
 
 1. **Frame.** Write the question in one line and the decision it serves in one line. List the
    answers you already know. They are background, not findings.
-2. **Local first.** Read earlier reports in `~/.claude/reports/` and the repository files that the
+2. **Local first.** Read earlier reports in `~/.swarm/reports/` and the repository files that the
    question names, as `<kit root>/blocks/local-research/SKILL.md` says.
 3. **Recent and underrated.** Set a window from the question, or 90 days. Search where
    practitioners write first.

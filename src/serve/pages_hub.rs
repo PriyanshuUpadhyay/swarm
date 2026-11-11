@@ -1,6 +1,7 @@
 //! Published page copies and their loopback HTTP hub.
 
 use super::*;
+use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::{fs, time::SystemTime};
 
@@ -9,8 +10,26 @@ pub(super) const CSP: &str =
 
 #[derive(Debug)]
 pub(super) struct Published {
-    pub(super) folder: String,
+    pub(super) id: String,
     pub(super) hash: String,
+}
+
+/// A page's own record, kept as a dot file so the hub never serves it.
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+pub(super) struct Page {
+    #[serde(skip)]
+    pub(super) id: String,
+    pub(super) date: String,
+    pub(super) slug: String,
+    pub(super) source: String,
+}
+
+const META: &str = ".page.json";
+
+/// A page folder name is a lowercase hyphenated UUID v4, so a URL cannot be guessed (ADR 0141).
+pub(super) fn page_id(name: &str) -> bool {
+    uuid::Uuid::try_parse(name)
+        .is_ok_and(|id| id.get_version_num() == 4 && id.hyphenated().to_string() == name)
 }
 
 pub(super) fn publish(
@@ -47,11 +66,19 @@ pub(super) fn publish(
         return Err("swarm pages: source needs a top index.html".into());
     }
     files.sort();
+    let origin = fs::canonicalize(source)
+        .map_err(io_error)?
+        .to_string_lossy()
+        .into_owned();
     prepare_shelf(shelf).map_err(io_error)?;
+    // A second publish of the same source keeps its ID, so a shared link stays valid.
+    let id = list(shelf)?
+        .into_iter()
+        .find(|page| page.source == origin)
+        .map_or_else(|| uuid::Uuid::new_v4().to_string(), |page| page.id);
     let temporary = shelf.join(format!(".tmp-{}", uuid::Uuid::now_v7()));
     fs::create_dir(&temporary).map_err(io_error)?;
-    let folder = format!("{date}-{slug}");
-    let target = shelf.join(&folder);
+    let target = shelf.join(&id);
     let result = (|| {
         let mut digest = Sha256::new();
         for relative in files {
@@ -68,6 +95,13 @@ pub(super) fn publish(
             digest.update((bytes.len() as u64).to_be_bytes());
             digest.update(bytes);
         }
+        let page = Page {
+            id: id.clone(),
+            date: date.into(),
+            slug: slug.into(),
+            source: origin,
+        };
+        write_meta(&temporary, &page)?;
         let previous = shelf.join(format!(".tmp-{}", uuid::Uuid::now_v7()));
         let replacing = match fs::symlink_metadata(&target) {
             Ok(metadata) => {
@@ -94,7 +128,7 @@ pub(super) fn publish(
             }
         }
         Ok(Published {
-            folder,
+            id,
             hash: format!("{:x}", digest.finalize()),
         })
     })();
@@ -104,13 +138,85 @@ pub(super) fn publish(
     result
 }
 
+/// Makes the shelf private and gives each page from before ADR 0141 a random ID.
 pub(super) fn prepare_shelf(shelf: &Path) -> std::io::Result<()> {
     use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
     fs::DirBuilder::new()
         .recursive(true)
         .mode(0o700)
         .create(shelf)?;
-    fs::set_permissions(shelf, fs::Permissions::from_mode(0o700))
+    fs::set_permissions(shelf, fs::Permissions::from_mode(0o700))?;
+    for entry in fs::read_dir(shelf)? {
+        let entry = entry?;
+        let Ok(name) = entry.file_name().into_string() else {
+            continue;
+        };
+        if name.starts_with('.') || page_id(&name) || !entry.file_type()?.is_dir() {
+            continue;
+        }
+        let (date, slug) = match name.get(..10).zip(name.get(11..)) {
+            Some((date, slug)) if name.as_bytes()[10] == b'-' => (date, slug),
+            _ => ("", name.as_str()),
+        };
+        let page = Page {
+            id: String::new(),
+            date: date.into(),
+            slug: slug.into(),
+            source: String::new(),
+        };
+        write_meta(&entry.path(), &page).map_err(std::io::Error::other)?;
+        fs::rename(entry.path(), shelf.join(uuid::Uuid::new_v4().to_string()))?;
+    }
+    Ok(())
+}
+
+fn write_meta(folder: &Path, page: &Page) -> Result<(), String> {
+    let text = serde_json::to_string(page).map_err(|error| format!("swarm pages: {error}"))?;
+    fs::write(folder.join(META), text).map_err(io_error)
+}
+
+/// The pages on the shelf, newest first. Only the owner's CLI and app read this list.
+pub(super) fn list(shelf: &Path) -> Result<Vec<Page>, String> {
+    let entries = match fs::read_dir(shelf) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => return Err(io_error(error)),
+    };
+    let mut rows = Vec::new();
+    for entry in entries {
+        let entry = entry.map_err(io_error)?;
+        let Ok(id) = entry.file_name().into_string() else {
+            continue;
+        };
+        let Ok(metadata) = fs::symlink_metadata(entry.path()) else {
+            continue;
+        };
+        if !page_id(&id)
+            || !metadata.is_dir()
+            || !fs::symlink_metadata(entry.path().join("index.html"))
+                .is_ok_and(|file| file.is_file())
+        {
+            continue;
+        }
+        let mut page = fs::read_to_string(entry.path().join(META))
+            .ok()
+            .and_then(|text| serde_json::from_str::<Page>(&text).ok())
+            .unwrap_or(Page {
+                id: String::new(),
+                date: String::new(),
+                slug: String::new(),
+                source: String::new(),
+            });
+        page.id = id;
+        rows.push((metadata.modified().unwrap_or(SystemTime::UNIX_EPOCH), page));
+    }
+    rows.sort_by(|left, right| {
+        right
+            .0
+            .cmp(&left.0)
+            .then_with(|| right.1.id.cmp(&left.1.id))
+    });
+    Ok(rows.into_iter().map(|(_, page)| page).collect())
 }
 
 fn io_error(error: std::io::Error) -> String {
@@ -160,12 +266,14 @@ fn source_files(
 struct Shelf {
     root: PathBuf,
     port: u16,
+    /// With `--id`, the hub serves only these pages.
+    only: Option<Vec<String>>,
 }
 
-pub(super) fn router(root: PathBuf, port: u16) -> Router {
+pub(super) fn router(root: PathBuf, port: u16, only: Option<Vec<String>>) -> Router {
     Router::new()
         .fallback(shelf)
-        .with_state(Shelf { root, port })
+        .with_state(Shelf { root, port, only })
 }
 
 async fn shelf(State(app): State<Shelf>, request: Request) -> Response {
@@ -221,10 +329,17 @@ async fn shelf_response(app: &Shelf, request: &axum::http::request::Parts) -> Re
     let Ok(root) = tokio::fs::canonicalize(&app.root).await else {
         return StatusCode::NOT_FOUND.into_response();
     };
-    if path == "/" {
-        return bytes_response(index(&root).await.into_bytes(), "text/html; charset=utf-8");
-    }
     let relative = path.trim_start_matches('/');
+    // No listing: a page is reached only through its ID.
+    let id = relative.split('/').next().unwrap_or_default();
+    if !page_id(id)
+        || app
+            .only
+            .as_ref()
+            .is_some_and(|only| !only.iter().any(|allowed| allowed == id))
+    {
+        return StatusCode::NOT_FOUND.into_response();
+    }
     let Some(mut file) = safe_path(&root, relative).await else {
         return StatusCode::NOT_FOUND.into_response();
     };
@@ -296,75 +411,6 @@ fn bytes_response(bytes: Vec<u8>, content_type: &'static str) -> Response {
         HeaderValue::from_str(&length.to_string()).unwrap(),
     );
     response
-}
-
-async fn index(root: &Path) -> String {
-    let mut rows = Vec::new();
-    if let Ok(mut entries) = tokio::fs::read_dir(root).await {
-        while let Ok(Some(entry)) = entries.next_entry().await {
-            let Ok(name) = entry.file_name().into_string() else {
-                continue;
-            };
-            if name.starts_with('.') {
-                continue;
-            }
-            let Ok(metadata) = tokio::fs::symlink_metadata(entry.path()).await else {
-                continue;
-            };
-            if !metadata.is_dir() {
-                continue;
-            }
-            let Some(file) = safe_path(root, &format!("{name}/index.html")).await else {
-                continue;
-            };
-            let Ok(bytes) = tokio::fs::read(file).await else {
-                continue;
-            };
-            let html = String::from_utf8_lossy(&bytes);
-            let lower = html.to_ascii_lowercase();
-            let title = lower
-                .find("<title>")
-                .and_then(|start| {
-                    let start = start + "<title>".len();
-                    lower[start..]
-                        .find("</title>")
-                        .map(|end| html[start..start + end].trim().to_owned())
-                })
-                .filter(|title| !title.is_empty())
-                .unwrap_or_else(|| name.clone());
-            let modified = metadata.modified().unwrap_or(SystemTime::UNIX_EPOCH);
-            rows.push((modified, name, title));
-        }
-    }
-    rows.sort_by(|left, right| right.0.cmp(&left.0).then_with(|| right.1.cmp(&left.1)));
-    let mut html = "<!doctype html><html><head><meta charset=\"utf-8\"><title>Swarm pages</title></head><body><h1>Swarm pages</h1><ul>".to_owned();
-    for (time, name, title) in rows {
-        let seconds = time
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
-        let url: String = name
-            .bytes()
-            .map(|byte| {
-                if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~') {
-                    (byte as char).to_string()
-                } else {
-                    format!("%{byte:02X}")
-                }
-            })
-            .collect();
-        html.push_str(&format!("<li>{} <a href=\"/{url}/\">{}</a> <time>{seconds} seconds since 1970-01-01 UTC</time></li>", escape(&title), escape(&name)));
-    }
-    html.push_str("</ul></body></html>");
-    html
-}
-
-fn escape(text: &str) -> String {
-    text.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-        .replace('\'', "&#39;")
 }
 
 #[cfg(test)]
