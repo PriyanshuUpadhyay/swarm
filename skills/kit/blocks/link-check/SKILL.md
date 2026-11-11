@@ -10,7 +10,7 @@ metadata:
   gives: "a checked link list with dead and unsupported links marked"
   conflicts: ""
   users: "research, web-search"
-  source: "presets/research/PRESET.md (05-report link check, moved here 2026-10-13); skills/web-search/SKILL.md (Chair synthesis step 2)"
+  source: "skills/research/SKILL.md (04-report link check); blocks/web-search/SKILL.md (Chair synthesis step 2)"
 ---
 
 ## Rules

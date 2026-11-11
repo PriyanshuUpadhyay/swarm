@@ -13,12 +13,13 @@ folders up from this skill's folder. `reach` below means
 
 1. **Frame.** Write the question in one line and the decision it serves in one line. List the
    answers you already know. They are background, not findings.
-2. **Local first.** Read earlier reports in `~/.claude/reports/` and the repository files that the
-   question names, as `<kit root>/blocks/local-research/SKILL.md` says.
+2. **Local first.** Read earlier reports in the `<reports>` folder that
+   `<kit root>/references/run-folder.md` names, and the repository files that the question names, as `<kit root>/blocks/local-research/SKILL.md` says.
 3. **Recent and underrated.** Set a window from the question, or 90 days. Search where
    practitioners write first.
-   - `reach search <site> "<query>" --days N` for `hn`, `reddit`, `x`, `lobsters`, `github`,
-     `youtube`, and `web`. Use two or three queries per site, one of them for the opposite view.
+   - `reach search <site> "<query>" --days N` on the sites where people who practice the subject
+     write (`hn`, `reddit`, `x`, `lobsters`, `github`, `youtube`, `web`). Add one query for the
+     opposite view.
    - Forward search: `reach paper <arxiv id> cites` on the key paper finds newer work that builds
      on it.
    - Keep an item only when you opened it and its own page dates it inside the window.
@@ -30,14 +31,11 @@ folders up from this skill's folder. `reach` below means
      says what.
    - A blog, a summary, or an abstract is a lead, never the origin. Name it "(secondary)" when you
      cannot reach the origin.
-5. **Check each number before you write.** Open the cited page again with `reach read` and compare
-   the number, its unit, what it measures (odds or a rate), its scope (which files, models, or
-   tasks), and the version. Fix or drop each claim that does not match.
-6. **Write the report** as `<kit root>/blocks/report/SKILL.md` says: the answer in two or three
-   sentences, then Evidence, What is contested, Off the usual path, and Sources newest first with
-   dates. Keep process out of the report, so no search log, checklist, or run notes.
-7. **Check every link** as `<kit root>/blocks/link-check/SKILL.md` says. A reader must be able to
-   open each link without your browser. When a page opens only through the browser, such as an X
+5. **Write the report** as `<kit root>/blocks/report/SKILL.md` says.
+6. **Check every link** as `<kit root>/blocks/link-check/SKILL.md` says. When a link backs a number,
+   compare the number, its unit, what it measures (odds or a rate), its scope (which files, models,
+   or tasks), and the version on the page you open, and fix or drop each claim that does not
+   match. A reader must be able to open each link without your browser. When a page opens only through the browser, such as an X
    post or a page that answers 403 to a plain fetch, cite a `web.archive.org` copy next to it, or
    drop the claim.
 
@@ -50,12 +48,6 @@ Question: "A blog says LSM-trees were designed for SSDs. Is that right?" Step 4 
 the 1996 paper by O'Neil and others, and reads its introduction, which frames the cost as disk arm
 movement under high insert rates. The report quotes that passage with its section, and names the
 blog as the lead.
-
-## Full mode
-
-When a swarm host can open visible panes and the question is about practice or opinion, run steps
-3 and 4 with web seats as `<kit root>/blocks/web-search/SKILL.md` says. Step 5 still applies to every
-number that the seats bring back.
 
 ## Start or continue
 
@@ -90,13 +82,13 @@ offered `tool-trial` block before `04-report`, so the candidates are tested hand
 
 ## 01-question
 
-Write the question in one line, and the decision it serves in one line. Show both and go on. If two
-readings of the question lead to different work, set the step to `waiting` with one question.
+Do Method step 1. Show the question and its decision and go on. If two readings of the question
+lead to different work, set the step to `waiting` with one question.
 
 ## 02-local
 
-Do this step as the kit block `blocks/local-research/SKILL.md` says, and carry each decision's open
-question, evidence, contrary evidence, and gap into the report.
+Do Method step 2, and carry each decision's open question, evidence, contrary evidence, and gap
+into the report.
 
 ## 03-web
 
@@ -109,12 +101,10 @@ ask only when it changes the search.
 On continue, skip only URLs on the `Fetched:` list with saved evidence. Refresh a source when the
 question or final link check needs current content.
 
-Under a Fable chair, one `search.web` seat does the web part and writes its notes to
-a file; any other session uses its own search and fetch tools. Either way the web part follows the
-kit block `blocks/deep-search/SKILL.md` and the blocked-site ladder (the brief's **method** item)
-in `web-search`.
-
-The `web-search` block names when the wide search runs. Start it as its own step run with this run's slug, at the web-search path in
+Do Method steps 3 and 4. The `web-search` block names when its seats run the wide search;
+otherwise this session searches with its own tools. Either way the web part follows the kit block
+`blocks/deep-search/SKILL.md` and the blocked-site ladder (the brief's **method** item) in
+`web-search`. Start the wide search as its own step run with this run's slug, at the web-search path in
 `references/run-folder.md`. Close `03-web.md` when its
 merged report is written. Its report is one source among the others, not the answer. If a trigger
 holds but this session cannot open visible seats, do the web part yourself and write in the gaps
@@ -139,9 +129,7 @@ source as `blocks/cite-sources/SKILL.md` says.
 
 ## 04-report
 
-Write the report at the research path in `references/run-folder.md` as the kit block
-`blocks/report/SKILL.md` says, and
-check every link as `blocks/link-check/SKILL.md` says before you finish.
+Do Method steps 5 and 6, with the report at the research path in `references/run-folder.md`.
 
 ## 05-close
 

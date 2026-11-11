@@ -10,7 +10,7 @@ metadata:
   gives: "findings with paths, contrary evidence, and gaps"
   conflicts: ""
   users: "research"
-  source: "presets/research/PRESET.md (02-local, moved here 2026-10-13)"
+  source: "skills/research/SKILL.md (02-local)"
 ---
 
 ## Rules
@@ -18,7 +18,7 @@ metadata:
 - For each decision, track the open question, the primary evidence, the contrary evidence, and the gap that remains.
 - Read the source's actual method or code before you accept its headline.
 - Count sources as the kit block `blocks/cite-sources/SKILL.md` says. A page count or agents that agree do not make a claim correct.
-- When the evidence is thin, name the gap; do not make the claim stronger. Do the deeper pass yourself; the user does not need to ask for it.
+- When the evidence is thin, name the gap; do not make the claim stronger.
 - Each finding cites its `path:line` or its report path.
 
 ## Example
