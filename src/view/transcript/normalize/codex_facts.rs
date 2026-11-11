@@ -159,11 +159,17 @@ pub(super) fn parse<'a>(line: &'a [u8], work: &mut dyn Work) -> Result<Fact<'a>,
             json!({"kind": "compaction", "text": payload.text("message")}),
         ),
         "retained_context" => fact.push_ignored(&format!("retained_context/{kind}")),
-        "token_usage_record" | "world_state" | "inter_agent_communication_metadata" => {
-            fact.push_ignored(&record_type)
-        }
+        "token_usage_record"
+        | "world_state"
+        | "inter_agent_communication_metadata"
+        | "inter_agent_communication"
+        | "security_risk_score"
+        | "dynamic_tools_updated"
+        | "realtime_item" => fact.push_ignored(&record_type),
         "response_item" => match kind.as_str() {
-            "ghost_snapshot" | "additional_tools" => fact.push_ignored(&kind),
+            "ghost_snapshot" | "additional_tools" | "configuration_update" => {
+                fact.push_ignored(&kind)
+            }
             "message" => message(&mut fact, &payload, work)?,
             "reasoning" => reasoning(&mut fact, &payload, work)?,
             "image_generation_call" => image_generation(&mut fact, &payload, "id", false),
@@ -272,7 +278,8 @@ fn event_message(
         | "exec_command_end"
         | "mcp_tool_call_end"
         | "web_search_end"
-        | "thread_settings_applied" => fact.push_ignored(&format!("event_msg/{kind}")),
+        | "thread_settings_applied"
+        | "thread_goal_updated" => fact.push_ignored(&format!("event_msg/{kind}")),
         _ => fact.push_unknown(),
     }
     Ok(())
@@ -308,6 +315,10 @@ fn message(
     work: &mut dyn Work,
 ) -> Result<(), SnapshotError> {
     let role = payload.text("role");
+    if role == "system" {
+        fact.push_ignored("response_item/message/system");
+        return Ok(());
+    }
     let Some(content) = payload
         .array("content")
         .filter(|_| matches!(role.as_str(), "user" | "assistant" | "developer" | "system"))
@@ -355,6 +366,12 @@ fn message(
                     "elicitation_result",
                     json!({"tool_call_id": call_id, "answers": answers}),
                 );
+            } else if trimmed.starts_with("<hook_prompt ") || trimmed.starts_with("<hook_prompt>") {
+                let text = trimmed
+                    .split_once('>')
+                    .and_then(|(_, body)| body.strip_suffix("</hook_prompt>"))
+                    .unwrap_or(&text);
+                fact.push("system_message", json!({"kind":"hook_prompt", "text":text}));
             } else if [
                 "<environment_context>",
                 "<user_instructions>",

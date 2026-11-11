@@ -199,6 +199,9 @@ pub(crate) fn parse_fact(line: &[u8], work: &mut dyn Work) -> Result<Fact, Snaps
         }
         _ => fact.unknown(line),
     }
+    if fact.events.is_empty() {
+        fact.unknown(line);
+    }
     Ok(fact)
 }
 

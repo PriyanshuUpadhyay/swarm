@@ -302,3 +302,74 @@ fn pi_custom_messages_follow_the_display_flag() {
         );
     }
 }
+
+#[test]
+fn provider_context_stays_hidden_and_codex_hook_prompts_are_not_user_turns() {
+    let claude = build(inline_fixture(
+        "claude",
+        &[
+            r#"{"type":"attachment","attachment":{"type":"hook_additional_context","hookName":"SessionStart"}}"#,
+            r#"{"type":"attachment","attachment":{"type":"sandbox_instructions"}}"#,
+        ],
+    ));
+    assert!(
+        claude
+            .iter()
+            .all(|row| row.collapsed && row.system_kind.as_deref() == Some("record"))
+    );
+    let rows = codex_rows(vec![
+        response(
+            json!({"type":"message","role":"system","content":[{"type":"input_text","text":"System setup"}]}),
+        ),
+        response(
+            json!({"type":"message","role":"user","content":[{"type":"input_text","text":"<hook_prompt hook_run_id=\"run\">Hook feedback</hook_prompt>"}]}),
+        ),
+    ]);
+    let visible: Vec<_> = rows.iter().filter(|row| !row.collapsed).collect();
+    assert_eq!(visible.len(), 1);
+    assert_eq!(visible[0].kind, RowKind::System);
+    assert_eq!(visible[0].system_kind.as_deref(), Some("hook_prompt"));
+    assert!(!visible[0].opens_turn());
+}
+
+#[test]
+fn codex_bookkeeping_is_hidden_without_an_unmapped_count() {
+    let mut lines: Vec<_> = [
+        "inter_agent_communication",
+        "security_risk_score",
+        "dynamic_tools_updated",
+        "realtime_item",
+    ]
+    .into_iter()
+    .map(|kind| json!({"type":kind,"payload":{}}))
+    .collect();
+    lines.push(event(json!({"type":"thread_goal_updated"})));
+    lines.push(response(json!({"type":"configuration_update"})));
+    let rows = codex_rows(lines);
+    assert!(
+        rows.iter()
+            .all(|row| row.collapsed && row.system_kind.as_deref() == Some("record"))
+    );
+}
+
+#[test]
+fn malformed_or_empty_provider_records_do_not_drop_silently() {
+    for (format, line) in [
+        ("claude", r#"{"type":"user"}"#),
+        ("claude", r#"{"type":"assistant"}"#),
+        ("claude", r#"{"type":"user","message":{"content":[17]}}"#),
+        (
+            "pi",
+            r#"{"type":"message","message":{"role":"user","content":[]}}"#,
+        ),
+    ] {
+        let events = inline_fixture(format, &[line]);
+        assert!(!events.is_empty(), "{line}");
+        let rows = build(events);
+        assert!(
+            rows.iter()
+                .any(|row| row.system_kind.as_deref() == Some("unmapped")),
+            "{line}"
+        );
+    }
+}
