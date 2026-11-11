@@ -21,13 +21,14 @@ pub(super) struct Fixture {
     pub(super) log: PathBuf,
 }
 
-fn real_worker() -> PathBuf {
-    let path: PathBuf = std::env::var_os("S9A_SWARM")
+pub(super) fn real_worker(override_env: &str) -> PathBuf {
+    let path: PathBuf = std::env::var_os(override_env)
         .map(PathBuf::from)
         .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("target/debug/swarm"));
     assert!(
         path.is_file(),
-        "build the real swarm worker with cargo build --features serve --bins; S9A_SWARM may name that binary"
+        "build the real swarm worker with cargo build --features serve --bins; {override_env} may name that binary ({})",
+        path.display()
     );
     path
 }
@@ -60,7 +61,7 @@ impl Fixture {
     pub(super) fn at(dir: PathBuf) -> Self {
         let root = dir.join("home/.swarm");
         std::fs::create_dir_all(&root).unwrap();
-        let worker = real_worker();
+        let worker = real_worker("S9A_SWARM");
         let executable = swarm::adapter::shell_line(&[worker.to_string_lossy().into_owned()]);
         std::fs::create_dir_all(root.join("adapters")).unwrap();
         // Adapter callbacks must run the CLI, not this unit test harness.

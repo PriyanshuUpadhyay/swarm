@@ -27,9 +27,7 @@ impl Server {
         let app = Arc::get_mut(&mut fixture.app).unwrap();
         app.port = port;
         app.ui = false;
-        app.cli = std::env::var_os("S9D_SWARM")
-            .expect("built real swarm binary")
-            .into();
+        app.cli = test_support::real_worker("S9D_SWARM");
         let (actions, action_queue) = mpsc::channel(64);
         app.actions = actions;
 
