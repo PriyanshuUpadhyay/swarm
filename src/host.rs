@@ -196,7 +196,7 @@ mod tests {
             assert!(worker.contains(
                 "\n\n[swarm-seat]\nYou are seat `cl-seat-1` with role `review.check` in swarm session `01a15391-109c-75b2-b09c-5eac0d553e25`. Your chair is `orchestrator`.\nSend your final result to the chair with `swarm finish`, and a question with `swarm send orchestrator <kind>`, as the swarm-voice skill says."
             ), "{worker}");
-            assert!(worker.find("[swarm-seat]") < worker.find("[agent-runtime: codex]"));
+            assert!(!worker.contains("[agent-runtime"), "a leaf starts no workers: {worker}");
         }
         let no_role = context("claude", env(&[REX[0], REX[1], seat[0], seat[2]])).unwrap();
         assert!(
