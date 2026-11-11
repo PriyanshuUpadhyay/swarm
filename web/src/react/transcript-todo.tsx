@@ -2,16 +2,9 @@
 import type { Row, TodoItem } from "../core/api";
 import type { MarkdownCache } from "../core/markdown";
 import { todoText } from "../core/transcript";
-import { CircleIcon } from "lucide-react";
 import { StatusGlyph, type Status } from "./status";
 
-const STATUS: Record<Exclude<TodoItem["status"], "pending">, Status> = { in_progress: "working", completed: "done" };
-
-/** A step that has not started has no `StatusGlyph` word, so it gets its own named icon. */
-function Glyph({ status }: { status: TodoItem["status"] }) {
-  if (status !== "pending") return <StatusGlyph status={STATUS[status]} />;
-  return <CircleIcon className="glyph ended" role="img" aria-label="Pending" data-tip="Pending" />;
-}
+const STATUS: Record<TodoItem["status"], Status> = { pending: "ended", in_progress: "working", completed: "done" };
 
 export function TodoRow({ row }: { row: Row }) {
   return (
@@ -20,7 +13,7 @@ export function TodoRow({ row }: { row: Row }) {
       <ul>
         {row.todo?.map((item, i) => (
           <li key={i} data-status={item.status}>
-            <Glyph status={item.status} />
+            <StatusGlyph status={STATUS[item.status]} label={item.status === "pending" ? "Pending" : undefined} />
             <span className="todo-text">{todoText(item)}</span>
           </li>
         ))}

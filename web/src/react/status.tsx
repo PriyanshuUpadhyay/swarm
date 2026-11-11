@@ -18,9 +18,9 @@ const ICON = {
   ended: CircleIcon,
 };
 
-/** A shape and a status colour, so colour is never the only signal. `data-tip` feeds the list tooltip. */
-export function StatusGlyph({ status }: { status: Status }) {
+/** A shape and a status colour, so colour is never the only signal. `data-tip` feeds the list tooltip. `label` names the state in the reader's words when the status word does not fit. */
+export function StatusGlyph({ status, label }: { status: Status; label?: string }) {
   if (status === "idle") return null;
   const Icon = ICON[status];
-  return <Icon className={`glyph ${status}`} role="img" aria-label={status} data-tip={TITLE[status]} />;
+  return <Icon className={`glyph ${status}`} role="img" aria-label={label ?? status} data-tip={label ?? TITLE[status]} />;
 }
